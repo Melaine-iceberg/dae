@@ -1,0 +1,30 @@
+{
+  "name": "dae",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "bindings:export": "cargo run --manifest-path src-tauri/Cargo.toml --bin export_bindings"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "oxfmt": "^0.62.0",
+    "oxlint": "^1.77.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tauri-plugin-dev-invoke-api": "^0.2.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
+    "typescript": "~7.0.2",
+    "vite": "^8.2.1"
+  }
+}

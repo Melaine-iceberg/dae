@@ -1,0 +1,20 @@
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let specta = specta_builder();
+
+    let app = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+
+    #[cfg(debug_assertions)]
+    let app = app
+        .plugin(tauri_plugin_devtools::init())
+        .plugin(tauri_plugin_dev_invoke::init());
+
+    app.invoke_handler(specta.invoke_handler())
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
+
+/// Creates the shared command registry for Tauri and TypeScript binding export.
+pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
+    tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![])
+}
