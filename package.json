@@ -11,12 +11,17 @@
     "bindings:export": "cargo run --manifest-path src-tauri/Cargo.toml --bin export_bindings"
   },
   "dependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-query": "^5.101.4",
+    "@tanstack/react-query-devtools": "^5.101.4",
+    "@tanstack/react-virtual": "^3.14.9",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-opener": "^2.5.4",
     "oxfmt": "^0.62.0",
     "oxlint": "^1.77.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3",
     "tauri-plugin-dev-invoke-api": "^0.2.0"
   },
   "devDependencies": {
