@@ -1,9 +1,13 @@
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+
+import { ExplorerView } from "@/features/explorer/explorer-view";
+
 function App() {
   return (
-    <main>
+    <>
+      <ExplorerView />
       <ReactQueryDevtools initialIsOpen={false} />
-    </main>
+    </>
   );
 }
 
