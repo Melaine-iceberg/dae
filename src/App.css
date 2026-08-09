@@ -117,6 +117,24 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+@layer components {
+  .window-control-glyph {
+    font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 400;
+    line-height: 1;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  #window-maximize:hover,
+  #window-maximize.is-hovered {
+    color: var(--accent-foreground);
+    background-color: var(--accent);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

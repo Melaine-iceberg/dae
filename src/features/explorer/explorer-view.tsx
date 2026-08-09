@@ -10,6 +10,7 @@ import {
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { WindowControls } from "@/components/window-controls";
 import { cn } from "@/lib/utils";
 
 import { ExplorerBreadcrumbs } from "./explorer-breadcrumbs";
@@ -42,7 +43,10 @@ export function ExplorerView() {
   return (
     <main className="h-full bg-background">
       <section className="flex h-full w-full flex-col overflow-hidden">
-        <header className="flex h-14 shrink-0 items-center gap-1 border-b px-2 sm:px-3">
+        <header
+          className="flex h-14 shrink-0 items-center gap-1 border-b px-2 sm:px-3"
+          data-tauri-drag-region
+        >
           <div className="flex shrink-0 items-center gap-0.5">
             <Button
               aria-label="后退"
@@ -79,7 +83,7 @@ export function ExplorerView() {
             </Button>
           </div>
 
-          <div className="min-w-0 flex-1 px-2">
+          <div className="min-w-0 flex-1 px-2" data-tauri-drag-region>
             {directory ? (
               <ExplorerBreadcrumbs
                 breadcrumbs={directory.breadcrumbs}
@@ -101,6 +105,8 @@ export function ExplorerView() {
           >
             <RefreshCwIcon className={cn(isLoading && "animate-spin")} />
           </Button>
+
+          <WindowControls />
         </header>
 
         {state.error && directory && (

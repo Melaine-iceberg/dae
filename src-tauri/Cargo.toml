@@ -26,6 +26,7 @@ tauri-specta = { version = "2.0.0-rc.25", features = ["javascript", "typescript"
 specta-typescript = "0.0.12"
 tauri-plugin-devtools = "2.1.0"
 tauri-plugin-dev-invoke = "0.2.0"
+tauri-plugin-snap-layout = "1.0.9"
 thiserror = "2"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

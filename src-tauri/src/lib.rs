@@ -4,7 +4,11 @@ mod file_system;
 pub fn run() {
     let specta = specta_builder();
 
-    let app = tauri::Builder::default();
+    let app = tauri::Builder::default().plugin(
+        tauri_plugin_snap_layout::init()
+            .button_id("window-maximize")
+            .build(),
+    );
 
     #[cfg(debug_assertions)]
     let app = app
@@ -18,9 +22,8 @@ pub fn run() {
 
 /// Creates the shared command registry for Tauri and TypeScript binding export.
 pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
-    tauri_specta::Builder::<tauri::Wry>::new()
-        .commands(tauri_specta::collect_commands![
-            file_system::get_home_directory,
-            file_system::read_directory
-        ])
+    tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
+        file_system::get_home_directory,
+        file_system::read_directory
+    ])
 }
