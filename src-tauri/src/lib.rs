@@ -1,18 +1,4 @@
-use std::path::PathBuf;
-use std::sync::Mutex;
-use tauri::Manager;
-use crate::utils::app_notification::app_notification;
-
 mod file_system;
-mod utils;
-
-struct CurFilepath(PathBuf);
-
-impl CurFilepath {
-    fn new(path: PathBuf) -> Self {
-        Self(path)
-    }
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -28,20 +14,6 @@ pub fn run() {
         .plugin(tauri_plugin_dev_invoke::init());
 
     app.invoke_handler(specta.invoke_handler())
-        .setup(|app| {
-            let home = match app.path().home_dir() {
-                Ok(path) => path,
-                Err(err) => {
-                    app_notification(
-                        app,
-                        format!("Failed to retrieve the current system user directory: {err}"),
-                    );
-                    std::env::current_dir()?
-                }
-            };
-            app.manage(Mutex::new(CurFilepath::new(home)));
-            Ok(())
-        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
