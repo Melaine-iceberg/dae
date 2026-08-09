@@ -47,7 +47,7 @@ pub struct DirectoryView {
 pub enum FileSystemError {
     #[error("The requested path was not found: {0}")]
     NotFound(String),
-    #[error("Permission was denied for: {0}")]
+    #[error("Permission was denied: {0}")]
     PermissionDenied(String),
     #[error("The requested path is not a directory: {0}")]
     NotDirectory(String),
@@ -76,7 +76,7 @@ pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemErr
     app.path()
         .home_dir()
         .map(|path| path_to_string(&path))
-        .map_err(|error| FileSystemError::Io(error.to_string()))
+        .map_err(|error| FileSystemError::Internal(error.to_string()))
 }
 
 /// Reads one directory as an immutable snapshot suitable for rendering in the explorer.
@@ -89,21 +89,18 @@ pub async fn read_directory(path: String) -> Result<DirectoryView, FileSystemErr
 }
 
 fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, FileSystemError> {
-    let path = requested_path
-        .canonicalize()
-        .map_err(FileSystemError::from)?;
-    let metadata = fs::metadata(&path).map_err(FileSystemError::from)?;
+    let path = requested_path.canonicalize()?;
+    let metadata = fs::metadata(&path)?;
 
     if !metadata.is_dir() {
         return Err(FileSystemError::NotDirectory(path_to_string(&path)));
     }
 
-    let mut entries = fs::read_dir(&path)
-        .map_err(FileSystemError::from)?
+    let mut entries = fs::read_dir(&path)?
         .map(|entry| {
-            let entry = entry.map_err(FileSystemError::from)?;
-            let file_type = entry.file_type().map_err(FileSystemError::from)?;
-            let metadata = entry.metadata().map_err(FileSystemError::from)?;
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            let metadata = entry.metadata()?;
             let kind = entry_kind(file_type);
             let size = matches!(&kind, EntryKind::File).then_some(metadata.len());
 
