@@ -27,6 +27,8 @@ tauri-specta = { version = "2.0.0-rc.25", features = ["javascript", "typescript"
 specta-typescript = "0.0.12"
 tauri-plugin-devtools = "2.1.0"
 tauri-plugin-dev-invoke = "0.2.0"
+tokio = { version = "1.53.1", features = ["fs"] }
+tauri-plugin-notification = "2"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
