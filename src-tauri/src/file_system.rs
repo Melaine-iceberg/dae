@@ -195,7 +195,7 @@ fn normalize_path_for_display(path: &str) -> String {
             return format!(r"\\{path}");
         }
 
-        return path.strip_prefix(r"\\?\").unwrap_or(path).to_owned();
+        path.strip_prefix(r"\\?\").unwrap_or(path).to_owned()
     }
 
     #[cfg(not(windows))]
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn places_directories_before_files_case_insensitively() {
-        let mut entries = vec![
+        let mut entries = [
             DirectoryEntry {
                 name: "zeta.txt".into(),
                 path: "zeta.txt".into(),
