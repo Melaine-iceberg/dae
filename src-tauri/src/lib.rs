@@ -4,9 +4,7 @@ mod file_system;
 pub fn run() {
     let specta = specta_builder();
 
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_opener::init());
+    let app = tauri::Builder::default();
 
     #[cfg(debug_assertions)]
     let app = app

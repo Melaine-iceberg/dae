@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Aesthetic file manager"
 authors = ["melaine"]
 edition = "2024"
+default-run = "dae"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -19,14 +20,12 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 specta = "2.0.0-rc.25"
 tauri-specta = { version = "2.0.0-rc.25", features = ["javascript", "typescript"] }
 specta-typescript = "0.0.12"
 tauri-plugin-devtools = "2.1.0"
 tauri-plugin-dev-invoke = "0.2.0"
-tauri-plugin-notification = "2"
 thiserror = "2"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

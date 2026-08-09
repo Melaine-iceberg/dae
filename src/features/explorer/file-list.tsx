@@ -1,3 +1,5 @@
+import { useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   FileIcon,
   FolderIcon,
@@ -24,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 import type { DirectoryEntry, EntryKind } from "./types";
 
@@ -60,7 +63,17 @@ const FILE_SIZE_FORMATTER = new Intl.NumberFormat("zh-CN", {
 
 const FILE_SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
+const ROW_HEIGHT = 48;
+
 export function FileList({ entries, isLoading, onOpenDirectory }: FileListProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const virtualizer = useVirtualizer({
+    count: entries.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10,
+  });
+
   return (
     <section aria-label="文件列表" className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center justify-between border-b px-4">
@@ -81,27 +94,35 @@ export function FileList({ entries, isLoading, onOpenDirectory }: FileListProps)
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto">
-          <Table className="min-w-160 table-fixed">
-            <TableHeader>
-              <TableRow>
-                <TableHead>名称</TableHead>
-                <TableHead className="w-44">修改日期</TableHead>
-                <TableHead className="w-28">类型</TableHead>
-                <TableHead className="w-24 text-right">大小</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entries.map((entry) => (
-                <FileListRow
-                  key={entry.path}
-                  entry={entry}
-                  isLoading={isLoading}
-                  onOpenDirectory={onOpenDirectory}
-                />
-              ))}
-            </TableBody>
-          </Table>
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+          <div className="min-w-160">
+            <div className="flex h-10 items-center whitespace-nowrap border-b text-sm font-medium text-foreground">
+              <div className="min-w-0 flex-1 px-2">名称</div>
+              <div className="w-44 px-2">修改日期</div>
+              <div className="w-28 px-2">类型</div>
+              <div className="w-24 px-2 text-right">大小</div>
+            </div>
+            <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
+              {virtualizer.getVirtualItems().map((virtualRow) => {
+                const entry = entries[virtualRow.index];
+
+                return (
+                  <div
+                    key={entry.path}
+                    className="absolute inset-x-0 top-0"
+                    style={{ transform: `translateY(${virtualRow.start}px)` }}
+                  >
+                    <FileListRow
+                      entry={entry}
+                      isLoading={isLoading}
+                      isLast={virtualRow.index === entries.length - 1}
+                      onOpenDirectory={onOpenDirectory}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
     </section>
@@ -111,18 +132,26 @@ export function FileList({ entries, isLoading, onOpenDirectory }: FileListProps)
 function FileListRow({
   entry,
   isLoading,
+  isLast,
   onOpenDirectory,
 }: {
   entry: DirectoryEntry;
   isLoading: boolean;
+  isLast: boolean;
   onOpenDirectory: (path: string) => void;
 }) {
   const presentation = ENTRY_PRESENTATION[entry.kind];
   const EntryIcon = presentation.icon;
 
   return (
-    <TableRow>
-      <TableCell>
+    <div
+      className={cn(
+        "flex items-center whitespace-nowrap text-sm transition-colors hover:bg-muted/50",
+        !isLast && "border-b",
+      )}
+      style={{ height: ROW_HEIGHT }}
+    >
+      <div className="min-w-0 flex-1 p-2">
         {entry.kind === "directory" ? (
           <Button
             aria-label={`打开文件夹 ${entry.name}`}
@@ -144,16 +173,16 @@ function FileListRow({
             </span>
           </div>
         )}
-      </TableCell>
-      <TableCell className="text-muted-foreground">{formatModifiedAt(entry.modifiedAt)}</TableCell>
-      <TableCell className="text-muted-foreground">{presentation.label}</TableCell>
-      <TableCell
-        className="text-right text-muted-foreground"
+      </div>
+      <div className="w-44 p-2 text-muted-foreground">{formatModifiedAt(entry.modifiedAt)}</div>
+      <div className="w-28 p-2 text-muted-foreground">{presentation.label}</div>
+      <div
+        className="w-24 p-2 text-right text-muted-foreground"
         title={entry.size === null ? undefined : `${entry.size.toLocaleString("zh-CN")} 字节`}
       >
         {formatFileSize(entry.size)}
-      </TableCell>
-    </TableRow>
+      </div>
+    </div>
   );
 }
 
