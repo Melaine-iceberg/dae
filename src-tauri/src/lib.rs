@@ -6,6 +6,7 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .manage(file_system::DirectoryWatcher::default())
+        .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_snap_layout::init()
                 .button_id("window-maximize")

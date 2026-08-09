@@ -27,6 +27,7 @@ specta-typescript = "0.0.12"
 tauri-plugin-devtools = "2.1.0"
 tauri-plugin-dev-invoke = "0.2.0"
 tauri-plugin-snap-layout = "1.0.9"
+tauri-plugin-opener = "2"
 thiserror = "2"
 notify = "8.2.0"
 

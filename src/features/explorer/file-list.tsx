@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { openPath } from "@tauri-apps/plugin-opener";
 import {
   FileIcon,
   FolderIcon,
@@ -166,12 +167,18 @@ function FileListRow({
             <span className="truncate">{entry.name}</span>
           </Button>
         ) : (
-          <div className="flex h-8 min-w-0 items-center gap-1.5 px-2">
-            <EntryIcon className="size-4 shrink-0 text-muted-foreground" />
-            <span className="truncate" title={entry.path}>
-              {entry.name}
-            </span>
-          </div>
+          <Button
+            aria-label={`打开 ${entry.name}`}
+            className="w-full justify-start"
+            disabled={isLoading}
+            onClick={() => void openFile(entry.path)}
+            title={entry.path}
+            type="button"
+            variant="ghost"
+          >
+            <EntryIcon data-icon="inline-start" className="text-muted-foreground" />
+            <span className="truncate">{entry.name}</span>
+          </Button>
         )}
       </div>
       <div className="w-44 p-2 text-muted-foreground">{formatModifiedAt(entry.modifiedAt)}</div>
@@ -184,6 +191,14 @@ function FileListRow({
       </div>
     </div>
   );
+}
+
+async function openFile(path: string): Promise<void> {
+  try {
+    await openPath(path);
+  } catch (error) {
+    console.warn(`Unable to open ${path}`, error);
+  }
 }
 
 function formatModifiedAt(modifiedAt: number | null): string {
