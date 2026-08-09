@@ -5,6 +5,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
+use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -39,48 +40,29 @@ pub struct DirectoryView {
     pub entries: Vec<DirectoryEntry>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "snake_case")]
-pub enum FileSystemErrorKind {
-    NotFound,
-    PermissionDenied,
-    NotDirectory,
-    Io,
-    Internal,
+#[derive(Debug, Clone, Error, Serialize, Type)]
+#[serde(tag = "kind", content = "message", rename_all = "snake_case")]
+pub enum FileSystemError {
+    #[error("The requested path was not found: {0}")]
+    NotFound(String),
+    #[error("Permission was denied for: {0}")]
+    PermissionDenied(String),
+    #[error("The requested path is not a directory: {0}")]
+    NotDirectory(String),
+    #[error("The file system operation failed: {0}")]
+    Io(String),
+    #[error("The directory operation could not complete: {0}")]
+    Internal(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct FileSystemError {
-    pub kind: FileSystemErrorKind,
-    pub message: String,
-}
+impl From<io::Error> for FileSystemError {
+    fn from(error: io::Error) -> Self {
+        let message = error.to_string();
 
-impl FileSystemError {
-    fn from_io(error: io::Error) -> Self {
-        let kind = match error.kind() {
-            io::ErrorKind::NotFound => FileSystemErrorKind::NotFound,
-            io::ErrorKind::PermissionDenied => FileSystemErrorKind::PermissionDenied,
-            _ => FileSystemErrorKind::Io,
-        };
-
-        Self {
-            kind,
-            message: error.to_string(),
-        }
-    }
-
-    fn not_directory(path: &Path) -> Self {
-        Self {
-            kind: FileSystemErrorKind::NotDirectory,
-            message: format!("{} is not a directory", path.display()),
-        }
-    }
-
-    fn internal(error: impl std::fmt::Display) -> Self {
-        Self {
-            kind: FileSystemErrorKind::Internal,
-            message: error.to_string(),
+        match error.kind() {
+            io::ErrorKind::NotFound => Self::NotFound(message),
+            io::ErrorKind::PermissionDenied => Self::PermissionDenied(message),
+            _ => Self::Io(message),
         }
     }
 }
@@ -92,10 +74,7 @@ pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemErr
     app.path()
         .home_dir()
         .map(|path| path_to_string(&path))
-        .map_err(|error| FileSystemError {
-            kind: FileSystemErrorKind::Io,
-            message: error.to_string(),
-        })
+        .map_err(|error| FileSystemError::Io(error.to_string()))
 }
 
 /// Reads one directory as an immutable snapshot suitable for rendering in the explorer.
@@ -104,24 +83,24 @@ pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemErr
 pub async fn read_directory(path: String) -> Result<DirectoryView, FileSystemError> {
     tauri::async_runtime::spawn_blocking(move || read_directory_sync(PathBuf::from(path)))
         .await
-        .map_err(FileSystemError::internal)?
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, FileSystemError> {
     let path = requested_path
         .canonicalize()
-        .map_err(FileSystemError::from_io)?;
-    let metadata = fs::metadata(&path).map_err(FileSystemError::from_io)?;
+        .map_err(FileSystemError::from)?;
+    let metadata = fs::metadata(&path).map_err(FileSystemError::from)?;
 
     if !metadata.is_dir() {
-        return Err(FileSystemError::not_directory(&path));
+        return Err(FileSystemError::NotDirectory(path_to_string(&path)));
     }
 
     let mut entries = fs::read_dir(&path)
-        .map_err(FileSystemError::from_io)?
+        .map_err(FileSystemError::from)?
         .map(|entry| {
-            let entry = entry.map_err(FileSystemError::from_io)?;
-            let file_type = entry.file_type().map_err(FileSystemError::from_io)?;
+            let entry = entry.map_err(FileSystemError::from)?;
+            let file_type = entry.file_type().map_err(FileSystemError::from)?;
 
             Ok(DirectoryEntry {
                 name: entry.file_name().to_string_lossy().into_owned(),
@@ -194,7 +173,8 @@ fn path_to_string(path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        DirectoryEntry, EntryKind, build_breadcrumbs, compare_entries, read_directory_sync,
+        DirectoryEntry, EntryKind, FileSystemError, build_breadcrumbs, compare_entries,
+        read_directory_sync,
     };
     use std::fs;
 
@@ -260,5 +240,18 @@ mod tests {
         assert_eq!(names, vec!["folder", "file.txt"]);
 
         fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[test]
+    fn returns_not_directory_for_a_file_path() {
+        let file =
+            std::env::temp_dir().join(format!("dae-file-system-test-{}.txt", std::process::id()));
+        fs::write(&file, "test").expect("create test file");
+
+        let error = read_directory_sync(file.clone()).expect_err("a file is not a directory");
+
+        fs::remove_file(file).expect("remove test file");
+
+        assert!(matches!(error, FileSystemError::NotDirectory(_)));
     }
 }

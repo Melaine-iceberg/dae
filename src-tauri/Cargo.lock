@@ -764,7 +764,6 @@ name = "dae"
 version = "0.1.0"
 dependencies = [
  "serde",
- "serde_json",
  "specta",
  "specta-typescript",
  "tauri",
@@ -774,7 +773,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tauri-specta",
- "tokio",
+ "thiserror 2.0.19",
 ]
 
 [[package]]

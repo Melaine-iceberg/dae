@@ -24,7 +24,6 @@ export type FileSystemErrorKind =
   | "io"
   | "internal";
 
-export interface FileSystemError {
-  kind: FileSystemErrorKind;
-  message: string;
-}
+export type FileSystemError = {
+  [Kind in FileSystemErrorKind]: { kind: Kind; message: string };
+}[FileSystemErrorKind];

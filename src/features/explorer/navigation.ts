@@ -25,6 +25,14 @@ const initialState: ExplorerState = {
   historyIndex: -1,
 };
 
+const fileSystemErrorKinds = new Set<FileSystemError["kind"]>([
+  "not_found",
+  "permission_denied",
+  "not_directory",
+  "io",
+  "internal",
+]);
+
 export class ExplorerNavigator {
   private state = initialState;
   private requestVersion = 0;
@@ -177,6 +185,7 @@ function isFileSystemError(value: unknown): value is FileSystemError {
     "kind" in value &&
     "message" in value &&
     typeof value.kind === "string" &&
+    fileSystemErrorKinds.has(value.kind as FileSystemError["kind"]) &&
     typeof value.message === "string"
   );
 }
