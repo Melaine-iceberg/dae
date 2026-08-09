@@ -45,6 +45,21 @@ const ENTRY_PRESENTATION: Record<EntryKind, EntryPresentation> = {
   other: { icon: ShapesIcon, label: "其他" },
 };
 
+const MODIFIED_DATE_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+  year: "numeric",
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+const FILE_SIZE_FORMATTER = new Intl.NumberFormat("zh-CN", {
+  maximumFractionDigits: 1,
+});
+
+const FILE_SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
+
 export function FileList({ entries, isLoading, onOpenDirectory }: FileListProps) {
   return (
     <section aria-label="文件列表" className="flex min-h-0 flex-1 flex-col">
@@ -67,11 +82,13 @@ export function FileList({ entries, isLoading, onOpenDirectory }: FileListProps)
         </Empty>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">
-          <Table className="table-fixed">
+          <Table className="min-w-160 table-fixed">
             <TableHeader>
               <TableRow>
                 <TableHead>名称</TableHead>
-                <TableHead className="hidden w-32 sm:table-cell">类型</TableHead>
+                <TableHead className="w-44">修改日期</TableHead>
+                <TableHead className="w-28">类型</TableHead>
+                <TableHead className="w-24 text-right">大小</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -128,11 +145,38 @@ function FileListRow({
           </div>
         )}
       </TableCell>
-      <TableCell className="hidden text-muted-foreground sm:table-cell">
-        {presentation.label}
+      <TableCell className="text-muted-foreground">{formatModifiedAt(entry.modifiedAt)}</TableCell>
+      <TableCell className="text-muted-foreground">{presentation.label}</TableCell>
+      <TableCell
+        className="text-right text-muted-foreground"
+        title={entry.size === null ? undefined : `${entry.size.toLocaleString("zh-CN")} 字节`}
+      >
+        {formatFileSize(entry.size)}
       </TableCell>
     </TableRow>
   );
+}
+
+function formatModifiedAt(modifiedAt: number | null): string {
+  return modifiedAt === null ? "—" : MODIFIED_DATE_FORMATTER.format(modifiedAt);
+}
+
+function formatFileSize(size: number | null): string {
+  if (size === null) {
+    return "—";
+  }
+
+  if (size === 0) {
+    return "0 B";
+  }
+
+  const unitIndex = Math.min(
+    Math.floor(Math.log(size) / Math.log(1024)),
+    FILE_SIZE_UNITS.length - 1,
+  );
+  const value = size / 1024 ** unitIndex;
+
+  return `${FILE_SIZE_FORMATTER.format(value)} ${FILE_SIZE_UNITS[unitIndex]}`;
 }
 
 export function FileListSkeleton() {
@@ -142,11 +186,13 @@ export function FileListSkeleton() {
         <Skeleton className="h-4 w-12" />
         <Skeleton className="h-3 w-16" />
       </div>
-      <Table className="table-fixed">
+      <Table className="min-w-160 table-fixed">
         <TableHeader>
           <TableRow>
             <TableHead>名称</TableHead>
-            <TableHead className="hidden w-32 sm:table-cell">类型</TableHead>
+            <TableHead className="w-44">修改日期</TableHead>
+            <TableHead className="w-28">类型</TableHead>
+            <TableHead className="w-24 text-right">大小</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -158,8 +204,14 @@ export function FileListSkeleton() {
                   <Skeleton className={index % 3 === 0 ? "h-4 w-48" : "h-4 w-32"} />
                 </div>
               </TableCell>
-              <TableCell className="hidden sm:table-cell">
+              <TableCell>
+                <Skeleton className="h-4 w-30" />
+              </TableCell>
+              <TableCell>
                 <Skeleton className="h-4 w-14" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="ml-auto h-4 w-12" />
               </TableCell>
             </TableRow>
           ))}

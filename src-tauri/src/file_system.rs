@@ -29,6 +29,8 @@ pub struct DirectoryEntry {
     pub name: String,
     pub path: String,
     pub kind: EntryKind,
+    pub modified_at: Option<u64>,
+    pub size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -101,11 +103,16 @@ fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, FileSys
         .map(|entry| {
             let entry = entry.map_err(FileSystemError::from)?;
             let file_type = entry.file_type().map_err(FileSystemError::from)?;
+            let metadata = entry.metadata().map_err(FileSystemError::from)?;
+            let kind = entry_kind(file_type);
+            let size = matches!(&kind, EntryKind::File).then_some(metadata.len());
 
             Ok(DirectoryEntry {
                 name: entry.file_name().to_string_lossy().into_owned(),
                 path: path_to_string(&entry.path()),
-                kind: entry_kind(file_type),
+                kind,
+                modified_at: modified_at_millis(&metadata),
+                size,
             })
         })
         .collect::<Result<Vec<_>, FileSystemError>>()?;
@@ -117,6 +124,17 @@ fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, FileSys
         breadcrumbs: build_breadcrumbs(&path),
         entries,
     })
+}
+
+fn modified_at_millis(metadata: &fs::Metadata) -> Option<u64> {
+    metadata
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis()
+        .try_into()
+        .ok()
 }
 
 fn entry_kind(file_type: fs::FileType) -> EntryKind {
@@ -230,16 +248,22 @@ mod tests {
                 name: "zeta.txt".into(),
                 path: "zeta.txt".into(),
                 kind: EntryKind::File,
+                modified_at: None,
+                size: None,
             },
             DirectoryEntry {
                 name: "alpha".into(),
                 path: "alpha".into(),
                 kind: EntryKind::Directory,
+                modified_at: None,
+                size: None,
             },
             DirectoryEntry {
                 name: "Beta".into(),
                 path: "Beta".into(),
                 kind: EntryKind::Directory,
+                modified_at: None,
+                size: None,
             },
         ];
 
@@ -268,6 +292,13 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(names, vec!["folder", "file.txt"]);
+
+        let folder_entry = &view.entries[0];
+        let file_entry = &view.entries[1];
+        assert!(folder_entry.modified_at.is_some());
+        assert_eq!(folder_entry.size, None);
+        assert!(file_entry.modified_at.is_some());
+        assert_eq!(file_entry.size, Some(4));
 
         fs::remove_dir_all(directory).expect("remove test directory");
     }

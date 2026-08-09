@@ -9,6 +9,8 @@ export interface DirectoryEntry {
   name: string;
   path: string;
   kind: EntryKind;
+  modifiedAt: number | null;
+  size: number | null;
 }
 
 export interface DirectoryView {
