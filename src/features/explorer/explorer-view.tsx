@@ -40,8 +40,8 @@ export function ExplorerView() {
   };
 
   return (
-    <main className="h-full bg-muted/40 p-2 sm:p-3">
-      <section className="mx-auto flex h-full max-w-screen-2xl flex-col overflow-hidden rounded-xl border bg-background shadow-xs">
+    <main className="h-full bg-background">
+      <section className="flex h-full w-full flex-col overflow-hidden">
         <header className="flex h-14 shrink-0 items-center gap-1 border-b px-2 sm:px-3">
           <div className="flex shrink-0 items-center gap-0.5">
             <Button

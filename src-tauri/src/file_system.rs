@@ -160,14 +160,28 @@ fn build_breadcrumbs(path: &Path) -> Vec<Breadcrumb> {
             name: ancestor
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_else(|| ancestor.display().to_string()),
+                .unwrap_or_else(|| path_to_string(ancestor)),
             path: path_to_string(ancestor),
         })
         .collect()
 }
 
 fn path_to_string(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+    normalize_path_for_display(&path.to_string_lossy())
+}
+
+fn normalize_path_for_display(path: &str) -> String {
+    #[cfg(windows)]
+    {
+        if let Some(path) = path.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{path}");
+        }
+
+        return path.strip_prefix(r"\\?\").unwrap_or(path).to_owned();
+    }
+
+    #[cfg(not(windows))]
+    path.to_owned()
 }
 
 #[cfg(test)]
@@ -177,6 +191,22 @@ mod tests {
         read_directory_sync,
     };
     use std::fs;
+
+    #[cfg(windows)]
+    use super::normalize_path_for_display;
+
+    #[cfg(windows)]
+    #[test]
+    fn removes_windows_verbatim_path_prefixes() {
+        assert_eq!(
+            normalize_path_for_display(r"\\?\C:\Users\test"),
+            r"C:\Users\test"
+        );
+        assert_eq!(
+            normalize_path_for_display(r"\\?\UNC\server\share\folder"),
+            r"\\server\share\folder"
+        );
+    }
 
     #[test]
     fn builds_clickable_breadcrumbs_from_a_path() {
