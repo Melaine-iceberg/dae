@@ -7,9 +7,13 @@ import { setupDevInvoke } from "tauri-plugin-dev-invoke-api";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { applySystemTheme } from "@/lib/theme";
+
 if (import.meta.env.DEV) {
   setupDevInvoke();
 }
+
+applySystemTheme();
 
 const queryClient = new QueryClient();
 
