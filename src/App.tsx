@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
-import { ExplorerView } from "@/features/explorer/explorer-view";
+import { ExplorerTabs } from "@/features/explorer/explorer-tabs";
 import { applySystemTheme, watchSystemTheme } from "@/lib/theme";
 
 function App() {
@@ -9,7 +9,7 @@ function App() {
 
   return (
     <>
-      <ExplorerView />
+      <ExplorerTabs />
       <ReactQueryDevtools initialIsOpen={false} />
     </>
   );

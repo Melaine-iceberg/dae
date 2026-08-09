@@ -36,11 +36,20 @@ const fileSystemErrorKinds = new Set<FileSystemError["kind"]>([
 export class ExplorerNavigator {
   private state = initialState;
   private requestVersion = 0;
+  private readonly scrollOffsets = new Map<string, number>();
   private readonly listeners = new Set<ExplorerListener>();
 
   constructor(private readonly api: ExplorerApi = explorerApi) {}
 
   getSnapshot = (): ExplorerState => this.state;
+
+  getScrollOffset(path: string): number {
+    return this.scrollOffsets.get(path) ?? 0;
+  }
+
+  setScrollOffset(path: string, offset: number): void {
+    this.scrollOffsets.set(path, offset);
+  }
 
   subscribe = (listener: ExplorerListener): (() => void) => {
     this.listeners.add(listener);
@@ -201,8 +210,6 @@ export class ExplorerNavigator {
     this.listeners.forEach((listener) => listener());
   }
 }
-
-export const explorerNavigator = new ExplorerNavigator();
 
 function toFileSystemError(error: unknown): FileSystemError {
   if (isFileSystemError(error)) {

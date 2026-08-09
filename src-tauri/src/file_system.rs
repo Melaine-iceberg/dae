@@ -126,6 +126,7 @@ pub async fn watch_directory(path: String, app: tauri::AppHandle) -> Result<(), 
     let watcher = tauri::async_runtime::spawn_blocking(move || {
         create_directory_watcher(PathBuf::from(path), watcher_app)
     })
+    
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))??;
 

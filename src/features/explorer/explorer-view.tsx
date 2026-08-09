@@ -12,20 +12,23 @@ import {
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { WindowControls } from "@/components/window-controls";
 import { cn } from "@/lib/utils";
 
 import { explorerApi } from "./api";
 import { ExplorerBreadcrumbs } from "./explorer-breadcrumbs";
 import { FileList, FileListSkeleton } from "./file-list";
-import { explorerNavigator } from "./navigation";
+import type { ExplorerNavigator } from "./navigation";
 
 const DIRECTORY_CHANGED_EVENT = "explorer-directory-changed";
 const DIRECTORY_REFRESH_DELAY_MS = 150;
 const appWindow = getCurrentWindow();
 
-export function ExplorerView() {
-  const state = useSyncExternalStore(explorerNavigator.subscribe, explorerNavigator.getSnapshot);
+interface ExplorerViewProps {
+  navigator: ExplorerNavigator;
+}
+
+export function ExplorerView({ navigator }: ExplorerViewProps) {
+  const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
   const directory = state.directory;
   const directoryPath = directory?.path;
   const isLoading = state.status === "loading";
@@ -34,33 +37,33 @@ export function ExplorerView() {
   const canGoUp = !isLoading && (directory?.breadcrumbs.length ?? 0) > 1;
 
   useEffect(() => {
-    if (explorerNavigator.getSnapshot().status === "idle") {
-      void explorerNavigator.initialize();
+    if (navigator.getSnapshot().status === "idle") {
+      void navigator.initialize();
     }
-  }, []);
+  }, [navigator]);
 
   useEffect(() => {
     if (!directoryPath) return;
 
     void explorerApi
       .watchDirectory(directoryPath)
-      .then(() => void explorerNavigator.refresh(directoryPath))
+      .then(() => void navigator.refresh(directoryPath))
       .catch((error: unknown) => {
         console.warn("Unable to watch directory for changes", error);
       });
-  }, [directoryPath]);
+  }, [navigator, directoryPath]);
 
   useEffect(() => {
     let disposed = false;
     let refreshTimeout: number | undefined;
 
     const scheduleRefresh = (path: string) => {
-      if (disposed || explorerNavigator.getSnapshot().directory?.path !== path) return;
+      if (disposed || navigator.getSnapshot().directory?.path !== path) return;
 
       window.clearTimeout(refreshTimeout);
       refreshTimeout = window.setTimeout(() => {
         refreshTimeout = undefined;
-        void explorerNavigator.refresh(path);
+        void navigator.refresh(path);
       }, DIRECTORY_REFRESH_DELAY_MS);
     };
 
@@ -68,7 +71,7 @@ export function ExplorerView() {
       scheduleRefresh(payload);
     });
     const unlistenFocusPromise = appWindow.onFocusChanged(({ payload: focused }) => {
-      const currentPath = explorerNavigator.getSnapshot().directory?.path;
+      const currentPath = navigator.getSnapshot().directory?.path;
       if (focused && currentPath) scheduleRefresh(currentPath);
     });
 
@@ -79,15 +82,15 @@ export function ExplorerView() {
         unlisten.forEach((stopListening) => stopListening());
       });
     };
-  }, []);
+  }, [navigator]);
 
   const retry = () => {
     if (directory) {
-      void explorerNavigator.navigate(directory.path);
+      void navigator.navigate(directory.path);
       return;
     }
 
-    void explorerNavigator.initialize();
+    void navigator.initialize();
   };
 
   return (
@@ -101,7 +104,7 @@ export function ExplorerView() {
             <Button
               aria-label="后退"
               disabled={!canGoBack}
-              onClick={() => void explorerNavigator.goBack()}
+              onClick={() => void navigator.goBack()}
               size="icon-sm"
               title="后退"
               type="button"
@@ -112,7 +115,7 @@ export function ExplorerView() {
             <Button
               aria-label="前进"
               disabled={!canGoForward}
-              onClick={() => void explorerNavigator.goForward()}
+              onClick={() => void navigator.goForward()}
               size="icon-sm"
               title="前进"
               type="button"
@@ -123,7 +126,7 @@ export function ExplorerView() {
             <Button
               aria-label="上一级"
               disabled={!canGoUp}
-              onClick={() => void explorerNavigator.goUp()}
+              onClick={() => void navigator.goUp()}
               size="icon-sm"
               title="上一级"
               type="button"
@@ -134,7 +137,7 @@ export function ExplorerView() {
             <Button
               aria-label="刷新"
               disabled={isLoading || !directory}
-              onClick={() => directory && void explorerNavigator.navigate(directory.path)}
+              onClick={() => directory && void navigator.navigate(directory.path)}
               size="icon-sm"
               title="刷新"
               type="button"
@@ -148,14 +151,12 @@ export function ExplorerView() {
             {directory ? (
               <ExplorerBreadcrumbs
                 breadcrumbs={directory.breadcrumbs}
-                onNavigate={(breadcrumb) => void explorerNavigator.navigateBreadcrumb(breadcrumb)}
+                onNavigate={(breadcrumb) => void navigator.navigateBreadcrumb(breadcrumb)}
               />
             ) : (
               <Skeleton className="h-4 w-48 max-w-full" />
             )}
           </div>
-
-          <WindowControls />
         </header>
 
         {state.error && directory && (
@@ -167,8 +168,10 @@ export function ExplorerView() {
         {directory ? (
           <FileList
             entries={directory.entries}
+            initialScrollOffset={navigator.getScrollOffset(directory.path)}
             isLoading={isLoading}
-            onOpenDirectory={(path) => void explorerNavigator.navigate(path)}
+            onOpenDirectory={(path) => void navigator.navigate(path)}
+            onScrollOffsetChange={(offset) => navigator.setScrollOffset(directory.path, offset)}
           />
         ) : state.error ? (
           <div className="p-4">

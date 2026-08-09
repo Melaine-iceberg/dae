@@ -33,8 +33,10 @@ import type { DirectoryEntry, EntryKind } from "./types";
 
 interface FileListProps {
   entries: DirectoryEntry[];
+  initialScrollOffset?: number;
   isLoading: boolean;
   onOpenDirectory: (path: string) => void;
+  onScrollOffsetChange?: (offset: number) => void;
 }
 
 interface EntryPresentation {
@@ -66,12 +68,19 @@ const FILE_SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
 const ROW_HEIGHT = 48;
 
-export function FileList({ entries, isLoading, onOpenDirectory }: FileListProps) {
+export function FileList({
+  entries,
+  initialScrollOffset = 0,
+  isLoading,
+  onOpenDirectory,
+  onScrollOffsetChange,
+}: FileListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: entries.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_HEIGHT,
+    initialOffset: initialScrollOffset,
     overscan: 10,
   });
 
@@ -95,7 +104,11 @@ export function FileList({ entries, isLoading, onOpenDirectory }: FileListProps)
           </EmptyHeader>
         </Empty>
       ) : (
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+        <div
+          ref={scrollRef}
+          className="min-h-0 flex-1 overflow-auto"
+          onScroll={(event) => onScrollOffsetChange?.(event.currentTarget.scrollTop)}
+        >
           <div className="min-w-160">
             <div className="flex h-10 items-center whitespace-nowrap border-b text-sm font-medium text-foreground">
               <div className="min-w-0 flex-1 px-2">名称</div>
