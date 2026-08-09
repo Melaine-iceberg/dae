@@ -1,4 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -13,13 +15,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { WindowControls } from "@/components/window-controls";
 import { cn } from "@/lib/utils";
 
+import { explorerApi } from "./api";
 import { ExplorerBreadcrumbs } from "./explorer-breadcrumbs";
 import { FileList, FileListSkeleton } from "./file-list";
 import { explorerNavigator } from "./navigation";
 
+const DIRECTORY_CHANGED_EVENT = "explorer-directory-changed";
+const DIRECTORY_REFRESH_DELAY_MS = 150;
+const appWindow = getCurrentWindow();
+
 export function ExplorerView() {
   const state = useSyncExternalStore(explorerNavigator.subscribe, explorerNavigator.getSnapshot);
   const directory = state.directory;
+  const directoryPath = directory?.path;
   const isLoading = state.status === "loading";
   const canGoBack = !isLoading && state.historyIndex > 0;
   const canGoForward = !isLoading && state.historyIndex < state.history.length - 1;
@@ -29,6 +37,48 @@ export function ExplorerView() {
     if (explorerNavigator.getSnapshot().status === "idle") {
       void explorerNavigator.initialize();
     }
+  }, []);
+
+  useEffect(() => {
+    if (!directoryPath) return;
+
+    void explorerApi
+      .watchDirectory(directoryPath)
+      .then(() => void explorerNavigator.refresh(directoryPath))
+      .catch((error: unknown) => {
+        console.warn("Unable to watch directory for changes", error);
+      });
+  }, [directoryPath]);
+
+  useEffect(() => {
+    let disposed = false;
+    let refreshTimeout: number | undefined;
+
+    const scheduleRefresh = (path: string) => {
+      if (disposed || explorerNavigator.getSnapshot().directory?.path !== path) return;
+
+      window.clearTimeout(refreshTimeout);
+      refreshTimeout = window.setTimeout(() => {
+        refreshTimeout = undefined;
+        void explorerNavigator.refresh(path);
+      }, DIRECTORY_REFRESH_DELAY_MS);
+    };
+
+    const unlistenChangesPromise = listen<string>(DIRECTORY_CHANGED_EVENT, ({ payload }) => {
+      scheduleRefresh(payload);
+    });
+    const unlistenFocusPromise = appWindow.onFocusChanged(({ payload: focused }) => {
+      const currentPath = explorerNavigator.getSnapshot().directory?.path;
+      if (focused && currentPath) scheduleRefresh(currentPath);
+    });
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(refreshTimeout);
+      void Promise.all([unlistenChangesPromise, unlistenFocusPromise]).then((unlisten) => {
+        unlisten.forEach((stopListening) => stopListening());
+      });
+    };
   }, []);
 
   const retry = () => {
@@ -81,6 +131,17 @@ export function ExplorerView() {
             >
               <ArrowUpIcon />
             </Button>
+            <Button
+              aria-label="刷新"
+              disabled={isLoading || !directory}
+              onClick={() => directory && void explorerNavigator.navigate(directory.path)}
+              size="icon-sm"
+              title="刷新"
+              type="button"
+              variant="ghost"
+            >
+              <RefreshCwIcon className={cn(isLoading && "animate-spin")} />
+            </Button>
           </div>
 
           <div className="min-w-0 flex-1 px-2" data-tauri-drag-region>
@@ -93,18 +154,6 @@ export function ExplorerView() {
               <Skeleton className="h-4 w-48 max-w-full" />
             )}
           </div>
-
-          <Button
-            aria-label="刷新"
-            disabled={isLoading || !directory}
-            onClick={() => directory && void explorerNavigator.navigate(directory.path)}
-            size="icon-sm"
-            title="刷新"
-            type="button"
-            variant="ghost"
-          >
-            <RefreshCwIcon className={cn(isLoading && "animate-spin")} />
-          </Button>
 
           <WindowControls />
         </header>

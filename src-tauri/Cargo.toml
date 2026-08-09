@@ -28,6 +28,7 @@ tauri-plugin-devtools = "2.1.0"
 tauri-plugin-dev-invoke = "0.2.0"
 tauri-plugin-snap-layout = "1.0.9"
 thiserror = "2"
+notify = "8.2.0"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

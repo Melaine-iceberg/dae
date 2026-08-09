@@ -77,6 +77,43 @@ export class ExplorerNavigator {
     return this.load(path, { type: "push" });
   }
 
+  async refresh(path = this.state.directory?.path): Promise<DirectoryView | undefined> {
+    if (!path || this.state.directory?.path !== path || this.state.status === "loading") {
+      return undefined;
+    }
+
+    const requestVersion = ++this.requestVersion;
+
+    try {
+      const directory = await this.api.readDirectory(path);
+
+      if (requestVersion !== this.requestVersion || this.state.directory?.path !== path) {
+        return undefined;
+      }
+
+      this.setState({
+        ...this.state,
+        status: "ready",
+        directory,
+        pendingPath: null,
+        error: null,
+      });
+
+      return directory;
+    } catch (error) {
+      if (requestVersion === this.requestVersion && this.state.directory?.path === path) {
+        this.setState({
+          ...this.state,
+          status: "error",
+          pendingPath: null,
+          error: toFileSystemError(error),
+        });
+      }
+
+      return undefined;
+    }
+  }
+
   private async load(path: string, mode: NavigationMode): Promise<DirectoryView | undefined> {
     const requestVersion = ++this.requestVersion;
     this.setState({ ...this.state, status: "loading", pendingPath: path, error: null });

@@ -1,11 +1,40 @@
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::cmp::Ordering;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use tauri::Manager;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use tauri::{Emitter, Manager};
 use thiserror::Error;
+
+const DIRECTORY_CHANGED_EVENT: &str = "explorer-directory-changed";
+
+#[derive(Default)]
+pub struct DirectoryWatcher {
+    generation: AtomicU64,
+    watcher: Mutex<Option<RecommendedWatcher>>,
+}
+
+impl DirectoryWatcher {
+    fn begin_update(&self) -> u64 {
+        self.generation.fetch_add(1, AtomicOrdering::AcqRel) + 1
+    }
+
+    fn replace(&self, generation: u64, watcher: RecommendedWatcher) -> Result<(), FileSystemError> {
+        let mut active_watcher = self.watcher.lock().map_err(|_| {
+            FileSystemError::Internal("The directory watcher lock was poisoned".into())
+        })?;
+
+        if self.generation.load(AtomicOrdering::Acquire) == generation {
+            *active_watcher = Some(watcher);
+        }
+
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -86,6 +115,49 @@ pub async fn read_directory(path: String) -> Result<DirectoryView, FileSystemErr
     tauri::async_runtime::spawn_blocking(move || read_directory_sync(PathBuf::from(path)))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+/// Replaces the active watcher with one that tracks the currently displayed directory.
+#[tauri::command]
+#[specta::specta]
+pub async fn watch_directory(path: String, app: tauri::AppHandle) -> Result<(), FileSystemError> {
+    let generation = app.state::<DirectoryWatcher>().begin_update();
+    let watcher_app = app.clone();
+    let watcher = tauri::async_runtime::spawn_blocking(move || {
+        create_directory_watcher(PathBuf::from(path), watcher_app)
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))??;
+
+    app.state::<DirectoryWatcher>().replace(generation, watcher)
+}
+
+fn create_directory_watcher(
+    requested_path: PathBuf,
+    app: tauri::AppHandle,
+) -> Result<RecommendedWatcher, FileSystemError> {
+    let path = requested_path.canonicalize()?;
+    let event_path = path_to_string(&path);
+    let mut watcher =
+        notify::recommended_watcher(move |result: Result<notify::Event, notify::Error>| {
+            // Watcher errors (e.g. ReadDirectoryChangesW buffer overflow on network
+            // shares) mean changes were dropped, so treat them as "possibly dirty".
+            let should_refresh = match &result {
+                Ok(event) => !matches!(event.kind, EventKind::Access(_)),
+                Err(_) => true,
+            };
+
+            if should_refresh {
+                let _ = app.emit(DIRECTORY_CHANGED_EVENT, &event_path);
+            }
+        })
+        .map_err(|error| FileSystemError::Io(error.to_string()))?;
+
+    watcher
+        .watch(&path, RecursiveMode::NonRecursive)
+        .map_err(|error| FileSystemError::Io(error.to_string()))?;
+
+    Ok(watcher)
 }
 
 fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, FileSystemError> {
