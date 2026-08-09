@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use tauri::Manager;
 use crate::utils::app_notification::app_notification;
 
+mod file_system;
 mod utils;
 
 struct CurFilepath(PathBuf);
@@ -47,5 +48,9 @@ pub fn run() {
 
 /// Creates the shared command registry for Tauri and TypeScript binding export.
 pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
-    tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![])
+    tauri_specta::Builder::<tauri::Wry>::new()
+        .commands(tauri_specta::collect_commands![
+            file_system::get_home_directory,
+            file_system::read_directory
+        ])
 }

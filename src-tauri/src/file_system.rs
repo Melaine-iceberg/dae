@@ -1,0 +1,264 @@
+use serde::{Deserialize, Serialize};
+use specta::Type;
+use std::cmp::Ordering;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
+use tauri::Manager;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Breadcrumb {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum EntryKind {
+    Directory,
+    File,
+    Symlink,
+    Other,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryEntry {
+    pub name: String,
+    pub path: String,
+    pub kind: EntryKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryView {
+    /// The absolute, canonical path that was read.
+    pub path: String,
+    pub breadcrumbs: Vec<Breadcrumb>,
+    pub entries: Vec<DirectoryEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum FileSystemErrorKind {
+    NotFound,
+    PermissionDenied,
+    NotDirectory,
+    Io,
+    Internal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FileSystemError {
+    pub kind: FileSystemErrorKind,
+    pub message: String,
+}
+
+impl FileSystemError {
+    fn from_io(error: io::Error) -> Self {
+        let kind = match error.kind() {
+            io::ErrorKind::NotFound => FileSystemErrorKind::NotFound,
+            io::ErrorKind::PermissionDenied => FileSystemErrorKind::PermissionDenied,
+            _ => FileSystemErrorKind::Io,
+        };
+
+        Self {
+            kind,
+            message: error.to_string(),
+        }
+    }
+
+    fn not_directory(path: &Path) -> Self {
+        Self {
+            kind: FileSystemErrorKind::NotDirectory,
+            message: format!("{} is not a directory", path.display()),
+        }
+    }
+
+    fn internal(error: impl std::fmt::Display) -> Self {
+        Self {
+            kind: FileSystemErrorKind::Internal,
+            message: error.to_string(),
+        }
+    }
+}
+
+/// Returns the operating system's home directory for the initial explorer view.
+#[tauri::command]
+#[specta::specta]
+pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemError> {
+    app.path()
+        .home_dir()
+        .map(|path| path_to_string(&path))
+        .map_err(|error| FileSystemError {
+            kind: FileSystemErrorKind::Io,
+            message: error.to_string(),
+        })
+}
+
+/// Reads one directory as an immutable snapshot suitable for rendering in the explorer.
+#[tauri::command]
+#[specta::specta]
+pub async fn read_directory(path: String) -> Result<DirectoryView, FileSystemError> {
+    tauri::async_runtime::spawn_blocking(move || read_directory_sync(PathBuf::from(path)))
+        .await
+        .map_err(FileSystemError::internal)?
+}
+
+fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, FileSystemError> {
+    let path = requested_path
+        .canonicalize()
+        .map_err(FileSystemError::from_io)?;
+    let metadata = fs::metadata(&path).map_err(FileSystemError::from_io)?;
+
+    if !metadata.is_dir() {
+        return Err(FileSystemError::not_directory(&path));
+    }
+
+    let mut entries = fs::read_dir(&path)
+        .map_err(FileSystemError::from_io)?
+        .map(|entry| {
+            let entry = entry.map_err(FileSystemError::from_io)?;
+            let file_type = entry.file_type().map_err(FileSystemError::from_io)?;
+
+            Ok(DirectoryEntry {
+                name: entry.file_name().to_string_lossy().into_owned(),
+                path: path_to_string(&entry.path()),
+                kind: entry_kind(file_type),
+            })
+        })
+        .collect::<Result<Vec<_>, FileSystemError>>()?;
+
+    entries.sort_by(compare_entries);
+
+    Ok(DirectoryView {
+        path: path_to_string(&path),
+        breadcrumbs: build_breadcrumbs(&path),
+        entries,
+    })
+}
+
+fn entry_kind(file_type: fs::FileType) -> EntryKind {
+    if file_type.is_dir() {
+        EntryKind::Directory
+    } else if file_type.is_file() {
+        EntryKind::File
+    } else if file_type.is_symlink() {
+        EntryKind::Symlink
+    } else {
+        EntryKind::Other
+    }
+}
+
+fn compare_entries(left: &DirectoryEntry, right: &DirectoryEntry) -> Ordering {
+    let left_rank = entry_kind_rank(&left.kind);
+    let right_rank = entry_kind_rank(&right.kind);
+
+    left_rank
+        .cmp(&right_rank)
+        .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+        .then_with(|| left.name.cmp(&right.name))
+}
+
+fn entry_kind_rank(kind: &EntryKind) -> u8 {
+    match kind {
+        EntryKind::Directory => 0,
+        EntryKind::Symlink => 1,
+        EntryKind::File => 2,
+        EntryKind::Other => 3,
+    }
+}
+
+fn build_breadcrumbs(path: &Path) -> Vec<Breadcrumb> {
+    let mut ancestors = path.ancestors().collect::<Vec<_>>();
+    ancestors.reverse();
+
+    ancestors
+        .into_iter()
+        .map(|ancestor| Breadcrumb {
+            name: ancestor
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| ancestor.display().to_string()),
+            path: path_to_string(ancestor),
+        })
+        .collect()
+}
+
+fn path_to_string(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DirectoryEntry, EntryKind, build_breadcrumbs, compare_entries, read_directory_sync,
+    };
+    use std::fs;
+
+    #[test]
+    fn builds_clickable_breadcrumbs_from_a_path() {
+        let path = std::env::temp_dir().join("dae").join("nested");
+        let breadcrumbs = build_breadcrumbs(&path);
+
+        assert_eq!(
+            breadcrumbs.last().map(|item| item.path.as_str()),
+            Some(path.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            breadcrumbs.last().map(|item| item.name.as_str()),
+            Some("nested")
+        );
+    }
+
+    #[test]
+    fn places_directories_before_files_case_insensitively() {
+        let mut entries = vec![
+            DirectoryEntry {
+                name: "zeta.txt".into(),
+                path: "zeta.txt".into(),
+                kind: EntryKind::File,
+            },
+            DirectoryEntry {
+                name: "alpha".into(),
+                path: "alpha".into(),
+                kind: EntryKind::Directory,
+            },
+            DirectoryEntry {
+                name: "Beta".into(),
+                path: "Beta".into(),
+                kind: EntryKind::Directory,
+            },
+        ];
+
+        entries.sort_by(compare_entries);
+
+        assert_eq!(entries[0].name, "alpha");
+        assert_eq!(entries[1].name, "Beta");
+        assert_eq!(entries[2].name, "zeta.txt");
+    }
+
+    #[test]
+    fn reads_entries_from_a_directory() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-file-system-test-{}", std::process::id()));
+        let nested_directory = directory.join("folder");
+        let file = directory.join("file.txt");
+
+        fs::create_dir_all(&nested_directory).expect("create test directory");
+        fs::write(&file, "test").expect("create test file");
+
+        let view = read_directory_sync(directory.clone()).expect("read test directory");
+        let names = view
+            .entries
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["folder", "file.txt"]);
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+}
