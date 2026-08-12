@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test:rust": "cargo nextest run --manifest-path src-tauri/Cargo.toml",
+    "test:rust": "src-tauri\\target\\bin\\cargo-nextest.exe nextest run --manifest-path src-tauri/Cargo.toml",
+    "test:rust:setup": "cargo binstall -y cargo-nextest --install-path src-tauri/target/bin",
     "bindings:export": "cargo run --manifest-path src-tauri/Cargo.toml --bin export_bindings"
   },
   "dependencies": {
