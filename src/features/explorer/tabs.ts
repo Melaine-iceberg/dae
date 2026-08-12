@@ -7,6 +7,11 @@ export interface ExplorerTab {
   id: string;
 }
 
+export type FileClipboard = {
+  operation: "copy" | "cut";
+  sourcePaths: string[];
+};
+
 const navigators = new Map<string, ExplorerNavigator>();
 let nextTabId = 0;
 
@@ -28,6 +33,7 @@ const initialTab = createTabEntry();
 
 export const tabsAtom = atom<ExplorerTab[]>([initialTab]);
 export const activeTabIdAtom = atom<string>(initialTab.id);
+export const fileClipboardAtom = atom<FileClipboard | null>(null);
 
 export const createTabAtom = atom(null, (_get, set) => {
   const tab = createTabEntry();

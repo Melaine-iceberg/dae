@@ -28,6 +28,10 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
         file_system::get_home_directory,
         file_system::read_directory,
-        file_system::watch_directory
+        file_system::watch_directory,
+        file_system::rename_entry,
+        file_system::copy_entries,
+        file_system::move_entries,
+        file_system::delete_entries
     ])
 }

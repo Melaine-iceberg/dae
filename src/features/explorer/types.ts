@@ -24,6 +24,8 @@ export type FileSystemErrorKind =
   | "permission_denied"
   | "not_directory"
   | "io"
+  | "already_exists"
+  | "invalid_input"
   | "internal";
 
 export type FileSystemError = {

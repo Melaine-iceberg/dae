@@ -1,16 +1,29 @@
-import { useRef } from "react";
+import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
+  ClipboardPasteIcon,
+  CopyIcon,
   FileIcon,
   FolderIcon,
   FolderOpenIcon,
   LinkIcon,
+  PencilIcon,
+  ScissorsIcon,
   ShapesIcon,
+  Trash2Icon,
   type LucideIcon,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   Empty,
   EmptyDescription,
@@ -33,10 +46,19 @@ import type { DirectoryEntry, EntryKind } from "./types";
 
 interface FileListProps {
   entries: DirectoryEntry[];
+  hasClipboard: boolean;
   initialScrollOffset?: number;
   isLoading: boolean;
+  isOperationPending: boolean;
+  onCopy: () => void;
+  onCut: () => void;
+  onDelete: () => void;
   onOpenDirectory: (path: string) => void;
+  onPaste: () => void;
+  onRename: () => void;
   onScrollOffsetChange?: (offset: number) => void;
+  onSelectedPathsChange: (paths: string[]) => void;
+  selectedPaths: string[];
 }
 
 interface EntryPresentation {
@@ -70,12 +92,25 @@ const ROW_HEIGHT = 48;
 
 export function FileList({
   entries,
+  hasClipboard,
   initialScrollOffset = 0,
   isLoading,
+  isOperationPending,
+  onCopy,
+  onCut,
+  onDelete,
   onOpenDirectory,
+  onPaste,
+  onRename,
   onScrollOffsetChange,
+  onSelectedPathsChange,
+  selectedPaths,
 }: FileListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const selectionAnchorIndexRef = useRef<number | null>(null);
+  const selectedPathSet = new Set(selectedPaths);
+  const actionsDisabled = isLoading || isOperationPending;
+  const selectedCount = selectedPaths.length;
   const virtualizer = useVirtualizer({
     count: entries.length,
     getScrollElement: () => scrollRef.current,
@@ -84,12 +119,105 @@ export function FileList({
     overscan: 10,
   });
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || isEditableElement(event.target)) return;
+
+      const hasModifier = event.ctrlKey || event.metaKey;
+      const key = event.key.toLowerCase();
+
+      if (hasModifier && !event.altKey && key === "c" && selectedCount > 0 && !actionsDisabled) {
+        event.preventDefault();
+        onCopy();
+        return;
+      }
+
+      if (hasModifier && !event.altKey && key === "x" && selectedCount > 0 && !actionsDisabled) {
+        event.preventDefault();
+        onCut();
+        return;
+      }
+
+      if (hasModifier && !event.altKey && key === "v" && hasClipboard && !actionsDisabled) {
+        event.preventDefault();
+        onPaste();
+        return;
+      }
+
+      if (event.key === "F2" && selectedCount === 1 && !actionsDisabled) {
+        event.preventDefault();
+        onRename();
+        return;
+      }
+
+      if (event.key === "Delete" && selectedCount > 0 && !actionsDisabled) {
+        event.preventDefault();
+        onDelete();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [actionsDisabled, hasClipboard, onCopy, onCut, onDelete, onPaste, onRename, selectedCount]);
+
+  const selectEntry = (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => {
+    if (actionsDisabled) return;
+
+    const isToggleSelection = event.ctrlKey || event.metaKey;
+    const anchorIndex = selectionAnchorIndexRef.current;
+
+    if (event.shiftKey && anchorIndex !== null) {
+      const [start, end] = [anchorIndex, index].sort((left, right) => left - right);
+      const range = entries.slice(start, end + 1).map((item) => item.path);
+      const nextSelection = isToggleSelection
+        ? new Set([...selectedPaths, ...range])
+        : new Set(range);
+      onSelectedPathsChange([...nextSelection]);
+      return;
+    }
+
+    selectionAnchorIndexRef.current = index;
+
+    if (isToggleSelection) {
+      const nextSelection = new Set(selectedPaths);
+      if (nextSelection.has(entry.path)) {
+        nextSelection.delete(entry.path);
+      } else {
+        nextSelection.add(entry.path);
+      }
+      onSelectedPathsChange([...nextSelection]);
+      return;
+    }
+
+    onSelectedPathsChange([entry.path]);
+  };
+
+  const selectForContextMenu = (entry: DirectoryEntry, index: number) => {
+    if (actionsDisabled || selectedPathSet.has(entry.path)) return;
+
+    selectionAnchorIndexRef.current = index;
+    onSelectedPathsChange([entry.path]);
+  };
+
+  const openEntry = (entry: DirectoryEntry) => {
+    if (actionsDisabled) return;
+
+    if (entry.kind === "directory") {
+      onOpenDirectory(entry.path);
+      return;
+    }
+
+    void openFile(entry.path);
+  };
+
   return (
     <section aria-label="文件列表" className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-10 shrink-0 items-center justify-between border-b px-4">
         <h1 className="text-sm font-medium">文件</h1>
         <p aria-live="polite" className="text-xs text-muted-foreground">
-          {isLoading ? "正在读取…" : `${entries.length} 个项目`}
+          {isLoading
+            ? "正在读取…"
+            : `${entries.length} 个项目${selectedCount ? `，已选择 ${selectedCount} 个` : ""}`}
         </p>
       </div>
 
@@ -116,7 +244,12 @@ export function FileList({
               <div className="w-28 px-2">类型</div>
               <div className="w-24 px-2 text-right">大小</div>
             </div>
-            <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
+            <div
+              aria-multiselectable="true"
+              className="relative"
+              role="listbox"
+              style={{ height: virtualizer.getTotalSize() }}
+            >
               {virtualizer.getVirtualItems().map((virtualRow) => {
                 const entry = entries[virtualRow.index];
 
@@ -127,10 +260,20 @@ export function FileList({
                     style={{ transform: `translateY(${virtualRow.start}px)` }}
                   >
                     <FileListRow
+                      canPaste={hasClipboard}
                       entry={entry}
-                      isLoading={isLoading}
+                      isActionDisabled={actionsDisabled}
                       isLast={virtualRow.index === entries.length - 1}
-                      onOpenDirectory={onOpenDirectory}
+                      isSelected={selectedPathSet.has(entry.path)}
+                      isSingleSelection={selectedCount === 1}
+                      onContextMenu={() => selectForContextMenu(entry, virtualRow.index)}
+                      onCopy={onCopy}
+                      onCut={onCut}
+                      onDelete={onDelete}
+                      onOpen={() => openEntry(entry)}
+                      onPaste={onPaste}
+                      onRename={onRename}
+                      onSelect={(event) => selectEntry(entry, virtualRow.index, event)}
                     />
                   </div>
                 );
@@ -144,65 +287,117 @@ export function FileList({
 }
 
 function FileListRow({
+  canPaste,
   entry,
-  isLoading,
+  isActionDisabled,
   isLast,
-  onOpenDirectory,
+  isSelected,
+  isSingleSelection,
+  onContextMenu,
+  onCopy,
+  onCut,
+  onDelete,
+  onOpen,
+  onPaste,
+  onRename,
+  onSelect,
 }: {
+  canPaste: boolean;
   entry: DirectoryEntry;
-  isLoading: boolean;
+  isActionDisabled: boolean;
   isLast: boolean;
-  onOpenDirectory: (path: string) => void;
+  isSelected: boolean;
+  isSingleSelection: boolean;
+  onContextMenu: () => void;
+  onCopy: () => void;
+  onCut: () => void;
+  onDelete: () => void;
+  onOpen: () => void;
+  onPaste: () => void;
+  onRename: () => void;
+  onSelect: (event: ReactMouseEvent) => void;
 }) {
   const presentation = ENTRY_PRESENTATION[entry.kind];
   const EntryIcon = presentation.icon;
 
   return (
-    <div
-      className={cn(
-        "flex items-center whitespace-nowrap text-sm transition-colors hover:bg-muted/50",
-        !isLast && "border-b",
-      )}
-      style={{ height: ROW_HEIGHT }}
-    >
-      <div className="min-w-0 flex-1 p-2">
-        {entry.kind === "directory" ? (
-          <Button
-            aria-label={`打开文件夹 ${entry.name}`}
-            className="w-full justify-start"
-            disabled={isLoading}
-            onClick={() => onOpenDirectory(entry.path)}
-            title={entry.path}
-            type="button"
-            variant="ghost"
-          >
-            <EntryIcon data-icon="inline-start" />
+    <ContextMenu>
+      <ContextMenuTrigger onContextMenu={onContextMenu}>
+        <div
+          aria-selected={isSelected}
+          className={cn(
+            "flex cursor-default items-center whitespace-nowrap text-sm transition-colors select-none hover:bg-muted/50 focus-visible:bg-muted focus-visible:outline-none",
+            !isLast && "border-b",
+            isSelected && "bg-accent text-accent-foreground",
+          )}
+          onClick={onSelect}
+          onDoubleClick={onOpen}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onOpen();
+            }
+          }}
+          role="option"
+          tabIndex={0}
+          title={entry.path}
+          style={{ height: ROW_HEIGHT }}
+        >
+          <div className="flex min-w-0 flex-1 items-center gap-2 p-2">
+            <EntryIcon className={cn(entry.kind !== "directory" && "text-muted-foreground")} />
             <span className="truncate">{entry.name}</span>
-          </Button>
-        ) : (
-          <Button
-            aria-label={`打开 ${entry.name}`}
-            className="w-full justify-start"
-            disabled={isLoading}
-            onClick={() => void openFile(entry.path)}
-            title={entry.path}
-            type="button"
-            variant="ghost"
+          </div>
+          <div className="w-44 p-2 text-muted-foreground">{formatModifiedAt(entry.modifiedAt)}</div>
+          <div className="w-28 p-2 text-muted-foreground">{presentation.label}</div>
+          <div
+            className="w-24 p-2 text-right text-muted-foreground"
+            title={entry.size === null ? undefined : `${entry.size.toLocaleString("zh-CN")} 字节`}
           >
-            <EntryIcon data-icon="inline-start" className="text-muted-foreground" />
-            <span className="truncate">{entry.name}</span>
-          </Button>
-        )}
-      </div>
-      <div className="w-44 p-2 text-muted-foreground">{formatModifiedAt(entry.modifiedAt)}</div>
-      <div className="w-28 p-2 text-muted-foreground">{presentation.label}</div>
-      <div
-        className="w-24 p-2 text-right text-muted-foreground"
-        title={entry.size === null ? undefined : `${entry.size.toLocaleString("zh-CN")} 字节`}
-      >
-        {formatFileSize(entry.size)}
-      </div>
-    </div>
+            {formatFileSize(entry.size)}
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuGroup>
+          <ContextMenuItem disabled={isActionDisabled} onClick={onOpen}>
+            <FolderOpenIcon />
+            打开
+            <ContextMenuShortcut>Enter</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem disabled={isActionDisabled || !isSingleSelection} onClick={onRename}>
+            <PencilIcon />
+            重命名
+            <ContextMenuShortcut>F2</ContextMenuShortcut>
+          </ContextMenuItem>
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
+          <ContextMenuItem disabled={isActionDisabled} onClick={onCopy}>
+            <CopyIcon />
+            复制
+            <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem disabled={isActionDisabled} onClick={onCut}>
+            <ScissorsIcon />
+            剪切
+            <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem disabled={isActionDisabled || !canPaste} onClick={onPaste}>
+            <ClipboardPasteIcon />
+            粘贴
+            <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
+          </ContextMenuItem>
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
+          <ContextMenuItem disabled={isActionDisabled} onClick={onDelete} variant="destructive">
+            <Trash2Icon />
+            删除
+            <ContextMenuShortcut>Delete</ContextMenuShortcut>
+          </ContextMenuItem>
+        </ContextMenuGroup>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -212,6 +407,16 @@ async function openFile(path: string): Promise<void> {
   } catch (error) {
     console.warn(`Unable to open ${path}`, error);
   }
+}
+
+function isEditableElement(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT")
+  );
 }
 
 function formatModifiedAt(modifiedAt: number | null): string {
