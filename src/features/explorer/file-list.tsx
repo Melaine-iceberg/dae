@@ -464,7 +464,6 @@ export function FileList({
                     style={{ transform: `translateY(${virtualRow.start}px)` }}
                   >
                     <FileListRow
-                      canPaste={hasClipboard}
                       entry={entry}
                       isActionDisabled={actionsDisabled}
                       isDragging={internalDrag?.sourcePaths.includes(entry.path) ?? false}
@@ -480,7 +479,6 @@ export function FileList({
                       onCut={onCut}
                       onDelete={onDelete}
                       onOpen={() => openEntry(entry)}
-                      onPaste={onPaste}
                       onPointerDown={(event) => prepareInternalDrag(entry, event)}
                       onRename={onRename}
                       onSelect={(event) => {
@@ -526,13 +524,20 @@ export function FileList({
             新建文件夹
           </ContextMenuItem>
         </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
+          <ContextMenuItem disabled={!hasClipboard} onClick={onPaste}>
+            <ClipboardPasteIcon />
+            粘贴
+            <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
+          </ContextMenuItem>
+        </ContextMenuGroup>
       </ContextMenuContent>
     </ContextMenu>
   );
 }
 
 function FileListRow({
-  canPaste,
   entry,
   isActionDisabled,
   isDragging,
@@ -545,12 +550,10 @@ function FileListRow({
   onCut,
   onDelete,
   onOpen,
-  onPaste,
   onPointerDown,
   onRename,
   onSelect,
 }: {
-  canPaste: boolean;
   entry: DirectoryEntry;
   isActionDisabled: boolean;
   isDragging: boolean;
@@ -563,7 +566,6 @@ function FileListRow({
   onCut: () => void;
   onDelete: () => void;
   onOpen: () => void;
-  onPaste: () => void;
   onPointerDown: (event: ReactPointerEvent) => void;
   onRename: () => void;
   onSelect: (event: ReactMouseEvent) => void;
@@ -648,11 +650,6 @@ function FileListRow({
             <ScissorsIcon />
             剪切
             <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
-          </ContextMenuItem>
-          <ContextMenuItem disabled={isActionDisabled || !canPaste} onClick={onPaste}>
-            <ClipboardPasteIcon />
-            粘贴
-            <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
