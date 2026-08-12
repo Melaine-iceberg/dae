@@ -19,6 +19,18 @@ export interface DirectoryView {
   entries: DirectoryEntry[];
 }
 
+export type FileOperationKind = "copy" | "move" | "delete";
+export type FileOperationPhase = "preparing" | "running" | "completed";
+
+export interface FileOperationProgress {
+  operationId: string;
+  operation: FileOperationKind;
+  phase: FileOperationPhase;
+  completed: number;
+  total: number | null;
+  currentPath: string | null;
+}
+
 export type FileSystemErrorKind =
   | "not_found"
   | "permission_denied"

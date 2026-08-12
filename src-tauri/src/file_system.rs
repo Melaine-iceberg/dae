@@ -8,10 +8,13 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 use thiserror::Error;
 
 const DIRECTORY_CHANGED_EVENT: &str = "explorer-directory-changed";
+const FILE_OPERATION_PROGRESS_EVENT: &str = "explorer-file-operation-progress";
+const FILE_OPERATION_PROGRESS_INTERVAL: Duration = Duration::from_millis(60);
 
 #[derive(Default)]
 pub struct DirectoryWatcher {
@@ -70,6 +73,17 @@ pub struct DirectoryView {
     pub path: String,
     pub breadcrumbs: Vec<Breadcrumb>,
     pub entries: Vec<DirectoryEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FileOperationProgress {
+    pub operation_id: String,
+    pub operation: String,
+    pub phase: String,
+    pub completed: u64,
+    pub total: Option<u64>,
+    pub current_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Error, Serialize, Type)]
@@ -154,9 +168,18 @@ pub async fn rename_entry(path: String, new_name: String) -> Result<(), FileSyst
 pub async fn copy_entries(
     sources: Vec<String>,
     destination: String,
+    operation_id: String,
+    app: tauri::AppHandle,
 ) -> Result<(), FileSystemError> {
+    emit_file_operation_progress(&app, &operation_id, "copy", "preparing", 0, None, None);
+
     tauri::async_runtime::spawn_blocking(move || {
-        copy_entries_sync(paths_from_strings(sources), PathBuf::from(destination))
+        let mut progress = FileOperationProgressReporter::new(app, operation_id, "copy");
+        copy_entries_with_progress(
+            paths_from_strings(sources),
+            PathBuf::from(destination),
+            &mut progress,
+        )
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -168,9 +191,18 @@ pub async fn copy_entries(
 pub async fn move_entries(
     sources: Vec<String>,
     destination: String,
+    operation_id: String,
+    app: tauri::AppHandle,
 ) -> Result<(), FileSystemError> {
+    emit_file_operation_progress(&app, &operation_id, "move", "preparing", 0, None, None);
+
     tauri::async_runtime::spawn_blocking(move || {
-        move_entries_sync(paths_from_strings(sources), PathBuf::from(destination))
+        let mut progress = FileOperationProgressReporter::new(app, operation_id, "move");
+        move_entries_with_progress(
+            paths_from_strings(sources),
+            PathBuf::from(destination),
+            &mut progress,
+        )
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -179,10 +211,19 @@ pub async fn move_entries(
 /// Permanently deletes entries. The UI must obtain confirmation before calling this command.
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_entries(paths: Vec<String>) -> Result<(), FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || delete_entries_sync(paths_from_strings(paths)))
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+pub async fn delete_entries(
+    paths: Vec<String>,
+    operation_id: String,
+    app: tauri::AppHandle,
+) -> Result<(), FileSystemError> {
+    emit_file_operation_progress(&app, &operation_id, "delete", "preparing", 0, None, None);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut progress = FileOperationProgressReporter::new(app, operation_id, "delete");
+        delete_entries_with_progress(paths_from_strings(paths), &mut progress)
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 fn create_directory_watcher(
@@ -270,44 +311,86 @@ fn rename_entry_sync(path: PathBuf, new_name: String) -> Result<(), FileSystemEr
     Ok(())
 }
 
+#[cfg(test)]
 fn copy_entries_sync(sources: Vec<PathBuf>, destination: PathBuf) -> Result<(), FileSystemError> {
+    let mut progress = NoopFileOperationProgress;
+    copy_entries_with_progress(sources, destination, &mut progress)
+}
+
+fn copy_entries_with_progress<P: FileOperationProgressReporterTrait>(
+    sources: Vec<PathBuf>,
+    destination: PathBuf,
+    progress: &mut P,
+) -> Result<(), FileSystemError> {
     let plan = build_transfer_plan(sources, destination)?;
+    progress.start(plan.iter().map(|entry| entry.work_units).sum());
 
     for entry in plan {
-        copy_entry(&entry.source, &entry.destination)?;
+        copy_entry(&entry.source, &entry.destination, progress)?;
     }
 
+    progress.finish();
     Ok(())
 }
 
+#[cfg(test)]
 fn move_entries_sync(sources: Vec<PathBuf>, destination: PathBuf) -> Result<(), FileSystemError> {
+    let mut progress = NoopFileOperationProgress;
+    move_entries_with_progress(sources, destination, &mut progress)
+}
+
+fn move_entries_with_progress<P: FileOperationProgressReporterTrait>(
+    sources: Vec<PathBuf>,
+    destination: PathBuf,
+    progress: &mut P,
+) -> Result<(), FileSystemError> {
     let plan = build_transfer_plan(sources, destination)?;
+    progress.start(plan.iter().map(|entry| entry.work_units).sum());
 
     for entry in plan {
+        progress.begin_entry(&entry.source);
         match fs::rename(&entry.source, &entry.destination) {
-            Ok(()) => {}
+            Ok(()) => progress.advance_by(entry.work_units, &entry.source),
             Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
-                copy_entry(&entry.source, &entry.destination)?;
+                copy_entry(&entry.source, &entry.destination, progress)?;
                 remove_entry(&entry.source)?;
             }
             Err(error) => return Err(error.into()),
         }
     }
 
+    progress.finish();
     Ok(())
 }
 
+#[cfg(test)]
 fn delete_entries_sync(paths: Vec<PathBuf>) -> Result<(), FileSystemError> {
+    let mut progress = NoopFileOperationProgress;
+    delete_entries_with_progress(paths, &mut progress)
+}
+
+fn delete_entries_with_progress<P: FileOperationProgressReporterTrait>(
+    paths: Vec<PathBuf>,
+    progress: &mut P,
+) -> Result<(), FileSystemError> {
     ensure_unique_paths(&paths)?;
 
     for path in &paths {
         fs::symlink_metadata(path)?;
     }
 
+    let total = paths
+        .iter()
+        .try_fold(0_u64, |count, path| -> Result<u64, FileSystemError> {
+            Ok(count + count_entry_units(path)?)
+        })?;
+    progress.start(total);
+
     for path in paths {
-        remove_entry(&path)?;
+        delete_entry(&path, progress)?;
     }
 
+    progress.finish();
     Ok(())
 }
 
@@ -315,6 +398,7 @@ fn delete_entries_sync(paths: Vec<PathBuf>) -> Result<(), FileSystemError> {
 struct TransferPlanEntry {
     source: PathBuf,
     destination: PathBuf,
+    work_units: u64,
 }
 
 fn build_transfer_plan(
@@ -366,9 +450,12 @@ fn build_transfer_plan(
             }
         }
 
+        let work_units = count_entry_units(&source)?;
+
         plan.push(TransferPlanEntry {
             source,
             destination: target,
+            work_units,
         });
     }
 
@@ -413,20 +500,39 @@ fn ensure_path_is_available(path: &Path) -> Result<(), FileSystemError> {
     Ok(())
 }
 
-fn copy_entry(source: &Path, destination: &Path) -> Result<(), FileSystemError> {
+fn count_entry_units(path: &Path) -> Result<u64, FileSystemError> {
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.is_dir() {
+        return Ok(1);
+    }
+
+    fs::read_dir(path)?.try_fold(1, |count, child| {
+        Ok(count + count_entry_units(&child?.path())?)
+    })
+}
+
+fn copy_entry<P: FileOperationProgressReporterTrait>(
+    source: &Path,
+    destination: &Path,
+    progress: &mut P,
+) -> Result<(), FileSystemError> {
     let metadata = fs::symlink_metadata(source)?;
+    progress.begin_entry(source);
 
     if metadata.is_file() {
         fs::copy(source, destination)?;
+        progress.advance(source);
         return Ok(());
     }
 
     if metadata.is_dir() {
-        return copy_directory(source, destination);
+        return copy_directory(source, destination, progress);
     }
 
     if metadata.file_type().is_symlink() {
-        return copy_symlink(source, destination);
+        copy_symlink(source, destination)?;
+        progress.advance(source);
+        return Ok(());
     }
 
     Err(FileSystemError::InvalidInput(format!(
@@ -435,12 +541,21 @@ fn copy_entry(source: &Path, destination: &Path) -> Result<(), FileSystemError> 
     )))
 }
 
-fn copy_directory(source: &Path, destination: &Path) -> Result<(), FileSystemError> {
+fn copy_directory<P: FileOperationProgressReporterTrait>(
+    source: &Path,
+    destination: &Path,
+    progress: &mut P,
+) -> Result<(), FileSystemError> {
     fs::create_dir(destination)?;
+    progress.advance(source);
 
     for child in fs::read_dir(source)? {
         let child = child?;
-        copy_entry(&child.path(), &destination.join(child.file_name()))?;
+        copy_entry(
+            &child.path(),
+            &destination.join(child.file_name()),
+            progress,
+        )?;
     }
 
     Ok(())
@@ -494,6 +609,138 @@ fn remove_entry(path: &Path) -> Result<(), FileSystemError> {
 
     fs::remove_file(path)?;
     Ok(())
+}
+
+fn delete_entry<P: FileOperationProgressReporterTrait>(
+    path: &Path,
+    progress: &mut P,
+) -> Result<(), FileSystemError> {
+    let metadata = fs::symlink_metadata(path)?;
+    progress.begin_entry(path);
+
+    if metadata.is_dir() {
+        for child in fs::read_dir(path)? {
+            delete_entry(&child?.path(), progress)?;
+        }
+        fs::remove_dir(path)?;
+    } else if metadata.file_type().is_symlink() {
+        fs::remove_file(path).or_else(|_| fs::remove_dir(path))?;
+    } else {
+        fs::remove_file(path)?;
+    }
+
+    progress.advance(path);
+    Ok(())
+}
+
+trait FileOperationProgressReporterTrait {
+    fn start(&mut self, total: u64);
+    fn begin_entry(&mut self, path: &Path);
+    fn advance(&mut self, path: &Path) {
+        self.advance_by(1, path);
+    }
+    fn advance_by(&mut self, units: u64, path: &Path);
+    fn finish(&mut self);
+}
+
+#[cfg(test)]
+struct NoopFileOperationProgress;
+
+#[cfg(test)]
+impl FileOperationProgressReporterTrait for NoopFileOperationProgress {
+    fn start(&mut self, _total: u64) {}
+
+    fn begin_entry(&mut self, _path: &Path) {}
+
+    fn advance_by(&mut self, _units: u64, _path: &Path) {}
+
+    fn finish(&mut self) {}
+}
+
+struct FileOperationProgressReporter {
+    app: tauri::AppHandle,
+    operation_id: String,
+    operation: &'static str,
+    completed: u64,
+    total: u64,
+    last_emit: Option<Instant>,
+}
+
+impl FileOperationProgressReporter {
+    fn new(app: tauri::AppHandle, operation_id: String, operation: &'static str) -> Self {
+        Self {
+            app,
+            operation_id,
+            operation,
+            completed: 0,
+            total: 0,
+            last_emit: None,
+        }
+    }
+
+    fn emit(&mut self, path: Option<&Path>, force: bool) {
+        if !force
+            && self
+                .last_emit
+                .is_some_and(|last_emit| last_emit.elapsed() < FILE_OPERATION_PROGRESS_INTERVAL)
+        {
+            return;
+        }
+
+        emit_file_operation_progress(
+            &self.app,
+            &self.operation_id,
+            self.operation,
+            "running",
+            self.completed,
+            Some(self.total),
+            path.map(path_to_string),
+        );
+        self.last_emit = Some(Instant::now());
+    }
+}
+
+impl FileOperationProgressReporterTrait for FileOperationProgressReporter {
+    fn start(&mut self, total: u64) {
+        self.total = total;
+        self.emit(None, true);
+    }
+
+    fn begin_entry(&mut self, path: &Path) {
+        self.emit(Some(path), self.completed == 0);
+    }
+
+    fn advance_by(&mut self, units: u64, path: &Path) {
+        self.completed = self.completed.saturating_add(units).min(self.total);
+        self.emit(Some(path), self.completed == self.total);
+    }
+
+    fn finish(&mut self) {
+        self.completed = self.total;
+        self.emit(None, true);
+    }
+}
+
+fn emit_file_operation_progress(
+    app: &tauri::AppHandle,
+    operation_id: &str,
+    operation: &str,
+    phase: &str,
+    completed: u64,
+    total: Option<u64>,
+    current_path: Option<String>,
+) {
+    let _ = app.emit(
+        FILE_OPERATION_PROGRESS_EVENT,
+        FileOperationProgress {
+            operation_id: operation_id.to_owned(),
+            operation: operation.to_owned(),
+            phase: phase.to_owned(),
+            completed,
+            total,
+            current_path,
+        },
+    );
 }
 
 fn modified_at_millis(metadata: &fs::Metadata) -> Option<u64> {

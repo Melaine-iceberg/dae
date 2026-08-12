@@ -13,6 +13,7 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpIcon,
+  LoaderCircleIcon,
   RefreshCwIcon,
   TriangleAlertIcon,
 } from "lucide-react";
@@ -29,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -38,10 +40,12 @@ import { ExplorerBreadcrumbs } from "./explorer-breadcrumbs";
 import { FileList, FileListSkeleton } from "./file-list";
 import type { ExplorerNavigator } from "./navigation";
 import { fileClipboardAtom } from "./tabs";
-import type { DirectoryEntry } from "./types";
+import type { DirectoryEntry, FileOperationKind, FileOperationProgress } from "./types";
 
 const DIRECTORY_CHANGED_EVENT = "explorer-directory-changed";
+const FILE_OPERATION_PROGRESS_EVENT = "explorer-file-operation-progress";
 const DIRECTORY_REFRESH_DELAY_MS = 150;
+const COMPLETED_OPERATION_STATUS_DURATION_MS = 900;
 const appWindow = getCurrentWindow();
 
 interface ExplorerViewProps {
@@ -61,6 +65,9 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const [deleteTargets, setDeleteTargets] = useState<DirectoryEntry[]>([]);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [isOperationPending, setIsOperationPending] = useState(false);
+  const [fileOperationProgress, setFileOperationProgress] = useState<FileOperationProgress | null>(
+    null,
+  );
   const [externalDrop, setExternalDrop] = useState<ExternalDrop | null>(null);
   const directory = state.directory;
   const directoryPath = directory?.path;
@@ -139,19 +146,79 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     };
   }, [navigator]);
 
+  useEffect(() => {
+    const unlistenProgressPromise = listen<FileOperationProgress>(
+      FILE_OPERATION_PROGRESS_EVENT,
+      ({ payload }) => {
+        setFileOperationProgress((currentProgress) => {
+          if (
+            !currentProgress ||
+            currentProgress.operationId !== payload.operationId ||
+            currentProgress.phase === "completed"
+          ) {
+            return currentProgress;
+          }
+
+          return payload;
+        });
+      },
+    );
+
+    return () => {
+      void unlistenProgressPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
   const performFileOperation = useCallback(
-    async (operation: () => Promise<void>): Promise<FileOperationResult> => {
+    async (
+      operation: (operationId?: string) => Promise<void>,
+      progressOperation?: FileOperationKind,
+    ): Promise<FileOperationResult> => {
       if (!directoryPath) {
         return { error: "当前目录不可用", ok: false };
       }
 
+      const operationId = progressOperation ? crypto.randomUUID() : undefined;
+      if (operationId && progressOperation) {
+        setFileOperationProgress({
+          operationId,
+          operation: progressOperation,
+          phase: "preparing",
+          completed: 0,
+          total: null,
+          currentPath: null,
+        });
+      }
       setIsOperationPending(true);
 
       try {
-        await operation();
+        await operation(operationId);
         await navigator.refresh(directoryPath);
+        if (operationId) {
+          setFileOperationProgress((currentProgress) => {
+            if (!currentProgress || currentProgress.operationId !== operationId) {
+              return currentProgress;
+            }
+
+            return {
+              ...currentProgress,
+              phase: "completed",
+              completed: currentProgress.total ?? currentProgress.completed,
+            };
+          });
+          window.setTimeout(() => {
+            setFileOperationProgress((currentProgress) =>
+              currentProgress?.operationId === operationId ? null : currentProgress,
+            );
+          }, COMPLETED_OPERATION_STATUS_DURATION_MS);
+        }
         return { ok: true };
       } catch (error) {
+        if (operationId) {
+          setFileOperationProgress((currentProgress) =>
+            currentProgress?.operationId === operationId ? null : currentProgress,
+          );
+        }
         return { error: getErrorMessage(error), ok: false };
       } finally {
         setIsOperationPending(false);
@@ -165,10 +232,12 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       if (sourcePaths.length === 0) return;
 
       setOperationError(null);
-      void performFileOperation(() =>
-        operation === "copy"
-          ? explorerApi.copyEntries(sourcePaths, destinationPath)
-          : explorerApi.moveEntries(sourcePaths, destinationPath),
+      void performFileOperation(
+        (operationId) =>
+          operation === "copy"
+            ? explorerApi.copyEntries(sourcePaths, destinationPath, operationId!)
+            : explorerApi.moveEntries(sourcePaths, destinationPath, operationId!),
+        operation,
       ).then((result) => {
         if (!result.ok) {
           setOperationError(result.error);
@@ -186,16 +255,16 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       if (sourcePaths.length === 0) return;
 
       setOperationError(null);
-      void performFileOperation(() => explorerApi.copyEntries(sourcePaths, destinationPath)).then(
-        (result) => {
-          if (!result.ok) {
-            setOperationError(result.error);
-            return;
-          }
-
-          setSelectedPaths([]);
-        },
-      );
+      void performFileOperation(
+        (operationId) => explorerApi.copyEntries(sourcePaths, destinationPath, operationId!),
+        "copy",
+      ).then((result) => {
+        if (!result.ok) {
+          setOperationError(result.error);
+          return;
+        }
+        setSelectedPaths([]);
+      });
     },
     [performFileOperation],
   );
@@ -203,9 +272,13 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   useEffect(() => {
     let disposed = false;
 
-    const getTargetPath = (position: { toLogical: (scaleFactor: number) => { x: number; y: number } }) => {
+    const getTargetPath = (position: {
+      toLogical: (scaleFactor: number) => { x: number; y: number };
+    }) => {
       const logicalPosition = position.toLogical(window.devicePixelRatio);
-      return getExplorerDropTargetAtPoint(logicalPosition.x, logicalPosition.y) ?? directoryPath ?? null;
+      return (
+        getExplorerDropTargetAtPoint(logicalPosition.x, logicalPosition.y) ?? directoryPath ?? null
+      );
     };
 
     const unlistenPromise = appWindow.onDragDropEvent(({ payload }) => {
@@ -265,10 +338,12 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     setOperationError(null);
     const pastedClipboard = clipboard;
 
-    void performFileOperation(() =>
-      pastedClipboard.operation === "copy"
-        ? explorerApi.copyEntries(pastedClipboard.sourcePaths, directoryPath)
-        : explorerApi.moveEntries(pastedClipboard.sourcePaths, directoryPath),
+    void performFileOperation(
+      (operationId) =>
+        pastedClipboard.operation === "copy"
+          ? explorerApi.copyEntries(pastedClipboard.sourcePaths, directoryPath, operationId!)
+          : explorerApi.moveEntries(pastedClipboard.sourcePaths, directoryPath, operationId!),
+      pastedClipboard.operation === "copy" ? "copy" : "move",
     ).then((result) => {
       if (!result.ok) {
         setOperationError(result.error);
@@ -345,7 +420,10 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     setOperationError(null);
     const paths = deleteTargets.map((entry) => entry.path);
 
-    void performFileOperation(() => explorerApi.deleteEntries(paths)).then((result) => {
+    void performFileOperation(
+      (operationId) => explorerApi.deleteEntries(paths, operationId!),
+      "delete",
+    ).then((result) => {
       if (!result.ok) {
         setOperationError(result.error);
         return;
@@ -485,6 +563,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         ) : (
           <FileListSkeleton />
         )}
+        {fileOperationProgress && <FileOperationStatusBar progress={fileOperationProgress} />}
       </section>
 
       <RenameDialog
@@ -509,6 +588,48 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         }}
       />
     </main>
+  );
+}
+
+function FileOperationStatusBar({ progress }: { progress: FileOperationProgress }) {
+  const operationLabel: Record<FileOperationKind, string> = {
+    copy: "复制",
+    move: "移动",
+    delete: "删除",
+  };
+  const total = progress.total;
+  const percentage = total && total > 0 ? Math.round((progress.completed / total) * 100) : 0;
+  const currentPath = progress.currentPath;
+  const statusText =
+    progress.phase === "preparing"
+      ? `正在准备${operationLabel[progress.operation]}…`
+      : progress.phase === "completed"
+        ? `已完成${operationLabel[progress.operation]}`
+        : `正在${operationLabel[progress.operation]}`;
+
+  return (
+    <footer aria-live="polite" className="flex shrink-0 items-center gap-3 border-t px-4 py-2">
+      <LoaderCircleIcon
+        className={cn(
+          "size-4 text-muted-foreground",
+          progress.phase !== "completed" && "animate-spin",
+        )}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-3 text-xs">
+          <span className="truncate font-medium">{statusText}</span>
+          <span className="shrink-0 tabular-nums text-muted-foreground">
+            {total === null
+              ? "正在计算项目数"
+              : `${progress.completed.toLocaleString("zh-CN")} / ${total.toLocaleString("zh-CN")}（${percentage}%）`}
+          </span>
+        </div>
+        <p className="truncate text-xs text-muted-foreground" title={currentPath ?? undefined}>
+          {currentPath ?? "请稍候…"}
+        </p>
+        <Progress className="mt-1 w-full" value={percentage} />
+      </div>
+    </footer>
   );
 }
 
