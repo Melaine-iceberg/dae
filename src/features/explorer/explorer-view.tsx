@@ -33,6 +33,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 import { explorerApi } from "./api";
+import { getExplorerDropTargetAtPoint, type FileTransferOperation } from "./drag-drop";
 import { ExplorerBreadcrumbs } from "./explorer-breadcrumbs";
 import { FileList, FileListSkeleton } from "./file-list";
 import type { ExplorerNavigator } from "./navigation";
@@ -48,6 +49,7 @@ interface ExplorerViewProps {
 }
 
 type FileOperationResult = { ok: true } | { error: string; ok: false };
+type ExternalDrop = { sourcePaths: string[]; targetPath: string | null };
 
 export function ExplorerView({ navigator }: ExplorerViewProps) {
   const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
@@ -59,6 +61,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const [deleteTargets, setDeleteTargets] = useState<DirectoryEntry[]>([]);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [isOperationPending, setIsOperationPending] = useState(false);
+  const [externalDrop, setExternalDrop] = useState<ExternalDrop | null>(null);
   const directory = state.directory;
   const directoryPath = directory?.path;
   const isLoading = state.status === "loading";
@@ -92,6 +95,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     setRenameTarget(null);
     setDeleteTargets([]);
     setOperationError(null);
+    setExternalDrop(null);
   }, [directoryPath]);
 
   useEffect(() => {
@@ -155,6 +159,91 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     },
     [directoryPath, navigator],
   );
+
+  const transferEntries = useCallback(
+    (sourcePaths: string[], destinationPath: string, operation: FileTransferOperation) => {
+      if (sourcePaths.length === 0) return;
+
+      setOperationError(null);
+      void performFileOperation(() =>
+        operation === "copy"
+          ? explorerApi.copyEntries(sourcePaths, destinationPath)
+          : explorerApi.moveEntries(sourcePaths, destinationPath),
+      ).then((result) => {
+        if (!result.ok) {
+          setOperationError(result.error);
+          return;
+        }
+
+        setSelectedPaths([]);
+      });
+    },
+    [performFileOperation],
+  );
+
+  const copyExternalEntries = useCallback(
+    (sourcePaths: string[], destinationPath: string) => {
+      if (sourcePaths.length === 0) return;
+
+      setOperationError(null);
+      void performFileOperation(() => explorerApi.copyEntries(sourcePaths, destinationPath)).then(
+        (result) => {
+          if (!result.ok) {
+            setOperationError(result.error);
+            return;
+          }
+
+          setSelectedPaths([]);
+        },
+      );
+    },
+    [performFileOperation],
+  );
+
+  useEffect(() => {
+    let disposed = false;
+
+    const getTargetPath = (position: { toLogical: (scaleFactor: number) => { x: number; y: number } }) => {
+      const logicalPosition = position.toLogical(window.devicePixelRatio);
+      return getExplorerDropTargetAtPoint(logicalPosition.x, logicalPosition.y) ?? directoryPath ?? null;
+    };
+
+    const unlistenPromise = appWindow.onDragDropEvent(({ payload }) => {
+      if (disposed) return;
+
+      if (payload.type === "enter") {
+        setExternalDrop({
+          sourcePaths: payload.paths,
+          targetPath: getTargetPath(payload.position),
+        });
+        return;
+      }
+
+      if (payload.type === "over") {
+        const targetPath = getTargetPath(payload.position);
+        setExternalDrop((currentDrop) =>
+          currentDrop ? { ...currentDrop, targetPath } : currentDrop,
+        );
+        return;
+      }
+
+      if (payload.type === "drop") {
+        const targetPath = getTargetPath(payload.position);
+        setExternalDrop(null);
+        if (targetPath) {
+          copyExternalEntries(payload.paths, targetPath);
+        }
+        return;
+      }
+
+      setExternalDrop(null);
+    });
+
+    return () => {
+      disposed = true;
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, [copyExternalEntries, directoryPath]);
 
   const copySelection = useCallback(() => {
     if (selectedEntries.length === 0) return;
@@ -370,7 +459,10 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
 
         {directory ? (
           <FileList
+            currentDirectoryPath={directory.path}
             entries={directory.entries}
+            externalDropItemCount={externalDrop?.sourcePaths.length ?? 0}
+            externalDropTargetPath={externalDrop?.targetPath ?? null}
             hasClipboard={clipboard !== null}
             initialScrollOffset={navigator.getScrollOffset(directory.path)}
             isLoading={isLoading}
@@ -378,6 +470,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             onCopy={copySelection}
             onCut={cutSelection}
             onDelete={requestDelete}
+            onDropEntries={transferEntries}
             onOpenDirectory={(path) => void navigator.navigate(path)}
             onPaste={pasteClipboard}
             onRename={requestRename}

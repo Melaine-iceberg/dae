@@ -1,4 +1,10 @@
-import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
@@ -42,10 +48,18 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
+import {
+  canDropEntries,
+  getExplorerDropTargetAtPoint,
+  type FileTransferOperation,
+} from "./drag-drop";
 import type { DirectoryEntry, EntryKind } from "./types";
 
 interface FileListProps {
+  currentDirectoryPath: string;
   entries: DirectoryEntry[];
+  externalDropItemCount: number;
+  externalDropTargetPath: string | null;
   hasClipboard: boolean;
   initialScrollOffset?: number;
   isLoading: boolean;
@@ -53,6 +67,11 @@ interface FileListProps {
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
+  onDropEntries: (
+    sourcePaths: string[],
+    destinationPath: string,
+    operation: FileTransferOperation,
+  ) => void;
   onOpenDirectory: (path: string) => void;
   onPaste: () => void;
   onRename: () => void;
@@ -89,9 +108,28 @@ const FILE_SIZE_FORMATTER = new Intl.NumberFormat("zh-CN", {
 const FILE_SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
 const ROW_HEIGHT = 48;
+const DRAG_START_DISTANCE_PX = 6;
+
+type InternalDragState = {
+  operation: FileTransferOperation;
+  pointerId: number;
+  position: { x: number; y: number };
+  sourcePaths: string[];
+  targetPath: string | null;
+};
+
+type DragCandidate = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  sourcePaths: string[];
+};
 
 export function FileList({
+  currentDirectoryPath,
   entries,
+  externalDropItemCount,
+  externalDropTargetPath,
   hasClipboard,
   initialScrollOffset = 0,
   isLoading,
@@ -99,6 +137,7 @@ export function FileList({
   onCopy,
   onCut,
   onDelete,
+  onDropEntries,
   onOpenDirectory,
   onPaste,
   onRename,
@@ -108,6 +147,10 @@ export function FileList({
 }: FileListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectionAnchorIndexRef = useRef<number | null>(null);
+  const dragCandidateRef = useRef<DragCandidate | null>(null);
+  const internalDragRef = useRef<InternalDragState | null>(null);
+  const suppressNextClickRef = useRef(false);
+  const [internalDrag, setInternalDrag] = useState<InternalDragState | null>(null);
   const selectedPathSet = new Set(selectedPaths);
   const actionsDisabled = isLoading || isOperationPending;
   const selectedCount = selectedPaths.length;
@@ -160,6 +203,77 @@ export function FileList({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [actionsDisabled, hasClipboard, onCopy, onCut, onDelete, onPaste, onRename, selectedCount]);
 
+  useEffect(() => {
+    const updateDrag = (nextDrag: InternalDragState | null) => {
+      internalDragRef.current = nextDrag;
+      setInternalDrag(nextDrag);
+    };
+
+    const stopDragging = () => {
+      dragCandidateRef.current = null;
+      updateDrag(null);
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const candidate = dragCandidateRef.current;
+      if (!candidate || candidate.pointerId !== event.pointerId) return;
+
+      const distanceX = event.clientX - candidate.startX;
+      const distanceY = event.clientY - candidate.startY;
+      const isDragging = internalDragRef.current !== null;
+      if (!isDragging && Math.hypot(distanceX, distanceY) < DRAG_START_DISTANCE_PX) return;
+
+      const operation: FileTransferOperation = event.ctrlKey || event.metaKey ? "copy" : "move";
+      const targetPath = getExplorerDropTargetAtPoint(event.clientX, event.clientY);
+      const nextTargetPath =
+        targetPath && canDropEntries(candidate.sourcePaths, targetPath) ? targetPath : null;
+      const previousDrag = internalDragRef.current;
+
+      if (
+        previousDrag &&
+        previousDrag.position.x === event.clientX &&
+        previousDrag.position.y === event.clientY &&
+        previousDrag.operation === operation &&
+        previousDrag.targetPath === nextTargetPath
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      updateDrag({
+        operation,
+        pointerId: candidate.pointerId,
+        position: { x: event.clientX, y: event.clientY },
+        sourcePaths: candidate.sourcePaths,
+        targetPath: nextTargetPath,
+      });
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      const candidate = dragCandidateRef.current;
+      const activeDrag = internalDragRef.current;
+      if (!candidate || candidate.pointerId !== event.pointerId) return;
+
+      if (activeDrag) {
+        suppressNextClickRef.current = true;
+        if (activeDrag.targetPath) {
+          onDropEntries(activeDrag.sourcePaths, activeDrag.targetPath, activeDrag.operation);
+        }
+      }
+
+      stopDragging();
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", stopDragging);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", stopDragging);
+    };
+  }, [onDropEntries]);
+
   const selectEntry = (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => {
     if (actionsDisabled) return;
 
@@ -199,6 +313,24 @@ export function FileList({
     onSelectedPathsChange([entry.path]);
   };
 
+  const prepareInternalDrag = (entry: DirectoryEntry, event: ReactPointerEvent) => {
+    if (actionsDisabled || event.button !== 0 || event.shiftKey) {
+      return;
+    }
+
+    const sourcePaths = selectedPathSet.has(entry.path) ? selectedPaths : [entry.path];
+    if (!selectedPathSet.has(entry.path) && !event.ctrlKey && !event.metaKey) {
+      onSelectedPathsChange(sourcePaths);
+    }
+
+    dragCandidateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      sourcePaths,
+    };
+  };
+
   const openEntry = (entry: DirectoryEntry) => {
     if (actionsDisabled) return;
 
@@ -211,7 +343,11 @@ export function FileList({
   };
 
   return (
-    <section aria-label="文件列表" className="flex min-h-0 flex-1 flex-col">
+    <section
+      aria-label="文件列表"
+      className="relative flex min-h-0 flex-1 flex-col"
+      data-explorer-drop-target={currentDirectoryPath}
+    >
       <div className="flex h-10 shrink-0 items-center justify-between border-b px-4">
         <h1 className="text-sm font-medium">文件</h1>
         <p aria-live="polite" className="text-xs text-muted-foreground">
@@ -263,6 +399,11 @@ export function FileList({
                       canPaste={hasClipboard}
                       entry={entry}
                       isActionDisabled={actionsDisabled}
+                      isDragging={internalDrag?.sourcePaths.includes(entry.path) ?? false}
+                      isDropTarget={
+                        internalDrag?.targetPath === entry.path ||
+                        externalDropTargetPath === entry.path
+                      }
                       isLast={virtualRow.index === entries.length - 1}
                       isSelected={selectedPathSet.has(entry.path)}
                       isSingleSelection={selectedCount === 1}
@@ -272,14 +413,36 @@ export function FileList({
                       onDelete={onDelete}
                       onOpen={() => openEntry(entry)}
                       onPaste={onPaste}
+                      onPointerDown={(event) => prepareInternalDrag(entry, event)}
                       onRename={onRename}
-                      onSelect={(event) => selectEntry(entry, virtualRow.index, event)}
+                      onSelect={(event) => {
+                        if (suppressNextClickRef.current) {
+                          suppressNextClickRef.current = false;
+                          return;
+                        }
+                        selectEntry(entry, virtualRow.index, event);
+                      }}
                     />
                   </div>
                 );
               })}
             </div>
           </div>
+        </div>
+      )}
+      {externalDropItemCount > 0 && (
+        <div className="pointer-events-none absolute inset-3 flex items-center justify-center rounded-xl border-2 border-dashed border-primary/60 bg-accent/80 text-sm font-medium text-accent-foreground">
+          松开以复制 {externalDropItemCount} 个项目
+        </div>
+      )}
+      {internalDrag && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-lg border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg"
+          style={{ left: internalDrag.position.x + 14, top: internalDrag.position.y + 14 }}
+        >
+          {internalDrag.operation === "copy" ? <CopyIcon /> : <ScissorsIcon />}
+          {internalDrag.operation === "copy" ? "复制" : "移动"} {internalDrag.sourcePaths.length} 个项目
         </div>
       )}
     </section>
@@ -290,6 +453,8 @@ function FileListRow({
   canPaste,
   entry,
   isActionDisabled,
+  isDragging,
+  isDropTarget,
   isLast,
   isSelected,
   isSingleSelection,
@@ -299,12 +464,15 @@ function FileListRow({
   onDelete,
   onOpen,
   onPaste,
+  onPointerDown,
   onRename,
   onSelect,
 }: {
   canPaste: boolean;
   entry: DirectoryEntry;
   isActionDisabled: boolean;
+  isDragging: boolean;
+  isDropTarget: boolean;
   isLast: boolean;
   isSelected: boolean;
   isSingleSelection: boolean;
@@ -314,6 +482,7 @@ function FileListRow({
   onDelete: () => void;
   onOpen: () => void;
   onPaste: () => void;
+  onPointerDown: (event: ReactPointerEvent) => void;
   onRename: () => void;
   onSelect: (event: ReactMouseEvent) => void;
 }) {
@@ -326,10 +495,13 @@ function FileListRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            "flex cursor-default items-center whitespace-nowrap text-sm transition-colors select-none hover:bg-muted/50 focus-visible:bg-muted focus-visible:outline-none",
+            "flex cursor-grab items-center whitespace-nowrap text-sm transition-colors select-none hover:bg-muted/50 focus-visible:bg-muted focus-visible:outline-none",
             !isLast && "border-b",
             isSelected && "bg-accent text-accent-foreground",
+            isDragging && "cursor-grabbing opacity-50",
+            isDropTarget && "bg-accent ring-2 ring-primary ring-inset",
           )}
+          data-explorer-directory-drop-target={entry.kind === "directory" ? entry.path : undefined}
           onClick={onSelect}
           onDoubleClick={onOpen}
           onKeyDown={(event) => {
@@ -338,6 +510,7 @@ function FileListRow({
               onOpen();
             }
           }}
+          onPointerDown={onPointerDown}
           role="option"
           tabIndex={0}
           title={entry.path}
