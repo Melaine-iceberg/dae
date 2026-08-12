@@ -34,6 +34,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         file_system::search::search_directory,
         file_system::search::cancel_search,
         file_system::operations::rename_entry,
+        file_system::operations::create_entry,
         file_system::operations::copy_entries,
         file_system::operations::move_entries,
         file_system::operations::delete_entries

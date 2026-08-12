@@ -13,8 +13,10 @@ import {
   ClipboardPasteIcon,
   CopyIcon,
   FileIcon,
+  FilePlus2Icon,
   FolderIcon,
   FolderOpenIcon,
+  FolderPlusIcon,
   LinkIcon,
   PencilIcon,
   SearchXIcon,
@@ -69,6 +71,8 @@ interface FileListProps {
   isLoading: boolean;
   isOperationPending: boolean;
   onCopy: () => void;
+  onCreateDirectory: () => void;
+  onCreateFile: () => void;
   onCut: () => void;
   onDelete: () => void;
   onDropEntries: (
@@ -148,6 +152,8 @@ export function FileList({
   isLoading,
   isOperationPending,
   onCopy,
+  onCreateDirectory,
+  onCreateFile,
   onCut,
   onDelete,
   onDropEntries,
@@ -365,12 +371,23 @@ export function FileList({
     void openFile(entry.path);
   };
 
+  const blankMenuDisabled = actionsDisabled || Boolean(searchState);
+
   return (
-    <section
-      aria-label="文件列表"
-      className="relative flex min-h-0 flex-1 flex-col"
-      data-explorer-drop-target={currentDirectoryPath}
-    >
+    <ContextMenu disabled={blankMenuDisabled}>
+      <ContextMenuTrigger
+        onContextMenu={() => {
+          selectionAnchorIndexRef.current = null;
+          onSelectedPathsChange([]);
+        }}
+        render={
+          <section
+            aria-label="文件列表"
+            className="relative flex min-h-0 flex-1 flex-col"
+            data-explorer-drop-target={currentDirectoryPath}
+          />
+        }
+      >
       <div className="flex h-10 shrink-0 items-center justify-between border-b px-4">
         <h1
           className="min-w-0 truncate text-sm font-medium"
@@ -497,7 +514,20 @@ export function FileList({
           个项目
         </div>
       )}
-    </section>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={onCreateFile}>
+            <FilePlus2Icon />
+            新建文件
+          </ContextMenuItem>
+          <ContextMenuItem onClick={onCreateDirectory}>
+            <FolderPlusIcon />
+            新建文件夹
+          </ContextMenuItem>
+        </ContextMenuGroup>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

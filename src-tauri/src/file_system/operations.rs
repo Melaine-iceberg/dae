@@ -17,6 +17,21 @@ pub async fn rename_entry(path: String, new_name: String) -> Result<(), FileSyst
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
+/// Creates a new file or directory inside an existing directory and returns its path.
+#[tauri::command]
+#[specta::specta]
+pub async fn create_entry(
+    directory: String,
+    name: String,
+    kind: String,
+) -> Result<String, FileSystemError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        create_entry_sync(PathBuf::from(directory), name, &kind)
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
 /// Copies entries into an existing destination directory. Existing files are never overwritten.
 #[tauri::command]
 #[specta::specta]
@@ -101,6 +116,35 @@ pub(super) fn rename_entry_sync(path: PathBuf, new_name: String) -> Result<(), F
     ensure_path_is_available(&destination)?;
     fs::rename(path, destination)?;
     Ok(())
+}
+
+pub(super) fn create_entry_sync(
+    directory: PathBuf,
+    name: String,
+    kind: &str,
+) -> Result<String, FileSystemError> {
+    validate_entry_name(&name)?;
+
+    if !fs::metadata(&directory)?.is_dir() {
+        return Err(FileSystemError::NotDirectory(path_to_string(&directory)));
+    }
+
+    let target = directory.join(&name);
+    ensure_path_is_available(&target)?;
+
+    match kind {
+        "file" => {
+            fs::File::create(&target)?;
+        }
+        "directory" => fs::create_dir(&target)?,
+        other => {
+            return Err(FileSystemError::InvalidInput(format!(
+                "Unsupported entry kind: {other}"
+            )));
+        }
+    }
+
+    Ok(path_to_string(&target))
 }
 
 pub(super) fn copy_entries_with_progress<P: FileOperationProgressReporterTrait>(

@@ -53,7 +53,7 @@ interface ExplorerViewProps {
   navigator: ExplorerNavigator;
 }
 
-type FileOperationResult = { ok: true } | { error: string; ok: false };
+type FileOperationResult = { ok: true } | { error: string; ok: false; rawError?: unknown };
 type ExternalDrop = { sourcePaths: string[]; targetPath: string | null };
 
 export function ExplorerView({ navigator }: ExplorerViewProps) {
@@ -63,6 +63,9 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const [renameTarget, setRenameTarget] = useState<DirectoryEntry | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [newEntryKind, setNewEntryKind] = useState<"file" | "directory" | null>(null);
+  const [newEntryValue, setNewEntryValue] = useState("");
+  const [newEntryError, setNewEntryError] = useState<string | null>(null);
   const [deleteTargets, setDeleteTargets] = useState<DirectoryEntry[]>([]);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [isOperationPending, setIsOperationPending] = useState(false);
@@ -106,6 +109,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   useEffect(() => {
     setSelectedPaths([]);
     setRenameTarget(null);
+    setNewEntryKind(null);
     setDeleteTargets([]);
     setOperationError(null);
     setExternalDrop(null);
@@ -223,7 +227,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             currentProgress?.operationId === operationId ? null : currentProgress,
           );
         }
-        return { error: getErrorMessage(error), ok: false };
+        return { error: getErrorMessage(error), ok: false, rawError: error };
       } finally {
         setIsOperationPending(false);
       }
@@ -405,6 +409,53 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     );
   };
 
+  const requestCreate = useCallback(
+    (kind: "file" | "directory") => {
+      if (!directoryPath || search.isActive) return;
+
+      setNewEntryKind(kind);
+      setNewEntryValue(kind === "file" ? "新建文件.txt" : "新建文件夹");
+      setNewEntryError(null);
+      setOperationError(null);
+    },
+    [directoryPath, search.isActive],
+  );
+
+  const closeCreateDialog = () => {
+    if (isOperationPending) return;
+
+    setNewEntryKind(null);
+    setNewEntryError(null);
+  };
+
+  const submitCreate = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!newEntryKind || !directoryPath) return;
+
+    const nextName = newEntryValue.trim();
+    if (!nextName) {
+      setNewEntryError("名称不能为空");
+      return;
+    }
+
+    setNewEntryError(null);
+    setOperationError(null);
+    const kind = newEntryKind;
+    let createdPath: string | null = null;
+
+    void performFileOperation(async () => {
+      createdPath = await explorerApi.createEntry(directoryPath, nextName, kind);
+    }).then((result) => {
+      if (!result.ok) {
+        setNewEntryError(getCreateEntryErrorMessage(result.error, result.rawError));
+        return;
+      }
+
+      setNewEntryKind(null);
+      setSelectedPaths(createdPath ? [createdPath] : []);
+    });
+  };
+
   const requestDelete = useCallback(() => {
     if (selectedEntries.length === 0) return;
 
@@ -556,6 +607,8 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             isLoading={isLoading}
             isOperationPending={isOperationPending}
             onCopy={copySelection}
+            onCreateDirectory={() => requestCreate("directory")}
+            onCreateFile={() => requestCreate("file")}
             onCut={cutSelection}
             onDelete={requestDelete}
             onDropEntries={transferEntries}
@@ -602,6 +655,18 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         onValueChange={setRenameValue}
         target={renameTarget}
         value={renameValue}
+      />
+      <CreateEntryDialog
+        error={newEntryError}
+        isPending={isOperationPending}
+        kind={newEntryKind}
+        onClose={closeCreateDialog}
+        onOpenChange={(open) => {
+          if (!open) closeCreateDialog();
+        }}
+        onSubmit={submitCreate}
+        onValueChange={setNewEntryValue}
+        value={newEntryValue}
       />
       <DeleteDialog
         entries={deleteTargets}
@@ -714,6 +779,70 @@ function RenameDialog({
   );
 }
 
+function CreateEntryDialog({
+  error,
+  isPending,
+  kind,
+  onClose,
+  onOpenChange,
+  onSubmit,
+  onValueChange,
+  value,
+}: {
+  error: string | null;
+  isPending: boolean;
+  kind: "file" | "directory" | null;
+  onClose: () => void;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onValueChange: (value: string) => void;
+  value: string;
+}) {
+  const isFile = kind === "file";
+
+  return (
+    <Dialog onOpenChange={onOpenChange} open={kind !== null}>
+      <DialogContent showCloseButton={!isPending}>
+        <DialogHeader>
+          <DialogTitle>{isFile ? "新建文件" : "新建文件夹"}</DialogTitle>
+          <DialogDescription>
+            {isFile ? "输入文件名称，可包含扩展名（例如 notes.txt）。" : "输入文件夹名称。"}
+          </DialogDescription>
+        </DialogHeader>
+        <form className="flex flex-col gap-4" onSubmit={onSubmit}>
+          <FieldGroup>
+            <Field data-invalid={Boolean(error)}>
+              <FieldLabel htmlFor="create-entry">名称</FieldLabel>
+              <Input
+                aria-invalid={Boolean(error)}
+                autoFocus
+                disabled={isPending}
+                id="create-entry"
+                onChange={(event) => onValueChange(event.target.value)}
+                onFocus={(event) => {
+                  const input = event.currentTarget;
+                  const dotIndex = isFile ? input.value.lastIndexOf(".") : -1;
+                  input.setSelectionRange(0, dotIndex > 0 ? dotIndex : input.value.length);
+                }}
+                value={value}
+              />
+              <FieldError>{error}</FieldError>
+            </Field>
+          </FieldGroup>
+          <DialogFooter>
+            <Button disabled={isPending} onClick={onClose} type="button" variant="outline">
+              取消
+            </Button>
+            <Button disabled={isPending} type="submit">
+              创建
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function DeleteDialog({
   entries,
   isPending,
@@ -765,6 +894,33 @@ function ExplorerErrorAlert({ message, onRetry }: { message: string; onRetry: ()
       </AlertAction>
     </Alert>
   );
+}
+
+function getCreateEntryErrorMessage(message: string, rawError: unknown): string {
+  const kind =
+    typeof rawError === "object" &&
+    rawError !== null &&
+    "kind" in rawError &&
+    typeof (rawError as { kind?: unknown }).kind === "string"
+      ? (rawError as { kind: string }).kind
+      : null;
+
+  switch (kind) {
+    case "already_exists":
+      return "已存在同名项目，请使用其他名称";
+    case "permission_denied":
+      return "没有权限在此位置创建项目";
+    case "not_found":
+      return "当前目录不存在或已被移动";
+    case "not_directory":
+      return "当前位置不是文件夹";
+  }
+
+  if (message.includes("must not contain a path separator")) {
+    return "名称不能包含路径分隔符";
+  }
+
+  return message;
 }
 
 function getErrorMessage(error: unknown): string {
