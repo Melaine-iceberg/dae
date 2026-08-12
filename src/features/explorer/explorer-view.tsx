@@ -35,6 +35,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 import { explorerApi } from "./api";
+import { DirectorySearch, useDirectorySearch } from "./directory-search";
 import { getExplorerDropTargetAtPoint, type FileTransferOperation } from "./drag-drop";
 import { ExplorerBreadcrumbs } from "./explorer-breadcrumbs";
 import { FileList, FileListSkeleton } from "./file-list";
@@ -75,9 +76,14 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const canGoBack = !isLoading && state.historyIndex > 0;
   const canGoForward = !isLoading && state.historyIndex < state.history.length - 1;
   const canGoUp = !isLoading && (directory?.breadcrumbs.length ?? 0) > 1;
+  const search = useDirectorySearch(directoryPath ?? null, directory);
+  const displayedEntries = useMemo(
+    () => (search.isActive ? (search.response?.entries ?? []) : (directory?.entries ?? [])),
+    [directory?.entries, search.isActive, search.response],
+  );
   const selectedEntries = useMemo(
-    () => directory?.entries.filter((entry) => selectedPaths.includes(entry.path)) ?? [],
-    [directory?.entries, selectedPaths],
+    () => displayedEntries.filter((entry) => selectedPaths.includes(entry.path)),
+    [displayedEntries, selectedPaths],
   );
 
   useEffect(() => {
@@ -103,17 +109,15 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     setDeleteTargets([]);
     setOperationError(null);
     setExternalDrop(null);
-  }, [directoryPath]);
+  }, [directoryPath, search.query]);
 
   useEffect(() => {
-    if (!directory) return;
-
-    const availablePaths = new Set(directory.entries.map((entry) => entry.path));
+    const availablePaths = new Set(displayedEntries.map((entry) => entry.path));
     setSelectedPaths((paths) => {
       const availableSelection = paths.filter((path) => availablePaths.has(path));
       return availableSelection.length === paths.length ? paths : availableSelection;
     });
-  }, [directory]);
+  }, [displayedEntries]);
 
   useEffect(() => {
     let disposed = false;
@@ -507,6 +511,12 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               <Skeleton className="h-4 w-48 max-w-full" />
             )}
           </div>
+
+          <DirectorySearch
+            directoryName={directory?.breadcrumbs.at(-1)?.name ?? null}
+            disabled={isLoading}
+            search={search}
+          />
         </header>
 
         {state.error && directory && (
@@ -538,11 +548,11 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         {directory ? (
           <FileList
             currentDirectoryPath={directory.path}
-            entries={directory.entries}
+            entries={displayedEntries}
             externalDropItemCount={externalDrop?.sourcePaths.length ?? 0}
             externalDropTargetPath={externalDrop?.targetPath ?? null}
             hasClipboard={clipboard !== null}
-            initialScrollOffset={navigator.getScrollOffset(directory.path)}
+            initialScrollOffset={search.isActive ? 0 : navigator.getScrollOffset(directory.path)}
             isLoading={isLoading}
             isOperationPending={isOperationPending}
             onCopy={copySelection}
@@ -552,9 +562,24 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             onOpenDirectory={(path) => void navigator.navigate(path)}
             onPaste={pasteClipboard}
             onRename={requestRename}
-            onScrollOffsetChange={(offset) => navigator.setScrollOffset(directory.path, offset)}
+            onScrollOffsetChange={
+              search.isActive
+                ? undefined
+                : (offset) => navigator.setScrollOffset(directory.path, offset)
+            }
             onSelectedPathsChange={setSelectedPaths}
+            searchState={
+              search.isActive
+                ? {
+                    error: search.error,
+                    isSearching: search.isSearching,
+                    query: search.query.trim(),
+                    truncated: search.response?.truncated ?? false,
+                  }
+                : undefined
+            }
             selectedPaths={selectedPaths}
+            viewId={search.isActive ? `${directory.path}::search::${search.query}` : directory.path}
           />
         ) : state.error ? (
           <div className="p-4">

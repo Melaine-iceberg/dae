@@ -6,6 +6,8 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .manage(file_system::DirectoryWatcher::default())
+        .manage(file_system::FileSearchState::default())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_snap_layout::init()
@@ -29,6 +31,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         file_system::directory::get_home_directory,
         file_system::directory::read_directory,
         file_system::directory::watch_directory,
+        file_system::search::search_directory,
+        file_system::search::cancel_search,
         file_system::operations::rename_entry,
         file_system::operations::copy_entries,
         file_system::operations::move_entries,

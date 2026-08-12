@@ -169,7 +169,7 @@ pub(super) fn read_directory_sync(
     })
 }
 
-fn modified_at_millis(metadata: &fs::Metadata) -> Option<u64> {
+pub(super) fn modified_at_millis(metadata: &fs::Metadata) -> Option<u64> {
     metadata
         .modified()
         .ok()?
@@ -180,7 +180,7 @@ fn modified_at_millis(metadata: &fs::Metadata) -> Option<u64> {
         .ok()
 }
 
-fn entry_kind(file_type: fs::FileType) -> EntryKind {
+pub(super) fn entry_kind(file_type: fs::FileType) -> EntryKind {
     if file_type.is_dir() {
         EntryKind::Directory
     } else if file_type.is_file() {
@@ -202,7 +202,7 @@ pub(super) fn compare_entries(left: &DirectoryEntry, right: &DirectoryEntry) -> 
         .then_with(|| left.name.cmp(&right.name))
 }
 
-fn entry_kind_rank(kind: &EntryKind) -> u8 {
+pub(super) fn entry_kind_rank(kind: &EntryKind) -> u8 {
     match kind {
         EntryKind::Directory => 0,
         EntryKind::Symlink => 1,

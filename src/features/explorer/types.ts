@@ -11,12 +11,22 @@ export interface DirectoryEntry {
   kind: EntryKind;
   modifiedAt: number | null;
   size: number | null;
+  relativePath?: string;
 }
 
 export interface DirectoryView {
   path: string;
   breadcrumbs: Breadcrumb[];
   entries: DirectoryEntry[];
+}
+
+export interface SearchEntry extends DirectoryEntry {
+  relativePath: string;
+}
+
+export interface SearchResponse {
+  entries: SearchEntry[];
+  truncated: boolean;
 }
 
 export type FileOperationKind = "copy" | "move" | "delete";

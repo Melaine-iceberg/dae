@@ -6,8 +6,10 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
+  ClipboardCopyIcon,
   ClipboardPasteIcon,
   CopyIcon,
   FileIcon,
@@ -15,9 +17,11 @@ import {
   FolderOpenIcon,
   LinkIcon,
   PencilIcon,
+  SearchXIcon,
   ScissorsIcon,
   ShapesIcon,
   Trash2Icon,
+  TriangleAlertIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -77,7 +81,16 @@ interface FileListProps {
   onRename: () => void;
   onScrollOffsetChange?: (offset: number) => void;
   onSelectedPathsChange: (paths: string[]) => void;
+  searchState?: FileListSearchState;
   selectedPaths: string[];
+  viewId: string;
+}
+
+interface FileListSearchState {
+  error: string | null;
+  isSearching: boolean;
+  query: string;
+  truncated: boolean;
 }
 
 interface EntryPresentation {
@@ -143,7 +156,9 @@ export function FileList({
   onRename,
   onScrollOffsetChange,
   onSelectedPathsChange,
+  searchState,
   selectedPaths,
+  viewId,
 }: FileListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectionAnchorIndexRef = useRef<number | null>(null);
@@ -152,7 +167,8 @@ export function FileList({
   const suppressNextClickRef = useRef(false);
   const [internalDrag, setInternalDrag] = useState<InternalDragState | null>(null);
   const selectedPathSet = new Set(selectedPaths);
-  const actionsDisabled = isLoading || isOperationPending;
+  const listIsLoading = isLoading || searchState?.isSearching === true;
+  const actionsDisabled = listIsLoading || isOperationPending;
   const selectedCount = selectedPaths.length;
   const virtualizer = useVirtualizer({
     count: entries.length,
@@ -161,6 +177,13 @@ export function FileList({
     initialOffset: initialScrollOffset,
     overscan: 10,
   });
+
+  useEffect(() => {
+    selectionAnchorIndexRef.current = null;
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = initialScrollOffset;
+    }
+  }, [initialScrollOffset, viewId]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -349,22 +372,50 @@ export function FileList({
       data-explorer-drop-target={currentDirectoryPath}
     >
       <div className="flex h-10 shrink-0 items-center justify-between border-b px-4">
-        <h1 className="text-sm font-medium">文件</h1>
-        <p aria-live="polite" className="text-xs text-muted-foreground">
-          {isLoading
-            ? "正在读取…"
-            : `${entries.length} 个项目${selectedCount ? `，已选择 ${selectedCount} 个` : ""}`}
+        <h1
+          className="min-w-0 truncate text-sm font-medium"
+          title={searchState ? `“${searchState.query}”的搜索结果` : undefined}
+        >
+          {searchState ? `搜索：“${searchState.query}”` : "文件"}
+        </h1>
+        <p aria-live="polite" className="shrink-0 text-xs text-muted-foreground">
+          {listIsLoading
+            ? searchState
+              ? "正在搜索…"
+              : "正在读取…"
+            : searchState?.error
+              ? "搜索失败"
+              : `${entries.length} 个${searchState ? "匹配项" : "项目"}${searchState?.truncated ? "，结果已截断" : ""}${selectedCount ? `，已选择 ${selectedCount} 个` : ""}`}
         </p>
       </div>
 
-      {entries.length === 0 && !isLoading ? (
+      {entries.length === 0 && !listIsLoading ? (
         <Empty>
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <FolderOpenIcon />
+              {searchState ? (
+                searchState.error ? (
+                  <TriangleAlertIcon />
+                ) : (
+                  <SearchXIcon />
+                )
+              ) : (
+                <FolderOpenIcon />
+              )}
             </EmptyMedia>
-            <EmptyTitle>这个文件夹是空的</EmptyTitle>
-            <EmptyDescription>此位置暂时没有文件或子文件夹。</EmptyDescription>
+            <EmptyTitle>
+              {searchState
+                ? searchState.error
+                  ? "搜索未完成"
+                  : "没有找到匹配项"
+                : "这个文件夹是空的"}
+            </EmptyTitle>
+            <EmptyDescription>
+              {searchState
+                ? (searchState.error ??
+                  `当前目录及子目录中没有名称包含“${searchState.query}”的文件或文件夹。`)
+                : "此位置暂时没有文件或子文件夹。"}
+            </EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
@@ -442,7 +493,8 @@ export function FileList({
           style={{ left: internalDrag.position.x + 14, top: internalDrag.position.y + 14 }}
         >
           {internalDrag.operation === "copy" ? <CopyIcon /> : <ScissorsIcon />}
-          {internalDrag.operation === "copy" ? "复制" : "移动"} {internalDrag.sourcePaths.length} 个项目
+          {internalDrag.operation === "copy" ? "复制" : "移动"} {internalDrag.sourcePaths.length}{" "}
+          个项目
         </div>
       )}
     </section>
@@ -518,7 +570,15 @@ function FileListRow({
         >
           <div className="flex min-w-0 flex-1 items-center gap-2 p-2">
             <EntryIcon className={cn(entry.kind !== "directory" && "text-muted-foreground")} />
-            <span className="truncate">{entry.name}</span>
+            <span className="min-w-0 truncate">{entry.name}</span>
+            {entry.relativePath && (
+              <span
+                className="ml-auto max-w-[45%] shrink-0 truncate text-xs text-muted-foreground"
+                title={entry.relativePath}
+              >
+                {formatRelativeLocation(entry.relativePath)}
+              </span>
+            )}
           </div>
           <div className="w-44 p-2 text-muted-foreground">{formatModifiedAt(entry.modifiedAt)}</div>
           <div className="w-28 p-2 text-muted-foreground">{presentation.label}</div>
@@ -541,6 +601,10 @@ function FileListRow({
             <PencilIcon />
             重命名
             <ContextMenuShortcut>F2</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => void copyEntryPath(entry.path)}>
+            <ClipboardCopyIcon />
+            复制文件地址
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
@@ -582,6 +646,14 @@ async function openFile(path: string): Promise<void> {
   }
 }
 
+async function copyEntryPath(path: string): Promise<void> {
+  try {
+    await writeText(path);
+  } catch (error) {
+    console.warn(`Unable to copy path ${path}`, error);
+  }
+}
+
 function isEditableElement(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
@@ -612,6 +684,15 @@ function formatFileSize(size: number | null): string {
   const value = size / 1024 ** unitIndex;
 
   return `${FILE_SIZE_FORMATTER.format(value)} ${FILE_SIZE_UNITS[unitIndex]}`;
+}
+
+function formatRelativeLocation(relativePath: string): string {
+  const separatorIndex = Math.max(relativePath.lastIndexOf("/"), relativePath.lastIndexOf("\\"));
+  if (separatorIndex < 0) {
+    return "当前目录";
+  }
+
+  return relativePath.slice(0, separatorIndex).replaceAll(/[\\/]/g, " › ");
 }
 
 export function FileListSkeleton() {
