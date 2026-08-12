@@ -835,6 +835,7 @@ name = "dae"
 version = "0.1.0"
 dependencies = [
  "ignore",
+ "nextest",
  "notify",
  "serde",
  "specta",
@@ -2654,6 +2655,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
+name = "nextest"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4916d44d6c0a42693f966f0987acb4fa43ec3ca85d957c02f30c7ad160bfe7e6"
+
+[[package]]
 name = "nom"
 version = "8.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4471,7 +4478,21 @@ dependencies = [
  "specta-typescript",
  "specta-util",
  "tauri",
+ "tauri-specta-macros",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "tauri-specta-macros"
+version = "2.0.0-rc.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a59dfdce06c98d8d211619bea5fdb39486d8a8c558e12b2d2ce255972320012"
+dependencies = [
+ "darling",
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

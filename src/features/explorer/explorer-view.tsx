@@ -7,7 +7,6 @@ import {
   type FormEvent,
 } from "react";
 import { useAtom } from "jotai";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ArrowLeftIcon,
@@ -17,6 +16,8 @@ import {
   RefreshCwIcon,
   TriangleAlertIcon,
 } from "lucide-react";
+
+import { commands, events } from "@/bindings";
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -34,17 +35,19 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-import { explorerApi } from "./api";
 import { DirectorySearch, useDirectorySearch } from "./directory-search";
 import { getExplorerDropTargetAtPoint, type FileTransferOperation } from "./drag-drop";
 import { ExplorerBreadcrumbs } from "./explorer-breadcrumbs";
 import { FileList, FileListSkeleton } from "./file-list";
 import type { ExplorerNavigator } from "./navigation";
 import { fileClipboardAtom } from "./tabs";
-import type { DirectoryEntry, FileOperationKind, FileOperationProgress } from "./types";
+import type {
+  DirectoryEntry,
+  FileOperationKind,
+  FileOperationProgress,
+  NewEntryKind,
+} from "./types";
 
-const DIRECTORY_CHANGED_EVENT = "explorer-directory-changed";
-const FILE_OPERATION_PROGRESS_EVENT = "explorer-file-operation-progress";
 const DIRECTORY_REFRESH_DELAY_MS = 150;
 const COMPLETED_OPERATION_STATUS_DURATION_MS = 900;
 const appWindow = getCurrentWindow();
@@ -63,7 +66,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const [renameTarget, setRenameTarget] = useState<DirectoryEntry | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
-  const [newEntryKind, setNewEntryKind] = useState<"file" | "directory" | null>(null);
+  const [newEntryKind, setNewEntryKind] = useState<NewEntryKind | null>(null);
   const [newEntryValue, setNewEntryValue] = useState("");
   const [newEntryError, setNewEntryError] = useState<string | null>(null);
   const [deleteTargets, setDeleteTargets] = useState<DirectoryEntry[]>([]);
@@ -98,7 +101,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   useEffect(() => {
     if (!directoryPath) return;
 
-    void explorerApi
+    void commands
       .watchDirectory(directoryPath)
       .then(() => void navigator.refresh(directoryPath))
       .catch((error: unknown) => {
@@ -137,7 +140,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       }, DIRECTORY_REFRESH_DELAY_MS);
     };
 
-    const unlistenChangesPromise = listen<string>(DIRECTORY_CHANGED_EVENT, ({ payload }) => {
+    const unlistenChangesPromise = events.explorerDirectoryChanged.listen(({ payload }) => {
       scheduleRefresh(payload);
     });
     const unlistenFocusPromise = appWindow.onFocusChanged(({ payload: focused }) => {
@@ -155,22 +158,19 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   }, [navigator]);
 
   useEffect(() => {
-    const unlistenProgressPromise = listen<FileOperationProgress>(
-      FILE_OPERATION_PROGRESS_EVENT,
-      ({ payload }) => {
-        setFileOperationProgress((currentProgress) => {
-          if (
-            !currentProgress ||
-            currentProgress.operationId !== payload.operationId ||
-            currentProgress.phase === "completed"
-          ) {
-            return currentProgress;
-          }
+    const unlistenProgressPromise = events.explorerFileOperationProgress.listen(({ payload }) => {
+      setFileOperationProgress((currentProgress) => {
+        if (
+          !currentProgress ||
+          currentProgress.operationId !== payload.operationId ||
+          currentProgress.phase === "completed"
+        ) {
+          return currentProgress;
+        }
 
-          return payload;
-        });
-      },
-    );
+        return payload;
+      });
+    });
 
     return () => {
       void unlistenProgressPromise.then((unlisten) => unlisten());
@@ -179,7 +179,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
 
   const performFileOperation = useCallback(
     async (
-      operation: (operationId?: string) => Promise<void>,
+      operation: (operationId?: string) => Promise<unknown>,
       progressOperation?: FileOperationKind,
     ): Promise<FileOperationResult> => {
       if (!directoryPath) {
@@ -243,8 +243,8 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       void performFileOperation(
         (operationId) =>
           operation === "copy"
-            ? explorerApi.copyEntries(sourcePaths, destinationPath, operationId!)
-            : explorerApi.moveEntries(sourcePaths, destinationPath, operationId!),
+            ? commands.copyEntries(sourcePaths, destinationPath, operationId!)
+            : commands.moveEntries(sourcePaths, destinationPath, operationId!),
         operation,
       ).then((result) => {
         if (!result.ok) {
@@ -264,7 +264,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
 
       setOperationError(null);
       void performFileOperation(
-        (operationId) => explorerApi.copyEntries(sourcePaths, destinationPath, operationId!),
+        (operationId) => commands.copyEntries(sourcePaths, destinationPath, operationId!),
         "copy",
       ).then((result) => {
         if (!result.ok) {
@@ -349,8 +349,8 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     void performFileOperation(
       (operationId) =>
         pastedClipboard.operation === "copy"
-          ? explorerApi.copyEntries(pastedClipboard.sourcePaths, directoryPath, operationId!)
-          : explorerApi.moveEntries(pastedClipboard.sourcePaths, directoryPath, operationId!),
+          ? commands.copyEntries(pastedClipboard.sourcePaths, directoryPath, operationId!)
+          : commands.moveEntries(pastedClipboard.sourcePaths, directoryPath, operationId!),
       pastedClipboard.operation === "copy" ? "copy" : "move",
     ).then((result) => {
       if (!result.ok) {
@@ -396,7 +396,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     setOperationError(null);
     const sourcePath = renameTarget.path;
 
-    void performFileOperation(() => explorerApi.renameEntry(sourcePath, nextName)).then(
+    void performFileOperation(() => commands.renameEntry(sourcePath, nextName)).then(
       (result) => {
         if (!result.ok) {
           setRenameError(result.error);
@@ -410,7 +410,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   };
 
   const requestCreate = useCallback(
-    (kind: "file" | "directory") => {
+    (kind: NewEntryKind) => {
       if (!directoryPath || search.isActive) return;
 
       setNewEntryKind(kind);
@@ -444,7 +444,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     let createdPath: string | null = null;
 
     void performFileOperation(async () => {
-      createdPath = await explorerApi.createEntry(directoryPath, nextName, kind);
+      createdPath = await commands.createEntry(directoryPath, nextName, kind);
     }).then((result) => {
       if (!result.ok) {
         setNewEntryError(getCreateEntryErrorMessage(result.error, result.rawError));
@@ -476,7 +476,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     const paths = deleteTargets.map((entry) => entry.path);
 
     void performFileOperation(
-      (operationId) => explorerApi.deleteEntries(paths, operationId!),
+      (operationId) => commands.deleteEntries(paths, operationId!),
       "delete",
     ).then((result) => {
       if (!result.ok) {
@@ -791,7 +791,7 @@ function CreateEntryDialog({
 }: {
   error: string | null;
   isPending: boolean;
-  kind: "file" | "directory" | null;
+  kind: NewEntryKind | null;
   onClose: () => void;
   onOpenChange: (open: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;

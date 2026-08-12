@@ -7,9 +7,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
+use tauri_specta::Event;
 
-const DIRECTORY_CHANGED_EVENT: &str = "explorer-directory-changed";
+#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "explorer-directory-changed")]
+pub struct DirectoryChanged(pub String);
 
 #[derive(Default)]
 pub struct DirectoryWatcher {
@@ -120,7 +123,7 @@ fn create_directory_watcher(
             };
 
             if should_refresh {
-                let _ = app.emit(DIRECTORY_CHANGED_EVENT, &event_path);
+                let _ = DirectoryChanged(event_path.clone()).emit(&app);
             }
         })
         .map_err(|error| FileSystemError::Io(error.to_string()))?;

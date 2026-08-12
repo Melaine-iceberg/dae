@@ -8,7 +8,8 @@ import {
   InputGroupInput,
 } from "@/components/ui/input-group";
 
-import { explorerApi } from "./api";
+import { commands } from "@/bindings";
+
 import type { SearchResponse } from "./types";
 
 const SEARCH_DEBOUNCE_MS = 180;
@@ -39,13 +40,13 @@ export function useDirectorySearch(
     setResponse(null);
     setError(null);
     setIsSearching(false);
-    void explorerApi.cancelSearch().catch(() => undefined);
+    void commands.cancelSearch().catch(() => undefined);
   }, [directoryPath]);
 
   useEffect(
     () => () => {
       requestVersionRef.current += 1;
-      void explorerApi.cancelSearch().catch(() => undefined);
+      void commands.cancelSearch().catch(() => undefined);
     },
     [],
   );
@@ -58,14 +59,14 @@ export function useDirectorySearch(
     if (!directoryPath || !trimmedQuery) {
       setIsSearching(false);
       if (directoryPath && !trimmedQuery) {
-        void explorerApi.cancelSearch().catch(() => undefined);
+        void commands.cancelSearch().catch(() => undefined);
       }
       return;
     }
 
     setIsSearching(true);
     const timeout = window.setTimeout(() => {
-      void explorerApi
+      void commands
         .searchDirectory(directoryPath, trimmedQuery)
         .then((nextResponse) => {
           if (requestVersion === requestVersionRef.current) {

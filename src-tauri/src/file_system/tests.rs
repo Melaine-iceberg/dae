@@ -4,7 +4,7 @@ use super::directory::{
 };
 use super::error::FileSystemError;
 use super::operations::{
-    copy_entries_with_progress, create_entry_sync, delete_entries_with_progress,
+    NewEntryKind, copy_entries_with_progress, create_entry_sync, delete_entries_with_progress,
     move_entries_with_progress, rename_entry_sync,
 };
 use super::progress::FileOperationProgressReporterTrait;
@@ -270,33 +270,35 @@ fn creates_files_and_directories_with_validated_names() {
         std::env::temp_dir().join(format!("dae-create-entry-test-{}", std::process::id()));
     fs::create_dir_all(&directory).expect("create test directory");
 
-    let file_path =
-        create_entry_sync(directory.clone(), "notes.txt".into(), "file").expect("create file");
+    let file_path = create_entry_sync(directory.clone(), "notes.txt".into(), NewEntryKind::File)
+        .expect("create file");
     assert_eq!(
         file_path,
         super::directory::path_to_string(&directory.join("notes.txt"))
     );
     assert!(directory.join("notes.txt").is_file());
 
-    let directory_path = create_entry_sync(directory.clone(), "子文件夹".into(), "directory")
-        .expect("create directory");
+    let directory_path = create_entry_sync(
+        directory.clone(),
+        "子文件夹".into(),
+        NewEntryKind::Directory,
+    )
+    .expect("create directory");
     assert_eq!(
         directory_path,
         super::directory::path_to_string(&directory.join("子文件夹"))
     );
     assert!(directory.join("子文件夹").is_dir());
 
-    let duplicate_error = create_entry_sync(directory.clone(), "notes.txt".into(), "file")
-        .expect_err("creating over an existing entry should fail");
+    let duplicate_error =
+        create_entry_sync(directory.clone(), "notes.txt".into(), NewEntryKind::File)
+            .expect_err("creating over an existing entry should fail");
     assert!(matches!(duplicate_error, FileSystemError::AlreadyExists(_)));
 
-    let separator_error = create_entry_sync(directory.clone(), "a/b.txt".into(), "file")
-        .expect_err("names with path separators should fail");
+    let separator_error =
+        create_entry_sync(directory.clone(), "a/b.txt".into(), NewEntryKind::File)
+            .expect_err("names with path separators should fail");
     assert!(matches!(separator_error, FileSystemError::InvalidInput(_)));
-
-    let kind_error = create_entry_sync(directory.clone(), "other".into(), "symlink")
-        .expect_err("unsupported entry kinds should fail");
-    assert!(matches!(kind_error, FileSystemError::InvalidInput(_)));
 
     fs::remove_dir_all(directory).expect("remove test directory");
 }

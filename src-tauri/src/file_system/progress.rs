@@ -3,24 +3,54 @@ use serde::Serialize;
 use specta::Type;
 use std::path::Path;
 use std::time::{Duration, Instant};
-use tauri::Emitter;
+use tauri_specta::Event;
 
-const FILE_OPERATION_PROGRESS_EVENT: &str = "explorer-file-operation-progress";
 const FILE_OPERATION_PROGRESS_INTERVAL: Duration = Duration::from_millis(60);
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum FileOperationKind {
+    Copy,
+    Move,
+    Delete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum FileOperationPhase {
+    Preparing,
+    Running,
+    // Only synthesized by the frontend; kept so the exported union covers all states.
+    #[allow(dead_code)]
+    Completed,
+}
+
+#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "explorer-file-operation-progress")]
 #[serde(rename_all = "camelCase")]
 pub struct FileOperationProgress {
     pub operation_id: String,
-    pub operation: String,
-    pub phase: String,
+    pub operation: FileOperationKind,
+    pub phase: FileOperationPhase,
     pub completed: u64,
     pub total: Option<u64>,
     pub current_path: Option<String>,
 }
 
-pub(super) fn emit_preparing(app: &tauri::AppHandle, operation_id: &str, operation: &str) {
-    emit_file_operation_progress(app, operation_id, operation, "preparing", 0, None, None);
+pub(super) fn emit_preparing(
+    app: &tauri::AppHandle,
+    operation_id: &str,
+    operation: FileOperationKind,
+) {
+    emit_file_operation_progress(
+        app,
+        operation_id,
+        operation,
+        FileOperationPhase::Preparing,
+        0,
+        None,
+        None,
+    );
 }
 
 pub(super) trait FileOperationProgressReporterTrait {
@@ -36,7 +66,7 @@ pub(super) trait FileOperationProgressReporterTrait {
 pub(super) struct FileOperationProgressReporter {
     app: tauri::AppHandle,
     operation_id: String,
-    operation: &'static str,
+    operation: FileOperationKind,
     completed: u64,
     total: u64,
     last_emit: Option<Instant>,
@@ -46,7 +76,7 @@ impl FileOperationProgressReporter {
     pub(super) fn new(
         app: tauri::AppHandle,
         operation_id: String,
-        operation: &'static str,
+        operation: FileOperationKind,
     ) -> Self {
         Self {
             app,
@@ -71,7 +101,7 @@ impl FileOperationProgressReporter {
             &self.app,
             &self.operation_id,
             self.operation,
-            "running",
+            FileOperationPhase::Running,
             self.completed,
             Some(self.total),
             path.map(path_to_string),
@@ -104,21 +134,19 @@ impl FileOperationProgressReporterTrait for FileOperationProgressReporter {
 fn emit_file_operation_progress(
     app: &tauri::AppHandle,
     operation_id: &str,
-    operation: &str,
-    phase: &str,
+    operation: FileOperationKind,
+    phase: FileOperationPhase,
     completed: u64,
     total: Option<u64>,
     current_path: Option<String>,
 ) {
-    let _ = app.emit(
-        FILE_OPERATION_PROGRESS_EVENT,
-        FileOperationProgress {
-            operation_id: operation_id.to_owned(),
-            operation: operation.to_owned(),
-            phase: phase.to_owned(),
-            completed,
-            total,
-            current_path,
-        },
-    );
+    let _ = FileOperationProgress {
+        operation_id: operation_id.to_owned(),
+        operation,
+        phase,
+        completed,
+        total,
+        current_path,
+    }
+    .emit(app);
 }

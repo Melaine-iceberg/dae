@@ -5,6 +5,11 @@ pub fn run() {
     let specta = specta_builder();
 
     let app = tauri::Builder::default()
+        .invoke_handler(specta.invoke_handler())
+        .setup(move |app| {
+            specta.mount_events(app);
+            Ok(())
+        })
         .manage(file_system::DirectoryWatcher::default())
         .manage(file_system::FileSearchState::default())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -20,23 +25,31 @@ pub fn run() {
         .plugin(tauri_plugin_devtools::init())
         .plugin(tauri_plugin_dev_invoke::init());
 
-    app.invoke_handler(specta.invoke_handler())
-        .run(tauri::generate_context!())
+    app.run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
 
 /// Creates the shared command registry for Tauri and TypeScript binding export.
 pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
-    tauri_specta::Builder::<tauri::Wry>::new().commands(tauri_specta::collect_commands![
-        file_system::directory::get_home_directory,
-        file_system::directory::read_directory,
-        file_system::directory::watch_directory,
-        file_system::search::search_directory,
-        file_system::search::cancel_search,
-        file_system::operations::rename_entry,
-        file_system::operations::create_entry,
-        file_system::operations::copy_entries,
-        file_system::operations::move_entries,
-        file_system::operations::delete_entries
-    ])
+    tauri_specta::Builder::<tauri::Wry>::new()
+        .error_handling(tauri_specta::ErrorHandlingMode::Throw)
+        // Millisecond timestamps, byte sizes, and counters all stay below 2^53,
+        // so exporting u64 as `number` loses no precision.
+        .dangerously_cast_bigints_to_number()
+        .commands(tauri_specta::collect_commands![
+            file_system::directory::get_home_directory,
+            file_system::directory::read_directory,
+            file_system::directory::watch_directory,
+            file_system::search::search_directory,
+            file_system::search::cancel_search,
+            file_system::operations::rename_entry,
+            file_system::operations::create_entry,
+            file_system::operations::copy_entries,
+            file_system::operations::move_entries,
+            file_system::operations::delete_entries
+        ])
+        .events(tauri_specta::collect_events![
+            file_system::directory::DirectoryChanged,
+            file_system::progress::FileOperationProgress
+        ])
 }

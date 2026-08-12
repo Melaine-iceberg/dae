@@ -1,4 +1,5 @@
-import { explorerApi, type ExplorerApi } from "./api";
+import { commands } from "@/bindings";
+
 import type { Breadcrumb, DirectoryView, FileSystemError } from "./types";
 
 export type ExplorerStatus = "idle" | "loading" | "ready" | "error";
@@ -39,7 +40,7 @@ export class ExplorerNavigator {
   private readonly scrollOffsets = new Map<string, number>();
   private readonly listeners = new Set<ExplorerListener>();
 
-  constructor(private readonly api: ExplorerApi = explorerApi) {}
+  constructor(private readonly api = commands) {}
 
   getSnapshot = (): ExplorerState => this.state;
 

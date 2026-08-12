@@ -1,12 +1,22 @@
 use super::directory::path_to_string;
 use super::error::FileSystemError;
 use super::progress::{
-    FileOperationProgressReporter, FileOperationProgressReporterTrait, emit_preparing,
+    FileOperationKind, FileOperationProgressReporter, FileOperationProgressReporterTrait,
+    emit_preparing,
 };
+use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::collections::HashSet;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum NewEntryKind {
+    File,
+    Directory,
+}
 
 /// Renames a single directory entry without allowing a path change.
 #[tauri::command]
@@ -23,10 +33,10 @@ pub async fn rename_entry(path: String, new_name: String) -> Result<(), FileSyst
 pub async fn create_entry(
     directory: String,
     name: String,
-    kind: String,
+    kind: NewEntryKind,
 ) -> Result<String, FileSystemError> {
     tauri::async_runtime::spawn_blocking(move || {
-        create_entry_sync(PathBuf::from(directory), name, &kind)
+        create_entry_sync(PathBuf::from(directory), name, kind)
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -41,10 +51,10 @@ pub async fn copy_entries(
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<(), FileSystemError> {
-    emit_preparing(&app, &operation_id, "copy");
+    emit_preparing(&app, &operation_id, FileOperationKind::Copy);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let mut progress = FileOperationProgressReporter::new(app, operation_id, "copy");
+        let mut progress = FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Copy);
         copy_entries_with_progress(
             paths_from_strings(sources),
             PathBuf::from(destination),
@@ -64,10 +74,10 @@ pub async fn move_entries(
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<(), FileSystemError> {
-    emit_preparing(&app, &operation_id, "move");
+    emit_preparing(&app, &operation_id, FileOperationKind::Move);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let mut progress = FileOperationProgressReporter::new(app, operation_id, "move");
+        let mut progress = FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Move);
         move_entries_with_progress(
             paths_from_strings(sources),
             PathBuf::from(destination),
@@ -86,10 +96,10 @@ pub async fn delete_entries(
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<(), FileSystemError> {
-    emit_preparing(&app, &operation_id, "delete");
+    emit_preparing(&app, &operation_id, FileOperationKind::Delete);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let mut progress = FileOperationProgressReporter::new(app, operation_id, "delete");
+        let mut progress = FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
         delete_entries_with_progress(paths_from_strings(paths), &mut progress)
     })
     .await
@@ -121,7 +131,7 @@ pub(super) fn rename_entry_sync(path: PathBuf, new_name: String) -> Result<(), F
 pub(super) fn create_entry_sync(
     directory: PathBuf,
     name: String,
-    kind: &str,
+    kind: NewEntryKind,
 ) -> Result<String, FileSystemError> {
     validate_entry_name(&name)?;
 
@@ -133,15 +143,10 @@ pub(super) fn create_entry_sync(
     ensure_path_is_available(&target)?;
 
     match kind {
-        "file" => {
+        NewEntryKind::File => {
             fs::File::create(&target)?;
         }
-        "directory" => fs::create_dir(&target)?,
-        other => {
-            return Err(FileSystemError::InvalidInput(format!(
-                "Unsupported entry kind: {other}"
-            )));
-        }
+        NewEntryKind::Directory => fs::create_dir(&target)?,
     }
 
     Ok(path_to_string(&target))
