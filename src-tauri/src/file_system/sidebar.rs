@@ -118,7 +118,7 @@ pub fn save_favorites(
 }
 
 fn list_disks_sync() -> Vec<DiskVolume> {
-    Disks::new_with_refreshed_list()
+    let mut volumes: Vec<DiskVolume> = Disks::new_with_refreshed_list()
         .iter()
         .filter(|disk| {
             let file_system = disk.file_system().to_string_lossy();
@@ -132,7 +132,33 @@ fn list_disks_sync() -> Vec<DiskVolume> {
             available_bytes: disk.available_space(),
             is_removable: disk.is_removable(),
         })
-        .collect()
+        .collect();
+
+    volumes.sort_by(|a, b| {
+        is_system_volume(b)
+            .cmp(&is_system_volume(a))
+            .then_with(|| a.mount_point.to_lowercase().cmp(&b.mount_point.to_lowercase()))
+    });
+
+    volumes
+}
+
+/// The volume holding the OS: the Windows %SystemDrive% volume, or the root volume elsewhere.
+fn is_system_volume(volume: &DiskVolume) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        let Some(system_drive) = std::env::var("SystemDrive").ok() else {
+            return false;
+        };
+
+        let prefix = format!("{}:", system_drive.trim_end_matches(':')).to_ascii_uppercase();
+        volume.mount_point.to_ascii_uppercase().starts_with(&prefix)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        volume.mount_point == "/"
+    }
 }
 
 /// Hides network shares and pseudo file systems that are not real storage volumes.

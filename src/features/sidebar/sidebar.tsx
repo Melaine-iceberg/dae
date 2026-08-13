@@ -1,13 +1,25 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
-import { useAtomValue, useSetAtom } from "jotai";
 import {
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
+import { useAtomValue, useSetAtom } from "jotai";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import {
+  ClipboardCopyIcon,
+  CopyIcon,
   DownloadIcon,
+  FolderOpenIcon,
   HardDriveIcon,
   HouseIcon,
   ImageIcon,
   MonitorIcon,
   MusicIcon,
   NotebookTextIcon,
+  ScissorsIcon,
   StarIcon,
   Trash2Icon,
   UsbIcon,
@@ -20,14 +32,22 @@ import { commands } from "@/bindings";
 import {
   ContextMenu,
   ContextMenuContent,
+  ContextMenuGroup,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn, formatBytes } from "@/lib/utils";
 
-import { activeTabIdAtom, getTabNavigator } from "@/features/explorer/tabs";
+import {
+  activeTabIdAtom,
+  fileClipboardAtom,
+  getTabNavigator,
+  openInNewTabAtom,
+} from "@/features/explorer/tabs";
 
 import {
+  addFavoritePathsAtom,
   ensureFavoritesLoadedAtom,
   favoritesAtom,
   hiddenPlacesAtom,
@@ -77,6 +97,10 @@ function SidebarContent() {
 
   const navigateTo = useCallback((path: string) => void navigator.navigate(path), [navigator]);
   const visiblePlaces = places.filter((place) => !hiddenPlaces.includes(place.kind));
+  const listedPaths = new Set([
+    ...places.map((place) => place.path),
+    ...favorites.map((favorite) => favorite.path),
+  ]);
 
   return (
     <nav aria-label="侧边栏" className="flex w-60 shrink-0 flex-col border-r bg-muted/40">
@@ -84,25 +108,20 @@ function SidebarContent() {
         {visiblePlaces.map((place) => {
           const presentation = PLACE_PRESENTATION[place.kind];
           return (
-            <ContextMenu key={place.kind}>
-              <ContextMenuTrigger>
-                <SidebarItem
-                  icon={presentation.icon}
-                  isActive={currentPath === place.path}
-                  label={presentation.label}
-                  onClick={() => navigateTo(place.path)}
-                  title={place.path}
-                />
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                <ContextMenuItem
-                  onClick={() => setHiddenPlaces([...hiddenPlaces, place.kind])}
-                >
-                  <Trash2Icon />
-                  从常用位置移除
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
+            <FolderContextMenu
+              isListed={listedPaths.has(place.path)}
+              key={place.kind}
+              onRemoveFromList={() => setHiddenPlaces([...hiddenPlaces, place.kind])}
+              path={place.path}
+            >
+              <SidebarItem
+                icon={presentation.icon}
+                isActive={currentPath === place.path}
+                label={presentation.label}
+                onClick={() => navigateTo(place.path)}
+                title={place.path}
+              />
+            </FolderContextMenu>
           );
         })}
 
@@ -178,51 +197,116 @@ function FavoritesList({
     >
       {favorites.length === 0 && (
         <p className="px-2 py-1 text-xs text-muted-foreground">
-          将文件夹拖到此处，或点击工具栏星标收藏当前目录
+          将文件夹拖到此处，或点击工具栏星标将当前目录加入常用位置
         </p>
       )}
       {favorites.map((favorite, index) => (
         <div key={favorite.path}>
           {dropIndex === index && draggedPath !== null && <DropIndicator />}
-          <ContextMenu>
-            <ContextMenuTrigger
-              draggable
-              onDragEnd={resetDrag}
-              onDragOver={(event) => {
+          <FolderContextMenu
+            isListed
+            onRemoveFromList={() => removeFavorite(favorite.path)}
+            path={favorite.path}
+            triggerProps={{
+              draggable: true,
+              onDragEnd: resetDrag,
+              onDragOver: (event) => {
                 if (draggedPath === null) return;
                 event.preventDefault();
                 const rect = event.currentTarget.getBoundingClientRect();
                 setDropIndex(event.clientY < rect.top + rect.height / 2 ? index : index + 1);
-              }}
-              onDragStart={(event) => {
+              },
+              onDragStart: (event) => {
                 setDraggedPath(favorite.path);
                 event.dataTransfer.effectAllowed = "move";
                 event.dataTransfer.setData("text/plain", favorite.path);
-              }}
-              onDrop={(event) => {
+              },
+              onDrop: (event) => {
                 event.preventDefault();
                 handleDrop();
-              }}
-            >
-              <SidebarItem
-                icon={StarIcon}
-                isActive={currentPath === favorite.path}
-                label={favorite.name}
-                onClick={() => onNavigate(favorite.path)}
-                title={favorite.path}
-              />
-            </ContextMenuTrigger>
-            <ContextMenuContent>
-              <ContextMenuItem onClick={() => removeFavorite(favorite.path)}>
-                <Trash2Icon />
-                从收藏移除
-              </ContextMenuItem>
-            </ContextMenuContent>
-          </ContextMenu>
+              },
+            }}
+          >
+            <SidebarItem
+              icon={StarIcon}
+              isActive={currentPath === favorite.path}
+              label={favorite.name}
+              onClick={() => onNavigate(favorite.path)}
+              title={favorite.path}
+            />
+          </FolderContextMenu>
         </div>
       ))}
       {dropIndex === favorites.length && draggedPath !== null && <DropIndicator />}
     </div>
+  );
+}
+
+function FolderContextMenu({
+  children,
+  isListed,
+  onRemoveFromList,
+  path,
+  triggerProps,
+}: {
+  children: ReactNode;
+  isListed: boolean;
+  onRemoveFromList?: () => void;
+  path: string;
+  triggerProps?: ComponentProps<typeof ContextMenuTrigger>;
+}) {
+  const setClipboard = useSetAtom(fileClipboardAtom);
+  const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
+  const openInNewTab = useSetAtom(openInNewTabAtom);
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger {...triggerProps}>{children}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={() => openInNewTab(path)}>
+            <FolderOpenIcon />
+            在新标签页打开
+          </ContextMenuItem>
+          {!isListed && (
+            <ContextMenuItem onClick={() => addFavoritePaths([path])}>
+              <StarIcon />
+              添加到常用位置
+            </ContextMenuItem>
+          )}
+          <ContextMenuItem onClick={() => void copyEntryPath(path)}>
+            <ClipboardCopyIcon />
+            复制文件地址
+          </ContextMenuItem>
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
+          <ContextMenuItem
+            onClick={() => setClipboard({ operation: "copy", sourcePaths: [path] })}
+          >
+            <CopyIcon />
+            复制
+          </ContextMenuItem>
+          <ContextMenuItem
+            onClick={() => setClipboard({ operation: "cut", sourcePaths: [path] })}
+          >
+            <ScissorsIcon />
+            剪切
+          </ContextMenuItem>
+        </ContextMenuGroup>
+        {onRemoveFromList && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuGroup>
+              <ContextMenuItem onClick={onRemoveFromList}>
+                <Trash2Icon />
+                从常用位置移除
+              </ContextMenuItem>
+            </ContextMenuGroup>
+          </>
+        )}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -338,4 +422,12 @@ function getDiskPresentation(volume: DiskVolume): { primary: string; secondary: 
     primary: volume.name.trim() || volume.mountPoint,
     secondary: volume.mountPoint,
   };
+}
+
+async function copyEntryPath(path: string): Promise<void> {
+  try {
+    await writeText(path);
+  } catch (error) {
+    console.warn(`Unable to copy path ${path}`, error);
+  }
 }

@@ -583,7 +583,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               <RefreshCwIcon className={cn(isLoading && "animate-spin")} />
             </Button>
             <Button
-              aria-label={isCurrentFavorited ? "取消收藏当前目录" : "收藏当前目录"}
+              aria-label={isCurrentFavorited ? "从常用位置移除当前目录" : "将当前目录添加到常用位置"}
               disabled={!directory}
               onClick={() =>
                 directory &&
@@ -593,7 +593,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                 })
               }
               size="icon-sm"
-              title={isCurrentFavorited ? "取消收藏当前目录" : "收藏当前目录"}
+              title={isCurrentFavorited ? "从常用位置移除当前目录" : "将当前目录添加到常用位置"}
               type="button"
               variant="ghost"
             >

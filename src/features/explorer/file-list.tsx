@@ -572,7 +572,7 @@ export function FileList({
               <>
                 <StarIcon />
                 添加 {draggableDirectoryPaths(entries, internalDrag.sourcePaths).length}{" "}
-                个文件夹到收藏
+                个文件夹到常用位置
               </>
             ) : (
               <>
@@ -705,7 +705,7 @@ function FileListRow({
           {entry.kind === "directory" && (
             <ContextMenuItem disabled={isActionDisabled} onClick={onAddToFavorites}>
               <StarIcon />
-              添加到收藏
+              添加到常用位置
             </ContextMenuItem>
           )}
           <ContextMenuItem disabled={isActionDisabled || !isSingleSelection} onClick={onRename}>

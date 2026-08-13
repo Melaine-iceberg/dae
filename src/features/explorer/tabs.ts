@@ -42,6 +42,13 @@ export const createTabAtom = atom(null, (_get, set) => {
   set(activeTabIdAtom, tab.id);
 });
 
+export const openInNewTabAtom = atom(null, (_get, set, path: string) => {
+  const tab = createTabEntry();
+  set(tabsAtom, (tabs) => [...tabs, tab]);
+  set(activeTabIdAtom, tab.id);
+  void getTabNavigator(tab.id).navigate(path);
+});
+
 export const activateTabAtom = atom(null, (_get, set, tabId: string) => {
   set(activeTabIdAtom, tabId);
 });
