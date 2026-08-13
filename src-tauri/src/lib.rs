@@ -46,7 +46,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::operations::create_entry,
             file_system::operations::copy_entries,
             file_system::operations::move_entries,
-            file_system::operations::delete_entries
+            file_system::operations::delete_entries,
+            file_system::sidebar::get_system_places,
+            file_system::sidebar::list_disks,
+            file_system::sidebar::load_favorites,
+            file_system::sidebar::save_favorites
         ])
         .events(tauri_specta::collect_events![
             file_system::directory::DirectoryChanged,

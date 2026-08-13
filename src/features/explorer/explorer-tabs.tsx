@@ -3,6 +3,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, XIcon } from "lucide-react";
 
 import { WindowControls } from "@/components/window-controls";
+import { Sidebar } from "@/features/sidebar/sidebar";
 import { cn } from "@/lib/utils";
 
 import { ExplorerView } from "./explorer-view";
@@ -86,8 +87,11 @@ export function ExplorerTabs() {
         <WindowControls />
       </header>
 
-      <div className="min-h-0 flex-1">
-        <ExplorerView key={activeTabId} navigator={getTabNavigator(activeTabId)} />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar />
+        <div className="min-h-0 min-w-0 flex-1">
+          <ExplorerView key={activeTabId} navigator={getTabNavigator(activeTabId)} />
+        </div>
       </div>
     </div>
   );

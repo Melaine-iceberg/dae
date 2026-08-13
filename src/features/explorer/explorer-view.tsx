@@ -6,13 +6,15 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from "react";
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpIcon,
   LoaderCircleIcon,
+  PanelLeftIcon,
   RefreshCwIcon,
+  StarIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 
@@ -34,6 +36,12 @@ import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  addFavoritePathsAtom,
+  favoritesAtom,
+  sidebarVisibleAtom,
+  toggleFavoriteAtom,
+} from "@/features/sidebar/sidebar-atoms";
 import { cn } from "@/lib/utils";
 
 import { DirectorySearch, useDirectorySearch } from "./directory-search";
@@ -63,6 +71,10 @@ type ExternalDrop = { sourcePaths: string[]; targetPath: string | null };
 export function ExplorerView({ navigator }: ExplorerViewProps) {
   const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
   const [clipboard, setClipboard] = useAtom(fileClipboardAtom);
+  const favorites = useAtomValue(favoritesAtom) ?? [];
+  const toggleFavorite = useSetAtom(toggleFavoriteAtom);
+  const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
+  const [sidebarVisible, setSidebarVisible] = useAtom(sidebarVisibleAtom);
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
   const [renameTarget, setRenameTarget] = useState<DirectoryEntry | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -400,17 +412,15 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     setOperationError(null);
     const sourcePath = renameTarget.path;
 
-    void performFileOperation(() => commands.renameEntry(sourcePath, nextName)).then(
-      (result) => {
-        if (!result.ok) {
-          setRenameError(result.error);
-          return;
-        }
+    void performFileOperation(() => commands.renameEntry(sourcePath, nextName)).then((result) => {
+      if (!result.ok) {
+        setRenameError(result.error);
+        return;
+      }
 
-        setRenameTarget(null);
-        setSelectedPaths([]);
-      },
-    );
+      setRenameTarget(null);
+      setSelectedPaths([]);
+    });
   };
 
   const requestCreate = useCallback(
@@ -507,6 +517,9 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     [navigator],
   );
 
+  const isCurrentFavorited =
+    directory !== null && favorites.some((favorite) => favorite.path === directory.path);
+
   return (
     <main className="h-full bg-background">
       <section className="flex h-full w-full flex-col overflow-hidden">
@@ -515,6 +528,16 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
           data-tauri-drag-region="deep"
         >
           <div className="flex shrink-0 items-center gap-0.5">
+            <Button
+              aria-label={sidebarVisible ? "隐藏侧边栏" : "显示侧边栏"}
+              onClick={() => setSidebarVisible(!sidebarVisible)}
+              size="icon-sm"
+              title={sidebarVisible ? "隐藏侧边栏" : "显示侧边栏"}
+              type="button"
+              variant="ghost"
+            >
+              <PanelLeftIcon />
+            </Button>
             <Button
               aria-label="后退"
               disabled={!canGoBack}
@@ -558,6 +581,23 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               variant="ghost"
             >
               <RefreshCwIcon className={cn(isLoading && "animate-spin")} />
+            </Button>
+            <Button
+              aria-label={isCurrentFavorited ? "取消收藏当前目录" : "收藏当前目录"}
+              disabled={!directory}
+              onClick={() =>
+                directory &&
+                toggleFavorite({
+                  path: directory.path,
+                  name: directory.breadcrumbs.at(-1)?.name ?? directory.path,
+                })
+              }
+              size="icon-sm"
+              title={isCurrentFavorited ? "取消收藏当前目录" : "收藏当前目录"}
+              type="button"
+              variant="ghost"
+            >
+              <StarIcon className={cn(isCurrentFavorited && "fill-amber-400 text-amber-500")} />
             </Button>
           </div>
 
@@ -616,6 +656,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             initialScrollOffset={search.isActive ? 0 : navigator.getScrollOffset(directory.path)}
             isLoading={isLoading}
             isOperationPending={isOperationPending}
+            onAddToFavorites={addFavoritePaths}
             onCopy={copySelection}
             onCreateDirectory={() => requestCreate("directory")}
             onCreateFile={() => requestCreate("file")}

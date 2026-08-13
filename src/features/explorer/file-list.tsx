@@ -22,6 +22,7 @@ import {
   SearchXIcon,
   ScissorsIcon,
   ShapesIcon,
+  StarIcon,
   Trash2Icon,
   TriangleAlertIcon,
   type LucideIcon,
@@ -57,6 +58,7 @@ import { cn } from "@/lib/utils";
 import {
   canDropEntries,
   getExplorerDropTargetAtPoint,
+  isOverSidebarFavoritesAtPoint,
   type FileTransferOperation,
 } from "./drag-drop";
 import type { DirectoryEntry, EntryKind } from "./types";
@@ -70,6 +72,7 @@ interface FileListProps {
   initialScrollOffset?: number;
   isLoading: boolean;
   isOperationPending: boolean;
+  onAddToFavorites: (paths: string[]) => void;
   onCopy: () => void;
   onCreateDirectory: () => void;
   onCreateFile: () => void;
@@ -127,12 +130,14 @@ const FILE_SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 const ROW_HEIGHT = 48;
 const DRAG_START_DISTANCE_PX = 6;
 
+type InternalDragTarget = { kind: "directory"; path: string } | { kind: "favorites" };
+
 type InternalDragState = {
   operation: FileTransferOperation;
   pointerId: number;
   position: { x: number; y: number };
   sourcePaths: string[];
-  targetPath: string | null;
+  target: InternalDragTarget | null;
 };
 
 type DragCandidate = {
@@ -141,6 +146,45 @@ type DragCandidate = {
   startY: number;
   sourcePaths: string[];
 };
+
+function resolveDragTarget(
+  entries: DirectoryEntry[],
+  sourcePaths: string[],
+  x: number,
+  y: number,
+): InternalDragTarget | null {
+  if (
+    draggableDirectoryPaths(entries, sourcePaths).length > 0 &&
+    isOverSidebarFavoritesAtPoint(x, y)
+  ) {
+    return { kind: "favorites" };
+  }
+
+  const targetPath = getExplorerDropTargetAtPoint(x, y);
+  if (targetPath && canDropEntries(sourcePaths, targetPath)) {
+    return { kind: "directory", path: targetPath };
+  }
+
+  return null;
+}
+
+function targetsAreEqual(
+  left: InternalDragTarget | null,
+  right: InternalDragTarget | null,
+): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.kind !== right.kind) return false;
+
+  return left.kind === "favorites" || left.path === (right as { path: string }).path;
+}
+
+function draggableDirectoryPaths(entries: DirectoryEntry[], sourcePaths: string[]): string[] {
+  const directoryPaths = new Set(
+    entries.filter((entry) => entry.kind === "directory").map((entry) => entry.path),
+  );
+
+  return sourcePaths.filter((path) => directoryPaths.has(path));
+}
 
 export function FileList({
   currentDirectoryPath,
@@ -151,6 +195,7 @@ export function FileList({
   initialScrollOffset = 0,
   isLoading,
   isOperationPending,
+  onAddToFavorites,
   onCopy,
   onCreateDirectory,
   onCreateFile,
@@ -171,6 +216,8 @@ export function FileList({
   const dragCandidateRef = useRef<DragCandidate | null>(null);
   const internalDragRef = useRef<InternalDragState | null>(null);
   const suppressNextClickRef = useRef(false);
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
   const [internalDrag, setInternalDrag] = useState<InternalDragState | null>(null);
   const selectedPathSet = new Set(selectedPaths);
   const listIsLoading = isLoading || searchState?.isSearching === true;
@@ -253,9 +300,12 @@ export function FileList({
       if (!isDragging && Math.hypot(distanceX, distanceY) < DRAG_START_DISTANCE_PX) return;
 
       const operation: FileTransferOperation = event.ctrlKey || event.metaKey ? "copy" : "move";
-      const targetPath = getExplorerDropTargetAtPoint(event.clientX, event.clientY);
-      const nextTargetPath =
-        targetPath && canDropEntries(candidate.sourcePaths, targetPath) ? targetPath : null;
+      const nextTarget = resolveDragTarget(
+        entriesRef.current,
+        candidate.sourcePaths,
+        event.clientX,
+        event.clientY,
+      );
       const previousDrag = internalDragRef.current;
 
       if (
@@ -263,7 +313,7 @@ export function FileList({
         previousDrag.position.x === event.clientX &&
         previousDrag.position.y === event.clientY &&
         previousDrag.operation === operation &&
-        previousDrag.targetPath === nextTargetPath
+        targetsAreEqual(previousDrag.target, nextTarget)
       ) {
         return;
       }
@@ -274,7 +324,7 @@ export function FileList({
         pointerId: candidate.pointerId,
         position: { x: event.clientX, y: event.clientY },
         sourcePaths: candidate.sourcePaths,
-        targetPath: nextTargetPath,
+        target: nextTarget,
       });
     };
 
@@ -285,8 +335,10 @@ export function FileList({
 
       if (activeDrag) {
         suppressNextClickRef.current = true;
-        if (activeDrag.targetPath) {
-          onDropEntries(activeDrag.sourcePaths, activeDrag.targetPath, activeDrag.operation);
+        if (activeDrag.target?.kind === "directory") {
+          onDropEntries(activeDrag.sourcePaths, activeDrag.target.path, activeDrag.operation);
+        } else if (activeDrag.target?.kind === "favorites") {
+          onAddToFavorites(draggableDirectoryPaths(entriesRef.current, activeDrag.sourcePaths));
         }
       }
 
@@ -301,7 +353,7 @@ export function FileList({
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", stopDragging);
     };
-  }, [onDropEntries]);
+  }, [onAddToFavorites, onDropEntries]);
 
   const selectEntry = (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => {
     if (actionsDisabled) return;
@@ -388,130 +440,149 @@ export function FileList({
           />
         }
       >
-      <div className="flex h-10 shrink-0 items-center justify-between border-b px-4">
-        <h1
-          className="min-w-0 truncate text-sm font-medium"
-          title={searchState ? `“${searchState.query}”的搜索结果` : undefined}
-        >
-          {searchState ? `搜索：“${searchState.query}”` : "文件"}
-        </h1>
-        <p aria-live="polite" className="shrink-0 text-xs text-muted-foreground">
-          {listIsLoading
-            ? searchState
-              ? "正在搜索…"
-              : "正在读取…"
-            : searchState?.error
-              ? "搜索失败"
-              : `${entries.length} 个${searchState ? "匹配项" : "项目"}${searchState?.truncated ? "，结果已截断" : ""}${selectedCount ? `，已选择 ${selectedCount} 个` : ""}`}
-        </p>
-      </div>
+        <div className="flex h-10 shrink-0 items-center justify-between border-b px-4">
+          <h1
+            className="min-w-0 truncate text-sm font-medium"
+            title={searchState ? `“${searchState.query}”的搜索结果` : undefined}
+          >
+            {searchState ? `搜索：“${searchState.query}”` : "文件"}
+          </h1>
+          <p aria-live="polite" className="shrink-0 text-xs text-muted-foreground">
+            {listIsLoading
+              ? searchState
+                ? "正在搜索…"
+                : "正在读取…"
+              : searchState?.error
+                ? "搜索失败"
+                : `${entries.length} 个${searchState ? "匹配项" : "项目"}${searchState?.truncated ? "，结果已截断" : ""}${selectedCount ? `，已选择 ${selectedCount} 个` : ""}`}
+          </p>
+        </div>
 
-      {entries.length === 0 && !listIsLoading ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              {searchState ? (
-                searchState.error ? (
-                  <TriangleAlertIcon />
+        {entries.length === 0 && !listIsLoading ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                {searchState ? (
+                  searchState.error ? (
+                    <TriangleAlertIcon />
+                  ) : (
+                    <SearchXIcon />
+                  )
                 ) : (
-                  <SearchXIcon />
-                )
-              ) : (
-                <FolderOpenIcon />
-              )}
-            </EmptyMedia>
-            <EmptyTitle>
-              {searchState
-                ? searchState.error
-                  ? "搜索未完成"
-                  : "没有找到匹配项"
-                : "这个文件夹是空的"}
-            </EmptyTitle>
-            <EmptyDescription>
-              {searchState
-                ? (searchState.error ??
-                  `当前目录及子目录中没有名称包含“${searchState.query}”的文件或文件夹。`)
-                : "此位置暂时没有文件或子文件夹。"}
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <div
-          ref={scrollRef}
-          className="min-h-0 flex-1 overflow-auto"
-          onScroll={(event) => onScrollOffsetChange?.(event.currentTarget.scrollTop)}
-        >
-          <div className="min-w-160">
-            <div className="flex h-10 items-center whitespace-nowrap border-b text-sm font-medium text-foreground">
-              <div className="min-w-0 flex-1 px-2">名称</div>
-              <div className="w-44 px-2">修改日期</div>
-              <div className="w-28 px-2">类型</div>
-              <div className="w-24 px-2 text-right">大小</div>
-            </div>
-            <div
-              aria-multiselectable="true"
-              className="relative"
-              role="listbox"
-              style={{ height: virtualizer.getTotalSize() }}
-            >
-              {virtualizer.getVirtualItems().map((virtualRow) => {
-                const entry = entries[virtualRow.index];
+                  <FolderOpenIcon />
+                )}
+              </EmptyMedia>
+              <EmptyTitle>
+                {searchState
+                  ? searchState.error
+                    ? "搜索未完成"
+                    : "没有找到匹配项"
+                  : "这个文件夹是空的"}
+              </EmptyTitle>
+              <EmptyDescription>
+                {searchState
+                  ? (searchState.error ??
+                    `当前目录及子目录中没有名称包含“${searchState.query}”的文件或文件夹。`)
+                  : "此位置暂时没有文件或子文件夹。"}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <div
+            ref={scrollRef}
+            className="min-h-0 flex-1 overflow-auto"
+            onScroll={(event) => onScrollOffsetChange?.(event.currentTarget.scrollTop)}
+          >
+            <div className="min-w-160">
+              <div className="flex h-10 items-center whitespace-nowrap border-b text-sm font-medium text-foreground">
+                <div className="min-w-0 flex-1 px-2">名称</div>
+                <div className="w-44 px-2">修改日期</div>
+                <div className="w-28 px-2">类型</div>
+                <div className="w-24 px-2 text-right">大小</div>
+              </div>
+              <div
+                aria-multiselectable="true"
+                className="relative"
+                role="listbox"
+                style={{ height: virtualizer.getTotalSize() }}
+              >
+                {virtualizer.getVirtualItems().map((virtualRow) => {
+                  const entry = entries[virtualRow.index];
 
-                return (
-                  <div
-                    key={entry.path}
-                    className="absolute inset-x-0 top-0"
-                    style={{ transform: `translateY(${virtualRow.start}px)` }}
-                  >
-                    <FileListRow
-                      entry={entry}
-                      isActionDisabled={actionsDisabled}
-                      isDragging={internalDrag?.sourcePaths.includes(entry.path) ?? false}
-                      isDropTarget={
-                        internalDrag?.targetPath === entry.path ||
-                        externalDropTargetPath === entry.path
-                      }
-                      isLast={virtualRow.index === entries.length - 1}
-                      isSelected={selectedPathSet.has(entry.path)}
-                      isSingleSelection={selectedCount === 1}
-                      onContextMenu={() => selectForContextMenu(entry, virtualRow.index)}
-                      onCopy={onCopy}
-                      onCut={onCut}
-                      onDelete={onDelete}
-                      onOpen={() => openEntry(entry)}
-                      onPointerDown={(event) => prepareInternalDrag(entry, event)}
-                      onRename={onRename}
-                      onSelect={(event) => {
-                        if (suppressNextClickRef.current) {
-                          suppressNextClickRef.current = false;
-                          return;
+                  return (
+                    <div
+                      key={entry.path}
+                      className="absolute inset-x-0 top-0"
+                      style={{ transform: `translateY(${virtualRow.start}px)` }}
+                    >
+                      <FileListRow
+                        entry={entry}
+                        isActionDisabled={actionsDisabled}
+                        isDragging={internalDrag?.sourcePaths.includes(entry.path) ?? false}
+                        isDropTarget={
+                          (internalDrag?.target?.kind === "directory" &&
+                            internalDrag.target.path === entry.path) ||
+                          externalDropTargetPath === entry.path
                         }
-                        selectEntry(entry, virtualRow.index, event);
-                      }}
-                    />
-                  </div>
-                );
-              })}
+                        isLast={virtualRow.index === entries.length - 1}
+                        isSelected={selectedPathSet.has(entry.path)}
+                        isSingleSelection={selectedCount === 1}
+                        onAddToFavorites={() =>
+                          onAddToFavorites(
+                            draggableDirectoryPaths(
+                              entries,
+                              selectedPathSet.has(entry.path) ? selectedPaths : [entry.path],
+                            ),
+                          )
+                        }
+                        onContextMenu={() => selectForContextMenu(entry, virtualRow.index)}
+                        onCopy={onCopy}
+                        onCut={onCut}
+                        onDelete={onDelete}
+                        onOpen={() => openEntry(entry)}
+                        onPointerDown={(event) => prepareInternalDrag(entry, event)}
+                        onRename={onRename}
+                        onSelect={(event) => {
+                          if (suppressNextClickRef.current) {
+                            suppressNextClickRef.current = false;
+                            return;
+                          }
+                          selectEntry(entry, virtualRow.index, event);
+                        }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      {externalDropItemCount > 0 && (
-        <div className="pointer-events-none absolute inset-3 flex items-center justify-center rounded-xl border-2 border-dashed border-primary/60 bg-accent/80 text-sm font-medium text-accent-foreground">
-          松开以复制 {externalDropItemCount} 个项目
-        </div>
-      )}
-      {internalDrag && (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-lg border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg"
-          style={{ left: internalDrag.position.x + 14, top: internalDrag.position.y + 14 }}
-        >
-          {internalDrag.operation === "copy" ? <CopyIcon /> : <ScissorsIcon />}
-          {internalDrag.operation === "copy" ? "复制" : "移动"} {internalDrag.sourcePaths.length}{" "}
-          个项目
-        </div>
-      )}
+        )}
+        {externalDropItemCount > 0 && (
+          <div className="pointer-events-none absolute inset-3 flex items-center justify-center rounded-xl border-2 border-dashed border-primary/60 bg-accent/80 text-sm font-medium text-accent-foreground">
+            松开以复制 {externalDropItemCount} 个项目
+          </div>
+        )}
+        {internalDrag && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-lg border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg"
+            style={{ left: internalDrag.position.x + 14, top: internalDrag.position.y + 14 }}
+          >
+            {internalDrag.target?.kind === "favorites" ? (
+              <>
+                <StarIcon />
+                添加 {draggableDirectoryPaths(entries, internalDrag.sourcePaths).length}{" "}
+                个文件夹到收藏
+              </>
+            ) : (
+              <>
+                {internalDrag.operation === "copy" ? <CopyIcon /> : <ScissorsIcon />}
+                {internalDrag.operation === "copy" ? "复制" : "移动"}{" "}
+                {internalDrag.sourcePaths.length} 个项目
+              </>
+            )}
+          </div>
+        )}
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuGroup>
@@ -545,6 +616,7 @@ function FileListRow({
   isLast,
   isSelected,
   isSingleSelection,
+  onAddToFavorites,
   onContextMenu,
   onCopy,
   onCut,
@@ -561,6 +633,7 @@ function FileListRow({
   isLast: boolean;
   isSelected: boolean;
   isSingleSelection: boolean;
+  onAddToFavorites: () => void;
   onContextMenu: () => void;
   onCopy: () => void;
   onCut: () => void;
@@ -629,6 +702,12 @@ function FileListRow({
             打开
             <ContextMenuShortcut>Enter</ContextMenuShortcut>
           </ContextMenuItem>
+          {entry.kind === "directory" && (
+            <ContextMenuItem disabled={isActionDisabled} onClick={onAddToFavorites}>
+              <StarIcon />
+              添加到收藏
+            </ContextMenuItem>
+          )}
           <ContextMenuItem disabled={isActionDisabled || !isSingleSelection} onClick={onRename}>
             <PencilIcon />
             重命名

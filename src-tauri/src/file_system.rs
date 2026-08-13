@@ -3,6 +3,7 @@ pub mod error;
 pub mod operations;
 pub mod progress;
 pub mod search;
+pub mod sidebar;
 
 #[cfg(test)]
 mod tests;

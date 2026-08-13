@@ -2,6 +2,7 @@ export type FileTransferOperation = "copy" | "move";
 
 const DIRECTORY_DROP_TARGET_SELECTOR = "[data-explorer-directory-drop-target]";
 const DROP_TARGET_SELECTOR = "[data-explorer-drop-target]";
+const SIDEBAR_FAVORITES_DROP_TARGET_SELECTOR = "[data-sidebar-favorites-drop-target]";
 
 export function getExplorerDropTargetAtPoint(x: number, y: number): string | null {
   const element = document.elementFromPoint(x, y);
@@ -13,6 +14,14 @@ export function getExplorerDropTargetAtPoint(x: number, y: number): string | nul
   }
 
   return element.closest<HTMLElement>(DROP_TARGET_SELECTOR)?.dataset.explorerDropTarget ?? null;
+}
+
+export function isOverSidebarFavoritesAtPoint(x: number, y: number): boolean {
+  const element = document.elementFromPoint(x, y);
+  return (
+    element instanceof HTMLElement &&
+    element.closest(SIDEBAR_FAVORITES_DROP_TARGET_SELECTOR) !== null
+  );
 }
 
 export function canDropEntries(sourcePaths: string[], destinationPath: string): boolean {
