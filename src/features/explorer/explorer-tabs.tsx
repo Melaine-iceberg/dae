@@ -49,7 +49,7 @@ export function ExplorerTabs() {
     <div className="flex h-full flex-col">
       <header
         className="flex h-10 shrink-0 items-stretch border-b bg-muted/40"
-        data-tauri-drag-region
+        data-tauri-drag-region="deep"
       >
         <StripScrollButton
           aria-label="向左滚动标签页"

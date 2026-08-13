@@ -503,7 +503,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       <section className="flex h-full w-full flex-col overflow-hidden">
         <header
           className="flex h-14 shrink-0 items-center gap-1 border-b px-2 sm:px-3"
-          data-tauri-drag-region
+          data-tauri-drag-region="deep"
         >
           <div className="flex shrink-0 items-center gap-0.5">
             <Button
