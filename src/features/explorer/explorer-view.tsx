@@ -8,15 +8,15 @@ import {
 } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
+  ArrowClockwiseIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpIcon,
-  LoaderCircleIcon,
-  PanelLeftIcon,
-  RefreshCwIcon,
+  CircleNotchIcon,
+  SidebarSimpleIcon,
   StarIcon,
-  TriangleAlertIcon,
-} from "lucide-react";
+  WarningIcon,
+} from "@phosphor-icons/react";
 
 import { commands, events } from "@/bindings";
 
@@ -536,7 +536,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               type="button"
               variant="ghost"
             >
-              <PanelLeftIcon />
+              <SidebarSimpleIcon />
             </Button>
             <Button
               aria-label="后退"
@@ -580,7 +580,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               type="button"
               variant="ghost"
             >
-              <RefreshCwIcon className={cn(isLoading && "animate-spin")} />
+              <ArrowClockwiseIcon className={cn(isLoading && "animate-spin")} />
             </Button>
             <Button
               aria-label={isCurrentFavorited ? "从常用位置移除当前目录" : "将当前目录添加到常用位置"}
@@ -629,7 +629,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         {operationError && (
           <div className="shrink-0 p-3 pb-0">
             <Alert variant="destructive">
-              <TriangleAlertIcon />
+              <WarningIcon />
               <AlertTitle>文件操作未完成</AlertTitle>
               <AlertDescription>{operationError}</AlertDescription>
               <AlertAction>
@@ -750,7 +750,7 @@ function FileOperationStatusBar({ progress }: { progress: FileOperationProgress 
 
   return (
     <footer aria-live="polite" className="flex shrink-0 items-center gap-3 border-t px-4 py-2">
-      <LoaderCircleIcon
+      <CircleNotchIcon
         className={cn(
           "size-4 text-muted-foreground",
           progress.phase !== "completed" && "animate-spin",
@@ -935,7 +935,7 @@ function DeleteDialog({
 function ExplorerErrorAlert({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <Alert variant="destructive">
-      <TriangleAlertIcon />
+      <WarningIcon />
       <AlertTitle>无法读取此位置</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
       <AlertAction>

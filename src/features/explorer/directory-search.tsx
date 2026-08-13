@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { LoaderCircleIcon, SearchIcon, XIcon } from "lucide-react";
+import { CircleNotchIcon, MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
 
 import {
   InputGroup,
@@ -149,11 +149,11 @@ export function DirectorySearch({
         value={search.query}
       />
       <InputGroupAddon align="inline-start">
-        <SearchIcon />
+        <MagnifyingGlassIcon />
       </InputGroupAddon>
       {(search.isSearching || search.query) && (
         <InputGroupAddon align="inline-end">
-          {search.isSearching && <LoaderCircleIcon className="animate-spin" />}
+          {search.isSearching && <CircleNotchIcon className="animate-spin" />}
           {search.query && (
             <InputGroupButton
               aria-label="清除搜索"

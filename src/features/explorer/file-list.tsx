@@ -5,28 +5,24 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useAtom, useAtomValue } from "jotai";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
-  ClipboardCopyIcon,
-  ClipboardPasteIcon,
+  ClipboardIcon,
+  ColumnsIcon,
   CopyIcon,
-  FileIcon,
-  FilePlus2Icon,
-  FolderIcon,
+  FilePlusIcon,
   FolderOpenIcon,
   FolderPlusIcon,
-  LinkIcon,
-  PencilIcon,
-  SearchXIcon,
+  ListIcon,
+  MagnifyingGlassIcon,
+  RowsIcon,
   ScissorsIcon,
-  ShapesIcon,
+  SquaresFourIcon,
   StarIcon,
-  Trash2Icon,
-  TriangleAlertIcon,
-  type LucideIcon,
-} from "lucide-react";
+  WarningIcon,
+} from "@phosphor-icons/react";
 
 import {
   ContextMenu,
@@ -37,6 +33,13 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Empty,
   EmptyDescription,
@@ -61,7 +64,18 @@ import {
   isOverSidebarFavoritesAtPoint,
   type FileTransferOperation,
 } from "./drag-drop";
-import type { DirectoryEntry, EntryKind } from "./types";
+import { EntryContextMenuContent } from "./entry-context-menu";
+import { FileColumnView } from "./file-column-view";
+import {
+  DIRECTORY_PRESENTATION,
+  getFilePresentation,
+  OTHER_PRESENTATION,
+  SYMLINK_PRESENTATION,
+} from "./file-icons";
+import { FileGridView } from "./file-grid-view";
+import { DENSITY_ROW_HEIGHT, densityAtom, viewModeAtom } from "./preferences";
+import { SelectionToolbar } from "./selection-toolbar";
+import type { DirectoryEntry } from "./types";
 
 interface FileListProps {
   currentDirectoryPath: string;
@@ -100,18 +114,6 @@ interface FileListSearchState {
   truncated: boolean;
 }
 
-interface EntryPresentation {
-  icon: LucideIcon;
-  label: string;
-}
-
-const ENTRY_PRESENTATION: Record<EntryKind, EntryPresentation> = {
-  directory: { icon: FolderIcon, label: "文件夹" },
-  file: { icon: FileIcon, label: "文件" },
-  symlink: { icon: LinkIcon, label: "符号链接" },
-  other: { icon: ShapesIcon, label: "其他" },
-};
-
 const MODIFIED_DATE_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   year: "numeric",
   month: "numeric",
@@ -127,7 +129,6 @@ const FILE_SIZE_FORMATTER = new Intl.NumberFormat("zh-CN", {
 
 const FILE_SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
-const ROW_HEIGHT = 48;
 const DRAG_START_DISTANCE_PX = 6;
 
 type InternalDragTarget = { kind: "directory"; path: string } | { kind: "favorites" };
@@ -186,6 +187,19 @@ function draggableDirectoryPaths(entries: DirectoryEntry[], sourcePaths: string[
   return sourcePaths.filter((path) => directoryPaths.has(path));
 }
 
+function getEntryPresentation(entry: DirectoryEntry) {
+  switch (entry.kind) {
+    case "directory":
+      return DIRECTORY_PRESENTATION;
+    case "symlink":
+      return SYMLINK_PRESENTATION;
+    case "other":
+      return OTHER_PRESENTATION;
+    default:
+      return getFilePresentation(entry.name);
+  }
+}
+
 export function FileList({
   currentDirectoryPath,
   entries,
@@ -219,14 +233,18 @@ export function FileList({
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
   const [internalDrag, setInternalDrag] = useState<InternalDragState | null>(null);
+  const [viewMode, setViewMode] = useAtom(viewModeAtom);
+  const density = useAtomValue(densityAtom);
+  const rowHeight = DENSITY_ROW_HEIGHT[density];
   const selectedPathSet = new Set(selectedPaths);
   const listIsLoading = isLoading || searchState?.isSearching === true;
   const actionsDisabled = listIsLoading || isOperationPending;
   const selectedCount = selectedPaths.length;
+  const activeViewMode = viewMode === "column" && searchState ? "list" : viewMode;
   const virtualizer = useVirtualizer({
     count: entries.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     initialOffset: initialScrollOffset,
     overscan: 10,
   });
@@ -241,6 +259,11 @@ export function FileList({
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing || isEditableElement(event.target)) return;
+
+      if (event.key === "Escape" && selectedCount > 0) {
+        onSelectedPathsChange([]);
+        return;
+      }
 
       const hasModifier = event.ctrlKey || event.metaKey;
       const key = event.key.toLowerCase();
@@ -277,7 +300,17 @@ export function FileList({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [actionsDisabled, hasClipboard, onCopy, onCut, onDelete, onPaste, onRename, selectedCount]);
+  }, [
+    actionsDisabled,
+    hasClipboard,
+    onCopy,
+    onCut,
+    onDelete,
+    onPaste,
+    onRename,
+    onSelectedPathsChange,
+    selectedCount,
+  ]);
 
   useEffect(() => {
     const updateDrag = (nextDrag: InternalDragState | null) => {
@@ -361,7 +394,7 @@ export function FileList({
     const isToggleSelection = event.ctrlKey || event.metaKey;
     const anchorIndex = selectionAnchorIndexRef.current;
 
-    if (event.shiftKey && anchorIndex !== null) {
+    if (event.shiftKey && anchorIndex !== null && index >= 0) {
       const [start, end] = [anchorIndex, index].sort((left, right) => left - right);
       const range = entries.slice(start, end + 1).map((item) => item.path);
       const nextSelection = isToggleSelection
@@ -371,7 +404,9 @@ export function FileList({
       return;
     }
 
-    selectionAnchorIndexRef.current = index;
+    if (index >= 0) {
+      selectionAnchorIndexRef.current = index;
+    }
 
     if (isToggleSelection) {
       const nextSelection = new Set(selectedPaths);
@@ -390,7 +425,9 @@ export function FileList({
   const selectForContextMenu = (entry: DirectoryEntry, index: number) => {
     if (actionsDisabled || selectedPathSet.has(entry.path)) return;
 
-    selectionAnchorIndexRef.current = index;
+    if (index >= 0) {
+      selectionAnchorIndexRef.current = index;
+    }
     onSelectedPathsChange([entry.path]);
   };
 
@@ -423,7 +460,55 @@ export function FileList({
     void openFile(entry.path);
   };
 
+  const addEntryToFavorites = (entry: DirectoryEntry) => {
+    onAddToFavorites(
+      draggableDirectoryPaths(
+        entries,
+        selectedPathSet.has(entry.path) ? selectedPaths : [entry.path],
+      ),
+    );
+  };
+
+  const draggingPaths = new Set(internalDrag?.sourcePaths ?? []);
+  const internalDropTargetPath =
+    internalDrag?.target?.kind === "directory" ? internalDrag.target.path : null;
+
   const blankMenuDisabled = actionsDisabled || Boolean(searchState);
+
+  const viewControls = {
+    actionsDisabled,
+    draggingPaths,
+    dropTargetPath: internalDropTargetPath ?? externalDropTargetPath,
+    onAddToFavorites: addEntryToFavorites,
+    onContextMenuEntry: (entry: DirectoryEntry, index = entries.indexOf(entry)) =>
+      selectForContextMenu(entry, index),
+    onCopy,
+    onCut,
+    onDelete,
+    onOpenEntry: openEntry,
+    onPointerDownEntry: prepareInternalDrag,
+    onRename,
+    onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => {
+      if (suppressNextClickRef.current) {
+        suppressNextClickRef.current = false;
+        return;
+      }
+      selectEntry(entry, index, event);
+    },
+    selectedCount,
+    selectedPathSet,
+  };
+
+  const columnControls = {
+    ...viewControls,
+    onSelectEntry: (entry: DirectoryEntry, event: ReactMouseEvent) => {
+      if (suppressNextClickRef.current) {
+        suppressNextClickRef.current = false;
+        return;
+      }
+      selectEntry(entry, entries.indexOf(entry), event);
+    },
+  };
 
   return (
     <ContextMenu disabled={blankMenuDisabled}>
@@ -440,22 +525,26 @@ export function FileList({
           />
         }
       >
-        <div className="flex h-10 shrink-0 items-center justify-between border-b px-4">
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
           <h1
             className="min-w-0 truncate text-sm font-medium"
             title={searchState ? `“${searchState.query}”的搜索结果` : undefined}
           >
             {searchState ? `搜索：“${searchState.query}”` : "文件"}
           </h1>
-          <p aria-live="polite" className="shrink-0 text-xs text-muted-foreground">
-            {listIsLoading
-              ? searchState
-                ? "正在搜索…"
-                : "正在读取…"
-              : searchState?.error
-                ? "搜索失败"
-                : `${entries.length} 个${searchState ? "匹配项" : "项目"}${searchState?.truncated ? "，结果已截断" : ""}${selectedCount ? `，已选择 ${selectedCount} 个` : ""}`}
-          </p>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <p aria-live="polite" className="text-xs whitespace-nowrap text-muted-foreground">
+              {listIsLoading
+                ? searchState
+                  ? "正在搜索…"
+                  : "正在读取…"
+                : searchState?.error
+                  ? "搜索失败"
+                  : `${entries.length} 个${searchState ? "匹配项" : "项目"}${searchState?.truncated ? "，结果已截断" : ""}`}
+            </p>
+            <ViewModeSwitcher value={activeViewMode} onChange={setViewMode} />
+            <DensitySwitcher />
+          </div>
         </div>
 
         {entries.length === 0 && !listIsLoading ? (
@@ -463,11 +552,7 @@ export function FileList({
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 {searchState ? (
-                  searchState.error ? (
-                    <TriangleAlertIcon />
-                  ) : (
-                    <SearchXIcon />
-                  )
+                  searchState.error ? <WarningIcon /> : <MagnifyingGlassIcon />
                 ) : (
                   <FolderOpenIcon />
                 )}
@@ -487,6 +572,10 @@ export function FileList({
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
+        ) : activeViewMode === "grid" ? (
+          <FileGridView {...viewControls} entries={entries} />
+        ) : activeViewMode === "column" ? (
+          <FileColumnView {...columnControls} rootEntries={entries} viewId={viewId} />
         ) : (
           <div
             ref={scrollRef}
@@ -494,11 +583,11 @@ export function FileList({
             onScroll={(event) => onScrollOffsetChange?.(event.currentTarget.scrollTop)}
           >
             <div className="min-w-160">
-              <div className="flex h-10 items-center whitespace-nowrap border-b text-sm font-medium text-foreground">
-                <div className="min-w-0 flex-1 px-2">名称</div>
-                <div className="w-44 px-2">修改日期</div>
-                <div className="w-28 px-2">类型</div>
-                <div className="w-24 px-2 text-right">大小</div>
+              <div className="grid h-9 items-center whitespace-nowrap border-b text-xs font-medium text-muted-foreground [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
+                <div className="min-w-0 px-2">名称</div>
+                <div className="px-2">修改日期</div>
+                <div className="px-2">类型</div>
+                <div className="px-2 text-right">大小</div>
               </div>
               <div
                 aria-multiselectable="true"
@@ -516,25 +605,18 @@ export function FileList({
                       style={{ transform: `translateY(${virtualRow.start}px)` }}
                     >
                       <FileListRow
+                        densityRowHeight={rowHeight}
                         entry={entry}
                         isActionDisabled={actionsDisabled}
-                        isDragging={internalDrag?.sourcePaths.includes(entry.path) ?? false}
+                        isDragging={draggingPaths.has(entry.path)}
                         isDropTarget={
-                          (internalDrag?.target?.kind === "directory" &&
-                            internalDrag.target.path === entry.path) ||
+                          internalDropTargetPath === entry.path ||
                           externalDropTargetPath === entry.path
                         }
                         isLast={virtualRow.index === entries.length - 1}
                         isSelected={selectedPathSet.has(entry.path)}
                         isSingleSelection={selectedCount === 1}
-                        onAddToFavorites={() =>
-                          onAddToFavorites(
-                            draggableDirectoryPaths(
-                              entries,
-                              selectedPathSet.has(entry.path) ? selectedPaths : [entry.path],
-                            ),
-                          )
-                        }
+                        onAddToFavorites={() => addEntryToFavorites(entry)}
                         onContextMenu={() => selectForContextMenu(entry, virtualRow.index)}
                         onCopy={onCopy}
                         onCut={onCut}
@@ -583,11 +665,22 @@ export function FileList({
             )}
           </div>
         )}
+        <SelectionToolbar
+          actionsDisabled={actionsDisabled}
+          isSingleSelection={selectedCount === 1}
+          onClear={() => onSelectedPathsChange([])}
+          onCopy={onCopy}
+          onCut={onCut}
+          onDelete={onDelete}
+          onOpenEntry={openEntry}
+          onRename={onRename}
+          selectedEntries={entries.filter((entry) => selectedPathSet.has(entry.path))}
+        />
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuGroup>
           <ContextMenuItem onClick={onCreateFile}>
-            <FilePlus2Icon />
+            <FilePlusIcon />
             新建文件
           </ContextMenuItem>
           <ContextMenuItem onClick={onCreateDirectory}>
@@ -598,7 +691,7 @@ export function FileList({
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem disabled={!hasClipboard} onClick={onPaste}>
-            <ClipboardPasteIcon />
+            <ClipboardIcon />
             粘贴
             <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
           </ContextMenuItem>
@@ -608,7 +701,76 @@ export function FileList({
   );
 }
 
+const VIEW_MODE_PRESENTATION = [
+  { icon: ListIcon, label: "列表视图", value: "list" },
+  { icon: ColumnsIcon, label: "分栏视图", value: "column" },
+  { icon: SquaresFourIcon, label: "网格视图", value: "grid" },
+] as const;
+
+function ViewModeSwitcher({
+  onChange,
+  value,
+}: {
+  onChange: (value: "list" | "grid" | "column") => void;
+  value: "list" | "grid" | "column";
+}) {
+  return (
+    <div aria-label="视图模式" className="flex items-center gap-0.5 rounded-md bg-muted p-0.5" role="group">
+      {VIEW_MODE_PRESENTATION.map(({ icon: ModeIcon, label, value: mode }) => (
+        <button
+          aria-label={label}
+          aria-pressed={value === mode}
+          className={cn(
+            "flex size-6 items-center justify-center rounded-[5px] text-muted-foreground transition-colors duration-100 hover:text-foreground",
+            value === mode && "bg-background text-foreground shadow-xs",
+          )}
+          onClick={() => onChange(mode)}
+          title={label}
+          type="button"
+        >
+          <ModeIcon size={14} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const DENSITY_PRESENTATION = [
+  { label: "紧凑", value: "compact" },
+  { label: "舒适", value: "comfortable" },
+  { label: "宽松", value: "spacious" },
+] as const;
+
+function DensitySwitcher() {
+  const [density, setDensity] = useAtom(densityAtom);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="显示密度"
+        className="flex size-7 items-center justify-center rounded-[10px] text-muted-foreground transition-colors duration-100 hover:bg-muted hover:text-foreground"
+        title="显示密度"
+      >
+        <RowsIcon size={16} />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuRadioGroup
+          onValueChange={(value) => setDensity(value as typeof density)}
+          value={density}
+        >
+          {DENSITY_PRESENTATION.map((item) => (
+            <DropdownMenuRadioItem key={item.value} value={item.value}>
+              {item.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function FileListRow({
+  densityRowHeight,
   entry,
   isActionDisabled,
   isDragging,
@@ -626,6 +788,7 @@ function FileListRow({
   onRename,
   onSelect,
 }: {
+  densityRowHeight: number;
   entry: DirectoryEntry;
   isActionDisabled: boolean;
   isDragging: boolean;
@@ -643,8 +806,9 @@ function FileListRow({
   onRename: () => void;
   onSelect: (event: ReactMouseEvent) => void;
 }) {
-  const presentation = ENTRY_PRESENTATION[entry.kind];
+  const presentation = getEntryPresentation(entry);
   const EntryIcon = presentation.icon;
+  const isDirectory = entry.kind === "directory";
 
   return (
     <ContextMenu>
@@ -652,13 +816,13 @@ function FileListRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            "flex cursor-grab items-center whitespace-nowrap text-sm transition-colors select-none hover:bg-muted/50 focus-visible:bg-muted focus-visible:outline-none",
+            "grid cursor-grab items-center whitespace-nowrap text-sm transition-colors duration-100 select-none hover:bg-accent focus-visible:bg-accent focus-visible:outline-none [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
             !isLast && "border-b",
-            isSelected && "bg-accent text-accent-foreground",
+            isSelected && "bg-selection ring-1 ring-primary/25 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-accent ring-2 ring-primary ring-inset",
           )}
-          data-explorer-directory-drop-target={entry.kind === "directory" ? entry.path : undefined}
+          data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={onSelect}
           onDoubleClick={onOpen}
           onKeyDown={(event) => {
@@ -671,10 +835,13 @@ function FileListRow({
           role="option"
           tabIndex={0}
           title={entry.path}
-          style={{ height: ROW_HEIGHT }}
+          style={{ height: densityRowHeight }}
         >
-          <div className="flex min-w-0 flex-1 items-center gap-2 p-2">
-            <EntryIcon className={cn(entry.kind !== "directory" && "text-muted-foreground")} />
+          <div className="flex min-w-0 items-center gap-2 px-2">
+            <EntryIcon
+              className={cn(isDirectory ? "text-primary" : "text-muted-foreground")}
+              size={18}
+            />
             <span className="min-w-0 truncate">{entry.name}</span>
             {entry.relativePath && (
               <span
@@ -685,10 +852,12 @@ function FileListRow({
               </span>
             )}
           </div>
-          <div className="w-44 p-2 text-muted-foreground">{formatModifiedAt(entry.modifiedAt)}</div>
-          <div className="w-28 p-2 text-muted-foreground">{presentation.label}</div>
+          <div className="px-2 text-muted-foreground">
+            {formatModifiedAt(entry.modifiedAt)}
+          </div>
+          <div className="px-2 text-muted-foreground">{presentation.label}</div>
           <div
-            className="w-24 p-2 text-right text-muted-foreground"
+            className="px-2 text-right text-muted-foreground"
             title={entry.size === null ? undefined : `${entry.size.toLocaleString("zh-CN")} 字节`}
           >
             {formatFileSize(entry.size)}
@@ -696,49 +865,17 @@ function FileListRow({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuGroup>
-          <ContextMenuItem disabled={isActionDisabled} onClick={onOpen}>
-            <FolderOpenIcon />
-            打开
-            <ContextMenuShortcut>Enter</ContextMenuShortcut>
-          </ContextMenuItem>
-          {entry.kind === "directory" && (
-            <ContextMenuItem disabled={isActionDisabled} onClick={onAddToFavorites}>
-              <StarIcon />
-              添加到常用位置
-            </ContextMenuItem>
-          )}
-          <ContextMenuItem disabled={isActionDisabled || !isSingleSelection} onClick={onRename}>
-            <PencilIcon />
-            重命名
-            <ContextMenuShortcut>F2</ContextMenuShortcut>
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => void copyEntryPath(entry.path)}>
-            <ClipboardCopyIcon />
-            复制文件地址
-          </ContextMenuItem>
-        </ContextMenuGroup>
-        <ContextMenuSeparator />
-        <ContextMenuGroup>
-          <ContextMenuItem disabled={isActionDisabled} onClick={onCopy}>
-            <CopyIcon />
-            复制
-            <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
-          </ContextMenuItem>
-          <ContextMenuItem disabled={isActionDisabled} onClick={onCut}>
-            <ScissorsIcon />
-            剪切
-            <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
-          </ContextMenuItem>
-        </ContextMenuGroup>
-        <ContextMenuSeparator />
-        <ContextMenuGroup>
-          <ContextMenuItem disabled={isActionDisabled} onClick={onDelete} variant="destructive">
-            <Trash2Icon />
-            删除
-            <ContextMenuShortcut>Delete</ContextMenuShortcut>
-          </ContextMenuItem>
-        </ContextMenuGroup>
+        <EntryContextMenuContent
+          entry={entry}
+          isActionDisabled={isActionDisabled}
+          isSingleSelection={isSingleSelection}
+          onAddToFavorites={onAddToFavorites}
+          onCopy={onCopy}
+          onCut={onCut}
+          onDelete={onDelete}
+          onOpen={onOpen}
+          onRename={onRename}
+        />
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -749,14 +886,6 @@ async function openFile(path: string): Promise<void> {
     await openPath(path);
   } catch (error) {
     console.warn(`Unable to open ${path}`, error);
-  }
-}
-
-async function copyEntryPath(path: string): Promise<void> {
-  try {
-    await writeText(path);
-  } catch (error) {
-    console.warn(`Unable to copy path ${path}`, error);
   }
 }
 

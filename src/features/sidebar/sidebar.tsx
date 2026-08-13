@@ -9,23 +9,23 @@ import {
 import { useAtomValue, useSetAtom } from "jotai";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
-  ClipboardCopyIcon,
+  ClipboardTextIcon,
   CopyIcon,
-  DownloadIcon,
+  DesktopIcon,
+  DownloadSimpleIcon,
+  FileTextIcon,
   FolderOpenIcon,
   HardDriveIcon,
   HouseIcon,
   ImageIcon,
-  MonitorIcon,
-  MusicIcon,
-  NotebookTextIcon,
+  MusicNotesIcon,
   ScissorsIcon,
   StarIcon,
-  Trash2Icon,
+  TrashIcon,
   UsbIcon,
   VideoIcon,
-  type LucideIcon,
-} from "lucide-react";
+  type Icon as PhosphorIcon,
+} from "@phosphor-icons/react";
 
 import { commands } from "@/bindings";
 
@@ -58,13 +58,13 @@ import {
 import type { DiskVolume, Favorite, PlaceKind, SystemPlace } from "./types";
 import { useDiskVolumes } from "./use-disk-volumes";
 
-const PLACE_PRESENTATION: Record<PlaceKind, { icon: LucideIcon; label: string }> = {
+const PLACE_PRESENTATION: Record<PlaceKind, { icon: PhosphorIcon; label: string }> = {
   home: { icon: HouseIcon, label: "主文件夹" },
-  desktop: { icon: MonitorIcon, label: "桌面" },
-  documents: { icon: NotebookTextIcon, label: "文档" },
-  downloads: { icon: DownloadIcon, label: "下载" },
+  desktop: { icon: DesktopIcon, label: "桌面" },
+  documents: { icon: FileTextIcon, label: "文档" },
+  downloads: { icon: DownloadSimpleIcon, label: "下载" },
   pictures: { icon: ImageIcon, label: "图片" },
-  music: { icon: MusicIcon, label: "音乐" },
+  music: { icon: MusicNotesIcon, label: "音乐" },
   videos: { icon: VideoIcon, label: "视频" },
 };
 
@@ -275,7 +275,7 @@ function FolderContextMenu({
             </ContextMenuItem>
           )}
           <ContextMenuItem onClick={() => void copyEntryPath(path)}>
-            <ClipboardCopyIcon />
+            <ClipboardTextIcon />
             复制文件地址
           </ContextMenuItem>
         </ContextMenuGroup>
@@ -299,7 +299,7 @@ function FolderContextMenu({
             <ContextMenuSeparator />
             <ContextMenuGroup>
               <ContextMenuItem onClick={onRemoveFromList}>
-                <Trash2Icon />
+                <TrashIcon />
                 从常用位置移除
               </ContextMenuItem>
             </ContextMenuGroup>
@@ -331,8 +331,8 @@ function DiskItem({
   return (
     <button
       className={cn(
-        "w-full rounded-md px-2 py-2 text-left transition-colors hover:bg-muted",
-        isActive && "bg-accent text-accent-foreground",
+        "w-full rounded-md px-2 py-2 text-left transition-colors duration-100 hover:bg-muted",
+        isActive && "bg-selection",
       )}
       onClick={() => onNavigate(volume.mountPoint)}
       title={`${presentation.primary} · ${formatBytes(volume.availableBytes)} 可用，共 ${formatBytes(volume.totalBytes)}`}
@@ -381,7 +381,7 @@ function SidebarItem({
   onClick,
   title,
 }: {
-  icon: LucideIcon;
+  icon: PhosphorIcon;
   isActive: boolean;
   label: string;
   onClick: () => void;
@@ -390,14 +390,16 @@ function SidebarItem({
   return (
     <button
       className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted",
-        isActive && "bg-accent text-accent-foreground",
+        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-100 hover:bg-muted",
+        isActive && "bg-selection",
       )}
       onClick={onClick}
       title={title}
       type="button"
     >
-      <Icon className={cn("size-4 shrink-0", !isActive && "text-muted-foreground")} />
+      <Icon
+        className={cn("size-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground")}
+      />
       <span className="min-w-0 truncate">{label}</span>
     </button>
   );

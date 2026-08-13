@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, XIcon } from "lucide-react";
+import { CaretLeftIcon, CaretRightIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
 
 import { WindowControls } from "@/components/window-controls";
 import { Sidebar } from "@/features/sidebar/sidebar";
@@ -108,7 +108,7 @@ function StripScrollButton({
   onClick: () => void;
   visible: boolean;
 }) {
-  const Icon = direction === -1 ? ChevronLeftIcon : ChevronRightIcon;
+  const Icon = direction === -1 ? CaretLeftIcon : CaretRightIcon;
 
   return (
     <button

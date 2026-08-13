@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
-import { FolderIcon } from "lucide-react";
+import { FolderIcon } from "@phosphor-icons/react";
 
 import { Input } from "@/components/ui/input";
 

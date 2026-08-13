@@ -76,7 +76,7 @@ pub fn get_system_places(app: tauri::AppHandle) -> Result<Vec<SystemPlace>, File
 #[tauri::command]
 #[specta::specta]
 pub async fn list_disks() -> Result<Vec<DiskVolume>, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(|| list_disks_sync())
+    tauri::async_runtime::spawn_blocking(list_disks_sync)
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))
 }
