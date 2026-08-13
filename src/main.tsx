@@ -8,10 +8,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { applySystemTheme } from "@/lib/theme";
 import { getAppWindow } from "@/lib/app-window";
+import { setupNativeClipboardBridge } from "@/lib/clipboard-bridge";
 
 if (import.meta.env.DEV) {
   setupDevInvoke();
 }
+
+setupNativeClipboardBridge();
 
 applySystemTheme();
 

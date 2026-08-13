@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type FormEvent, type MouseEvent } from "react";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { FolderIcon } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
@@ -54,33 +53,6 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
     }
   };
 
-  // WebView2 的原生复制不会被 Windows 剪贴板历史(Win+V)记录，
-  // 改走 clipboard-manager 插件的原生写入。
-  const copySelection = (event: ClipboardEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    const selected = input.value.slice(input.selectionStart ?? 0, input.selectionEnd ?? 0);
-    if (!selected) return;
-
-    event.preventDefault();
-    void writeText(selected);
-  };
-
-  const cutSelection = (event: ClipboardEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    const start = input.selectionStart ?? 0;
-    const end = input.selectionEnd ?? 0;
-    const selected = input.value.slice(start, end);
-    if (!selected) return;
-
-    event.preventDefault();
-    void writeText(selected);
-    setValue(input.value.slice(0, start) + input.value.slice(end));
-    setIsInvalid(false);
-    requestAnimationFrame(() => {
-      inputRef.current?.setSelectionRange(start, start);
-    });
-  };
-
   if (isEditing) {
     return (
       <form
@@ -101,8 +73,6 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
             setIsEditing(false);
             setIsInvalid(false);
           }}
-          onCopy={copySelection}
-          onCut={cutSelection}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
               setIsEditing(false);
