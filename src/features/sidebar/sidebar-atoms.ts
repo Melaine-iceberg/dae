@@ -3,9 +3,11 @@ import { atomWithStorage } from "jotai/utils";
 
 import { commands } from "@/bindings";
 
-import type { Favorite } from "./types";
+import type { Favorite, PlaceKind } from "./types";
 
 export const sidebarVisibleAtom = atomWithStorage("sidebar-visible", true);
+
+export const hiddenPlacesAtom = atomWithStorage<PlaceKind[]>("sidebar-hidden-places", []);
 
 // `null` means the favorites have not been loaded yet.
 export const favoritesAtom = atom<Favorite[] | null>(null);

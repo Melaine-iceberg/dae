@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
   DownloadIcon,
@@ -30,6 +30,7 @@ import { activeTabIdAtom, getTabNavigator } from "@/features/explorer/tabs";
 import {
   ensureFavoritesLoadedAtom,
   favoritesAtom,
+  hiddenPlacesAtom,
   removeFavoriteAtom,
   reorderFavoritesAtom,
   sidebarVisibleAtom,
@@ -58,6 +59,8 @@ function SidebarContent() {
   const [places, setPlaces] = useState<SystemPlace[]>([]);
   const favorites = useAtomValue(favoritesAtom) ?? [];
   const ensureFavoritesLoaded = useSetAtom(ensureFavoritesLoadedAtom);
+  const hiddenPlaces = useAtomValue(hiddenPlacesAtom);
+  const setHiddenPlaces = useSetAtom(hiddenPlacesAtom);
   const activeTabId = useAtomValue(activeTabIdAtom);
   const navigator = getTabNavigator(activeTabId);
   const { directory } = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
@@ -73,44 +76,54 @@ function SidebarContent() {
   }, [ensureFavoritesLoaded]);
 
   const navigateTo = useCallback((path: string) => void navigator.navigate(path), [navigator]);
+  const visiblePlaces = places.filter((place) => !hiddenPlaces.includes(place.kind));
 
   return (
     <nav aria-label="侧边栏" className="flex w-60 shrink-0 flex-col border-r bg-muted/40">
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
-        <SidebarSection title="常用位置">
-          {places.map((place) => {
-            const presentation = PLACE_PRESENTATION[place.kind];
-            return (
-              <SidebarItem
-                icon={presentation.icon}
-                isActive={currentPath === place.path}
-                key={place.kind}
-                label={presentation.label}
-                onClick={() => navigateTo(place.path)}
-                title={place.path}
-              />
-            );
-          })}
-        </SidebarSection>
+        {visiblePlaces.map((place) => {
+          const presentation = PLACE_PRESENTATION[place.kind];
+          return (
+            <ContextMenu key={place.kind}>
+              <ContextMenuTrigger>
+                <SidebarItem
+                  icon={presentation.icon}
+                  isActive={currentPath === place.path}
+                  label={presentation.label}
+                  onClick={() => navigateTo(place.path)}
+                  title={place.path}
+                />
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem
+                  onClick={() => setHiddenPlaces([...hiddenPlaces, place.kind])}
+                >
+                  <Trash2Icon />
+                  从常用位置移除
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
+          );
+        })}
 
-        <FavoritesSection currentPath={currentPath} favorites={favorites} onNavigate={navigateTo} />
+        <FavoritesList currentPath={currentPath} favorites={favorites} onNavigate={navigateTo} />
 
-        <SidebarSection title="设备">
-          {volumes.map((volume) => (
-            <DiskItem
-              isActive={currentPath === volume.mountPoint}
-              key={volume.mountPoint}
-              onNavigate={navigateTo}
-              volume={volume}
-            />
-          ))}
-        </SidebarSection>
+        <SidebarDivider />
+
+        {volumes.map((volume) => (
+          <DiskItem
+            isActive={currentPath === volume.mountPoint}
+            key={volume.mountPoint}
+            onNavigate={navigateTo}
+            volume={volume}
+          />
+        ))}
       </div>
     </nav>
   );
 }
 
-function FavoritesSection({
+function FavoritesList({
   currentPath,
   favorites,
   onNavigate,
@@ -149,69 +162,67 @@ function FavoritesSection({
   };
 
   return (
-    <SidebarSection title="收藏夹">
-      <div
-        data-sidebar-favorites-drop-target=""
-        onDragOver={(event) => {
-          if (draggedPath !== null) {
-            event.preventDefault();
-          }
-        }}
-        onDrop={(event) => {
-          if (draggedPath !== null) {
-            event.preventDefault();
-            handleDrop();
-          }
-        }}
-      >
-        {favorites.length === 0 && (
-          <p className="px-2 py-1 text-xs text-muted-foreground">
-            将文件夹拖到此处，或点击工具栏星标收藏当前目录
-          </p>
-        )}
-        {favorites.map((favorite, index) => (
-          <div key={favorite.path}>
-            {dropIndex === index && draggedPath !== null && <DropIndicator />}
-            <ContextMenu>
-              <ContextMenuTrigger
-                draggable
-                onDragEnd={resetDrag}
-                onDragOver={(event) => {
-                  if (draggedPath === null) return;
-                  event.preventDefault();
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  setDropIndex(event.clientY < rect.top + rect.height / 2 ? index : index + 1);
-                }}
-                onDragStart={(event) => {
-                  setDraggedPath(favorite.path);
-                  event.dataTransfer.effectAllowed = "move";
-                  event.dataTransfer.setData("text/plain", favorite.path);
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  handleDrop();
-                }}
-              >
-                <SidebarItem
-                  icon={StarIcon}
-                  isActive={currentPath === favorite.path}
-                  label={favorite.name}
-                  onClick={() => onNavigate(favorite.path)}
-                  title={favorite.path}
-                />
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                <ContextMenuItem onClick={() => removeFavorite(favorite.path)}>
-                  <Trash2Icon />
-                  从收藏移除
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-          </div>
-        ))}
-        {dropIndex === favorites.length && draggedPath !== null && <DropIndicator />}
-      </div>
-    </SidebarSection>
+    <div
+      data-sidebar-favorites-drop-target=""
+      onDragOver={(event) => {
+        if (draggedPath !== null) {
+          event.preventDefault();
+        }
+      }}
+      onDrop={(event) => {
+        if (draggedPath !== null) {
+          event.preventDefault();
+          handleDrop();
+        }
+      }}
+    >
+      {favorites.length === 0 && (
+        <p className="px-2 py-1 text-xs text-muted-foreground">
+          将文件夹拖到此处，或点击工具栏星标收藏当前目录
+        </p>
+      )}
+      {favorites.map((favorite, index) => (
+        <div key={favorite.path}>
+          {dropIndex === index && draggedPath !== null && <DropIndicator />}
+          <ContextMenu>
+            <ContextMenuTrigger
+              draggable
+              onDragEnd={resetDrag}
+              onDragOver={(event) => {
+                if (draggedPath === null) return;
+                event.preventDefault();
+                const rect = event.currentTarget.getBoundingClientRect();
+                setDropIndex(event.clientY < rect.top + rect.height / 2 ? index : index + 1);
+              }}
+              onDragStart={(event) => {
+                setDraggedPath(favorite.path);
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", favorite.path);
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                handleDrop();
+              }}
+            >
+              <SidebarItem
+                icon={StarIcon}
+                isActive={currentPath === favorite.path}
+                label={favorite.name}
+                onClick={() => onNavigate(favorite.path)}
+                title={favorite.path}
+              />
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem onClick={() => removeFavorite(favorite.path)}>
+                <Trash2Icon />
+                从收藏移除
+              </ContextMenuItem>
+            </ContextMenuContent>
+          </ContextMenu>
+        </div>
+      ))}
+      {dropIndex === favorites.length && draggedPath !== null && <DropIndicator />}
+    </div>
   );
 }
 
@@ -308,13 +319,8 @@ function SidebarItem({
   );
 }
 
-function SidebarSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div className="mb-3">
-      <h2 className="px-2 pb-1 text-xs font-medium text-muted-foreground">{title}</h2>
-      {children}
-    </div>
-  );
+function SidebarDivider() {
+  return <div aria-hidden="true" className="my-2 border-t" />;
 }
 
 function getDiskPresentation(volume: DiskVolume): { primary: string; secondary: string } {
