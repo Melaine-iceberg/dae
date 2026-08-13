@@ -114,6 +114,8 @@ export function ExplorerBreadcrumbs({ breadcrumbs, onNavigate }: ExplorerBreadcr
                         title="显示完整路径"
                         type="button"
                         variant="ghost"
+                        onClick={(event) => event.stopPropagation()}
+                        onPointerDown={(event) => event.stopPropagation()}
                       />
                     }
                   >
@@ -206,7 +208,15 @@ function CrumbContent({
   return (
     <BreadcrumbLink
       className="block max-w-40 truncate"
-      render={<button type="button" onClick={() => onNavigate?.(breadcrumb)} />}
+      render={
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onNavigate?.(breadcrumb);
+          }}
+        />
+      }
     >
       {breadcrumb.name}
     </BreadcrumbLink>

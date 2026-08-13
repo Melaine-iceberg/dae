@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { cn } from "@/lib/utils";
 
-const appWindow = getCurrentWindow();
+import { cn } from "@/lib/utils";
+import { getAppWindow } from "@/lib/app-window";
+
+const appWindow = getAppWindow();
 
 export function WindowControls() {
   const [maximized, setMaximized] = useState(false);
   const [focused, setFocused] = useState(true);
 
   useEffect(() => {
+    if (!appWindow) return;
     let disposed = false;
     const sync = () =>
       void appWindow.isMaximized().then((value) => {
@@ -39,7 +41,7 @@ export function WindowControls() {
       <button
         aria-label="最小化"
         className={buttonClassName}
-        onClick={() => void appWindow.minimize()}
+        onClick={() => void appWindow?.minimize()}
         title="最小化"
         type="button"
       >
@@ -51,7 +53,7 @@ export function WindowControls() {
         id="window-maximize"
         aria-label={maximized ? "向下还原" : "最大化"}
         className={buttonClassName}
-        onClick={() => void appWindow.toggleMaximize()}
+        onClick={() => void appWindow?.toggleMaximize()}
         title={maximized ? "向下还原" : "最大化"}
         type="button"
       >
@@ -62,7 +64,7 @@ export function WindowControls() {
       <button
         aria-label="关闭"
         className={cn(buttonClassName, "hover:bg-destructive hover:text-white")}
-        onClick={() => void appWindow.close()}
+        onClick={() => void appWindow?.close()}
         title="关闭"
         type="button"
       >

@@ -7,7 +7,6 @@ import {
   type FormEvent,
 } from "react";
 import { useAtom } from "jotai";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -18,6 +17,8 @@ import {
 } from "lucide-react";
 
 import { commands, events } from "@/bindings";
+
+import { getAppWindow } from "@/lib/app-window";
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -37,7 +38,7 @@ import { cn } from "@/lib/utils";
 
 import { DirectorySearch, useDirectorySearch } from "./directory-search";
 import { getExplorerDropTargetAtPoint, type FileTransferOperation } from "./drag-drop";
-import { ExplorerBreadcrumbs } from "./explorer-breadcrumbs";
+import { ExplorerPathBar } from "./explorer-path-bar";
 import { FileList, FileListSkeleton } from "./file-list";
 import type { ExplorerNavigator } from "./navigation";
 import { fileClipboardAtom } from "./tabs";
@@ -50,7 +51,7 @@ import type {
 
 const DIRECTORY_REFRESH_DELAY_MS = 150;
 const COMPLETED_OPERATION_STATUS_DURATION_MS = 900;
-const appWindow = getCurrentWindow();
+const appWindow = getAppWindow();
 
 interface ExplorerViewProps {
   navigator: ExplorerNavigator;
@@ -143,10 +144,12 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     const unlistenChangesPromise = events.explorerDirectoryChanged.listen(({ payload }) => {
       scheduleRefresh(payload);
     });
-    const unlistenFocusPromise = appWindow.onFocusChanged(({ payload: focused }) => {
-      const currentPath = navigator.getSnapshot().directory?.path;
-      if (focused && currentPath) scheduleRefresh(currentPath);
-    });
+    const unlistenFocusPromise = appWindow
+      ? appWindow.onFocusChanged(({ payload: focused }) => {
+          const currentPath = navigator.getSnapshot().directory?.path;
+          if (focused && currentPath) scheduleRefresh(currentPath);
+        })
+      : Promise.resolve(() => {});
 
     return () => {
       disposed = true;
@@ -278,6 +281,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   );
 
   useEffect(() => {
+    if (!appWindow) return;
     let disposed = false;
 
     const getTargetPath = (position: {
@@ -498,6 +502,11 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     void navigator.initialize();
   };
 
+  const navigateToPath = useCallback(
+    (path: string) => navigator.navigate(path).then((result) => result !== undefined),
+    [navigator],
+  );
+
   return (
     <main className="h-full bg-background">
       <section className="flex h-full w-full flex-col overflow-hidden">
@@ -552,11 +561,12 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             </Button>
           </div>
 
-          <div className="min-w-0 flex-1 px-2" data-tauri-drag-region>
+          <div className="min-w-0 flex-1 px-2">
             {directory ? (
-              <ExplorerBreadcrumbs
-                breadcrumbs={directory.breadcrumbs}
+              <ExplorerPathBar
+                directory={directory}
                 onNavigate={(breadcrumb) => void navigator.navigateBreadcrumb(breadcrumb)}
+                onNavigatePath={navigateToPath}
               />
             ) : (
               <Skeleton className="h-4 w-48 max-w-full" />

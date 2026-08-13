@@ -60,7 +60,7 @@ export function ExplorerTabs() {
         <div
           ref={stripRef}
           aria-label="文件标签页"
-          className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto px-1 pt-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto px-1 pt-1.5 scrollbar-none [&::-webkit-scrollbar]:hidden"
           onScroll={syncScrollButtons}
           role="tablist"
         >

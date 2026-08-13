@@ -4,10 +4,10 @@ import App from "./App";
 import "./App.css";
 
 import { setupDevInvoke } from "tauri-plugin-dev-invoke-api";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { applySystemTheme } from "@/lib/theme";
+import { getAppWindow } from "@/lib/app-window";
 
 if (import.meta.env.DEV) {
   setupDevInvoke();
@@ -27,11 +27,11 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
 
 // The window is created hidden (see tauri.conf.json); reveal it once the
 // first frame has actually painted so users never see a white flash.
-if ("__TAURI_INTERNALS__" in window) {
+const appWindow = getAppWindow();
+if (appWindow) {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      const currentWindow = getCurrentWindow();
-      void currentWindow.show().then(() => currentWindow.setFocus());
+      void appWindow.show().then(() => appWindow.setFocus());
     });
   });
 }

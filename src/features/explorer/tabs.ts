@@ -1,5 +1,6 @@
 import { atom } from "jotai";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+
+import { getAppWindow } from "@/lib/app-window";
 
 import { ExplorerNavigator } from "./navigation";
 
@@ -54,7 +55,7 @@ export const closeTabAtom = atom(null, (get, set, tabId: string) => {
   navigators.delete(tabId);
 
   if (remaining.length === 0) {
-    void getCurrentWindow().close();
+    getAppWindow()?.close();
     return;
   }
 
