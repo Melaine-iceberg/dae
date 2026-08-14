@@ -5,21 +5,16 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtomValue } from "jotai";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
   ClipboardIcon,
-  ColumnsIcon,
   CopyIcon,
   FilePlusIcon,
-  FolderOpenIcon,
+  FolderIcon,
   FolderPlusIcon,
-  ListIcon,
-  MagnifyingGlassIcon,
-  RowsIcon,
   ScissorsIcon,
-  SquaresFourIcon,
   StarIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
@@ -33,20 +28,6 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -74,7 +55,6 @@ import {
 } from "./file-icons";
 import { FileGridView } from "./file-grid-view";
 import { DENSITY_ROW_HEIGHT, densityAtom, viewModeAtom } from "./preferences";
-import { SelectionToolbar } from "./selection-toolbar";
 import type { DirectoryEntry } from "./types";
 
 interface FileListProps {
@@ -233,7 +213,7 @@ export function FileList({
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
   const [internalDrag, setInternalDrag] = useState<InternalDragState | null>(null);
-  const [viewMode, setViewMode] = useAtom(viewModeAtom);
+  const viewMode = useAtomValue(viewModeAtom);
   const density = useAtomValue(densityAtom);
   const rowHeight = DENSITY_ROW_HEIGHT[density];
   const selectedPathSet = new Set(selectedPaths);
@@ -525,53 +505,21 @@ export function FileList({
           />
         }
       >
-        <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4">
-          <h1
-            className="min-w-0 truncate text-sm font-medium"
-            title={searchState ? `“${searchState.query}”的搜索结果` : undefined}
-          >
-            {searchState ? `搜索：“${searchState.query}”` : "文件"}
-          </h1>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            <p aria-live="polite" className="text-xs whitespace-nowrap text-muted-foreground">
-              {listIsLoading
-                ? searchState
-                  ? "正在搜索…"
-                  : "正在读取…"
-                : searchState?.error
-                  ? "搜索失败"
-                  : `${entries.length} 个${searchState ? "匹配项" : "项目"}${searchState?.truncated ? "，结果已截断" : ""}`}
-            </p>
-            <ViewModeSwitcher value={activeViewMode} onChange={setViewMode} />
-            <DensitySwitcher />
-          </div>
-        </div>
-
         {entries.length === 0 && !listIsLoading ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                {searchState ? (
-                  searchState.error ? <WarningIcon /> : <MagnifyingGlassIcon />
-                ) : (
-                  <FolderOpenIcon />
-                )}
-              </EmptyMedia>
-              <EmptyTitle>
-                {searchState
-                  ? searchState.error
-                    ? "搜索未完成"
-                    : "没有找到匹配项"
-                  : "这个文件夹是空的"}
-              </EmptyTitle>
-              <EmptyDescription>
-                {searchState
-                  ? (searchState.error ??
-                    `当前目录及子目录中没有名称包含“${searchState.query}”的文件或文件夹。`)
-                  : "此位置暂时没有文件或子文件夹。"}
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center select-none">
+            {searchState?.error ? (
+              <WarningIcon className="size-5 text-muted-foreground" />
+            ) : (
+              <FolderIcon className="size-7 text-folder" weight="fill" />
+            )}
+            <p className="text-[13px] text-muted-foreground">
+              {searchState
+                ? searchState.error
+                  ? `搜索未完成：${searchState.error}`
+                  : `未找到名称包含“${searchState.query}”的项目`
+                : "此文件夹为空。"}
+            </p>
+          </div>
         ) : activeViewMode === "grid" ? (
           <FileGridView {...viewControls} entries={entries} />
         ) : activeViewMode === "column" ? (
@@ -583,11 +531,11 @@ export function FileList({
             onScroll={(event) => onScrollOffsetChange?.(event.currentTarget.scrollTop)}
           >
             <div className="min-w-160">
-              <div className="grid h-9 items-center whitespace-nowrap border-b text-xs font-medium text-muted-foreground [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
-                <div className="min-w-0 px-2">名称</div>
-                <div className="px-2">修改日期</div>
-                <div className="px-2">类型</div>
-                <div className="px-2 text-right">大小</div>
+              <div className="sticky top-0 z-10 grid h-7 shrink-0 items-center whitespace-nowrap border-b bg-card text-xs text-muted-foreground [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
+                <div className="min-w-0 truncate px-3">名称</div>
+                <div className="px-2.5">修改日期</div>
+                <div className="px-2.5">类型</div>
+                <div className="px-2.5 text-right">大小</div>
               </div>
               <div
                 aria-multiselectable="true"
@@ -613,7 +561,6 @@ export function FileList({
                           internalDropTargetPath === entry.path ||
                           externalDropTargetPath === entry.path
                         }
-                        isLast={virtualRow.index === entries.length - 1}
                         isSelected={selectedPathSet.has(entry.path)}
                         isSingleSelection={selectedCount === 1}
                         onAddToFavorites={() => addEntryToFavorites(entry)}
@@ -640,14 +587,14 @@ export function FileList({
           </div>
         )}
         {externalDropItemCount > 0 && (
-          <div className="pointer-events-none absolute inset-3 flex items-center justify-center rounded-xl border-2 border-dashed border-primary/60 bg-accent/80 text-sm font-medium text-accent-foreground">
+          <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 text-[13px] font-medium text-primary">
             松开以复制 {externalDropItemCount} 个项目
           </div>
         )}
         {internalDrag && (
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-lg border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-lg"
+            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md border bg-popover px-2.5 py-1.5 text-[13px] text-popover-foreground shadow-lg"
             style={{ left: internalDrag.position.x + 14, top: internalDrag.position.y + 14 }}
           >
             {internalDrag.target?.kind === "favorites" ? (
@@ -665,17 +612,6 @@ export function FileList({
             )}
           </div>
         )}
-        <SelectionToolbar
-          actionsDisabled={actionsDisabled}
-          isSingleSelection={selectedCount === 1}
-          onClear={() => onSelectedPathsChange([])}
-          onCopy={onCopy}
-          onCut={onCut}
-          onDelete={onDelete}
-          onOpenEntry={openEntry}
-          onRename={onRename}
-          selectedEntries={entries.filter((entry) => selectedPathSet.has(entry.path))}
-        />
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuGroup>
@@ -701,81 +637,12 @@ export function FileList({
   );
 }
 
-const VIEW_MODE_PRESENTATION = [
-  { icon: ListIcon, label: "列表视图", value: "list" },
-  { icon: ColumnsIcon, label: "分栏视图", value: "column" },
-  { icon: SquaresFourIcon, label: "网格视图", value: "grid" },
-] as const;
-
-function ViewModeSwitcher({
-  onChange,
-  value,
-}: {
-  onChange: (value: "list" | "grid" | "column") => void;
-  value: "list" | "grid" | "column";
-}) {
-  return (
-    <div aria-label="视图模式" className="flex items-center gap-0.5 rounded-md bg-muted p-0.5" role="group">
-      {VIEW_MODE_PRESENTATION.map(({ icon: ModeIcon, label, value: mode }) => (
-        <button
-          aria-label={label}
-          aria-pressed={value === mode}
-          className={cn(
-            "flex size-6 items-center justify-center rounded-[5px] text-muted-foreground transition-colors duration-100 hover:text-foreground",
-            value === mode && "bg-background text-foreground shadow-xs",
-          )}
-          onClick={() => onChange(mode)}
-          title={label}
-          type="button"
-        >
-          <ModeIcon size={14} />
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const DENSITY_PRESENTATION = [
-  { label: "紧凑", value: "compact" },
-  { label: "舒适", value: "comfortable" },
-  { label: "宽松", value: "spacious" },
-] as const;
-
-function DensitySwitcher() {
-  const [density, setDensity] = useAtom(densityAtom);
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label="显示密度"
-        className="flex size-7 items-center justify-center rounded-[10px] text-muted-foreground transition-colors duration-100 hover:bg-muted hover:text-foreground"
-        title="显示密度"
-      >
-        <RowsIcon size={16} />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuRadioGroup
-          onValueChange={(value) => setDensity(value as typeof density)}
-          value={density}
-        >
-          {DENSITY_PRESENTATION.map((item) => (
-            <DropdownMenuRadioItem key={item.value} value={item.value}>
-              {item.label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 function FileListRow({
   densityRowHeight,
   entry,
   isActionDisabled,
   isDragging,
   isDropTarget,
-  isLast,
   isSelected,
   isSingleSelection,
   onAddToFavorites,
@@ -793,7 +660,6 @@ function FileListRow({
   isActionDisabled: boolean;
   isDragging: boolean;
   isDropTarget: boolean;
-  isLast: boolean;
   isSelected: boolean;
   isSingleSelection: boolean;
   onAddToFavorites: () => void;
@@ -816,11 +682,10 @@ function FileListRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            "grid cursor-grab items-center whitespace-nowrap text-sm transition-colors duration-100 select-none hover:bg-accent focus-visible:bg-accent focus-visible:outline-none [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
-            !isLast && "border-b",
-            isSelected && "bg-selection ring-1 ring-primary/25 ring-inset",
+            "grid cursor-grab items-center rounded-[5px] whitespace-nowrap text-[13px] transition-colors select-none hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
+            isSelected && "bg-selection ring-1 ring-primary/30 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
-            isDropTarget && "bg-accent ring-2 ring-primary ring-inset",
+            isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={onSelect}
@@ -837,10 +702,11 @@ function FileListRow({
           title={entry.path}
           style={{ height: densityRowHeight }}
         >
-          <div className="flex min-w-0 items-center gap-2 px-2">
+          <div className="flex min-w-0 items-center gap-2.5 px-3">
             <EntryIcon
-              className={cn(isDirectory ? "text-primary" : "text-muted-foreground")}
+              className={cn("shrink-0", isDirectory ? "text-folder" : "text-muted-foreground")}
               size={18}
+              weight={isDirectory ? "fill" : undefined}
             />
             <span className="min-w-0 truncate">{entry.name}</span>
             {entry.relativePath && (
@@ -852,12 +718,10 @@ function FileListRow({
               </span>
             )}
           </div>
-          <div className="px-2 text-muted-foreground">
-            {formatModifiedAt(entry.modifiedAt)}
-          </div>
-          <div className="px-2 text-muted-foreground">{presentation.label}</div>
+          <div className="px-2.5 text-muted-foreground">{formatModifiedAt(entry.modifiedAt)}</div>
+          <div className="px-2.5 text-muted-foreground">{presentation.label}</div>
           <div
-            className="px-2 text-right text-muted-foreground"
+            className="px-2.5 text-right text-muted-foreground"
             title={entry.size === null ? undefined : `${entry.size.toLocaleString("zh-CN")} 字节`}
           >
             {formatFileSize(entry.size)}
@@ -933,8 +797,8 @@ function formatRelativeLocation(relativePath: string): string {
 export function FileListSkeleton() {
   return (
     <section aria-label="正在加载文件列表" className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-10 shrink-0 items-center justify-between border-b px-4">
-        <Skeleton className="h-4 w-12" />
+      <div className="flex h-7 shrink-0 items-center justify-between border-b px-3">
+        <Skeleton className="h-3.5 w-12" />
         <Skeleton className="h-3 w-16" />
       </div>
       <Table className="min-w-160 table-fixed">

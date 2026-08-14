@@ -137,10 +137,10 @@ function GridCell({
         <div
           aria-selected={isSelected}
           className={cn(
-            "flex cursor-grab flex-col items-center gap-1.5 rounded-lg px-2 py-3 text-center transition-colors duration-100 select-none hover:bg-accent focus-visible:bg-accent focus-visible:outline-none",
-            isSelected && "bg-selection ring-1 ring-primary/25 ring-inset",
+            "flex cursor-grab flex-col items-center gap-1.5 rounded-[5px] px-2 py-2.5 text-center transition-colors select-none hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none",
+            isSelected && "bg-selection ring-1 ring-primary/30 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
-            isDropTarget && "bg-accent ring-2 ring-primary ring-inset",
+            isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={onSelect}
@@ -157,8 +157,9 @@ function GridCell({
           title={entry.path}
         >
           <EntryIcon
-            className={cn("shrink-0", isDirectory ? "text-primary" : "text-muted-foreground")}
+            className={cn("shrink-0", isDirectory ? "text-folder" : "text-muted-foreground")}
             size={iconSize}
+            weight={isDirectory ? "fill" : undefined}
           />
           <span className="line-clamp-2 text-xs leading-snug break-all">{entry.name}</span>
         </div>

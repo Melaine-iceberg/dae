@@ -103,8 +103,8 @@ function SidebarContent() {
   ]);
 
   return (
-    <nav aria-label="侧边栏" className="flex w-60 shrink-0 flex-col border-r bg-muted/40">
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+    <nav aria-label="侧边栏" className="flex w-56 shrink-0 flex-col border-r bg-background">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         {visiblePlaces.map((place) => {
           const presentation = PLACE_PRESENTATION[place.kind];
           return (
@@ -196,7 +196,7 @@ function FavoritesList({
       }}
     >
       {favorites.length === 0 && (
-        <p className="px-2 py-1 text-xs text-muted-foreground">
+        <p className="px-2.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
           将文件夹拖到此处，或点击工具栏星标将当前目录加入常用位置
         </p>
       )}
@@ -281,15 +281,11 @@ function FolderContextMenu({
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
-          <ContextMenuItem
-            onClick={() => setClipboard({ operation: "copy", sourcePaths: [path] })}
-          >
+          <ContextMenuItem onClick={() => setClipboard({ operation: "copy", sourcePaths: [path] })}>
             <CopyIcon />
             复制
           </ContextMenuItem>
-          <ContextMenuItem
-            onClick={() => setClipboard({ operation: "cut", sourcePaths: [path] })}
-          >
+          <ContextMenuItem onClick={() => setClipboard({ operation: "cut", sourcePaths: [path] })}>
             <ScissorsIcon />
             剪切
           </ContextMenuItem>
@@ -331,7 +327,7 @@ function DiskItem({
   return (
     <button
       className={cn(
-        "w-full rounded-md px-2 py-2 text-left transition-colors duration-100 hover:bg-muted",
+        "w-full rounded-[5px] px-2.5 py-1.5 text-left transition-colors hover:bg-muted/70",
         isActive && "bg-selection",
       )}
       onClick={() => onNavigate(volume.mountPoint)}
@@ -345,7 +341,7 @@ function DiskItem({
           <HardDriveIcon className="size-4 shrink-0 text-muted-foreground" />
         )}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm">{presentation.primary}</div>
+          <div className="truncate text-[13px]">{presentation.primary}</div>
           <div className="truncate text-xs text-muted-foreground">{presentation.secondary}</div>
         </div>
       </div>
@@ -353,7 +349,7 @@ function DiskItem({
         aria-valuemax={100}
         aria-valuemin={0}
         aria-valuenow={usedPercent}
-        className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted"
+        className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted"
         role="progressbar"
       >
         <div
@@ -390,7 +386,7 @@ function SidebarItem({
   return (
     <button
       className={cn(
-        "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-100 hover:bg-muted",
+        "flex w-full items-center gap-2 rounded-[5px] px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-muted/70",
         isActive && "bg-selection",
       )}
       onClick={onClick}

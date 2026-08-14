@@ -53,11 +53,7 @@ interface SharedRowProps {
   selectedPathSet: Set<string>;
 }
 
-export function FileColumnView({
-  rootEntries,
-  viewId,
-  ...shared
-}: FileColumnViewProps) {
+export function FileColumnView({ rootEntries, viewId, ...shared }: FileColumnViewProps) {
   const [drillChain, setDrillChain] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -189,10 +185,10 @@ function Pane({
               <div
                 aria-selected={isSelected}
                 className={cn(
-                  "flex h-8 cursor-grab items-center gap-2 rounded-md px-2 text-sm transition-colors duration-100 select-none hover:bg-accent focus-visible:bg-accent focus-visible:outline-none",
-                  (isSelected || isExpanded) && "bg-selection ring-1 ring-primary/25 ring-inset",
+                  "flex h-8 cursor-grab items-center gap-2 rounded-[5px] px-2 text-[13px] transition-colors select-none hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none",
+                  (isSelected || isExpanded) && "bg-selection ring-1 ring-primary/30 ring-inset",
                   draggingPaths.has(entry.path) && "cursor-grabbing opacity-50",
-                  dropTargetPath === entry.path && "bg-accent ring-2 ring-primary ring-inset",
+                  dropTargetPath === entry.path && "bg-selection ring-2 ring-primary ring-inset",
                 )}
                 data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
                 onClick={(event) => {
@@ -216,8 +212,9 @@ function Pane({
                 <EntryIcon
                   className={cn(
                     "size-4 shrink-0",
-                    isDirectory ? "text-primary" : "text-muted-foreground",
+                    isDirectory ? "text-folder" : "text-muted-foreground",
                   )}
+                  weight={isDirectory ? "fill" : undefined}
                 />
                 <span className="min-w-0 flex-1 truncate">{entry.name}</span>
                 {isDirectory && (

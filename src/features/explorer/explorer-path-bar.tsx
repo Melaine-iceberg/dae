@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { FolderIcon } from "@phosphor-icons/react";
 
-import { Input } from "@/components/ui/input";
-
 import { ExplorerBreadcrumbs } from "./explorer-breadcrumbs";
+import { cn } from "@/lib/utils";
 import type { Breadcrumb, DirectoryView } from "./types";
 
 interface ExplorerPathBarProps {
@@ -56,15 +55,21 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
   if (isEditing) {
     return (
       <form
-        className="flex min-w-0 flex-1 items-center gap-2"
+        className={cn(
+          "flex h-8 min-w-0 flex-1 items-center rounded-md border bg-card pr-2 pl-2.5 transition-colors focus-within:border-ring",
+          isInvalid ? "border-destructive" : "border-input",
+        )}
         onSubmit={(event) => void submitPath(event)}
       >
-        <FolderIcon className="pointer-events-none size-4 shrink-0 text-muted-foreground" />
-        <Input
+        <FolderIcon
+          className="pointer-events-none mr-2 size-3.5 shrink-0 text-folder"
+          weight="fill"
+        />
+        <input
           ref={inputRef}
           aria-invalid={isInvalid}
           aria-label="当前路径"
-          className="h-7"
+          className="h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none"
           onChange={(event) => {
             setValue(event.target.value);
             setIsInvalid(false);
@@ -87,11 +92,15 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
 
   return (
     <div
-      className="-mx-1.5 -my-1 flex min-w-0 flex-1 cursor-default items-center rounded-md px-1.5 py-1 transition-colors hover:bg-accent/60"
+      className="flex h-8 min-w-0 flex-1 items-center rounded-md border border-input bg-card px-2.5 transition-colors hover:border-ring/60"
       data-tauri-drag-region="false"
       onClick={startEditing}
       title="单击以编辑路径"
     >
+      <FolderIcon
+        className="pointer-events-none mr-2 size-3.5 shrink-0 text-folder"
+        weight="fill"
+      />
       <ExplorerBreadcrumbs breadcrumbs={directory.breadcrumbs} onNavigate={onNavigate} />
     </div>
   );

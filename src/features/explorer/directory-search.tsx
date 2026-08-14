@@ -130,7 +130,7 @@ export function DirectorySearch({
   const scopeName = directoryName ?? "当前目录";
 
   return (
-    <InputGroup className="w-44 shrink-0 sm:w-56">
+    <InputGroup className="w-56 shrink-0">
       <InputGroupInput
         ref={inputRef}
         aria-invalid={Boolean(search.error)}
