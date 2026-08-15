@@ -28,13 +28,10 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   </QueryClientProvider>,
 );
 
-// The window is created hidden (see tauri.conf.json); reveal it once the
-// first frame has actually painted so users never see a white flash.
+// The window is created hidden (see tauri.conf.json); reveal it immediately
+// after the initial render. index.html carries the app background color, so
+// the window appears without a white flash even before the first paint.
 const appWindow = getAppWindow();
 if (appWindow) {
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      void appWindow.show().then(() => appWindow.setFocus());
-    });
-  });
+  void appWindow.show().then(() => appWindow.setFocus());
 }
