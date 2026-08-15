@@ -277,7 +277,7 @@ fn favorites_path(app: &tauri::AppHandle) -> Result<PathBuf, FileSystemError> {
 }
 
 /// Writes via a temp file + rename so readers never observe a partial document.
-fn write_atomic(path: &std::path::Path, contents: &[u8]) -> Result<(), FileSystemError> {
+pub(super) fn write_atomic(path: &std::path::Path, contents: &[u8]) -> Result<(), FileSystemError> {
     let temp_path = path.with_extension("tmp");
     fs::write(&temp_path, contents)?;
     fs::rename(&temp_path, path)?;

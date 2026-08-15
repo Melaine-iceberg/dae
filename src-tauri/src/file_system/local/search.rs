@@ -73,10 +73,7 @@ pub fn search_directory_sync(
                 }
 
                 let should_stop = {
-                    let mut entries = shared
-                        .entries
-                        .lock()
-                        .expect("search results lock poisoned");
+                    let mut entries = shared.entries.lock().expect("search results lock poisoned");
 
                     if entries.len() >= MAX_SEARCH_RESULTS {
                         true
@@ -115,11 +112,7 @@ struct SearchShared<'a> {
     is_current: &'a (dyn Fn() -> bool + Send + Sync),
 }
 
-fn build_search_entry(
-    entry: &ignore::DirEntry,
-    name: &str,
-    root: &PathBuf,
-) -> SearchEntry {
+fn build_search_entry(entry: &ignore::DirEntry, name: &str, root: &PathBuf) -> SearchEntry {
     let relative_path = entry.path().strip_prefix(root).unwrap_or(entry.path());
     let kind = entry
         .file_type()

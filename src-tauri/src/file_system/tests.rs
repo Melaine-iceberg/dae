@@ -10,7 +10,7 @@ use super::types::{
     DirectoryEntry, EntryKind, NewEntryKind, entry_sort_key, normalize_path_for_display,
     path_to_string,
 };
-use super::vfs;
+use super::vfs::{self, FileSystemBackend};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -434,24 +434,99 @@ fn rejects_unknown_and_unregistered_schemes() {
         .expect("unknown scheme");
     assert!(matches!(unknown, FileSystemError::InvalidInput(_)));
 
-    let unregistered = vfs::resolve("smb://nas/media")
+    // SMB resolves to a connect attempt these days; sftp is the scheme that
+    // still has no backend.
+    let unregistered = vfs::resolve("sftp://nas/media")
         .err()
-        .expect("no smb backend yet");
+        .expect("no sftp backend yet");
     assert!(matches!(unregistered, FileSystemError::InvalidInput(_)));
 }
 
 #[test]
-fn blocks_transfers_across_backends() {
-    vfs::ensure_same_backend(&[r"C:\source.txt".into()], r"D:\folder", "Copying")
-        .expect("same-backend transfers pass");
+fn transfers_trees_between_distinct_backend_instances() {
+    use super::local::LocalBackend;
+    use super::transfer::{self, TransferSource};
+    use std::sync::Arc;
 
-    let error = vfs::ensure_same_backend(
-        &[r"C:\source.txt".into()],
-        "smb://nas/media",
-        "Copying",
+    let root = std::env::temp_dir().join(format!("dae-transfer-test-{}", std::process::id()));
+    let source_dir = root.join("source");
+    let destination_dir = root.join("destination");
+    fs::create_dir_all(source_dir.join("nested")).expect("create source tree");
+    fs::write(source_dir.join("root.txt"), "root content").expect("write root file");
+    fs::write(source_dir.join("nested/leaf.bin"), vec![7_u8; 600 * 1024])
+        .expect("write multi-chunk file");
+    fs::create_dir_all(&destination_dir).expect("create destination");
+
+    // Two distinct Arcs force the streaming path instead of any fast path.
+    let source_backend: Arc<dyn FileSystemBackend> = Arc::new(LocalBackend);
+    let destination_backend: Arc<dyn FileSystemBackend> = Arc::new(LocalBackend);
+    let source_path = source_dir.to_string_lossy().into_owned();
+    let destination_path = destination_dir.to_string_lossy().into_owned();
+
+    let copy_progress = TestProgress::new();
+    transfer::copy_entries(
+        vec![TransferSource {
+            path: source_path.clone(),
+            backend: source_backend.clone(),
+        }],
+        &destination_path,
+        &destination_backend,
+        &copy_progress,
     )
-    .expect_err("cross-backend copy is blocked");
-    assert!(matches!(error, FileSystemError::InvalidInput(_)));
+    .expect("copy tree across backends");
+
+    let copied_root = destination_dir.join("source");
+    assert_eq!(
+        fs::read_to_string(copied_root.join("root.txt")).expect("read copied root file"),
+        "root content"
+    );
+    let leaf = fs::read(copied_root.join("nested/leaf.bin")).expect("read copied leaf");
+    assert_eq!(leaf.len(), 600 * 1024);
+    assert!(leaf.iter().all(|byte| *byte == 7));
+    assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), copy_progress.total.load(AtomicOrdering::Relaxed));
+
+    let duplicate_progress = TestProgress::new();
+    let duplicate_error = transfer::copy_entries(
+        vec![TransferSource {
+            path: source_path.clone(),
+            backend: source_backend.clone(),
+        }],
+        &destination_path,
+        &destination_backend,
+        &duplicate_progress,
+    )
+    .expect_err("overwriting must be blocked");
+    assert!(matches!(duplicate_error, FileSystemError::AlreadyExists(_)));
+
+    let move_destination_dir = root.join("destination-moved");
+    fs::create_dir_all(&move_destination_dir).expect("create move destination");
+    let move_progress = TestProgress::new();
+    transfer::move_entries(
+        vec![TransferSource {
+            path: source_path.clone(),
+            backend: source_backend.clone(),
+        }],
+        &move_destination_dir.to_string_lossy().into_owned(),
+        &destination_backend,
+        &move_progress,
+    )
+    .expect("move tree across backends");
+    assert!(!source_dir.exists());
+    assert!(move_destination_dir.join("source/nested/leaf.bin").is_file());
+    assert_eq!(move_progress.completed.load(AtomicOrdering::Relaxed), move_progress.total.load(AtomicOrdering::Relaxed));
+
+    let delete_progress = TestProgress::new();
+    transfer::delete_entries(
+        vec![TransferSource {
+            path: move_destination_dir.join("source").to_string_lossy().into_owned(),
+            backend: destination_backend.clone(),
+        }],
+        &delete_progress,
+    )
+    .expect("delete tree through engine");
+    assert!(!move_destination_dir.join("source").exists());
+
+    fs::remove_dir_all(root).expect("remove test directory");
 }
 
 #[test]
@@ -473,10 +548,81 @@ fn serves_local_paths_through_the_backend_trait() {
         .iter()
         .any(|entry| entry.name == "through-trait.txt"));
 
-    let progress = TestProgress::new();
     backend
-        .delete(&[created], &progress)
+        .remove(&created)
         .expect("delete through trait object");
 
     fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+/// Exercises the connection store through its public commands. One test
+/// function because the registry is a process-global singleton.
+#[test]
+fn saves_updates_and_deletes_connections() {
+    use super::connections::{
+        self, Protocol, SaveConnectionInput,
+    };
+
+    let config_dir =
+        std::env::temp_dir().join(format!("dae-connections-test-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&config_dir);
+    connections::use_config_dir_for_tests(config_dir.clone()).expect("initialize store");
+
+    let saved = connections::save_connection(SaveConnectionInput {
+        protocol: Protocol::Smb,
+        host: "  MyServer.Local  ".into(),
+        port: Some(445),
+        username: Some(" alice ".into()),
+        password: Some("session-only".into()),
+        // Session memory instead of the OS keychain keeps the test hermetic.
+        remember_password: false,
+    })
+    .expect("save connection");
+
+    assert_eq!(saved.id, "smb://myserver.local:445");
+    assert_eq!(saved.host, "myserver.local");
+    assert_eq!(saved.username.as_deref(), Some("alice"));
+
+    let listed = connections::list_connections().expect("list connections");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0], saved);
+
+    let persisted = fs::read_to_string(config_dir.join("connections.json"))
+        .expect("connections file exists");
+    assert!(!persisted.contains("password"), "passwords must never be persisted");
+    assert!(!persisted.contains("session-only"));
+
+    let (username, password) = connections::resolve_credentials(Protocol::Smb, "MyServer.Local", Some(445));
+    assert_eq!(username.as_deref(), Some("alice"));
+    assert_eq!(password.as_deref(), Some("session-only"));
+
+    // Saving the same server again updates in place and keeps the credential.
+    connections::save_connection(SaveConnectionInput {
+        protocol: Protocol::Smb,
+        host: "myserver.local".into(),
+        port: Some(445),
+        username: Some("bob".into()),
+        password: None,
+        remember_password: false,
+    })
+    .expect("update connection");
+
+    let listed = connections::list_connections().expect("list after update");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].username.as_deref(), Some("bob"));
+    let (_, password) = connections::resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
+    assert_eq!(password.as_deref(), Some("session-only"));
+
+    // Reopening the store reloads from disk.
+    connections::use_config_dir_for_tests(config_dir.clone()).expect("reload store");
+    let listed = connections::list_connections().expect("list after reload");
+    assert_eq!(listed.len(), 1);
+
+    connections::delete_connection("smb://myserver.local:445".into())
+        .expect("delete connection");
+    assert!(connections::list_connections().expect("list after delete").is_empty());
+    let (_, password) = connections::resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
+    assert_eq!(password, None);
+
+    fs::remove_dir_all(config_dir).expect("remove test directory");
 }

@@ -16,6 +16,7 @@ pub fn run() {
         .invoke_handler(specta.invoke_handler())
         .setup(move |app| {
             specta.mount_events(app);
+            file_system::connections::init(app.handle())?;
             Ok(())
         })
         .manage(file_system::DirectoryWatcher::default())
@@ -59,7 +60,11 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::sidebar::list_disks,
             file_system::sidebar::list_wsl_distros,
             file_system::sidebar::load_favorites,
-            file_system::sidebar::save_favorites
+            file_system::sidebar::save_favorites,
+            file_system::connections::list_connections,
+            file_system::connections::save_connection,
+            file_system::connections::delete_connection,
+            file_system::smb::test_connection
         ])
         .events(tauri_specta::collect_events![
             file_system::DirectoryChanged,

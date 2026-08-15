@@ -2,56 +2,11 @@ use crate::file_system::error::FileSystemError;
 use crate::file_system::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, entry_sort_key, path_to_string,
 };
+use crate::file_system::watch::DirectoryChanged;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use serde::Serialize;
-use specta::Type;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use tauri_specta::Event;
-
-#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
-#[tauri_specta(event_name = "explorer-directory-changed")]
-pub struct DirectoryChanged(pub String);
-
-#[derive(Default)]
-pub struct DirectoryWatcher {
-    generation: AtomicU64,
-    watcher: Mutex<Option<RecommendedWatcher>>,
-}
-
-impl DirectoryWatcher {
-    pub fn begin_update(&self) -> u64 {
-        self.generation.fetch_add(1, AtomicOrdering::AcqRel) + 1
-    }
-
-    pub fn replace(&self, generation: u64, watcher: RecommendedWatcher) -> Result<(), FileSystemError> {
-        let mut active_watcher = self.watcher.lock().map_err(|_| {
-            FileSystemError::Internal("The directory watcher lock was poisoned".into())
-        })?;
-
-        if self.generation.load(AtomicOrdering::Acquire) == generation {
-            *active_watcher = Some(watcher);
-        }
-
-        Ok(())
-    }
-
-    /// Drops the active watcher, e.g. after navigating somewhere no backend
-    /// can observe with OS file notifications.
-    pub fn clear(&self, generation: u64) -> Result<(), FileSystemError> {
-        let mut active_watcher = self.watcher.lock().map_err(|_| {
-            FileSystemError::Internal("The directory watcher lock was poisoned".into())
-        })?;
-
-        if self.generation.load(AtomicOrdering::Acquire) == generation {
-            *active_watcher = None;
-        }
-
-        Ok(())
-    }
-}
 
 pub fn create_directory_watcher(
     requested_path: PathBuf,

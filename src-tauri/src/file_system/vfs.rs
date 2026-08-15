@@ -1,7 +1,14 @@
 use super::error::FileSystemError;
 use super::local::LocalBackend;
-use super::progress::FileOperationProgressReporterTrait;
-use super::types::{DirectoryView, NewEntryKind, SearchResponse};
+use super::smb;
+use super::types::{DirectoryView, EntryStat, NewEntryKind, SearchResponse};
+use std::io::{Read, Write};
+use std::sync::Arc;
+use std::sync::LazyLock;
+
+/// A backend handle shared between the command layer, the transfer engine,
+/// and per-connection session caches.
+pub type SharedBackend = Arc<dyn FileSystemBackend>;
 
 /// Storage protocols addressable through a scheme prefix on explorer paths.
 ///
@@ -47,14 +54,17 @@ pub fn split_scheme(path: &str) -> Result<(Scheme, &str), FileSystemError> {
 }
 
 /// Returns the backend that serves `path`.
-// A single static backend serves everything today; network backends will be
-// served from a per-connection registry once the first protocol lands.
-pub fn resolve(path: &str) -> Result<&'static dyn FileSystemBackend, FileSystemError> {
-    static LOCAL: LocalBackend = LocalBackend;
+// The local backend is static; network schemes consult the connection
+// registry once the first protocol lands.
+pub fn resolve(path: &str) -> Result<SharedBackend, FileSystemError> {
+    static LOCAL: LazyLock<SharedBackend> = LazyLock::new(|| Arc::new(LocalBackend));
 
     match split_scheme(path)?.0 {
-        Scheme::Local => Ok(&LOCAL),
-        Scheme::Smb => Err(unsupported_scheme("SMB")),
+        Scheme::Local => Ok(Arc::clone(&LOCAL)),
+        Scheme::Smb => {
+            let (_, rest) = split_scheme(path)?;
+            smb::open_backend(rest)
+        }
         Scheme::Sftp => Err(unsupported_scheme("SFTP")),
         Scheme::Ftp => Err(unsupported_scheme("FTP")),
         Scheme::WebDav => Err(unsupported_scheme("WebDAV")),
@@ -65,32 +75,17 @@ fn unsupported_scheme(name: &str) -> FileSystemError {
     FileSystemError::InvalidInput(format!("{name} storage is not supported in this build"))
 }
 
-/// Blocks `operation` whose sources and destination live on different backends.
-// Extension point: a generic list/stream-based transfer engine built on backend
-// primitives replaces this guard when the second protocol backend lands.
-pub fn ensure_same_backend(
-    sources: &[String],
-    destination: &str,
-    operation: &str,
-) -> Result<(), FileSystemError> {
-    let destination_scheme = split_scheme(destination)?.0;
-
-    for source in sources {
-        if split_scheme(source)?.0 != destination_scheme {
-            return Err(FileSystemError::InvalidInput(format!(
-                "{operation} between different storage backends is not supported yet"
-            )));
-        }
-    }
-
-    Ok(())
+/// The scheme serving `path`, without the remainder.
+pub fn scheme_of(path: &str) -> Result<Scheme, FileSystemError> {
+    Ok(split_scheme(path)?.0)
 }
 
 /// One storage protocol implementation behind the explorer's path strings.
 ///
 /// All methods are blocking; commands run them on the async runtime's blocking
-/// threads. Transfer methods only ever see sources and a destination on this
-/// same backend (see [`ensure_same_backend`]).
+/// threads. Backends only implement single-server operations; tree-shaped
+/// transfers (copy/move/delete across directories and backends) are composed
+/// by the generic engine in `transfer.rs` from the primitive methods below.
 pub trait FileSystemBackend: Send + Sync {
     fn read_dir(&self, path: &str) -> Result<DirectoryView, FileSystemError>;
 
@@ -103,30 +98,30 @@ pub trait FileSystemBackend: Send + Sync {
 
     fn rename_entry(&self, path: &str, new_name: &str) -> Result<(), FileSystemError>;
 
-    fn copy(
-        &self,
-        sources: &[String],
-        destination: &str,
-        progress: &dyn FileOperationProgressReporterTrait,
-    ) -> Result<(), FileSystemError>;
-
-    fn move_entries(
-        &self,
-        sources: &[String],
-        destination: &str,
-        progress: &dyn FileOperationProgressReporterTrait,
-    ) -> Result<(), FileSystemError>;
-
-    fn delete(
-        &self,
-        paths: &[String],
-        progress: &dyn FileOperationProgressReporterTrait,
-    ) -> Result<(), FileSystemError>;
-
     fn search(
         &self,
         root: &str,
         query: &str,
         is_current: &(dyn Fn() -> bool + Send + Sync),
     ) -> Result<SearchResponse, FileSystemError>;
+
+    // -- Primitive operations for the generic cross-backend transfer engine --
+
+    fn stat(&self, path: &str) -> Result<EntryStat, FileSystemError>;
+
+    /// Creates a directory; parents must already exist.
+    fn mkdir(&self, path: &str) -> Result<(), FileSystemError>;
+
+    /// Opens a file for reading as a byte stream.
+    fn open_read(&self, path: &str) -> Result<Box<dyn Read + Send>, FileSystemError>;
+
+    /// Creates (or truncates) a file for sequential writing.
+    fn open_write(&self, path: &str) -> Result<Box<dyn Write + Send>, FileSystemError>;
+
+    /// Deletes a file or an empty directory.
+    fn remove(&self, path: &str) -> Result<(), FileSystemError>;
+
+    /// Moves an entry to another path on the same backend when the protocol
+    /// supports it; the engine falls back to copy + delete on failure.
+    fn rename_to(&self, source: &str, destination: &str) -> Result<(), FileSystemError>;
 }

@@ -1,10 +1,10 @@
 use super::error::FileSystemError;
-use super::local::{self, DirectoryWatcher};
-use super::progress::{
-    FileOperationKind, FileOperationProgressReporter, emit_preparing,
-};
+use super::local;
+use super::progress::{FileOperationKind, FileOperationProgressReporter, emit_preparing};
+use super::transfer::{self, TransferSource};
 use super::types::{DirectoryView, NewEntryKind, SearchResponse, path_to_string};
 use super::vfs::{self, Scheme};
+use super::watch::{DirectoryWatcher, WatchHandle, spawn_polling_watcher};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use tauri::Manager;
@@ -39,12 +39,14 @@ pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemErr
 }
 
 /// Reads one directory as an immutable snapshot suitable for rendering in the explorer.
+///
+/// `vfs::resolve` can open a network session (a blocking, runtime-owning
+/// operation), so it must run on a blocking thread — never on the async
+/// workers, where a nested runtime panics.
 #[tauri::command]
 #[specta::specta]
 pub async fn read_directory(path: String) -> Result<DirectoryView, FileSystemError> {
-    let backend = vfs::resolve(&path)?;
-
-    tauri::async_runtime::spawn_blocking(move || backend.read_dir(&path))
+    tauri::async_runtime::spawn_blocking(move || vfs::resolve(&path)?.read_dir(&path))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
@@ -55,20 +57,25 @@ pub async fn read_directory(path: String) -> Result<DirectoryView, FileSystemErr
 pub async fn watch_directory(path: String, app: tauri::AppHandle) -> Result<(), FileSystemError> {
     let generation = app.state::<DirectoryWatcher>().begin_update();
 
-    // Only the local backend exposes OS file notifications today; network
-    // backends will plug polling or protocol-native notifications in here.
-    if vfs::split_scheme(&path)?.0 != Scheme::Local {
-        return app.state::<DirectoryWatcher>().clear(generation);
+    if vfs::split_scheme(&path)?.0 == Scheme::Local {
+        let watcher_app = app.clone();
+        let watcher = tauri::async_runtime::spawn_blocking(move || {
+            local::create_directory_watcher(PathBuf::from(path), watcher_app)
+        })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))??;
+
+        app.state::<DirectoryWatcher>()
+            .replace(generation, WatchHandle::Notify(watcher))
+    } else {
+        let watch_path = path.clone();
+        let backend = tauri::async_runtime::spawn_blocking(move || vfs::resolve(&watch_path))
+            .await
+            .map_err(|error| FileSystemError::Internal(error.to_string()))??;
+
+        let handle = spawn_polling_watcher(path, backend, app.clone());
+        app.state::<DirectoryWatcher>().replace(generation, handle)
     }
-
-    let watcher_app = app.clone();
-    let watcher = tauri::async_runtime::spawn_blocking(move || {
-        local::create_directory_watcher(PathBuf::from(path), watcher_app)
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))??;
-
-    app.state::<DirectoryWatcher>().replace(generation, watcher)
 }
 
 /// Recursively searches entry names beneath one directory. A newer request
@@ -80,11 +87,11 @@ pub async fn search_directory(
     query: String,
     app: tauri::AppHandle,
 ) -> Result<SearchResponse, FileSystemError> {
-    let backend = vfs::resolve(&path)?;
     let generation = app.state::<FileSearchState>().begin();
     let search_app = app.clone();
 
     tauri::async_runtime::spawn_blocking(move || {
+        let backend = vfs::resolve(&path)?;
         let state = search_app.state::<FileSearchState>();
         let is_current = || state.is_current(generation);
         backend.search(&path, &query, &is_current)
@@ -104,11 +111,11 @@ pub fn cancel_search(app: tauri::AppHandle) {
 #[tauri::command]
 #[specta::specta]
 pub async fn rename_entry(path: String, new_name: String) -> Result<(), FileSystemError> {
-    let backend = vfs::resolve(&path)?;
-
-    tauri::async_runtime::spawn_blocking(move || backend.rename_entry(&path, &new_name))
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || {
+        vfs::resolve(&path)?.rename_entry(&path, &new_name)
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Creates a new file or directory inside an existing directory and returns its path.
@@ -119,11 +126,11 @@ pub async fn create_entry(
     name: String,
     kind: NewEntryKind,
 ) -> Result<String, FileSystemError> {
-    let backend = vfs::resolve(&directory)?;
-
-    tauri::async_runtime::spawn_blocking(move || backend.create_entry(&directory, &name, kind))
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || {
+        vfs::resolve(&directory)?.create_entry(&directory, &name, kind)
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Copies entries into an existing destination directory. Existing files are never overwritten.
@@ -135,13 +142,23 @@ pub async fn copy_entries(
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<(), FileSystemError> {
-    vfs::ensure_same_backend(&sources, &destination, "Copying")?;
-    let backend = vfs::resolve(&destination)?;
     emit_preparing(&app, &operation_id, FileOperationKind::Copy);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let progress = FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Copy);
-        backend.copy(&sources, &destination, &progress)
+        let sources = resolve_sources(sources)?;
+        let destination_backend = vfs::resolve(&destination)?;
+        let progress =
+            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Copy);
+
+        if is_pure_local(&sources, &destination) {
+            let paths = sources
+                .iter()
+                .map(|source| PathBuf::from(&source.path))
+                .collect::<Vec<_>>();
+            local::copy_entries_with_progress(paths, PathBuf::from(&destination), &progress)
+        } else {
+            transfer::copy_entries(sources, &destination, &destination_backend, &progress)
+        }
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -156,13 +173,23 @@ pub async fn move_entries(
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<(), FileSystemError> {
-    vfs::ensure_same_backend(&sources, &destination, "Moving")?;
-    let backend = vfs::resolve(&destination)?;
     emit_preparing(&app, &operation_id, FileOperationKind::Move);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let progress = FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Move);
-        backend.move_entries(&sources, &destination, &progress)
+        let sources = resolve_sources(sources)?;
+        let destination_backend = vfs::resolve(&destination)?;
+        let progress =
+            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Move);
+
+        if is_pure_local(&sources, &destination) {
+            let paths = sources
+                .iter()
+                .map(|source| PathBuf::from(&source.path))
+                .collect::<Vec<_>>();
+            local::move_entries_with_progress(paths, PathBuf::from(&destination), &progress)
+        } else {
+            transfer::move_entries(sources, &destination, &destination_backend, &progress)
+        }
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -176,16 +203,47 @@ pub async fn delete_entries(
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<(), FileSystemError> {
-    if let Some(first) = paths.first() {
-        vfs::ensure_same_backend(&paths, first, "Deleting")?;
+    if paths.is_empty() {
+        return Ok(());
     }
-    let backend = vfs::resolve(paths.first().map(String::as_str).unwrap_or_default())?;
+
     emit_preparing(&app, &operation_id, FileOperationKind::Delete);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let progress = FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
-        backend.delete(&paths, &progress)
+        let targets = resolve_sources(paths)?;
+        let progress =
+            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
+
+        if targets.iter().all(|target| is_local_path(&target.path)) {
+            let paths = targets
+                .iter()
+                .map(|target| PathBuf::from(&target.path))
+                .collect::<Vec<_>>();
+            local::delete_entries_with_progress(paths, &progress)
+        } else {
+            transfer::delete_entries(targets, &progress)
+        }
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+fn resolve_sources(paths: Vec<String>) -> Result<Vec<TransferSource>, FileSystemError> {
+    paths
+        .into_iter()
+        .map(|path| {
+            let backend = vfs::resolve(&path)?;
+            Ok(TransferSource { path, backend })
+        })
+        .collect()
+}
+
+fn is_local_path(path: &str) -> bool {
+    vfs::scheme_of(path).is_ok_and(|scheme| scheme == Scheme::Local)
+}
+
+/// True when every source and the destination sit on the local backend, which
+/// keeps its native rayon transfer path instead of the streaming engine.
+fn is_pure_local(sources: &[TransferSource], destination: &str) -> bool {
+    is_local_path(destination) && sources.iter().all(|source| is_local_path(&source.path))
 }

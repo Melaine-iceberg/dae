@@ -11,7 +11,7 @@ pub struct Breadcrumb {
     pub path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum EntryKind {
     Directory,
@@ -62,6 +62,13 @@ pub struct SearchEntry {
 pub struct SearchResponse {
     pub entries: Vec<SearchEntry>,
     pub truncated: bool,
+}
+
+/// Backend-neutral metadata used by the generic transfer engine.
+#[derive(Debug, Clone)]
+pub struct EntryStat {
+    pub kind: EntryKind,
+    pub size: u64,
 }
 
 pub fn entry_kind_rank(kind: &EntryKind) -> u8 {

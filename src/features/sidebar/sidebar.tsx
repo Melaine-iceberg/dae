@@ -16,10 +16,12 @@ import {
   DownloadSimpleIcon,
   FileTextIcon,
   FolderOpenIcon,
+  GlobeIcon,
   HardDriveIcon,
   HouseIcon,
   ImageIcon,
   MusicNotesIcon,
+  PlusIcon,
   ScissorsIcon,
   StarIcon,
   TrashIcon,
@@ -28,7 +30,7 @@ import {
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 
-import { commands } from "@/bindings";
+import { commands, type StoredConnection } from "@/bindings";
 
 import {
   ContextMenu,
@@ -57,7 +59,9 @@ import {
   sidebarVisibleAtom,
 } from "./sidebar-atoms";
 import type { DiskVolume, Favorite, PlaceKind, SystemPlace } from "./types";
+import { ConnectDialog } from "./connect-dialog";
 import { PenguinIcon } from "./penguin-icon";
+import { useConnections } from "./use-connections";
 import { useDiskVolumes } from "./use-disk-volumes";
 import { useWslDistros } from "./use-wsl-distros";
 
@@ -80,6 +84,7 @@ export function Sidebar() {
 
 function SidebarContent() {
   const [places, setPlaces] = useState<SystemPlace[]>([]);
+  const [connectOpen, setConnectOpen] = useState(false);
   const favorites = useAtomValue(favoritesAtom) ?? [];
   const ensureFavoritesLoaded = useSetAtom(ensureFavoritesLoadedAtom);
   const hiddenPlaces = useAtomValue(hiddenPlacesAtom);
@@ -90,6 +95,7 @@ function SidebarContent() {
   const currentPath = directory?.path ?? null;
   const volumes = useDiskVolumes(currentPath);
   const wslDistros = useWslDistros();
+  const { connections, refresh: refreshConnections } = useConnections();
 
   useEffect(() => {
     void commands
@@ -157,8 +163,131 @@ function SidebarContent() {
             ))}
           </div>
         )}
+
+        <NetworkSection
+          connections={connections}
+          currentPath={currentPath}
+          onAdd={() => setConnectOpen(true)}
+          onNavigate={navigateTo}
+          onRemoved={refreshConnections}
+        />
       </div>
+
+      <ConnectDialog
+        onOpenChange={setConnectOpen}
+        onSaved={(connection) => {
+          refreshConnections();
+          navigateTo(connection.id);
+        }}
+        open={connectOpen}
+      />
     </nav>
+  );
+}
+
+function NetworkSection({
+  connections,
+  currentPath,
+  onAdd,
+  onNavigate,
+  onRemoved,
+}: {
+  connections: StoredConnection[];
+  currentPath: string | null;
+  onAdd: () => void;
+  onNavigate: (path: string) => void;
+  onRemoved: () => void;
+}) {
+  return (
+    <div className="mt-3">
+      <div className="flex items-center justify-between px-2.5 pb-1">
+        <span className="text-xs font-medium text-muted-foreground">网络</span>
+        <button
+          className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+          onClick={onAdd}
+          title="连接网络存储"
+          type="button"
+        >
+          <PlusIcon className="size-4" />
+        </button>
+      </div>
+
+      {connections.map((connection) => (
+        <ConnectionContextMenu
+          key={connection.id}
+          onRemoved={() => {
+            void commands
+              .deleteConnection(connection.id)
+              .then(onRemoved)
+              .catch((error: unknown) => console.warn("Unable to delete connection", error));
+          }}
+          path={connection.id}
+        >
+          <SidebarItem
+            icon={GlobeIcon}
+            isActive={currentPath === connection.id || currentPath?.startsWith(`${connection.id}/`) === true}
+            label={connection.host}
+            onClick={() => onNavigate(connection.id)}
+            title={connection.id}
+          />
+        </ConnectionContextMenu>
+      ))}
+
+      {connections.length === 0 && (
+        <p className="px-2.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
+          点击 + 连接 NAS 或 Windows 共享
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ConnectionContextMenu({
+  children,
+  onRemoved,
+  path,
+}: {
+  children: ReactNode;
+  onRemoved: () => void;
+  path: string;
+}) {
+  const setClipboard = useSetAtom(fileClipboardAtom);
+  const openInNewTab = useSetAtom(openInNewTabAtom);
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger>{children}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={() => openInNewTab(path)}>
+            <FolderOpenIcon />
+            在新标签页打开
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => void copyEntryPath(path)}>
+            <ClipboardTextIcon />
+            复制地址
+          </ContextMenuItem>
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={() => setClipboard({ operation: "copy", sourcePaths: [path] })}>
+            <CopyIcon />
+            复制
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => setClipboard({ operation: "cut", sourcePaths: [path] })}>
+            <ScissorsIcon />
+            剪切
+          </ContextMenuItem>
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={onRemoved}>
+            <TrashIcon />
+            移除连接
+          </ContextMenuItem>
+        </ContextMenuGroup>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
