@@ -1,1 +1,1 @@
-export type { DiskVolume, Favorite, PlaceKind, SystemPlace } from "@/bindings";
+export type { DiskVolume, Favorite, PlaceKind, SystemPlace, WslDistro } from "@/bindings";

@@ -1,5 +1,5 @@
-use super::directory::path_to_string;
 use super::error::FileSystemError;
+use super::types::path_to_string;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::fs;
@@ -47,6 +47,13 @@ pub struct DiskVolume {
     pub is_removable: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WslDistro {
+    pub name: String,
+    pub path: String,
+}
+
 /// Resolves the fixed set of system places, skipping any the OS cannot provide.
 #[tauri::command]
 #[specta::specta]
@@ -77,6 +84,19 @@ pub fn get_system_places(app: tauri::AppHandle) -> Result<Vec<SystemPlace>, File
 #[specta::specta]
 pub async fn list_disks() -> Result<Vec<DiskVolume>, FileSystemError> {
     tauri::async_runtime::spawn_blocking(list_disks_sync)
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))
+}
+
+/// Lists installed WSL distributions for the sidebar's WSL section.
+///
+/// The `\\wsl$` share root only exposes running distros, so discovery goes
+/// through `wsl.exe` instead; each distro stays reachable at `\\wsl$\<name>`
+/// because accessing that path auto-starts a stopped distro.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_wsl_distros() -> Result<Vec<WslDistro>, FileSystemError> {
+    tauri::async_runtime::spawn_blocking(list_wsl_distros_sync)
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))
 }
@@ -143,6 +163,66 @@ fn list_disks_sync() -> Vec<DiskVolume> {
     volumes
 }
 
+fn list_wsl_distros_sync() -> Vec<WslDistro> {
+    #[cfg(target_os = "windows")]
+    {
+        list_wsl_distros_windows()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    Vec::new()
+}
+
+#[cfg(target_os = "windows")]
+fn list_wsl_distros_windows() -> Vec<WslDistro> {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+
+    // Without CREATE_NO_WINDOW a console flashes every time the sidebar refreshes.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+    let output = Command::new("wsl.exe")
+        .args(["--list", "--quiet"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+
+    let Ok(output) = output else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        // WSL not installed, or no distributions registered.
+        return Vec::new();
+    }
+
+    decode_wsl_output(&output.stdout)
+        .lines()
+        .map(|line| line.trim_matches('\0').trim())
+        .filter(|line| !line.is_empty())
+        .map(|name| WslDistro {
+            name: name.to_owned(),
+            path: format!(r"\\wsl$\{name}"),
+        })
+        .collect()
+}
+
+/// `wsl.exe` emits UTF-16LE (with or without a BOM) when piped; raw UTF-8 otherwise.
+#[cfg(target_os = "windows")]
+fn decode_wsl_output(bytes: &[u8]) -> String {
+    let has_bom = bytes.starts_with(&[0xFF, 0xFE]);
+    let looks_utf16 =
+        has_bom || bytes.iter().skip(1).step_by(2).any(|&byte| byte == 0);
+    if !looks_utf16 {
+        return String::from_utf8_lossy(bytes).into_owned();
+    }
+
+    let payload = if has_bom { &bytes[2..] } else { bytes };
+    let units: Vec<u16> = payload
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect();
+    String::from_utf16_lossy(&units)
+}
+
 /// The volume holding the OS: the Windows %SystemDrive% volume, or the root volume elsewhere.
 fn is_system_volume(volume: &DiskVolume) -> bool {
     #[cfg(target_os = "windows")]
@@ -197,7 +277,7 @@ fn favorites_path(app: &tauri::AppHandle) -> Result<PathBuf, FileSystemError> {
 }
 
 /// Writes via a temp file + rename so readers never observe a partial document.
-fn write_atomic(path: &std::path::Path, contents: &[u8]) -> Result<(), FileSystemError> {
+pub(super) fn write_atomic(path: &std::path::Path, contents: &[u8]) -> Result<(), FileSystemError> {
     let temp_path = path.with_extension("tmp");
     fs::write(&temp_path, contents)?;
     fs::rename(&temp_path, path)?;

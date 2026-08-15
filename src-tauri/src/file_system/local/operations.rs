@@ -1,116 +1,14 @@
-use super::directory::path_to_string;
-use super::error::FileSystemError;
-use super::progress::{
-    FileOperationKind, FileOperationProgressReporter, FileOperationProgressReporterTrait,
-    emit_preparing,
-};
-use serde::{Deserialize, Serialize};
-use specta::Type;
+use crate::file_system::error::FileSystemError;
+use crate::file_system::progress::FileOperationProgressReporterTrait;
+use crate::file_system::types::{NewEntryKind, path_to_string};
+use rayon::prelude::*;
 use std::collections::HashSet;
+use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "lowercase")]
-pub enum NewEntryKind {
-    File,
-    Directory,
-}
-
-/// Renames a single directory entry without allowing a path change.
-#[tauri::command]
-#[specta::specta]
-pub async fn rename_entry(path: String, new_name: String) -> Result<(), FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || rename_entry_sync(PathBuf::from(path), new_name))
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
-}
-
-/// Creates a new file or directory inside an existing directory and returns its path.
-#[tauri::command]
-#[specta::specta]
-pub async fn create_entry(
-    directory: String,
-    name: String,
-    kind: NewEntryKind,
-) -> Result<String, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        create_entry_sync(PathBuf::from(directory), name, kind)
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
-}
-
-/// Copies entries into an existing destination directory. Existing files are never overwritten.
-#[tauri::command]
-#[specta::specta]
-pub async fn copy_entries(
-    sources: Vec<String>,
-    destination: String,
-    operation_id: String,
-    app: tauri::AppHandle,
-) -> Result<(), FileSystemError> {
-    emit_preparing(&app, &operation_id, FileOperationKind::Copy);
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut progress = FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Copy);
-        copy_entries_with_progress(
-            paths_from_strings(sources),
-            PathBuf::from(destination),
-            &mut progress,
-        )
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
-}
-
-/// Moves entries into an existing destination directory. Existing files are never overwritten.
-#[tauri::command]
-#[specta::specta]
-pub async fn move_entries(
-    sources: Vec<String>,
-    destination: String,
-    operation_id: String,
-    app: tauri::AppHandle,
-) -> Result<(), FileSystemError> {
-    emit_preparing(&app, &operation_id, FileOperationKind::Move);
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut progress = FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Move);
-        move_entries_with_progress(
-            paths_from_strings(sources),
-            PathBuf::from(destination),
-            &mut progress,
-        )
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
-}
-
-/// Permanently deletes entries. The UI must obtain confirmation before calling this command.
-#[tauri::command]
-#[specta::specta]
-pub async fn delete_entries(
-    paths: Vec<String>,
-    operation_id: String,
-    app: tauri::AppHandle,
-) -> Result<(), FileSystemError> {
-    emit_preparing(&app, &operation_id, FileOperationKind::Delete);
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut progress = FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
-        delete_entries_with_progress(paths_from_strings(paths), &mut progress)
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
-}
-
-fn paths_from_strings(paths: Vec<String>) -> Vec<PathBuf> {
-    paths.into_iter().map(PathBuf::from).collect()
-}
-
-pub(super) fn rename_entry_sync(path: PathBuf, new_name: String) -> Result<(), FileSystemError> {
+pub fn rename_entry_sync(path: PathBuf, new_name: String) -> Result<(), FileSystemError> {
     validate_entry_name(&new_name)?;
     fs::symlink_metadata(&path)?;
 
@@ -128,7 +26,7 @@ pub(super) fn rename_entry_sync(path: PathBuf, new_name: String) -> Result<(), F
     Ok(())
 }
 
-pub(super) fn create_entry_sync(
+pub fn create_entry_sync(
     directory: PathBuf,
     name: String,
     kind: NewEntryKind,
@@ -152,10 +50,10 @@ pub(super) fn create_entry_sync(
     Ok(path_to_string(&target))
 }
 
-pub(super) fn copy_entries_with_progress<P: FileOperationProgressReporterTrait>(
+pub fn copy_entries_with_progress(
     sources: Vec<PathBuf>,
     destination: PathBuf,
-    progress: &mut P,
+    progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
     let plan = build_transfer_plan(sources, destination)?;
     progress.start(plan.iter().map(|entry| entry.work_units).sum());
@@ -168,10 +66,10 @@ pub(super) fn copy_entries_with_progress<P: FileOperationProgressReporterTrait>(
     Ok(())
 }
 
-pub(super) fn move_entries_with_progress<P: FileOperationProgressReporterTrait>(
+pub fn move_entries_with_progress(
     sources: Vec<PathBuf>,
     destination: PathBuf,
-    progress: &mut P,
+    progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
     let plan = build_transfer_plan(sources, destination)?;
     progress.start(plan.iter().map(|entry| entry.work_units).sum());
@@ -192,9 +90,9 @@ pub(super) fn move_entries_with_progress<P: FileOperationProgressReporterTrait>(
     Ok(())
 }
 
-pub(super) fn delete_entries_with_progress<P: FileOperationProgressReporterTrait>(
+pub fn delete_entries_with_progress(
     paths: Vec<PathBuf>,
-    progress: &mut P,
+    progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
     ensure_unique_paths(&paths)?;
 
@@ -329,15 +227,28 @@ fn count_entry_units(path: &Path) -> Result<u64, FileSystemError> {
         return Ok(1);
     }
 
-    fs::read_dir(path)?.try_fold(1, |count, child| {
-        Ok(count + count_entry_units(&child?.path())?)
-    })
+    let children = read_child_paths(path)?;
+    let child_units: Vec<u64> = children
+        .par_iter()
+        .map(|(child, _)| count_entry_units(child))
+        .collect::<Result<_, _>>()?;
+
+    Ok(1 + child_units.iter().sum::<u64>())
 }
 
-fn copy_entry<P: FileOperationProgressReporterTrait>(
+fn read_child_paths(directory: &Path) -> Result<Vec<(PathBuf, OsString)>, FileSystemError> {
+    fs::read_dir(directory)?
+        .map(|child| {
+            let child = child?;
+            Ok((child.path(), child.file_name()))
+        })
+        .collect()
+}
+
+fn copy_entry(
     source: &Path,
     destination: &Path,
-    progress: &mut P,
+    progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
     let metadata = fs::symlink_metadata(source)?;
     progress.begin_entry(source);
@@ -364,24 +275,19 @@ fn copy_entry<P: FileOperationProgressReporterTrait>(
     )))
 }
 
-fn copy_directory<P: FileOperationProgressReporterTrait>(
+fn copy_directory(
     source: &Path,
     destination: &Path,
-    progress: &mut P,
+    progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
     fs::create_dir(destination)?;
     progress.advance(source);
 
-    for child in fs::read_dir(source)? {
-        let child = child?;
-        copy_entry(
-            &child.path(),
-            &destination.join(child.file_name()),
-            progress,
-        )?;
-    }
-
-    Ok(())
+    let children = read_child_paths(source)?;
+    children
+        .par_iter()
+        .map(|(child, name)| copy_entry(child, &destination.join(name), progress))
+        .collect::<Result<(), _>>()
 }
 
 fn copy_symlink(source: &Path, destination: &Path) -> Result<(), FileSystemError> {
@@ -434,17 +340,19 @@ fn remove_entry(path: &Path) -> Result<(), FileSystemError> {
     Ok(())
 }
 
-fn delete_entry<P: FileOperationProgressReporterTrait>(
+fn delete_entry(
     path: &Path,
-    progress: &mut P,
+    progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
     let metadata = fs::symlink_metadata(path)?;
     progress.begin_entry(path);
 
     if metadata.is_dir() {
-        for child in fs::read_dir(path)? {
-            delete_entry(&child?.path(), progress)?;
-        }
+        let children = read_child_paths(path)?;
+        children
+            .par_iter()
+            .map(|(child, _)| delete_entry(child, progress))
+            .collect::<Result<(), _>>()?;
         fs::remove_dir(path)?;
     } else if metadata.file_type().is_symlink() {
         fs::remove_file(path).or_else(|_| fs::remove_dir(path))?;

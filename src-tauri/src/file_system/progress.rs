@@ -1,4 +1,4 @@
-use super::directory::path_to_string;
+use super::types::path_to_string;
 use serde::Serialize;
 use specta::Type;
 use std::path::Path;
@@ -53,23 +53,27 @@ pub(super) fn emit_preparing(
     );
 }
 
-pub(super) trait FileOperationProgressReporterTrait {
-    fn start(&mut self, total: u64);
-    fn begin_entry(&mut self, path: &Path);
-    fn advance(&mut self, path: &Path) {
+pub trait FileOperationProgressReporterTrait: Send + Sync {
+    fn start(&self, total: u64);
+    fn begin_entry(&self, path: &Path);
+    fn advance(&self, path: &Path) {
         self.advance_by(1, path);
     }
-    fn advance_by(&mut self, units: u64, path: &Path);
-    fn finish(&mut self);
+    fn advance_by(&self, units: u64, path: &Path);
+    fn finish(&self);
+}
+
+struct ReporterState {
+    completed: u64,
+    total: u64,
+    last_emit: Option<Instant>,
 }
 
 pub(super) struct FileOperationProgressReporter {
     app: tauri::AppHandle,
     operation_id: String,
     operation: FileOperationKind,
-    completed: u64,
-    total: u64,
-    last_emit: Option<Instant>,
+    state: std::sync::Mutex<ReporterState>,
 }
 
 impl FileOperationProgressReporter {
@@ -82,15 +86,19 @@ impl FileOperationProgressReporter {
             app,
             operation_id,
             operation,
-            completed: 0,
-            total: 0,
-            last_emit: None,
+            state: std::sync::Mutex::new(ReporterState {
+                completed: 0,
+                total: 0,
+                last_emit: None,
+            }),
         }
     }
 
-    fn emit(&mut self, path: Option<&Path>, force: bool) {
+    fn emit(&self, path: Option<&Path>, force: bool) {
+        let mut state = self.state.lock().expect("progress reporter lock poisoned");
+
         if !force
-            && self
+            && state
                 .last_emit
                 .is_some_and(|last_emit| last_emit.elapsed() < FILE_OPERATION_PROGRESS_INTERVAL)
         {
@@ -102,31 +110,44 @@ impl FileOperationProgressReporter {
             &self.operation_id,
             self.operation,
             FileOperationPhase::Running,
-            self.completed,
-            Some(self.total),
+            state.completed.min(state.total),
+            Some(state.total),
             path.map(path_to_string),
         );
-        self.last_emit = Some(Instant::now());
+        state.last_emit = Some(Instant::now());
     }
 }
 
 impl FileOperationProgressReporterTrait for FileOperationProgressReporter {
-    fn start(&mut self, total: u64) {
-        self.total = total;
+    fn start(&self, total: u64) {
+        let mut state = self.state.lock().expect("progress reporter lock poisoned");
+        state.total = total;
+        drop(state);
         self.emit(None, true);
     }
 
-    fn begin_entry(&mut self, path: &Path) {
-        self.emit(Some(path), self.completed == 0);
+    fn begin_entry(&self, path: &Path) {
+        let is_first = {
+            let state = self.state.lock().expect("progress reporter lock poisoned");
+            state.completed == 0
+        };
+        self.emit(Some(path), is_first);
     }
 
-    fn advance_by(&mut self, units: u64, path: &Path) {
-        self.completed = self.completed.saturating_add(units).min(self.total);
-        self.emit(Some(path), self.completed == self.total);
+    fn advance_by(&self, units: u64, path: &Path) {
+        let is_done = {
+            let mut state = self.state.lock().expect("progress reporter lock poisoned");
+            state.completed = state.completed.saturating_add(units);
+            state.completed >= state.total
+        };
+        self.emit(Some(path), is_done);
     }
 
-    fn finish(&mut self) {
-        self.completed = self.total;
+    fn finish(&self) {
+        {
+            let mut state = self.state.lock().expect("progress reporter lock poisoned");
+            state.completed = state.total;
+        }
         self.emit(None, true);
     }
 }

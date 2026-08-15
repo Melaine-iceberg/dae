@@ -1,12 +1,17 @@
-pub mod directory;
+pub mod commands;
+pub mod connections;
 pub mod error;
-pub mod operations;
+pub mod local;
 pub mod progress;
-pub mod search;
+pub mod smb;
 pub mod sidebar;
+pub mod transfer;
+pub mod types;
+pub mod vfs;
+pub mod watch;
 
 #[cfg(test)]
 mod tests;
 
-pub use directory::DirectoryWatcher;
-pub use search::FileSearchState;
+pub use commands::FileSearchState;
+pub use watch::{DirectoryChanged, DirectoryWatcher};

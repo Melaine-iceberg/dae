@@ -1,45 +1,50 @@
-use super::directory::{
-    DirectoryEntry, EntryKind, build_breadcrumbs, compare_entries, normalize_path_for_display,
-    read_directory_sync,
-};
 use super::error::FileSystemError;
-use super::operations::{
-    NewEntryKind, copy_entries_with_progress, create_entry_sync, delete_entries_with_progress,
-    move_entries_with_progress, rename_entry_sync,
+use super::local::{
+    build_breadcrumbs, copy_entries_with_progress, create_entry_sync,
+    delete_entries_with_progress, move_entries_with_progress, read_directory_sync,
+    rename_entry_sync, search_directory_sync,
 };
 use super::progress::FileOperationProgressReporterTrait;
-use super::search::search_directory_sync;
 use super::sidebar::{Favorite, dedupe_favorites, is_visible_file_system};
+use super::types::{
+    DirectoryEntry, EntryKind, NewEntryKind, entry_sort_key, normalize_path_for_display,
+    path_to_string,
+};
+use super::vfs::{self, FileSystemBackend};
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 struct TestProgress {
-    completed: u64,
-    total: u64,
+    completed: AtomicU64,
+    total: AtomicU64,
 }
 
 impl TestProgress {
     fn new() -> Self {
         Self {
-            completed: 0,
-            total: 0,
+            completed: AtomicU64::new(0),
+            total: AtomicU64::new(0),
         }
     }
 }
 
 impl FileOperationProgressReporterTrait for TestProgress {
-    fn start(&mut self, total: u64) {
-        self.total = total;
+    fn start(&self, total: u64) {
+        self.total.store(total, AtomicOrdering::Relaxed);
     }
 
-    fn begin_entry(&mut self, _path: &Path) {}
+    fn begin_entry(&self, _path: &Path) {}
 
-    fn advance_by(&mut self, units: u64, _path: &Path) {
-        self.completed += units;
+    fn advance_by(&self, units: u64, _path: &Path) {
+        self.completed.fetch_add(units, AtomicOrdering::Relaxed);
     }
 
-    fn finish(&mut self) {
-        assert_eq!(self.completed, self.total);
+    fn finish(&self) {
+        assert_eq!(
+            self.completed.load(AtomicOrdering::Relaxed),
+            self.total.load(AtomicOrdering::Relaxed)
+        );
     }
 }
 
@@ -97,7 +102,7 @@ fn places_directories_before_files_case_insensitively() {
         },
     ];
 
-    entries.sort_by(compare_entries);
+    entries.sort_by_cached_key(entry_sort_key);
 
     assert_eq!(entries[0].name, "alpha");
     assert_eq!(entries[1].name, "Beta");
@@ -159,7 +164,7 @@ fn searches_nested_files_and_directories_case_insensitively() {
     fs::write(&hidden_file, "draft").expect("create hidden matching file");
 
     let response =
-        search_directory_sync(directory.clone(), "report", || true).expect("search test directory");
+        search_directory_sync(directory.clone(), "report", &|| true).expect("search test directory");
     let names = response
         .entries
         .iter()
@@ -187,11 +192,27 @@ fn searches_nested_files_and_directories_case_insensitively() {
 
 #[test]
 fn returns_no_search_results_for_blank_queries() {
-    let response = search_directory_sync(Path::new("missing").to_path_buf(), "  ", || true)
+    let response = search_directory_sync(Path::new("missing").to_path_buf(), "  ", &|| true)
         .expect("blank search should not touch the file system");
 
     assert!(response.entries.is_empty());
     assert!(!response.truncated);
+}
+
+#[test]
+fn cancels_search_when_the_generation_is_stale() {
+    let directory =
+        std::env::temp_dir().join(format!("dae-search-cancel-test-{}", std::process::id()));
+    fs::create_dir_all(&directory).expect("create test directory");
+    fs::write(directory.join("report.txt"), "content").expect("create matching file");
+
+    let response = search_directory_sync(directory.clone(), "report", &|| false)
+        .expect("stale search should return an empty snapshot");
+
+    assert!(response.entries.is_empty());
+    assert!(!response.truncated);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
 }
 
 #[test]
@@ -206,15 +227,15 @@ fn performs_file_operations_and_reports_entry_progress() {
     fs::create_dir_all(&destination).expect("create destination directory");
     fs::write(&nested_file, "copied content").expect("create source file");
 
-    let mut copy_progress = TestProgress::new();
+    let copy_progress = TestProgress::new();
     copy_entries_with_progress(
         vec![source.clone()],
         destination.clone(),
-        &mut copy_progress,
+        &copy_progress,
     )
     .expect("copy directory");
-    assert_eq!(copy_progress.completed, 2);
-    assert_eq!(copy_progress.total, 2);
+    assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 2);
+    assert_eq!(copy_progress.total.load(AtomicOrdering::Relaxed), 2);
 
     let copied_directory = destination.join("source");
     assert_eq!(
@@ -223,18 +244,18 @@ fn performs_file_operations_and_reports_entry_progress() {
     );
     assert!(source.exists());
 
-    let mut duplicate_progress = TestProgress::new();
+    let duplicate_progress = TestProgress::new();
     let duplicate_error = copy_entries_with_progress(
         vec![source.clone()],
         destination.clone(),
-        &mut duplicate_progress,
+        &duplicate_progress,
     )
     .expect_err("copying over an existing entry should fail");
     assert!(matches!(duplicate_error, FileSystemError::AlreadyExists(_)));
 
-    let mut nested_progress = TestProgress::new();
+    let nested_progress = TestProgress::new();
     let nested_error =
-        copy_entries_with_progress(vec![source.clone()], source.clone(), &mut nested_progress)
+        copy_entries_with_progress(vec![source.clone()], source.clone(), &nested_progress)
             .expect_err("copying a folder into itself should fail");
     assert!(matches!(nested_error, FileSystemError::InvalidInput(_)));
 
@@ -242,25 +263,58 @@ fn performs_file_operations_and_reports_entry_progress() {
     let renamed_file = source.join("renamed.txt");
     assert!(renamed_file.exists());
 
-    let mut move_progress = TestProgress::new();
+    let move_progress = TestProgress::new();
     move_entries_with_progress(
         vec![renamed_file.clone()],
         destination.clone(),
-        &mut move_progress,
+        &move_progress,
     )
     .expect("move file");
     let moved_file = destination.join("renamed.txt");
     assert!(moved_file.exists());
     assert!(!renamed_file.exists());
-    assert_eq!(move_progress.completed, 1);
-    assert_eq!(move_progress.total, 1);
+    assert_eq!(move_progress.completed.load(AtomicOrdering::Relaxed), 1);
+    assert_eq!(move_progress.total.load(AtomicOrdering::Relaxed), 1);
 
-    let mut delete_progress = TestProgress::new();
-    delete_entries_with_progress(vec![moved_file.clone()], &mut delete_progress)
+    let delete_progress = TestProgress::new();
+    delete_entries_with_progress(vec![moved_file.clone()], &delete_progress)
         .expect("delete file");
     assert!(!moved_file.exists());
-    assert_eq!(delete_progress.completed, 1);
-    assert_eq!(delete_progress.total, 1);
+    assert_eq!(delete_progress.completed.load(AtomicOrdering::Relaxed), 1);
+    assert_eq!(delete_progress.total.load(AtomicOrdering::Relaxed), 1);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn copies_and_deletes_nested_trees_in_parallel() {
+    let directory =
+        std::env::temp_dir().join(format!("dae-parallel-tree-test-{}", std::process::id()));
+    let source = directory.join("source");
+    let destination = directory.join("destination");
+
+    for index in 0..3 {
+        let nested = source.join(format!("folder-{index}"));
+        fs::create_dir_all(&nested).expect("create nested directory");
+        fs::write(nested.join("file.txt"), "parallel").expect("create nested file");
+    }
+    fs::create_dir_all(&destination).expect("create destination directory");
+
+    let copy_progress = TestProgress::new();
+    copy_entries_with_progress(vec![source.clone()], destination.clone(), &copy_progress)
+        .expect("copy nested tree");
+    assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 7);
+    assert_eq!(copy_progress.total.load(AtomicOrdering::Relaxed), 7);
+
+    let copied_root = destination.join("source");
+    for index in 0..3 {
+        assert!(copied_root.join(format!("folder-{index}")).join("file.txt").is_file());
+    }
+
+    let delete_progress = TestProgress::new();
+    delete_entries_with_progress(vec![copied_root], &delete_progress).expect("delete nested tree");
+    assert_eq!(delete_progress.completed.load(AtomicOrdering::Relaxed), 7);
+    assert_eq!(delete_progress.total.load(AtomicOrdering::Relaxed), 7);
 
     fs::remove_dir_all(directory).expect("remove test directory");
 }
@@ -311,7 +365,7 @@ fn creates_files_and_directories_with_validated_names() {
         .expect("create file");
     assert_eq!(
         file_path,
-        super::directory::path_to_string(&directory.join("notes.txt"))
+        path_to_string(&directory.join("notes.txt"))
     );
     assert!(directory.join("notes.txt").is_file());
 
@@ -323,7 +377,7 @@ fn creates_files_and_directories_with_validated_names() {
     .expect("create directory");
     assert_eq!(
         directory_path,
-        super::directory::path_to_string(&directory.join("子文件夹"))
+        path_to_string(&directory.join("子文件夹"))
     );
     assert!(directory.join("子文件夹").is_dir());
 
@@ -338,4 +392,237 @@ fn creates_files_and_directories_with_validated_names() {
     assert!(matches!(separator_error, FileSystemError::InvalidInput(_)));
 
     fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn parses_scheme_prefixes() {
+    let (scheme, rest) = vfs::split_scheme("smb://nas/media").expect("smb scheme");
+    assert_eq!(scheme, vfs::Scheme::Smb);
+    assert_eq!(rest, "nas/media");
+
+    let (scheme, rest) = vfs::split_scheme("sftp://user@nas:22/home").expect("sftp scheme");
+    assert_eq!(scheme, vfs::Scheme::Sftp);
+    assert_eq!(rest, "user@nas:22/home");
+
+    let (scheme, rest) = vfs::split_scheme("webdavs://cloud.example/dav").expect("webdav scheme");
+    assert_eq!(scheme, vfs::Scheme::WebDav);
+    assert_eq!(rest, "cloud.example/dav");
+
+    let (scheme, rest) = vfs::split_scheme("file:///home").expect("file maps to local");
+    assert_eq!(scheme, vfs::Scheme::Local);
+    assert_eq!(rest, "/home");
+}
+
+#[test]
+fn treats_scheme_less_paths_as_local() {
+    for path in [
+        r"C:\Users\test",
+        "/home/user",
+        r"\\nas\share\folder",
+        r"relative\nested://segment",
+    ] {
+        let (scheme, rest) = vfs::split_scheme(path).expect("scheme-less path");
+        assert_eq!(scheme, vfs::Scheme::Local, "path should stay local: {path}");
+        assert_eq!(rest, path);
+    }
+}
+
+#[test]
+fn rejects_unknown_and_unregistered_schemes() {
+    let unknown = vfs::resolve("s3://bucket/data")
+        .err()
+        .expect("unknown scheme");
+    assert!(matches!(unknown, FileSystemError::InvalidInput(_)));
+
+    // SMB resolves to a connect attempt these days; sftp is the scheme that
+    // still has no backend.
+    let unregistered = vfs::resolve("sftp://nas/media")
+        .err()
+        .expect("no sftp backend yet");
+    assert!(matches!(unregistered, FileSystemError::InvalidInput(_)));
+}
+
+#[test]
+fn transfers_trees_between_distinct_backend_instances() {
+    use super::local::LocalBackend;
+    use super::transfer::{self, TransferSource};
+    use std::sync::Arc;
+
+    let root = std::env::temp_dir().join(format!("dae-transfer-test-{}", std::process::id()));
+    let source_dir = root.join("source");
+    let destination_dir = root.join("destination");
+    fs::create_dir_all(source_dir.join("nested")).expect("create source tree");
+    fs::write(source_dir.join("root.txt"), "root content").expect("write root file");
+    fs::write(source_dir.join("nested/leaf.bin"), vec![7_u8; 600 * 1024])
+        .expect("write multi-chunk file");
+    fs::create_dir_all(&destination_dir).expect("create destination");
+
+    // Two distinct Arcs force the streaming path instead of any fast path.
+    let source_backend: Arc<dyn FileSystemBackend> = Arc::new(LocalBackend);
+    let destination_backend: Arc<dyn FileSystemBackend> = Arc::new(LocalBackend);
+    let source_path = source_dir.to_string_lossy().into_owned();
+    let destination_path = destination_dir.to_string_lossy().into_owned();
+
+    let copy_progress = TestProgress::new();
+    transfer::copy_entries(
+        vec![TransferSource {
+            path: source_path.clone(),
+            backend: source_backend.clone(),
+        }],
+        &destination_path,
+        &destination_backend,
+        &copy_progress,
+    )
+    .expect("copy tree across backends");
+
+    let copied_root = destination_dir.join("source");
+    assert_eq!(
+        fs::read_to_string(copied_root.join("root.txt")).expect("read copied root file"),
+        "root content"
+    );
+    let leaf = fs::read(copied_root.join("nested/leaf.bin")).expect("read copied leaf");
+    assert_eq!(leaf.len(), 600 * 1024);
+    assert!(leaf.iter().all(|byte| *byte == 7));
+    assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), copy_progress.total.load(AtomicOrdering::Relaxed));
+
+    let duplicate_progress = TestProgress::new();
+    let duplicate_error = transfer::copy_entries(
+        vec![TransferSource {
+            path: source_path.clone(),
+            backend: source_backend.clone(),
+        }],
+        &destination_path,
+        &destination_backend,
+        &duplicate_progress,
+    )
+    .expect_err("overwriting must be blocked");
+    assert!(matches!(duplicate_error, FileSystemError::AlreadyExists(_)));
+
+    let move_destination_dir = root.join("destination-moved");
+    fs::create_dir_all(&move_destination_dir).expect("create move destination");
+    let move_progress = TestProgress::new();
+    transfer::move_entries(
+        vec![TransferSource {
+            path: source_path.clone(),
+            backend: source_backend.clone(),
+        }],
+        &move_destination_dir.to_string_lossy().into_owned(),
+        &destination_backend,
+        &move_progress,
+    )
+    .expect("move tree across backends");
+    assert!(!source_dir.exists());
+    assert!(move_destination_dir.join("source/nested/leaf.bin").is_file());
+    assert_eq!(move_progress.completed.load(AtomicOrdering::Relaxed), move_progress.total.load(AtomicOrdering::Relaxed));
+
+    let delete_progress = TestProgress::new();
+    transfer::delete_entries(
+        vec![TransferSource {
+            path: move_destination_dir.join("source").to_string_lossy().into_owned(),
+            backend: destination_backend.clone(),
+        }],
+        &delete_progress,
+    )
+    .expect("delete tree through engine");
+    assert!(!move_destination_dir.join("source").exists());
+
+    fs::remove_dir_all(root).expect("remove test directory");
+}
+
+#[test]
+fn serves_local_paths_through_the_backend_trait() {
+    let directory = std::env::temp_dir().join(format!("dae-vfs-trait-test-{}", std::process::id()));
+    fs::create_dir_all(&directory).expect("create test directory");
+
+    let path = directory.to_string_lossy().into_owned();
+    let backend = vfs::resolve(&path).expect("local path resolves");
+
+    let created = backend
+        .create_entry(&path, "through-trait.txt", NewEntryKind::File)
+        .expect("create through trait object");
+    assert!(directory.join("through-trait.txt").is_file());
+
+    let view = backend.read_dir(&path).expect("read through trait object");
+    assert!(view
+        .entries
+        .iter()
+        .any(|entry| entry.name == "through-trait.txt"));
+
+    backend
+        .remove(&created)
+        .expect("delete through trait object");
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+/// Exercises the connection store through its public commands. One test
+/// function because the registry is a process-global singleton.
+#[test]
+fn saves_updates_and_deletes_connections() {
+    use super::connections::{
+        self, Protocol, SaveConnectionInput,
+    };
+
+    let config_dir =
+        std::env::temp_dir().join(format!("dae-connections-test-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&config_dir);
+    connections::use_config_dir_for_tests(config_dir.clone()).expect("initialize store");
+
+    let saved = connections::save_connection(SaveConnectionInput {
+        protocol: Protocol::Smb,
+        host: "  MyServer.Local  ".into(),
+        port: Some(445),
+        username: Some(" alice ".into()),
+        password: Some("session-only".into()),
+        // Session memory instead of the OS keychain keeps the test hermetic.
+        remember_password: false,
+    })
+    .expect("save connection");
+
+    assert_eq!(saved.id, "smb://myserver.local:445");
+    assert_eq!(saved.host, "myserver.local");
+    assert_eq!(saved.username.as_deref(), Some("alice"));
+
+    let listed = connections::list_connections().expect("list connections");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0], saved);
+
+    let persisted = fs::read_to_string(config_dir.join("connections.json"))
+        .expect("connections file exists");
+    assert!(!persisted.contains("password"), "passwords must never be persisted");
+    assert!(!persisted.contains("session-only"));
+
+    let (username, password) = connections::resolve_credentials(Protocol::Smb, "MyServer.Local", Some(445));
+    assert_eq!(username.as_deref(), Some("alice"));
+    assert_eq!(password.as_deref(), Some("session-only"));
+
+    // Saving the same server again updates in place and keeps the credential.
+    connections::save_connection(SaveConnectionInput {
+        protocol: Protocol::Smb,
+        host: "myserver.local".into(),
+        port: Some(445),
+        username: Some("bob".into()),
+        password: None,
+        remember_password: false,
+    })
+    .expect("update connection");
+
+    let listed = connections::list_connections().expect("list after update");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].username.as_deref(), Some("bob"));
+    let (_, password) = connections::resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
+    assert_eq!(password.as_deref(), Some("session-only"));
+
+    // Reopening the store reloads from disk.
+    connections::use_config_dir_for_tests(config_dir.clone()).expect("reload store");
+    let listed = connections::list_connections().expect("list after reload");
+    assert_eq!(listed.len(), 1);
+
+    connections::delete_connection("smb://myserver.local:445".into())
+        .expect("delete connection");
+    assert!(connections::list_connections().expect("list after delete").is_empty());
+    let (_, password) = connections::resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
+    assert_eq!(password, None);
+
+    fs::remove_dir_all(config_dir).expect("remove test directory");
 }
