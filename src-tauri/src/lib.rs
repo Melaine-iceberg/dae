@@ -4,6 +4,14 @@ mod file_system;
 pub fn run() {
     let specta = specta_builder();
 
+    #[cfg(debug_assertions)]
+    specta
+        .export(
+            specta_typescript::Typescript::default(),
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/bindings.ts"),
+        )
+        .expect("Failed to export TypeScript bindings");
+
     let app = tauri::Builder::default()
         .invoke_handler(specta.invoke_handler())
         .setup(move |app| {
