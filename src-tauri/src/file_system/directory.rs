@@ -2,7 +2,6 @@ use super::error::FileSystemError;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::cmp::Ordering;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -163,7 +162,7 @@ pub(super) fn read_directory_sync(
         })
         .collect::<Result<Vec<_>, FileSystemError>>()?;
 
-    entries.sort_by(compare_entries);
+    entries.sort_by_cached_key(entry_sort_key);
 
     Ok(DirectoryView {
         path: path_to_string(&path),
@@ -195,14 +194,12 @@ pub(super) fn entry_kind(file_type: fs::FileType) -> EntryKind {
     }
 }
 
-pub(super) fn compare_entries(left: &DirectoryEntry, right: &DirectoryEntry) -> Ordering {
-    let left_rank = entry_kind_rank(&left.kind);
-    let right_rank = entry_kind_rank(&right.kind);
-
-    left_rank
-        .cmp(&right_rank)
-        .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
-        .then_with(|| left.name.cmp(&right.name))
+pub(super) fn entry_sort_key(entry: &DirectoryEntry) -> (u8, String, String) {
+    (
+        entry_kind_rank(&entry.kind),
+        entry.name.to_lowercase(),
+        entry.name.clone(),
+    )
 }
 
 pub(super) fn entry_kind_rank(kind: &EntryKind) -> u8 {

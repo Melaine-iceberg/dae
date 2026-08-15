@@ -1,5 +1,5 @@
 use super::directory::{
-    DirectoryEntry, EntryKind, build_breadcrumbs, compare_entries, normalize_path_for_display,
+    DirectoryEntry, EntryKind, build_breadcrumbs, entry_sort_key, normalize_path_for_display,
     read_directory_sync,
 };
 use super::error::FileSystemError;
@@ -12,34 +12,38 @@ use super::search::search_directory_sync;
 use super::sidebar::{Favorite, dedupe_favorites, is_visible_file_system};
 use std::fs;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 struct TestProgress {
-    completed: u64,
-    total: u64,
+    completed: AtomicU64,
+    total: AtomicU64,
 }
 
 impl TestProgress {
     fn new() -> Self {
         Self {
-            completed: 0,
-            total: 0,
+            completed: AtomicU64::new(0),
+            total: AtomicU64::new(0),
         }
     }
 }
 
 impl FileOperationProgressReporterTrait for TestProgress {
-    fn start(&mut self, total: u64) {
-        self.total = total;
+    fn start(&self, total: u64) {
+        self.total.store(total, AtomicOrdering::Relaxed);
     }
 
-    fn begin_entry(&mut self, _path: &Path) {}
+    fn begin_entry(&self, _path: &Path) {}
 
-    fn advance_by(&mut self, units: u64, _path: &Path) {
-        self.completed += units;
+    fn advance_by(&self, units: u64, _path: &Path) {
+        self.completed.fetch_add(units, AtomicOrdering::Relaxed);
     }
 
-    fn finish(&mut self) {
-        assert_eq!(self.completed, self.total);
+    fn finish(&self) {
+        assert_eq!(
+            self.completed.load(AtomicOrdering::Relaxed),
+            self.total.load(AtomicOrdering::Relaxed)
+        );
     }
 }
 
@@ -97,7 +101,7 @@ fn places_directories_before_files_case_insensitively() {
         },
     ];
 
-    entries.sort_by(compare_entries);
+    entries.sort_by_cached_key(entry_sort_key);
 
     assert_eq!(entries[0].name, "alpha");
     assert_eq!(entries[1].name, "Beta");
@@ -195,6 +199,22 @@ fn returns_no_search_results_for_blank_queries() {
 }
 
 #[test]
+fn cancels_search_when_the_generation_is_stale() {
+    let directory =
+        std::env::temp_dir().join(format!("dae-search-cancel-test-{}", std::process::id()));
+    fs::create_dir_all(&directory).expect("create test directory");
+    fs::write(directory.join("report.txt"), "content").expect("create matching file");
+
+    let response = search_directory_sync(directory.clone(), "report", || false)
+        .expect("stale search should return an empty snapshot");
+
+    assert!(response.entries.is_empty());
+    assert!(!response.truncated);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
 fn performs_file_operations_and_reports_entry_progress() {
     let directory =
         std::env::temp_dir().join(format!("dae-file-operation-test-{}", std::process::id()));
@@ -206,15 +226,15 @@ fn performs_file_operations_and_reports_entry_progress() {
     fs::create_dir_all(&destination).expect("create destination directory");
     fs::write(&nested_file, "copied content").expect("create source file");
 
-    let mut copy_progress = TestProgress::new();
+    let copy_progress = TestProgress::new();
     copy_entries_with_progress(
         vec![source.clone()],
         destination.clone(),
-        &mut copy_progress,
+        &copy_progress,
     )
     .expect("copy directory");
-    assert_eq!(copy_progress.completed, 2);
-    assert_eq!(copy_progress.total, 2);
+    assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 2);
+    assert_eq!(copy_progress.total.load(AtomicOrdering::Relaxed), 2);
 
     let copied_directory = destination.join("source");
     assert_eq!(
@@ -223,18 +243,18 @@ fn performs_file_operations_and_reports_entry_progress() {
     );
     assert!(source.exists());
 
-    let mut duplicate_progress = TestProgress::new();
+    let duplicate_progress = TestProgress::new();
     let duplicate_error = copy_entries_with_progress(
         vec![source.clone()],
         destination.clone(),
-        &mut duplicate_progress,
+        &duplicate_progress,
     )
     .expect_err("copying over an existing entry should fail");
     assert!(matches!(duplicate_error, FileSystemError::AlreadyExists(_)));
 
-    let mut nested_progress = TestProgress::new();
+    let nested_progress = TestProgress::new();
     let nested_error =
-        copy_entries_with_progress(vec![source.clone()], source.clone(), &mut nested_progress)
+        copy_entries_with_progress(vec![source.clone()], source.clone(), &nested_progress)
             .expect_err("copying a folder into itself should fail");
     assert!(matches!(nested_error, FileSystemError::InvalidInput(_)));
 
@@ -242,25 +262,58 @@ fn performs_file_operations_and_reports_entry_progress() {
     let renamed_file = source.join("renamed.txt");
     assert!(renamed_file.exists());
 
-    let mut move_progress = TestProgress::new();
+    let move_progress = TestProgress::new();
     move_entries_with_progress(
         vec![renamed_file.clone()],
         destination.clone(),
-        &mut move_progress,
+        &move_progress,
     )
     .expect("move file");
     let moved_file = destination.join("renamed.txt");
     assert!(moved_file.exists());
     assert!(!renamed_file.exists());
-    assert_eq!(move_progress.completed, 1);
-    assert_eq!(move_progress.total, 1);
+    assert_eq!(move_progress.completed.load(AtomicOrdering::Relaxed), 1);
+    assert_eq!(move_progress.total.load(AtomicOrdering::Relaxed), 1);
 
-    let mut delete_progress = TestProgress::new();
-    delete_entries_with_progress(vec![moved_file.clone()], &mut delete_progress)
+    let delete_progress = TestProgress::new();
+    delete_entries_with_progress(vec![moved_file.clone()], &delete_progress)
         .expect("delete file");
     assert!(!moved_file.exists());
-    assert_eq!(delete_progress.completed, 1);
-    assert_eq!(delete_progress.total, 1);
+    assert_eq!(delete_progress.completed.load(AtomicOrdering::Relaxed), 1);
+    assert_eq!(delete_progress.total.load(AtomicOrdering::Relaxed), 1);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn copies_and_deletes_nested_trees_in_parallel() {
+    let directory =
+        std::env::temp_dir().join(format!("dae-parallel-tree-test-{}", std::process::id()));
+    let source = directory.join("source");
+    let destination = directory.join("destination");
+
+    for index in 0..3 {
+        let nested = source.join(format!("folder-{index}"));
+        fs::create_dir_all(&nested).expect("create nested directory");
+        fs::write(nested.join("file.txt"), "parallel").expect("create nested file");
+    }
+    fs::create_dir_all(&destination).expect("create destination directory");
+
+    let copy_progress = TestProgress::new();
+    copy_entries_with_progress(vec![source.clone()], destination.clone(), &copy_progress)
+        .expect("copy nested tree");
+    assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 7);
+    assert_eq!(copy_progress.total.load(AtomicOrdering::Relaxed), 7);
+
+    let copied_root = destination.join("source");
+    for index in 0..3 {
+        assert!(copied_root.join(format!("folder-{index}")).join("file.txt").is_file());
+    }
+
+    let delete_progress = TestProgress::new();
+    delete_entries_with_progress(vec![copied_root], &delete_progress).expect("delete nested tree");
+    assert_eq!(delete_progress.completed.load(AtomicOrdering::Relaxed), 7);
+    assert_eq!(delete_progress.total.load(AtomicOrdering::Relaxed), 7);
 
     fs::remove_dir_all(directory).expect("remove test directory");
 }
