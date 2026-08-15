@@ -144,15 +144,18 @@ pub(super) fn read_directory_sync(
         return Err(FileSystemError::NotDirectory(path_to_string(&path)));
     }
 
+    // Entries whose metadata fails to load (WSL's /proc and /run over the
+    // `\\wsl$` 9P share behave this way) are skipped so the directory itself
+    // stays readable instead of failing as a whole.
     let mut entries = fs::read_dir(&path)?
-        .map(|entry| {
-            let entry = entry?;
-            let file_type = entry.file_type()?;
-            let metadata = entry.metadata()?;
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let file_type = entry.file_type().ok()?;
+            let metadata = entry.metadata().ok()?;
             let kind = entry_kind(file_type);
             let size = matches!(&kind, EntryKind::File).then_some(metadata.len());
 
-            Ok(DirectoryEntry {
+            Some(DirectoryEntry {
                 name: entry.file_name().to_string_lossy().into_owned(),
                 path: path_to_string(&entry.path()),
                 kind,
@@ -160,7 +163,7 @@ pub(super) fn read_directory_sync(
                 size,
             })
         })
-        .collect::<Result<Vec<_>, FileSystemError>>()?;
+        .collect::<Vec<_>>();
 
     entries.sort_by_cached_key(entry_sort_key);
 

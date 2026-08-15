@@ -4,6 +4,7 @@ import {
   useState,
   useSyncExternalStore,
   type ComponentProps,
+  type ComponentType,
   type ReactNode,
 } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -56,7 +57,9 @@ import {
   sidebarVisibleAtom,
 } from "./sidebar-atoms";
 import type { DiskVolume, Favorite, PlaceKind, SystemPlace } from "./types";
+import { PenguinIcon } from "./penguin-icon";
 import { useDiskVolumes } from "./use-disk-volumes";
+import { useWslDistros } from "./use-wsl-distros";
 
 const PLACE_PRESENTATION: Record<PlaceKind, { icon: PhosphorIcon; label: string }> = {
   home: { icon: HouseIcon, label: "主文件夹" },
@@ -86,6 +89,7 @@ function SidebarContent() {
   const { directory } = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
   const currentPath = directory?.path ?? null;
   const volumes = useDiskVolumes(currentPath);
+  const wslDistros = useWslDistros();
 
   useEffect(() => {
     void commands
@@ -137,6 +141,22 @@ function SidebarContent() {
             volume={volume}
           />
         ))}
+
+        {wslDistros.length > 0 && (
+          <div className="mt-2">
+            {wslDistros.map((distro) => (
+              <FolderContextMenu isListed={false} key={distro.path} path={distro.path}>
+                <SidebarItem
+                  icon={PenguinIcon}
+                  isActive={currentPath === distro.path}
+                  label={distro.name}
+                  onClick={() => navigateTo(distro.path)}
+                  title={distro.path}
+                />
+              </FolderContextMenu>
+            ))}
+          </div>
+        )}
       </div>
     </nav>
   );
@@ -377,7 +397,7 @@ function SidebarItem({
   onClick,
   title,
 }: {
-  icon: PhosphorIcon;
+  icon: ComponentType<{ className?: string }>;
   isActive: boolean;
   label: string;
   onClick: () => void;
