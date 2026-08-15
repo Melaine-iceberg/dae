@@ -1,4 +1,4 @@
-use super::directory::path_to_string;
+use super::types::path_to_string;
 use serde::Serialize;
 use specta::Type;
 use std::path::Path;
@@ -53,7 +53,7 @@ pub(super) fn emit_preparing(
     );
 }
 
-pub(super) trait FileOperationProgressReporterTrait: Send + Sync {
+pub trait FileOperationProgressReporterTrait: Send + Sync {
     fn start(&self, total: u64);
     fn begin_entry(&self, path: &Path);
     fn advance(&self, path: &Path) {

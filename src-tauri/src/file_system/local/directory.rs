@@ -1,12 +1,14 @@
-use super::error::FileSystemError;
+use crate::file_system::error::FileSystemError;
+use crate::file_system::types::{
+    Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, entry_sort_key, path_to_string,
+};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use specta::Type;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-use tauri::Manager;
 use tauri_specta::Event;
 
 #[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
@@ -20,11 +22,11 @@ pub struct DirectoryWatcher {
 }
 
 impl DirectoryWatcher {
-    fn begin_update(&self) -> u64 {
+    pub fn begin_update(&self) -> u64 {
         self.generation.fetch_add(1, AtomicOrdering::AcqRel) + 1
     }
 
-    fn replace(&self, generation: u64, watcher: RecommendedWatcher) -> Result<(), FileSystemError> {
+    pub fn replace(&self, generation: u64, watcher: RecommendedWatcher) -> Result<(), FileSystemError> {
         let mut active_watcher = self.watcher.lock().map_err(|_| {
             FileSystemError::Internal("The directory watcher lock was poisoned".into())
         })?;
@@ -35,78 +37,23 @@ impl DirectoryWatcher {
 
         Ok(())
     }
+
+    /// Drops the active watcher, e.g. after navigating somewhere no backend
+    /// can observe with OS file notifications.
+    pub fn clear(&self, generation: u64) -> Result<(), FileSystemError> {
+        let mut active_watcher = self.watcher.lock().map_err(|_| {
+            FileSystemError::Internal("The directory watcher lock was poisoned".into())
+        })?;
+
+        if self.generation.load(AtomicOrdering::Acquire) == generation {
+            *active_watcher = None;
+        }
+
+        Ok(())
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct Breadcrumb {
-    pub name: String,
-    pub path: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "lowercase")]
-pub enum EntryKind {
-    Directory,
-    File,
-    Symlink,
-    Other,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DirectoryEntry {
-    pub name: String,
-    pub path: String,
-    pub kind: EntryKind,
-    pub modified_at: Option<u64>,
-    pub size: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct DirectoryView {
-    /// The absolute, canonical path that was read.
-    pub path: String,
-    pub breadcrumbs: Vec<Breadcrumb>,
-    pub entries: Vec<DirectoryEntry>,
-}
-
-/// Returns the operating system's home directory for the initial explorer view.
-#[tauri::command]
-#[specta::specta]
-pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemError> {
-    app.path()
-        .home_dir()
-        .map(|path| path_to_string(&path))
-        .map_err(|error| FileSystemError::Internal(error.to_string()))
-}
-
-/// Reads one directory as an immutable snapshot suitable for rendering in the explorer.
-#[tauri::command]
-#[specta::specta]
-pub async fn read_directory(path: String) -> Result<DirectoryView, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || read_directory_sync(PathBuf::from(path)))
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
-}
-
-/// Replaces the active watcher with one that tracks the currently displayed directory.
-#[tauri::command]
-#[specta::specta]
-pub async fn watch_directory(path: String, app: tauri::AppHandle) -> Result<(), FileSystemError> {
-    let generation = app.state::<DirectoryWatcher>().begin_update();
-    let watcher_app = app.clone();
-    let watcher = tauri::async_runtime::spawn_blocking(move || {
-        create_directory_watcher(PathBuf::from(path), watcher_app)
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))??;
-
-    app.state::<DirectoryWatcher>().replace(generation, watcher)
-}
-
-fn create_directory_watcher(
+pub fn create_directory_watcher(
     requested_path: PathBuf,
     app: tauri::AppHandle,
 ) -> Result<RecommendedWatcher, FileSystemError> {
@@ -134,9 +81,7 @@ fn create_directory_watcher(
     Ok(watcher)
 }
 
-pub(super) fn read_directory_sync(
-    requested_path: PathBuf,
-) -> Result<DirectoryView, FileSystemError> {
+pub fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, FileSystemError> {
     let path = requested_path.canonicalize()?;
     let metadata = fs::metadata(&path)?;
 
@@ -174,7 +119,7 @@ pub(super) fn read_directory_sync(
     })
 }
 
-pub(super) fn modified_at_millis(metadata: &fs::Metadata) -> Option<u64> {
+pub fn modified_at_millis(metadata: &fs::Metadata) -> Option<u64> {
     metadata
         .modified()
         .ok()?
@@ -185,7 +130,7 @@ pub(super) fn modified_at_millis(metadata: &fs::Metadata) -> Option<u64> {
         .ok()
 }
 
-pub(super) fn entry_kind(file_type: fs::FileType) -> EntryKind {
+pub fn entry_kind(file_type: fs::FileType) -> EntryKind {
     if file_type.is_dir() {
         EntryKind::Directory
     } else if file_type.is_file() {
@@ -197,24 +142,7 @@ pub(super) fn entry_kind(file_type: fs::FileType) -> EntryKind {
     }
 }
 
-pub(super) fn entry_sort_key(entry: &DirectoryEntry) -> (u8, String, String) {
-    (
-        entry_kind_rank(&entry.kind),
-        entry.name.to_lowercase(),
-        entry.name.clone(),
-    )
-}
-
-pub(super) fn entry_kind_rank(kind: &EntryKind) -> u8 {
-    match kind {
-        EntryKind::Directory => 0,
-        EntryKind::Symlink => 1,
-        EntryKind::File => 2,
-        EntryKind::Other => 3,
-    }
-}
-
-pub(super) fn build_breadcrumbs(path: &Path) -> Vec<Breadcrumb> {
+pub fn build_breadcrumbs(path: &Path) -> Vec<Breadcrumb> {
     let mut ancestors = path.ancestors().collect::<Vec<_>>();
     ancestors.reverse();
 
@@ -228,23 +156,4 @@ pub(super) fn build_breadcrumbs(path: &Path) -> Vec<Breadcrumb> {
             path: path_to_string(ancestor),
         })
         .collect()
-}
-
-pub(super) fn path_to_string(path: &Path) -> String {
-    normalize_path_for_display(&path.to_string_lossy())
-}
-
-#[cfg_attr(not(windows), allow(dead_code))]
-pub(super) fn normalize_path_for_display(path: &str) -> String {
-    #[cfg(windows)]
-    {
-        if let Some(path) = path.strip_prefix(r"\\?\UNC\") {
-            return format!(r"\\{path}");
-        }
-
-        path.strip_prefix(r"\\?\").unwrap_or(path).to_owned()
-    }
-
-    #[cfg(not(windows))]
-    path.to_owned()
 }

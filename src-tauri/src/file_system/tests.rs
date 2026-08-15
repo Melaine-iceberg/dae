@@ -1,15 +1,16 @@
-use super::directory::{
-    DirectoryEntry, EntryKind, build_breadcrumbs, entry_sort_key, normalize_path_for_display,
-    read_directory_sync,
-};
 use super::error::FileSystemError;
-use super::operations::{
-    NewEntryKind, copy_entries_with_progress, create_entry_sync, delete_entries_with_progress,
-    move_entries_with_progress, rename_entry_sync,
+use super::local::{
+    build_breadcrumbs, copy_entries_with_progress, create_entry_sync,
+    delete_entries_with_progress, move_entries_with_progress, read_directory_sync,
+    rename_entry_sync, search_directory_sync,
 };
 use super::progress::FileOperationProgressReporterTrait;
-use super::search::search_directory_sync;
 use super::sidebar::{Favorite, dedupe_favorites, is_visible_file_system};
+use super::types::{
+    DirectoryEntry, EntryKind, NewEntryKind, entry_sort_key, normalize_path_for_display,
+    path_to_string,
+};
+use super::vfs;
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -163,7 +164,7 @@ fn searches_nested_files_and_directories_case_insensitively() {
     fs::write(&hidden_file, "draft").expect("create hidden matching file");
 
     let response =
-        search_directory_sync(directory.clone(), "report", || true).expect("search test directory");
+        search_directory_sync(directory.clone(), "report", &|| true).expect("search test directory");
     let names = response
         .entries
         .iter()
@@ -191,7 +192,7 @@ fn searches_nested_files_and_directories_case_insensitively() {
 
 #[test]
 fn returns_no_search_results_for_blank_queries() {
-    let response = search_directory_sync(Path::new("missing").to_path_buf(), "  ", || true)
+    let response = search_directory_sync(Path::new("missing").to_path_buf(), "  ", &|| true)
         .expect("blank search should not touch the file system");
 
     assert!(response.entries.is_empty());
@@ -205,7 +206,7 @@ fn cancels_search_when_the_generation_is_stale() {
     fs::create_dir_all(&directory).expect("create test directory");
     fs::write(directory.join("report.txt"), "content").expect("create matching file");
 
-    let response = search_directory_sync(directory.clone(), "report", || false)
+    let response = search_directory_sync(directory.clone(), "report", &|| false)
         .expect("stale search should return an empty snapshot");
 
     assert!(response.entries.is_empty());
@@ -364,7 +365,7 @@ fn creates_files_and_directories_with_validated_names() {
         .expect("create file");
     assert_eq!(
         file_path,
-        super::directory::path_to_string(&directory.join("notes.txt"))
+        path_to_string(&directory.join("notes.txt"))
     );
     assert!(directory.join("notes.txt").is_file());
 
@@ -376,7 +377,7 @@ fn creates_files_and_directories_with_validated_names() {
     .expect("create directory");
     assert_eq!(
         directory_path,
-        super::directory::path_to_string(&directory.join("子文件夹"))
+        path_to_string(&directory.join("子文件夹"))
     );
     assert!(directory.join("子文件夹").is_dir());
 
@@ -389,6 +390,93 @@ fn creates_files_and_directories_with_validated_names() {
         create_entry_sync(directory.clone(), "a/b.txt".into(), NewEntryKind::File)
             .expect_err("names with path separators should fail");
     assert!(matches!(separator_error, FileSystemError::InvalidInput(_)));
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn parses_scheme_prefixes() {
+    let (scheme, rest) = vfs::split_scheme("smb://nas/media").expect("smb scheme");
+    assert_eq!(scheme, vfs::Scheme::Smb);
+    assert_eq!(rest, "nas/media");
+
+    let (scheme, rest) = vfs::split_scheme("sftp://user@nas:22/home").expect("sftp scheme");
+    assert_eq!(scheme, vfs::Scheme::Sftp);
+    assert_eq!(rest, "user@nas:22/home");
+
+    let (scheme, rest) = vfs::split_scheme("webdavs://cloud.example/dav").expect("webdav scheme");
+    assert_eq!(scheme, vfs::Scheme::WebDav);
+    assert_eq!(rest, "cloud.example/dav");
+
+    let (scheme, rest) = vfs::split_scheme("file:///home").expect("file maps to local");
+    assert_eq!(scheme, vfs::Scheme::Local);
+    assert_eq!(rest, "/home");
+}
+
+#[test]
+fn treats_scheme_less_paths_as_local() {
+    for path in [
+        r"C:\Users\test",
+        "/home/user",
+        r"\\nas\share\folder",
+        r"relative\nested://segment",
+    ] {
+        let (scheme, rest) = vfs::split_scheme(path).expect("scheme-less path");
+        assert_eq!(scheme, vfs::Scheme::Local, "path should stay local: {path}");
+        assert_eq!(rest, path);
+    }
+}
+
+#[test]
+fn rejects_unknown_and_unregistered_schemes() {
+    let unknown = vfs::resolve("s3://bucket/data")
+        .err()
+        .expect("unknown scheme");
+    assert!(matches!(unknown, FileSystemError::InvalidInput(_)));
+
+    let unregistered = vfs::resolve("smb://nas/media")
+        .err()
+        .expect("no smb backend yet");
+    assert!(matches!(unregistered, FileSystemError::InvalidInput(_)));
+}
+
+#[test]
+fn blocks_transfers_across_backends() {
+    vfs::ensure_same_backend(&[r"C:\source.txt".into()], r"D:\folder", "Copying")
+        .expect("same-backend transfers pass");
+
+    let error = vfs::ensure_same_backend(
+        &[r"C:\source.txt".into()],
+        "smb://nas/media",
+        "Copying",
+    )
+    .expect_err("cross-backend copy is blocked");
+    assert!(matches!(error, FileSystemError::InvalidInput(_)));
+}
+
+#[test]
+fn serves_local_paths_through_the_backend_trait() {
+    let directory = std::env::temp_dir().join(format!("dae-vfs-trait-test-{}", std::process::id()));
+    fs::create_dir_all(&directory).expect("create test directory");
+
+    let path = directory.to_string_lossy().into_owned();
+    let backend = vfs::resolve(&path).expect("local path resolves");
+
+    let created = backend
+        .create_entry(&path, "through-trait.txt", NewEntryKind::File)
+        .expect("create through trait object");
+    assert!(directory.join("through-trait.txt").is_file());
+
+    let view = backend.read_dir(&path).expect("read through trait object");
+    assert!(view
+        .entries
+        .iter()
+        .any(|entry| entry.name == "through-trait.txt"));
+
+    let progress = TestProgress::new();
+    backend
+        .delete(&[created], &progress)
+        .expect("delete through trait object");
 
     fs::remove_dir_all(directory).expect("remove test directory");
 }

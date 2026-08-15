@@ -1,93 +1,23 @@
-use super::directory::{
-    EntryKind, entry_kind, entry_kind_rank, modified_at_millis, path_to_string,
+use super::directory::{entry_kind, modified_at_millis};
+use crate::file_system::error::FileSystemError;
+use crate::file_system::types::{
+    EntryKind, SearchEntry, SearchResponse, entry_kind_rank, path_to_string,
 };
-use super::error::FileSystemError;
 use ignore::{WalkBuilder, WalkState};
-use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::cmp::Ordering;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Mutex;
-use tauri::Manager;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 
 const MAX_SEARCH_RESULTS: usize = 200;
 
-#[derive(Default)]
-pub struct FileSearchState {
-    generation: AtomicU64,
-}
-
-impl FileSearchState {
-    fn begin(&self) -> u64 {
-        self.generation.fetch_add(1, AtomicOrdering::AcqRel) + 1
-    }
-
-    fn cancel(&self) {
-        self.generation.fetch_add(1, AtomicOrdering::AcqRel);
-    }
-
-    fn is_current(&self, generation: u64) -> bool {
-        self.generation.load(AtomicOrdering::Acquire) == generation
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchEntry {
-    pub name: String,
-    pub path: String,
-    pub relative_path: String,
-    pub kind: EntryKind,
-    pub modified_at: Option<u64>,
-    pub size: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct SearchResponse {
-    pub entries: Vec<SearchEntry>,
-    pub truncated: bool,
-}
-
-/// Recursively searches entry names beneath one directory using ripgrep's
-/// filesystem traversal engine. A newer request cancels any older traversal.
-#[tauri::command]
-#[specta::specta]
-pub async fn search_directory(
-    path: String,
-    query: String,
-    app: tauri::AppHandle,
-) -> Result<SearchResponse, FileSystemError> {
-    let generation = app.state::<FileSearchState>().begin();
-    let search_app = app.clone();
-
-    tauri::async_runtime::spawn_blocking(move || {
-        search_directory_sync(PathBuf::from(path), &query, move || {
-            search_app.state::<FileSearchState>().is_current(generation)
-        })
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
-}
-
-/// Stops the active traversal when the search surface is dismissed.
-#[tauri::command]
-#[specta::specta]
-pub fn cancel_search(app: tauri::AppHandle) {
-    app.state::<FileSearchState>().cancel();
-}
-
-pub(super) fn search_directory_sync<F>(
+pub fn search_directory_sync(
     requested_path: PathBuf,
     query: &str,
-    is_current: F,
-) -> Result<SearchResponse, FileSystemError>
-where
-    F: Fn() -> bool + Send + Sync + 'static,
-{
+    is_current: &(dyn Fn() -> bool + Send + Sync),
+) -> Result<SearchResponse, FileSystemError> {
     let query = query.trim();
     if query.is_empty() {
         return Ok(SearchResponse {
@@ -179,10 +109,10 @@ where
     Ok(SearchResponse { entries, truncated })
 }
 
-struct SearchShared<F> {
+struct SearchShared<'a> {
     entries: Mutex<Vec<SearchEntry>>,
     truncated: AtomicBool,
-    is_current: F,
+    is_current: &'a (dyn Fn() -> bool + Send + Sync),
 }
 
 fn build_search_entry(

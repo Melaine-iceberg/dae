@@ -45,16 +45,16 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         // so exporting u64 as `number` loses no precision.
         .dangerously_cast_bigints_to_number()
         .commands(tauri_specta::collect_commands![
-            file_system::directory::get_home_directory,
-            file_system::directory::read_directory,
-            file_system::directory::watch_directory,
-            file_system::search::search_directory,
-            file_system::search::cancel_search,
-            file_system::operations::rename_entry,
-            file_system::operations::create_entry,
-            file_system::operations::copy_entries,
-            file_system::operations::move_entries,
-            file_system::operations::delete_entries,
+            file_system::commands::get_home_directory,
+            file_system::commands::read_directory,
+            file_system::commands::watch_directory,
+            file_system::commands::search_directory,
+            file_system::commands::cancel_search,
+            file_system::commands::rename_entry,
+            file_system::commands::create_entry,
+            file_system::commands::copy_entries,
+            file_system::commands::move_entries,
+            file_system::commands::delete_entries,
             file_system::sidebar::get_system_places,
             file_system::sidebar::list_disks,
             file_system::sidebar::list_wsl_distros,
@@ -62,7 +62,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::sidebar::save_favorites
         ])
         .events(tauri_specta::collect_events![
-            file_system::directory::DirectoryChanged,
+            file_system::DirectoryChanged,
             file_system::progress::FileOperationProgress
         ])
 }
