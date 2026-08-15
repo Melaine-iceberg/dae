@@ -1,5 +1,5 @@
 import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { FolderIcon } from "lucide-react";
+import { FolderIcon } from "@phosphor-icons/react";
 
 import {
   Breadcrumb,

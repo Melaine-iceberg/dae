@@ -1,13 +1,16 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: "Geist Variable", sans-serif;
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "PingFang SC", "Noto Sans", sans-serif;
+  --color-selection: var(--selection);
+  --color-folder: var(--folder);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -49,72 +52,78 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Native utility — neutral cool gray, indigo accent */
+  --background: #f4f4f5; /* window chrome: tab strip, toolbar, sidebar */
+  --foreground: #1a1a1c;
+  --card: #ffffff; /* content surface */
+  --card-foreground: #1a1a1c;
+  --popover: #ffffff;
+  --popover-foreground: #1a1a1c;
+  --primary: #5b5bd6; /* indigo */
+  --primary-foreground: #ffffff;
+  --secondary: #e9e9ec;
+  --secondary-foreground: #1a1a1c;
+  --muted: #e9e9ec;
+  --muted-foreground: #5f5f66;
+  --accent: #e4e4e7; /* hover surface */
+  --accent-foreground: #1a1a1c;
+  --selection: color-mix(in oklab, var(--primary) 15%, transparent);
+  --folder: #e8a33d;
+  --destructive: #c42b1c;
+  --border: #e3e3e6;
+  --input: #cfcfd6;
+  --ring: #5b5bd6;
+  --chart-1: #5b5bd6;
+  --chart-2: #5f5f66;
+  --chart-3: #43434a;
+  --chart-4: #36363c;
+  --chart-5: #26262b;
+  --radius: 0.375rem;
+  --sidebar: #f4f4f5;
+  --sidebar-foreground: #1a1a1c;
+  --sidebar-primary: #5b5bd6;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e4e4e7;
+  --sidebar-accent-foreground: #1a1a1c;
+  --sidebar-border: #e3e3e6;
+  --sidebar-ring: #5b5bd6;
 }
 
 .dark {
-  --background: oklch(0.21 0 0);
-  --foreground: oklch(0.96 0 0);
-  --card: oklch(0.25 0 0);
-  --card-foreground: oklch(0.96 0 0);
-  --popover: oklch(0.25 0 0);
-  --popover-foreground: oklch(0.96 0 0);
-  --primary: oklch(0.92 0 0);
-  --primary-foreground: oklch(0.22 0 0);
-  --secondary: oklch(0.32 0 0);
-  --secondary-foreground: oklch(0.96 0 0);
-  --muted: oklch(0.32 0 0);
-  --muted-foreground: oklch(0.72 0 0);
-  --accent: oklch(0.32 0 0);
-  --accent-foreground: oklch(0.96 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 12%);
-  --input: oklch(1 0 0 / 16%);
-  --ring: oklch(0.58 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.23 0 0);
-  --sidebar-foreground: oklch(0.96 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.96 0 0);
-  --sidebar-accent: oklch(0.32 0 0);
-  --sidebar-accent-foreground: oklch(0.96 0 0);
-  --sidebar-border: oklch(1 0 0 / 12%);
-  --sidebar-ring: oklch(0.58 0 0);
+  /* Native utility — dark */
+  --background: #1d1d20;
+  --foreground: #ededf0;
+  --card: #242428;
+  --card-foreground: #ededf0;
+  --popover: #2a2a2f;
+  --popover-foreground: #ededf0;
+  --primary: #6e7ef3;
+  --primary-foreground: #101021;
+  --secondary: #2b2b30;
+  --secondary-foreground: #ededf0;
+  --muted: #2b2b30;
+  --muted-foreground: #a2a2ab;
+  --accent: #333338;
+  --accent-foreground: #ededf0;
+  --selection: color-mix(in oklab, var(--primary) 32%, transparent);
+  --folder: #ffc65a;
+  --destructive: #ff99a4;
+  --border: rgb(255 255 255 / 9%);
+  --input: rgb(255 255 255 / 14%);
+  --ring: #6e7ef3;
+  --chart-1: #6e7ef3;
+  --chart-2: #a2a2ab;
+  --chart-3: #75757e;
+  --chart-4: #565660;
+  --chart-5: #3a3a44;
+  --sidebar: #1d1d20;
+  --sidebar-foreground: #ededf0;
+  --sidebar-primary: #6e7ef3;
+  --sidebar-primary-foreground: #101021;
+  --sidebar-accent: #333338;
+  --sidebar-accent-foreground: #ededf0;
+  --sidebar-border: rgb(255 255 255 / 9%);
+  --sidebar-ring: #6e7ef3;
 }
 
 @layer components {
@@ -139,15 +148,45 @@
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply overflow-hidden bg-background text-foreground antialiased;
-  }
   html {
     @apply font-sans;
+  }
+  body {
+    @apply cursor-default overflow-hidden bg-background text-foreground antialiased select-none;
+  }
+  input,
+  textarea {
+    @apply cursor-text select-text;
   }
   html,
   body,
   #root {
     @apply h-full;
+  }
+
+  /* Native overlay-style scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--foreground) 28%, transparent) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-clip: padding-box;
+    background-color: color-mix(in oklab, var(--foreground) 28%, transparent);
+    border: 3.5px solid transparent;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in oklab, var(--foreground) 45%, transparent);
+  }
+  ::-webkit-scrollbar-button {
+    display: none;
   }
 }

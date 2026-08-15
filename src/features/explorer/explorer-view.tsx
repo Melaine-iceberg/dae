@@ -8,15 +8,15 @@ import {
 } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import {
+  ArrowClockwiseIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpIcon,
-  LoaderCircleIcon,
-  PanelLeftIcon,
-  RefreshCwIcon,
+  CircleNotchIcon,
+  SidebarSimpleIcon,
   StarIcon,
-  TriangleAlertIcon,
-} from "lucide-react";
+  WarningIcon,
+} from "@phosphor-icons/react";
 
 import { commands, events } from "@/bindings";
 
@@ -47,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { DirectorySearch, useDirectorySearch } from "./directory-search";
 import { getExplorerDropTargetAtPoint, type FileTransferOperation } from "./drag-drop";
 import { ExplorerPathBar } from "./explorer-path-bar";
+import { ExplorerStatusBar } from "./explorer-status-bar";
 import { FileList, FileListSkeleton } from "./file-list";
 import type { ExplorerNavigator } from "./navigation";
 import { fileClipboardAtom } from "./tabs";
@@ -521,28 +522,29 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     directory !== null && favorites.some((favorite) => favorite.path === directory.path);
 
   return (
-    <main className="h-full bg-background">
+    <main className="h-full bg-card">
       <section className="flex h-full w-full flex-col overflow-hidden">
         <header
-          className="flex h-14 shrink-0 items-center gap-1 border-b px-2 sm:px-3"
+          className="flex h-11 shrink-0 items-center gap-1 border-b bg-background px-2"
           data-tauri-drag-region="deep"
         >
           <div className="flex shrink-0 items-center gap-0.5">
             <Button
               aria-label={sidebarVisible ? "隐藏侧边栏" : "显示侧边栏"}
               onClick={() => setSidebarVisible(!sidebarVisible)}
-              size="icon-sm"
+              size="icon"
               title={sidebarVisible ? "隐藏侧边栏" : "显示侧边栏"}
               type="button"
               variant="ghost"
             >
-              <PanelLeftIcon />
+              <SidebarSimpleIcon />
             </Button>
+            <ToolbarSeparator />
             <Button
               aria-label="后退"
               disabled={!canGoBack}
               onClick={() => void navigator.goBack()}
-              size="icon-sm"
+              size="icon"
               title="后退"
               type="button"
               variant="ghost"
@@ -553,7 +555,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               aria-label="前进"
               disabled={!canGoForward}
               onClick={() => void navigator.goForward()}
-              size="icon-sm"
+              size="icon"
               title="前进"
               type="button"
               variant="ghost"
@@ -564,7 +566,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               aria-label="上一级"
               disabled={!canGoUp}
               onClick={() => void navigator.goUp()}
-              size="icon-sm"
+              size="icon"
               title="上一级"
               type="button"
               variant="ghost"
@@ -575,15 +577,18 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               aria-label="刷新"
               disabled={isLoading || !directory}
               onClick={() => directory && void navigator.navigate(directory.path)}
-              size="icon-sm"
+              size="icon"
               title="刷新"
               type="button"
               variant="ghost"
             >
-              <RefreshCwIcon className={cn(isLoading && "animate-spin")} />
+              <ArrowClockwiseIcon className={cn(isLoading && "animate-spin")} />
             </Button>
+            <ToolbarSeparator />
             <Button
-              aria-label={isCurrentFavorited ? "从常用位置移除当前目录" : "将当前目录添加到常用位置"}
+              aria-label={
+                isCurrentFavorited ? "从常用位置移除当前目录" : "将当前目录添加到常用位置"
+              }
               disabled={!directory}
               onClick={() =>
                 directory &&
@@ -592,7 +597,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                   name: directory.breadcrumbs.at(-1)?.name ?? directory.path,
                 })
               }
-              size="icon-sm"
+              size="icon"
               title={isCurrentFavorited ? "从常用位置移除当前目录" : "将当前目录添加到常用位置"}
               type="button"
               variant="ghost"
@@ -609,7 +614,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                 onNavigatePath={navigateToPath}
               />
             ) : (
-              <Skeleton className="h-4 w-48 max-w-full" />
+              <Skeleton className="h-6 w-56 max-w-full rounded-[5px]" />
             )}
           </div>
 
@@ -629,7 +634,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         {operationError && (
           <div className="shrink-0 p-3 pb-0">
             <Alert variant="destructive">
-              <TriangleAlertIcon />
+              <WarningIcon />
               <AlertTitle>文件操作未完成</AlertTitle>
               <AlertDescription>{operationError}</AlertDescription>
               <AlertAction>
@@ -693,6 +698,14 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
           <FileListSkeleton />
         )}
         {fileOperationProgress && <FileOperationStatusBar progress={fileOperationProgress} />}
+        <ExplorerStatusBar
+          itemCount={displayedEntries.length}
+          isLoading={isLoading || search.isSearching}
+          searchError={search.isActive ? search.error : null}
+          searchQuery={search.isActive ? search.query.trim() : null}
+          selectedCount={selectedPaths.length}
+          truncated={search.response?.truncated ?? false}
+        />
       </section>
 
       <RenameDialog
@@ -732,6 +745,10 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   );
 }
 
+function ToolbarSeparator() {
+  return <div aria-hidden="true" className="mx-1 h-5 w-px bg-border" />;
+}
+
 function FileOperationStatusBar({ progress }: { progress: FileOperationProgress }) {
   const operationLabel: Record<FileOperationKind, string> = {
     copy: "复制",
@@ -749,26 +766,29 @@ function FileOperationStatusBar({ progress }: { progress: FileOperationProgress 
         : `正在${operationLabel[progress.operation]}`;
 
   return (
-    <footer aria-live="polite" className="flex shrink-0 items-center gap-3 border-t px-4 py-2">
-      <LoaderCircleIcon
+    <footer
+      aria-live="polite"
+      className="flex h-10 shrink-0 items-center gap-3 border-t bg-background px-3"
+    >
+      <CircleNotchIcon
         className={cn(
-          "size-4 text-muted-foreground",
+          "size-3.5 shrink-0 text-primary",
           progress.phase !== "completed" && "animate-spin",
         )}
       />
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-3 text-xs">
-          <span className="truncate font-medium">{statusText}</span>
+          <span className="truncate">
+            {statusText}
+            {currentPath ? ` · ${currentPath}` : ""}
+          </span>
           <span className="shrink-0 tabular-nums text-muted-foreground">
             {total === null
               ? "正在计算项目数"
               : `${progress.completed.toLocaleString("zh-CN")} / ${total.toLocaleString("zh-CN")}（${percentage}%）`}
           </span>
         </div>
-        <p className="truncate text-xs text-muted-foreground" title={currentPath ?? undefined}>
-          {currentPath ?? "请稍候…"}
-        </p>
-        <Progress className="mt-1 w-full" value={percentage} />
+        <Progress className="mt-1.5 w-full" value={percentage} />
       </div>
     </footer>
   );
@@ -935,7 +955,7 @@ function DeleteDialog({
 function ExplorerErrorAlert({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <Alert variant="destructive">
-      <TriangleAlertIcon />
+      <WarningIcon />
       <AlertTitle>无法读取此位置</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
       <AlertAction>

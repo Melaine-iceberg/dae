@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { ChevronLeftIcon, ChevronRightIcon, PlusIcon, XIcon } from "lucide-react";
+import { CaretLeftIcon, CaretRightIcon, FolderIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
 
 import { WindowControls } from "@/components/window-controls";
 import { Sidebar } from "@/features/sidebar/sidebar";
@@ -49,7 +49,7 @@ export function ExplorerTabs() {
   return (
     <div className="flex h-full flex-col">
       <header
-        className="flex h-10 shrink-0 items-stretch border-b bg-muted/40"
+        className="flex h-9 shrink-0 items-stretch border-b bg-muted/50"
         data-tauri-drag-region="deep"
       >
         <StripScrollButton
@@ -61,7 +61,7 @@ export function ExplorerTabs() {
         <div
           ref={stripRef}
           aria-label="文件标签页"
-          className="flex min-w-0 flex-1 items-stretch gap-1 overflow-x-auto px-1 pt-1.5 scrollbar-none [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
           onScroll={syncScrollButtons}
           role="tablist"
         >
@@ -70,12 +70,12 @@ export function ExplorerTabs() {
           ))}
           <button
             aria-label="新建标签页"
-            className="my-auto flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="mb-1 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={createTab}
             title="新建标签页"
             type="button"
           >
-            <PlusIcon className="size-4" />
+            <PlusIcon className="size-3.5" />
           </button>
         </div>
         <StripScrollButton
@@ -108,20 +108,20 @@ function StripScrollButton({
   onClick: () => void;
   visible: boolean;
 }) {
-  const Icon = direction === -1 ? ChevronLeftIcon : ChevronRightIcon;
+  const Icon = direction === -1 ? CaretLeftIcon : CaretRightIcon;
 
   return (
     <button
       aria-label={ariaLabel}
       className={cn(
-        "flex w-7 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+        "flex w-7 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
         !visible && "invisible",
       )}
       onClick={onClick}
       tabIndex={visible ? 0 : -1}
       type="button"
     >
-      <Icon className="size-4" />
+      <Icon className="size-3.5" />
     </button>
   );
 }
@@ -131,7 +131,8 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
   const closeTab = useSetAtom(closeTabAtom);
   const navigator = getTabNavigator(tab.id);
   const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
-  const title = state.directory?.path ?? "加载中…";
+  const directory = state.directory;
+  const title = directory?.breadcrumbs.at(-1)?.name ?? "加载中…";
   const elementRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -144,10 +145,10 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     <div
       aria-selected={isActive}
       className={cn(
-        "group relative flex h-full w-64 shrink-0 cursor-pointer items-center rounded-t-md border border-b-0 text-sm select-none",
+        "group relative flex h-8 w-52 shrink-0 items-center rounded-t-lg border border-b-0 text-[13px] select-none",
         isActive
           ? "border-border bg-background"
-          : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
+          : "cursor-default border-transparent text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       )}
       onClick={() => activateTab(tab.id)}
       onKeyDown={(event) => {
@@ -159,14 +160,17 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       ref={elementRef}
       role="tab"
       tabIndex={0}
-      title={title}
+      title={directory?.path ?? title}
     >
-      <span className="w-full truncate pr-8 pl-3 text-center">{title}</span>
+      <FolderIcon className="ml-2 size-3.5 shrink-0 text-folder" weight="fill" />
+      <span className="w-full truncate pr-7 pl-1.5">{title}</span>
       <button
         aria-label={`关闭标签页 ${title}`}
         className={cn(
-          "absolute top-1/2 right-1.5 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm transition-opacity hover:bg-muted",
-          isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+          "absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-[4px] transition-colors hover:bg-accent",
+          isActive
+            ? "text-muted-foreground hover:text-foreground"
+            : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
         )}
         onClick={(event) => {
           event.stopPropagation();
@@ -174,7 +178,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
         }}
         type="button"
       >
-        <XIcon className="size-3.5" />
+        <XIcon className="size-3" />
       </button>
     </div>
   );
