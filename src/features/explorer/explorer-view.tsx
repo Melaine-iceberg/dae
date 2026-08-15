@@ -489,6 +489,10 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
 
     setOperationError(null);
     const paths = deleteTargets.map((entry) => entry.path);
+    const targets = deleteTargets;
+
+    setDeleteTargets([]);
+    setSelectedPaths([]);
 
     void performFileOperation(
       (operationId) => commands.deleteEntries(paths, operationId!),
@@ -496,11 +500,10 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     ).then((result) => {
       if (!result.ok) {
         setOperationError(result.error);
+        setDeleteTargets(targets);
+        setSelectedPaths(paths);
         return;
       }
-
-      setDeleteTargets([]);
-      setSelectedPaths([]);
     });
   };
 
