@@ -302,7 +302,7 @@ function GridCell({
         <div
           aria-selected={isSelected}
           className={cn(
-            "flex cursor-grab flex-col items-center gap-1.5 rounded-2xs px-2 py-2.5 text-center transition-colors select-none hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none",
+            "flex cursor-grab flex-col items-center gap-1.5 rounded-lg px-2 py-2.5 text-center transition-colors select-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none",
             isSelected && "bg-selection ring-1 ring-primary/30 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-selection ring-2 ring-primary ring-inset",

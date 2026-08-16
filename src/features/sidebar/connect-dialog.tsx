@@ -122,7 +122,7 @@ export function ConnectDialog({
             <Label htmlFor="connect-protocol">协议</Label>
             <select
               aria-invalid={false}
-              className="h-9 rounded-md border border-input bg-transparent px-3 text-[13px] outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-50"
+              className="h-9 rounded-lg border border-input bg-transparent px-3 text-[13px] outline-none transition-[border-color,box-shadow] duration-200 ease-spring focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50"
               id="connect-protocol"
               onChange={(event) => {
                 setProtocol(event.target.value as Protocol);

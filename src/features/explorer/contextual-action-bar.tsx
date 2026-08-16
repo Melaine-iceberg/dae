@@ -73,7 +73,7 @@ export function ContextualActionBar({
   return (
     <div
       aria-label="选中项操作"
-      className="animate-in absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border bg-popover/95 p-1 shadow-lg backdrop-blur duration-150 fade-in slide-in-from-bottom-2"
+      className="animate-in absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-foreground/5 bg-popover p-1 shadow-xl shadow-black/15 backdrop-blur duration-150 ease-spring fade-in slide-in-from-bottom-2"
       role="toolbar"
     >
       <span className="shrink-0 px-2.5 text-[13px] text-muted-foreground select-none tabular-nums">
@@ -127,7 +127,7 @@ export function ContextualActionBar({
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label="更多操作"
-          className="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+          className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
           disabled={isActionDisabled}
           title="更多操作"
         >

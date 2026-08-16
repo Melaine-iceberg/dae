@@ -728,7 +728,7 @@ export function FileList({
         {internalDrag && (
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md border bg-popover px-2.5 py-1.5 text-[13px] text-popover-foreground shadow-lg"
+            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-full border border-foreground/5 bg-popover px-3 py-1.5 text-[13px] text-popover-foreground shadow-lg"
             style={{ left: internalDrag.position.x + 14, top: internalDrag.position.y + 14 }}
           >
             {internalDrag.target?.kind === "favorites" ? (
@@ -798,7 +798,7 @@ function SortHeaderCell({
     >
       <button
         className={cn(
-          "flex min-w-0 items-center gap-1 rounded-sm px-2.5 py-1 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "flex min-w-0 items-center gap-1 rounded-xs px-2.5 py-1 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           active && "text-foreground",
           align === "right" && "flex-row-reverse",
         )}
@@ -871,7 +871,7 @@ function FileListRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            "grid cursor-grab items-center rounded-2xs whitespace-nowrap text-[13px] transition-colors select-none hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
+            "grid cursor-grab items-center rounded-md whitespace-nowrap text-[13px] transition-colors select-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
             isSelected && "bg-selection ring-1 ring-primary/30 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-selection ring-2 ring-primary ring-inset",

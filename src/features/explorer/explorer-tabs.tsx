@@ -89,7 +89,7 @@ export function ExplorerTabs() {
           ))}
           <button
             aria-label="新建标签页"
-            className="mb-1 flex size-6 shrink-0 items-center justify-center rounded-2xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="mb-1 flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={createTab}
             title={`新建标签页 (${MOD_KEY}+T)`}
             type="button"
@@ -204,9 +204,9 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     <div
       aria-selected={isActive}
       className={cn(
-        "group relative flex h-8 w-52 shrink-0 items-center rounded-t-lg border border-b-0 text-[13px] select-none",
+        "group relative flex h-8 w-52 shrink-0 items-center rounded-t-lg border border-b-0 text-[13px] select-none transition-[background-color,color,border-color] duration-200 ease-spring",
         isActive
-          ? "border-border bg-background"
+          ? "border-border bg-card"
           : "cursor-default border-transparent text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       )}
       onClick={() => activateTab(tab.id)}
@@ -232,7 +232,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       <button
         aria-label={`关闭标签页 ${title}`}
         className={cn(
-          "absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-xs transition-colors hover:bg-accent",
+          "absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-full transition-colors hover:bg-accent",
           isActive
             ? "text-muted-foreground hover:text-foreground"
             : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",

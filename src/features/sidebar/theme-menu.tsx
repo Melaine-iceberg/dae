@@ -51,7 +51,7 @@ export function ThemeMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={`主题：${activeOption?.label ?? "跟随系统"}`}
-        className="flex size-7 items-center justify-center rounded-2xs text-muted-foreground transition-colors outline-none hover:bg-muted/70 hover:text-foreground data-[popup-open]:bg-muted/70 data-[popup-open]:text-foreground"
+        className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-accent/70 hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground"
         title={`主题：${activeOption?.label ?? "跟随系统"}`}
       >
         <ActiveIcon className="size-4" />

@@ -238,7 +238,7 @@ function SidebarContent() {
         />
 
         <SubLabel label="云存储" />
-        <div className="flex items-center gap-2 rounded-2xs px-2.5 py-1.5 text-[13px] text-muted-foreground/70">
+        <div className="flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] text-muted-foreground/70">
           <CloudIcon className="size-4 shrink-0" />
           <span className="text-xs">即将支持</span>
         </div>
@@ -275,7 +275,7 @@ function SectionLabel({
       {onAdd && (
         <button
           aria-label={addTitle}
-          className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+          className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
           onClick={onAdd}
           title={addTitle}
           type="button"
@@ -310,8 +310,8 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "flex w-full items-center gap-2 rounded-2xs px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-muted/70",
-        isActive && "bg-selection",
+        "flex w-full items-center gap-2.5 rounded-full px-3.5 py-1.5 text-left text-[13px] transition-[background-color,color] duration-200 ease-spring hover:bg-accent/70",
+        isActive && "bg-selection font-medium text-accent-foreground",
       )}
       onClick={onClick}
       title={title ?? label}
@@ -320,7 +320,7 @@ function NavItem({
       <Icon
         className={cn(
           "size-4 shrink-0",
-          isActive ? "text-primary" : "text-muted-foreground",
+          isActive ? "text-accent-foreground" : "text-muted-foreground",
           iconClassName,
         )}
       />
@@ -348,7 +348,7 @@ function NetworkSection({
         <span className="text-[11px] text-muted-foreground/80">网络</span>
         <button
           aria-label="连接网络存储"
-          className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
+          className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
           onClick={onAdd}
           title="连接网络存储"
           type="button"
@@ -506,7 +506,7 @@ function DiskItem({
   return (
     <button
       className={cn(
-        "w-full rounded-2xs px-2.5 py-1.5 text-left transition-colors hover:bg-muted/70",
+        "w-full rounded-lg px-3 py-2 text-left transition-[background-color] duration-200 ease-spring hover:bg-accent/60",
         isActive && "bg-selection",
       )}
       onClick={() => onNavigate(volume.mountPoint)}

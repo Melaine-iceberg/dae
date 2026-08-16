@@ -9,6 +9,13 @@
   --font-sans:
     system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
     "PingFang SC", "Noto Sans", sans-serif;
+
+  /* M3 Expressive motion tokens: springy overshoot for shape morphs and
+     playful state changes, emphasized for spatial transitions. */
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
   --color-selection: var(--selection);
   --color-folder: var(--folder);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -42,93 +49,127 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  /* Expressive shape language (SKILL.md §9): xs 4 / 2xs 5 / sm 8 / md 12 / lg 16 / xl 24.
-     Small controls stay tight; cards and floating surfaces get expressive
-     corners. */
-  --radius-xs: 4px;
-  --radius-2xs: 5px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
+
+  /* Extra M3 tonal roles used by expressive components. */
+  --color-primary-container: var(--primary-container);
+  --color-on-primary-container: var(--on-primary-container);
+  --color-secondary-container: var(--secondary-container);
+  --color-on-secondary-container: var(--on-secondary-container);
+  --color-error-container: var(--error-container);
+  --color-on-error-container: var(--on-error-container);
+
+  /* Material 3 Expressive shape scale (2025): generous, soft corners.
+     Controls trend pill-shaped; cards and floating surfaces get 24–36px
+     corners. Shape morphing happens per-component via radius transitions. */
+  --radius-xs: 10px;
+  --radius-2xs: 12px;
+  --radius-sm: 14px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
   --radius-xl: 24px;
   --radius-2xl: 28px;
   --radius-3xl: 32px;
   --radius-4xl: 36px;
+
+  /* M3 Expressive wavy progress: the indicator carries a travelling sine
+     wave, the signature expressive loading treatment. */
+  --animate-m3-wave: m3-wave 0.9s linear infinite;
+
+  @keyframes m3-wave {
+    to {
+      transform: translateX(-16px);
+    }
+  }
 }
 
 :root {
-  /* Native utility — neutral cool gray, indigo accent */
-  --background: #f4f4f5; /* window chrome: tab strip, toolbar, sidebar */
-  --foreground: #1a1a1c;
-  --card: #ffffff; /* content surface */
-  --card-foreground: #1a1a1c;
-  --popover: #ffffff;
-  --popover-foreground: #1a1a1c;
-  --primary: #5b5bd6; /* indigo */
+  /* Material 3 (baseline purple) — light scheme.
+     Window chrome uses surface-container; the content surface sits lighter
+     above it; menus/dialogs float on surface-container-high. */
+  --background: #f3edf7; /* surface-container — tab strip, toolbar, sidebar */
+  --foreground: #1d1b20; /* on-surface */
+  --card: #fef7ff; /* surface — content surface */
+  --card-foreground: #1d1b20;
+  --popover: #ece6f0; /* surface-container-high — menus, dialogs */
+  --popover-foreground: #1d1b20;
+  --primary: #6750a4;
   --primary-foreground: #ffffff;
-  --secondary: #e9e9ec;
-  --secondary-foreground: #1a1a1c;
-  --muted: #e9e9ec;
-  --muted-foreground: #5f5f66;
-  --accent: #e4e4e7; /* hover surface */
-  --accent-foreground: #1a1a1c;
-  --selection: color-mix(in oklab, var(--primary) 15%, transparent);
+  --primary-container: #eaddff;
+  --on-primary-container: #21005d;
+  --secondary: #e8def8; /* secondary-container — tonal surfaces */
+  --secondary-foreground: #1d192b; /* on-secondary-container */
+  --secondary-container: #e8def8;
+  --on-secondary-container: #1d192b;
+  --muted: #ece6f0; /* surface-container-high */
+  --muted-foreground: #49454f; /* on-surface-variant */
+  --accent: #e8def8; /* secondary-container — menu highlight */
+  --accent-foreground: #1d192b;
+  --error-container: #f9dedc;
+  --on-error-container: #410e0b;
+  --selection: #e8def8; /* secondary-container — active pills, selection */
   --folder: #e8a33d;
-  --destructive: #c42b1c;
-  --border: #e3e3e6;
-  --input: #cfcfd6;
-  --ring: #5b5bd6;
-  --chart-1: #5b5bd6;
-  --chart-2: #5f5f66;
-  --chart-3: #43434a;
-  --chart-4: #36363c;
-  --chart-5: #26262b;
-  --radius: 0.75rem;
-  --sidebar: #f4f4f5;
-  --sidebar-foreground: #1a1a1c;
-  --sidebar-primary: #5b5bd6;
+  --destructive: #b3261e; /* error */
+  --border: #cac4d0; /* outline-variant */
+  --input: #79747e; /* outline */
+  --ring: #6750a4;
+  --chart-1: #6750a4;
+  --chart-2: #7d5260;
+  --chart-3: #625b71;
+  --chart-4: #49454f;
+  --chart-5: #1d1b20;
+  --radius: 1rem;
+  --sidebar: #f3edf7;
+  --sidebar-foreground: #1d1b20;
+  --sidebar-primary: #6750a4;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e4e4e7;
-  --sidebar-accent-foreground: #1a1a1c;
-  --sidebar-border: #e3e3e6;
-  --sidebar-ring: #5b5bd6;
+  --sidebar-accent: #e8def8;
+  --sidebar-accent-foreground: #1d192b;
+  --sidebar-border: #cac4d0;
+  --sidebar-ring: #6750a4;
 }
 
 .dark {
-  /* Native utility — dark */
-  --background: #1d1d20;
-  --foreground: #ededf0;
-  --card: #242428;
-  --card-foreground: #ededf0;
-  --popover: #2a2a2f;
-  --popover-foreground: #ededf0;
-  --primary: #6e7ef3;
-  --primary-foreground: #101021;
-  --secondary: #2b2b30;
-  --secondary-foreground: #ededf0;
-  --muted: #2b2b30;
-  --muted-foreground: #a2a2ab;
-  --accent: #333338;
-  --accent-foreground: #ededf0;
-  --selection: color-mix(in oklab, var(--primary) 32%, transparent);
+  /* Material 3 (baseline purple) — dark scheme. */
+  --background: #1d1b20; /* surface-container-low */
+  --foreground: #e6e0e9; /* on-surface */
+  --card: #211f26; /* surface-container — content surface */
+  --card-foreground: #e6e0e9;
+  --popover: #2b2930; /* surface-container-high */
+  --popover-foreground: #e6e0e9;
+  --primary: #d0bcff;
+  --primary-foreground: #381e72;
+  --primary-container: #4f378b;
+  --on-primary-container: #eaddff;
+  --secondary: #4a4458; /* secondary-container */
+  --secondary-foreground: #e8def8; /* on-secondary-container */
+  --secondary-container: #4a4458;
+  --on-secondary-container: #e8def8;
+  --muted: #2b2930; /* surface-container-high */
+  --muted-foreground: #cac4d0; /* on-surface-variant */
+  --accent: #4a4458;
+  --accent-foreground: #e8def8;
+  --error-container: #8c1d18;
+  --on-error-container: #f9dedc;
+  --selection: #4a4458; /* secondary-container */
   --folder: #ffc65a;
-  --destructive: #ff99a4;
-  --border: rgb(255 255 255 / 9%);
-  --input: rgb(255 255 255 / 14%);
-  --ring: #6e7ef3;
-  --chart-1: #6e7ef3;
-  --chart-2: #a2a2ab;
-  --chart-3: #75757e;
-  --chart-4: #565660;
-  --chart-5: #3a3a44;
-  --sidebar: #1d1d20;
-  --sidebar-foreground: #ededf0;
-  --sidebar-primary: #6e7ef3;
-  --sidebar-primary-foreground: #101021;
-  --sidebar-accent: #333338;
-  --sidebar-accent-foreground: #ededf0;
-  --sidebar-border: rgb(255 255 255 / 9%);
-  --sidebar-ring: #6e7ef3;
+  --destructive: #f2b8b5; /* error */
+  --border: #49454f; /* outline-variant */
+  --input: #938f99; /* outline */
+  --ring: #d0bcff;
+  --chart-1: #d0bcff;
+  --chart-2: #efb8c8;
+  --chart-3: #ccc2dc;
+  --chart-4: #cac4d0;
+  --chart-5: #e6e0e9;
+  --radius: 1rem;
+  --sidebar: #1d1b20;
+  --sidebar-foreground: #e6e0e9;
+  --sidebar-primary: #d0bcff;
+  --sidebar-primary-foreground: #381e72;
+  --sidebar-accent: #4a4458;
+  --sidebar-accent-foreground: #e8def8;
+  --sidebar-border: #49454f;
+  --sidebar-ring: #d0bcff;
 }
 
 @layer components {
@@ -169,7 +210,7 @@
     @apply h-full;
   }
 
-  /* Native overlay-style scrollbars */
+  /* Overlay-style scrollbars: pill thumbs fit the expressive shape language. */
   * {
     scrollbar-width: thin;
     scrollbar-color: color-mix(in oklab, var(--foreground) 28%, transparent) transparent;

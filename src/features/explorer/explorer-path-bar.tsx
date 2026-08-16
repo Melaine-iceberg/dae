@@ -56,7 +56,7 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
     return (
       <form
         className={cn(
-          "flex h-8 min-w-0 flex-1 items-center rounded-md border bg-card pr-2 pl-2.5 transition-colors focus-within:border-ring",
+          "flex h-8 min-w-0 flex-1 items-center rounded-full border bg-card pr-3 pl-3.5 transition-colors focus-within:border-ring",
           isInvalid ? "border-destructive" : "border-input",
         )}
         onSubmit={(event) => void submitPath(event)}
@@ -92,7 +92,7 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
 
   return (
     <div
-      className="flex h-8 min-w-0 flex-1 items-center rounded-md border border-input bg-card px-2.5 transition-colors hover:border-ring/60"
+      className="flex h-8 min-w-0 flex-1 items-center rounded-full border border-input bg-card px-3.5 transition-colors hover:border-ring/60"
       data-tauri-drag-region="false"
       onClick={startEditing}
       title="单击以编辑路径"

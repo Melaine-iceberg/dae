@@ -827,7 +827,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                 onNavigatePath={navigateToPath}
               />
             ) : (
-              <Skeleton className="h-6 w-56 max-w-full rounded-2xs" />
+              <Skeleton className="h-6 w-56 max-w-full rounded-full" />
             )}
           </div>
 
