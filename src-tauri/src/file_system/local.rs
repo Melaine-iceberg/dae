@@ -2,10 +2,12 @@
 //! paths, and UNC shares. Sibling protocol backends (smb, sftp, ...) will live
 //! next to this module as they land.
 
+mod content_search;
 mod directory;
 mod operations;
 mod search;
 
+pub use content_search::{ContentSearchParams, search_file_contents_sync};
 pub use directory::create_directory_watcher;
 pub use operations::{
     copy_entries_with_progress, delete_entries_with_progress, move_entries_with_progress,

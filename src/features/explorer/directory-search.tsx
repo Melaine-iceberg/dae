@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
-import { CircleNotchIcon, MagnifyingGlassIcon, XIcon } from "@phosphor-icons/react";
+import {
+  CircleNotchIcon,
+  MagnifyingGlassIcon,
+  TextAaIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 
 import {
   InputGroup,
@@ -10,9 +15,12 @@ import {
 
 import { commands } from "@/bindings";
 
+import type { ContentSearchController } from "./content-search";
 import type { SearchResponse } from "./types";
 
 const SEARCH_DEBOUNCE_MS = 180;
+
+export type ExplorerSearchMode = "name" | "content";
 
 export interface DirectorySearchController {
   error: string | null;
@@ -26,6 +34,7 @@ export interface DirectorySearchController {
 export function useDirectorySearch(
   directoryPath: string | null,
   refreshToken: object | null,
+  enabled = true,
 ): DirectorySearchController {
   const requestVersionRef = useRef(0);
   const [query, setQuery] = useState("");
@@ -56,7 +65,7 @@ export function useDirectorySearch(
     setResponse(null);
     setError(null);
 
-    if (!directoryPath || !trimmedQuery) {
+    if (!enabled || !directoryPath || !trimmedQuery) {
       setIsSearching(false);
       if (directoryPath && !trimmedQuery) {
         void commands.cancelSearch().catch(() => undefined);
@@ -86,11 +95,11 @@ export function useDirectorySearch(
     }, SEARCH_DEBOUNCE_MS);
 
     return () => window.clearTimeout(timeout);
-  }, [directoryPath, refreshToken, trimmedQuery]);
+  }, [directoryPath, enabled, refreshToken, trimmedQuery]);
 
   return {
     error,
-    isActive: trimmedQuery.length > 0,
+    isActive: enabled && trimmedQuery.length > 0,
     isSearching,
     query,
     response,
@@ -99,15 +108,26 @@ export function useDirectorySearch(
 }
 
 export function DirectorySearch({
+  contentSearch,
   directoryName,
   disabled,
+  mode,
+  onModeChange,
   search,
 }: {
+  contentSearch: ContentSearchController;
   directoryName: string | null;
   disabled: boolean;
+  mode: ExplorerSearchMode;
+  onModeChange: (mode: ExplorerSearchMode) => void;
   search: DirectorySearchController;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const isContentMode = mode === "content";
+  const activeQuery = isContentMode ? contentSearch.query : search.query;
+  const setActiveQuery = isContentMode ? contentSearch.setQuery : search.setQuery;
+  const isSearching = isContentMode ? contentSearch.isSearching : search.isSearching;
+  const activeError = isContentMode ? contentSearch.error : search.error;
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -133,31 +153,46 @@ export function DirectorySearch({
     <InputGroup className="w-56 shrink-0 rounded-full">
       <InputGroupInput
         ref={inputRef}
-        aria-invalid={Boolean(search.error)}
-        aria-label={`搜索“${scopeName}”中的文件和文件夹`}
+        aria-invalid={Boolean(activeError)}
+        aria-label={
+          isContentMode
+            ? `搜索“${scopeName}”中的文件内容`
+            : `搜索“${scopeName}”中的文件和文件夹`
+        }
         disabled={disabled}
-        onChange={(event) => search.setQuery(event.target.value)}
+        onChange={(event) => setActiveQuery(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Escape" && search.query) {
+          if (event.key === "Escape" && activeQuery) {
             event.preventDefault();
-            search.setQuery("");
+            setActiveQuery("");
           }
         }}
-        placeholder={`搜索 ${scopeName}`}
+        placeholder={isContentMode ? `在内容中搜索` : `搜索 ${scopeName}`}
         spellCheck={false}
-        title={search.error ?? `递归搜索“${scopeName}”`}
-        value={search.query}
+        title={
+          isContentMode
+            ? `递归搜索“${scopeName}”中的文件内容（正则可选）`
+            : `递归搜索“${scopeName}”的文件名`
+        }
+        value={activeQuery}
       />
       <InputGroupAddon align="inline-start">
-        <MagnifyingGlassIcon />
+        <InputGroupButton
+          aria-label={isContentMode ? "切换为按名称搜索" : "切换为按内容搜索"}
+          onClick={() => onModeChange(isContentMode ? "name" : "content")}
+          size="icon-xs"
+          title={isContentMode ? "当前：按内容搜索，点击切换为按名称" : "当前：按名称搜索，点击切换为按内容"}
+        >
+          {isContentMode ? <TextAaIcon /> : <MagnifyingGlassIcon />}
+        </InputGroupButton>
       </InputGroupAddon>
-      {(search.isSearching || search.query) && (
+      {(isSearching || activeQuery) && (
         <InputGroupAddon align="inline-end">
-          {search.isSearching && <CircleNotchIcon className="animate-spin" />}
-          {search.query && (
+          {isSearching && <CircleNotchIcon className="animate-spin" />}
+          {activeQuery && (
             <InputGroupButton
               aria-label="清除搜索"
-              onClick={() => search.setQuery("")}
+              onClick={() => setActiveQuery("")}
               size="icon-xs"
               title="清除搜索"
             >

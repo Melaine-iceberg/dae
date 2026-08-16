@@ -55,8 +55,13 @@ import { addItemsToSpace } from "@/features/workspace/spaces-atoms";
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
 import { cn } from "@/lib/utils";
 
+import {
+  ContentSearchResults,
+  ContentSearchToolbar,
+  useContentSearch,
+} from "./content-search";
 import { ContextualActionBar } from "./contextual-action-bar";
-import { DirectorySearch, useDirectorySearch } from "./directory-search";
+import { DirectorySearch, useDirectorySearch, type ExplorerSearchMode } from "./directory-search";
 import { getExplorerDropTargetAtPoint, type FileTransferOperation } from "./drag-drop";
 import { EntryPreview } from "./entry-preview";
 import { isArchiveFile } from "./entry-context-menu";
@@ -114,13 +119,20 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   );
   const [externalDrop, setExternalDrop] = useState<ExternalDrop | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("name");
   const directory = state.directory;
   const directoryPath = directory?.path;
   const isLoading = state.status === "loading";
   const canGoBack = !isLoading && state.historyIndex > 0;
   const canGoForward = !isLoading && state.historyIndex < state.history.length - 1;
   const canGoUp = !isLoading && (directory?.breadcrumbs.length ?? 0) > 1;
-  const search = useDirectorySearch(directoryPath ?? null, directory);
+  const search = useDirectorySearch(directoryPath ?? null, directory, searchMode === "name");
+  const contentSearch = useContentSearch(
+    directoryPath ?? null,
+    directory,
+    searchMode === "content",
+  );
+  const isContentSearchActive = searchMode === "content" && contentSearch.isActive;
   const sortKey = useAtomValue(sortKeyAtom);
   const sortOrder = useAtomValue(sortOrderAtom);
   const entryFilters = useAtomValue(entryFiltersAtom);
@@ -140,6 +152,13 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       void navigator.initialize();
     }
   }, [navigator]);
+
+  // File selection belongs to the entry list, which content search replaces.
+  useEffect(() => {
+    if (isContentSearchActive) {
+      setSelectedPaths([]);
+    }
+  }, [isContentSearchActive]);
 
   useEffect(() => {
     if (!directoryPath) return;
@@ -865,12 +884,21 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
           </div>
 
           <DirectorySearch
+            contentSearch={contentSearch}
             directoryName={directory?.breadcrumbs.at(-1)?.name ?? null}
             disabled={isLoading}
+            mode={searchMode}
+            onModeChange={setSearchMode}
             search={search}
           />
           <FilterMenu disabled={!directory} />
         </header>
+
+        {isContentSearchActive && (
+          <div className="shrink-0 border-b border-border/60 px-3 py-1.5">
+            <ContentSearchToolbar search={contentSearch} />
+          </div>
+        )}
 
         {state.error && directory && (
           <div className="shrink-0 p-3 pb-0">
@@ -900,7 +928,16 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
 
         {directory ? (
           <div className="relative flex min-h-0 flex-1 flex-col">
-            <FileList
+            {isContentSearchActive ? (
+              <ContentSearchResults
+                error={contentSearch.error}
+                isSearching={contentSearch.isSearching}
+                onOpenLocation={(location) => void navigator.navigate(location)}
+                query={contentSearch.query.trim()}
+                response={contentSearch.response}
+              />
+            ) : (
+              <FileList
               currentDirectoryPath={directory.path}
               entries={displayedEntries}
               externalDropItemCount={externalDrop?.sourcePaths.length ?? 0}
@@ -949,6 +986,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                 search.isActive ? `${directory.path}::search::${search.query}` : directory.path
               }
             />
+            )}
             {isPreviewOpen && selectedEntries.length > 0 && (
               <EntryPreview
                 entry={selectedEntries[0]}
@@ -1000,12 +1038,32 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         )}
         {fileOperationProgress && <FileOperationStatusBar progress={fileOperationProgress} />}
         <ExplorerStatusBar
-          itemCount={displayedEntries.length}
-          isLoading={isLoading || search.isSearching}
-          searchError={search.isActive ? search.error : null}
-          searchQuery={search.isActive ? search.query.trim() : null}
+          itemCount={
+            isContentSearchActive
+              ? (contentSearch.response?.files.length ?? 0)
+              : displayedEntries.length
+          }
+          isLoading={isLoading || search.isSearching || contentSearch.isSearching}
+          searchError={
+            isContentSearchActive
+              ? contentSearch.error
+              : search.isActive
+                ? search.error
+                : null
+          }
+          searchQuery={
+            isContentSearchActive
+              ? contentSearch.query.trim()
+              : search.isActive
+                ? search.query.trim()
+                : null
+          }
           selectedCount={selectedPaths.length}
-          truncated={search.response?.truncated ?? false}
+          truncated={
+            isContentSearchActive
+              ? (contentSearch.response?.truncated ?? false)
+              : (search.response?.truncated ?? false)
+          }
         />
       </section>
 

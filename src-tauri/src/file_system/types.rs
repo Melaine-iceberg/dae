@@ -64,6 +64,30 @@ pub struct SearchResponse {
     pub truncated: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentSearchMatch {
+    pub line_number: u64,
+    pub line_text: String,
+    /// Zero-based character ranges of the matches within `line_text`.
+    pub ranges: Vec<(usize, usize)>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentSearchFile {
+    pub path: String,
+    pub relative_path: String,
+    pub matches: Vec<ContentSearchMatch>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentSearchResponse {
+    pub files: Vec<ContentSearchFile>,
+    pub truncated: bool,
+}
+
 /// Backend-neutral metadata used by the generic transfer engine.
 #[derive(Debug, Clone)]
 pub struct EntryStat {

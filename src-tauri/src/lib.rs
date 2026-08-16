@@ -51,6 +51,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::commands::read_directory,
             file_system::commands::watch_directory,
             file_system::commands::search_directory,
+            file_system::commands::search_file_contents,
             file_system::commands::cancel_search,
             file_system::commands::rename_entry,
             file_system::commands::create_entry,

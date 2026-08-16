@@ -2,7 +2,9 @@ use super::error::FileSystemError;
 use super::local;
 use super::progress::{FileOperationKind, FileOperationProgressReporter, emit_preparing};
 use super::transfer::{self, TransferSource};
-use super::types::{DirectoryView, NewEntryKind, SearchResponse, path_to_string};
+use super::types::{
+    ContentSearchResponse, DirectoryView, NewEntryKind, SearchResponse, path_to_string,
+};
 use super::vfs::{self, Scheme};
 use super::watch::{DirectoryWatcher, WatchHandle, spawn_polling_watcher};
 use std::path::PathBuf;
@@ -105,6 +107,47 @@ pub async fn search_directory(
 #[specta::specta]
 pub fn cancel_search(app: tauri::AppHandle) {
     app.state::<FileSearchState>().cancel();
+}
+
+/// Searches file contents beneath one local directory with optional regex,
+/// case sensitivity, and file-type filtering. Ignores VCS/dependency
+/// directories (`.git`, `node_modules`, `target`) by default. A newer request
+/// cancels any older traversal.
+#[tauri::command]
+#[specta::specta]
+pub async fn search_file_contents(
+    path: String,
+    query: String,
+    is_regex: bool,
+    case_sensitive: bool,
+    file_filter: Option<String>,
+    app: tauri::AppHandle,
+) -> Result<ContentSearchResponse, FileSystemError> {
+    if !is_local_path(&path) {
+        return Err(FileSystemError::InvalidInput(
+            "内容搜索仅支持本地目录".into(),
+        ));
+    }
+
+    let generation = app.state::<FileSearchState>().begin();
+    let search_app = app.clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = search_app.state::<FileSearchState>();
+        let is_current = move || state.is_current(generation);
+        local::search_file_contents_sync(
+            PathBuf::from(path),
+            &local::ContentSearchParams {
+                query: &query,
+                is_regex,
+                case_sensitive,
+                file_filter: file_filter.as_deref(),
+            },
+            &is_current,
+        )
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Renames a single directory entry without allowing a path change.
