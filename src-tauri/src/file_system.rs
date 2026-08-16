@@ -1,7 +1,9 @@
+pub mod archive;
 pub mod commands;
 pub mod connections;
 pub mod error;
 pub mod local;
+pub mod preview;
 pub mod progress;
 pub mod recents;
 pub mod smb;

@@ -84,7 +84,7 @@ function ViewModeSwitcher() {
           aria-label={label}
           aria-pressed={viewMode === mode}
           className={cn(
-            "flex size-5 items-center justify-center rounded-[4px] transition-colors hover:bg-accent hover:text-foreground",
+            "flex size-5 items-center justify-center rounded-xs transition-colors hover:bg-accent hover:text-foreground",
             viewMode === mode && "bg-accent text-foreground",
           )}
           key={mode}
@@ -112,7 +112,7 @@ function DensitySwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label="显示密度"
-        className="flex size-5 items-center justify-center rounded-[4px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        className="flex size-5 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         title="显示密度"
       >
         <RowsIcon size={13} />

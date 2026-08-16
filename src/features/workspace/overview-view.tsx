@@ -35,6 +35,7 @@ import {
 
 import { ensureRecentsLoadedAtom, recentsAtom, recordRecentItem } from "./recents-atoms";
 import { ensureSpacesLoadedAtom, spacesAtom } from "./spaces-atoms";
+import { getSpaceAccent } from "./space-identity";
 import { navigateToFolderAtom, openSurfaceAtom } from "./workspace-atoms";
 import {
   LocationCard,
@@ -256,7 +257,7 @@ export function OverviewView() {
               <LocationCard
                 description={space.items.length > 0 ? `${space.items.length} 个位置` : "空空间"}
                 icon={SquaresFourIcon}
-                iconClassName="text-primary"
+                iconClassName={getSpaceAccent(space.id).text}
                 key={space.id}
                 onClick={() => openSurface({ kind: "space", spaceId: space.id })}
                 title={space.name}

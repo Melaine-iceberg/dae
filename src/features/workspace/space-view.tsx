@@ -41,6 +41,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { openInNewTabAtom } from "@/features/explorer/tabs";
+import { cn } from "@/lib/utils";
 
 import {
   deleteSpace,
@@ -49,6 +50,7 @@ import {
   renameSpace,
   spacesAtom,
 } from "./spaces-atoms";
+import { getSpaceAccent } from "./space-identity";
 import { navigateToFolderAtom, openSurfaceAtom } from "./workspace-atoms";
 import { LocationCard, WorkspacePage, WorkspacePageHeader } from "./workspace-components";
 
@@ -161,6 +163,17 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
                 </Button>
               )}
             </>
+          }
+          icon={
+            <span
+              aria-hidden="true"
+              className={cn(
+                "flex size-11 shrink-0 items-center justify-center rounded-xl",
+                getSpaceAccent(space.id).tile,
+              )}
+            >
+              <SquaresFourIcon className={cn("size-5.5", getSpaceAccent(space.id).text)} />
+            </span>
           }
           title={space.name}
           description={

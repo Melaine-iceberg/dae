@@ -171,6 +171,113 @@ pub fn delete_entries(
     Ok(())
 }
 
+/// Duplicates entries next to their originals with "副本" suffixes
+/// ("报告.txt" → "报告 副本.txt", then "报告 副本 2.txt", …). Works on any
+/// backend because each copy runs through the same engine as copy/paste.
+pub fn duplicate_sources(
+    sources: Vec<TransferSource>,
+    progress: &dyn FileOperationProgressReporterTrait,
+) -> Result<Vec<String>, FileSystemError> {
+    if sources.is_empty() {
+        return Err(FileSystemError::InvalidInput(
+            "Choose at least one entry before duplicating".into(),
+        ));
+    }
+
+    ensure_unique_paths(&sources)?;
+
+    let mut stats = Vec::with_capacity(sources.len());
+    for source in &sources {
+        stats.push(source.backend.stat(&source.path)?);
+    }
+
+    progress.start(
+        sources
+            .iter()
+            .zip(&stats)
+            .map(|(source, stat)| count_copy_units(source.backend.as_ref(), &source.path, stat))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .sum(),
+    );
+
+    let mut created = Vec::with_capacity(sources.len());
+    for (source, stat) in sources.into_iter().zip(stats) {
+        progress.begin_entry(Path::new(&source.path));
+        let destination = unique_duplicate_path(&source)?;
+
+        copy_node(
+            source.backend.as_ref(),
+            &source.path,
+            &stat,
+            source.backend.as_ref(),
+            &destination,
+            progress,
+        )?;
+
+        created.push(destination);
+    }
+
+    progress.finish();
+    Ok(created)
+}
+
+/// Computes the first free sibling path for a duplicate of `source`.
+fn unique_duplicate_path(source: &TransferSource) -> Result<String, FileSystemError> {
+    let name = last_segment(&source.path).ok_or_else(|| {
+        FileSystemError::InvalidInput(format!(
+            "The root of a volume cannot be duplicated: {}",
+            source.path
+        ))
+    })?;
+
+    let parent = parent_path_of(&source.path).ok_or_else(|| {
+        FileSystemError::InvalidInput(format!(
+            "The root of a volume cannot be duplicated: {}",
+            source.path
+        ))
+    })?;
+
+    let mut attempt = 0_u32;
+    loop {
+        let candidate_name = duplicate_name(name, attempt);
+        let candidate = join_path(&parent, &candidate_name);
+
+        match source.backend.stat(&candidate) {
+            Err(FileSystemError::NotFound(_)) => return Ok(candidate),
+            Err(error) => return Err(error),
+            Ok(_) => attempt += 1,
+        }
+    }
+}
+
+/// The directory containing `path`, keeping the trailing separator style.
+fn parent_path_of(path: &str) -> Option<String> {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    let separator_index = trimmed.rfind(['/', '\\'])?;
+    Some(trimmed[..=separator_index].to_owned())
+}
+
+/// "report.txt" → "report 副本.txt" → "report 副本 2.txt"; directories keep
+/// their full name because they have no extension to preserve.
+fn duplicate_name(name: &str, attempt: u32) -> String {
+    let suffix = if attempt == 0 {
+        "副本".to_owned()
+    } else {
+        format!("副本 {}", attempt + 1)
+    };
+
+    let Some((stem, extension)) = name.rsplit_once('.') else {
+        return format!("{name} {suffix}");
+    };
+
+    if stem.is_empty() {
+        return format!("{name} {suffix}");
+    }
+
+    format!("{stem} {suffix}.{extension}")
+}
+
 fn build_plan(
     sources: Vec<TransferSource>,
     destination: &str,

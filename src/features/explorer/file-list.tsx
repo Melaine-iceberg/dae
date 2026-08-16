@@ -5,10 +5,12 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { useAtomValue } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
+  CaretDownIcon,
+  CaretUpIcon,
   ClipboardIcon,
   CopyIcon,
   FilePlusIcon,
@@ -38,6 +40,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
@@ -51,14 +54,18 @@ import {
 } from "./drag-drop";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { FileColumnView } from "./file-column-view";
-import {
-  DIRECTORY_PRESENTATION,
-  getFilePresentation,
-  OTHER_PRESENTATION,
-  SYMLINK_PRESENTATION,
-} from "./file-icons";
+import { getEntryPresentation } from "./file-icons";
 import { FileGridView } from "./file-grid-view";
-import { DENSITY_ROW_HEIGHT, densityAtom, viewModeAtom } from "./preferences";
+import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
+import {
+  DEFAULT_SORT_ORDER,
+  DENSITY_ROW_HEIGHT,
+  densityAtom,
+  sortKeyAtom,
+  sortOrderAtom,
+  viewModeAtom,
+  type ExplorerSortKey,
+} from "./preferences";
 import type { DirectoryEntry } from "./types";
 
 interface FileListProps {
@@ -72,21 +79,25 @@ interface FileListProps {
   isOperationPending: boolean;
   onAddToFavorites: (paths: string[]) => void;
   onAddToSpace: (spaceId: string, paths: string[]) => void;
+  onCompress: () => void;
   onCopy: () => void;
   onCreateDirectory: () => void;
   onCreateFile: () => void;
   onCut: () => void;
   onDelete: () => void;
+  onDuplicate: () => void;
   onDropEntries: (
     sourcePaths: string[],
     destinationPath: string,
     operation: FileTransferOperation,
   ) => void;
+  onMoveTo: () => void;
   onOpenDirectory: (path: string) => void;
   onPaste: () => void;
   onRename: () => void;
   onScrollOffsetChange?: (offset: number) => void;
   onSelectedPathsChange: (paths: string[]) => void;
+  onTogglePreview: () => void;
   searchState?: FileListSearchState;
   selectedPaths: string[];
   viewId: string;
@@ -115,6 +126,7 @@ const FILE_SIZE_FORMATTER = new Intl.NumberFormat("zh-CN", {
 const FILE_SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
 const DRAG_START_DISTANCE_PX = 6;
+const LIST_HEADER_HEIGHT_PX = 28;
 
 type InternalDragTarget =
   | { kind: "directory"; path: string }
@@ -182,19 +194,6 @@ function draggableDirectoryPaths(entries: DirectoryEntry[], sourcePaths: string[
   return sourcePaths.filter((path) => directoryPaths.has(path));
 }
 
-function getEntryPresentation(entry: DirectoryEntry) {
-  switch (entry.kind) {
-    case "directory":
-      return DIRECTORY_PRESENTATION;
-    case "symlink":
-      return SYMLINK_PRESENTATION;
-    case "other":
-      return OTHER_PRESENTATION;
-    default:
-      return getFilePresentation(entry.name);
-  }
-}
-
 export function FileList({
   currentDirectoryPath,
   entries,
@@ -206,17 +205,21 @@ export function FileList({
   isOperationPending,
   onAddToFavorites,
   onAddToSpace,
+  onCompress,
   onCopy,
   onCreateDirectory,
   onCreateFile,
   onCut,
   onDelete,
+  onDuplicate,
   onDropEntries,
+  onMoveTo,
   onOpenDirectory,
   onPaste,
   onRename,
   onScrollOffsetChange,
   onSelectedPathsChange,
+  onTogglePreview,
   searchState,
   selectedPaths,
   viewId,
@@ -231,6 +234,8 @@ export function FileList({
   const [internalDrag, setInternalDrag] = useState<InternalDragState | null>(null);
   const viewMode = useAtomValue(viewModeAtom);
   const density = useAtomValue(densityAtom);
+  const [sortKey, setSortKey] = useAtom(sortKeyAtom);
+  const [sortOrder, setSortOrder] = useAtom(sortOrderAtom);
   const rowHeight = DENSITY_ROW_HEIGHT[density];
   const selectedPathSet = new Set(selectedPaths);
   const listIsLoading = isLoading || searchState?.isSearching === true;
@@ -294,6 +299,13 @@ export function FileList({
         return;
       }
 
+      // Space toggles the preview surface for the selection (SKILL.md §30).
+      if (event.key === " " && selectedCount > 0 && !actionsDisabled) {
+        event.preventDefault();
+        onTogglePreview();
+        return;
+      }
+
       if (event.key === "Delete" && selectedCount > 0 && !actionsDisabled) {
         event.preventDefault();
         onDelete();
@@ -312,6 +324,7 @@ export function FileList({
     onPaste,
     onRename,
     onSelectedPathsChange,
+    onTogglePreview,
     selectedCount,
   ]);
 
@@ -498,6 +511,44 @@ export function FileList({
 
   const blankMenuDisabled = actionsDisabled || Boolean(searchState);
 
+  // Rubber-band selection over uniform-height rows (SKILL.md §19).
+  const listMarquee = useMarqueeSelection({
+    enabled: !actionsDisabled && activeViewMode === "list",
+    getBaseSelection: () => selectedPaths,
+    hitTest: (rect: MarqueeRect) => {
+      const container = scrollRef.current;
+      if (!container) return [];
+
+      const bounds = container.getBoundingClientRect();
+      const topContent = rect.top - bounds.top + container.scrollTop - LIST_HEADER_HEIGHT_PX;
+      const bottomContent = rect.bottom - bounds.top + container.scrollTop - LIST_HEADER_HEIGHT_PX;
+      if (bottomContent <= 0) return [];
+
+      const firstRow = Math.max(0, Math.floor(topContent / rowHeight));
+      const lastRow = Math.min(
+        entries.length - 1,
+        Math.ceil(bottomContent / rowHeight) - 1,
+      );
+      if (lastRow < firstRow) return [];
+
+      return entries.slice(firstRow, lastRow + 1).map((entry) => entry.path);
+    },
+    onSelectionChange: onSelectedPathsChange,
+    scrollElementRef: scrollRef,
+  });
+
+  /** Clicking the active column toggles direction; a new column starts at its
+   * default direction (SKILL.md §18). */
+  const applySort = (key: ExplorerSortKey) => {
+    if (key === sortKey) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+      return;
+    }
+
+    setSortKey(key);
+    setSortOrder(DEFAULT_SORT_ORDER[key]);
+  };
+
   const viewControls = {
     actionsDisabled,
     draggingPaths,
@@ -509,6 +560,9 @@ export function FileList({
     onCopy,
     onCut,
     onDelete,
+    onDuplicate,
+    onCompress,
+    onMoveTo,
     onOpenEntry: openEntry,
     onPointerDownEntry: prepareInternalDrag,
     onRename,
@@ -519,6 +573,7 @@ export function FileList({
       }
       selectEntry(entry, index, event);
     },
+    onSelectedPathsChange,
     selectedCount,
     selectedPathSet,
   };
@@ -572,14 +627,44 @@ export function FileList({
           <div
             ref={scrollRef}
             className="min-h-0 flex-1 overflow-auto"
+            onPointerDown={(event) => {
+              if (
+                event.target instanceof Element &&
+                event.target.closest('[role="option"], [role="columnheader"]')
+              ) {
+                return;
+              }
+              listMarquee.beginMarquee(event);
+            }}
             onScroll={(event) => onScrollOffsetChange?.(event.currentTarget.scrollTop)}
           >
             <div className="min-w-160">
               <div className="sticky top-0 z-10 grid h-7 shrink-0 items-center whitespace-nowrap border-b bg-card text-xs text-muted-foreground [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
-                <div className="min-w-0 truncate px-3">名称</div>
-                <div className="px-2.5">修改日期</div>
-                <div className="px-2.5">类型</div>
-                <div className="px-2.5 text-right">大小</div>
+                <SortHeaderCell
+                  active={sortKey === "name"}
+                  label="名称"
+                  onSort={() => applySort("name")}
+                  order={sortOrder}
+                />
+                <SortHeaderCell
+                  active={sortKey === "modified"}
+                  label="修改日期"
+                  onSort={() => applySort("modified")}
+                  order={sortOrder}
+                />
+                <SortHeaderCell
+                  active={sortKey === "type"}
+                  label="类型"
+                  onSort={() => applySort("type")}
+                  order={sortOrder}
+                />
+                <SortHeaderCell
+                  active={sortKey === "size"}
+                  align="right"
+                  label="大小"
+                  onSort={() => applySort("size")}
+                  order={sortOrder}
+                />
               </div>
               <div
                 aria-multiselectable="true"
@@ -609,10 +694,13 @@ export function FileList({
                         isSingleSelection={selectedCount === 1}
                         onAddToFavorites={() => addEntryToFavorites(entry)}
                         onAddToSpace={(spaceId) => addEntryToSpace(entry, spaceId)}
+                        onCompress={onCompress}
                         onContextMenu={() => selectForContextMenu(entry, virtualRow.index)}
                         onCopy={onCopy}
                         onCut={onCut}
                         onDelete={onDelete}
+                        onDuplicate={onDuplicate}
+                        onMoveTo={onMoveTo}
                         onOpen={() => openEntry(entry)}
                         onPointerDown={(event) => prepareInternalDrag(entry, event)}
                         onRename={onRename}
@@ -636,6 +724,7 @@ export function FileList({
             松开以复制 {externalDropItemCount} 个项目
           </div>
         )}
+        <MarqueeOverlay rect={listMarquee.rect} />
         {internalDrag && (
           <div
             aria-hidden="true"
@@ -680,11 +769,52 @@ export function FileList({
           <ContextMenuItem disabled={!hasClipboard} onClick={onPaste}>
             <ClipboardIcon />
             粘贴
-            <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
+            <ContextMenuShortcut>{MOD_KEY}+V</ContextMenuShortcut>
           </ContextMenuItem>
         </ContextMenuGroup>
       </ContextMenuContent>
     </ContextMenu>
+  );
+}
+
+function SortHeaderCell({
+  active,
+  align = "left",
+  label,
+  onSort,
+  order,
+}: {
+  active: boolean;
+  align?: "left" | "right";
+  label: string;
+  onSort: () => void;
+  order: "asc" | "desc";
+}) {
+  return (
+    <div
+      aria-sort={active ? (order === "asc" ? "ascending" : "descending") : "none"}
+      className={cn("min-w-0", align === "right" && "text-right")}
+      role="columnheader"
+    >
+      <button
+        className={cn(
+          "flex min-w-0 items-center gap-1 rounded-sm px-2.5 py-1 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          active && "text-foreground",
+          align === "right" && "flex-row-reverse",
+        )}
+        onClick={onSort}
+        title={active ? `按${label}${order === "asc" ? "升序" : "降序"}排列，点击切换` : `按${label}排序`}
+        type="button"
+      >
+        <span className="truncate">{label}</span>
+        {active &&
+          (order === "asc" ? (
+            <CaretUpIcon className="size-3 shrink-0" />
+          ) : (
+            <CaretDownIcon className="size-3 shrink-0" />
+          ))}
+      </button>
+    </div>
   );
 }
 
@@ -698,10 +828,13 @@ function FileListRow({
   isSingleSelection,
   onAddToFavorites,
   onAddToSpace,
+  onCompress,
   onContextMenu,
   onCopy,
   onCut,
   onDelete,
+  onDuplicate,
+  onMoveTo,
   onOpen,
   onPointerDown,
   onRename,
@@ -716,10 +849,13 @@ function FileListRow({
   isSingleSelection: boolean;
   onAddToFavorites: () => void;
   onAddToSpace: (spaceId: string) => void;
+  onCompress: () => void;
   onContextMenu: () => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
+  onDuplicate: () => void;
+  onMoveTo: () => void;
   onOpen: () => void;
   onPointerDown: (event: ReactPointerEvent) => void;
   onRename: () => void;
@@ -735,7 +871,7 @@ function FileListRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            "grid cursor-grab items-center rounded-[5px] whitespace-nowrap text-[13px] transition-colors select-none hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
+            "grid cursor-grab items-center rounded-2xs whitespace-nowrap text-[13px] transition-colors select-none hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
             isSelected && "bg-selection ring-1 ring-primary/30 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
@@ -788,9 +924,12 @@ function FileListRow({
           isSingleSelection={isSingleSelection}
           onAddToFavorites={onAddToFavorites}
           onAddToSpace={onAddToSpace}
+          onCompress={onCompress}
           onCopy={onCopy}
           onCut={onCut}
           onDelete={onDelete}
+          onDuplicate={onDuplicate}
+          onMoveTo={onMoveTo}
           onOpen={onOpen}
           onRename={onRename}
         />

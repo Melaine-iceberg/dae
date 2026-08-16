@@ -28,17 +28,22 @@ export function WorkspacePage({
 export function WorkspacePageHeader({
   actions,
   description,
+  icon,
   title,
 }: {
   actions?: ReactNode;
   description?: string;
+  icon?: ReactNode;
   title: string;
 }) {
   return (
     <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
-      <div className="min-w-0">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+      <div className="flex min-w-0 items-center gap-3.5">
+        {icon}
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+          {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+        </div>
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </header>

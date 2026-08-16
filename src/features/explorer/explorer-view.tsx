@@ -9,6 +9,8 @@ import {
 } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { openPath } from "@tauri-apps/plugin-opener";
 import {
   ArrowClockwiseIcon,
   ArrowLeftIcon,
@@ -50,14 +52,25 @@ import {
   type ExplorerCommandId,
 } from "@/features/workspace/explorer-command-bus";
 import { addItemsToSpace } from "@/features/workspace/spaces-atoms";
+import { recordRecentItem } from "@/features/workspace/recents-atoms";
 import { cn } from "@/lib/utils";
 
+import { ContextualActionBar } from "./contextual-action-bar";
 import { DirectorySearch, useDirectorySearch } from "./directory-search";
 import { getExplorerDropTargetAtPoint, type FileTransferOperation } from "./drag-drop";
+import { EntryPreview } from "./entry-preview";
 import { ExplorerPathBar } from "./explorer-path-bar";
 import { ExplorerStatusBar } from "./explorer-status-bar";
 import { FileList, FileListSkeleton } from "./file-list";
+import { FilterMenu } from "./filter-menu";
 import type { ExplorerNavigator } from "./navigation";
+import {
+  applyEntryFilters,
+  entryFiltersAtom,
+  sortEntries,
+  sortKeyAtom,
+  sortOrderAtom,
+} from "./preferences";
 import { fileClipboardAtom } from "./tabs";
 import type {
   DirectoryEntry,
@@ -99,6 +112,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     null,
   );
   const [externalDrop, setExternalDrop] = useState<ExternalDrop | null>(null);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const directory = state.directory;
   const directoryPath = directory?.path;
   const isLoading = state.status === "loading";
@@ -106,10 +120,15 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const canGoForward = !isLoading && state.historyIndex < state.history.length - 1;
   const canGoUp = !isLoading && (directory?.breadcrumbs.length ?? 0) > 1;
   const search = useDirectorySearch(directoryPath ?? null, directory);
-  const displayedEntries = useMemo(
-    () => (search.isActive ? (search.response?.entries ?? []) : (directory?.entries ?? [])),
-    [directory?.entries, search.isActive, search.response],
-  );
+  const sortKey = useAtomValue(sortKeyAtom);
+  const sortOrder = useAtomValue(sortOrderAtom);
+  const entryFilters = useAtomValue(entryFiltersAtom);
+  const displayedEntries = useMemo(() => {
+    const sourceEntries = search.isActive
+      ? (search.response?.entries ?? [])
+      : (directory?.entries ?? []);
+    return sortEntries(applyEntryFilters(sourceEntries, entryFilters), sortKey, sortOrder);
+  }, [directory?.entries, entryFilters, search.isActive, search.response, sortKey, sortOrder]);
   const selectedEntries = useMemo(
     () => displayedEntries.filter((entry) => selectedPaths.includes(entry.path)),
     [displayedEntries, selectedPaths],
@@ -139,6 +158,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     setDeleteTargets([]);
     setOperationError(null);
     setExternalDrop(null);
+    setIsPreviewOpen(false);
   }, [directoryPath, search.query]);
 
   useEffect(() => {
@@ -401,6 +421,66 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     setOperationError(null);
   }, [selectedEntries]);
 
+  /** Duplicates the selection in place; the backend picks unique "副本" names. */
+  const duplicateSelection = useCallback(() => {
+    if (selectedEntries.length === 0) return;
+
+    setOperationError(null);
+    void performFileOperation(
+      (operationId) =>
+        commands.duplicateEntries(
+          selectedEntries.map((entry) => entry.path),
+          operationId!,
+        ),
+      "copy",
+    ).then((result) => {
+      if (!result.ok) setOperationError(result.error);
+    });
+  }, [performFileOperation, selectedEntries]);
+
+  /** Compresses the selection into a unique .zip next to the entries. */
+  const compressSelection = useCallback(() => {
+    if (selectedEntries.length === 0 || !directoryPath) return;
+
+    setOperationError(null);
+    void performFileOperation(
+      (operationId) =>
+        commands.compressEntries(
+          selectedEntries.map((entry) => entry.path),
+          directoryPath,
+          operationId!,
+        ),
+      "compress",
+    ).then((result) => {
+      if (!result.ok) setOperationError(result.error);
+    });
+  }, [directoryPath, performFileOperation, selectedEntries]);
+
+  /** Native cross-platform folder picker feeding the existing move pipeline. */
+  const moveSelectionTo = useCallback(() => {
+    if (selectedEntries.length === 0 || !directoryPath) return;
+
+    const sourcePaths = selectedEntries.map((entry) => entry.path);
+    setOperationError(null);
+
+    void openDialog({
+      defaultPath: directoryPath,
+      directory: true,
+      multiple: false,
+      title: "选择目标文件夹",
+    })
+      .then((destination) => {
+        if (typeof destination !== "string" || !destination || destination === directoryPath) {
+          return;
+        }
+
+        transferEntries(sourcePaths, destination, "move");
+      })
+      .catch((error: unknown) => {
+        console.warn("Unable to open destination picker", error);
+      });
+  }, [directoryPath, selectedEntries, transferEntries]);
+
   const closeRenameDialog = () => {
     if (isOperationPending) return;
 
@@ -542,9 +622,33 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     });
   }, [selectedEntries]);
 
+  /** Opens every selected file and navigates into the first selected folder. */
+  const openSelectedEntries = useCallback(() => {
+    if (selectedEntries.length === 0 || isOperationPending) return;
+
+    const firstDirectory = selectedEntries.find((entry) => entry.kind === "directory");
+    if (firstDirectory) {
+      void navigator.navigate(firstDirectory.path);
+    }
+
+    for (const entry of selectedEntries) {
+      if (entry.kind === "directory") continue;
+
+      recordRecentItem(entry.path, "file", "opened");
+      void openPath(entry.path).catch((error) => {
+        console.warn(`Unable to open ${entry.path}`, error);
+      });
+    }
+  }, [isOperationPending, navigator, selectedEntries]);
+
   const selectAll = useCallback(() => {
     setSelectedPaths(displayedEntries.map((entry) => entry.path));
   }, [displayedEntries]);
+
+  /** Space toggles the preview surface for the first selected entry. */
+  const togglePreview = useCallback(() => {
+    setIsPreviewOpen((isOpen) => !isOpen);
+  }, []);
 
   const executeExplorerCommand = useCallback(
     (command: ExplorerCommandId) => {
@@ -723,7 +827,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                 onNavigatePath={navigateToPath}
               />
             ) : (
-              <Skeleton className="h-6 w-56 max-w-full rounded-[5px]" />
+              <Skeleton className="h-6 w-56 max-w-full rounded-2xs" />
             )}
           </div>
 
@@ -732,6 +836,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             disabled={isLoading}
             search={search}
           />
+          <FilterMenu disabled={!directory} />
         </header>
 
         {state.error && directory && (
@@ -761,45 +866,90 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         )}
 
         {directory ? (
-          <FileList
-            currentDirectoryPath={directory.path}
-            entries={displayedEntries}
-            externalDropItemCount={externalDrop?.sourcePaths.length ?? 0}
-            externalDropTargetPath={externalDrop?.targetPath ?? null}
-            hasClipboard={clipboard !== null}
-            initialScrollOffset={search.isActive ? 0 : navigator.getScrollOffset(directory.path)}
-            isLoading={isLoading}
-            isOperationPending={isOperationPending}
-            onAddToFavorites={addFavoritePaths}
-            onAddToSpace={addToSpace}
-            onCopy={copySelection}
-            onCreateDirectory={() => requestCreate("directory")}
-            onCreateFile={() => requestCreate("file")}
-            onCut={cutSelection}
-            onDelete={requestDelete}
-            onDropEntries={transferEntries}
-            onOpenDirectory={(path) => void navigator.navigate(path)}
-            onPaste={pasteClipboard}
-            onRename={requestRename}
-            onScrollOffsetChange={
-              search.isActive
-                ? undefined
-                : (offset) => navigator.setScrollOffset(directory.path, offset)
-            }
-            onSelectedPathsChange={setSelectedPaths}
-            searchState={
-              search.isActive
-                ? {
-                    error: search.error,
-                    isSearching: search.isSearching,
-                    query: search.query.trim(),
-                    truncated: search.response?.truncated ?? false,
-                  }
-                : undefined
-            }
-            selectedPaths={selectedPaths}
-            viewId={search.isActive ? `${directory.path}::search::${search.query}` : directory.path}
-          />
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <FileList
+              currentDirectoryPath={directory.path}
+              entries={displayedEntries}
+              externalDropItemCount={externalDrop?.sourcePaths.length ?? 0}
+              externalDropTargetPath={externalDrop?.targetPath ?? null}
+              hasClipboard={clipboard !== null}
+              initialScrollOffset={
+                search.isActive ? 0 : navigator.getScrollOffset(directory.path)
+              }
+              isLoading={isLoading}
+              isOperationPending={isOperationPending}
+              onAddToFavorites={addFavoritePaths}
+              onAddToSpace={addToSpace}
+              onCompress={compressSelection}
+              onCopy={copySelection}
+              onCreateDirectory={() => requestCreate("directory")}
+              onCreateFile={() => requestCreate("file")}
+              onCut={cutSelection}
+              onDelete={requestDelete}
+              onDuplicate={duplicateSelection}
+              onDropEntries={transferEntries}
+              onMoveTo={moveSelectionTo}
+              onOpenDirectory={(path) => void navigator.navigate(path)}
+              onPaste={pasteClipboard}
+              onRename={requestRename}
+              onScrollOffsetChange={
+                search.isActive
+                  ? undefined
+                  : (offset) => navigator.setScrollOffset(directory.path, offset)
+              }
+              onSelectedPathsChange={setSelectedPaths}
+              onTogglePreview={togglePreview}
+              searchState={
+                search.isActive
+                  ? {
+                      error: search.error,
+                      isSearching: search.isSearching,
+                      query: search.query.trim(),
+                      truncated: search.response?.truncated ?? false,
+                    }
+                  : undefined
+              }
+              selectedPaths={selectedPaths}
+              viewId={
+                search.isActive ? `${directory.path}::search::${search.query}` : directory.path
+              }
+            />
+            {isPreviewOpen && selectedEntries.length > 0 && (
+              <EntryPreview
+                entry={selectedEntries[0]}
+                onClose={() => setIsPreviewOpen(false)}
+                onOpen={() => openSelectedEntries()}
+              />
+            )}
+            {selectedPaths.length > 0 && (
+              <ContextualActionBar
+                hasDirectorySelection={selectedEntries.some(
+                  (entry) => entry.kind === "directory",
+                )}
+                isActionDisabled={isOperationPending || isLoading}
+                isSingleSelection={selectedEntries.length === 1}
+                onAddToSpace={(spaceId) =>
+                  addToSpace(
+                    spaceId,
+                    selectedEntries
+                      .filter((entry) => entry.kind === "directory")
+                      .map((entry) => entry.path),
+                  )
+                }
+                onClearSelection={() => setSelectedPaths([])}
+                onCompress={compressSelection}
+                onCopy={copySelection}
+                onCopyPaths={copySelectedPaths}
+                onCut={cutSelection}
+                onDelete={requestDelete}
+                onDuplicate={duplicateSelection}
+                onMoveTo={moveSelectionTo}
+                onOpen={openSelectedEntries}
+                onRename={requestRename}
+                selectedCount={selectedPaths.length}
+              />
+            )}
+          </div>
         ) : state.error ? (
           <div className="p-4">
             <ExplorerErrorAlert message={state.error.message} onRetry={retry} />
@@ -864,6 +1014,7 @@ function FileOperationStatusBar({ progress }: { progress: FileOperationProgress 
     copy: "复制",
     move: "移动",
     delete: "删除",
+    compress: "压缩",
   };
   const total = progress.total;
   const percentage = total && total > 0 ? Math.round((progress.completed / total) * 100) : 0;

@@ -174,3 +174,19 @@ export const DIRECTORY_PRESENTATION: ExtensionPresentation = {
   icon: FolderClosedIcon,
   label: "文件夹",
 };
+
+/** Kind-aware presentation used by every view and the preview surface. */
+export function getEntryPresentation(
+  entry: import("./types").DirectoryEntry,
+): ExtensionPresentation {
+  switch (entry.kind) {
+    case "directory":
+      return DIRECTORY_PRESENTATION;
+    case "symlink":
+      return SYMLINK_PRESENTATION;
+    case "other":
+      return OTHER_PRESENTATION;
+    default:
+      return getFilePresentation(entry.name);
+  }
+}

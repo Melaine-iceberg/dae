@@ -47,6 +47,7 @@ import {
   openInNewTabAtom,
 } from "@/features/explorer/tabs";
 import { spaceRenameRequestAtom } from "@/features/workspace/space-view";
+import { getSpaceAccent } from "@/features/workspace/space-identity";
 import { createSpace, ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
 import {
   activeSurfaceAtom,
@@ -59,6 +60,7 @@ import { addFavoritePathsAtom, sidebarVisibleAtom } from "./sidebar-atoms";
 import type { DiskVolume } from "./types";
 import { ConnectDialog } from "./connect-dialog";
 import { PenguinIcon } from "./penguin-icon";
+import { ThemeMenu } from "./theme-menu";
 import { useConnections } from "./use-connections";
 import { useDiskVolumes } from "./use-disk-volumes";
 import { useWslDistros } from "./use-wsl-distros";
@@ -167,6 +169,7 @@ function SidebarContent() {
               <ContextMenuTrigger>
                 <NavItem
                   icon={SquaresFourIcon}
+                  iconClassName={getSpaceAccent(space.id).text}
                   isActive={surface.kind === "space" && surface.spaceId === space.id}
                   label={space.name}
                   onClick={() => openSurface({ kind: "space", spaceId: space.id })}
@@ -235,10 +238,14 @@ function SidebarContent() {
         />
 
         <SubLabel label="云存储" />
-        <div className="flex items-center gap-2 rounded-[5px] px-2.5 py-1.5 text-[13px] text-muted-foreground/70">
+        <div className="flex items-center gap-2 rounded-2xs px-2.5 py-1.5 text-[13px] text-muted-foreground/70">
           <CloudIcon className="size-4 shrink-0" />
           <span className="text-xs">即将支持</span>
         </div>
+      </div>
+
+      <div className="flex shrink-0 items-center justify-end border-t px-2 py-1.5">
+        <ThemeMenu />
       </div>
 
       <ConnectDialog
@@ -286,12 +293,14 @@ function SubLabel({ label }: { label: string }) {
 
 function NavItem({
   icon: Icon,
+  iconClassName,
   isActive,
   label,
   onClick,
   title,
 }: {
   icon: ComponentType<{ className?: string }>;
+  iconClassName?: string;
   isActive: boolean;
   label: string;
   onClick: () => void;
@@ -301,7 +310,7 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "flex w-full items-center gap-2 rounded-[5px] px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-muted/70",
+        "flex w-full items-center gap-2 rounded-2xs px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-muted/70",
         isActive && "bg-selection",
       )}
       onClick={onClick}
@@ -309,7 +318,11 @@ function NavItem({
       type="button"
     >
       <Icon
-        className={cn("size-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground")}
+        className={cn(
+          "size-4 shrink-0",
+          isActive ? "text-primary" : "text-muted-foreground",
+          iconClassName,
+        )}
       />
       <span className="min-w-0 truncate">{label}</span>
     </button>
@@ -493,7 +506,7 @@ function DiskItem({
   return (
     <button
       className={cn(
-        "w-full rounded-[5px] px-2.5 py-1.5 text-left transition-colors hover:bg-muted/70",
+        "w-full rounded-2xs px-2.5 py-1.5 text-left transition-colors hover:bg-muted/70",
         isActive && "bg-selection",
       )}
       onClick={() => onNavigate(volume.mountPoint)}

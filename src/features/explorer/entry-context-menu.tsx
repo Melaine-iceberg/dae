@@ -1,8 +1,11 @@
 import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
+  ArrowsOutCardinalIcon,
   ClipboardTextIcon,
   CopyIcon,
+  FileZipIcon,
+  FilesIcon,
   FolderOpenIcon,
   PencilIcon,
   ScissorsIcon,
@@ -11,6 +14,8 @@ import {
   TrashIcon,
 } from "@phosphor-icons/react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+
+import { MOD_KEY } from "@/lib/platform";
 
 import {
   ContextMenuGroup,
@@ -31,9 +36,12 @@ export interface EntryActions {
   isSingleSelection: boolean;
   onAddToFavorites: () => void;
   onAddToSpace: (spaceId: string) => void;
+  onCompress: () => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
+  onDuplicate: () => void;
+  onMoveTo: () => void;
   onOpen: () => void;
   onRename: () => void;
 }
@@ -44,9 +52,12 @@ export function EntryContextMenuContent({
   isSingleSelection,
   onAddToFavorites,
   onAddToSpace,
+  onCompress,
   onCopy,
   onCut,
   onDelete,
+  onDuplicate,
+  onMoveTo,
   onOpen,
   onRename,
 }: EntryActions) {
@@ -99,15 +110,30 @@ export function EntryContextMenuContent({
       </ContextMenuGroup>
       <ContextMenuSeparator />
       <ContextMenuGroup>
+        <ContextMenuItem disabled={isActionDisabled} onClick={onDuplicate}>
+          <FilesIcon />
+          创建副本
+        </ContextMenuItem>
+        <ContextMenuItem disabled={isActionDisabled} onClick={onCompress}>
+          <FileZipIcon />
+          压缩为ZIP
+        </ContextMenuItem>
+        <ContextMenuItem disabled={isActionDisabled} onClick={onMoveTo}>
+          <ArrowsOutCardinalIcon />
+          移动到…
+        </ContextMenuItem>
+      </ContextMenuGroup>
+      <ContextMenuSeparator />
+      <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onCopy}>
           <CopyIcon />
           复制
-          <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
+          <ContextMenuShortcut>{MOD_KEY}+C</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem disabled={isActionDisabled} onClick={onCut}>
           <ScissorsIcon />
           剪切
-          <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
+          <ContextMenuShortcut>{MOD_KEY}+X</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuGroup>
       <ContextMenuSeparator />

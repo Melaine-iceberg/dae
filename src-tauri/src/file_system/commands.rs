@@ -238,6 +238,33 @@ fn resolve_sources(paths: Vec<String>) -> Result<Vec<TransferSource>, FileSystem
         .collect()
 }
 
+/// Duplicates entries next to their originals ("name 副本"), returning the
+/// created paths so the UI can refresh and select them.
+#[tauri::command]
+#[specta::specta]
+pub async fn duplicate_entries(
+    paths: Vec<String>,
+    operation_id: String,
+    app: tauri::AppHandle,
+) -> Result<Vec<String>, FileSystemError> {
+    if paths.is_empty() {
+        return Err(FileSystemError::InvalidInput(
+            "Choose at least one entry before duplicating".into(),
+        ));
+    }
+
+    emit_preparing(&app, &operation_id, FileOperationKind::Copy);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let sources = resolve_sources(paths)?;
+        let progress =
+            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Copy);
+        transfer::duplicate_sources(sources, &progress)
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
 fn is_local_path(path: &str) -> bool {
     vfs::scheme_of(path).is_ok_and(|scheme| scheme == Scheme::Local)
 }

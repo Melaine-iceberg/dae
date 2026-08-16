@@ -18,6 +18,7 @@ import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import { WorkspaceSurfaceView } from "@/features/workspace/workspace-surface";
 import type { WorkspaceSurface } from "@/features/workspace/types";
+import { MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import {
@@ -88,9 +89,9 @@ export function ExplorerTabs() {
           ))}
           <button
             aria-label="新建标签页"
-            className="mb-1 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="mb-1 flex size-6 shrink-0 items-center justify-center rounded-2xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={createTab}
-            title="新建标签页 (Ctrl+T)"
+            title={`新建标签页 (${MOD_KEY}+T)`}
             type="button"
           >
             <PlusIcon className="size-3.5" />
@@ -231,7 +232,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       <button
         aria-label={`关闭标签页 ${title}`}
         className={cn(
-          "absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-[4px] transition-colors hover:bg-accent",
+          "absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-xs transition-colors hover:bg-accent",
           isActive
             ? "text-muted-foreground hover:text-foreground"
             : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",

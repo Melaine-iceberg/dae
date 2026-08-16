@@ -13,7 +13,10 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpIcon,
+  ArrowsDownUpIcon,
+  CalendarIcon,
   CheckCircleIcon,
+  CircleNotchIcon,
   ClipboardIcon,
   ClipboardTextIcon,
   ClockCounterClockwiseIcon,
@@ -23,20 +26,38 @@ import {
   FilePlusIcon,
   FolderIcon,
   FolderPlusIcon,
+  FunnelIcon,
   HouseIcon,
   ListIcon,
   MagnifyingGlassIcon,
+  MonitorIcon,
+  MoonIcon,
   PencilIcon,
   RowsIcon,
   ScissorsIcon,
   SquaresFourIcon,
   StarIcon,
+  SunIcon,
+  TextAaIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
 
-import type { RecentItem } from "@/bindings";
+import type { RecentItem, SearchEntry } from "@/bindings";
+import { commands } from "@/bindings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { densityAtom, viewModeAtom, type ExplorerDensity } from "@/features/explorer/preferences";
+import {
+  DEFAULT_ENTRY_FILTERS,
+  DEFAULT_SORT_ORDER,
+  densityAtom,
+  entryFiltersAtom,
+  sortKeyAtom,
+  sortOrderAtom,
+  viewModeAtom,
+  type ExplorerDensity,
+  type ExplorerKindFilter,
+  type ExplorerSortKey,
+} from "@/features/explorer/preferences";
+import { activeTabIdAtom, getTabNavigator } from "@/features/explorer/tabs";
 import { ensureFavoritesLoadedAtom, favoritesAtom } from "@/features/sidebar/sidebar-atoms";
 import {
   dispatchExplorerCommand,
@@ -54,13 +75,18 @@ import {
   openSurfaceAtom,
 } from "@/features/workspace/workspace-atoms";
 import { rankByFuzzy, type RankedResult } from "@/lib/fuzzy";
+import { MOD_KEY } from "@/lib/platform";
+import { setThemePreference, type ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 export const commandBarOpenAtom = atom(false);
 
 const MAX_RECENT_ITEMS = 8;
+const MAX_FILE_RESULTS = 12;
+const FILE_SEARCH_DEBOUNCE_MS = 220;
+const MIN_FILE_QUERY_LENGTH = 2;
 
-const GROUP_ORDER = ["导航", "空间", "收藏", "最近", "文件", "视图"] as const;
+const GROUP_ORDER = ["搜索", "导航", "空间", "收藏", "最近", "文件", "视图"] as const;
 type CommandGroup = (typeof GROUP_ORDER)[number];
 
 interface CommandItem {
@@ -73,6 +99,15 @@ interface CommandItem {
   run: () => void;
 }
 
+/** Reads the active tab's current directory; null when unavailable. */
+function getActiveFolderScope(tabId: string): string | null {
+  try {
+    return getTabNavigator(tabId).getSnapshot().directory?.path ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Global command/search surface (SKILL.md §15). Opens with Ctrl/Cmd+K,
  * fuzzy-searches commands, surfaces, favorites and recents, and dispatches
@@ -82,6 +117,8 @@ export function CommandBar() {
   const [open, setOpen] = useAtom(commandBarOpenAtom);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [fileResults, setFileResults] = useState<SearchEntry[]>([]);
+  const [isSearchingFiles, setIsSearchingFiles] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -89,6 +126,7 @@ export function CommandBar() {
   const recents = useAtomValue(recentsAtom) ?? [];
   const spaces = useAtomValue(spacesAtom) ?? [];
   const activeSurface = useAtomValue(activeSurfaceAtom);
+  const activeTabId = useAtomValue(activeTabIdAtom);
   const ensureFavoritesLoaded = useSetAtom(ensureFavoritesLoadedAtom);
   const ensureRecentsLoaded = useSetAtom(ensureRecentsLoadedAtom);
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
@@ -96,19 +134,78 @@ export function CommandBar() {
   const openSurface = useSetAtom(openSurfaceAtom);
   const setDensity = useSetAtom(densityAtom);
   const setViewMode = useSetAtom(viewModeAtom);
+  const setSortKey = useSetAtom(sortKeyAtom);
+  const setSortOrder = useSetAtom(sortOrderAtom);
+  const setEntryFilters = useSetAtom(entryFiltersAtom);
 
   useEffect(() => {
     if (!open) return;
 
     setQuery("");
     setActiveIndex(0);
+    setFileResults([]);
+    setIsSearchingFiles(false);
     inputRef.current?.focus();
     void ensureFavoritesLoaded();
     void ensureRecentsLoaded();
     void ensureSpacesLoaded();
   }, [ensureFavoritesLoaded, ensureRecentsLoaded, ensureSpacesLoaded, open]);
 
+  // Cancel the backend traversal whenever the surface closes or unmounts.
+  useEffect(
+    () => () => {
+      void commands.cancelSearch().catch(() => undefined);
+    },
+    [],
+  );
+
   const folderActive = activeSurface.kind === "folder";
+
+  /**
+   * Progressive file search (SKILL.md §16): scoped to the active tab's
+   * directory on folder surfaces, falling back to the home directory.
+   * Debounced; a newer query or dismissal cancels the older traversal
+   * through the backend's search generation.
+   */
+  useEffect(() => {
+    if (!open || query.trim().length < MIN_FILE_QUERY_LENGTH) {
+      setFileResults([]);
+      setIsSearchingFiles(false);
+      return;
+    }
+
+    let cancelled = false;
+    const trimmedQuery = query.trim();
+
+    const resolveScope = folderActive
+      ? Promise.resolve(getActiveFolderScope(activeTabId))
+      : commands.getHomeDirectory().catch(() => null);
+
+    const timeout = window.setTimeout(() => {
+      void resolveScope.then((scope) => {
+        if (cancelled || !scope) return;
+
+        setIsSearchingFiles(true);
+        void commands
+          .searchDirectory(scope, trimmedQuery)
+          .then((response) => {
+            if (!cancelled) setFileResults(response.entries);
+          })
+          .catch(() => {
+            if (!cancelled) setFileResults([]);
+          })
+          .finally(() => {
+            if (!cancelled) setIsSearchingFiles(false);
+          });
+      });
+    }, FILE_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      void commands.cancelSearch().catch(() => undefined);
+    };
+  }, [activeTabId, folderActive, open, query]);
 
   const items = useMemo<CommandItem[]>(() => {
     const openRecentItem = (recent: RecentItem) => {
@@ -220,7 +317,7 @@ export function CommandBar() {
       {
         id: "copy",
         label: "复制",
-        hint: "Ctrl+C",
+        hint: `${MOD_KEY}+C`,
         keywords: "copy",
         icon: CopyIcon,
         command: "copy",
@@ -228,7 +325,7 @@ export function CommandBar() {
       {
         id: "cut",
         label: "剪切",
-        hint: "Ctrl+X",
+        hint: `${MOD_KEY}+X`,
         keywords: "cut move",
         icon: ScissorsIcon,
         command: "cut",
@@ -236,7 +333,7 @@ export function CommandBar() {
       {
         id: "paste",
         label: "粘贴",
-        hint: "Ctrl+V",
+        hint: `${MOD_KEY}+V`,
         keywords: "paste",
         icon: ClipboardIcon,
         command: "paste",
@@ -251,7 +348,7 @@ export function CommandBar() {
       {
         id: "select-all",
         label: "全选",
-        hint: "Ctrl+A",
+        hint: `${MOD_KEY}+A`,
         keywords: "select all",
         icon: CheckCircleIcon,
         command: "select-all",
@@ -330,6 +427,73 @@ export function CommandBar() {
         icon: ColumnsIcon,
         run: () => setViewMode("column"),
       },
+      ...(
+        [
+          { key: "name", label: "按名称排序", icon: TextAaIcon },
+          { key: "modified", label: "按修改日期排序", icon: CalendarIcon },
+          { key: "type", label: "按类型排序", icon: FileIcon },
+          { key: "size", label: "按大小排序", icon: ArrowsDownUpIcon },
+        ] as ReadonlyArray<{ icon: ComponentType<{ className?: string }>; key: ExplorerSortKey; label: string }>
+      ).map<CommandItem>((entry) => ({
+        id: `sort:${entry.key}`,
+        group: "视图",
+        label: entry.label,
+        keywords: "sort order arrange",
+        icon: entry.icon,
+        run: () => {
+          setSortKey(entry.key);
+          setSortOrder(DEFAULT_SORT_ORDER[entry.key]);
+        },
+      })),
+      {
+        id: "sort:toggle-order",
+        group: "视图",
+        label: "切换升序/降序",
+        keywords: "sort order ascending descending toggle",
+        icon: ArrowsDownUpIcon,
+        run: () => setSortOrder((order) => (order === "asc" ? "desc" : "asc")),
+      },
+      ...(
+        [
+          { value: "all", label: "类型过滤：全部" },
+          { value: "folders", label: "类型过滤：仅文件夹" },
+          { value: "files", label: "类型过滤：仅文件" },
+          { value: "images", label: "类型过滤：仅图片" },
+        ] as ReadonlyArray<{ label: string; value: ExplorerKindFilter }>
+      ).map<CommandItem>((entry) => ({
+        id: `filter:kind:${entry.value}`,
+        group: "视图",
+        label: entry.label,
+        keywords: "filter kind type",
+        icon: FunnelIcon,
+        run: () => setEntryFilters((filters) => ({ ...filters, kind: entry.value })),
+      })),
+      {
+        id: "filter:clear",
+        group: "视图",
+        label: "清除所有过滤器",
+        keywords: "filter clear reset",
+        icon: FunnelIcon,
+        run: () => setEntryFilters(DEFAULT_ENTRY_FILTERS),
+      },
+      ...(
+        [
+          { icon: SunIcon, label: "主题：浅色", value: "light" },
+          { icon: MoonIcon, label: "主题：深色", value: "dark" },
+          { icon: MonitorIcon, label: "主题：跟随系统", value: "system" },
+        ] as ReadonlyArray<{
+          icon: ComponentType<{ className?: string }>;
+          label: string;
+          value: ThemePreference;
+        }>
+      ).map<CommandItem>((entry) => ({
+        id: `theme:${entry.value}`,
+        group: "视图",
+        label: entry.label,
+        keywords: "theme appearance light dark system",
+        icon: entry.icon,
+        run: () => setThemePreference(entry.value),
+      })),
       {
         id: "density:compact",
         group: "视图",
@@ -371,18 +535,45 @@ export function CommandBar() {
     openSurface,
     recents,
     setDensity,
+    setEntryFilters,
+    setSortKey,
+    setSortOrder,
     setViewMode,
     spaces,
   ]);
 
   const trimmedQuery = query.trim();
 
+  const fileResultItems = useMemo<CommandItem[]>(() => {
+    const openSearchEntry = (entry: SearchEntry) => {
+      recordRecentItem(entry.path, entry.kind, "opened");
+      if (entry.kind === "directory") {
+        navigateToFolder(entry.path);
+        return;
+      }
+
+      void openPath(entry.path).catch((error) => {
+        console.warn(`Unable to open ${entry.path}`, error);
+      });
+    };
+
+    return fileResults.slice(0, MAX_FILE_RESULTS).map((entry) => ({
+      id: `file:${entry.path}`,
+      group: "搜索",
+      label: entry.name,
+      hint: entry.relativePath,
+      keywords: "file search",
+      icon: entry.kind === "directory" ? FolderIcon : FileIcon,
+      run: () => openSearchEntry(entry),
+    }));
+  }, [fileResults, navigateToFolder]);
+
   const results = useMemo<RankedResult<CommandItem>[]>(
     () =>
-      rankByFuzzy(trimmedQuery, items, (item) =>
+      rankByFuzzy(trimmedQuery, [...items, ...fileResultItems], (item) =>
         `${item.label} ${item.keywords ?? ""} ${item.hint ?? ""}`.trim(),
       ),
-    [items, trimmedQuery],
+    [fileResultItems, items, trimmedQuery],
   );
 
   // Grouped sections for the unfiltered list; the flattened order still
@@ -481,8 +672,8 @@ export function CommandBar() {
             type="text"
             value={query}
           />
-          <kbd className="shrink-0 rounded-[4px] border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-            Ctrl K
+          <kbd className="shrink-0 rounded-xs border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+            {MOD_KEY} K
           </kbd>
         </div>
         <div
@@ -493,9 +684,15 @@ export function CommandBar() {
           role="listbox"
         >
           {results.length === 0 ? (
-            <p className="px-2.5 py-6 text-center text-[13px] text-muted-foreground">
-              没有匹配“{trimmedQuery}”的命令或位置
-            </p>
+            isSearchingFiles ? (
+              <p className="px-2.5 py-6 text-center text-[13px] text-muted-foreground">
+                正在搜索文件…
+              </p>
+            ) : (
+              <p className="px-2.5 py-6 text-center text-[13px] text-muted-foreground">
+                没有匹配“{trimmedQuery}”的命令或位置
+              </p>
+            )
           ) : renderGroups ? (
             renderGroups.map((section) => (
               <div key={section.group}>
@@ -531,7 +728,10 @@ export function CommandBar() {
           )}
         </div>
         <footer className="flex h-8 shrink-0 items-center justify-between border-t px-3.5 text-xs text-muted-foreground select-none">
-          <span>↑↓ 选择</span>
+          <span className="flex items-center gap-1.5">
+            {isSearchingFiles && <CircleNotchIcon className="size-3 animate-spin" />}
+            ↑↓ 选择
+          </span>
           <span>Enter 执行 · Esc 关闭</span>
         </footer>
       </DialogContent>
