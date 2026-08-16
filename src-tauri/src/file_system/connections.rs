@@ -203,12 +203,7 @@ pub fn session_for(protocol: Protocol, host: &str, port: Option<u16>) -> Option<
 }
 
 /// Caches (or replaces) the live session for a server.
-pub fn store_session(
-    protocol: Protocol,
-    host: &str,
-    port: Option<u16>,
-    backend: SharedBackend,
-) {
+pub fn store_session(protocol: Protocol, host: &str, port: Option<u16>, backend: SharedBackend) {
     let key = session_key(protocol, host, port);
     let mut registry = REGISTRY.lock().expect("connection registry poisoned");
     registry.sessions.insert(key, backend);
@@ -234,7 +229,9 @@ fn apply_password_policy(id: &str, password: Option<&str>, remember_password: bo
 
     if !remember_password {
         let mut registry = REGISTRY.lock().expect("connection registry poisoned");
-        registry.memory_passwords.insert(id.to_owned(), password.to_owned());
+        registry
+            .memory_passwords
+            .insert(id.to_owned(), password.to_owned());
         drop(registry);
 
         if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, id) {
@@ -243,9 +240,7 @@ fn apply_password_policy(id: &str, password: Option<&str>, remember_password: bo
         return;
     }
 
-    match keyring::Entry::new(KEYRING_SERVICE, id)
-        .and_then(|entry| entry.set_password(password))
-    {
+    match keyring::Entry::new(KEYRING_SERVICE, id).and_then(|entry| entry.set_password(password)) {
         Ok(()) => {
             let mut registry = REGISTRY.lock().expect("connection registry poisoned");
             registry.memory_passwords.remove(id);
@@ -254,7 +249,9 @@ fn apply_password_policy(id: &str, password: Option<&str>, remember_password: bo
             // No usable OS keychain (e.g. headless Linux): keep the password
             // for this session only.
             let mut registry = REGISTRY.lock().expect("connection registry poisoned");
-            registry.memory_passwords.insert(id.to_owned(), password.to_owned());
+            registry
+                .memory_passwords
+                .insert(id.to_owned(), password.to_owned());
         }
     }
 }

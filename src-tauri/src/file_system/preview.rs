@@ -123,7 +123,9 @@ fn decode_and_scale(path: &Path, size: u16) -> Result<Option<Thumbnail>, FileSys
         .map_err(|error| FileSystemError::Io(error.to_string()))?;
 
     let (width, height) = decoded.dimensions();
-    if width == 0 || height == 0 || u64::from(width) * u64::from(height) > THUMBNAIL_MAX_DECODED_PIXELS
+    if width == 0
+        || height == 0
+        || u64::from(width) * u64::from(height) > THUMBNAIL_MAX_DECODED_PIXELS
     {
         return Ok(None);
     }
@@ -145,7 +147,10 @@ fn decode_and_scale(path: &Path, size: u16) -> Result<Option<Thumbnail>, FileSys
         let mut buffer = Vec::new();
         scaled
             .to_rgba8()
-            .write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
+            .write_to(
+                &mut std::io::Cursor::new(&mut buffer),
+                image::ImageFormat::Png,
+            )
             .map_err(|error| FileSystemError::Io(error.to_string()))?;
         ("image/png", buffer)
     } else {
@@ -185,7 +190,8 @@ pub async fn read_text_preview(
         let mut buffer = vec![0u8; bytes_to_read];
         let mut file = fs::File::open(&path).map_err(FileSystemError::from)?;
         use std::io::Read;
-        file.read_exact(&mut buffer).map_err(FileSystemError::from)?;
+        file.read_exact(&mut buffer)
+            .map_err(FileSystemError::from)?;
 
         // Lossy decoding keeps multi-byte characters cut at the boundary from
         // failing the whole preview.

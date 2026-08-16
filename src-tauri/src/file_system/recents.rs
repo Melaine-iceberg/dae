@@ -1,6 +1,6 @@
 use super::error::FileSystemError;
 use super::sidebar::write_atomic;
-use super::types::{display_name_from_path, EntryKind};
+use super::types::{EntryKind, display_name_from_path};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::fs;

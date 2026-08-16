@@ -1,1509 +1,254 @@
----
-name: file-workspace-design
-description: >
-  Design and implementation system for a distinctive desktop file manager.
-  Use this skill whenever designing, implementing, reviewing, or modifying
-  the application's UI, UX, components, layouts, interactions, motion,
-  theming, accessibility, or AI-native file management features.
----
+****# 桌面文件工作台（File Workspace）产品需求规格 v1.0
 
-# File Workspace Design System
+## 1. 文档目的
 
-## 1. Product Identity
+本文档定义桌面文件工作台的首发产品范围、核心交互、非功能要求与验收标准，供产品、设计、开发和测试共同使用。
 
-This application is a desktop file manager designed as a **File Workspace**,
-not as a visual clone of Windows Explorer or macOS Finder.
+**产品定位：** 它不是 Windows Explorer、Finder 或网页式后台的视觉翻版，而是以文件任务为中心的桌面工作空间。用户既能可靠地管理真实文件系统，也能通过“空间（Space）”、搜索、收藏和预览更快完成工作。
 
-The product should feel:
+**首发假设：** Windows 11 优先；架构需保留对 macOS / Linux 的扩展能力。涉及平台特有能力时，优先遵守所在平台的文件系统、辅助功能、快捷键与回收站惯例。
 
-- Spatial
-- Calm
-- Expressive
-- Tactile
-- Focused
-- Modern
-- Efficient
-- Distinctive
+## 2. 目标、非目标与优先级
 
-Primary design principle:
+### 2.1 产品目标
 
-> Files are content that users work with, not merely rows in a filesystem.
+1. 用户可安全、高效地浏览与操作本地文件。
+2. 用户可在“概览、最近、收藏、空间、位置”之间快速切换，不必每次从磁盘目录开始。
+3. 常见任务可通过键盘、鼠标、拖放或命令栏完成。
+4. 大型目录仍保持流畅，文件操作状态真实、清晰、可恢复。
+5. 视觉体验克制、有辨识度，但绝不牺牲可用性、性能或无障碍。
 
-The UI should therefore emphasize:
+### 2.2 首发版本（MVP）范围
 
-- context
-- spatial relationships
-- meaningful grouping
-- progressive disclosure
-- contextual actions
-- visual hierarchy
-- fast keyboard interaction
+- 本地磁盘与用户可访问目录的浏览。
+- 面包屑导航、返回/前进、地址输入、刷新。
+- 列表、网格、紧凑网格三种视图；舒适与紧凑两种密度。
+- 文件/文件夹的新建、打开、预览、重命名、复制、剪切、粘贴、移动、重复、压缩、删除。
+- 多选、范围选择、键盘选择、拖放、右键菜单与快捷键。
+- 最近文件、收藏、基础全局搜索、可保存的 Space。
+- 缩略图、常见文件的轻量预览、操作进度、回收站删除、撤销。
+- 深色模式、缩放文本、键盘和屏幕阅读器基础支持。
 
-Avoid reproducing the conventional desktop file manager paradigm
-unless required for interoperability or user expectations.
+### 2.3 后续版本范围
 
----
+- 网络位置与云盘连接器。
+- 标签、保存搜索、时间线/Gallery/列视图。
+- 跨设备同步 Space 设置。
+- 本地优先的语义搜索、文档摘要、重复文件识别与 AI 批量整理。
 
-# 2. Design Philosophy
+### 2.4 首发版本非目标
 
-The design system is inspired by Material 3 Expressive, but MUST NOT
-simply reproduce Material 3.
+- 替代专业版本控制、团队协同盘或完整的云存储客户端。
+- 默认扫描或上传全部用户文件。
+- 在未经确认时执行不可逆的批量操作。
+- 为视觉差异而违背用户熟悉的系统文件操作习惯。
 
-Use Material 3 Expressive as a foundation for:
+## 3. 信息架构
 
-- design tokens
-- dynamic color
-- typography hierarchy
-- expressive shapes
-- state transitions
-- motion
-- accessibility
+侧边导航固定呈现于大窗口，较窄窗口可折叠。主内容始终优先于导航。
 
-Then adapt those principles to a desktop-first file workspace.
+```text
+概览
+最近
+收藏
 
-The final product should have its own visual identity.
+空间
+  工作
+  个人
+  共享（后续）
+  归档
 
-Do not create:
+位置
+  此电脑
+  本地磁盘与已固定目录
+  云端 / 网络（后续）
+```
 
-- Windows Explorer with different colors
-- macOS Finder with rounded corners
-- a web dashboard inside a desktop window
-- a generic Material Design application
+### 3.1 核心对象
 
-The product should feel native to its own design language.
+| 对象        | 定义                           | 首发行为                                                 |
+| ----------- | ------------------------------ | -------------------------------------------------------- |
+| 文件/文件夹 | 操作系统中的真实对象           | 所有操作直接作用于真实路径，并展示真实状态。             |
+| 位置        | 磁盘、文件夹或未来的远程根目录 | 可固定、重命名显示名称、移除快捷入口；不删除真实内容。   |
+| Space       | 与任务相关的工作区配置         | 包含固定位置、收藏项目和保存视图；不复制或移动原始文件。 |
+| 收藏        | 指向文件或文件夹的引用         | 原文件移除或无权限后显示失效状态。                       |
+| 最近        | 基于应用打开记录的列表         | 可单项移除记录，不影响原文件。                           |
 
----
+### 3.2 Space 要求
 
-# 3. Core Information Architecture
+- 用户可创建、重命名、调整顺序、删除 Space。
+- 一个文件或位置可同时出现于多个 Space；Space 本身不拥有文件。
+- Space 至少可包含：固定位置、收藏项、默认视图与排序方式。
+- 当关联位置不可访问时，Space 保留配置并显示“位置当前不可用”，提供重试、移除或重新定位。
+- 删除 Space 只删除配置，必须明确提示“不会删除任何文件”。
 
-The primary navigation model is:
+## 4. 主要界面与行为
 
-    Overview
-    Recent
-    Favorites
+### 4.1 概览
 
-    Spaces
-      Work
-      Personal
-      Shared
-      Archive
+默认入口，依次展示：最近打开、收藏、最近使用的 Space、常用位置和轻量活动信息。无内容时必须给出原因和下一步，例如“尚无最近文件——打开或编辑过的文件会显示在这里”。用户可在设置中改为启动时打开上次位置或指定位置。
 
-    Locations
-      Computer
-      Cloud
-      Network
+### 4.2 文件夹与文件视图
 
-The concept of a **Space** is central to the product.
+- 列表默认列为：名称、修改日期、类型、大小；用户可开关其他列并保存到当前位置或 Space。
+- 网格优先展示缩略图/类型图标、名称及简短元数据；大目录自动延迟缩略图。
+- 目录较小时可使用更具空间感的文件夹卡片；大量项目默认紧凑显示，不能渲染大量复杂卡片。
+- 支持按名称、修改日期、类型、大小排序；支持升降序、文件夹置顶和基础筛选（类型、日期、大小）。
+- 视图、密度、排序和筛选均须在当前会话保持；用户可选择保存到 Space。
 
-A Space is a contextual workspace that may contain:
+### 4.3 导航、搜索与命令栏
 
-- local folders
-- network locations
-- cloud locations
-- collections
-- saved searches
-- favorite files
-- saved views
+- 工具栏顺序：后退/前进、当前位置、搜索、与当前上下文相关的少量操作。
+- `Ctrl+L` 聚焦地址输入；地址既可接受有效路径，也可按名称匹配已固定位置。
+- `Ctrl+F` 在当前范围搜索；`Ctrl+K` 打开全局命令栏。macOS 使用 `Cmd` 对应快捷键。
+- 全局搜索覆盖文件、文件夹、Space、位置、最近项目和已建立索引的元数据；结果必须显示来源路径和匹配原因。
+- 首发搜索默认仅覆盖用户授权/应用可访问的本地范围；未建立索引的目录应明确说明并提供“在此位置搜索”。
+- 命令栏支持模糊匹配：打开位置、新建文件夹、复制路径、变更视图、排序、筛选及已选项目的上下文操作。危险操作不能因模糊匹配而直接执行，仍须确认。
 
-Do not assume that filesystem hierarchy must be the primary
-information architecture.
+### 4.4 选择、拖放与预览
 
-Filesystem hierarchy remains available, but it is not necessarily
-the first thing the user sees.
+- 单击选择；`Ctrl`/`Cmd` 增减选择；`Shift` 选择连续范围；`Ctrl+A` 全选；方向键移动焦点，`Shift+方向键` 扩展选择。
+- 选中项必须同时具有表面、指示符和辅助技术可感知的选中状态，不能只改变颜色。
+- 有选中项时显示上下文操作栏：打开、预览、移动、复制、重命名（仅单项）、压缩、删除和更多。
+- 拖放时展示拖拽对象数量、有效/无效目标与动作。跨卷拖放默认复制，同卷默认移动；按平台惯例提供修饰键切换动作，并在落点前清晰说明。
+- Space / 删除到回收站的拖放不是静默的真实文件移动：前者创建引用，后者必须显示明确删除目标。
+- 空格键可打开轻量预览；复杂文件使用独立预览面板/窗口。预览可关闭，不永久压缩文件工作区。
 
----
+## 5. 文件操作规范
 
-# 4. Primary Screens
+所有文件写操作必须由后台任务执行，界面从实际任务状态读取进度和结果。任务支持排队，互不相关的目录操作可并行；对同一目标的冲突操作必须串行化。
 
-The application should have the following conceptual screens.
+| 操作      | 规则                                                                                                                                       |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 新建      | 文件夹名不可为空、不可含平台非法字符；重名时即时提示，不产生半成品。                                                                       |
+| 重命名    | 单文件/文件夹首发支持；保留扩展名的编辑方式符合平台惯例；失败时保留用户输入并解释原因。                                                    |
+| 复制/移动 | 展示总项目数、已处理数、速度、剩余估算和失败数；可暂停、继续、取消。取消后明确已完成与未完成范围。                                         |
+| 同名冲突  | 提供覆盖、跳过、保留两者、比较详情，并允许“应用到全部”。默认不覆盖。                                                                       |
+| 删除      | 默认移入系统回收站；`Shift+Delete` 是永久删除，必须二次确认并明确不可恢复。                                                                |
+| 复制路径  | 支持复制完整路径；首发以系统原生路径格式为准。                                                                                             |
+| 压缩      | 首发输出 ZIP；目标重名使用同名冲突规则；压缩失败不得破坏来源。                                                                             |
+| 撤销      | 支持撤销应用内发起、且系统允许安全反转的最近操作（至少重命名、移动到回收站、移动）。复制、覆盖、永久删除不承诺撤销，必须在操作前表达清楚。 |
 
-## 4.1 Overview
+### 5.1 异常与边界
 
-Overview is the default landing surface.
+- 磁盘空间不足、路径不存在、文件被占用、权限被拒绝、网络断开、名称非法、路径过长、符号链接异常都必须给出人类可读的原因与下一步操作。
+- 不默认跟随符号链接进行递归批量操作；若操作会影响链接目标，必须明确显示真实目标。
+- 隐藏/系统文件按设置显示；对系统位置的写操作给予明确风险提示，但不能用模糊文案阻碍用户正常管理。
+- 应用崩溃或异常退出后，启动时检查未完成任务，展示“已完成/可重试/需手动检查”的恢复报告；不得声称未验证的操作已完成。
+- 外部程序改变当前目录时，列表自动增量刷新；若用户正在重命名、拖放或选择，避免无提示地改变焦点或丢失选择。
 
-It should provide:
+## 6. 状态、反馈与错误处理
 
-- recent files
-- favorite files
-- active Spaces
-- useful collections
-- quick access to common locations
-- lightweight activity information
+- 加载优先用骨架、分段加载和占位缩略图；仅在整个窗口不可用时使用阻断式加载。
+- Toast 用于成功、轻量失败和可撤销动作；需要决策的冲突与永久删除使用对话框。
+- 错误文案包含：发生了什么、可能原因、可以做什么。技术细节放入“查看详情”，避免直接暴露原始异常。
+- 空状态、无搜索结果、无权限状态、离线状态和索引中状态均要有专属文案与操作。
+- 所有任务均有 `pending / running / paused / completed / partially_completed / failed / cancelled` 状态；部分成功必须列出失败项目并允许复制报告或重试。
 
-Do not default directly to a raw filesystem path unless the user
-explicitly configures that behavior.
+## 7. 视觉与交互设计要求
 
----
+### 7.1 设计语言
 
-## 4.2 Space
+采用“中性基础 + 表达性点缀”的桌面工作区风格：平静、清晰、具有空间层级，但不模仿 Windows Explorer、Finder 或移动端 Material UI。主工作区保持高可读性；半透明/玻璃效果仅用于命令栏、临时浮层与上下文面板。
 
-A Space represents a contextual working environment.
+### 7.2 Token 与组件
 
-A Space may contain:
+- 所有颜色、间距、圆角、阴影、字体必须来自语义 token；组件中不得散落任意色值或间距。
+- 间距基准为 4px，常用尺度为 8/12/16/24/32px；圆角为 8/12/16/24px 四级。
+- 必须定义浅色、深色与高对比度主题的 token 表；避免纯黑背景和色彩作为唯一状态标识。
+- 组件按 `primitives / navigation / files / workspace / search / overlays / ai` 分层；优先组合既有组件。
+- 每个交互组件定义 default、hover、pressed、focus、selected、disabled、loading、error；异步任务另定义 pending、partial、failed、success。
 
-- folders
-- files
-- collections
-- saved searches
-- pinned locations
+### 7.3 动效
 
-A Space should visually communicate its identity.
+动效仅表达层级、因果和空间连续性：拖拽抬起与落下、选择反馈、上下文栏出现、目录切换。动效应短、可中断，且完整遵守系统“减少动态效果”偏好。不得使用妨碍效率的长动画、弹跳或大面积过渡。
 
----
+## 8. 无障碍与键盘要求
 
-## 4.3 Folder
+- 所有功能可通过键盘完成；焦点始终可见，焦点顺序符合视觉顺序。
+- 交互元素具备可访问名称、角色、状态和禁用行为；列表/网格必须告知项目数量、当前焦点和选择状态。
+- 支持系统文字缩放、不裁切关键内容；正常与高对比模式下文字和关键图标满足 WCAG AA 对比度。
+- 状态、错误、选中、拖放有效性不可只依赖颜色；屏幕阅读器能获知操作进度、错误和确认提示。
+- 最低快捷键集：`Ctrl/Cmd+K` 命令栏、`Ctrl/Cmd+F` 搜索、`Enter` 打开、`Space` 预览、`F2` 重命名、`Ctrl/Cmd+C/X/V` 复制/剪切/粘贴、`Delete` 删除、`Esc` 取消、`Ctrl/Cmd+A` 全选。
 
-Folders use a spatial hierarchy.
+## 9. 数据、安全与隐私
 
-Preferred representation:
+- 文件内容、路径、缩略图缓存、搜索索引与活动记录默认仅保存在本机。设置页须提供缓存/索引清理和保留期限。
+- 应用仅访问用户主动打开、固定或授权的位置；不可在未告知的情况下扫描其他目录。
+- 任何云同步、遥测、AI 服务或崩溃报告均采用明确的 opt-in；需说明发送的数据、目的、保留时间和关闭方式。
+- 凭据交由操作系统安全存储；不得在日志、Toast 或导出报告中泄露路径中的敏感信息、令牌或文件内容。
+- 操作历史应记录动作、时间、结果和错误摘要，供用户恢复判断；不记录文件正文。
 
-- expressive folder cards for prominent folders
-- compact list/grid for large collections
-- optional density modes
+## 10. AI 功能（后续版本门槛）
 
-Avoid showing every folder as a generic row by default.
+AI 是辅助层，不是文件系统的替代者。首次实现前必须完成隐私评审，并实现以下交互链路：
 
----
+```text
+用户意图 → AI 理解/搜索 → 可编辑提案 → 用户确认 → 执行 → 可审计结果
+```
 
-## 4.4 File View
+- AI 可建议搜索结果、重复项、文件分组、重命名方案和存储清理，但不得默认执行。
+- 批量移动、重命名、删除、覆盖或超过用户设定阈值的数据操作，必须展示影响项目、目标位置、大小、冲突与可逆性，并要求明确确认。
+- 结果要区分“建议”“计划中”“已执行”“部分完成”“失败”；用户可逐项修改、排除、取消或导出计划。
+- AI 不能在后台自行改变文件或持续上传索引；任何外发内容必须在功能启用前被清楚告知。
 
-Files should support:
+## 11. 技术与性能要求
 
-- list view
-- grid view
-- compact view
-- large preview view
+### 11.1 架构约束
 
-The user should be able to switch density without changing
-the underlying information architecture.
+- 界面层不得直接承担高风险文件系统写入；文件访问、缩略图、索引和长任务由受控后台服务执行，并通过明确的任务/事件接口向界面报告。
+- UI 状态必须来源于真实文件系统与任务状态，禁止用“假进度”掩盖失败。
+- 本地配置、Space、收藏和视图状态需支持损坏检测、备份与恢复；配置损坏不得影响原始文件。
 
----
+### 11.2 性能验收目标（基准设备）
 
-# 5. Layout Principles
+| 场景                     | 目标                                                                      |
+| ------------------------ | ------------------------------------------------------------------------- |
+| 冷启动到可交互概览       | P95 不超过 2 秒。                                                         |
+| 打开 10 万项目的本地目录 | P95 在 2 秒内显示首屏并允许导航；完整元数据/缩略图可渐进加载。            |
+| 列表滚动                 | 常规硬件上保持明显流畅，不因隐藏项目或缩略图阻塞。                        |
+| 当前目录内搜索           | 已加载目录的首批结果在 500ms 内出现；全盘索引搜索显示索引范围和进行状态。 |
+| 复制/移动                | 进度至少每秒更新一次；界面可继续浏览其他位置。                            |
 
-Use a desktop-first layout.
+实现应使用虚拟化列表/网格、异步元数据、缩略图缓存、取消机制和有限并发。不得一次渲染数千个复杂卡片，或因一个目录加载阻塞整个应用。
 
-Default structure:
+## 12. 测试与验收场景
 
-    ┌────────────────────────────────────────────────────┐
-    │ Global Header / Search / Commands                  │
-    ├──────────────┬─────────────────────────────────────┤
-    │              │                                     │
-    │ Navigation   │ Main Workspace                      │
-    │              │                                     │
-    │              │                                     │
-    └──────────────┴─────────────────────────────────────┘
+以下为首发必须通过的端到端验收：
 
-The navigation rail/sidebar should be persistent on large screens.
+1. 用户可用键盘打开本地目录、选择多个项目、复制到另一目录并看见真实进度与完成结果。
+2. 同名复制弹出冲突决策；选择“保留两者”后原文件与新文件都完整存在。
+3. 删除文件后文件进入系统回收站；永久删除必须经过明确确认，且文案说明不可恢复。
+4. 移动任务因权限或磁盘空间失败时，成功项与失败项均可查询，失败项可重试或复制报告。
+5. 打开包含 10 万项目目录时首屏可用，滚动不会造成明显卡顿，缩略图不会引发严重布局跳动。
+6. 屏幕阅读器能读出当前文件夹、焦点项目、选择数量和任务完成/失败状态；仅键盘也能完成核心文件操作。
+7. 深色模式、文字缩放和减少动态效果下，关键内容仍完整可读、焦点和选中状态仍清楚。
+8. Space 中关联路径被删除或断开后，应用不崩溃，明确标记失效并提供重试/移除/重新定位。
+9. 应用在复制任务中异常退出后重启，不虚报操作成功，并提供未完成任务的结果或恢复说明。
+10. 未启用 AI 或云功能时，应用不会上传文件内容、路径或索引。
 
-However:
+## 13. 版本计划
 
-- do not make it excessively wide
-- allow collapse
-- preserve clear hierarchy
-- avoid permanently consuming large screen area
+| 阶段        | 交付重点                                                                            |
+| ----------- | ----------------------------------------------------------------------------------- |
+| 0：基础框架 | 文件服务边界、任务系统、设计 token、导航、无障碍骨架、自动化测试框架。              |
+| 1：MVP      | 本地浏览与文件操作、视图/选择/拖放、搜索、最近/收藏/Space、预览、回收站与性能优化。 |
+| 2：扩展     | 网络位置、云盘连接、保存搜索、更多视图、跨设备设置同步。                            |
+| 3：AI       | 本地优先索引、可审阅 AI 提案、批量操作确认、隐私控制与审计。                        |
 
-The main content area should always remain the visual focus.
+## 14. 待确认决策
 
----
+以下决策应在开发启动前确定：
 
-# 6. Spatial Surfaces
+1. 首发是否仅支持 Windows 11，最低系统版本与硬件基准是什么？
+2. 应用采用何种桌面运行时；是否需要原生系统右键菜单、文件关联和多窗口？
+3. “最近”是否只记录本应用打开行为，是否允许导入系统最近项目？
+4. 本地搜索采用按需搜索还是持续索引；默认索引哪些用户目录？
+5. 撤销历史保留多久、最多占用多少空间？
+6. 未来云盘/AI 是否允许联网，默认区域、隐私政策与企业版要求为何？
 
-Use a small number of meaningful surfaces.
+## 15. 决策原则
 
-Preferred hierarchy:
+发生冲突时，按以下顺序裁决：**可用性 → 无障碍 → 数据安全与性能 → 信息层级 → 交互清晰度 → 产品辨识度 → 视觉表达 → 装饰细节。**
 
-    App background
-        ↓
-    Workspace surface
-        ↓
-    Elevated surface
-        ↓
-    Floating/contextual surface
-
-Avoid excessive cards.
-
-Not every element should be enclosed in a card.
-
-Cards are for:
-
-- folders
-- collections
-- important grouped content
-- contextual summaries
-
-Do not wrap every row, button, or section in a card.
-
----
-
-# 7. Design Tokens
-
-All visual values MUST come from semantic tokens.
-
-Do not scatter raw values throughout components.
-
-Use semantic tokens such as:
-
-    color.background
-    color.surface
-    color.surfaceElevated
-    color.surfaceVariant
-
-    color.primary
-    color.primaryContainer
-    color.onPrimary
-    color.onPrimaryContainer
-
-    color.secondary
-    color.secondaryContainer
-
-    color.error
-    color.warning
-    color.success
-
-    color.textPrimary
-    color.textSecondary
-    color.textTertiary
-    color.textDisabled
-
-    border.subtle
-    border.strong
-    border.focus
-
-    spacing.xs
-    spacing.sm
-    spacing.md
-    spacing.lg
-    spacing.xl
-    spacing.2xl
-
-    radius.sm
-    radius.md
-    radius.lg
-    radius.xl
-    radius.full
-
-    elevation.none
-    elevation.low
-    elevation.medium
-    elevation.high
-
-Do not introduce arbitrary spacing or color values unless the
-design system genuinely requires a new semantic token.
-
----
-
-# 8. Spacing
-
-Use a 4px base spacing system.
-
-Preferred values:
-
-    4
-    8
-    12
-    16
-    20
-    24
-    32
-    40
-    48
-    64
-
-The default content rhythm should primarily use:
-
-    8
-    12
-    16
-    24
-    32
-
-Do not use arbitrary values such as 13px, 19px, 27px, etc.
-unless required by typography or platform rendering.
-
----
-
-# 9. Shape Language
-
-The product uses expressive rounded geometry.
-
-Recommended semantic radii:
-
-    sm     8px
-    md     12px
-    lg     16px
-    xl     24px
-    full   9999px
-
-Use larger radii for:
-
-- prominent folder cards
-- floating panels
-- command surfaces
-- contextual action bars
-
-Use smaller radii for:
-
-- compact controls
-- table rows
-- inputs
-- menus
-
-Do not round everything.
-
-Shape must communicate hierarchy.
-
----
-
-# 10. Typography
-
-Typography should be highly legible and information-oriented.
-
-Use a modern system sans-serif unless the platform requires otherwise.
-
-Semantic hierarchy:
-
-    display
-    headline
-    title
-    body
-    label
-    caption
-
-Primary content should have strong hierarchy.
-
-Important values such as:
-
-- file names
-- folder names
-- item counts
-- dates
-- sizes
-
-should be visually differentiated without excessive font-weight changes.
-
-Avoid overly small secondary text.
-
-Do not use typography as decoration.
-
----
-
-# 11. Color
-
-Use:
-
-**Neutral foundation + expressive accent.**
-
-The background should remain relatively calm.
-
-Accent color should communicate:
-
-- selection
-- active navigation
-- important actions
-- focus
-- system state
-
-Avoid rainbow-like file management UI.
-
-File types should not automatically receive aggressive colors.
-
-Do not make every folder or file colorful.
-
-Dynamic color may be supported, but the application must remain
-coherent with a neutral theme.
-
----
-
-# 12. Dark Mode
-
-Dark mode is a first-class theme.
-
-Do not implement dark mode by simply multiplying RGB values.
-
-Dark mode should use semantic surface hierarchy.
-
-Preferred hierarchy:
-
-    background
-    ↓
-    surface
-    ↓
-    elevated surface
-    ↓
-    floating surface
-
-Text contrast must remain accessible.
-
-Avoid pure black backgrounds unless explicitly required.
-
----
-
-# 13. Navigation
-
-The navigation system uses:
-
-    Overview
-    Recent
-    Favorites
-    Spaces
-    Locations
-
-Navigation items should communicate:
-
-- active state
-- hover state
-- keyboard focus
-- disabled state
-
-Active navigation should not rely solely on color.
-
-Use a combination of:
-
-- shape
-- surface
-- icon
-- typography
-- subtle accent
-
-Avoid the appearance of a traditional web sidebar.
-
----
-
-# 14. Toolbar
-
-The toolbar should prioritize:
-
-1. navigation
-2. current context
-3. search
-4. contextual actions
-
-Avoid huge collections of toolbar buttons.
-
-Actions should be:
-
-- discoverable
-- grouped
-- contextual
-- keyboard accessible
-
-Low-frequency actions should move into:
-
-- overflow menu
-- command bar
-- context menu
-
----
-
-# 15. Command Bar
-
-The application MUST support a command/search surface.
-
-Default shortcut:
-
-    Cmd/Ctrl + K
-
-The command surface can perform:
-
-- open location
-- create folder
-- rename
-- move
-- copy
-- copy path
-- compress
-- delete
-- duplicate
-- share
-- change view
-- sort
-- filter
-- navigate
-- execute saved commands
-
-Command search should support fuzzy matching.
-
-Commands should expose keyboard shortcuts where applicable.
-
----
-
-# 16. Search
-
-Search is a global concept.
-
-The global search should be able to search:
-
-- files
-- folders
-- Spaces
-- locations
-- recent items
-- metadata
-
-Search should support progressive refinement.
-
-Potential filters:
-
-- type
-- date
-- size
-- location
-- tags
-- modified time
-
-Search results should preserve context.
-
-Do not make search look like a generic web search engine.
-
----
-
-# 17. File Cards
-
-Folder/file cards should communicate:
-
-- icon/thumbnail
-- name
-- type
-- metadata
-- selection state
-
-Folder cards may display:
-
-- item count
-- recent activity
-- representative preview
-
-Do not overload cards with metadata.
-
-The primary hierarchy is:
-
-    icon/preview
-    ↓
-    name
-    ↓
-    useful metadata
-
----
-
-# 18. File List
-
-The list view should prioritize scanning speed.
-
-Default hierarchy:
-
-    Name
-    Modified
-    Type
-    Size
-
-Additional metadata should be configurable.
-
-Rows should have:
-
-- hover state
-- selected state
-- focus state
-- disabled state
-- drag target state
-
-Do not use excessive borders.
-
-Use spacing and subtle separators instead.
-
----
-
-# 19. Selection
-
-Selection is a core interaction.
-
-Support:
-
-- single selection
-- multi-selection
-- range selection
-- keyboard selection
-- drag selection
-
-Selection must be visually obvious.
-
-Do not rely only on a background color.
-
-Preferred signals:
-
-- accent container
-- selection indicator
-- icon state
-- contextual toolbar
-
-When one or more files are selected, contextual actions may appear.
-
-Example:
-
-    3 selected
-    Open
-    Move
-    Copy
-    Share
-    Delete
-    More
-
-The contextual action surface should appear only when useful.
-
----
-
-# 20. Contextual Action Bar
-
-Contextual actions should follow the selection.
-
-Do not permanently occupy toolbar space with actions that are
-only relevant after selection.
-
-Contextual actions may include:
-
-- open
-- preview
-- move
-- copy
-- rename
-- share
-- compress
-- delete
-
-Destructive actions must be visually differentiated.
-
----
-
-# 21. Preview
-
-Preview should be contextual rather than permanently consuming
-a large portion of the workspace.
-
-Preferred behavior:
-
-- inline preview for lightweight content
-- floating preview for focused content
-- dedicated preview surface for complex documents
-
-Preview should show:
-
-- content
-- filename
-- type
-- size
-- modified time
-- location
-- available actions
-
-Avoid permanently displaying a Finder-like inspector panel.
-
----
-
-# 22. Drag and Drop
-
-Drag and drop should feel physical.
-
-Visual states should communicate:
-
-    draggable
-    dragging
-    valid target
-    invalid target
-    drop active
-
-Use motion to establish spatial continuity.
-
-When possible, preserve the user's mental model:
-
-    item
-      ↓
-    destination
-
-Do not abruptly teleport content between locations without feedback.
-
----
-
-# 23. Motion
-
-Motion is functional, not decorative.
-
-Use motion to communicate:
-
-- hierarchy
-- causality
-- continuity
-- state
-- spatial relationship
-
-Preferred motion characteristics:
-
-- responsive
-- subtle
-- spring-like
-- short
-- interruptible
-
-Avoid:
-
-- long animations
-- gratuitous bouncing
-- cinematic transitions
-- motion that blocks productivity
-
-Typical interactions:
-
-Folder open:
-expand → transition → content appears
-
-Selection:
-surface responds → contextual actions appear
-
-Drag:
-item lifts → destination reacts → item settles
-
-Delete:
-item moves toward removal state → disappears
-
-Navigation:
-current context transitions into new context
-
-Respect reduced-motion accessibility preferences.
-
----
-
-# 24. Elevation
-
-Elevation should indicate hierarchy, not decoration.
-
-Use:
-
-- low elevation for floating controls
-- medium elevation for command surfaces
-- higher elevation for modal or critical overlays
-
-Avoid heavy shadows.
-
-Use surface contrast before shadows.
-
----
-
-# 25. Icons
-
-Icons should be:
-
-- consistent
-- simple
-- recognizable
-- visually balanced
-
-Do not use icons merely for decoration.
-
-Icons should communicate actions or object identity.
-
-File-type icons should be visually consistent.
-
-Avoid mixing unrelated icon libraries.
-
----
-
-# 26. Empty States
-
-Empty states should explain:
-
-1. what is empty
-2. why it is empty
-3. what the user can do next
-
-Example:
-
-    No recent files
-
-    Files you open or edit will appear here.
-
-    [ Browse files ]
-
-Do not leave large blank areas without explanation.
-
----
-
-# 27. Loading States
-
-Prefer:
-
-- skeletons
-- progressive content
-- lightweight placeholders
-
-Avoid full-screen spinners unless the entire application is blocked.
-
-Do not block unrelated parts of the UI while loading one location.
-
----
-
-# 28. Error States
-
-Errors should be:
-
-- understandable
-- actionable
-- contextual
-
-Example:
-
-    Couldn't access this location
-
-    The network connection may have been interrupted.
-
-    [ Retry ]    [ Open another location ]
-
-Do not expose raw filesystem exceptions as the primary user message.
-
-Technical error details may be available through an advanced disclosure.
-
----
-
-# 29. Accessibility
-
-Accessibility is mandatory.
-
-Support:
-
-- keyboard navigation
-- visible focus
-- screen readers
-- sufficient contrast
-- reduced motion
-- scalable text
-- semantic labels
-- non-color-only state communication
-
-All interactive elements must have:
-
-- accessible name
-- focus behavior
-- keyboard behavior
-- disabled behavior where applicable
-
-Selection, errors, warnings, and status must not rely exclusively
-on color.
-
----
-
-# 30. Keyboard First
-
-The application is a desktop productivity tool.
-
-Keyboard interaction is a first-class feature.
-
-Support common patterns:
-
-    Cmd/Ctrl + K      Command bar
-    Cmd/Ctrl + F      Search
-    Enter             Open
-    Space             Preview/select where appropriate
-    F2                Rename
-    Cmd/Ctrl + C      Copy
-    Cmd/Ctrl + X      Cut
-    Cmd/Ctrl + V      Paste
-    Delete            Delete
-    Escape            Cancel/close
-    Cmd/Ctrl + A      Select all
-
-Respect platform conventions where necessary.
-
-Do not force web-style keyboard interactions onto desktop users.
-
----
-
-# 31. Context Menus
-
-Context menus should be concise.
-
-Prioritize:
-
-    Open
-    Preview
-    Rename
-    Copy
-    Move
-    Share
-    Compress
-    Delete
-
-Secondary actions may be placed under:
-
-    More
-
-Do not create enormous context menus containing every possible
-filesystem operation.
-
----
-
-# 32. AI-Native Design
-
-The application should be designed so AI capabilities can be
-introduced without breaking the existing information architecture.
-
-AI is an assistant layer, not a replacement for the filesystem.
-
-Potential AI operations:
-
-- natural-language file search
-- semantic search
-- summarize documents
-- organize files
-- identify duplicates
-- suggest collections
-- rename groups of files
-- explain storage usage
-- find related files
-- perform multi-step file operations
-
-AI operations must clearly distinguish:
-
-    user intent
-    AI interpretation
-    proposed action
-    executed action
-
----
-
-# 33. AI State Model
-
-AI interactions may have states such as:
-
-    idle
-    understanding
-    searching
-    planning
-    waiting_for_confirmation
-    executing
-    completed
-    partially_completed
-    failed
-
-These states must be visible but not distracting.
-
-Do not use a generic "AI is thinking..." animation everywhere.
-
-Use meaningful status.
-
-Example:
-
-    Searching 1,248 files…
-
-    Found 36 likely duplicates.
-
-    [ Review ]    [ Organize ]
-
----
-
-# 34. AI Confirmation
-
-Destructive or large-scale AI operations require explicit confirmation.
-
-Examples:
-
-    Delete 247 files
-    Move 1.4 GB
-    Rename 83 files
-
-The UI should communicate:
-
-- scope
-- affected items
-- destination
-- irreversible consequences
-
-Never hide destructive AI actions behind a single ambiguous button.
-
----
-
-# 35. AI Results
-
-AI-generated results should remain editable.
-
-Examples:
-
-    Suggested folder:
-    "2026 Product Launch"
-
-    34 files
-
-    [ Review ] [ Rename ] [ Apply ]
-
-The user should be able to inspect and modify the proposal before
-execution.
-
-AI should propose whenever confidence or consequences warrant it.
-
----
-
-# 36. Progressive Disclosure
-
-Do not show everything at once.
-
-Primary actions should be immediately visible.
-
-Secondary actions should appear through:
-
-- context menus
-- overflow menus
-- command bar
-- contextual toolbars
-- preview surfaces
-
-The UI should remain calm even when the underlying filesystem
-is complex.
-
----
-
-# 37. Density Modes
-
-Support at least:
-
-    Comfortable
-    Compact
-
-Optional:
-
-    Spacious
-
-Density changes spacing and row height, not information architecture.
-
-Power users should be able to increase information density.
-
----
-
-# 38. View Modes
-
-Support:
-
-    List
-    Grid
-    Compact Grid
-
-Potential future:
-
-    Columns
-    Timeline
-    Gallery
-    Saved View
-
-Do not assume one representation is universally optimal.
-
----
-
-# 39. Responsive Desktop Behavior
-
-The application should adapt to:
-
-- small desktop windows
-- large monitors
-- ultrawide monitors
-- split-screen layouts
-
-When space decreases:
-
-1. reduce secondary information
-2. collapse navigation
-3. simplify toolbar
-4. preserve primary content
-
-Do not simply scale everything down.
-
----
-
-# 40. Platform Independence
-
-The design language should remain visually independent from:
-
-- Windows Explorer
-- macOS Finder
-- GNOME Files
-- KDE Dolphin
-
-Platform conventions may still be respected for:
-
-- keyboard shortcuts
-- window behavior
-- file dialogs
-- accessibility
-- system menus
-
-Platform compatibility must not force platform visual imitation.
-
----
-
-# 41. Avoid These Patterns
-
-Never default to:
-
-- Windows Explorer clone
-- Finder clone
-- generic SaaS dashboard
-- excessive card layouts
-- giant rounded rectangles everywhere
-- excessive gradients
-- excessive blur
-- excessive glass effects
-- excessive shadows
-- rainbow file icons
-- toolbar button overload
-- permanent inspector panels
-- unnecessary animations
-- tiny secondary text
-- color-only states
-- arbitrary spacing
-- arbitrary component variants
-
----
-
-# 42. Material 3 Expressive Adaptation
-
-Use M3 Expressive concepts selectively.
-
-Use:
-
-- expressive shapes
-- dynamic color
-- semantic tokens
-- motion
-- strong hierarchy
-- responsive state transitions
-
-Do NOT directly copy:
-
-- Android navigation patterns
-- Android-specific component dimensions
-- mobile bottom navigation
-- mobile-first spacing
-- Android-specific dialogs
-- Material icons if they conflict with product identity
-
-The final system must feel desktop-native but not platform-native.
-
----
-
-# 43. Liquid Glass Inspiration
-
-Liquid Glass may be used as inspiration for:
-
-- translucent overlays
-- depth
-- floating surfaces
-- visual separation
-- spatial hierarchy
-
-Do not turn the entire UI into glass.
-
-Glass should be reserved for:
-
-- command surfaces
-- temporary overlays
-- contextual panels
-- floating controls
-
-The main workspace should remain calm and readable.
-
----
-
-# 44. Component Architecture
-
-Components should be organized by semantic role.
-
-Suggested hierarchy:
-
-    primitives/
-        Button
-        IconButton
-        Text
-        Surface
-        Divider
-        Input
-
-    navigation/
-        Sidebar
-        NavigationItem
-        Breadcrumb
-        SpaceSwitcher
-
-    files/
-        FileItem
-        FolderCard
-        FileGrid
-        FileList
-        FileThumbnail
-        SelectionIndicator
-
-    workspace/
-        WorkspaceHeader
-        Toolbar
-        ContextualActionBar
-        Preview
-        EmptyState
-
-    search/
-        SearchField
-        SearchResults
-        SearchFilters
-        CommandBar
-
-    overlays/
-        ContextMenu
-        Dialog
-        Popover
-        Tooltip
-        Toast
-
-    ai/
-        AICommand
-        AIStatus
-        AIProposal
-        AIConfirmation
-        AIResult
-
-Prefer composition over large monolithic components.
-
----
-
-# 45. Component States
-
-Every interactive component should explicitly consider:
-
-    default
-    hover
-    pressed
-    focused
-    selected
-    disabled
-    loading
-    error
-
-Components that represent asynchronous operations should also
-consider:
-
-    pending
-    success
-    partial
-    failed
-
-Do not implement only the happy path.
-
----
-
-# 46. State Management and Visual State
-
-Visual states should derive from application state.
-
-Do not create fake visual states disconnected from the actual
-filesystem or operation state.
-
-Examples:
-
-Selection UI must derive from selection state.
-
-Upload/progress UI must derive from actual operation progress.
-
-AI execution state must derive from the actual task state.
-
----
-
-# 47. Performance
-
-The design system must not create unnecessary rendering cost.
-
-File managers may display thousands or millions of filesystem items.
-
-Prefer:
-
-- virtualization
-- lazy thumbnails
-- incremental rendering
-- memoized item rendering
-- progressive previews
-- asynchronous metadata loading
-
-Visual richness must not compromise filesystem performance.
-
----
-
-# 48. Large Collections
-
-For large directories:
-
-- default to compact density
-- virtualize lists/grids
-- defer expensive previews
-- avoid rendering hidden items
-- avoid excessive DOM/component depth
-
-Do not render thousands of complex cards simultaneously.
-
----
-
-# 49. Thumbnails
-
-Thumbnails should be:
-
-- cached
-- lazy-loaded
-- asynchronously generated
-- replaceable with placeholders
-
-Use consistent thumbnail geometry.
-
-Avoid layout shifts while thumbnails load.
-
----
-
-# 50. Design Review Checklist
-
-When implementing or reviewing a UI, ask:
-
-### Identity
-
-- Does this look like our product?
-- Could this be mistaken for Windows Explorer?
-- Could this be mistaken for Finder?
-- Could this be mistaken for a generic web dashboard?
-
-### Hierarchy
-
-- Is the primary content obvious?
-- Are secondary actions hidden appropriately?
-- Is information density appropriate?
-
-### Interaction
-
-- Does selection feel physical?
-- Are contextual actions available?
-- Is keyboard interaction supported?
-- Does motion explain state changes?
-
-### Accessibility
-
-- Is focus visible?
-- Are states understandable without color?
-- Does reduced motion work?
-- Are interactive elements keyboard accessible?
-
-### Performance
-
-- Does this scale to large directories?
-- Are previews lazy?
-- Is rendering virtualized where necessary?
-
-### AI
-
-- Is AI state visible?
-- Are proposed operations distinguishable from executed operations?
-- Are destructive actions confirmed?
-- Can users review and edit AI proposals?
-
----
-
-# 51. Implementation Rules for Coding Agents
-
-When modifying UI code:
-
-1. Inspect existing design tokens before introducing new values.
-2. Reuse existing components before creating new components.
-3. Prefer semantic tokens over raw CSS values.
-4. Preserve keyboard accessibility.
-5. Preserve reduced-motion behavior.
-6. Preserve existing selection semantics.
-7. Do not introduce platform-specific visual patterns without a reason.
-8. Do not add decorative UI that does not improve hierarchy or interaction.
-9. Keep file operations visually connected to their real state.
-10. Consider large directory performance before adding visual effects.
-11. Keep AI actions explicit and reversible where possible.
-12. Do not introduce a new component variant when composition is sufficient.
-
----
-
-# 52. When Adding a New Component
-
-Before creating a new component:
-
-1. Search for an existing component with similar semantics.
-2. Check whether an existing primitive can be composed.
-3. Determine whether the new component is reusable.
-4. Define its semantic states.
-5. Define keyboard behavior.
-6. Define accessibility behavior.
-7. Define light/dark behavior.
-8. Define reduced-motion behavior.
-9. Define loading/error behavior if asynchronous.
-10. Add tests for important interaction states.
-
----
-
-# 53. When Reviewing UI Code
-
-Reject implementations that:
-
-- hardcode arbitrary colors
-- hardcode arbitrary spacing
-- ignore dark mode
-- ignore keyboard navigation
-- remove focus indicators
-- use color as the only state signal
-- add excessive animations
-- create unnecessary modal dialogs
-- duplicate existing components
-- introduce inconsistent corner radii
-- render huge file collections without virtualization
-- hide destructive operations behind ambiguous controls
-
----
-
-# 54. Visual Quality Bar
-
-The UI should feel:
-
-    Calm rather than busy.
-    Expressive rather than decorative.
-    Spatial rather than flat.
-    Tactile rather than mechanical.
-    Fast rather than animated.
-    Focused rather than feature-heavy.
-    Distinctive rather than platform-cloned.
-
-The ultimate goal is:
-
-> A desktop file workspace that feels familiar enough to be immediately
-> usable, but distinctive enough that users cannot mistake it for
-> Windows Explorer or macOS Finder.
-
----
-
-# 55. Priority Order
-
-When design decisions conflict, prioritize in this order:
-
-    1. Usability
-    2. Accessibility
-    3. Performance
-    4. Information hierarchy
-    5. Interaction clarity
-    6. Product identity
-    7. Visual expressiveness
-    8. Decorative detail
-
-Never sacrifice usability or performance merely to achieve a visual effect.
-
----
-
-# 56. Final Design Principle
-
-The product should not ask:
-
-> "How can we make a better file explorer?"
-
-It should ask:
-
-> "How can we make working with files feel like working in a
-> modern spatial workspace?"
-
-Every new feature should reinforce that idea.
+每一项新功能都应回答：它是否让用户更可靠、更快速、更有上下文地完成文件工作？若答案是否定的，不应进入首发范围。

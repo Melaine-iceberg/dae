@@ -37,7 +37,13 @@ pub fn copy_entries(
     let plan = build_plan(sources, destination, destination_backend)?;
     progress.start(
         plan.iter()
-            .map(|entry| count_copy_units(entry.source.backend.as_ref(), &entry.source.path, &entry.stat))
+            .map(|entry| {
+                count_copy_units(
+                    entry.source.backend.as_ref(),
+                    &entry.source.path,
+                    &entry.stat,
+                )
+            })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .sum(),
@@ -71,15 +77,19 @@ pub fn move_entries(
     progress.start(
         plan.iter()
             .map(|entry| {
-                count_copy_units(entry.source.backend.as_ref(), &entry.source.path, &entry.stat)
-                    .and_then(|copy| {
-                        count_delete_units(
-                            entry.source.backend.as_ref(),
-                            &entry.source.path,
-                            &entry.stat,
-                        )
-                        .map(|delete| copy + delete)
-                    })
+                count_copy_units(
+                    entry.source.backend.as_ref(),
+                    &entry.source.path,
+                    &entry.stat,
+                )
+                .and_then(|copy| {
+                    count_delete_units(
+                        entry.source.backend.as_ref(),
+                        &entry.source.path,
+                        &entry.stat,
+                    )
+                    .map(|delete| copy + delete)
+                })
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
@@ -154,9 +164,7 @@ pub fn delete_entries(
         targets
             .iter()
             .zip(&stats)
-            .map(|(target, stat)| {
-                count_delete_units(target.backend.as_ref(), &target.path, stat)
-            })
+            .map(|(target, stat)| count_delete_units(target.backend.as_ref(), &target.path, stat))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .sum(),

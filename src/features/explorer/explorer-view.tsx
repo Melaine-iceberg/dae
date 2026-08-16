@@ -622,6 +622,15 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     });
   }, [selectedEntries]);
 
+  /** Opens the system default terminal at a directory (Windows Terminal,
+   *  Terminal.app, or the desktop's default terminal on Linux). */
+  const openTerminalHere = useCallback((path: string) => {
+    setOperationError(null);
+    void commands.openTerminal(path).catch((error: unknown) => {
+      setOperationError(`无法打开终端：${getErrorMessage(error)}`);
+    });
+  }, []);
+
   /** Opens every selected file and navigates into the first selected folder. */
   const openSelectedEntries = useCallback(() => {
     if (selectedEntries.length === 0 || isOperationPending) return;
@@ -692,6 +701,9 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         case "go-up":
           void navigator.goUp();
           break;
+        case "open-terminal":
+          if (directoryPath) openTerminalHere(directoryPath);
+          break;
         case "toggle-favorite":
           if (directory) {
             toggleFavorite({
@@ -707,7 +719,9 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       copySelection,
       cutSelection,
       directory,
+      directoryPath,
       navigator,
+      openTerminalHere,
       pasteClipboard,
       requestCreate,
       requestDelete,
@@ -890,6 +904,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               onDropEntries={transferEntries}
               onMoveTo={moveSelectionTo}
               onOpenDirectory={(path) => void navigator.navigate(path)}
+              onOpenTerminal={() => directory.path && openTerminalHere(directory.path)}
               onPaste={pasteClipboard}
               onRename={requestRename}
               onScrollOffsetChange={
@@ -1256,6 +1271,23 @@ function getCreateEntryErrorMessage(message: string, rawError: unknown): string 
 }
 
 function getErrorMessage(error: unknown): string {
+  const kind = extractErrorKind(error);
+  if (kind) {
+    const friendly = FILE_OPERATION_ERROR_MESSAGES[kind];
+    if (friendly) {
+      // Only the structured IPC payload carries a clean detail message; an
+      // Error instance's message is the raw stringified form.
+      const detail =
+        typeof error === "object" &&
+        error !== null &&
+        !(error instanceof Error) &&
+        "message" in error
+          ? (error as { message: unknown }).message
+          : undefined;
+      return typeof detail === "string" && detail ? `${friendly}：${detail}` : friendly;
+    }
+  }
+
   if (
     typeof error === "object" &&
     error !== null &&
@@ -1267,3 +1299,28 @@ function getErrorMessage(error: unknown): string {
 
   return error instanceof Error ? error.message : String(error);
 }
+
+/** Extracts the FileSystemError kind, either from the structured Tauri IPC
+ *  payload ({ kind, message }) or from the stringified form produced by the
+ *  dev-invoke bridge when debugging in a plain browser. */
+function extractErrorKind(error: unknown): string | null {
+  if (typeof error === "object" && error !== null && "kind" in error) {
+    return String((error as { kind: unknown }).kind);
+  }
+
+  const raw =
+    error instanceof Error ? error.message : typeof error === "string" ? error : null;
+  const match = raw?.match(/"kind":\s*(?:String\()?"([a-z_]+)"/);
+  return match?.[1] ?? null;
+}
+
+const FILE_OPERATION_ERROR_MESSAGES: Record<string, string> = {
+  already_exists: "目标位置已存在同名项目",
+  not_found: "项目不存在或已被移动",
+  permission_denied: "没有足够的权限完成此操作",
+  invalid_input: "无法完成此操作",
+  not_a_directory: "目标不是文件夹",
+  not_directory: "目标不是文件夹",
+  io: "文件系统操作失败",
+  internal: "操作失败",
+};

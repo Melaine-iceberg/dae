@@ -59,7 +59,12 @@ impl SmbPath {
         } else if self.sub_path.is_empty() {
             format!("smb://{}/{}", self.authority(), self.share)
         } else {
-            format!("smb://{}/{}/{}", self.authority(), self.share, self.sub_path)
+            format!(
+                "smb://{}/{}/{}",
+                self.authority(),
+                self.share,
+                self.sub_path
+            )
         }
     }
 
@@ -133,11 +138,12 @@ fn parse_smb_path(rest: &str) -> Result<SmbPath, FileSystemError> {
 
 fn split_authority(rest: &str) -> (&str, Option<&str>) {
     if let Some(stripped) = rest.strip_prefix('[')
-        && let Some(end) = stripped.find(']') {
-            let host = &rest[..end + 2];
-            let remainder = &rest[end + 2..];
-            return (host, remainder.strip_prefix('/'));
-        }
+        && let Some(end) = stripped.find(']')
+    {
+        let host = &rest[..end + 2];
+        let remainder = &rest[end + 2..];
+        return (host, remainder.strip_prefix('/'));
+    }
 
     match rest.split_once('/') {
         Some((authority, remainder)) => (authority, Some(remainder)),
@@ -169,9 +175,10 @@ fn parse_authority(authority: &str) -> Result<(String, Option<u16>), FileSystemE
     let port = match port {
         None => None,
         Some("") => None,
-        Some(port) => Some(port.parse::<u16>().map_err(|_| {
-            FileSystemError::InvalidInput(format!("Invalid SMB port: {port}"))
-        })?),
+        Some(port) => Some(
+            port.parse::<u16>()
+                .map_err(|_| FileSystemError::InvalidInput(format!("Invalid SMB port: {port}")))?,
+        ),
     };
 
     Ok((host.to_owned(), port))
@@ -207,11 +214,14 @@ impl SmbBackend {
     ) -> Result<Self, FileSystemError> {
         let addr = format!("{}:{}", host, port.unwrap_or(DEFAULT_PORT));
         let runtime = Arc::new(
-            tokio::runtime::Runtime::new().map_err(|error| FileSystemError::Io(error.to_string()))?,
+            tokio::runtime::Runtime::new()
+                .map_err(|error| FileSystemError::Io(error.to_string()))?,
         );
 
         let client = runtime
-            .block_on(async { smb2::connect(&addr, username.unwrap_or(""), password.unwrap_or("")).await })
+            .block_on(async {
+                smb2::connect(&addr, username.unwrap_or(""), password.unwrap_or("")).await
+            })
             .map_err(map_connect_error)?;
 
         Ok(Self {
@@ -572,7 +582,11 @@ fn smb_breadcrumbs(path: &SmbPath) -> Vec<Breadcrumb> {
     });
 
     let mut accumulated = format!("smb://{}/{}", path.authority(), path.share);
-    for segment in path.sub_path.split('/').filter(|segment| !segment.is_empty()) {
+    for segment in path
+        .sub_path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+    {
         accumulated.push('/');
         accumulated.push_str(segment);
         breadcrumbs.push(Breadcrumb {
@@ -744,9 +758,9 @@ fn map_connect_error(error: smb2::Error) -> FileSystemError {
             ))
         }
         SmbErrorKind::AccessDenied => FileSystemError::PermissionDenied(error.to_string()),
-        SmbErrorKind::TimedOut | SmbErrorKind::ConnectionLost => FileSystemError::Io(format!(
-            "Could not reach the SMB server: {error}"
-        )),
+        SmbErrorKind::TimedOut | SmbErrorKind::ConnectionLost => {
+            FileSystemError::Io(format!("Could not reach the SMB server: {error}"))
+        }
         _ => FileSystemError::Io(error.to_string()),
     }
 }
@@ -757,9 +771,7 @@ fn map_smb_error(error: smb2::Error) -> FileSystemError {
         SmbErrorKind::AlreadyExists => FileSystemError::AlreadyExists(error.to_string()),
         SmbErrorKind::AccessDenied => FileSystemError::PermissionDenied(error.to_string()),
         SmbErrorKind::AuthRequired | SmbErrorKind::SigningRequired => {
-            FileSystemError::PermissionDenied(format!(
-                "The server requires an account: {error}"
-            ))
+            FileSystemError::PermissionDenied(format!("The server requires an account: {error}"))
         }
         SmbErrorKind::NotADirectory => FileSystemError::NotDirectory(error.to_string()),
         SmbErrorKind::IsADirectory => FileSystemError::InvalidInput(error.to_string()),
@@ -771,9 +783,7 @@ fn map_smb_error(error: smb2::Error) -> FileSystemError {
 /// typed into the connect dialog rather than any stored ones.
 #[tauri::command]
 #[specta::specta]
-pub async fn test_connection(
-    input: SaveConnectionInput,
-) -> Result<(), FileSystemError> {
+pub async fn test_connection(input: SaveConnectionInput) -> Result<(), FileSystemError> {
     tauri::async_runtime::spawn_blocking(move || {
         let host = input.host.trim().to_owned();
         if host.is_empty() {
@@ -852,10 +862,7 @@ mod smb_tests {
     fn rejects_malformed_hosts_and_ports() {
         assert!(parse_smb_path(":445/media").is_err());
         let bad_port = parse_smb_path("nas.local:99999/media");
-        assert!(matches!(
-            bad_port,
-            Err(FileSystemError::InvalidInput(_))
-        ));
+        assert!(matches!(bad_port, Err(FileSystemError::InvalidInput(_))));
     }
 
     #[test]
@@ -863,7 +870,10 @@ mod smb_tests {
         let path = parse_smb_path("nas.local/media/movies/2024").unwrap();
         let breadcrumbs = smb_breadcrumbs(&path);
 
-        let names: Vec<_> = breadcrumbs.iter().map(|crumb| crumb.name.as_str()).collect();
+        let names: Vec<_> = breadcrumbs
+            .iter()
+            .map(|crumb| crumb.name.as_str())
+            .collect();
         assert_eq!(names, vec!["nas.local", "media", "movies", "2024"]);
         assert_eq!(breadcrumbs[0].path, "smb://nas.local");
         assert_eq!(breadcrumbs[1].path, "smb://nas.local/media");

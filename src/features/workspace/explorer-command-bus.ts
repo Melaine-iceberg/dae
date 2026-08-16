@@ -20,6 +20,7 @@ export type ExplorerCommandId =
   | "go-back"
   | "go-forward"
   | "go-up"
+  | "open-terminal"
   | "toggle-favorite";
 
 export type PendingExplorerCommand = {

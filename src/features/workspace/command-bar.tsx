@@ -38,6 +38,7 @@ import {
   SquaresFourIcon,
   StarIcon,
   SunIcon,
+  TerminalIcon,
   TextAaIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
@@ -380,6 +381,14 @@ export function CommandBar() {
         keywords: "up parent navigate",
         icon: ArrowUpIcon,
         command: "go-up",
+      },
+      {
+        id: "open-terminal",
+        label: "在终端中打开",
+        hint: `${MOD_KEY}+\``,
+        keywords: "terminal shell console open external",
+        icon: TerminalIcon,
+        command: "open-terminal",
       },
       {
         id: "toggle-favorite",

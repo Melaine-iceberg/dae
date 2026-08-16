@@ -72,9 +72,10 @@ pub fn get_system_places(app: tauri::AppHandle) -> Result<Vec<SystemPlace>, File
     Ok(candidates
         .into_iter()
         .filter_map(|(kind, resolved)| {
-            resolved
-                .ok()
-                .map(|path| SystemPlace { kind, path: path_to_string(&path) })
+            resolved.ok().map(|path| SystemPlace {
+                kind,
+                path: path_to_string(&path),
+            })
         })
         .collect())
 }
@@ -155,9 +156,11 @@ fn list_disks_sync() -> Vec<DiskVolume> {
         .collect();
 
     volumes.sort_by(|a, b| {
-        is_system_volume(b)
-            .cmp(&is_system_volume(a))
-            .then_with(|| a.mount_point.to_lowercase().cmp(&b.mount_point.to_lowercase()))
+        is_system_volume(b).cmp(&is_system_volume(a)).then_with(|| {
+            a.mount_point
+                .to_lowercase()
+                .cmp(&b.mount_point.to_lowercase())
+        })
     });
 
     volumes
@@ -209,8 +212,7 @@ fn list_wsl_distros_windows() -> Vec<WslDistro> {
 #[cfg(target_os = "windows")]
 fn decode_wsl_output(bytes: &[u8]) -> String {
     let has_bom = bytes.starts_with(&[0xFF, 0xFE]);
-    let looks_utf16 =
-        has_bom || bytes.iter().skip(1).step_by(2).any(|&byte| byte == 0);
+    let looks_utf16 = has_bom || bytes.iter().skip(1).step_by(2).any(|&byte| byte == 0);
     if !looks_utf16 {
         return String::from_utf8_lossy(bytes).into_owned();
     }
@@ -245,13 +247,46 @@ fn is_system_volume(volume: &DiskVolume) -> bool {
 pub(super) fn is_visible_file_system(file_system: &str) -> bool {
     const HIDDEN: &[&str] = &[
         // Network file systems (network storage is out of scope).
-        "cifs", "smbfs", "smb", "smb2", "nfs", "nfs4", "afpfs", "sshfs", "fuse.sshfs", "webdav",
-        "davfs", "davfs2", "9p",
+        "cifs",
+        "smbfs",
+        "smb",
+        "smb2",
+        "nfs",
+        "nfs4",
+        "afpfs",
+        "sshfs",
+        "fuse.sshfs",
+        "webdav",
+        "davfs",
+        "davfs2",
+        "9p",
         // Pseudo file systems without meaningful capacity.
-        "proc", "procfs", "sysfs", "tmpfs", "devtmpfs", "devpts", "ramfs", "overlay",
-        "squashfs", "efivarfs", "securityfs", "debugfs", "tracefs", "cgroup", "cgroup2",
-        "autofs", "mqueue", "hugetlbfs", "pstore", "configfs", "fusectl", "binfmt_misc",
-        "nsfs", "fuse.lxcfs", "rpc_pipefs", "none",
+        "proc",
+        "procfs",
+        "sysfs",
+        "tmpfs",
+        "devtmpfs",
+        "devpts",
+        "ramfs",
+        "overlay",
+        "squashfs",
+        "efivarfs",
+        "securityfs",
+        "debugfs",
+        "tracefs",
+        "cgroup",
+        "cgroup2",
+        "autofs",
+        "mqueue",
+        "hugetlbfs",
+        "pstore",
+        "configfs",
+        "fusectl",
+        "binfmt_misc",
+        "nsfs",
+        "fuse.lxcfs",
+        "rpc_pipefs",
+        "none",
     ];
 
     let lowered = file_system.to_lowercase();

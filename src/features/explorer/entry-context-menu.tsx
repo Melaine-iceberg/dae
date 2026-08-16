@@ -11,10 +11,12 @@ import {
   ScissorsIcon,
   SquaresFourIcon,
   StarIcon,
+  TerminalIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
+import { commands } from "@/bindings";
 import { MOD_KEY } from "@/lib/platform";
 
 import {
@@ -103,6 +105,12 @@ export function EntryContextMenuContent({
           重命名
           <ContextMenuShortcut>F2</ContextMenuShortcut>
         </ContextMenuItem>
+        {entry.kind === "directory" && (
+          <ContextMenuItem disabled={isActionDisabled} onClick={() => void openTerminalAt(entry.path)}>
+            <TerminalIcon />
+            在终端中打开
+          </ContextMenuItem>
+        )}
         <ContextMenuItem onClick={() => void copyEntryPath(entry.path)}>
           <ClipboardTextIcon />
           复制文件地址
@@ -153,5 +161,13 @@ async function copyEntryPath(path: string): Promise<void> {
     await writeText(path);
   } catch (error) {
     console.warn(`Unable to copy path ${path}`, error);
+  }
+}
+
+async function openTerminalAt(path: string): Promise<void> {
+  try {
+    await commands.openTerminal(path);
+  } catch (error) {
+    console.warn(`Unable to open terminal at ${path}`, error);
   }
 }

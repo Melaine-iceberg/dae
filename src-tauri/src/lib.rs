@@ -58,6 +58,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::commands::move_entries,
             file_system::commands::delete_entries,
             file_system::commands::duplicate_entries,
+            file_system::commands::open_terminal,
             file_system::archive::compress_entries,
             file_system::preview::get_thumbnail,
             file_system::preview::read_text_preview,

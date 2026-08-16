@@ -269,6 +269,141 @@ fn is_local_path(path: &str) -> bool {
     vfs::scheme_of(path).is_ok_and(|scheme| scheme == Scheme::Local)
 }
 
+/// Opens the user's system default terminal at a local directory.
+///
+/// Each platform honors its own "default terminal" setting: Windows routes
+/// the spawned console process to the configured default terminal host
+/// (e.g. Windows Terminal), macOS opens Terminal.app, and Linux resolves
+/// `$TERMINAL`, `xdg-terminal-exec`, or a common desktop terminal.
+#[tauri::command]
+#[specta::specta]
+pub fn open_terminal(path: String) -> Result<(), FileSystemError> {
+    if !is_local_path(&path) {
+        return Err(FileSystemError::InvalidInput(
+            "只能在本地目录打开终端".into(),
+        ));
+    }
+
+    let directory = PathBuf::from(&path);
+    if !directory.is_dir() {
+        return Err(FileSystemError::NotDirectory(path));
+    }
+
+    open_system_terminal(&directory)
+}
+
+#[cfg(target_os = "windows")]
+fn open_system_terminal(directory: &std::path::Path) -> Result<(), FileSystemError> {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+
+    // Prefer Windows Terminal: `wt -d` opens the user's configured default
+    // profile (their chosen shell) at the directory.
+    if std::process::Command::new("wt.exe")
+        .arg("-d")
+        .arg(directory)
+        .spawn()
+        .is_ok()
+    {
+        return Ok(());
+    }
+
+    // Fallback for systems without Windows Terminal: launch PowerShell in a
+    // new console, which Windows routes to the configured default terminal
+    // host (e.g. Windows Terminal or conhost).
+    std::process::Command::new("powershell.exe")
+        .current_dir(directory)
+        .creation_flags(CREATE_NEW_CONSOLE)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| FileSystemError::Internal(format!("无法启动终端：{error}")))
+}
+
+#[cfg(target_os = "macos")]
+fn open_system_terminal(directory: &std::path::Path) -> Result<(), FileSystemError> {
+    std::process::Command::new("open")
+        .arg("-a")
+        .arg("Terminal")
+        .arg(directory)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| FileSystemError::Internal(format!("无法启动终端：{error}")))
+}
+
+#[cfg(target_os = "linux")]
+fn open_system_terminal(directory: &std::path::Path) -> Result<(), FileSystemError> {
+    use std::process::Command;
+
+    fn spawn(
+        program: &str,
+        extra_args: &[&str],
+        directory: &std::path::Path,
+    ) -> Result<(), std::io::Error> {
+        let mut command = Command::new(program);
+        command.args(extra_args).current_dir(directory).spawn()?;
+        Ok(())
+    }
+
+    // Honor an explicit user override first.
+    if let Ok(terminal) = std::env::var("TERMINAL") {
+        let terminal = terminal.trim();
+        if !terminal.is_empty() && spawn(terminal, &[], directory).is_ok() {
+            return Ok(());
+        }
+    }
+
+    // Candidates: (program, args). Terminals without a working-directory
+    // flag inherit `directory` through `current_dir`.
+    let dir = directory.to_string_lossy().into_owned();
+    let candidates: Vec<(String, Vec<String>)> = vec![
+        // The cross-desktop default-terminal spec.
+        ("xdg-terminal-exec".into(), vec![]),
+        // Debian's alternatives symlink.
+        ("x-terminal-emulator".into(), vec![]),
+        (
+            "gnome-terminal".into(),
+            vec!["--working-directory".into(), dir.clone()],
+        ),
+        (
+            "kgx".into(),
+            vec!["--working-directory".into(), dir.clone()],
+        ),
+        ("konsole".into(), vec!["--workdir".into(), dir.clone()]),
+        (
+            "xfce4-terminal".into(),
+            vec!["--working-directory".into(), dir.clone()],
+        ),
+        (
+            "mate-terminal".into(),
+            vec!["--working-directory".into(), dir.clone()],
+        ),
+        (
+            "tilix".into(),
+            vec!["--working-directory".into(), dir.clone()],
+        ),
+        (
+            "wezterm".into(),
+            vec!["start".into(), "--cwd".into(), dir.clone()],
+        ),
+        ("kitty".into(), vec![]),
+        ("alacritty".into(), vec![]),
+        ("foot".into(), vec![]),
+        ("xterm".into(), vec![]),
+    ];
+
+    for (program, args) in candidates {
+        let arg_refs = args.iter().map(String::as_str).collect::<Vec<_>>();
+        if spawn(&program, &arg_refs, directory).is_ok() {
+            return Ok(());
+        }
+    }
+
+    Err(FileSystemError::Internal(
+        "未找到可用的终端，请安装 xdg-terminal-exec 或设置 $TERMINAL".into(),
+    ))
+}
+
 /// True when every source and the destination sit on the local backend, which
 /// keeps its native rayon transfer path instead of the streaming engine.
 fn is_pure_local(sources: &[TransferSource], destination: &str) -> bool {

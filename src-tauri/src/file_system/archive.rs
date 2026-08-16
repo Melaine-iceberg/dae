@@ -159,7 +159,9 @@ fn add_tree_to_zip(
 
     match stat.kind {
         EntryKind::Directory => {
-            writer.add_directory(arc_name.to_owned(), options).map_err(zip_error)?;
+            writer
+                .add_directory(arc_name.to_owned(), options)
+                .map_err(zip_error)?;
 
             for entry in backend.read_dir(path)?.entries {
                 let child_arc = format!("{arc_name}/{}", entry.name);

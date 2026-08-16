@@ -19,6 +19,7 @@ import {
   ScissorsIcon,
   SquaresFourIcon,
   StarIcon,
+  TerminalIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
 
@@ -93,6 +94,7 @@ interface FileListProps {
   ) => void;
   onMoveTo: () => void;
   onOpenDirectory: (path: string) => void;
+  onOpenTerminal: () => void;
   onPaste: () => void;
   onRename: () => void;
   onScrollOffsetChange?: (offset: number) => void;
@@ -215,6 +217,7 @@ export function FileList({
   onDropEntries,
   onMoveTo,
   onOpenDirectory,
+  onOpenTerminal,
   onPaste,
   onRename,
   onScrollOffsetChange,
@@ -287,6 +290,13 @@ export function FileList({
         return;
       }
 
+      // Ctrl/Cmd+` opens the system terminal in the current directory.
+      if (hasModifier && !event.altKey && key === "`") {
+        event.preventDefault();
+        onOpenTerminal();
+        return;
+      }
+
       if (hasModifier && !event.altKey && key === "a" && !listIsLoading) {
         event.preventDefault();
         onSelectedPathsChange(entriesRef.current.map((entry) => entry.path));
@@ -321,6 +331,7 @@ export function FileList({
     onCopy,
     onCut,
     onDelete,
+    onOpenTerminal,
     onPaste,
     onRename,
     onSelectedPathsChange,
@@ -766,6 +777,11 @@ export function FileList({
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
+          <ContextMenuItem onClick={onOpenTerminal}>
+            <TerminalIcon />
+            在终端中打开
+            <ContextMenuShortcut>{MOD_KEY}+`</ContextMenuShortcut>
+          </ContextMenuItem>
           <ContextMenuItem disabled={!hasClipboard} onClick={onPaste}>
             <ClipboardIcon />
             粘贴

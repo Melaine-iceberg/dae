@@ -11,7 +11,10 @@ fn main() {
                 println!("guest connect OK");
                 match client.list_shares().await {
                     Ok(shares) => {
-                        println!("shares: {:?}", shares.iter().map(|s| s.name.clone()).collect::<Vec<_>>());
+                        println!(
+                            "shares: {:?}",
+                            shares.iter().map(|s| s.name.clone()).collect::<Vec<_>>()
+                        );
                         run_roundtrip(&mut client).await;
                     }
                     Err(e) => println!("guest list_shares failed: {e}"),
@@ -52,7 +55,12 @@ async fn run_roundtrip(client: &mut smb2::SmbClient) {
         entries
             .iter()
             .take(5)
-            .map(|e| format!("{}{}({}b)", e.name, if e.is_directory { "/" } else { "" }, e.size))
+            .map(|e| format!(
+                "{}{}({}b)",
+                e.name,
+                if e.is_directory { "/" } else { "" },
+                e.size
+            ))
             .collect::<Vec<_>>()
     );
 
@@ -69,9 +77,21 @@ async fn run_roundtrip(client: &mut smb2::SmbClient) {
     println!("read_file roundtrip OK");
 
     client.stat(&mut tree, &path).await.expect("stat");
-    client.rename(&mut tree, &path, "dae-spike-renamed.txt").await.expect("rename");
-    client.delete_file(&mut tree, "dae-spike-renamed.txt").await.expect("delete_file");
-    client.create_directory(&mut tree, "dae-spike-dir").await.expect("create_directory");
-    client.delete_directory(&mut tree, "dae-spike-dir").await.expect("delete_directory");
+    client
+        .rename(&mut tree, &path, "dae-spike-renamed.txt")
+        .await
+        .expect("rename");
+    client
+        .delete_file(&mut tree, "dae-spike-renamed.txt")
+        .await
+        .expect("delete_file");
+    client
+        .create_directory(&mut tree, "dae-spike-dir")
+        .await
+        .expect("create_directory");
+    client
+        .delete_directory(&mut tree, "dae-spike-dir")
+        .await
+        .expect("delete_directory");
     println!("FULL ROUNDTRIP OK");
 }

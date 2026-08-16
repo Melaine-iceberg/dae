@@ -4,10 +4,10 @@ use super::local::{
     move_entries_with_progress, read_directory_sync, rename_entry_sync, search_directory_sync,
 };
 use super::progress::FileOperationProgressReporterTrait;
-use super::sidebar::{dedupe_favorites, is_visible_file_system, Favorite};
+use super::sidebar::{Favorite, dedupe_favorites, is_visible_file_system};
 use super::types::{
-    entry_sort_key, normalize_path_for_display, path_to_string, DirectoryEntry, EntryKind,
-    NewEntryKind,
+    DirectoryEntry, EntryKind, NewEntryKind, entry_sort_key, normalize_path_for_display,
+    path_to_string,
 };
 use super::vfs::{self, FileSystemBackend};
 use std::fs;
@@ -171,10 +171,12 @@ fn searches_nested_files_and_directories_case_insensitively() {
         .collect::<Vec<_>>();
 
     assert_eq!(names, vec!["Reports", ".report-draft", "Annual-REPORT.txt"]);
-    assert!(response
-        .entries
-        .iter()
-        .any(|entry| entry.relative_path.contains("Annual-REPORT.txt")));
+    assert!(
+        response
+            .entries
+            .iter()
+            .any(|entry| entry.relative_path.contains("Annual-REPORT.txt"))
+    );
     let file_entry = response
         .entries
         .iter()
@@ -300,10 +302,12 @@ fn copies_and_deletes_nested_trees_in_parallel() {
 
     let copied_root = destination.join("source");
     for index in 0..3 {
-        assert!(copied_root
-            .join(format!("folder-{index}"))
-            .join("file.txt")
-            .is_file());
+        assert!(
+            copied_root
+                .join(format!("folder-{index}"))
+                .join("file.txt")
+                .is_file()
+        );
     }
 
     let delete_progress = TestProgress::new();
@@ -513,9 +517,11 @@ fn transfers_trees_between_distinct_backend_instances() {
     )
     .expect("move tree across backends");
     assert!(!source_dir.exists());
-    assert!(move_destination_dir
-        .join("source/nested/leaf.bin")
-        .is_file());
+    assert!(
+        move_destination_dir
+            .join("source/nested/leaf.bin")
+            .is_file()
+    );
     assert_eq!(
         move_progress.completed.load(AtomicOrdering::Relaxed),
         move_progress.total.load(AtomicOrdering::Relaxed)
@@ -552,10 +558,11 @@ fn serves_local_paths_through_the_backend_trait() {
     assert!(directory.join("through-trait.txt").is_file());
 
     let view = backend.read_dir(&path).expect("read through trait object");
-    assert!(view
-        .entries
-        .iter()
-        .any(|entry| entry.name == "through-trait.txt"));
+    assert!(
+        view.entries
+            .iter()
+            .any(|entry| entry.name == "through-trait.txt")
+    );
 
     backend
         .remove(&created)
@@ -631,9 +638,11 @@ fn saves_updates_and_deletes_connections() {
     assert_eq!(listed.len(), 1);
 
     connections::delete_connection("smb://myserver.local:445".into()).expect("delete connection");
-    assert!(connections::list_connections()
-        .expect("list after delete")
-        .is_empty());
+    assert!(
+        connections::list_connections()
+            .expect("list after delete")
+            .is_empty()
+    );
     let (_, password) =
         connections::resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
     assert_eq!(password, None);
@@ -658,7 +667,7 @@ fn display_name_from_path_handles_separators_and_roots() {
 
 #[test]
 fn upsert_recent_dedupes_orders_and_caps() {
-    use super::recents::{upsert_recent, RecentItem, RecentSource};
+    use super::recents::{RecentItem, RecentSource, upsert_recent};
     use super::types::EntryKind;
 
     let make = |path: &str, accessed_at: u64| RecentItem {
