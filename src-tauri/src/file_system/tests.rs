@@ -1,14 +1,13 @@
 use super::error::FileSystemError;
 use super::local::{
-    build_breadcrumbs, copy_entries_with_progress, create_entry_sync,
-    delete_entries_with_progress, move_entries_with_progress, read_directory_sync,
-    rename_entry_sync, search_directory_sync,
+    build_breadcrumbs, copy_entries_with_progress, create_entry_sync, delete_entries_with_progress,
+    move_entries_with_progress, read_directory_sync, rename_entry_sync, search_directory_sync,
 };
 use super::progress::FileOperationProgressReporterTrait;
-use super::sidebar::{Favorite, dedupe_favorites, is_visible_file_system};
+use super::sidebar::{dedupe_favorites, is_visible_file_system, Favorite};
 use super::types::{
-    DirectoryEntry, EntryKind, NewEntryKind, entry_sort_key, normalize_path_for_display,
-    path_to_string,
+    entry_sort_key, normalize_path_for_display, path_to_string, DirectoryEntry, EntryKind,
+    NewEntryKind,
 };
 use super::vfs::{self, FileSystemBackend};
 use std::fs;
@@ -163,8 +162,8 @@ fn searches_nested_files_and_directories_case_insensitively() {
     fs::write(&matching_file, "report").expect("create matching file");
     fs::write(&hidden_file, "draft").expect("create hidden matching file");
 
-    let response =
-        search_directory_sync(directory.clone(), "report", &|| true).expect("search test directory");
+    let response = search_directory_sync(directory.clone(), "report", &|| true)
+        .expect("search test directory");
     let names = response
         .entries
         .iter()
@@ -172,12 +171,10 @@ fn searches_nested_files_and_directories_case_insensitively() {
         .collect::<Vec<_>>();
 
     assert_eq!(names, vec!["Reports", ".report-draft", "Annual-REPORT.txt"]);
-    assert!(
-        response
-            .entries
-            .iter()
-            .any(|entry| entry.relative_path.contains("Annual-REPORT.txt"))
-    );
+    assert!(response
+        .entries
+        .iter()
+        .any(|entry| entry.relative_path.contains("Annual-REPORT.txt")));
     let file_entry = response
         .entries
         .iter()
@@ -228,12 +225,8 @@ fn performs_file_operations_and_reports_entry_progress() {
     fs::write(&nested_file, "copied content").expect("create source file");
 
     let copy_progress = TestProgress::new();
-    copy_entries_with_progress(
-        vec![source.clone()],
-        destination.clone(),
-        &copy_progress,
-    )
-    .expect("copy directory");
+    copy_entries_with_progress(vec![source.clone()], destination.clone(), &copy_progress)
+        .expect("copy directory");
     assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 2);
     assert_eq!(copy_progress.total.load(AtomicOrdering::Relaxed), 2);
 
@@ -277,8 +270,7 @@ fn performs_file_operations_and_reports_entry_progress() {
     assert_eq!(move_progress.total.load(AtomicOrdering::Relaxed), 1);
 
     let delete_progress = TestProgress::new();
-    delete_entries_with_progress(vec![moved_file.clone()], &delete_progress)
-        .expect("delete file");
+    delete_entries_with_progress(vec![moved_file.clone()], &delete_progress).expect("delete file");
     assert!(!moved_file.exists());
     assert_eq!(delete_progress.completed.load(AtomicOrdering::Relaxed), 1);
     assert_eq!(delete_progress.total.load(AtomicOrdering::Relaxed), 1);
@@ -308,7 +300,10 @@ fn copies_and_deletes_nested_trees_in_parallel() {
 
     let copied_root = destination.join("source");
     for index in 0..3 {
-        assert!(copied_root.join(format!("folder-{index}")).join("file.txt").is_file());
+        assert!(copied_root
+            .join(format!("folder-{index}"))
+            .join("file.txt")
+            .is_file());
     }
 
     let delete_progress = TestProgress::new();
@@ -342,9 +337,18 @@ fn hides_network_and_pseudo_file_systems() {
 #[test]
 fn dedupes_favorites_keeping_the_first_entry_per_path() {
     let favorites = vec![
-        Favorite { path: "/a".into(), name: "First".into() },
-        Favorite { path: "/b".into(), name: "B".into() },
-        Favorite { path: "/a".into(), name: "Duplicate".into() },
+        Favorite {
+            path: "/a".into(),
+            name: "First".into(),
+        },
+        Favorite {
+            path: "/b".into(),
+            name: "B".into(),
+        },
+        Favorite {
+            path: "/a".into(),
+            name: "Duplicate".into(),
+        },
     ];
 
     let deduped = dedupe_favorites(favorites);
@@ -363,10 +367,7 @@ fn creates_files_and_directories_with_validated_names() {
 
     let file_path = create_entry_sync(directory.clone(), "notes.txt".into(), NewEntryKind::File)
         .expect("create file");
-    assert_eq!(
-        file_path,
-        path_to_string(&directory.join("notes.txt"))
-    );
+    assert_eq!(file_path, path_to_string(&directory.join("notes.txt")));
     assert!(directory.join("notes.txt").is_file());
 
     let directory_path = create_entry_sync(
@@ -375,10 +376,7 @@ fn creates_files_and_directories_with_validated_names() {
         NewEntryKind::Directory,
     )
     .expect("create directory");
-    assert_eq!(
-        directory_path,
-        path_to_string(&directory.join("子文件夹"))
-    );
+    assert_eq!(directory_path, path_to_string(&directory.join("子文件夹")));
     assert!(directory.join("子文件夹").is_dir());
 
     let duplicate_error =
@@ -483,7 +481,10 @@ fn transfers_trees_between_distinct_backend_instances() {
     let leaf = fs::read(copied_root.join("nested/leaf.bin")).expect("read copied leaf");
     assert_eq!(leaf.len(), 600 * 1024);
     assert!(leaf.iter().all(|byte| *byte == 7));
-    assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), copy_progress.total.load(AtomicOrdering::Relaxed));
+    assert_eq!(
+        copy_progress.completed.load(AtomicOrdering::Relaxed),
+        copy_progress.total.load(AtomicOrdering::Relaxed)
+    );
 
     let duplicate_progress = TestProgress::new();
     let duplicate_error = transfer::copy_entries(
@@ -512,13 +513,21 @@ fn transfers_trees_between_distinct_backend_instances() {
     )
     .expect("move tree across backends");
     assert!(!source_dir.exists());
-    assert!(move_destination_dir.join("source/nested/leaf.bin").is_file());
-    assert_eq!(move_progress.completed.load(AtomicOrdering::Relaxed), move_progress.total.load(AtomicOrdering::Relaxed));
+    assert!(move_destination_dir
+        .join("source/nested/leaf.bin")
+        .is_file());
+    assert_eq!(
+        move_progress.completed.load(AtomicOrdering::Relaxed),
+        move_progress.total.load(AtomicOrdering::Relaxed)
+    );
 
     let delete_progress = TestProgress::new();
     transfer::delete_entries(
         vec![TransferSource {
-            path: move_destination_dir.join("source").to_string_lossy().into_owned(),
+            path: move_destination_dir
+                .join("source")
+                .to_string_lossy()
+                .into_owned(),
             backend: destination_backend.clone(),
         }],
         &delete_progress,
@@ -559,9 +568,7 @@ fn serves_local_paths_through_the_backend_trait() {
 /// function because the registry is a process-global singleton.
 #[test]
 fn saves_updates_and_deletes_connections() {
-    use super::connections::{
-        self, Protocol, SaveConnectionInput,
-    };
+    use super::connections::{self, Protocol, SaveConnectionInput};
 
     let config_dir =
         std::env::temp_dir().join(format!("dae-connections-test-{}", std::process::id()));
@@ -587,12 +594,16 @@ fn saves_updates_and_deletes_connections() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0], saved);
 
-    let persisted = fs::read_to_string(config_dir.join("connections.json"))
-        .expect("connections file exists");
-    assert!(!persisted.contains("password"), "passwords must never be persisted");
+    let persisted =
+        fs::read_to_string(config_dir.join("connections.json")).expect("connections file exists");
+    assert!(
+        !persisted.contains("password"),
+        "passwords must never be persisted"
+    );
     assert!(!persisted.contains("session-only"));
 
-    let (username, password) = connections::resolve_credentials(Protocol::Smb, "MyServer.Local", Some(445));
+    let (username, password) =
+        connections::resolve_credentials(Protocol::Smb, "MyServer.Local", Some(445));
     assert_eq!(username.as_deref(), Some("alice"));
     assert_eq!(password.as_deref(), Some("session-only"));
 
@@ -610,7 +621,8 @@ fn saves_updates_and_deletes_connections() {
     let listed = connections::list_connections().expect("list after update");
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].username.as_deref(), Some("bob"));
-    let (_, password) = connections::resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
+    let (_, password) =
+        connections::resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
     assert_eq!(password.as_deref(), Some("session-only"));
 
     // Reopening the store reloads from disk.
@@ -618,11 +630,68 @@ fn saves_updates_and_deletes_connections() {
     let listed = connections::list_connections().expect("list after reload");
     assert_eq!(listed.len(), 1);
 
-    connections::delete_connection("smb://myserver.local:445".into())
-        .expect("delete connection");
-    assert!(connections::list_connections().expect("list after delete").is_empty());
-    let (_, password) = connections::resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
+    connections::delete_connection("smb://myserver.local:445".into()).expect("delete connection");
+    assert!(connections::list_connections()
+        .expect("list after delete")
+        .is_empty());
+    let (_, password) =
+        connections::resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
     assert_eq!(password, None);
 
     fs::remove_dir_all(config_dir).expect("remove test directory");
+}
+
+#[test]
+fn display_name_from_path_handles_separators_and_roots() {
+    use super::types::display_name_from_path;
+
+    assert_eq!(display_name_from_path(r"C:\Users\alice\docs"), "docs");
+    assert_eq!(display_name_from_path("/home/alice/pictures/"), "pictures");
+    assert_eq!(display_name_from_path(r"\wsl$\Ubuntu"), "Ubuntu");
+    assert_eq!(display_name_from_path("smb://nas.local/media"), "media");
+    // Trailing separators are ignored, so drive roots keep their letter and
+    // connection roots show their host.
+    assert_eq!(display_name_from_path(r"C:\"), "C:");
+    assert_eq!(display_name_from_path("smb://nas.local"), "nas.local");
+    assert_eq!(display_name_from_path("/"), "/");
+}
+
+#[test]
+fn upsert_recent_dedupes_orders_and_caps() {
+    use super::recents::{upsert_recent, RecentItem, RecentSource};
+    use super::types::EntryKind;
+
+    let make = |path: &str, accessed_at: u64| RecentItem {
+        path: path.to_string(),
+        name: path.to_string(),
+        kind: EntryKind::File,
+        source: RecentSource::Opened,
+        accessed_at,
+    };
+
+    let mut items = vec![make("a", 1), make("b", 2), make("c", 3)];
+
+    // Re-recording an existing path moves it to the front without duplicating.
+    upsert_recent(&mut items, make("b", 4), 10);
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0].path, "b");
+    assert_eq!(items[0].accessed_at, 4);
+
+    // The cap evicts the least recently used entries.
+    upsert_recent(&mut items, make("d", 5), 2);
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].path, "d");
+    assert_eq!(items[1].path, "b");
+}
+
+#[test]
+fn seed_spaces_creates_four_presets() {
+    use super::spaces::seed_spaces;
+
+    let spaces = seed_spaces();
+    assert_eq!(spaces.len(), 4);
+    assert!(spaces.iter().all(|space| space.is_preset));
+    assert!(spaces.iter().all(|space| space.items.is_empty()));
+    let ids: Vec<&str> = spaces.iter().map(|space| space.id.as_str()).collect();
+    assert_eq!(ids, ["work", "personal", "shared", "archive"]);
 }

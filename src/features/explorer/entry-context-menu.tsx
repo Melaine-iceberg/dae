@@ -1,9 +1,12 @@
+import { useEffect } from "react";
+import { useAtomValue, useSetAtom } from "jotai";
 import {
   ClipboardTextIcon,
   CopyIcon,
   FolderOpenIcon,
   PencilIcon,
   ScissorsIcon,
+  SquaresFourIcon,
   StarIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
@@ -14,7 +17,11 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuShortcut,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
+import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
 
 import type { DirectoryEntry } from "./types";
 
@@ -23,6 +30,7 @@ export interface EntryActions {
   isActionDisabled: boolean;
   isSingleSelection: boolean;
   onAddToFavorites: () => void;
+  onAddToSpace: (spaceId: string) => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
@@ -35,12 +43,20 @@ export function EntryContextMenuContent({
   isActionDisabled,
   isSingleSelection,
   onAddToFavorites,
+  onAddToSpace,
   onCopy,
   onCut,
   onDelete,
   onOpen,
   onRename,
 }: EntryActions) {
+  const spaces = useAtomValue(spacesAtom) ?? [];
+  const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
+
+  useEffect(() => {
+    void ensureSpacesLoaded();
+  }, [ensureSpacesLoaded]);
+
   return (
     <>
       <ContextMenuGroup>
@@ -52,8 +68,24 @@ export function EntryContextMenuContent({
         {entry.kind === "directory" && (
           <ContextMenuItem disabled={isActionDisabled} onClick={onAddToFavorites}>
             <StarIcon />
-            添加到常用位置
+            添加到收藏
           </ContextMenuItem>
+        )}
+        {entry.kind === "directory" && spaces.length > 0 && (
+          <ContextMenuSub>
+            <ContextMenuSubTrigger disabled={isActionDisabled}>
+              <SquaresFourIcon />
+              添加到空间
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              {spaces.map((space) => (
+                <ContextMenuItem key={space.id} onClick={() => onAddToSpace(space.id)}>
+                  <SquaresFourIcon />
+                  {space.name}
+                </ContextMenuItem>
+              ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
         )}
         <ContextMenuItem disabled={isActionDisabled || !isSingleSelection} onClick={onRename}>
           <PencilIcon />

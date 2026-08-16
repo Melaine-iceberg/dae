@@ -1,12 +1,25 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
-import { CaretLeftIcon, CaretRightIcon, FolderIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
+import {
+  CaretLeftIcon,
+  CaretRightIcon,
+  ClockCounterClockwiseIcon,
+  FolderIcon,
+  HouseIcon,
+  PlusIcon,
+  SquaresFourIcon,
+  StarIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 
 import { WindowControls } from "@/components/window-controls";
 import { Sidebar } from "@/features/sidebar/sidebar";
+import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
+import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
+import { WorkspaceSurfaceView } from "@/features/workspace/workspace-surface";
+import type { WorkspaceSurface } from "@/features/workspace/types";
 import { cn } from "@/lib/utils";
 
-import { ExplorerView } from "./explorer-view";
 import {
   activeTabIdAtom,
   activateTabAtom,
@@ -23,8 +36,13 @@ export function ExplorerTabs() {
   const tabs = useAtomValue(tabsAtom);
   const activeTabId = useAtomValue(activeTabIdAtom);
   const createTab = useSetAtom(createTabAtom);
+  const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const stripRef = useRef<HTMLDivElement>(null);
   const [canScroll, setCanScroll] = useState({ left: false, right: false });
+
+  useEffect(() => {
+    void ensureSpacesLoaded();
+  }, [ensureSpacesLoaded]);
 
   const syncScrollButtons = useCallback(() => {
     const strip = stripRef.current;
@@ -72,7 +90,7 @@ export function ExplorerTabs() {
             aria-label="新建标签页"
             className="mb-1 flex size-6 shrink-0 items-center justify-center rounded-[5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={createTab}
-            title="新建标签页"
+            title="新建标签页 (Ctrl+T)"
             type="button"
           >
             <PlusIcon className="size-3.5" />
@@ -89,8 +107,8 @@ export function ExplorerTabs() {
 
       <div className="flex min-h-0 flex-1">
         <Sidebar />
-        <div className="min-h-0 min-w-0 flex-1">
-          <ExplorerView key={activeTabId} navigator={getTabNavigator(activeTabId)} />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <WorkspaceSurfaceView key={activeTabId} tabId={activeTabId} />
         </div>
       </div>
     </div>
@@ -126,13 +144,38 @@ function StripScrollButton({
   );
 }
 
+function surfaceTitle(
+  surface: WorkspaceSurface,
+  folderTitle: string,
+  spaceName: string | undefined,
+): string {
+  switch (surface.kind) {
+    case "overview":
+      return "概览";
+    case "recents":
+      return "最近使用";
+    case "favorites":
+      return "收藏";
+    case "space":
+      return spaceName ?? "空间";
+    case "folder":
+      return folderTitle;
+  }
+}
+
 function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }) {
   const activateTab = useSetAtom(activateTabAtom);
   const closeTab = useSetAtom(closeTabAtom);
+  const surface = useAtomValue(tabSurfaceFamily(tab.id));
+  const spaces = useAtomValue(spacesAtom);
   const navigator = getTabNavigator(tab.id);
   const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
   const directory = state.directory;
-  const title = directory?.breadcrumbs.at(-1)?.name ?? "加载中…";
+  const spaceName =
+    surface.kind === "space"
+      ? spaces?.find((space) => space.id === surface.spaceId)?.name
+      : undefined;
+  const title = surfaceTitle(surface, directory?.breadcrumbs.at(-1)?.name ?? "加载中…", spaceName);
   const elementRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -140,6 +183,21 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       elementRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
     }
   }, [isActive]);
+
+  const TabIcon = (() => {
+    switch (surface.kind) {
+      case "overview":
+        return HouseIcon;
+      case "recents":
+        return ClockCounterClockwiseIcon;
+      case "favorites":
+        return StarIcon;
+      case "space":
+        return SquaresFourIcon;
+      case "folder":
+        return FolderIcon;
+    }
+  })();
 
   return (
     <div
@@ -160,9 +218,15 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       ref={elementRef}
       role="tab"
       tabIndex={0}
-      title={directory?.path ?? title}
+      title={surface.kind === "folder" ? (directory?.path ?? title) : title}
     >
-      <FolderIcon className="ml-2 size-3.5 shrink-0 text-folder" weight="fill" />
+      <TabIcon
+        className={cn(
+          "ml-2 size-3.5 shrink-0",
+          surface.kind === "folder" ? "text-folder" : "text-muted-foreground",
+        )}
+        weight={surface.kind === "folder" ? "fill" : "regular"}
+      />
       <span className="w-full truncate pr-7 pl-1.5">{title}</span>
       <button
         aria-label={`关闭标签页 ${title}`}

@@ -1,0 +1,110 @@
+import type { ReactNode } from "react";
+
+import { cn } from "@/lib/utils";
+
+import type { PhosphorIcon } from "@/features/explorer/file-icons";
+
+/**
+ * Shared building blocks for the workspace surfaces (Overview, Recents,
+ * Favorites, Space). They encode the design system's surface hierarchy:
+ * the page stays on the workspace surface while cards provide one
+ * elevated level for grouped content.
+ */
+
+export function WorkspacePage({
+  "aria-label": ariaLabel,
+  children,
+}: {
+  "aria-label": string;
+  children: ReactNode;
+}) {
+  return (
+    <main aria-label={ariaLabel} className="min-h-0 flex-1 overflow-y-auto bg-card">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-8 pt-8 pb-12">{children}</div>
+    </main>
+  );
+}
+
+export function WorkspacePageHeader({
+  actions,
+  description,
+  title,
+}: {
+  actions?: ReactNode;
+  description?: string;
+  title: string;
+}) {
+  return (
+    <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0">
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+    </header>
+  );
+}
+
+export function SectionHeader({ action, title }: { action?: ReactNode; title: string }) {
+  return (
+    <div className="mb-3 flex items-center justify-between gap-4">
+      <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
+      {action}
+    </div>
+  );
+}
+
+/**
+ * Expressive card for a folder, location, or space — one of the few places
+ * the design system uses cards. Hierarchy: icon → name → useful metadata.
+ */
+export function LocationCard({
+  description,
+  icon: Icon,
+  iconClassName,
+  onClick,
+  title,
+}: {
+  description?: string;
+  icon: PhosphorIcon;
+  iconClassName?: string;
+  onClick: () => void;
+  title: string;
+}) {
+  return (
+    <button
+      className={cn(
+        "group flex w-full items-center gap-3 rounded-xl border border-border/60 bg-background p-3 text-left",
+        "transition-colors hover:border-border hover:bg-accent/60",
+        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+      )}
+      onClick={onClick}
+      title={description ? `${title} · ${description}` : title}
+      type="button"
+    >
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary">
+        <Icon className={cn("size-4.5", iconClassName)} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-medium">{title}</span>
+        {description && (
+          <span className="mt-0.5 block truncate text-xs text-muted-foreground">{description}</span>
+        )}
+      </span>
+    </button>
+  );
+}
+
+/** Computes the parent portion of a path for either separator style. */
+export function parentPathOf(path: string): string | null {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const separatorIndex = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  if (separatorIndex < 0) return null;
+
+  const parent = trimmed.slice(0, separatorIndex);
+  if (/^[a-zA-Z]:$/.test(parent)) {
+    return `${parent}${trimmed[separatorIndex]}`;
+  }
+
+  return parent || trimmed[separatorIndex] || null;
+}

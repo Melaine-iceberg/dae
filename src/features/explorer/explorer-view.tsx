@@ -2,11 +2,13 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
   type FormEvent,
 } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   ArrowClockwiseIcon,
   ArrowLeftIcon,
@@ -42,6 +44,12 @@ import {
   sidebarVisibleAtom,
   toggleFavoriteAtom,
 } from "@/features/sidebar/sidebar-atoms";
+import {
+  clearPendingExplorerCommand,
+  pendingExplorerCommandAtom,
+  type ExplorerCommandId,
+} from "@/features/workspace/explorer-command-bus";
+import { addItemsToSpace } from "@/features/workspace/spaces-atoms";
 import { cn } from "@/lib/utils";
 
 import { DirectorySearch, useDirectorySearch } from "./directory-search";
@@ -76,6 +84,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const toggleFavorite = useSetAtom(toggleFavoriteAtom);
   const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
   const [sidebarVisible, setSidebarVisible] = useAtom(sidebarVisibleAtom);
+  const pendingCommand = useAtomValue(pendingExplorerCommandAtom);
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
   const [renameTarget, setRenameTarget] = useState<DirectoryEntry | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -521,6 +530,103 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     [navigator],
   );
 
+  const addToSpace = useCallback((spaceId: string, paths: string[]) => {
+    void addItemsToSpace(spaceId, paths);
+  }, []);
+
+  const copySelectedPaths = useCallback(() => {
+    if (selectedEntries.length === 0) return;
+
+    void writeText(selectedEntries.map((entry) => entry.path).join("\n")).catch((error) => {
+      console.warn("Unable to copy paths to clipboard", error);
+    });
+  }, [selectedEntries]);
+
+  const selectAll = useCallback(() => {
+    setSelectedPaths(displayedEntries.map((entry) => entry.path));
+  }, [displayedEntries]);
+
+  const executeExplorerCommand = useCallback(
+    (command: ExplorerCommandId) => {
+      switch (command) {
+        case "create-folder":
+          requestCreate("directory");
+          break;
+        case "create-file":
+          requestCreate("file");
+          break;
+        case "rename":
+          requestRename();
+          break;
+        case "delete":
+          requestDelete();
+          break;
+        case "copy":
+          copySelection();
+          break;
+        case "cut":
+          cutSelection();
+          break;
+        case "paste":
+          pasteClipboard();
+          break;
+        case "copy-paths":
+          copySelectedPaths();
+          break;
+        case "select-all":
+          selectAll();
+          break;
+        case "refresh":
+          if (directory) void navigator.refresh(directory.path);
+          break;
+        case "go-back":
+          void navigator.goBack();
+          break;
+        case "go-forward":
+          void navigator.goForward();
+          break;
+        case "go-up":
+          void navigator.goUp();
+          break;
+        case "toggle-favorite":
+          if (directory) {
+            toggleFavorite({
+              path: directory.path,
+              name: directory.breadcrumbs.at(-1)?.name ?? directory.path,
+            });
+          }
+          break;
+      }
+    },
+    [
+      copySelectedPaths,
+      copySelection,
+      cutSelection,
+      directory,
+      navigator,
+      pasteClipboard,
+      requestCreate,
+      requestDelete,
+      requestRename,
+      selectAll,
+      toggleFavorite,
+    ],
+  );
+
+  // The command bar drops intents into the bus; the mounted (active tab)
+  // explorer consumes them. Ids are tracked so React StrictMode's double
+  // effect invocation cannot execute a command twice.
+  const executedCommandIdsRef = useRef(new Set<number>());
+
+  useEffect(() => {
+    if (!pendingCommand) return;
+    if (executedCommandIdsRef.current.has(pendingCommand.id)) return;
+
+    executedCommandIdsRef.current.add(pendingCommand.id);
+    clearPendingExplorerCommand();
+    executeExplorerCommand(pendingCommand.command);
+  }, [pendingCommand, executeExplorerCommand]);
+
   const isCurrentFavorited =
     directory !== null && favorites.some((favorite) => favorite.path === directory.path);
 
@@ -665,6 +771,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             isLoading={isLoading}
             isOperationPending={isOperationPending}
             onAddToFavorites={addFavoritePaths}
+            onAddToSpace={addToSpace}
             onCopy={copySelection}
             onCreateDirectory={() => requestCreate("directory")}
             onCreateFile={() => requestCreate("file")}

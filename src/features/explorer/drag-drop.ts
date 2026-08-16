@@ -3,6 +3,7 @@ export type FileTransferOperation = "copy" | "move";
 const DIRECTORY_DROP_TARGET_SELECTOR = "[data-explorer-directory-drop-target]";
 const DROP_TARGET_SELECTOR = "[data-explorer-drop-target]";
 const SIDEBAR_FAVORITES_DROP_TARGET_SELECTOR = "[data-sidebar-favorites-drop-target]";
+const SIDEBAR_SPACE_DROP_TARGET_SELECTOR = "[data-sidebar-space-drop-target]";
 
 export function getExplorerDropTargetAtPoint(x: number, y: number): string | null {
   const element = document.elementFromPoint(x, y);
@@ -21,6 +22,17 @@ export function isOverSidebarFavoritesAtPoint(x: number, y: number): boolean {
   return (
     element instanceof HTMLElement &&
     element.closest(SIDEBAR_FAVORITES_DROP_TARGET_SELECTOR) !== null
+  );
+}
+
+/** Returns the id of the sidebar space under the pointer, if any. */
+export function getSidebarSpaceDropTargetAtPoint(x: number, y: number): string | null {
+  const element = document.elementFromPoint(x, y);
+  if (!(element instanceof HTMLElement)) return null;
+
+  return (
+    element.closest<HTMLElement>(SIDEBAR_SPACE_DROP_TARGET_SELECTOR)?.dataset
+      .sidebarSpaceDropTarget ?? null
   );
 }
 

@@ -15,6 +15,7 @@ import {
   FolderIcon,
   FolderPlusIcon,
   ScissorsIcon,
+  SquaresFourIcon,
   StarIcon,
   WarningIcon,
 } from "@phosphor-icons/react";
@@ -39,9 +40,12 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
+import { recordRecentItem } from "@/features/workspace/recents-atoms";
+
 import {
   canDropEntries,
   getExplorerDropTargetAtPoint,
+  getSidebarSpaceDropTargetAtPoint,
   isOverSidebarFavoritesAtPoint,
   type FileTransferOperation,
 } from "./drag-drop";
@@ -67,6 +71,7 @@ interface FileListProps {
   isLoading: boolean;
   isOperationPending: boolean;
   onAddToFavorites: (paths: string[]) => void;
+  onAddToSpace: (spaceId: string, paths: string[]) => void;
   onCopy: () => void;
   onCreateDirectory: () => void;
   onCreateFile: () => void;
@@ -111,7 +116,10 @@ const FILE_SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
 const DRAG_START_DISTANCE_PX = 6;
 
-type InternalDragTarget = { kind: "directory"; path: string } | { kind: "favorites" };
+type InternalDragTarget =
+  | { kind: "directory"; path: string }
+  | { kind: "favorites" }
+  | { kind: "space"; spaceId: string };
 
 type InternalDragState = {
   operation: FileTransferOperation;
@@ -134,11 +142,15 @@ function resolveDragTarget(
   x: number,
   y: number,
 ): InternalDragTarget | null {
-  if (
-    draggableDirectoryPaths(entries, sourcePaths).length > 0 &&
-    isOverSidebarFavoritesAtPoint(x, y)
-  ) {
+  const draggableDirectories = draggableDirectoryPaths(entries, sourcePaths);
+
+  if (draggableDirectories.length > 0 && isOverSidebarFavoritesAtPoint(x, y)) {
     return { kind: "favorites" };
+  }
+
+  const spaceId = getSidebarSpaceDropTargetAtPoint(x, y);
+  if (draggableDirectories.length > 0 && spaceId !== null) {
+    return { kind: "space", spaceId };
   }
 
   const targetPath = getExplorerDropTargetAtPoint(x, y);
@@ -156,7 +168,10 @@ function targetsAreEqual(
   if (left === right) return true;
   if (!left || !right || left.kind !== right.kind) return false;
 
-  return left.kind === "favorites" || left.path === (right as { path: string }).path;
+  if (left.kind === "favorites") return true;
+  if (left.kind === "space") return left.spaceId === (right as { spaceId: string }).spaceId;
+
+  return left.path === (right as { path: string }).path;
 }
 
 function draggableDirectoryPaths(entries: DirectoryEntry[], sourcePaths: string[]): string[] {
@@ -190,6 +205,7 @@ export function FileList({
   isLoading,
   isOperationPending,
   onAddToFavorites,
+  onAddToSpace,
   onCopy,
   onCreateDirectory,
   onCreateFile,
@@ -266,6 +282,12 @@ export function FileList({
         return;
       }
 
+      if (hasModifier && !event.altKey && key === "a" && !listIsLoading) {
+        event.preventDefault();
+        onSelectedPathsChange(entriesRef.current.map((entry) => entry.path));
+        return;
+      }
+
       if (event.key === "F2" && selectedCount === 1 && !actionsDisabled) {
         event.preventDefault();
         onRename();
@@ -283,6 +305,7 @@ export function FileList({
   }, [
     actionsDisabled,
     hasClipboard,
+    listIsLoading,
     onCopy,
     onCut,
     onDelete,
@@ -352,6 +375,11 @@ export function FileList({
           onDropEntries(activeDrag.sourcePaths, activeDrag.target.path, activeDrag.operation);
         } else if (activeDrag.target?.kind === "favorites") {
           onAddToFavorites(draggableDirectoryPaths(entriesRef.current, activeDrag.sourcePaths));
+        } else if (activeDrag.target?.kind === "space") {
+          onAddToSpace(
+            activeDrag.target.spaceId,
+            draggableDirectoryPaths(entriesRef.current, activeDrag.sourcePaths),
+          );
         }
       }
 
@@ -366,7 +394,7 @@ export function FileList({
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", stopDragging);
     };
-  }, [onAddToFavorites, onDropEntries]);
+  }, [onAddToFavorites, onAddToSpace, onDropEntries]);
 
   const selectEntry = (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => {
     if (actionsDisabled) return;
@@ -440,13 +468,28 @@ export function FileList({
     void openFile(entry.path);
   };
 
-  const addEntryToFavorites = (entry: DirectoryEntry) => {
-    onAddToFavorites(
-      draggableDirectoryPaths(
-        entries,
-        selectedPathSet.has(entry.path) ? selectedPaths : [entry.path],
-      ),
+  /**
+   * Column view child panes render entries fetched on their own, so the
+   * dragged entry may not be part of the root `entries`. Fall back to the
+   * entry's own kind for those instead of silently dropping them.
+   */
+  const directoryPathsForEntry = (entry: DirectoryEntry): string[] => {
+    const sourcePaths = selectedPathSet.has(entry.path) ? selectedPaths : [entry.path];
+    const knownDirectories = new Set(
+      entries.filter((item) => item.kind === "directory").map((item) => item.path),
     );
+
+    return sourcePaths.filter((path) =>
+      path === entry.path ? entry.kind === "directory" : knownDirectories.has(path),
+    );
+  };
+
+  const addEntryToFavorites = (entry: DirectoryEntry) => {
+    onAddToFavorites(directoryPathsForEntry(entry));
+  };
+
+  const addEntryToSpace = (entry: DirectoryEntry, spaceId: string) => {
+    onAddToSpace(spaceId, directoryPathsForEntry(entry));
   };
 
   const draggingPaths = new Set(internalDrag?.sourcePaths ?? []);
@@ -460,6 +503,7 @@ export function FileList({
     draggingPaths,
     dropTargetPath: internalDropTargetPath ?? externalDropTargetPath,
     onAddToFavorites: addEntryToFavorites,
+    onAddToSpace: addEntryToSpace,
     onContextMenuEntry: (entry: DirectoryEntry, index = entries.indexOf(entry)) =>
       selectForContextMenu(entry, index),
     onCopy,
@@ -564,6 +608,7 @@ export function FileList({
                         isSelected={selectedPathSet.has(entry.path)}
                         isSingleSelection={selectedCount === 1}
                         onAddToFavorites={() => addEntryToFavorites(entry)}
+                        onAddToSpace={(spaceId) => addEntryToSpace(entry, spaceId)}
                         onContextMenu={() => selectForContextMenu(entry, virtualRow.index)}
                         onCopy={onCopy}
                         onCut={onCut}
@@ -601,7 +646,13 @@ export function FileList({
               <>
                 <StarIcon />
                 添加 {draggableDirectoryPaths(entries, internalDrag.sourcePaths).length}{" "}
-                个文件夹到常用位置
+                个文件夹到收藏
+              </>
+            ) : internalDrag.target?.kind === "space" ? (
+              <>
+                <SquaresFourIcon />
+                添加 {draggableDirectoryPaths(entries, internalDrag.sourcePaths).length}{" "}
+                个文件夹到空间
               </>
             ) : (
               <>
@@ -646,6 +697,7 @@ function FileListRow({
   isSelected,
   isSingleSelection,
   onAddToFavorites,
+  onAddToSpace,
   onContextMenu,
   onCopy,
   onCut,
@@ -663,6 +715,7 @@ function FileListRow({
   isSelected: boolean;
   isSingleSelection: boolean;
   onAddToFavorites: () => void;
+  onAddToSpace: (spaceId: string) => void;
   onContextMenu: () => void;
   onCopy: () => void;
   onCut: () => void;
@@ -734,6 +787,7 @@ function FileListRow({
           isActionDisabled={isActionDisabled}
           isSingleSelection={isSingleSelection}
           onAddToFavorites={onAddToFavorites}
+          onAddToSpace={onAddToSpace}
           onCopy={onCopy}
           onCut={onCut}
           onDelete={onDelete}
@@ -746,6 +800,8 @@ function FileListRow({
 }
 
 async function openFile(path: string): Promise<void> {
+  recordRecentItem(path, "file", "opened");
+
   try {
     await openPath(path);
   } catch (error) {

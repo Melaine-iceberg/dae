@@ -27,6 +27,7 @@ export interface FileGridViewProps {
   dropTargetPath: string | null;
   entries: DirectoryEntry[];
   onAddToFavorites: (entry: DirectoryEntry) => void;
+  onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
   onContextMenuEntry: (entry: DirectoryEntry, index: number) => void;
   onCopy: () => void;
   onCut: () => void;
@@ -45,6 +46,7 @@ export function FileGridView({
   dropTargetPath,
   entries,
   onAddToFavorites,
+  onAddToSpace,
   onContextMenuEntry,
   onCopy,
   onCut,
@@ -77,6 +79,7 @@ export function FileGridView({
           isSingleSelection={selectedCount === 1}
           key={entry.path}
           onAddToFavorites={() => onAddToFavorites(entry)}
+          onAddToSpace={(spaceId) => onAddToSpace(entry, spaceId)}
           onContextMenu={() => onContextMenuEntry(entry, index)}
           onCopy={onCopy}
           onCut={onCut}
@@ -100,6 +103,7 @@ function GridCell({
   isSelected,
   isSingleSelection,
   onAddToFavorites,
+  onAddToSpace,
   onContextMenu,
   onCopy,
   onCut,
@@ -117,6 +121,7 @@ function GridCell({
   isSelected: boolean;
   isSingleSelection: boolean;
   onAddToFavorites: () => void;
+  onAddToSpace: (spaceId: string) => void;
   onContextMenu: () => void;
   onCopy: () => void;
   onCut: () => void;
@@ -170,6 +175,7 @@ function GridCell({
           isActionDisabled={isActionDisabled}
           isSingleSelection={isSingleSelection}
           onAddToFavorites={onAddToFavorites}
+          onAddToSpace={onAddToSpace}
           onCopy={onCopy}
           onCut={onCut}
           onDelete={onDelete}

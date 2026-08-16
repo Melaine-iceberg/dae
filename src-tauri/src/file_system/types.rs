@@ -92,6 +92,25 @@ pub fn path_to_string(path: &Path) -> String {
     normalize_path_for_display(&path.to_string_lossy())
 }
 
+/// Derives a display name from the last path segment, handling both `/` and
+/// `\\` separators so it works for local, UNC, and `smb://` style paths.
+/// Trailing separators are ignored (`C:\` becomes `C:`); only when nothing
+/// remains (e.g. `/`) does it fall back to the full path.
+pub fn display_name_from_path(path: &str) -> String {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    let separator_index = trimmed
+        .rfind(['/', '\\'])
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let name = &trimmed[separator_index..];
+
+    if name.is_empty() {
+        path.to_string()
+    } else {
+        name.to_string()
+    }
+}
+
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn normalize_path_for_display(path: &str) -> String {
     #[cfg(windows)]

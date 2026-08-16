@@ -1,6 +1,8 @@
 import { atom } from "jotai";
 
 import { getAppWindow } from "@/lib/app-window";
+import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
+import type { WorkspaceSurface } from "@/features/workspace/types";
 
 import { ExplorerNavigator } from "./navigation";
 
@@ -42,10 +44,19 @@ export const createTabAtom = atom(null, (_get, set) => {
   set(activeTabIdAtom, tab.id);
 });
 
+/** Creates and activates a tab showing the given workspace surface. */
+export const createTabWithSurfaceAtom = atom(null, (_get, set, surface: WorkspaceSurface) => {
+  const tab = createTabEntry();
+  set(tabsAtom, (tabs) => [...tabs, tab]);
+  set(activeTabIdAtom, tab.id);
+  set(tabSurfaceFamily(tab.id), surface);
+});
+
 export const openInNewTabAtom = atom(null, (_get, set, path: string) => {
   const tab = createTabEntry();
   set(tabsAtom, (tabs) => [...tabs, tab]);
   set(activeTabIdAtom, tab.id);
+  set(tabSurfaceFamily(tab.id), { kind: "folder" });
   void getTabNavigator(tab.id).navigate(path);
 });
 

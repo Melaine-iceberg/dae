@@ -22,6 +22,7 @@ export interface FileColumnViewProps {
   draggingPaths: Set<string>;
   dropTargetPath: string | null;
   onAddToFavorites: (entry: DirectoryEntry) => void;
+  onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
   onContextMenuEntry: (entry: DirectoryEntry) => void;
   onCopy: () => void;
   onCut: () => void;
@@ -41,6 +42,7 @@ interface SharedRowProps {
   draggingPaths: Set<string>;
   dropTargetPath: string | null;
   onAddToFavorites: (entry: DirectoryEntry) => void;
+  onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
   onContextMenuEntry: (entry: DirectoryEntry) => void;
   onCopy: () => void;
   onCut: () => void;
@@ -143,6 +145,7 @@ function Pane({
   isError = false,
   isLoading = false,
   onAddToFavorites,
+  onAddToSpace,
   onContextMenuEntry,
   onCopy,
   onCut,
@@ -228,6 +231,7 @@ function Pane({
                 isActionDisabled={actionsDisabled}
                 isSingleSelection={selectedCount === 1}
                 onAddToFavorites={() => onAddToFavorites(entry)}
+                onAddToSpace={(spaceId) => onAddToSpace(entry, spaceId)}
                 onCopy={onCopy}
                 onCut={onCut}
                 onDelete={onDelete}

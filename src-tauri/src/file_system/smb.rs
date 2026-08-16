@@ -132,13 +132,12 @@ fn parse_smb_path(rest: &str) -> Result<SmbPath, FileSystemError> {
 }
 
 fn split_authority(rest: &str) -> (&str, Option<&str>) {
-    if let Some(stripped) = rest.strip_prefix('[') {
-        if let Some(end) = stripped.find(']') {
+    if let Some(stripped) = rest.strip_prefix('[')
+        && let Some(end) = stripped.find(']') {
             let host = &rest[..end + 2];
             let remainder = &rest[end + 2..];
             return (host, remainder.strip_prefix('/'));
         }
-    }
 
     match rest.split_once('/') {
         Some((authority, remainder)) => (authority, Some(remainder)),
@@ -300,7 +299,7 @@ impl FileSystemBackend for SmbBackend {
         };
 
         let mut entries = entries;
-        entries.sort_by_cached_key(|entry| entry_sort_key(entry));
+        entries.sort_by_cached_key(entry_sort_key);
 
         Ok(DirectoryView {
             path: parsed.url(),

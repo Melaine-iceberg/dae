@@ -1,4 +1,5 @@
 import { commands } from "@/bindings";
+import { recordRecentItem } from "@/features/workspace/recents-atoms";
 
 import type { Breadcrumb, DirectoryView, FileSystemError } from "./types";
 
@@ -143,6 +144,10 @@ export class ExplorerNavigator {
         error: null,
         ...history,
       });
+
+      // Every successful navigation counts as a directory visit, so the
+      // workspace Recents surface reflects where the user actually went.
+      recordRecentItem(directory.path, "directory", "visited");
 
       return directory;
     } catch (error) {
