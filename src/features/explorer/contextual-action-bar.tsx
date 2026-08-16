@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
+  ArchiveTrayIcon,
   ArrowsOutCardinalIcon,
   ClipboardTextIcon,
   CopyIcon,
@@ -20,10 +21,21 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
+import type { ArchiveFormat } from "@/bindings";
 import { MOD_KEY } from "@/lib/platform";
+
+const COMPRESS_FORMATS: { format: ArchiveFormat; label: string }[] = [
+  { format: "zip", label: "ZIP 压缩包" },
+  { format: "tar", label: "TAR 归档" },
+  { format: "tar.gz", label: "TAR.GZ 压缩包" },
+  { format: "7z", label: "7Z 压缩包" },
+];
 
 /**
  * Floating contextual action surface that follows the selection
@@ -31,6 +43,7 @@ import { MOD_KEY } from "@/lib/platform";
  * actions are visually differentiated.
  */
 export function ContextualActionBar({
+  archiveSelectionPath,
   hasDirectorySelection,
   isActionDisabled,
   isSingleSelection,
@@ -42,22 +55,25 @@ export function ContextualActionBar({
   onCut,
   onDelete,
   onDuplicate,
+  onExtract,
   onMoveTo,
   onOpen,
   onRename,
   selectedCount,
 }: {
+  archiveSelectionPath: string | null;
   hasDirectorySelection: boolean;
   isActionDisabled: boolean;
   isSingleSelection: boolean;
   onAddToSpace: (spaceId: string) => void;
   onClearSelection: () => void;
-  onCompress: () => void;
+  onCompress: (format: ArchiveFormat) => void;
   onCopy: () => void;
   onCopyPaths: () => void;
   onCut: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onExtract: (path: string) => void;
   onMoveTo: () => void;
   onOpen: () => void;
   onRename: () => void;
@@ -124,6 +140,19 @@ export function ContextualActionBar({
       >
         <PencilIcon />
       </Button>
+      {archiveSelectionPath && (
+        <Button
+          aria-label="解压"
+          disabled={isActionDisabled}
+          onClick={() => onExtract(archiveSelectionPath)}
+          size="icon"
+          title="解压到此处"
+          type="button"
+          variant="ghost"
+        >
+          <ArchiveTrayIcon />
+        </Button>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label="更多操作"
@@ -138,10 +167,24 @@ export function ContextualActionBar({
             <FilesIcon />
             创建副本
           </DropdownMenuItem>
-          <DropdownMenuItem disabled={isActionDisabled} onClick={onCompress}>
-            <FileZipIcon />
-            压缩为ZIP
-          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger disabled={isActionDisabled}>
+              <FileZipIcon />
+              压缩为…
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent>
+              {COMPRESS_FORMATS.map(({ format, label }) => (
+                <DropdownMenuItem
+                  key={format}
+                  disabled={isActionDisabled}
+                  onClick={() => onCompress(format)}
+                >
+                  <FileZipIcon />
+                  {label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           <DropdownMenuItem disabled={isActionDisabled} onClick={onMoveTo}>
             <ArrowsOutCardinalIcon />
             移动到…

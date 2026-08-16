@@ -8,6 +8,7 @@ import {
 import { useAtom, useAtomValue } from "jotai";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openPath } from "@tauri-apps/plugin-opener";
+import type { ArchiveFormat } from "@/bindings";
 import {
   CaretDownIcon,
   CaretUpIcon,
@@ -80,7 +81,7 @@ interface FileListProps {
   isOperationPending: boolean;
   onAddToFavorites: (paths: string[]) => void;
   onAddToSpace: (spaceId: string, paths: string[]) => void;
-  onCompress: () => void;
+  onCompress: (format: ArchiveFormat) => void;
   onCopy: () => void;
   onCreateDirectory: () => void;
   onCreateFile: () => void;
@@ -92,6 +93,7 @@ interface FileListProps {
     destinationPath: string,
     operation: FileTransferOperation,
   ) => void;
+  onExtract: (path: string) => void;
   onMoveTo: () => void;
   onOpenDirectory: (path: string) => void;
   onOpenTerminal: () => void;
@@ -215,6 +217,7 @@ export function FileList({
   onDelete,
   onDuplicate,
   onDropEntries,
+  onExtract,
   onMoveTo,
   onOpenDirectory,
   onOpenTerminal,
@@ -573,6 +576,7 @@ export function FileList({
     onDelete,
     onDuplicate,
     onCompress,
+    onExtract,
     onMoveTo,
     onOpenEntry: openEntry,
     onPointerDownEntry: prepareInternalDrag,
@@ -711,6 +715,7 @@ export function FileList({
                         onCut={onCut}
                         onDelete={onDelete}
                         onDuplicate={onDuplicate}
+                        onExtract={onExtract}
                         onMoveTo={onMoveTo}
                         onOpen={() => openEntry(entry)}
                         onPointerDown={(event) => prepareInternalDrag(entry, event)}
@@ -850,6 +855,7 @@ function FileListRow({
   onCut,
   onDelete,
   onDuplicate,
+  onExtract,
   onMoveTo,
   onOpen,
   onPointerDown,
@@ -865,12 +871,13 @@ function FileListRow({
   isSingleSelection: boolean;
   onAddToFavorites: () => void;
   onAddToSpace: (spaceId: string) => void;
-  onCompress: () => void;
+  onCompress: (format: ArchiveFormat) => void;
   onContextMenu: () => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onExtract: (path: string) => void;
   onMoveTo: () => void;
   onOpen: () => void;
   onPointerDown: (event: ReactPointerEvent) => void;
@@ -945,6 +952,7 @@ function FileListRow({
           onCut={onCut}
           onDelete={onDelete}
           onDuplicate={onDuplicate}
+          onExtract={onExtract}
           onMoveTo={onMoveTo}
           onOpen={onOpen}
           onRename={onRename}

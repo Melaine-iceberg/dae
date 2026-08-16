@@ -22,7 +22,7 @@ import {
   WarningIcon,
 } from "@phosphor-icons/react";
 
-import { commands, events } from "@/bindings";
+import { commands, events, type ArchiveFormat } from "@/bindings";
 
 import { getAppWindow } from "@/lib/app-window";
 
@@ -59,6 +59,7 @@ import { ContextualActionBar } from "./contextual-action-bar";
 import { DirectorySearch, useDirectorySearch } from "./directory-search";
 import { getExplorerDropTargetAtPoint, type FileTransferOperation } from "./drag-drop";
 import { EntryPreview } from "./entry-preview";
+import { isArchiveFile } from "./entry-context-menu";
 import { ExplorerPathBar } from "./explorer-path-bar";
 import { ExplorerStatusBar } from "./explorer-status-bar";
 import { FileList, FileListSkeleton } from "./file-list";
@@ -438,23 +439,41 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     });
   }, [performFileOperation, selectedEntries]);
 
-  /** Compresses the selection into a unique .zip next to the entries. */
-  const compressSelection = useCallback(() => {
-    if (selectedEntries.length === 0 || !directoryPath) return;
+  /** Compresses the selection into a unique archive next to the entries. */
+  const compressSelection = useCallback(
+    (format: ArchiveFormat) => {
+      if (selectedEntries.length === 0 || !directoryPath) return;
 
-    setOperationError(null);
-    void performFileOperation(
-      (operationId) =>
-        commands.compressEntries(
-          selectedEntries.map((entry) => entry.path),
-          directoryPath,
-          operationId!,
-        ),
-      "compress",
-    ).then((result) => {
-      if (!result.ok) setOperationError(result.error);
-    });
-  }, [directoryPath, performFileOperation, selectedEntries]);
+      setOperationError(null);
+      void performFileOperation(
+        (operationId) =>
+          commands.compressEntries(
+            selectedEntries.map((entry) => entry.path),
+            directoryPath,
+            format,
+            operationId!,
+          ),
+        "compress",
+      ).then((result) => {
+        if (!result.ok) setOperationError(result.error);
+      });
+    },
+    [directoryPath, performFileOperation, selectedEntries],
+  );
+
+  /** Extracts an archive into a fresh folder next to it. */
+  const extractSelection = useCallback(
+    (archivePath: string) => {
+      setOperationError(null);
+      void performFileOperation(
+        (operationId) => commands.extractArchive(archivePath, null, operationId!),
+        "extract",
+      ).then((result) => {
+        if (!result.ok) setOperationError(result.error);
+      });
+    },
+    [performFileOperation],
+  );
 
   /** Native cross-platform folder picker feeding the existing move pipeline. */
   const moveSelectionTo = useCallback(() => {
@@ -902,6 +921,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               onDelete={requestDelete}
               onDuplicate={duplicateSelection}
               onDropEntries={transferEntries}
+              onExtract={extractSelection}
               onMoveTo={moveSelectionTo}
               onOpenDirectory={(path) => void navigator.navigate(path)}
               onOpenTerminal={() => directory.path && openTerminalHere(directory.path)}
@@ -938,6 +958,11 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             )}
             {selectedPaths.length > 0 && (
               <ContextualActionBar
+                archiveSelectionPath={
+                  selectedEntries.length === 1 && isArchiveFile(selectedEntries[0])
+                    ? selectedEntries[0].path
+                    : null
+                }
                 hasDirectorySelection={selectedEntries.some(
                   (entry) => entry.kind === "directory",
                 )}
@@ -958,6 +983,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                 onCut={cutSelection}
                 onDelete={requestDelete}
                 onDuplicate={duplicateSelection}
+                onExtract={extractSelection}
                 onMoveTo={moveSelectionTo}
                 onOpen={openSelectedEntries}
                 onRename={requestRename}
@@ -1030,6 +1056,7 @@ function FileOperationStatusBar({ progress }: { progress: FileOperationProgress 
     move: "移动",
     delete: "删除",
     compress: "压缩",
+    extract: "解压",
   };
   const total = progress.total;
   const percentage = total && total > 0 ? Math.round((progress.completed / total) * 100) : 0;

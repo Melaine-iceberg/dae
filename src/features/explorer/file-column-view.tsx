@@ -11,7 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { CaretRightIcon, CircleNotchIcon, WarningIcon } from "@phosphor-icons/react";
 
-import { commands } from "@/bindings";
+import { commands, type ArchiveFormat } from "@/bindings";
 
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
@@ -27,12 +27,13 @@ export interface FileColumnViewProps {
   dropTargetPath: string | null;
   onAddToFavorites: (entry: DirectoryEntry) => void;
   onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
-  onCompress: () => void;
+  onCompress: (format: ArchiveFormat) => void;
   onContextMenuEntry: (entry: DirectoryEntry) => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onExtract: (path: string) => void;
   onMoveTo: () => void;
   onOpenEntry: (entry: DirectoryEntry) => void;
   onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
@@ -50,12 +51,13 @@ interface SharedRowProps {
   dropTargetPath: string | null;
   onAddToFavorites: (entry: DirectoryEntry) => void;
   onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
-  onCompress: () => void;
+  onCompress: (format: ArchiveFormat) => void;
   onContextMenuEntry: (entry: DirectoryEntry) => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onExtract: (path: string) => void;
   onMoveTo: () => void;
   onOpenEntry: (entry: DirectoryEntry) => void;
   onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
@@ -174,6 +176,7 @@ function Pane({
   onDelete,
   onDuplicate,
   onDrill,
+  onExtract,
   onMoveTo,
   onOpenEntry,
   onPointerDownEntry,
@@ -282,6 +285,7 @@ function Pane({
                     onCut={onCut}
                     onDelete={onDelete}
                     onDuplicate={onDuplicate}
+                    onExtract={onExtract}
                     onMoveTo={onMoveTo}
                     onOpen={() => onOpenEntry(entry)}
                     onRename={onRename}

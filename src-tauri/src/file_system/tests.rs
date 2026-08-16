@@ -704,3 +704,111 @@ fn seed_spaces_creates_four_presets() {
     let ids: Vec<&str> = spaces.iter().map(|space| space.id.as_str()).collect();
     assert_eq!(ids, ["work", "personal", "shared", "archive"]);
 }
+
+fn make_archive_source_tree(root: &Path) {
+    fs::create_dir_all(root.join("资料").join("nested")).expect("create nested directory");
+    fs::write(root.join("root.txt"), "root content").expect("write root file");
+    fs::write(root.join("资料/nested/leaf.txt"), "leaf content").expect("write leaf file");
+}
+
+#[test]
+fn compresses_and_extracts_every_archive_format() {
+    use super::archive::{ArchiveFormat, compress_sync, extract_sync};
+
+    let root = std::env::temp_dir().join(format!("dae-archive-test-{}", std::process::id()));
+    let source = root.join("bundle");
+    let output = root.join("output");
+    fs::create_dir_all(&source).expect("create source directory");
+    fs::create_dir_all(&output).expect("create output directory");
+    make_archive_source_tree(&source);
+
+    for format in [
+        ArchiveFormat::Zip,
+        ArchiveFormat::Tar,
+        ArchiveFormat::TarGz,
+        ArchiveFormat::SevenZip,
+    ] {
+        let compress_progress = TestProgress::new();
+        let archive_path = compress_sync(
+            vec![source.to_string_lossy().into_owned()],
+            &output.to_string_lossy(),
+            format,
+            &compress_progress,
+        )
+        .expect("compress archive");
+
+        let created = Path::new(&archive_path);
+        assert!(created.is_file(), "archive exists: {archive_path}");
+        assert_eq!(
+            compress_progress.completed.load(AtomicOrdering::Relaxed),
+            compress_progress.total.load(AtomicOrdering::Relaxed),
+            "compression progress completes for {format:?}"
+        );
+
+        let extract_progress = TestProgress::new();
+        let destination = extract_sync(&archive_path, None, &extract_progress)
+            .expect("extract archive");
+
+        let extracted_root = Path::new(&destination).join("bundle");
+        assert_eq!(
+            fs::read_to_string(extracted_root.join("root.txt")).expect("read extracted root"),
+            "root content",
+            "round-trip preserves files for {format:?}"
+        );
+        assert_eq!(
+            fs::read_to_string(extracted_root.join("资料/nested/leaf.txt"))
+                .expect("read extracted leaf"),
+            "leaf content",
+            "round-trip preserves nested unicode paths for {format:?}"
+        );
+        assert_eq!(
+            extract_progress.completed.load(AtomicOrdering::Relaxed),
+            extract_progress.total.load(AtomicOrdering::Relaxed),
+            "extraction progress completes for {format:?}"
+        );
+
+        fs::remove_dir_all(destination).expect("remove extraction folder");
+    }
+
+    fs::remove_dir_all(root).expect("remove test directory");
+}
+
+#[test]
+fn rejects_path_traversal_entries_during_extraction() {
+    use super::archive::extract_sync;
+    use std::io::Write;
+    use zip::ZipWriter;
+    use zip::write::SimpleFileOptions;
+
+    let root = std::env::temp_dir().join(format!("dae-zip-slip-test-{}", std::process::id()));
+    fs::create_dir_all(&root).expect("create test directory");
+
+    let archive_path = root.join("malicious.zip");
+    let file = fs::File::create(&archive_path).expect("create malicious archive");
+    let mut writer = ZipWriter::new(file);
+    writer
+        .start_file("../escaped.txt", SimpleFileOptions::default())
+        .expect("start traversal entry");
+    writer.write_all(b"escaped").expect("write traversal entry");
+    writer.finish().expect("finish malicious archive");
+
+    let error = extract_sync(&archive_path.to_string_lossy(), None, &TestProgress::new())
+        .expect_err("traversal entries must be blocked");
+
+    fs::remove_file(&archive_path).expect("remove malicious archive");
+    fs::remove_dir(&root).expect("remove test directory");
+
+    assert!(matches!(error, FileSystemError::InvalidInput(_)));
+    assert!(!root.join("../escaped.txt").exists());
+}
+
+#[test]
+fn derives_extraction_folder_stems_from_archive_names() {
+    use super::archive::extraction_stem_of;
+
+    assert_eq!(extraction_stem_of(Path::new("Photos.tar.gz")), "Photos");
+    assert_eq!(extraction_stem_of(Path::new("backup.TGZ")), "backup");
+    assert_eq!(extraction_stem_of(Path::new("报告.zip")), "报告");
+    assert_eq!(extraction_stem_of(Path::new("bundle.7z")), "bundle");
+    assert_eq!(extraction_stem_of(Path::new("archive.tar")), "archive");
+}

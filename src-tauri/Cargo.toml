@@ -50,6 +50,9 @@ image = { version = "0.25", default-features = false, features = [
 ] }
 base64 = "0.22"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+tar = "0.4"
+flate2 = "1"
+sevenz-rust2 = "0.21"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

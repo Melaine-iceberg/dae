@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
+  ArchiveTrayIcon,
   ArrowsOutCardinalIcon,
   ClipboardTextIcon,
   CopyIcon,
@@ -16,7 +17,7 @@ import {
 } from "@phosphor-icons/react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
-import { commands } from "@/bindings";
+import { commands, type ArchiveFormat } from "@/bindings";
 import { MOD_KEY } from "@/lib/platform";
 
 import {
@@ -32,17 +33,31 @@ import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-
 
 import type { DirectoryEntry } from "./types";
 
+const ARCHIVE_FILE_PATTERN = /\.(zip|tar|tar\.gz|tgz|7z)$/i;
+
+const COMPRESS_FORMATS: { format: ArchiveFormat; label: string }[] = [
+  { format: "zip", label: "ZIP 压缩包" },
+  { format: "tar", label: "TAR 归档" },
+  { format: "tar.gz", label: "TAR.GZ 压缩包" },
+  { format: "7z", label: "7Z 压缩包" },
+];
+
+export function isArchiveFile(entry: DirectoryEntry): boolean {
+  return entry.kind === "file" && ARCHIVE_FILE_PATTERN.test(entry.name);
+}
+
 export interface EntryActions {
   entry: DirectoryEntry;
   isActionDisabled: boolean;
   isSingleSelection: boolean;
   onAddToFavorites: () => void;
   onAddToSpace: (spaceId: string) => void;
-  onCompress: () => void;
+  onCompress: (format: ArchiveFormat) => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onExtract: (path: string) => void;
   onMoveTo: () => void;
   onOpen: () => void;
   onRename: () => void;
@@ -59,6 +74,7 @@ export function EntryContextMenuContent({
   onCut,
   onDelete,
   onDuplicate,
+  onExtract,
   onMoveTo,
   onOpen,
   onRename,
@@ -122,10 +138,30 @@ export function EntryContextMenuContent({
           <FilesIcon />
           创建副本
         </ContextMenuItem>
-        <ContextMenuItem disabled={isActionDisabled} onClick={onCompress}>
-          <FileZipIcon />
-          压缩为ZIP
-        </ContextMenuItem>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger disabled={isActionDisabled}>
+            <FileZipIcon />
+            压缩为…
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            {COMPRESS_FORMATS.map(({ format, label }) => (
+              <ContextMenuItem
+                key={format}
+                disabled={isActionDisabled}
+                onClick={() => onCompress(format)}
+              >
+                <FileZipIcon />
+                {label}
+              </ContextMenuItem>
+            ))}
+          </ContextMenuSubContent>
+        </ContextMenuSub>
+        {isArchiveFile(entry) && (
+          <ContextMenuItem disabled={isActionDisabled} onClick={() => onExtract(entry.path)}>
+            <ArchiveTrayIcon />
+            解压到此处
+          </ContextMenuItem>
+        )}
         <ContextMenuItem disabled={isActionDisabled} onClick={onMoveTo}>
           <ArrowsOutCardinalIcon />
           移动到…

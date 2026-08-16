@@ -9,6 +9,7 @@ import {
 import { useAtomValue } from "jotai";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
+import type { ArchiveFormat } from "@/bindings";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 
@@ -55,12 +56,13 @@ export interface FileGridViewProps {
   entries: DirectoryEntry[];
   onAddToFavorites: (entry: DirectoryEntry) => void;
   onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
-  onCompress: () => void;
+  onCompress: (format: ArchiveFormat) => void;
   onContextMenuEntry: (entry: DirectoryEntry, index: number) => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onExtract: (path: string) => void;
   onMoveTo: () => void;
   onOpenEntry: (entry: DirectoryEntry) => void;
   onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
@@ -88,6 +90,7 @@ export function FileGridView({
   onCut,
   onDelete,
   onDuplicate,
+  onExtract,
   onMoveTo,
   onOpenEntry,
   onPointerDownEntry,
@@ -229,6 +232,7 @@ export function FileGridView({
                     onCut={onCut}
                     onDelete={onDelete}
                     onDuplicate={onDuplicate}
+                    onExtract={onExtract}
                     onMoveTo={onMoveTo}
                     onOpen={() => onOpenEntry(entry)}
                     onPointerDown={(event) => onPointerDownEntry(entry, event)}
@@ -263,6 +267,7 @@ function GridCell({
   onCut,
   onDelete,
   onDuplicate,
+  onExtract,
   onMoveTo,
   onOpen,
   onPointerDown,
@@ -278,12 +283,13 @@ function GridCell({
   isSingleSelection: boolean;
   onAddToFavorites: () => void;
   onAddToSpace: (spaceId: string) => void;
-  onCompress: () => void;
+  onCompress: (format: ArchiveFormat) => void;
   onContextMenu: () => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onExtract: (path: string) => void;
   onMoveTo: () => void;
   onOpen: () => void;
   onPointerDown: (event: ReactPointerEvent) => void;
@@ -349,6 +355,7 @@ function GridCell({
           onCut={onCut}
           onDelete={onDelete}
           onDuplicate={onDuplicate}
+          onExtract={onExtract}
           onMoveTo={onMoveTo}
           onOpen={onOpen}
           onRename={onRename}
