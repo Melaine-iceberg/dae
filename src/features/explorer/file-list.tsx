@@ -607,7 +607,15 @@ export function FileList({
   return (
     <ContextMenu disabled={blankMenuDisabled}>
       <ContextMenuTrigger
-        onContextMenu={() => {
+        onContextMenu={(event) => {
+          // Entries own their context menu and set the selection themselves;
+          // only a right-click on blank space should clear it.
+          if (
+            event.target instanceof Element &&
+            event.target.closest('[role="option"], [role="columnheader"]')
+          ) {
+            return;
+          }
           selectionAnchorIndexRef.current = null;
           onSelectedPathsChange([]);
         }}
@@ -890,7 +898,7 @@ function FileListRow({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger onContextMenu={onContextMenu}>
+      <ContextMenuTrigger>
         <div
           aria-selected={isSelected}
           className={cn(
@@ -901,6 +909,7 @@ function FileListRow({
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={onSelect}
+          onContextMenu={onContextMenu}
           onDoubleClick={onOpen}
           onKeyDown={(event) => {
             if (event.key === "Enter") {

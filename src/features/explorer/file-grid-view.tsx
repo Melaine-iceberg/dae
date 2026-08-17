@@ -304,7 +304,7 @@ function GridCell({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger onContextMenu={onContextMenu}>
+      <ContextMenuTrigger>
         <div
           aria-selected={isSelected}
           className={cn(
@@ -315,6 +315,7 @@ function GridCell({
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={onSelect}
+          onContextMenu={onContextMenu}
           onDoubleClick={onOpen}
           onKeyDown={(event) => {
             if (event.key === "Enter") {

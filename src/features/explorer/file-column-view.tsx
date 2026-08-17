@@ -231,7 +231,7 @@ function Pane({
 
             return (
               <ContextMenu key={entry.path}>
-                <ContextMenuTrigger onContextMenu={() => onContextMenuEntry(entry)}>
+                <ContextMenuTrigger>
                   <div
                     aria-selected={isSelected}
                     className={cn(
@@ -247,6 +247,7 @@ function Pane({
                         onDrill(entry.path, depth);
                       }
                     }}
+                    onContextMenu={() => onContextMenuEntry(entry)}
                     onDoubleClick={() => onOpenEntry(entry)}
                     onKeyDown={(event) => {
                       if (event.key === "Enter") {

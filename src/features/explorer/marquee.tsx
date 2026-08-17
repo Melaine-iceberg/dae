@@ -110,6 +110,19 @@ export function useMarqueeSelection({
     (event: ReactPointerEvent) => {
       if (!enabled || event.button !== 0) return false;
 
+      // React propagates portal events (e.g. context menu items) through the
+      // React tree, so a pointerdown on a floating menu can reach this
+      // container's handler. Only claim gestures that start inside the
+      // container's own DOM subtree.
+      const container = event.currentTarget;
+      if (
+        !(container instanceof Node) ||
+        !(event.target instanceof Node) ||
+        !container.contains(event.target)
+      ) {
+        return false;
+      }
+
       const additive = event.ctrlKey || event.metaKey;
       startRef.current = {
         additive,
