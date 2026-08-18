@@ -87,11 +87,12 @@ export function ContextualActionBar({
   }, [ensureSpacesLoaded]);
 
   return (
-    <div
-      aria-label="选中项操作"
-      className="animate-in absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-foreground/5 bg-popover p-1 shadow-xl shadow-black/15 backdrop-blur duration-150 ease-spring fade-in slide-in-from-bottom-2"
-      role="toolbar"
-    >
+    <div className="absolute bottom-4 left-1/2 z-30 -translate-x-1/2">
+      <div
+        aria-label="选中项操作"
+        className="animate-float-in flex items-center gap-0.5 rounded-full bg-popover p-1 shadow-ambient-lg ring-1 ring-foreground/5 backdrop-blur"
+        role="toolbar"
+      >
       <span className="shrink-0 px-2.5 text-[13px] text-muted-foreground select-none tabular-nums">
         已选 {selectedCount.toLocaleString("zh-CN")} 项
       </span>
@@ -225,6 +226,7 @@ export function ContextualActionBar({
       >
         <XIcon />
       </Button>
+      </div>
     </div>
   );
 }

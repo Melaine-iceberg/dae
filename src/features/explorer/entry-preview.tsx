@@ -145,7 +145,7 @@ export function EntryPreview({
   return (
     <aside
       aria-label="预览"
-      className="animate-in flex h-full w-[26rem] shrink-0 flex-col overflow-hidden border-l bg-popover/95 duration-200 fade-in slide-in-from-right-2"
+      className="animate-in flex h-full w-[26rem] shrink-0 flex-col overflow-hidden bg-popover/95 duration-200 fade-in slide-in-from-right-2"
     >
       <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
         {VisualIcon ? <VisualIcon className="size-4 shrink-0 text-muted-foreground" /> : null}
@@ -177,12 +177,12 @@ export function EntryPreview({
           <>
             {supportsThumbnail ? (
               <ThumbnailImage
-                className="flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40"
+                className="flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/40"
                 entry={entry}
                 requestSize={384}
               />
             ) : textPreview?.status === "ready" ? (
-              <div className="flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-muted/40">
+              <div className="flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-muted/40">
                 {textPreview.html !== null ? (
                   <div
                     className="code-preview min-h-0 flex-1 overflow-auto p-2.5 text-xs leading-relaxed"
@@ -201,24 +201,24 @@ export function EntryPreview({
                 )}
               </div>
             ) : textPreview?.status === "loading" ? (
-              <div className="flex shrink-0 flex-col gap-2 rounded-lg border bg-muted/40 p-2.5">
+              <div className="flex shrink-0 flex-col gap-2 rounded-xl bg-muted/40 p-2.5">
                 <Skeleton className="h-3 w-3/4 rounded-full" />
                 <Skeleton className="h-3 w-1/2 rounded-full" />
                 <Skeleton className="h-3 w-2/3 rounded-full" />
               </div>
             ) : isTooLarge ? (
-              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-lg border bg-muted/40 px-3 text-center text-xs text-muted-foreground">
+              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 px-3 text-center text-xs text-muted-foreground">
                 <WarningIcon className="size-5" />
                 <p>文件超过 {PREVIEW_MAX_SOURCE_BYTES / 1024 / 1024} MB</p>
                 <p>为保障性能，不预览内容</p>
               </div>
             ) : textPreview?.status === "error" ? (
-              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-lg border bg-muted/40 text-xs text-muted-foreground">
+              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 text-xs text-muted-foreground">
                 <WarningIcon className="size-5" />
                 <p>无法读取文本内容</p>
               </div>
             ) : (
-              <div className="flex h-32 shrink-0 items-center justify-center rounded-lg border bg-muted/40">
+              <div className="flex h-32 shrink-0 items-center justify-center rounded-xl bg-muted/40">
                 {VisualIcon ? (
                   <VisualIcon className="size-12 text-muted-foreground/60" weight="duotone" />
                 ) : null}

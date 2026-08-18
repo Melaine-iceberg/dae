@@ -674,7 +674,7 @@ export function FileList({
             onScroll={(event) => onScrollOffsetChange?.(event.currentTarget.scrollTop)}
           >
             <div className="min-w-160">
-              <div className="sticky top-0 z-10 grid h-7 shrink-0 items-center whitespace-nowrap border-b bg-card text-xs text-muted-foreground [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
+              <div className="sticky top-0 z-10 grid h-7 shrink-0 items-center whitespace-nowrap border-b border-border/60 bg-card text-label uppercase text-muted-foreground [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
                 <SortHeaderCell
                   active={sortKey === "name"}
                   label="名称"
@@ -753,7 +753,7 @@ export function FileList({
         {internalDrag && (
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-full border border-foreground/5 bg-popover px-3 py-1.5 text-[13px] text-popover-foreground shadow-lg"
+            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-full bg-popover px-3 py-1.5 text-[13px] text-popover-foreground shadow-ambient ring-1 ring-foreground/5"
             style={{ left: internalDrag.position.x + 14, top: internalDrag.position.y + 14 }}
           >
             {internalDrag.target?.kind === "favorites" ? (
@@ -912,8 +912,8 @@ function FileListRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            "grid cursor-grab items-center rounded-md whitespace-nowrap text-[13px] transition-colors select-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
-            isSelected && "bg-selection ring-1 ring-primary/30 ring-inset",
+            "grid cursor-grab items-center rounded-lg whitespace-nowrap text-[13px] transition-[background-color,box-shadow] duration-200 ease-standard select-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
+            isSelected && "bg-selection ring-1 ring-primary/40 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
           )}

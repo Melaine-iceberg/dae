@@ -55,7 +55,7 @@ export function ExplorerStatusBar({
   return (
     <footer
       aria-label="状态栏"
-      className="flex h-7 shrink-0 items-center gap-3 border-t bg-background px-3 text-xs text-muted-foreground select-none"
+      className="flex h-7 shrink-0 items-center gap-3 bg-background px-3 text-xs text-muted-foreground select-none"
     >
       <span aria-live="polite" className="truncate tabular-nums">
         {countText}
@@ -126,7 +126,7 @@ function ViewModeSwitcher() {
           aria-pressed={viewMode === mode}
           className={cn(
             "flex size-5 items-center justify-center rounded-full transition-colors hover:bg-accent hover:text-foreground",
-            viewMode === mode && "bg-accent text-foreground",
+            viewMode === mode && "bg-selection text-primary",
           )}
           key={mode}
           onClick={() => setViewMode(mode)}

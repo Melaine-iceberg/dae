@@ -69,7 +69,7 @@ export function ExplorerTabs() {
   return (
     <div className="flex h-full flex-col">
       <header
-        className="flex h-9 shrink-0 items-stretch border-b bg-muted/50"
+        className="flex h-11 shrink-0 items-stretch bg-background"
         data-tauri-drag-region="deep"
       >
         <StripScrollButton
@@ -81,7 +81,7 @@ export function ExplorerTabs() {
         <div
           ref={stripRef}
           aria-label="文件标签页"
-          className="flex min-w-0 flex-1 items-end gap-0.5 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-2 scrollbar-none [&::-webkit-scrollbar]:hidden"
           onScroll={syncScrollButtons}
           role="tablist"
         >
@@ -90,7 +90,7 @@ export function ExplorerTabs() {
           ))}
           <button
             aria-label="新建标签页"
-            className="mb-1 flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={createTab}
             title={`新建标签页 (${MOD_KEY}+T)`}
             type="button"
@@ -208,10 +208,10 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     <div
       aria-selected={isActive}
       className={cn(
-        "group relative flex h-8 w-52 shrink-0 items-center rounded-t-lg border border-b-0 text-[13px] select-none transition-[background-color,color,border-color] duration-200 ease-spring",
+        "group relative flex h-8 w-52 shrink-0 items-center rounded-xl text-[13px] select-none transition-[background-color,color,box-shadow] duration-300 ease-spring-fast",
         isActive
-          ? "border-border bg-card"
-          : "cursor-default border-transparent text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+          ? "bg-card text-foreground shadow-ambient-sm"
+          : "cursor-default text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       )}
       onClick={() => activateTab(tab.id)}
       onKeyDown={(event) => {

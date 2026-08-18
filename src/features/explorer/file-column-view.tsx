@@ -173,7 +173,7 @@ function Pane({
 
   return (
     <div
-      className="flex w-56 shrink-0 flex-col overflow-y-auto border-r px-1.5 py-2"
+      className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border/60 px-1.5 py-2"
       ref={scrollRef}
     >
       {isLoading && (
@@ -283,8 +283,8 @@ function PaneRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            "absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-md px-2.5 text-[13px] transition-colors select-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none",
-            (isSelected || isExpanded) && "bg-selection ring-1 ring-primary/30 ring-inset",
+            "absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-lg px-2.5 text-[13px] transition-colors select-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none",
+            (isSelected || isExpanded) && "bg-selection ring-1 ring-primary/40 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
             dropTargetPath === entry.path && "bg-selection ring-2 ring-primary ring-inset",
           )}

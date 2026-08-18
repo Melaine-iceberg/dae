@@ -858,7 +858,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     <main className="h-full bg-card">
       <section className="flex h-full w-full flex-col overflow-hidden">
         <header
-          className="flex h-11 shrink-0 items-center gap-1 border-b bg-background px-2"
+          className="flex h-11 shrink-0 items-center gap-1 bg-background px-2"
           data-tauri-drag-region="deep"
         >
           <div className="flex shrink-0 items-center gap-0.5">
@@ -1108,7 +1108,8 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                 />
               )}
               {trashUndo && (
-                <div className="absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-popover px-4 py-2 text-[13px] text-popover-foreground shadow-lg">
+                <div className="absolute bottom-4 left-1/2 z-40 -translate-x-1/2">
+                  <div className="animate-float-in flex items-center gap-2 rounded-full bg-popover px-4 py-2 text-[13px] text-popover-foreground shadow-ambient-lg ring-1 ring-foreground/5">
                   <ArrowCounterClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
                   <span className="whitespace-nowrap">
                     已将 {trashUndo.count.toLocaleString("zh-CN")} 个项目移到回收站
@@ -1125,6 +1126,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                   >
                     <XIcon />
                   </Button>
+                  </div>
                 </div>
               )}
             </div>

@@ -9,12 +9,52 @@
   --font-sans:
     system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
     "PingFang SC", "Noto Sans", sans-serif;
+  --font-mono:
+    "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Consolas, "Courier New",
+    monospace;
 
-  /* M3 Expressive motion tokens: springy overshoot for shape morphs and
-     playful state changes, emphasized for spatial transitions. */
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  /* M3 Expressive emphasized type scale: punchier display/title steps for
+     view headers, and a micro label step for section captions. */
+  --text-display: 1.375rem;
+  --text-display--line-height: 1.75rem;
+  --text-display--font-weight: 700;
+  --text-display--letter-spacing: -0.01em;
+  --text-title: 1rem;
+  --text-title--line-height: 1.5rem;
+  --text-title--font-weight: 600;
+  --text-label: 0.6875rem;
+  --text-label--line-height: 1rem;
+  --text-label--font-weight: 600;
+  --text-label--letter-spacing: 0.08em;
+
+  /* Motion physics (M3 Expressive): Web approximation of the spring tokens.
+     Spatial springs overshoot and bounce into place; effects springs are
+     critically damped (no overshoot) for color/opacity. fast/default/slow
+     map to small components / partial-screen / full-screen motion. */
+  --ease-spring-fast: cubic-bezier(0.35, 1.56, 0.5, 1);
+  --ease-spring: cubic-bezier(0.3, 1.32, 0.45, 1);
+  --ease-spring-slow: cubic-bezier(0.28, 1.22, 0.4, 1);
   --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+
+  --duration-instant: 100ms;
+  --duration-fast: 200ms;
+  --duration-normal: 300ms;
+  --duration-slow: 500ms;
+
+  /* Ambient elevation: soft, tinted shadows replace hard borders for
+     floating layers (menus, dock, dialogs, hover lift). */
+  --shadow-ambient-xs: 0 1px 2px color-mix(in oklab, var(--shadow-color) 14%, transparent);
+  --shadow-ambient-sm:
+    0 1px 2px color-mix(in oklab, var(--shadow-color) 16%, transparent),
+    0 2px 8px color-mix(in oklab, var(--shadow-color) 10%, transparent);
+  --shadow-ambient:
+    0 2px 4px color-mix(in oklab, var(--shadow-color) 16%, transparent),
+    0 8px 24px color-mix(in oklab, var(--shadow-color) 14%, transparent);
+  --shadow-ambient-lg:
+    0 4px 8px color-mix(in oklab, var(--shadow-color) 18%, transparent),
+    0 16px 48px color-mix(in oklab, var(--shadow-color) 18%, transparent);
 
   --color-selection: var(--selection);
   --color-folder: var(--folder);
@@ -55,10 +95,13 @@
   --color-on-primary-container: var(--on-primary-container);
   --color-secondary-container: var(--secondary-container);
   --color-on-secondary-container: var(--on-secondary-container);
+  --color-tertiary: var(--tertiary);
+  --color-tertiary-container: var(--tertiary-container);
+  --color-on-tertiary-container: var(--on-tertiary-container);
   --color-error-container: var(--error-container);
   --color-on-error-container: var(--on-error-container);
 
-  /* Material 3 Expressive shape scale (2025): generous, soft corners.
+  /* Material 3 Expressive shape scale: generous, soft corners.
      Controls trend pill-shaped; cards and floating surfaces get 24–36px
      corners. Shape morphing happens per-component via radius transitions. */
   --radius-xs: 10px;
@@ -75,101 +118,123 @@
      wave, the signature expressive loading treatment. */
   --animate-m3-wave: m3-wave 0.9s linear infinite;
 
+  /* Floating layer entrance: scale-up + fade with spring spatial fast. */
+  --animate-float-in: float-in var(--duration-normal) var(--ease-spring-fast) both;
+
   @keyframes m3-wave {
     to {
       transform: translateX(-16px);
     }
   }
+
+  @keyframes float-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.94);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
 }
 
 :root {
-  /* Material 3 (baseline purple) — light scheme.
-     Window chrome uses surface-container; the content surface sits lighter
-     above it; menus/dialogs float on surface-container-high. */
-  --background: #f3edf7; /* surface-container — tab strip, toolbar, sidebar */
-  --foreground: #1d1b20; /* on-surface */
-  --card: #fef7ff; /* surface — content surface */
-  --card-foreground: #1d1b20;
-  --popover: #ece6f0; /* surface-container-high — menus, dialogs */
-  --popover-foreground: #1d1b20;
-  --primary: #6750a4;
+  /* Iris — expressive light scheme. Deepened chroma vs the M3 baseline
+     purple; cooler tinted neutrals; tonal layering replaces borders. */
+  --shadow-color: #2a2440;
+  --background: #f3f2fa; /* surface-container — tab strip, toolbar, sidebar */
+  --foreground: #191823; /* on-surface */
+  --card: #fcfbff; /* surface — content surface */
+  --card-foreground: #191823;
+  --popover: #ebe9f6; /* surface-container-high — menus, dialogs */
+  --popover-foreground: #191823;
+  --primary: #5744d6;
   --primary-foreground: #ffffff;
-  --primary-container: #eaddff;
-  --on-primary-container: #21005d;
-  --secondary: #e8def8; /* secondary-container — tonal surfaces */
-  --secondary-foreground: #1d192b; /* on-secondary-container */
-  --secondary-container: #e8def8;
-  --on-secondary-container: #1d192b;
-  --muted: #ece6f0; /* surface-container-high */
-  --muted-foreground: #49454f; /* on-surface-variant */
-  --accent: #e8def8; /* secondary-container — menu highlight */
-  --accent-foreground: #1d192b;
+  --primary-container: #e3dfff;
+  --on-primary-container: #160e63;
+  --secondary: #e2dff6; /* secondary-container — tonal surfaces */
+  --secondary-foreground: #1a1930; /* on-secondary-container */
+  --secondary-container: #e2dff6;
+  --on-secondary-container: #1a1930;
+  --tertiary: #94399f;
+  --tertiary-container: #fdd6ff;
+  --on-tertiary-container: #38004a;
+  --muted: #ebe9f6; /* surface-container-high */
+  --muted-foreground: #4a4758; /* on-surface-variant */
+  --accent: #e6e3fb; /* menu highlight */
+  --accent-foreground: #1a1930;
   --error-container: #f9dedc;
   --on-error-container: #410e0b;
-  --selection: #e8def8; /* secondary-container — active pills, selection */
-  --folder: #e8a33d;
-  --destructive: #b3261e; /* error */
-  --border: #cac4d0; /* outline-variant */
-  --input: #79747e; /* outline */
-  --ring: #6750a4;
-  --chart-1: #6750a4;
-  --chart-2: #7d5260;
-  --chart-3: #625b71;
-  --chart-4: #49454f;
-  --chart-5: #1d1b20;
+  --selection: #ddd8fc; /* active pills, selection */
+  --folder: #f2a53a;
+  --destructive: #ba1a1a; /* error */
+  --border: #cdcadf; /* outline-variant */
+  --input: #7b7692; /* outline */
+  --ring: #5744d6;
+  --chart-1: #5744d6;
+  --chart-2: #94399f;
+  --chart-3: #605a78;
+  --chart-4: #4a4758;
+  --chart-5: #191823;
   --radius: 1rem;
-  --sidebar: #f3edf7;
-  --sidebar-foreground: #1d1b20;
-  --sidebar-primary: #6750a4;
+  --sidebar: #f3f2fa;
+  --sidebar-foreground: #191823;
+  --sidebar-primary: #5744d6;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e8def8;
-  --sidebar-accent-foreground: #1d192b;
-  --sidebar-border: #cac4d0;
-  --sidebar-ring: #6750a4;
+  --sidebar-accent: #e6e3fb;
+  --sidebar-accent-foreground: #1a1930;
+  --sidebar-border: #cdcadf;
+  --sidebar-ring: #5744d6;
 }
 
 .dark {
-  /* Material 3 (baseline purple) — dark scheme. */
-  --background: #1d1b20; /* surface-container-low */
-  --foreground: #e6e0e9; /* on-surface */
-  --card: #211f26; /* surface-container — content surface */
-  --card-foreground: #e6e0e9;
-  --popover: #2b2930; /* surface-container-high */
-  --popover-foreground: #e6e0e9;
-  --primary: #d0bcff;
-  --primary-foreground: #381e72;
-  --primary-container: #4f378b;
-  --on-primary-container: #eaddff;
-  --secondary: #4a4458; /* secondary-container */
-  --secondary-foreground: #e8def8; /* on-secondary-container */
-  --secondary-container: #4a4458;
-  --on-secondary-container: #e8def8;
-  --muted: #2b2930; /* surface-container-high */
-  --muted-foreground: #cac4d0; /* on-surface-variant */
-  --accent: #4a4458;
-  --accent-foreground: #e8def8;
+  /* Iris — expressive dark scheme. Blue-tinted ink instead of grey-black;
+     surfaces separate by tone, not lines. */
+  --shadow-color: #000000;
+  --background: #100f19; /* surface-container-low */
+  --foreground: #e5e2f2; /* on-surface */
+  --card: #181724; /* surface-container — content surface */
+  --card-foreground: #e5e2f2;
+  --popover: #222031; /* surface-container-high */
+  --popover-foreground: #e5e2f2;
+  --primary: #c6bfff;
+  --primary-foreground: #291a75;
+  --primary-container: #4030a3;
+  --on-primary-container: #e3dfff;
+  --secondary: #3b3854; /* secondary-container */
+  --secondary-foreground: #e2dff6; /* on-secondary-container */
+  --secondary-container: #3b3854;
+  --on-secondary-container: #e2dff6;
+  --tertiary: #f0aef5;
+  --tertiary-container: #792084;
+  --on-tertiary-container: #fdd6ff;
+  --muted: #222031; /* surface-container-high */
+  --muted-foreground: #c9c5db; /* on-surface-variant */
+  --accent: #403d5c;
+  --accent-foreground: #e2dff6;
   --error-container: #8c1d18;
   --on-error-container: #f9dedc;
-  --selection: #4a4458; /* secondary-container */
-  --folder: #ffc65a;
-  --destructive: #f2b8b5; /* error */
-  --border: #49454f; /* outline-variant */
-  --input: #938f99; /* outline */
-  --ring: #d0bcff;
-  --chart-1: #d0bcff;
-  --chart-2: #efb8c8;
-  --chart-3: #ccc2dc;
-  --chart-4: #cac4d0;
-  --chart-5: #e6e0e9;
+  --selection: #46416b; /* secondary-container, lifted for visibility */
+  --folder: #ffc868;
+  --destructive: #ffb4ab; /* error */
+  --border: #494665; /* outline-variant */
+  --input: #938fa9; /* outline */
+  --ring: #c6bfff;
+  --chart-1: #c6bfff;
+  --chart-2: #f0aef5;
+  --chart-3: #ccc4e8;
+  --chart-4: #c9c5db;
+  --chart-5: #e5e2f2;
   --radius: 1rem;
-  --sidebar: #1d1b20;
-  --sidebar-foreground: #e6e0e9;
-  --sidebar-primary: #d0bcff;
-  --sidebar-primary-foreground: #381e72;
-  --sidebar-accent: #4a4458;
-  --sidebar-accent-foreground: #e8def8;
-  --sidebar-border: #49454f;
-  --sidebar-ring: #d0bcff;
+  --sidebar: #100f19;
+  --sidebar-foreground: #e5e2f2;
+  --sidebar-primary: #c6bfff;
+  --sidebar-primary-foreground: #291a75;
+  --sidebar-accent: #403d5c;
+  --sidebar-accent-foreground: #e2dff6;
+  --sidebar-border: #494665;
+  --sidebar-ring: #c6bfff;
 }
 
 @layer components {
@@ -187,6 +252,31 @@
   #window-maximize.is-hovered {
     color: var(--accent-foreground);
     background-color: var(--accent);
+  }
+
+  /* M3 state layer: hover/focus tint mixed from the foreground token of the
+     element it sits on, per the M3 8% / 12% state-layer opacities. */
+  .state-layer {
+    position: relative;
+  }
+  .state-layer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-color: currentColor;
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-standard);
+    pointer-events: none;
+  }
+  .state-layer:hover::after {
+    opacity: 0.08;
+  }
+  .state-layer:focus-visible::after {
+    opacity: 0.12;
+  }
+  .state-layer:active::after {
+    opacity: 0.12;
   }
 }
 
@@ -237,8 +327,8 @@
   }
 }
 
-/* Respect the OS reduced-motion preference (SKILL.md §23/§29): motion stays
-   functional but collapses to near-instant state changes. */
+/* Respect the OS reduced-motion preference: motion stays functional but
+   collapses to near-instant state changes. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

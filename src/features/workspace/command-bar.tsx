@@ -668,7 +668,7 @@ export function CommandBar() {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogContent
-        className="top-20 w-full min-w-0 max-w-[min(36rem,calc(100%-2rem))] translate-y-0 gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[min(36rem,calc(100%-2rem))]"
+        className="top-20 w-full min-w-0 max-w-[min(36rem,calc(100%-2rem))] translate-y-0 gap-0 overflow-hidden rounded-3xl p-0 sm:max-w-[min(36rem,calc(100%-2rem))]"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">命令栏</DialogTitle>
@@ -718,7 +718,7 @@ export function CommandBar() {
               <div key={section.group}>
                 <p
                   aria-hidden="true"
-                  className="px-3.5 pt-2 pb-1 text-xs font-medium text-muted-foreground select-none"
+                  className="px-3.5 pt-2 pb-1 text-label uppercase text-muted-foreground select-none"
                 >
                   {section.group}
                 </p>
@@ -777,7 +777,7 @@ function CommandResultRow({
       aria-selected={isActive}
       className={cn(
         "flex w-full items-center gap-2.5 rounded-full px-3 py-2 text-left text-[13px] transition-colors outline-none",
-        isActive ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
+        isActive ? "bg-selection font-medium text-accent-foreground" : "hover:bg-accent/60",
       )}
       data-command-index={dataIndex}
       id={`command-item-${dataIndex}`}
@@ -786,7 +786,9 @@ function CommandResultRow({
       tabIndex={-1}
       type="button"
     >
-      <item.icon className="size-4 shrink-0 text-muted-foreground" />
+      <item.icon
+        className={cn("size-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground")}
+      />
       <HighlightedLabel label={item.label} matchedIndices={matchedIndices} />
       {item.hint && (
         <span
