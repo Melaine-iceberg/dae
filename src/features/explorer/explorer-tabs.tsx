@@ -14,6 +14,7 @@ import {
 
 import { WindowControls } from "@/components/window-controls";
 import { Sidebar } from "@/features/sidebar/sidebar";
+import { TerminalPanel } from "@/features/terminal/terminal-panel";
 import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import { WorkspaceSurfaceView } from "@/features/workspace/workspace-surface";
@@ -109,7 +110,10 @@ export function ExplorerTabs() {
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <WorkspaceSurfaceView key={activeTabId} tabId={activeTabId} />
+          <div className="min-h-0 flex-1">
+            <WorkspaceSurfaceView key={activeTabId} tabId={activeTabId} />
+          </div>
+          <TerminalPanel />
         </div>
       </div>
     </div>

@@ -1,5 +1,12 @@
 import { useAtom } from "jotai";
-import { ColumnsIcon, GitBranchIcon, ListIcon, RowsIcon, SquaresFourIcon } from "@phosphor-icons/react";
+import {
+  ColumnsIcon,
+  GitBranchIcon,
+  ListIcon,
+  RowsIcon,
+  SquaresFourIcon,
+  TerminalIcon,
+} from "@phosphor-icons/react";
 
 import {
   DropdownMenu,
@@ -8,6 +15,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
 import { cn } from "@/lib/utils";
 
 import {
@@ -67,11 +75,33 @@ export function ExplorerStatusBar({
         </span>
       )}
       <div className="ml-auto flex shrink-0 items-center gap-1">
+        <TerminalToggle />
+        <div aria-hidden="true" className="mx-1 h-4 w-px bg-border" />
         <DensitySwitcher />
         <div aria-hidden="true" className="mx-1 h-4 w-px bg-border" />
         <ViewModeSwitcher />
       </div>
     </footer>
+  );
+}
+
+function TerminalToggle() {
+  const [visible, setVisible] = useAtom(terminalVisibleAtom);
+
+  return (
+    <button
+      aria-label="切换集成终端"
+      aria-pressed={visible}
+      className={cn(
+        "flex size-5 items-center justify-center rounded-full transition-colors hover:bg-accent hover:text-foreground",
+        visible && "bg-accent text-foreground",
+      )}
+      onClick={() => setVisible((open) => !open)}
+      title="集成终端 (Ctrl+`)"
+      type="button"
+    >
+      <TerminalIcon size={13} />
+    </button>
   );
 }
 

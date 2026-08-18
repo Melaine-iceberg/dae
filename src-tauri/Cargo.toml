@@ -61,6 +61,9 @@ grep-regex = "0.1"
 grep-searcher = "0.1"
 grep-matcher = "0.1"
 git2 = "0.21.0"
+# Spawns the cross-platform PTY (ConPTY on Windows, openpty on Unix) that
+# backs the integrated terminal panel.
+portable-pty = "0.9"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

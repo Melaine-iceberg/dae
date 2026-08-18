@@ -1,4 +1,7 @@
 mod file_system;
+mod terminal;
+
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -12,8 +15,20 @@ pub fn run() {
         )
         .expect("Failed to export TypeScript bindings");
 
+    // The terminal commands push raw bytes over IPC channels, which has no
+    // specta type, so they live outside the generated bindings and are
+    // dispatched before the specta registry sees them.
+    let specta_handler = specta.invoke_handler();
+
     let app = tauri::Builder::default()
-        .invoke_handler(specta.invoke_handler())
+        .invoke_handler(move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+            let command = invoke.message.command();
+            if command.starts_with("terminal_") {
+                terminal::handle_invoke(invoke)
+            } else {
+                specta_handler(invoke)
+            }
+        })
         .setup(move |app| {
             specta.mount_events(app);
             file_system::connections::init(app.handle())?;
@@ -22,6 +37,7 @@ pub fn run() {
         .manage(file_system::DirectoryWatcher::default())
         .manage(file_system::FileSearchState::default())
         .manage(file_system::TrashUndoState::default())
+        .manage(terminal::TerminalState::default())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -36,8 +52,15 @@ pub fn run() {
         .plugin(tauri_plugin_devtools::init())
         .plugin(tauri_plugin_dev_invoke::init());
 
-    app.run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    let app = app.build(tauri::generate_context!()).expect("error while building tauri application");
+    app.run(|app_handle, event| {
+        // Kill live shells so no orphaned processes survive the app.
+        if let tauri::RunEvent::Exit = event {
+            if let Some(state) = app_handle.try_state::<terminal::TerminalState>() {
+                terminal::kill_all(&state);
+            }
+        }
+    });
 }
 
 /// Creates the shared command registry for Tauri and TypeScript binding export.
