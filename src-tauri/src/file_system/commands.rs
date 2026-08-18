@@ -1,13 +1,16 @@
 use super::error::FileSystemError;
 use super::local;
-use super::progress::{FileOperationKind, FileOperationProgressReporter, emit_preparing};
+use super::progress::{
+    FileOperationKind, FileOperationProgressReporter, FileOperationProgressReporterTrait,
+    emit_preparing,
+};
 use super::transfer::{self, TransferSource};
 use super::types::{
     ContentSearchResponse, DirectoryView, NewEntryKind, SearchResponse, path_to_string,
 };
 use super::vfs::{self, Scheme};
 use super::watch::{DirectoryWatcher, WatchHandle, spawn_polling_watcher};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use tauri::Manager;
 
@@ -279,6 +282,160 @@ fn resolve_sources(paths: Vec<String>) -> Result<Vec<TransferSource>, FileSystem
             Ok(TransferSource { path, backend })
         })
         .collect()
+}
+
+/// One entry remembered from a move-to-trash run: where it lived and what it
+/// was called. Kept lightweight so deleting never has to enumerate the trash;
+/// [`undo_trash`] resolves these back to `TrashItem`s only when restoring.
+struct TrashRecord {
+    parent: PathBuf,
+    name: std::ffi::OsString,
+}
+
+/// Tracks the most recent batch of entries moved to the system trash so that
+/// [`undo_trash`] can restore it. A newer batch replaces the previous one.
+#[derive(Default)]
+pub struct TrashUndoState {
+    records: std::sync::Mutex<Vec<TrashRecord>>,
+}
+
+/// Moves local entries into the system trash (recycle bin) instead of deleting
+/// them permanently. The most recent batch stays undoable via [`undo_trash`].
+/// Network paths are rejected; the UI routes those to `delete_entries`.
+///
+/// This only records `(parent, name)` pairs — no trash enumeration here,
+/// because `os_limited::list()` scans the whole recycle bin via the shell API
+/// and would make every delete visibly slow.
+#[tauri::command]
+#[specta::specta]
+pub async fn trash_entries(
+    paths: Vec<String>,
+    operation_id: String,
+    app: tauri::AppHandle,
+) -> Result<(), FileSystemError> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    if paths.iter().any(|path| !is_local_path(path)) {
+        return Err(FileSystemError::InvalidInput(
+            "回收站仅支持本地路径".into(),
+        ));
+    }
+
+    emit_preparing(&app, &operation_id, FileOperationKind::Delete);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let progress = FileOperationProgressReporter::new(
+            app.clone(),
+            operation_id,
+            FileOperationKind::Delete,
+        );
+        progress.start(paths.len() as u64);
+
+        let mut records = Vec::with_capacity(paths.len());
+        let mut first_error: Option<FileSystemError> = None;
+        for path in &paths {
+            match trash::delete(path) {
+                Ok(()) => {
+                    let entry_path = Path::new(path);
+                    if let (Some(parent), Some(name)) =
+                        (entry_path.parent(), entry_path.file_name())
+                    {
+                        records.push(TrashRecord {
+                            parent: parent.to_path_buf(),
+                            name: name.to_os_string(),
+                        });
+                    }
+                    progress.advance(entry_path);
+                }
+                Err(error) => {
+                    first_error = Some(trash_error(error));
+                    break;
+                }
+            }
+        }
+
+        // Even when a later entry fails, the ones that did reach the trash
+        // stay undoable.
+        *app.state::<TrashUndoState>()
+            .records
+            .lock()
+            .expect("trash undo state lock poisoned") = records;
+        progress.finish();
+
+        if let Some(error) = first_error {
+            return Err(error);
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+/// Restores the most recent [`trash_entries`] batch to its original locations,
+/// returning the restored paths so the UI can refresh. Entries no longer in
+/// the trash (emptied or restored elsewhere) are skipped.
+#[tauri::command]
+#[specta::specta]
+pub async fn undo_trash(app: tauri::AppHandle) -> Result<Vec<String>, FileSystemError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let records = std::mem::take(
+            &mut *app
+                .state::<TrashUndoState>()
+                .records
+                .lock()
+                .expect("trash undo state lock poisoned"),
+        );
+        if records.is_empty() {
+            return Err(FileSystemError::InvalidInput(
+                "没有可撤销的删除操作".into(),
+            ));
+        }
+
+        let items = trash::os_limited::list().map_err(trash_error)?;
+        let mut to_restore = Vec::new();
+        let mut restored_paths = Vec::new();
+        for record in &records {
+            // The same (parent, name) can appear multiple times in the trash
+            // from earlier deletions; the newest one is ours.
+            let match_item = items.iter().filter(|item| {
+                item.name == record.name && same_trash_location(&item.original_parent, &record.parent)
+            }).max_by_key(|item| item.time_deleted);
+
+            if let Some(item) = match_item {
+                restored_paths.push(path_to_string(&item.original_parent.join(&item.name)));
+                to_restore.push(item.clone());
+            }
+        }
+
+        if to_restore.is_empty() {
+            return Err(FileSystemError::InvalidInput(
+                "回收站中已找不到这些项目，可能已被清空或还原".into(),
+            ));
+        }
+
+        trash::os_limited::restore_all(to_restore).map_err(trash_error)?;
+        Ok(restored_paths)
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+/// Windows paths are case-insensitive, so recycle-bin parents recorded from a
+/// deletion must compare that way too.
+fn same_trash_location(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        left.to_string_lossy().to_lowercase() == right.to_string_lossy().to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+fn trash_error(error: trash::Error) -> FileSystemError {
+    FileSystemError::Internal(error.to_string())
 }
 
 /// Duplicates entries next to their originals ("name 副本"), returning the

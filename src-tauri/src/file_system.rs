@@ -17,5 +17,5 @@ pub mod watch;
 #[cfg(test)]
 mod tests;
 
-pub use commands::FileSearchState;
+pub use commands::{FileSearchState, TrashUndoState};
 pub use watch::{DirectoryChanged, DirectoryWatcher};

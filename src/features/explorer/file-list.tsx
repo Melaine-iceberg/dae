@@ -71,6 +71,7 @@ import {
 import type { DirectoryEntry } from "./types";
 
 interface FileListProps {
+  canUndoDelete: boolean;
   currentDirectoryPath: string;
   entries: DirectoryEntry[];
   externalDropItemCount: number;
@@ -87,6 +88,7 @@ interface FileListProps {
   onCreateFile: () => void;
   onCut: () => void;
   onDelete: () => void;
+  onDeletePermanent: () => void;
   onDuplicate: () => void;
   onDropEntries: (
     sourcePaths: string[],
@@ -102,6 +104,7 @@ interface FileListProps {
   onScrollOffsetChange?: (offset: number) => void;
   onSelectedPathsChange: (paths: string[]) => void;
   onTogglePreview: () => void;
+  onUndoDelete: () => void;
   searchState?: FileListSearchState;
   selectedPaths: string[];
   viewId: string;
@@ -199,6 +202,7 @@ function draggableDirectoryPaths(entries: DirectoryEntry[], sourcePaths: string[
 }
 
 export function FileList({
+  canUndoDelete,
   currentDirectoryPath,
   entries,
   externalDropItemCount,
@@ -215,6 +219,7 @@ export function FileList({
   onCreateFile,
   onCut,
   onDelete,
+  onDeletePermanent,
   onDuplicate,
   onDropEntries,
   onExtract,
@@ -226,6 +231,7 @@ export function FileList({
   onScrollOffsetChange,
   onSelectedPathsChange,
   onTogglePreview,
+  onUndoDelete,
   searchState,
   selectedPaths,
   viewId,
@@ -319,9 +325,21 @@ export function FileList({
         return;
       }
 
+      // Ctrl/Cmd+Z restores the most recent batch moved to the trash.
+      if (hasModifier && !event.altKey && key === "z" && canUndoDelete && !actionsDisabled) {
+        event.preventDefault();
+        onUndoDelete();
+        return;
+      }
+
       if (event.key === "Delete" && selectedCount > 0 && !actionsDisabled) {
         event.preventDefault();
-        onDelete();
+        // Plain Delete moves to the trash (undoable); Shift+Delete is permanent.
+        if (event.shiftKey) {
+          onDeletePermanent();
+        } else {
+          onDelete();
+        }
       }
     };
 
@@ -329,16 +347,19 @@ export function FileList({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     actionsDisabled,
+    canUndoDelete,
     hasClipboard,
     listIsLoading,
     onCopy,
     onCut,
     onDelete,
+    onDeletePermanent,
     onOpenTerminal,
     onPaste,
     onRename,
-    onSelectedPathsChange,
     onTogglePreview,
+    onUndoDelete,
+    onSelectedPathsChange,
     selectedCount,
   ]);
 

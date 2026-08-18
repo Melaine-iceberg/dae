@@ -13,6 +13,7 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
   ArrowClockwiseIcon,
+  ArrowCounterClockwiseIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowUpIcon,
@@ -20,6 +21,7 @@ import {
   SidebarSimpleIcon,
   StarIcon,
   WarningIcon,
+  XIcon,
 } from "@phosphor-icons/react";
 
 import { commands, events, type ArchiveFormat } from "@/bindings";
@@ -79,7 +81,7 @@ import {
   sortKeyAtom,
   sortOrderAtom,
 } from "./preferences";
-import { fileClipboardAtom } from "./tabs";
+import { fileClipboardAtom, trashUndoAtom } from "./tabs";
 import type {
   DirectoryEntry,
   FileOperationKind,
@@ -101,6 +103,7 @@ type ExternalDrop = { sourcePaths: string[]; targetPath: string | null };
 export function ExplorerView({ navigator }: ExplorerViewProps) {
   const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
   const [clipboard, setClipboard] = useAtom(fileClipboardAtom);
+  const [trashUndo, setTrashUndo] = useAtom(trashUndoAtom);
   const favorites = useAtomValue(favoritesAtom) ?? [];
   const toggleFavorite = useSetAtom(toggleFavoriteAtom);
   const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
@@ -614,12 +617,62 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     });
   };
 
+  /** Moves the selection into the system trash; the batch stays undoable. */
+  const trashSelection = useCallback(() => {
+    if (selectedEntries.length === 0) return;
+
+    const paths = selectedEntries.map((entry) => entry.path);
+    setOperationError(null);
+    setSelectedPaths([]);
+
+    void performFileOperation(
+      (operationId) => commands.trashEntries(paths, operationId!),
+      "delete",
+    ).then((result) => {
+      if (!result.ok) {
+        setOperationError(result.error);
+        setSelectedPaths(paths);
+        return;
+      }
+      setTrashUndo({ count: paths.length });
+    });
+  }, [performFileOperation, selectedEntries, setTrashUndo]);
+
+  /** Delete moves the selection to the trash when every entry is local;
+   *  network locations have no recycle bin, so they keep the permanent-delete
+   *  confirmation dialog. */
   const requestDelete = useCallback(() => {
+    if (selectedEntries.length === 0) return;
+
+    if (selectedEntries.every((entry) => isLocalExplorerPath(entry.path))) {
+      trashSelection();
+      return;
+    }
+
+    setDeleteTargets(selectedEntries);
+    setOperationError(null);
+  }, [selectedEntries, trashSelection]);
+
+  /** Shift+Delete bypasses the trash and asks for permanent deletion. */
+  const requestPermanentDelete = useCallback(() => {
     if (selectedEntries.length === 0) return;
 
     setDeleteTargets(selectedEntries);
     setOperationError(null);
   }, [selectedEntries]);
+
+  /** Restores the most recent trashed batch to its original locations. */
+  const undoLastTrash = useCallback(() => {
+    if (!trashUndo) return;
+
+    setTrashUndo(null);
+    setOperationError(null);
+    void performFileOperation(() => commands.undoTrash()).then((result) => {
+      if (!result.ok) {
+        setOperationError(`撤销删除失败：${result.error}`);
+      }
+    });
+  }, [performFileOperation, setTrashUndo, trashUndo]);
 
   const closeDeleteDialog = () => {
     if (!isOperationPending) {
@@ -965,6 +1018,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               }
               isLoading={isLoading}
               isOperationPending={isOperationPending}
+              canUndoDelete={trashUndo !== null}
               onAddToFavorites={addFavoritePaths}
               onAddToSpace={addToSpace}
               onCompress={compressSelection}
@@ -973,6 +1027,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               onCreateFile={() => requestCreate("file")}
               onCut={cutSelection}
               onDelete={requestDelete}
+              onDeletePermanent={requestPermanentDelete}
               onDuplicate={duplicateSelection}
               onDropEntries={transferEntries}
               onExtract={extractSelection}
@@ -981,6 +1036,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               onOpenTerminal={() => directory.path && openTerminalHere(directory.path)}
               onPaste={pasteClipboard}
               onRename={requestRename}
+              onUndoDelete={undoLastTrash}
               onScrollOffsetChange={
                 search.isActive
                   ? undefined
@@ -1044,6 +1100,26 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                 onRename={requestRename}
                 selectedCount={selectedPaths.length}
               />
+            )}
+            {trashUndo && (
+              <div className="absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-popover px-4 py-2 text-[13px] text-popover-foreground shadow-lg">
+                <ArrowCounterClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
+                <span className="whitespace-nowrap">
+                  已将 {trashUndo.count.toLocaleString("zh-CN")} 个项目移到回收站
+                </span>
+                <Button onClick={undoLastTrash} size="xs" type="button" variant="outline">
+                  撤销
+                </Button>
+                <Button
+                  aria-label="关闭提示"
+                  onClick={() => setTrashUndo(null)}
+                  size="xs"
+                  type="button"
+                  variant="ghost"
+                >
+                  <XIcon />
+                </Button>
+              </div>
             )}
           </div>
         ) : state.error ? (
@@ -1123,6 +1199,18 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
 
 function ToolbarSeparator() {
   return <div aria-hidden="true" className="mx-1 h-5 w-px bg-border" />;
+}
+
+/** Mirrors the backend's scheme detection: only a `scheme://` prefix whose
+ *  scheme part contains no path separators counts as a network path. */
+function isLocalExplorerPath(path: string): boolean {
+  const separatorIndex = path.indexOf("://");
+  if (separatorIndex < 1) return true;
+
+  const scheme = path.slice(0, separatorIndex);
+  if (scheme.includes("/") || scheme.includes("\\")) return true;
+
+  return scheme.toLowerCase() === "file";
 }
 
 function FileOperationStatusBar({ progress }: { progress: FileOperationProgress }) {
@@ -1307,22 +1395,24 @@ function DeleteDialog({
 }) {
   const description =
     entries.length === 1
-      ? `“${entries[0].name}”将被永久删除，且无法恢复。`
-      : `将永久删除所选的 ${entries.length} 个项目，且无法恢复。`;
+      ? `“${entries[0].name}”将被永久删除，无法从回收站恢复。`
+      : `所选的 ${entries.length} 个项目将被永久删除，无法从回收站恢复。`;
 
   return (
     <Dialog onOpenChange={onOpenChange} open={entries.length > 0}>
       <DialogContent showCloseButton={!isPending}>
         <DialogHeader>
-          <DialogTitle>确认删除</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
+          <DialogTitle>永久删除</DialogTitle>
+          <DialogDescription>
+            {description}直接按 Delete 键则移入回收站，可随时用 Ctrl+Z 撤销。
+          </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button disabled={isPending} onClick={onClose} type="button" variant="outline">
             取消
           </Button>
           <Button disabled={isPending} onClick={onConfirm} type="button" variant="destructive">
-            删除
+            永久删除
           </Button>
         </DialogFooter>
       </DialogContent>

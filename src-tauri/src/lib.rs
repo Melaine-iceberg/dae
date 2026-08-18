@@ -21,6 +21,7 @@ pub fn run() {
         })
         .manage(file_system::DirectoryWatcher::default())
         .manage(file_system::FileSearchState::default())
+        .manage(file_system::TrashUndoState::default())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -58,6 +59,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::commands::copy_entries,
             file_system::commands::move_entries,
             file_system::commands::delete_entries,
+            file_system::commands::trash_entries,
+            file_system::commands::undo_trash,
             file_system::commands::duplicate_entries,
             file_system::commands::open_terminal,
             file_system::archive::compress_entries,
