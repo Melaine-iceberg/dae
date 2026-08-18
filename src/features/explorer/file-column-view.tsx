@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "./file-icons";
-import { sortEntries, sortKeyAtom, sortOrderAtom } from "./preferences";
+import { sortEntries, foldersFirstAtom, sortKeyAtom, sortOrderAtom } from "./preferences";
 import type { DirectoryEntry } from "./types";
 
 export interface FileColumnViewProps {
@@ -129,10 +129,11 @@ function ChildPane({ path, ...paneProps }: ChildPaneProps) {
   });
   const sortKey = useAtomValue(sortKeyAtom);
   const sortOrder = useAtomValue(sortOrderAtom);
+  const foldersFirst = useAtomValue(foldersFirstAtom);
   // Child panes share the parent's sort preference (SKILL.md §18).
   const sortedEntries = useMemo(
-    () => sortEntries(data?.entries ?? [], sortKey, sortOrder),
-    [data, sortKey, sortOrder],
+    () => sortEntries(data?.entries ?? [], sortKey, sortOrder, foldersFirst),
+    [data, foldersFirst, sortKey, sortOrder],
   );
 
   return (

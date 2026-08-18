@@ -51,6 +51,7 @@ import {
   DEFAULT_SORT_ORDER,
   densityAtom,
   entryFiltersAtom,
+  foldersFirstAtom,
   sortKeyAtom,
   sortOrderAtom,
   viewModeAtom,
@@ -137,6 +138,7 @@ export function CommandBar() {
   const setViewMode = useSetAtom(viewModeAtom);
   const setSortKey = useSetAtom(sortKeyAtom);
   const setSortOrder = useSetAtom(sortOrderAtom);
+  const setFoldersFirst = useSetAtom(foldersFirstAtom);
   const setEntryFilters = useSetAtom(entryFiltersAtom);
 
   useEffect(() => {
@@ -462,6 +464,14 @@ export function CommandBar() {
         icon: ArrowsDownUpIcon,
         run: () => setSortOrder((order) => (order === "asc" ? "desc" : "asc")),
       },
+      {
+        id: "sort:toggle-folders-first",
+        group: "视图",
+        label: "切换文件夹置顶",
+        keywords: "sort folders first directories group top",
+        icon: FolderIcon,
+        run: () => setFoldersFirst((enabled) => !enabled),
+      },
       ...(
         [
           { value: "all", label: "类型过滤：全部" },
@@ -545,6 +555,7 @@ export function CommandBar() {
     recents,
     setDensity,
     setEntryFilters,
+    setFoldersFirst,
     setSortKey,
     setSortOrder,
     setViewMode,

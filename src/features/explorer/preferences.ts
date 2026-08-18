@@ -35,6 +35,7 @@ export const viewModeAtom = atomWithStorage<ExplorerViewMode>("explorer.viewMode
 export const densityAtom = atomWithStorage<ExplorerDensity>("explorer.density", "comfortable");
 export const sortKeyAtom = atomWithStorage<ExplorerSortKey>("explorer.sortKey", "name");
 export const sortOrderAtom = atomWithStorage<ExplorerSortOrder>("explorer.sortOrder", "asc");
+export const foldersFirstAtom = atomWithStorage<boolean>("explorer.foldersFirst", true);
 
 export interface ExplorerEntryFilters {
   kind: ExplorerKindFilter;
@@ -129,13 +130,6 @@ export function applyEntryFilters(
   });
 }
 
-const KIND_ORDER: Record<string, number> = {
-  directory: 0,
-  file: 1,
-  symlink: 2,
-  other: 3,
-};
-
 const NAME_COLLATOR = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
 
 function entryTypeLabel(entry: DirectoryEntry): string {
@@ -152,20 +146,25 @@ function entryTypeLabel(entry: DirectoryEntry): string {
 }
 
 /**
- * Sorts entries for display. Directories always group first regardless of
- * the active key (predictable spatial convention); names break ties with a
- * natural-order collator so file2 < file10.
+ * Sorts entries for display. With `foldersFirst` (default) directories
+ * always group ahead of files regardless of the active key (predictable
+ * spatial convention); names break ties with a natural-order collator so
+ * file2 < file10. When disabled, entries interleave purely by the key.
  */
 export function sortEntries(
   entries: readonly DirectoryEntry[],
   key: ExplorerSortKey,
   order: ExplorerSortOrder,
+  foldersFirst = true,
 ): DirectoryEntry[] {
   const direction = order === "asc" ? 1 : -1;
 
   return [...entries].sort((left, right) => {
-    const kindDiff = KIND_ORDER[left.kind] - KIND_ORDER[right.kind];
-    if (kindDiff !== 0) return kindDiff;
+    if (foldersFirst) {
+      const folderDiff =
+        Number(right.kind === "directory") - Number(left.kind === "directory");
+      if (folderDiff !== 0) return folderDiff;
+    }
 
     let comparison = 0;
     if (key === "name") {

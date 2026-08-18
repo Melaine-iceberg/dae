@@ -70,9 +70,11 @@ import { ExplorerStatusBar } from "./explorer-status-bar";
 import { FileList, FileListSkeleton } from "./file-list";
 import { FilterMenu } from "./filter-menu";
 import type { ExplorerNavigator } from "./navigation";
+import { SortMenu } from "./sort-menu";
 import {
   applyEntryFilters,
   entryFiltersAtom,
+  foldersFirstAtom,
   sortEntries,
   sortKeyAtom,
   sortOrderAtom,
@@ -135,13 +137,27 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const isContentSearchActive = searchMode === "content" && contentSearch.isActive;
   const sortKey = useAtomValue(sortKeyAtom);
   const sortOrder = useAtomValue(sortOrderAtom);
+  const foldersFirst = useAtomValue(foldersFirstAtom);
   const entryFilters = useAtomValue(entryFiltersAtom);
   const displayedEntries = useMemo(() => {
     const sourceEntries = search.isActive
       ? (search.response?.entries ?? [])
       : (directory?.entries ?? []);
-    return sortEntries(applyEntryFilters(sourceEntries, entryFilters), sortKey, sortOrder);
-  }, [directory?.entries, entryFilters, search.isActive, search.response, sortKey, sortOrder]);
+    return sortEntries(
+      applyEntryFilters(sourceEntries, entryFilters),
+      sortKey,
+      sortOrder,
+      foldersFirst,
+    );
+  }, [
+    directory?.entries,
+    entryFilters,
+    foldersFirst,
+    search.isActive,
+    search.response,
+    sortKey,
+    sortOrder,
+  ]);
   const selectedEntries = useMemo(
     () => displayedEntries.filter((entry) => selectedPaths.includes(entry.path)),
     [displayedEntries, selectedPaths],
@@ -891,6 +907,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             onModeChange={setSearchMode}
             search={search}
           />
+          <SortMenu disabled={!directory} />
           <FilterMenu disabled={!directory} />
         </header>
 
