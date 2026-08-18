@@ -21,6 +21,13 @@ pub fn run() {
     let specta_handler = specta.invoke_handler();
 
     let app = tauri::Builder::default()
+        // Thumbnails stream as raw image bytes through the webview's HTTP
+        // stack instead of base64 `invoke` payloads, which lets the browser
+        // fetch them in parallel and cache them per URL.
+        .register_uri_scheme_protocol(
+            "thumbnail",
+            file_system::preview::handle_thumbnail_protocol,
+        )
         .invoke_handler(move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
             let command = invoke.message.command();
             if command.starts_with("terminal_") {
@@ -89,7 +96,6 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::git::get_git_status,
             file_system::archive::compress_entries,
             file_system::archive::extract_archive,
-            file_system::preview::get_thumbnail,
             file_system::preview::read_text_preview,
             file_system::sidebar::get_system_places,
             file_system::sidebar::list_disks,

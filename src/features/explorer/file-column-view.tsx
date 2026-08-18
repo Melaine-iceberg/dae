@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -11,13 +10,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { CaretRightIcon, CircleNotchIcon, WarningIcon } from "@phosphor-icons/react";
 
-import { commands, type ArchiveFormat } from "@/bindings";
+import { commands } from "@/bindings";
 
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "./file-icons";
+import type { MenuActions } from "./file-list";
 import { sortEntries, foldersFirstAtom, sortKeyAtom, sortOrderAtom } from "./preferences";
 import type { DirectoryEntry } from "./types";
 
@@ -25,20 +25,13 @@ export interface FileColumnViewProps {
   actionsDisabled: boolean;
   draggingPaths: Set<string>;
   dropTargetPath: string | null;
+  menuActions: MenuActions;
   onAddToFavorites: (entry: DirectoryEntry) => void;
   onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
-  onCompress: (format: ArchiveFormat) => void;
-  onContextMenuEntry: (entry: DirectoryEntry) => void;
-  onCopy: () => void;
-  onCut: () => void;
-  onDelete: () => void;
-  onDuplicate: () => void;
-  onExtract: (path: string) => void;
-  onMoveTo: () => void;
+  onContextMenuEntry: (entry: DirectoryEntry, index: number) => void;
   onOpenEntry: (entry: DirectoryEntry) => void;
   onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
-  onRename: () => void;
-  onSelectEntry: (entry: DirectoryEntry, event: ReactMouseEvent) => void;
+  onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => void;
   rootEntries: DirectoryEntry[];
   selectedCount: number;
   selectedPathSet: Set<string>;
@@ -49,20 +42,13 @@ interface SharedRowProps {
   actionsDisabled: boolean;
   draggingPaths: Set<string>;
   dropTargetPath: string | null;
+  menuActions: MenuActions;
   onAddToFavorites: (entry: DirectoryEntry) => void;
   onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
-  onCompress: (format: ArchiveFormat) => void;
-  onContextMenuEntry: (entry: DirectoryEntry) => void;
-  onCopy: () => void;
-  onCut: () => void;
-  onDelete: () => void;
-  onDuplicate: () => void;
-  onExtract: (path: string) => void;
-  onMoveTo: () => void;
+  onContextMenuEntry: (entry: DirectoryEntry, index: number) => void;
   onOpenEntry: (entry: DirectoryEntry) => void;
   onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
-  onRename: () => void;
-  onSelectEntry: (entry: DirectoryEntry, event: ReactMouseEvent) => void;
+  onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => void;
   selectedCount: number;
   selectedPathSet: Set<string>;
 }
@@ -131,10 +117,7 @@ function ChildPane({ path, ...paneProps }: ChildPaneProps) {
   const sortOrder = useAtomValue(sortOrderAtom);
   const foldersFirst = useAtomValue(foldersFirstAtom);
   // Child panes share the parent's sort preference (SKILL.md §18).
-  const sortedEntries = useMemo(
-    () => sortEntries(data?.entries ?? [], sortKey, sortOrder, foldersFirst),
-    [data, foldersFirst, sortKey, sortOrder],
-  );
+  const sortedEntries = sortEntries(data?.entries ?? [], sortKey, sortOrder, foldersFirst);
 
   return (
     <Pane
@@ -168,20 +151,13 @@ function Pane({
   entries,
   isError = false,
   isLoading = false,
+  menuActions,
   onAddToFavorites,
   onAddToSpace,
-  onCompress,
   onContextMenuEntry,
-  onCopy,
-  onCut,
-  onDelete,
-  onDuplicate,
   onDrill,
-  onExtract,
-  onMoveTo,
   onOpenEntry,
   onPointerDownEntry,
-  onRename,
   onSelectEntry,
   selectedCount,
   selectedPathSet,
@@ -222,82 +198,148 @@ function Pane({
         >
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const entry = entries[virtualRow.index];
-            const isDirectory = entry.kind === "directory";
-            const presentation = isDirectory
-              ? DIRECTORY_PRESENTATION
-              : getFilePresentation(entry.name);
-            const EntryIcon = presentation.icon;
-            const isExpanded = activeChildPath === entry.path;
-            const isSelected = selectedPathSet.has(entry.path);
-
             return (
-              <ContextMenu key={entry.path}>
-                <ContextMenuTrigger>
-                  <div
-                    aria-selected={isSelected}
-                    className={cn(
-                      "absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-md px-2.5 text-[13px] transition-colors select-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none",
-                      (isSelected || isExpanded) && "bg-selection ring-1 ring-primary/30 ring-inset",
-                      draggingPaths.has(entry.path) && "cursor-grabbing opacity-50",
-                      dropTargetPath === entry.path && "bg-selection ring-2 ring-primary ring-inset",
-                    )}
-                    data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
-                    onClick={(event) => {
-                      onSelectEntry(entry, event);
-                      if (isDirectory && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
-                        onDrill(entry.path, depth);
-                      }
-                    }}
-                    onContextMenu={() => onContextMenuEntry(entry)}
-                    onDoubleClick={() => onOpenEntry(entry)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        onOpenEntry(entry);
-                      }
-                    }}
-                    onPointerDown={(event) => onPointerDownEntry(entry, event)}
-                    role="option"
-                    style={{ transform: `translateY(${PANE_VERTICAL_PADDING_PX + virtualRow.start}px)` }}
-                    tabIndex={0}
-                    title={entry.path}
-                  >
-                    <EntryIcon
-                      className={cn(
-                        "size-4 shrink-0",
-                        isDirectory ? "text-folder" : "text-muted-foreground",
-                      )}
-                      weight={isDirectory ? "fill" : undefined}
-                    />
-                    <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                    {isDirectory && (
-                      <CaretRightIcon className="size-3 shrink-0 text-muted-foreground" />
-                    )}
-                  </div>
-                </ContextMenuTrigger>
-                <ContextMenuContent>
-                  <EntryContextMenuContent
-                    entry={entry}
-                    isActionDisabled={actionsDisabled}
-                    isSingleSelection={selectedCount === 1}
-                    onAddToFavorites={() => onAddToFavorites(entry)}
-                    onAddToSpace={(spaceId) => onAddToSpace(entry, spaceId)}
-                    onCompress={onCompress}
-                    onCopy={onCopy}
-                    onCut={onCut}
-                    onDelete={onDelete}
-                    onDuplicate={onDuplicate}
-                    onExtract={onExtract}
-                    onMoveTo={onMoveTo}
-                    onOpen={() => onOpenEntry(entry)}
-                    onRename={onRename}
-                  />
-                </ContextMenuContent>
-              </ContextMenu>
+              <PaneRow
+                activeChildPath={activeChildPath}
+                actionsDisabled={actionsDisabled}
+                depth={depth}
+                dropTargetPath={dropTargetPath}
+                entry={entry}
+                index={virtualRow.index}
+                isDragging={draggingPaths.has(entry.path)}
+                isSelected={selectedPathSet.has(entry.path)}
+                key={entry.path}
+                menuActions={menuActions}
+                onAddToFavorites={onAddToFavorites}
+                onAddToSpace={onAddToSpace}
+                onContextMenuEntry={onContextMenuEntry}
+                onDrill={onDrill}
+                onOpenEntry={onOpenEntry}
+                onPointerDownEntry={onPointerDownEntry}
+                onSelectEntry={onSelectEntry}
+                selectedCount={selectedCount}
+                virtualStart={virtualRow.start}
+              />
             );
           })}
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Miller-column row. The React Compiler memoizes this component's render
+ * output; selection/drag membership arrives as boolean props so re-renders
+ * stay scoped to rows whose bits actually changed.
+ */
+function PaneRow({
+  activeChildPath,
+  actionsDisabled,
+  depth,
+  dropTargetPath,
+  entry,
+  index,
+  isDragging,
+  isSelected,
+  menuActions,
+  onAddToFavorites,
+  onAddToSpace,
+  onContextMenuEntry,
+  onDrill,
+  onOpenEntry,
+  onPointerDownEntry,
+  onSelectEntry,
+  selectedCount,
+  virtualStart,
+}: {
+  activeChildPath: string | null;
+  actionsDisabled: boolean;
+  depth: number;
+  dropTargetPath: string | null;
+  entry: DirectoryEntry;
+  index: number;
+  isDragging: boolean;
+  isSelected: boolean;
+  menuActions: MenuActions;
+  onAddToFavorites: (entry: DirectoryEntry) => void;
+  onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
+  onContextMenuEntry: (entry: DirectoryEntry, index: number) => void;
+  onDrill: (path: string, depth: number) => void;
+  onOpenEntry: (entry: DirectoryEntry) => void;
+  onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
+  onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => void;
+  selectedCount: number;
+  virtualStart: number;
+}) {
+  const isDirectory = entry.kind === "directory";
+  const presentation = isDirectory ? DIRECTORY_PRESENTATION : getFilePresentation(entry.name);
+  const EntryIcon = presentation.icon;
+  const isExpanded = activeChildPath === entry.path;
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger>
+        <div
+          aria-selected={isSelected}
+          className={cn(
+            "absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-md px-2.5 text-[13px] transition-colors select-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none",
+            (isSelected || isExpanded) && "bg-selection ring-1 ring-primary/30 ring-inset",
+            isDragging && "cursor-grabbing opacity-50",
+            dropTargetPath === entry.path && "bg-selection ring-2 ring-primary ring-inset",
+          )}
+          data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
+          onClick={(event) => {
+            onSelectEntry(entry, index, event);
+            if (isDirectory && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+              onDrill(entry.path, depth);
+            }
+          }}
+          onContextMenu={() => onContextMenuEntry(entry, index)}
+          onDoubleClick={() => onOpenEntry(entry)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              onOpenEntry(entry);
+            }
+          }}
+          onPointerDown={(event) => onPointerDownEntry(entry, event)}
+          role="option"
+          style={{ transform: `translateY(${PANE_VERTICAL_PADDING_PX + virtualStart}px)` }}
+          tabIndex={0}
+          title={entry.path}
+        >
+          <EntryIcon
+            className={cn(
+              "size-4 shrink-0",
+              isDirectory ? "text-folder" : "text-muted-foreground",
+            )}
+            weight={isDirectory ? "fill" : undefined}
+          />
+          <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+          {isDirectory && (
+            <CaretRightIcon className="size-3 shrink-0 text-muted-foreground" />
+          )}
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <EntryContextMenuContent
+          entry={entry}
+          isActionDisabled={actionsDisabled}
+          isSingleSelection={selectedCount === 1}
+          onAddToFavorites={() => onAddToFavorites(entry)}
+          onAddToSpace={(spaceId) => onAddToSpace(entry, spaceId)}
+          onCompress={menuActions.onCompress}
+          onCopy={menuActions.onCopy}
+          onCut={menuActions.onCut}
+          onDelete={menuActions.onDelete}
+          onDuplicate={menuActions.onDuplicate}
+          onExtract={menuActions.onExtract}
+          onMoveTo={menuActions.onMoveTo}
+          onOpen={() => onOpenEntry(entry)}
+          onRename={menuActions.onRename}
+        />
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

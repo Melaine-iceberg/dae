@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { commands, type Thumbnail } from "@/bindings";
+import { isWindowsPlatform } from "@/lib/platform";
 
 import { getFileExtension } from "./file-icons";
 import type { DirectoryEntry } from "./types";
@@ -22,38 +22,25 @@ export function isThumbnailSupported(entry: DirectoryEntry): boolean {
   return entry.kind === "file" && THUMBNAIL_EXTENSIONS.has(getFileExtension(entry.name));
 }
 
+/** Windows exposes Tauri custom schemes as `http://<scheme>.localhost`. */
+const THUMBNAIL_URL_ORIGIN = isWindowsPlatform
+  ? "http://thumbnail.localhost"
+  : "thumbnail://localhost";
+
 /**
- * Module-level in-flight/result cache. Keys include mtime and size so
- * replaced files refresh naturally; the Rust side keeps its own cache too.
+ * Versioned URL for the `thumbnail://` protocol handler. Embedding mtime and
+ * size lets the webview cache responses immutably and refresh automatically
+ * when a file is replaced — no frontend promise cache needed.
  */
-const thumbnailCache = new Map<string, Promise<Thumbnail | null>>();
-const THUMBNAIL_CACHE_MAX = 300;
-
-export function loadThumbnail(entry: DirectoryEntry, size: number): Promise<Thumbnail | null> {
-  const cacheKey = `${entry.path}|${entry.modifiedAt ?? 0}|${entry.size ?? 0}|${size}`;
-  const cached = thumbnailCache.get(cacheKey);
-  if (cached) return cached;
-
-  if (thumbnailCache.size >= THUMBNAIL_CACHE_MAX) {
-    thumbnailCache.clear();
-  }
-
-  const pending: Promise<Thumbnail | null> = commands
-    .getThumbnail(entry.path, size)
-    .then((result) => result ?? null)
-    .catch((error: unknown) => {
-      console.warn(`Unable to render thumbnail for ${entry.path}`, error);
-      thumbnailCache.delete(cacheKey);
-      return null;
-    });
-
-  thumbnailCache.set(cacheKey, pending);
-  return pending;
+export function buildThumbnailUrl(entry: DirectoryEntry, size: number): string {
+  const version = `${entry.modifiedAt ?? 0}-${entry.size ?? 0}`;
+  return `${THUMBNAIL_URL_ORIGIN}/?path=${encodeURIComponent(entry.path)}&size=${size}&v=${version}`;
 }
 
 /**
  * Lazy thumbnail image: renders nothing but a subtle placeholder until the
- * element approaches the viewport (SKILL.md §49 lazy + cached thumbnails).
+ * element approaches the viewport, then loads through the custom protocol
+ * (parallel fetches + browser cache, no base64 IPC payload).
  */
 export function ThumbnailImage({
   className,
@@ -65,8 +52,13 @@ export function ThumbnailImage({
   requestSize: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [thumbnail, setThumbnail] = useState<Thumbnail | null>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const thumbnailUrl = buildThumbnailUrl(entry, requestSize);
+
+  useEffect(() => {
+    setIsLoaded(false);
+  }, [thumbnailUrl]);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -92,30 +84,19 @@ export function ThumbnailImage({
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => {
-    if (!isVisible) return;
-
-    let cancelled = false;
-    void loadThumbnail(entry, requestSize).then((result) => {
-      if (!cancelled) setThumbnail(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [entry, isVisible, requestSize]);
-
   return (
     <div className={className} ref={containerRef}>
-      {thumbnail ? (
+      {isVisible && (
         <img
           alt=""
           className="h-full w-full object-contain"
           draggable={false}
-          src={thumbnail.dataUrl}
+          decoding="async"
+          onLoad={() => setIsLoaded(true)}
+          src={thumbnailUrl}
         />
-      ) : (
-        <div className="h-full w-full animate-pulse rounded-sm bg-muted" />
       )}
+      {!isLoaded && <div className="h-full w-full animate-pulse rounded-sm bg-muted" />}
     </div>
   );
 }

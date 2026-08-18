@@ -244,8 +244,6 @@ export function FileList({
   const dragCandidateRef = useRef<DragCandidate | null>(null);
   const internalDragRef = useRef<InternalDragState | null>(null);
   const suppressNextClickRef = useRef(false);
-  const entriesRef = useRef(entries);
-  entriesRef.current = entries;
   const [internalDrag, setInternalDrag] = useState<InternalDragState | null>(null);
   const viewMode = useAtomValue(viewModeAtom);
   const density = useAtomValue(densityAtom);
@@ -272,99 +270,85 @@ export function FileList({
     }
   }, [initialScrollOffset, viewId]);
 
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.isComposing || isEditableElement(event.target)) return;
+
+    if (event.key === "Escape" && selectedCount > 0) {
+      onSelectedPathsChange([]);
+      return;
+    }
+
+    const hasModifier = event.ctrlKey || event.metaKey;
+    const key = event.key.toLowerCase();
+
+    if (hasModifier && !event.altKey && key === "c" && selectedCount > 0 && !actionsDisabled) {
+      event.preventDefault();
+      onCopy();
+      return;
+    }
+
+    if (hasModifier && !event.altKey && key === "x" && selectedCount > 0 && !actionsDisabled) {
+      event.preventDefault();
+      onCut();
+      return;
+    }
+
+    if (hasModifier && !event.altKey && key === "v" && hasClipboard && !actionsDisabled) {
+      event.preventDefault();
+      onPaste();
+      return;
+    }
+
+    // Ctrl/Cmd+` opens the system terminal in the current directory.
+    if (hasModifier && !event.altKey && key === "`") {
+      event.preventDefault();
+      onOpenTerminal();
+      return;
+    }
+
+    if (hasModifier && !event.altKey && key === "a" && !listIsLoading) {
+      event.preventDefault();
+      onSelectedPathsChange(entries.map((entry) => entry.path));
+      return;
+    }
+
+    if (event.key === "F2" && selectedCount === 1 && !actionsDisabled) {
+      event.preventDefault();
+      onRename();
+      return;
+    }
+
+    // Space toggles the preview surface for the selection (SKILL.md §30).
+    if (event.key === " " && selectedCount > 0 && !actionsDisabled) {
+      event.preventDefault();
+      onTogglePreview();
+      return;
+    }
+
+    // Ctrl/Cmd+Z restores the most recent batch moved to the trash.
+    if (hasModifier && !event.altKey && key === "z" && canUndoDelete && !actionsDisabled) {
+      event.preventDefault();
+      onUndoDelete();
+      return;
+    }
+
+    if (event.key === "Delete" && selectedCount > 0 && !actionsDisabled) {
+      event.preventDefault();
+      // Plain Delete moves to the trash (undoable); Shift+Delete is permanent.
+      if (event.shiftKey) {
+        onDeletePermanent();
+      } else {
+        onDelete();
+      }
+    }
+  };
+
+  // The Compiler keeps `handleKeyDown` referentially stable across renders,
+  // so this subscribes once unless a callback it reads actually changes.
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing || isEditableElement(event.target)) return;
-
-      if (event.key === "Escape" && selectedCount > 0) {
-        onSelectedPathsChange([]);
-        return;
-      }
-
-      const hasModifier = event.ctrlKey || event.metaKey;
-      const key = event.key.toLowerCase();
-
-      if (hasModifier && !event.altKey && key === "c" && selectedCount > 0 && !actionsDisabled) {
-        event.preventDefault();
-        onCopy();
-        return;
-      }
-
-      if (hasModifier && !event.altKey && key === "x" && selectedCount > 0 && !actionsDisabled) {
-        event.preventDefault();
-        onCut();
-        return;
-      }
-
-      if (hasModifier && !event.altKey && key === "v" && hasClipboard && !actionsDisabled) {
-        event.preventDefault();
-        onPaste();
-        return;
-      }
-
-      // Ctrl/Cmd+` opens the system terminal in the current directory.
-      if (hasModifier && !event.altKey && key === "`") {
-        event.preventDefault();
-        onOpenTerminal();
-        return;
-      }
-
-      if (hasModifier && !event.altKey && key === "a" && !listIsLoading) {
-        event.preventDefault();
-        onSelectedPathsChange(entriesRef.current.map((entry) => entry.path));
-        return;
-      }
-
-      if (event.key === "F2" && selectedCount === 1 && !actionsDisabled) {
-        event.preventDefault();
-        onRename();
-        return;
-      }
-
-      // Space toggles the preview surface for the selection (SKILL.md §30).
-      if (event.key === " " && selectedCount > 0 && !actionsDisabled) {
-        event.preventDefault();
-        onTogglePreview();
-        return;
-      }
-
-      // Ctrl/Cmd+Z restores the most recent batch moved to the trash.
-      if (hasModifier && !event.altKey && key === "z" && canUndoDelete && !actionsDisabled) {
-        event.preventDefault();
-        onUndoDelete();
-        return;
-      }
-
-      if (event.key === "Delete" && selectedCount > 0 && !actionsDisabled) {
-        event.preventDefault();
-        // Plain Delete moves to the trash (undoable); Shift+Delete is permanent.
-        if (event.shiftKey) {
-          onDeletePermanent();
-        } else {
-          onDelete();
-        }
-      }
-    };
-
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [
-    actionsDisabled,
-    canUndoDelete,
-    hasClipboard,
-    listIsLoading,
-    onCopy,
-    onCut,
-    onDelete,
-    onDeletePermanent,
-    onOpenTerminal,
-    onPaste,
-    onRename,
-    onTogglePreview,
-    onUndoDelete,
-    onSelectedPathsChange,
-    selectedCount,
-  ]);
+  }, [handleKeyDown]);
 
   useEffect(() => {
     const updateDrag = (nextDrag: InternalDragState | null) => {
@@ -388,7 +372,7 @@ export function FileList({
 
       const operation: FileTransferOperation = event.ctrlKey || event.metaKey ? "copy" : "move";
       const nextTarget = resolveDragTarget(
-        entriesRef.current,
+        entries,
         candidate.sourcePaths,
         event.clientX,
         event.clientY,
@@ -425,11 +409,11 @@ export function FileList({
         if (activeDrag.target?.kind === "directory") {
           onDropEntries(activeDrag.sourcePaths, activeDrag.target.path, activeDrag.operation);
         } else if (activeDrag.target?.kind === "favorites") {
-          onAddToFavorites(draggableDirectoryPaths(entriesRef.current, activeDrag.sourcePaths));
+          onAddToFavorites(draggableDirectoryPaths(entries, activeDrag.sourcePaths));
         } else if (activeDrag.target?.kind === "space") {
           onAddToSpace(
             activeDrag.target.spaceId,
-            draggableDirectoryPaths(entriesRef.current, activeDrag.sourcePaths),
+            draggableDirectoryPaths(entries, activeDrag.sourcePaths),
           );
         }
       }
@@ -445,7 +429,7 @@ export function FileList({
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", stopDragging);
     };
-  }, [onAddToFavorites, onAddToSpace, onDropEntries]);
+  }, [entries, onAddToFavorites, onAddToSpace, onDropEntries]);
 
   const selectEntry = (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => {
     if (actionsDisabled) return;
@@ -487,6 +471,7 @@ export function FileList({
     if (index >= 0) {
       selectionAnchorIndexRef.current = index;
     }
+
     onSelectedPathsChange([entry.path]);
   };
 
@@ -543,9 +528,34 @@ export function FileList({
     onAddToSpace(spaceId, directoryPathsForEntry(entry));
   };
 
+  /** Swallows the click that ends an internal drag before it changes selection. */
+  const selectEntryIfNotDragging = (
+    entry: DirectoryEntry,
+    index: number,
+    event: ReactMouseEvent,
+  ) => {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
+    }
+    selectEntry(entry, index, event);
+  };
+
   const draggingPaths = new Set(internalDrag?.sourcePaths ?? []);
   const internalDropTargetPath =
     internalDrag?.target?.kind === "directory" ? internalDrag.target.path : null;
+
+  // Bulk menu action callbacks shared by every row (SKILL.md §10).
+  const menuActions = {
+    onCompress,
+    onCopy,
+    onCut,
+    onDelete,
+    onDuplicate,
+    onExtract,
+    onMoveTo,
+    onRename,
+  };
 
   const blankMenuDisabled = actionsDisabled || Boolean(searchState);
 
@@ -587,46 +597,23 @@ export function FileList({
     setSortOrder(DEFAULT_SORT_ORDER[key]);
   };
 
+  // Shared control bundle for grid and column views; the Compiler memoizes
+  // both the object and every child prop automatically.
   const viewControls = {
     actionsDisabled,
     draggingPaths,
     dropTargetPath: internalDropTargetPath ?? externalDropTargetPath,
     gitStatus,
+    menuActions,
     onAddToFavorites: addEntryToFavorites,
     onAddToSpace: addEntryToSpace,
-    onContextMenuEntry: (entry: DirectoryEntry, index = entries.indexOf(entry)) =>
-      selectForContextMenu(entry, index),
-    onCopy,
-    onCut,
-    onDelete,
-    onDuplicate,
-    onCompress,
-    onExtract,
-    onMoveTo,
+    onContextMenuEntry: selectForContextMenu,
     onOpenEntry: openEntry,
     onPointerDownEntry: prepareInternalDrag,
-    onRename,
-    onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => {
-      if (suppressNextClickRef.current) {
-        suppressNextClickRef.current = false;
-        return;
-      }
-      selectEntry(entry, index, event);
-    },
+    onSelectEntry: selectEntryIfNotDragging,
     onSelectedPathsChange,
     selectedCount,
     selectedPathSet,
-  };
-
-  const columnControls = {
-    ...viewControls,
-    onSelectEntry: (entry: DirectoryEntry, event: ReactMouseEvent) => {
-      if (suppressNextClickRef.current) {
-        suppressNextClickRef.current = false;
-        return;
-      }
-      selectEntry(entry, entries.indexOf(entry), event);
-    },
   };
 
   return (
@@ -670,7 +657,7 @@ export function FileList({
         ) : activeViewMode === "grid" ? (
           <FileGridView {...viewControls} entries={entries} />
         ) : activeViewMode === "column" ? (
-          <FileColumnView {...columnControls} rootEntries={entries} viewId={viewId} />
+          <FileColumnView {...viewControls} rootEntries={entries} viewId={viewId} />
         ) : (
           <div
             ref={scrollRef}
@@ -733,6 +720,7 @@ export function FileList({
                         densityRowHeight={rowHeight}
                         entry={entry}
                         gitStatus={gitStatus}
+                        index={virtualRow.index}
                         isActionDisabled={actionsDisabled}
                         isDragging={draggingPaths.has(entry.path)}
                         isDropTarget={
@@ -740,27 +728,14 @@ export function FileList({
                           externalDropTargetPath === entry.path
                         }
                         isSelected={selectedPathSet.has(entry.path)}
-                        isSingleSelection={selectedCount === 1}
-                        onAddToFavorites={() => addEntryToFavorites(entry)}
-                        onAddToSpace={(spaceId) => addEntryToSpace(entry, spaceId)}
-                        onCompress={onCompress}
-                        onContextMenu={() => selectForContextMenu(entry, virtualRow.index)}
-                        onCopy={onCopy}
-                        onCut={onCut}
-                        onDelete={onDelete}
-                        onDuplicate={onDuplicate}
-                        onExtract={onExtract}
-                        onMoveTo={onMoveTo}
-                        onOpen={() => openEntry(entry)}
-                        onPointerDown={(event) => prepareInternalDrag(entry, event)}
-                        onRename={onRename}
-                        onSelect={(event) => {
-                          if (suppressNextClickRef.current) {
-                            suppressNextClickRef.current = false;
-                            return;
-                          }
-                          selectEntry(entry, virtualRow.index, event);
-                        }}
+                        menuActions={menuActions}
+                        onAddEntryToFavorites={addEntryToFavorites}
+                        onAddEntryToSpace={addEntryToSpace}
+                        onContextMenuEntry={selectForContextMenu}
+                        onOpenEntry={openEntry}
+                        onPointerDownEntry={prepareInternalDrag}
+                        onSelectEntry={selectEntryIfNotDragging}
+                        selectedCount={selectedCount}
                       />
                     </div>
                   );
@@ -873,57 +848,63 @@ function SortHeaderCell({
   );
 }
 
-function FileListRow({
-  densityRowHeight,
-  entry,
-  gitStatus,
-  isActionDisabled,
-  isDragging,
-  isDropTarget,
-  isSelected,
-  isSingleSelection,
-  onAddToFavorites,
-  onAddToSpace,
-  onCompress,
-  onContextMenu,
-  onCopy,
-  onCut,
-  onDelete,
-  onDuplicate,
-  onExtract,
-  onMoveTo,
-  onOpen,
-  onPointerDown,
-  onRename,
-  onSelect,
-}: {
-  densityRowHeight: number;
-  entry: DirectoryEntry;
-  gitStatus?: ExplorerGitStatus | null;
-  isActionDisabled: boolean;
-  isDragging: boolean;
-  isDropTarget: boolean;
-  isSelected: boolean;
-  isSingleSelection: boolean;
-  onAddToFavorites: () => void;
-  onAddToSpace: (spaceId: string) => void;
+/** Bulk action callbacks shared by every row's context menu. */
+export interface MenuActions {
   onCompress: (format: ArchiveFormat) => void;
-  onContextMenu: () => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onExtract: (path: string) => void;
   onMoveTo: () => void;
-  onOpen: () => void;
-  onPointerDown: (event: ReactPointerEvent) => void;
   onRename: () => void;
-  onSelect: (event: ReactMouseEvent) => void;
+}
+
+/**
+ * List row. The React Compiler memoizes this component's render output, so
+ * scroll, selection, and drag churn only re-renders rows whose props
+ * actually changed.
+ */
+function FileListRow({
+  densityRowHeight,
+  entry,
+  gitStatus,
+  index,
+  isActionDisabled,
+  isDragging,
+  isDropTarget,
+  isSelected,
+  menuActions,
+  onAddEntryToFavorites,
+  onAddEntryToSpace,
+  onContextMenuEntry,
+  onOpenEntry,
+  onPointerDownEntry,
+  onSelectEntry,
+  selectedCount,
+}: {
+  densityRowHeight: number;
+  entry: DirectoryEntry;
+  gitStatus?: ExplorerGitStatus | null;
+  index: number;
+  isActionDisabled: boolean;
+  isDragging: boolean;
+  isDropTarget: boolean;
+  isSelected: boolean;
+  menuActions: MenuActions;
+  onAddEntryToFavorites: (entry: DirectoryEntry) => void;
+  onAddEntryToSpace: (entry: DirectoryEntry, spaceId: string) => void;
+  onContextMenuEntry: (entry: DirectoryEntry, index: number) => void;
+  onOpenEntry: (entry: DirectoryEntry) => void;
+  onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
+  onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => void;
+  selectedCount: number;
 }) {
   const presentation = getEntryPresentation(entry);
   const EntryIcon = presentation.icon;
   const isDirectory = entry.kind === "directory";
   const entryStatus = getEntryGitStatus(gitStatus, entry);
+  const handleSelect = (event: ReactMouseEvent) => onSelectEntry(entry, index, event);
 
   return (
     <ContextMenu>
@@ -937,16 +918,16 @@ function FileListRow({
             isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
-          onClick={onSelect}
-          onContextMenu={onContextMenu}
-          onDoubleClick={onOpen}
+          onClick={handleSelect}
+          onContextMenu={() => onContextMenuEntry(entry, index)}
+          onDoubleClick={() => onOpenEntry(entry)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              onOpen();
+              onOpenEntry(entry);
             }
           }}
-          onPointerDown={onPointerDown}
+          onPointerDown={(event) => onPointerDownEntry(entry, event)}
           role="option"
           tabIndex={0}
           title={entry.path}
@@ -983,18 +964,18 @@ function FileListRow({
         <EntryContextMenuContent
           entry={entry}
           isActionDisabled={isActionDisabled}
-          isSingleSelection={isSingleSelection}
-          onAddToFavorites={onAddToFavorites}
-          onAddToSpace={onAddToSpace}
-          onCompress={onCompress}
-          onCopy={onCopy}
-          onCut={onCut}
-          onDelete={onDelete}
-          onDuplicate={onDuplicate}
-          onExtract={onExtract}
-          onMoveTo={onMoveTo}
-          onOpen={onOpen}
-          onRename={onRename}
+          isSingleSelection={selectedCount === 1}
+          onAddToFavorites={() => onAddEntryToFavorites(entry)}
+          onAddToSpace={(spaceId) => onAddEntryToSpace(entry, spaceId)}
+          onCompress={menuActions.onCompress}
+          onCopy={menuActions.onCopy}
+          onCut={menuActions.onCut}
+          onDelete={menuActions.onDelete}
+          onDuplicate={menuActions.onDuplicate}
+          onExtract={menuActions.onExtract}
+          onMoveTo={menuActions.onMoveTo}
+          onOpen={() => onOpenEntry(entry)}
+          onRename={menuActions.onRename}
         />
       </ContextMenuContent>
     </ContextMenu>

@@ -1,5 +1,4 @@
 import {
-  useCallback,
   useEffect,
   useRef,
   useState,
@@ -9,12 +8,13 @@ import {
 import { useAtomValue } from "jotai";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-import type { ArchiveFormat, GitEntryStatusKind } from "@/bindings";
+import type { GitEntryStatusKind } from "@/bindings";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "./file-icons";
+import type { MenuActions } from "./file-list";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
 import { densityAtom, type ExplorerDensity } from "./preferences";
@@ -56,19 +56,12 @@ export interface FileGridViewProps {
   dropTargetPath: string | null;
   entries: DirectoryEntry[];
   gitStatus?: ExplorerGitStatus | null;
+  menuActions: MenuActions;
   onAddToFavorites: (entry: DirectoryEntry) => void;
   onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
-  onCompress: (format: ArchiveFormat) => void;
   onContextMenuEntry: (entry: DirectoryEntry, index: number) => void;
-  onCopy: () => void;
-  onCut: () => void;
-  onDelete: () => void;
-  onDuplicate: () => void;
-  onExtract: (path: string) => void;
-  onMoveTo: () => void;
   onOpenEntry: (entry: DirectoryEntry) => void;
   onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
-  onRename: () => void;
   onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => void;
   onSelectedPathsChange: (paths: string[]) => void;
   selectedCount: number;
@@ -85,19 +78,12 @@ export function FileGridView({
   dropTargetPath,
   entries,
   gitStatus,
+  menuActions,
   onAddToFavorites,
   onAddToSpace,
-  onCompress,
   onContextMenuEntry,
-  onCopy,
-  onCut,
-  onDelete,
-  onDuplicate,
-  onExtract,
-  onMoveTo,
   onOpenEntry,
   onPointerDownEntry,
-  onRename,
   onSelectEntry,
   onSelectedPathsChange,
   selectedCount,
@@ -139,40 +125,34 @@ export function FileGridView({
     scrollMargin: GRID_PADDING_PX,
   });
 
-  const hitTest = useCallback(
-    (rect: MarqueeRect) => {
-      const container = scrollRef.current;
-      if (!container || viewportWidth === 0) return [];
+  const hitTest = (rect: MarqueeRect) => {
+    const container = scrollRef.current;
+    if (!container || viewportWidth === 0) return [];
 
-      const bounds = container.getBoundingClientRect();
-      const cellWidth =
-        (viewportWidth - GRID_PADDING_PX * 2 - GRID_GAP_PX * (columnCount - 1)) / columnCount;
-      const cellStrideX = cellWidth + GRID_GAP_PX;
-      const topContent = rect.top - bounds.top + container.scrollTop - GRID_PADDING_PX;
-      const bottomContent = rect.bottom - bounds.top + container.scrollTop - GRID_PADDING_PX;
-      const leftContent = rect.left - bounds.left + container.scrollLeft - GRID_PADDING_PX;
-      const rightContent = rect.right - bounds.left + container.scrollLeft - GRID_PADDING_PX;
-      const firstRow = Math.max(0, Math.floor(topContent / rowStride));
-      const lastRow = Math.min(
-        rowCount - 1,
-        Math.max(0, Math.ceil(bottomContent / rowStride) - 1),
-      );
-      if (lastRow < firstRow) return [];
+    const bounds = container.getBoundingClientRect();
+    const cellWidth =
+      (viewportWidth - GRID_PADDING_PX * 2 - GRID_GAP_PX * (columnCount - 1)) / columnCount;
+    const cellStrideX = cellWidth + GRID_GAP_PX;
+    const topContent = rect.top - bounds.top + container.scrollTop - GRID_PADDING_PX;
+    const bottomContent = rect.bottom - bounds.top + container.scrollTop - GRID_PADDING_PX;
+    const leftContent = rect.left - bounds.left + container.scrollLeft - GRID_PADDING_PX;
+    const rightContent = rect.right - bounds.left + container.scrollLeft - GRID_PADDING_PX;
+    const firstRow = Math.max(0, Math.floor(topContent / rowStride));
+    const lastRow = Math.min(rowCount - 1, Math.max(0, Math.ceil(bottomContent / rowStride) - 1));
+    if (lastRow < firstRow) return [];
 
-      const matchedPaths: string[] = [];
-      for (let row = firstRow; row <= lastRow; row += 1) {
-        for (let column = 0; column < columnCount; column += 1) {
-          const cellLeft = column * cellStrideX;
-          if (cellLeft + cellWidth < leftContent || cellLeft > rightContent) continue;
+    const matchedPaths: string[] = [];
+    for (let row = firstRow; row <= lastRow; row += 1) {
+      for (let column = 0; column < columnCount; column += 1) {
+        const cellLeft = column * cellStrideX;
+        if (cellLeft + cellWidth < leftContent || cellLeft > rightContent) continue;
 
-          const entry = entries[row * columnCount + column];
-          if (entry) matchedPaths.push(entry.path);
-        }
+        const entry = entries[row * columnCount + column];
+        if (entry) matchedPaths.push(entry.path);
       }
-      return matchedPaths;
-    },
-    [columnCount, entries, rowCount, rowStride, viewportWidth],
-  );
+    }
+    return matchedPaths;
+  };
 
   const marquee = useMarqueeSelection({
     enabled: !actionsDisabled,
@@ -221,29 +201,21 @@ export function FileGridView({
                   <GridCell
                     density={density}
                     entry={entry}
-                    entryStatus={getEntryGitStatus(gitStatus, entry)}
+                    gitStatus={gitStatus}
+                    index={virtualRow.index * columnCount + sliceIndex}
                     isActionDisabled={actionsDisabled}
                     isDragging={draggingPaths.has(entry.path)}
                     isDropTarget={dropTargetPath === entry.path}
                     isSelected={selectedPathSet.has(entry.path)}
-                    isSingleSelection={selectedCount === 1}
                     key={entry.path}
-                    onAddToFavorites={() => onAddToFavorites(entry)}
-                    onAddToSpace={(spaceId) => onAddToSpace(entry, spaceId)}
-                    onCompress={onCompress}
-                    onContextMenu={() => onContextMenuEntry(entry, virtualRow.index * columnCount + sliceIndex)}
-                    onCopy={onCopy}
-                    onCut={onCut}
-                    onDelete={onDelete}
-                    onDuplicate={onDuplicate}
-                    onExtract={onExtract}
-                    onMoveTo={onMoveTo}
-                    onOpen={() => onOpenEntry(entry)}
-                    onPointerDown={(event) => onPointerDownEntry(entry, event)}
-                    onRename={onRename}
-                    onSelect={(event) =>
-                      onSelectEntry(entry, virtualRow.index * columnCount + sliceIndex, event)
-                    }
+                    menuActions={menuActions}
+                    onAddToFavorites={onAddToFavorites}
+                    onAddToSpace={onAddToSpace}
+                    onContextMenuEntry={onContextMenuEntry}
+                    onOpenEntry={onOpenEntry}
+                    onPointerDownEntry={onPointerDownEntry}
+                    onSelectEntry={onSelectEntry}
+                    selectedCount={selectedCount}
                   />
                 ))}
             </div>
@@ -255,58 +227,51 @@ export function FileGridView({
   );
 }
 
+/**
+ * Grid cell. The React Compiler memoizes this component's render output, so
+ * scrolling and selection churn only re-renders cells whose props changed.
+ */
 function GridCell({
   density,
   entry,
-  entryStatus,
+  gitStatus,
+  index,
   isActionDisabled,
   isDragging,
   isDropTarget,
   isSelected,
-  isSingleSelection,
+  menuActions,
   onAddToFavorites,
   onAddToSpace,
-  onCompress,
-  onContextMenu,
-  onCopy,
-  onCut,
-  onDelete,
-  onDuplicate,
-  onExtract,
-  onMoveTo,
-  onOpen,
-  onPointerDown,
-  onRename,
-  onSelect,
+  onContextMenuEntry,
+  onOpenEntry,
+  onPointerDownEntry,
+  onSelectEntry,
+  selectedCount,
 }: {
   density: ExplorerDensity;
   entry: DirectoryEntry;
-  entryStatus: GitEntryStatusKind | undefined;
+  gitStatus?: ExplorerGitStatus | null;
+  index: number;
   isActionDisabled: boolean;
   isDragging: boolean;
   isDropTarget: boolean;
   isSelected: boolean;
-  isSingleSelection: boolean;
-  onAddToFavorites: () => void;
-  onAddToSpace: (spaceId: string) => void;
-  onCompress: (format: ArchiveFormat) => void;
-  onContextMenu: () => void;
-  onCopy: () => void;
-  onCut: () => void;
-  onDelete: () => void;
-  onDuplicate: () => void;
-  onExtract: (path: string) => void;
-  onMoveTo: () => void;
-  onOpen: () => void;
-  onPointerDown: (event: ReactPointerEvent) => void;
-  onRename: () => void;
-  onSelect: (event: ReactMouseEvent) => void;
+  menuActions: MenuActions;
+  onAddToFavorites: (entry: DirectoryEntry) => void;
+  onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
+  onContextMenuEntry: (entry: DirectoryEntry, index: number) => void;
+  onOpenEntry: (entry: DirectoryEntry) => void;
+  onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
+  onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => void;
+  selectedCount: number;
 }) {
   const isDirectory = entry.kind === "directory";
   const presentation = isDirectory ? DIRECTORY_PRESENTATION : getFilePresentation(entry.name);
   const EntryIcon = presentation.icon;
   const iconSize = GRID_ICON_SIZE[density];
   const showThumbnail = isThumbnailSupported(entry);
+  const entryStatus: GitEntryStatusKind | undefined = getEntryGitStatus(gitStatus, entry);
 
   return (
     <ContextMenu>
@@ -320,16 +285,16 @@ function GridCell({
             isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
-          onClick={onSelect}
-          onContextMenu={onContextMenu}
-          onDoubleClick={onOpen}
+          onClick={(event) => onSelectEntry(entry, index, event)}
+          onContextMenu={() => onContextMenuEntry(entry, index)}
+          onDoubleClick={() => onOpenEntry(entry)}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
-              onOpen();
+              onOpenEntry(entry);
             }
           }}
-          onPointerDown={onPointerDown}
+          onPointerDown={(event) => onPointerDownEntry(entry, event)}
           role="option"
           tabIndex={0}
           title={entry.path}
@@ -359,18 +324,18 @@ function GridCell({
         <EntryContextMenuContent
           entry={entry}
           isActionDisabled={isActionDisabled}
-          isSingleSelection={isSingleSelection}
-          onAddToFavorites={onAddToFavorites}
-          onAddToSpace={onAddToSpace}
-          onCompress={onCompress}
-          onCopy={onCopy}
-          onCut={onCut}
-          onDelete={onDelete}
-          onDuplicate={onDuplicate}
-          onExtract={onExtract}
-          onMoveTo={onMoveTo}
-          onOpen={onOpen}
-          onRename={onRename}
+          isSingleSelection={selectedCount === 1}
+          onAddToFavorites={() => onAddToFavorites(entry)}
+          onAddToSpace={(spaceId) => onAddToSpace(entry, spaceId)}
+          onCompress={menuActions.onCompress}
+          onCopy={menuActions.onCopy}
+          onCut={menuActions.onCut}
+          onDelete={menuActions.onDelete}
+          onDuplicate={menuActions.onDuplicate}
+          onExtract={menuActions.onExtract}
+          onMoveTo={menuActions.onMoveTo}
+          onOpen={() => onOpenEntry(entry)}
+          onRename={menuActions.onRename}
         />
       </ContextMenuContent>
     </ContextMenu>

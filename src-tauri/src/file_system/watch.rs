@@ -2,7 +2,7 @@
 //! file notifications; every other backend falls back to snapshot polling.
 
 use crate::file_system::error::FileSystemError;
-use crate::file_system::types::DirectoryView;
+use crate::file_system::types::{entry_kind_rank, DirectoryView};
 use crate::file_system::vfs::SharedBackend;
 use notify::RecommendedWatcher;
 use serde::Serialize;
@@ -106,15 +106,20 @@ pub fn spawn_polling_watcher(
     WatchHandle::Poll(stop)
 }
 
-fn fingerprint(view: &DirectoryView) -> String {
-    view.entries
-        .iter()
-        .map(|entry| {
-            format!(
-                "{}/{:?}/{:?}/{:?}",
-                entry.name, entry.kind, entry.size, entry.modified_at
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
+/// Folds the snapshot into a 64-bit hash instead of building one formatted
+/// `String` per entry every poll tick, which keeps polling watchers free of
+/// per-entry heap allocations.
+fn fingerprint(view: &DirectoryView) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    view.entries.len().hash(&mut hasher);
+    for entry in &view.entries {
+        entry.name.hash(&mut hasher);
+        entry_kind_rank(&entry.kind).hash(&mut hasher);
+        entry.size.hash(&mut hasher);
+        entry.modified_at.hash(&mut hasher);
+    }
+    hasher.finish()
 }
