@@ -1,5 +1,5 @@
 import { useAtom } from "jotai";
-import { ColumnsIcon, ListIcon, RowsIcon, SquaresFourIcon } from "@phosphor-icons/react";
+import { ColumnsIcon, GitBranchIcon, ListIcon, RowsIcon, SquaresFourIcon } from "@phosphor-icons/react";
 
 import {
   DropdownMenu,
@@ -18,6 +18,7 @@ import {
 } from "./preferences";
 
 interface ExplorerStatusBarProps {
+  gitBranch?: string | null;
   itemCount: number;
   isLoading: boolean;
   searchError: string | null;
@@ -27,6 +28,7 @@ interface ExplorerStatusBarProps {
 }
 
 export function ExplorerStatusBar({
+  gitBranch,
   itemCount,
   isLoading,
   searchError,
@@ -53,6 +55,15 @@ export function ExplorerStatusBar({
       {selectedCount > 0 && (
         <span className="shrink-0 tabular-nums">
           已选择 {selectedCount.toLocaleString("zh-CN")} 项
+        </span>
+      )}
+      {gitBranch && (
+        <span
+          className="flex min-w-0 shrink-0 items-center gap-1"
+          title={`Git 分支：${gitBranch}`}
+        >
+          <GitBranchIcon className="size-3.5 shrink-0" />
+          <span className="max-w-48 truncate">{gitBranch}</span>
         </span>
       )}
       <div className="ml-auto flex shrink-0 items-center gap-1">

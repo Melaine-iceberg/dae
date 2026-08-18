@@ -63,6 +63,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::commands::undo_trash,
             file_system::commands::duplicate_entries,
             file_system::commands::open_terminal,
+            file_system::git::get_git_status,
             file_system::archive::compress_entries,
             file_system::archive::extract_archive,
             file_system::preview::get_thumbnail,

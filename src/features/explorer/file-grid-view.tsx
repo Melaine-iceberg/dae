@@ -9,12 +9,13 @@ import {
 import { useAtomValue } from "jotai";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
-import type { ArchiveFormat } from "@/bindings";
+import type { ArchiveFormat, GitEntryStatusKind } from "@/bindings";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "./file-icons";
+import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
 import { densityAtom, type ExplorerDensity } from "./preferences";
 import { isThumbnailSupported, ThumbnailImage } from "./thumbnail";
@@ -54,6 +55,7 @@ export interface FileGridViewProps {
   draggingPaths: Set<string>;
   dropTargetPath: string | null;
   entries: DirectoryEntry[];
+  gitStatus?: ExplorerGitStatus | null;
   onAddToFavorites: (entry: DirectoryEntry) => void;
   onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
   onCompress: (format: ArchiveFormat) => void;
@@ -82,6 +84,7 @@ export function FileGridView({
   draggingPaths,
   dropTargetPath,
   entries,
+  gitStatus,
   onAddToFavorites,
   onAddToSpace,
   onCompress,
@@ -218,6 +221,7 @@ export function FileGridView({
                   <GridCell
                     density={density}
                     entry={entry}
+                    entryStatus={getEntryGitStatus(gitStatus, entry)}
                     isActionDisabled={actionsDisabled}
                     isDragging={draggingPaths.has(entry.path)}
                     isDropTarget={dropTargetPath === entry.path}
@@ -254,6 +258,7 @@ export function FileGridView({
 function GridCell({
   density,
   entry,
+  entryStatus,
   isActionDisabled,
   isDragging,
   isDropTarget,
@@ -276,6 +281,7 @@ function GridCell({
 }: {
   density: ExplorerDensity;
   entry: DirectoryEntry;
+  entryStatus: GitEntryStatusKind | undefined;
   isActionDisabled: boolean;
   isDragging: boolean;
   isDropTarget: boolean;
@@ -308,7 +314,7 @@ function GridCell({
         <div
           aria-selected={isSelected}
           className={cn(
-            "flex cursor-grab flex-col items-center gap-1.5 rounded-lg px-2 py-2.5 text-center transition-colors select-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none",
+            "relative flex cursor-grab flex-col items-center gap-1.5 rounded-lg px-2 py-2.5 text-center transition-colors select-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none",
             isSelected && "bg-selection ring-1 ring-primary/30 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
@@ -342,6 +348,11 @@ function GridCell({
             />
           )}
           <span className="line-clamp-2 text-xs leading-snug break-all">{entry.name}</span>
+          {entryStatus && (
+            <span className="absolute right-1.5 top-1.5">
+              <GitStatusBadge kind={entryStatus} />
+            </span>
+          )}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>

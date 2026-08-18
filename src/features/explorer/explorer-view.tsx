@@ -71,6 +71,7 @@ import { ExplorerPathBar } from "./explorer-path-bar";
 import { ExplorerStatusBar } from "./explorer-status-bar";
 import { FileList, FileListSkeleton } from "./file-list";
 import { FilterMenu } from "./filter-menu";
+import { useGitStatus } from "./git-status";
 import type { ExplorerNavigator } from "./navigation";
 import { SortMenu } from "./sort-menu";
 import {
@@ -137,6 +138,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     directory,
     searchMode === "content",
   );
+  const gitStatus = useGitStatus(directoryPath ?? null);
   const isContentSearchActive = searchMode === "content" && contentSearch.isActive;
   const sortKey = useAtomValue(sortKeyAtom);
   const sortOrder = useAtomValue(sortOrderAtom);
@@ -1012,6 +1014,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
               entries={displayedEntries}
               externalDropItemCount={externalDrop?.sourcePaths.length ?? 0}
               externalDropTargetPath={externalDrop?.targetPath ?? null}
+              gitStatus={gitStatus}
               hasClipboard={clipboard !== null}
               initialScrollOffset={
                 search.isActive ? 0 : navigator.getScrollOffset(directory.path)
@@ -1131,6 +1134,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         )}
         {fileOperationProgress && <FileOperationStatusBar progress={fileOperationProgress} />}
         <ExplorerStatusBar
+          gitBranch={gitStatus?.branch ?? null}
           itemCount={
             isContentSearchActive
               ? (contentSearch.response?.files.length ?? 0)

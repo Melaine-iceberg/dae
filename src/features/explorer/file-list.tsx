@@ -58,6 +58,7 @@ import { EntryContextMenuContent } from "./entry-context-menu";
 import { FileColumnView } from "./file-column-view";
 import { getEntryPresentation } from "./file-icons";
 import { FileGridView } from "./file-grid-view";
+import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
 import {
   DEFAULT_SORT_ORDER,
@@ -76,6 +77,7 @@ interface FileListProps {
   entries: DirectoryEntry[];
   externalDropItemCount: number;
   externalDropTargetPath: string | null;
+  gitStatus?: ExplorerGitStatus | null;
   hasClipboard: boolean;
   initialScrollOffset?: number;
   isLoading: boolean;
@@ -207,6 +209,7 @@ export function FileList({
   entries,
   externalDropItemCount,
   externalDropTargetPath,
+  gitStatus,
   hasClipboard,
   initialScrollOffset = 0,
   isLoading,
@@ -588,6 +591,7 @@ export function FileList({
     actionsDisabled,
     draggingPaths,
     dropTargetPath: internalDropTargetPath ?? externalDropTargetPath,
+    gitStatus,
     onAddToFavorites: addEntryToFavorites,
     onAddToSpace: addEntryToSpace,
     onContextMenuEntry: (entry: DirectoryEntry, index = entries.indexOf(entry)) =>
@@ -728,6 +732,7 @@ export function FileList({
                       <FileListRow
                         densityRowHeight={rowHeight}
                         entry={entry}
+                        gitStatus={gitStatus}
                         isActionDisabled={actionsDisabled}
                         isDragging={draggingPaths.has(entry.path)}
                         isDropTarget={
@@ -871,6 +876,7 @@ function SortHeaderCell({
 function FileListRow({
   densityRowHeight,
   entry,
+  gitStatus,
   isActionDisabled,
   isDragging,
   isDropTarget,
@@ -893,6 +899,7 @@ function FileListRow({
 }: {
   densityRowHeight: number;
   entry: DirectoryEntry;
+  gitStatus?: ExplorerGitStatus | null;
   isActionDisabled: boolean;
   isDragging: boolean;
   isDropTarget: boolean;
@@ -916,6 +923,7 @@ function FileListRow({
   const presentation = getEntryPresentation(entry);
   const EntryIcon = presentation.icon;
   const isDirectory = entry.kind === "directory";
+  const entryStatus = getEntryGitStatus(gitStatus, entry);
 
   return (
     <ContextMenu>
@@ -951,6 +959,7 @@ function FileListRow({
               weight={isDirectory ? "fill" : undefined}
             />
             <span className="min-w-0 truncate">{entry.name}</span>
+            {entryStatus && <GitStatusBadge kind={entryStatus} />}
             {entry.relativePath && (
               <span
                 className="ml-auto max-w-[45%] shrink-0 truncate text-xs text-muted-foreground"

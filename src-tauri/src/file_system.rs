@@ -2,6 +2,7 @@ pub mod archive;
 pub mod commands;
 pub mod connections;
 pub mod error;
+pub mod git;
 pub mod local;
 pub mod preview;
 pub mod progress;
