@@ -249,3 +249,25 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Shiki code preview emits dual-theme tokens as CSS variables; the app's
+   `.dark` class on <html> picks the active palette. Background stays
+   transparent so blocks blend into the preview surface. */
+.code-preview .shiki,
+.code-preview .shiki span {
+  color: var(--shiki-light);
+  background-color: transparent;
+  font-style: var(--shiki-light-font-style);
+  font-weight: var(--shiki-light-font-weight);
+}
+.dark .code-preview .shiki,
+.dark .code-preview .shiki span {
+  color: var(--shiki-dark);
+  background-color: transparent;
+  font-style: var(--shiki-dark-font-style);
+  font-weight: var(--shiki-dark-font-weight);
+}
+.code-preview .shiki {
+  font-family: var(--font-mono);
+  white-space: pre;
+}

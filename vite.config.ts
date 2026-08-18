@@ -15,6 +15,12 @@ export default defineConfig(async () => ({
     },
   },
 
+  // Emit workers as ES modules so dynamic imports (shiki grammars, wasm)
+  // stay lazy chunks instead of being inlined into one huge worker bundle.
+  worker: {
+    format: "es",
+  },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

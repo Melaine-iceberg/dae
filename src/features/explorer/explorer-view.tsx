@@ -18,6 +18,7 @@ import {
   ArrowRightIcon,
   ArrowUpIcon,
   CircleNotchIcon,
+  EyeIcon,
   SidebarSimpleIcon,
   StarIcon,
   WarningIcon,
@@ -57,11 +58,7 @@ import { addItemsToSpace } from "@/features/workspace/spaces-atoms";
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
 import { cn } from "@/lib/utils";
 
-import {
-  ContentSearchResults,
-  ContentSearchToolbar,
-  useContentSearch,
-} from "./content-search";
+import { ContentSearchResults, ContentSearchToolbar, useContentSearch } from "./content-search";
 import { ContextualActionBar } from "./contextual-action-bar";
 import { DirectorySearch, useDirectorySearch, type ExplorerSearchMode } from "./directory-search";
 import { getExplorerDropTargetAtPoint, type FileTransferOperation } from "./drag-drop";
@@ -964,6 +961,18 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
           />
           <SortMenu disabled={!directory} />
           <FilterMenu disabled={!directory} />
+          <ToolbarSeparator />
+          <Button
+            aria-label={isPreviewOpen ? "收起预览面板" : "展开预览面板"}
+            aria-pressed={isPreviewOpen}
+            onClick={() => setIsPreviewOpen((isOpen) => !isOpen)}
+            size="icon"
+            title={isPreviewOpen ? "收起预览面板 (Space)" : "展开预览面板 (Space)"}
+            type="button"
+            variant="ghost"
+          >
+            <EyeIcon />
+          </Button>
         </header>
 
         {isContentSearchActive && (
@@ -999,130 +1008,132 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         )}
 
         {directory ? (
-          <div className="relative flex min-h-0 flex-1 flex-col">
-            {isContentSearchActive ? (
-              <ContentSearchResults
-                error={contentSearch.error}
-                isSearching={contentSearch.isSearching}
-                onOpenLocation={(location) => void navigator.navigate(location)}
-                query={contentSearch.query.trim()}
-                response={contentSearch.response}
-              />
-            ) : (
-              <FileList
-              currentDirectoryPath={directory.path}
-              entries={displayedEntries}
-              externalDropItemCount={externalDrop?.sourcePaths.length ?? 0}
-              externalDropTargetPath={externalDrop?.targetPath ?? null}
-              gitStatus={gitStatus}
-              hasClipboard={clipboard !== null}
-              initialScrollOffset={
-                search.isActive ? 0 : navigator.getScrollOffset(directory.path)
-              }
-              isLoading={isLoading}
-              isOperationPending={isOperationPending}
-              canUndoDelete={trashUndo !== null}
-              onAddToFavorites={addFavoritePaths}
-              onAddToSpace={addToSpace}
-              onCompress={compressSelection}
-              onCopy={copySelection}
-              onCreateDirectory={() => requestCreate("directory")}
-              onCreateFile={() => requestCreate("file")}
-              onCut={cutSelection}
-              onDelete={requestDelete}
-              onDeletePermanent={requestPermanentDelete}
-              onDuplicate={duplicateSelection}
-              onDropEntries={transferEntries}
-              onExtract={extractSelection}
-              onMoveTo={moveSelectionTo}
-              onOpenDirectory={(path) => void navigator.navigate(path)}
-              onOpenTerminal={() => directory.path && openTerminalHere(directory.path)}
-              onPaste={pasteClipboard}
-              onRename={requestRename}
-              onUndoDelete={undoLastTrash}
-              onScrollOffsetChange={
-                search.isActive
-                  ? undefined
-                  : (offset) => navigator.setScrollOffset(directory.path, offset)
-              }
-              onSelectedPathsChange={setSelectedPaths}
-              onTogglePreview={togglePreview}
-              searchState={
-                search.isActive
-                  ? {
-                      error: search.error,
-                      isSearching: search.isSearching,
-                      query: search.query.trim(),
-                      truncated: search.response?.truncated ?? false,
-                    }
-                  : undefined
-              }
-              selectedPaths={selectedPaths}
-              viewId={
-                search.isActive ? `${directory.path}::search::${search.query}` : directory.path
-              }
-            />
-            )}
-            {isPreviewOpen && selectedEntries.length > 0 && (
+          <div className="flex min-h-0 flex-1">
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+              {isContentSearchActive ? (
+                <ContentSearchResults
+                  error={contentSearch.error}
+                  isSearching={contentSearch.isSearching}
+                  onOpenLocation={(location) => void navigator.navigate(location)}
+                  query={contentSearch.query.trim()}
+                  response={contentSearch.response}
+                />
+              ) : (
+                <FileList
+                  currentDirectoryPath={directory.path}
+                  entries={displayedEntries}
+                  externalDropItemCount={externalDrop?.sourcePaths.length ?? 0}
+                  externalDropTargetPath={externalDrop?.targetPath ?? null}
+                  gitStatus={gitStatus}
+                  hasClipboard={clipboard !== null}
+                  initialScrollOffset={
+                    search.isActive ? 0 : navigator.getScrollOffset(directory.path)
+                  }
+                  isLoading={isLoading}
+                  isOperationPending={isOperationPending}
+                  canUndoDelete={trashUndo !== null}
+                  onAddToFavorites={addFavoritePaths}
+                  onAddToSpace={addToSpace}
+                  onCompress={compressSelection}
+                  onCopy={copySelection}
+                  onCreateDirectory={() => requestCreate("directory")}
+                  onCreateFile={() => requestCreate("file")}
+                  onCut={cutSelection}
+                  onDelete={requestDelete}
+                  onDeletePermanent={requestPermanentDelete}
+                  onDuplicate={duplicateSelection}
+                  onDropEntries={transferEntries}
+                  onExtract={extractSelection}
+                  onMoveTo={moveSelectionTo}
+                  onOpenDirectory={(path) => void navigator.navigate(path)}
+                  onOpenTerminal={() => directory.path && openTerminalHere(directory.path)}
+                  onPaste={pasteClipboard}
+                  onRename={requestRename}
+                  onUndoDelete={undoLastTrash}
+                  onScrollOffsetChange={
+                    search.isActive
+                      ? undefined
+                      : (offset) => navigator.setScrollOffset(directory.path, offset)
+                  }
+                  onSelectedPathsChange={setSelectedPaths}
+                  onTogglePreview={togglePreview}
+                  searchState={
+                    search.isActive
+                      ? {
+                          error: search.error,
+                          isSearching: search.isSearching,
+                          query: search.query.trim(),
+                          truncated: search.response?.truncated ?? false,
+                        }
+                      : undefined
+                  }
+                  selectedPaths={selectedPaths}
+                  viewId={
+                    search.isActive ? `${directory.path}::search::${search.query}` : directory.path
+                  }
+                />
+              )}
+              {selectedPaths.length > 0 && (
+                <ContextualActionBar
+                  archiveSelectionPath={
+                    selectedEntries.length === 1 && isArchiveFile(selectedEntries[0])
+                      ? selectedEntries[0].path
+                      : null
+                  }
+                  hasDirectorySelection={selectedEntries.some(
+                    (entry) => entry.kind === "directory",
+                  )}
+                  isActionDisabled={isOperationPending || isLoading}
+                  isSingleSelection={selectedEntries.length === 1}
+                  onAddToSpace={(spaceId) =>
+                    addToSpace(
+                      spaceId,
+                      selectedEntries
+                        .filter((entry) => entry.kind === "directory")
+                        .map((entry) => entry.path),
+                    )
+                  }
+                  onClearSelection={() => setSelectedPaths([])}
+                  onCompress={compressSelection}
+                  onCopy={copySelection}
+                  onCopyPaths={copySelectedPaths}
+                  onCut={cutSelection}
+                  onDelete={requestDelete}
+                  onDuplicate={duplicateSelection}
+                  onExtract={extractSelection}
+                  onMoveTo={moveSelectionTo}
+                  onOpen={openSelectedEntries}
+                  onRename={requestRename}
+                  selectedCount={selectedPaths.length}
+                />
+              )}
+              {trashUndo && (
+                <div className="absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-popover px-4 py-2 text-[13px] text-popover-foreground shadow-lg">
+                  <ArrowCounterClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="whitespace-nowrap">
+                    已将 {trashUndo.count.toLocaleString("zh-CN")} 个项目移到回收站
+                  </span>
+                  <Button onClick={undoLastTrash} size="xs" type="button" variant="outline">
+                    撤销
+                  </Button>
+                  <Button
+                    aria-label="关闭提示"
+                    onClick={() => setTrashUndo(null)}
+                    size="xs"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <XIcon />
+                  </Button>
+                </div>
+              )}
+            </div>
+            {isPreviewOpen && (
               <EntryPreview
-                entry={selectedEntries[0]}
+                entry={selectedEntries[0] ?? null}
                 onClose={() => setIsPreviewOpen(false)}
                 onOpen={() => openSelectedEntries()}
               />
-            )}
-            {selectedPaths.length > 0 && (
-              <ContextualActionBar
-                archiveSelectionPath={
-                  selectedEntries.length === 1 && isArchiveFile(selectedEntries[0])
-                    ? selectedEntries[0].path
-                    : null
-                }
-                hasDirectorySelection={selectedEntries.some(
-                  (entry) => entry.kind === "directory",
-                )}
-                isActionDisabled={isOperationPending || isLoading}
-                isSingleSelection={selectedEntries.length === 1}
-                onAddToSpace={(spaceId) =>
-                  addToSpace(
-                    spaceId,
-                    selectedEntries
-                      .filter((entry) => entry.kind === "directory")
-                      .map((entry) => entry.path),
-                  )
-                }
-                onClearSelection={() => setSelectedPaths([])}
-                onCompress={compressSelection}
-                onCopy={copySelection}
-                onCopyPaths={copySelectedPaths}
-                onCut={cutSelection}
-                onDelete={requestDelete}
-                onDuplicate={duplicateSelection}
-                onExtract={extractSelection}
-                onMoveTo={moveSelectionTo}
-                onOpen={openSelectedEntries}
-                onRename={requestRename}
-                selectedCount={selectedPaths.length}
-              />
-            )}
-            {trashUndo && (
-              <div className="absolute bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-2 rounded-full border bg-popover px-4 py-2 text-[13px] text-popover-foreground shadow-lg">
-                <ArrowCounterClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
-                <span className="whitespace-nowrap">
-                  已将 {trashUndo.count.toLocaleString("zh-CN")} 个项目移到回收站
-                </span>
-                <Button onClick={undoLastTrash} size="xs" type="button" variant="outline">
-                  撤销
-                </Button>
-                <Button
-                  aria-label="关闭提示"
-                  onClick={() => setTrashUndo(null)}
-                  size="xs"
-                  type="button"
-                  variant="ghost"
-                >
-                  <XIcon />
-                </Button>
-              </div>
             )}
           </div>
         ) : state.error ? (
@@ -1142,11 +1153,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
           }
           isLoading={isLoading || search.isSearching || contentSearch.isSearching}
           searchError={
-            isContentSearchActive
-              ? contentSearch.error
-              : search.isActive
-                ? search.error
-                : null
+            isContentSearchActive ? contentSearch.error : search.isActive ? search.error : null
           }
           searchQuery={
             isContentSearchActive
@@ -1504,8 +1511,7 @@ function extractErrorKind(error: unknown): string | null {
     return String((error as { kind: unknown }).kind);
   }
 
-  const raw =
-    error instanceof Error ? error.message : typeof error === "string" ? error : null;
+  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : null;
   const match = raw?.match(/"kind":\s*(?:String\()?"([a-z_]+)"/);
   return match?.[1] ?? null;
 }

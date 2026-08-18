@@ -48,6 +48,15 @@ function readTerminalTheme(): ITheme {
   };
 }
 
+/** Fit that tolerates mid-layout containers; the next resize tick recovers. */
+function safeFit(fit: FitAddon): void {
+  try {
+    fit.fit();
+  } catch {
+    // Ignore transient layout races.
+  }
+}
+
 /**
  * Bottom terminal panel hosting a single PTY session. The session spawns on
  * first reveal, survives being hidden and only dies on restart, shell exit
@@ -95,7 +104,8 @@ export function TerminalPanel() {
     fitRef.current = fit;
     terminalRef.current = terminal;
 
-    // xterm 6 ships no built-in renderer; prefer WebGL and fall back to canvas.
+    // xterm 6 ships no built-in renderer; prefer WebGL and fall back to
+    // canvas on init failure or GPU context loss.
     try {
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => {
@@ -115,6 +125,10 @@ export function TerminalPanel() {
       }
     }
 
+    // Fit before proposing dimensions so the terminal and the PTY agree on
+    // cols/rows from the first byte; a mismatch makes shell line redraws
+    // (PSReadLine echoes each keypress) jump while typing.
+    safeFit(fit);
     const dimensions = fit.proposeDimensions();
     const outputChannel = new Channel<ArrayBuffer>();
     outputChannel.onmessage = (data) => terminal.write(new Uint8Array(data));
@@ -146,18 +160,26 @@ export function TerminalPanel() {
         if (!disposed) setError(String(reason));
       });
 
+    // Refit on container changes, but only when the grid actually changes —
+    // repeated fit/resize round-trips make the shell redraw and flicker.
+    let lastCols = dimensions?.cols ?? 0;
+    let lastRows = dimensions?.rows ?? 0;
+    let fitFrame: number | null = null;
     const observer = new ResizeObserver(() => {
-      if (container.clientWidth === 0 || container.clientHeight === 0) return;
-      try {
-        fit.fit();
-      } catch {
-        // Fit can throw while the container is mid-layout; the next tick recovers.
-      }
-      const next = fit.proposeDimensions();
-      const sessionId = sessionIdRef.current;
-      if (sessionId != null && next) {
-        void invoke("terminal_resize", { id: sessionId, cols: next.cols, rows: next.rows });
-      }
+      if (fitFrame != null) return;
+      fitFrame = requestAnimationFrame(() => {
+        fitFrame = null;
+        if (container.clientWidth === 0 || container.clientHeight === 0) return;
+        safeFit(fit);
+        const next = fit.proposeDimensions();
+        if (!next || (next.cols === lastCols && next.rows === lastRows)) return;
+        lastCols = next.cols;
+        lastRows = next.rows;
+        const sessionId = sessionIdRef.current;
+        if (sessionId != null) {
+          void invoke("terminal_resize", { id: sessionId, cols: next.cols, rows: next.rows });
+        }
+      });
     });
     observer.observe(container);
 
@@ -168,6 +190,7 @@ export function TerminalPanel() {
 
     return () => {
       disposed = true;
+      if (fitFrame != null) cancelAnimationFrame(fitFrame);
       observer.disconnect();
       window.removeEventListener("app-theme-change", handleThemeChange);
       dataDisposable?.dispose();
@@ -184,11 +207,8 @@ export function TerminalPanel() {
   useEffect(() => {
     if (!visible) return;
     const frame = requestAnimationFrame(() => {
-      try {
-        fitRef.current?.fit();
-      } catch {
-        // Ignore transient layout races.
-      }
+      const fit = fitRef.current;
+      if (fit) safeFit(fit);
       terminalRef.current?.focus();
     });
     return () => cancelAnimationFrame(frame);
