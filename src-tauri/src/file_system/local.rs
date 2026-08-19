@@ -61,6 +61,7 @@ impl FileSystemBackend for LocalBackend {
         Ok(EntryStat {
             kind: directory::entry_kind(metadata.file_type()),
             size: metadata.len(),
+            modified_at: directory::modified_at_millis(&metadata),
         })
     }
 

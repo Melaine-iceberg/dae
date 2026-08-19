@@ -6,7 +6,8 @@ use super::progress::{
 };
 use super::transfer::{self, TransferSource};
 use super::types::{
-    ContentSearchResponse, DirectoryView, NewEntryKind, SearchResponse, path_to_string,
+    ConflictAction, ContentSearchResponse, DirectoryView, NewEntryKind, SearchResponse,
+    TransferConflict, TransferItem, path_to_string,
 };
 use super::vfs::{self, Scheme};
 use super::watch::{DirectoryWatcher, WatchHandle, spawn_polling_watcher};
@@ -179,11 +180,13 @@ pub async fn create_entry(
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// Copies entries into an existing destination directory. Existing files are never overwritten.
+/// Copies entries into an existing destination directory. Each item's conflict
+/// action decides what happens when the target name already exists; the UI
+/// usually resolves collisions through `check_transfer_conflicts` first.
 #[tauri::command]
 #[specta::specta]
 pub async fn copy_entries(
-    sources: Vec<String>,
+    items: Vec<TransferItem>,
     destination: String,
     operation_id: String,
     app: tauri::AppHandle,
@@ -191,7 +194,7 @@ pub async fn copy_entries(
     emit_preparing(&app, &operation_id, FileOperationKind::Copy);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let sources = resolve_sources(sources)?;
+        let sources = resolve_transfer_items(items)?;
         let destination_backend = vfs::resolve(&destination)?;
         let progress =
             FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Copy);
@@ -199,7 +202,7 @@ pub async fn copy_entries(
         if is_pure_local(&sources, &destination) {
             let paths = sources
                 .iter()
-                .map(|source| PathBuf::from(&source.path))
+                .map(|source| (PathBuf::from(&source.path), source.on_conflict))
                 .collect::<Vec<_>>();
             local::copy_entries_with_progress(paths, PathBuf::from(&destination), &progress)
         } else {
@@ -210,11 +213,13 @@ pub async fn copy_entries(
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// Moves entries into an existing destination directory. Existing files are never overwritten.
+/// Moves entries into an existing destination directory. Each item's conflict
+/// action decides what happens when the target name already exists; the UI
+/// usually resolves collisions through `check_transfer_conflicts` first.
 #[tauri::command]
 #[specta::specta]
 pub async fn move_entries(
-    sources: Vec<String>,
+    items: Vec<TransferItem>,
     destination: String,
     operation_id: String,
     app: tauri::AppHandle,
@@ -222,7 +227,7 @@ pub async fn move_entries(
     emit_preparing(&app, &operation_id, FileOperationKind::Move);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let sources = resolve_sources(sources)?;
+        let sources = resolve_transfer_items(items)?;
         let destination_backend = vfs::resolve(&destination)?;
         let progress =
             FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Move);
@@ -230,12 +235,30 @@ pub async fn move_entries(
         if is_pure_local(&sources, &destination) {
             let paths = sources
                 .iter()
-                .map(|source| PathBuf::from(&source.path))
+                .map(|source| (PathBuf::from(&source.path), source.on_conflict))
                 .collect::<Vec<_>>();
             local::move_entries_with_progress(paths, PathBuf::from(&destination), &progress)
         } else {
             transfer::move_entries(sources, &destination, &destination_backend, &progress)
         }
+    })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+/// Reports the name collisions a copy/move into `destination` would hit, so
+/// the UI can show the conflict dialog and collect per-entry resolutions
+/// before invoking the transfer.
+#[tauri::command]
+#[specta::specta]
+pub async fn check_transfer_conflicts(
+    sources: Vec<String>,
+    destination: String,
+) -> Result<Vec<TransferConflict>, FileSystemError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let sources = resolve_sources(sources)?;
+        let destination_backend = vfs::resolve(&destination)?;
+        transfer::find_conflicts(sources, &destination, &destination_backend)
     })
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -279,7 +302,27 @@ fn resolve_sources(paths: Vec<String>) -> Result<Vec<TransferSource>, FileSystem
         .into_iter()
         .map(|path| {
             let backend = vfs::resolve(&path)?;
-            Ok(TransferSource { path, backend })
+            Ok(TransferSource {
+                path,
+                backend,
+                on_conflict: ConflictAction::Fail,
+            })
+        })
+        .collect()
+}
+
+fn resolve_transfer_items(
+    items: Vec<TransferItem>,
+) -> Result<Vec<TransferSource>, FileSystemError> {
+    items
+        .into_iter()
+        .map(|item| {
+            let backend = vfs::resolve(&item.path)?;
+            Ok(TransferSource {
+                path: item.path,
+                backend,
+                on_conflict: item.on_conflict,
+            })
         })
         .collect()
 }

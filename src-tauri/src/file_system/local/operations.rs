@@ -1,9 +1,10 @@
 use crate::file_system::error::FileSystemError;
 use crate::file_system::progress::FileOperationProgressReporterTrait;
-use crate::file_system::types::{NewEntryKind, path_to_string};
+use crate::file_system::transfer::duplicate_name;
+use crate::file_system::types::{ConflictAction, NewEntryKind, path_to_string};
 use rayon::prelude::*;
 use std::collections::HashSet;
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -51,14 +52,21 @@ pub fn create_entry_sync(
 }
 
 pub fn copy_entries_with_progress(
-    sources: Vec<PathBuf>,
+    sources: Vec<(PathBuf, ConflictAction)>,
     destination: PathBuf,
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
     let plan = build_transfer_plan(sources, destination)?;
-    progress.start(plan.iter().map(|entry| entry.work_units).sum());
+    progress.start(
+        plan.iter()
+            .map(|entry| entry.source_units + entry.replacement_units)
+            .sum(),
+    );
 
     for entry in plan {
+        if entry.replacement_units > 0 {
+            delete_entry(&entry.destination, progress)?;
+        }
         copy_entry(&entry.source, &entry.destination, progress)?;
     }
 
@@ -67,17 +75,24 @@ pub fn copy_entries_with_progress(
 }
 
 pub fn move_entries_with_progress(
-    sources: Vec<PathBuf>,
+    sources: Vec<(PathBuf, ConflictAction)>,
     destination: PathBuf,
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
     let plan = build_transfer_plan(sources, destination)?;
-    progress.start(plan.iter().map(|entry| entry.work_units).sum());
+    progress.start(
+        plan.iter()
+            .map(|entry| entry.source_units + entry.replacement_units)
+            .sum(),
+    );
 
     for entry in plan {
         progress.begin_entry(&entry.source);
+        if entry.replacement_units > 0 {
+            delete_entry(&entry.destination, progress)?;
+        }
         match fs::rename(&entry.source, &entry.destination) {
-            Ok(()) => progress.advance_by(entry.work_units, &entry.source),
+            Ok(()) => progress.advance_by(entry.source_units, &entry.source),
             Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
                 copy_entry(&entry.source, &entry.destination, progress)?;
                 remove_entry(&entry.source)?;
@@ -94,7 +109,7 @@ pub fn delete_entries_with_progress(
     paths: Vec<PathBuf>,
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
-    ensure_unique_paths(&paths)?;
+    ensure_unique_paths(paths.iter().map(|path| path.as_path()))?;
 
     for path in &paths {
         fs::symlink_metadata(path)?;
@@ -119,11 +134,15 @@ pub fn delete_entries_with_progress(
 struct TransferPlanEntry {
     source: PathBuf,
     destination: PathBuf,
-    work_units: u64,
+    /// Units the transfer of `source` itself advances (copy or rename).
+    source_units: u64,
+    /// Units for deleting an existing destination entry (`Replace`); zero
+    /// when the destination path is free.
+    replacement_units: u64,
 }
 
 fn build_transfer_plan(
-    sources: Vec<PathBuf>,
+    sources: Vec<(PathBuf, ConflictAction)>,
     requested_destination: PathBuf,
 ) -> Result<Vec<TransferPlanEntry>, FileSystemError> {
     if sources.is_empty() {
@@ -132,7 +151,7 @@ fn build_transfer_plan(
         ));
     }
 
-    ensure_unique_paths(&sources)?;
+    ensure_unique_paths(sources.iter().map(|(path, _)| path.as_path()))?;
 
     let destination = requested_destination.canonicalize()?;
     if !fs::metadata(&destination)?.is_dir() {
@@ -142,7 +161,7 @@ fn build_transfer_plan(
     let mut planned_destinations = HashSet::new();
     let mut plan = Vec::with_capacity(sources.len());
 
-    for source in sources {
+    for (source, on_conflict) in sources {
         let metadata = fs::symlink_metadata(&source)?;
         let name = source.file_name().ok_or_else(|| {
             FileSystemError::InvalidInput(format!(
@@ -159,11 +178,33 @@ fn build_transfer_plan(
             )));
         }
 
-        ensure_path_is_available(&target)?;
+        let (target, replacement_units) = match fs::symlink_metadata(&target) {
+            Err(error) if error.kind() == io::ErrorKind::NotFound => (target, 0),
+            Err(error) => return Err(error.into()),
+            Ok(_) if paths_refer_to_same_entry(&source, &target) => {
+                // Transferring an entry onto itself is a no-op, not a conflict.
+                continue;
+            }
+            Ok(_) => match on_conflict {
+                ConflictAction::Fail => {
+                    return Err(FileSystemError::AlreadyExists(path_to_string(&target)));
+                }
+                ConflictAction::Skip => continue,
+                ConflictAction::Replace => {
+                    (target.clone(), count_entry_units(&target)?)
+                }
+                ConflictAction::KeepBoth => {
+                    let kept =
+                        unique_sibling_path(&destination, &name, &planned_destinations)?;
+                    planned_destinations.insert(kept.clone());
+                    (kept, 0)
+                }
+            },
+        };
 
         if metadata.is_dir() {
             let canonical_source = source.canonicalize()?;
-            if destination.starts_with(&canonical_source) {
+            if target.starts_with(&canonical_source) {
                 return Err(FileSystemError::InvalidInput(format!(
                     "Cannot paste a folder into itself: {}",
                     path_to_string(&source)
@@ -171,16 +212,43 @@ fn build_transfer_plan(
             }
         }
 
-        let work_units = count_entry_units(&source)?;
-
+        let source_units = count_entry_units(&source)?;
         plan.push(TransferPlanEntry {
             source,
             destination: target,
-            work_units,
+            source_units,
+            replacement_units,
         });
     }
 
     Ok(plan)
+}
+
+/// True when both paths resolve to the same on-disk entry.
+fn paths_refer_to_same_entry(source: &Path, target: &Path) -> bool {
+    match (fs::canonicalize(source), fs::canonicalize(target)) {
+        (Ok(source), Ok(target)) => source == target,
+        _ => false,
+    }
+}
+
+/// The first sibling of `name` in `directory` that neither exists on disk nor
+/// is already claimed by another planned entry ("副本" naming).
+fn unique_sibling_path(
+    directory: &Path,
+    name: &OsStr,
+    reserved: &HashSet<PathBuf>,
+) -> Result<PathBuf, FileSystemError> {
+    let name = name.to_string_lossy();
+    let mut attempt = 0_u32;
+
+    loop {
+        let candidate = directory.join(duplicate_name(&name, attempt));
+        if !reserved.contains(&candidate) && !candidate.try_exists()? {
+            return Ok(candidate);
+        }
+        attempt += 1;
+    }
 }
 
 fn validate_entry_name(name: &str) -> Result<(), FileSystemError> {
@@ -199,7 +267,10 @@ fn validate_entry_name(name: &str) -> Result<(), FileSystemError> {
     Ok(())
 }
 
-fn ensure_unique_paths(paths: &[PathBuf]) -> Result<(), FileSystemError> {
+fn ensure_unique_paths<'a, I>(paths: I) -> Result<(), FileSystemError>
+where
+    I: IntoIterator<Item = &'a Path>,
+{
     let mut unique_paths = HashSet::new();
     for path in paths {
         if !unique_paths.insert(path) {

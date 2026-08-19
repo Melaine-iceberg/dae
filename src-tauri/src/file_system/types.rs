@@ -93,6 +93,48 @@ pub struct ContentSearchResponse {
 pub struct EntryStat {
     pub kind: EntryKind,
     pub size: u64,
+    /// Milliseconds since the Unix epoch; `None` when the backend cannot
+    /// report it. Surfaced by the conflict dialog to compare both sides.
+    pub modified_at: Option<u64>,
+}
+
+/// How a transfer resolves an existing entry at the destination.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ConflictAction {
+    /// Fails with `AlreadyExists` (the pre-dialog behavior).
+    #[default]
+    Fail,
+    /// Leaves the destination untouched and transfers nothing for this source.
+    Skip,
+    /// Deletes the existing destination entry, then transfers.
+    Replace,
+    /// Transfers under a generated "副本" name, keeping both entries.
+    KeepBoth,
+}
+
+/// One source entry paired with its conflict resolution.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferItem {
+    pub path: String,
+    pub on_conflict: ConflictAction,
+}
+
+/// A name collision detected before a transfer runs, with both sides'
+/// metadata so the conflict dialog can compare them.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferConflict {
+    pub source_path: String,
+    pub target_path: String,
+    pub name: String,
+    pub source_kind: EntryKind,
+    pub source_size: Option<u64>,
+    pub source_modified_at: Option<u64>,
+    pub target_kind: EntryKind,
+    pub target_size: Option<u64>,
+    pub target_modified_at: Option<u64>,
 }
 
 pub fn entry_kind_rank(kind: &EntryKind) -> u8 {

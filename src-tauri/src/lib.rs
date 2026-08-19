@@ -88,6 +88,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::commands::create_entry,
             file_system::commands::copy_entries,
             file_system::commands::move_entries,
+            file_system::commands::check_transfer_conflicts,
             file_system::commands::delete_entries,
             file_system::commands::trash_entries,
             file_system::commands::undo_trash,

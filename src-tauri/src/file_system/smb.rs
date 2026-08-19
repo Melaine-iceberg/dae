@@ -417,6 +417,7 @@ impl FileSystemBackend for SmbBackend {
             return Ok(EntryStat {
                 kind: EntryKind::Directory,
                 size: 0,
+                modified_at: None,
             });
         }
 
@@ -431,6 +432,7 @@ impl FileSystemBackend for SmbBackend {
                 EntryKind::File
             },
             size: info.size,
+            modified_at: None,
         })
     }
 

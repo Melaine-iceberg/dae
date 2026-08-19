@@ -25,7 +25,14 @@ import {
   XIcon,
 } from "@phosphor-icons/react";
 
-import { commands, events, type ArchiveFormat } from "@/bindings";
+import {
+  commands,
+  events,
+  type ArchiveFormat,
+  type ConflictAction,
+  type TransferConflict,
+  type TransferItem,
+} from "@/bindings";
 
 import { getAppWindow } from "@/lib/app-window";
 
@@ -71,6 +78,7 @@ import { FilterMenu } from "./filter-menu";
 import { useGitStatus } from "./git-status";
 import type { ExplorerNavigator } from "./navigation";
 import { SortMenu } from "./sort-menu";
+import { TransferConflictDialog } from "./transfer-conflict-dialog";
 import {
   applyEntryFilters,
   entryFiltersAtom,
@@ -98,6 +106,15 @@ interface ExplorerViewProps {
 type FileOperationResult = { ok: true } | { error: string; ok: false; rawError?: unknown };
 type ExternalDrop = { sourcePaths: string[]; targetPath: string | null };
 
+/** A transfer paused on the conflict dialog, waiting for per-item decisions. */
+type PendingTransfer = {
+  conflicts: TransferConflict[];
+  destinationPath: string;
+  operation: FileTransferOperation;
+  sourcePaths: string[];
+  onSuccess: () => void;
+};
+
 export function ExplorerView({ navigator }: ExplorerViewProps) {
   const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
   const [clipboard, setClipboard] = useAtom(fileClipboardAtom);
@@ -115,6 +132,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const [newEntryValue, setNewEntryValue] = useState("");
   const [newEntryError, setNewEntryError] = useState<string | null>(null);
   const [deleteTargets, setDeleteTargets] = useState<DirectoryEntry[]>([]);
+  const [pendingTransfer, setPendingTransfer] = useState<PendingTransfer | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [isOperationPending, setIsOperationPending] = useState(false);
   const [fileOperationProgress, setFileOperationProgress] = useState<FileOperationProgress | null>(
@@ -318,16 +336,25 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     [directoryPath, navigator],
   );
 
-  const transferEntries = useCallback(
-    (sourcePaths: string[], destinationPath: string, operation: FileTransferOperation) => {
-      if (sourcePaths.length === 0) return;
+  /** Executes a transfer whose conflicts (if any) have already been resolved. */
+  const executeTransfer = useCallback(
+    (
+      sourcePaths: string[],
+      destinationPath: string,
+      operation: FileTransferOperation,
+      decisions: Record<string, ConflictAction>,
+      onSuccess: () => void,
+    ) => {
+      const items: TransferItem[] = sourcePaths.map((path) => ({
+        path,
+        onConflict: decisions[path] ?? "fail",
+      }));
 
-      setOperationError(null);
       void performFileOperation(
         (operationId) =>
           operation === "copy"
-            ? commands.copyEntries(sourcePaths, destinationPath, operationId!)
-            : commands.moveEntries(sourcePaths, destinationPath, operationId!),
+            ? commands.copyEntries(items, destinationPath, operationId!)
+            : commands.moveEntries(items, destinationPath, operationId!),
         operation,
       ).then((result) => {
         if (!result.ok) {
@@ -335,30 +362,72 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
           return;
         }
 
-        setSelectedPaths([]);
+        onSuccess();
       });
     },
     [performFileOperation],
+  );
+
+  /** Pre-checks conflicts, then either executes directly or opens the conflict dialog. */
+  const startTransfer = useCallback(
+    (
+      sourcePaths: string[],
+      destinationPath: string,
+      operation: FileTransferOperation,
+      onSuccess: () => void,
+    ) => {
+      if (sourcePaths.length === 0) return;
+
+      setOperationError(null);
+      commands
+        .checkTransferConflicts(sourcePaths, destinationPath)
+        .then((conflicts) => {
+          if (conflicts.length === 0) {
+            executeTransfer(sourcePaths, destinationPath, operation, {}, onSuccess);
+            return;
+          }
+
+          setPendingTransfer({ conflicts, destinationPath, operation, sourcePaths, onSuccess });
+        })
+        .catch((error: unknown) => setOperationError(getErrorMessage(error)));
+    },
+    [executeTransfer],
+  );
+
+  const transferEntries = useCallback(
+    (sourcePaths: string[], destinationPath: string, operation: FileTransferOperation) => {
+      startTransfer(sourcePaths, destinationPath, operation, () => setSelectedPaths([]));
+    },
+    [startTransfer],
   );
 
   const copyExternalEntries = useCallback(
     (sourcePaths: string[], destinationPath: string) => {
-      if (sourcePaths.length === 0) return;
-
-      setOperationError(null);
-      void performFileOperation(
-        (operationId) => commands.copyEntries(sourcePaths, destinationPath, operationId!),
-        "copy",
-      ).then((result) => {
-        if (!result.ok) {
-          setOperationError(result.error);
-          return;
-        }
-        setSelectedPaths([]);
-      });
+      startTransfer(sourcePaths, destinationPath, "copy", () => setSelectedPaths([]));
     },
-    [performFileOperation],
+    [startTransfer],
   );
+
+  const resolveTransferConflicts = useCallback(
+    (decisions: Record<string, ConflictAction>) => {
+      const transfer = pendingTransfer;
+      if (!transfer) return;
+
+      setPendingTransfer(null);
+      executeTransfer(
+        transfer.sourcePaths,
+        transfer.destinationPath,
+        transfer.operation,
+        decisions,
+        transfer.onSuccess,
+      );
+    },
+    [executeTransfer, pendingTransfer],
+  );
+
+  const cancelTransferConflicts = useCallback(() => {
+    setPendingTransfer(null);
+  }, []);
 
   useEffect(() => {
     if (!appWindow) return;
@@ -429,25 +498,16 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
 
     setOperationError(null);
     const pastedClipboard = clipboard;
+    const operation: FileTransferOperation =
+      pastedClipboard.operation === "copy" ? "copy" : "move";
 
-    void performFileOperation(
-      (operationId) =>
-        pastedClipboard.operation === "copy"
-          ? commands.copyEntries(pastedClipboard.sourcePaths, directoryPath, operationId!)
-          : commands.moveEntries(pastedClipboard.sourcePaths, directoryPath, operationId!),
-      pastedClipboard.operation === "copy" ? "copy" : "move",
-    ).then((result) => {
-      if (!result.ok) {
-        setOperationError(result.error);
-        return;
-      }
-
+    startTransfer(pastedClipboard.sourcePaths, directoryPath, operation, () => {
       if (pastedClipboard.operation === "cut") {
         setClipboard(null);
       }
       setSelectedPaths([]);
     });
-  }, [clipboard, directoryPath, performFileOperation, setClipboard]);
+  }, [clipboard, directoryPath, setClipboard, startTransfer]);
 
   const requestRename = useCallback(() => {
     if (selectedEntries.length !== 1) return;
@@ -1206,6 +1266,14 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
           if (!open) closeDeleteDialog();
         }}
       />
+      {pendingTransfer && (
+        <TransferConflictDialog
+          conflicts={pendingTransfer.conflicts}
+          operation={pendingTransfer.operation}
+          onCancel={cancelTransferConflicts}
+          onResolve={resolveTransferConflicts}
+        />
+      )}
     </main>
   );
 }

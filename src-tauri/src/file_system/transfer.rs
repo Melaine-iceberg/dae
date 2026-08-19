@@ -5,7 +5,7 @@
 
 use super::error::FileSystemError;
 use super::progress::FileOperationProgressReporterTrait;
-use super::types::{EntryKind, EntryStat};
+use super::types::{ConflictAction, EntryKind, EntryStat, TransferConflict};
 use super::vfs::{FileSystemBackend, SharedBackend};
 use std::collections::HashSet;
 use std::io::{Read, Write};
@@ -18,16 +18,21 @@ const STREAM_CHUNK_BYTES: usize = 256 * 1024;
 pub struct TransferSource {
     pub path: String,
     pub backend: SharedBackend,
+    /// How the destination is resolved when the target name already exists.
+    pub on_conflict: ConflictAction,
 }
 
 struct PlanEntry {
     source: TransferSource,
     stat: EntryStat,
     destination: String,
+    /// The existing destination entry a `Replace` entry deletes first.
+    replacement: Option<EntryStat>,
 }
 
 /// Copies sources into `destination` (a directory on `destination_backend`).
-/// Existing entries are never overwritten.
+/// Each source's [`ConflictAction`] decides what happens when the target
+/// name already exists; `Fail` keeps the legacy "never overwrite" behavior.
 pub fn copy_entries(
     sources: Vec<TransferSource>,
     destination: &str,
@@ -37,13 +42,8 @@ pub fn copy_entries(
     let plan = build_plan(sources, destination, destination_backend)?;
     progress.start(
         plan.iter()
-            .map(|entry| {
-                count_copy_units(
-                    entry.source.backend.as_ref(),
-                    &entry.source.path,
-                    &entry.stat,
-                )
-            })
+            .map(|entry| count_copy_units(entry.source.backend.as_ref(), &entry.source.path, &entry.stat)
+                .and_then(|units| add_replacement_units(destination_backend, entry, units)))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .sum(),
@@ -51,6 +51,7 @@ pub fn copy_entries(
 
     for entry in plan {
         progress.begin_entry(Path::new(&entry.source.path));
+        remove_replacement(destination_backend, &entry, progress)?;
         copy_node(
             entry.source.backend.as_ref(),
             &entry.source.path,
@@ -67,6 +68,8 @@ pub fn copy_entries(
 
 /// Moves sources into `destination`, preferring a protocol-native rename when
 /// source and destination share one backend, falling back to copy + delete.
+/// Each source's [`ConflictAction`] decides what happens when the target name
+/// already exists.
 pub fn move_entries(
     sources: Vec<TransferSource>,
     destination: &str,
@@ -90,6 +93,7 @@ pub fn move_entries(
                     )
                     .map(|delete| copy + delete)
                 })
+                .and_then(|units| add_replacement_units(destination_backend, entry, units))
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
@@ -98,6 +102,7 @@ pub fn move_entries(
 
     for entry in plan {
         progress.begin_entry(Path::new(&entry.source.path));
+        remove_replacement(destination_backend, &entry, progress)?;
 
         let native_rename = if Arc::ptr_eq(&entry.source.backend, destination_backend) {
             entry
@@ -140,6 +145,99 @@ pub fn move_entries(
 
     progress.finish();
     Ok(())
+}
+
+/// Work units contributed by a `Replace` entry's existing destination tree.
+fn add_replacement_units(
+    destination_backend: &SharedBackend,
+    entry: &PlanEntry,
+    units: u64,
+) -> Result<u64, FileSystemError> {
+    match &entry.replacement {
+        Some(stat) => Ok(units
+            + count_delete_units(destination_backend.as_ref(), &entry.destination, stat)?),
+        None => Ok(units),
+    }
+}
+
+/// Deletes the existing destination tree of a `Replace` entry before the
+/// source is transferred onto its path.
+fn remove_replacement(
+    destination_backend: &SharedBackend,
+    entry: &PlanEntry,
+    progress: &dyn FileOperationProgressReporterTrait,
+) -> Result<(), FileSystemError> {
+    match &entry.replacement {
+        Some(stat) => {
+            delete_node(destination_backend.as_ref(), &entry.destination, stat, progress)
+        }
+        None => Ok(()),
+    }
+}
+
+/// Reports every source whose target name already exists in `destination`,
+/// with both sides' metadata for the conflict dialog. Sources that would land
+/// on themselves (a no-op the engine skips) are not conflicts.
+pub fn find_conflicts(
+    sources: Vec<TransferSource>,
+    destination: &str,
+    destination_backend: &SharedBackend,
+) -> Result<Vec<TransferConflict>, FileSystemError> {
+    if sources.is_empty() {
+        return Err(FileSystemError::InvalidInput(
+            "Choose at least one entry before pasting".into(),
+        ));
+    }
+
+    ensure_unique_paths(&sources)?;
+
+    if destination_backend.stat(destination)?.kind != EntryKind::Directory {
+        return Err(FileSystemError::NotDirectory(destination.to_owned()));
+    }
+
+    let mut conflicts = Vec::new();
+    for source in sources {
+        let name = last_segment(&source.path)
+            .ok_or_else(|| {
+                FileSystemError::InvalidInput(format!(
+                    "The root of a volume cannot be copied or moved: {}",
+                    source.path
+                ))
+            })?
+            .to_owned();
+        let target = join_path(destination, &name);
+
+        if Arc::ptr_eq(&source.backend, destination_backend)
+            && same_backend_path(&source.path, &target)
+        {
+            continue;
+        }
+
+        let target_stat = match destination_backend.stat(&target) {
+            Err(FileSystemError::NotFound(_)) => continue,
+            Err(error) => return Err(error),
+            Ok(stat) => stat,
+        };
+        let source_stat = source.backend.stat(&source.path)?;
+
+        conflicts.push(TransferConflict {
+            source_path: source.path.clone(),
+            target_path: target,
+            name,
+            source_kind: source_stat.kind,
+            source_size: stat_size(&source_stat),
+            source_modified_at: source_stat.modified_at,
+            target_kind: target_stat.kind,
+            target_size: stat_size(&target_stat),
+            target_modified_at: target_stat.modified_at,
+        });
+    }
+
+    Ok(conflicts)
+}
+
+fn stat_size(stat: &EntryStat) -> Option<u64> {
+    (stat.kind != EntryKind::Directory).then_some(stat.size)
 }
 
 /// Deletes entries anywhere in the VFS, depth-first.
@@ -246,12 +344,28 @@ fn unique_duplicate_path(source: &TransferSource) -> Result<String, FileSystemEr
         ))
     })?;
 
+    unique_sibling_path(source.backend.as_ref(), &parent, name, &HashSet::new())
+}
+
+/// The first sibling of `name` in `parent` that neither exists on `backend`
+/// nor appears in `reserved` (names other planned entries will claim).
+fn unique_sibling_path(
+    backend: &dyn FileSystemBackend,
+    parent: &str,
+    name: &str,
+    reserved: &HashSet<String>,
+) -> Result<String, FileSystemError> {
     let mut attempt = 0_u32;
     loop {
         let candidate_name = duplicate_name(name, attempt);
-        let candidate = join_path(&parent, &candidate_name);
+        let candidate = join_path(parent, &candidate_name);
 
-        match source.backend.stat(&candidate) {
+        if reserved.contains(&candidate_name) {
+            attempt += 1;
+            continue;
+        }
+
+        match backend.stat(&candidate) {
             Err(FileSystemError::NotFound(_)) => return Ok(candidate),
             Err(error) => return Err(error),
             Ok(_) => attempt += 1,
@@ -268,7 +382,7 @@ fn parent_path_of(path: &str) -> Option<String> {
 
 /// "report.txt" → "report 副本.txt" → "report 副本 2.txt"; directories keep
 /// their full name because they have no extension to preserve.
-fn duplicate_name(name: &str, attempt: u32) -> String {
+pub fn duplicate_name(name: &str, attempt: u32) -> String {
     let suffix = if attempt == 0 {
         "副本".to_owned()
     } else {
@@ -323,15 +437,39 @@ fn build_plan(
 
         let target = join_path(destination, name);
 
-        match destination_backend.stat(&target) {
-            Err(FileSystemError::NotFound(_)) => {}
-            Err(error) => return Err(error),
-            Ok(_) => return Err(FileSystemError::AlreadyExists(target)),
+        // A source that would land on itself is a no-op, not a conflict.
+        if Arc::ptr_eq(&source.backend, destination_backend)
+            && same_backend_path(&source.path, &target)
+        {
+            continue;
         }
+
+        let (destination_path, replacement) =
+            match destination_backend.stat(&target) {
+                Err(FileSystemError::NotFound(_)) => (target, None),
+                Err(error) => return Err(error),
+                Ok(target_stat) => match source.on_conflict {
+                    ConflictAction::Fail => {
+                        return Err(FileSystemError::AlreadyExists(target));
+                    }
+                    ConflictAction::Skip => continue,
+                    ConflictAction::Replace => (target, Some(target_stat)),
+                    ConflictAction::KeepBoth => {
+                        let kept = unique_sibling_path(
+                            destination_backend.as_ref(),
+                            destination,
+                            name,
+                            &planned_names,
+                        )?;
+                        planned_names.insert(last_segment(&kept).unwrap_or_default().to_owned());
+                        (kept, None)
+                    }
+                },
+            };
 
         if stat.kind == EntryKind::Directory
             && Arc::ptr_eq(&source.backend, destination_backend)
-            && path_contains(&source.path, &target)
+            && path_contains(&source.path, &destination_path)
         {
             return Err(FileSystemError::InvalidInput(format!(
                 "Cannot paste a folder into itself: {}",
@@ -342,11 +480,33 @@ fn build_plan(
         plan.push(PlanEntry {
             source,
             stat,
-            destination: target,
+            destination: destination_path,
+            replacement,
         });
     }
 
     Ok(plan)
+}
+
+/// Path equality on one backend: exact on POSIX, case-insensitive with
+/// unified separators on Windows (sources arrive with `\` while joined
+/// targets use `/`).
+fn same_backend_path(left: &str, right: &str) -> bool {
+    fn normalize(path: &str) -> String {
+        let trimmed = path.trim_end_matches(['/', '\\']);
+
+        #[cfg(windows)]
+        {
+            trimmed.replace('\\', "/").to_lowercase()
+        }
+
+        #[cfg(not(windows))]
+        {
+            trimmed.to_owned()
+        }
+    }
+
+    normalize(left) == normalize(right)
 }
 
 fn copy_node(
