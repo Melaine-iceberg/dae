@@ -64,6 +64,18 @@ git2 = "0.21.0"
 # Spawns the cross-platform PTY (ConPTY on Windows, openpty on Unix) that
 # backs the integrated terminal panel.
 portable-pty = "0.9"
+# Starts a native drag-out (OLE DoDragDrop on Windows) so files can be
+# dragged from the window into Explorer, chat apps, or browsers.
+drag = "2.1.1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_UI_Shell",
+] }
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

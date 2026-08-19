@@ -8,7 +8,7 @@ import {
 import { useAtom, useAtomValue } from "jotai";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openPath } from "@tauri-apps/plugin-opener";
-import type { ArchiveFormat } from "@/bindings";
+import { commands, type ArchiveFormat } from "@/bindings";
 import {
   CaretDownIcon,
   CaretUpIcon,
@@ -51,6 +51,7 @@ import {
   canDropEntries,
   getExplorerDropTargetAtPoint,
   getSidebarSpaceDropTargetAtPoint,
+  isLocalExplorerPath,
   isOverSidebarFavoritesAtPoint,
   type FileTransferOperation,
 } from "./drag-drop";
@@ -78,7 +79,6 @@ interface FileListProps {
   externalDropItemCount: number;
   externalDropTargetPath: string | null;
   gitStatus?: ExplorerGitStatus | null;
-  hasClipboard: boolean;
   initialScrollOffset?: number;
   isLoading: boolean;
   isOperationPending: boolean;
@@ -210,7 +210,6 @@ export function FileList({
   externalDropItemCount,
   externalDropTargetPath,
   gitStatus,
-  hasClipboard,
   initialScrollOffset = 0,
   isLoading,
   isOperationPending,
@@ -293,7 +292,7 @@ export function FileList({
       return;
     }
 
-    if (hasModifier && !event.altKey && key === "v" && hasClipboard && !actionsDisabled) {
+    if (hasModifier && !event.altKey && key === "v" && !actionsDisabled) {
       event.preventDefault();
       onPaste();
       return;
@@ -369,6 +368,31 @@ export function FileList({
       const distanceY = event.clientY - candidate.startY;
       const isDragging = internalDragRef.current !== null;
       if (!isDragging && Math.hypot(distanceX, distanceY) < DRAG_START_DISTANCE_PX) return;
+
+      // Chromium keeps delivering pointermove while the button is held, even
+      // outside the webview, so an out-of-bounds position means the user is
+      // dragging towards another app. Hand the gesture to a native OS drag
+      // (OLE DoDragDrop); dropping back onto our own window still works via
+      // the external-drop path.
+      if (
+        isDragging &&
+        (event.clientX < 0 ||
+          event.clientY < 0 ||
+          event.clientX >= window.innerWidth ||
+          event.clientY >= window.innerHeight)
+      ) {
+        const dragPaths = internalDragRef.current?.sourcePaths ?? [];
+        suppressNextClickRef.current = true;
+        stopDragging();
+
+        const localPaths = dragPaths.filter(isLocalExplorerPath);
+        if (localPaths.length > 0) {
+          void commands.startDragOut(localPaths).catch((error) => {
+            console.warn("Unable to start the native drag-out", error);
+          });
+        }
+        return;
+      }
 
       const operation: FileTransferOperation = event.ctrlKey || event.metaKey ? "copy" : "move";
       const nextTarget = resolveDragTarget(
@@ -796,7 +820,7 @@ export function FileList({
             在终端中打开
             <ContextMenuShortcut>{MOD_KEY}+`</ContextMenuShortcut>
           </ContextMenuItem>
-          <ContextMenuItem disabled={!hasClipboard} onClick={onPaste}>
+          <ContextMenuItem onClick={onPaste}>
             <ClipboardIcon />
             粘贴
             <ContextMenuShortcut>{MOD_KEY}+V</ContextMenuShortcut>

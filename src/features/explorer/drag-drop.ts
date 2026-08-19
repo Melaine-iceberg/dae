@@ -44,6 +44,18 @@ export function canDropEntries(sourcePaths: string[], destinationPath: string): 
   return !sourcePaths.every((sourcePath) => parentPath(sourcePath) === destinationPath);
 }
 
+/** Mirrors the backend's scheme detection: only a `scheme://` prefix whose
+ *  scheme part contains no path separators counts as a network path. */
+export function isLocalExplorerPath(path: string): boolean {
+  const separatorIndex = path.indexOf("://");
+  if (separatorIndex < 1) return true;
+
+  const scheme = path.slice(0, separatorIndex);
+  if (scheme.includes("/") || scheme.includes("\\")) return true;
+
+  return scheme.toLowerCase() === "file";
+}
+
 function parentPath(path: string): string | null {
   const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   if (separatorIndex < 0) return null;

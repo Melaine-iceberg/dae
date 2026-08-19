@@ -68,7 +68,11 @@ import { cn } from "@/lib/utils";
 import { ContentSearchResults, ContentSearchToolbar, useContentSearch } from "./content-search";
 import { ContextualActionBar } from "./contextual-action-bar";
 import { DirectorySearch, useDirectorySearch, type ExplorerSearchMode } from "./directory-search";
-import { getExplorerDropTargetAtPoint, type FileTransferOperation } from "./drag-drop";
+import {
+  getExplorerDropTargetAtPoint,
+  isLocalExplorerPath,
+  type FileTransferOperation,
+} from "./drag-drop";
 import { EntryPreview } from "./entry-preview";
 import { isArchiveFile } from "./entry-context-menu";
 import { ExplorerPathBar } from "./explorer-path-bar";
@@ -482,31 +486,56 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const copySelection = useCallback(() => {
     if (selectedEntries.length === 0) return;
 
-    setClipboard({ operation: "copy", sourcePaths: selectedEntries.map((entry) => entry.path) });
+    const sourcePaths = selectedEntries.map((entry) => entry.path);
+    setClipboard({ operation: "copy", sourcePaths });
+    mirrorFilesToSystemClipboard(sourcePaths, false);
     setOperationError(null);
   }, [selectedEntries, setClipboard]);
 
   const cutSelection = useCallback(() => {
     if (selectedEntries.length === 0) return;
 
-    setClipboard({ operation: "cut", sourcePaths: selectedEntries.map((entry) => entry.path) });
+    const sourcePaths = selectedEntries.map((entry) => entry.path);
+    setClipboard({ operation: "cut", sourcePaths });
+    mirrorFilesToSystemClipboard(sourcePaths, true);
     setOperationError(null);
   }, [selectedEntries, setClipboard]);
 
   const pasteClipboard = useCallback(() => {
-    if (!clipboard || !directoryPath) return;
+    if (!directoryPath) return;
 
     setOperationError(null);
-    const pastedClipboard = clipboard;
-    const operation: FileTransferOperation =
-      pastedClipboard.operation === "copy" ? "copy" : "move";
 
-    startTransfer(pastedClipboard.sourcePaths, directoryPath, operation, () => {
-      if (pastedClipboard.operation === "cut") {
-        setClipboard(null);
-      }
-      setSelectedPaths([]);
-    });
+    // The system clipboard wins when it holds a different file list, because
+    // copying files in Explorer or another app replaces our mirror while the
+    // app-internal atom keeps its previous contents. Network paths never
+    // reach the system clipboard, so those stay app-internal.
+    void commands
+      .readFilesFromClipboard()
+      .then((systemFiles) => {
+        const systemPaths = systemFiles?.paths ?? [];
+        const systemIsMirror =
+          clipboard !== null && pathListsEqual(systemPaths, clipboard.sourcePaths);
+        const fromSystem = systemPaths.length > 0 && !systemIsMirror;
+
+        const paths = fromSystem ? systemPaths : clipboard?.sourcePaths ?? [];
+        if (paths.length === 0) return;
+
+        const isCut = fromSystem
+          ? systemFiles?.cut === true
+          : clipboard?.operation === "cut";
+        const operation: FileTransferOperation = isCut ? "move" : "copy";
+
+        startTransfer(paths, directoryPath, operation, () => {
+          if (isCut && !fromSystem) {
+            setClipboard(null);
+          }
+          setSelectedPaths([]);
+        });
+      })
+      .catch((error) => {
+        console.warn("Unable to read the system clipboard", error);
+      });
   }, [clipboard, directoryPath, setClipboard, startTransfer]);
 
   const requestRename = useCallback(() => {
@@ -1085,7 +1114,6 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                   externalDropItemCount={externalDrop?.sourcePaths.length ?? 0}
                   externalDropTargetPath={externalDrop?.targetPath ?? null}
                   gitStatus={gitStatus}
-                  hasClipboard={clipboard !== null}
                   initialScrollOffset={
                     search.isActive ? 0 : navigator.getScrollOffset(directory.path)
                   }
@@ -1282,16 +1310,19 @@ function ToolbarSeparator() {
   return <div aria-hidden="true" className="mx-1 h-5 w-px bg-border" />;
 }
 
-/** Mirrors the backend's scheme detection: only a `scheme://` prefix whose
- *  scheme part contains no path separators counts as a network path. */
-function isLocalExplorerPath(path: string): boolean {
-  const separatorIndex = path.indexOf("://");
-  if (separatorIndex < 1) return true;
+/** Places local files on the OS clipboard (CF_HDROP) so Explorer, browsers,
+ *  and chat apps accept a paste; network paths stay app-internal. */
+function mirrorFilesToSystemClipboard(paths: string[], cut: boolean) {
+  const localPaths = paths.filter(isLocalExplorerPath);
+  if (localPaths.length === 0) return;
 
-  const scheme = path.slice(0, separatorIndex);
-  if (scheme.includes("/") || scheme.includes("\\")) return true;
+  void commands.writeFilesToClipboard(localPaths, cut).catch((error) => {
+    console.warn("Unable to place files on the system clipboard", error);
+  });
+}
 
-  return scheme.toLowerCase() === "file";
+function pathListsEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((path, index) => path === b[index]);
 }
 
 function FileOperationStatusBar({ progress }: { progress: FileOperationProgress }) {

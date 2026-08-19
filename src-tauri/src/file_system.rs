@@ -10,6 +10,7 @@ pub mod recents;
 pub mod sidebar;
 pub mod smb;
 pub mod spaces;
+pub mod system_files;
 pub mod transfer;
 pub mod types;
 pub mod vfs;
