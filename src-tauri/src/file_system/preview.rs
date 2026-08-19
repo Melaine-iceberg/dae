@@ -205,14 +205,13 @@ fn store_cache(cache_key: String, thumbnail: Arc<RenderedThumbnail>) {
         });
 
         // Refresh the recency marker when the key already exists.
-        if cache.entries.contains_key(&cache_key) {
-            if let Some(position) = cache
+        if cache.entries.contains_key(&cache_key)
+            && let Some(position) = cache
                 .insertion_order
                 .iter()
                 .position(|key| key == &cache_key)
-            {
-                cache.insertion_order.remove(position);
-            }
+        {
+            cache.insertion_order.remove(position);
         }
 
         while cache.entries.len() >= THUMBNAIL_CACHE_MAX_ENTRIES {

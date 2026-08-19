@@ -173,16 +173,16 @@ fn merge(left: GitEntryStatusKind, right: GitEntryStatusKind) -> GitEntryStatusK
 
 fn branch_name(repo: &Repository) -> String {
     if let Ok(head) = repo.head() {
-        if repo.head_detached().unwrap_or(false) {
-            if let Some(target) = head.target() {
-                let commit = target.to_string();
-                return commit[..7.min(commit.len())].to_string();
-            }
+        if repo.head_detached().unwrap_or(false)
+            && let Some(target) = head.target()
+        {
+            let commit = target.to_string();
+            return commit[..7.min(commit.len())].to_string();
         }
-        if let Ok(shorthand) = head.shorthand() {
-            if !shorthand.is_empty() {
-                return shorthand.to_string();
-            }
+        if let Ok(shorthand) = head.shorthand()
+            && !shorthand.is_empty()
+        {
+            return shorthand.to_string();
         }
     } else if let Ok(head) = repo.find_reference("HEAD") {
         // 尚无提交的仓库：HEAD 符号指向未诞生的分支，如 refs/heads/main。

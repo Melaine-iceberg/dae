@@ -644,7 +644,7 @@ fn transfers_trees_between_distinct_backend_instances() {
             path: source_path.clone(),
             backend: source_backend.clone(),
         }],
-        &move_destination_dir.to_string_lossy().into_owned(),
+        &move_destination_dir.to_string_lossy(),
         &destination_backend,
         &move_progress,
     )

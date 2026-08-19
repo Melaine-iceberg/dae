@@ -62,10 +62,10 @@ pub fn run() {
     let app = app.build(tauri::generate_context!()).expect("error while building tauri application");
     app.run(|app_handle, event| {
         // Kill live shells so no orphaned processes survive the app.
-        if let tauri::RunEvent::Exit = event {
-            if let Some(state) = app_handle.try_state::<terminal::TerminalState>() {
-                terminal::kill_all(&state);
-            }
+        if let tauri::RunEvent::Exit = event
+            && let Some(state) = app_handle.try_state::<terminal::TerminalState>()
+        {
+            terminal::kill_all(&state);
         }
     });
 }

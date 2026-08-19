@@ -100,7 +100,7 @@ fn read_recents(path: &std::path::Path) -> Result<Vec<RecentItem>, FileSystemErr
         Ok(contents) => {
             let mut items: Vec<RecentItem> = serde_json::from_str(&contents)
                 .map_err(|error| FileSystemError::Internal(error.to_string()))?;
-            items.sort_by(|a, b| b.accessed_at.cmp(&a.accessed_at));
+            items.sort_by_key(|item| std::cmp::Reverse(item.accessed_at));
             Ok(items)
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),

@@ -67,8 +67,8 @@ pub async fn watch_directory(path: String, app: tauri::AppHandle) -> Result<(), 
         let watcher = tauri::async_runtime::spawn_blocking(move || {
             local::create_directory_watcher(PathBuf::from(path), watcher_app)
         })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))??;
+            .await
+            .map_err(|error| FileSystemError::Internal(error.to_string()))??;
 
         app.state::<DirectoryWatcher>()
             .replace(generation, WatchHandle::Notify(watcher))
@@ -101,8 +101,8 @@ pub async fn search_directory(
         let is_current = || state.is_current(generation);
         backend.search(&path, &query, &is_current)
     })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Stops the active traversal when the search surface is dismissed.
@@ -149,8 +149,8 @@ pub async fn search_file_contents(
             &is_current,
         )
     })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Renames a single directory entry without allowing a path change.
@@ -160,8 +160,8 @@ pub async fn rename_entry(path: String, new_name: String) -> Result<(), FileSyst
     tauri::async_runtime::spawn_blocking(move || {
         vfs::resolve(&path)?.rename_entry(&path, &new_name)
     })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Creates a new file or directory inside an existing directory and returns its path.
@@ -175,8 +175,8 @@ pub async fn create_entry(
     tauri::async_runtime::spawn_blocking(move || {
         vfs::resolve(&directory)?.create_entry(&directory, &name, kind)
     })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Copies entries into an existing destination directory. Existing files are never overwritten.
@@ -206,8 +206,8 @@ pub async fn copy_entries(
             transfer::copy_entries(sources, &destination, &destination_backend, &progress)
         }
     })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Moves entries into an existing destination directory. Existing files are never overwritten.
@@ -237,8 +237,8 @@ pub async fn move_entries(
             transfer::move_entries(sources, &destination, &destination_backend, &progress)
         }
     })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Permanently deletes entries. The UI must obtain confirmation before calling this command.
@@ -270,8 +270,8 @@ pub async fn delete_entries(
             transfer::delete_entries(targets, &progress)
         }
     })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 fn resolve_sources(paths: Vec<String>) -> Result<Vec<TransferSource>, FileSystemError> {
@@ -368,8 +368,8 @@ pub async fn trash_entries(
         }
         Ok(())
     })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Restores the most recent [`trash_entries`] batch to its original locations,
@@ -417,8 +417,8 @@ pub async fn undo_trash(app: tauri::AppHandle) -> Result<Vec<String>, FileSystem
         trash::os_limited::restore_all(to_restore).map_err(trash_error)?;
         Ok(restored_paths)
     })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Windows paths are case-insensitive, so recycle-bin parents recorded from a
@@ -461,8 +461,8 @@ pub async fn duplicate_entries(
             FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Copy);
         transfer::duplicate_sources(sources, &progress)
     })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 fn is_local_path(path: &str) -> bool {
@@ -493,7 +493,7 @@ pub fn open_terminal(path: String) -> Result<(), FileSystemError> {
 }
 
 #[cfg(target_os = "windows")]
-fn open_system_terminal(directory: &std::path::Path) -> Result<(), FileSystemError> {
+fn open_system_terminal(directory: &Path) -> Result<(), FileSystemError> {
     use std::os::windows::process::CommandExt;
 
     const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;

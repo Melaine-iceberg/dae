@@ -95,8 +95,8 @@ pub async fn compress_entries(
             FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Compress);
         compress_sync(sources, &destination_dir, format, &progress)
     })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Extracts a local archive. Without `destination_dir` the entries land in a
@@ -117,8 +117,8 @@ pub async fn extract_archive(
             FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Extract);
         extract_sync(&archive_path, destination_dir.as_deref(), &progress)
     })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 pub(super) fn compress_sync(
@@ -229,7 +229,7 @@ pub(super) fn extract_sync(
 /// Sink that hides the per-format writer differences behind one interface.
 enum ArchiveSink {
     Zip {
-        writer: ZipWriter<std::fs::File>,
+        writer: Box<ZipWriter<std::fs::File>>,
         options: SimpleFileOptions,
     },
     Tar {
@@ -269,7 +269,7 @@ impl ArchiveSink {
             ArchiveFormat::Zip => {
                 let file = std::fs::File::create(path)?;
                 Ok(ArchiveSink::Zip {
-                    writer: ZipWriter::new(file),
+                    writer: Box::new(ZipWriter::new(file)),
                     options: SimpleFileOptions::default()
                         .compression_method(CompressionMethod::Deflated)
                         .large_file(true),
