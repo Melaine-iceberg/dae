@@ -136,7 +136,9 @@ fn parse_smb_path(rest: &str) -> Result<SmbPath, FileSystemError> {
     })
 }
 
-fn split_authority(rest: &str) -> (&str, Option<&str>) {
+/// Splits `host[:port]/rest` into the authority and the rest. Shared with the
+/// SFTP backend, whose URLs share the `scheme://authority/path` shape.
+pub(crate) fn split_authority(rest: &str) -> (&str, Option<&str>) {
     if let Some(stripped) = rest.strip_prefix('[')
         && let Some(end) = stripped.find(']')
     {
@@ -151,7 +153,9 @@ fn split_authority(rest: &str) -> (&str, Option<&str>) {
     }
 }
 
-fn parse_authority(authority: &str) -> Result<(String, Option<u16>), FileSystemError> {
+/// Parses the `[host]:port` authority, accepting bracketed IPv6 addresses.
+/// Shared with the SFTP backend.
+pub(crate) fn parse_authority(authority: &str) -> Result<(String, Option<u16>), FileSystemError> {
     let (host, port) = if authority.starts_with('[') {
         let end = authority
             .find(']')
@@ -168,7 +172,7 @@ fn parse_authority(authority: &str) -> Result<(String, Option<u16>), FileSystemE
 
     if host.is_empty() {
         return Err(FileSystemError::InvalidInput(
-            "An SMB host is required".into(),
+            "A server host is required".into(),
         ));
     }
 
@@ -177,7 +181,7 @@ fn parse_authority(authority: &str) -> Result<(String, Option<u16>), FileSystemE
         Some("") => None,
         Some(port) => Some(
             port.parse::<u16>()
-                .map_err(|_| FileSystemError::InvalidInput(format!("Invalid SMB port: {port}")))?,
+                .map_err(|_| FileSystemError::InvalidInput(format!("Invalid port: {port}")))?,
         ),
     };
 
@@ -804,6 +808,12 @@ pub async fn test_connection(input: SaveConnectionInput) -> Result<(), FileSyste
                 )?;
                 backend.share_names().map(|_| ())
             }
+            Protocol::Sftp => super::sftp::test_backend(
+                &host,
+                input.port,
+                input.username.as_deref(),
+                input.password.as_deref(),
+            ),
             other => Err(FileSystemError::InvalidInput(format!(
                 "The {} protocol is not supported in this build yet",
                 other.as_str()

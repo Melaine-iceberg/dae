@@ -9,6 +9,7 @@ pub mod progress;
 pub mod recents;
 pub mod sidebar;
 pub mod smb;
+pub mod sftp;
 pub mod spaces;
 pub mod system_files;
 pub mod transfer;

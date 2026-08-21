@@ -23,12 +23,12 @@ const PROTOCOL_DEFAULT_PORTS: Record<Protocol, string> = {
 
 const PROTOCOL_LABELS: Record<Protocol, string> = {
   smb: "SMB / Windows 共享",
-  sftp: "SFTP（即将支持）",
+  sftp: "SFTP / SSH",
   ftp: "FTP（即将支持）",
   webdav: "WebDAV（即将支持）",
 };
 
-const AVAILABLE_PROTOCOLS: Protocol[] = ["smb"];
+const AVAILABLE_PROTOCOLS: Protocol[] = ["smb", "sftp"];
 
 type TestState = { status: "idle" } | { status: "testing" } | { status: "ok" } | { status: "failed"; message: string };
 
@@ -115,7 +115,9 @@ export function ConnectDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>连接网络存储</DialogTitle>
-          <DialogDescription>连接 SMB 服务器（NAS、Windows 共享）。匿名连接失败时请填写账号。</DialogDescription>
+          <DialogDescription>
+            连接 SMB 服务器（NAS、Windows 共享）或 SFTP 服务器（Linux、NAS）。SFTP 需要账号密码。
+          </DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={submit}>
           <div className="grid gap-2">

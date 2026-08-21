@@ -580,11 +580,11 @@ fn rejects_unknown_and_unregistered_schemes() {
         .expect("unknown scheme");
     assert!(matches!(unknown, FileSystemError::InvalidInput(_)));
 
-    // SMB resolves to a connect attempt these days; sftp is the scheme that
-    // still has no backend.
-    let unregistered = vfs::resolve("sftp://nas/media")
+    // SMB and SFTP resolve to connect attempts these days; ftp is a scheme
+    // that still has no backend.
+    let unregistered = vfs::resolve("ftp://nas/media")
         .err()
-        .expect("no sftp backend yet");
+        .expect("no ftp backend yet");
     assert!(matches!(unregistered, FileSystemError::InvalidInput(_)));
 }
 

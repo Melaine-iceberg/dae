@@ -390,7 +390,7 @@ function NetworkSection({
 
       {connections.length === 0 && (
         <p className="px-2.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
-          点击 + 连接 NAS 或 Windows 共享
+          点击 + 连接 NAS、Windows 共享或 SFTP 服务器
         </p>
       )}
     </div>

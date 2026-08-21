@@ -1,5 +1,6 @@
 use super::error::FileSystemError;
 use super::local::LocalBackend;
+use super::sftp;
 use super::smb;
 use super::types::{
     DirectoryView, EntryStat, FileProperties, NewEntryKind, PropertyChanges, SearchResponse,
@@ -67,7 +68,10 @@ pub fn resolve(path: &str) -> Result<SharedBackend, FileSystemError> {
             let (_, rest) = split_scheme(path)?;
             smb::open_backend(rest)
         }
-        Scheme::Sftp => Err(unsupported_scheme("SFTP")),
+        Scheme::Sftp => {
+            let (_, rest) = split_scheme(path)?;
+            sftp::open_backend(rest)
+        }
         Scheme::Ftp => Err(unsupported_scheme("FTP")),
         Scheme::WebDav => Err(unsupported_scheme("WebDAV")),
     }
