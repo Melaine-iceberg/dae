@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import {
+  AppWindowIcon,
   ArchiveTrayIcon,
   ArrowsOutCardinalIcon,
   ClipboardTextIcon,
@@ -18,7 +19,7 @@ import {
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { commands, type ArchiveFormat } from "@/bindings";
-import { MOD_KEY } from "@/lib/platform";
+import { isWindowsPlatform, MOD_KEY } from "@/lib/platform";
 
 import {
   ContextMenuGroup,
@@ -94,6 +95,15 @@ export function EntryContextMenuContent({
           打开
           <ContextMenuShortcut>Enter</ContextMenuShortcut>
         </ContextMenuItem>
+        {entry.kind === "file" && isWindowsPlatform && (
+          <ContextMenuItem
+            disabled={isActionDisabled}
+            onClick={() => void openWithSystemDialog(entry.path)}
+          >
+            <AppWindowIcon />
+            打开方式…
+          </ContextMenuItem>
+        )}
         {entry.kind === "directory" && (
           <ContextMenuItem disabled={isActionDisabled} onClick={onAddToFavorites}>
             <StarIcon />
@@ -205,5 +215,13 @@ async function openTerminalAt(path: string): Promise<void> {
     await commands.openTerminal(path);
   } catch (error) {
     console.warn(`Unable to open terminal at ${path}`, error);
+  }
+}
+
+async function openWithSystemDialog(path: string): Promise<void> {
+  try {
+    await commands.openWith(path);
+  } catch (error) {
+    console.warn(`Unable to open "open with" picker for ${path}`, error);
   }
 }

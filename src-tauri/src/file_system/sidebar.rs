@@ -219,7 +219,9 @@ fn decode_wsl_output(bytes: &[u8]) -> String {
 
     let payload = if has_bom { &bytes[2..] } else { bytes };
     let units: Vec<u16> = payload
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
         .collect();
     String::from_utf16_lossy(&units)

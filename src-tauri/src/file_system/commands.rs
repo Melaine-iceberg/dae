@@ -535,6 +535,34 @@ pub fn open_terminal(path: String) -> Result<(), FileSystemError> {
     open_system_terminal(&directory)
 }
 
+/// Opens the system's native "Open With" picker for a local file.
+///
+/// Windows shows the shell's "How do you want to open this file?" dialog,
+/// letting the user pick any installed application (or set a new default);
+/// the command resolves once the dialog is dismissed. macOS and Linux expose
+/// no native picker, so the command fails there.
+#[tauri::command]
+#[specta::specta]
+pub async fn open_with(path: String) -> Result<(), FileSystemError> {
+    if !is_local_path(&path) {
+        return Err(FileSystemError::InvalidInput(
+            "只能为本地文件选择打开方式".into(),
+        ));
+    }
+
+    let file = PathBuf::from(&path);
+    if !file.is_file() {
+        return Err(FileSystemError::InvalidInput(
+            "只能为文件选择打开方式".into(),
+        ));
+    }
+
+    // SHOpenWithDialog 以模态方式运行到用户关闭为止，放到阻塞线程池执行。
+    tauri::async_runtime::spawn_blocking(move || open_system_with_dialog(&file))
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
 #[cfg(target_os = "windows")]
 fn open_system_terminal(directory: &Path) -> Result<(), FileSystemError> {
     use std::os::windows::process::CommandExt;
@@ -644,6 +672,71 @@ fn open_system_terminal(directory: &std::path::Path) -> Result<(), FileSystemErr
 
     Err(FileSystemError::Internal(
         "未找到可用的终端，请安装 xdg-terminal-exec 或设置 $TERMINAL".into(),
+    ))
+}
+
+#[cfg(target_os = "windows")]
+fn open_system_with_dialog(file: &Path) -> Result<(), FileSystemError> {
+    use std::os::windows::ffi::OsStrExt;
+
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+    use windows::Win32::UI::Shell::{
+        OAIF_ALLOW_REGISTRATION, OAIF_EXEC, OAIF_REGISTER_EXT, OPENASINFO, OPEN_AS_INFO_FLAGS,
+        SHOpenWithDialog,
+    };
+
+    /// RAII COM 套间；S_FALSE (0x1) 表示线程已有套间，此时不能反初始化。
+    struct CoApartment {
+        owned: bool,
+    }
+
+    impl CoApartment {
+        fn enter() -> Result<Self, FileSystemError> {
+            unsafe {
+                match CoInitializeEx(Some(std::ptr::null()), COINIT_APARTMENTTHREADED) {
+                    Ok(()) => Ok(Self { owned: true }),
+                    Err(error) if error.code().0 == 1 => Ok(Self { owned: false }),
+                    Err(error) => Err(FileSystemError::Internal(error.to_string())),
+                }
+            }
+        }
+    }
+
+    impl Drop for CoApartment {
+        fn drop(&mut self) {
+            if self.owned {
+                unsafe { CoUninitialize() };
+            }
+        }
+    }
+
+    let _apartment = CoApartment::enter()?;
+
+    // 路径以 UTF-16 直传。不走 rundll32 的 OpenAs_RunDLLW——那条路径会经过
+    // ANSI 代码页转换，非 ASCII 文件名在对话框里会显示成乱码。
+    let wide_path: Vec<u16> = file
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let info = OPENASINFO {
+        pcszFile: PCWSTR::from_raw(wide_path.as_ptr()),
+        pcszClass: PCWSTR::null(),
+        oaifInFlags: OPEN_AS_INFO_FLAGS(
+            OAIF_ALLOW_REGISTRATION.0 | OAIF_REGISTER_EXT.0 | OAIF_EXEC.0,
+        ),
+    };
+
+    // 模态对话框：确认后立即用所选程序打开文件；取消返回 S_FALSE，视为成功。
+    unsafe { SHOpenWithDialog(None, &info) }
+        .map_err(|error| FileSystemError::Internal(error.to_string()))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn open_system_with_dialog(_file: &Path) -> Result<(), FileSystemError> {
+    Err(FileSystemError::Internal(
+        "当前平台不支持系统“打开方式”对话框".into(),
     ))
 }
 

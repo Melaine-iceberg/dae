@@ -94,6 +94,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::commands::undo_trash,
             file_system::commands::duplicate_entries,
             file_system::commands::open_terminal,
+            file_system::commands::open_with,
             file_system::system_files::write_files_to_clipboard,
             file_system::system_files::read_files_from_clipboard,
             file_system::system_files::start_drag_out,
