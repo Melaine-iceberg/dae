@@ -1,4 +1,36 @@
-export type FileTransferOperation = "copy" | "move";
+/** Transfer intent of a drag gesture, including Windows-style "link"
+ * (create shortcut, Alt-drag). */
+export type FileTransferOperation = "copy" | "move" | "link";
+
+/** Operations the copy/move transfer pipeline understands; "link" shortcuts
+ * are handled by their own command and never reach the conflict dialog. */
+export type TransferOperation = Exclude<FileTransferOperation, "link">;
+
+/** Resolves the Windows-explorer-style modifier state to a drag operation:
+ * Alt (or Ctrl+Shift) creates shortcuts, Ctrl copies, plain/Shift moves. */
+export function dragOperationFromModifiers(event: {
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+}): FileTransferOperation {
+  if (event.altKey || (event.ctrlKey && event.shiftKey)) return "link";
+  if (event.ctrlKey || event.metaKey) return "copy";
+  return "move";
+}
+
+/** Same Windows conventions for drags that leave the window, where the plain
+ * gesture copies (Explorer's cross-volume default). */
+export function dragOutModeFromModifiers(event: {
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+}): "copy" | "move" | "link" {
+  if (event.altKey || (event.ctrlKey && event.shiftKey)) return "link";
+  if (event.shiftKey) return "move";
+  return "copy";
+}
 
 const DIRECTORY_DROP_TARGET_SELECTOR = "[data-explorer-directory-drop-target]";
 const DROP_TARGET_SELECTOR = "[data-explorer-drop-target]";

@@ -71,7 +71,7 @@ import { DirectorySearch, useDirectorySearch, type ExplorerSearchMode } from "./
 import {
   getExplorerDropTargetAtPoint,
   isLocalExplorerPath,
-  type FileTransferOperation,
+  type TransferOperation,
 } from "./drag-drop";
 import { EntryPreview } from "./entry-preview";
 import { isArchiveFile } from "./entry-context-menu";
@@ -114,7 +114,7 @@ type ExternalDrop = { sourcePaths: string[]; targetPath: string | null };
 type PendingTransfer = {
   conflicts: TransferConflict[];
   destinationPath: string;
-  operation: FileTransferOperation;
+  operation: TransferOperation;
   sourcePaths: string[];
   onSuccess: () => void;
 };
@@ -345,7 +345,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     (
       sourcePaths: string[],
       destinationPath: string,
-      operation: FileTransferOperation,
+      operation: TransferOperation,
       decisions: Record<string, ConflictAction>,
       onSuccess: () => void,
     ) => {
@@ -377,7 +377,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     (
       sourcePaths: string[],
       destinationPath: string,
-      operation: FileTransferOperation,
+      operation: TransferOperation,
       onSuccess: () => void,
     ) => {
       if (sourcePaths.length === 0) return;
@@ -399,10 +399,24 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   );
 
   const transferEntries = useCallback(
-    (sourcePaths: string[], destinationPath: string, operation: FileTransferOperation) => {
+    (sourcePaths: string[], destinationPath: string, operation: TransferOperation) => {
       startTransfer(sourcePaths, destinationPath, operation, () => setSelectedPaths([]));
     },
     [startTransfer],
+  );
+
+  /** Windows-style Alt-drag: create .lnk shortcuts for the sources inside the
+   * destination. The backend resolves name collisions with " (2)"… suffixes,
+   * so no conflict dialog is needed here. */
+  const createShortcutsEntries = useCallback(
+    (sourcePaths: string[], destinationPath: string) => {
+      setOperationError(null);
+      commands
+        .createShortcuts(sourcePaths, destinationPath)
+        .then(() => setSelectedPaths([]))
+        .catch((error: unknown) => setOperationError(getErrorMessage(error)));
+    },
+    [],
   );
 
   const copyExternalEntries = useCallback(
@@ -524,7 +538,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         const isCut = fromSystem
           ? systemFiles?.cut === true
           : clipboard?.operation === "cut";
-        const operation: FileTransferOperation = isCut ? "move" : "copy";
+        const operation: TransferOperation = isCut ? "move" : "copy";
 
         startTransfer(paths, directoryPath, operation, () => {
           if (isCut && !fromSystem) {
@@ -1131,6 +1145,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                   onDeletePermanent={requestPermanentDelete}
                   onDuplicate={duplicateSelection}
                   onDropEntries={transferEntries}
+                  onCreateShortcuts={createShortcutsEntries}
                   onExtract={extractSelection}
                   onMoveTo={moveSelectionTo}
                   onOpenDirectory={(path) => void navigator.navigate(path)}

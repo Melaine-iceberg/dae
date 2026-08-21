@@ -17,6 +17,7 @@ import {
   FilePlusIcon,
   FolderIcon,
   FolderPlusIcon,
+  LinkIcon,
   ScissorsIcon,
   SquaresFourIcon,
   StarIcon,
@@ -49,11 +50,14 @@ import { recordRecentItem } from "@/features/workspace/recents-atoms";
 
 import {
   canDropEntries,
+  dragOperationFromModifiers,
+  dragOutModeFromModifiers,
   getExplorerDropTargetAtPoint,
   getSidebarSpaceDropTargetAtPoint,
   isLocalExplorerPath,
   isOverSidebarFavoritesAtPoint,
   type FileTransferOperation,
+  type TransferOperation,
 } from "./drag-drop";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { FileColumnView } from "./file-column-view";
@@ -95,8 +99,9 @@ interface FileListProps {
   onDropEntries: (
     sourcePaths: string[],
     destinationPath: string,
-    operation: FileTransferOperation,
+    operation: TransferOperation,
   ) => void;
+  onCreateShortcuts: (sourcePaths: string[], destinationPath: string) => void;
   onExtract: (path: string) => void;
   onMoveTo: () => void;
   onOpenDirectory: (path: string) => void;
@@ -224,6 +229,7 @@ export function FileList({
   onDeletePermanent,
   onDuplicate,
   onDropEntries,
+  onCreateShortcuts,
   onExtract,
   onMoveTo,
   onOpenDirectory,
@@ -387,14 +393,19 @@ export function FileList({
 
         const localPaths = dragPaths.filter(isLocalExplorerPath);
         if (localPaths.length > 0) {
-          void commands.startDragOut(localPaths).catch((error) => {
+          // Windows conventions: plain/Ctrl copies out, Shift moves,
+          // Alt (or Ctrl+Shift) creates shortcuts at the drop target.
+          const dragOutMode = dragOutModeFromModifiers(event);
+          void commands.startDragOut(localPaths, dragOutMode).catch((error) => {
             console.warn("Unable to start the native drag-out", error);
           });
         }
         return;
       }
 
-      const operation: FileTransferOperation = event.ctrlKey || event.metaKey ? "copy" : "move";
+      // Windows conventions inside the window: Alt (or Ctrl+Shift) links,
+      // Ctrl copies, plain/Shift moves (Explorer's same-volume default).
+      const operation: FileTransferOperation = dragOperationFromModifiers(event);
       const nextTarget = resolveDragTarget(
         entries,
         candidate.sourcePaths,
@@ -431,7 +442,11 @@ export function FileList({
       if (activeDrag) {
         suppressNextClickRef.current = true;
         if (activeDrag.target?.kind === "directory") {
-          onDropEntries(activeDrag.sourcePaths, activeDrag.target.path, activeDrag.operation);
+          if (activeDrag.operation === "link") {
+            onCreateShortcuts(activeDrag.sourcePaths, activeDrag.target.path);
+          } else {
+            onDropEntries(activeDrag.sourcePaths, activeDrag.target.path, activeDrag.operation);
+          }
         } else if (activeDrag.target?.kind === "favorites") {
           onAddToFavorites(draggableDirectoryPaths(entries, activeDrag.sourcePaths));
         } else if (activeDrag.target?.kind === "space") {
@@ -453,7 +468,7 @@ export function FileList({
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", stopDragging);
     };
-  }, [entries, onAddToFavorites, onAddToSpace, onDropEntries]);
+  }, [entries, onAddToFavorites, onAddToSpace, onCreateShortcuts, onDropEntries]);
 
   const selectEntry = (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => {
     if (actionsDisabled) return;
@@ -794,8 +809,18 @@ export function FileList({
               </>
             ) : (
               <>
-                {internalDrag.operation === "copy" ? <CopyIcon /> : <ScissorsIcon />}
-                {internalDrag.operation === "copy" ? "复制" : "移动"}{" "}
+                {internalDrag.operation === "copy" ? (
+                  <CopyIcon />
+                ) : internalDrag.operation === "link" ? (
+                  <LinkIcon />
+                ) : (
+                  <ScissorsIcon />
+                )}
+                {internalDrag.operation === "copy"
+                  ? "复制"
+                  : internalDrag.operation === "link"
+                    ? "创建快捷方式"
+                    : "移动"}{" "}
                 {internalDrag.sourcePaths.length} 个项目
               </>
             )}

@@ -1,0 +1,75 @@
+# Vendored copy of drag 2.1.1 (CrabNebula, Apache-2.0 OR MIT) with a local
+# patch: `DragMode::Link` so drag-out can advertise DROPEFFECT_LINK and let
+# drop targets create shortcuts, matching Windows Explorer's Alt-drag.
+# Upstream: https://github.com/crabnebula-dev/drag-rs
+
+[package]
+edition = "2021"
+name = "drag"
+version = "2.1.1"
+authors = ["CrabNebula Ltd."]
+description = "Start a drag operation out of a window"
+license = "Apache-2.0 OR MIT"
+
+[features]
+serde = ["dep:serde"]
+
+[lib]
+name = "drag"
+path = "src/lib.rs"
+
+[dependencies]
+log = "0.4"
+raw-window-handle = "0.6"
+serde = { version = "1", features = ["derive"], optional = true }
+thiserror = "2.0.18"
+
+[target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))'.dependencies]
+gdk = "0.18.0"
+gdkx11 = "0.18.0"
+gtk = "0.18.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-graphics = "0.24.0"
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3", features = [
+    "std",
+    "NSEvent",
+    "NSImage",
+    "NSPasteboard",
+    "NSDragging",
+    "NSDraggingItem",
+    "NSDraggingSession",
+    "NSView",
+    "NSWindow",
+    "NSApplication",
+] }
+objc2-foundation = { version = "0.3", features = [
+    "std",
+    "NSGeometry",
+    "NSString",
+    "NSURL",
+    "NSData",
+    "NSArray",
+    "NSDictionary",
+    "NSEnumerator",
+    "NSObject",
+] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+dunce = "1.0.5"
+windows = { version = "0.52", features = [
+    "implement",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Ole",
+    "Win32_System_Memory",
+    "Win32_System_SystemServices",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Imaging",
+] }
+windows-core = "0.58"

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-import type { FileTransferOperation } from "./drag-drop";
+import type { TransferOperation } from "./drag-drop";
 import {
   DIRECTORY_PRESENTATION,
   getFilePresentation,
@@ -71,7 +71,7 @@ export function TransferConflictDialog({
   onResolve,
 }: {
   conflicts: TransferConflict[];
-  operation: FileTransferOperation;
+  operation: TransferOperation;
   onCancel: () => void;
   onResolve: (decisions: Record<string, ConflictAction>) => void;
 }) {

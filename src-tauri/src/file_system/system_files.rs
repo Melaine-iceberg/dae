@@ -2,7 +2,7 @@
 //! drag-out of files to other applications.
 
 use super::error::FileSystemError;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use specta::Type;
 
 /// File paths currently held by the system clipboard, with Explorer's
@@ -44,26 +44,64 @@ pub async fn read_files_from_clipboard() -> Result<Option<SystemClipboardFiles>,
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
+/// Transfer effect the native drag-out advertises to the drop target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(rename_all = "lowercase")]
+pub enum DragOutMode {
+    Copy,
+    Move,
+    /// Drop targets create shortcuts instead of transferring the files
+    /// (DROPEFFECT_LINK — Windows Explorer's Alt-drag behavior).
+    Link,
+}
+
 /// Starts a native drag carrying the given files out of the window, e.g. into
-/// Explorer, a chat app, or a browser upload field. Returns immediately; the
-/// drag itself runs on its own thread until the user drops or cancels.
+/// Explorer, a chat app, or a browser upload field. `mode` decides the effect
+/// the target performs: `copy` duplicates the files, `move` relocates them,
+/// `link` creates shortcuts. Returns immediately; the drag runs on the main
+/// thread in a modal loop until the user drops or cancels.
 #[tauri::command]
 #[specta::specta]
-pub fn start_drag_out(paths: Vec<String>, app: tauri::AppHandle) -> Result<(), FileSystemError> {
+pub fn start_drag_out(
+    paths: Vec<String>,
+    mode: DragOutMode,
+    app: tauri::AppHandle,
+) -> Result<(), FileSystemError> {
     if paths.is_empty() {
         return Err(FileSystemError::InvalidInput(
             "Choose at least one entry before dragging".into(),
         ));
     }
 
-    start_drag_out_impl(paths, &app)
+    start_drag_out_impl(paths, mode, &app)
+}
+
+/// Creates `.lnk` shortcuts pointing at `sources` inside `destination`,
+/// resolving name collisions with ` (2)`, ` (3)`… suffixes like Explorer.
+/// Returns the created shortcut paths so the UI can refresh and select them.
+#[tauri::command]
+#[specta::specta]
+pub async fn create_shortcuts(
+    sources: Vec<String>,
+    destination: String,
+) -> Result<Vec<String>, FileSystemError> {
+    if sources.is_empty() {
+        return Err(FileSystemError::InvalidInput(
+            "Choose at least one entry to link".into(),
+        ));
+    }
+
+    tauri::async_runtime::spawn_blocking(move || create_shortcuts_impl(&sources, &destination))
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 #[cfg(windows)]
 mod platform {
-    use super::SystemClipboardFiles;
+    use super::{DragOutMode, SystemClipboardFiles};
     use crate::file_system::error::FileSystemError;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::{GlobalFree, BOOL, HANDLE, HGLOBAL, HWND};
@@ -282,8 +320,16 @@ mod platform {
     /// Drag preview shown by the OS while dragging out of the window.
     const DRAG_PREVIEW_ICON: &[u8] = include_bytes!("../../icons/32x32.png");
 
+    /// Set while a native drag-out is running. DoDragDrop runs a modal message
+    /// loop on the main thread, and closures posted through
+    /// `run_on_main_thread` can be dispatched re-entrantly from inside that
+    /// loop, so a second gesture arriving mid-drag must not start a nested
+    /// DoDragDrop.
+    static DRAG_OUT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
     pub(super) fn start_drag_out_impl(
         paths: Vec<String>,
+        mode: DragOutMode,
         app: &tauri::AppHandle,
     ) -> Result<(), FileSystemError> {
         use tauri::Manager;
@@ -294,25 +340,154 @@ mod platform {
             ));
         };
 
-        std::thread::spawn(move || {
+        // DoDragDrop must run on the main (STA) thread — the apartment that
+        // owns the window, is already OLE-initialized by the runtime, and can
+        // receive the drag's input messages. Running it on a background thread
+        // leaves the drag dead (no input reaches the modal loop) and each
+        // per-gesture thread that initializes OLE and then exits leaks a
+        // destroyed apartment, which corrupts process-wide OLE state and later
+        // crashes unrelated drag handling on the main thread (stack overflow).
+        // This mirrors the official tauri-plugin-drag, which also dispatches
+        // drag::start_drag onto the main thread.
+        app.run_on_main_thread(move || {
+            if DRAG_OUT_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+                return;
+            }
+
             let item = drag::DragItem::Files(paths.into_iter().map(PathBuf::from).collect());
             let preview = drag::Image::Raw(DRAG_PREVIEW_ICON.to_vec());
-            // DoDragDrop blocks in a modal loop until the drop ends, hence the
-            // dedicated thread.
-            if let Err(error) =
-                drag::start_drag(&window, item, preview, |_, _| (), drag::Options::default())
-            {
+            let drag_mode = match mode {
+                DragOutMode::Copy => drag::DragMode::Copy,
+                DragOutMode::Move => drag::DragMode::Move,
+                DragOutMode::Link => drag::DragMode::Link,
+            };
+            // DoDragDrop blocks in a modal loop that pumps window messages
+            // until the user drops or cancels, so the main thread stays
+            // responsive for the duration of the gesture.
+            if let Err(error) = drag::start_drag(
+                &window,
+                item,
+                preview,
+                |_, _| (),
+                drag::Options {
+                    skip_animatation_on_cancel_or_failure: false,
+                    mode: drag_mode,
+                },
+            ) {
                 eprintln!("Unable to start the drag-out: {error:?}");
             }
-        });
+
+            DRAG_OUT_IN_PROGRESS.store(false, Ordering::SeqCst);
+        })
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?;
 
         Ok(())
+    }
+
+    pub(super) fn create_shortcuts_impl(
+        sources: &[String],
+        destination: &str,
+    ) -> Result<Vec<String>, FileSystemError> {
+        use std::iter::once;
+        use windows::core::{ComInterface, PCWSTR};
+        use windows::Win32::System::Com::{
+            CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+            COINIT_APARTMENTTHREADED,
+        };
+        use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+
+        /// RAII COM apartment. `owned` records whether this call initialized
+        /// COM: S_FALSE (0x1) means the thread already had an apartment, so
+        /// dropping must not uninitialize it.
+        struct CoApartment { owned: bool }
+        impl CoApartment {
+            fn enter() -> Result<Self, FileSystemError> {
+                unsafe {
+                    match CoInitializeEx(Some(std::ptr::null()), COINIT_APARTMENTTHREADED) {
+                        Ok(()) => Ok(Self { owned: true }),
+                        Err(error) if error.code().0 == 1 => Ok(Self { owned: false }),
+                        Err(error) => Err(FileSystemError::Internal(error.to_string())),
+                    }
+                }
+            }
+        }
+        impl Drop for CoApartment {
+            fn drop(&mut self) {
+                if self.owned {
+                    unsafe { CoUninitialize() };
+                }
+            }
+        }
+
+        let _apartment = CoApartment::enter()?;
+
+        let mut created = Vec::new();
+        for source in sources {
+            let link: IShellLinkW =
+                unsafe { CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER) }
+                    .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+            let source_wide: Vec<u16> = source.encode_utf16().chain(once(0)).collect();
+            unsafe {
+                link.SetPath(PCWSTR::from_raw(source_wide.as_ptr()))
+                    .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+                // Explorer-style description so the shortcut hover tooltip
+                // mirrors what the shell itself would have written.
+                let description: Vec<u16> = source.encode_utf16().chain(once(0)).collect();
+                link.SetDescription(PCWSTR::from_raw(description.as_ptr()))
+                    .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+            }
+
+            let stem = std::path::Path::new(source)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .ok_or_else(|| {
+                    FileSystemError::InvalidInput(format!("Cannot derive a name from {source}"))
+                })?;
+            let link_path = unique_shortcut_path(destination, stem);
+
+            let persist: IPersistFile = link.cast::<IPersistFile>().map_err(|error| {
+                FileSystemError::Internal(error.to_string())
+            })?;
+            unsafe {
+                persist
+                    .Save(PCWSTR::from_raw(link_path.encode_utf16().collect::<Vec<u16>>().as_ptr()), true)
+                    .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+            }
+
+            created.push(link_path);
+        }
+
+        Ok(created)
+    }
+
+    /// Builds `{destination}\{stem} - Shortcut.lnk`, appending ` (2)`, ` (3)`…
+    /// while the name is taken — the same scheme Explorer uses.
+    fn unique_shortcut_path(destination: &str, stem: &str) -> String {
+        let separator = if destination.contains('\\') && !destination.contains('/') {
+            '\\'
+        } else {
+            '/'
+        };
+        let base = if destination.ends_with('\\') || destination.ends_with('/') {
+            destination.to_string()
+        } else {
+            format!("{destination}{separator}")
+        };
+
+        let mut candidate = format!("{base}{stem} - Shortcut.lnk");
+        let mut counter = 2u32;
+        while std::path::Path::new(&candidate).exists() {
+            candidate = format!("{base}{stem} - Shortcut ({counter}).lnk");
+            counter += 1;
+        }
+        candidate
     }
 }
 
 #[cfg(windows)]
 use platform::{
-    read_files_from_clipboard_impl, start_drag_out_impl, write_files_to_clipboard_impl,
+    create_shortcuts_impl, read_files_from_clipboard_impl, start_drag_out_impl,
+    write_files_to_clipboard_impl,
 };
 
 #[cfg(not(windows))]
@@ -332,10 +507,21 @@ fn read_files_from_clipboard_impl() -> Result<Option<SystemClipboardFiles>, File
 #[cfg(not(windows))]
 fn start_drag_out_impl(
     _paths: Vec<String>,
+    _mode: DragOutMode,
     _app: &tauri::AppHandle,
 ) -> Result<(), FileSystemError> {
     Err(FileSystemError::Internal(
         "Drag-out is only implemented on Windows".into(),
+    ))
+}
+
+#[cfg(not(windows))]
+fn create_shortcuts_impl(
+    _sources: &[String],
+    _destination: &str,
+) -> Result<Vec<String>, FileSystemError> {
+    Err(FileSystemError::Internal(
+        "Shortcuts are only implemented on Windows".into(),
     ))
 }
 
