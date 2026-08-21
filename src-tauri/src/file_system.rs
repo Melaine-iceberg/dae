@@ -14,11 +14,13 @@ pub mod spaces;
 pub mod system_files;
 pub mod transfer;
 pub mod types;
+pub mod undo;
 pub mod vfs;
 pub mod watch;
 
 #[cfg(test)]
 mod tests;
 
-pub use commands::{FileSearchState, TrashUndoState};
+pub use commands::FileSearchState;
+pub use undo::UndoRedoState;
 pub use watch::{DirectoryChanged, DirectoryWatcher};

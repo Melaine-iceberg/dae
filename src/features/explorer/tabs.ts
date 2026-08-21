@@ -15,9 +15,10 @@ export type FileClipboard = {
   sourcePaths: string[];
 };
 
-/** The most recent move-to-trash batch that can still be restored (Ctrl+Z). */
-export interface TrashUndoInfo {
-  count: number;
+/** Undo/redo availability mirrored from the backend history stacks. */
+export interface UndoRedoStatus {
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 const navigators = new Map<string, ExplorerNavigator>();
@@ -42,7 +43,7 @@ const initialTab = createTabEntry();
 export const tabsAtom = atom<ExplorerTab[]>([initialTab]);
 export const activeTabIdAtom = atom<string>(initialTab.id);
 export const fileClipboardAtom = atom<FileClipboard | null>(null);
-export const trashUndoAtom = atom<TrashUndoInfo | null>(null);
+export const undoRedoAtom = atom<UndoRedoStatus>({ canUndo: false, canRedo: false });
 
 export const createTabAtom = atom(null, (_get, set) => {
   const tab = createTabEntry();

@@ -32,6 +32,7 @@ import {
   type ConflictAction,
   type TransferConflict,
   type TransferItem,
+  type UndoRedoOutcome,
 } from "@/bindings";
 
 import { getAppWindow } from "@/lib/app-window";
@@ -91,7 +92,7 @@ import {
   sortKeyAtom,
   sortOrderAtom,
 } from "./preferences";
-import { fileClipboardAtom, trashUndoAtom } from "./tabs";
+import { fileClipboardAtom, undoRedoAtom } from "./tabs";
 import type {
   DirectoryEntry,
   FileOperationKind,
@@ -110,6 +111,13 @@ interface ExplorerViewProps {
 type FileOperationResult = { ok: true } | { error: string; ok: false; rawError?: unknown };
 type ExternalDrop = { sourcePaths: string[]; targetPath: string | null };
 
+/** Floating hint after an undoable operation or an undo/redo step. */
+type UndoRedoToast = {
+  message: string;
+  /** Follow-up action offered on the toast. */
+  action: "undo" | "redo";
+};
+
 /** A transfer paused on the conflict dialog, waiting for per-item decisions. */
 type PendingTransfer = {
   conflicts: TransferConflict[];
@@ -122,7 +130,7 @@ type PendingTransfer = {
 export function ExplorerView({ navigator }: ExplorerViewProps) {
   const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
   const [clipboard, setClipboard] = useAtom(fileClipboardAtom);
-  const [trashUndo, setTrashUndo] = useAtom(trashUndoAtom);
+  const undoRedo = useAtomValue(undoRedoAtom);
   const favorites = useAtomValue(favoritesAtom) ?? [];
   const toggleFavorite = useSetAtom(toggleFavoriteAtom);
   const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
@@ -145,6 +153,10 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const [externalDrop, setExternalDrop] = useState<ExternalDrop | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("name");
+  const [undoRedoToast, setUndoRedoToast] = useState<UndoRedoToast | null>(null);
+  // Operation IDs started with the "auto" progress kind: the backend announces
+  // the kind with its first progress event, so the ID is adopted there.
+  const deferredProgressIdsRef = useRef<Set<string>>(new Set());
   const directory = state.directory;
   const directoryPath = directory?.path;
   const isLoading = state.status === "loading";
@@ -265,8 +277,13 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   useEffect(() => {
     const unlistenProgressPromise = events.explorerFileOperationProgress.listen(({ payload }) => {
       setFileOperationProgress((currentProgress) => {
+        if (!currentProgress) {
+          // "auto" operations (undo/redo) have no frontend-known kind; adopt
+          // the backend's first event for an operation this view started.
+          return deferredProgressIdsRef.current.has(payload.operationId) ? payload : null;
+        }
+
         if (
-          !currentProgress ||
           currentProgress.operationId !== payload.operationId ||
           currentProgress.phase === "completed"
         ) {
@@ -275,6 +292,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
 
         return payload;
       });
+      deferredProgressIdsRef.current.delete(payload.operationId);
     });
 
     return () => {
@@ -285,22 +303,28 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const performFileOperation = useCallback(
     async (
       operation: (operationId?: string) => Promise<unknown>,
-      progressOperation?: FileOperationKind,
+      progressOperation?: FileOperationKind | "auto",
     ): Promise<FileOperationResult> => {
       if (!directoryPath) {
         return { error: "当前目录不可用", ok: false };
       }
 
       const operationId = progressOperation ? crypto.randomUUID() : undefined;
-      if (operationId && progressOperation) {
+      const announcedProgressOperation =
+        progressOperation && progressOperation !== "auto" ? progressOperation : null;
+      if (announcedProgressOperation && operationId) {
         setFileOperationProgress({
           operationId,
-          operation: progressOperation,
+          operation: announcedProgressOperation,
           phase: "preparing",
           completed: 0,
           total: null,
           currentPath: null,
         });
+      } else if (operationId) {
+        // "auto": the kind is only known to the backend (undo/redo); the
+        // progress state is adopted from its first progress event.
+        deferredProgressIdsRef.current.add(operationId);
       }
       setIsOperationPending(true);
 
@@ -334,6 +358,9 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         }
         return { error: getErrorMessage(error), ok: false, rawError: error };
       } finally {
+        if (operationId) {
+          deferredProgressIdsRef.current.delete(operationId);
+        }
         setIsOperationPending(false);
       }
     },
@@ -736,9 +763,12 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         setSelectedPaths(paths);
         return;
       }
-      setTrashUndo({ count: paths.length });
+      setUndoRedoToast({
+        message: `已将 ${paths.length.toLocaleString("zh-CN")} 个项目移到回收站`,
+        action: "undo",
+      });
     });
-  }, [performFileOperation, selectedEntries, setTrashUndo]);
+  }, [performFileOperation, selectedEntries]);
 
   /** Delete moves the selection to the trash when every entry is local;
    *  network locations have no recycle bin, so they keep the permanent-delete
@@ -763,18 +793,46 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     setOperationError(null);
   }, [selectedEntries]);
 
-  /** Restores the most recent trashed batch to its original locations. */
-  const undoLastTrash = useCallback(() => {
-    if (!trashUndo) return;
+  /** Reverts the most recent recorded operation (move, rename, copy, trash,
+   *  create, duplicate) through the backend history stack. */
+  const undoLastOperation = useCallback(() => {
+    if (!undoRedo.canUndo || isOperationPending) return;
 
-    setTrashUndo(null);
+    setUndoRedoToast(null);
     setOperationError(null);
-    void performFileOperation(() => commands.undoTrash()).then((result) => {
+    let outcome: UndoRedoOutcome | null = null;
+    void performFileOperation(async (operationId) => {
+      outcome = await commands.undoOperation(operationId!);
+    }, "auto").then((result) => {
       if (!result.ok) {
-        setOperationError(`撤销删除失败：${result.error}`);
+        setOperationError(`撤销失败：${result.error}`);
+        return;
+      }
+      if (outcome) {
+        setUndoRedoToast({ message: outcome.message, action: "redo" });
       }
     });
-  }, [performFileOperation, setTrashUndo, trashUndo]);
+  }, [isOperationPending, performFileOperation, undoRedo.canUndo]);
+
+  /** Re-applies the most recently undone operation. */
+  const redoLastOperation = useCallback(() => {
+    if (!undoRedo.canRedo || isOperationPending) return;
+
+    setUndoRedoToast(null);
+    setOperationError(null);
+    let outcome: UndoRedoOutcome | null = null;
+    void performFileOperation(async (operationId) => {
+      outcome = await commands.redoOperation(operationId!);
+    }, "auto").then((result) => {
+      if (!result.ok) {
+        setOperationError(`重做失败：${result.error}`);
+        return;
+      }
+      if (outcome) {
+        setUndoRedoToast({ message: outcome.message, action: "undo" });
+      }
+    });
+  }, [isOperationPending, performFileOperation, undoRedo.canRedo]);
 
   const closeDeleteDialog = () => {
     if (!isOperationPending) {
@@ -1133,7 +1191,8 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                   }
                   isLoading={isLoading}
                   isOperationPending={isOperationPending}
-                  canUndoDelete={trashUndo !== null}
+                  canRedo={undoRedo.canRedo}
+                  canUndo={undoRedo.canUndo}
                   onAddToFavorites={addFavoritePaths}
                   onAddToSpace={addToSpace}
                   onCompress={compressSelection}
@@ -1152,7 +1211,8 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                   onOpenTerminal={() => directory.path && openTerminalHere(directory.path)}
                   onPaste={pasteClipboard}
                   onRename={requestRename}
-                  onUndoDelete={undoLastTrash}
+                  onRedo={redoLastOperation}
+                  onUndo={undoLastOperation}
                   onScrollOffsetChange={
                     search.isActive
                       ? undefined
@@ -1210,19 +1270,27 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                   selectedCount={selectedPaths.length}
                 />
               )}
-              {trashUndo && (
+              {undoRedoToast && (
                 <div className="absolute bottom-4 left-1/2 z-40 -translate-x-1/2">
                   <div className="animate-float-in flex items-center gap-2 rounded-full bg-popover px-4 py-2 text-[13px] text-popover-foreground shadow-ambient-lg ring-1 ring-foreground/5">
-                  <ArrowCounterClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="whitespace-nowrap">
-                    已将 {trashUndo.count.toLocaleString("zh-CN")} 个项目移到回收站
-                  </span>
-                  <Button onClick={undoLastTrash} size="xs" type="button" variant="outline">
-                    撤销
-                  </Button>
+                  {undoRedoToast.action === "redo" ? (
+                    <ArrowClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
+                  ) : (
+                    <ArrowCounterClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
+                  )}
+                  <span className="whitespace-nowrap">{undoRedoToast.message}</span>
+                  {undoRedoToast.action === "redo" ? (
+                    <Button onClick={redoLastOperation} size="xs" type="button" variant="outline">
+                      重做
+                    </Button>
+                  ) : (
+                    <Button onClick={undoLastOperation} size="xs" type="button" variant="outline">
+                      撤销
+                    </Button>
+                  )}
                   <Button
                     aria-label="关闭提示"
-                    onClick={() => setTrashUndo(null)}
+                    onClick={() => setUndoRedoToast(null)}
                     size="xs"
                     type="button"
                     variant="ghost"

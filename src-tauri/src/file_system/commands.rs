@@ -7,8 +7,10 @@ use super::progress::{
 use super::transfer::{self, TransferSource};
 use super::types::{
     ConflictAction, ContentSearchResponse, DirectoryView, FileProperties, NewEntryKind,
-    PropertyChanges, SearchResponse, TransferConflict, TransferItem, path_to_string,
+    PropertyChanges, SearchResponse, TransferConflict, TransferItem, TransferPair,
+    path_to_string,
 };
+use super::undo::{self, Operation, TrashRecord, UndoRedoOutcome, UndoRedoState};
 use super::vfs::{self, Scheme};
 use super::watch::{DirectoryWatcher, WatchHandle, spawn_polling_watcher};
 use std::path::{Path, PathBuf};
@@ -157,9 +159,25 @@ pub async fn search_file_contents(
 /// Renames a single directory entry without allowing a path change.
 #[tauri::command]
 #[specta::specta]
-pub async fn rename_entry(path: String, new_name: String) -> Result<(), FileSystemError> {
+pub async fn rename_entry(
+    path: String,
+    new_name: String,
+    app: tauri::AppHandle,
+) -> Result<(), FileSystemError> {
     tauri::async_runtime::spawn_blocking(move || {
-        vfs::resolve(&path)?.rename_entry(&path, &new_name)
+        vfs::resolve(&path)?.rename_entry(&path, &new_name)?;
+        if let Some(to) = undo::renamed_path(&path, &new_name) {
+            if to != path {
+                app.state::<UndoRedoState>().record(
+                    &app,
+                    Operation::Rename {
+                        from: path,
+                        to,
+                    },
+                );
+            }
+        }
+        Ok(())
     })
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -172,9 +190,18 @@ pub async fn create_entry(
     directory: String,
     name: String,
     kind: NewEntryKind,
+    app: tauri::AppHandle,
 ) -> Result<String, FileSystemError> {
     tauri::async_runtime::spawn_blocking(move || {
-        vfs::resolve(&directory)?.create_entry(&directory, &name, kind)
+        let created = vfs::resolve(&directory)?.create_entry(&directory, &name, kind)?;
+        app.state::<UndoRedoState>().record(
+            &app,
+            Operation::Create {
+                path: created.clone(),
+                kind,
+            },
+        );
+        Ok(created)
     })
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -197,17 +224,46 @@ pub async fn copy_entries(
         let sources = resolve_transfer_items(items)?;
         let destination_backend = vfs::resolve(&destination)?;
         let progress =
-            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Copy);
+            FileOperationProgressReporter::new(app.clone(), operation_id, FileOperationKind::Copy);
 
-        if is_pure_local(&sources, &destination) {
+        // The journal records every entry that actually landed on disk, so a
+        // partially failed copy still gets an undo record for its successes.
+        let mut journal: Vec<TransferPair> = Vec::new();
+        let result = if is_pure_local(&sources, &destination) {
             let paths = sources
                 .iter()
                 .map(|source| (PathBuf::from(&source.path), source.on_conflict))
                 .collect::<Vec<_>>();
-            local::copy_entries_with_progress(paths, PathBuf::from(&destination), &progress)
+            local::copy_entries_with_progress(
+                paths,
+                PathBuf::from(&destination),
+                &progress,
+                &mut journal,
+            )
         } else {
-            transfer::copy_entries(sources, &destination, &destination_backend, &progress)
-        }
+            transfer::copy_entries(
+                sources,
+                &destination,
+                &destination_backend,
+                &progress,
+                &mut journal,
+            )
+        };
+
+        let (recorded_sources, created): (Vec<String>, Vec<String>) = journal
+            .into_iter()
+            .map(|pair| (pair.source, pair.destination))
+            .unzip();
+        app.state::<UndoRedoState>().record(
+            &app,
+            Operation::Copy {
+                sources: recorded_sources,
+                destination,
+                created,
+            },
+        );
+
+        result
     })
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -230,17 +286,40 @@ pub async fn move_entries(
         let sources = resolve_transfer_items(items)?;
         let destination_backend = vfs::resolve(&destination)?;
         let progress =
-            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Move);
+            FileOperationProgressReporter::new(app.clone(), operation_id, FileOperationKind::Move);
 
-        if is_pure_local(&sources, &destination) {
+        // The journal records every entry that actually moved, so a partially
+        // failed move still gets an undo record for its successes.
+        let mut journal: Vec<TransferPair> = Vec::new();
+        let result = if is_pure_local(&sources, &destination) {
             let paths = sources
                 .iter()
                 .map(|source| (PathBuf::from(&source.path), source.on_conflict))
                 .collect::<Vec<_>>();
-            local::move_entries_with_progress(paths, PathBuf::from(&destination), &progress)
+            local::move_entries_with_progress(
+                paths,
+                PathBuf::from(&destination),
+                &progress,
+                &mut journal,
+            )
         } else {
-            transfer::move_entries(sources, &destination, &destination_backend, &progress)
-        }
+            transfer::move_entries(
+                sources,
+                &destination,
+                &destination_backend,
+                &progress,
+                &mut journal,
+            )
+        };
+
+        app.state::<UndoRedoState>().record(
+            &app,
+            Operation::Move {
+                transfers: journal,
+            },
+        );
+
+        result
     })
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -327,23 +406,8 @@ fn resolve_transfer_items(
         .collect()
 }
 
-/// One entry remembered from a move-to-trash run: where it lived and what it
-/// was called. Kept lightweight so deleting never has to enumerate the trash;
-/// [`undo_trash`] resolves these back to `TrashItem`s only when restoring.
-struct TrashRecord {
-    parent: PathBuf,
-    name: std::ffi::OsString,
-}
-
-/// Tracks the most recent batch of entries moved to the system trash so that
-/// [`undo_trash`] can restore it. A newer batch replaces the previous one.
-#[derive(Default)]
-pub struct TrashUndoState {
-    records: std::sync::Mutex<Vec<TrashRecord>>,
-}
-
 /// Moves local entries into the system trash (recycle bin) instead of deleting
-/// them permanently. The most recent batch stays undoable via [`undo_trash`].
+/// them permanently. The batch stays undoable via [`undo_operation`].
 /// Network paths are rejected; the UI routes those to `delete_entries`.
 ///
 /// This only records `(parent, name)` pairs — no trash enumeration here,
@@ -385,14 +449,14 @@ pub async fn trash_entries(
                         (entry_path.parent(), entry_path.file_name())
                     {
                         records.push(TrashRecord {
-                            parent: parent.to_path_buf(),
-                            name: name.to_os_string(),
+                            parent: path_to_string(parent),
+                            name: name.to_string_lossy().into_owned(),
                         });
                     }
                     progress.advance(entry_path);
                 }
                 Err(error) => {
-                    first_error = Some(trash_error(error));
+                    first_error = Some(FileSystemError::Internal(error.to_string()));
                     break;
                 }
             }
@@ -400,10 +464,10 @@ pub async fn trash_entries(
 
         // Even when a later entry fails, the ones that did reach the trash
         // stay undoable.
-        *app.state::<TrashUndoState>()
-            .records
-            .lock()
-            .expect("trash undo state lock poisoned") = records;
+        app.state::<UndoRedoState>().record(
+            &app,
+            Operation::Trash { records },
+        );
         progress.finish();
 
         if let Some(error) = first_error {
@@ -415,70 +479,98 @@ pub async fn trash_entries(
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// Restores the most recent [`trash_entries`] batch to its original locations,
-/// returning the restored paths so the UI can refresh. Entries no longer in
-/// the trash (emptied or restored elsewhere) are skipped.
+/// Undoes the most recent recorded operation (move, rename, copy, trash,
+/// create, duplicate) and returns toast text describing what was reverted.
+/// A failed step is dropped from the history rather than left stale.
 #[tauri::command]
 #[specta::specta]
-pub async fn undo_trash(app: tauri::AppHandle) -> Result<Vec<String>, FileSystemError> {
+pub async fn undo_operation(
+    operation_id: String,
+    app: tauri::AppHandle,
+) -> Result<UndoRedoOutcome, FileSystemError> {
+    let kind = app
+        .state::<UndoRedoState>()
+        .peek_undo()
+        .map(|operation| operation.undo_kind())
+        .unwrap_or(FileOperationKind::Move);
+    emit_preparing(&app, &operation_id, kind);
+
     tauri::async_runtime::spawn_blocking(move || {
-        let records = std::mem::take(
-            &mut *app
-                .state::<TrashUndoState>()
-                .records
-                .lock()
-                .expect("trash undo state lock poisoned"),
-        );
-        if records.is_empty() {
-            return Err(FileSystemError::InvalidInput(
-                "没有可撤销的删除操作".into(),
-            ));
-        }
+        let state = app.state::<UndoRedoState>();
+        let Some(operation) = state.pop_undo() else {
+            return Err(FileSystemError::InvalidInput("没有可撤销的操作".into()));
+        };
 
-        let items = trash::os_limited::list().map_err(trash_error)?;
-        let mut to_restore = Vec::new();
-        let mut restored_paths = Vec::new();
-        for record in &records {
-            // The same (parent, name) can appear multiple times in the trash
-            // from earlier deletions; the newest one is ours.
-            let match_item = items.iter().filter(|item| {
-                item.name == record.name && same_trash_location(&item.original_parent, &record.parent)
-            }).max_by_key(|item| item.time_deleted);
+        let noun = operation.noun();
+        let progress = FileOperationProgressReporter::new(app.clone(), operation_id, kind);
+        let result = undo::execute_undo(operation, &progress);
 
-            if let Some(item) = match_item {
-                restored_paths.push(path_to_string(&item.original_parent.join(&item.name)));
-                to_restore.push(item.clone());
+        match result {
+            Ok((count, redo_operation)) => {
+                if let Some(redo_operation) = redo_operation {
+                    state.push_redo(redo_operation);
+                }
+                undo::emit_changed(&app, &state);
+                progress.finish();
+                Ok(UndoRedoOutcome {
+                    message: format!("已撤销：{}", undo::operation_label(noun, count)),
+                })
+            }
+            Err(error) => {
+                // The entry stays consumed; report what blocked the undo.
+                undo::emit_changed(&app, &state);
+                Err(error)
             }
         }
-
-        if to_restore.is_empty() {
-            return Err(FileSystemError::InvalidInput(
-                "回收站中已找不到这些项目，可能已被清空或还原".into(),
-            ));
-        }
-
-        trash::os_limited::restore_all(to_restore).map_err(trash_error)?;
-        Ok(restored_paths)
     })
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// Windows paths are case-insensitive, so recycle-bin parents recorded from a
-/// deletion must compare that way too.
-fn same_trash_location(left: &Path, right: &Path) -> bool {
-    #[cfg(windows)]
-    {
-        left.to_string_lossy().to_lowercase() == right.to_string_lossy().to_lowercase()
-    }
-    #[cfg(not(windows))]
-    {
-        left == right
-    }
-}
+/// Re-applies the most recent undone operation and returns toast text
+/// describing what was restored.
+#[tauri::command]
+#[specta::specta]
+pub async fn redo_operation(
+    operation_id: String,
+    app: tauri::AppHandle,
+) -> Result<UndoRedoOutcome, FileSystemError> {
+    let kind = app
+        .state::<UndoRedoState>()
+        .peek_redo()
+        .map(|operation| operation.redo_kind())
+        .unwrap_or(FileOperationKind::Move);
+    emit_preparing(&app, &operation_id, kind);
 
-fn trash_error(error: trash::Error) -> FileSystemError {
-    FileSystemError::Internal(error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<UndoRedoState>();
+        let Some(operation) = state.pop_redo() else {
+            return Err(FileSystemError::InvalidInput("没有可重做的操作".into()));
+        };
+
+        let noun = operation.noun();
+        let progress = FileOperationProgressReporter::new(app.clone(), operation_id, kind);
+        let result = undo::execute_redo(operation, &progress);
+
+        match result {
+            Ok((count, undo_operation)) => {
+                if let Some(undo_operation) = undo_operation {
+                    state.push_undo(undo_operation);
+                }
+                undo::emit_changed(&app, &state);
+                progress.finish();
+                Ok(UndoRedoOutcome {
+                    message: format!("已重做：{}", undo::operation_label(noun, count)),
+                })
+            }
+            Err(error) => {
+                undo::emit_changed(&app, &state);
+                Err(error)
+            }
+        }
+    })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Duplicates entries next to their originals ("name 副本"), returning the
@@ -499,10 +591,19 @@ pub async fn duplicate_entries(
     emit_preparing(&app, &operation_id, FileOperationKind::Copy);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let sources = resolve_sources(paths)?;
+        let sources = resolve_sources(paths.clone())?;
         let progress =
-            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Copy);
-        transfer::duplicate_sources(sources, &progress)
+            FileOperationProgressReporter::new(app.clone(), operation_id, FileOperationKind::Copy);
+        let created = transfer::duplicate_sources(sources, &progress)?;
+
+        app.state::<UndoRedoState>().record(
+            &app,
+            Operation::Duplicate {
+                sources: paths,
+                created: created.clone(),
+            },
+        );
+        Ok(created)
     })
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?

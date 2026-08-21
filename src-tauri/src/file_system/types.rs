@@ -226,6 +226,16 @@ pub struct TransferItem {
     pub on_conflict: ConflictAction,
 }
 
+/// One executed (source, destination) pair from a copy or move batch, as
+/// reported by the transfer engines' journal. Destinations reflect what
+/// actually landed on disk, "副本" auto-renames included. Internal to the
+/// backend: the undo/redo history is built from these pairs.
+#[derive(Debug, Clone)]
+pub struct TransferPair {
+    pub source: String,
+    pub destination: String,
+}
+
 /// A name collision detected before a transfer runs, with both sides'
 /// metadata so the conflict dialog can compare them.
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

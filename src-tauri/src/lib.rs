@@ -43,7 +43,7 @@ pub fn run() {
         })
         .manage(file_system::DirectoryWatcher::default())
         .manage(file_system::FileSearchState::default())
-        .manage(file_system::TrashUndoState::default())
+        .manage(file_system::UndoRedoState::default())
         .manage(terminal::TerminalState::default())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
@@ -91,7 +91,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::commands::check_transfer_conflicts,
             file_system::commands::delete_entries,
             file_system::commands::trash_entries,
-            file_system::commands::undo_trash,
+            file_system::commands::undo_operation,
+            file_system::commands::redo_operation,
             file_system::commands::duplicate_entries,
             file_system::commands::open_terminal,
             file_system::commands::open_with,
@@ -127,6 +128,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         ])
         .events(tauri_specta::collect_events![
             file_system::DirectoryChanged,
-            file_system::progress::FileOperationProgress
+            file_system::progress::FileOperationProgress,
+            file_system::undo::UndoRedoChanged
         ])
 }

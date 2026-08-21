@@ -77,7 +77,8 @@ import {
 import type { DirectoryEntry } from "./types";
 
 interface FileListProps {
-  canUndoDelete: boolean;
+  canRedo: boolean;
+  canUndo: boolean;
   currentDirectoryPath: string;
   entries: DirectoryEntry[];
   externalDropItemCount: number;
@@ -107,11 +108,12 @@ interface FileListProps {
   onOpenDirectory: (path: string) => void;
   onOpenTerminal: () => void;
   onPaste: () => void;
+  onRedo: () => void;
   onRename: () => void;
   onScrollOffsetChange?: (offset: number) => void;
   onSelectedPathsChange: (paths: string[]) => void;
   onTogglePreview: () => void;
-  onUndoDelete: () => void;
+  onUndo: () => void;
   searchState?: FileListSearchState;
   selectedPaths: string[];
   viewId: string;
@@ -209,7 +211,8 @@ function draggableDirectoryPaths(entries: DirectoryEntry[], sourcePaths: string[
 }
 
 export function FileList({
-  canUndoDelete,
+  canRedo,
+  canUndo,
   currentDirectoryPath,
   entries,
   externalDropItemCount,
@@ -235,11 +238,12 @@ export function FileList({
   onOpenDirectory,
   onOpenTerminal,
   onPaste,
+  onRedo,
   onRename,
   onScrollOffsetChange,
   onSelectedPathsChange,
   onTogglePreview,
-  onUndoDelete,
+  onUndo,
   searchState,
   selectedPaths,
   viewId,
@@ -330,10 +334,23 @@ export function FileList({
       return;
     }
 
-    // Ctrl/Cmd+Z restores the most recent batch moved to the trash.
-    if (hasModifier && !event.altKey && key === "z" && canUndoDelete && !actionsDisabled) {
+    // Ctrl/Cmd+Z undoes the most recent file operation; Ctrl+Shift+Z and
+    // Ctrl/Cmd+Y redo the most recently undone one.
+    if (hasModifier && !event.altKey && key === "z" && !event.shiftKey && canUndo && !actionsDisabled) {
       event.preventDefault();
-      onUndoDelete();
+      onUndo();
+      return;
+    }
+
+    if (
+      hasModifier &&
+      !event.altKey &&
+      ((key === "z" && event.shiftKey) || key === "y") &&
+      canRedo &&
+      !actionsDisabled
+    ) {
+      event.preventDefault();
+      onRedo();
       return;
     }
 

@@ -10,6 +10,7 @@ use super::types::{
     ConflictAction, DirectoryEntry, EntryKind, NewEntryKind, entry_sort_key,
     normalize_path_for_display, path_to_string,
 };
+use super::undo::{self, Operation};
 use super::vfs::{self, FileSystemBackend};
 use std::fs;
 use std::path::Path;
@@ -364,6 +365,7 @@ fn performs_file_operations_and_reports_entry_progress() {
         vec![(source.clone(), ConflictAction::Fail)],
         destination.clone(),
         &copy_progress,
+        &mut Vec::new(),
     )
     .expect("copy directory");
     assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 2);
@@ -381,6 +383,7 @@ fn performs_file_operations_and_reports_entry_progress() {
         vec![(source.clone(), ConflictAction::Fail)],
         destination.clone(),
         &duplicate_progress,
+        &mut Vec::new(),
     )
     .expect_err("copying over an existing entry should fail");
     assert!(matches!(duplicate_error, FileSystemError::AlreadyExists(_)));
@@ -390,6 +393,7 @@ fn performs_file_operations_and_reports_entry_progress() {
         vec![(source.clone(), ConflictAction::Fail)],
         source.clone(),
         &nested_progress,
+        &mut Vec::new(),
     )
     .expect_err("copying a folder into itself should fail");
     assert!(matches!(nested_error, FileSystemError::InvalidInput(_)));
@@ -403,6 +407,7 @@ fn performs_file_operations_and_reports_entry_progress() {
         vec![(renamed_file.clone(), ConflictAction::Fail)],
         destination.clone(),
         &move_progress,
+        &mut Vec::new(),
     )
     .expect("move file");
     let moved_file = destination.join("renamed.txt");
@@ -416,6 +421,107 @@ fn performs_file_operations_and_reports_entry_progress() {
     assert!(!moved_file.exists());
     assert_eq!(delete_progress.completed.load(AtomicOrdering::Relaxed), 1);
     assert_eq!(delete_progress.total.load(AtomicOrdering::Relaxed), 1);
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn undo_and_redo_revert_a_batch_move() {
+    let directory =
+        std::env::temp_dir().join(format!("dae-undo-move-test-{}", std::process::id()));
+    let source = directory.join("source");
+    let destination = directory.join("destination");
+    fs::create_dir_all(&source).expect("create source directory");
+    fs::create_dir_all(&destination).expect("create destination directory");
+    fs::write(source.join("a.txt"), "a").expect("create file a");
+    fs::write(source.join("b.txt"), "b").expect("create file b");
+
+    let progress = TestProgress::new();
+    let mut journal = Vec::new();
+    move_entries_with_progress(
+        vec![
+            (source.join("a.txt"), ConflictAction::Fail),
+            (source.join("b.txt"), ConflictAction::Fail),
+        ],
+        destination.clone(),
+        &progress,
+        &mut journal,
+    )
+    .expect("move entries");
+    assert_eq!(journal.len(), 2);
+    assert!(destination.join("a.txt").exists());
+    assert!(!source.join("a.txt").exists());
+
+    let undo_progress = TestProgress::new();
+    let (count, redo) =
+        undo::execute_undo(Operation::Move { transfers: journal }, &undo_progress)
+            .expect("undo move");
+    assert_eq!(count, 2);
+    assert!(source.join("a.txt").exists());
+    assert!(source.join("b.txt").exists());
+    assert!(!destination.join("a.txt").exists());
+
+    let redo_progress = TestProgress::new();
+    let redo = redo.expect("undo reports a redo operation");
+    let (count, undone) =
+        undo::execute_redo(redo, &redo_progress).expect("redo move");
+    assert_eq!(count, 2);
+    assert!(destination.join("a.txt").exists());
+    assert!(destination.join("b.txt").exists());
+    assert!(!source.join("a.txt").exists());
+    assert!(undone.is_some());
+
+    // An entry deleted after the move is skipped; the survivor still reverts
+    // and the redo stack only keeps the pair that actually moved back.
+    fs::remove_file(destination.join("a.txt")).expect("delete one moved file");
+    let journal = match undone.expect("redo reports an undo operation") {
+        Operation::Move { transfers } => transfers,
+        other => panic!("expected a move operation, got {other:?}"),
+    };
+    let progress = TestProgress::new();
+    let (count, redo) =
+        undo::execute_undo(Operation::Move { transfers: journal }, &progress)
+            .expect("undo move with a missing entry");
+    assert_eq!(count, 1);
+    assert!(source.join("b.txt").exists());
+    assert!(!source.join("a.txt").exists());
+    match redo.expect("redo keeps only the reverted pair") {
+        Operation::Move { transfers } => assert_eq!(transfers.len(), 1),
+        other => panic!("expected a move operation, got {other:?}"),
+    }
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn undo_and_redo_revert_a_rename() {
+    let directory =
+        std::env::temp_dir().join(format!("dae-undo-rename-test-{}", std::process::id()));
+    fs::create_dir_all(&directory).expect("create test directory");
+    let file = directory.join("original.txt");
+    fs::write(&file, "content").expect("create file");
+
+    let new_name = "renamed.txt";
+    rename_entry_sync(file.clone(), new_name.into()).expect("rename file");
+    let renamed = directory.join(new_name);
+    assert!(renamed.exists());
+
+    let from = path_to_string(&file);
+    let to = undo::renamed_path(&from, new_name).expect("derive renamed path");
+    let progress = TestProgress::new();
+    let (count, redo) =
+        undo::execute_undo(Operation::Rename { from, to }, &progress).expect("undo rename");
+    assert_eq!(count, 1);
+    assert!(file.exists());
+    assert!(!renamed.exists());
+
+    let (count, undone) =
+        undo::execute_redo(redo.expect("undo reports a redo operation"), &progress)
+            .expect("redo rename");
+    assert_eq!(count, 1);
+    assert!(renamed.exists());
+    assert!(!file.exists());
+    assert!(undone.is_some());
 
     fs::remove_dir_all(directory).expect("remove test directory");
 }
@@ -439,6 +545,7 @@ fn copies_and_deletes_nested_trees_in_parallel() {
         vec![(source.clone(), ConflictAction::Fail)],
         destination.clone(),
         &copy_progress,
+        &mut Vec::new(),
     )
     .expect("copy nested tree");
     assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 7);
@@ -619,6 +726,7 @@ fn transfers_trees_between_distinct_backend_instances() {
         &destination_path,
         &destination_backend,
         &copy_progress,
+        &mut Vec::new(),
     )
     .expect("copy tree across backends");
 
@@ -645,6 +753,7 @@ fn transfers_trees_between_distinct_backend_instances() {
         &destination_path,
         &destination_backend,
         &duplicate_progress,
+        &mut Vec::new(),
     )
     .expect_err("overwriting must be blocked");
     assert!(matches!(duplicate_error, FileSystemError::AlreadyExists(_)));
@@ -661,6 +770,7 @@ fn transfers_trees_between_distinct_backend_instances() {
         &move_destination_dir.to_string_lossy(),
         &destination_backend,
         &move_progress,
+        &mut Vec::new(),
     )
     .expect("move tree across backends");
     assert!(!source_dir.exists());
@@ -709,6 +819,7 @@ fn resolves_local_transfer_conflicts_with_replace_skip_and_keep_both() {
         vec![(source_dir.join("report.txt"), ConflictAction::Replace)],
         destination_dir.clone(),
         &replace_progress,
+        &mut Vec::new(),
     )
     .expect("copy with replace");
     assert_eq!(
@@ -727,6 +838,7 @@ fn resolves_local_transfer_conflicts_with_replace_skip_and_keep_both() {
         vec![(source_dir.join("report.txt"), ConflictAction::Skip)],
         destination_dir.clone(),
         &skip_progress,
+        &mut Vec::new(),
     )
     .expect("copy with skip");
     assert_eq!(
@@ -741,6 +853,7 @@ fn resolves_local_transfer_conflicts_with_replace_skip_and_keep_both() {
         vec![(source_dir.join("report.txt"), ConflictAction::KeepBoth)],
         destination_dir.clone(),
         &keep_progress,
+        &mut Vec::new(),
     )
     .expect("copy keeping both");
     assert_eq!(
@@ -758,6 +871,7 @@ fn resolves_local_transfer_conflicts_with_replace_skip_and_keep_both() {
         vec![(source_dir.join("report.txt"), ConflictAction::Replace)],
         destination_dir.clone(),
         &move_progress,
+        &mut Vec::new(),
     )
     .expect("move with replace");
     assert!(!source_dir.join("report.txt").exists());
@@ -778,6 +892,7 @@ fn resolves_local_transfer_conflicts_with_replace_skip_and_keep_both() {
         vec![(source_dir.join("bundle"), ConflictAction::Replace)],
         destination_dir.clone(),
         &TestProgress::new(),
+        &mut Vec::new(),
     )
     .expect("replace a directory with a file");
     assert_eq!(
@@ -800,6 +915,7 @@ fn moving_an_entry_onto_itself_is_a_no_op() {
         vec![(directory.join("file.txt"), ConflictAction::Replace)],
         directory.clone(),
         &move_progress,
+        &mut Vec::new(),
     )
     .expect("move onto itself is skipped");
     assert_eq!(
@@ -895,6 +1011,7 @@ fn resolves_streaming_transfer_conflicts_across_backends() {
         &destination_dir.to_string_lossy(),
         &destination_backend,
         &keep_progress,
+        &mut Vec::new(),
     )
     .expect("stream copy keeping both");
     assert_eq!(
@@ -912,6 +1029,7 @@ fn resolves_streaming_transfer_conflicts_across_backends() {
         &destination_dir.to_string_lossy(),
         &destination_backend,
         &replace_progress,
+        &mut Vec::new(),
     )
     .expect("stream copy with replace");
     assert_eq!(

@@ -1,7 +1,7 @@
 use crate::file_system::error::FileSystemError;
 use crate::file_system::progress::FileOperationProgressReporterTrait;
 use crate::file_system::transfer::duplicate_name;
-use crate::file_system::types::{ConflictAction, NewEntryKind, path_to_string};
+use crate::file_system::types::{ConflictAction, NewEntryKind, TransferPair, path_to_string};
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
@@ -55,6 +55,7 @@ pub fn copy_entries_with_progress(
     sources: Vec<(PathBuf, ConflictAction)>,
     destination: PathBuf,
     progress: &dyn FileOperationProgressReporterTrait,
+    journal: &mut Vec<TransferPair>,
 ) -> Result<(), FileSystemError> {
     let plan = build_transfer_plan(sources, destination)?;
     progress.start(
@@ -68,6 +69,10 @@ pub fn copy_entries_with_progress(
             delete_entry(&entry.destination, progress)?;
         }
         copy_entry(&entry.source, &entry.destination, progress)?;
+        journal.push(TransferPair {
+            source: path_to_string(&entry.source),
+            destination: path_to_string(&entry.destination),
+        });
     }
 
     progress.finish();
@@ -78,6 +83,7 @@ pub fn move_entries_with_progress(
     sources: Vec<(PathBuf, ConflictAction)>,
     destination: PathBuf,
     progress: &dyn FileOperationProgressReporterTrait,
+    journal: &mut Vec<TransferPair>,
 ) -> Result<(), FileSystemError> {
     let plan = build_transfer_plan(sources, destination)?;
     progress.start(
@@ -99,6 +105,11 @@ pub fn move_entries_with_progress(
             }
             Err(error) => return Err(error.into()),
         }
+
+        journal.push(TransferPair {
+            source: path_to_string(&entry.source),
+            destination: path_to_string(&entry.destination),
+        });
     }
 
     progress.finish();

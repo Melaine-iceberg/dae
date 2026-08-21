@@ -5,7 +5,7 @@
 
 use super::error::FileSystemError;
 use super::progress::FileOperationProgressReporterTrait;
-use super::types::{ConflictAction, EntryKind, EntryStat, TransferConflict};
+use super::types::{ConflictAction, EntryKind, EntryStat, TransferConflict, TransferPair};
 use super::vfs::{FileSystemBackend, SharedBackend};
 use std::collections::HashSet;
 use std::io::{Read, Write};
@@ -33,11 +33,14 @@ struct PlanEntry {
 /// Copies sources into `destination` (a directory on `destination_backend`).
 /// Each source's [`ConflictAction`] decides what happens when the target
 /// name already exists; `Fail` keeps the legacy "never overwrite" behavior.
+/// Every completed entry is appended to `journal` so callers can build an
+/// undo record even when a later entry fails.
 pub fn copy_entries(
     sources: Vec<TransferSource>,
     destination: &str,
     destination_backend: &SharedBackend,
     progress: &dyn FileOperationProgressReporterTrait,
+    journal: &mut Vec<TransferPair>,
 ) -> Result<(), FileSystemError> {
     let plan = build_plan(sources, destination, destination_backend)?;
     progress.start(
@@ -60,6 +63,10 @@ pub fn copy_entries(
             &entry.destination,
             progress,
         )?;
+        journal.push(TransferPair {
+            source: entry.source.path.clone(),
+            destination: entry.destination.clone(),
+        });
     }
 
     progress.finish();
@@ -69,12 +76,14 @@ pub fn copy_entries(
 /// Moves sources into `destination`, preferring a protocol-native rename when
 /// source and destination share one backend, falling back to copy + delete.
 /// Each source's [`ConflictAction`] decides what happens when the target name
-/// already exists.
+/// already exists. Every completed entry is appended to `journal` so callers
+/// can build an undo record even when a later entry fails.
 pub fn move_entries(
     sources: Vec<TransferSource>,
     destination: &str,
     destination_backend: &SharedBackend,
     progress: &dyn FileOperationProgressReporterTrait,
+    journal: &mut Vec<TransferPair>,
 ) -> Result<(), FileSystemError> {
     let plan = build_plan(sources, destination, destination_backend)?;
     progress.start(
@@ -141,6 +150,11 @@ pub fn move_entries(
                 progress,
             )?;
         }
+
+        journal.push(TransferPair {
+            source: entry.source.path.clone(),
+            destination: entry.destination.clone(),
+        });
     }
 
     progress.finish();
@@ -374,7 +388,7 @@ fn unique_sibling_path(
 }
 
 /// The directory containing `path`, keeping the trailing separator style.
-fn parent_path_of(path: &str) -> Option<String> {
+pub(super) fn parent_path_of(path: &str) -> Option<String> {
     let trimmed = path.trim_end_matches(['/', '\\']);
     let separator_index = trimmed.rfind(['/', '\\'])?;
     Some(trimmed[..=separator_index].to_owned())
@@ -629,7 +643,7 @@ fn ensure_unique_paths(sources: &[TransferSource]) -> Result<(), FileSystemError
     Ok(())
 }
 
-fn last_segment(path: &str) -> Option<&str> {
+pub(super) fn last_segment(path: &str) -> Option<&str> {
     let trimmed = path.trim_end_matches(['/', '\\']);
     trimmed
         .rsplit(['/', '\\'])
