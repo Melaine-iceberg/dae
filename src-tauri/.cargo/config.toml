@@ -1,0 +1,10 @@
+# Windows gives the main thread a 1MB stack by default (Linux/macOS: 8MB).
+# Large Tauri apps in debug builds — many commands, plugins, and layered
+# window-proc subclassing — can exhaust it inside deep callback chains such as
+# the OLE DragEnter path (Explorer -> wndproc chain -> COM -> wry -> tauri),
+# crashing with STATUS_STACK_OVERFLOW. Raise the executable's stack reserve
+# to 8MB, matching the other platforms.
+# See https://github.com/tauri-apps/tauri/issues/9882 and
+# https://github.com/tauri-apps/tauri/issues/12488
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/STACK:8388608"]
