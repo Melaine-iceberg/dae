@@ -81,7 +81,13 @@ windows = { version = "0.52", features = [
     "Win32_System_Memory",
     "Win32_System_Ole",
     "Win32_UI_Shell",
+    "Win32_Storage_FileSystem",
 ] }
+
+# Resolves account names for the properties dialog (getpwnam_r/getgrnam_r),
+# which must honor NSS so domain-joined machines work.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

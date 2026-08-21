@@ -5,6 +5,7 @@
 mod content_search;
 mod directory;
 mod operations;
+mod properties;
 mod search;
 
 pub use content_search::{ContentSearchParams, search_file_contents_sync};
@@ -21,10 +22,12 @@ pub use operations::{create_entry_sync, rename_entry_sync};
 pub use search::search_directory_sync;
 
 use crate::file_system::error::FileSystemError;
-use crate::file_system::types::{DirectoryView, EntryStat, NewEntryKind, SearchResponse};
+use crate::file_system::types::{
+    DirectoryView, EntryStat, FileProperties, NewEntryKind, PropertyChanges, SearchResponse,
+};
 use crate::file_system::vfs::FileSystemBackend;
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct LocalBackend;
 
@@ -94,5 +97,17 @@ impl FileSystemBackend for LocalBackend {
     fn rename_to(&self, source: &str, destination: &str) -> Result<(), FileSystemError> {
         std::fs::rename(PathBuf::from(source), PathBuf::from(destination))?;
         Ok(())
+    }
+
+    fn properties(&self, path: &str) -> Result<FileProperties, FileSystemError> {
+        properties::read_properties(Path::new(path))
+    }
+
+    fn update_properties(
+        &self,
+        path: &str,
+        changes: &PropertyChanges,
+    ) -> Result<(), FileSystemError> {
+        properties::update_properties(Path::new(path), changes)
     }
 }

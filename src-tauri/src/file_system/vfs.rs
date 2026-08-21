@@ -1,7 +1,9 @@
 use super::error::FileSystemError;
 use super::local::LocalBackend;
 use super::smb;
-use super::types::{DirectoryView, EntryStat, NewEntryKind, SearchResponse};
+use super::types::{
+    DirectoryView, EntryStat, FileProperties, NewEntryKind, PropertyChanges, SearchResponse,
+};
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::sync::LazyLock;
@@ -124,4 +126,27 @@ pub trait FileSystemBackend: Send + Sync {
     /// Moves an entry to another path on the same backend when the protocol
     /// supports it; the engine falls back to copy + delete on failure.
     fn rename_to(&self, source: &str, destination: &str) -> Result<(), FileSystemError>;
+
+    // -- Properties (permissions / ownership / attributes) --
+
+    /// Full metadata for the properties dialog. Backends without a
+    /// permission model inherit the default, which degrades to a view-only
+    /// [`FileProperties`] built from [`FileSystemBackend::stat`].
+    fn properties(&self, path: &str) -> Result<FileProperties, FileSystemError> {
+        let stat = self.stat(path)?;
+        Ok(FileProperties::basic(path, stat))
+    }
+
+    /// Applies permission/ownership/attribute edits. Fields left as `None`
+    /// keep their current value. The default rejects every change for
+    /// backends without a permission model.
+    fn update_properties(
+        &self,
+        path: &str,
+        _changes: &PropertyChanges,
+    ) -> Result<(), FileSystemError> {
+        Err(FileSystemError::Unsupported(format!(
+            "This storage backend does not support editing properties: {path}"
+        )))
+    }
 }

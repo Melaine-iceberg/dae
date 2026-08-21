@@ -88,6 +88,111 @@ pub struct ContentSearchResponse {
     pub truncated: bool,
 }
 
+/// Cross-platform file properties for the properties dialog.
+///
+/// The common fields every backend can report live here; the
+/// platform-specific layer (POSIX mode bits, Windows DOS attributes) rides
+/// in `platform` as a tagged union so the frontend renders exactly the
+/// section the current backend supports.
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct FileProperties {
+    pub path: String,
+    pub name: String,
+    pub kind: EntryKind,
+    pub size: Option<u64>,
+    /// Milliseconds since the Unix epoch; `None` when the file system
+    /// cannot report the timestamp (e.g. birth time on Linux).
+    pub created_at: Option<u64>,
+    pub modified_at: Option<u64>,
+    pub accessed_at: Option<u64>,
+    /// Destination of a symbolic link, when `kind` is `Symlink`.
+    pub target: Option<String>,
+    pub platform: PlatformProperties,
+}
+
+/// The platform-specific section of [`FileProperties`].
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PlatformProperties {
+    /// POSIX mode bits and ownership (Linux, macOS).
+    Unix(UnixProperties),
+    /// DOS attribute flags (Windows local disks).
+    Windows(WindowsProperties),
+    /// Backends without a permission model (SMB today): view-only.
+    Basic,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct UnixProperties {
+    /// Permission bits including the file-type mask (e.g. `0o100644`).
+    /// Keep only the low 12 bits (`mode & 0o7777`) when editing.
+    pub mode: u32,
+    pub uid: u32,
+    pub gid: u32,
+    /// Resolved account names; `None` when the account no longer exists.
+    pub user_name: Option<String>,
+    pub group_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WindowsProperties {
+    pub read_only: bool,
+    pub hidden: bool,
+    pub archive: bool,
+    pub system: bool,
+}
+
+/// A field-set of property edits. `None` means "leave unchanged", so one
+/// command can chmod, chown, or toggle DOS attributes independently.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct PropertyChanges {
+    /// POSIX `chmod`: the low 12 bits (setuid/setgid/sticky included).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<u32>,
+    /// POSIX `chown`: account names or numeric ids; each side optional.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<OwnerChange>,
+    /// Windows `SetFileAttributes`: read-only flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_only: Option<bool>,
+    /// Windows `SetFileAttributes`: hidden flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerChange {
+    /// User name or numeric uid; `None` keeps the current owner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+    /// Group name or numeric gid; `None` keeps the current group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+}
+
+impl FileProperties {
+    /// Builds the view-only variant from the backend-neutral [`EntryStat`],
+    /// used by backends without a permission model.
+    pub fn basic(path: &str, stat: EntryStat) -> Self {
+        Self {
+            path: path.to_owned(),
+            name: display_name_from_path(path),
+            kind: stat.kind,
+            size: Some(stat.size),
+            created_at: None,
+            modified_at: stat.modified_at,
+            accessed_at: None,
+            target: None,
+            platform: PlatformProperties::Basic,
+        }
+    }
+}
+
 /// Backend-neutral metadata used by the generic transfer engine.
 #[derive(Debug, Clone)]
 pub struct EntryStat {

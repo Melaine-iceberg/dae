@@ -9,6 +9,7 @@ import {
   FileZipIcon,
   FilesIcon,
   FolderOpenIcon,
+  InfoIcon,
   PencilIcon,
   ScissorsIcon,
   SquaresFourIcon,
@@ -20,6 +21,8 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { commands, type ArchiveFormat } from "@/bindings";
 import { isWindowsPlatform, MOD_KEY } from "@/lib/platform";
+
+import { propertiesTargetAtom } from "./properties-dialog";
 
 import {
   ContextMenuGroup,
@@ -82,6 +85,7 @@ export function EntryContextMenuContent({
 }: EntryActions) {
   const spaces = useAtomValue(spacesAtom) ?? [];
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
+  const setPropertiesTarget = useSetAtom(propertiesTargetAtom);
 
   useEffect(() => {
     void ensureSpacesLoaded();
@@ -196,6 +200,17 @@ export function EntryContextMenuContent({
           <TrashIcon />
           删除
           <ContextMenuShortcut>Delete</ContextMenuShortcut>
+        </ContextMenuItem>
+      </ContextMenuGroup>
+      <ContextMenuSeparator />
+      <ContextMenuGroup>
+        <ContextMenuItem
+          disabled={isActionDisabled || !isSingleSelection}
+          onClick={() => setPropertiesTarget(entry)}
+        >
+          <InfoIcon />
+          属性
+          <ContextMenuShortcut>Alt+Enter</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuGroup>
     </>

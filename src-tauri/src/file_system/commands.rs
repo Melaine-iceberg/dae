@@ -6,8 +6,8 @@ use super::progress::{
 };
 use super::transfer::{self, TransferSource};
 use super::types::{
-    ConflictAction, ContentSearchResponse, DirectoryView, NewEntryKind, SearchResponse,
-    TransferConflict, TransferItem, path_to_string,
+    ConflictAction, ContentSearchResponse, DirectoryView, FileProperties, NewEntryKind,
+    PropertyChanges, SearchResponse, TransferConflict, TransferItem, path_to_string,
 };
 use super::vfs::{self, Scheme};
 use super::watch::{DirectoryWatcher, WatchHandle, spawn_polling_watcher};
@@ -510,6 +510,32 @@ pub async fn duplicate_entries(
 
 fn is_local_path(path: &str) -> bool {
     vfs::scheme_of(path).is_ok_and(|scheme| scheme == Scheme::Local)
+}
+
+/// Reads one entry's full metadata for the properties dialog. Local paths
+/// return the platform permission model (POSIX mode bits and ownership, or
+/// Windows DOS attributes); other backends degrade to a view-only summary.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_file_properties(path: String) -> Result<FileProperties, FileSystemError> {
+    tauri::async_runtime::spawn_blocking(move || vfs::resolve(&path)?.properties(&path))
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+/// Applies property edits (permissions, ownership, attributes). Fields left
+/// unset keep their current value.
+#[tauri::command]
+#[specta::specta]
+pub async fn update_file_properties(
+    path: String,
+    changes: PropertyChanges,
+) -> Result<(), FileSystemError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        vfs::resolve(&path)?.update_properties(&path, &changes)
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Opens the user's system default terminal at a local directory.

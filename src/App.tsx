@@ -3,6 +3,7 @@ import { useSetAtom } from "jotai";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 
 import { ExplorerTabs } from "@/features/explorer/explorer-tabs";
+import { PropertiesDialog } from "@/features/explorer/properties-dialog";
 import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
 import { CommandBar, commandBarOpenAtom } from "@/features/workspace/command-bar";
 import { applySystemTheme, watchSystemTheme } from "@/lib/theme";
@@ -39,6 +40,7 @@ function App() {
     <>
       <ExplorerTabs />
       <CommandBar />
+      <PropertiesDialog />
       <ReactQueryDevtools initialIsOpen={false} />
     </>
   );
