@@ -48,9 +48,13 @@ pub fn run() {
         .setup(move |app| {
             specta.mount_events(app);
             file_system::connections::init(app.handle())?;
+            // Answer the startup surface's queries while the webview loads
+            // so the first paint resolves them from memory.
+            file_system::prefetch::warm_startup_data(app.handle());
             Ok(())
         })
         .manage(file_system::DirectoryWatcher::default())
+        .manage(file_system::prefetch::StartupPrefetch::default())
         .manage(file_system::FileSearchState::default())
         .manage(file_system::UndoRedoState::default())
         .manage(terminal::TerminalState::default())

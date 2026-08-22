@@ -58,6 +58,12 @@ pub struct WslDistro {
 #[tauri::command]
 #[specta::specta]
 pub fn get_system_places(app: tauri::AppHandle) -> Result<Vec<SystemPlace>, FileSystemError> {
+    if let Some(places) = app
+        .state::<super::prefetch::StartupPrefetch>()
+        .take_system_places()
+    {
+        return Ok(places);
+    }
     let resolver = app.path();
     let candidates = [
         (PlaceKind::Home, resolver.home_dir()),
@@ -83,7 +89,10 @@ pub fn get_system_places(app: tauri::AppHandle) -> Result<Vec<SystemPlace>, File
 /// Lists local disk volumes with capacity information for the sidebar's devices section.
 #[tauri::command]
 #[specta::specta]
-pub async fn list_disks() -> Result<Vec<DiskVolume>, FileSystemError> {
+pub async fn list_disks(app: tauri::AppHandle) -> Result<Vec<DiskVolume>, FileSystemError> {
+    if let Some(disks) = app.state::<super::prefetch::StartupPrefetch>().take_disks() {
+        return Ok(disks);
+    }
     tauri::async_runtime::spawn_blocking(list_disks_sync)
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))
@@ -96,7 +105,13 @@ pub async fn list_disks() -> Result<Vec<DiskVolume>, FileSystemError> {
 /// because accessing that path auto-starts a stopped distro.
 #[tauri::command]
 #[specta::specta]
-pub async fn list_wsl_distros() -> Result<Vec<WslDistro>, FileSystemError> {
+pub async fn list_wsl_distros(app: tauri::AppHandle) -> Result<Vec<WslDistro>, FileSystemError> {
+    if let Some(distros) = app
+        .state::<super::prefetch::StartupPrefetch>()
+        .take_wsl_distros()
+    {
+        return Ok(distros);
+    }
     tauri::async_runtime::spawn_blocking(list_wsl_distros_sync)
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))
@@ -106,6 +121,12 @@ pub async fn list_wsl_distros() -> Result<Vec<WslDistro>, FileSystemError> {
 #[tauri::command]
 #[specta::specta]
 pub fn load_favorites(app: tauri::AppHandle) -> Result<Vec<Favorite>, FileSystemError> {
+    if let Some(favorites) = app
+        .state::<super::prefetch::StartupPrefetch>()
+        .take_favorites()
+    {
+        return Ok(favorites);
+    }
     let path = favorites_path(&app)?;
 
     match fs::read_to_string(&path) {
@@ -138,7 +159,7 @@ pub fn save_favorites(
     write_atomic(&path, contents.as_bytes())
 }
 
-fn list_disks_sync() -> Vec<DiskVolume> {
+pub(super) fn list_disks_sync() -> Vec<DiskVolume> {
     let mut volumes: Vec<DiskVolume> = Disks::new_with_refreshed_list()
         .iter()
         .filter(|disk| {
@@ -166,7 +187,7 @@ fn list_disks_sync() -> Vec<DiskVolume> {
     volumes
 }
 
-fn list_wsl_distros_sync() -> Vec<WslDistro> {
+pub(super) fn list_wsl_distros_sync() -> Vec<WslDistro> {
     #[cfg(target_os = "windows")]
     {
         list_wsl_distros_windows()

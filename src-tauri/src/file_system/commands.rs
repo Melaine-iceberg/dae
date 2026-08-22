@@ -53,7 +53,18 @@ pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemErr
 /// workers, where a nested runtime panics.
 #[tauri::command]
 #[specta::specta]
-pub async fn read_directory(path: String) -> Result<DirectoryView, FileSystemError> {
+pub async fn read_directory(
+    path: String,
+    app: tauri::AppHandle,
+) -> Result<DirectoryView, FileSystemError> {
+    // A prefetched snapshot (see `prefetch::warm_startup_data`) is consumed
+    // on first hit; every later read goes back to the filesystem.
+    if let Some(view) = app
+        .state::<super::prefetch::StartupPrefetch>()
+        .take_directory(&path)
+    {
+        return Ok(view);
+    }
     tauri::async_runtime::spawn_blocking(move || vfs::resolve(&path)?.read_dir(&path))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
