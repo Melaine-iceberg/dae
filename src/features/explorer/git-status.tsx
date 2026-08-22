@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { commands, events, type GitEntryStatusKind } from "@/bindings";
@@ -76,32 +77,34 @@ const GIT_STATUS_PRESENTATION: Record<
 > = {
   added: {
     className: "bg-emerald-500/15 text-emerald-600",
-    label: "已暂存新增",
+    label: "git.added",
     letter: "A",
   },
   modified: {
     className: "bg-amber-500/15 text-amber-600",
-    label: "已修改",
+    label: "git.modified",
     letter: "M",
   },
   untracked: {
     className: "bg-sky-500/15 text-sky-600",
-    label: "未跟踪",
+    label: "git.untracked",
     letter: "U",
   },
 };
 
 export function GitStatusBadge({ kind }: { kind: GitEntryStatusKind }) {
+  const { t } = useTranslation("explorer");
   const presentation = GIT_STATUS_PRESENTATION[kind];
+  const label = t(presentation.label);
 
   return (
     <span
-      aria-label={`Git 状态：${presentation.label}`}
+      aria-label={t("git.statusTitle", { status: label })}
       className={cn(
         "shrink-0 rounded-full px-1.5 text-[10px] leading-4 font-semibold",
         presentation.className,
       )}
-      title={`Git 状态：${presentation.label}`}
+      title={t("git.statusTitle", { status: label })}
     >
       {presentation.letter}
     </span>

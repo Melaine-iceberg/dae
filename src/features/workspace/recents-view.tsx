@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useTranslation } from "react-i18next";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@phosphor-icons/react";
 
 import type { RecentItem } from "@/bindings";
+import { i18n } from "@/i18n";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -51,6 +53,7 @@ type RecentGroup = { label: string; items: RecentItem[] };
 
 /** Recent files and folders, grouped by day. Clearing only clears history. */
 export function RecentsView() {
+  const { t } = useTranslation("workspace");
   const recents = useAtomValue(recentsAtom);
   const ensureRecentsLoaded = useSetAtom(ensureRecentsLoadedAtom);
   const navigateToFolder = useSetAtom(navigateToFolderAtom);
@@ -60,7 +63,16 @@ export function RecentsView() {
     void ensureRecentsLoaded();
   }, [ensureRecentsLoaded]);
 
-  const groups = useMemo(() => groupByDay(recents ?? []), [recents]);
+  const groups = useMemo(
+    () =>
+      groupByDay(recents ?? [], {
+        today: t("recents.groups.today"),
+        yesterday: t("recents.groups.yesterday"),
+        thisWeek: t("recents.groups.thisWeek"),
+        earlier: t("recents.groups.earlier"),
+      }),
+    [recents, t],
+  );
 
   const openItem = (item: RecentItem) => {
     if (item.kind === "directory") {
@@ -80,13 +92,13 @@ export function RecentsView() {
   };
 
   return (
-    <WorkspacePage aria-label="最近使用">
+    <WorkspacePage aria-label={t("recents.title")}>
       <WorkspacePageHeader
         actions={
           (recents?.length ?? 0) > 0 &&
           (confirmingClear ? (
             <>
-              <span className="text-xs text-muted-foreground">仅清除记录，不会删除文件</span>
+              <span className="text-xs text-muted-foreground">{t("recents.clearNotice")}</span>
               <Button
                 onClick={() => {
                   clearRecentItems();
@@ -96,7 +108,7 @@ export function RecentsView() {
                 type="button"
                 variant="destructive"
               >
-                确认清除
+                {t("recents.confirmClear")}
               </Button>
               <Button
                 onClick={() => setConfirmingClear(false)}
@@ -104,7 +116,7 @@ export function RecentsView() {
                 type="button"
                 variant="outline"
               >
-                取消
+                {t("recents.cancel")}
               </Button>
             </>
           ) : (
@@ -115,12 +127,12 @@ export function RecentsView() {
               variant="outline"
             >
               <TrashIcon />
-              清除全部
+              {t("recents.clearAll")}
             </Button>
           ))
         }
-        description="你浏览过的文件夹和打开过的文件。"
-        title="最近使用"
+        description={t("recents.description")}
+        title={t("recents.title")}
       />
 
       {recents === null ? (
@@ -135,8 +147,8 @@ export function RecentsView() {
             <EmptyMedia variant="icon">
               <ClockCounterClockwiseIcon />
             </EmptyMedia>
-            <EmptyTitle>暂无最近使用</EmptyTitle>
-            <EmptyDescription>你浏览的文件夹和打开的文件会按时间显示在这里。</EmptyDescription>
+            <EmptyTitle>{t("recents.emptyTitle")}</EmptyTitle>
+            <EmptyDescription>{t("recents.emptyDescription")}</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
@@ -169,6 +181,7 @@ function RecentRow({
   onOpen: () => void;
   onOpenContainingFolder: () => void;
 }) {
+  const { t } = useTranslation("workspace");
   const presentation =
     item.kind === "directory" ? DIRECTORY_PRESENTATION : getFilePresentation(item.name);
   const Icon: PhosphorIcon = presentation.icon;
@@ -207,24 +220,24 @@ function RecentRow({
           <ContextMenuGroup>
             <ContextMenuItem onClick={onOpen}>
               <FolderOpenIcon />
-              打开
+              {t("recents.open")}
             </ContextMenuItem>
             {location && (
               <ContextMenuItem onClick={onOpenContainingFolder}>
                 <FolderIcon />
-                打开所在文件夹
+                {t("recents.openContainingFolder")}
               </ContextMenuItem>
             )}
             <ContextMenuItem onClick={() => void copyPath(item.path)}>
               <ClipboardTextIcon />
-              复制文件地址
+              {t("recents.copyPath")}
             </ContextMenuItem>
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuGroup>
             <ContextMenuItem onClick={() => removeRecentItem(item.path)}>
               <XIcon />
-              从最近使用移除
+              {t("recents.remove")}
             </ContextMenuItem>
           </ContextMenuGroup>
         </ContextMenuContent>
@@ -233,7 +246,10 @@ function RecentRow({
   );
 }
 
-function groupByDay(items: RecentItem[]): RecentGroup[] {
+function groupByDay(
+  items: RecentItem[],
+  labels: { today: string; yesterday: string; thisWeek: string; earlier: string },
+): RecentGroup[] {
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const startOfYesterday = startOfToday - 86_400_000;
@@ -251,13 +267,13 @@ function groupByDay(items: RecentItem[]): RecentGroup[] {
 
   for (const item of items) {
     if (item.accessedAt >= startOfToday) {
-      push("今天", item);
+      push(labels.today, item);
     } else if (item.accessedAt >= startOfYesterday) {
-      push("昨天", item);
+      push(labels.yesterday, item);
     } else if (item.accessedAt >= startOfWeek) {
-      push("本周", item);
+      push(labels.thisWeek, item);
     } else {
-      push("更早", item);
+      push(labels.earlier, item);
     }
   }
 
@@ -265,7 +281,7 @@ function groupByDay(items: RecentItem[]): RecentGroup[] {
 }
 
 function formatTime(accessedAt: number): string {
-  return new Date(accessedAt).toLocaleTimeString("zh-CN", {
+  return new Date(accessedAt).toLocaleTimeString(i18n.language, {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,

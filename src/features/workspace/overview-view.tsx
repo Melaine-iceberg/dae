@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useTranslation } from "react-i18next";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
   ArrowRightIcon,
@@ -11,6 +12,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { commands, type SystemPlace } from "@/bindings";
+import { i18n } from "@/i18n";
 
 import {
   ContextMenu,
@@ -36,6 +38,7 @@ import {
 import { ensureRecentsLoadedAtom, recentsAtom, recordRecentItem } from "./recents-atoms";
 import { ensureSpacesLoadedAtom, spacesAtom } from "./spaces-atoms";
 import { getSpaceAccent } from "./space-identity";
+import { getSpaceDisplayName } from "./types";
 import { navigateToFolderAtom, openSurfaceAtom } from "./workspace-atoms";
 import {
   LocationCard,
@@ -53,6 +56,7 @@ const FAVORITES_PREVIEW_COUNT = 6;
  * path.
  */
 export function OverviewView() {
+  const { t } = useTranslation("workspace");
   const [places, setPlaces] = useState<SystemPlace[] | null>(null);
   const hiddenPlaces = useAtomValue(hiddenPlacesAtom);
   const setHiddenPlaces = useSetAtom(hiddenPlacesAtom);
@@ -90,11 +94,14 @@ export function OverviewView() {
   };
 
   return (
-    <WorkspacePage aria-label="概览">
-      <WorkspacePageHeader title="概览" description="快速回到你的位置、空间和最近的工作。" />
+    <WorkspacePage aria-label={t("overview.title")}>
+      <WorkspacePageHeader
+        title={t("overview.title")}
+        description={t("overview.description")}
+      />
 
-      <section aria-label="快捷入口">
-        <SectionHeader title="快捷入口" />
+      <section aria-label={t("overview.quickAccess")}>
+        <SectionHeader title={t("overview.quickAccess")} />
         {places === null ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
@@ -119,11 +126,11 @@ export function OverviewView() {
                   <ContextMenuContent>
                     <ContextMenuItem onClick={() => navigateToFolder(place.path)}>
                       <FolderIcon />
-                      打开
+                      {t("overview.open")}
                     </ContextMenuItem>
                     <ContextMenuItem onClick={() => setHiddenPlaces([...hiddenPlaces, place.kind])}>
                       <StarIcon />
-                      从快捷入口隐藏
+                      {t("overview.hideFromQuickAccess")}
                     </ContextMenuItem>
                   </ContextMenuContent>
                 </ContextMenu>
@@ -133,7 +140,7 @@ export function OverviewView() {
         )}
       </section>
 
-      <section aria-label="最近使用">
+      <section aria-label={t("overview.recentsTitle")}>
         <SectionHeader
           action={
             (recents?.length ?? 0) > RECENTS_PREVIEW_COUNT && (
@@ -142,12 +149,12 @@ export function OverviewView() {
                 onClick={() => openSurface({ kind: "recents" })}
                 type="button"
               >
-                查看全部
+                {t("overview.viewAll")}
                 <ArrowRightIcon className="size-3" />
               </button>
             )
           }
-          title="最近使用"
+          title={t("overview.recentsTitle")}
         />
         {recents === null ? (
           <div className="flex flex-col gap-1">
@@ -161,9 +168,9 @@ export function OverviewView() {
               <EmptyMedia variant="icon">
                 <ClockCounterClockwiseIcon />
               </EmptyMedia>
-              <EmptyTitle className="text-sm">暂无最近使用</EmptyTitle>
+              <EmptyTitle className="text-sm">{t("overview.recentsEmptyTitle")}</EmptyTitle>
               <EmptyDescription className="text-xs">
-                你浏览的文件夹和打开的文件会显示在这里。
+                {t("overview.recentsEmptyDescription")}
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -190,7 +197,7 @@ export function OverviewView() {
                   />
                   <span className="min-w-0 flex-1 truncate text-[13px]">{item.name}</span>
                   <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                    {formatRecentTime(item.accessedAt)}
+                    {formatRecentTime(item.accessedAt, t("recents.groups.yesterday"))}
                   </span>
                 </button>
               </li>
@@ -199,7 +206,7 @@ export function OverviewView() {
         )}
       </section>
 
-      <section aria-label="收藏">
+      <section aria-label={t("overview.favoritesTitle")}>
         <SectionHeader
           action={
             favorites.length > FAVORITES_PREVIEW_COUNT && (
@@ -208,12 +215,12 @@ export function OverviewView() {
                 onClick={() => openSurface({ kind: "favorites" })}
                 type="button"
               >
-                查看全部
+                {t("overview.viewAll")}
                 <ArrowRightIcon className="size-3" />
               </button>
             )
           }
-          title="收藏"
+          title={t("overview.favoritesTitle")}
         />
         {favoritePreview.length === 0 ? (
           <Empty className="border-none py-6">
@@ -221,9 +228,9 @@ export function OverviewView() {
               <EmptyMedia variant="icon">
                 <StarIcon />
               </EmptyMedia>
-              <EmptyTitle className="text-sm">暂无收藏</EmptyTitle>
+              <EmptyTitle className="text-sm">{t("overview.favoritesEmptyTitle")}</EmptyTitle>
               <EmptyDescription className="text-xs">
-                在文件夹中点击工具栏的星标，或将文件夹拖到侧边栏的收藏，即可添加。
+                {t("overview.favoritesEmptyDescription")}
               </EmptyDescription>
             </EmptyHeader>
           </Empty>
@@ -243,8 +250,8 @@ export function OverviewView() {
         )}
       </section>
 
-      <section aria-label="空间">
-        <SectionHeader title="空间" />
+      <section aria-label={t("overview.spacesTitle")}>
+        <SectionHeader title={t("overview.spacesTitle")} />
         {spaces === null ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
@@ -255,12 +262,16 @@ export function OverviewView() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {spaces.map((space) => (
               <LocationCard
-                description={space.items.length > 0 ? `${space.items.length} 个位置` : "空空间"}
+                description={
+                  space.items.length > 0
+                    ? t("spaces.itemCount", { count: space.items.length })
+                    : t("spaces.emptyLabel")
+                }
                 icon={SquaresFourIcon}
                 iconClassName={getSpaceAccent(space.id).text}
                 key={space.id}
                 onClick={() => openSurface({ kind: "space", spaceId: space.id })}
-                title={space.name}
+                title={getSpaceDisplayName(space)}
               />
             ))}
           </div>
@@ -270,19 +281,23 @@ export function OverviewView() {
   );
 }
 
-function formatRecentTime(accessedAt: number): string {
+function formatRecentTime(accessedAt: number, yesterdayLabel: string): string {
   const date = new Date(accessedAt);
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 
   if (startOfDate === startOfToday) {
-    return date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+    return date.toLocaleTimeString(i18n.language, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
   }
 
   if (startOfToday - startOfDate === 86_400_000) {
-    return "昨天";
+    return yesterdayLabel;
   }
 
-  return date.toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+  return date.toLocaleDateString(i18n.language, { month: "numeric", day: "numeric" });
 }

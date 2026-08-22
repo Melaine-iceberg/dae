@@ -1,0 +1,15 @@
+{
+  "panel": {
+    "label": "集成终端",
+    "title": "终端",
+    "restart": {
+      "label": "重启终端",
+      "action": "重新启动"
+    },
+    "close": {
+      "label": "关闭终端面板",
+      "title": "关闭面板 (Ctrl+`)"
+    },
+    "sessionEnded": "终端会话已结束（退出代码 {{code}}）"
+  }
+}

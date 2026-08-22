@@ -1,6 +1,8 @@
 import { useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { ConflictAction, EntryKind, TransferConflict } from "@/bindings";
+import { localeDateTimeFormat, localeNumber, localeNumberFormat } from "@/i18n/format";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,14 +22,14 @@ import {
   SYMLINK_PRESENTATION,
 } from "./file-icons";
 
-const MODIFIED_DATE_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+const MODIFIED_DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   year: "numeric",
   month: "numeric",
   day: "numeric",
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
-});
+};
 
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
 
@@ -37,14 +39,13 @@ function formatConflictSize(bytes: number | null): string {
 
   const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), BYTE_UNITS.length - 1);
   const value = bytes / 1024 ** unitIndex;
-  return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 }).format(value)} ${
-    BYTE_UNITS[unitIndex]
-  }`;
+  const formatter = localeNumberFormat({ maximumFractionDigits: 1 });
+  return `${formatter.format(value)} ${BYTE_UNITS[unitIndex]}`;
 }
 
 function formatConflictDate(timestamp: number | null): string {
   if (timestamp === null) return "—";
-  return MODIFIED_DATE_FORMATTER.format(new Date(timestamp));
+  return localeDateTimeFormat(MODIFIED_DATE_FORMAT_OPTIONS).format(new Date(timestamp));
 }
 
 function kindPresentation(kind: EntryKind, name: string) {
@@ -75,6 +76,7 @@ export function TransferConflictDialog({
   onCancel: () => void;
   onResolve: (decisions: Record<string, ConflictAction>) => void;
 }) {
+  const { t } = useTranslation("explorer");
   const [index, setIndex] = useState(0);
   const [applyToAll, setApplyToAll] = useState(false);
   const [decisions, setDecisions] = useState<Record<string, ConflictAction>>({});
@@ -83,7 +85,9 @@ export function TransferConflictDialog({
   if (!conflict) return null;
 
   const remaining = conflicts.length - index;
-  const actionVerb = operation === "copy" ? "复制" : "移动";
+  const actionVerb = t(
+    operation === "copy" ? "conflictDialog.actionCopy" : "conflictDialog.actionMove",
+  );
 
   const choose = (action: ConflictAction) => {
     const next = { ...decisions };
@@ -120,15 +124,17 @@ export function TransferConflictDialog({
     >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>替换或跳过文件</DialogTitle>
+          <DialogTitle>{t("conflictDialog.title")}</DialogTitle>
           <DialogDescription>
             {conflicts.length > 1 && (
               <span className="text-foreground">
-                第 {(index + 1).toLocaleString("zh-CN")} / {conflicts.length.toLocaleString("zh-CN")}{" "}
-                个冲突 ·{" "}
+                {t("conflictDialog.conflictCounter", {
+                  current: localeNumber(index + 1),
+                  total: localeNumber(conflicts.length),
+                })}{" "}
               </span>
             )}
-            目标文件夹中已存在“{conflict.name}”，请选择{actionVerb}方式。
+            {t("conflictDialog.description", { name: conflict.name, action: actionVerb })}
           </DialogDescription>
         </DialogHeader>
 
@@ -138,7 +144,7 @@ export function TransferConflictDialog({
             metadata={`${sourceLabel} · ${formatConflictSize(conflict.sourceSize)}`}
             modifiedAt={formatConflictDate(conflict.sourceModifiedAt)}
             title={conflict.name}
-            subtitle={`准备${actionVerb}的项目`}
+            subtitle={t("conflictDialog.sourceSubtitle", { action: actionVerb })}
           />
           <ConflictSideCard
             highlight
@@ -146,7 +152,7 @@ export function TransferConflictDialog({
             metadata={`${targetLabel} · ${formatConflictSize(conflict.targetSize)}`}
             modifiedAt={formatConflictDate(conflict.targetModifiedAt)}
             title={conflict.name}
-            subtitle="目标文件夹中的现有项目"
+            subtitle={t("conflictDialog.targetSubtitle")}
           />
         </div>
 
@@ -158,23 +164,23 @@ export function TransferConflictDialog({
               onChange={(event) => setApplyToAll(event.target.checked)}
               type="checkbox"
             />
-            应用到剩余全部（{remaining.toLocaleString("zh-CN")} 个冲突）
+            {t("conflictDialog.applyToAll", { count: localeNumber(remaining) })}
           </label>
         )}
 
         <DialogFooter className="gap-2 sm:justify-between">
           <Button onClick={onCancel} type="button" variant="ghost">
-            取消{actionVerb}
+            {t("conflictDialog.cancelAction", { action: actionVerb })}
           </Button>
           <div className="flex gap-2">
             <Button onClick={() => choose("skip")} type="button" variant="outline">
-              跳过
+              {t("conflictDialog.skip")}
             </Button>
             <Button onClick={() => choose("keep_both")} type="button" variant="outline">
-              两者保留
+              {t("conflictDialog.keepBoth")}
             </Button>
             <Button onClick={() => choose("replace")} type="button" variant="destructive">
-              替换
+              {t("conflictDialog.replace")}
             </Button>
           </div>
         </DialogFooter>
@@ -198,6 +204,8 @@ function ConflictSideCard({
   subtitle: string;
   title: string;
 }) {
+  const { t } = useTranslation("explorer");
+
   return (
     <div
       className={cn(
@@ -213,7 +221,9 @@ function ConflictSideCard({
         </p>
       </div>
       <p className="truncate text-xs text-muted-foreground">{metadata}</p>
-      <p className="text-xs text-muted-foreground">修改于 {modifiedAt}</p>
+      <p className="text-xs text-muted-foreground">
+        {t("conflictDialog.modifiedAt", { date: modifiedAt })}
+      </p>
     </div>
   );
 }

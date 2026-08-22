@@ -6,9 +6,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useAtom, useAtomValue } from "jotai";
+import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { commands, type ArchiveFormat } from "@/bindings";
+import { i18n } from "@/i18n";
+import { localeDateTimeFormat, localeNumber, localeNumberFormat } from "@/i18n/format";
 import {
   CaretDownIcon,
   CaretUpIcon,
@@ -126,18 +129,18 @@ interface FileListSearchState {
   truncated: boolean;
 }
 
-const MODIFIED_DATE_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+const MODIFIED_DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   year: "numeric",
   month: "numeric",
   day: "numeric",
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
-});
+};
 
-const FILE_SIZE_FORMATTER = new Intl.NumberFormat("zh-CN", {
+const FILE_SIZE_FORMAT_OPTIONS: Intl.NumberFormatOptions = {
   maximumFractionDigits: 1,
-});
+};
 
 const FILE_SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
@@ -248,6 +251,7 @@ export function FileList({
   selectedPaths,
   viewId,
 }: FileListProps) {
+  const { t } = useTranslation("explorer");
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectionAnchorIndexRef = useRef<number | null>(null);
   const dragCandidateRef = useRef<DragCandidate | null>(null);
@@ -689,7 +693,7 @@ export function FileList({
         }}
         render={
           <section
-            aria-label="文件列表"
+            aria-label={t("explorer:list.ariaLabel")}
             className="relative flex min-h-0 flex-1 flex-col"
             data-explorer-drop-target={currentDirectoryPath}
           />
@@ -705,9 +709,9 @@ export function FileList({
             <p className="text-[13px] text-muted-foreground">
               {searchState
                 ? searchState.error
-                  ? `搜索未完成：${searchState.error}`
-                  : `未找到名称包含“${searchState.query}”的项目`
-                : "此文件夹为空。"}
+                  ? t("explorer:list.searchError", { error: searchState.error })
+                  : t("explorer:list.searchEmpty", { query: searchState.query })
+                : t("explorer:list.emptyFolder")}
             </p>
           </div>
         ) : activeViewMode === "grid" ? (
@@ -733,26 +737,26 @@ export function FileList({
               <div className="sticky top-0 z-10 grid h-7 shrink-0 items-center whitespace-nowrap border-b border-border/60 bg-card text-label uppercase text-muted-foreground [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
                 <SortHeaderCell
                   active={sortKey === "name"}
-                  label="名称"
+                  label={t("explorer:columns.name")}
                   onSort={() => applySort("name")}
                   order={sortOrder}
                 />
                 <SortHeaderCell
                   active={sortKey === "modified"}
-                  label="修改日期"
+                  label={t("explorer:columns.modified")}
                   onSort={() => applySort("modified")}
                   order={sortOrder}
                 />
                 <SortHeaderCell
                   active={sortKey === "type"}
-                  label="类型"
+                  label={t("explorer:columns.type")}
                   onSort={() => applySort("type")}
                   order={sortOrder}
                 />
                 <SortHeaderCell
                   active={sortKey === "size"}
                   align="right"
-                  label="大小"
+                  label={t("explorer:columns.size")}
                   onSort={() => applySort("size")}
                   order={sortOrder}
                 />
@@ -802,7 +806,7 @@ export function FileList({
         )}
         {externalDropItemCount > 0 && (
           <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 text-[13px] font-medium text-primary">
-            松开以复制 {externalDropItemCount} 个项目
+            {t("explorer:drag.dropToCopy", { count: externalDropItemCount })}
           </div>
         )}
         <MarqueeOverlay rect={listMarquee.rect} />
@@ -815,14 +819,16 @@ export function FileList({
             {internalDrag.target?.kind === "favorites" ? (
               <>
                 <StarIcon />
-                添加 {draggableDirectoryPaths(entries, internalDrag.sourcePaths).length}{" "}
-                个文件夹到收藏
+                {t("explorer:drag.addToFavorites", {
+                  count: draggableDirectoryPaths(entries, internalDrag.sourcePaths).length,
+                })}
               </>
             ) : internalDrag.target?.kind === "space" ? (
               <>
                 <SquaresFourIcon />
-                添加 {draggableDirectoryPaths(entries, internalDrag.sourcePaths).length}{" "}
-                个文件夹到空间
+                {t("explorer:drag.addToSpace", {
+                  count: draggableDirectoryPaths(entries, internalDrag.sourcePaths).length,
+                })}
               </>
             ) : (
               <>
@@ -834,11 +840,11 @@ export function FileList({
                   <ScissorsIcon />
                 )}
                 {internalDrag.operation === "copy"
-                  ? "复制"
+                  ? t("explorer:drag.opCopy")
                   : internalDrag.operation === "link"
-                    ? "创建快捷方式"
-                    : "移动"}{" "}
-                {internalDrag.sourcePaths.length} 个项目
+                    ? t("explorer:drag.opLink")
+                    : t("explorer:drag.opMove")}{" "}
+                {t("explorer:drag.items", { count: internalDrag.sourcePaths.length })}
               </>
             )}
           </div>
@@ -848,23 +854,23 @@ export function FileList({
         <ContextMenuGroup>
           <ContextMenuItem onClick={onCreateFile}>
             <FilePlusIcon />
-            新建文件
+            {t("explorer:contextMenu.newFile")}
           </ContextMenuItem>
           <ContextMenuItem onClick={onCreateDirectory}>
             <FolderPlusIcon />
-            新建文件夹
+            {t("explorer:contextMenu.newFolder")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={onOpenTerminal}>
             <TerminalIcon />
-            在终端中打开
+            {t("explorer:contextMenu.openInTerminal")}
             <ContextMenuShortcut>{MOD_KEY}+`</ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem onClick={onPaste}>
             <ClipboardIcon />
-            粘贴
+            {t("explorer:contextMenu.paste")}
             <ContextMenuShortcut>{MOD_KEY}+V</ContextMenuShortcut>
           </ContextMenuItem>
         </ContextMenuGroup>
@@ -886,6 +892,8 @@ function SortHeaderCell({
   onSort: () => void;
   order: "asc" | "desc";
 }) {
+  const { t } = useTranslation("explorer");
+
   return (
     <div
       aria-sort={active ? (order === "asc" ? "ascending" : "descending") : "none"}
@@ -899,7 +907,14 @@ function SortHeaderCell({
           align === "right" && "flex-row-reverse",
         )}
         onClick={onSort}
-        title={active ? `按${label}${order === "asc" ? "升序" : "降序"}排列，点击切换` : `按${label}排序`}
+        title={
+          active
+            ? t("explorer:sort.activeTitle", {
+                column: label,
+                direction: order === "asc" ? t("explorer:sort.ascending") : t("explorer:sort.descending"),
+              })
+            : t("explorer:sort.inactiveTitle", { column: label })
+        }
         type="button"
       >
         <span className="truncate">{label}</span>
@@ -966,6 +981,7 @@ function FileListRow({
   onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => void;
   selectedCount: number;
 }) {
+  const { t } = useTranslation("explorer");
   const presentation = getEntryPresentation(entry);
   const EntryIcon = presentation.icon;
   const isDirectory = entry.kind === "directory";
@@ -1020,7 +1036,11 @@ function FileListRow({
           <div className="px-2.5 text-muted-foreground">{presentation.label}</div>
           <div
             className="px-2.5 text-right text-muted-foreground"
-            title={entry.size === null ? undefined : `${entry.size.toLocaleString("zh-CN")} 字节`}
+            title={
+              entry.size === null
+                ? undefined
+                : t("explorer:list.bytesTitle", { size: localeNumber(entry.size) })
+            }
           >
             {formatFileSize(entry.size)}
           </div>
@@ -1069,7 +1089,9 @@ function isEditableElement(target: EventTarget | null): boolean {
 }
 
 function formatModifiedAt(modifiedAt: number | null): string {
-  return modifiedAt === null ? "—" : MODIFIED_DATE_FORMATTER.format(modifiedAt);
+  return modifiedAt === null
+    ? "—"
+    : localeDateTimeFormat(MODIFIED_DATE_FORMAT_OPTIONS).format(modifiedAt);
 }
 
 function formatFileSize(size: number | null): string {
@@ -1087,21 +1109,26 @@ function formatFileSize(size: number | null): string {
   );
   const value = size / 1024 ** unitIndex;
 
-  return `${FILE_SIZE_FORMATTER.format(value)} ${FILE_SIZE_UNITS[unitIndex]}`;
+  return `${localeNumberFormat(FILE_SIZE_FORMAT_OPTIONS).format(value)} ${FILE_SIZE_UNITS[unitIndex]}`;
 }
 
 function formatRelativeLocation(relativePath: string): string {
   const separatorIndex = Math.max(relativePath.lastIndexOf("/"), relativePath.lastIndexOf("\\"));
   if (separatorIndex < 0) {
-    return "当前目录";
+    return i18n.t("explorer:list.currentFolder");
   }
 
   return relativePath.slice(0, separatorIndex).replaceAll(/[\\/]/g, " › ");
 }
 
 export function FileListSkeleton() {
+  const { t } = useTranslation("explorer");
+
   return (
-    <section aria-label="正在加载文件列表" className="flex min-h-0 flex-1 flex-col">
+    <section
+      aria-label={t("explorer:list.loadingAriaLabel")}
+      className="flex min-h-0 flex-1 flex-col"
+    >
       <div className="flex h-7 shrink-0 items-center justify-between border-b px-3">
         <Skeleton className="h-3.5 w-12" />
         <Skeleton className="h-3 w-16" />
@@ -1109,10 +1136,10 @@ export function FileListSkeleton() {
       <Table className="min-w-160 table-fixed">
         <TableHeader>
           <TableRow>
-            <TableHead>名称</TableHead>
-            <TableHead className="w-44">修改日期</TableHead>
-            <TableHead className="w-28">类型</TableHead>
-            <TableHead className="w-24 text-right">大小</TableHead>
+            <TableHead>{t("explorer:columns.name")}</TableHead>
+            <TableHead className="w-44">{t("explorer:columns.modified")}</TableHead>
+            <TableHead className="w-28">{t("explorer:columns.type")}</TableHead>
+            <TableHead className="w-24 text-right">{t("explorer:columns.size")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>

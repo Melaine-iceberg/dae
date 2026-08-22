@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ClipboardTextIcon, FolderOpenIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { commands, type TextPreview } from "@/bindings";
+import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -44,12 +46,12 @@ function sliceForHighlight(content: string): string {
   return newlineIndex > 0 ? slice.slice(0, newlineIndex) : slice;
 }
 
-const MODIFIED_DATE_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+const MODIFIED_DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   dateStyle: "medium",
   timeStyle: "short",
-});
+};
 
-const FILE_SIZE_FORMATTER = new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 });
+const FILE_SIZE_FORMAT_OPTIONS: Intl.NumberFormatOptions = { maximumFractionDigits: 1 };
 const FILE_SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
 function formatFileSize(size: number | null): string {
@@ -60,7 +62,8 @@ function formatFileSize(size: number | null): string {
     Math.floor(Math.log(size) / Math.log(1024)),
     FILE_SIZE_UNITS.length - 1,
   );
-  return `${FILE_SIZE_FORMATTER.format(size / 1024 ** unitIndex)} ${FILE_SIZE_UNITS[unitIndex]}`;
+  const formatter = localeNumberFormat(FILE_SIZE_FORMAT_OPTIONS);
+  return `${formatter.format(size / 1024 ** unitIndex)} ${FILE_SIZE_UNITS[unitIndex]}`;
 }
 
 function parentDirectory(path: string): string {
@@ -93,6 +96,7 @@ export function EntryPreview({
   onClose: () => void;
   onOpen: () => void;
 }) {
+  const { t } = useTranslation("explorer");
   const language = entry?.kind === "file" ? getPreviewLanguage(entry.name) : null;
   const supportsThumbnail = entry !== null && isThumbnailSupported(entry);
   const supportsText =
@@ -144,7 +148,7 @@ export function EntryPreview({
 
   return (
     <aside
-      aria-label="预览"
+      aria-label={t("preview.ariaLabel")}
       className="animate-in flex h-full w-[26rem] shrink-0 flex-col overflow-hidden bg-popover/95 duration-200 fade-in slide-in-from-right-2"
     >
       <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
@@ -153,13 +157,13 @@ export function EntryPreview({
           className="min-w-0 flex-1 truncate text-[13px] font-medium"
           title={entry?.name ?? undefined}
         >
-          {entry?.name ?? "未选择文件"}
+          {entry?.name ?? t("preview.noFileSelected")}
         </p>
         <Button
-          aria-label="收起预览面板"
+          aria-label={t("preview.collapsePanel")}
           onClick={onClose}
           size="icon-sm"
-          title="收起预览面板 (Space)"
+          title={t("preview.collapsePanelShortcut")}
           type="button"
           variant="ghost"
         >
@@ -171,7 +175,7 @@ export function EntryPreview({
         {entry === null ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
             <VisualPlaceholder name="preview" />
-            <p>在列表中选择一个文件以预览</p>
+            <p>{t("preview.selectHint")}</p>
           </div>
         ) : (
           <>
@@ -196,7 +200,7 @@ export function EntryPreview({
                 )}
                 {textPreview.truncated && (
                   <p className="shrink-0 border-t px-2.5 py-1.5 text-xs text-muted-foreground">
-                    内容较长，仅显示前 {PREVIEW_READ_BYTES / 1024} KB
+                    {t("preview.truncatedHint", { size: PREVIEW_READ_BYTES / 1024 })}
                   </p>
                 )}
               </div>
@@ -209,13 +213,13 @@ export function EntryPreview({
             ) : isTooLarge ? (
               <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 px-3 text-center text-xs text-muted-foreground">
                 <WarningIcon className="size-5" />
-                <p>文件超过 {PREVIEW_MAX_SOURCE_BYTES / 1024 / 1024} MB</p>
-                <p>为保障性能，不预览内容</p>
+                <p>{t("preview.tooLarge", { size: PREVIEW_MAX_SOURCE_BYTES / 1024 / 1024 })}</p>
+                <p>{t("preview.tooLargeHint")}</p>
               </div>
             ) : textPreview?.status === "error" ? (
               <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 text-xs text-muted-foreground">
                 <WarningIcon className="size-5" />
-                <p>无法读取文本内容</p>
+                <p>{t("preview.readError")}</p>
               </div>
             ) : (
               <div className="flex h-32 shrink-0 items-center justify-center rounded-xl bg-muted/40">
@@ -226,15 +230,17 @@ export function EntryPreview({
             )}
 
             <dl className="grid shrink-0 grid-cols-[5rem_1fr] gap-x-3 gap-y-2 text-xs">
-              <dt className="text-muted-foreground">类型</dt>
+              <dt className="text-muted-foreground">{t("preview.type")}</dt>
               <dd className="min-w-0 break-all">{visual?.label ?? "—"}</dd>
-              <dt className="text-muted-foreground">大小</dt>
+              <dt className="text-muted-foreground">{t("preview.size")}</dt>
               <dd className="tabular-nums">{formatFileSize(entry.size)}</dd>
-              <dt className="text-muted-foreground">修改日期</dt>
+              <dt className="text-muted-foreground">{t("preview.modified")}</dt>
               <dd className="tabular-nums">
-                {entry.modifiedAt === null ? "—" : MODIFIED_DATE_FORMATTER.format(entry.modifiedAt)}
+                {entry.modifiedAt === null
+                  ? "—"
+                  : localeDateTimeFormat(MODIFIED_DATE_FORMAT_OPTIONS).format(entry.modifiedAt)}
               </dd>
-              <dt className="text-muted-foreground">位置</dt>
+              <dt className="text-muted-foreground">{t("preview.location")}</dt>
               <dd className="min-w-0 break-all" title={parentDirectory(entry.path)}>
                 {parentDirectory(entry.path)}
               </dd>
@@ -247,7 +253,7 @@ export function EntryPreview({
         <footer className="flex shrink-0 items-center gap-2 border-t p-2.5">
           <Button onClick={onOpen} size="sm" type="button">
             <FolderOpenIcon />
-            打开
+            {t("preview.open")}
           </Button>
           <Button
             onClick={() =>
@@ -256,12 +262,12 @@ export function EntryPreview({
               })
             }
             size="sm"
-            title="复制文件地址"
+            title={t("preview.copyPathTitle")}
             type="button"
             variant="outline"
           >
             <ClipboardTextIcon />
-            复制地址
+            {t("preview.copyPath")}
           </Button>
         </footer>
       )}

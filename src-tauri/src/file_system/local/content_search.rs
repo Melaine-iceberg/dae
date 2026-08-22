@@ -60,7 +60,7 @@ pub fn search_file_contents_sync(
         .case_insensitive(!params.case_sensitive)
         .fixed_strings(!params.is_regex)
         .build(query)
-        .map_err(|error| FileSystemError::InvalidInput(format!("无效的搜索表达式：{error}")))?;
+        .map_err(|error| FileSystemError::InvalidInput(format!("fs.invalid_search_query: {error}")))?;
 
     let shared = Arc::new(ContentSearchShared {
         files: Mutex::new(Vec::new()),
@@ -75,12 +75,12 @@ pub fn search_file_contents_sync(
     for pattern in ALWAYS_IGNORED {
         overrides
             .add(pattern)
-            .map_err(|error| FileSystemError::Internal(format!("无法注册忽略规则：{error}")))?;
+            .map_err(|error| FileSystemError::Internal(format!("fs.ignore_rule_register_failed: {error}")))?;
     }
     builder.overrides(
         overrides
             .build()
-            .map_err(|error| FileSystemError::Internal(format!("无法构建忽略规则：{error}")))?,
+            .map_err(|error| FileSystemError::Internal(format!("fs.ignore_rule_build_failed: {error}")))?,
     );
 
     if let Some(types) = build_file_types(params.file_filter)? {
@@ -253,7 +253,7 @@ fn build_file_types(filter: Option<&str>) -> Result<Option<ignore::types::Types>
 
         builder
             .add("daefilter", &pattern)
-            .map_err(|error| FileSystemError::InvalidInput(format!("无效的类型过滤：{error}")))?;
+            .map_err(|error| FileSystemError::InvalidInput(format!("fs.invalid_type_filter: {error}")))?;
         has_pattern = true;
     }
 
@@ -264,6 +264,6 @@ fn build_file_types(filter: Option<&str>) -> Result<Option<ignore::types::Types>
     builder.select("daefilter");
     let types = builder
         .build()
-        .map_err(|error| FileSystemError::Internal(format!("无法构建类型过滤：{error}")))?;
+        .map_err(|error| FileSystemError::Internal(format!("fs.type_filter_build_failed: {error}")))?;
     Ok(Some(types))
 }

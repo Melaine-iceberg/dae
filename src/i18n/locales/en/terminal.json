@@ -1,0 +1,15 @@
+{
+  "panel": {
+    "label": "Integrated terminal",
+    "title": "Terminal",
+    "restart": {
+      "label": "Restart terminal",
+      "action": "Restart"
+    },
+    "close": {
+      "label": "Close terminal panel",
+      "title": "Close panel (Ctrl+`)"
+    },
+    "sessionEnded": "The terminal session ended (exit code {{code}})"
+  }
+}

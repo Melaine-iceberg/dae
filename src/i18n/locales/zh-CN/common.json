@@ -1,0 +1,15 @@
+{
+  "language": {
+    "label": "语言",
+    "title": "语言：{{name}}",
+    "zh-CN": "简体中文",
+    "en": "English"
+  },
+  "windowControls": {
+    "minimize": "最小化",
+    "restore": "向下还原",
+    "maximize": "最大化",
+    "close": "关闭"
+  },
+  "duplicateSuffix": "副本"
+}

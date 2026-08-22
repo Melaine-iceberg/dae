@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { atom, useAtomValue, useSetAtom } from "jotai";
+import { useTranslation } from "react-i18next";
 
+import { i18n } from "@/i18n";
+import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
 import { commands, type FileProperties, type OwnerChange, type PropertyChanges } from "@/bindings";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,7 +30,7 @@ import {
  *  without threading callbacks through every view. */
 export const propertiesTargetAtom = atom<DirectoryEntry | null>(null);
 
-const TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+const TIMESTAMP_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   year: "numeric",
   month: "numeric",
   day: "numeric",
@@ -35,7 +38,7 @@ const TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
   minute: "2-digit",
   second: "2-digit",
   hour12: false,
-});
+};
 
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
 
@@ -101,7 +104,9 @@ function buildChanges(properties: FileProperties, draft: PropertiesDraft): Prope
 }
 
 function formatTimestamp(timestamp: number | null): string {
-  return timestamp === null ? "—" : TIMESTAMP_FORMATTER.format(new Date(timestamp));
+  return timestamp === null
+    ? "—"
+    : localeDateTimeFormat(TIMESTAMP_FORMAT_OPTIONS).format(new Date(timestamp));
 }
 
 function formatSize(size: number | null): string {
@@ -110,9 +115,8 @@ function formatSize(size: number | null): string {
 
   const unitIndex = Math.min(Math.floor(Math.log(size) / Math.log(1024)), BYTE_UNITS.length - 1);
   const value = size / 1024 ** unitIndex;
-  return `${new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 1 }).format(value)} ${
-    BYTE_UNITS[unitIndex]
-  }`;
+  const formatter = localeNumberFormat({ maximumFractionDigits: 1 });
+  return `${formatter.format(value)} ${BYTE_UNITS[unitIndex]}`;
 }
 
 function parentPath(path: string): string {
@@ -132,8 +136,8 @@ function describeError(error: unknown): string {
       ? String((error as { kind: unknown }).kind)
       : null;
 
-  if (kind === "unsupported") return "当前存储位置不支持修改权限";
-  if (kind === "permission_denied") return "没有足够的权限修改该项目";
+  if (kind === "unsupported") return i18n.t("explorer:properties.errorUnsupported");
+  if (kind === "permission_denied") return i18n.t("explorer:properties.errorPermissionDenied");
 
   if (
     typeof error === "object" &&
@@ -151,6 +155,7 @@ function describeError(error: unknown): string {
  *  platform, plus a POSIX permission matrix / owner editor on Unix and
  *  read-only/hidden toggles on Windows. */
 export function PropertiesDialog() {
+  const { t } = useTranslation("explorer");
   const target = useAtomValue(propertiesTargetAtom);
   const setTarget = useSetAtom(propertiesTargetAtom);
   const [properties, setProperties] = useState<FileProperties | null>(null);
@@ -229,8 +234,10 @@ export function PropertiesDialog() {
     <Dialog onOpenChange={(open) => !open && close()} open={target !== null}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>属性</DialogTitle>
-          <DialogDescription>查看并编辑“{target?.name}”的详细信息。</DialogDescription>
+          <DialogTitle>{t("explorer:properties.title")}</DialogTitle>
+          <DialogDescription>
+            {t("explorer:properties.description", { name: target?.name ?? "" })}
+          </DialogDescription>
         </DialogHeader>
 
         {error && <p className="text-[13px] text-destructive">{error}</p>}
@@ -248,27 +255,27 @@ export function PropertiesDialog() {
         )}
 
         {target && !properties && !error && (
-          <p className="text-[13px] text-muted-foreground">正在读取属性…</p>
+          <p className="text-[13px] text-muted-foreground">{t("explorer:properties.loading")}</p>
         )}
 
         {target && properties && draft && (
           <>
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
-              <dt className="text-muted-foreground">位置</dt>
+              <dt className="text-muted-foreground">{t("explorer:properties.location")}</dt>
               <dd className="truncate" title={parentPath(properties.path)}>
                 {parentPath(properties.path)}
               </dd>
-              <dt className="text-muted-foreground">大小</dt>
+              <dt className="text-muted-foreground">{t("explorer:properties.size")}</dt>
               <dd>{formatSize(properties.size)}</dd>
-              <dt className="text-muted-foreground">修改时间</dt>
+              <dt className="text-muted-foreground">{t("explorer:properties.modified")}</dt>
               <dd>{formatTimestamp(properties.modifiedAt)}</dd>
-              <dt className="text-muted-foreground">创建时间</dt>
+              <dt className="text-muted-foreground">{t("explorer:properties.created")}</dt>
               <dd>{formatTimestamp(properties.createdAt)}</dd>
-              <dt className="text-muted-foreground">访问时间</dt>
+              <dt className="text-muted-foreground">{t("explorer:properties.accessed")}</dt>
               <dd>{formatTimestamp(properties.accessedAt)}</dd>
               {properties.target && (
                 <>
-                  <dt className="text-muted-foreground">指向</dt>
+                  <dt className="text-muted-foreground">{t("explorer:properties.target")}</dt>
                   <dd className="truncate" title={properties.target}>
                     {properties.target}
                   </dd>
@@ -290,7 +297,7 @@ export function PropertiesDialog() {
             )}
             {properties.platform.kind === "basic" && (
               <p className="text-[13px] text-muted-foreground">
-                当前存储位置不支持查看或修改权限信息。
+                {t("explorer:properties.unsupportedPermissions")}
               </p>
             )}
           </>
@@ -298,14 +305,14 @@ export function PropertiesDialog() {
 
         <DialogFooter>
           <Button disabled={isSaving} onClick={close} type="button" variant="outline">
-            关闭
+            {t("explorer:actions.close")}
           </Button>
           <Button
             disabled={!isDirty || isSaving}
             onClick={() => void applyChanges()}
             type="button"
           >
-            {isSaving ? "应用中…" : "应用"}
+            {isSaving ? t("explorer:properties.applying") : t("explorer:properties.apply")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -314,15 +321,15 @@ export function PropertiesDialog() {
 }
 
 const PERMISSION_SUBJECTS = [
-  { key: "owner", label: "所有者", shift: 6 },
-  { key: "group", label: "组", shift: 3 },
-  { key: "others", label: "其他", shift: 0 },
+  { key: "owner", labelKey: "permOwner", shift: 6 },
+  { key: "group", labelKey: "permGroup", shift: 3 },
+  { key: "others", labelKey: "permOthers", shift: 0 },
 ] as const;
 
 const PERMISSION_BITS = [
-  { value: 4, label: "读取" },
-  { value: 2, label: "写入" },
-  { value: 1, label: "执行" },
+  { value: 4, labelKey: "permRead" },
+  { value: 2, labelKey: "permWrite" },
+  { value: 1, labelKey: "permExecute" },
 ] as const;
 
 function UnixPropertiesEditor({
@@ -334,10 +341,12 @@ function UnixPropertiesEditor({
   onTogglePermission: (subject: "owner" | "group" | "others", bit: 4 | 2 | 1) => void;
   onUpdateDraft: (patch: Partial<PropertiesDraft>) => void;
 }) {
+  const { t } = useTranslation("explorer");
+
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-4">
-        <p className="text-[13px] font-medium">权限</p>
+        <p className="text-[13px] font-medium">{t("explorer:properties.permissions")}</p>
         <p className="font-mono text-xs text-muted-foreground">
           {formatSymbolicMode(draft.mode)} · {draft.mode.toString(8)}
         </p>
@@ -347,36 +356,41 @@ function UnixPropertiesEditor({
         <thead>
           <tr className="text-xs text-muted-foreground">
             <th className="w-1/4" />
-            {PERMISSION_BITS.map(({ label }) => (
-              <th key={label} className="font-normal">
-                {label}
+            {PERMISSION_BITS.map(({ labelKey }) => (
+              <th key={labelKey} className="font-normal">
+                {t(`explorer:properties.${labelKey}`)}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {PERMISSION_SUBJECTS.map(({ key, label, shift }) => (
-            <tr key={key}>
-              <td className="text-muted-foreground">{label}</td>
-              {PERMISSION_BITS.map(({ value, label: bitLabel }) => (
-                <td key={bitLabel} className="text-center">
-                  <input
-                    aria-label={`${label} · ${bitLabel}`}
-                    checked={((draft.mode >> shift) & value) !== 0}
-                    className="size-4 accent-[var(--primary)]"
-                    onChange={() => onTogglePermission(key, value)}
-                    type="checkbox"
-                  />
-                </td>
-              ))}
-            </tr>
-          ))}
+          {PERMISSION_SUBJECTS.map(({ key, labelKey, shift }) => {
+            const subjectLabel = t(`explorer:properties.${labelKey}`);
+            return (
+              <tr key={key}>
+                <td className="text-muted-foreground">{subjectLabel}</td>
+                {PERMISSION_BITS.map(({ value, labelKey: bitLabelKey }) => (
+                  <td key={bitLabelKey} className="text-center">
+                    <input
+                      aria-label={`${subjectLabel} · ${t(`explorer:properties.${bitLabelKey}`)}`}
+                      checked={((draft.mode >> shift) & value) !== 0}
+                      className="size-4 accent-[var(--primary)]"
+                      onChange={() => onTogglePermission(key, value)}
+                      type="checkbox"
+                    />
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
 
       <div className="grid grid-cols-2 gap-3">
         <label className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">所有者（名称或 ID）</span>
+          <span className="text-xs text-muted-foreground">
+            {t("explorer:properties.ownerField")}
+          </span>
           <Input
             onChange={(event) => onUpdateDraft({ user: event.target.value })}
             spellCheck={false}
@@ -384,7 +398,9 @@ function UnixPropertiesEditor({
           />
         </label>
         <label className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">组（名称或 ID）</span>
+          <span className="text-xs text-muted-foreground">
+            {t("explorer:properties.groupField")}
+          </span>
           <Input
             onChange={(event) => onUpdateDraft({ group: event.target.value })}
             spellCheck={false}
@@ -403,9 +419,11 @@ function WindowsPropertiesEditor({
   draft: PropertiesDraft;
   onUpdateDraft: (patch: Partial<PropertiesDraft>) => void;
 }) {
+  const { t } = useTranslation("explorer");
+
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[13px] font-medium">属性</p>
+      <p className="text-[13px] font-medium">{t("explorer:properties.attributes")}</p>
       <label className="flex items-center gap-2 text-[13px]">
         <input
           checked={draft.readOnly}
@@ -413,7 +431,7 @@ function WindowsPropertiesEditor({
           onChange={(event) => onUpdateDraft({ readOnly: event.target.checked })}
           type="checkbox"
         />
-        只读
+        {t("explorer:properties.readOnly")}
       </label>
       <label className="flex items-center gap-2 text-[13px]">
         <input
@@ -422,11 +440,9 @@ function WindowsPropertiesEditor({
           onChange={(event) => onUpdateDraft({ hidden: event.target.checked })}
           type="checkbox"
         />
-        隐藏
+        {t("explorer:properties.hidden")}
       </label>
-      <p className="text-xs text-muted-foreground">
-        Windows 通过只读/隐藏等属性标记文件；完整的访问控制列表（ACL）请在系统安全设置中管理。
-      </p>
+      <p className="text-xs text-muted-foreground">{t("explorer:properties.windowsAclHint")}</p>
     </div>
   );
 }

@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import { commands, type Protocol, type StoredConnection } from "@/bindings";
+import { translateBackendMessage } from "@/i18n/errors";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { i18n } from "@/i18n";
 
 const PROTOCOL_DEFAULT_PORTS: Record<Protocol, string> = {
   smb: "445",
@@ -22,10 +25,18 @@ const PROTOCOL_DEFAULT_PORTS: Record<Protocol, string> = {
 };
 
 const PROTOCOL_LABELS: Record<Protocol, string> = {
-  smb: "SMB / Windows 共享",
-  sftp: "SFTP / SSH",
-  ftp: "FTP（即将支持）",
-  webdav: "WebDAV（即将支持）",
+  get smb() {
+    return i18n.t("sidebar:protocols.smb");
+  },
+  get sftp() {
+    return i18n.t("sidebar:protocols.sftp");
+  },
+  get ftp() {
+    return i18n.t("sidebar:protocols.ftp");
+  },
+  get webdav() {
+    return i18n.t("sidebar:protocols.webdav");
+  },
 };
 
 const AVAILABLE_PROTOCOLS: Protocol[] = ["smb", "sftp"];
@@ -41,6 +52,7 @@ export function ConnectDialog({
   onSaved: (connection: StoredConnection) => void;
   open: boolean;
 }) {
+  const { t } = useTranslation("sidebar");
   const [protocol, setProtocol] = useState<Protocol>("smb");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("");
@@ -73,7 +85,10 @@ export function ConnectDialog({
 
   const runTest = () => {
     if (hostInvalid || portInvalid) {
-      setTest({ status: "failed", message: hostInvalid ? "请输入服务器地址" : "端口必须是 1-65535" });
+      setTest({
+        status: "failed",
+        message: hostInvalid ? t("connect.hostRequired") : t("connect.portRange"),
+      });
       return;
     }
 
@@ -87,11 +102,11 @@ export function ConnectDialog({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (hostInvalid) {
-      setError("请输入服务器地址");
+      setError(t("connect.hostRequired"));
       return;
     }
     if (portInvalid) {
-      setError("端口必须是 1-65535");
+      setError(t("connect.portRange"));
       return;
     }
 
@@ -114,14 +129,12 @@ export function ConnectDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>连接网络存储</DialogTitle>
-          <DialogDescription>
-            连接 SMB 服务器（NAS、Windows 共享）或 SFTP 服务器（Linux、NAS）。SFTP 需要账号密码。
-          </DialogDescription>
+          <DialogTitle>{t("network.connectStorage")}</DialogTitle>
+          <DialogDescription>{t("connect.description")}</DialogDescription>
         </DialogHeader>
         <form className="grid gap-4" onSubmit={submit}>
           <div className="grid gap-2">
-            <Label htmlFor="connect-protocol">协议</Label>
+            <Label htmlFor="connect-protocol">{t("connect.protocol")}</Label>
             <select
               aria-invalid={false}
               className="h-9 rounded-lg border border-input bg-transparent px-3 text-[13px] outline-none transition-[border-color,box-shadow] duration-200 ease-spring focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50"
@@ -142,7 +155,7 @@ export function ConnectDialog({
 
           <div className="grid grid-cols-[1fr_7rem] gap-3">
             <div className="grid gap-2">
-              <Label htmlFor="connect-host">服务器地址</Label>
+              <Label htmlFor="connect-host">{t("connect.host")}</Label>
               <Input
                 aria-invalid={hostInvalid}
                 id="connect-host"
@@ -150,12 +163,12 @@ export function ConnectDialog({
                   setHost(event.target.value);
                   setTest({ status: "idle" });
                 }}
-                placeholder="例如 nas.local 或 192.168.1.10"
+                placeholder={t("connect.hostPlaceholder")}
                 value={host}
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="connect-port">端口</Label>
+              <Label htmlFor="connect-port">{t("connect.port")}</Label>
               <Input
                 aria-invalid={portInvalid}
                 id="connect-port"
@@ -172,7 +185,7 @@ export function ConnectDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-2">
-              <Label htmlFor="connect-username">账号（可选）</Label>
+              <Label htmlFor="connect-username">{t("connect.username")}</Label>
               <Input
                 autoComplete="off"
                 id="connect-username"
@@ -181,7 +194,7 @@ export function ConnectDialog({
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="connect-password">密码（可选）</Label>
+              <Label htmlFor="connect-password">{t("connect.password")}</Label>
               <Input
                 autoComplete="new-password"
                 id="connect-password"
@@ -199,19 +212,21 @@ export function ConnectDialog({
               onChange={(event) => setRemember(event.target.checked)}
               type="checkbox"
             />
-            记住密码（保存在系统钥匙串中）
+            {t("connect.rememberPassword")}
           </label>
 
-          {test.status === "ok" && <p className="text-[13px] text-primary">连接测试成功</p>}
+          {test.status === "ok" && (
+            <p className="text-[13px] text-primary">{t("connect.testOk")}</p>
+          )}
           {test.status === "failed" && <p className="text-[13px] text-destructive">{test.message}</p>}
           {error && <p className="text-[13px] text-destructive">{error}</p>}
 
           <DialogFooter className="gap-2 sm:justify-between">
             <Button disabled={test.status === "testing"} onClick={runTest} type="button" variant="outline">
-              {test.status === "testing" ? "测试中…" : "测试连接"}
+              {test.status === "testing" ? t("connect.testing") : t("connect.test")}
             </Button>
             <Button disabled={saving} type="submit">
-              {saving ? "保存中…" : "连接"}
+              {saving ? t("connect.saving") : t("connect.connect")}
             </Button>
           </DialogFooter>
         </form>
@@ -234,5 +249,5 @@ function describeError(error: unknown): string {
   // Plain-browser IPC rejects with the Rust debug repr, e.g.
   // InvokeError(Object {"kind": String("io"), "message": String("...")}).
   const embedded = /message":\s*String\("(.+?)"\)/.exec(raw);
-  return embedded ? embedded[1] : raw;
+  return translateBackendMessage(embedded ? embedded[1] : raw);
 }

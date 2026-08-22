@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   ClipboardTextIcon,
@@ -54,12 +55,14 @@ import {
   navigateToFolderAtom,
   openSurfaceAtom,
 } from "@/features/workspace/workspace-atoms";
+import { i18n } from "@/i18n";
 import { cn, formatBytes } from "@/lib/utils";
 
 import { addFavoritePathsAtom, sidebarVisibleAtom } from "./sidebar-atoms";
 import type { DiskVolume } from "./types";
 import { ConnectDialog } from "./connect-dialog";
 import { PenguinIcon } from "./penguin-icon";
+import { LanguageMenu } from "@/i18n/language-menu";
 import { ThemeMenu } from "./theme-menu";
 import { useConnections } from "./use-connections";
 import { useDiskVolumes } from "./use-disk-volumes";
@@ -78,6 +81,7 @@ export function Sidebar() {
 }
 
 function SidebarContent() {
+  const { t } = useTranslation("sidebar");
   const surface = useAtomValue(activeSurfaceAtom);
   const openSurface = useSetAtom(openSurfaceAtom);
   const navigateToFolder = useSetAtom(navigateToFolderAtom);
@@ -114,18 +118,18 @@ function SidebarContent() {
   };
 
   return (
-    <nav aria-label="侧边栏" className="flex w-56 shrink-0 flex-col bg-background">
+    <nav aria-label={t("nav.label")} className="flex w-56 shrink-0 flex-col bg-background">
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <NavItem
           icon={HouseIcon}
           isActive={surface.kind === "overview"}
-          label="概览"
+          label={t("nav.overview")}
           onClick={() => openSurface({ kind: "overview" })}
         />
         <NavItem
           icon={ClockCounterClockwiseIcon}
           isActive={surface.kind === "recents"}
-          label="最近使用"
+          label={t("nav.recents")}
           onClick={() => openSurface({ kind: "recents" })}
         />
         {/* File entries can be dragged onto Favorites; see drag-drop.ts. */}
@@ -133,16 +137,20 @@ function SidebarContent() {
           <NavItem
             icon={StarIcon}
             isActive={surface.kind === "favorites"}
-            label="收藏"
+            label={t("nav.favorites")}
             onClick={() => openSurface({ kind: "favorites" })}
           />
         </div>
 
-        <SectionLabel label="空间" onAdd={() => setCreatingSpace(true)} addTitle="新建空间" />
+        <SectionLabel
+          label={t("sections.spaces")}
+          onAdd={() => setCreatingSpace(true)}
+          addTitle={t("spaces.create")}
+        />
         {creatingSpace && (
           <form className="px-0.5 pb-1" onSubmit={submitCreateSpace}>
             <Input
-              aria-label="空间名称"
+              aria-label={t("spaces.name")}
               autoFocus
               className="h-7 text-[13px]"
               onBlur={() => {
@@ -157,7 +165,7 @@ function SidebarContent() {
                   setSpaceName("");
                 }
               }}
-              placeholder="空间名称"
+              placeholder={t("spaces.name")}
               value={spaceName}
             />
           </form>
@@ -181,13 +189,13 @@ function SidebarContent() {
                     onClick={() => openSurface({ kind: "space", spaceId: space.id })}
                   >
                     <FolderOpenIcon />
-                    打开
+                    {t("contextMenu.open")}
                   </ContextMenuItem>
                   <ContextMenuItem
                     onClick={() => createTabWithSurface({ kind: "space", spaceId: space.id })}
                   >
                     <TabsIcon />
-                    在新标签页打开
+                    {t("contextMenu.openInNewTab")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
                 <ContextMenuSeparator />
@@ -199,7 +207,7 @@ function SidebarContent() {
                     }}
                   >
                     <PencilSimpleIcon />
-                    重命名空间
+                    {t("contextMenu.renameSpace")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
               </ContextMenuContent>
@@ -207,8 +215,8 @@ function SidebarContent() {
           </div>
         ))}
 
-        <SectionLabel label="位置" />
-        <SubLabel label="计算机" />
+        <SectionLabel label={t("sections.locations")} />
+        <SubLabel label={t("sections.computer")} />
         {volumes.map((volume) => (
           <DiskItem
             isActive={currentPath === volume.mountPoint}
@@ -237,15 +245,16 @@ function SidebarContent() {
           onRemoved={refreshConnections}
         />
 
-        <SubLabel label="云存储" />
+        <SubLabel label={t("sections.cloudStorage")} />
         <div className="flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] text-muted-foreground/70">
           <CloudIcon className="size-4 shrink-0" />
-          <span className="text-xs">即将支持</span>
+          <span className="text-xs">{t("cloud.comingSoon")}</span>
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center justify-end px-2 py-1.5">
+      <div className="flex shrink-0 items-center justify-end gap-1 px-2 py-1.5">
         <ThemeMenu />
+        <LanguageMenu />
       </div>
 
       <ConnectDialog
@@ -350,15 +359,16 @@ function NetworkSection({
   onNavigate: (path: string) => void;
   onRemoved: () => void;
 }) {
+  const { t } = useTranslation("sidebar");
   return (
     <div className="mt-2">
       <div className="flex items-center justify-between px-2.5 pb-0.5">
-        <span className="text-[11px] text-muted-foreground/80">网络</span>
+        <span className="text-[11px] text-muted-foreground/80">{t("sections.network")}</span>
         <button
-          aria-label="连接网络存储"
+          aria-label={t("network.connectStorage")}
           className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
           onClick={onAdd}
-          title="连接网络存储"
+          title={t("network.connectStorage")}
           type="button"
         >
           <PlusIcon className="size-4" />
@@ -390,7 +400,7 @@ function NetworkSection({
 
       {connections.length === 0 && (
         <p className="px-2.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
-          点击 + 连接 NAS、Windows 共享或 SFTP 服务器
+          {t("network.emptyHint")}
         </p>
       )}
     </div>
@@ -406,6 +416,7 @@ function ConnectionContextMenu({
   onRemoved: () => void;
   path: string;
 }) {
+  const { t } = useTranslation("sidebar");
   const setClipboard = useSetAtom(fileClipboardAtom);
   const openInNewTab = useSetAtom(openInNewTabAtom);
 
@@ -416,29 +427,29 @@ function ConnectionContextMenu({
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => openInNewTab(path)}>
             <FolderOpenIcon />
-            在新标签页打开
+            {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => void copyEntryPath(path)}>
             <ClipboardTextIcon />
-            复制地址
+            {t("contextMenu.copyPath")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => setClipboard({ operation: "copy", sourcePaths: [path] })}>
             <CopyIcon />
-            复制
+            {t("contextMenu.copy")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => setClipboard({ operation: "cut", sourcePaths: [path] })}>
             <ScissorsIcon />
-            剪切
+            {t("contextMenu.cut")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={onRemoved}>
             <TrashIcon />
-            移除连接
+            {t("contextMenu.removeConnection")}
           </ContextMenuItem>
         </ContextMenuGroup>
       </ContextMenuContent>
@@ -457,6 +468,7 @@ function FolderContextMenu({
   path: string;
   triggerProps?: ComponentProps<typeof ContextMenuTrigger>;
 }) {
+  const { t } = useTranslation("sidebar");
   const setClipboard = useSetAtom(fileClipboardAtom);
   const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
   const openInNewTab = useSetAtom(openInNewTabAtom);
@@ -468,28 +480,28 @@ function FolderContextMenu({
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => openInNewTab(path)}>
             <FolderOpenIcon />
-            在新标签页打开
+            {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
           {!isListed && (
             <ContextMenuItem onClick={() => addFavoritePaths([path])}>
               <StarIcon />
-              添加到收藏
+              {t("contextMenu.addFavorite")}
             </ContextMenuItem>
           )}
           <ContextMenuItem onClick={() => void copyEntryPath(path)}>
             <ClipboardTextIcon />
-            复制文件地址
+            {t("contextMenu.copyFilePath")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => setClipboard({ operation: "copy", sourcePaths: [path] })}>
             <CopyIcon />
-            复制
+            {t("contextMenu.copy")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => setClipboard({ operation: "cut", sourcePaths: [path] })}>
             <ScissorsIcon />
-            剪切
+            {t("contextMenu.cut")}
           </ContextMenuItem>
         </ContextMenuGroup>
       </ContextMenuContent>
@@ -506,6 +518,7 @@ function DiskItem({
   onNavigate: (path: string) => void;
   volume: DiskVolume;
 }) {
+  const { t } = useTranslation("sidebar");
   const presentation = getDiskPresentation(volume);
   const freePercent =
     volume.totalBytes > 0 ? Math.round((volume.availableBytes / volume.totalBytes) * 100) : 0;
@@ -518,7 +531,11 @@ function DiskItem({
         isActive && "bg-selection",
       )}
       onClick={() => onNavigate(volume.mountPoint)}
-      title={`${presentation.primary} · ${formatBytes(volume.availableBytes)} 可用，共 ${formatBytes(volume.totalBytes)}`}
+      title={t("disk.title", {
+        name: presentation.primary,
+        free: formatBytes(volume.availableBytes),
+        total: formatBytes(volume.totalBytes),
+      })}
       type="button"
     >
       <div className="flex items-center gap-2">
@@ -548,9 +565,12 @@ function DiskItem({
         />
       </div>
       <div className="mt-1 flex justify-between gap-2 text-[11px] text-muted-foreground">
-        <span className="shrink-0">剩余 {freePercent}%</span>
+        <span className="shrink-0">{t("disk.freePercent", { percent: freePercent })}</span>
         <span className="truncate tabular-nums">
-          {formatBytes(volume.availableBytes)} / 共 {formatBytes(volume.totalBytes)}
+          {t("disk.capacity", {
+            free: formatBytes(volume.availableBytes),
+            total: formatBytes(volume.totalBytes),
+          })}
         </span>
       </div>
     </button>
@@ -563,7 +583,9 @@ function getDiskPresentation(volume: DiskVolume): { primary: string; secondary: 
   if (driveLetter) {
     const label = volume.name.trim();
     return {
-      primary: label ? `${label} (${driveLetter}:)` : `本地磁盘 (${driveLetter}:)`,
+      primary: label
+        ? `${label} (${driveLetter}:)`
+        : i18n.t("sidebar:disk.localDisk", { letter: driveLetter }),
       secondary: volume.fileSystem,
     };
   }

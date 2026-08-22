@@ -1,4 +1,5 @@
 import { useAtom } from "jotai";
+import { useTranslation } from "react-i18next";
 import {
   ColumnsIcon,
   GitBranchIcon,
@@ -16,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
+import { localeNumber } from "@/i18n/format";
 import { cn } from "@/lib/utils";
 
 import {
@@ -44,17 +46,21 @@ export function ExplorerStatusBar({
   selectedCount,
   truncated,
 }: ExplorerStatusBarProps) {
+  const { t } = useTranslation("explorer");
   const countText = isLoading
     ? searchQuery
-      ? "正在搜索…"
-      : "正在读取…"
+      ? t("statusBar.searching")
+      : t("statusBar.loading")
     : searchError
-      ? "搜索失败"
-      : `${itemCount.toLocaleString("zh-CN")} 个${searchQuery ? "匹配项" : "项目"}${truncated ? "（已截断）" : ""}`;
+      ? t("statusBar.searchFailed")
+      : `${t(searchQuery ? "statusBar.matchCount" : "statusBar.itemCount", {
+          count: itemCount,
+          display: localeNumber(itemCount),
+        })}${truncated ? t("statusBar.truncatedSuffix") : ""}`;
 
   return (
     <footer
-      aria-label="状态栏"
+      aria-label={t("statusBar.ariaLabel")}
       className="flex h-7 shrink-0 items-center gap-3 bg-background px-3 text-xs text-muted-foreground select-none"
     >
       <span aria-live="polite" className="truncate tabular-nums">
@@ -62,13 +68,13 @@ export function ExplorerStatusBar({
       </span>
       {selectedCount > 0 && (
         <span className="shrink-0 tabular-nums">
-          已选择 {selectedCount.toLocaleString("zh-CN")} 项
+          {t("statusBar.selectedCount", { number: localeNumber(selectedCount) })}
         </span>
       )}
       {gitBranch && (
         <span
           className="flex min-w-0 shrink-0 items-center gap-1"
-          title={`Git 分支：${gitBranch}`}
+          title={t("statusBar.gitBranchTitle", { branch: gitBranch })}
         >
           <GitBranchIcon className="size-3.5 shrink-0" />
           <span className="max-w-48 truncate">{gitBranch}</span>
@@ -86,18 +92,19 @@ export function ExplorerStatusBar({
 }
 
 function TerminalToggle() {
+  const { t } = useTranslation("explorer");
   const [visible, setVisible] = useAtom(terminalVisibleAtom);
 
   return (
     <button
-      aria-label="切换集成终端"
+      aria-label={t("statusBar.toggleTerminal")}
       aria-pressed={visible}
       className={cn(
         "flex size-5 items-center justify-center rounded-full transition-colors hover:bg-accent hover:text-foreground",
         visible && "bg-accent text-foreground",
       )}
       onClick={() => setVisible((open) => !open)}
-      title="集成终端 (Ctrl+`)"
+      title={t("statusBar.terminalTitle")}
       type="button"
     >
       <TerminalIcon size={13} />
@@ -106,9 +113,9 @@ function TerminalToggle() {
 }
 
 const VIEW_MODE_PRESENTATION = [
-  { icon: ListIcon, label: "列表视图", value: "list" },
-  { icon: ColumnsIcon, label: "分栏视图", value: "column" },
-  { icon: SquaresFourIcon, label: "网格视图", value: "grid" },
+  { icon: ListIcon, label: "statusBar.viewList", value: "list" },
+  { icon: ColumnsIcon, label: "statusBar.viewColumn", value: "column" },
+  { icon: SquaresFourIcon, label: "statusBar.viewGrid", value: "grid" },
 ] as const satisfies ReadonlyArray<{
   icon: typeof ListIcon;
   label: string;
@@ -116,13 +123,14 @@ const VIEW_MODE_PRESENTATION = [
 }>;
 
 function ViewModeSwitcher() {
+  const { t } = useTranslation("explorer");
   const [viewMode, setViewMode] = useAtom(viewModeAtom);
 
   return (
-    <div aria-label="视图模式" className="flex items-center gap-0.5" role="group">
+    <div aria-label={t("statusBar.viewModeLabel")} className="flex items-center gap-0.5" role="group">
       {VIEW_MODE_PRESENTATION.map(({ icon: ModeIcon, label, value: mode }) => (
         <button
-          aria-label={label}
+          aria-label={t(label)}
           aria-pressed={viewMode === mode}
           className={cn(
             "flex size-5 items-center justify-center rounded-full transition-colors hover:bg-accent hover:text-foreground",
@@ -130,7 +138,7 @@ function ViewModeSwitcher() {
           )}
           key={mode}
           onClick={() => setViewMode(mode)}
-          title={label}
+          title={t(label)}
           type="button"
         >
           <ModeIcon size={13} />
@@ -141,20 +149,21 @@ function ViewModeSwitcher() {
 }
 
 const DENSITY_PRESENTATION = [
-  { label: "紧凑", value: "compact" },
-  { label: "舒适", value: "comfortable" },
-  { label: "宽松", value: "spacious" },
+  { label: "statusBar.densityCompact", value: "compact" },
+  { label: "statusBar.densityComfortable", value: "comfortable" },
+  { label: "statusBar.densitySpacious", value: "spacious" },
 ] as const satisfies ReadonlyArray<{ label: string; value: ExplorerDensity }>;
 
 function DensitySwitcher() {
+  const { t } = useTranslation("explorer");
   const [density, setDensity] = useAtom(densityAtom);
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label="显示密度"
+        aria-label={t("statusBar.densityLabel")}
         className="flex size-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        title="显示密度"
+        title={t("statusBar.densityLabel")}
       >
         <RowsIcon size={13} />
       </DropdownMenuTrigger>
@@ -165,7 +174,7 @@ function DensitySwitcher() {
         >
           {DENSITY_PRESENTATION.map((item) => (
             <DropdownMenuRadioItem key={item.value} value={item.value}>
-              {item.label}
+              {t(item.label)}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

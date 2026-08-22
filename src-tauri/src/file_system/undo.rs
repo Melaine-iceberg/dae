@@ -72,15 +72,16 @@ impl Operation {
         }
     }
 
-    /// The noun naming the original operation in toasts, e.g. "移动".
-    pub fn noun(&self) -> &'static str {
+    /// Stable code naming the original operation for UI toast translation,
+    /// e.g. "move". The frontend maps it to a localized noun.
+    pub fn op_code(&self) -> &'static str {
         match self {
-            Operation::Move { .. } => "移动",
-            Operation::Rename { .. } => "重命名",
-            Operation::Copy { .. } => "复制",
-            Operation::Trash { .. } => "删除",
-            Operation::Create { .. } => "新建",
-            Operation::Duplicate { .. } => "创建副本",
+            Operation::Move { .. } => "move",
+            Operation::Rename { .. } => "rename",
+            Operation::Copy { .. } => "copy",
+            Operation::Trash { .. } => "trash",
+            Operation::Create { .. } => "create",
+            Operation::Duplicate { .. } => "duplicate",
         }
     }
 
@@ -107,12 +108,17 @@ impl Operation {
     }
 }
 
-/// Result of one undo/redo step, ready for the UI toast.
+/// Result of one undo/redo step. The frontend renders the localized toast
+/// from these fields, including pluralization for `count`.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct UndoRedoOutcome {
-    /// Fully-formed toast text, e.g. "已撤销：移动 3 个项目".
-    pub message: String,
+    /// "undo" or "redo".
+    pub action: &'static str,
+    /// The reverted/re-applied operation code, e.g. "move".
+    pub op: &'static str,
+    /// How many entries the step touched.
+    pub count: u64,
 }
 
 /// Emitted whenever the undo/redo stacks change so shortcuts stay accurate.
@@ -325,15 +331,6 @@ pub fn execute_redo(
             });
             Ok((count, undo))
         }
-    }
-}
-
-/// Toast text naming the reverted/re-applied operation with its count.
-pub fn operation_label(noun: &str, count: u64) -> String {
-    if count > 1 {
-        format!("{noun} {count} 个项目")
-    } else {
-        noun.to_owned()
     }
 }
 
@@ -568,9 +565,7 @@ fn undo_trash(
     }
 
     if to_restore.is_empty() {
-        return Err(FileSystemError::InvalidInput(
-            "回收站中已找不到这些项目，可能已被清空或还原".into(),
-        ));
+        return Err(FileSystemError::InvalidInput("fs.undo_trash_missing".into()));
     }
 
     progress.start(to_restore.len() as u64);
@@ -592,7 +587,7 @@ fn redo_trash(
     }
     if to_trash.is_empty() {
         return Err(FileSystemError::InvalidInput(
-            "这些项目已不在原位置，无法重新移入回收站".into(),
+            "fs.redo_trash_source_missing".into(),
         ));
     }
 

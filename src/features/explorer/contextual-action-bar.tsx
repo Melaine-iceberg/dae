@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useTranslation } from "react-i18next";
 import {
   ArchiveTrayIcon,
   ArrowsOutCardinalIcon,
@@ -28,13 +29,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
 import type { ArchiveFormat } from "@/bindings";
+import { localeNumber } from "@/i18n/format";
 import { MOD_KEY } from "@/lib/platform";
 
-const COMPRESS_FORMATS: { format: ArchiveFormat; label: string }[] = [
-  { format: "zip", label: "ZIP 压缩包" },
-  { format: "tar", label: "TAR 归档" },
-  { format: "tar.gz", label: "TAR.GZ 压缩包" },
-  { format: "7z", label: "7Z 压缩包" },
+const COMPRESS_FORMATS: { format: ArchiveFormat; labelKey: string }[] = [
+  { format: "zip", labelKey: "zip" },
+  { format: "tar", labelKey: "tar" },
+  { format: "tar.gz", labelKey: "tarGz" },
+  { format: "7z", labelKey: "7z" },
 ];
 
 /**
@@ -79,6 +81,7 @@ export function ContextualActionBar({
   onRename: () => void;
   selectedCount: number;
 }) {
+  const { t } = useTranslation("explorer");
   const spaces = useAtomValue(spacesAtom) ?? [];
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
 
@@ -89,53 +92,53 @@ export function ContextualActionBar({
   return (
     <div className="absolute bottom-4 left-1/2 z-30 -translate-x-1/2">
       <div
-        aria-label="选中项操作"
+        aria-label={t("explorer:actionBar.ariaLabel")}
         className="animate-float-in flex items-center gap-0.5 rounded-full bg-popover p-1 shadow-ambient-lg ring-1 ring-foreground/5 backdrop-blur"
         role="toolbar"
       >
       <span className="shrink-0 px-2.5 text-[13px] text-muted-foreground select-none tabular-nums">
-        已选 {selectedCount.toLocaleString("zh-CN")} 项
+        {t("explorer:actionBar.selectedCount", { number: localeNumber(selectedCount) })}
       </span>
       <div aria-hidden="true" className="mr-0.5 h-5 w-px bg-border" />
       <Button
-        aria-label="打开所选项目"
+        aria-label={t("explorer:actionBar.openAria")}
         disabled={isActionDisabled}
         onClick={onOpen}
         size="icon"
-        title="打开 (Enter)"
+        title={t("explorer:actionBar.openTitle")}
         type="button"
         variant="ghost"
       >
         <FolderOpenIcon />
       </Button>
       <Button
-        aria-label="复制"
+        aria-label={t("explorer:actionBar.copyAria")}
         disabled={isActionDisabled}
         onClick={onCopy}
         size="icon"
-        title={`复制 (${MOD_KEY}+C)`}
+        title={t("explorer:actionBar.copyTitle", { modifier: MOD_KEY })}
         type="button"
         variant="ghost"
       >
         <CopyIcon />
       </Button>
       <Button
-        aria-label="剪切"
+        aria-label={t("explorer:actionBar.cutAria")}
         disabled={isActionDisabled}
         onClick={onCut}
         size="icon"
-        title={`剪切 (${MOD_KEY}+X)`}
+        title={t("explorer:actionBar.cutTitle", { modifier: MOD_KEY })}
         type="button"
         variant="ghost"
       >
         <ScissorsIcon />
       </Button>
       <Button
-        aria-label="重命名"
+        aria-label={t("explorer:actionBar.renameAria")}
         disabled={isActionDisabled || !isSingleSelection}
         onClick={onRename}
         size="icon"
-        title="重命名 (F2)"
+        title={t("explorer:actionBar.renameTitle")}
         type="button"
         variant="ghost"
       >
@@ -143,11 +146,11 @@ export function ContextualActionBar({
       </Button>
       {archiveSelectionPath && (
         <Button
-          aria-label="解压"
+          aria-label={t("explorer:actionBar.extractAria")}
           disabled={isActionDisabled}
           onClick={() => onExtract(archiveSelectionPath)}
           size="icon"
-          title="解压到此处"
+          title={t("explorer:actionBar.extractTitle")}
           type="button"
           variant="ghost"
         >
@@ -156,60 +159,60 @@ export function ContextualActionBar({
       )}
       <DropdownMenu>
         <DropdownMenuTrigger
-          aria-label="更多操作"
+          aria-label={t("explorer:actionBar.moreAria")}
           className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
           disabled={isActionDisabled}
-          title="更多操作"
+          title={t("explorer:actionBar.moreTitle")}
         >
           <DotsThreeIcon className="size-4" weight="bold" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="center" side="top">
           <DropdownMenuItem disabled={isActionDisabled} onClick={onDuplicate}>
             <FilesIcon />
-            创建副本
+            {t("explorer:contextMenu.duplicate")}
           </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger disabled={isActionDisabled}>
               <FileZipIcon />
-              压缩为…
+              {t("explorer:contextMenu.compressAs")}
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              {COMPRESS_FORMATS.map(({ format, label }) => (
+              {COMPRESS_FORMATS.map(({ format, labelKey }) => (
                 <DropdownMenuItem
                   key={format}
                   disabled={isActionDisabled}
                   onClick={() => onCompress(format)}
                 >
                   <FileZipIcon />
-                  {label}
+                  {t(`explorer:compressFormats.${labelKey}`)}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuItem disabled={isActionDisabled} onClick={onMoveTo}>
             <ArrowsOutCardinalIcon />
-            移动到…
+            {t("explorer:contextMenu.moveTo")}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={onCopyPaths}>
             <ClipboardTextIcon />
-            复制文件地址
+            {t("explorer:contextMenu.copyPath")}
           </DropdownMenuItem>
           {hasDirectorySelection &&
             spaces.slice(0, 3).map((space) => (
               <DropdownMenuItem key={space.id} onClick={() => onAddToSpace(space.id)}>
                 <SquaresFourIcon />
-                添加到「{space.name}」
+                {t("explorer:contextMenu.addToSpaceNamed", { name: space.name })}
               </DropdownMenuItem>
             ))}
         </DropdownMenuContent>
       </DropdownMenu>
       <Button
-        aria-label="删除"
+        aria-label={t("explorer:actionBar.deleteAria")}
         className="text-destructive hover:bg-destructive/10 hover:text-destructive"
         disabled={isActionDisabled}
         onClick={onDelete}
         size="icon"
-        title="删除 (Delete)"
+        title={t("explorer:actionBar.deleteTitle")}
         type="button"
         variant="ghost"
       >
@@ -217,10 +220,10 @@ export function ContextualActionBar({
       </Button>
       <div aria-hidden="true" className="ml-0.5 h-5 w-px bg-border" />
       <Button
-        aria-label="取消选择"
+        aria-label={t("explorer:actionBar.clearAria")}
         onClick={onClearSelection}
         size="icon"
-        title="取消选择 (Esc)"
+        title={t("explorer:actionBar.clearTitle")}
         type="button"
         variant="ghost"
       >

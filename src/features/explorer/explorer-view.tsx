@@ -8,6 +8,7 @@ import {
   type FormEvent,
 } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -36,6 +37,9 @@ import {
 } from "@/bindings";
 
 import { getAppWindow } from "@/lib/app-window";
+import { i18n } from "@/i18n";
+import { localeNumber } from "@/i18n/format";
+import { getFileOperationErrorMessage } from "@/i18n/errors";
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -113,7 +117,7 @@ type ExternalDrop = { sourcePaths: string[]; targetPath: string | null };
 
 /** Floating hint after an undoable operation or an undo/redo step. */
 type UndoRedoToast = {
-  message: string;
+  outcome: { action: string; count: number; op: string };
   /** Follow-up action offered on the toast. */
   action: "undo" | "redo";
 };
@@ -128,6 +132,7 @@ type PendingTransfer = {
 };
 
 export function ExplorerView({ navigator }: ExplorerViewProps) {
+  const { t } = useTranslation("explorer");
   const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
   const [clipboard, setClipboard] = useAtom(fileClipboardAtom);
   const undoRedo = useAtomValue(undoRedoAtom);
@@ -306,7 +311,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       progressOperation?: FileOperationKind | "auto",
     ): Promise<FileOperationResult> => {
       if (!directoryPath) {
-        return { error: "当前目录不可用", ok: false };
+        return { error: t("explorer:errors.directoryUnavailable"), ok: false };
       }
 
       const operationId = progressOperation ? crypto.randomUUID() : undefined;
@@ -356,7 +361,11 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             currentProgress?.operationId === operationId ? null : currentProgress,
           );
         }
-        return { error: getErrorMessage(error), ok: false, rawError: error };
+        return {
+          error: getFileOperationErrorMessage(error),
+          ok: false,
+          rawError: error,
+        };
       } finally {
         if (operationId) {
           deferredProgressIdsRef.current.delete(operationId);
@@ -364,7 +373,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         setIsOperationPending(false);
       }
     },
-    [directoryPath, navigator],
+    [directoryPath, navigator, t],
   );
 
   /** Executes a transfer whose conflicts (if any) have already been resolved. */
@@ -420,7 +429,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
 
           setPendingTransfer({ conflicts, destinationPath, operation, sourcePaths, onSuccess });
         })
-        .catch((error: unknown) => setOperationError(getErrorMessage(error)));
+        .catch((error: unknown) => setOperationError(getFileOperationErrorMessage(error)));
     },
     [executeTransfer],
   );
@@ -441,7 +450,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       commands
         .createShortcuts(sourcePaths, destinationPath)
         .then(() => setSelectedPaths([]))
-        .catch((error: unknown) => setOperationError(getErrorMessage(error)));
+        .catch((error: unknown) => setOperationError(getFileOperationErrorMessage(error)));
     },
     [],
   );
@@ -653,7 +662,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       defaultPath: directoryPath,
       directory: true,
       multiple: false,
-      title: "选择目标文件夹",
+      title: t("explorer:moveTo.dialogTitle"),
     })
       .then((destination) => {
         if (typeof destination !== "string" || !destination || destination === directoryPath) {
@@ -665,7 +674,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       .catch((error: unknown) => {
         console.warn("Unable to open destination picker", error);
       });
-  }, [directoryPath, selectedEntries, transferEntries]);
+  }, [directoryPath, selectedEntries, t, transferEntries]);
 
   const closeRenameDialog = () => {
     if (isOperationPending) return;
@@ -680,7 +689,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
 
     const nextName = renameValue.trim();
     if (!nextName) {
-      setRenameError("名称不能为空");
+      setRenameError(t("explorer:validation.nameEmpty"));
       return;
     }
 
@@ -704,11 +713,15 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       if (!directoryPath || search.isActive) return;
 
       setNewEntryKind(kind);
-      setNewEntryValue(kind === "file" ? "新建文件.txt" : "新建文件夹");
+      setNewEntryValue(
+        kind === "file"
+          ? t("explorer:newEntry.defaultNameExt", { name: t("explorer:newEntry.fileDefaultName") })
+          : t("explorer:newEntry.folderDefaultName"),
+      );
       setNewEntryError(null);
       setOperationError(null);
     },
-    [directoryPath, search.isActive],
+    [directoryPath, search.isActive, t],
   );
 
   const closeCreateDialog = () => {
@@ -724,7 +737,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
 
     const nextName = newEntryValue.trim();
     if (!nextName) {
-      setNewEntryError("名称不能为空");
+      setNewEntryError(t("explorer:validation.nameEmpty"));
       return;
     }
 
@@ -764,7 +777,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         return;
       }
       setUndoRedoToast({
-        message: `已将 ${paths.length.toLocaleString("zh-CN")} 个项目移到回收站`,
+        outcome: { action: "trash", count: paths.length, op: "trash" },
         action: "undo",
       });
     });
@@ -805,14 +818,14 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       outcome = await commands.undoOperation(operationId!);
     }, "auto").then((result) => {
       if (!result.ok) {
-        setOperationError(`撤销失败：${result.error}`);
+        setOperationError(t("explorer:undoRedo.failedUndo", { detail: result.error }));
         return;
       }
       if (outcome) {
-        setUndoRedoToast({ message: outcome.message, action: "redo" });
+        setUndoRedoToast({ outcome, action: "redo" });
       }
     });
-  }, [isOperationPending, performFileOperation, undoRedo.canUndo]);
+  }, [isOperationPending, performFileOperation, t, undoRedo.canUndo]);
 
   /** Re-applies the most recently undone operation. */
   const redoLastOperation = useCallback(() => {
@@ -825,14 +838,14 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       outcome = await commands.redoOperation(operationId!);
     }, "auto").then((result) => {
       if (!result.ok) {
-        setOperationError(`重做失败：${result.error}`);
+        setOperationError(t("explorer:undoRedo.failedRedo", { detail: result.error }));
         return;
       }
       if (outcome) {
-        setUndoRedoToast({ message: outcome.message, action: "undo" });
+        setUndoRedoToast({ outcome, action: "undo" });
       }
     });
-  }, [isOperationPending, performFileOperation, undoRedo.canRedo]);
+  }, [isOperationPending, performFileOperation, t, undoRedo.canRedo]);
 
   const closeDeleteDialog = () => {
     if (!isOperationPending) {
@@ -891,12 +904,17 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
 
   /** Opens the system default terminal at a directory (Windows Terminal,
    *  Terminal.app, or the desktop's default terminal on Linux). */
-  const openTerminalHere = useCallback((path: string) => {
-    setOperationError(null);
-    void commands.openTerminal(path).catch((error: unknown) => {
-      setOperationError(`无法打开终端：${getErrorMessage(error)}`);
-    });
-  }, []);
+  const openTerminalHere = useCallback(
+    (path: string) => {
+      setOperationError(null);
+      void commands.openTerminal(path).catch((error: unknown) => {
+        setOperationError(
+          t("explorer:terminalOpenFailed", { detail: getFileOperationErrorMessage(error) }),
+        );
+      });
+    },
+    [t],
+  );
 
   /** Opens every selected file and navigates into the first selected folder. */
   const openSelectedEntries = useCallback(() => {
@@ -1024,10 +1042,18 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         >
           <div className="flex shrink-0 items-center gap-0.5">
             <Button
-              aria-label={sidebarVisible ? "隐藏侧边栏" : "显示侧边栏"}
+              aria-label={
+                sidebarVisible
+                  ? t("explorer:toolbar.hideSidebar")
+                  : t("explorer:toolbar.showSidebar")
+              }
               onClick={() => setSidebarVisible(!sidebarVisible)}
               size="icon"
-              title={sidebarVisible ? "隐藏侧边栏" : "显示侧边栏"}
+              title={
+                sidebarVisible
+                  ? t("explorer:toolbar.hideSidebar")
+                  : t("explorer:toolbar.showSidebar")
+              }
               type="button"
               variant="ghost"
             >
@@ -1035,44 +1061,44 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             </Button>
             <ToolbarSeparator />
             <Button
-              aria-label="后退"
+              aria-label={t("explorer:toolbar.back")}
               disabled={!canGoBack}
               onClick={() => void navigator.goBack()}
               size="icon"
-              title="后退"
+              title={t("explorer:toolbar.back")}
               type="button"
               variant="ghost"
             >
               <ArrowLeftIcon />
             </Button>
             <Button
-              aria-label="前进"
+              aria-label={t("explorer:toolbar.forward")}
               disabled={!canGoForward}
               onClick={() => void navigator.goForward()}
               size="icon"
-              title="前进"
+              title={t("explorer:toolbar.forward")}
               type="button"
               variant="ghost"
             >
               <ArrowRightIcon />
             </Button>
             <Button
-              aria-label="上一级"
+              aria-label={t("explorer:toolbar.up")}
               disabled={!canGoUp}
               onClick={() => void navigator.goUp()}
               size="icon"
-              title="上一级"
+              title={t("explorer:toolbar.up")}
               type="button"
               variant="ghost"
             >
               <ArrowUpIcon />
             </Button>
             <Button
-              aria-label="刷新"
+              aria-label={t("explorer:toolbar.refresh")}
               disabled={isLoading || !directory}
               onClick={() => directory && void navigator.navigate(directory.path)}
               size="icon"
-              title="刷新"
+              title={t("explorer:toolbar.refresh")}
               type="button"
               variant="ghost"
             >
@@ -1081,7 +1107,9 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             <ToolbarSeparator />
             <Button
               aria-label={
-                isCurrentFavorited ? "从常用位置移除当前目录" : "将当前目录添加到常用位置"
+                isCurrentFavorited
+                  ? t("explorer:toolbar.removeFavorite")
+                  : t("explorer:toolbar.addFavorite")
               }
               disabled={!directory}
               onClick={() =>
@@ -1092,7 +1120,11 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                 })
               }
               size="icon"
-              title={isCurrentFavorited ? "从常用位置移除当前目录" : "将当前目录添加到常用位置"}
+              title={
+                isCurrentFavorited
+                  ? t("explorer:toolbar.removeFavorite")
+                  : t("explorer:toolbar.addFavorite")
+              }
               type="button"
               variant="ghost"
             >
@@ -1124,11 +1156,19 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
           <FilterMenu disabled={!directory} />
           <ToolbarSeparator />
           <Button
-            aria-label={isPreviewOpen ? "收起预览面板" : "展开预览面板"}
+            aria-label={
+              isPreviewOpen
+                ? t("explorer:toolbar.collapsePreview")
+                : t("explorer:toolbar.expandPreview")
+            }
             aria-pressed={isPreviewOpen}
             onClick={() => setIsPreviewOpen((isOpen) => !isOpen)}
             size="icon"
-            title={isPreviewOpen ? "收起预览面板 (Space)" : "展开预览面板 (Space)"}
+            title={
+              isPreviewOpen
+                ? t("explorer:toolbar.collapsePreviewShortcut")
+                : t("explorer:toolbar.expandPreviewShortcut")
+            }
             type="button"
             variant="ghost"
           >
@@ -1152,7 +1192,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
           <div className="shrink-0 p-3 pb-0">
             <Alert variant="destructive">
               <WarningIcon />
-              <AlertTitle>文件操作未完成</AlertTitle>
+              <AlertTitle>{t("explorer:errors.operationFailedTitle")}</AlertTitle>
               <AlertDescription>{operationError}</AlertDescription>
               <AlertAction>
                 <Button
@@ -1161,7 +1201,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                   type="button"
                   variant="outline"
                 >
-                  关闭
+                  {t("explorer:actions.close")}
                 </Button>
               </AlertAction>
             </Alert>
@@ -1278,18 +1318,23 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                   ) : (
                     <ArrowCounterClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
                   )}
-                  <span className="whitespace-nowrap">{undoRedoToast.message}</span>
+                  <span className="whitespace-nowrap">
+                    {t(`explorer:undoRedo.toast_${undoRedoToast.outcome.action}`, {
+                      op: t(`explorer:undoRedo.op_${undoRedoToast.outcome.op}`),
+                      count: undoRedoToast.outcome.count,
+                    })}
+                  </span>
                   {undoRedoToast.action === "redo" ? (
                     <Button onClick={redoLastOperation} size="xs" type="button" variant="outline">
-                      重做
+                      {t("explorer:actions.redo")}
                     </Button>
                   ) : (
                     <Button onClick={undoLastOperation} size="xs" type="button" variant="outline">
-                      撤销
+                      {t("explorer:actions.undo")}
                     </Button>
                   )}
                   <Button
-                    aria-label="关闭提示"
+                    aria-label={t("explorer:undoRedo.closeToast")}
                     onClick={() => setUndoRedoToast(null)}
                     size="xs"
                     type="button"
@@ -1409,22 +1454,24 @@ function pathListsEqual(a: string[], b: string[]): boolean {
 }
 
 function FileOperationStatusBar({ progress }: { progress: FileOperationProgress }) {
+  const { t } = useTranslation("explorer");
   const operationLabel: Record<FileOperationKind, string> = {
-    copy: "复制",
-    move: "移动",
-    delete: "删除",
-    compress: "压缩",
-    extract: "解压",
+    copy: t("explorer:progress.opCopy"),
+    move: t("explorer:progress.opMove"),
+    delete: t("explorer:progress.opDelete"),
+    compress: t("explorer:progress.opCompress"),
+    extract: t("explorer:progress.opExtract"),
   };
   const total = progress.total;
   const percentage = total && total > 0 ? Math.round((progress.completed / total) * 100) : 0;
   const currentPath = progress.currentPath;
+  const operationName = operationLabel[progress.operation];
   const statusText =
     progress.phase === "preparing"
-      ? `正在准备${operationLabel[progress.operation]}…`
+      ? t("explorer:progress.preparing", { op: operationName })
       : progress.phase === "completed"
-        ? `已完成${operationLabel[progress.operation]}`
-        : `正在${operationLabel[progress.operation]}`;
+        ? t("explorer:progress.completed", { op: operationName })
+        : t("explorer:progress.inProgress", { op: operationName });
 
   return (
     <footer
@@ -1445,8 +1492,12 @@ function FileOperationStatusBar({ progress }: { progress: FileOperationProgress 
           </span>
           <span className="shrink-0 tabular-nums text-muted-foreground">
             {total === null
-              ? "正在计算项目数"
-              : `${progress.completed.toLocaleString("zh-CN")} / ${total.toLocaleString("zh-CN")}（${percentage}%）`}
+              ? t("explorer:progress.counting")
+              : t("explorer:progress.counter", {
+                  completed: localeNumber(progress.completed),
+                  total: localeNumber(total),
+                  percentage,
+                })}
           </span>
         </div>
         <Progress className="mt-1.5 w-full" value={percentage} />
@@ -1474,17 +1525,21 @@ function RenameDialog({
   target: DirectoryEntry | null;
   value: string;
 }) {
+  const { t } = useTranslation("explorer");
+
   return (
     <Dialog onOpenChange={onOpenChange} open={target !== null}>
       <DialogContent showCloseButton={!isPending}>
         <DialogHeader>
-          <DialogTitle>重命名</DialogTitle>
-          <DialogDescription>为“{target?.name}”输入新名称。</DialogDescription>
+          <DialogTitle>{t("explorer:rename.title")}</DialogTitle>
+          <DialogDescription>
+            {t("explorer:rename.description", { name: target?.name ?? "" })}
+          </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
           <FieldGroup>
             <Field data-invalid={Boolean(error)}>
-              <FieldLabel htmlFor="rename-entry">新名称</FieldLabel>
+              <FieldLabel htmlFor="rename-entry">{t("explorer:rename.newNameLabel")}</FieldLabel>
               <Input
                 aria-invalid={Boolean(error)}
                 autoFocus
@@ -1499,10 +1554,10 @@ function RenameDialog({
           </FieldGroup>
           <DialogFooter>
             <Button disabled={isPending} onClick={onClose} type="button" variant="outline">
-              取消
+              {t("explorer:actions.cancel")}
             </Button>
             <Button disabled={isPending} type="submit">
-              重命名
+              {t("explorer:actions.rename")}
             </Button>
           </DialogFooter>
         </form>
@@ -1530,21 +1585,28 @@ function CreateEntryDialog({
   onValueChange: (value: string) => void;
   value: string;
 }) {
+  const { t } = useTranslation("explorer");
   const isFile = kind === "file";
 
   return (
     <Dialog onOpenChange={onOpenChange} open={kind !== null}>
       <DialogContent showCloseButton={!isPending}>
         <DialogHeader>
-          <DialogTitle>{isFile ? "新建文件" : "新建文件夹"}</DialogTitle>
+          <DialogTitle>
+            {isFile
+              ? t("explorer:newEntry.fileDialogTitle")
+              : t("explorer:newEntry.folderDialogTitle")}
+          </DialogTitle>
           <DialogDescription>
-            {isFile ? "输入文件名称，可包含扩展名（例如 notes.txt）。" : "输入文件夹名称。"}
+            {isFile
+              ? t("explorer:newEntry.fileDescription")
+              : t("explorer:newEntry.folderDescription")}
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={onSubmit}>
           <FieldGroup>
             <Field data-invalid={Boolean(error)}>
-              <FieldLabel htmlFor="create-entry">名称</FieldLabel>
+              <FieldLabel htmlFor="create-entry">{t("explorer:newEntry.nameLabel")}</FieldLabel>
               <Input
                 aria-invalid={Boolean(error)}
                 autoFocus
@@ -1563,10 +1625,10 @@ function CreateEntryDialog({
           </FieldGroup>
           <DialogFooter>
             <Button disabled={isPending} onClick={onClose} type="button" variant="outline">
-              取消
+              {t("explorer:actions.cancel")}
             </Button>
             <Button disabled={isPending} type="submit">
-              创建
+              {t("explorer:actions.create")}
             </Button>
           </DialogFooter>
         </form>
@@ -1588,26 +1650,28 @@ function DeleteDialog({
   onConfirm: () => void;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useTranslation("explorer");
   const description =
     entries.length === 1
-      ? `“${entries[0].name}”将被永久删除，无法从回收站恢复。`
-      : `所选的 ${entries.length} 个项目将被永久删除，无法从回收站恢复。`;
+      ? t("explorer:deleteConfirm.single", { name: entries[0].name })
+      : t("explorer:deleteConfirm.multiple", { number: entries.length });
 
   return (
     <Dialog onOpenChange={onOpenChange} open={entries.length > 0}>
       <DialogContent showCloseButton={!isPending}>
         <DialogHeader>
-          <DialogTitle>永久删除</DialogTitle>
+          <DialogTitle>{t("explorer:deleteConfirm.title")}</DialogTitle>
           <DialogDescription>
-            {description}直接按 Delete 键则移入回收站，可随时用 Ctrl+Z 撤销。
+            {description}
+            {t("explorer:deleteConfirm.hint")}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button disabled={isPending} onClick={onClose} type="button" variant="outline">
-            取消
+            {t("explorer:actions.cancel")}
           </Button>
           <Button disabled={isPending} onClick={onConfirm} type="button" variant="destructive">
-            永久删除
+            {t("explorer:actions.deletePermanent")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1616,14 +1680,16 @@ function DeleteDialog({
 }
 
 function ExplorerErrorAlert({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const { t } = useTranslation("explorer");
+
   return (
     <Alert variant="destructive">
       <WarningIcon />
-      <AlertTitle>无法读取此位置</AlertTitle>
+      <AlertTitle>{t("explorer:errors.unreadableLocation")}</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
       <AlertAction>
         <Button onClick={onRetry} size="xs" type="button" variant="outline">
-          重试
+          {t("explorer:actions.retry")}
         </Button>
       </AlertAction>
     </Alert>
@@ -1641,72 +1707,18 @@ function getCreateEntryErrorMessage(message: string, rawError: unknown): string 
 
   switch (kind) {
     case "already_exists":
-      return "已存在同名项目，请使用其他名称";
+      return i18n.t("explorer:createEntryError.alreadyExists");
     case "permission_denied":
-      return "没有权限在此位置创建项目";
+      return i18n.t("explorer:createEntryError.permissionDenied");
     case "not_found":
-      return "当前目录不存在或已被移动";
+      return i18n.t("explorer:createEntryError.notFound");
     case "not_directory":
-      return "当前位置不是文件夹";
+      return i18n.t("explorer:createEntryError.notDirectory");
   }
 
   if (message.includes("must not contain a path separator")) {
-    return "名称不能包含路径分隔符";
+    return i18n.t("explorer:createEntryError.pathSeparator");
   }
 
   return message;
 }
-
-function getErrorMessage(error: unknown): string {
-  const kind = extractErrorKind(error);
-  if (kind) {
-    const friendly = FILE_OPERATION_ERROR_MESSAGES[kind];
-    if (friendly) {
-      // Only the structured IPC payload carries a clean detail message; an
-      // Error instance's message is the raw stringified form.
-      const detail =
-        typeof error === "object" &&
-        error !== null &&
-        !(error instanceof Error) &&
-        "message" in error
-          ? (error as { message: unknown }).message
-          : undefined;
-      return typeof detail === "string" && detail ? `${friendly}：${detail}` : friendly;
-    }
-  }
-
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return error.message;
-  }
-
-  return error instanceof Error ? error.message : String(error);
-}
-
-/** Extracts the FileSystemError kind, either from the structured Tauri IPC
- *  payload ({ kind, message }) or from the stringified form produced by the
- *  dev-invoke bridge when debugging in a plain browser. */
-function extractErrorKind(error: unknown): string | null {
-  if (typeof error === "object" && error !== null && "kind" in error) {
-    return String((error as { kind: unknown }).kind);
-  }
-
-  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : null;
-  const match = raw?.match(/"kind":\s*(?:String\()?"([a-z_]+)"/);
-  return match?.[1] ?? null;
-}
-
-const FILE_OPERATION_ERROR_MESSAGES: Record<string, string> = {
-  already_exists: "目标位置已存在同名项目",
-  not_found: "项目不存在或已被移动",
-  permission_denied: "没有足够的权限完成此操作",
-  invalid_input: "无法完成此操作",
-  not_a_directory: "目标不是文件夹",
-  not_directory: "目标不是文件夹",
-  io: "文件系统操作失败",
-  internal: "操作失败",
-};

@@ -131,7 +131,7 @@ pub async fn search_file_contents(
 ) -> Result<ContentSearchResponse, FileSystemError> {
     if !is_local_path(&path) {
         return Err(FileSystemError::InvalidInput(
-            "内容搜索仅支持本地目录".into(),
+            "fs.content_search_local_only".into(),
         ));
     }
 
@@ -424,9 +424,7 @@ pub async fn trash_entries(
         return Ok(());
     }
     if paths.iter().any(|path| !is_local_path(path)) {
-        return Err(FileSystemError::InvalidInput(
-            "回收站仅支持本地路径".into(),
-        ));
+        return Err(FileSystemError::InvalidInput("fs.trash_local_only".into()));
     }
 
     emit_preparing(&app, &operation_id, FileOperationKind::Delete);
@@ -498,10 +496,10 @@ pub async fn undo_operation(
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<UndoRedoState>();
         let Some(operation) = state.pop_undo() else {
-            return Err(FileSystemError::InvalidInput("没有可撤销的操作".into()));
+            return Err(FileSystemError::InvalidInput("fs.undo_empty".into()));
         };
 
-        let noun = operation.noun();
+        let op = operation.op_code();
         let progress = FileOperationProgressReporter::new(app.clone(), operation_id, kind);
         let result = undo::execute_undo(operation, &progress);
 
@@ -513,7 +511,9 @@ pub async fn undo_operation(
                 undo::emit_changed(&app, &state);
                 progress.finish();
                 Ok(UndoRedoOutcome {
-                    message: format!("已撤销：{}", undo::operation_label(noun, count)),
+                    action: "undo",
+                    op,
+                    count,
                 })
             }
             Err(error) => {
@@ -545,10 +545,10 @@ pub async fn redo_operation(
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<UndoRedoState>();
         let Some(operation) = state.pop_redo() else {
-            return Err(FileSystemError::InvalidInput("没有可重做的操作".into()));
+            return Err(FileSystemError::InvalidInput("fs.redo_empty".into()));
         };
 
-        let noun = operation.noun();
+        let op = operation.op_code();
         let progress = FileOperationProgressReporter::new(app.clone(), operation_id, kind);
         let result = undo::execute_redo(operation, &progress);
 
@@ -560,7 +560,9 @@ pub async fn redo_operation(
                 undo::emit_changed(&app, &state);
                 progress.finish();
                 Ok(UndoRedoOutcome {
-                    message: format!("已重做：{}", undo::operation_label(noun, count)),
+                    action: "redo",
+                    op,
+                    count,
                 })
             }
             Err(error) => {
@@ -613,6 +615,15 @@ fn is_local_path(path: &str) -> bool {
     vfs::scheme_of(path).is_ok_and(|scheme| scheme == Scheme::Local)
 }
 
+/// Pushes the locale's duplicate-name token (e.g. "副本" / "copy") so the
+/// backend names Keep-Both conflicts and duplicates in the UI language.
+/// Called by the frontend at startup and on language changes.
+#[tauri::command]
+#[specta::specta]
+pub fn set_duplicate_suffix(suffix: String) {
+    super::transfer::set_duplicate_suffix(&suffix);
+}
+
 /// Reads one entry's full metadata for the properties dialog. Local paths
 /// return the platform permission model (POSIX mode bits and ownership, or
 /// Windows DOS attributes); other backends degrade to a view-only summary.
@@ -650,7 +661,7 @@ pub async fn update_file_properties(
 pub fn open_terminal(path: String) -> Result<(), FileSystemError> {
     if !is_local_path(&path) {
         return Err(FileSystemError::InvalidInput(
-            "只能在本地目录打开终端".into(),
+            "fs.terminal_local_dir_only".into(),
         ));
     }
 
@@ -673,15 +684,13 @@ pub fn open_terminal(path: String) -> Result<(), FileSystemError> {
 pub async fn open_with(path: String) -> Result<(), FileSystemError> {
     if !is_local_path(&path) {
         return Err(FileSystemError::InvalidInput(
-            "只能为本地文件选择打开方式".into(),
+            "fs.open_with_local_only".into(),
         ));
     }
 
     let file = PathBuf::from(&path);
     if !file.is_file() {
-        return Err(FileSystemError::InvalidInput(
-            "只能为文件选择打开方式".into(),
-        ));
+        return Err(FileSystemError::InvalidInput("fs.open_with_file_only".into()));
     }
 
     // SHOpenWithDialog 以模态方式运行到用户关闭为止，放到阻塞线程池执行。
@@ -715,7 +724,7 @@ fn open_system_terminal(directory: &Path) -> Result<(), FileSystemError> {
         .creation_flags(CREATE_NEW_CONSOLE)
         .spawn()
         .map(|_| ())
-        .map_err(|error| FileSystemError::Internal(format!("无法启动终端：{error}")))
+        .map_err(|error| FileSystemError::Internal(format!("fs.terminal_launch_failed: {error}")))
 }
 
 #[cfg(target_os = "macos")]
@@ -726,7 +735,7 @@ fn open_system_terminal(directory: &std::path::Path) -> Result<(), FileSystemErr
         .arg(directory)
         .spawn()
         .map(|_| ())
-        .map_err(|error| FileSystemError::Internal(format!("无法启动终端：{error}")))
+        .map_err(|error| FileSystemError::Internal(format!("fs.terminal_launch_failed: {error}")))
 }
 
 #[cfg(target_os = "linux")]
@@ -798,7 +807,7 @@ fn open_system_terminal(directory: &std::path::Path) -> Result<(), FileSystemErr
     }
 
     Err(FileSystemError::Internal(
-        "未找到可用的终端，请安装 xdg-terminal-exec 或设置 $TERMINAL".into(),
+        "fs.terminal_not_found".into(),
     ))
 }
 
@@ -863,7 +872,7 @@ fn open_system_with_dialog(file: &Path) -> Result<(), FileSystemError> {
 #[cfg(not(target_os = "windows"))]
 fn open_system_with_dialog(_file: &Path) -> Result<(), FileSystemError> {
     Err(FileSystemError::Internal(
-        "当前平台不支持系统“打开方式”对话框".into(),
+        "fs.open_with_unsupported".into(),
     ))
 }
 

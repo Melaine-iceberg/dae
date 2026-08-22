@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   ClipboardTextIcon,
@@ -37,6 +38,7 @@ import { LocationCard, WorkspacePage, WorkspacePageHeader } from "./workspace-co
 
 /** The Favorites surface: every favorited folder as an expressive card. */
 export function FavoritesView() {
+  const { t } = useTranslation("workspace");
   const favorites = useAtomValue(favoritesAtom);
   const ensureFavoritesLoaded = useSetAtom(ensureFavoritesLoadedAtom);
   const removeFavorite = useSetAtom(removeFavoriteAtom);
@@ -48,8 +50,11 @@ export function FavoritesView() {
   }, [ensureFavoritesLoaded]);
 
   return (
-    <WorkspacePage aria-label="收藏">
-      <WorkspacePageHeader title="收藏" description="常用文件夹，一键直达。" />
+    <WorkspacePage aria-label={t("favorites.title")}>
+      <WorkspacePageHeader
+        title={t("favorites.title")}
+        description={t("favorites.description")}
+      />
 
       {favorites === null ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -63,10 +68,8 @@ export function FavoritesView() {
             <EmptyMedia variant="icon">
               <StarIcon />
             </EmptyMedia>
-            <EmptyTitle>暂无收藏</EmptyTitle>
-            <EmptyDescription>
-              在文件夹中点击工具栏的星标，或将文件夹拖到侧边栏的“收藏”，即可把常用位置放在这里。
-            </EmptyDescription>
+            <EmptyTitle>{t("favorites.emptyTitle")}</EmptyTitle>
+            <EmptyDescription>{t("favorites.emptyDescription")}</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (
@@ -86,22 +89,22 @@ export function FavoritesView() {
                 <ContextMenuGroup>
                   <ContextMenuItem onClick={() => navigateToFolder(favorite.path)}>
                     <FolderOpenIcon />
-                    打开
+                    {t("favorites.open")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => openInNewTab(favorite.path)}>
                     <TabsIcon />
-                    在新标签页打开
+                    {t("favorites.openInNewTab")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => void copyPath(favorite.path)}>
                     <ClipboardTextIcon />
-                    复制文件地址
+                    {t("favorites.copyPath")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
                 <ContextMenuSeparator />
                 <ContextMenuGroup>
                   <ContextMenuItem onClick={() => removeFavorite(favorite.path)}>
                     <XIcon />
-                    从收藏移除
+                    {t("favorites.remove")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
               </ContextMenuContent>

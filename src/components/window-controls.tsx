@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
 import { getAppWindow } from "@/lib/app-window";
@@ -6,6 +7,7 @@ import { getAppWindow } from "@/lib/app-window";
 const appWindow = getAppWindow();
 
 export function WindowControls() {
+  const { t } = useTranslation("common");
   const [maximized, setMaximized] = useState(false);
   const [focused, setFocused] = useState(true);
 
@@ -39,10 +41,10 @@ export function WindowControls() {
   return (
     <div className="flex h-full shrink-0 items-stretch">
       <button
-        aria-label="最小化"
+        aria-label={t("windowControls.minimize")}
         className={buttonClassName}
         onClick={() => void appWindow?.minimize()}
-        title="最小化"
+        title={t("windowControls.minimize")}
         type="button"
       >
         <span aria-hidden="true" className="window-control-glyph">
@@ -51,10 +53,10 @@ export function WindowControls() {
       </button>
       <button
         id="window-maximize"
-        aria-label={maximized ? "向下还原" : "最大化"}
+        aria-label={maximized ? t("windowControls.restore") : t("windowControls.maximize")}
         className={buttonClassName}
         onClick={() => void appWindow?.toggleMaximize()}
-        title={maximized ? "向下还原" : "最大化"}
+        title={maximized ? t("windowControls.restore") : t("windowControls.maximize")}
         type="button"
       >
         <span aria-hidden="true" className="window-control-glyph">
@@ -62,10 +64,10 @@ export function WindowControls() {
         </span>
       </button>
       <button
-        aria-label="关闭"
+        aria-label={t("windowControls.close")}
         className={cn(buttonClassName, "hover:bg-destructive hover:text-white")}
         onClick={() => void appWindow?.close()}
-        title="关闭"
+        title={t("windowControls.close")}
         type="button"
       >
         <span aria-hidden="true" className="window-control-glyph">

@@ -11,14 +11,50 @@ import {
 import type { PlaceKind } from "@/bindings";
 
 import type { PhosphorIcon } from "@/features/explorer/file-icons";
+import { i18n } from "@/i18n";
 
 /** Icons and labels for the well-known system places. */
 export const PLACE_PRESENTATION: Record<PlaceKind, { icon: PhosphorIcon; label: string }> = {
-  home: { icon: HouseIcon, label: "主文件夹" },
-  desktop: { icon: DesktopIcon, label: "桌面" },
-  documents: { icon: FileTextIcon, label: "文档" },
-  downloads: { icon: DownloadSimpleIcon, label: "下载" },
-  pictures: { icon: ImageIcon, label: "图片" },
-  music: { icon: MusicNotesIcon, label: "音乐" },
-  videos: { icon: VideoIcon, label: "视频" },
+  home: {
+    icon: HouseIcon,
+    get label() {
+      return i18n.t("sidebar:places.home");
+    },
+  },
+  desktop: {
+    icon: DesktopIcon,
+    get label() {
+      return i18n.t("sidebar:places.desktop");
+    },
+  },
+  documents: {
+    icon: FileTextIcon,
+    get label() {
+      return i18n.t("sidebar:places.documents");
+    },
+  },
+  downloads: {
+    icon: DownloadSimpleIcon,
+    get label() {
+      return i18n.t("sidebar:places.downloads");
+    },
+  },
+  pictures: {
+    icon: ImageIcon,
+    get label() {
+      return i18n.t("sidebar:places.pictures");
+    },
+  },
+  music: {
+    icon: MusicNotesIcon,
+    get label() {
+      return i18n.t("sidebar:places.music");
+    },
+  },
+  videos: {
+    icon: VideoIcon,
+    get label() {
+      return i18n.t("sidebar:places.videos");
+    },
+  },
 };

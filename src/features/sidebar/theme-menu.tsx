@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { MonitorIcon, MoonIcon, SunIcon } from "@phosphor-icons/react";
 
 import {
@@ -16,12 +17,11 @@ import {
 
 const THEME_OPTIONS: ReadonlyArray<{
   icon: typeof SunIcon;
-  label: string;
   value: ThemePreference;
 }> = [
-  { icon: SunIcon, label: "浅色主题", value: "light" },
-  { icon: MoonIcon, label: "深色主题", value: "dark" },
-  { icon: MonitorIcon, label: "跟随系统", value: "system" },
+  { icon: SunIcon, value: "light" },
+  { icon: MoonIcon, value: "dark" },
+  { icon: MonitorIcon, value: "system" },
 ];
 
 /**
@@ -29,6 +29,7 @@ const THEME_OPTIONS: ReadonlyArray<{
  * the active mode reflected on the trigger icon.
  */
 export function ThemeMenu() {
+  const { t } = useTranslation("sidebar");
   const [preference, setPreference] = useState<ThemePreference>(() =>
     getStoredThemePreference(),
   );
@@ -41,6 +42,8 @@ export function ThemeMenu() {
 
   const activeOption = THEME_OPTIONS.find((option) => option.value === preference);
   const ActiveIcon = activeOption?.icon ?? MonitorIcon;
+  const activeLabel = t(`theme.${preference}`);
+  const title = t("theme.titleWith", { name: activeLabel });
 
   const updatePreference = (value: ThemePreference) => {
     setPreference(value);
@@ -50,9 +53,9 @@ export function ThemeMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label={`主题：${activeOption?.label ?? "跟随系统"}`}
+        aria-label={title}
         className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-accent/70 hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground"
-        title={`主题：${activeOption?.label ?? "跟随系统"}`}
+        title={title}
       >
         <ActiveIcon className="size-4" />
       </DropdownMenuTrigger>
@@ -64,7 +67,7 @@ export function ThemeMenu() {
           {THEME_OPTIONS.map((option) => (
             <DropdownMenuRadioItem key={option.value} value={option.value}>
               <option.icon />
-              {option.label}
+              {t(`theme.${option.value}`)}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

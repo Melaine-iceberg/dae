@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useTranslation } from "react-i18next";
 import {
   CircleNotchIcon,
   MagnifyingGlassIcon,
@@ -14,6 +15,7 @@ import {
 } from "@/components/ui/input-group";
 
 import { commands } from "@/bindings";
+import { translateBackendMessage } from "@/i18n/errors";
 
 import type { ContentSearchController } from "./content-search";
 import type { SearchResponse } from "./types";
@@ -122,6 +124,7 @@ export function DirectorySearch({
   onModeChange: (mode: ExplorerSearchMode) => void;
   search: DirectorySearchController;
 }) {
+  const { t } = useTranslation("explorer");
   const inputRef = useRef<HTMLInputElement>(null);
   const isContentMode = mode === "content";
   const activeQuery = isContentMode ? contentSearch.query : search.query;
@@ -147,7 +150,7 @@ export function DirectorySearch({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [disabled]);
 
-  const scopeName = directoryName ?? "当前目录";
+  const scopeName = directoryName ?? t("directorySearch.currentDirectory");
 
   return (
     <InputGroup className="w-56 shrink-0 rounded-full">
@@ -156,8 +159,8 @@ export function DirectorySearch({
         aria-invalid={Boolean(activeError)}
         aria-label={
           isContentMode
-            ? `搜索“${scopeName}”中的文件内容`
-            : `搜索“${scopeName}”中的文件和文件夹`
+            ? t("directorySearch.contentAriaLabel", { scope: scopeName })
+            : t("directorySearch.nameAriaLabel", { scope: scopeName })
         }
         disabled={disabled}
         onChange={(event) => setActiveQuery(event.target.value)}
@@ -167,21 +170,33 @@ export function DirectorySearch({
             setActiveQuery("");
           }
         }}
-        placeholder={isContentMode ? `在内容中搜索` : `搜索 ${scopeName}`}
+        placeholder={
+          isContentMode
+            ? t("directorySearch.contentPlaceholder")
+            : t("directorySearch.namePlaceholder", { scope: scopeName })
+        }
         spellCheck={false}
         title={
           isContentMode
-            ? `递归搜索“${scopeName}”中的文件内容（正则可选）`
-            : `递归搜索“${scopeName}”的文件名`
+            ? t("directorySearch.contentTitle", { scope: scopeName })
+            : t("directorySearch.nameTitle", { scope: scopeName })
         }
         value={activeQuery}
       />
       <InputGroupAddon align="inline-start">
         <InputGroupButton
-          aria-label={isContentMode ? "切换为按名称搜索" : "切换为按内容搜索"}
+          aria-label={
+            isContentMode
+              ? t("directorySearch.switchToName")
+              : t("directorySearch.switchToContent")
+          }
           onClick={() => onModeChange(isContentMode ? "name" : "content")}
           size="icon-xs"
-          title={isContentMode ? "当前：按内容搜索，点击切换为按名称" : "当前：按名称搜索，点击切换为按内容"}
+          title={
+            isContentMode
+              ? t("directorySearch.currentContentTitle")
+              : t("directorySearch.currentNameTitle")
+          }
         >
           {isContentMode ? <TextAaIcon /> : <MagnifyingGlassIcon />}
         </InputGroupButton>
@@ -191,10 +206,10 @@ export function DirectorySearch({
           {isSearching && <CircleNotchIcon className="animate-spin" />}
           {activeQuery && (
             <InputGroupButton
-              aria-label="清除搜索"
+              aria-label={t("directorySearch.clearSearch")}
               onClick={() => setActiveQuery("")}
               size="icon-xs"
-              title="清除搜索"
+              title={t("directorySearch.clearSearch")}
             >
               <XIcon />
             </InputGroupButton>
@@ -212,8 +227,8 @@ function getErrorMessage(error: unknown): string {
     "message" in error &&
     typeof error.message === "string"
   ) {
-    return error.message;
+    return translateBackendMessage(error.message);
   }
 
-  return error instanceof Error ? error.message : String(error);
+  return error instanceof Error ? translateBackendMessage(error.message) : String(error);
 }

@@ -1,0 +1,43 @@
+{
+  "backend": {
+    "fs": {
+      "content_search_local_only": "内容搜索仅支持本地目录",
+      "trash_local_only": "回收站仅支持本地路径",
+      "undo_empty": "没有可撤销的操作",
+      "redo_empty": "没有可重做的操作",
+      "undo_trash_missing": "回收站中已找不到这些项目，可能已被清空或还原",
+      "redo_trash_source_missing": "这些项目已不在原位置，无法重新移入回收站",
+      "terminal_local_dir_only": "只能在本地目录打开终端",
+      "terminal_launch_failed": "无法启动终端",
+      "terminal_not_found": "未找到可用的终端，请安装 xdg-terminal-exec 或设置 $TERMINAL",
+      "open_with_local_only": "只能为本地文件选择打开方式",
+      "open_with_file_only": "只能为文件选择打开方式",
+      "open_with_unsupported": "当前平台不支持系统“打开方式”对话框",
+      "invalid_search_query": "无效的搜索表达式",
+      "ignore_rule_register_failed": "无法注册忽略规则",
+      "ignore_rule_build_failed": "无法构建忽略规则",
+      "invalid_type_filter": "无效的类型过滤",
+      "type_filter_build_failed": "无法构建类型过滤"
+    },
+    "term": {
+      "pty_create_failed": "创建 PTY 失败",
+      "shell_spawn_failed": "启动 shell 失败",
+      "pty_input_failed": "接管 PTY 输入失败",
+      "pty_output_failed": "接管 PTY 输出失败",
+      "session_missing": "终端会话不存在",
+      "write_failed": "写入终端失败",
+      "resize_failed": "调整终端尺寸失败"
+    }
+  },
+  "kind": {
+    "already_exists": "目标位置已存在同名项目",
+    "not_found": "项目不存在或已被移动",
+    "permission_denied": "没有足够的权限完成此操作",
+    "invalid_input": "无法完成此操作",
+    "not_a_directory": "目标不是文件夹",
+    "not_directory": "目标不是文件夹",
+    "io": "文件系统操作失败",
+    "internal": "操作失败"
+  },
+  "withDetail": "{{base}}：{{detail}}"
+}

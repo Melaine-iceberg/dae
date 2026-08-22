@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getDefaultStore, useAtomValue, useSetAtom } from "jotai";
+import { useTranslation } from "react-i18next";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -9,6 +10,7 @@ import { ArrowCounterClockwiseIcon, XIcon } from "@phosphor-icons/react";
 
 import { activeTabIdAtom, getTabNavigator } from "@/features/explorer/tabs";
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
+import { translateBackendMessage } from "@/i18n/errors";
 import { cn } from "@/lib/utils";
 
 import { terminalVisibleAtom } from "./terminal-atoms";
@@ -63,6 +65,7 @@ function safeFit(fit: FitAddon): void {
  * or app shutdown.
  */
 export function TerminalPanel() {
+  const { t } = useTranslation("terminal");
   const visible = useAtomValue(terminalVisibleAtom);
   const setVisible = useSetAtom(terminalVisibleAtom);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -240,7 +243,7 @@ export function TerminalPanel() {
 
   return (
     <section
-      aria-label="集成终端"
+      aria-label={t("panel.label")}
       className={cn("flex shrink-0 flex-col border-t bg-card", !visible && "hidden")}
       style={{ height }}
     >
@@ -250,22 +253,24 @@ export function TerminalPanel() {
         onPointerDown={startResizeDrag}
       />
       <header className="flex h-8 shrink-0 items-center gap-1 border-b px-2">
-        <span className="text-xs font-medium text-muted-foreground select-none">终端</span>
+        <span className="text-xs font-medium text-muted-foreground select-none">
+          {t("panel.title")}
+        </span>
         <div className="ml-auto flex items-center gap-0.5">
           <button
-            aria-label="重启终端"
+            aria-label={t("panel.restart.label")}
             className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={restart}
-            title="重启终端"
+            title={t("panel.restart.label")}
             type="button"
           >
             <ArrowCounterClockwiseIcon className="size-3.5" />
           </button>
           <button
-            aria-label="关闭终端面板"
+            aria-label={t("panel.close.label")}
             className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={() => setVisible(false)}
-            title="关闭面板 (Ctrl+`)"
+            title={t("panel.close.title")}
             type="button"
           >
             <XIcon className="size-3.5" />
@@ -276,20 +281,20 @@ export function TerminalPanel() {
         <div ref={containerRef} className="h-full w-full" />
         {exitCode != null && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-card text-sm text-muted-foreground">
-            <span>终端会话已结束（退出代码 {exitCode}）</span>
+            <span>{t("panel.sessionEnded", { code: exitCode })}</span>
             <button
               className="flex h-7 items-center gap-1 rounded-lg border px-3 transition-colors hover:bg-accent hover:text-foreground"
               onClick={restart}
               type="button"
             >
               <ArrowCounterClockwiseIcon className="size-3.5" />
-              重新启动
+              {t("panel.restart.action")}
             </button>
           </div>
         )}
         {error && (
           <div className="absolute inset-0 flex items-center justify-center bg-card p-4 text-center text-sm text-destructive">
-            {error}
+            {translateBackendMessage(error)}
           </div>
         )}
       </div>

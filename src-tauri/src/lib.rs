@@ -94,6 +94,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::commands::undo_operation,
             file_system::commands::redo_operation,
             file_system::commands::duplicate_entries,
+            file_system::commands::set_duplicate_suffix,
             file_system::commands::open_terminal,
             file_system::commands::open_with,
             file_system::commands::get_file_properties,

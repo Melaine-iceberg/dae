@@ -6,6 +6,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
+import { useTranslation } from "react-i18next";
 import { CircleNotchIcon, FolderOpenIcon, WarningIcon } from "@phosphor-icons/react";
 import { openPath } from "@tauri-apps/plugin-opener";
 
@@ -17,6 +18,8 @@ import {
 } from "@/bindings";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { localeNumber } from "@/i18n/format";
+import { translateBackendMessage } from "@/i18n/errors";
 
 import { getFilePresentation } from "./file-icons";
 
@@ -133,6 +136,7 @@ export function useContentSearch(
 
 /** Regex / case / file-type controls shown while content search is active. */
 export function ContentSearchToolbar({ search }: { search: ContentSearchController }) {
+  const { t } = useTranslation("explorer");
   const fileCount = search.response?.files.length ?? 0;
   const matchCount =
     search.response?.files.reduce((total, file) => total + file.matches.length, 0) ?? 0;
@@ -141,22 +145,22 @@ export function ContentSearchToolbar({ search }: { search: ContentSearchControll
     <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
       <div className="flex items-center gap-0.5">
         <Button
-          aria-label="切换正则表达式"
+          aria-label={t("contentSearch.toggleRegex")}
           aria-pressed={search.isRegex}
           onClick={() => search.setIsRegex((value) => !value)}
           size="xs"
-          title="正则表达式"
+          title={t("contentSearch.regexTitle")}
           type="button"
           variant={search.isRegex ? "secondary" : "ghost"}
         >
           .*
         </Button>
         <Button
-          aria-label="切换区分大小写"
+          aria-label={t("contentSearch.toggleCaseSensitive")}
           aria-pressed={search.caseSensitive}
           onClick={() => search.setCaseSensitive((value) => !value)}
           size="xs"
-          title="区分大小写"
+          title={t("contentSearch.caseSensitiveTitle")}
           type="button"
           variant={search.caseSensitive ? "secondary" : "ghost"}
         >
@@ -164,20 +168,23 @@ export function ContentSearchToolbar({ search }: { search: ContentSearchControll
         </Button>
       </div>
       <Input
-        aria-label="文件类型过滤"
+        aria-label={t("contentSearch.typeFilterLabel")}
         className="h-7 w-52"
         onChange={(event) => search.setTypeFilter(event.target.value)}
-        placeholder="类型过滤，如 *.ts, rs, *.md"
+        placeholder={t("contentSearch.typeFilterPlaceholder")}
         spellCheck={false}
-        title="只搜索匹配的文件类型，支持扩展名或 glob，逗号分隔"
+        title={t("contentSearch.typeFilterTitle")}
         value={search.typeFilter}
       />
-      <span className="select-none">默认忽略 .git / node_modules / target</span>
+      <span className="select-none">{t("contentSearch.ignoredHint")}</span>
       {search.isSearching && <CircleNotchIcon className="animate-spin" size={14} />}
       {!search.isSearching && search.response && (
         <span className="select-none tabular-nums">
-          {fileCount.toLocaleString("zh-CN")} 个文件 · {matchCount.toLocaleString("zh-CN")} 处匹配
-          {search.response.truncated ? "（已达上限，已截断）" : ""}
+          {t("contentSearch.resultSummary", {
+            fileCount: localeNumber(fileCount),
+            matchCount: localeNumber(matchCount),
+          })}
+          {search.response.truncated ? t("contentSearch.truncatedSuffix") : ""}
         </span>
       )}
     </div>
@@ -198,6 +205,8 @@ export function ContentSearchResults({
   query: string;
   response: ContentSearchResponse | null;
 }) {
+  const { t } = useTranslation("explorer");
+
   if (error) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center select-none">
@@ -211,7 +220,7 @@ export function ContentSearchResults({
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center select-none">
         <p className="text-[13px] text-muted-foreground">
-          未找到内容包含“{query}”的文件
+          {t("contentSearch.noMatches", { query })}
         </p>
       </div>
     );
@@ -239,6 +248,7 @@ function FileMatchGroup({
   file: ContentSearchFile;
   onOpenLocation: (directory: string) => void;
 }) {
+  const { t } = useTranslation("explorer");
   const [expanded, setExpanded] = useState(false);
   const fileName = fileNameOf(file.path);
   const presentation = getFilePresentation(fileName);
@@ -258,14 +268,14 @@ function FileMatchGroup({
         >
           {file.relativePath || fileName}
           <span className="ml-2 text-xs font-normal text-muted-foreground">
-            {file.matches.length} 处匹配
+            {t("contentSearch.matchCount", { count: file.matches.length })}
           </span>
         </button>
         <Button
-          aria-label="打开所在文件夹"
+          aria-label={t("contentSearch.openLocation")}
           onClick={() => parentDirectory && onOpenLocation(parentDirectory)}
           size="icon-xs"
-          title="打开所在文件夹"
+          title={t("contentSearch.openLocation")}
           type="button"
           variant="ghost"
         >
@@ -295,7 +305,9 @@ function FileMatchGroup({
             onClick={() => setExpanded((value) => !value)}
             type="button"
           >
-            {expanded ? "收起匹配行" : `显示全部 ${file.matches.length} 处匹配`}
+            {expanded
+              ? t("contentSearch.collapseMatches")
+              : t("contentSearch.showAllMatches", { count: file.matches.length })}
           </button>
         )}
       </div>
@@ -352,8 +364,8 @@ function getErrorMessage(error: unknown): string {
     "message" in error &&
     typeof error.message === "string"
   ) {
-    return error.message;
+    return translateBackendMessage(error.message);
   }
 
-  return error instanceof Error ? error.message : String(error);
+  return error instanceof Error ? translateBackendMessage(error.message) : String(error);
 }

@@ -1,0 +1,82 @@
+{
+  "nav": {
+    "label": "Sidebar",
+    "overview": "Overview",
+    "recents": "Recent",
+    "favorites": "Favorites"
+  },
+  "sections": {
+    "spaces": "Spaces",
+    "locations": "Locations",
+    "computer": "Computer",
+    "network": "Network",
+    "cloudStorage": "Cloud storage"
+  },
+  "spaces": {
+    "create": "New space",
+    "name": "Space name"
+  },
+  "cloud": {
+    "comingSoon": "Coming soon"
+  },
+  "network": {
+    "connectStorage": "Connect to network storage",
+    "emptyHint": "Click + to connect to a NAS, Windows share, or SFTP server"
+  },
+  "contextMenu": {
+    "open": "Open",
+    "openInNewTab": "Open in new tab",
+    "renameSpace": "Rename space",
+    "addFavorite": "Add to favorites",
+    "copyPath": "Copy address",
+    "copyFilePath": "Copy file path",
+    "copy": "Copy",
+    "cut": "Cut",
+    "removeConnection": "Remove connection"
+  },
+  "disk": {
+    "localDisk": "Local Disk ({{letter}}:)",
+    "title": "{{name}} · {{free}} free of {{total}}",
+    "freePercent": "{{percent}}% free",
+    "capacity": "{{free}} / {{total}}"
+  },
+  "places": {
+    "home": "Home",
+    "desktop": "Desktop",
+    "documents": "Documents",
+    "downloads": "Downloads",
+    "pictures": "Pictures",
+    "music": "Music",
+    "videos": "Videos"
+  },
+  "theme": {
+    "label": "Theme",
+    "light": "Light theme",
+    "dark": "Dark theme",
+    "system": "Follow system",
+    "titleWith": "Theme: {{name}}"
+  },
+  "protocols": {
+    "smb": "SMB / Windows share",
+    "sftp": "SFTP / SSH",
+    "ftp": "FTP (coming soon)",
+    "webdav": "WebDAV (coming soon)"
+  },
+  "connect": {
+    "description": "Connect to an SMB server (NAS, Windows share) or an SFTP server (Linux, NAS). SFTP requires an account and password.",
+    "protocol": "Protocol",
+    "host": "Server address",
+    "hostPlaceholder": "e.g. nas.local or 192.168.1.10",
+    "port": "Port",
+    "username": "Account (optional)",
+    "password": "Password (optional)",
+    "rememberPassword": "Remember password (stored in the system keychain)",
+    "hostRequired": "Enter a server address",
+    "portRange": "Port must be 1-65535",
+    "testOk": "Connection test succeeded",
+    "testing": "Testing…",
+    "test": "Test connection",
+    "saving": "Saving…",
+    "connect": "Connect"
+  }
+}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { useTranslation } from "react-i18next";
 import { FolderIcon } from "@phosphor-icons/react";
 
 import { ExplorerBreadcrumbs } from "./explorer-breadcrumbs";
@@ -12,6 +13,7 @@ interface ExplorerPathBarProps {
 }
 
 export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: ExplorerPathBarProps) {
+  const { t } = useTranslation("explorer");
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState("");
   const [isInvalid, setIsInvalid] = useState(false);
@@ -68,7 +70,7 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
         <input
           ref={inputRef}
           aria-invalid={isInvalid}
-          aria-label="当前路径"
+          aria-label={t("pathBar.currentPath")}
           className="h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none"
           onChange={(event) => {
             setValue(event.target.value);
@@ -95,7 +97,7 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
       className="flex h-8 min-w-0 flex-1 items-center rounded-full border border-transparent bg-muted/70 px-3.5 transition-colors hover:bg-muted dark:bg-muted/50 dark:hover:bg-muted/70"
       data-tauri-drag-region="false"
       onClick={startEditing}
-      title="单击以编辑路径"
+      title={t("pathBar.clickToEdit")}
     >
       <FolderIcon
         className="pointer-events-none mr-2 size-3.5 shrink-0 text-folder"

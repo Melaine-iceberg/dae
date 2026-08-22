@@ -1,0 +1,43 @@
+{
+  "backend": {
+    "fs": {
+      "content_search_local_only": "Content search only works on local folders",
+      "trash_local_only": "The Recycle Bin only works with local paths",
+      "undo_empty": "Nothing to undo",
+      "redo_empty": "Nothing to redo",
+      "undo_trash_missing": "These items are no longer in the Recycle Bin — it may have been emptied or restored",
+      "redo_trash_source_missing": "These items are no longer in their original locations, so they cannot be moved back to the Recycle Bin",
+      "terminal_local_dir_only": "A terminal can only be opened in a local folder",
+      "terminal_launch_failed": "Could not launch the terminal",
+      "terminal_not_found": "No terminal found. Install xdg-terminal-exec or set $TERMINAL",
+      "open_with_local_only": "Open With only works on local files",
+      "open_with_file_only": "Open With only works on files",
+      "open_with_unsupported": "The system Open With dialog is not supported on this platform",
+      "invalid_search_query": "Invalid search expression",
+      "ignore_rule_register_failed": "Could not register ignore rules",
+      "ignore_rule_build_failed": "Could not build ignore rules",
+      "invalid_type_filter": "Invalid type filter",
+      "type_filter_build_failed": "Could not build the type filter"
+    },
+    "term": {
+      "pty_create_failed": "Failed to create the PTY",
+      "shell_spawn_failed": "Failed to start the shell",
+      "pty_input_failed": "Failed to take over PTY input",
+      "pty_output_failed": "Failed to take over PTY output",
+      "session_missing": "The terminal session no longer exists",
+      "write_failed": "Failed to write to the terminal",
+      "resize_failed": "Failed to resize the terminal"
+    }
+  },
+  "kind": {
+    "already_exists": "An item with the same name already exists at the destination",
+    "not_found": "The item no longer exists or has been moved",
+    "permission_denied": "You don't have permission to complete this action",
+    "invalid_input": "This action cannot be completed",
+    "not_a_directory": "The destination is not a folder",
+    "not_directory": "The destination is not a folder",
+    "io": "The file system operation failed",
+    "internal": "The operation failed"
+  },
+  "withDetail": "{{base}}: {{detail}}"
+}

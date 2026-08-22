@@ -1,4 +1,5 @@
 import { useAtom } from "jotai";
+import { useTranslation } from "react-i18next";
 import { ArrowsDownUpIcon } from "@phosphor-icons/react";
 
 import {
@@ -27,18 +28,18 @@ const SORT_KEY_OPTIONS: ReadonlyArray<{
   key: ExplorerSortKey;
   label: string;
 }> = [
-  { key: "name", label: "名称" },
-  { key: "size", label: "大小" },
-  { key: "modified", label: "修改时间" },
-  { key: "type", label: "类型" },
+  { key: "name", label: "sort.keyName" },
+  { key: "size", label: "sort.keySize" },
+  { key: "modified", label: "sort.keyModified" },
+  { key: "type", label: "sort.keyType" },
 ];
 
 const SORT_ORDER_OPTIONS: ReadonlyArray<{
   label: string;
   order: ExplorerSortOrder;
 }> = [
-  { label: "升序", order: "asc" },
-  { label: "降序", order: "desc" },
+  { label: "sort.orderAscending", order: "asc" },
+  { label: "sort.orderDescending", order: "desc" },
 ];
 
 /**
@@ -47,6 +48,7 @@ const SORT_ORDER_OPTIONS: ReadonlyArray<{
  * every view mode, complementing the list-view column headers.
  */
 export function SortMenu({ disabled }: { disabled?: boolean }) {
+  const { t } = useTranslation("explorer");
   const [sortKey, setSortKey] = useAtom(sortKeyAtom);
   const [sortOrder, setSortOrder] = useAtom(sortOrderAtom);
   const [foldersFirst, setFoldersFirst] = useAtom(foldersFirstAtom);
@@ -54,17 +56,17 @@ export function SortMenu({ disabled }: { disabled?: boolean }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        aria-label="排序当前列表"
+        aria-label={t("sort.menuLabel")}
         className={cn(
           "flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-accent/70 hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground disabled:pointer-events-none disabled:opacity-50",
         )}
         disabled={disabled}
-        title="排序当前列表"
+        title={t("sort.menuLabel")}
       >
         <ArrowsDownUpIcon />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
-        <DropdownMenuLabel>排序方式</DropdownMenuLabel>
+        <DropdownMenuLabel>{t("sort.sortBy")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           onValueChange={(value) => {
             const key = value as ExplorerSortKey;
@@ -77,20 +79,20 @@ export function SortMenu({ disabled }: { disabled?: boolean }) {
         >
           {SORT_KEY_OPTIONS.map((option) => (
             <DropdownMenuRadioItem key={option.key} value={option.key}>
-              {option.label}
+              {t(option.label)}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
 
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>排序方向</DropdownMenuLabel>
+        <DropdownMenuLabel>{t("sort.direction")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           onValueChange={(value) => setSortOrder(value as ExplorerSortOrder)}
           value={sortOrder}
         >
           {SORT_ORDER_OPTIONS.map((option) => (
             <DropdownMenuRadioItem key={option.order} value={option.order}>
-              {option.label}
+              {t(option.label)}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
@@ -101,7 +103,7 @@ export function SortMenu({ disabled }: { disabled?: boolean }) {
             checked={foldersFirst}
             onCheckedChange={setFoldersFirst}
           >
-            文件夹置顶
+            {t("sort.foldersFirst")}
           </DropdownMenuCheckboxItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import {
   CaretLeftIcon,
   CaretRightIcon,
@@ -35,6 +37,7 @@ import {
 const TAB_STRIP_SCROLL_AMOUNT = 512;
 
 export function ExplorerTabs() {
+  const { t } = useTranslation("explorer");
   const tabs = useAtomValue(tabsAtom);
   const activeTabId = useAtomValue(activeTabIdAtom);
   const createTab = useSetAtom(createTabAtom);
@@ -73,14 +76,14 @@ export function ExplorerTabs() {
         data-tauri-drag-region="deep"
       >
         <StripScrollButton
-          aria-label="向左滚动标签页"
+          aria-label={t("tabs.scrollLeft")}
           direction={-1}
           onClick={() => scrollStrip(-1)}
           visible={canScroll.left}
         />
         <div
           ref={stripRef}
-          aria-label="文件标签页"
+          aria-label={t("tabs.ariaLabel")}
           className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-2 scrollbar-none [&::-webkit-scrollbar]:hidden"
           onScroll={syncScrollButtons}
           role="tablist"
@@ -89,17 +92,17 @@ export function ExplorerTabs() {
             <TabStripItem key={tab.id} isActive={tab.id === activeTabId} tab={tab} />
           ))}
           <button
-            aria-label="新建标签页"
+            aria-label={t("tabs.newTab")}
             className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={createTab}
-            title={`新建标签页 (${MOD_KEY}+T)`}
+            title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
             type="button"
           >
             <PlusIcon className="size-3.5" />
           </button>
         </div>
         <StripScrollButton
-          aria-label="向右滚动标签页"
+          aria-label={t("tabs.scrollRight")}
           direction={1}
           onClick={() => scrollStrip(1)}
           visible={canScroll.right}
@@ -153,22 +156,24 @@ function surfaceTitle(
   surface: WorkspaceSurface,
   folderTitle: string,
   spaceName: string | undefined,
+  t: TFunction,
 ): string {
   switch (surface.kind) {
     case "overview":
-      return "概览";
+      return t("tabs.overview");
     case "recents":
-      return "最近使用";
+      return t("tabs.recents");
     case "favorites":
-      return "收藏";
+      return t("tabs.favorites");
     case "space":
-      return spaceName ?? "空间";
+      return spaceName ?? t("tabs.space");
     case "folder":
       return folderTitle;
   }
 }
 
 function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }) {
+  const { t } = useTranslation("explorer");
   const activateTab = useSetAtom(activateTabAtom);
   const closeTab = useSetAtom(closeTabAtom);
   const surface = useAtomValue(tabSurfaceFamily(tab.id));
@@ -180,7 +185,12 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     surface.kind === "space"
       ? spaces?.find((space) => space.id === surface.spaceId)?.name
       : undefined;
-  const title = surfaceTitle(surface, directory?.breadcrumbs.at(-1)?.name ?? "加载中…", spaceName);
+  const title = surfaceTitle(
+    surface,
+    directory?.breadcrumbs.at(-1)?.name ?? t("tabs.loading"),
+    spaceName,
+    t,
+  );
   const elementRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -234,7 +244,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       />
       <span className="w-full truncate pr-7 pl-1.5">{title}</span>
       <button
-        aria-label={`关闭标签页 ${title}`}
+        aria-label={t("tabs.closeTab", { title })}
         className={cn(
           "absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-full transition-colors hover:bg-accent",
           isActive

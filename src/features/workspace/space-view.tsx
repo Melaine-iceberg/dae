@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { atom } from "jotai";
+import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   CheckIcon,
@@ -51,6 +52,7 @@ import {
   spacesAtom,
 } from "./spaces-atoms";
 import { getSpaceAccent } from "./space-identity";
+import { getSpaceDisplayName } from "./types";
 import { navigateToFolderAtom, openSurfaceAtom } from "./workspace-atoms";
 import { LocationCard, WorkspacePage, WorkspacePageHeader } from "./workspace-components";
 
@@ -65,6 +67,7 @@ export const spaceRenameRequestAtom = atom<string | null>(null);
  * Items are pointers — removing them here never touches the filesystem.
  */
 export function SpaceView({ spaceId }: { spaceId: string }) {
+  const { t } = useTranslation("workspace");
   const spaces = useAtomValue(spacesAtom);
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const navigateToFolder = useSetAtom(navigateToFolderAtom);
@@ -111,17 +114,17 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
 
   if (spaces !== null && space === null) {
     return (
-      <WorkspacePage aria-label="空间">
+      <WorkspacePage aria-label={t("space.ariaLabel")}>
         <Empty className="min-h-64">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <SquaresFourIcon />
             </EmptyMedia>
-            <EmptyTitle>空间不存在</EmptyTitle>
-            <EmptyDescription>它可能已被删除。</EmptyDescription>
+            <EmptyTitle>{t("space.notFoundTitle")}</EmptyTitle>
+            <EmptyDescription>{t("space.notFoundDescription")}</EmptyDescription>
           </EmptyHeader>
           <Button onClick={() => openSurface({ kind: "overview" })} size="sm" type="button">
-            返回概览
+            {t("space.backToOverview")}
           </Button>
         </Empty>
       </WorkspacePage>
@@ -129,7 +132,13 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
   }
 
   return (
-    <WorkspacePage aria-label={space ? `空间 ${space.name}` : "空间"}>
+    <WorkspacePage
+      aria-label={
+        space
+          ? t("space.ariaLabelWithName", { name: getSpaceDisplayName(space) })
+          : t("space.ariaLabel")
+      }
+    >
       {space === null ? (
         <Skeleton className="h-9 w-40 rounded-lg" />
       ) : (
@@ -137,13 +146,13 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
           actions={
             <>
               <Button
-                aria-label="重命名空间"
+                aria-label={t("space.rename")}
                 onClick={() => {
                   setRenameValue(space.name);
                   setRenaming(true);
                 }}
                 size="icon"
-                title="重命名空间"
+                title={t("space.rename")}
                 type="button"
                 variant="ghost"
               >
@@ -151,11 +160,11 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
               </Button>
               {!space.isPreset && (
                 <Button
-                  aria-label="删除空间"
+                  aria-label={t("space.delete")}
                   className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={() => setConfirmingDelete(true)}
                   size="icon"
-                  title="删除空间"
+                  title={t("space.delete")}
                   type="button"
                   variant="ghost"
                 >
@@ -175,9 +184,11 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
               <SquaresFourIcon className={cn("size-5.5", getSpaceAccent(space.id).text)} />
             </span>
           }
-          title={space.name}
+          title={getSpaceDisplayName(space)}
           description={
-            space.items.length > 0 ? `${space.items.length} 个位置` : "把相关的文件夹聚集到这里。"
+            space.items.length > 0
+              ? t("spaces.itemCount", { count: space.items.length })
+              : t("spaces.emptyHint")
           }
         />
       )}
@@ -185,7 +196,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
       {renaming && space && (
         <form className="flex max-w-sm items-center gap-2" onSubmit={submitRename}>
           <Input
-            aria-label="空间名称"
+            aria-label={t("space.nameAriaLabel")}
             autoFocus
             onChange={(event) => setRenameValue(event.target.value)}
             onFocus={(event) => event.currentTarget.select()}
@@ -197,14 +208,20 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
             }}
             value={renameValue}
           />
-          <Button aria-label="确认重命名" size="icon" title="确认" type="submit" variant="outline">
+          <Button
+            aria-label={t("space.confirmRename")}
+            size="icon"
+            title={t("space.confirm")}
+            type="submit"
+            variant="outline"
+          >
             <CheckIcon />
           </Button>
           <Button
-            aria-label="取消重命名"
+            aria-label={t("space.cancelRename")}
             onClick={() => setRenaming(false)}
             size="icon"
-            title="取消"
+            title={t("space.cancel")}
             type="button"
             variant="ghost"
           >
@@ -225,9 +242,9 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
             <EmptyMedia variant="icon">
               <SquaresFourIcon />
             </EmptyMedia>
-            <EmptyTitle>空间还是空的</EmptyTitle>
+            <EmptyTitle>{t("space.emptyTitle")}</EmptyTitle>
             <EmptyDescription>
-              把文件夹拖到侧边栏中的“{space.name}”，或在文件夹上右键选择“添加到空间”。
+              {t("space.emptyDescription", { name: getSpaceDisplayName(space) })}
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -248,22 +265,22 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
                 <ContextMenuGroup>
                   <ContextMenuItem onClick={() => navigateToFolder(item.path)}>
                     <FolderOpenIcon />
-                    打开
+                    {t("space.open")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => openInNewTab(item.path)}>
                     <TabsIcon />
-                    在新标签页打开
+                    {t("space.openInNewTab")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => void copyPath(item.path)}>
                     <ClipboardTextIcon />
-                    复制文件地址
+                    {t("space.copyPath")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
                 <ContextMenuSeparator />
                 <ContextMenuGroup>
                   <ContextMenuItem onClick={() => void removeSpaceItem(space.id, item.path)}>
                     <XIcon />
-                    从空间中移除
+                    {t("space.remove")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
               </ContextMenuContent>
@@ -275,10 +292,10 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
       <Dialog onOpenChange={setConfirmingDelete} open={confirmingDelete}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>删除空间“{space?.name}”？</DialogTitle>
-            <DialogDescription>
-              只会删除这个空间的组织方式，里面的文件夹和文件不会被删除。
-            </DialogDescription>
+            <DialogTitle>
+              {t("space.deleteTitle", { name: space ? getSpaceDisplayName(space) : "" })}
+            </DialogTitle>
+            <DialogDescription>{t("space.deleteDescription")}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button
@@ -287,7 +304,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
               type="button"
               variant="outline"
             >
-              取消
+              {t("space.cancel")}
             </Button>
             <Button
               disabled={isDeleting}
@@ -295,7 +312,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
               type="button"
               variant="destructive"
             >
-              删除空间
+              {t("space.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>

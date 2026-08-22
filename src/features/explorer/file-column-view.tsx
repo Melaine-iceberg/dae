@@ -6,6 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useAtomValue } from "jotai";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { CaretRightIcon, CircleNotchIcon, WarningIcon } from "@phosphor-icons/react";
@@ -162,6 +163,7 @@ function Pane({
   selectedCount,
   selectedPathSet,
 }: PaneProps) {
+  const { t } = useTranslation("explorer");
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: entries.length,
@@ -179,17 +181,19 @@ function Pane({
       {isLoading && (
         <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
           <CircleNotchIcon className="animate-spin" size={14} />
-          正在读取…
+          {t("explorer:columnView.loading")}
         </div>
       )}
       {!isLoading && isError && (
         <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-destructive">
           <WarningIcon size={14} />
-          无法读取此文件夹
+          {t("explorer:columnView.readError")}
         </div>
       )}
       {!isLoading && !isError && entries.length === 0 && (
-        <p className="px-2 py-1.5 text-xs text-muted-foreground">空文件夹</p>
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">
+          {t("explorer:columnView.emptyFolder")}
+        </p>
       )}
       {entries.length > 0 && (
         <div

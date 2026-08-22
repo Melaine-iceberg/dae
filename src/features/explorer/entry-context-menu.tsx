@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useTranslation } from "react-i18next";
 import {
   AppWindowIcon,
   ArchiveTrayIcon,
@@ -39,11 +40,11 @@ import type { DirectoryEntry } from "./types";
 
 const ARCHIVE_FILE_PATTERN = /\.(zip|tar|tar\.gz|tgz|7z)$/i;
 
-const COMPRESS_FORMATS: { format: ArchiveFormat; label: string }[] = [
-  { format: "zip", label: "ZIP 压缩包" },
-  { format: "tar", label: "TAR 归档" },
-  { format: "tar.gz", label: "TAR.GZ 压缩包" },
-  { format: "7z", label: "7Z 压缩包" },
+const COMPRESS_FORMATS: { format: ArchiveFormat; labelKey: string }[] = [
+  { format: "zip", labelKey: "zip" },
+  { format: "tar", labelKey: "tar" },
+  { format: "tar.gz", labelKey: "tarGz" },
+  { format: "7z", labelKey: "7z" },
 ];
 
 export function isArchiveFile(entry: DirectoryEntry): boolean {
@@ -83,6 +84,7 @@ export function EntryContextMenuContent({
   onOpen,
   onRename,
 }: EntryActions) {
+  const { t } = useTranslation("explorer");
   const spaces = useAtomValue(spacesAtom) ?? [];
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const setPropertiesTarget = useSetAtom(propertiesTargetAtom);
@@ -96,7 +98,7 @@ export function EntryContextMenuContent({
       <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onOpen}>
           <FolderOpenIcon />
-          打开
+          {t("explorer:contextMenu.open")}
           <ContextMenuShortcut>Enter</ContextMenuShortcut>
         </ContextMenuItem>
         {entry.kind === "file" && isWindowsPlatform && (
@@ -105,20 +107,20 @@ export function EntryContextMenuContent({
             onClick={() => void openWithSystemDialog(entry.path)}
           >
             <AppWindowIcon />
-            打开方式…
+            {t("explorer:contextMenu.openWith")}
           </ContextMenuItem>
         )}
         {entry.kind === "directory" && (
           <ContextMenuItem disabled={isActionDisabled} onClick={onAddToFavorites}>
             <StarIcon />
-            添加到收藏
+            {t("explorer:contextMenu.addToFavorites")}
           </ContextMenuItem>
         )}
         {entry.kind === "directory" && spaces.length > 0 && (
           <ContextMenuSub>
             <ContextMenuSubTrigger disabled={isActionDisabled}>
               <SquaresFourIcon />
-              添加到空间
+              {t("explorer:contextMenu.addToSpace")}
             </ContextMenuSubTrigger>
             <ContextMenuSubContent>
               {spaces.map((space) => (
@@ -132,40 +134,40 @@ export function EntryContextMenuContent({
         )}
         <ContextMenuItem disabled={isActionDisabled || !isSingleSelection} onClick={onRename}>
           <PencilIcon />
-          重命名
+          {t("explorer:contextMenu.rename")}
           <ContextMenuShortcut>F2</ContextMenuShortcut>
         </ContextMenuItem>
         {entry.kind === "directory" && (
           <ContextMenuItem disabled={isActionDisabled} onClick={() => void openTerminalAt(entry.path)}>
             <TerminalIcon />
-            在终端中打开
+            {t("explorer:contextMenu.openInTerminal")}
           </ContextMenuItem>
         )}
         <ContextMenuItem onClick={() => void copyEntryPath(entry.path)}>
           <ClipboardTextIcon />
-          复制文件地址
+          {t("explorer:contextMenu.copyPath")}
         </ContextMenuItem>
       </ContextMenuGroup>
       <ContextMenuSeparator />
       <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onDuplicate}>
           <FilesIcon />
-          创建副本
+          {t("explorer:contextMenu.duplicate")}
         </ContextMenuItem>
         <ContextMenuSub>
           <ContextMenuSubTrigger disabled={isActionDisabled}>
             <FileZipIcon />
-            压缩为…
+            {t("explorer:contextMenu.compressAs")}
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
-            {COMPRESS_FORMATS.map(({ format, label }) => (
+            {COMPRESS_FORMATS.map(({ format, labelKey }) => (
               <ContextMenuItem
                 key={format}
                 disabled={isActionDisabled}
                 onClick={() => onCompress(format)}
               >
                 <FileZipIcon />
-                {label}
+                {t(`explorer:compressFormats.${labelKey}`)}
               </ContextMenuItem>
             ))}
           </ContextMenuSubContent>
@@ -173,24 +175,24 @@ export function EntryContextMenuContent({
         {isArchiveFile(entry) && (
           <ContextMenuItem disabled={isActionDisabled} onClick={() => onExtract(entry.path)}>
             <ArchiveTrayIcon />
-            解压到此处
+            {t("explorer:contextMenu.extractHere")}
           </ContextMenuItem>
         )}
         <ContextMenuItem disabled={isActionDisabled} onClick={onMoveTo}>
           <ArrowsOutCardinalIcon />
-          移动到…
+          {t("explorer:contextMenu.moveTo")}
         </ContextMenuItem>
       </ContextMenuGroup>
       <ContextMenuSeparator />
       <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onCopy}>
           <CopyIcon />
-          复制
+          {t("explorer:contextMenu.copy")}
           <ContextMenuShortcut>{MOD_KEY}+C</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem disabled={isActionDisabled} onClick={onCut}>
           <ScissorsIcon />
-          剪切
+          {t("explorer:contextMenu.cut")}
           <ContextMenuShortcut>{MOD_KEY}+X</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuGroup>
@@ -198,7 +200,7 @@ export function EntryContextMenuContent({
       <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onDelete} variant="destructive">
           <TrashIcon />
-          删除
+          {t("explorer:contextMenu.delete")}
           <ContextMenuShortcut>Delete</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuGroup>
@@ -209,7 +211,7 @@ export function EntryContextMenuContent({
           onClick={() => setPropertiesTarget(entry)}
         >
           <InfoIcon />
-          属性
+          {t("explorer:contextMenu.properties")}
           <ContextMenuShortcut>Alt+Enter</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuGroup>

@@ -1,4 +1,5 @@
 import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { FolderIcon } from "@phosphor-icons/react";
 
 import {
@@ -27,6 +28,7 @@ interface ExplorerBreadcrumbsProps {
 }
 
 export function ExplorerBreadcrumbs({ breadcrumbs, onNavigate }: ExplorerBreadcrumbsProps) {
+  const { t } = useTranslation("explorer");
   const containerRef = useRef<HTMLElement | null>(null);
   const itemRefs = useRef<(HTMLLIElement | null)[]>([]);
   const separatorRef = useRef<HTMLLIElement | null>(null);
@@ -109,9 +111,9 @@ export function ExplorerBreadcrumbs({ breadcrumbs, onNavigate }: ExplorerBreadcr
                   <DropdownMenuTrigger
                     render={
                       <Button
-                        aria-label="显示完整路径"
+                        aria-label={t("breadcrumbs.showFullPath")}
                         size="icon-sm"
-                        title="显示完整路径"
+                        title={t("breadcrumbs.showFullPath")}
                         type="button"
                         variant="ghost"
                         onClick={(event) => event.stopPropagation()}

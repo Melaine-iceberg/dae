@@ -10,9 +10,26 @@ use super::vfs::{FileSystemBackend, SharedBackend};
 use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock, RwLock};
 
 const STREAM_CHUNK_BYTES: usize = 256 * 1024;
+
+/// Locale-dependent token appended to duplicate names ("副本" / "copy" / …).
+/// The frontend pushes the localized token at startup and on language
+/// changes; the Chinese default keeps unit tests independent of UI state.
+static DUPLICATE_SUFFIX: LazyLock<RwLock<String>> =
+    LazyLock::new(|| RwLock::new("副本".to_owned()));
+
+/// Sets the suffix used for duplicate naming (Keep-Both conflicts and the
+/// duplicate action). Empty input is ignored to avoid corrupting names.
+pub fn set_duplicate_suffix(suffix: &str) {
+    if suffix.is_empty() {
+        return;
+    }
+    if let Ok(mut lock) = DUPLICATE_SUFFIX.write() {
+        *lock = suffix.to_owned();
+    }
+}
 
 /// One source entry paired with the backend that serves it.
 pub struct TransferSource {
@@ -395,12 +412,17 @@ pub(super) fn parent_path_of(path: &str) -> Option<String> {
 }
 
 /// "report.txt" → "report 副本.txt" → "report 副本 2.txt"; directories keep
-/// their full name because they have no extension to preserve.
+/// their full name because they have no extension to preserve. The suffix
+/// token follows the UI locale (see [`set_duplicate_suffix`]).
 pub fn duplicate_name(name: &str, attempt: u32) -> String {
+    let token = match DUPLICATE_SUFFIX.read() {
+        Ok(lock) => lock.clone(),
+        Err(poisoned) => poisoned.into_inner().to_owned(),
+    };
     let suffix = if attempt == 0 {
-        "副本".to_owned()
+        token
     } else {
-        format!("副本 {}", attempt + 1)
+        format!("{token} {}", attempt + 1)
     };
 
     let Some((stem, extension)) = name.rsplit_once('.') else {

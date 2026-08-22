@@ -85,20 +85,20 @@ pub fn terminal_create(
             pixel_width: 0,
             pixel_height: 0,
         })
-        .map_err(|error| format!("创建 PTY 失败：{error}"))?;
+        .map_err(|error| format!("term.pty_create_failed: {error}"))?;
     let mut child = pair
         .slave
         .spawn_command(command)
-        .map_err(|error| format!("启动 shell 失败：{error}"))?;
+        .map_err(|error| format!("term.shell_spawn_failed: {error}"))?;
     let killer = child.clone_killer();
     let mut writer = pair
         .master
         .take_writer()
-        .map_err(|error| format!("接管 PTY 输入失败：{error}"))?;
+        .map_err(|error| format!("term.pty_input_failed: {error}"))?;
     let mut reader = pair
         .master
         .try_clone_reader()
-        .map_err(|error| format!("接管 PTY 输出失败：{error}"))?;
+        .map_err(|error| format!("term.pty_output_failed: {error}"))?;
     // Dropping the slave keeps reads from hanging once the shell exits.
     drop(pair.slave);
 
@@ -181,11 +181,11 @@ pub fn terminal_write(state: State<'_, TerminalState>, id: u32, data: String) ->
     let mut sessions = state.sessions.lock().unwrap();
     let session = sessions
         .get_mut(&id)
-        .ok_or_else(|| "终端会话不存在".to_string())?;
+        .ok_or_else(|| "term.session_missing".to_string())?;
     session
         .writer
         .write_all(data.as_bytes())
-        .map_err(|error| format!("写入终端失败：{error}"))
+        .map_err(|error| format!("term.write_failed: {error}"))
 }
 
 /// Resizes the session's PTY to match the xterm viewport.
@@ -199,7 +199,7 @@ pub fn terminal_resize(
     let sessions = state.sessions.lock().unwrap();
     let session = sessions
         .get(&id)
-        .ok_or_else(|| "终端会话不存在".to_string())?;
+        .ok_or_else(|| "term.session_missing".to_string())?;
     session
         .master
         .resize(PtySize {
@@ -208,7 +208,7 @@ pub fn terminal_resize(
             pixel_width: 0,
             pixel_height: 0,
         })
-        .map_err(|error| format!("调整终端尺寸失败：{error}"))
+        .map_err(|error| format!("term.resize_failed: {error}"))
 }
 
 /// Kills the shell and releases every PTY handle for the session.

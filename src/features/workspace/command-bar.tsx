@@ -7,6 +7,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useTranslation } from "react-i18next";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
   ArrowClockwiseIcon,
@@ -71,6 +72,7 @@ import {
   recordRecentItem,
 } from "@/features/workspace/recents-atoms";
 import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
+import { getSpaceDisplayName } from "@/features/workspace/types";
 import {
   activeSurfaceAtom,
   navigateToFolderAtom,
@@ -88,7 +90,15 @@ const MAX_FILE_RESULTS = 12;
 const FILE_SEARCH_DEBOUNCE_MS = 220;
 const MIN_FILE_QUERY_LENGTH = 2;
 
-const GROUP_ORDER = ["搜索", "导航", "空间", "收藏", "最近", "文件", "视图"] as const;
+const GROUP_ORDER = [
+  "search",
+  "navigation",
+  "spaces",
+  "favorites",
+  "recents",
+  "files",
+  "view",
+] as const;
 type CommandGroup = (typeof GROUP_ORDER)[number];
 
 interface CommandItem {
@@ -116,6 +126,7 @@ function getActiveFolderScope(tabId: string): string | null {
  * file operations to the active explorer through the command bus.
  */
 export function CommandBar() {
+  const { t } = useTranslation("workspace");
   const [open, setOpen] = useAtom(commandBarOpenAtom);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
@@ -226,24 +237,24 @@ export function CommandBar() {
     const surfaceItems: CommandItem[] = [
       {
         id: "surface:overview",
-        group: "导航",
-        label: "前往概览",
+        group: "navigation",
+        label: t("commandBar.navigation.overview"),
         keywords: "overview home start",
         icon: HouseIcon,
         run: () => openSurface({ kind: "overview" }),
       },
       {
         id: "surface:recents",
-        group: "导航",
-        label: "前往最近使用",
+        group: "navigation",
+        label: t("commandBar.navigation.recents"),
         keywords: "recent history",
         icon: ClockCounterClockwiseIcon,
         run: () => openSurface({ kind: "recents" }),
       },
       {
         id: "surface:favorites",
-        group: "导航",
-        label: "前往收藏",
+        group: "navigation",
+        label: t("commandBar.navigation.favorites"),
         keywords: "favorites starred",
         icon: StarIcon,
         run: () => openSurface({ kind: "favorites" }),
@@ -252,8 +263,8 @@ export function CommandBar() {
 
     const spaceItems: CommandItem[] = spaces.map((space) => ({
       id: `space:${space.id}`,
-      group: "空间",
-      label: `打开空间「${space.name}」`,
+      group: "spaces",
+      label: t("commandBar.openSpace", { name: getSpaceDisplayName(space) }),
       keywords: "space workspace open",
       icon: SquaresFourIcon,
       run: () => openSurface({ kind: "space", spaceId: space.id }),
@@ -261,7 +272,7 @@ export function CommandBar() {
 
     const favoriteItems: CommandItem[] = favorites.map((favorite) => ({
       id: `favorite:${favorite.path}`,
-      group: "收藏",
+      group: "favorites",
       label: favorite.name,
       hint: favorite.path,
       keywords: "favorite open folder",
@@ -271,7 +282,7 @@ export function CommandBar() {
 
     const recentItems: CommandItem[] = recents.slice(0, MAX_RECENT_ITEMS).map((recent) => ({
       id: `recent:${recent.path}`,
-      group: "最近",
+      group: "recents",
       label: recent.name,
       hint: recent.path,
       keywords: "recent open",
@@ -289,21 +300,21 @@ export function CommandBar() {
     }> = [
       {
         id: "create-folder",
-        label: "新建文件夹",
+        label: t("commandBar.commands.createFolder"),
         keywords: "new create folder directory",
         icon: FolderPlusIcon,
         command: "create-folder",
       },
       {
         id: "create-file",
-        label: "新建文件",
+        label: t("commandBar.commands.createFile"),
         keywords: "new create file",
         icon: FilePlusIcon,
         command: "create-file",
       },
       {
         id: "rename",
-        label: "重命名",
+        label: t("commandBar.commands.rename"),
         hint: "F2",
         keywords: "rename",
         icon: PencilIcon,
@@ -311,7 +322,7 @@ export function CommandBar() {
       },
       {
         id: "delete",
-        label: "删除",
+        label: t("commandBar.commands.delete"),
         hint: "Delete",
         keywords: "delete remove trash",
         icon: TrashIcon,
@@ -319,7 +330,7 @@ export function CommandBar() {
       },
       {
         id: "copy",
-        label: "复制",
+        label: t("commandBar.commands.copy"),
         hint: `${MOD_KEY}+C`,
         keywords: "copy",
         icon: CopyIcon,
@@ -327,7 +338,7 @@ export function CommandBar() {
       },
       {
         id: "cut",
-        label: "剪切",
+        label: t("commandBar.commands.cut"),
         hint: `${MOD_KEY}+X`,
         keywords: "cut move",
         icon: ScissorsIcon,
@@ -335,7 +346,7 @@ export function CommandBar() {
       },
       {
         id: "paste",
-        label: "粘贴",
+        label: t("commandBar.commands.paste"),
         hint: `${MOD_KEY}+V`,
         keywords: "paste",
         icon: ClipboardIcon,
@@ -343,14 +354,14 @@ export function CommandBar() {
       },
       {
         id: "copy-paths",
-        label: "复制文件地址",
+        label: t("commandBar.commands.copyPaths"),
         keywords: "copy path clipboard location",
         icon: ClipboardTextIcon,
         command: "copy-paths",
       },
       {
         id: "select-all",
-        label: "全选",
+        label: t("commandBar.commands.selectAll"),
         hint: `${MOD_KEY}+A`,
         keywords: "select all",
         icon: CheckCircleIcon,
@@ -358,35 +369,35 @@ export function CommandBar() {
       },
       {
         id: "refresh",
-        label: "刷新",
+        label: t("commandBar.commands.refresh"),
         keywords: "refresh reload",
         icon: ArrowClockwiseIcon,
         command: "refresh",
       },
       {
         id: "go-back",
-        label: "后退",
+        label: t("commandBar.commands.goBack"),
         keywords: "back history navigate",
         icon: ArrowLeftIcon,
         command: "go-back",
       },
       {
         id: "go-forward",
-        label: "前进",
+        label: t("commandBar.commands.goForward"),
         keywords: "forward history navigate",
         icon: ArrowRightIcon,
         command: "go-forward",
       },
       {
         id: "go-up",
-        label: "上一级",
+        label: t("commandBar.commands.goUp"),
         keywords: "up parent navigate",
         icon: ArrowUpIcon,
         command: "go-up",
       },
       {
         id: "open-terminal",
-        label: "在终端中打开",
+        label: t("commandBar.commands.openTerminal"),
         hint: `${MOD_KEY}+\``,
         keywords: "terminal shell console open external",
         icon: TerminalIcon,
@@ -394,7 +405,7 @@ export function CommandBar() {
       },
       {
         id: "toggle-favorite",
-        label: "收藏或取消收藏当前文件夹",
+        label: t("commandBar.commands.toggleFavorite"),
         keywords: "favorite star toggle folder",
         icon: StarIcon,
         command: "toggle-favorite",
@@ -404,7 +415,7 @@ export function CommandBar() {
     const explorerCommandItems: CommandItem[] = folderActive
       ? explorerCommands.map((entry) => ({
           id: `cmd:${entry.id}`,
-          group: "文件",
+          group: "files",
           label: entry.label,
           hint: entry.hint,
           keywords: entry.keywords,
@@ -416,38 +427,38 @@ export function CommandBar() {
     const viewItems: CommandItem[] = [
       {
         id: "view:list",
-        group: "视图",
-        label: "切换到列表视图",
+        group: "view",
+        label: t("commandBar.view.switchToList"),
         keywords: "view list mode",
         icon: ListIcon,
         run: () => setViewMode("list"),
       },
       {
         id: "view:grid",
-        group: "视图",
-        label: "切换到网格视图",
+        group: "view",
+        label: t("commandBar.view.switchToGrid"),
         keywords: "view grid mode",
         icon: SquaresFourIcon,
         run: () => setViewMode("grid"),
       },
       {
         id: "view:column",
-        group: "视图",
-        label: "切换到分栏视图",
+        group: "view",
+        label: t("commandBar.view.switchToColumn"),
         keywords: "view column miller mode",
         icon: ColumnsIcon,
         run: () => setViewMode("column"),
       },
       ...(
         [
-          { key: "name", label: "按名称排序", icon: TextAaIcon },
-          { key: "modified", label: "按修改日期排序", icon: CalendarIcon },
-          { key: "type", label: "按类型排序", icon: FileIcon },
-          { key: "size", label: "按大小排序", icon: ArrowsDownUpIcon },
+          { key: "name", label: t("commandBar.view.sortByName"), icon: TextAaIcon },
+          { key: "modified", label: t("commandBar.view.sortByModified"), icon: CalendarIcon },
+          { key: "type", label: t("commandBar.view.sortByType"), icon: FileIcon },
+          { key: "size", label: t("commandBar.view.sortBySize"), icon: ArrowsDownUpIcon },
         ] as ReadonlyArray<{ icon: ComponentType<{ className?: string }>; key: ExplorerSortKey; label: string }>
       ).map<CommandItem>((entry) => ({
         id: `sort:${entry.key}`,
-        group: "视图",
+        group: "view",
         label: entry.label,
         keywords: "sort order arrange",
         icon: entry.icon,
@@ -458,30 +469,30 @@ export function CommandBar() {
       })),
       {
         id: "sort:toggle-order",
-        group: "视图",
-        label: "切换升序/降序",
+        group: "view",
+        label: t("commandBar.view.toggleSortOrder"),
         keywords: "sort order ascending descending toggle",
         icon: ArrowsDownUpIcon,
         run: () => setSortOrder((order) => (order === "asc" ? "desc" : "asc")),
       },
       {
         id: "sort:toggle-folders-first",
-        group: "视图",
-        label: "切换文件夹置顶",
+        group: "view",
+        label: t("commandBar.view.toggleFoldersFirst"),
         keywords: "sort folders first directories group top",
         icon: FolderIcon,
         run: () => setFoldersFirst((enabled) => !enabled),
       },
       ...(
         [
-          { value: "all", label: "类型过滤：全部" },
-          { value: "folders", label: "类型过滤：仅文件夹" },
-          { value: "files", label: "类型过滤：仅文件" },
-          { value: "images", label: "类型过滤：仅图片" },
+          { value: "all", label: t("commandBar.view.filterAll") },
+          { value: "folders", label: t("commandBar.view.filterFolders") },
+          { value: "files", label: t("commandBar.view.filterFiles") },
+          { value: "images", label: t("commandBar.view.filterImages") },
         ] as ReadonlyArray<{ label: string; value: ExplorerKindFilter }>
       ).map<CommandItem>((entry) => ({
         id: `filter:kind:${entry.value}`,
-        group: "视图",
+        group: "view",
         label: entry.label,
         keywords: "filter kind type",
         icon: FunnelIcon,
@@ -489,17 +500,17 @@ export function CommandBar() {
       })),
       {
         id: "filter:clear",
-        group: "视图",
-        label: "清除所有过滤器",
+        group: "view",
+        label: t("commandBar.view.clearFilters"),
         keywords: "filter clear reset",
         icon: FunnelIcon,
         run: () => setEntryFilters(DEFAULT_ENTRY_FILTERS),
       },
       ...(
         [
-          { icon: SunIcon, label: "主题：浅色", value: "light" },
-          { icon: MoonIcon, label: "主题：深色", value: "dark" },
-          { icon: MonitorIcon, label: "主题：跟随系统", value: "system" },
+          { icon: SunIcon, label: t("commandBar.view.themeLight"), value: "light" },
+          { icon: MoonIcon, label: t("commandBar.view.themeDark"), value: "dark" },
+          { icon: MonitorIcon, label: t("commandBar.view.themeSystem"), value: "system" },
         ] as ReadonlyArray<{
           icon: ComponentType<{ className?: string }>;
           label: string;
@@ -507,7 +518,7 @@ export function CommandBar() {
         }>
       ).map<CommandItem>((entry) => ({
         id: `theme:${entry.value}`,
-        group: "视图",
+        group: "view",
         label: entry.label,
         keywords: "theme appearance light dark system",
         icon: entry.icon,
@@ -515,24 +526,24 @@ export function CommandBar() {
       })),
       {
         id: "density:compact",
-        group: "视图",
-        label: "紧凑密度",
+        group: "view",
+        label: t("commandBar.view.densityCompact"),
         keywords: "density compact rows",
         icon: RowsIcon,
         run: () => setDensity("compact" satisfies ExplorerDensity),
       },
       {
         id: "density:comfortable",
-        group: "视图",
-        label: "舒适密度",
+        group: "view",
+        label: t("commandBar.view.densityComfortable"),
         keywords: "density comfortable rows",
         icon: RowsIcon,
         run: () => setDensity("comfortable" satisfies ExplorerDensity),
       },
       {
         id: "density:spacious",
-        group: "视图",
-        label: "宽松密度",
+        group: "view",
+        label: t("commandBar.view.densitySpacious"),
         keywords: "density spacious rows",
         icon: RowsIcon,
         run: () => setDensity("spacious" satisfies ExplorerDensity),
@@ -560,6 +571,7 @@ export function CommandBar() {
     setSortOrder,
     setViewMode,
     spaces,
+    t,
   ]);
 
   const trimmedQuery = query.trim();
@@ -579,7 +591,7 @@ export function CommandBar() {
 
     return fileResults.slice(0, MAX_FILE_RESULTS).map((entry) => ({
       id: `file:${entry.path}`,
-      group: "搜索",
+      group: "search",
       label: entry.name,
       hint: entry.relativePath,
       keywords: "file search",
@@ -618,6 +630,16 @@ export function CommandBar() {
 
     return groups;
   }, [results, trimmedQuery]);
+
+  const groupLabels: Record<CommandGroup, string> = {
+    search: t("commandBar.groups.search"),
+    navigation: t("commandBar.groups.navigation"),
+    spaces: t("commandBar.groups.spaces"),
+    favorites: t("commandBar.groups.favorites"),
+    recents: t("commandBar.groups.recents"),
+    files: t("commandBar.groups.files"),
+    view: t("commandBar.groups.view"),
+  };
 
   const currentIndex = Math.min(activeIndex, Math.max(results.length - 1, 0));
 
@@ -671,7 +693,7 @@ export function CommandBar() {
         className="top-20 w-full min-w-0 max-w-[min(36rem,calc(100%-2rem))] translate-y-0 gap-0 overflow-hidden rounded-3xl p-0 sm:max-w-[min(36rem,calc(100%-2rem))]"
         showCloseButton={false}
       >
-        <DialogTitle className="sr-only">命令栏</DialogTitle>
+        <DialogTitle className="sr-only">{t("commandBar.title")}</DialogTitle>
         <div className="flex items-center gap-2.5 border-b px-3.5">
           <MagnifyingGlassIcon className="size-4 shrink-0 text-muted-foreground" />
           <input
@@ -679,13 +701,13 @@ export function CommandBar() {
             aria-autocomplete="list"
             aria-controls="command-bar-results"
             aria-expanded="true"
-            aria-label="搜索命令与位置"
+            aria-label={t("commandBar.inputAriaLabel")}
             autoComplete="off"
             className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             id="command-bar-input"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleInputKeyDown}
-            placeholder="搜索命令、空间、收藏或位置…"
+            placeholder={t("commandBar.placeholder")}
             ref={inputRef}
             role="combobox"
             spellCheck={false}
@@ -697,7 +719,7 @@ export function CommandBar() {
           </kbd>
         </div>
         <div
-          aria-label="命令结果"
+          aria-label={t("commandBar.resultsAriaLabel")}
           className="max-h-80 overflow-y-auto overscroll-contain p-1.5"
           id="command-bar-results"
           ref={listRef}
@@ -706,11 +728,11 @@ export function CommandBar() {
           {results.length === 0 ? (
             isSearchingFiles ? (
               <p className="px-2.5 py-6 text-center text-[13px] text-muted-foreground">
-                正在搜索文件…
+                {t("commandBar.searchingFiles")}
               </p>
             ) : (
               <p className="px-2.5 py-6 text-center text-[13px] text-muted-foreground">
-                没有匹配“{trimmedQuery}”的命令或位置
+                {t("commandBar.noResults", { query: trimmedQuery })}
               </p>
             )
           ) : renderGroups ? (
@@ -720,7 +742,7 @@ export function CommandBar() {
                   aria-hidden="true"
                   className="px-3.5 pt-2 pb-1 text-label uppercase text-muted-foreground select-none"
                 >
-                  {section.group}
+                  {groupLabels[section.group]}
                 </p>
                 {section.entries.map((entry, localIndex) => (
                   <CommandResultRow
@@ -750,9 +772,9 @@ export function CommandBar() {
         <footer className="flex h-8 shrink-0 items-center justify-between border-t px-3.5 text-xs text-muted-foreground select-none">
           <span className="flex items-center gap-1.5">
             {isSearchingFiles && <CircleNotchIcon className="size-3 animate-spin" />}
-            ↑↓ 选择
+            {t("commandBar.footerNavigateHint")}
           </span>
-          <span>Enter 执行 · Esc 关闭</span>
+          <span>{t("commandBar.footerExecuteHint")}</span>
         </footer>
       </DialogContent>
     </Dialog>

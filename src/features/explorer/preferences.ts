@@ -1,5 +1,7 @@
 import { atomWithStorage } from "jotai/utils";
 
+import { localeCollator } from "@/i18n/format";
+
 import {
   DIRECTORY_PRESENTATION,
   OTHER_PRESENTATION,
@@ -130,7 +132,7 @@ export function applyEntryFilters(
   });
 }
 
-const NAME_COLLATOR = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
+const NAME_COLLATOR_OPTIONS: Intl.CollatorOptions = { numeric: true, sensitivity: "base" };
 
 function entryTypeLabel(entry: DirectoryEntry): string {
   switch (entry.kind) {
@@ -158,6 +160,7 @@ export function sortEntries(
   foldersFirst = true,
 ): DirectoryEntry[] {
   const direction = order === "asc" ? 1 : -1;
+  const collator = localeCollator(NAME_COLLATOR_OPTIONS);
 
   return [...entries].sort((left, right) => {
     if (foldersFirst) {
@@ -168,16 +171,16 @@ export function sortEntries(
 
     let comparison = 0;
     if (key === "name") {
-      comparison = NAME_COLLATOR.compare(left.name, right.name);
+      comparison = collator.compare(left.name, right.name);
     } else if (key === "modified") {
       comparison = (left.modifiedAt ?? 0) - (right.modifiedAt ?? 0);
     } else if (key === "size") {
       comparison = (left.size ?? 0) - (right.size ?? 0);
     } else {
-      comparison = NAME_COLLATOR.compare(entryTypeLabel(left), entryTypeLabel(right));
+      comparison = collator.compare(entryTypeLabel(left), entryTypeLabel(right));
     }
 
     if (comparison !== 0) return comparison * direction;
-    return NAME_COLLATOR.compare(left.name, right.name);
+    return collator.compare(left.name, right.name);
   });
 }
