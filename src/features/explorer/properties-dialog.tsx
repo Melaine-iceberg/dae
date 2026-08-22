@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { atom, useAtomValue, useSetAtom } from "jotai";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 
 import { i18n } from "@/i18n";
@@ -18,17 +18,13 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 
 import type { DirectoryEntry } from "./types";
+import { propertiesTargetAtom } from "./properties-atoms";
 import {
   DIRECTORY_PRESENTATION,
   OTHER_PRESENTATION,
   SYMLINK_PRESENTATION,
   getFilePresentation,
 } from "./file-icons";
-
-/** The entry whose properties dialog is open; `null` keeps the dialog closed.
- *  Kept in a global atom so any context menu (list/grid/columns) can open it
- *  without threading callbacks through every view. */
-export const propertiesTargetAtom = atom<DirectoryEntry | null>(null);
 
 const TIMESTAMP_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   year: "numeric",

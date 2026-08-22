@@ -1,20 +1,52 @@
-import { useEffect } from "react";
-import { useSetAtom } from "jotai";
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { useAtomValue, useSetAtom } from "jotai";
 
 import { events } from "@/bindings";
 import { useLocaleSync } from "@/i18n/atoms";
 import { ExplorerTabs } from "@/features/explorer/explorer-tabs";
-import { PropertiesDialog } from "@/features/explorer/properties-dialog";
+import { propertiesTargetAtom } from "@/features/explorer/properties-atoms";
 import { undoRedoAtom } from "@/features/explorer/tabs";
 import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
-import { CommandBar, commandBarOpenAtom } from "@/features/workspace/command-bar";
+import { commandBarOpenAtom } from "@/features/workspace/command-bar-atoms";
 import { applySystemTheme, watchSystemTheme } from "@/lib/theme";
+
+// Overlays that only appear on user action; their chunks load on demand so
+// the first frame stays lean.
+const PropertiesDialog = lazy(() =>
+  import("@/features/explorer/properties-dialog").then((m) => ({
+    default: m.PropertiesDialog,
+  })),
+);
+const CommandBar = lazy(() =>
+  import("@/features/workspace/command-bar").then((m) => ({ default: m.CommandBar })),
+);
+
+// The query devtools panel is debug-only; a dynamic import keeps it (and its
+// dependency subtree) out of production bundles entirely.
+const ReactQueryDevtools = import.meta.env.DEV
+  ? lazy(() =>
+      import("@tanstack/react-query-devtools").then((m) => ({
+        default: m.ReactQueryDevtools,
+      })),
+    )
+  : null;
+
+/** Latches to true the first time `open` becomes true, then stays true so
+ *  lazily loaded overlays keep their close animation and internal state. */
+function useEverOpened(open: boolean) {
+  const [opened, setOpened] = useState(open);
+  useEffect(() => {
+    if (open) setOpened(true);
+  }, [open]);
+  return opened;
+}
 
 function App() {
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
   const setTerminalVisible = useSetAtom(terminalVisibleAtom);
   const setUndoRedo = useSetAtom(undoRedoAtom);
+  const commandBarMounted = useEverOpened(useAtomValue(commandBarOpenAtom));
+  const propertiesMounted = useEverOpened(useAtomValue(propertiesTargetAtom) !== null);
 
   useLocaleSync();
 
@@ -57,9 +89,21 @@ function App() {
   return (
     <>
       <ExplorerTabs />
-      <CommandBar />
-      <PropertiesDialog />
-      <ReactQueryDevtools initialIsOpen={false} />
+      {commandBarMounted && (
+        <Suspense fallback={null}>
+          <CommandBar />
+        </Suspense>
+      )}
+      {propertiesMounted && (
+        <Suspense fallback={null}>
+          <PropertiesDialog />
+        </Suspense>
+      )}
+      {import.meta.env.DEV && ReactQueryDevtools && (
+        <Suspense fallback={null}>
+          <ReactQueryDevtools initialIsOpen={false} />
+        </Suspense>
+      )}
     </>
   );
 }

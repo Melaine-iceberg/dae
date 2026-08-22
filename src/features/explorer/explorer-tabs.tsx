@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -16,13 +16,20 @@ import {
 
 import { WindowControls } from "@/components/window-controls";
 import { Sidebar } from "@/features/sidebar/sidebar";
-import { TerminalPanel } from "@/features/terminal/terminal-panel";
+import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
 import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import { WorkspaceSurfaceView } from "@/features/workspace/workspace-surface";
 import type { WorkspaceSurface } from "@/features/workspace/types";
 import { MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
+
+// xterm and its renderer addons are only needed once the terminal panel is
+// first revealed, so they load as a separate chunk instead of delaying the
+// first frame.
+const TerminalPanel = lazy(() =>
+  import("@/features/terminal/terminal-panel").then((m) => ({ default: m.TerminalPanel })),
+);
 
 import {
   activeTabIdAtom,
@@ -42,8 +49,16 @@ export function ExplorerTabs() {
   const activeTabId = useAtomValue(activeTabIdAtom);
   const createTab = useSetAtom(createTabAtom);
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
+  const terminalVisible = useAtomValue(terminalVisibleAtom);
   const stripRef = useRef<HTMLDivElement>(null);
   const [canScroll, setCanScroll] = useState({ left: false, right: false });
+  // Keep the terminal mounted after its first reveal so the PTY session
+  // survives being hidden; before that there is nothing to keep alive.
+  const [terminalMounted, setTerminalMounted] = useState(terminalVisible);
+
+  useEffect(() => {
+    if (terminalVisible) setTerminalMounted(true);
+  }, [terminalVisible]);
 
   useEffect(() => {
     void ensureSpacesLoaded();
@@ -116,7 +131,11 @@ export function ExplorerTabs() {
           <div className="flex min-h-0 flex-1 flex-col">
             <WorkspaceSurfaceView key={activeTabId} tabId={activeTabId} />
           </div>
-          <TerminalPanel />
+          {terminalMounted && (
+            <Suspense fallback={null}>
+              <TerminalPanel />
+            </Suspense>
+          )}
         </div>
       </div>
     </div>

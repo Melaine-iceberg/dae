@@ -23,7 +23,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { commands, type ArchiveFormat } from "@/bindings";
 import { isWindowsPlatform, MOD_KEY } from "@/lib/platform";
 
-import { propertiesTargetAtom } from "./properties-dialog";
+import { propertiesTargetAtom } from "./properties-atoms";
 
 import {
   ContextMenuGroup,

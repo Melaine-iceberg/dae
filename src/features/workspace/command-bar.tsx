@@ -6,7 +6,7 @@ import {
   type ComponentType,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
@@ -82,8 +82,7 @@ import { rankByFuzzy, type RankedResult } from "@/lib/fuzzy";
 import { MOD_KEY } from "@/lib/platform";
 import { setThemePreference, type ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-
-export const commandBarOpenAtom = atom(false);
+import { commandBarOpenAtom } from "@/features/workspace/command-bar-atoms";
 
 const MAX_RECENT_ITEMS = 8;
 const MAX_FILE_RESULTS = 12;

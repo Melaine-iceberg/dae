@@ -20,7 +20,16 @@ pub fn run() {
     // dispatched before the specta registry sees them.
     let specta_handler = specta.invoke_handler();
 
-    let app = tauri::Builder::default()
+    // DevTools must be the first plugin registered so its tracing subscriber
+    // can capture every other plugin's initialization spans.
+    let app = tauri::Builder::default();
+
+    #[cfg(debug_assertions)]
+    let app = app
+        .plugin(tauri_plugin_devtools::init())
+        .plugin(tauri_plugin_dev_invoke::init());
+
+    let app = app
         // Thumbnails stream as raw image bytes through the webview's HTTP
         // stack instead of base64 `invoke` payloads, which lets the browser
         // fetch them in parallel and cache them per URL.
@@ -53,11 +62,6 @@ pub fn run() {
                 .button_id("window-maximize")
                 .build(),
         );
-
-    #[cfg(debug_assertions)]
-    let app = app
-        .plugin(tauri_plugin_devtools::init())
-        .plugin(tauri_plugin_dev_invoke::init());
 
     let app = app.build(tauri::generate_context!()).expect("error while building tauri application");
     app.run(|app_handle, event| {
