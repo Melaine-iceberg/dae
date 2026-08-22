@@ -4,19 +4,17 @@ import { useTranslation } from "react-i18next";
 import { atomWithStorage } from "jotai/utils";
 
 import { commands } from "@/bindings";
-import { DEFAULT_LOCALE, i18n, isSupportedLocale } from "./index";
+import { ensureLocaleLoaded, i18n, i18nReady, initialLocale } from "./index";
 import type { AppLocale } from "./index";
 
 /**
- * The persisted UI language. `getOnInit` mirrors what i18next already
- * resolved at startup so the atom and the instance never disagree.
+ * The persisted UI language. The fallback repeats the startup resolution
+ * (stored preference, else OS language) so the atom never depends on
+ * i18next's initialization order.
  */
-export const localeAtom = atomWithStorage<AppLocale>(
-  "app.locale",
-  isSupportedLocale(i18n.language) ? (i18n.language as AppLocale) : DEFAULT_LOCALE,
-  undefined,
-  { getOnInit: true },
-);
+export const localeAtom = atomWithStorage<AppLocale>("app.locale", initialLocale(), undefined, {
+  getOnInit: true,
+});
 
 /** Keeps i18next (and `<html lang>`) aligned with the locale atom, and
  *  pushes the locale's duplicate-name token to the backend. */
@@ -25,8 +23,14 @@ export function useLocaleSync(): void {
   const { t } = useTranslation("common");
 
   useEffect(() => {
-    if (i18n.language !== locale) void i18n.changeLanguage(locale);
-    document.documentElement.lang = locale;
+    void i18nReady.then(async () => {
+      if (i18n.language !== locale) {
+        // Non-default locales ship as lazy chunks; register before switching.
+        await ensureLocaleLoaded(locale);
+        await i18n.changeLanguage(locale);
+      }
+      document.documentElement.lang = locale;
+    });
   }, [locale]);
 
   useEffect(() => {
