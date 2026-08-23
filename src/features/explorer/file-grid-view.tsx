@@ -112,9 +112,7 @@ export function FileGridView({
 
   const columnCount = Math.max(
     1,
-    Math.floor(
-      (viewportWidth - GRID_PADDING_PX * 2 + GRID_GAP_PX) / (cellMinWidth + GRID_GAP_PX),
-    ),
+    Math.floor((viewportWidth - GRID_PADDING_PX * 2 + GRID_GAP_PX) / (cellMinWidth + GRID_GAP_PX)),
   );
   const rowCount = Math.ceil(entries.length / columnCount);
   const virtualizer = useVirtualizer({
@@ -168,10 +166,7 @@ export function FileGridView({
         aria-multiselectable="true"
         className="h-full overflow-auto"
         onPointerDown={(event) => {
-          if (
-            event.target instanceof Element &&
-            event.target.closest('[role="option"]')
-          ) {
+          if (event.target instanceof Element && event.target.closest('[role="option"]')) {
             return;
           }
           marquee.beginMarquee(event);
@@ -279,10 +274,13 @@ function GridCell({
         <div
           aria-selected={isSelected}
           className={cn(
-            "relative flex cursor-grab flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 text-center transition-[background-color,box-shadow,transform] duration-300 ease-spring-fast select-none hover:-translate-y-0.5 hover:bg-accent/60 hover:shadow-ambient-sm focus-visible:bg-accent/60 focus-visible:outline-none",
-            isSelected && "bg-selection ring-1 ring-primary/40 ring-inset",
+            // M3 Expressive cell: state-layer tints hover/focus/press; the
+            // hover lift stays, and selection trades the ring for a tonal
+            // fill plus a shape morph up the corner scale.
+            "state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 text-center transition-[background-color,border-radius,box-shadow,transform,opacity] duration-fast ease-spring-fast select-none hover:-translate-y-0.5 hover:shadow-ambient-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
+            isSelected && "rounded-2xl bg-selection",
             isDragging && "cursor-grabbing opacity-50",
-            isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
+            isDropTarget && "rounded-2xl bg-selection ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={(event) => onSelectEntry(entry, index, event)}
@@ -312,7 +310,16 @@ function GridCell({
               weight={isDirectory ? "fill" : undefined}
             />
           )}
-          <span className="line-clamp-2 text-xs leading-snug break-all">{entry.name}</span>
+          <span
+            className={cn(
+              "line-clamp-2 text-xs leading-snug break-all",
+              // Expressive type scale: the name carries the cell's weight and
+              // steps up to semibold while selected.
+              isSelected ? "font-semibold" : "font-medium",
+            )}
+          >
+            {entry.name}
+          </span>
           {entryStatus && (
             <span className="absolute right-1.5 top-1.5">
               <GitStatusBadge kind={entryStatus} />

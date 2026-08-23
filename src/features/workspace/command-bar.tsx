@@ -78,18 +78,23 @@ import {
   navigateToFolderAtom,
   openSurfaceAtom,
 } from "@/features/workspace/workspace-atoms";
-import { rankByFuzzy, type RankedResult } from "@/lib/fuzzy";
+import { fuzzyMatch, rankByFuzzy, type RankedResult } from "@/lib/fuzzy";
 import { MOD_KEY } from "@/lib/platform";
 import { setThemePreference, type ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils";
-import { commandBarOpenAtom } from "@/features/workspace/command-bar-atoms";
+import { commandBarModeAtom, commandBarOpenAtom } from "@/features/workspace/command-bar-atoms";
 
 const MAX_RECENT_ITEMS = 8;
+const MAX_PATH_RECENT_ITEMS = 12;
 const MAX_FILE_RESULTS = 12;
 const FILE_SEARCH_DEBOUNCE_MS = 220;
 const MIN_FILE_QUERY_LENGTH = 2;
 
+/** Absolute-path shapes: drive letter, home alias, UNC share, POSIX root. */
+const PATH_LIKE_PATTERN = /^([a-zA-Z]:[\\/]|~(?=$|[\\/])|\\\\|\/)/;
+
 const GROUP_ORDER = [
+  "path",
   "search",
   "navigation",
   "spaces",
@@ -127,6 +132,8 @@ function getActiveFolderScope(tabId: string): string | null {
 export function CommandBar() {
   const { t } = useTranslation("workspace");
   const [open, setOpen] = useAtom(commandBarOpenAtom);
+  const mode = useAtomValue(commandBarModeAtom);
+  const pathMode = mode === "path";
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [fileResults, setFileResults] = useState<SearchEntry[]>([]);
@@ -162,7 +169,7 @@ export function CommandBar() {
     void ensureFavoritesLoaded();
     void ensureRecentsLoaded();
     void ensureSpacesLoaded();
-  }, [ensureFavoritesLoaded, ensureRecentsLoaded, ensureSpacesLoaded, open]);
+  }, [ensureFavoritesLoaded, ensureRecentsLoaded, ensureSpacesLoaded, mode, open]);
 
   // Cancel the backend traversal whenever the surface closes or unmounts.
   useEffect(
@@ -181,7 +188,13 @@ export function CommandBar() {
    * through the backend's search generation.
    */
   useEffect(() => {
-    if (!open || query.trim().length < MIN_FILE_QUERY_LENGTH) {
+    // Path-like input in path mode is a jump target, not a name query —
+    // skip the traversal entirely.
+    if (
+      !open ||
+      query.trim().length < MIN_FILE_QUERY_LENGTH ||
+      (pathMode && PATH_LIKE_PATTERN.test(query.trim()))
+    ) {
       setFileResults([]);
       setIsSearchingFiles(false);
       return;
@@ -218,7 +231,7 @@ export function CommandBar() {
       window.clearTimeout(timeout);
       void commands.cancelSearch().catch(() => undefined);
     };
-  }, [activeTabId, folderActive, open, query]);
+  }, [activeTabId, folderActive, open, pathMode, query]);
 
   const items = useMemo<CommandItem[]>(() => {
     const openRecentItem = (recent: RecentItem) => {
@@ -279,15 +292,19 @@ export function CommandBar() {
       run: () => navigateToFolder(favorite.path),
     }));
 
-    const recentItems: CommandItem[] = recents.slice(0, MAX_RECENT_ITEMS).map((recent) => ({
-      id: `recent:${recent.path}`,
-      group: "recents",
-      label: recent.name,
-      hint: recent.path,
-      keywords: "recent open",
-      icon: recent.kind === "directory" ? FolderIcon : FileIcon,
-      run: () => openRecentItem(recent),
-    }));
+    const recentItems: CommandItem[] = recents
+      // Path mode jumps to folders; files are reachable through file search.
+      .filter((recent) => !pathMode || recent.kind === "directory")
+      .slice(0, pathMode ? MAX_PATH_RECENT_ITEMS : MAX_RECENT_ITEMS)
+      .map((recent) => ({
+        id: `recent:${recent.path}`,
+        group: "recents",
+        label: recent.name,
+        hint: recent.path,
+        keywords: "recent open",
+        icon: recent.kind === "directory" ? FolderIcon : FileIcon,
+        run: () => openRecentItem(recent),
+      }));
 
     const explorerCommands: ReadonlyArray<{
       id: string;
@@ -454,7 +471,11 @@ export function CommandBar() {
           { key: "modified", label: t("commandBar.view.sortByModified"), icon: CalendarIcon },
           { key: "type", label: t("commandBar.view.sortByType"), icon: FileIcon },
           { key: "size", label: t("commandBar.view.sortBySize"), icon: ArrowsDownUpIcon },
-        ] as ReadonlyArray<{ icon: ComponentType<{ className?: string }>; key: ExplorerSortKey; label: string }>
+        ] as ReadonlyArray<{
+          icon: ComponentType<{ className?: string }>;
+          key: ExplorerSortKey;
+          label: string;
+        }>
       ).map<CommandItem>((entry) => ({
         id: `sort:${entry.key}`,
         group: "view",
@@ -549,6 +570,12 @@ export function CommandBar() {
       },
     ];
 
+    // Path mode is a jump list: favorites + recent directories only. Commands,
+    // surfaces and view toggles stay in the Ctrl/Cmd+K mode.
+    if (pathMode) {
+      return [...favoriteItems, ...recentItems];
+    }
+
     return [
       ...surfaceItems,
       ...spaceItems,
@@ -562,6 +589,7 @@ export function CommandBar() {
     folderActive,
     navigateToFolder,
     openSurface,
+    pathMode,
     recents,
     setDensity,
     setEntryFilters,
@@ -574,6 +602,36 @@ export function CommandBar() {
   ]);
 
   const trimmedQuery = query.trim();
+
+  // Path mode's headline feature: an absolute path in the input becomes a
+  // direct jump target, with `~` expanded against the home directory.
+  const directPathItem = useMemo<CommandItem | null>(() => {
+    if (!pathMode || !PATH_LIKE_PATTERN.test(trimmedQuery)) return null;
+
+    const target = trimmedQuery;
+    return {
+      id: `path:${target}`,
+      group: "path",
+      label: t("commandBar.jumpToPath", { path: target }),
+      hint: target,
+      icon: ArrowRightIcon,
+      run: () => {
+        void (async () => {
+          let resolved = target;
+          if (resolved.startsWith("~")) {
+            const home = await commands.getHomeDirectory().catch(() => null);
+            if (!home) return;
+            // Expand `~` against the home directory and normalize separators
+            // to the platform's own (`~/project` → `C:\Users\me\project`).
+            const separator = home.includes("\\") ? "\\" : "/";
+            resolved = home + resolved.slice(1).replace(/[\\/]+/g, separator);
+          }
+          recordRecentItem(resolved, "directory", "opened");
+          navigateToFolder(resolved);
+        })();
+      },
+    };
+  }, [navigateToFolder, pathMode, t, trimmedQuery]);
 
   const fileResultItems = useMemo<CommandItem[]>(() => {
     const openSearchEntry = (entry: SearchEntry) => {
@@ -588,24 +646,39 @@ export function CommandBar() {
       });
     };
 
-    return fileResults.slice(0, MAX_FILE_RESULTS).map((entry) => ({
-      id: `file:${entry.path}`,
-      group: "search",
-      label: entry.name,
-      hint: entry.relativePath,
-      keywords: "file search",
-      icon: entry.kind === "directory" ? FolderIcon : FileIcon,
-      run: () => openSearchEntry(entry),
-    }));
-  }, [fileResults, navigateToFolder]);
+    return fileResults
+      .filter((entry) => !pathMode || entry.kind === "directory")
+      .slice(0, MAX_FILE_RESULTS)
+      .map((entry) => ({
+        id: `file:${entry.path}`,
+        group: "search",
+        label: entry.name,
+        hint: entry.relativePath,
+        keywords: "file search",
+        icon: entry.kind === "directory" ? FolderIcon : FileIcon,
+        run: () => openSearchEntry(entry),
+      }));
+  }, [fileResults, navigateToFolder, pathMode]);
 
-  const results = useMemo<RankedResult<CommandItem>[]>(
-    () =>
-      rankByFuzzy(trimmedQuery, [...items, ...fileResultItems], (item) =>
-        `${item.label} ${item.keywords ?? ""} ${item.hint ?? ""}`.trim(),
-      ),
-    [fileResultItems, items, trimmedQuery],
-  );
+  const results = useMemo<RankedResult<CommandItem>[]>(() => {
+    const ranked = rankByFuzzy(trimmedQuery, [...items, ...fileResultItems], (item) =>
+      `${item.label} ${item.keywords ?? ""} ${item.hint ?? ""}`.trim(),
+    );
+
+    // The direct jump target always leads the list; everything else ranks
+    // fuzzily beneath it.
+    if (!directPathItem) return ranked;
+
+    const jumpMatch = fuzzyMatch(trimmedQuery, directPathItem.label);
+    return [
+      {
+        item: directPathItem,
+        score: Number.POSITIVE_INFINITY,
+        matchedIndices: jumpMatch?.matchedIndices ?? [],
+      },
+      ...ranked,
+    ];
+  }, [directPathItem, fileResultItems, items, trimmedQuery]);
 
   // Grouped sections for the unfiltered list; the flattened order still
   // drives keyboard navigation.
@@ -631,6 +704,7 @@ export function CommandBar() {
   }, [results, trimmedQuery]);
 
   const groupLabels: Record<CommandGroup, string> = {
+    path: t("commandBar.groups.path"),
     search: t("commandBar.groups.search"),
     navigation: t("commandBar.groups.navigation"),
     spaces: t("commandBar.groups.spaces"),
@@ -706,7 +780,7 @@ export function CommandBar() {
             id="command-bar-input"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleInputKeyDown}
-            placeholder={t("commandBar.placeholder")}
+            placeholder={pathMode ? t("commandBar.pathPlaceholder") : t("commandBar.placeholder")}
             ref={inputRef}
             role="combobox"
             spellCheck={false}
@@ -714,7 +788,7 @@ export function CommandBar() {
             value={query}
           />
           <kbd className="shrink-0 rounded-xs border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-            {MOD_KEY} K
+            {MOD_KEY} {pathMode ? "P" : "K"}
           </kbd>
         </div>
         <div
@@ -727,11 +801,17 @@ export function CommandBar() {
           {results.length === 0 ? (
             isSearchingFiles ? (
               <p className="px-2.5 py-6 text-center text-[13px] text-muted-foreground">
-                {t("commandBar.searchingFiles")}
+                {pathMode ? t("commandBar.searchingFolders") : t("commandBar.searchingFiles")}
+              </p>
+            ) : pathMode && !trimmedQuery ? (
+              <p className="px-2.5 py-6 text-center text-[13px] text-muted-foreground">
+                {t("commandBar.noPathLocations")}
               </p>
             ) : (
               <p className="px-2.5 py-6 text-center text-[13px] text-muted-foreground">
-                {t("commandBar.noResults", { query: trimmedQuery })}
+                {pathMode
+                  ? t("commandBar.noPathResults", { query: trimmedQuery })
+                  : t("commandBar.noResults", { query: trimmedQuery })}
               </p>
             )
           ) : renderGroups ? (

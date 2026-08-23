@@ -8,9 +8,13 @@
   "sections": {
     "spaces": "空间",
     "locations": "位置",
-    "computer": "计算机",
-    "network": "网络",
+    "disks": "本地磁盘",
+    "wsl": "WSL",
+    "network": "网络存储",
     "cloudStorage": "云存储"
+  },
+  "wsl": {
+    "empty": "未检测到 WSL 发行版"
   },
   "spaces": {
     "create": "新建空间",

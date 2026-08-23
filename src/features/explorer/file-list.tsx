@@ -340,7 +340,14 @@ export function FileList({
 
     // Ctrl/Cmd+Z undoes the most recent file operation; Ctrl+Shift+Z and
     // Ctrl/Cmd+Y redo the most recently undone one.
-    if (hasModifier && !event.altKey && key === "z" && !event.shiftKey && canUndo && !actionsDisabled) {
+    if (
+      hasModifier &&
+      !event.altKey &&
+      key === "z" &&
+      !event.shiftKey &&
+      canUndo &&
+      !actionsDisabled
+    ) {
       event.preventDefault();
       onUndo();
       return;
@@ -633,10 +640,7 @@ export function FileList({
       if (bottomContent <= 0) return [];
 
       const firstRow = Math.max(0, Math.floor(topContent / rowHeight));
-      const lastRow = Math.min(
-        entries.length - 1,
-        Math.ceil(bottomContent / rowHeight) - 1,
-      );
+      const lastRow = Math.min(entries.length - 1, Math.ceil(bottomContent / rowHeight) - 1);
       if (lastRow < firstRow) return [];
 
       return entries.slice(firstRow, lastRow + 1).map((entry) => entry.path);
@@ -902,7 +906,7 @@ function SortHeaderCell({
     >
       <button
         className={cn(
-          "flex min-w-0 items-center gap-1 rounded-xs px-2.5 py-1 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "state-layer flex min-w-0 items-center gap-1 rounded-xs px-2.5 py-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
           active && "text-foreground",
           align === "right" && "flex-row-reverse",
         )}
@@ -911,7 +915,8 @@ function SortHeaderCell({
           active
             ? t("explorer:sort.activeTitle", {
                 column: label,
-                direction: order === "asc" ? t("explorer:sort.ascending") : t("explorer:sort.descending"),
+                direction:
+                  order === "asc" ? t("explorer:sort.ascending") : t("explorer:sort.descending"),
               })
             : t("explorer:sort.inactiveTitle", { column: label })
         }
@@ -994,10 +999,13 @@ function FileListRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            "grid cursor-grab items-center rounded-lg whitespace-nowrap text-[13px] transition-[background-color,box-shadow] duration-200 ease-standard select-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
-            isSelected && "bg-selection ring-1 ring-primary/40 ring-inset",
+            // M3 Expressive row: state-layer tints hover/focus/press; the
+            // row morphs from a quiet 10px rectangle into a full pill when
+            // selected, riding the spring shape scale.
+            "state-layer grid cursor-grab items-center rounded-xs whitespace-nowrap transition-[background-color,border-radius,box-shadow,opacity] duration-fast ease-spring-fast select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
+            isSelected && "rounded-full bg-selection",
             isDragging && "cursor-grabbing opacity-50",
-            isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
+            isDropTarget && "rounded-full bg-selection ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={handleSelect}
@@ -1021,7 +1029,16 @@ function FileListRow({
               size={18}
               weight={isDirectory ? "fill" : undefined}
             />
-            <span className="min-w-0 truncate">{entry.name}</span>
+            <span
+              className={cn(
+                "min-w-0 truncate text-sm",
+                // Expressive type scale: the name carries the row's weight and
+                // steps up to semibold while selected.
+                isSelected ? "font-semibold" : "font-medium",
+              )}
+            >
+              {entry.name}
+            </span>
             {entryStatus && <GitStatusBadge kind={entryStatus} />}
             {entry.relativePath && (
               <span
@@ -1032,10 +1049,12 @@ function FileListRow({
               </span>
             )}
           </div>
-          <div className="px-2.5 text-muted-foreground">{formatModifiedAt(entry.modifiedAt)}</div>
-          <div className="px-2.5 text-muted-foreground">{presentation.label}</div>
+          <div className="px-2.5 text-xs text-muted-foreground">
+            {formatModifiedAt(entry.modifiedAt)}
+          </div>
+          <div className="px-2.5 text-xs text-muted-foreground">{presentation.label}</div>
           <div
-            className="px-2.5 text-right text-muted-foreground"
+            className="px-2.5 text-right text-xs text-muted-foreground"
             title={
               entry.size === null
                 ? undefined

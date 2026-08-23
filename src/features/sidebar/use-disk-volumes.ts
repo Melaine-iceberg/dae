@@ -11,9 +11,13 @@ const NAVIGATION_REFRESH_THROTTLE_MS = 30_000;
  * Lists disk volumes and keeps them fresh: polls on an interval, refreshes when
  * the window regains focus, and (throttled) whenever the viewed path changes,
  * since moving across volumes is when capacity or removable media change.
+ *
+ * Returns `null` until the first fetch resolves so callers can tell loading
+ * apart from an empty machine. Meant to be mounted lazily (collapsed sidebar
+ * sections should not pay for the probe).
  */
-export function useDiskVolumes(viewedPath: string | null): DiskVolume[] {
-  const [volumes, setVolumes] = useState<DiskVolume[]>([]);
+export function useDiskVolumes(viewedPath: string | null): DiskVolume[] | null {
+  const [volumes, setVolumes] = useState<DiskVolume[] | null>(null);
   const lastRefreshAtRef = useRef(0);
   const refreshRef = useRef<(force?: boolean) => void>(() => {});
 

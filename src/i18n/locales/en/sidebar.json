@@ -8,9 +8,13 @@
   "sections": {
     "spaces": "Spaces",
     "locations": "Locations",
-    "computer": "Computer",
-    "network": "Network",
+    "disks": "Local disks",
+    "wsl": "WSL",
+    "network": "Network storage",
     "cloudStorage": "Cloud storage"
+  },
+  "wsl": {
+    "empty": "No WSL distributions found"
   },
   "spaces": {
     "create": "New space",

@@ -11,6 +11,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
+  CaretDownIcon,
   ClipboardTextIcon,
   CloudIcon,
   CopyIcon,
@@ -29,7 +30,7 @@ import {
   UsbIcon,
 } from "@phosphor-icons/react";
 
-import { commands, type StoredConnection } from "@/bindings";
+import { commands } from "@/bindings";
 
 import {
   ContextMenu,
@@ -58,15 +59,30 @@ import {
 import { i18n } from "@/i18n";
 import { cn, formatBytes } from "@/lib/utils";
 
-import { addFavoritePathsAtom, sidebarVisibleAtom } from "./sidebar-atoms";
+import {
+  addFavoritePathsAtom,
+  collapsedLocationSectionsAtom,
+  connectionsAtom,
+  ensureConnectionsLoadedAtom,
+  expandLocationSectionAtom,
+  reloadConnectionsAtom,
+  sidebarVisibleAtom,
+  toggleLocationSectionAtom,
+  type LocationSectionId,
+} from "./sidebar-atoms";
 import type { DiskVolume } from "./types";
 import { ConnectDialog } from "./connect-dialog";
 import { PenguinIcon } from "./penguin-icon";
 import { LanguageMenu } from "@/i18n/language-menu";
 import { ThemeMenu } from "./theme-menu";
-import { useConnections } from "./use-connections";
 import { useDiskVolumes } from "./use-disk-volumes";
 import { useWslDistros } from "./use-wsl-distros";
+
+/** WSL only exists on Windows; elsewhere the section is hidden entirely. */
+const IS_WINDOWS = navigator.userAgent.includes("Windows");
+
+/** Matches the grid-rows collapse transition (duration-normal). */
+const COLLAPSE_ANIMATION_MS = 300;
 
 /**
  * The persistent navigation rail. Follows the workspace information
@@ -89,6 +105,8 @@ function SidebarContent() {
   const spaces = useAtomValue(spacesAtom) ?? [];
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const setSpaceRenameRequest = useSetAtom(spaceRenameRequestAtom);
+  const reloadConnections = useSetAtom(reloadConnectionsAtom);
+  const expandLocationSection = useSetAtom(expandLocationSectionAtom);
   const [creatingSpace, setCreatingSpace] = useState(false);
   const [spaceName, setSpaceName] = useState("");
   const [connectOpen, setConnectOpen] = useState(false);
@@ -97,9 +115,6 @@ function SidebarContent() {
   const { directory } = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
   // Location rows highlight only while the tab actually shows a folder.
   const currentPath = surface.kind === "folder" ? (directory?.path ?? null) : null;
-  const volumes = useDiskVolumes(currentPath);
-  const wslDistros = useWslDistros();
-  const { connections, refresh: refreshConnections } = useConnections();
 
   useEffect(() => {
     void ensureSpacesLoaded();
@@ -216,40 +231,38 @@ function SidebarContent() {
         ))}
 
         <SectionLabel label={t("sections.locations")} />
-        <SubLabel label={t("sections.computer")} />
-        {volumes.map((volume) => (
-          <DiskItem
-            isActive={currentPath === volume.mountPoint}
-            key={volume.mountPoint}
-            onNavigate={navigateToFolder}
-            volume={volume}
-          />
-        ))}
-        {wslDistros.map((distro) => (
-          <FolderContextMenu isListed={false} key={distro.path} path={distro.path}>
-            <NavItem
-              icon={PenguinIcon}
-              isActive={currentPath === distro.path}
-              label={distro.name}
-              onClick={() => navigateToFolder(distro.path)}
-              title={distro.path}
-            />
-          </FolderContextMenu>
-        ))}
 
-        <NetworkSection
-          connections={connections}
-          currentPath={currentPath}
-          onAdd={() => setConnectOpen(true)}
-          onNavigate={navigateToFolder}
-          onRemoved={refreshConnections}
-        />
+        {/* Location groups are collapsed by default and mount their content
+            (and its backend queries) only on first expand, keeping cold start
+            free of disk enumeration, the `wsl.exe` probe, and store reads. */}
+        <CollapsibleSection icon={HardDriveIcon} id="disks" label={t("sections.disks")}>
+          <DisksContent currentPath={currentPath} onNavigate={navigateToFolder} />
+        </CollapsibleSection>
 
-        <SubLabel label={t("sections.cloudStorage")} />
-        <div className="flex items-center gap-2 rounded-full px-3.5 py-1.5 text-[13px] text-muted-foreground/70">
-          <CloudIcon className="size-4 shrink-0" />
-          <span className="text-xs">{t("cloud.comingSoon")}</span>
-        </div>
+        {IS_WINDOWS && (
+          <CollapsibleSection icon={PenguinIcon} id="wsl" label={t("sections.wsl")}>
+            <WslContent currentPath={currentPath} onNavigate={navigateToFolder} />
+          </CollapsibleSection>
+        )}
+
+        <CollapsibleSection
+          action={{
+            label: t("network.connectStorage"),
+            onClick: () => setConnectOpen(true),
+          }}
+          icon={GlobeIcon}
+          id="network"
+          label={t("sections.network")}
+        >
+          <NetworkContent currentPath={currentPath} onNavigate={navigateToFolder} />
+        </CollapsibleSection>
+
+        <CollapsibleSection icon={CloudIcon} id="cloud" label={t("sections.cloudStorage")}>
+          <div className="flex items-center gap-2 rounded-full px-3.5 py-1.5 text-muted-foreground/70">
+            <CloudIcon className="size-4 shrink-0" />
+            <span className="text-xs">{t("cloud.comingSoon")}</span>
+          </div>
+        </CollapsibleSection>
       </div>
 
       <div className="flex shrink-0 items-center justify-end gap-1 px-2 py-1.5">
@@ -260,12 +273,191 @@ function SidebarContent() {
       <ConnectDialog
         onOpenChange={setConnectOpen}
         onSaved={(connection) => {
-          refreshConnections();
+          void reloadConnections();
+          expandLocationSection("network");
           navigateToFolder(connection.id);
         }}
         open={connectOpen}
       />
     </nav>
+  );
+}
+
+/**
+ * A collapsible location group, M3 Expressive style: a pill header with a
+ * leading tonal icon and a spring-rotating chevron; the body expands with a
+ * grid-rows spatial spring. Children stay unmounted while collapsed (and are
+ * only mounted once expanded), so collapsed groups cost zero IPC and zero
+ * render work.
+ */
+function CollapsibleSection({
+  action,
+  children,
+  icon: Icon,
+  id,
+  label,
+}: {
+  action?: { label: string; onClick: () => void };
+  children: ReactNode;
+  icon: ComponentType<{ className?: string }>;
+  id: LocationSectionId;
+  label: string;
+}) {
+  const collapsed = useAtomValue(collapsedLocationSectionsAtom);
+  const toggle = useSetAtom(toggleLocationSectionAtom);
+  const open = !collapsed[id];
+
+  // Keep the body mounted for the duration of the collapse animation, then
+  // unmount so its hooks stop polling/querying the backend.
+  const [contentMounted, setContentMounted] = useState(open);
+  useEffect(() => {
+    if (open) {
+      setContentMounted(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setContentMounted(false), COLLAPSE_ANIMATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  return (
+    <div className="mt-1">
+      <div className="flex items-center gap-0.5">
+        <button
+          aria-expanded={open}
+          className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-full px-3.5 py-1.5 text-left text-[13px] font-medium transition-[background-color,color] duration-200 ease-spring-fast hover:bg-accent/70"
+          onClick={() => toggle(id)}
+          type="button"
+        >
+          <Icon className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+          <CaretDownIcon
+            aria-hidden="true"
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground/80 transition-transform duration-300 ease-spring-fast",
+              !open && "-rotate-90",
+            )}
+          />
+        </button>
+        {action && (
+          <button
+            aria-label={action.label}
+            className="shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+            onClick={action.onClick}
+            title={action.label}
+            type="button"
+          >
+            <PlusIcon className="size-4" />
+          </button>
+        )}
+      </div>
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-300 ease-spring-fast",
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+        )}
+      >
+        <div className="min-h-0 overflow-hidden">{contentMounted && children}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Placeholder row shown while a lazily mounted section runs its first query. */
+function SectionSkeleton() {
+  return (
+    <div aria-hidden="true" className="px-3.5 py-1">
+      <div className="h-8 animate-pulse rounded-xl bg-muted/70" />
+    </div>
+  );
+}
+
+function DisksContent({
+  currentPath,
+  onNavigate,
+}: {
+  currentPath: string | null;
+  onNavigate: (path: string) => void;
+}) {
+  const volumes = useDiskVolumes(currentPath);
+  if (volumes === null) return <SectionSkeleton />;
+
+  return volumes.map((volume) => (
+    <DiskItem
+      isActive={currentPath === volume.mountPoint}
+      key={volume.mountPoint}
+      onNavigate={onNavigate}
+      volume={volume}
+    />
+  ));
+}
+
+function WslContent({
+  currentPath,
+  onNavigate,
+}: {
+  currentPath: string | null;
+  onNavigate: (path: string) => void;
+}) {
+  const { t } = useTranslation("sidebar");
+  const distros = useWslDistros();
+  if (distros === null) return <SectionSkeleton />;
+
+  if (distros.length === 0) {
+    return <p className="px-3.5 py-1.5 text-xs text-muted-foreground">{t("wsl.empty")}</p>;
+  }
+
+  return distros.map((distro) => (
+    <FolderContextMenu isListed={false} key={distro.path} path={distro.path}>
+      <NavItem
+        icon={PenguinIcon}
+        isActive={currentPath === distro.path}
+        label={distro.name}
+        onClick={() => onNavigate(distro.path)}
+        title={distro.path}
+      />
+    </FolderContextMenu>
+  ));
+}
+
+function NetworkContent({
+  currentPath,
+  onNavigate,
+}: {
+  currentPath: string | null;
+  onNavigate: (path: string) => void;
+}) {
+  const { t } = useTranslation("sidebar");
+  const connections = useAtomValue(connectionsAtom);
+  const ensureLoaded = useSetAtom(ensureConnectionsLoadedAtom);
+
+  useEffect(() => {
+    void ensureLoaded();
+  }, [ensureLoaded]);
+
+  if (connections === null) return <SectionSkeleton />;
+
+  return (
+    <>
+      {connections.map((connection) => (
+        <ConnectionContextMenu key={connection.id} connection={connection}>
+          <NavItem
+            icon={GlobeIcon}
+            isActive={
+              currentPath === connection.id || currentPath?.startsWith(`${connection.id}/`) === true
+            }
+            label={connection.host}
+            onClick={() => onNavigate(connection.id)}
+            title={connection.id}
+          />
+        </ConnectionContextMenu>
+      ))}
+
+      {connections.length === 0 && (
+        <p className="px-3.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
+          {t("network.emptyHint")}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -294,10 +486,6 @@ function SectionLabel({
       )}
     </div>
   );
-}
-
-function SubLabel({ label }: { label: string }) {
-  return <div className="mt-2 px-2.5 pb-0.5 text-[11px] text-muted-foreground/80">{label}</div>;
 }
 
 function NavItem({
@@ -346,79 +534,25 @@ function NavItem({
   );
 }
 
-function NetworkSection({
-  connections,
-  currentPath,
-  onAdd,
-  onNavigate,
-  onRemoved,
-}: {
-  connections: StoredConnection[];
-  currentPath: string | null;
-  onAdd: () => void;
-  onNavigate: (path: string) => void;
-  onRemoved: () => void;
-}) {
-  const { t } = useTranslation("sidebar");
-  return (
-    <div className="mt-2">
-      <div className="flex items-center justify-between px-2.5 pb-0.5">
-        <span className="text-[11px] text-muted-foreground/80">{t("sections.network")}</span>
-        <button
-          aria-label={t("network.connectStorage")}
-          className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
-          onClick={onAdd}
-          title={t("network.connectStorage")}
-          type="button"
-        >
-          <PlusIcon className="size-4" />
-        </button>
-      </div>
-
-      {connections.map((connection) => (
-        <ConnectionContextMenu
-          key={connection.id}
-          onRemoved={() => {
-            void commands
-              .deleteConnection(connection.id)
-              .then(onRemoved)
-              .catch((error: unknown) => console.warn("Unable to delete connection", error));
-          }}
-          path={connection.id}
-        >
-          <NavItem
-            icon={GlobeIcon}
-            isActive={
-              currentPath === connection.id || currentPath?.startsWith(`${connection.id}/`) === true
-            }
-            label={connection.host}
-            onClick={() => onNavigate(connection.id)}
-            title={connection.id}
-          />
-        </ConnectionContextMenu>
-      ))}
-
-      {connections.length === 0 && (
-        <p className="px-2.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
-          {t("network.emptyHint")}
-        </p>
-      )}
-    </div>
-  );
-}
-
 function ConnectionContextMenu({
   children,
-  onRemoved,
-  path,
+  connection,
 }: {
   children: ReactNode;
-  onRemoved: () => void;
-  path: string;
+  connection: { id: string };
 }) {
   const { t } = useTranslation("sidebar");
   const setClipboard = useSetAtom(fileClipboardAtom);
   const openInNewTab = useSetAtom(openInNewTabAtom);
+  const reloadConnections = useSetAtom(reloadConnectionsAtom);
+  const path = connection.id;
+
+  const remove = () => {
+    void commands
+      .deleteConnection(path)
+      .then(() => reloadConnections())
+      .catch((error: unknown) => console.warn("Unable to delete connection", error));
+  };
 
   return (
     <ContextMenu>
@@ -447,7 +581,7 @@ function ConnectionContextMenu({
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
-          <ContextMenuItem onClick={onRemoved}>
+          <ContextMenuItem onClick={remove}>
             <TrashIcon />
             {t("contextMenu.removeConnection")}
           </ContextMenuItem>

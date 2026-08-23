@@ -4,9 +4,14 @@ import { commands } from "@/bindings";
 
 import type { WslDistro } from "./types";
 
-/** Lists installed WSL distros, refreshing when the window regains focus. */
-export function useWslDistros(): WslDistro[] {
-  const [distros, setDistros] = useState<WslDistro[]>([]);
+/**
+ * Lists installed WSL distros, refreshing when the window regains focus.
+ * Returns `null` until the first fetch resolves so callers can tell loading
+ * apart from "no distros installed". Meant to be mounted lazily — the probe
+ * spawns `wsl.exe`, which cold start should never pay for.
+ */
+export function useWslDistros(): WslDistro[] | null {
+  const [distros, setDistros] = useState<WslDistro[] | null>(null);
 
   useEffect(() => {
     let disposed = false;

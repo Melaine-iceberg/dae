@@ -86,13 +86,11 @@ pub fn get_system_places(app: tauri::AppHandle) -> Result<Vec<SystemPlace>, File
         .collect())
 }
 
-/// Lists local disk volumes with capacity information for the sidebar's devices section.
+/// Lists local disk volumes with capacity information for the sidebar's disks
+/// section. Called lazily — only when the user expands the section.
 #[tauri::command]
 #[specta::specta]
-pub async fn list_disks(app: tauri::AppHandle) -> Result<Vec<DiskVolume>, FileSystemError> {
-    if let Some(disks) = app.state::<super::prefetch::StartupPrefetch>().take_disks() {
-        return Ok(disks);
-    }
+pub async fn list_disks() -> Result<Vec<DiskVolume>, FileSystemError> {
     tauri::async_runtime::spawn_blocking(list_disks_sync)
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))
@@ -103,15 +101,12 @@ pub async fn list_disks(app: tauri::AppHandle) -> Result<Vec<DiskVolume>, FileSy
 /// The `\\wsl$` share root only exposes running distros, so discovery goes
 /// through `wsl.exe` instead; each distro stays reachable at `\\wsl$\<name>`
 /// because accessing that path auto-starts a stopped distro.
+///
+/// Called lazily — only when the user expands the section — since the probe
+/// spawns `wsl.exe` and must not run on the cold-start path.
 #[tauri::command]
 #[specta::specta]
-pub async fn list_wsl_distros(app: tauri::AppHandle) -> Result<Vec<WslDistro>, FileSystemError> {
-    if let Some(distros) = app
-        .state::<super::prefetch::StartupPrefetch>()
-        .take_wsl_distros()
-    {
-        return Ok(distros);
-    }
+pub async fn list_wsl_distros() -> Result<Vec<WslDistro>, FileSystemError> {
     tauri::async_runtime::spawn_blocking(list_wsl_distros_sync)
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))

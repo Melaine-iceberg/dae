@@ -1,11 +1,60 @@
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
-import { commands } from "@/bindings";
+import { commands, type StoredConnection } from "@/bindings";
 
 import type { Favorite, PlaceKind } from "./types";
 
 export const sidebarVisibleAtom = atomWithStorage("sidebar-visible", true);
+
+/** Collapsible location groups in the sidebar. All start collapsed so cold
+ *  start never pays for disk enumeration, the `wsl.exe` probe, or the
+ *  connections store read — each group loads on first expand. */
+export type LocationSectionId = "disks" | "wsl" | "network" | "cloud";
+
+export const collapsedLocationSectionsAtom = atomWithStorage<
+  Record<LocationSectionId, boolean>
+>("sidebar-collapsed-locations", {
+  disks: true,
+  wsl: true,
+  network: true,
+  cloud: true,
+});
+
+export const toggleLocationSectionAtom = atom(null, (get, set, id: LocationSectionId) => {
+  const collapsed = get(collapsedLocationSectionsAtom);
+  set(collapsedLocationSectionsAtom, { ...collapsed, [id]: !collapsed[id] });
+});
+
+export const expandLocationSectionAtom = atom(null, (get, set, id: LocationSectionId) => {
+  const collapsed = get(collapsedLocationSectionsAtom);
+  if (!collapsed[id]) return;
+  set(collapsedLocationSectionsAtom, { ...collapsed, [id]: false });
+});
+
+// `null` means the connections have not been loaded yet (lazy, on first
+// expand of the network section).
+export const connectionsAtom = atom<StoredConnection[] | null>(null);
+
+export const ensureConnectionsLoadedAtom = atom(null, async (get, set) => {
+  if (get(connectionsAtom) !== null) return;
+
+  try {
+    set(connectionsAtom, await commands.listConnections());
+  } catch (error) {
+    console.warn("Unable to list connections", error);
+    set(connectionsAtom, []);
+  }
+});
+
+/** Reloads after a save/delete, regardless of current loaded state. */
+export const reloadConnectionsAtom = atom(null, async (_get, set) => {
+  try {
+    set(connectionsAtom, await commands.listConnections());
+  } catch (error) {
+    console.warn("Unable to list connections", error);
+  }
+});
 
 export const hiddenPlacesAtom = atomWithStorage<PlaceKind[]>("sidebar-hidden-places", []);
 

@@ -12,7 +12,6 @@ import {
 } from "@phosphor-icons/react";
 
 import { commands, type SystemPlace } from "@/bindings";
-import { i18n } from "@/i18n";
 
 import {
   ContextMenu,
@@ -39,12 +38,14 @@ import { ensureRecentsLoadedAtom, recentsAtom, recordRecentItem } from "./recent
 import { ensureSpacesLoadedAtom, spacesAtom } from "./spaces-atoms";
 import { getSpaceAccent } from "./space-identity";
 import { getSpaceDisplayName } from "./types";
+import { ProjectsSection } from "./projects-section";
 import { navigateToFolderAtom, openSurfaceAtom } from "./workspace-atoms";
 import {
   LocationCard,
   SectionHeader,
   WorkspacePage,
   WorkspacePageHeader,
+  formatRecentTime,
 } from "./workspace-components";
 
 const RECENTS_PREVIEW_COUNT = 6;
@@ -99,6 +100,8 @@ export function OverviewView() {
         title={t("overview.title")}
         description={t("overview.description")}
       />
+
+      <ProjectsSection recents={recents} />
 
       <section aria-label={t("overview.quickAccess")}>
         <SectionHeader title={t("overview.quickAccess")} />
@@ -279,25 +282,4 @@ export function OverviewView() {
       </section>
     </WorkspacePage>
   );
-}
-
-function formatRecentTime(accessedAt: number, yesterdayLabel: string): string {
-  const date = new Date(accessedAt);
-  const now = new Date();
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-
-  if (startOfDate === startOfToday) {
-    return date.toLocaleTimeString(i18n.language, {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    });
-  }
-
-  if (startOfToday - startOfDate === 86_400_000) {
-    return yesterdayLabel;
-  }
-
-  return date.toLocaleDateString(i18n.language, { month: "numeric", day: "numeric" });
 }

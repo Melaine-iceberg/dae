@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { i18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 import type { PhosphorIcon } from "@/features/explorer/file-icons";
@@ -112,4 +113,36 @@ export function parentPathOf(path: string): string | null {
   }
 
   return parent || trimmed[separatorIndex] || null;
+}
+
+/** Computes the final path segment for either separator style. */
+export function baseNameOf(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  const separatorIndex = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  const name = separatorIndex >= 0 ? trimmed.slice(separatorIndex + 1) : trimmed;
+
+  return name || path;
+}
+
+/** Relative timestamp for recents lists: today → HH:mm, yesterday → label,
+ *  older → M/d. */
+export function formatRecentTime(accessedAt: number, yesterdayLabel: string): string {
+  const date = new Date(accessedAt);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+
+  if (startOfDate === startOfToday) {
+    return date.toLocaleTimeString(i18n.language, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  }
+
+  if (startOfToday - startOfDate === 86_400_000) {
+    return yesterdayLabel;
+  }
+
+  return date.toLocaleDateString(i18n.language, { month: "numeric", day: "numeric" });
 }

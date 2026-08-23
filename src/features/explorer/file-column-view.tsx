@@ -287,10 +287,14 @@ function PaneRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            "absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-lg px-2.5 text-[13px] transition-colors select-none hover:bg-accent/60 focus-visible:bg-accent/60 focus-visible:outline-none",
-            (isSelected || isExpanded) && "bg-selection ring-1 ring-primary/40 ring-inset",
+            // M3 Expressive row: state-layer tints hover/focus/press; both
+            // selection and expansion morph the row into a pill on the
+            // spring shape scale.
+            "state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-xs px-2.5 select-none transition-[background-color,border-radius,opacity] duration-fast ease-spring-fast focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
+            (isSelected || isExpanded) && "rounded-full bg-selection",
             isDragging && "cursor-grabbing opacity-50",
-            dropTargetPath === entry.path && "bg-selection ring-2 ring-primary ring-inset",
+            dropTargetPath === entry.path &&
+              "rounded-full bg-selection ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={(event) => {
@@ -314,16 +318,20 @@ function PaneRow({
           title={entry.path}
         >
           <EntryIcon
-            className={cn(
-              "size-4 shrink-0",
-              isDirectory ? "text-folder" : "text-muted-foreground",
-            )}
+            className={cn("size-4 shrink-0", isDirectory ? "text-folder" : "text-muted-foreground")}
             weight={isDirectory ? "fill" : undefined}
           />
-          <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-          {isDirectory && (
-            <CaretRightIcon className="size-3 shrink-0 text-muted-foreground" />
-          )}
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-sm",
+              // Expressive type scale: the name carries the row's weight and
+              // steps up to semibold while selected or expanded.
+              isSelected || isExpanded ? "font-semibold" : "font-medium",
+            )}
+          >
+            {entry.name}
+          </span>
+          {isDirectory && <CaretRightIcon className="size-3 shrink-0 text-muted-foreground" />}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>

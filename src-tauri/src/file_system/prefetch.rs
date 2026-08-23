@@ -5,6 +5,11 @@
 //!
 //! Every slot is consumed on first hit, so a stale snapshot can never be
 //! served twice — every later call goes back to the real source.
+//!
+//! Disks and WSL distros are deliberately NOT prefetched: their sidebar
+//! sections are collapsed by default and query lazily on first expand, so
+//! warming them here would spend startup time (the WSL probe spawns
+//! `wsl.exe`) on data that is usually never shown.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -12,7 +17,7 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 use super::recents::{self, RecentItem};
-use super::sidebar::{self, DiskVolume, Favorite, SystemPlace, WslDistro};
+use super::sidebar::{self, Favorite, SystemPlace};
 use super::spaces::{self, Space};
 use super::types::{DirectoryView, path_to_string};
 use super::vfs;
@@ -21,8 +26,6 @@ use super::vfs;
 pub struct StartupPrefetch {
     directories: Mutex<HashMap<String, DirectoryView>>,
     system_places: Mutex<Option<Vec<SystemPlace>>>,
-    disks: Mutex<Option<Vec<DiskVolume>>>,
-    wsl_distros: Mutex<Option<Vec<WslDistro>>>,
     favorites: Mutex<Option<Vec<Favorite>>>,
     recents: Mutex<Option<Vec<RecentItem>>>,
     spaces: Mutex<Option<Vec<Space>>>,
@@ -47,14 +50,6 @@ impl StartupPrefetch {
         take(&self.system_places)
     }
 
-    pub fn take_disks(&self) -> Option<Vec<DiskVolume>> {
-        take(&self.disks)
-    }
-
-    pub fn take_wsl_distros(&self) -> Option<Vec<WslDistro>> {
-        take(&self.wsl_distros)
-    }
-
     pub fn take_favorites(&self) -> Option<Vec<Favorite>> {
         take(&self.favorites)
     }
@@ -70,7 +65,7 @@ impl StartupPrefetch {
 
 /// Answers the startup surface's queries on a background thread while the
 /// webview loads. A plain thread, not the async runtime: `vfs::resolve` may
-/// block on opening a network session, and the WSL probe spawns `wsl.exe`.
+/// block on opening a network session.
 pub fn warm_startup_data(app: &tauri::AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
@@ -91,13 +86,10 @@ pub fn warm_startup_data(app: &tauri::AppHandle) {
         let state = app.state::<StartupPrefetch>();
 
         // The overview and sidebar first-frame queries. Fallible reads stay
-        // uncached on failure so the real command surfaces the error; the
-        // disk and WSL probes already degrade to empty lists internally.
+        // uncached on failure so the real command surfaces the error.
         if let Ok(places) = sidebar::get_system_places(app.clone()) {
             store(&state.system_places, places);
         }
-        store(&state.disks, sidebar::list_disks_sync());
-        store(&state.wsl_distros, sidebar::list_wsl_distros_sync());
         if let Ok(favorites) = sidebar::load_favorites(app.clone()) {
             store(&state.favorites, favorites);
         }

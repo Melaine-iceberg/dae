@@ -7,7 +7,7 @@ import { ExplorerTabs } from "@/features/explorer/explorer-tabs";
 import { propertiesTargetAtom } from "@/features/explorer/properties-atoms";
 import { undoRedoAtom } from "@/features/explorer/tabs";
 import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
-import { commandBarOpenAtom } from "@/features/workspace/command-bar-atoms";
+import { commandBarModeAtom, commandBarOpenAtom } from "@/features/workspace/command-bar-atoms";
 import { applySystemTheme, watchSystemTheme } from "@/lib/theme";
 
 // Overlays that only appear on user action; their chunks load on demand so
@@ -42,10 +42,13 @@ function useEverOpened(open: boolean) {
 }
 
 function App() {
+  const commandBarOpen = useAtomValue(commandBarOpenAtom);
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
+  const commandBarMode = useAtomValue(commandBarModeAtom);
+  const setCommandBarMode = useSetAtom(commandBarModeAtom);
   const setTerminalVisible = useSetAtom(terminalVisibleAtom);
   const setUndoRedo = useSetAtom(undoRedoAtom);
-  const commandBarMounted = useEverOpened(useAtomValue(commandBarOpenAtom));
+  const commandBarMounted = useEverOpened(commandBarOpen);
   const propertiesMounted = useEverOpened(useAtomValue(propertiesTargetAtom) !== null);
 
   useLocaleSync();
@@ -65,14 +68,34 @@ function App() {
   }, [setUndoRedo]);
 
   // Global shortcuts: Ctrl/Cmd+K toggles the command bar (SKILL.md §15/§30),
-  // Ctrl+` toggles the integrated terminal (matching VS Code on all platforms).
+  // Ctrl/Cmd+P opens it in path-jump mode (matching VS Code's Quick Open),
+  // Ctrl+` toggles the integrated terminal.
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.isComposing) return;
 
       if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        setCommandBarOpen((open) => !open);
+        // A second Ctrl+K in command mode toggles the surface closed; from
+        // path mode it switches flavors without closing.
+        if (commandBarOpen && commandBarMode === "commands") {
+          setCommandBarOpen(false);
+        } else {
+          setCommandBarMode("commands");
+          setCommandBarOpen(true);
+        }
+        return;
+      }
+
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        // A second Ctrl+P while already jumping closes the surface.
+        if (commandBarOpen && commandBarMode === "path") {
+          setCommandBarOpen(false);
+        } else {
+          setCommandBarMode("path");
+          setCommandBarOpen(true);
+        }
         return;
       }
 
@@ -84,7 +107,7 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [setCommandBarOpen, setTerminalVisible]);
+  }, [commandBarMode, commandBarOpen, setCommandBarMode, setCommandBarOpen, setTerminalVisible]);
 
   return (
     <>
