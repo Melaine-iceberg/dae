@@ -174,17 +174,11 @@ impl UndoRedoState {
     }
 
     pub fn pop_undo(&self) -> Option<Operation> {
-        self.undo
-            .lock()
-            .expect("undo stack lock poisoned")
-            .pop()
+        self.undo.lock().expect("undo stack lock poisoned").pop()
     }
 
     pub fn pop_redo(&self) -> Option<Operation> {
-        self.redo
-            .lock()
-            .expect("redo stack lock poisoned")
-            .pop()
+        self.redo.lock().expect("redo stack lock poisoned").pop()
     }
 
     /// Pushes the (possibly updated) operation a finished undo produced.
@@ -238,7 +232,7 @@ pub fn execute_undo(
         Operation::Move { transfers } => {
             let undone = undo_move(&transfers, progress)?;
             let count = undone.len() as u64;
-            let redo = (!undone.is_empty()).then(|| Operation::Move { transfers: undone });
+            let redo = (!undone.is_empty()).then_some(Operation::Move { transfers: undone });
             Ok((count, redo))
         }
         Operation::Rename { from, to } => {
@@ -252,7 +246,7 @@ pub fn execute_undo(
         } => {
             let removed = trash_or_delete(&created, progress)?;
             let count = removed.len() as u64;
-            let redo = (!removed.is_empty()).then(|| Operation::Copy {
+            let redo = (!removed.is_empty()).then_some(Operation::Copy {
                 sources,
                 destination,
                 created: removed,
@@ -273,7 +267,7 @@ pub fn execute_undo(
         Operation::Duplicate { sources, created } => {
             let removed = trash_or_delete(&created, progress)?;
             let count = removed.len() as u64;
-            let redo = (!removed.is_empty()).then(|| Operation::Duplicate {
+            let redo = (!removed.is_empty()).then_some(Operation::Duplicate {
                 sources,
                 created: removed,
             });
@@ -292,7 +286,7 @@ pub fn execute_redo(
         Operation::Move { transfers } => {
             let redone = redo_move(&transfers, progress)?;
             let count = redone.len() as u64;
-            let undo = (!redone.is_empty()).then(|| Operation::Move { transfers: redone });
+            let undo = (!redone.is_empty()).then_some(Operation::Move { transfers: redone });
             Ok((count, undo))
         }
         Operation::Rename { from, to } => {
@@ -306,7 +300,7 @@ pub fn execute_redo(
         } => {
             let created = redo_copy(&sources, &destination, progress)?;
             let count = created.len() as u64;
-            let undo = (!created.is_empty()).then(|| Operation::Copy {
+            let undo = (!created.is_empty()).then_some(Operation::Copy {
                 sources,
                 destination,
                 created,
@@ -325,10 +319,7 @@ pub fn execute_redo(
         Operation::Duplicate { sources, .. } => {
             let created = redo_duplicate(&sources, progress)?;
             let count = created.len() as u64;
-            let undo = (!created.is_empty()).then(|| Operation::Duplicate {
-                sources,
-                created,
-            });
+            let undo = (!created.is_empty()).then_some(Operation::Duplicate { sources, created });
             Ok((count, undo))
         }
     }
@@ -386,14 +377,24 @@ fn undo_move(
     transfers: &[TransferPair],
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<Vec<TransferPair>, FileSystemError> {
-    move_pairs(transfers, |pair| &pair.destination, |pair| &pair.source, progress)
+    move_pairs(
+        transfers,
+        |pair| &pair.destination,
+        |pair| &pair.source,
+        progress,
+    )
 }
 
 fn redo_move(
     transfers: &[TransferPair],
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<Vec<TransferPair>, FileSystemError> {
-    move_pairs(transfers, |pair| &pair.source, |pair| &pair.destination, progress)
+    move_pairs(
+        transfers,
+        |pair| &pair.source,
+        |pair| &pair.destination,
+        progress,
+    )
 }
 
 /// Moves `paths` into the directory `destination`, failing when a target
@@ -420,7 +421,13 @@ fn move_entries_into(
     } else {
         let sources = resolve_sources(paths, ConflictAction::Fail)?;
         let destination_backend = vfs::resolve(destination)?;
-        transfer::move_entries(sources, destination, &destination_backend, progress, &mut journal)
+        transfer::move_entries(
+            sources,
+            destination,
+            &destination_backend,
+            progress,
+            &mut journal,
+        )
     }
 }
 
@@ -510,13 +517,16 @@ fn redo_copy(
     } else {
         let items = resolve_sources(sources, ConflictAction::KeepBoth)?;
         let destination_backend = vfs::resolve(destination)?;
-        transfer::copy_entries(items, destination, &destination_backend, progress, &mut journal)?;
+        transfer::copy_entries(
+            items,
+            destination,
+            &destination_backend,
+            progress,
+            &mut journal,
+        )?;
     }
 
-    Ok(journal
-        .into_iter()
-        .map(|pair| pair.destination)
-        .collect())
+    Ok(journal.into_iter().map(|pair| pair.destination).collect())
 }
 
 fn redo_duplicate(
@@ -565,7 +575,9 @@ fn undo_trash(
     }
 
     if to_restore.is_empty() {
-        return Err(FileSystemError::InvalidInput("fs.undo_trash_missing".into()));
+        return Err(FileSystemError::InvalidInput(
+            "fs.undo_trash_missing".into(),
+        ));
     }
 
     progress.start(to_restore.len() as u64);
@@ -657,9 +669,7 @@ fn last_segment_of(path: &str) -> Result<String, FileSystemError> {
     transfer::last_segment(path)
         .map(str::to_owned)
         .ok_or_else(|| {
-            FileSystemError::InvalidInput(format!(
-                "The root of a volume cannot be renamed: {path}"
-            ))
+            FileSystemError::InvalidInput(format!("The root of a volume cannot be renamed: {path}"))
         })
 }
 

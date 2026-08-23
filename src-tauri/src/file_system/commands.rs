@@ -7,8 +7,7 @@ use super::progress::{
 use super::transfer::{self, TransferSource};
 use super::types::{
     ConflictAction, ContentSearchResponse, DirectoryView, FileProperties, NewEntryKind,
-    PropertyChanges, SearchResponse, TransferConflict, TransferItem, TransferPair,
-    path_to_string,
+    PropertyChanges, SearchResponse, TransferConflict, TransferItem, TransferPair, path_to_string,
 };
 use super::undo::{self, Operation, TrashRecord, UndoRedoOutcome, UndoRedoState};
 use super::vfs::{self, Scheme};
@@ -81,8 +80,8 @@ pub async fn watch_directory(path: String, app: tauri::AppHandle) -> Result<(), 
         let watcher = tauri::async_runtime::spawn_blocking(move || {
             local::create_directory_watcher(PathBuf::from(path), watcher_app)
         })
-            .await
-            .map_err(|error| FileSystemError::Internal(error.to_string()))??;
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))??;
 
         app.state::<DirectoryWatcher>()
             .replace(generation, WatchHandle::Notify(watcher))
@@ -115,8 +114,8 @@ pub async fn search_directory(
         let is_current = || state.is_current(generation);
         backend.search(&path, &query, &is_current)
     })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Stops the active traversal when the search surface is dismissed.
@@ -163,8 +162,8 @@ pub async fn search_file_contents(
             &is_current,
         )
     })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Renames a single directory entry without allowing a path change.
@@ -177,21 +176,16 @@ pub async fn rename_entry(
 ) -> Result<(), FileSystemError> {
     tauri::async_runtime::spawn_blocking(move || {
         vfs::resolve(&path)?.rename_entry(&path, &new_name)?;
-        if let Some(to) = undo::renamed_path(&path, &new_name) {
-            if to != path {
-                app.state::<UndoRedoState>().record(
-                    &app,
-                    Operation::Rename {
-                        from: path,
-                        to,
-                    },
-                );
-            }
+        if let Some(to) = undo::renamed_path(&path, &new_name)
+            && to != path
+        {
+            app.state::<UndoRedoState>()
+                .record(&app, Operation::Rename { from: path, to });
         }
         Ok(())
     })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Creates a new file or directory inside an existing directory and returns its path.
@@ -214,8 +208,8 @@ pub async fn create_entry(
         );
         Ok(created)
     })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Copies entries into an existing destination directory. Each item's conflict
@@ -276,8 +270,8 @@ pub async fn copy_entries(
 
         result
     })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Moves entries into an existing destination directory. Each item's conflict
@@ -323,17 +317,13 @@ pub async fn move_entries(
             )
         };
 
-        app.state::<UndoRedoState>().record(
-            &app,
-            Operation::Move {
-                transfers: journal,
-            },
-        );
+        app.state::<UndoRedoState>()
+            .record(&app, Operation::Move { transfers: journal });
 
         result
     })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Reports the name collisions a copy/move into `destination` would hit, so
@@ -350,8 +340,8 @@ pub async fn check_transfer_conflicts(
         let destination_backend = vfs::resolve(&destination)?;
         transfer::find_conflicts(sources, &destination, &destination_backend)
     })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Permanently deletes entries. The UI must obtain confirmation before calling this command.
@@ -383,8 +373,8 @@ pub async fn delete_entries(
             transfer::delete_entries(targets, &progress)
         }
     })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 fn resolve_sources(paths: Vec<String>) -> Result<Vec<TransferSource>, FileSystemError> {
@@ -473,10 +463,8 @@ pub async fn trash_entries(
 
         // Even when a later entry fails, the ones that did reach the trash
         // stay undoable.
-        app.state::<UndoRedoState>().record(
-            &app,
-            Operation::Trash { records },
-        );
+        app.state::<UndoRedoState>()
+            .record(&app, Operation::Trash { records });
         progress.finish();
 
         if let Some(error) = first_error {
@@ -484,8 +472,8 @@ pub async fn trash_entries(
         }
         Ok(())
     })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Undoes the most recent recorded operation (move, rename, copy, trash,
@@ -534,8 +522,8 @@ pub async fn undo_operation(
             }
         }
     })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Re-applies the most recent undone operation and returns toast text
@@ -582,8 +570,8 @@ pub async fn redo_operation(
             }
         }
     })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Duplicates entries next to their originals ("name 副本"), returning the
@@ -618,8 +606,8 @@ pub async fn duplicate_entries(
         );
         Ok(created)
     })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 fn is_local_path(path: &str) -> bool {
@@ -701,7 +689,9 @@ pub async fn open_with(path: String) -> Result<(), FileSystemError> {
 
     let file = PathBuf::from(&path);
     if !file.is_file() {
-        return Err(FileSystemError::InvalidInput("fs.open_with_file_only".into()));
+        return Err(FileSystemError::InvalidInput(
+            "fs.open_with_file_only".into(),
+        ));
     }
 
     // SHOpenWithDialog 以模态方式运行到用户关闭为止，放到阻塞线程池执行。
@@ -817,21 +807,19 @@ fn open_system_terminal(directory: &std::path::Path) -> Result<(), FileSystemErr
         }
     }
 
-    Err(FileSystemError::Internal(
-        "fs.terminal_not_found".into(),
-    ))
+    Err(FileSystemError::Internal("fs.terminal_not_found".into()))
 }
 
 #[cfg(target_os = "windows")]
 fn open_system_with_dialog(file: &Path) -> Result<(), FileSystemError> {
     use std::os::windows::ffi::OsStrExt;
 
-    use windows::core::PCWSTR;
-    use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
+    use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx, CoUninitialize};
     use windows::Win32::UI::Shell::{
-        OAIF_ALLOW_REGISTRATION, OAIF_EXEC, OAIF_REGISTER_EXT, OPENASINFO, OPEN_AS_INFO_FLAGS,
+        OAIF_ALLOW_REGISTRATION, OAIF_EXEC, OAIF_REGISTER_EXT, OPEN_AS_INFO_FLAGS, OPENASINFO,
         SHOpenWithDialog,
     };
+    use windows::core::PCWSTR;
 
     /// RAII COM 套间；S_FALSE (0x1) 表示线程已有套间，此时不能反初始化。
     struct CoApartment {
@@ -882,9 +870,7 @@ fn open_system_with_dialog(file: &Path) -> Result<(), FileSystemError> {
 
 #[cfg(not(target_os = "windows"))]
 fn open_system_with_dialog(_file: &Path) -> Result<(), FileSystemError> {
-    Err(FileSystemError::Internal(
-        "fs.open_with_unsupported".into(),
-    ))
+    Err(FileSystemError::Internal("fs.open_with_unsupported".into()))
 }
 
 /// True when every source and the destination sit on the local backend, which

@@ -201,12 +201,9 @@ fn build_transfer_plan(
                     return Err(FileSystemError::AlreadyExists(path_to_string(&target)));
                 }
                 ConflictAction::Skip => continue,
-                ConflictAction::Replace => {
-                    (target.clone(), count_entry_units(&target)?)
-                }
+                ConflictAction::Replace => (target.clone(), count_entry_units(&target)?),
                 ConflictAction::KeepBoth => {
-                    let kept =
-                        unique_sibling_path(&destination, &name, &planned_destinations)?;
+                    let kept = unique_sibling_path(&destination, name, &planned_destinations)?;
                     planned_destinations.insert(kept.clone());
                     (kept, 0)
                 }
