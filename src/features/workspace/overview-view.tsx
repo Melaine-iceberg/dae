@@ -5,13 +5,13 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import {
   ArrowRightIcon,
   ClockCounterClockwiseIcon,
-  FileTextIcon,
   FolderIcon,
   SquaresFourIcon,
   StarIcon,
 } from "@phosphor-icons/react";
 
 import { commands, type SystemPlace } from "@/bindings";
+import { cn } from "@/lib/utils";
 
 import {
   ContextMenu,
@@ -27,6 +27,11 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  DIRECTORY_PRESENTATION,
+  getFilePresentation,
+  getPresentationIconClassName,
+} from "@/features/explorer/file-icons";
 import { PLACE_PRESENTATION } from "@/features/sidebar/place-presentation";
 import {
   ensureFavoritesLoadedAtom,
@@ -96,10 +101,7 @@ export function OverviewView() {
 
   return (
     <WorkspacePage aria-label={t("overview.title")}>
-      <WorkspacePageHeader
-        title={t("overview.title")}
-        description={t("overview.description")}
-      />
+      <WorkspacePageHeader title={t("overview.title")} description={t("overview.description")} />
 
       <ProjectsSection recents={recents} />
 
@@ -179,32 +181,32 @@ export function OverviewView() {
           </Empty>
         ) : (
           <ul className="flex flex-col">
-            {recentPreview.map((item) => (
-              <li key={item.path}>
-                <button
-                  className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                  onClick={() =>
-                    openRecent(item.path, item.kind === "directory" ? "directory" : "file")
-                  }
-                  title={item.path}
-                  type="button"
-                >
-                  <FolderIcon
-                    className={item.kind === "directory" ? "size-4 shrink-0 text-folder" : "hidden"}
-                    weight="fill"
-                  />
-                  <FileTextIcon
-                    className={
-                      item.kind === "directory" ? "hidden" : "size-4 shrink-0 text-muted-foreground"
+            {recentPreview.map((item) => {
+              const presentation =
+                item.kind === "directory" ? DIRECTORY_PRESENTATION : getFilePresentation(item.name);
+              const EntryIcon = presentation.icon;
+              return (
+                <li key={item.path}>
+                  <button
+                    className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    onClick={() =>
+                      openRecent(item.path, item.kind === "directory" ? "directory" : "file")
                     }
-                  />
-                  <span className="min-w-0 flex-1 truncate text-[13px]">{item.name}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                    {formatRecentTime(item.accessedAt, t("recents.groups.yesterday"))}
-                  </span>
-                </button>
-              </li>
-            ))}
+                    title={item.path}
+                    type="button"
+                  >
+                    <EntryIcon
+                      className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
+                      weight={item.kind === "directory" ? "fill" : undefined}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[13px]">{item.name}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                      {formatRecentTime(item.accessedAt, t("recents.groups.yesterday"))}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

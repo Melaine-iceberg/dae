@@ -17,7 +17,11 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/component
 import { cn } from "@/lib/utils";
 
 import { EntryContextMenuContent } from "./entry-context-menu";
-import { DIRECTORY_PRESENTATION, getFilePresentation } from "./file-icons";
+import {
+  DIRECTORY_PRESENTATION,
+  getFilePresentation,
+  getPresentationIconClassName,
+} from "./file-icons";
 import type { MenuActions } from "./file-list";
 import { sortEntries, foldersFirstAtom, sortKeyAtom, sortOrderAtom } from "./preferences";
 import type { DirectoryEntry } from "./types";
@@ -318,7 +322,7 @@ function PaneRow({
           title={entry.path}
         >
           <EntryIcon
-            className={cn("size-4 shrink-0", isDirectory ? "text-folder" : "text-muted-foreground")}
+            className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
             weight={isDirectory ? "fill" : undefined}
           />
           <span

@@ -18,6 +18,7 @@ import type { TransferOperation } from "./drag-drop";
 import {
   DIRECTORY_PRESENTATION,
   getFilePresentation,
+  getPresentationIconClassName,
   OTHER_PRESENTATION,
   SYMLINK_PRESENTATION,
 } from "./file-icons";
@@ -110,10 +111,12 @@ export function TransferConflictDialog({
     setIndex(index + 1);
   };
 
-  const SourceIcon = kindPresentation(conflict.sourceKind, conflict.name).icon;
-  const TargetIcon = kindPresentation(conflict.targetKind, conflict.name).icon;
-  const sourceLabel = kindPresentation(conflict.sourceKind, conflict.name).label;
-  const targetLabel = kindPresentation(conflict.targetKind, conflict.name).label;
+  const sourcePresentation = kindPresentation(conflict.sourceKind, conflict.name);
+  const targetPresentation = kindPresentation(conflict.targetKind, conflict.name);
+  const SourceIcon = sourcePresentation.icon;
+  const TargetIcon = targetPresentation.icon;
+  const sourceLabel = sourcePresentation.label;
+  const targetLabel = targetPresentation.label;
 
   return (
     <Dialog
@@ -140,7 +143,11 @@ export function TransferConflictDialog({
 
         <div className="grid grid-cols-2 gap-3">
           <ConflictSideCard
-            icon={<SourceIcon className="size-5 text-muted-foreground" />}
+            icon={
+              <SourceIcon
+                className={cn("size-5", getPresentationIconClassName(sourcePresentation))}
+              />
+            }
             metadata={`${sourceLabel} · ${formatConflictSize(conflict.sourceSize)}`}
             modifiedAt={formatConflictDate(conflict.sourceModifiedAt)}
             title={conflict.name}
@@ -148,7 +155,11 @@ export function TransferConflictDialog({
           />
           <ConflictSideCard
             highlight
-            icon={<TargetIcon className="size-5 text-muted-foreground" />}
+            icon={
+              <TargetIcon
+                className={cn("size-5", getPresentationIconClassName(targetPresentation))}
+              />
+            }
             metadata={`${targetLabel} · ${formatConflictSize(conflict.targetSize)}`}
             modifiedAt={formatConflictDate(conflict.targetModifiedAt)}
             title={conflict.name}

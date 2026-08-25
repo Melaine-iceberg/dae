@@ -13,7 +13,11 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/component
 import { cn } from "@/lib/utils";
 
 import { EntryContextMenuContent } from "./entry-context-menu";
-import { DIRECTORY_PRESENTATION, getFilePresentation } from "./file-icons";
+import {
+  DIRECTORY_PRESENTATION,
+  getFilePresentation,
+  getPresentationIconClassName,
+} from "./file-icons";
 import type { MenuActions } from "./file-list";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
@@ -305,7 +309,7 @@ function GridCell({
             />
           ) : (
             <EntryIcon
-              className={cn("shrink-0", isDirectory ? "text-folder" : "text-muted-foreground")}
+              className={cn("shrink-0", getPresentationIconClassName(presentation))}
               size={iconSize}
               weight={isDirectory ? "fill" : undefined}
             />

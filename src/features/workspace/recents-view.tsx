@@ -35,6 +35,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   DIRECTORY_PRESENTATION,
   getFilePresentation,
+  getPresentationIconClassName,
   type PhosphorIcon,
 } from "@/features/explorer/file-icons";
 import { cn } from "@/lib/utils";
@@ -199,10 +200,7 @@ function RecentRow({
             type="button"
           >
             <Icon
-              className={cn(
-                "size-4 shrink-0",
-                item.kind === "directory" ? "text-folder" : "text-muted-foreground",
-              )}
+              className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
               weight={item.kind === "directory" ? "fill" : "regular"}
             />
             <span className="min-w-0 flex-1">

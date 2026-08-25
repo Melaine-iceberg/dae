@@ -21,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { localeNumber } from "@/i18n/format";
 import { translateBackendMessage } from "@/i18n/errors";
 
-import { getFilePresentation } from "./file-icons";
+import { getFilePresentation, getPresentationIconClassName } from "./file-icons";
 
 /** Content scans read every candidate file, so they debounce longer than name search. */
 const CONTENT_SEARCH_DEBOUNCE_MS = 350;
@@ -259,7 +259,7 @@ function FileMatchGroup({
   return (
     <div className="overflow-hidden rounded-lg border border-foreground/5">
       <div className="flex items-center gap-2 bg-accent/40 px-3 py-1.5">
-        <FileIcon className="size-4 shrink-0 text-muted-foreground" />
+        <FileIcon className={`size-4 shrink-0 ${getPresentationIconClassName(presentation)}`} />
         <button
           className="min-w-0 flex-1 truncate text-left text-[13px] font-medium"
           onClick={() => setExpanded((value) => !value)}

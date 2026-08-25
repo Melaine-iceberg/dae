@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { i18n } from "@/i18n";
 import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
+import { cn } from "@/lib/utils";
 import { commands, type FileProperties, type OwnerChange, type PropertyChanges } from "@/bindings";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +25,7 @@ import {
   OTHER_PRESENTATION,
   SYMLINK_PRESENTATION,
   getFilePresentation,
+  getPresentationIconClassName,
 } from "./file-icons";
 
 const TIMESTAMP_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
@@ -221,9 +223,7 @@ export function PropertiesDialog() {
       return { ...current, mode: current.mode ^ (bit << shift) };
     });
 
-  const presentation = target
-    ? kindPresentation(target.kind, target.name)
-    : DIRECTORY_PRESENTATION;
+  const presentation = target ? kindPresentation(target.kind, target.name) : DIRECTORY_PRESENTATION;
   const Icon = presentation.icon;
 
   return (
@@ -240,7 +240,10 @@ export function PropertiesDialog() {
 
         {target && (
           <div className="flex items-center gap-3">
-            <Icon className="size-8 shrink-0 text-muted-foreground" />
+            <Icon
+              className={cn("size-8 shrink-0", getPresentationIconClassName(presentation))}
+              weight={target?.kind === "directory" ? "fill" : undefined}
+            />
             <div className="min-w-0">
               <p className="truncate text-[13px] font-medium" title={target.name}>
                 {target.name}
@@ -303,11 +306,7 @@ export function PropertiesDialog() {
           <Button disabled={isSaving} onClick={close} type="button" variant="outline">
             {t("explorer:actions.close")}
           </Button>
-          <Button
-            disabled={!isDirty || isSaving}
-            onClick={() => void applyChanges()}
-            type="button"
-          >
+          <Button disabled={!isDirty || isSaving} onClick={() => void applyChanges()} type="button">
             {isSaving ? t("explorer:properties.applying") : t("explorer:properties.apply")}
           </Button>
         </DialogFooter>

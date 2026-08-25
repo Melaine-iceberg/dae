@@ -7,9 +7,10 @@ import { commands, type TextPreview } from "@/bindings";
 import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 import { getPreviewLanguage, highlightCode } from "./code-highlight";
-import { getEntryPresentation } from "./file-icons";
+import { getEntryPresentation, getPresentationIconClassName } from "./file-icons";
 import { isThumbnailSupported, ThumbnailImage } from "./thumbnail";
 import type { DirectoryEntry } from "./types";
 
@@ -152,7 +153,9 @@ export function EntryPreview({
       className="animate-in flex h-full w-[26rem] shrink-0 flex-col overflow-hidden bg-popover/95 duration-200 fade-in slide-in-from-right-2"
     >
       <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-        {VisualIcon ? <VisualIcon className="size-4 shrink-0 text-muted-foreground" /> : null}
+        {visual && VisualIcon ? (
+          <VisualIcon className={cn("size-4 shrink-0", getPresentationIconClassName(visual))} />
+        ) : null}
         <p
           className="min-w-0 flex-1 truncate text-[13px] font-medium"
           title={entry?.name ?? undefined}
@@ -224,7 +227,10 @@ export function EntryPreview({
             ) : (
               <div className="flex h-32 shrink-0 items-center justify-center rounded-xl bg-muted/40">
                 {VisualIcon ? (
-                  <VisualIcon className="size-12 text-muted-foreground/60" weight="duotone" />
+                  <VisualIcon
+                    className={cn("size-12", visual?.tone ?? "text-muted-foreground/60")}
+                    weight="duotone"
+                  />
                 ) : null}
               </div>
             )}

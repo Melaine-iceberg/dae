@@ -64,7 +64,7 @@ import {
 } from "./drag-drop";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { FileColumnView } from "./file-column-view";
-import { getEntryPresentation } from "./file-icons";
+import { getEntryPresentation, getPresentationIconClassName } from "./file-icons";
 import { FileGridView } from "./file-grid-view";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
@@ -1025,7 +1025,7 @@ function FileListRow({
         >
           <div className="flex min-w-0 items-center gap-2.5 px-3">
             <EntryIcon
-              className={cn("shrink-0", isDirectory ? "text-folder" : "text-muted-foreground")}
+              className={cn("shrink-0", getPresentationIconClassName(presentation))}
               size={18}
               weight={isDirectory ? "fill" : undefined}
             />

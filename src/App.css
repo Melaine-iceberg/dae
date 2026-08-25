@@ -10,8 +10,7 @@
     system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
     "PingFang SC", "Noto Sans", sans-serif;
   --font-mono:
-    "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Consolas, "Courier New",
-    monospace;
+    "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
 
   /* M3 Expressive emphasized type scale: punchier display/title steps for
      view headers, and a micro label step for section captions. */
@@ -58,6 +57,22 @@
 
   --color-selection: var(--selection);
   --color-folder: var(--folder);
+
+  /* File-type icon tones: category hues tuned per scheme so file kinds
+     stay scannable in both light and dark. */
+  --color-icon-pdf: var(--icon-pdf);
+  --color-icon-doc: var(--icon-doc);
+  --color-icon-sheet: var(--icon-sheet);
+  --color-icon-slide: var(--icon-slide);
+  --color-icon-image: var(--icon-image);
+  --color-icon-video: var(--icon-video);
+  --color-icon-audio: var(--icon-audio);
+  --color-icon-archive: var(--icon-archive);
+  --color-icon-code: var(--icon-code);
+  --color-icon-config: var(--icon-config);
+  --color-icon-exec: var(--icon-exec);
+  --color-icon-lock: var(--icon-lock);
+  --color-icon-font: var(--icon-font);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -168,6 +183,19 @@
   --on-error-container: #410e0b;
   --selection: #ddd8fc; /* active pills, selection */
   --folder: #f2a53a;
+  --icon-pdf: #d64545;
+  --icon-doc: #3b6fe0;
+  --icon-sheet: #2e9e63;
+  --icon-slide: #e0762f;
+  --icon-image: #159aa3;
+  --icon-video: #c94fa0;
+  --icon-audio: #9053d8;
+  --icon-archive: #a3762a;
+  --icon-code: #2085c9;
+  --icon-config: #7a7f96;
+  --icon-exec: #5b6478;
+  --icon-lock: #d4506f;
+  --icon-font: #6d5ae0;
   --destructive: #ba1a1a; /* error */
   --border: #cdcadf; /* outline-variant */
   --input: #7b7692; /* outline */
@@ -217,6 +245,19 @@
   --on-error-container: #f9dedc;
   --selection: #46416b; /* secondary-container, lifted for visibility */
   --folder: #ffc868;
+  --icon-pdf: #ff8f8f;
+  --icon-doc: #93b6ff;
+  --icon-sheet: #6fd69d;
+  --icon-slide: #ffb066;
+  --icon-image: #66d2da;
+  --icon-video: #f295d1;
+  --icon-audio: #c8a2ff;
+  --icon-archive: #dcb26a;
+  --icon-code: #7fc5ff;
+  --icon-config: #9da1b8;
+  --icon-exec: #adb4c8;
+  --icon-lock: #ff9db4;
+  --icon-font: #b5a6ff;
   --destructive: #ffb4ab; /* error */
   --border: #494665; /* outline-variant */
   --input: #938fa9; /* outline */
