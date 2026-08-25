@@ -19,6 +19,7 @@ import {
   GlobeIcon,
   HardDriveIcon,
   HouseIcon,
+  LinuxLogoIcon,
   ClockCounterClockwiseIcon,
   PencilSimpleIcon,
   PlusIcon,
@@ -72,7 +73,6 @@ import {
 } from "./sidebar-atoms";
 import type { DiskVolume } from "./types";
 import { ConnectDialog } from "./connect-dialog";
-import { PenguinIcon } from "./penguin-icon";
 import { LanguageMenu } from "@/i18n/language-menu";
 import { ThemeMenu } from "./theme-menu";
 import { useDiskVolumes } from "./use-disk-volumes";
@@ -240,7 +240,7 @@ function SidebarContent() {
         </CollapsibleSection>
 
         {IS_WINDOWS && (
-          <CollapsibleSection icon={PenguinIcon} id="wsl" label={t("sections.wsl")}>
+          <CollapsibleSection icon={LinuxLogoIcon} id="wsl" label={t("sections.wsl")}>
             <WslContent currentPath={currentPath} onNavigate={navigateToFolder} />
           </CollapsibleSection>
         )}
@@ -409,7 +409,7 @@ function WslContent({
   return distros.map((distro) => (
     <FolderContextMenu isListed={false} key={distro.path} path={distro.path}>
       <NavItem
-        icon={PenguinIcon}
+        icon={LinuxLogoIcon}
         isActive={currentPath === distro.path}
         label={distro.name}
         onClick={() => onNavigate(distro.path)}

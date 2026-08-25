@@ -15,6 +15,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { i18n } from "@/i18n";
 
 const PROTOCOL_DEFAULT_PORTS: Record<Protocol, string> = {
@@ -135,22 +142,29 @@ export function ConnectDialog({
         <form className="grid gap-4" onSubmit={submit}>
           <div className="grid gap-2">
             <Label htmlFor="connect-protocol">{t("connect.protocol")}</Label>
-            <select
-              aria-invalid={false}
-              className="h-9 rounded-lg border border-input bg-transparent px-3 text-[13px] outline-none transition-[border-color,box-shadow] duration-200 ease-spring focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50"
-              id="connect-protocol"
-              onChange={(event) => {
-                setProtocol(event.target.value as Protocol);
+            <Select
+              items={PROTOCOL_LABELS}
+              onValueChange={(value) => {
+                setProtocol(value as Protocol);
                 setTest({ status: "idle" });
               }}
               value={protocol}
             >
-              {(Object.keys(PROTOCOL_LABELS) as Protocol[]).map((candidate) => (
-                <option disabled={!AVAILABLE_PROTOCOLS.includes(candidate)} key={candidate} value={candidate}>
-                  {PROTOCOL_LABELS[candidate]}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="connect-protocol">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(PROTOCOL_LABELS) as Protocol[]).map((candidate) => (
+                  <SelectItem
+                    disabled={!AVAILABLE_PROTOCOLS.includes(candidate)}
+                    key={candidate}
+                    value={candidate}
+                  >
+                    {PROTOCOL_LABELS[candidate]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-[1fr_7rem] gap-3">
