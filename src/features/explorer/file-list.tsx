@@ -635,6 +635,14 @@ export function FileList({
       const container = scrollRef.current;
       if (!container) return [];
 
+      // Windows behavior: rows end at the last column's edge, so the
+      // marquee must cross that content box horizontally too — a band
+      // drawn over the blank area right of the columns selects nothing.
+      const rowElement = container.querySelector<HTMLElement>('[role="option"]');
+      if (!rowElement) return [];
+      const rowBounds = rowElement.getBoundingClientRect();
+      if (rect.right <= rowBounds.left || rect.left >= rowBounds.right) return [];
+
       const bounds = container.getBoundingClientRect();
       const topContent = rect.top - bounds.top + container.scrollTop - LIST_HEADER_HEIGHT_PX;
       const bottomContent = rect.bottom - bounds.top + container.scrollTop - LIST_HEADER_HEIGHT_PX;
@@ -775,10 +783,15 @@ export function FileList({
                 {virtualizer.getVirtualItems().map((virtualRow) => {
                   const entry = entries[virtualRow.index];
 
+                  // Windows detail-view geometry: rows stop at the size
+                  // column's right edge (34+11+7+6 rem = 58rem) instead of
+                  // stretching across the window, so the area right of the
+                  // columns stays blank background for clicks and marquee
+                  // starts.
                   return (
                     <div
                       key={entry.path}
-                      className="absolute inset-x-0 top-0"
+                      className="absolute left-0 top-0 w-full max-w-232"
                       style={{ transform: `translateY(${virtualRow.start}px)` }}
                     >
                       <FileListRow
