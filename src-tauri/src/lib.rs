@@ -37,6 +37,12 @@ pub fn run() {
             "thumbnail",
             file_system::preview::handle_thumbnail_protocol,
         )
+        // OS file icons (shortcuts, executables, registered file types) ride
+        // the same raw-bytes pipeline as thumbnails.
+        .register_uri_scheme_protocol(
+            "fileicon",
+            file_system::preview::handle_fileicon_protocol,
+        )
         .invoke_handler(move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
             let command = invoke.message.command();
             if command.starts_with("terminal_") {

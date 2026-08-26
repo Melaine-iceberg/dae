@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 
 import { getPreviewLanguage, highlightCode } from "./code-highlight";
 import { getEntryPresentation, getPresentationIconClassName } from "./file-icons";
+import { isNativeIconSupported, NativeIconImage } from "./native-icon";
 import { isThumbnailSupported, ThumbnailImage } from "./thumbnail";
 import type { DirectoryEntry } from "./types";
 
@@ -226,7 +227,21 @@ export function EntryPreview({
               </div>
             ) : (
               <div className="flex h-32 shrink-0 items-center justify-center rounded-xl bg-muted/40">
-                {VisualIcon ? (
+                {entry && isNativeIconSupported(entry) ? (
+                  <NativeIconImage
+                    className="size-12"
+                    entry={entry}
+                    fallback={
+                      VisualIcon ? (
+                        <VisualIcon
+                          className={cn("size-12", visual?.tone ?? "text-muted-foreground/60")}
+                          weight="duotone"
+                        />
+                      ) : null
+                    }
+                    pixelSize={48}
+                  />
+                ) : VisualIcon ? (
                   <VisualIcon
                     className={cn("size-12", visual?.tone ?? "text-muted-foreground/60")}
                     weight="duotone"

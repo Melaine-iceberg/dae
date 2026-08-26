@@ -23,6 +23,7 @@ import {
   getPresentationIconClassName,
 } from "./file-icons";
 import type { MenuActions } from "./file-list";
+import { isNativeIconSupported, NativeIconImage } from "./native-icon";
 import { sortEntries, foldersFirstAtom, sortKeyAtom, sortOrderAtom } from "./preferences";
 import type { DirectoryEntry } from "./types";
 
@@ -321,10 +322,21 @@ function PaneRow({
           tabIndex={0}
           title={entry.path}
         >
-          <EntryIcon
-            className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
-            weight={isDirectory ? "fill" : undefined}
-          />
+          {isNativeIconSupported(entry) ? (
+            <NativeIconImage
+              className="shrink-0"
+              entry={entry}
+              fallback={
+                <EntryIcon className={getPresentationIconClassName(presentation)} size={16} />
+              }
+              pixelSize={16}
+            />
+          ) : (
+            <EntryIcon
+              className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
+              weight={isDirectory ? "fill" : undefined}
+            />
+          )}
           <span
             className={cn(
               "min-w-0 flex-1 truncate text-sm",

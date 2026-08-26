@@ -36,12 +36,16 @@ const THUMBNAIL_CACHE_MAX_ENTRIES: usize = 256;
 /// Entries are `Arc`'d so lookups never clone image bytes; eviction drops
 /// the oldest entry instead of clearing the map so scrolling back through a
 /// large folder stays cache-hot.
-struct ThumbnailCache {
+struct RenderedCache {
     entries: HashMap<String, Arc<RenderedThumbnail>>,
     insertion_order: VecDeque<String>,
 }
 
-static THUMBNAIL_CACHE: Mutex<Option<ThumbnailCache>> = Mutex::new(None);
+static THUMBNAIL_CACHE: Mutex<Option<RenderedCache>> = Mutex::new(None);
+/// Icons extracted through the shell are comparatively expensive (COM +
+/// handler invocation), so the icon cache keeps more entries than thumbnails.
+static ICON_CACHE: Mutex<Option<RenderedCache>> = Mutex::new(None);
+const ICON_CACHE_MAX_ENTRIES: usize = 512;
 
 fn extension_of(path: &Path) -> String {
     path.extension()
@@ -174,7 +178,7 @@ fn render_thumbnail(
         metadata.len()
     );
 
-    if let Some(cached) = lookup_cache(&cache_key) {
+    if let Some(cached) = lookup_cache(&THUMBNAIL_CACHE, &cache_key) {
         return Ok(Some(cached));
     }
 
@@ -183,23 +187,219 @@ fn render_thumbnail(
     };
 
     let thumbnail = Arc::new(thumbnail);
-    store_cache(cache_key, Arc::clone(&thumbnail));
+    store_cache(
+        &THUMBNAIL_CACHE,
+        THUMBNAIL_CACHE_MAX_ENTRIES,
+        cache_key,
+        Arc::clone(&thumbnail),
+    );
     Ok(Some(thumbnail))
 }
 
-fn lookup_cache(cache_key: &str) -> Option<Arc<RenderedThumbnail>> {
-    THUMBNAIL_CACHE
-        .lock()
-        .ok()?
-        .as_ref()?
-        .entries
-        .get(cache_key)
-        .cloned()
+/// Serves `fileicon://localhost/?path=...&size=...` with the operating
+/// system's icon for the file (Windows shell icon extraction; other platforms
+/// answer 404 so the frontend keeps its Phosphor fallback).
+pub fn handle_fileicon_protocol(
+    _ctx: tauri::UriSchemeContext<'_, tauri::Wry>,
+    request: tauri::http::Request<Vec<u8>>,
+) -> tauri::http::Response<Vec<u8>> {
+    match request
+        .uri()
+        .query()
+        .and_then(thumbnail_request_params)
+        .map(|(path, size)| render_file_icon(&path, size))
+    {
+        Some(Ok(Some(icon))) => tauri::http::Response::builder()
+            .header("Content-Type", icon.mime)
+            // The URL embeds mtime + size, so a given URL is immutable.
+            .header("Cache-Control", "public, max-age=86400, immutable")
+            .body(icon.bytes.clone())
+            .unwrap_or_else(|_| empty_thumbnail_response(500)),
+        Some(Ok(None)) => empty_thumbnail_response(404),
+        Some(Err(_)) => empty_thumbnail_response(500),
+        None => empty_thumbnail_response(400),
+    }
 }
 
-fn store_cache(cache_key: String, thumbnail: Arc<RenderedThumbnail>) {
-    if let Ok(mut guard) = THUMBNAIL_CACHE.lock() {
-        let cache = guard.get_or_insert_with(|| ThumbnailCache {
+/// Renders the OS icon for `path_string` as PNG; `None` means the frontend
+/// should keep its type-based Phosphor icon.
+fn render_file_icon(
+    path_string: &str,
+    size: u16,
+) -> Result<Option<Arc<RenderedThumbnail>>, FileSystemError> {
+    let size = size.clamp(16, 256);
+    let path = Path::new(path_string);
+
+    let metadata = fs::metadata(path).map_err(FileSystemError::from)?;
+    if !metadata.is_file() {
+        return Ok(None);
+    }
+
+    let modified_at = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64);
+    let cache_key = format!(
+        "icon|{}|{}|{}|{size}",
+        path_string,
+        modified_at.unwrap_or(0),
+        metadata.len()
+    );
+
+    if let Some(cached) = lookup_cache(&ICON_CACHE, &cache_key) {
+        return Ok(Some(cached));
+    }
+
+    let Some(bytes) = extract_file_icon_png(path_string, u32::from(size)) else {
+        return Ok(None);
+    };
+
+    let icon = Arc::new(RenderedThumbnail {
+        mime: "image/png",
+        bytes,
+    });
+    store_cache(&ICON_CACHE, ICON_CACHE_MAX_ENTRIES, cache_key, Arc::clone(&icon));
+    Ok(Some(icon))
+}
+
+/// Windows shell icon extraction: `IShellItemImageFactory` resolves whatever
+/// Explorer would show — the target icon for `.lnk`/`.url` shortcuts, the
+/// embedded icon for executables, the registered handler icon otherwise.
+#[cfg(windows)]
+fn extract_file_icon_png(path: &str, size: u32) -> Option<Vec<u8>> {
+    use windows::Win32::Foundation::SIZE;
+    use windows::Win32::Graphics::Gdi::{
+        BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DeleteObject, GetDC, GetDIBits,
+        GetObjectW, HGDIOBJ, ReleaseDC,
+    };
+    use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
+    use windows::Win32::UI::Shell::{
+        IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_ICONONLY,
+        SIIGBF_RESIZETOFIT,
+    };
+    use windows::core::HSTRING;
+
+    unsafe {
+        // Protocol-handler threads may never have initialized COM; the shell
+        // item APIs require an apartment.
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+
+        let factory: IShellItemImageFactory =
+            SHCreateItemFromParsingName(&HSTRING::from(path), None).ok()?;
+        // ICONONLY keeps document thumbnails out — views pair these icons
+        // with their own image thumbnails.
+        let bitmap = factory
+            .GetImage(
+                SIZE {
+                    cx: size as i32,
+                    cy: size as i32,
+                },
+                SIIGBF_ICONONLY | SIIGBF_RESIZETOFIT,
+            )
+            .ok()?;
+
+        let result = (|| {
+            let mut info = BITMAP::default();
+            if GetObjectW(
+                bitmap,
+                std::mem::size_of::<BITMAP>() as i32,
+                Some(&mut info as *mut BITMAP as *mut core::ffi::c_void),
+            ) == 0
+            {
+                return None;
+            }
+            let width = info.bmWidth as usize;
+            let height = info.bmHeight as usize;
+            if width == 0 || height == 0 {
+                return None;
+            }
+
+            // Top-down 32bpp read so scanlines arrive in image order.
+            let mut header = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: info.bmWidth,
+                    biHeight: -(info.bmHeight),
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            let mut pixels = vec![0u8; width * height * 4];
+            // GetDIBits wants a real DC for format negotiation; the screen DC
+            // is process-wide and costs nothing here.
+            let dc = GetDC(None);
+            let copied = GetDIBits(
+                dc,
+                bitmap,
+                0,
+                height as u32,
+                Some(pixels.as_mut_ptr() as *mut core::ffi::c_void),
+                &mut header,
+                DIB_RGB_COLORS,
+            );
+            let _ = ReleaseDC(None, dc);
+            if copied == 0 {
+                return None;
+            }
+
+            // Shell bitmaps are BGRA; swap channels for the `image` crate.
+            for pixel in pixels.chunks_exact_mut(4) {
+                pixel.swap(0, 2);
+            }
+
+            let image = image::RgbaImage::from_raw(width as u32, height as u32, pixels)?;
+            let mut buffer = Vec::new();
+            image::DynamicImage::ImageRgba8(image)
+                .write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
+                .ok()?;
+            Some(buffer)
+        })();
+
+        let _ = DeleteObject(HGDIOBJ(bitmap.0));
+        result
+    }
+}
+
+// No shell icon extraction on other platforms yet; the frontend falls back
+// to its type-based Phosphor icons.
+#[cfg(not(windows))]
+fn extract_file_icon_png(_path: &str, _size: u32) -> Option<Vec<u8>> {
+    None
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::extract_file_icon_png;
+
+    #[test]
+    fn extracts_png_icon_for_executable() {
+        let bytes = extract_file_icon_png("C:\\Windows\\System32\\notepad.exe", 64)
+            .expect("notepad.exe exposes a shell icon");
+        assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
+        assert!(bytes.len() > 100);
+    }
+
+    #[test]
+    fn missing_path_yields_none() {
+        assert!(extract_file_icon_png("C:\\does-not-exist.lnk", 64).is_none());
+    }
+}
+
+fn lookup_cache(cache: &'static Mutex<Option<RenderedCache>>, cache_key: &str) -> Option<Arc<RenderedThumbnail>> {
+    cache.lock().ok()?.as_ref()?.entries.get(cache_key).cloned()
+}
+
+fn store_cache(
+    cache: &'static Mutex<Option<RenderedCache>>,
+    max_entries: usize,
+    cache_key: String,
+    thumbnail: Arc<RenderedThumbnail>,
+) {
+    if let Ok(mut guard) = cache.lock() {
+        let cache = guard.get_or_insert_with(|| RenderedCache {
             entries: HashMap::new(),
             insertion_order: VecDeque::new(),
         });
@@ -214,7 +414,7 @@ fn store_cache(cache_key: String, thumbnail: Arc<RenderedThumbnail>) {
             cache.insertion_order.remove(position);
         }
 
-        while cache.entries.len() >= THUMBNAIL_CACHE_MAX_ENTRIES {
+        while cache.entries.len() >= max_entries {
             let Some(oldest) = cache.insertion_order.pop_front() else {
                 break;
             };

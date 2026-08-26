@@ -68,6 +68,7 @@ import { getEntryPresentation, getPresentationIconClassName } from "./file-icons
 import { FileGridView } from "./file-grid-view";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
+import { isNativeIconSupported, NativeIconImage } from "./native-icon";
 import {
   DEFAULT_SORT_ORDER,
   DENSITY_ROW_HEIGHT,
@@ -1024,11 +1025,22 @@ function FileListRow({
           style={{ height: densityRowHeight }}
         >
           <div className="flex min-w-0 items-center gap-2.5 px-3">
-            <EntryIcon
-              className={cn("shrink-0", getPresentationIconClassName(presentation))}
-              size={18}
-              weight={isDirectory ? "fill" : undefined}
-            />
+            {isNativeIconSupported(entry) ? (
+              <NativeIconImage
+                className="shrink-0"
+                entry={entry}
+                fallback={
+                  <EntryIcon className={getPresentationIconClassName(presentation)} size={18} />
+                }
+                pixelSize={18}
+              />
+            ) : (
+              <EntryIcon
+                className={cn("shrink-0", getPresentationIconClassName(presentation))}
+                size={18}
+                weight={isDirectory ? "fill" : undefined}
+              />
+            )}
             <span
               className={cn(
                 "min-w-0 truncate text-sm",

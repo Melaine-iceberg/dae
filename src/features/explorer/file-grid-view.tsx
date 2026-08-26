@@ -21,6 +21,7 @@ import {
 import type { MenuActions } from "./file-list";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
+import { isNativeIconSupported, NativeIconImage } from "./native-icon";
 import { densityAtom, type ExplorerDensity } from "./preferences";
 import { isThumbnailSupported, ThumbnailImage } from "./thumbnail";
 import type { DirectoryEntry } from "./types";
@@ -306,6 +307,19 @@ function GridCell({
               className={cn("w-full shrink-0 self-center", GRID_IMAGE_ZONE_CLASS[density])}
               entry={entry}
               requestSize={128}
+            />
+          ) : isNativeIconSupported(entry) ? (
+            <NativeIconImage
+              className="shrink-0"
+              entry={entry}
+              fallback={
+                <EntryIcon
+                  className={getPresentationIconClassName(presentation)}
+                  size={iconSize}
+                  weight={isDirectory ? "fill" : undefined}
+                />
+              }
+              pixelSize={iconSize}
             />
           ) : (
             <EntryIcon

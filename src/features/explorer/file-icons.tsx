@@ -246,6 +246,12 @@ export function getFileExtension(name: string): string {
   return name.slice(dotIndex + 1).toLowerCase();
 }
 
+/** Whether an extension has a built-in presentation mapping; unmapped types
+ *  are candidates for OS-native icons (see `native-icon.tsx`). */
+export function hasKnownFileExtension(extension: string): boolean {
+  return extension in EXTENSION_PRESENTATION;
+}
+
 export function getFilePresentation(name: string): ExtensionPresentation {
   const byName = FILENAME_PRESENTATION[name.toLowerCase()];
   if (byName) {
