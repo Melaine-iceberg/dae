@@ -106,6 +106,7 @@ import type {
 
 const DIRECTORY_REFRESH_DELAY_MS = 150;
 const COMPLETED_OPERATION_STATUS_DURATION_MS = 900;
+const UNDO_TOAST_DISMISS_MS = 6000;
 const appWindow = getAppWindow();
 
 interface ExplorerViewProps {
@@ -847,6 +848,17 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     });
   }, [isOperationPending, performFileOperation, t, undoRedo.canRedo]);
 
+  // The undo toast auto-dismisses after a delay; hovering pauses the timer
+  // so the pointer can reach the action button before the toast disappears.
+  const [isUndoToastHovered, setIsUndoToastHovered] = useState(false);
+
+  useEffect(() => {
+    if (!undoRedoToast || isUndoToastHovered) return undefined;
+
+    const timer = window.setTimeout(() => setUndoRedoToast(null), UNDO_TOAST_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [isUndoToastHovered, undoRedoToast]);
+
   const closeDeleteDialog = () => {
     if (!isOperationPending) {
       setDeleteTargets([]);
@@ -1311,7 +1323,11 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                 />
               )}
               {undoRedoToast && (
-                <div className="absolute bottom-4 left-1/2 z-40 -translate-x-1/2">
+                <div
+                  className="absolute bottom-4 left-1/2 z-40 -translate-x-1/2"
+                  onPointerEnter={() => setIsUndoToastHovered(true)}
+                  onPointerLeave={() => setIsUndoToastHovered(false)}
+                >
                   <div className="animate-float-in flex items-center gap-2 rounded-full bg-popover px-4 py-2 text-[13px] text-popover-foreground shadow-ambient-lg ring-1 ring-foreground/5">
                   {undoRedoToast.action === "redo" ? (
                     <ArrowClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
