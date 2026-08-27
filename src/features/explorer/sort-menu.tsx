@@ -58,7 +58,7 @@ export function SortMenu({ disabled }: { disabled?: boolean }) {
       <DropdownMenuTrigger
         aria-label={t("sort.menuLabel")}
         className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-accent/70 hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground disabled:pointer-events-none disabled:opacity-50",
+          "flex size-8 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-accent/70 hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground disabled:pointer-events-none disabled:opacity-50",
         )}
         disabled={disabled}
         title={t("sort.menuLabel")}

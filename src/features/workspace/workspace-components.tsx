@@ -80,8 +80,8 @@ export function LocationCard({
   return (
     <button
       className={cn(
-        "group flex w-full items-center gap-3 rounded-2xl bg-background p-3 text-left shadow-ambient-xs",
-        "transition-[background-color,box-shadow,transform] duration-300 ease-spring-fast hover:-translate-y-0.5 hover:bg-accent/60 hover:shadow-ambient-sm",
+        "group flex w-full items-center gap-3 rounded-lg bg-background p-3 text-left shadow-ambient-xs",
+        "transition-[background-color,box-shadow] duration-fast ease-standard hover:bg-accent/60 hover:shadow-ambient-sm",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       )}
       onClick={onClick}

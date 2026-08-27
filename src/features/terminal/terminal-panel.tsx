@@ -259,7 +259,7 @@ export function TerminalPanel() {
         <div className="ml-auto flex items-center gap-0.5">
           <button
             aria-label={t("panel.restart.label")}
-            className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={restart}
             title={t("panel.restart.label")}
             type="button"
@@ -268,7 +268,7 @@ export function TerminalPanel() {
           </button>
           <button
             aria-label={t("panel.close.label")}
-            className="flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={() => setVisible(false)}
             title={t("panel.close.title")}
             type="button"

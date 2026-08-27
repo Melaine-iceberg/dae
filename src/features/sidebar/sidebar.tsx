@@ -82,7 +82,7 @@ import { useWslDistros } from "./use-wsl-distros";
 const IS_WINDOWS = navigator.userAgent.includes("Windows");
 
 /** Matches the grid-rows collapse transition (duration-normal). */
-const COLLAPSE_ANIMATION_MS = 300;
+const COLLAPSE_ANIMATION_MS = 160;
 
 /**
  * The persistent navigation rail. Follows the workspace information
@@ -133,7 +133,10 @@ function SidebarContent() {
   };
 
   return (
-    <nav aria-label={t("nav.label")} className="flex w-56 shrink-0 flex-col bg-background">
+    <nav
+      aria-label={t("nav.label")}
+      className="flex w-56 shrink-0 flex-col overflow-hidden rounded-xl border bg-sidebar shadow-ambient-xs"
+    >
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <NavItem
           icon={HouseIcon}
@@ -258,14 +261,14 @@ function SidebarContent() {
         </CollapsibleSection>
 
         <CollapsibleSection icon={CloudIcon} id="cloud" label={t("sections.cloudStorage")}>
-          <div className="flex items-center gap-2 rounded-full px-3.5 py-1.5 text-muted-foreground/70">
+          <div className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground/70">
             <CloudIcon className="size-4 shrink-0" />
             <span className="text-xs">{t("cloud.comingSoon")}</span>
           </div>
         </CollapsibleSection>
       </div>
 
-      <div className="flex shrink-0 items-center justify-end gap-1 px-2 py-1.5">
+      <div className="flex shrink-0 items-center justify-end gap-1 border-t border-sidebar-border px-2 py-1.5">
         <ThemeMenu />
         <LanguageMenu />
       </div>
@@ -284,11 +287,10 @@ function SidebarContent() {
 }
 
 /**
- * A collapsible location group, M3 Expressive style: a pill header with a
- * leading tonal icon and a spring-rotating chevron; the body expands with a
- * grid-rows spatial spring. Children stay unmounted while collapsed (and are
- * only mounted once expanded), so collapsed groups cost zero IPC and zero
- * render work.
+ * A collapsible location group: a compact header row with a leading icon and
+ * a rotating chevron; the body expands with a grid-rows transition. Children
+ * stay unmounted while collapsed (and are only mounted once expanded), so
+ * collapsed groups cost zero IPC and zero render work.
  */
 function CollapsibleSection({
   action,
@@ -324,7 +326,7 @@ function CollapsibleSection({
       <div className="flex items-center gap-0.5">
         <button
           aria-expanded={open}
-          className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-full px-3.5 py-1.5 text-left text-[13px] font-medium transition-[background-color,color] duration-200 ease-spring-fast hover:bg-accent/70"
+          className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-sm px-2 py-1 text-left text-[13px] font-medium transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/70"
           onClick={() => toggle(id)}
           type="button"
         >
@@ -333,7 +335,7 @@ function CollapsibleSection({
           <CaretDownIcon
             aria-hidden="true"
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground/80 transition-transform duration-300 ease-spring-fast",
+              "size-3.5 shrink-0 text-muted-foreground/80 transition-transform duration-fast ease-spring-fast",
               !open && "-rotate-90",
             )}
           />
@@ -341,7 +343,7 @@ function CollapsibleSection({
         {action && (
           <button
             aria-label={action.label}
-            className="shrink-0 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+            className="shrink-0 rounded-xs p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
             onClick={action.onClick}
             title={action.label}
             type="button"
@@ -352,7 +354,7 @@ function CollapsibleSection({
       </div>
       <div
         className={cn(
-          "grid transition-[grid-template-rows] duration-300 ease-spring-fast",
+          "grid transition-[grid-template-rows] duration-normal ease-spring-fast",
           open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
         )}
       >
@@ -365,8 +367,8 @@ function CollapsibleSection({
 /** Placeholder row shown while a lazily mounted section runs its first query. */
 function SectionSkeleton() {
   return (
-    <div aria-hidden="true" className="px-3.5 py-1">
-      <div className="h-8 animate-pulse rounded-xl bg-muted/70" />
+    <div aria-hidden="true" className="px-2 py-1">
+      <div className="h-7 animate-pulse rounded-sm bg-muted/70" />
     </div>
   );
 }
@@ -471,12 +473,12 @@ function SectionLabel({
   onAdd?: () => void;
 }) {
   return (
-    <div className="mt-4 flex items-center justify-between px-2.5 pb-1">
+    <div className="mt-3 flex items-center justify-between px-2 pb-1">
       <span className="text-label uppercase text-muted-foreground">{label}</span>
       {onAdd && (
         <button
           aria-label={addTitle}
-          className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+          className="rounded-xs p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
           onClick={onAdd}
           title={addTitle}
           type="button"
@@ -507,18 +509,18 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "relative flex w-full items-center gap-2.5 rounded-full px-3.5 py-1.5 text-left text-[13px] transition-[background-color,color] duration-200 ease-spring-fast hover:bg-accent/70",
+        "relative flex w-full items-center gap-2.5 rounded-sm px-2 py-1 text-left text-[13px] transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/70",
         isActive && "bg-selection font-medium text-accent-foreground",
       )}
       onClick={onClick}
       title={title ?? label}
       type="button"
     >
-      {/* Active indicator: a spring-in primary tick, M3 navigation style. */}
+      {/* Active indicator: a compact primary tick on the leading edge. */}
       <span
         aria-hidden="true"
         className={cn(
-          "absolute left-1 h-4 w-[3px] rounded-full bg-primary transition-[transform,opacity] duration-300 ease-spring-fast",
+          "absolute left-0.5 h-4 w-[3px] rounded-xs bg-primary transition-[transform,opacity] duration-fast ease-spring-fast",
           isActive ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0",
         )}
       />
@@ -661,7 +663,7 @@ function DiskItem({
   return (
     <button
       className={cn(
-        "w-full rounded-xl px-3 py-2 text-left transition-[background-color] duration-200 ease-spring-fast hover:bg-accent/60",
+        "w-full rounded-md px-2.5 py-2 text-left transition-[background-color] duration-fast ease-spring-fast hover:bg-accent/60",
         isActive && "bg-selection",
       )}
       onClick={() => onNavigate(volume.mountPoint)}
@@ -687,12 +689,12 @@ function DiskItem({
         aria-valuemax={100}
         aria-valuemin={0}
         aria-valuenow={usedPercent}
-        className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-muted"
+        className="mt-1.5 h-1 w-full overflow-hidden rounded-xs bg-muted"
         role="progressbar"
       >
         <div
           className={cn(
-            "h-full rounded-full bg-primary transition-all",
+            "h-full rounded-xs bg-primary transition-all duration-normal",
             usedPercent > 90 && "bg-destructive",
           )}
           style={{ width: `${usedPercent}%` }}
@@ -700,7 +702,7 @@ function DiskItem({
       </div>
       <div className="mt-1 flex justify-between gap-2 text-[11px] text-muted-foreground">
         <span className="shrink-0">{t("disk.freePercent", { percent: freePercent })}</span>
-        <span className="truncate tabular-nums">
+        <span className="truncate font-mono tabular-nums">
           {t("disk.capacity", {
             free: formatBytes(volume.availableBytes),
             total: formatBytes(volume.totalBytes),

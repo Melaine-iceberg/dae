@@ -763,7 +763,7 @@ export function CommandBar() {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogContent
-        className="top-20 w-full min-w-0 max-w-[min(36rem,calc(100%-2rem))] translate-y-0 gap-0 overflow-hidden rounded-3xl p-0 sm:max-w-[min(36rem,calc(100%-2rem))]"
+        className="top-20 w-full min-w-0 max-w-[min(36rem,calc(100%-2rem))] translate-y-0 gap-0 overflow-hidden rounded-xl p-0 sm:max-w-[min(36rem,calc(100%-2rem))]"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{t("commandBar.title")}</DialogTitle>
@@ -877,7 +877,7 @@ function CommandResultRow({
     <button
       aria-selected={isActive}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-full px-3 py-2 text-left text-[13px] transition-colors outline-none",
+        "flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-[13px] transition-colors outline-none",
         isActive ? "bg-selection font-medium text-accent-foreground" : "hover:bg-accent/60",
       )}
       data-command-index={dataIndex}

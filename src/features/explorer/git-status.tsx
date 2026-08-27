@@ -101,7 +101,7 @@ export function GitStatusBadge({ kind }: { kind: GitEntryStatusKind }) {
     <span
       aria-label={t("git.statusTitle", { status: label })}
       className={cn(
-        "shrink-0 rounded-full px-1.5 text-[10px] leading-4 font-semibold",
+        "shrink-0 rounded-xs px-1.5 text-[10px] leading-4 font-semibold",
         presentation.className,
       )}
       title={t("git.statusTitle", { status: label })}

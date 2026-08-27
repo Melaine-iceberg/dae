@@ -151,7 +151,7 @@ export function EntryPreview({
   return (
     <aside
       aria-label={t("preview.ariaLabel")}
-      className="animate-in flex h-full w-[26rem] shrink-0 flex-col overflow-hidden bg-popover/95 duration-200 fade-in slide-in-from-right-2"
+      className="animate-in flex h-full w-[26rem] shrink-0 flex-col overflow-hidden bg-popover/95 duration-fast fade-in slide-in-from-right-2"
     >
       <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
         {visual && VisualIcon ? (
@@ -210,9 +210,9 @@ export function EntryPreview({
               </div>
             ) : textPreview?.status === "loading" ? (
               <div className="flex shrink-0 flex-col gap-2 rounded-xl bg-muted/40 p-2.5">
-                <Skeleton className="h-3 w-3/4 rounded-full" />
-                <Skeleton className="h-3 w-1/2 rounded-full" />
-                <Skeleton className="h-3 w-2/3 rounded-full" />
+                <Skeleton className="h-3 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="h-3 w-2/3" />
               </div>
             ) : isTooLarge ? (
               <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 px-3 text-center text-xs text-muted-foreground">

@@ -279,13 +279,12 @@ function GridCell({
         <div
           aria-selected={isSelected}
           className={cn(
-            // M3 Expressive cell: state-layer tints hover/focus/press; the
-            // hover lift stays, and selection trades the ring for a tonal
-            // fill plus a shape morph up the corner scale.
-            "state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 text-center transition-[background-color,border-radius,box-shadow,transform,opacity] duration-fast ease-spring-fast select-none hover:-translate-y-0.5 hover:shadow-ambient-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
-            isSelected && "rounded-2xl bg-selection",
+            // Desktop cell: tonal hover via state-layer, flat selection fill,
+            // no lift and no corner morph so tiles stay put.
+            "state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 text-center transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
+            isSelected && "bg-selection",
             isDragging && "cursor-grabbing opacity-50",
-            isDropTarget && "rounded-2xl bg-selection ring-2 ring-primary ring-inset",
+            isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={(event) => onSelectEntry(entry, index, event)}

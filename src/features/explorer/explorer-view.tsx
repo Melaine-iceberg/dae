@@ -1152,7 +1152,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                 onNavigatePath={navigateToPath}
               />
             ) : (
-              <Skeleton className="h-6 w-56 max-w-full rounded-full" />
+              <Skeleton className="h-6 w-56 max-w-full" />
             )}
           </div>
 
@@ -1328,7 +1328,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                   onPointerEnter={() => setIsUndoToastHovered(true)}
                   onPointerLeave={() => setIsUndoToastHovered(false)}
                 >
-                  <div className="animate-float-in flex items-center gap-2 rounded-full bg-popover px-4 py-2 text-[13px] text-popover-foreground shadow-ambient-lg ring-1 ring-foreground/5">
+                  <div className="animate-float-in flex items-center gap-2 rounded-lg bg-popover px-4 py-2 text-[13px] text-popover-foreground shadow-ambient-lg ring-1 ring-border">
                   {undoRedoToast.action === "redo" ? (
                     <ArrowClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
                   ) : (

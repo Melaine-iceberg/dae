@@ -88,8 +88,8 @@ export function ProjectsSection({ recents }: { recents: RecentItem[] | null }) {
       <section aria-label={t("workspace:overview.projectsTitle")}>
         <SectionHeader title={t("workspace:overview.projectsTitle")} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Skeleton className="h-[74px] rounded-2xl" />
-          <Skeleton className="h-[74px] rounded-2xl" />
+          <Skeleton className="h-[74px] rounded-lg" />
+          <Skeleton className="h-[74px] rounded-lg" />
         </div>
       </section>
     );
@@ -130,8 +130,8 @@ function ProjectCard({
   return (
     <button
       className={cn(
-        "group flex w-full flex-col gap-2 rounded-2xl bg-background p-3.5 text-left shadow-ambient-xs",
-        "transition-[background-color,box-shadow,transform] duration-300 ease-spring-fast hover:-translate-y-0.5 hover:bg-accent/60 hover:shadow-ambient-sm",
+        "group flex w-full flex-col gap-2 rounded-lg bg-background p-3.5 text-left shadow-ambient-xs",
+        "transition-[background-color,box-shadow] duration-fast ease-standard hover:bg-accent/60 hover:shadow-ambient-sm",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       )}
       onClick={onOpen}
@@ -148,7 +148,7 @@ function ProjectCard({
         </span>
       </span>
       <span className="flex w-full items-center gap-1.5 pl-[42px]">
-        <span className="max-w-[60%] truncate rounded-full bg-secondary px-2 py-0.5 font-mono text-[11px] leading-4 text-secondary-foreground">
+        <span className="max-w-[60%] truncate rounded-xs bg-secondary px-2 py-0.5 font-mono text-[11px] leading-4 text-secondary-foreground">
           {project.branch}
         </span>
         {counts !== undefined &&
@@ -158,7 +158,7 @@ function ProjectCard({
                 <span
                   aria-label={t(`explorer:git.${kind}`)}
                   className={cn(
-                    "shrink-0 rounded-full px-1.5 text-[10px] leading-4 font-semibold tabular-nums",
+                    "shrink-0 rounded-xs px-1.5 text-[10px] leading-4 font-semibold tabular-nums",
                     BADGE_PRESENTATION[kind].className,
                   )}
                   key={kind}

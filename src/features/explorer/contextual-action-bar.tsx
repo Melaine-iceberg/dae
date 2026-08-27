@@ -93,7 +93,7 @@ export function ContextualActionBar({
     <div className="absolute bottom-4 left-1/2 z-30 -translate-x-1/2">
       <div
         aria-label={t("explorer:actionBar.ariaLabel")}
-        className="animate-float-in flex items-center gap-0.5 rounded-full bg-popover p-1 shadow-ambient-lg ring-1 ring-foreground/5 backdrop-blur"
+        className="animate-float-in flex items-center gap-0.5 rounded-lg bg-popover p-1 shadow-ambient-lg ring-1 ring-border backdrop-blur"
         role="toolbar"
       >
       <span className="shrink-0 px-2.5 text-[13px] text-muted-foreground select-none tabular-nums">
@@ -160,7 +160,7 @@ export function ContextualActionBar({
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label={t("explorer:actionBar.moreAria")}
-          className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+          className="flex size-8 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
           disabled={isActionDisabled}
           title={t("explorer:actionBar.moreTitle")}
         >

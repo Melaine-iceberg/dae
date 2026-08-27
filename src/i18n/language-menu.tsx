@@ -28,7 +28,7 @@ export function LanguageMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={title}
-        className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors outline-none hover:bg-accent/70 hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground"
+        className="flex size-7 items-center justify-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-accent/70 hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground"
         title={title}
       >
         <GlobeIcon className="size-4" />

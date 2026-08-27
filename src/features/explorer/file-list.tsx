@@ -831,7 +831,7 @@ export function FileList({
         {internalDrag && (
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-full bg-popover px-3 py-1.5 text-[13px] text-popover-foreground shadow-ambient ring-1 ring-foreground/5"
+            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md bg-popover px-3 py-1.5 text-[13px] text-popover-foreground shadow-ambient ring-1 ring-border"
             style={{ left: internalDrag.position.x + 14, top: internalDrag.position.y + 14 }}
           >
             {internalDrag.target?.kind === "favorites" ? (
@@ -1014,13 +1014,12 @@ function FileListRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            // M3 Expressive row: state-layer tints hover/focus/press; the
-            // row morphs from a quiet 10px rectangle into a full pill when
-            // selected, riding the spring shape scale.
-            "state-layer grid cursor-grab items-center rounded-xs whitespace-nowrap transition-[background-color,border-radius,box-shadow,opacity] duration-fast ease-spring-fast select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
-            isSelected && "rounded-full bg-selection",
+            // Desktop row: tonal hover via state-layer, flat selection fill,
+            // constant corner radius — no pill morph.
+            "state-layer grid cursor-grab items-center rounded-xs whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
+            isSelected && "bg-selection",
             isDragging && "cursor-grabbing opacity-50",
-            isDropTarget && "rounded-full bg-selection ring-2 ring-primary ring-inset",
+            isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={handleSelect}

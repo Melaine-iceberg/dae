@@ -292,14 +292,12 @@ function PaneRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            // M3 Expressive row: state-layer tints hover/focus/press; both
-            // selection and expansion morph the row into a pill on the
-            // spring shape scale.
-            "state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-xs px-2.5 select-none transition-[background-color,border-radius,opacity] duration-fast ease-spring-fast focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
-            (isSelected || isExpanded) && "rounded-full bg-selection",
+            // Desktop row: tonal hover via state-layer, flat selection fill,
+            // no pill morph so rows keep a constant corner radius.
+            "state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-xs px-2.5 select-none transition-[background-color,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
+            (isSelected || isExpanded) && "bg-selection",
             isDragging && "cursor-grabbing opacity-50",
-            dropTargetPath === entry.path &&
-              "rounded-full bg-selection ring-2 ring-primary ring-inset",
+            dropTargetPath === entry.path && "bg-selection ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={(event) => {

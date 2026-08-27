@@ -100,7 +100,7 @@ function TerminalToggle() {
       aria-label={t("statusBar.toggleTerminal")}
       aria-pressed={visible}
       className={cn(
-        "flex size-5 items-center justify-center rounded-full transition-colors hover:bg-accent hover:text-foreground",
+        "flex size-5 items-center justify-center rounded-xs transition-colors hover:bg-accent hover:text-foreground",
         visible && "bg-accent text-foreground",
       )}
       onClick={() => setVisible((open) => !open)}
@@ -133,7 +133,7 @@ function ViewModeSwitcher() {
           aria-label={t(label)}
           aria-pressed={viewMode === mode}
           className={cn(
-            "flex size-5 items-center justify-center rounded-full transition-colors hover:bg-accent hover:text-foreground",
+            "flex size-5 items-center justify-center rounded-xs transition-colors hover:bg-accent hover:text-foreground",
             viewMode === mode && "bg-selection text-primary",
           )}
           key={mode}
@@ -162,7 +162,7 @@ function DensitySwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={t("statusBar.densityLabel")}
-        className="flex size-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        className="flex size-5 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         title={t("statusBar.densityLabel")}
       >
         <RowsIcon size={13} />

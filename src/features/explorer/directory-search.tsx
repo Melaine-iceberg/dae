@@ -153,7 +153,7 @@ export function DirectorySearch({
   const scopeName = directoryName ?? t("directorySearch.currentDirectory");
 
   return (
-    <InputGroup className="w-56 shrink-0 rounded-full">
+    <InputGroup className="w-56 shrink-0">
       <InputGroupInput
         ref={inputRef}
         aria-invalid={Boolean(activeError)}

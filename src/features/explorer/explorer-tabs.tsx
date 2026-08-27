@@ -87,7 +87,7 @@ export function ExplorerTabs() {
   return (
     <div className="flex h-full flex-col">
       <header
-        className="flex h-11 shrink-0 items-stretch bg-background"
+        className="flex h-10 shrink-0 items-stretch bg-background"
         data-tauri-drag-region="deep"
       >
         <StripScrollButton
@@ -108,7 +108,7 @@ export function ExplorerTabs() {
           ))}
           <button
             aria-label={t("tabs.newTab")}
-            className="flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground"
             onClick={createTab}
             title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
             type="button"
@@ -125,10 +125,13 @@ export function ExplorerTabs() {
         <WindowControls />
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      {/* Island shell: panels float on the canvas separated by 8px gutters.
+          The tab bar stays flush with the window edge so the native window
+          controls and snap layouts keep working. */}
+      <div className="flex min-h-0 flex-1 gap-2 px-2 pb-2">
         <Sidebar />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-ambient-xs">
             <WorkspaceSurfaceView key={activeTabId} tabId={activeTabId} />
           </div>
           {terminalMounted && (
@@ -237,9 +240,9 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     <div
       aria-selected={isActive}
       className={cn(
-        "group relative flex h-8 w-52 shrink-0 items-center rounded-xl text-[13px] select-none transition-[background-color,color,box-shadow] duration-300 ease-spring-fast",
+        "group relative flex h-7 w-52 shrink-0 items-center rounded-md text-[13px] select-none transition-[background-color,color,box-shadow] duration-fast ease-spring-fast",
         isActive
-          ? "bg-card text-foreground shadow-ambient-sm"
+          ? "bg-card text-foreground shadow-ambient-xs ring-1 ring-border"
           : "cursor-default text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       )}
       onClick={() => activateTab(tab.id)}
@@ -265,7 +268,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       <button
         aria-label={t("tabs.closeTab", { title })}
         className={cn(
-          "absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-full transition-colors hover:bg-accent",
+          "absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-xs transition-colors hover:bg-accent",
           isActive
             ? "text-muted-foreground hover:text-foreground"
             : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",

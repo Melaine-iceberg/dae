@@ -67,7 +67,7 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
       <DropdownMenuTrigger
         aria-label={t("filter.ariaLabel")}
         className={cn(
-          "relative flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none transition-colors hover:bg-accent/70 hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground disabled:pointer-events-none disabled:opacity-50",
+          "relative flex size-8 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-accent/70 hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground disabled:pointer-events-none disabled:opacity-50",
           isActive && "bg-muted text-foreground",
         )}
         disabled={disabled}
