@@ -261,6 +261,8 @@
     "loading": "正在读取属性…",
     "location": "位置",
     "size": "大小",
+    "sizeCalculating": "正在计算…",
+    "sizeBytes": "{{size}} 字节",
     "modified": "修改时间",
     "created": "创建时间",
     "accessed": "访问时间",

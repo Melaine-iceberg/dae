@@ -1,6 +1,7 @@
 pub mod archive;
 pub mod commands;
 pub mod connections;
+pub mod directory_size;
 pub mod error;
 pub mod git;
 pub mod local;

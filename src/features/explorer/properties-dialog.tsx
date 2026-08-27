@@ -1,11 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 
 import { i18n } from "@/i18n";
 import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
 import { cn } from "@/lib/utils";
-import { commands, type FileProperties, type OwnerChange, type PropertyChanges } from "@/bindings";
+import {
+  commands,
+  events,
+  type FileProperties,
+  type OwnerChange,
+  type PropertyChanges,
+} from "@/bindings";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,6 +26,7 @@ import { Separator } from "@/components/ui/separator";
 
 import type { DirectoryEntry } from "./types";
 import { propertiesTargetAtom } from "./properties-atoms";
+import { isLocalExplorerPath } from "./drag-drop";
 import {
   DIRECTORY_PRESENTATION,
   OTHER_PRESENTATION,
@@ -160,6 +167,10 @@ export function PropertiesDialog() {
   const [draft, setDraft] = useState<PropertiesDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  // Folder sizes are computed on demand here (never in the list, to avoid
+  // constant background scans). While a scan runs, the total updates live.
+  const [directorySize, setDirectorySize] = useState<number | null>(null);
+  const [isCalculatingDirectorySize, setIsCalculatingDirectorySize] = useState(false);
 
   useEffect(() => {
     if (!target) return;
@@ -182,6 +193,39 @@ export function PropertiesDialog() {
 
     return () => {
       cancelled = true;
+    };
+  }, [target]);
+
+  // Compute a folder's size only while its properties dialog is open; the
+  // backend emits running totals under the operation id until the final sum.
+  useEffect(() => {
+    if (!target || target.kind !== "directory" || !isLocalExplorerPath(target.path)) {
+      setDirectorySize(null);
+      setIsCalculatingDirectorySize(false);
+      return undefined;
+    }
+
+    let disposed = false;
+    setDirectorySize(null);
+    setIsCalculatingDirectorySize(true);
+
+    const operationId = crypto.randomUUID();
+    const unlistenPromise = events.explorerDirectorySizeProgress.listen(({ payload }) => {
+      if (disposed || payload.operationId !== operationId) return;
+      setDirectorySize(payload.size);
+      if (payload.completed) setIsCalculatingDirectorySize(false);
+    });
+
+    void commands.startDirectorySizeCalculation(operationId, [target.path]).catch(() => {
+      if (!disposed) setIsCalculatingDirectorySize(false);
+    });
+
+    return () => {
+      disposed = true;
+      void unlistenPromise.then((unlisten) => unlisten());
+      void commands
+        .cancelDirectorySizeCalculation(operationId)
+        .catch((cause: unknown) => console.warn("Unable to cancel folder size scan", cause));
     };
   }, [target]);
 
@@ -226,6 +270,26 @@ export function PropertiesDialog() {
   const presentation = target ? kindPresentation(target.kind, target.name) : DIRECTORY_PRESENTATION;
   const Icon = presentation.icon;
 
+  // Folder sizes come from the on-demand scan; everything else uses the
+  // loaded snapshot. Guard `properties` since this runs before it resolves.
+  const isLocalDirectoryTarget =
+    target?.kind === "directory" && target !== null && isLocalExplorerPath(target.path);
+  let sizeValue: ReactNode;
+  if (isLocalDirectoryTarget) {
+    if (directorySize === null) {
+      sizeValue = (
+        <span className="text-muted-foreground">{t("explorer:properties.sizeCalculating")}</span>
+      );
+    } else if (isCalculatingDirectorySize) {
+      sizeValue = `${formatSize(directorySize)} · ${t("explorer:properties.sizeCalculating")}`;
+    } else {
+      const byteCount = localeNumberFormat().format(directorySize);
+      sizeValue = `${formatSize(directorySize)} (${t("explorer:properties.sizeBytes", { size: byteCount })})`;
+    }
+  } else {
+    sizeValue = formatSize(properties?.size ?? null);
+  }
+
   return (
     <Dialog onOpenChange={(open) => !open && close()} open={target !== null}>
       <DialogContent className="sm:max-w-md">
@@ -265,7 +329,7 @@ export function PropertiesDialog() {
                 {parentPath(properties.path)}
               </dd>
               <dt className="text-muted-foreground">{t("explorer:properties.size")}</dt>
-              <dd>{formatSize(properties.size)}</dd>
+              <dd>{sizeValue}</dd>
               <dt className="text-muted-foreground">{t("explorer:properties.modified")}</dt>
               <dd>{formatTimestamp(properties.modifiedAt)}</dd>
               <dt className="text-muted-foreground">{t("explorer:properties.created")}</dt>

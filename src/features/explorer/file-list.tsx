@@ -1005,6 +1005,7 @@ function FileListRow({
   const EntryIcon = presentation.icon;
   const isDirectory = entry.kind === "directory";
   const entryStatus = getEntryGitStatus(gitStatus, entry);
+  const displaySize = isDirectory ? null : entry.size;
   const handleSelect = (event: ReactMouseEvent) => onSelectEntry(entry, index, event);
 
   return (
@@ -1081,12 +1082,12 @@ function FileListRow({
           <div
             className="px-2.5 text-right text-xs text-muted-foreground"
             title={
-              entry.size === null
+              displaySize === null
                 ? undefined
-                : t("explorer:list.bytesTitle", { size: localeNumber(entry.size) })
+                : t("explorer:list.bytesTitle", { size: localeNumber(displaySize) })
             }
           >
-            {formatFileSize(entry.size)}
+            {formatFileSize(displaySize)}
           </div>
         </div>
       </ContextMenuTrigger>
@@ -1140,7 +1141,7 @@ function formatModifiedAt(modifiedAt: number | null): string {
 
 function formatFileSize(size: number | null): string {
   if (size === null) {
-    return "—";
+    return "";
   }
 
   if (size === 0) {

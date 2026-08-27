@@ -261,6 +261,8 @@
     "loading": "Reading properties…",
     "location": "Location",
     "size": "Size",
+    "sizeCalculating": "Calculating…",
+    "sizeBytes": "{{size}} bytes",
     "modified": "Modified",
     "created": "Created",
     "accessed": "Accessed",

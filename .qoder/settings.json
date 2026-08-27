@@ -1,0 +1,6 @@
+{
+  "enabledPlugins": {
+    "chrome-devtools-mcp@qoder-marketplace": true,
+    "design-review@qoder-marketplace": true
+  }
+}
