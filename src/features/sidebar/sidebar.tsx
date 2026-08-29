@@ -77,6 +77,7 @@ import { LanguageMenu } from "@/i18n/language-menu";
 import { ThemeMenu } from "./theme-menu";
 import { useDiskVolumes } from "./use-disk-volumes";
 import { useWslDistros } from "./use-wsl-distros";
+import { WslIcon } from "./wsl-icon";
 
 /** WSL only exists on Windows; elsewhere the section is hidden entirely. */
 const IS_WINDOWS = navigator.userAgent.includes("Windows");
@@ -243,7 +244,7 @@ function SidebarContent() {
         </CollapsibleSection>
 
         {IS_WINDOWS && (
-          <CollapsibleSection icon={LinuxLogoIcon} id="wsl" label={t("sections.wsl")}>
+          <CollapsibleSection icon={WslIcon} id="wsl" label={t("sections.wsl")}>
             <WslContent currentPath={currentPath} onNavigate={navigateToFolder} />
           </CollapsibleSection>
         )}
