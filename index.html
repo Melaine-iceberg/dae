@@ -5,13 +5,23 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>dae</title>
-    <!-- 与 --background 保持一致，窗口提前显示时先呈现主题背景而非白屏 -->
+    <!-- 与 --background 保持一致，窗口提前显示时先呈现主题背景而非白屏。
+         背景跟随 .dark 类而不是系统配色：用户可在应用内显式选择浅色/深色，
+         且该未分层样式会压过 Tailwind @layer base 里 body 的 bg-background。 -->
     <style>
       html, body { margin: 0; height: 100%; background: #f5f6f8; }
-      @media (prefers-color-scheme: dark) {
-        html, body { background: #1e1f22; }
-      }
+      html.dark, html.dark body { background: #1e1f22; }
     </style>
+    <script>
+      try {
+        var stored = localStorage.getItem("app.theme");
+        var dark =
+          stored === "dark" ||
+          (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.classList.add("dark");
+        document.documentElement.style.colorScheme = dark ? "dark" : "light";
+      } catch (e) {}
+    </script>
   </head>
 
   <body>
