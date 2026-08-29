@@ -1,4 +1,7 @@
 {
+  "badges": {
+    "readOnly": "Read-only"
+  },
   "undoRedo": {
     "toast_undo_one": "Undid: {{op}}",
     "toast_undo_other": "Undid: {{op}} ({{count}} items)",

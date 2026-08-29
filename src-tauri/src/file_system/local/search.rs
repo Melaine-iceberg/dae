@@ -1,4 +1,4 @@
-use super::directory::{entry_kind, modified_at_millis};
+use super::directory::{entry_kind, entry_state_flags, modified_at_millis};
 use crate::file_system::error::FileSystemError;
 use crate::file_system::types::{
     EntryKind, SearchEntry, SearchResponse, entry_kind_rank, path_to_string,
@@ -118,11 +118,17 @@ fn build_search_entry(entry: &ignore::DirEntry, name: &str, root: &PathBuf) -> S
         .file_type()
         .map(entry_kind)
         .unwrap_or(EntryKind::Other);
+    // With `follow_links(false)` this is the link's own metadata for
+    // symlinks, unlike directory listings which follow the target.
     let metadata = entry.metadata().ok();
     let modified_at = metadata.as_ref().and_then(modified_at_millis);
     let size = matches!(&kind, EntryKind::File)
         .then(|| metadata.as_ref().map(|metadata| metadata.len()))
         .flatten();
+    let (hidden, read_only) = metadata
+        .as_ref()
+        .map(|metadata| entry_state_flags(metadata, name))
+        .unwrap_or_default();
 
     SearchEntry {
         name: name.to_owned(),
@@ -131,6 +137,8 @@ fn build_search_entry(entry: &ignore::DirEntry, name: &str, root: &PathBuf) -> S
         kind,
         modified_at,
         size,
+        hidden,
+        read_only,
     }
 }
 

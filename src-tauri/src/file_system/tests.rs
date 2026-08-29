@@ -4,6 +4,8 @@ use super::local::{
     delete_entries_with_progress, move_entries_with_progress, read_directory_sync,
     rename_entry_sync, search_directory_sync, search_file_contents_sync, ContentSearchParams,
 };
+#[cfg(windows)]
+use super::local::update_properties;
 use super::progress::FileOperationProgressReporterTrait;
 use super::sidebar::{Favorite, dedupe_favorites, is_visible_file_system};
 use super::types::{
@@ -86,6 +88,8 @@ fn places_directories_before_files_case_insensitively() {
             kind: EntryKind::File,
             modified_at: None,
             size: None,
+            hidden: false,
+            read_only: false,
         },
         DirectoryEntry {
             name: "alpha".into(),
@@ -93,6 +97,8 @@ fn places_directories_before_files_case_insensitively() {
             kind: EntryKind::Directory,
             modified_at: None,
             size: None,
+            hidden: false,
+            read_only: false,
         },
         DirectoryEntry {
             name: "Beta".into(),
@@ -100,6 +106,8 @@ fn places_directories_before_files_case_insensitively() {
             kind: EntryKind::Directory,
             modified_at: None,
             size: None,
+            hidden: false,
+            read_only: false,
         },
     ];
 
@@ -135,6 +143,73 @@ fn reads_entries_from_a_directory() {
     assert_eq!(folder_entry.size, None);
     assert!(file_entry.modified_at.is_some());
     assert_eq!(file_entry.size, Some(4));
+
+    fs::remove_dir_all(directory).expect("remove test directory");
+}
+
+#[test]
+fn reports_read_only_and_hidden_entry_flags() {
+    let directory =
+        std::env::temp_dir().join(format!("dae-entry-flags-test-{}", std::process::id()));
+    let plain_file = directory.join("plain.txt");
+    let read_only_file = directory.join("locked.txt");
+    fs::create_dir_all(&directory).expect("create test directory");
+    fs::write(&plain_file, "plain").expect("create plain file");
+    fs::write(&read_only_file, "locked").expect("create read-only file");
+
+    let mut permissions = fs::metadata(&read_only_file)
+        .expect("read file metadata")
+        .permissions();
+    permissions.set_readonly(true);
+    fs::set_permissions(&read_only_file, permissions).expect("mark file read-only");
+
+    #[cfg(unix)]
+    let hidden_file = {
+        let hidden_file = directory.join(".hidden.txt");
+        fs::write(&hidden_file, "hidden").expect("create hidden file");
+        hidden_file
+    };
+    #[cfg(windows)]
+    let hidden_file = {
+        use super::types::PropertyChanges;
+
+        let hidden_file = directory.join("hidden.txt");
+        fs::write(&hidden_file, "hidden").expect("create hidden file");
+        update_properties(
+            &hidden_file,
+            &PropertyChanges {
+                hidden: Some(true),
+                ..Default::default()
+            },
+        )
+        .expect("mark file hidden");
+        hidden_file
+    };
+
+    let view = read_directory_sync(directory.clone()).expect("read test directory");
+    let by_name = |name: &str| {
+        view.entries
+            .iter()
+            .find(|entry| entry.name == name)
+            .unwrap_or_else(|| panic!("entry {name} is missing from the listing"))
+    };
+
+    assert!(!by_name("plain.txt").hidden);
+    assert!(!by_name("plain.txt").read_only);
+    assert!(by_name("locked.txt").read_only);
+    let hidden_name = hidden_file
+        .file_name()
+        .expect("hidden file has a name")
+        .to_string_lossy()
+        .into_owned();
+    assert!(by_name(&hidden_name).hidden);
+
+    // Restore writability so cleanup succeeds on every platform.
+    let mut permissions = fs::metadata(&read_only_file)
+        .expect("read file metadata")
+        .permissions();
+    permissions.set_readonly(false);
+    fs::set_permissions(&read_only_file, permissions).expect("clear read-only");
 
     fs::remove_dir_all(directory).expect("remove test directory");
 }

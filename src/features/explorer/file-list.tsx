@@ -62,6 +62,7 @@ import {
   type FileTransferOperation,
   type TransferOperation,
 } from "./drag-drop";
+import { EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { FileColumnView } from "./file-column-view";
 import { getEntryPresentation, getPresentationIconClassName } from "./file-icons";
@@ -1017,6 +1018,7 @@ function FileListRow({
             // Desktop row: tonal hover via state-layer, flat selection fill,
             // constant corner radius — no pill morph.
             "state-layer grid cursor-grab items-center rounded-xs whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
+            entry.hidden && HIDDEN_ENTRY_CLASS,
             isSelected && "bg-selection",
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
@@ -1038,22 +1040,24 @@ function FileListRow({
           style={{ height: densityRowHeight }}
         >
           <div className="flex min-w-0 items-center gap-2.5 px-3">
-            {isNativeIconSupported(entry) ? (
-              <NativeIconImage
-                className="shrink-0"
-                entry={entry}
-                fallback={
-                  <EntryIcon className={getPresentationIconClassName(presentation)} size={18} />
-                }
-                pixelSize={18}
-              />
-            ) : (
-              <EntryIcon
-                className={cn("shrink-0", getPresentationIconClassName(presentation))}
-                size={18}
-                weight={isDirectory ? "fill" : undefined}
-              />
-            )}
+            <EntryIconFrame entry={entry}>
+              {isNativeIconSupported(entry) ? (
+                <NativeIconImage
+                  className="shrink-0"
+                  entry={entry}
+                  fallback={
+                    <EntryIcon className={getPresentationIconClassName(presentation)} size={18} />
+                  }
+                  pixelSize={18}
+                />
+              ) : (
+                <EntryIcon
+                  className={cn("shrink-0", getPresentationIconClassName(presentation))}
+                  size={18}
+                  weight={isDirectory ? "fill" : undefined}
+                />
+              )}
+            </EntryIconFrame>
             <span
               className={cn(
                 "min-w-0 truncate text-sm",

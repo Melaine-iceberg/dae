@@ -16,12 +16,9 @@ import { commands } from "@/bindings";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 
+import { EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
-import {
-  DIRECTORY_PRESENTATION,
-  getFilePresentation,
-  getPresentationIconClassName,
-} from "./file-icons";
+import { getEntryPresentation, getPresentationIconClassName } from "./file-icons";
 import type { MenuActions } from "./file-list";
 import { isNativeIconSupported, NativeIconImage } from "./native-icon";
 import { sortEntries, foldersFirstAtom, sortKeyAtom, sortOrderAtom } from "./preferences";
@@ -282,7 +279,7 @@ function PaneRow({
   virtualStart: number;
 }) {
   const isDirectory = entry.kind === "directory";
-  const presentation = isDirectory ? DIRECTORY_PRESENTATION : getFilePresentation(entry.name);
+  const presentation = getEntryPresentation(entry);
   const EntryIcon = presentation.icon;
   const isExpanded = activeChildPath === entry.path;
 
@@ -295,6 +292,7 @@ function PaneRow({
             // Desktop row: tonal hover via state-layer, flat selection fill,
             // no pill morph so rows keep a constant corner radius.
             "state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-xs px-2.5 select-none transition-[background-color,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
+            entry.hidden && HIDDEN_ENTRY_CLASS,
             (isSelected || isExpanded) && "bg-selection",
             isDragging && "cursor-grabbing opacity-50",
             dropTargetPath === entry.path && "bg-selection ring-2 ring-primary ring-inset",
@@ -320,21 +318,23 @@ function PaneRow({
           tabIndex={0}
           title={entry.path}
         >
-          {isNativeIconSupported(entry) ? (
-            <NativeIconImage
-              className="shrink-0"
-              entry={entry}
-              fallback={
-                <EntryIcon className={getPresentationIconClassName(presentation)} size={16} />
-              }
-              pixelSize={16}
-            />
-          ) : (
-            <EntryIcon
-              className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
-              weight={isDirectory ? "fill" : undefined}
-            />
-          )}
+          <EntryIconFrame entry={entry}>
+            {isNativeIconSupported(entry) ? (
+              <NativeIconImage
+                className="shrink-0"
+                entry={entry}
+                fallback={
+                  <EntryIcon className={getPresentationIconClassName(presentation)} size={16} />
+                }
+                pixelSize={16}
+              />
+            ) : (
+              <EntryIcon
+                className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
+                weight={isDirectory ? "fill" : undefined}
+              />
+            )}
+          </EntryIconFrame>
           <span
             className={cn(
               "min-w-0 flex-1 truncate text-sm",

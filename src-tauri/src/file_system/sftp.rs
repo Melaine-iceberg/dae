@@ -210,12 +210,15 @@ impl SftpBackend {
             .map(|entry| {
                 let attrs = entry.metadata();
                 let kind = kind_of(&attrs);
+                let name = entry.file_name();
                 DirectoryEntry {
-                    name: entry.file_name(),
-                    path: parsed.join(&entry.file_name()),
+                    name: name.clone(),
+                    path: parsed.join(&name),
                     kind,
                     modified_at: modified_millis(&attrs),
                     size: (kind == EntryKind::File).then(|| attrs.size.unwrap_or(0)),
+                    hidden: name.starts_with('.'),
+                    read_only: attrs.permissions.is_some_and(|mode| mode & 0o200 == 0),
                 }
             })
             .collect::<Vec<_>>();
@@ -713,6 +716,8 @@ impl SearchWalker<'_> {
                     kind: child.kind,
                     modified_at: child.modified_at,
                     size: child.size,
+                    hidden: child.hidden,
+                    read_only: child.read_only,
                 });
             }
 

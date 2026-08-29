@@ -8,6 +8,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri_specta::Event;
 
+#[cfg(windows)]
+use windows::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY};
+
 pub fn create_directory_watcher(
     requested_path: PathBuf,
     app: tauri::AppHandle,
@@ -54,13 +57,17 @@ pub fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, Fil
             let metadata = entry.metadata().ok()?;
             let kind = entry_kind(file_type);
             let size = matches!(&kind, EntryKind::File).then_some(metadata.len());
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let (hidden, read_only) = entry_state_flags(&metadata, &name);
 
             Some(DirectoryEntry {
-                name: entry.file_name().to_string_lossy().into_owned(),
+                name,
                 path: path_to_string(&entry.path()),
                 kind,
                 modified_at: modified_at_millis(&metadata),
                 size,
+                hidden,
+                read_only,
             })
         })
         .collect::<Vec<_>>();
@@ -95,6 +102,35 @@ pub fn entry_kind(file_type: fs::FileType) -> EntryKind {
     } else {
         EntryKind::Other
     }
+}
+
+/// `(hidden, read_only)` derived from metadata already fetched during
+/// listing — no extra system calls. Windows reads the DOS attribute bits;
+/// Unix approximates with the dot prefix and the owner write bit.
+#[cfg(windows)]
+pub fn entry_state_flags(metadata: &fs::Metadata, _name: &str) -> (bool, bool) {
+    use std::os::windows::fs::MetadataExt;
+
+    let attributes = metadata.file_attributes();
+    (
+        attributes & FILE_ATTRIBUTE_HIDDEN.0 != 0,
+        attributes & FILE_ATTRIBUTE_READONLY.0 != 0,
+    )
+}
+
+#[cfg(unix)]
+pub fn entry_state_flags(metadata: &fs::Metadata, name: &str) -> (bool, bool) {
+    use std::os::unix::fs::PermissionsExt;
+
+    (
+        name.starts_with('.'),
+        metadata.permissions().mode() & 0o200 == 0,
+    )
+}
+
+#[cfg(not(any(windows, unix)))]
+pub fn entry_state_flags(_metadata: &fs::Metadata, _name: &str) -> (bool, bool) {
+    (false, false)
 }
 
 pub fn build_breadcrumbs(path: &Path) -> Vec<Breadcrumb> {

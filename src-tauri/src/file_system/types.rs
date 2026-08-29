@@ -28,6 +28,12 @@ pub struct DirectoryEntry {
     pub kind: EntryKind,
     pub modified_at: Option<u64>,
     pub size: Option<u64>,
+    /// OS hidden marker (DOS attribute on Windows, dot prefix on Unix-like
+    /// systems). Views dim such entries instead of filtering them out.
+    pub hidden: bool,
+    /// Read-only marker. Directories report the raw flag too; the UI only
+    /// badges files because the DOS READONLY bit on folders is vestigial.
+    pub read_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -55,6 +61,10 @@ pub struct SearchEntry {
     pub kind: EntryKind,
     pub modified_at: Option<u64>,
     pub size: Option<u64>,
+    /// See [`DirectoryEntry::hidden`]; search rows reuse the same badges.
+    pub hidden: bool,
+    /// See [`DirectoryEntry::read_only`].
+    pub read_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]

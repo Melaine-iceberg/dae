@@ -1,4 +1,7 @@
 {
+  "badges": {
+    "readOnly": "只读"
+  },
   "undoRedo": {
     "toast_undo_one": "已撤销：{{op}}",
     "toast_undo_other": "已撤销：{{op}} {{count}} 个项目",

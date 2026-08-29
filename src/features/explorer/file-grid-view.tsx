@@ -12,12 +12,9 @@ import type { GitEntryStatusKind } from "@/bindings";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 
+import { EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
-import {
-  DIRECTORY_PRESENTATION,
-  getFilePresentation,
-  getPresentationIconClassName,
-} from "./file-icons";
+import { getEntryPresentation, getPresentationIconClassName } from "./file-icons";
 import type { MenuActions } from "./file-list";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
@@ -267,7 +264,7 @@ function GridCell({
   selectedCount: number;
 }) {
   const isDirectory = entry.kind === "directory";
-  const presentation = isDirectory ? DIRECTORY_PRESENTATION : getFilePresentation(entry.name);
+  const presentation = getEntryPresentation(entry);
   const EntryIcon = presentation.icon;
   const iconSize = GRID_ICON_SIZE[density];
   const showThumbnail = isThumbnailSupported(entry);
@@ -282,6 +279,7 @@ function GridCell({
             // Desktop cell: tonal hover via state-layer, flat selection fill,
             // no lift and no corner morph so tiles stay put.
             "state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 text-center transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
+            entry.hidden && HIDDEN_ENTRY_CLASS,
             isSelected && "bg-selection",
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
@@ -302,30 +300,36 @@ function GridCell({
           title={entry.path}
         >
           {showThumbnail ? (
-            <ThumbnailImage
-              className={cn("w-full shrink-0 self-center", GRID_IMAGE_ZONE_CLASS[density])}
-              entry={entry}
-              requestSize={128}
-            />
+            <EntryIconFrame badgeSize="md" className="w-full" entry={entry}>
+              <ThumbnailImage
+                className={cn("w-full shrink-0 self-center", GRID_IMAGE_ZONE_CLASS[density])}
+                entry={entry}
+                requestSize={128}
+              />
+            </EntryIconFrame>
           ) : isNativeIconSupported(entry) ? (
-            <NativeIconImage
-              className="shrink-0"
-              entry={entry}
-              fallback={
-                <EntryIcon
-                  className={getPresentationIconClassName(presentation)}
-                  size={iconSize}
-                  weight={isDirectory ? "fill" : undefined}
-                />
-              }
-              pixelSize={iconSize}
-            />
+            <EntryIconFrame badgeSize="md" entry={entry}>
+              <NativeIconImage
+                className="shrink-0"
+                entry={entry}
+                fallback={
+                  <EntryIcon
+                    className={getPresentationIconClassName(presentation)}
+                    size={iconSize}
+                    weight={isDirectory ? "fill" : undefined}
+                  />
+                }
+                pixelSize={iconSize}
+              />
+            </EntryIconFrame>
           ) : (
-            <EntryIcon
-              className={cn("shrink-0", getPresentationIconClassName(presentation))}
-              size={iconSize}
-              weight={isDirectory ? "fill" : undefined}
-            />
+            <EntryIconFrame badgeSize="md" entry={entry}>
+              <EntryIcon
+                className={cn("shrink-0", getPresentationIconClassName(presentation))}
+                size={iconSize}
+                weight={isDirectory ? "fill" : undefined}
+              />
+            </EntryIconFrame>
           )}
           <span
             className={cn(

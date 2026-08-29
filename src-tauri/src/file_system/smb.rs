@@ -285,6 +285,9 @@ impl FileSystemBackend for SmbBackend {
                     kind: EntryKind::Directory,
                     modified_at: None,
                     size: None,
+                    // The smb2 crate exposes no DOS attributes; stay neutral.
+                    hidden: false,
+                    read_only: false,
                 })
                 .collect::<Vec<_>>()
         } else {
@@ -308,6 +311,8 @@ impl FileSystemBackend for SmbBackend {
                     } else {
                         Some(entry.size)
                     },
+                    hidden: false,
+                    read_only: false,
                 })
                 .collect::<Vec<_>>()
         };
@@ -633,6 +638,8 @@ impl SearchWalker<'_> {
                     kind: EntryKind::Directory,
                     modified_at: None,
                     size: None,
+                    hidden: false,
+                    read_only: false,
                 })
                 .collect::<Vec<_>>()
         } else {
@@ -656,6 +663,8 @@ impl SearchWalker<'_> {
                     } else {
                         Some(entry.size)
                     },
+                    hidden: false,
+                    read_only: false,
                 })
                 .collect::<Vec<_>>()
         };
@@ -682,6 +691,8 @@ impl SearchWalker<'_> {
                     kind: child.kind,
                     modified_at: child.modified_at,
                     size: child.size,
+                    hidden: child.hidden,
+                    read_only: child.read_only,
                 });
             }
 
