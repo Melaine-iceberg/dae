@@ -74,6 +74,7 @@ import {
 import type { DiskVolume } from "./types";
 import { ConnectDialog } from "./connect-dialog";
 import { LanguageMenu } from "@/i18n/language-menu";
+import { CloudSectionIcon, DisksSectionIcon, NetworkSectionIcon } from "./location-icons";
 import { ThemeMenu } from "./theme-menu";
 import { useDiskVolumes } from "./use-disk-volumes";
 import { useWslDistros } from "./use-wsl-distros";
@@ -239,7 +240,7 @@ function SidebarContent() {
         {/* Location groups are collapsed by default and mount their content
             (and its backend queries) only on first expand, keeping cold start
             free of disk enumeration, the `wsl.exe` probe, and store reads. */}
-        <CollapsibleSection icon={HardDriveIcon} id="disks" label={t("sections.disks")}>
+        <CollapsibleSection icon={DisksSectionIcon} id="disks" label={t("sections.disks")}>
           <DisksContent currentPath={currentPath} onNavigate={navigateToFolder} />
         </CollapsibleSection>
 
@@ -254,14 +255,14 @@ function SidebarContent() {
             label: t("network.connectStorage"),
             onClick: () => setConnectOpen(true),
           }}
-          icon={GlobeIcon}
+          icon={NetworkSectionIcon}
           id="network"
           label={t("sections.network")}
         >
           <NetworkContent currentPath={currentPath} onNavigate={navigateToFolder} />
         </CollapsibleSection>
 
-        <CollapsibleSection icon={CloudIcon} id="cloud" label={t("sections.cloudStorage")}>
+        <CollapsibleSection icon={CloudSectionIcon} id="cloud" label={t("sections.cloudStorage")}>
           <div className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground/70">
             <CloudIcon className="size-4 shrink-0" />
             <span className="text-xs">{t("cloud.comingSoon")}</span>
