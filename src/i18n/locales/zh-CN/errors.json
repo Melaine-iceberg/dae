@@ -27,6 +27,22 @@
       "session_missing": "终端会话不存在",
       "write_failed": "写入终端失败",
       "resize_failed": "调整终端尺寸失败"
+    },
+    "git": {
+      "git_not_found": "未找到 git 命令行工具，无法执行远程操作",
+      "not_a_worktree": "此位置不在 Git 工作区内",
+      "empty_repo": "此仓库还没有任何提交",
+      "detached_head": "当前处于分离 HEAD 状态，无法确定分支",
+      "no_remote": "此仓库没有配置远程仓库",
+      "no_upstream": "当前分支没有配置上游分支",
+      "branch_not_found": "未找到该分支",
+      "branch_exists": "已存在同名分支",
+      "invalid_branch_name": "无效的分支名称",
+      "checkout_failed": "切换分支失败",
+      "create_branch_failed": "创建分支失败",
+      "fetch_failed": "获取远程更新失败",
+      "push_failed": "推送失败",
+      "pull_failed": "拉取失败"
     }
   },
   "kind": {

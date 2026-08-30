@@ -1380,6 +1380,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         {fileOperationProgress && <FileOperationStatusBar progress={fileOperationProgress} />}
         <ExplorerStatusBar
           gitBranch={gitStatus?.branch ?? null}
+          gitRoot={gitStatus?.root ?? null}
           itemCount={
             isContentSearchActive
               ? (contentSearch.response?.files.length ?? 0)

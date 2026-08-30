@@ -27,6 +27,22 @@
       "session_missing": "The terminal session no longer exists",
       "write_failed": "Failed to write to the terminal",
       "resize_failed": "Failed to resize the terminal"
+    },
+    "git": {
+      "git_not_found": "The git command line tool is not available; remote operations are disabled",
+      "not_a_worktree": "This location is not inside a Git work tree",
+      "empty_repo": "This repository has no commits yet",
+      "detached_head": "HEAD is detached; no branch is checked out",
+      "no_remote": "This repository has no remotes configured",
+      "no_upstream": "The current branch has no upstream configured",
+      "branch_not_found": "Branch not found",
+      "branch_exists": "A branch with this name already exists",
+      "invalid_branch_name": "Invalid branch name",
+      "checkout_failed": "Branch switch failed",
+      "create_branch_failed": "Branch creation failed",
+      "fetch_failed": "Fetch failed",
+      "push_failed": "Push failed",
+      "pull_failed": "Pull failed"
     }
   },
   "kind": {

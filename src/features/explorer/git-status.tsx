@@ -14,7 +14,7 @@ export interface ExplorerGitStatus {
   directoryUntracked: boolean;
 }
 
-const GIT_STATUS_QUERY_KEY = "git-status";
+export const GIT_STATUS_QUERY_KEY = "git-status";
 
 /**
  * 当前目录的 Git 装饰信息。状态由 git2 在后端阻塞线程计算并按路径缓存；

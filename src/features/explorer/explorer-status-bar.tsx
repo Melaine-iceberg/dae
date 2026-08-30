@@ -2,7 +2,6 @@ import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import {
   ColumnsIcon,
-  GitBranchIcon,
   ListIcon,
   RowsIcon,
   SquaresFourIcon,
@@ -20,6 +19,7 @@ import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
 import { localeNumber } from "@/i18n/format";
 import { cn } from "@/lib/utils";
 
+import { StatusBarGit } from "./git-branches";
 import {
   densityAtom,
   viewModeAtom,
@@ -29,6 +29,7 @@ import {
 
 interface ExplorerStatusBarProps {
   gitBranch?: string | null;
+  gitRoot?: string | null;
   itemCount: number;
   isLoading: boolean;
   searchError: string | null;
@@ -39,6 +40,7 @@ interface ExplorerStatusBarProps {
 
 export function ExplorerStatusBar({
   gitBranch,
+  gitRoot,
   itemCount,
   isLoading,
   searchError,
@@ -71,15 +73,7 @@ export function ExplorerStatusBar({
           {t("statusBar.selectedCount", { number: localeNumber(selectedCount) })}
         </span>
       )}
-      {gitBranch && (
-        <span
-          className="flex min-w-0 shrink-0 items-center gap-1"
-          title={t("statusBar.gitBranchTitle", { branch: gitBranch })}
-        >
-          <GitBranchIcon className="size-3.5 shrink-0" />
-          <span className="max-w-48 truncate">{gitBranch}</span>
-        </span>
-      )}
+      <StatusBarGit branch={gitBranch ?? null} root={gitRoot ?? null} />
       <div className="ml-auto flex shrink-0 items-center gap-1">
         <TerminalToggle />
         <div aria-hidden="true" className="mx-1 h-4 w-px bg-border" />
