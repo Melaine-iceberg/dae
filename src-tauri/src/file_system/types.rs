@@ -316,3 +316,73 @@ pub fn normalize_path_for_display(path: &str) -> String {
     #[cfg(not(windows))]
     path.to_owned()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn removes_windows_verbatim_path_prefixes() {
+        assert_eq!(
+            normalize_path_for_display(r"\\?\C:\Users\test"),
+            r"C:\Users\test"
+        );
+        assert_eq!(
+            normalize_path_for_display(r"\\?\UNC\server\share\folder"),
+            r"\\server\share\folder"
+        );
+    }
+
+    #[test]
+    fn places_directories_before_files_case_insensitively() {
+        let mut entries = [
+            DirectoryEntry {
+                name: "zeta.txt".into(),
+                path: "zeta.txt".into(),
+                kind: EntryKind::File,
+                modified_at: None,
+                size: None,
+                hidden: false,
+                read_only: false,
+            },
+            DirectoryEntry {
+                name: "alpha".into(),
+                path: "alpha".into(),
+                kind: EntryKind::Directory,
+                modified_at: None,
+                size: None,
+                hidden: false,
+                read_only: false,
+            },
+            DirectoryEntry {
+                name: "Beta".into(),
+                path: "Beta".into(),
+                kind: EntryKind::Directory,
+                modified_at: None,
+                size: None,
+                hidden: false,
+                read_only: false,
+            },
+        ];
+
+        entries.sort_by_cached_key(entry_sort_key);
+
+        assert_eq!(entries[0].name, "alpha");
+        assert_eq!(entries[1].name, "Beta");
+        assert_eq!(entries[2].name, "zeta.txt");
+    }
+
+    #[test]
+    fn display_name_from_path_handles_separators_and_roots() {
+        assert_eq!(display_name_from_path(r"C:\Users\alice\docs"), "docs");
+        assert_eq!(display_name_from_path("/home/alice/pictures/"), "pictures");
+        assert_eq!(display_name_from_path(r"\wsl$\Ubuntu"), "Ubuntu");
+        assert_eq!(display_name_from_path("smb://nas.local/media"), "media");
+        // Trailing separators are ignored, so drive roots keep their letter and
+        // connection roots show their host.
+        assert_eq!(display_name_from_path(r"C:\"), "C:");
+        assert_eq!(display_name_from_path("smb://nas.local"), "nas.local");
+        assert_eq!(display_name_from_path("/"), "/");
+    }
+}

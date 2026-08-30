@@ -259,7 +259,12 @@ fn render_file_icon(
         mime: "image/png",
         bytes,
     });
-    store_cache(&ICON_CACHE, ICON_CACHE_MAX_ENTRIES, cache_key, Arc::clone(&icon));
+    store_cache(
+        &ICON_CACHE,
+        ICON_CACHE_MAX_ENTRIES,
+        cache_key,
+        Arc::clone(&icon),
+    );
     Ok(Some(icon))
 }
 
@@ -275,8 +280,7 @@ fn extract_file_icon_png(path: &str, size: u32) -> Option<Vec<u8>> {
     };
     use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
     use windows::Win32::UI::Shell::{
-        IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_ICONONLY,
-        SIIGBF_RESIZETOFIT,
+        IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT,
     };
     use windows::core::HSTRING;
 
@@ -346,14 +350,17 @@ fn extract_file_icon_png(path: &str, size: u32) -> Option<Vec<u8>> {
             }
 
             // Shell bitmaps are BGRA; swap channels for the `image` crate.
-            for pixel in pixels.chunks_exact_mut(4) {
+            for pixel in pixels.as_chunks_mut::<4>().0 {
                 pixel.swap(0, 2);
             }
 
             let image = image::RgbaImage::from_raw(width as u32, height as u32, pixels)?;
             let mut buffer = Vec::new();
             image::DynamicImage::ImageRgba8(image)
-                .write_to(&mut std::io::Cursor::new(&mut buffer), image::ImageFormat::Png)
+                .write_to(
+                    &mut std::io::Cursor::new(&mut buffer),
+                    image::ImageFormat::Png,
+                )
                 .ok()?;
             Some(buffer)
         })();
@@ -388,7 +395,10 @@ mod tests {
     }
 }
 
-fn lookup_cache(cache: &'static Mutex<Option<RenderedCache>>, cache_key: &str) -> Option<Arc<RenderedThumbnail>> {
+fn lookup_cache(
+    cache: &'static Mutex<Option<RenderedCache>>,
+    cache_key: &str,
+) -> Option<Arc<RenderedThumbnail>> {
     cache.lock().ok()?.as_ref()?.entries.get(cache_key).cloned()
 }
 

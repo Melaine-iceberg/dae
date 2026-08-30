@@ -212,3 +212,56 @@ fn emit_size(
     }
     .emit(app);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn walks_directory_sizes_including_nested_and_hidden_files() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-folder-size-test-{}", std::process::id()));
+        let nested = directory.join("nested");
+        fs::create_dir_all(&nested).expect("create test directory");
+        fs::write(directory.join("root.txt"), "root").expect("write root file");
+        fs::write(directory.join(".hidden"), "hidden!").expect("write hidden file");
+        fs::write(nested.join("leaf.bin"), "leaf-content").expect("write nested file");
+
+        let cancelled = AtomicBool::new(false);
+        let last_reported = AtomicU64::new(0);
+        let report_count = AtomicU64::new(0);
+
+        let total = walk_directory_size(&directory, &cancelled, &|current| {
+            last_reported.store(current, AtomicOrdering::Relaxed);
+            report_count.fetch_add(1, AtomicOrdering::Relaxed);
+        });
+
+        // Every file — including the hidden and the nested one — is counted
+        // exactly once, so the last progress report carries the final total.
+        assert_eq!(total, 4 + 7 + 12);
+        assert_eq!(last_reported.load(AtomicOrdering::Relaxed), total);
+        assert_eq!(report_count.load(AtomicOrdering::Relaxed), 3);
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[test]
+    fn cancels_directory_size_walks_before_they_start() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-folder-size-cancel-{}", std::process::id()));
+        fs::create_dir_all(&directory).expect("create test directory");
+        fs::write(directory.join("file.txt"), "content").expect("write file");
+
+        let cancelled = AtomicBool::new(true);
+        let report_count = AtomicU64::new(0);
+        let total = walk_directory_size(&directory, &cancelled, &|_| {
+            report_count.fetch_add(1, AtomicOrdering::Relaxed);
+        });
+
+        assert_eq!(total, 0);
+        assert_eq!(report_count.load(AtomicOrdering::Relaxed), 0);
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+}

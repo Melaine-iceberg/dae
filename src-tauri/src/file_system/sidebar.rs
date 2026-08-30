@@ -336,3 +336,53 @@ pub(super) fn write_atomic(path: &std::path::Path, contents: &[u8]) -> Result<()
     fs::rename(&temp_path, path)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hides_network_and_pseudo_file_systems() {
+        assert!(!is_visible_file_system("cifs"));
+        assert!(!is_visible_file_system("NFS"));
+        assert!(!is_visible_file_system("smbfs"));
+        assert!(!is_visible_file_system("fuse.sshfs"));
+        assert!(!is_visible_file_system("webdav"));
+        assert!(!is_visible_file_system("tmpfs"));
+        assert!(!is_visible_file_system("overlay"));
+        assert!(!is_visible_file_system("proc"));
+
+        assert!(is_visible_file_system("NTFS"));
+        assert!(is_visible_file_system("ext4"));
+        assert!(is_visible_file_system("apfs"));
+        assert!(is_visible_file_system("btrfs"));
+        assert!(is_visible_file_system("FAT32"));
+        assert!(is_visible_file_system("exFAT"));
+        assert!(is_visible_file_system("iso9660"));
+    }
+
+    #[test]
+    fn dedupes_favorites_keeping_the_first_entry_per_path() {
+        let favorites = vec![
+            Favorite {
+                path: "/a".into(),
+                name: "First".into(),
+            },
+            Favorite {
+                path: "/b".into(),
+                name: "B".into(),
+            },
+            Favorite {
+                path: "/a".into(),
+                name: "Duplicate".into(),
+            },
+        ];
+
+        let deduped = dedupe_favorites(favorites);
+
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0].path, "/a");
+        assert_eq!(deduped[0].name, "First");
+        assert_eq!(deduped[1].path, "/b");
+    }
+}

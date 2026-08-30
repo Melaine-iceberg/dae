@@ -15,13 +15,7 @@ pub use operations::{
 };
 
 #[cfg(test)]
-pub use directory::{build_breadcrumbs, entry_state_flags, read_directory_sync};
-#[cfg(test)]
-pub use operations::{create_entry_sync, rename_entry_sync};
-#[cfg(test)]
-pub use properties::update_properties;
-#[cfg(test)]
-pub use search::search_directory_sync;
+pub use operations::rename_entry_sync;
 
 use crate::file_system::error::FileSystemError;
 use crate::file_system::types::{

@@ -136,3 +136,33 @@ pub(super) fn now_millis() -> u64 {
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upsert_recent_dedupes_orders_and_caps() {
+        let make = |path: &str, accessed_at: u64| RecentItem {
+            path: path.to_string(),
+            name: path.to_string(),
+            kind: EntryKind::File,
+            source: RecentSource::Opened,
+            accessed_at,
+        };
+
+        let mut items = vec![make("a", 1), make("b", 2), make("c", 3)];
+
+        // Re-recording an existing path moves it to the front without duplicating.
+        upsert_recent(&mut items, make("b", 4), 10);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].path, "b");
+        assert_eq!(items[0].accessed_at, 4);
+
+        // The cap evicts the least recently used entries.
+        upsert_recent(&mut items, make("d", 5), 2);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].path, "d");
+        assert_eq!(items[1].path, "b");
+    }
+}

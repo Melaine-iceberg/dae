@@ -267,3 +267,141 @@ fn build_file_types(filter: Option<&str>) -> Result<Option<ignore::types::Types>
         .map_err(|error| FileSystemError::Internal(format!("fs.type_filter_build_failed: {error}")))?;
     Ok(Some(types))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn write_content_search_fixture(root: &Path) {
+        let src = root.join("src");
+        fs::create_dir_all(src.join("nested")).expect("create src tree");
+        fs::create_dir_all(root.join("node_modules")).expect("create node_modules");
+        fs::create_dir_all(root.join("target")).expect("create target");
+
+        fs::write(src.join("notes.txt"), "hello TODO world\ntodo again\nplain line\n")
+            .expect("write notes.txt");
+        fs::write(src.join("nested").join("main.rs"), "fn main() { let n = 42; }\n")
+            .expect("write main.rs");
+        fs::write(root.join("node_modules").join("dep.js"), "TODO in deps\n")
+            .expect("write dep.js");
+        fs::write(root.join("target").join("build.log"), "TODO in build output\n")
+            .expect("write build.log");
+    }
+
+    #[test]
+    fn searches_contents_with_regex_and_reports_match_ranges() {
+        let root =
+            std::env::temp_dir().join(format!("dae-content-search-regex-{}", std::process::id()));
+        write_content_search_fixture(&root);
+
+        let params = ContentSearchParams {
+            query: r"T[OD]DO",
+            is_regex: true,
+            case_sensitive: false,
+            file_filter: None,
+        };
+        let response =
+            search_file_contents_sync(root.clone(), &params, &|| true).expect("regex content search");
+
+        let paths = response
+            .files
+            .iter()
+            .map(|file| file.relative_path.as_str())
+            .collect::<Vec<_>>();
+        let expected_notes = Path::new("src").join("notes.txt").to_string_lossy().into_owned();
+        assert_eq!(paths, vec![expected_notes.as_str()]);
+        assert!(!response.truncated);
+
+        let notes = &response.files[0];
+        assert_eq!(notes.matches.len(), 2);
+        assert_eq!(notes.matches[0].line_number, 1);
+        assert_eq!(notes.matches[0].line_text, "hello TODO world");
+        assert_eq!(notes.matches[0].ranges, vec![(6, 10)]);
+        assert_eq!(notes.matches[1].line_number, 2);
+
+        fs::remove_dir_all(root).expect("remove content search fixture");
+    }
+
+    #[test]
+    fn fixed_string_search_respects_case_sensitivity() {
+        let root =
+            std::env::temp_dir().join(format!("dae-content-search-case-{}", std::process::id()));
+        write_content_search_fixture(&root);
+
+        let sensitive = ContentSearchParams {
+            query: "todo",
+            is_regex: false,
+            case_sensitive: true,
+            file_filter: None,
+        };
+        let response = search_file_contents_sync(root.clone(), &sensitive, &|| true)
+            .expect("case-sensitive content search");
+        assert_eq!(response.files.len(), 1);
+        assert_eq!(response.files[0].matches.len(), 1);
+        assert_eq!(response.files[0].matches[0].line_number, 2);
+
+        let regex_metacharacters = ContentSearchParams {
+            query: "main()",
+            is_regex: false,
+            case_sensitive: true,
+            file_filter: None,
+        };
+        let response = search_file_contents_sync(root.clone(), &regex_metacharacters, &|| true)
+            .expect("literal content search");
+        assert_eq!(response.files.len(), 1);
+        assert!(response.files[0].relative_path.ends_with("main.rs"));
+
+        fs::remove_dir_all(root).expect("remove content search fixture");
+    }
+
+    #[test]
+    fn content_search_filters_by_file_type() {
+        let root =
+            std::env::temp_dir().join(format!("dae-content-search-types-{}", std::process::id()));
+        write_content_search_fixture(&root);
+
+        let params = ContentSearchParams {
+            query: "TODO",
+            is_regex: false,
+            case_sensitive: true,
+            file_filter: Some("*.rs, js"),
+        };
+        let response = search_file_contents_sync(root.clone(), &params, &|| true)
+            .expect("typed content search");
+
+        // node_modules is force-ignored even though dep.js matches the filter.
+        assert!(response.files.is_empty());
+
+        let params = ContentSearchParams {
+            query: "42",
+            is_regex: false,
+            case_sensitive: true,
+            file_filter: Some("rs"),
+        };
+        let response = search_file_contents_sync(root.clone(), &params, &|| true)
+            .expect("extension-alias content search");
+        assert_eq!(response.files.len(), 1);
+        assert!(response.files[0].relative_path.ends_with("main.rs"));
+
+        fs::remove_dir_all(root).expect("remove content search fixture");
+    }
+
+    #[test]
+    fn blank_content_search_returns_empty_response() {
+        let response = search_file_contents_sync(
+            PathBuf::from("missing"),
+            &ContentSearchParams {
+                query: "   ",
+                is_regex: true,
+                case_sensitive: false,
+                file_filter: None,
+            },
+            &|| true,
+        )
+        .expect("blank content search should not touch the file system");
+
+        assert!(response.files.is_empty());
+        assert!(!response.truncated);
+    }
+}

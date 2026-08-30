@@ -688,3 +688,235 @@ fn path_contains(ancestor: &str, descendant: &str) -> bool {
             .next()
             .is_some_and(|next| next == '/' || next == '\\')
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::file_system::local::LocalBackend;
+    use crate::file_system::test_support::TestProgress;
+    use crate::file_system::vfs;
+    use std::fs;
+    use std::sync::atomic::Ordering as AtomicOrdering;
+
+    #[test]
+    fn transfers_trees_between_distinct_backend_instances() {
+        use std::sync::Arc;
+
+        let root = std::env::temp_dir().join(format!("dae-transfer-test-{}", std::process::id()));
+        let source_dir = root.join("source");
+        let destination_dir = root.join("destination");
+        fs::create_dir_all(source_dir.join("nested")).expect("create source tree");
+        fs::write(source_dir.join("root.txt"), "root content").expect("write root file");
+        fs::write(source_dir.join("nested/leaf.bin"), vec![7_u8; 600 * 1024])
+            .expect("write multi-chunk file");
+        fs::create_dir_all(&destination_dir).expect("create destination");
+
+        // Two distinct Arcs force the streaming path instead of any fast path.
+        let source_backend: Arc<dyn FileSystemBackend> = Arc::new(LocalBackend);
+        let destination_backend: Arc<dyn FileSystemBackend> = Arc::new(LocalBackend);
+        let source_path = source_dir.to_string_lossy().into_owned();
+        let destination_path = destination_dir.to_string_lossy().into_owned();
+
+        let copy_progress = TestProgress::new();
+        copy_entries(
+            vec![TransferSource {
+                path: source_path.clone(),
+                backend: source_backend.clone(),
+                on_conflict: ConflictAction::Fail,
+            }],
+            &destination_path,
+            &destination_backend,
+            &copy_progress,
+            &mut Vec::new(),
+        )
+        .expect("copy tree across backends");
+
+        let copied_root = destination_dir.join("source");
+        assert_eq!(
+            fs::read_to_string(copied_root.join("root.txt")).expect("read copied root file"),
+            "root content"
+        );
+        let leaf = fs::read(copied_root.join("nested/leaf.bin")).expect("read copied leaf");
+        assert_eq!(leaf.len(), 600 * 1024);
+        assert!(leaf.iter().all(|byte| *byte == 7));
+        assert_eq!(
+            copy_progress.completed.load(AtomicOrdering::Relaxed),
+            copy_progress.total.load(AtomicOrdering::Relaxed)
+        );
+
+        let duplicate_progress = TestProgress::new();
+        let duplicate_error = copy_entries(
+            vec![TransferSource {
+                path: source_path.clone(),
+                backend: source_backend.clone(),
+                on_conflict: ConflictAction::Fail,
+            }],
+            &destination_path,
+            &destination_backend,
+            &duplicate_progress,
+            &mut Vec::new(),
+        )
+        .expect_err("overwriting must be blocked");
+        assert!(matches!(duplicate_error, FileSystemError::AlreadyExists(_)));
+
+        let move_destination_dir = root.join("destination-moved");
+        fs::create_dir_all(&move_destination_dir).expect("create move destination");
+        let move_progress = TestProgress::new();
+        move_entries(
+            vec![TransferSource {
+                path: source_path.clone(),
+                backend: source_backend.clone(),
+                on_conflict: ConflictAction::Fail,
+            }],
+            &move_destination_dir.to_string_lossy(),
+            &destination_backend,
+            &move_progress,
+            &mut Vec::new(),
+        )
+        .expect("move tree across backends");
+        assert!(!source_dir.exists());
+        assert!(
+            move_destination_dir
+                .join("source/nested/leaf.bin")
+                .is_file()
+        );
+        assert_eq!(
+            move_progress.completed.load(AtomicOrdering::Relaxed),
+            move_progress.total.load(AtomicOrdering::Relaxed)
+        );
+
+        let delete_progress = TestProgress::new();
+        delete_entries(
+            vec![TransferSource {
+                path: move_destination_dir
+                    .join("source")
+                    .to_string_lossy()
+                    .into_owned(),
+                backend: destination_backend.clone(),
+                on_conflict: ConflictAction::Fail,
+            }],
+            &delete_progress,
+        )
+        .expect("delete tree through engine");
+        assert!(!move_destination_dir.join("source").exists());
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn reports_conflicts_for_the_dialog_and_skips_self_transfers() {
+        use std::sync::Arc;
+
+        let root = std::env::temp_dir().join(format!("dae-conflict-report-{}", std::process::id()));
+        let source_dir = root.join("source");
+        let destination_dir = root.join("destination");
+        fs::create_dir_all(&source_dir).expect("create source directory");
+        fs::create_dir_all(&destination_dir).expect("create destination directory");
+        fs::write(source_dir.join("clashing.txt"), "source bytes").expect("write clashing source");
+        fs::write(source_dir.join("fresh.txt"), "fresh bytes").expect("write fresh source");
+        // A file already sitting in the destination directory: moving the whole
+        // batch into its own parent must not report it as a conflict.
+        fs::write(destination_dir.join("clashing.txt"), "target bytes")
+            .expect("write clashing target");
+
+        let backend: Arc<dyn FileSystemBackend> = vfs::resolve(&source_dir.to_string_lossy())
+            .expect("resolve local backend");
+
+        let source = |name: &str| TransferSource {
+            path: source_dir.join(name).to_string_lossy().into_owned(),
+            backend: backend.clone(),
+            on_conflict: ConflictAction::Fail,
+        };
+
+        let conflicts = find_conflicts(
+            vec![source("clashing.txt"), source("fresh.txt")],
+            &destination_dir.to_string_lossy(),
+            &backend,
+        )
+        .expect("find conflicts");
+
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].name, "clashing.txt");
+        assert_eq!(conflicts[0].source_size, Some("source bytes".len() as u64));
+        assert_eq!(conflicts[0].target_size, Some("target bytes".len() as u64));
+        assert!(conflicts[0].source_modified_at.is_some());
+        assert!(conflicts[0].target_modified_at.is_some());
+
+        // A file moved into its own directory lands on itself: no conflict.
+        let self_conflicts = find_conflicts(
+            vec![TransferSource {
+                path: destination_dir
+                    .join("clashing.txt")
+                    .to_string_lossy()
+                    .into_owned(),
+                backend: backend.clone(),
+                on_conflict: ConflictAction::Fail,
+            }],
+            &destination_dir.to_string_lossy(),
+            &backend,
+        )
+        .expect("find self conflicts");
+        assert!(self_conflicts.is_empty());
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn resolves_streaming_transfer_conflicts_across_backends() {
+        use std::sync::Arc;
+
+        let root = std::env::temp_dir().join(format!("dae-conflict-stream-{}", std::process::id()));
+        let source_dir = root.join("source");
+        let destination_dir = root.join("destination");
+        fs::create_dir_all(&source_dir).expect("create source directory");
+        fs::create_dir_all(&destination_dir).expect("create destination directory");
+        fs::write(source_dir.join("data.bin"), "streamed").expect("write source file");
+        fs::write(destination_dir.join("data.bin"), "existing").expect("write target file");
+
+        // Two distinct Arcs force the streaming engine.
+        let source_backend: Arc<dyn FileSystemBackend> = Arc::new(LocalBackend);
+        let destination_backend: Arc<dyn FileSystemBackend> = Arc::new(LocalBackend);
+
+        let keep_progress = TestProgress::new();
+        copy_entries(
+            vec![TransferSource {
+                path: source_dir.join("data.bin").to_string_lossy().into_owned(),
+                backend: source_backend.clone(),
+                on_conflict: ConflictAction::KeepBoth,
+            }],
+            &destination_dir.to_string_lossy(),
+            &destination_backend,
+            &keep_progress,
+            &mut Vec::new(),
+        )
+        .expect("stream copy keeping both");
+        assert_eq!(
+            fs::read_to_string(destination_dir.join("data 副本.bin")).expect("kept streamed copy"),
+            "streamed"
+        );
+
+        let replace_progress = TestProgress::new();
+        copy_entries(
+            vec![TransferSource {
+                path: source_dir.join("data.bin").to_string_lossy().into_owned(),
+                backend: source_backend.clone(),
+                on_conflict: ConflictAction::Replace,
+            }],
+            &destination_dir.to_string_lossy(),
+            &destination_backend,
+            &replace_progress,
+            &mut Vec::new(),
+        )
+        .expect("stream copy with replace");
+        assert_eq!(
+            fs::read_to_string(destination_dir.join("data.bin")).expect("replaced streamed copy"),
+            "streamed"
+        );
+        assert_eq!(
+            replace_progress.completed.load(AtomicOrdering::Relaxed),
+            replace_progress.total.load(AtomicOrdering::Relaxed)
+        );
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+}

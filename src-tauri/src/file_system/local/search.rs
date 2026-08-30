@@ -162,3 +162,72 @@ fn match_rank(name: &str, query: &str) -> u8 {
         2
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn searches_nested_files_and_directories_case_insensitively() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-file-search-test-{}", std::process::id()));
+        let matching_directory = directory.join("Reports");
+        let matching_file = matching_directory.join("Annual-REPORT.txt");
+        let hidden_file = directory.join(".report-draft");
+
+        fs::create_dir_all(&matching_directory).expect("create matching directory");
+        fs::write(&matching_file, "report").expect("create matching file");
+        fs::write(&hidden_file, "draft").expect("create hidden matching file");
+
+        let response = search_directory_sync(directory.clone(), "report", &|| true)
+            .expect("search test directory");
+        let names = response
+            .entries
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["Reports", ".report-draft", "Annual-REPORT.txt"]);
+        assert!(
+            response
+                .entries
+                .iter()
+                .any(|entry| entry.relative_path.contains("Annual-REPORT.txt"))
+        );
+        let file_entry = response
+            .entries
+            .iter()
+            .find(|entry| entry.name == "Annual-REPORT.txt")
+            .expect("matching file entry");
+        assert_eq!(file_entry.size, Some(6));
+        assert!(file_entry.modified_at.is_some());
+        assert!(!response.truncated);
+
+        fs::remove_dir_all(directory).expect("remove search test directory");
+    }
+
+    #[test]
+    fn returns_no_search_results_for_blank_queries() {
+        let response = search_directory_sync(PathBuf::from("missing"), "  ", &|| true)
+            .expect("blank search should not touch the file system");
+
+        assert!(response.entries.is_empty());
+        assert!(!response.truncated);
+    }
+
+    #[test]
+    fn cancels_search_when_the_generation_is_stale() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-search-cancel-test-{}", std::process::id()));
+        fs::create_dir_all(&directory).expect("create test directory");
+        fs::write(directory.join("report.txt"), "content").expect("create matching file");
+
+        let response = search_directory_sync(directory.clone(), "report", &|| false)
+            .expect("stale search should return an empty snapshot");
+
+        assert!(response.entries.is_empty());
+        assert!(!response.truncated);
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+}

@@ -6,34 +6,13 @@ use super::progress::{
 };
 use super::transfer::{self, TransferSource};
 use super::types::{
-    ConflictAction, ContentSearchResponse, DirectoryView, FileProperties, NewEntryKind,
-    PropertyChanges, SearchResponse, TransferConflict, TransferItem, TransferPair, path_to_string,
+    ConflictAction, DirectoryView, FileProperties, NewEntryKind, PropertyChanges, TransferConflict,
+    TransferItem, TransferPair, path_to_string,
 };
 use super::undo::{self, Operation, TrashRecord, UndoRedoOutcome, UndoRedoState};
-use super::vfs::{self, Scheme};
-use super::watch::{DirectoryWatcher, WatchHandle, spawn_polling_watcher};
+use super::vfs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use tauri::Manager;
-
-#[derive(Default)]
-pub struct FileSearchState {
-    generation: AtomicU64,
-}
-
-impl FileSearchState {
-    fn begin(&self) -> u64 {
-        self.generation.fetch_add(1, AtomicOrdering::AcqRel) + 1
-    }
-
-    fn cancel(&self) {
-        self.generation.fetch_add(1, AtomicOrdering::AcqRel);
-    }
-
-    fn is_current(&self, generation: u64) -> bool {
-        self.generation.load(AtomicOrdering::Acquire) == generation
-    }
-}
 
 /// Returns the operating system's home directory for the initial explorer view.
 #[tauri::command]
@@ -67,103 +46,6 @@ pub async fn read_directory(
     tauri::async_runtime::spawn_blocking(move || vfs::resolve(&path)?.read_dir(&path))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
-}
-
-/// Replaces the active watcher with one that tracks the currently displayed directory.
-#[tauri::command]
-#[specta::specta]
-pub async fn watch_directory(path: String, app: tauri::AppHandle) -> Result<(), FileSystemError> {
-    let generation = app.state::<DirectoryWatcher>().begin_update();
-
-    if vfs::split_scheme(&path)?.0 == Scheme::Local {
-        let watcher_app = app.clone();
-        let watcher = tauri::async_runtime::spawn_blocking(move || {
-            local::create_directory_watcher(PathBuf::from(path), watcher_app)
-        })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))??;
-
-        app.state::<DirectoryWatcher>()
-            .replace(generation, WatchHandle::Notify(watcher))
-    } else {
-        let watch_path = path.clone();
-        let backend = tauri::async_runtime::spawn_blocking(move || vfs::resolve(&watch_path))
-            .await
-            .map_err(|error| FileSystemError::Internal(error.to_string()))??;
-
-        let handle = spawn_polling_watcher(path, backend, app.clone());
-        app.state::<DirectoryWatcher>().replace(generation, handle)
-    }
-}
-
-/// Recursively searches entry names beneath one directory. A newer request
-/// cancels any older traversal.
-#[tauri::command]
-#[specta::specta]
-pub async fn search_directory(
-    path: String,
-    query: String,
-    app: tauri::AppHandle,
-) -> Result<SearchResponse, FileSystemError> {
-    let generation = app.state::<FileSearchState>().begin();
-    let search_app = app.clone();
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let backend = vfs::resolve(&path)?;
-        let state = search_app.state::<FileSearchState>();
-        let is_current = || state.is_current(generation);
-        backend.search(&path, &query, &is_current)
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
-}
-
-/// Stops the active traversal when the search surface is dismissed.
-#[tauri::command]
-#[specta::specta]
-pub fn cancel_search(app: tauri::AppHandle) {
-    app.state::<FileSearchState>().cancel();
-}
-
-/// Searches file contents beneath one local directory with optional regex,
-/// case sensitivity, and file-type filtering. Ignores VCS/dependency
-/// directories (`.git`, `node_modules`, `target`) by default. A newer request
-/// cancels any older traversal.
-#[tauri::command]
-#[specta::specta]
-pub async fn search_file_contents(
-    path: String,
-    query: String,
-    is_regex: bool,
-    case_sensitive: bool,
-    file_filter: Option<String>,
-    app: tauri::AppHandle,
-) -> Result<ContentSearchResponse, FileSystemError> {
-    if !is_local_path(&path) {
-        return Err(FileSystemError::InvalidInput(
-            "fs.content_search_local_only".into(),
-        ));
-    }
-
-    let generation = app.state::<FileSearchState>().begin();
-    let search_app = app.clone();
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = search_app.state::<FileSearchState>();
-        let is_current = move || state.is_current(generation);
-        local::search_file_contents_sync(
-            PathBuf::from(path),
-            &local::ContentSearchParams {
-                query: &query,
-                is_regex,
-                case_sensitive,
-                file_filter: file_filter.as_deref(),
-            },
-            &is_current,
-        )
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Renames a single directory entry without allowing a path change.
@@ -363,7 +245,7 @@ pub async fn delete_entries(
         let progress =
             FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
 
-        if targets.iter().all(|target| is_local_path(&target.path)) {
+        if targets.iter().all(|target| vfs::is_local_path(&target.path)) {
             let paths = targets
                 .iter()
                 .map(|target| PathBuf::from(&target.path))
@@ -424,7 +306,7 @@ pub async fn trash_entries(
     if paths.is_empty() {
         return Ok(());
     }
-    if paths.iter().any(|path| !is_local_path(path)) {
+    if paths.iter().any(|path| !vfs::is_local_path(path)) {
         return Err(FileSystemError::InvalidInput("fs.trash_local_only".into()));
     }
 
@@ -610,10 +492,6 @@ pub async fn duplicate_entries(
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-fn is_local_path(path: &str) -> bool {
-    vfs::scheme_of(path).is_ok_and(|scheme| scheme == Scheme::Local)
-}
-
 /// Pushes the locale's duplicate-name token (e.g. "副本" / "copy") so the
 /// backend names Keep-Both conflicts and duplicates in the UI language.
 /// Called by the frontend at startup and on language changes.
@@ -658,7 +536,7 @@ pub async fn update_file_properties(
 #[tauri::command]
 #[specta::specta]
 pub fn open_terminal(path: String) -> Result<(), FileSystemError> {
-    if !is_local_path(&path) {
+    if !vfs::is_local_path(&path) {
         return Err(FileSystemError::InvalidInput(
             "fs.terminal_local_dir_only".into(),
         ));
@@ -681,7 +559,7 @@ pub fn open_terminal(path: String) -> Result<(), FileSystemError> {
 #[tauri::command]
 #[specta::specta]
 pub async fn open_with(path: String) -> Result<(), FileSystemError> {
-    if !is_local_path(&path) {
+    if !vfs::is_local_path(&path) {
         return Err(FileSystemError::InvalidInput(
             "fs.open_with_local_only".into(),
         ));
@@ -876,5 +754,5 @@ fn open_system_with_dialog(_file: &Path) -> Result<(), FileSystemError> {
 /// True when every source and the destination sit on the local backend, which
 /// keeps its native rayon transfer path instead of the streaming engine.
 fn is_pure_local(sources: &[TransferSource], destination: &str) -> bool {
-    is_local_path(destination) && sources.iter().all(|source| is_local_path(&source.path))
+    vfs::is_local_path(destination) && sources.iter().all(|source| vfs::is_local_path(&source.path))
 }

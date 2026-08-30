@@ -86,6 +86,11 @@ pub fn scheme_of(path: &str) -> Result<Scheme, FileSystemError> {
     Ok(split_scheme(path)?.0)
 }
 
+/// True when `path` addresses the local disk rather than a remote scheme.
+pub fn is_local_path(path: &str) -> bool {
+    scheme_of(path).is_ok_and(|scheme| scheme == Scheme::Local)
+}
+
 /// One storage protocol implementation behind the explorer's path strings.
 ///
 /// All methods are blocking; commands run them on the async runtime's blocking
@@ -152,5 +157,87 @@ pub trait FileSystemBackend: Send + Sync {
         Err(FileSystemError::Unsupported(format!(
             "This storage backend does not support editing properties: {path}"
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_scheme_prefixes() {
+        let (scheme, rest) = split_scheme("smb://nas/media").expect("smb scheme");
+        assert_eq!(scheme, Scheme::Smb);
+        assert_eq!(rest, "nas/media");
+
+        let (scheme, rest) = split_scheme("sftp://user@nas:22/home").expect("sftp scheme");
+        assert_eq!(scheme, Scheme::Sftp);
+        assert_eq!(rest, "user@nas:22/home");
+
+        let (scheme, rest) = split_scheme("webdavs://cloud.example/dav").expect("webdav scheme");
+        assert_eq!(scheme, Scheme::WebDav);
+        assert_eq!(rest, "cloud.example/dav");
+
+        let (scheme, rest) = split_scheme("file:///home").expect("file maps to local");
+        assert_eq!(scheme, Scheme::Local);
+        assert_eq!(rest, "/home");
+    }
+
+    #[test]
+    fn treats_scheme_less_paths_as_local() {
+        for path in [
+            r"C:\Users\test",
+            "/home/user",
+            r"\\nas\share\folder",
+            r"relative\nested://segment",
+        ] {
+            let (scheme, rest) = split_scheme(path).expect("scheme-less path");
+            assert_eq!(scheme, Scheme::Local, "path should stay local: {path}");
+            assert_eq!(rest, path);
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_and_unregistered_schemes() {
+        let unknown = resolve("s3://bucket/data")
+            .err()
+            .expect("unknown scheme");
+        assert!(matches!(unknown, FileSystemError::InvalidInput(_)));
+
+        // SMB and SFTP resolve to connect attempts these days; ftp is a scheme
+        // that still has no backend.
+        let unregistered = resolve("ftp://nas/media")
+            .err()
+            .expect("no ftp backend yet");
+        assert!(matches!(unregistered, FileSystemError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn serves_local_paths_through_the_backend_trait() {
+        use std::fs;
+
+        let directory = std::env::temp_dir().join(format!("dae-vfs-trait-test-{}", std::process::id()));
+        fs::create_dir_all(&directory).expect("create test directory");
+
+        let path = directory.to_string_lossy().into_owned();
+        let backend = resolve(&path).expect("local path resolves");
+
+        let created = backend
+            .create_entry(&path, "through-trait.txt", NewEntryKind::File)
+            .expect("create through trait object");
+        assert!(directory.join("through-trait.txt").is_file());
+
+        let view = backend.read_dir(&path).expect("read through trait object");
+        assert!(
+            view.entries
+                .iter()
+                .any(|entry| entry.name == "through-trait.txt")
+        );
+
+        backend
+            .remove(&created)
+            .expect("delete through trait object");
+
+        fs::remove_dir_all(directory).expect("remove test directory");
     }
 }

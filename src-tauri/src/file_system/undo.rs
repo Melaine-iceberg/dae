@@ -18,7 +18,7 @@ use super::error::FileSystemError;
 use super::progress::{FileOperationKind, FileOperationProgressReporterTrait};
 use super::transfer::{self, TransferSource};
 use super::types::{ConflictAction, NewEntryKind, TransferPair, path_to_string};
-use super::vfs::{self, Scheme};
+use super::vfs;
 use serde::Serialize;
 use specta::Type;
 use std::collections::HashMap;
@@ -328,7 +328,7 @@ pub fn execute_redo(
 /// The full path an entry gets when renamed to `new_name` within its parent,
 /// or `None` for volume roots (which cannot be renamed).
 pub fn renamed_path(path: &str, new_name: &str) -> Option<String> {
-    if is_local_path(path) {
+    if vfs::is_local_path(path) {
         Path::new(path)
             .parent()
             .map(|parent| path_to_string(&parent.join(new_name)))
@@ -407,7 +407,7 @@ fn move_entries_into(
 ) -> Result<(), FileSystemError> {
     let mut journal = Vec::new();
 
-    if is_local_path(destination) && paths.iter().all(|path| is_local_path(path)) {
+    if vfs::is_local_path(destination) && paths.iter().all(|path| vfs::is_local_path(path)) {
         let sources = paths
             .iter()
             .map(|path| (PathBuf::from(path), ConflictAction::Fail))
@@ -478,7 +478,7 @@ fn trash_or_delete(
         return Ok(existing);
     }
 
-    if existing.iter().all(|path| is_local_path(path)) {
+    if existing.iter().all(|path| vfs::is_local_path(path)) {
         progress.start(existing.len() as u64);
         for path in &existing {
             trash::delete(path).map_err(trash_error)?;
@@ -503,7 +503,7 @@ fn redo_copy(
 
     // KeepBoth so a redo never overwrites whatever claimed the names since;
     // the journal records where the copies actually landed.
-    if is_local_path(destination) && sources.iter().all(|path| is_local_path(path)) {
+    if vfs::is_local_path(destination) && sources.iter().all(|path| vfs::is_local_path(path)) {
         let items = sources
             .iter()
             .map(|path| (PathBuf::from(path), ConflictAction::KeepBoth))
@@ -636,10 +636,6 @@ fn trash_error(error: trash::Error) -> FileSystemError {
 
 // -- Path helpers -----------------------------------------------------------
 
-fn is_local_path(path: &str) -> bool {
-    vfs::scheme_of(path).is_ok_and(|scheme| scheme == Scheme::Local)
-}
-
 /// True when the path currently refers to an entry on its backend.
 fn entry_exists(path: &str) -> Result<bool, FileSystemError> {
     match vfs::resolve(path)?.stat(path) {
@@ -653,7 +649,7 @@ fn entry_exists(path: &str) -> Result<bool, FileSystemError> {
 /// (Windows drive roots keep their separator); scheme paths trim the last
 /// `/` segment.
 fn parent_directory(path: &str) -> String {
-    if is_local_path(path) {
+    if vfs::is_local_path(path) {
         Path::new(path)
             .parent()
             .map(|parent| parent.to_string_lossy().into_owned())
@@ -687,4 +683,113 @@ fn resolve_sources(
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::file_system::local::{move_entries_with_progress, rename_entry_sync};
+    use crate::file_system::test_support::TestProgress;
+    use std::fs;
+
+    #[test]
+    fn undo_and_redo_revert_a_batch_move() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-undo-move-test-{}", std::process::id()));
+        let source = directory.join("source");
+        let destination = directory.join("destination");
+        fs::create_dir_all(&source).expect("create source directory");
+        fs::create_dir_all(&destination).expect("create destination directory");
+        fs::write(source.join("a.txt"), "a").expect("create file a");
+        fs::write(source.join("b.txt"), "b").expect("create file b");
+
+        let progress = TestProgress::new();
+        let mut journal = Vec::new();
+        move_entries_with_progress(
+            vec![
+                (source.join("a.txt"), ConflictAction::Fail),
+                (source.join("b.txt"), ConflictAction::Fail),
+            ],
+            destination.clone(),
+            &progress,
+            &mut journal,
+        )
+        .expect("move entries");
+        assert_eq!(journal.len(), 2);
+        assert!(destination.join("a.txt").exists());
+        assert!(!source.join("a.txt").exists());
+
+        let undo_progress = TestProgress::new();
+        let (count, redo) =
+            execute_undo(Operation::Move { transfers: journal }, &undo_progress)
+                .expect("undo move");
+        assert_eq!(count, 2);
+        assert!(source.join("a.txt").exists());
+        assert!(source.join("b.txt").exists());
+        assert!(!destination.join("a.txt").exists());
+
+        let redo_progress = TestProgress::new();
+        let redo = redo.expect("undo reports a redo operation");
+        let (count, undone) =
+            execute_redo(redo, &redo_progress).expect("redo move");
+        assert_eq!(count, 2);
+        assert!(destination.join("a.txt").exists());
+        assert!(destination.join("b.txt").exists());
+        assert!(!source.join("a.txt").exists());
+        assert!(undone.is_some());
+
+        // An entry deleted after the move is skipped; the survivor still reverts
+        // and the redo stack only keeps the pair that actually moved back.
+        fs::remove_file(destination.join("a.txt")).expect("delete one moved file");
+        let journal = match undone.expect("redo reports an undo operation") {
+            Operation::Move { transfers } => transfers,
+            other => panic!("expected a move operation, got {other:?}"),
+        };
+        let progress = TestProgress::new();
+        let (count, redo) =
+            execute_undo(Operation::Move { transfers: journal }, &progress)
+                .expect("undo move with a missing entry");
+        assert_eq!(count, 1);
+        assert!(source.join("b.txt").exists());
+        assert!(!source.join("a.txt").exists());
+        match redo.expect("redo keeps only the reverted pair") {
+            Operation::Move { transfers } => assert_eq!(transfers.len(), 1),
+            other => panic!("expected a move operation, got {other:?}"),
+        }
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[test]
+    fn undo_and_redo_revert_a_rename() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-undo-rename-test-{}", std::process::id()));
+        fs::create_dir_all(&directory).expect("create test directory");
+        let file = directory.join("original.txt");
+        fs::write(&file, "content").expect("create file");
+
+        let new_name = "renamed.txt";
+        rename_entry_sync(file.clone(), new_name.into()).expect("rename file");
+        let renamed = directory.join(new_name);
+        assert!(renamed.exists());
+
+        let from = path_to_string(&file);
+        let to = renamed_path(&from, new_name).expect("derive renamed path");
+        let progress = TestProgress::new();
+        let (count, redo) =
+            execute_undo(Operation::Rename { from, to }, &progress).expect("undo rename");
+        assert_eq!(count, 1);
+        assert!(file.exists());
+        assert!(!renamed.exists());
+
+        let (count, undone) =
+            execute_redo(redo.expect("undo reports a redo operation"), &progress)
+                .expect("redo rename");
+        assert_eq!(count, 1);
+        assert!(renamed.exists());
+        assert!(!file.exists());
+        assert!(undone.is_some());
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
 }

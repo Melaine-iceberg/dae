@@ -297,3 +297,85 @@ pub(crate) fn use_config_dir_for_tests(config_dir: PathBuf) -> Result<(), FileSy
     registry.memory_passwords.clear();
     Ok(())
 }
+
+/// Exercises the connection store through its public commands. One test
+/// function because the registry is a process-global singleton.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn saves_updates_and_deletes_connections() {
+        let config_dir =
+            std::env::temp_dir().join(format!("dae-connections-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&config_dir);
+        use_config_dir_for_tests(config_dir.clone()).expect("initialize store");
+
+        let saved = save_connection(SaveConnectionInput {
+            protocol: Protocol::Smb,
+            host: "  MyServer.Local  ".into(),
+            port: Some(445),
+            username: Some(" alice ".into()),
+            password: Some("session-only".into()),
+            // Session memory instead of the OS keychain keeps the test hermetic.
+            remember_password: false,
+        })
+        .expect("save connection");
+
+        assert_eq!(saved.id, "smb://myserver.local:445");
+        assert_eq!(saved.host, "myserver.local");
+        assert_eq!(saved.username.as_deref(), Some("alice"));
+
+        let listed = list_connections().expect("list connections");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0], saved);
+
+        let persisted =
+            fs::read_to_string(config_dir.join("connections.json")).expect("connections file exists");
+        assert!(
+            !persisted.contains("password"),
+            "passwords must never be persisted"
+        );
+        assert!(!persisted.contains("session-only"));
+
+        let (username, password) =
+            resolve_credentials(Protocol::Smb, "MyServer.Local", Some(445));
+        assert_eq!(username.as_deref(), Some("alice"));
+        assert_eq!(password.as_deref(), Some("session-only"));
+
+        // Saving the same server again updates in place and keeps the credential.
+        save_connection(SaveConnectionInput {
+            protocol: Protocol::Smb,
+            host: "myserver.local".into(),
+            port: Some(445),
+            username: Some("bob".into()),
+            password: None,
+            remember_password: false,
+        })
+        .expect("update connection");
+
+        let listed = list_connections().expect("list after update");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].username.as_deref(), Some("bob"));
+        let (_, password) =
+            resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
+        assert_eq!(password.as_deref(), Some("session-only"));
+
+        // Reopening the store reloads from disk.
+        use_config_dir_for_tests(config_dir.clone()).expect("reload store");
+        let listed = list_connections().expect("list after reload");
+        assert_eq!(listed.len(), 1);
+
+        delete_connection("smb://myserver.local:445".into()).expect("delete connection");
+        assert!(
+            list_connections()
+                .expect("list after delete")
+                .is_empty()
+        );
+        let (_, password) =
+            resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
+        assert_eq!(password, None);
+
+        fs::remove_dir_all(config_dir).expect("remove test directory");
+    }
+}

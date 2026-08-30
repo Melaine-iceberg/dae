@@ -442,3 +442,288 @@ fn delete_entry(
     progress.advance(path);
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::file_system::test_support::TestProgress;
+    use std::sync::atomic::Ordering as AtomicOrdering;
+
+    #[test]
+    fn performs_file_operations_and_reports_entry_progress() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-file-operation-test-{}", std::process::id()));
+        let source = directory.join("source");
+        let destination = directory.join("destination");
+        let nested_file = source.join("nested.txt");
+
+        fs::create_dir_all(&source).expect("create source directory");
+        fs::create_dir_all(&destination).expect("create destination directory");
+        fs::write(&nested_file, "copied content").expect("create source file");
+
+        let copy_progress = TestProgress::new();
+        copy_entries_with_progress(
+            vec![(source.clone(), ConflictAction::Fail)],
+            destination.clone(),
+            &copy_progress,
+            &mut Vec::new(),
+        )
+        .expect("copy directory");
+        assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 2);
+        assert_eq!(copy_progress.total.load(AtomicOrdering::Relaxed), 2);
+
+        let copied_directory = destination.join("source");
+        assert_eq!(
+            fs::read_to_string(copied_directory.join("nested.txt")).expect("read copied file"),
+            "copied content"
+        );
+        assert!(source.exists());
+
+        let duplicate_progress = TestProgress::new();
+        let duplicate_error = copy_entries_with_progress(
+            vec![(source.clone(), ConflictAction::Fail)],
+            destination.clone(),
+            &duplicate_progress,
+            &mut Vec::new(),
+        )
+        .expect_err("copying over an existing entry should fail");
+        assert!(matches!(duplicate_error, FileSystemError::AlreadyExists(_)));
+
+        let nested_progress = TestProgress::new();
+        let nested_error = copy_entries_with_progress(
+            vec![(source.clone(), ConflictAction::Fail)],
+            source.clone(),
+            &nested_progress,
+            &mut Vec::new(),
+        )
+        .expect_err("copying a folder into itself should fail");
+        assert!(matches!(nested_error, FileSystemError::InvalidInput(_)));
+
+        rename_entry_sync(nested_file.clone(), "renamed.txt".into()).expect("rename file");
+        let renamed_file = source.join("renamed.txt");
+        assert!(renamed_file.exists());
+
+        let move_progress = TestProgress::new();
+        move_entries_with_progress(
+            vec![(renamed_file.clone(), ConflictAction::Fail)],
+            destination.clone(),
+            &move_progress,
+            &mut Vec::new(),
+        )
+        .expect("move file");
+        let moved_file = destination.join("renamed.txt");
+        assert!(moved_file.exists());
+        assert!(!renamed_file.exists());
+        assert_eq!(move_progress.completed.load(AtomicOrdering::Relaxed), 1);
+        assert_eq!(move_progress.total.load(AtomicOrdering::Relaxed), 1);
+
+        let delete_progress = TestProgress::new();
+        delete_entries_with_progress(vec![moved_file.clone()], &delete_progress).expect("delete file");
+        assert!(!moved_file.exists());
+        assert_eq!(delete_progress.completed.load(AtomicOrdering::Relaxed), 1);
+        assert_eq!(delete_progress.total.load(AtomicOrdering::Relaxed), 1);
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[test]
+    fn copies_and_deletes_nested_trees_in_parallel() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-parallel-tree-test-{}", std::process::id()));
+        let source = directory.join("source");
+        let destination = directory.join("destination");
+
+        for index in 0..3 {
+            let nested = source.join(format!("folder-{index}"));
+            fs::create_dir_all(&nested).expect("create nested directory");
+            fs::write(nested.join("file.txt"), "parallel").expect("create nested file");
+        }
+        fs::create_dir_all(&destination).expect("create destination directory");
+
+        let copy_progress = TestProgress::new();
+        copy_entries_with_progress(
+            vec![(source.clone(), ConflictAction::Fail)],
+            destination.clone(),
+            &copy_progress,
+            &mut Vec::new(),
+        )
+        .expect("copy nested tree");
+        assert_eq!(copy_progress.completed.load(AtomicOrdering::Relaxed), 7);
+        assert_eq!(copy_progress.total.load(AtomicOrdering::Relaxed), 7);
+
+        let copied_root = destination.join("source");
+        for index in 0..3 {
+            assert!(
+                copied_root
+                    .join(format!("folder-{index}"))
+                    .join("file.txt")
+                    .is_file()
+            );
+        }
+
+        let delete_progress = TestProgress::new();
+        delete_entries_with_progress(vec![copied_root], &delete_progress).expect("delete nested tree");
+        assert_eq!(delete_progress.completed.load(AtomicOrdering::Relaxed), 7);
+        assert_eq!(delete_progress.total.load(AtomicOrdering::Relaxed), 7);
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[test]
+    fn creates_files_and_directories_with_validated_names() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-create-entry-test-{}", std::process::id()));
+        fs::create_dir_all(&directory).expect("create test directory");
+
+        let file_path = create_entry_sync(directory.clone(), "notes.txt".into(), NewEntryKind::File)
+            .expect("create file");
+        assert_eq!(file_path, path_to_string(&directory.join("notes.txt")));
+        assert!(directory.join("notes.txt").is_file());
+
+        let directory_path = create_entry_sync(
+            directory.clone(),
+            "子文件夹".into(),
+            NewEntryKind::Directory,
+        )
+        .expect("create directory");
+        assert_eq!(directory_path, path_to_string(&directory.join("子文件夹")));
+        assert!(directory.join("子文件夹").is_dir());
+
+        let duplicate_error =
+            create_entry_sync(directory.clone(), "notes.txt".into(), NewEntryKind::File)
+                .expect_err("creating over an existing entry should fail");
+        assert!(matches!(duplicate_error, FileSystemError::AlreadyExists(_)));
+
+        let separator_error =
+            create_entry_sync(directory.clone(), "a/b.txt".into(), NewEntryKind::File)
+                .expect_err("names with path separators should fail");
+        assert!(matches!(separator_error, FileSystemError::InvalidInput(_)));
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[test]
+    fn resolves_local_transfer_conflicts_with_replace_skip_and_keep_both() {
+        let root =
+            std::env::temp_dir().join(format!("dae-conflict-local-test-{}", std::process::id()));
+        let source_dir = root.join("source");
+        let destination_dir = root.join("destination");
+        fs::create_dir_all(&source_dir).expect("create source directory");
+        fs::create_dir_all(&destination_dir).expect("create destination directory");
+
+        // Replace: the existing file is deleted, then the source is copied.
+        fs::write(source_dir.join("report.txt"), "new content").expect("write source file");
+        fs::write(destination_dir.join("report.txt"), "old content").expect("write target file");
+        let replace_progress = TestProgress::new();
+        copy_entries_with_progress(
+            vec![(source_dir.join("report.txt"), ConflictAction::Replace)],
+            destination_dir.clone(),
+            &replace_progress,
+            &mut Vec::new(),
+        )
+        .expect("copy with replace");
+        assert_eq!(
+            fs::read_to_string(destination_dir.join("report.txt")).expect("read replaced file"),
+            "new content"
+        );
+        assert_eq!(
+            replace_progress.completed.load(AtomicOrdering::Relaxed),
+            replace_progress.total.load(AtomicOrdering::Relaxed)
+        );
+        assert_eq!(replace_progress.total.load(AtomicOrdering::Relaxed), 2);
+
+        // Skip: the destination stays untouched and the source survives.
+        let skip_progress = TestProgress::new();
+        copy_entries_with_progress(
+            vec![(source_dir.join("report.txt"), ConflictAction::Skip)],
+            destination_dir.clone(),
+            &skip_progress,
+            &mut Vec::new(),
+        )
+        .expect("copy with skip");
+        assert_eq!(
+            fs::read_to_string(destination_dir.join("report.txt")).expect("skipped file unchanged"),
+            "new content"
+        );
+        assert!(source_dir.join("report.txt").is_file());
+
+        // Keep both: the incoming file lands under a "副本" name.
+        let keep_progress = TestProgress::new();
+        copy_entries_with_progress(
+            vec![(source_dir.join("report.txt"), ConflictAction::KeepBoth)],
+            destination_dir.clone(),
+            &keep_progress,
+            &mut Vec::new(),
+        )
+        .expect("copy keeping both");
+        assert_eq!(
+            fs::read_to_string(destination_dir.join("report 副本.txt")).expect("kept copy exists"),
+            "new content"
+        );
+        assert_eq!(
+            keep_progress.completed.load(AtomicOrdering::Relaxed),
+            keep_progress.total.load(AtomicOrdering::Relaxed)
+        );
+
+        // Move with replace removes the source once the target is replaced.
+        let move_progress = TestProgress::new();
+        move_entries_with_progress(
+            vec![(source_dir.join("report.txt"), ConflictAction::Replace)],
+            destination_dir.clone(),
+            &move_progress,
+            &mut Vec::new(),
+        )
+        .expect("move with replace");
+        assert!(!source_dir.join("report.txt").exists());
+        assert_eq!(
+            fs::read_to_string(destination_dir.join("report.txt")).expect("moved file content"),
+            "new content"
+        );
+        assert_eq!(
+            move_progress.completed.load(AtomicOrdering::Relaxed),
+            move_progress.total.load(AtomicOrdering::Relaxed)
+        );
+
+        // Replacing a directory tree with a file works across kinds.
+        fs::create_dir_all(destination_dir.join("bundle")).expect("create target directory");
+        fs::write(destination_dir.join("bundle/inner.txt"), "inner").expect("write inner file");
+        fs::write(source_dir.join("bundle"), "now a file").expect("write source file");
+        copy_entries_with_progress(
+            vec![(source_dir.join("bundle"), ConflictAction::Replace)],
+            destination_dir.clone(),
+            &TestProgress::new(),
+            &mut Vec::new(),
+        )
+        .expect("replace a directory with a file");
+        assert_eq!(
+            fs::read_to_string(destination_dir.join("bundle")).expect("replaced directory"),
+            "now a file"
+        );
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn moving_an_entry_onto_itself_is_a_no_op() {
+        let root = std::env::temp_dir().join(format!("dae-conflict-self-{}", std::process::id()));
+        let directory = root.join("folder");
+        fs::create_dir_all(&directory).expect("create directory");
+        fs::write(directory.join("file.txt"), "content").expect("write file");
+
+        let move_progress = TestProgress::new();
+        move_entries_with_progress(
+            vec![(directory.join("file.txt"), ConflictAction::Replace)],
+            directory.clone(),
+            &move_progress,
+            &mut Vec::new(),
+        )
+        .expect("move onto itself is skipped");
+        assert_eq!(
+            fs::read_to_string(directory.join("file.txt")).expect("file survives"),
+            "content"
+        );
+        assert_eq!(move_progress.total.load(AtomicOrdering::Relaxed), 0);
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+}

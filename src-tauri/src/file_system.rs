@@ -9,6 +9,7 @@ pub mod prefetch;
 pub mod preview;
 pub mod progress;
 pub mod recents;
+pub mod search;
 pub mod sidebar;
 pub mod smb;
 pub mod sftp;
@@ -21,8 +22,8 @@ pub mod vfs;
 pub mod watch;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod test_support;
 
-pub use commands::FileSearchState;
+pub use search::FileSearchState;
 pub use undo::UndoRedoState;
 pub use watch::{DirectoryChanged, DirectoryWatcher};

@@ -2,16 +2,19 @@
 //! file notifications; every other backend falls back to snapshot polling.
 
 use crate::file_system::error::FileSystemError;
+use crate::file_system::local;
 use crate::file_system::types::{entry_kind_rank, DirectoryView};
-use crate::file_system::vfs::SharedBackend;
+use crate::file_system::vfs::{self, Scheme, SharedBackend};
 use notify::RecommendedWatcher;
 use serde::Serialize;
 use specta::Type;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::thread;
 use std::time::Duration;
+use tauri::Manager;
 use tauri_specta::Event;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(4);
@@ -60,6 +63,33 @@ impl DirectoryWatcher {
         }
 
         Ok(())
+    }
+}
+
+/// Replaces the active watcher with one that tracks the currently displayed directory.
+#[tauri::command]
+#[specta::specta]
+pub async fn watch_directory(path: String, app: tauri::AppHandle) -> Result<(), FileSystemError> {
+    let generation = app.state::<DirectoryWatcher>().begin_update();
+
+    if vfs::split_scheme(&path)?.0 == Scheme::Local {
+        let watcher_app = app.clone();
+        let watcher = tauri::async_runtime::spawn_blocking(move || {
+            local::create_directory_watcher(PathBuf::from(path), watcher_app)
+        })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))??;
+
+        app.state::<DirectoryWatcher>()
+            .replace(generation, WatchHandle::Notify(watcher))
+    } else {
+        let watch_path = path.clone();
+        let backend = tauri::async_runtime::spawn_blocking(move || vfs::resolve(&watch_path))
+            .await
+            .map_err(|error| FileSystemError::Internal(error.to_string()))??;
+
+        let handle = spawn_polling_watcher(path, backend, app.clone());
+        app.state::<DirectoryWatcher>().replace(generation, handle)
     }
 }
 

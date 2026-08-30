@@ -233,3 +233,18 @@ fn spaces_path(app: &tauri::AppHandle) -> Result<PathBuf, FileSystemError> {
 
     Ok(config_dir.join(SPACES_FILE_NAME))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn seed_spaces_creates_four_presets() {
+        let spaces = seed_spaces();
+        assert_eq!(spaces.len(), 4);
+        assert!(spaces.iter().all(|space| space.is_preset));
+        assert!(spaces.iter().all(|space| space.items.is_empty()));
+        let ids: Vec<&str> = spaces.iter().map(|space| space.id.as_str()).collect();
+        assert_eq!(ids, ["work", "personal", "shared", "archive"]);
+    }
+}
