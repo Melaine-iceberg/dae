@@ -2,14 +2,12 @@ import {
   useEffect,
   useState,
   useSyncExternalStore,
-  type ComponentProps,
   type ComponentType,
   type FormEvent,
   type ReactNode,
 } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   CaretDownIcon,
   ClipboardTextIcon,
@@ -30,7 +28,7 @@ import {
   UsbIcon,
 } from "@phosphor-icons/react";
 
-import { commands, type StoredCloudAccount } from "@/bindings";
+import { commands, type Breadcrumb, type StoredCloudAccount } from "@/bindings";
 
 import {
   ContextMenu,
@@ -59,7 +57,6 @@ import { i18n } from "@/i18n";
 import { cn, formatBytes } from "@/lib/utils";
 
 import {
-  addFavoritePathsAtom,
   cloudAccountsAtom,
   collapsedLocationSectionsAtom,
   connectionsAtom,
@@ -76,6 +73,14 @@ import type { DiskVolume } from "./types";
 import { CloudAccountDialog } from "./cloud-account-dialog";
 import { CLOUD_PROVIDER_ICONS } from "./cloud-icons";
 import { ConnectDialog } from "./connect-dialog";
+import {
+  FolderTree,
+  ensureTreeNodeExpandedAtom,
+  isPathWithin,
+  toggleTreeNodeAtom,
+  treeExpandedPathsAtom,
+} from "./directory-tree";
+import { FolderContextMenu, copyEntryPath } from "./folder-context-menu";
 import { LanguageMenu } from "@/i18n/language-menu";
 import { CloudSectionIcon, DisksSectionIcon, NetworkSectionIcon } from "./location-icons";
 import { ThemeMenu } from "./theme-menu";
@@ -88,6 +93,9 @@ const IS_WINDOWS = navigator.userAgent.includes("Windows");
 
 /** Matches the grid-rows collapse transition (duration-normal). */
 const COLLAPSE_ANIMATION_MS = 160;
+
+/** Stable empty breadcrumb list for surfaces that are not showing a folder. */
+const EMPTY_BREADCRUMBS: readonly Breadcrumb[] = [];
 
 /**
  * The persistent navigation rail. Follows the workspace information
@@ -246,7 +254,11 @@ function SidebarContent() {
             (and its backend queries) only on first expand, keeping cold start
             free of disk enumeration, the `wsl.exe` probe, and store reads. */}
         <CollapsibleSection icon={DisksSectionIcon} id="disks" label={t("sections.disks")}>
-          <DisksContent currentPath={currentPath} onNavigate={navigateToFolder} />
+          <DisksContent
+            currentBreadcrumbs={directory?.breadcrumbs ?? EMPTY_BREADCRUMBS}
+            currentPath={currentPath}
+            onNavigate={navigateToFolder}
+          />
         </CollapsibleSection>
 
         {IS_WINDOWS && (
@@ -396,17 +408,37 @@ function SectionSkeleton() {
 }
 
 function DisksContent({
+  currentBreadcrumbs,
   currentPath,
   onNavigate,
 }: {
+  currentBreadcrumbs: readonly Breadcrumb[];
   currentPath: string | null;
   onNavigate: (path: string) => void;
 }) {
   const volumes = useDiskVolumes(currentPath);
+  const ensureTreeExpanded = useSetAtom(ensureTreeNodeExpandedAtom);
+
+  // Follow the active pane: reveal and expand the tree path leading to the
+  // folder currently shown, so the tree mirrors breadcrumb navigation.
+  useEffect(() => {
+    if (!volumes || !currentPath) return;
+    const volume = volumes.find((candidate) => isPathWithin(currentPath, candidate.mountPoint));
+    if (!volume) return;
+
+    ensureTreeExpanded(volume.mountPoint);
+    for (const crumb of currentBreadcrumbs) {
+      if (crumb.path !== currentPath && isPathWithin(crumb.path, volume.mountPoint)) {
+        ensureTreeExpanded(crumb.path);
+      }
+    }
+  }, [currentBreadcrumbs, currentPath, ensureTreeExpanded, volumes]);
+
   if (volumes === null) return <SectionSkeleton />;
 
   return volumes.map((volume) => (
     <DiskItem
+      currentPath={currentPath}
       isActive={currentPath === volume.mountPoint}
       key={volume.mountPoint}
       onNavigate={onNavigate}
@@ -705,123 +737,113 @@ function ConnectionContextMenu({
   );
 }
 
-function FolderContextMenu({
-  children,
-  isListed,
-  path,
-  triggerProps,
-}: {
-  children: ReactNode;
-  isListed: boolean;
-  path: string;
-  triggerProps?: ComponentProps<typeof ContextMenuTrigger>;
-}) {
-  const { t } = useTranslation("sidebar");
-  const setClipboard = useSetAtom(fileClipboardAtom);
-  const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
-  const openInNewTab = useSetAtom(openInNewTabAtom);
-
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger {...triggerProps}>{children}</ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuGroup>
-          <ContextMenuItem onClick={() => openInNewTab(path)}>
-            <FolderOpenIcon />
-            {t("contextMenu.openInNewTab")}
-          </ContextMenuItem>
-          {!isListed && (
-            <ContextMenuItem onClick={() => addFavoritePaths([path])}>
-              <StarIcon />
-              {t("contextMenu.addFavorite")}
-            </ContextMenuItem>
-          )}
-          <ContextMenuItem onClick={() => void copyEntryPath(path)}>
-            <ClipboardTextIcon />
-            {t("contextMenu.copyFilePath")}
-          </ContextMenuItem>
-        </ContextMenuGroup>
-        <ContextMenuSeparator />
-        <ContextMenuGroup>
-          <ContextMenuItem onClick={() => setClipboard({ operation: "copy", sourcePaths: [path] })}>
-            <CopyIcon />
-            {t("contextMenu.copy")}
-          </ContextMenuItem>
-          <ContextMenuItem onClick={() => setClipboard({ operation: "cut", sourcePaths: [path] })}>
-            <ScissorsIcon />
-            {t("contextMenu.cut")}
-          </ContextMenuItem>
-        </ContextMenuGroup>
-      </ContextMenuContent>
-    </ContextMenu>
-  );
-}
-
 function DiskItem({
+  currentPath,
   isActive,
   onNavigate,
   volume,
 }: {
+  currentPath: string | null;
   isActive: boolean;
   onNavigate: (path: string) => void;
   volume: DiskVolume;
 }) {
   const { t } = useTranslation("sidebar");
+  const treeOpen = useAtomValue(treeExpandedPathsAtom).has(volume.mountPoint);
+  const toggleTreeNode = useSetAtom(toggleTreeNodeAtom);
   const presentation = getDiskPresentation(volume);
   const freePercent =
     volume.totalBytes > 0 ? Math.round((volume.availableBytes / volume.totalBytes) * 100) : 0;
   const usedPercent = 100 - freePercent;
+  const title = t("disk.title", {
+    name: presentation.primary,
+    free: formatBytes(volume.availableBytes),
+    total: formatBytes(volume.totalBytes),
+  });
 
   return (
-    <button
+    <div
       className={cn(
-        "w-full rounded-md px-2.5 py-2 text-left transition-[background-color] duration-fast ease-spring-fast hover:bg-accent/60",
+        "w-full rounded-md px-2.5 py-2 transition-[background-color] duration-fast ease-spring-fast hover:bg-accent/60",
         isActive && "bg-selection",
       )}
-      onClick={() => onNavigate(volume.mountPoint)}
-      title={t("disk.title", {
-        name: presentation.primary,
-        free: formatBytes(volume.availableBytes),
-        total: formatBytes(volume.totalBytes),
-      })}
-      type="button"
     >
-      <div className="flex items-center gap-2">
-        {volume.isRemovable ? (
-          <UsbIcon className="size-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <HardDriveIcon className="size-4 shrink-0 text-muted-foreground" />
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px]">{presentation.primary}</div>
-          <div className="truncate text-xs text-muted-foreground">{presentation.secondary}</div>
-        </div>
+      <div className="flex items-center gap-1">
+        <button
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          onClick={() => onNavigate(volume.mountPoint)}
+          title={title}
+          type="button"
+        >
+          {volume.isRemovable ? (
+            <UsbIcon className="size-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <HardDriveIcon className="size-4 shrink-0 text-muted-foreground" />
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[13px]">{presentation.primary}</div>
+            <div className="truncate text-xs text-muted-foreground">{presentation.secondary}</div>
+          </div>
+        </button>
+        <button
+          aria-expanded={treeOpen}
+          aria-label={t(treeOpen ? "tree.collapse" : "tree.expand")}
+          className="shrink-0 rounded-xs p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+          onClick={() => toggleTreeNode(volume.mountPoint)}
+          type="button"
+        >
+          <CaretDownIcon
+            aria-hidden="true"
+            className={cn(
+              "size-3.5 transition-transform duration-fast ease-spring-fast",
+              !treeOpen && "-rotate-90",
+            )}
+          />
+        </button>
       </div>
-      <div
-        aria-valuemax={100}
-        aria-valuemin={0}
-        aria-valuenow={usedPercent}
-        className="mt-1.5 h-1 w-full overflow-hidden rounded-xs bg-muted"
-        role="progressbar"
+      {/* Secondary click target so the capacity block still navigates; the
+          name row above carries keyboard focus for the same action. */}
+      <button
+        className="mt-1.5 block w-full text-left"
+        onClick={() => onNavigate(volume.mountPoint)}
+        tabIndex={-1}
+        type="button"
       >
         <div
-          className={cn(
-            "h-full rounded-xs bg-primary transition-all duration-normal",
-            usedPercent > 90 && "bg-destructive",
-          )}
-          style={{ width: `${usedPercent}%` }}
-        />
-      </div>
-      <div className="mt-1 flex justify-between gap-2 text-[11px] text-muted-foreground">
-        <span className="shrink-0">{t("disk.freePercent", { percent: freePercent })}</span>
-        <span className="truncate font-mono tabular-nums">
-          {t("disk.capacity", {
-            free: formatBytes(volume.availableBytes),
-            total: formatBytes(volume.totalBytes),
-          })}
-        </span>
-      </div>
-    </button>
+          aria-valuemax={100}
+          aria-valuemin={0}
+          aria-valuenow={usedPercent}
+          className="h-1 w-full overflow-hidden rounded-xs bg-muted"
+          role="progressbar"
+        >
+          <div
+            className={cn(
+              "h-full rounded-xs bg-primary transition-all duration-normal",
+              usedPercent > 90 && "bg-destructive",
+            )}
+            style={{ width: `${usedPercent}%` }}
+          />
+        </div>
+        <div className="mt-1 flex justify-between gap-2 text-[11px] text-muted-foreground">
+          <span className="shrink-0">{t("disk.freePercent", { percent: freePercent })}</span>
+          <span className="truncate font-mono tabular-nums">
+            {t("disk.capacity", {
+              free: formatBytes(volume.availableBytes),
+              total: formatBytes(volume.totalBytes),
+            })}
+          </span>
+        </div>
+      </button>
+      {treeOpen && (
+        <div className="mt-1.5">
+          <FolderTree
+            currentPath={currentPath}
+            onNavigate={onNavigate}
+            rootPath={volume.mountPoint}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -842,12 +864,4 @@ function getDiskPresentation(volume: DiskVolume): { primary: string; secondary: 
     primary: volume.name.trim() || volume.mountPoint,
     secondary: volume.mountPoint,
   };
-}
-
-async function copyEntryPath(path: string): Promise<void> {
-  try {
-    await writeText(path);
-  } catch (error) {
-    console.warn(`Unable to copy path ${path}`, error);
-  }
 }

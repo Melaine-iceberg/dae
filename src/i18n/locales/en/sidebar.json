@@ -63,6 +63,12 @@
     "freePercent": "{{percent}}% free",
     "capacity": "{{free}} / {{total}}"
   },
+  "tree": {
+    "expand": "Expand folder tree",
+    "collapse": "Collapse folder tree",
+    "empty": "No subfolders",
+    "loadError": "Couldn't load subfolders"
+  },
   "places": {
     "home": "Home",
     "desktop": "Desktop",

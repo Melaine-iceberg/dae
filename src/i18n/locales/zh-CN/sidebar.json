@@ -63,6 +63,12 @@
     "freePercent": "剩余 {{percent}}%",
     "capacity": "{{free}} / 共 {{total}}"
   },
+  "tree": {
+    "expand": "展开目录树",
+    "collapse": "收起目录树",
+    "empty": "没有子文件夹",
+    "loadError": "无法加载子文件夹"
+  },
   "places": {
     "home": "主文件夹",
     "desktop": "桌面",
