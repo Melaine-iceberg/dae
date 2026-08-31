@@ -366,6 +366,7 @@
     "sizeSmall": "小于 1 MB",
     "sizeMedium": "1 MB – 100 MB",
     "sizeLarge": "大于 100 MB",
+    "showHiddenFiles": "显示隐藏文件 ({{modifier}}+H)",
     "clearAll": "清除所有过滤器"
   },
   "directorySearch": {

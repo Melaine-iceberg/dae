@@ -73,6 +73,7 @@
       "sortBySize": "按大小排序",
       "toggleSortOrder": "切换升序/降序",
       "toggleFoldersFirst": "切换文件夹置顶",
+      "toggleHiddenFiles": "切换隐藏文件显示",
       "filterAll": "类型过滤：全部",
       "filterFolders": "类型过滤：仅文件夹",
       "filterFiles": "类型过滤：仅文件",

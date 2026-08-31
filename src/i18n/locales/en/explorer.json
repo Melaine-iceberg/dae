@@ -366,6 +366,7 @@
     "sizeSmall": "Smaller than 1 MB",
     "sizeMedium": "1 MB – 100 MB",
     "sizeLarge": "Larger than 100 MB",
+    "showHiddenFiles": "Show hidden files ({{modifier}}+H)",
     "clearAll": "Clear all filters"
   },
   "directorySearch": {

@@ -5,7 +5,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -75,6 +75,7 @@ import {
   DEFAULT_SORT_ORDER,
   DENSITY_ROW_HEIGHT,
   densityAtom,
+  showHiddenFilesAtom,
   sortKeyAtom,
   sortOrderAtom,
   viewModeAtom,
@@ -271,6 +272,7 @@ export function FileList({
   const density = useAtomValue(densityAtom);
   const [sortKey, setSortKey] = useAtom(sortKeyAtom);
   const [sortOrder, setSortOrder] = useAtom(sortOrderAtom);
+  const setShowHiddenFiles = useSetAtom(showHiddenFilesAtom);
   const rowHeight = DENSITY_ROW_HEIGHT[density];
   const selectedPathSet = new Set(selectedPaths);
   const listIsLoading = isLoading || searchState?.isSearching === true;
@@ -334,6 +336,13 @@ export function FileList({
     if (hasModifier && !event.altKey && key === "a" && !listIsLoading) {
       event.preventDefault();
       onSelectedPathsChange(entries.map((entry) => entry.path));
+      return;
+    }
+
+    // Ctrl/Cmd+H toggles hidden-file visibility, persisted as a preference.
+    if (hasModifier && !event.altKey && key === "h") {
+      event.preventDefault();
+      setShowHiddenFiles((visible) => !visible);
       return;
     }
 

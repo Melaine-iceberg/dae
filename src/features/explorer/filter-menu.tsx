@@ -4,6 +4,7 @@ import { FunnelIcon, XIcon } from "@phosphor-icons/react";
 
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
@@ -13,12 +14,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import {
   DEFAULT_ENTRY_FILTERS,
   entryFiltersAtom,
   hasActiveEntryFilters,
+  showHiddenFilesAtom,
   type ExplorerEntryFilters,
   type ExplorerKindFilter,
   type ExplorerModifiedFilter,
@@ -53,6 +56,7 @@ const SIZE_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerSizeFilter }> 
 export function FilterMenu({ disabled }: { disabled?: boolean }) {
   const { t } = useTranslation("explorer");
   const [filters, setFilters] = useAtom(entryFiltersAtom);
+  const [showHiddenFiles, setShowHiddenFiles] = useAtom(showHiddenFilesAtom);
   const isActive = hasActiveEntryFilters(filters);
 
   const updateFilter = <TKey extends keyof ExplorerEntryFilters>(
@@ -120,13 +124,18 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
           ))}
         </DropdownMenuRadioGroup>
 
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuCheckboxItem checked={showHiddenFiles} onCheckedChange={setShowHiddenFiles}>
+            {t("filter.showHiddenFiles", { modifier: MOD_KEY })}
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuGroup>
+
         {isActive && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem
-                onSelect={() => setFilters(DEFAULT_ENTRY_FILTERS)}
-              >
+              <DropdownMenuItem onSelect={() => setFilters(DEFAULT_ENTRY_FILTERS)}>
                 <XIcon />
                 {t("filter.clearAll")}
               </DropdownMenuItem>

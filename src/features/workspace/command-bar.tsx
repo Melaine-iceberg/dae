@@ -23,6 +23,7 @@ import {
   ClockCounterClockwiseIcon,
   ColumnsIcon,
   CopyIcon,
+  EyeIcon,
   FileIcon,
   FilePlusIcon,
   FolderIcon,
@@ -53,6 +54,7 @@ import {
   densityAtom,
   entryFiltersAtom,
   foldersFirstAtom,
+  showHiddenFilesAtom,
   sortKeyAtom,
   sortOrderAtom,
   viewModeAtom,
@@ -157,6 +159,7 @@ export function CommandBar() {
   const setSortKey = useSetAtom(sortKeyAtom);
   const setSortOrder = useSetAtom(sortOrderAtom);
   const setFoldersFirst = useSetAtom(foldersFirstAtom);
+  const setShowHiddenFiles = useSetAtom(showHiddenFilesAtom);
   const setEntryFilters = useSetAtom(entryFiltersAtom);
 
   useEffect(() => {
@@ -512,6 +515,14 @@ export function CommandBar() {
         icon: FolderIcon,
         run: () => setFoldersFirst((enabled) => !enabled),
       },
+      {
+        id: "view:toggle-hidden-files",
+        group: "view",
+        label: t("commandBar.view.toggleHiddenFiles"),
+        keywords: "hidden files dotfiles visibility toggle",
+        icon: EyeIcon,
+        run: () => setShowHiddenFiles((visible) => !visible),
+      },
       ...(
         [
           { value: "all", label: t("commandBar.view.filterAll") },
@@ -603,6 +614,7 @@ export function CommandBar() {
     setDensity,
     setEntryFilters,
     setFoldersFirst,
+    setShowHiddenFiles,
     setSortKey,
     setSortOrder,
     setViewMode,

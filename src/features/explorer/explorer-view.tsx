@@ -94,7 +94,9 @@ import { TransferConflictDialog } from "./transfer-conflict-dialog";
 import {
   applyEntryFilters,
   entryFiltersAtom,
+  filterHiddenEntries,
   foldersFirstAtom,
+  showHiddenFilesAtom,
   sortEntries,
   sortKeyAtom,
   sortOrderAtom,
@@ -198,13 +200,14 @@ export function ExplorerView({
   const sortKey = useAtomValue(sortKeyAtom);
   const sortOrder = useAtomValue(sortOrderAtom);
   const foldersFirst = useAtomValue(foldersFirstAtom);
+  const showHiddenFiles = useAtomValue(showHiddenFilesAtom);
   const entryFilters = useAtomValue(entryFiltersAtom);
   const displayedEntries = useMemo(() => {
     const sourceEntries = search.isActive
       ? (search.response?.entries ?? [])
       : (directory?.entries ?? []);
     return sortEntries(
-      applyEntryFilters(sourceEntries, entryFilters),
+      applyEntryFilters(filterHiddenEntries(sourceEntries, showHiddenFiles), entryFilters),
       sortKey,
       sortOrder,
       foldersFirst,
@@ -215,6 +218,7 @@ export function ExplorerView({
     foldersFirst,
     search.isActive,
     search.response,
+    showHiddenFiles,
     sortKey,
     sortOrder,
   ]);
@@ -463,16 +467,13 @@ export function ExplorerView({
   /** Windows-style Alt-drag: create .lnk shortcuts for the sources inside the
    * destination. The backend resolves name collisions with " (2)"… suffixes,
    * so no conflict dialog is needed here. */
-  const createShortcutsEntries = useCallback(
-    (sourcePaths: string[], destinationPath: string) => {
-      setOperationError(null);
-      commands
-        .createShortcuts(sourcePaths, destinationPath)
-        .then(() => setSelectedPaths([]))
-        .catch((error: unknown) => setOperationError(getFileOperationErrorMessage(error)));
-    },
-    [],
-  );
+  const createShortcutsEntries = useCallback((sourcePaths: string[], destinationPath: string) => {
+    setOperationError(null);
+    commands
+      .createShortcuts(sourcePaths, destinationPath)
+      .then(() => setSelectedPaths([]))
+      .catch((error: unknown) => setOperationError(getFileOperationErrorMessage(error)));
+  }, []);
 
   const copyExternalEntries = useCallback(
     (sourcePaths: string[], destinationPath: string) => {
@@ -587,12 +588,10 @@ export function ExplorerView({
           clipboard !== null && pathListsEqual(systemPaths, clipboard.sourcePaths);
         const fromSystem = systemPaths.length > 0 && !systemIsMirror;
 
-        const paths = fromSystem ? systemPaths : clipboard?.sourcePaths ?? [];
+        const paths = fromSystem ? systemPaths : (clipboard?.sourcePaths ?? []);
         if (paths.length === 0) return;
 
-        const isCut = fromSystem
-          ? systemFiles?.cut === true
-          : clipboard?.operation === "cut";
+        const isCut = fromSystem ? systemFiles?.cut === true : clipboard?.operation === "cut";
         const operation: TransferOperation = isCut ? "move" : "copy";
 
         startTransfer(paths, directoryPath, operation, () => {
@@ -1393,35 +1392,35 @@ export function ExplorerView({
                   onPointerLeave={() => setIsUndoToastHovered(false)}
                 >
                   <div className="animate-float-in flex items-center gap-2 rounded-lg bg-popover px-4 py-2 text-[13px] text-popover-foreground shadow-ambient-lg ring-1 ring-border">
-                  {undoRedoToast.action === "redo" ? (
-                    <ArrowClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <ArrowCounterClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
-                  )}
-                  <span className="whitespace-nowrap">
-                    {t(`explorer:undoRedo.toast_${undoRedoToast.outcome.action}`, {
-                      op: t(`explorer:undoRedo.op_${undoRedoToast.outcome.op}`),
-                      count: undoRedoToast.outcome.count,
-                    })}
-                  </span>
-                  {undoRedoToast.action === "redo" ? (
-                    <Button onClick={redoLastOperation} size="xs" type="button" variant="outline">
-                      {t("explorer:actions.redo")}
+                    {undoRedoToast.action === "redo" ? (
+                      <ArrowClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ArrowCounterClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
+                    )}
+                    <span className="whitespace-nowrap">
+                      {t(`explorer:undoRedo.toast_${undoRedoToast.outcome.action}`, {
+                        op: t(`explorer:undoRedo.op_${undoRedoToast.outcome.op}`),
+                        count: undoRedoToast.outcome.count,
+                      })}
+                    </span>
+                    {undoRedoToast.action === "redo" ? (
+                      <Button onClick={redoLastOperation} size="xs" type="button" variant="outline">
+                        {t("explorer:actions.redo")}
+                      </Button>
+                    ) : (
+                      <Button onClick={undoLastOperation} size="xs" type="button" variant="outline">
+                        {t("explorer:actions.undo")}
+                      </Button>
+                    )}
+                    <Button
+                      aria-label={t("explorer:undoRedo.closeToast")}
+                      onClick={() => setUndoRedoToast(null)}
+                      size="xs"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <XIcon />
                     </Button>
-                  ) : (
-                    <Button onClick={undoLastOperation} size="xs" type="button" variant="outline">
-                      {t("explorer:actions.undo")}
-                    </Button>
-                  )}
-                  <Button
-                    aria-label={t("explorer:undoRedo.closeToast")}
-                    onClick={() => setUndoRedoToast(null)}
-                    size="xs"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <XIcon />
-                  </Button>
                   </div>
                 </div>
               )}

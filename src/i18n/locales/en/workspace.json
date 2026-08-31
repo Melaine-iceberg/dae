@@ -73,6 +73,7 @@
       "sortBySize": "Sort by size",
       "toggleSortOrder": "Toggle ascending/descending order",
       "toggleFoldersFirst": "Toggle folders on top",
+      "toggleHiddenFiles": "Toggle hidden files",
       "filterAll": "Type filter: All",
       "filterFolders": "Type filter: Folders only",
       "filterFiles": "Type filter: Files only",

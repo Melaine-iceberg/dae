@@ -29,7 +29,8 @@ pub struct DirectoryEntry {
     pub modified_at: Option<u64>,
     pub size: Option<u64>,
     /// OS hidden marker (DOS attribute on Windows, dot prefix on Unix-like
-    /// systems). Views dim such entries instead of filtering them out.
+    /// systems). Views dim such entries and hide them entirely when the
+    /// show-hidden-files preference is off.
     pub hidden: bool,
     /// Read-only marker. Directories report the raw flag too; the UI only
     /// badges files because the DOS READONLY bit on folders is vestigial.

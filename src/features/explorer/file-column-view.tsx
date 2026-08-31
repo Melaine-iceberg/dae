@@ -21,7 +21,14 @@ import { EntryContextMenuContent } from "./entry-context-menu";
 import { getEntryPresentation, getPresentationIconClassName } from "./file-icons";
 import type { MenuActions } from "./file-list";
 import { isNativeIconSupported, NativeIconImage } from "./native-icon";
-import { sortEntries, foldersFirstAtom, sortKeyAtom, sortOrderAtom } from "./preferences";
+import {
+  filterHiddenEntries,
+  foldersFirstAtom,
+  showHiddenFilesAtom,
+  sortEntries,
+  sortKeyAtom,
+  sortOrderAtom,
+} from "./preferences";
 import type { DirectoryEntry } from "./types";
 
 export interface FileColumnViewProps {
@@ -119,8 +126,14 @@ function ChildPane({ path, ...paneProps }: ChildPaneProps) {
   const sortKey = useAtomValue(sortKeyAtom);
   const sortOrder = useAtomValue(sortOrderAtom);
   const foldersFirst = useAtomValue(foldersFirstAtom);
-  // Child panes share the parent's sort preference (SKILL.md §18).
-  const sortedEntries = sortEntries(data?.entries ?? [], sortKey, sortOrder, foldersFirst);
+  const showHiddenFiles = useAtomValue(showHiddenFilesAtom);
+  // Child panes share the parent's sort and visibility preferences (SKILL.md §18).
+  const sortedEntries = sortEntries(
+    filterHiddenEntries(data?.entries ?? [], showHiddenFiles),
+    sortKey,
+    sortOrder,
+    foldersFirst,
+  );
 
   return (
     <Pane

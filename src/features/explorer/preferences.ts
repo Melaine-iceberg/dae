@@ -39,6 +39,21 @@ export const sortKeyAtom = atomWithStorage<ExplorerSortKey>("explorer.sortKey", 
 export const sortOrderAtom = atomWithStorage<ExplorerSortOrder>("explorer.sortOrder", "asc");
 export const foldersFirstAtom = atomWithStorage<boolean>("explorer.foldersFirst", true);
 
+/**
+ * Whether hidden entries are listed at all. Defaults to `true` (the app has
+ * always shown them); toggled from the filter menu, Ctrl/Cmd+H, or the
+ * command bar, and persisted across sessions.
+ */
+export const showHiddenFilesAtom = atomWithStorage<boolean>("explorer.showHiddenFiles", true);
+
+/** Strips hidden entries when visibility is off; passes the list through untouched otherwise. */
+export function filterHiddenEntries(
+  entries: readonly DirectoryEntry[],
+  showHiddenFiles: boolean,
+): DirectoryEntry[] {
+  return showHiddenFiles ? (entries as DirectoryEntry[]) : entries.filter((entry) => !entry.hidden);
+}
+
 export interface ExplorerEntryFilters {
   kind: ExplorerKindFilter;
   modified: ExplorerModifiedFilter;
@@ -164,8 +179,7 @@ export function sortEntries(
 
   return [...entries].sort((left, right) => {
     if (foldersFirst) {
-      const folderDiff =
-        Number(right.kind === "directory") - Number(left.kind === "directory");
+      const folderDiff = Number(right.kind === "directory") - Number(left.kind === "directory");
       if (folderDiff !== 0) return folderDiff;
     }
 
