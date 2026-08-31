@@ -28,13 +28,15 @@ function stripPhosphorWeights(): Plugin {
 }
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ command }) => ({
   plugins: [
     stripPhosphorWeights(),
     react(),
     // React Compiler auto-memoizes components and values at build time,
     // so manual React.memo/useMemo/useCallback are no longer needed.
-    babel({ presets: [reactCompilerPreset()] }),
+    // Build-only: the Babel pass is expensive per module and would otherwise
+    // run on every cold dev start, stretching the dev white screen.
+    ...(command === "build" ? [babel({ presets: [reactCompilerPreset()] })] : []),
     tailwindcss(),
   ],
   resolve: {
