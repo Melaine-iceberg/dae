@@ -36,7 +36,9 @@ import {
   activateTabAtom,
   closeTabAtom,
   createTabAtom,
+  getSplitNavigator,
   getTabNavigator,
+  splitEnabledFamily,
   tabsAtom,
   type ExplorerTab,
 } from "./tabs";
@@ -199,20 +201,25 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
   const activateTab = useSetAtom(activateTabAtom);
   const closeTab = useSetAtom(closeTabAtom);
   const surface = useAtomValue(tabSurfaceFamily(tab.id));
+  const splitEnabled = useAtomValue(splitEnabledFamily(tab.id));
   const spaces = useAtomValue(spacesAtom);
   const navigator = getTabNavigator(tab.id);
   const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
+  const splitNavigator = getSplitNavigator(tab.id);
+  const splitState = useSyncExternalStore(splitNavigator.subscribe, splitNavigator.getSnapshot);
   const directory = state.directory;
+  const splitDirectory = splitState.directory;
   const spaceName =
     surface.kind === "space"
       ? spaces?.find((space) => space.id === surface.spaceId)?.name
       : undefined;
-  const title = surfaceTitle(
-    surface,
-    directory?.breadcrumbs.at(-1)?.name ?? t("tabs.loading"),
-    spaceName,
-    t,
-  );
+  const folderTitle =
+    splitEnabled && surface.kind === "folder"
+      ? `${directory?.breadcrumbs.at(-1)?.name ?? t("tabs.loading")} · ${
+          splitDirectory?.breadcrumbs.at(-1)?.name ?? t("tabs.loading")
+        }`
+      : (directory?.breadcrumbs.at(-1)?.name ?? t("tabs.loading"));
+  const title = surfaceTitle(surface, folderTitle, spaceName, t);
   const elementRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -255,7 +262,13 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       ref={elementRef}
       role="tab"
       tabIndex={0}
-      title={surface.kind === "folder" ? (directory?.path ?? title) : title}
+      title={
+        surface.kind === "folder"
+          ? splitEnabled
+            ? `${directory?.path ?? title} · ${splitDirectory?.path ?? ""}`
+            : (directory?.path ?? title)
+          : title
+      }
     >
       <TabIcon
         className={cn(

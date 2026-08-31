@@ -8,7 +8,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { CanvasAddon } from "@xterm/addon-canvas";
 import { ArrowCounterClockwiseIcon, XIcon } from "@phosphor-icons/react";
 
-import { activeTabIdAtom, getTabNavigator } from "@/features/explorer/tabs";
+import { activePaneNavigatorAtom, activeTabIdAtom } from "@/features/explorer/tabs";
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import { translateBackendMessage } from "@/i18n/errors";
 import { cn } from "@/lib/utils";
@@ -22,7 +22,8 @@ const FONT_STACK =
 
 const MIN_PANEL_HEIGHT = 140;
 
-/** Resolves the folder shown by the active tab, if any, as the shell cwd. */
+/** Resolves the folder shown by the active tab's focused pane, if any, as
+ *  the shell cwd. */
 function currentWorkingDirectory(): string | undefined {
   const store = getDefaultStore();
   const tabId = store.get(activeTabIdAtom);
@@ -30,7 +31,7 @@ function currentWorkingDirectory(): string | undefined {
   const surface = store.get(tabSurfaceFamily(tabId));
   if (surface.kind !== "folder") return undefined;
   try {
-    return getTabNavigator(tabId).getSnapshot().directory?.path;
+    return store.get(activePaneNavigatorAtom).getSnapshot().directory?.path;
   } catch {
     return undefined;
   }

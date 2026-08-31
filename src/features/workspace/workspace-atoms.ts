@@ -1,6 +1,11 @@
 import { atom } from "jotai";
 
-import { activeTabIdAtom, getTabNavigator } from "@/features/explorer/tabs";
+import {
+  activePaneFamily,
+  activeTabIdAtom,
+  getPaneNavigator,
+  splitEnabledFamily,
+} from "@/features/explorer/tabs";
 
 import { tabSurfaceFamily } from "./tab-surface";
 import type { WorkspaceSurface } from "./types";
@@ -22,11 +27,13 @@ export const openSurfaceAtom = atom(null, (get, set, surface: WorkspaceSurface) 
 
 /**
  * Switches the active tab to the folder surface and navigates its explorer
- * navigator to the given path. The navigator keeps its own history, so
+ * navigator to the given path. In the dual-pane layout the focused pane
+ * receives the navigation. The navigator keeps its own history, so
  * back/forward keep working across surface switches.
  */
 export const navigateToFolderAtom = atom(null, (get, set, path: string) => {
   const tabId = get(activeTabIdAtom);
   set(tabSurfaceFamily(tabId), { kind: "folder" });
-  void getTabNavigator(tabId).navigate(path);
+  const pane = get(splitEnabledFamily(tabId)) ? get(activePaneFamily(tabId)) : "primary";
+  void getPaneNavigator(tabId, pane).navigate(path);
 });

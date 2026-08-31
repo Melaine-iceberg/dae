@@ -21,7 +21,8 @@ export type ExplorerCommandId =
   | "go-forward"
   | "go-up"
   | "open-terminal"
-  | "toggle-favorite";
+  | "toggle-favorite"
+  | "toggle-split";
 
 export type PendingExplorerCommand = {
   id: number;

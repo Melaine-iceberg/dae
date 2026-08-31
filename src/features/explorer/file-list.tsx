@@ -91,6 +91,9 @@ interface FileListProps {
   externalDropTargetPath: string | null;
   gitStatus?: ExplorerGitStatus | null;
   initialScrollOffset?: number;
+  /** Window-level shortcuts only fire for the focused pane of the
+   *  dual-pane layout; always true in the single-pane layout. */
+  isActivePane: boolean;
   isLoading: boolean;
   isOperationPending: boolean;
   onAddToFavorites: (paths: string[]) => void;
@@ -226,6 +229,7 @@ export function FileList({
   externalDropTargetPath,
   gitStatus,
   initialScrollOffset = 0,
+  isActivePane,
   isLoading,
   isOperationPending,
   onAddToFavorites,
@@ -289,6 +293,9 @@ export function FileList({
   }, [initialScrollOffset, viewId]);
 
   const handleKeyDown = (event: KeyboardEvent) => {
+    // In the dual-pane layout only the focused pane reacts to global
+    // shortcuts; the other pane ignores them entirely.
+    if (!isActivePane) return;
     if (event.defaultPrevented || event.isComposing || isEditableElement(event.target)) return;
 
     if (event.key === "Escape" && selectedCount > 0) {

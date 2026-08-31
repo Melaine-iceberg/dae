@@ -50,7 +50,12 @@
     "collapsePreview": "Collapse preview panel",
     "expandPreview": "Expand preview panel",
     "collapsePreviewShortcut": "Collapse preview panel (Space)",
-    "expandPreviewShortcut": "Expand preview panel (Space)"
+    "expandPreviewShortcut": "Expand preview panel (Space)",
+    "splitView": "Open split view",
+    "closeSplitView": "Close split view"
+  },
+  "split": {
+    "resizeAria": "Resize split panes"
   },
   "errors": {
     "directoryUnavailable": "The current folder is unavailable",

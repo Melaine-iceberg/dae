@@ -60,7 +60,8 @@
       "goForward": "Forward",
       "goUp": "Go Up",
       "openTerminal": "Open in Terminal",
-      "toggleFavorite": "Favorite or unfavorite the current folder"
+      "toggleFavorite": "Favorite or unfavorite the current folder",
+      "toggleSplitView": "Toggle split view"
     },
     "view": {
       "switchToList": "Switch to list view",

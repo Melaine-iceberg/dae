@@ -60,7 +60,8 @@ import {
   type ExplorerKindFilter,
   type ExplorerSortKey,
 } from "@/features/explorer/preferences";
-import { activeTabIdAtom, getTabNavigator } from "@/features/explorer/tabs";
+import { activePaneNavigatorAtom } from "@/features/explorer/tabs";
+import type { ExplorerNavigator } from "@/features/explorer/navigation";
 import { ensureFavoritesLoadedAtom, favoritesAtom } from "@/features/sidebar/sidebar-atoms";
 import {
   dispatchExplorerCommand,
@@ -115,10 +116,10 @@ interface CommandItem {
   run: () => void;
 }
 
-/** Reads the active tab's current directory; null when unavailable. */
-function getActiveFolderScope(tabId: string): string | null {
+/** Reads the focused pane's current directory; null when unavailable. */
+function getActiveFolderScope(navigator: ExplorerNavigator): string | null {
   try {
-    return getTabNavigator(tabId).getSnapshot().directory?.path ?? null;
+    return navigator.getSnapshot().directory?.path ?? null;
   } catch {
     return null;
   }
@@ -145,7 +146,7 @@ export function CommandBar() {
   const recents = useAtomValue(recentsAtom) ?? [];
   const spaces = useAtomValue(spacesAtom) ?? [];
   const activeSurface = useAtomValue(activeSurfaceAtom);
-  const activeTabId = useAtomValue(activeTabIdAtom);
+  const scopeNavigator = useAtomValue(activePaneNavigatorAtom);
   const ensureFavoritesLoaded = useSetAtom(ensureFavoritesLoadedAtom);
   const ensureRecentsLoaded = useSetAtom(ensureRecentsLoadedAtom);
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
@@ -204,7 +205,7 @@ export function CommandBar() {
     const trimmedQuery = query.trim();
 
     const resolveScope = folderActive
-      ? Promise.resolve(getActiveFolderScope(activeTabId))
+      ? Promise.resolve(getActiveFolderScope(scopeNavigator))
       : commands.getHomeDirectory().catch(() => null);
 
     const timeout = window.setTimeout(() => {
@@ -231,7 +232,7 @@ export function CommandBar() {
       window.clearTimeout(timeout);
       void commands.cancelSearch().catch(() => undefined);
     };
-  }, [activeTabId, folderActive, open, pathMode, query]);
+  }, [folderActive, open, pathMode, query, scopeNavigator]);
 
   const items = useMemo<CommandItem[]>(() => {
     const openRecentItem = (recent: RecentItem) => {
@@ -425,6 +426,14 @@ export function CommandBar() {
         keywords: "favorite star toggle folder",
         icon: StarIcon,
         command: "toggle-favorite",
+      },
+      {
+        id: "toggle-split",
+        label: t("commandBar.commands.toggleSplitView"),
+        hint: "F6",
+        keywords: "split dual pane panel column view",
+        icon: ColumnsIcon,
+        command: "toggle-split",
       },
     ];
 

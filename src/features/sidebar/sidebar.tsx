@@ -42,10 +42,9 @@ import {
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import {
-  activeTabIdAtom,
+  activePaneNavigatorAtom,
   createTabWithSurfaceAtom,
   fileClipboardAtom,
-  getTabNavigator,
   openInNewTabAtom,
 } from "@/features/explorer/tabs";
 import { spaceRenameRequestAtom } from "@/features/workspace/space-view";
@@ -118,8 +117,8 @@ function SidebarContent() {
   const [spaceName, setSpaceName] = useState("");
   const [connectOpen, setConnectOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
-  const activeTabId = useAtomValue(activeTabIdAtom);
-  const navigator = getTabNavigator(activeTabId);
+  // Location rows highlight the focused pane's folder in the active tab.
+  const navigator = useAtomValue(activePaneNavigatorAtom);
   const { directory } = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
   // Location rows highlight only while the tab actually shows a folder.
   const currentPath = surface.kind === "folder" ? (directory?.path ?? null) : null;

@@ -50,7 +50,12 @@
     "collapsePreview": "收起预览面板",
     "expandPreview": "展开预览面板",
     "collapsePreviewShortcut": "收起预览面板 (Space)",
-    "expandPreviewShortcut": "展开预览面板 (Space)"
+    "expandPreviewShortcut": "展开预览面板 (Space)",
+    "splitView": "打开分屏视图",
+    "closeSplitView": "关闭分屏视图"
+  },
+  "split": {
+    "resizeAria": "调整分屏宽度"
   },
   "errors": {
     "directoryUnavailable": "当前目录不可用",

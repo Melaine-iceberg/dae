@@ -60,7 +60,8 @@
       "goForward": "前进",
       "goUp": "上一级",
       "openTerminal": "在终端中打开",
-      "toggleFavorite": "收藏或取消收藏当前文件夹"
+      "toggleFavorite": "收藏或取消收藏当前文件夹",
+      "toggleSplitView": "切换分屏视图"
     },
     "view": {
       "switchToList": "切换到列表视图",

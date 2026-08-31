@@ -19,6 +19,7 @@ import {
   ArrowRightIcon,
   ArrowUpIcon,
   CircleNotchIcon,
+  ColumnsIcon,
   EyeIcon,
   SidebarSimpleIcon,
   StarIcon,
@@ -113,6 +114,15 @@ const appWindow = getAppWindow();
 
 interface ExplorerViewProps {
   navigator: ExplorerNavigator;
+  /** Only the focused pane owns window-level shortcuts and command-bar
+   *  intents; in the single-pane layout this stays true. */
+  isActivePane?: boolean;
+  /** Whether the dual-pane layout is currently up for this tab; drives the
+   *  split toggle's state. */
+  splitEnabled?: boolean;
+  /** Toggles the dual-pane layout; the toolbar button is hidden without
+   *  it. */
+  onToggleSplit?: () => void;
 }
 
 type FileOperationResult = { ok: true } | { error: string; ok: false; rawError?: unknown };
@@ -134,7 +144,12 @@ type PendingTransfer = {
   onSuccess: () => void;
 };
 
-export function ExplorerView({ navigator }: ExplorerViewProps) {
+export function ExplorerView({
+  navigator,
+  isActivePane = true,
+  splitEnabled = false,
+  onToggleSplit,
+}: ExplorerViewProps) {
   const { t } = useTranslation("explorer");
   const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
   const [clipboard, setClipboard] = useAtom(fileClipboardAtom);
@@ -1030,6 +1045,9 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
             });
           }
           break;
+        case "toggle-split":
+          onToggleSplit?.();
+          break;
       }
     },
     [
@@ -1039,6 +1057,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
       directory,
       directoryPath,
       navigator,
+      onToggleSplit,
       openTerminalHere,
       pasteClipboard,
       requestCreate,
@@ -1050,18 +1069,19 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   );
 
   // The command bar drops intents into the bus; the mounted (active tab)
-  // explorer consumes them. Ids are tracked so React StrictMode's double
-  // effect invocation cannot execute a command twice.
+  // explorer consumes them. In the dual-pane layout only the focused pane
+  // executes, so the same intent never runs twice. Ids are tracked so React
+  // StrictMode's double effect invocation cannot execute a command twice.
   const executedCommandIdsRef = useRef(new Set<number>());
 
   useEffect(() => {
-    if (!pendingCommand) return;
+    if (!pendingCommand || !isActivePane) return;
     if (executedCommandIdsRef.current.has(pendingCommand.id)) return;
 
     executedCommandIdsRef.current.add(pendingCommand.id);
     clearPendingExplorerCommand();
     executeExplorerCommand(pendingCommand.command);
-  }, [pendingCommand, executeExplorerCommand]);
+  }, [pendingCommand, executeExplorerCommand, isActivePane]);
 
   const isCurrentFavorited =
     directory !== null && favorites.some((favorite) => favorite.path === directory.path);
@@ -1187,6 +1207,27 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
           />
           <SortMenu disabled={!directory} />
           <FilterMenu disabled={!directory} />
+          {onToggleSplit && (
+            <Button
+              aria-label={
+                splitEnabled
+                  ? t("explorer:toolbar.closeSplitView")
+                  : t("explorer:toolbar.splitView")
+              }
+              aria-pressed={splitEnabled}
+              onClick={onToggleSplit}
+              size="icon"
+              title={
+                splitEnabled
+                  ? t("explorer:toolbar.closeSplitView")
+                  : t("explorer:toolbar.splitView")
+              }
+              type="button"
+              variant="ghost"
+            >
+              <ColumnsIcon />
+            </Button>
+          )}
           <ToolbarSeparator />
           <Button
             aria-label={
@@ -1262,6 +1303,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                   initialScrollOffset={
                     search.isActive ? 0 : navigator.getScrollOffset(directory.path)
                   }
+                  isActivePane={isActivePane}
                   isLoading={isLoading}
                   isOperationPending={isOperationPending}
                   canRedo={undoRedo.canRedo}

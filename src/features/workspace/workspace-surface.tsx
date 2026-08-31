@@ -1,7 +1,6 @@
 import { useAtomValue } from "jotai";
 
-import { ExplorerView } from "@/features/explorer/explorer-view";
-import { getTabNavigator } from "@/features/explorer/tabs";
+import { SplitExplorerView } from "@/features/explorer/split-view";
 
 import { FavoritesView } from "./favorites-view";
 import { OverviewView } from "./overview-view";
@@ -11,7 +10,8 @@ import { tabSurfaceFamily } from "./tab-surface";
 
 /**
  * Renders the active surface of one tab: the workspace surfaces (Overview,
- * Recents, Favorites, Space) or the classic folder explorer.
+ * Recents, Favorites, Space) or the classic folder explorer, which itself
+ * switches between the single and dual-pane layouts.
  */
 export function WorkspaceSurfaceView({ tabId }: { tabId: string }) {
   const surface = useAtomValue(tabSurfaceFamily(tabId));
@@ -26,6 +26,6 @@ export function WorkspaceSurfaceView({ tabId }: { tabId: string }) {
     case "space":
       return <SpaceView key={surface.spaceId} spaceId={surface.spaceId} />;
     case "folder":
-      return <ExplorerView navigator={getTabNavigator(tabId)} />;
+      return <SplitExplorerView tabId={tabId} />;
   }
 }
