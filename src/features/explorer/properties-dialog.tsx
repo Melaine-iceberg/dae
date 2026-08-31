@@ -1,6 +1,15 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
+import {
+  ArrowsClockwiseIcon,
+  CheckCircleIcon,
+  CheckIcon,
+  CircleNotchIcon,
+  CopyIcon,
+  XCircleIcon,
+} from "@phosphor-icons/react";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { i18n } from "@/i18n";
 import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
@@ -8,6 +17,7 @@ import { cn } from "@/lib/utils";
 import {
   commands,
   events,
+  type FileHashDigests,
   type FileProperties,
   type OwnerChange,
   type PropertyChanges,
@@ -22,6 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 
 import type { DirectoryEntry } from "./types";
@@ -156,6 +167,23 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+type PropertiesTab = "general" | "checksum";
+
+/** Live state of one checksum run streamed from the backend. */
+interface HashRunState {
+  status: "running" | "done" | "error";
+  bytesRead: number;
+  totalBytes: number;
+  digests: FileHashDigests | null;
+  error: string | null;
+}
+
+const HASH_ALGORITHMS: readonly { key: keyof FileHashDigests; label: string }[] = [
+  { key: "md5", label: "MD5" },
+  { key: "sha1", label: "SHA-1" },
+  { key: "sha256", label: "SHA-256" },
+];
+
 /** Global properties dialog (right-click → 属性): common metadata on every
  *  platform, plus a POSIX permission matrix / owner editor on Unix and
  *  read-only/hidden toggles on Windows. */
@@ -167,6 +195,7 @@ export function PropertiesDialog() {
   const [draft, setDraft] = useState<PropertiesDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [tab, setTab] = useState<PropertiesTab>("general");
   // Folder sizes are computed on demand here (never in the list, to avoid
   // constant background scans). While a scan runs, the total updates live.
   const [directorySize, setDirectorySize] = useState<number | null>(null);
@@ -179,6 +208,7 @@ export function PropertiesDialog() {
     setProperties(null);
     setDraft(null);
     setError(null);
+    setTab("general");
 
     commands
       .getFileProperties(target.path)
@@ -270,6 +300,12 @@ export function PropertiesDialog() {
   const presentation = target ? kindPresentation(target.kind, target.name) : DIRECTORY_PRESENTATION;
   const Icon = presentation.icon;
 
+  // Checksums only make sense for real local files; everything else keeps
+  // the single-view layout without the tab strip.
+  const showHashTab =
+    target !== null && target.kind === "file" && isLocalExplorerPath(target.path);
+  const showGeneral = !showHashTab || tab === "general";
+
   // Folder sizes come from the on-demand scan; everything else uses the
   // loaded snapshot. Guard `properties` since this runs before it resolves.
   const isLocalDirectoryTarget =
@@ -300,7 +336,18 @@ export function PropertiesDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        {error && <p className="text-[13px] text-destructive">{error}</p>}
+        {showHashTab && (
+          <div className="flex gap-1 rounded-md bg-muted/60 p-0.5" role="tablist">
+            <PropertiesTabButton active={showGeneral} onClick={() => setTab("general")}>
+              {t("explorer:properties.tabGeneral")}
+            </PropertiesTabButton>
+            <PropertiesTabButton active={tab === "checksum"} onClick={() => setTab("checksum")}>
+              {t("explorer:properties.tabChecksum")}
+            </PropertiesTabButton>
+          </div>
+        )}
+
+        {showGeneral && error && <p className="text-[13px] text-destructive">{error}</p>}
 
         {target && (
           <div className="flex items-center gap-3">
@@ -317,12 +364,12 @@ export function PropertiesDialog() {
           </div>
         )}
 
-        {target && !properties && !error && (
+        {showGeneral && target && !properties && !error && (
           <p className="text-[13px] text-muted-foreground">{t("explorer:properties.loading")}</p>
         )}
 
         {target && properties && draft && (
-          <>
+          <div className="flex flex-col gap-3" hidden={!showGeneral}>
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
               <dt className="text-muted-foreground">{t("explorer:properties.location")}</dt>
               <dd className="truncate" title={parentPath(properties.path)}>
@@ -363,16 +410,23 @@ export function PropertiesDialog() {
                 {t("explorer:properties.unsupportedPermissions")}
               </p>
             )}
-          </>
+          </div>
+        )}
+
+        {target && showHashTab && (
+          // Keyed by path so switching targets resets the run entirely.
+          <FileHashPanel active={tab === "checksum"} key={target.path} path={target.path} />
         )}
 
         <DialogFooter>
           <Button disabled={isSaving} onClick={close} type="button" variant="outline">
             {t("explorer:actions.close")}
           </Button>
-          <Button disabled={!isDirty || isSaving} onClick={() => void applyChanges()} type="button">
-            {isSaving ? t("explorer:properties.applying") : t("explorer:properties.apply")}
-          </Button>
+          {showGeneral && (
+            <Button disabled={!isDirty || isSaving} onClick={() => void applyChanges()} type="button">
+              {isSaving ? t("explorer:properties.applying") : t("explorer:properties.apply")}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -517,4 +571,206 @@ function kindPresentation(kind: DirectoryEntry["kind"], name: string) {
     default:
       return getFilePresentation(name);
   }
+}
+
+function PropertiesTabButton({
+  active,
+  children,
+  onClick,
+}: {
+  active: boolean;
+  children: ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-selected={active}
+      className={cn(
+        "flex-1 rounded-[5px] px-3 py-1 text-[13px] transition-colors duration-fast",
+        active
+          ? "bg-card text-foreground shadow-ambient-xs ring-1 ring-border"
+          : "text-muted-foreground hover:text-foreground",
+      )}
+      onClick={onClick}
+      role="tab"
+      type="button"
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Checksum tab: hashes the file once with MD5 + SHA-1 + SHA-256 in a
+ *  single pass, streams progress while the read runs, then lets the user
+ *  copy each digest or compare one against the value a download site
+ *  published. The run only starts on the first visit to the tab, and is
+ *  cancelled when the dialog closes. */
+function FileHashPanel({ active, path }: { active: boolean; path: string }) {
+  const { t } = useTranslation("explorer");
+  const [started, setStarted] = useState(false);
+  const [runId, setRunId] = useState(() => crypto.randomUUID());
+  const [run, setRun] = useState<HashRunState>({
+    status: "running",
+    bytesRead: 0,
+    totalBytes: 0,
+    digests: null,
+    error: null,
+  });
+  const [expected, setExpected] = useState("");
+  const [copied, setCopied] = useState<string | null>(null);
+
+  // Defer the run until the tab is first shown so merely opening the
+  // dialog never kicks off a full-file read.
+  useEffect(() => {
+    if (active && !started) setStarted(true);
+  }, [active, started]);
+
+  useEffect(() => {
+    if (!started) return undefined;
+
+    let disposed = false;
+    setRun({ status: "running", bytesRead: 0, totalBytes: 0, digests: null, error: null });
+
+    const unlistenPromise = events.explorerFileHashProgress.listen(({ payload }) => {
+      if (disposed || payload.operationId !== runId || payload.path !== path) return;
+
+      if (payload.completed) {
+        setRun({
+          status: payload.error ? "error" : "done",
+          bytesRead: payload.totalBytes,
+          totalBytes: payload.totalBytes,
+          digests: payload.digests,
+          error: payload.error,
+        });
+      } else {
+        setRun((current) => ({
+          ...current,
+          bytesRead: payload.bytesRead,
+          totalBytes: payload.totalBytes,
+        }));
+      }
+    });
+
+    void commands.startFileHashCalculation(runId, path).catch((cause: unknown) => {
+      if (!disposed) {
+        setRun((current) => ({ ...current, status: "error", error: describeError(cause) }));
+      }
+    });
+
+    return () => {
+      disposed = true;
+      void unlistenPromise.then((unlisten) => unlisten());
+      void commands
+        .cancelFileHashCalculation(runId)
+        .catch((cause: unknown) => console.warn("Unable to cancel hash run", cause));
+    };
+  }, [started, runId, path]);
+
+  const expectedNormalized = expected.trim().toLowerCase();
+  const match = run.digests
+    ? HASH_ALGORITHMS.find(({ key }) => run.digests?.[key] === expectedNormalized)
+    : undefined;
+  const mismatch = expectedNormalized.length > 0 && run.status === "done" && !match;
+  const percent =
+    run.totalBytes > 0 ? Math.min(100, Math.round((run.bytesRead / run.totalBytes) * 100)) : 0;
+
+  const copyDigest = (algorithm: string, value: string) => {
+    void writeText(value)
+      .then(() => {
+        setCopied(algorithm);
+        window.setTimeout(() => setCopied(null), 1500);
+      })
+      .catch((cause) => console.warn("Unable to copy digest to clipboard", cause));
+  };
+
+  return (
+    <div className="flex flex-col gap-3" hidden={!active}>
+      <p className="text-xs text-muted-foreground">{t("explorer:properties.hashHint")}</p>
+
+      {run.status === "running" && (
+        <div className="flex flex-col gap-2">
+          <Progress className="w-full" value={percent} />
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <CircleNotchIcon className="size-3.5 animate-spin" />
+            {run.totalBytes > 0
+              ? `${formatSize(run.bytesRead)} / ${formatSize(run.totalBytes)} · ${percent}%`
+              : t("explorer:properties.hashCalculating")}
+          </p>
+        </div>
+      )}
+
+      {run.status === "error" && (
+        <p className="text-[13px] text-destructive">
+          {t("explorer:properties.hashError")}
+          {run.error ? `: ${run.error}` : ""}
+        </p>
+      )}
+
+      {run.digests && (
+        <>
+          <dl className="flex flex-col gap-2">
+            {HASH_ALGORITHMS.map(({ key, label }) => (
+              <div key={key} className="grid grid-cols-[3.5rem_1fr_auto] items-center gap-2">
+                <dt className="text-xs text-muted-foreground">{label}</dt>
+                <dd className="min-w-0 font-mono text-xs break-all select-all">
+                  {run.digests?.[key]}
+                </dd>
+                <button
+                  aria-label={t("explorer:properties.hashCopy", { algorithm: label })}
+                  className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground"
+                  onClick={() => copyDigest(label, run.digests?.[key] ?? "")}
+                  type="button"
+                >
+                  {copied === label ? (
+                    <CheckIcon className="size-3.5" />
+                  ) : (
+                    <CopyIcon className="size-3.5" />
+                  )}
+                </button>
+              </div>
+            ))}
+          </dl>
+
+          <Separator />
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">
+              {t("explorer:properties.hashExpectedLabel")}
+            </span>
+            <Input
+              onChange={(event) => setExpected(event.target.value)}
+              placeholder={t("explorer:properties.hashExpectedPlaceholder")}
+              spellCheck={false}
+              value={expected}
+            />
+          </label>
+
+          {match && (
+            <p className="flex items-center gap-1.5 text-[13px] text-emerald-600 dark:text-emerald-400">
+              <CheckCircleIcon className="size-4 shrink-0" weight="fill" />
+              {t("explorer:properties.hashMatch", { algorithm: match.label })}
+            </p>
+          )}
+          {mismatch && (
+            <p className="flex items-center gap-1.5 text-[13px] text-destructive">
+              <XCircleIcon className="size-4 shrink-0" weight="fill" />
+              {t("explorer:properties.hashMismatch")}
+            </p>
+          )}
+        </>
+      )}
+
+      {run.status !== "running" && (
+        <Button
+          className="self-start"
+          onClick={() => setRunId(crypto.randomUUID())}
+          type="button"
+          variant="outline"
+        >
+          <ArrowsClockwiseIcon className="size-3.5" />
+          {t("explorer:properties.hashRecalculate")}
+        </Button>
+      )}
+    </div>
+  );
 }

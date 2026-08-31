@@ -65,6 +65,7 @@ pub fn run() {
         .manage(file_system::FileSearchState::default())
         .manage(file_system::UndoRedoState::default())
         .manage(file_system::directory_size::DirectorySizeState::default())
+        .manage(file_system::hashing::FileHashState::default())
         .manage(terminal::TerminalState::default())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
@@ -99,6 +100,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::watch::watch_directory,
             file_system::directory_size::start_directory_size_calculation,
             file_system::directory_size::cancel_directory_size_calculation,
+            file_system::hashing::start_file_hash_calculation,
+            file_system::hashing::cancel_file_hash_calculation,
             file_system::search::search_directory,
             file_system::search::search_file_contents,
             file_system::search::cancel_search,
@@ -161,6 +164,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::DirectoryChanged,
             file_system::progress::FileOperationProgress,
             file_system::directory_size::DirectorySizeProgress,
+            file_system::hashing::FileHashProgress,
             file_system::undo::UndoRedoChanged
         ])
 }

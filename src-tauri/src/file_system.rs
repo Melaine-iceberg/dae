@@ -5,6 +5,7 @@ pub mod connections;
 pub mod directory_size;
 pub mod error;
 pub mod git;
+pub mod hashing;
 pub mod local;
 pub mod open_with;
 pub mod prefetch;

@@ -304,7 +304,18 @@
     "hidden": "Hidden",
     "windowsAclHint": "Windows marks files with attributes such as read-only and hidden; manage full access control lists (ACL) in the system security settings.",
     "errorUnsupported": "This storage location does not support changing permissions",
-    "errorPermissionDenied": "Not enough permission to modify this item"
+    "errorPermissionDenied": "Not enough permission to modify this item",
+    "tabGeneral": "General",
+    "tabChecksum": "Checksums",
+    "hashHint": "Compare the file's digests with the values published by the download source to verify integrity.",
+    "hashCalculating": "Calculating digests…",
+    "hashError": "Could not calculate digests",
+    "hashRecalculate": "Recalculate",
+    "hashCopy": "Copy {{algorithm}} digest",
+    "hashExpectedLabel": "Compare with expected digest",
+    "hashExpectedPlaceholder": "Paste MD5 / SHA-1 / SHA-256…",
+    "hashMatch": "Matches {{algorithm}}",
+    "hashMismatch": "Does not match any calculated digest"
   },
   "breadcrumbs": {
     "showFullPath": "Show full path"

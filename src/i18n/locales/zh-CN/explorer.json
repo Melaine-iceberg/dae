@@ -304,7 +304,18 @@
     "hidden": "隐藏",
     "windowsAclHint": "Windows 通过只读/隐藏等属性标记文件；完整的访问控制列表（ACL）请在系统安全设置中管理。",
     "errorUnsupported": "当前存储位置不支持修改权限",
-    "errorPermissionDenied": "没有足够的权限修改该项目"
+    "errorPermissionDenied": "没有足够的权限修改该项目",
+    "tabGeneral": "常规",
+    "tabChecksum": "校验",
+    "hashHint": "将文件摘要与下载来源提供的值比对，用于校验下载完整性。",
+    "hashCalculating": "正在计算摘要…",
+    "hashError": "无法计算摘要",
+    "hashRecalculate": "重新计算",
+    "hashCopy": "复制 {{algorithm}} 摘要",
+    "hashExpectedLabel": "与预期摘要比对",
+    "hashExpectedPlaceholder": "粘贴 MD5 / SHA-1 / SHA-256…",
+    "hashMatch": "与 {{algorithm}} 一致",
+    "hashMismatch": "与所有已计算的摘要均不一致"
   },
   "breadcrumbs": {
     "showFullPath": "显示完整路径"
