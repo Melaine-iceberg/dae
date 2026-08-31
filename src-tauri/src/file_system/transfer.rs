@@ -228,14 +228,12 @@ pub fn find_conflicts(
 
     let mut conflicts = Vec::new();
     for source in sources {
-        let name = last_segment(&source.path)
-            .ok_or_else(|| {
-                FileSystemError::InvalidInput(format!(
-                    "The root of a volume cannot be copied or moved: {}",
-                    source.path
-                ))
-            })?
-            .to_owned();
+        let name = source.backend.entry_name(&source.path).map_err(|_| {
+            FileSystemError::InvalidInput(format!(
+                "The root of a volume cannot be copied or moved: {}",
+                source.path
+            ))
+        })?;
         let target = join_path(destination, &name);
 
         if Arc::ptr_eq(&source.backend, destination_backend)
@@ -361,7 +359,7 @@ pub fn duplicate_sources(
 
 /// Computes the first free sibling path for a duplicate of `source`.
 fn unique_duplicate_path(source: &TransferSource) -> Result<String, FileSystemError> {
-    let name = last_segment(&source.path).ok_or_else(|| {
+    let name = source.backend.entry_name(&source.path).map_err(|_| {
         FileSystemError::InvalidInput(format!(
             "The root of a volume cannot be duplicated: {}",
             source.path
@@ -375,7 +373,7 @@ fn unique_duplicate_path(source: &TransferSource) -> Result<String, FileSystemEr
         ))
     })?;
 
-    unique_sibling_path(source.backend.as_ref(), &parent, name, &HashSet::new())
+    unique_sibling_path(source.backend.as_ref(), &parent, &name, &HashSet::new())
 }
 
 /// The first sibling of `name` in `parent` that neither exists on `backend`
@@ -458,20 +456,20 @@ fn build_plan(
 
     for source in sources {
         let stat = source.backend.stat(&source.path)?;
-        let name = last_segment(&source.path).ok_or_else(|| {
+        let name = source.backend.entry_name(&source.path).map_err(|_| {
             FileSystemError::InvalidInput(format!(
                 "The root of a volume cannot be copied or moved: {}",
                 source.path
             ))
         })?;
 
-        if !planned_names.insert(name.to_owned()) {
+        if !planned_names.insert(name.clone()) {
             return Err(FileSystemError::AlreadyExists(format!(
                 "Multiple selected entries have the same name: {name}"
             )));
         }
 
-        let target = join_path(destination, name);
+        let target = join_path(destination, &name);
 
         // A source that would land on itself is a no-op, not a conflict.
         if Arc::ptr_eq(&source.backend, destination_backend)
@@ -494,10 +492,13 @@ fn build_plan(
                         let kept = unique_sibling_path(
                             destination_backend.as_ref(),
                             destination,
-                            name,
+                            &name,
                             &planned_names,
                         )?;
-                        planned_names.insert(last_segment(&kept).unwrap_or_default().to_owned());
+                        let kept_name = destination_backend
+                            .entry_name(&kept)
+                            .unwrap_or_else(|_| last_segment(&kept).unwrap_or_default().to_owned());
+                        planned_names.insert(kept_name);
                         (kept, None)
                     }
                 },

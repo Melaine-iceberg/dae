@@ -1,4 +1,5 @@
 pub mod archive;
+pub mod cloud;
 pub mod commands;
 pub mod connections;
 pub mod directory_size;

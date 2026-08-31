@@ -21,7 +21,26 @@
     "name": "空间名称"
   },
   "cloud": {
-    "comingSoon": "即将支持"
+    "addAccount": "添加网盘账户",
+    "emptyHint": "点击 + 连接 Google Drive、OneDrive 或 Dropbox",
+    "removeAccount": "移除账户",
+    "dialogTitle": "连接云存储",
+    "dialogDescription": "使用你自己创建的 OAuth 应用凭据，在浏览器中完成登录授权。",
+    "provider": "网盘",
+    "clientId": "Client ID",
+    "clientIdPlaceholder": "来自服务商控制台的 OAuth 客户端 ID",
+    "clientSecret": "Client Secret",
+    "clientSecretOptional": "Client Secret（可选）",
+    "clientIdRequired": "请输入 Client ID",
+    "redirectUri": "重定向 URI",
+    "guide": {
+      "google_drive": "在 Google Cloud 控制台中启用 Google Drive API，并在「API 和服务 → 凭据」中创建「桌面应用」类型的 OAuth 客户端。",
+      "onedrive": "在 Azure 门户的「应用注册」中创建应用（支持任何组织目录和个人账户），并在「移动和桌面应用程序」平台下添加重定向 URI。",
+      "dropbox": "在 Dropbox App Console 中创建应用，并在 OAuth 2 设置中逐字添加下方重定向 URI。"
+    },
+    "authorize": "在浏览器中授权…",
+    "waiting": "等待授权中…",
+    "waitingHint": "请在刚刚打开的浏览器窗口中完成登录。账户连接成功后本对话框会自动关闭。"
   },
   "network": {
     "connectStorage": "连接网络存储",

@@ -25,6 +25,7 @@ pub enum Scheme {
     Sftp,
     Ftp,
     WebDav,
+    Cloud,
 }
 
 /// Parses the `scheme://` prefix of an explorer path, returning the scheme and
@@ -46,6 +47,7 @@ pub fn split_scheme(path: &str) -> Result<(Scheme, &str), FileSystemError> {
         "sftp" => Scheme::Sftp,
         "ftp" => Scheme::Ftp,
         "webdav" | "webdavs" => Scheme::WebDav,
+        "cloud" => Scheme::Cloud,
         other => {
             return Err(FileSystemError::InvalidInput(format!(
                 "Unsupported storage protocol: {other}"
@@ -74,6 +76,10 @@ pub fn resolve(path: &str) -> Result<SharedBackend, FileSystemError> {
         }
         Scheme::Ftp => Err(unsupported_scheme("FTP")),
         Scheme::WebDav => Err(unsupported_scheme("WebDAV")),
+        Scheme::Cloud => {
+            let (_, rest) = split_scheme(path)?;
+            super::cloud::open_backend(rest)
+        }
     }
 }
 
@@ -99,6 +105,20 @@ pub fn is_local_path(path: &str) -> bool {
 /// by the generic engine in `transfer.rs` from the primitive methods below.
 pub trait FileSystemBackend: Send + Sync {
     fn read_dir(&self, path: &str) -> Result<DirectoryView, FileSystemError>;
+
+    /// Display name of the entry at `path`. Defaults to the final path
+    /// segment; backends whose segments are opaque ids (cloud storage)
+    /// resolve the real name instead, so cross-backend transfers name
+    /// destination entries correctly.
+    fn entry_name(&self, path: &str) -> Result<String, FileSystemError> {
+        super::transfer::last_segment(path)
+            .map(str::to_owned)
+            .ok_or_else(|| {
+                FileSystemError::InvalidInput(format!(
+                    "The root of a volume has no entry name: {path}"
+                ))
+            })
+    }
 
     fn create_entry(
         &self,
@@ -177,6 +197,12 @@ mod tests {
         let (scheme, rest) = split_scheme("webdavs://cloud.example/dav").expect("webdav scheme");
         assert_eq!(scheme, Scheme::WebDav);
         assert_eq!(rest, "cloud.example/dav");
+
+        let (scheme, rest) =
+            split_scheme("cloud://google_drive:user@example.com/folder-id")
+                .expect("cloud scheme");
+        assert_eq!(scheme, Scheme::Cloud);
+        assert_eq!(rest, "google_drive:user@example.com/folder-id");
 
         let (scheme, rest) = split_scheme("file:///home").expect("file maps to local");
         assert_eq!(scheme, Scheme::Local);

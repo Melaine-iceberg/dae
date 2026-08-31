@@ -13,7 +13,6 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   CaretDownIcon,
   ClipboardTextIcon,
-  CloudIcon,
   CopyIcon,
   FolderOpenIcon,
   GlobeIcon,
@@ -31,7 +30,7 @@ import {
   UsbIcon,
 } from "@phosphor-icons/react";
 
-import { commands } from "@/bindings";
+import { commands, type StoredCloudAccount } from "@/bindings";
 
 import {
   ContextMenu,
@@ -62,16 +61,21 @@ import { cn, formatBytes } from "@/lib/utils";
 
 import {
   addFavoritePathsAtom,
+  cloudAccountsAtom,
   collapsedLocationSectionsAtom,
   connectionsAtom,
+  ensureCloudAccountsLoadedAtom,
   ensureConnectionsLoadedAtom,
   expandLocationSectionAtom,
+  reloadCloudAccountsAtom,
   reloadConnectionsAtom,
   sidebarVisibleAtom,
   toggleLocationSectionAtom,
   type LocationSectionId,
 } from "./sidebar-atoms";
 import type { DiskVolume } from "./types";
+import { CloudAccountDialog } from "./cloud-account-dialog";
+import { CLOUD_PROVIDER_ICONS } from "./cloud-icons";
 import { ConnectDialog } from "./connect-dialog";
 import { LanguageMenu } from "@/i18n/language-menu";
 import { CloudSectionIcon, DisksSectionIcon, NetworkSectionIcon } from "./location-icons";
@@ -108,10 +112,12 @@ function SidebarContent() {
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const setSpaceRenameRequest = useSetAtom(spaceRenameRequestAtom);
   const reloadConnections = useSetAtom(reloadConnectionsAtom);
+  const reloadCloudAccounts = useSetAtom(reloadCloudAccountsAtom);
   const expandLocationSection = useSetAtom(expandLocationSectionAtom);
   const [creatingSpace, setCreatingSpace] = useState(false);
   const [spaceName, setSpaceName] = useState("");
   const [connectOpen, setConnectOpen] = useState(false);
+  const [cloudOpen, setCloudOpen] = useState(false);
   const activeTabId = useAtomValue(activeTabIdAtom);
   const navigator = getTabNavigator(activeTabId);
   const { directory } = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
@@ -262,11 +268,16 @@ function SidebarContent() {
           <NetworkContent currentPath={currentPath} onNavigate={navigateToFolder} />
         </CollapsibleSection>
 
-        <CollapsibleSection icon={CloudSectionIcon} id="cloud" label={t("sections.cloudStorage")}>
-          <div className="flex items-center gap-2 rounded-sm px-2 py-1.5 text-muted-foreground/70">
-            <CloudIcon className="size-4 shrink-0" />
-            <span className="text-xs">{t("cloud.comingSoon")}</span>
-          </div>
+        <CollapsibleSection
+          action={{
+            label: t("cloud.addAccount"),
+            onClick: () => setCloudOpen(true),
+          }}
+          icon={CloudSectionIcon}
+          id="cloud"
+          label={t("sections.cloudStorage")}
+        >
+          <CloudContent currentPath={currentPath} onNavigate={navigateToFolder} />
         </CollapsibleSection>
       </div>
 
@@ -283,6 +294,16 @@ function SidebarContent() {
           navigateToFolder(connection.id);
         }}
         open={connectOpen}
+      />
+
+      <CloudAccountDialog
+        onAuthorized={(account) => {
+          void reloadCloudAccounts();
+          expandLocationSection("cloud");
+          navigateToFolder(account.id);
+        }}
+        onOpenChange={setCloudOpen}
+        open={cloudOpen}
       />
     </nav>
   );
@@ -462,6 +483,96 @@ function NetworkContent({
         </p>
       )}
     </>
+  );
+}
+
+function CloudContent({
+  currentPath,
+  onNavigate,
+}: {
+  currentPath: string | null;
+  onNavigate: (path: string) => void;
+}) {
+  const { t } = useTranslation("sidebar");
+  const accounts = useAtomValue(cloudAccountsAtom);
+  const ensureLoaded = useSetAtom(ensureCloudAccountsLoadedAtom);
+
+  useEffect(() => {
+    void ensureLoaded();
+  }, [ensureLoaded]);
+
+  if (accounts === null) return <SectionSkeleton />;
+
+  return (
+    <>
+      {accounts.map((account) => {
+        const Icon = CLOUD_PROVIDER_ICONS[account.provider];
+        return (
+          <CloudAccountContextMenu account={account} key={account.id}>
+            <NavItem
+              icon={Icon}
+              isActive={
+                currentPath === account.id || currentPath?.startsWith(`${account.id}/`) === true
+              }
+              label={account.email}
+              onClick={() => onNavigate(account.id)}
+              title={account.displayName ? `${account.displayName} (${account.email})` : account.id}
+            />
+          </CloudAccountContextMenu>
+        );
+      })}
+
+      {accounts.length === 0 && (
+        <p className="px-3.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
+          {t("cloud.emptyHint")}
+        </p>
+      )}
+    </>
+  );
+}
+
+function CloudAccountContextMenu({
+  account,
+  children,
+}: {
+  account: StoredCloudAccount;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation("sidebar");
+  const openInNewTab = useSetAtom(openInNewTabAtom);
+  const reloadCloudAccounts = useSetAtom(reloadCloudAccountsAtom);
+  const path = account.id;
+
+  const remove = () => {
+    void commands
+      .deleteCloudAccount(path)
+      .then(() => reloadCloudAccounts())
+      .catch((error: unknown) => console.warn("Unable to delete cloud account", error));
+  };
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger>{children}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={() => openInNewTab(path)}>
+            <FolderOpenIcon />
+            {t("contextMenu.openInNewTab")}
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => void copyEntryPath(path)}>
+            <ClipboardTextIcon />
+            {t("contextMenu.copyPath")}
+          </ContextMenuItem>
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={remove}>
+            <TrashIcon />
+            {t("cloud.removeAccount")}
+          </ContextMenuItem>
+        </ContextMenuGroup>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

@@ -49,7 +49,7 @@ sysinfo = { version = "0.39", default-features = false, features = ["disk"] }
 trash = "5"
 smb2 = "0.18.1"
 keyring = "4.1.6"
-tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "net", "io-util"] }
 image = { version = "0.25", default-features = false, features = [
     "jpeg",
     "png",
@@ -77,6 +77,21 @@ portable-pty = "0.9"
 # The [patch] below swaps in a vendored copy that adds `DragMode::Link`
 # (DROPEFFECT_LINK) so Alt-drag can create shortcuts, like Explorer.
 drag = "2.1.1"
+# OAuth2 + REST for the cloud storage backends. rustls with `ring` (instead
+# of aws-lc-rs or native TLS) keeps the build free of CMake/NASM/OpenSSL
+# requirements, matching the `russh` choice above.
+reqwest = { version = "0.12", default-features = false, features = [
+    "rustls-tls-webpki-roots-no-provider",
+    "json",
+] }
+rustls = { version = "0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+] }
+async-trait = "0.1"
+sha2 = "0.10"
+rand = "0.9"
 
 [patch.crates-io]
 drag = { path = "vendor/drag" }
@@ -97,6 +112,11 @@ windows = { version = "0.52", features = [
 # which must honor NSS so domain-joined machines work.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# The in-memory mock credential store for the cloud account tests, keeping
+# them away from the real OS keychain.
+[dev-dependencies]
+keyring-core = "1"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

@@ -1,7 +1,7 @@
 import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
-import { commands, type StoredConnection } from "@/bindings";
+import { commands, type StoredCloudAccount, type StoredConnection } from "@/bindings";
 
 import type { Favorite, PlaceKind } from "./types";
 
@@ -53,6 +53,30 @@ export const reloadConnectionsAtom = atom(null, async (_get, set) => {
     set(connectionsAtom, await commands.listConnections());
   } catch (error) {
     console.warn("Unable to list connections", error);
+  }
+});
+
+// `null` means the cloud accounts have not been loaded yet (lazy, on first
+// expand of the cloud section).
+export const cloudAccountsAtom = atom<StoredCloudAccount[] | null>(null);
+
+export const ensureCloudAccountsLoadedAtom = atom(null, async (get, set) => {
+  if (get(cloudAccountsAtom) !== null) return;
+
+  try {
+    set(cloudAccountsAtom, await commands.listCloudAccounts());
+  } catch (error) {
+    console.warn("Unable to list cloud accounts", error);
+    set(cloudAccountsAtom, []);
+  }
+});
+
+/** Reloads after an authorize/delete, regardless of current loaded state. */
+export const reloadCloudAccountsAtom = atom(null, async (_get, set) => {
+  try {
+    set(cloudAccountsAtom, await commands.listCloudAccounts());
+  } catch (error) {
+    console.warn("Unable to list cloud accounts", error);
   }
 });
 

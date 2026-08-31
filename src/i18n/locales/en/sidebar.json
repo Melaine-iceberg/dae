@@ -21,7 +21,26 @@
     "name": "Space name"
   },
   "cloud": {
-    "comingSoon": "Coming soon"
+    "addAccount": "Add cloud account",
+    "emptyHint": "Click + to connect Google Drive, OneDrive, or Dropbox",
+    "removeAccount": "Remove account",
+    "dialogTitle": "Connect cloud storage",
+    "dialogDescription": "Sign in with your browser using credentials from your own OAuth app.",
+    "provider": "Provider",
+    "clientId": "Client ID",
+    "clientIdPlaceholder": "OAuth client ID from the provider console",
+    "clientSecret": "Client secret",
+    "clientSecretOptional": "Client secret (optional)",
+    "clientIdRequired": "Enter a client ID",
+    "redirectUri": "Redirect URI",
+    "guide": {
+      "google_drive": "In Google Cloud Console, enable the Google Drive API and create an OAuth client of type “Desktop app” under APIs & Services → Credentials.",
+      "onedrive": "In Azure portal → App registrations, create an app for any organization and personal accounts, then add the redirect URI under “Mobile and desktop applications”.",
+      "dropbox": "In the Dropbox App Console, create an app and add the redirect URI exactly as shown under the OAuth 2 section."
+    },
+    "authorize": "Authorize in browser…",
+    "waiting": "Waiting for authorization…",
+    "waitingHint": "Complete the sign-in in the browser window that just opened. This dialog closes automatically once the account is connected."
   },
   "network": {
     "connectStorage": "Connect to network storage",

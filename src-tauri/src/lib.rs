@@ -54,6 +54,7 @@ pub fn run() {
         .setup(move |app| {
             specta.mount_events(app);
             file_system::connections::init(app.handle())?;
+            file_system::cloud::accounts::init(app.handle())?;
             // Answer the startup surface's queries while the webview loads
             // so the first paint resolves them from memory.
             file_system::prefetch::warm_startup_data(app.handle());
@@ -149,7 +150,10 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::connections::list_connections,
             file_system::connections::save_connection,
             file_system::connections::delete_connection,
-            file_system::smb::test_connection
+            file_system::smb::test_connection,
+            file_system::cloud::accounts::list_cloud_accounts,
+            file_system::cloud::accounts::delete_cloud_account,
+            file_system::cloud::oauth::authorize_cloud_account
         ])
         .events(tauri_specta::collect_events![
             file_system::DirectoryChanged,
