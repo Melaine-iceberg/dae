@@ -20,6 +20,7 @@
     "closeToast": "Dismiss"
   },
   "terminalOpenFailed": "Could not open a terminal: {{detail}}",
+  "openWithFailed": "Could not open the Open With dialog: {{detail}}",
   "createEntryError": {
     "alreadyExists": "An item with this name already exists — pick another name",
     "permissionDenied": "You don't have permission to create items here",
@@ -58,6 +59,16 @@
   },
   "moveTo": {
     "dialogTitle": "Choose a destination folder"
+  },
+  "openWith": {
+    "dialogTitle": "Open with",
+    "description": "Choose an app to open “{{name}}”.",
+    "listAriaLabel": "Available applications",
+    "empty": "No apps are registered for this type.",
+    "loadFailed": "Could not list applications: {{detail}}",
+    "openFailed": "Could not open the item: {{detail}}",
+    "setDefault": "Always use this app",
+    "open": "Open"
   },
   "validation": {
     "nameEmpty": "Name cannot be empty"
@@ -146,6 +157,7 @@
     "paste": "Paste",
     "open": "Open",
     "openWith": "Open with…",
+    "openWithOtherApp": "Open in another app…",
     "addToFavorites": "Add to favorites",
     "addToSpace": "Add to space",
     "addToSpaceNamed": "Add to “{{name}}”",

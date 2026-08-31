@@ -68,6 +68,7 @@ import {
 } from "@/features/workspace/explorer-command-bus";
 import { addItemsToSpace } from "@/features/workspace/spaces-atoms";
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
+import { isWindowsPlatform } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import { ContentSearchResults, ContentSearchToolbar, useContentSearch } from "./content-search";
@@ -86,6 +87,7 @@ import { FileList, FileListSkeleton } from "./file-list";
 import { FilterMenu } from "./filter-menu";
 import { useGitStatus } from "./git-status";
 import type { ExplorerNavigator } from "./navigation";
+import { OpenWithDialog } from "./open-with-dialog";
 import { SortMenu } from "./sort-menu";
 import { TransferConflictDialog } from "./transfer-conflict-dialog";
 import {
@@ -150,6 +152,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
   const [newEntryValue, setNewEntryValue] = useState("");
   const [newEntryError, setNewEntryError] = useState<string | null>(null);
   const [deleteTargets, setDeleteTargets] = useState<DirectoryEntry[]>([]);
+  const [openWithTarget, setOpenWithTarget] = useState<string | null>(null);
   const [pendingTransfer, setPendingTransfer] = useState<PendingTransfer | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [isOperationPending, setIsOperationPending] = useState(false);
@@ -928,6 +931,24 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
     [t],
   );
 
+  /** Opens the "Open With" picker for a local file or folder: the native
+   *  SHOpenWithDialog on Windows, the in-app picker on macOS/Linux. */
+  const openWithHere = useCallback(
+    (path: string) => {
+      setOperationError(null);
+      if (isWindowsPlatform) {
+        void commands.openWith(path).catch((error: unknown) => {
+          setOperationError(
+            t("explorer:openWithFailed", { detail: getFileOperationErrorMessage(error) }),
+          );
+        });
+        return;
+      }
+      setOpenWithTarget(path);
+    },
+    [t],
+  );
+
   /** Opens every selected file and navigates into the first selected folder. */
   const openSelectedEntries = useCallback(() => {
     if (selectedEntries.length === 0 || isOperationPending) return;
@@ -1261,6 +1282,7 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
                   onMoveTo={moveSelectionTo}
                   onOpenDirectory={(path) => void navigator.navigate(path)}
                   onOpenTerminal={() => directory.path && openTerminalHere(directory.path)}
+                  onOpenWith={() => directory.path && openWithHere(directory.path)}
                   onPaste={pasteClipboard}
                   onRename={requestRename}
                   onRedo={redoLastOperation}
@@ -1438,6 +1460,13 @@ export function ExplorerView({ navigator }: ExplorerViewProps) {
         onOpenChange={(open) => {
           if (!open) closeDeleteDialog();
         }}
+      />
+      <OpenWithDialog
+        onClose={() => setOpenWithTarget(null)}
+        onOpenChange={(open) => {
+          if (!open) setOpenWithTarget(null);
+        }}
+        target={openWithTarget}
       />
       {pendingTransfer && (
         <TransferConflictDialog

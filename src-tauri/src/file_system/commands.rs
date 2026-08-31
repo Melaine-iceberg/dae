@@ -550,12 +550,14 @@ pub fn open_terminal(path: String) -> Result<(), FileSystemError> {
     open_system_terminal(&directory)
 }
 
-/// Opens the system's native "Open With" picker for a local file.
+/// Opens the system's native "Open With" picker for a local file or folder.
 ///
 /// Windows shows the shell's "How do you want to open this file?" dialog,
-/// letting the user pick any installed application (or set a new default);
-/// the command resolves once the dialog is dismissed. macOS and Linux expose
-/// no native picker, so the command fails there.
+/// letting the user pick any installed application; the command resolves once
+/// the dialog is dismissed. Since Windows 10 that dialog can no longer change
+/// default associations (registration flags are ignored by the OS), so it only
+/// opens the item once. macOS and Linux use the in-app picker backed by
+/// `file_system::open_with` instead, where this command fails.
 #[tauri::command]
 #[specta::specta]
 pub async fn open_with(path: String) -> Result<(), FileSystemError> {
@@ -565,15 +567,15 @@ pub async fn open_with(path: String) -> Result<(), FileSystemError> {
         ));
     }
 
-    let file = PathBuf::from(&path);
-    if !file.is_file() {
+    let target = PathBuf::from(&path);
+    if !target.is_file() && !target.is_dir() {
         return Err(FileSystemError::InvalidInput(
-            "fs.open_with_file_only".into(),
+            "fs.open_with_not_found".into(),
         ));
     }
 
     // SHOpenWithDialog 以模态方式运行到用户关闭为止，放到阻塞线程池执行。
-    tauri::async_runtime::spawn_blocking(move || open_system_with_dialog(&file))
+    tauri::async_runtime::spawn_blocking(move || open_system_with_dialog(&target))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }

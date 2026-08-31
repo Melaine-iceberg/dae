@@ -363,6 +363,7 @@ function PaneRow({
           onExtract={menuActions.onExtract}
           onMoveTo={menuActions.onMoveTo}
           onOpen={() => onOpenEntry(entry)}
+          onOpenWith={() => menuActions.onOpenWith(entry.path)}
           onRename={menuActions.onRename}
         />
       </ContextMenuContent>

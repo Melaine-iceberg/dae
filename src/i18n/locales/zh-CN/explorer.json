@@ -20,6 +20,7 @@
     "closeToast": "关闭提示"
   },
   "terminalOpenFailed": "无法打开终端：{{detail}}",
+  "openWithFailed": "无法打开“打开方式”对话框：{{detail}}",
   "createEntryError": {
     "alreadyExists": "已存在同名项目，请使用其他名称",
     "permissionDenied": "没有权限在此位置创建项目",
@@ -58,6 +59,16 @@
   },
   "moveTo": {
     "dialogTitle": "选择目标文件夹"
+  },
+  "openWith": {
+    "dialogTitle": "打开方式",
+    "description": "选择用于打开“{{name}}”的应用。",
+    "listAriaLabel": "可用应用列表",
+    "empty": "没有注册可打开此类型的应用。",
+    "loadFailed": "无法列出应用：{{detail}}",
+    "openFailed": "无法打开该项目：{{detail}}",
+    "setDefault": "始终使用此应用打开",
+    "open": "打开"
   },
   "validation": {
     "nameEmpty": "名称不能为空"
@@ -146,6 +157,7 @@
     "paste": "粘贴",
     "open": "打开",
     "openWith": "打开方式…",
+    "openWithOtherApp": "在其它应用中打开…",
     "addToFavorites": "添加到收藏",
     "addToSpace": "添加到空间",
     "addToSpaceNamed": "添加到「{{name}}」",

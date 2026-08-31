@@ -21,7 +21,7 @@ import {
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { commands, type ArchiveFormat } from "@/bindings";
-import { isWindowsPlatform, MOD_KEY } from "@/lib/platform";
+import { MOD_KEY } from "@/lib/platform";
 
 import { propertiesTargetAtom } from "./properties-atoms";
 
@@ -65,6 +65,7 @@ export interface EntryActions {
   onExtract: (path: string) => void;
   onMoveTo: () => void;
   onOpen: () => void;
+  onOpenWith: () => void;
   onRename: () => void;
 }
 
@@ -82,6 +83,7 @@ export function EntryContextMenuContent({
   onExtract,
   onMoveTo,
   onOpen,
+  onOpenWith,
   onRename,
 }: EntryActions) {
   const { t } = useTranslation("explorer");
@@ -101,15 +103,12 @@ export function EntryContextMenuContent({
           {t("explorer:contextMenu.open")}
           <ContextMenuShortcut>Enter</ContextMenuShortcut>
         </ContextMenuItem>
-        {entry.kind === "file" && isWindowsPlatform && (
-          <ContextMenuItem
-            disabled={isActionDisabled}
-            onClick={() => void openWithSystemDialog(entry.path)}
-          >
-            <AppWindowIcon />
-            {t("explorer:contextMenu.openWith")}
-          </ContextMenuItem>
-        )}
+        {/* Windows keeps the native SHOpenWithDialog; macOS/Linux fall back
+            to the in-app picker, both routed through the explorer view. */}
+        <ContextMenuItem disabled={isActionDisabled} onClick={onOpenWith}>
+          <AppWindowIcon />
+          {t("explorer:contextMenu.openWith")}
+        </ContextMenuItem>
         {entry.kind === "directory" && (
           <ContextMenuItem disabled={isActionDisabled} onClick={onAddToFavorites}>
             <StarIcon />
@@ -232,13 +231,5 @@ async function openTerminalAt(path: string): Promise<void> {
     await commands.openTerminal(path);
   } catch (error) {
     console.warn(`Unable to open terminal at ${path}`, error);
-  }
-}
-
-async function openWithSystemDialog(path: string): Promise<void> {
-  try {
-    await commands.openWith(path);
-  } catch (error) {
-    console.warn(`Unable to open "open with" picker for ${path}`, error);
   }
 }

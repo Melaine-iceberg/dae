@@ -115,6 +115,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::commands::set_duplicate_suffix,
             file_system::commands::open_terminal,
             file_system::commands::open_with,
+            file_system::open_with::list_open_with_apps,
+            file_system::open_with::open_with_app,
             file_system::commands::get_file_properties,
             file_system::commands::update_file_properties,
             file_system::system_files::write_files_to_clipboard,

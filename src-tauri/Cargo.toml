@@ -113,6 +113,16 @@ windows = { version = "0.52", features = [
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# CoreFoundation bindings for the macOS "Open With" picker: LaunchServices
+# application enumeration and default-handler registration.
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.9"
+
+# Maps file paths to freedesktop MIME types so the Linux "Open With" picker
+# can match applications declared in `.desktop` files.
+[target.'cfg(target_os = "linux")'.dependencies]
+mime_guess = "2"
+
 # The in-memory mock credential store for the cloud account tests, keeping
 # them away from the real OS keychain.
 [dev-dependencies]

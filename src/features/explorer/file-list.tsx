@@ -13,6 +13,7 @@ import { commands, type ArchiveFormat } from "@/bindings";
 import { i18n } from "@/i18n";
 import { localeDateTimeFormat, localeNumber, localeNumberFormat } from "@/i18n/format";
 import {
+  AppWindowIcon,
   CaretDownIcon,
   CaretUpIcon,
   ClipboardIcon,
@@ -112,6 +113,7 @@ interface FileListProps {
   onMoveTo: () => void;
   onOpenDirectory: (path: string) => void;
   onOpenTerminal: () => void;
+  onOpenWith: () => void;
   onPaste: () => void;
   onRedo: () => void;
   onRename: () => void;
@@ -242,6 +244,7 @@ export function FileList({
   onMoveTo,
   onOpenDirectory,
   onOpenTerminal,
+  onOpenWith,
   onPaste,
   onRedo,
   onRename,
@@ -623,6 +626,7 @@ export function FileList({
     onDuplicate,
     onExtract,
     onMoveTo,
+    onOpenWith,
     onRename,
   };
 
@@ -887,6 +891,10 @@ export function FileList({
             {t("explorer:contextMenu.openInTerminal")}
             <ContextMenuShortcut>{MOD_KEY}+`</ContextMenuShortcut>
           </ContextMenuItem>
+          <ContextMenuItem disabled={blankMenuDisabled} onClick={onOpenWith}>
+            <AppWindowIcon />
+            {t("explorer:contextMenu.openWithOtherApp")}
+          </ContextMenuItem>
           <ContextMenuItem onClick={onPaste}>
             <ClipboardIcon />
             {t("explorer:contextMenu.paste")}
@@ -958,6 +966,7 @@ export interface MenuActions {
   onDuplicate: () => void;
   onExtract: (path: string) => void;
   onMoveTo: () => void;
+  onOpenWith: (path: string) => void;
   onRename: () => void;
 }
 
@@ -1109,6 +1118,7 @@ function FileListRow({
           onExtract={menuActions.onExtract}
           onMoveTo={menuActions.onMoveTo}
           onOpen={() => onOpenEntry(entry)}
+          onOpenWith={() => menuActions.onOpenWith(entry.path)}
           onRename={menuActions.onRename}
         />
       </ContextMenuContent>
