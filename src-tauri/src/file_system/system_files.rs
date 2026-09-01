@@ -76,9 +76,10 @@ pub fn start_drag_out(
     start_drag_out_impl(paths, mode, &app)
 }
 
-/// Creates `.lnk` shortcuts pointing at `sources` inside `destination`,
-/// resolving name collisions with ` (2)`, ` (3)`… suffixes like Explorer.
-/// Returns the created shortcut paths so the UI can refresh and select them.
+/// Creates links pointing at `sources` inside `destination`: `.lnk`
+/// shortcuts on Windows (IShellLink), real symlinks on macOS and Linux.
+/// Resolves name collisions with ` (2)`, ` (3)`… suffixes like Explorer.
+/// Returns the created link paths so the UI can refresh and select them.
 #[tauri::command]
 #[specta::specta]
 pub async fn create_shortcuts(
@@ -515,14 +516,61 @@ fn start_drag_out_impl(
     ))
 }
 
+/// macOS/Linux counterpart of the Windows `.lnk` path: creates a real
+/// symlink in `destination` for each source, keeping the source's file name
+/// (Explorer's Alt-drag keeps the name too, minus the `.lnk` machinery).
 #[cfg(not(windows))]
 fn create_shortcuts_impl(
-    _sources: &[String],
-    _destination: &str,
+    sources: &[String],
+    destination: &str,
 ) -> Result<Vec<String>, FileSystemError> {
-    Err(FileSystemError::Internal(
-        "Shortcuts are only implemented on Windows".into(),
-    ))
+    use std::os::unix::fs::symlink;
+
+    let mut created = Vec::new();
+    for source in sources {
+        let source_path = std::path::Path::new(source);
+        let name = source_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| {
+                FileSystemError::InvalidInput(format!("Cannot derive a name from {source}"))
+            })?;
+        let link_path = unique_symlink_path(destination, name);
+
+        // The target stays absolute: a relative symlink would resolve against
+        // the link's own folder and break the moment the link is moved.
+        symlink(source_path, &link_path)?;
+        created.push(link_path);
+    }
+
+    Ok(created)
+}
+
+/// Builds `{destination}/{name}`, appending ` (2)`, ` (3)`… before the
+/// extension while the name is taken — the same collision scheme the
+/// Windows side uses for `.lnk` shortcuts.
+#[cfg(not(windows))]
+fn unique_symlink_path(destination: &str, name: &str) -> String {
+    let directory = std::path::Path::new(destination);
+    let mut link_name = name.to_owned();
+    let mut candidate = directory.join(&link_name);
+    let mut counter = 2u32;
+
+    while candidate.exists() {
+        let source_name = std::path::Path::new(name);
+        let stem = source_name
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or(name);
+        link_name = match source_name.extension().and_then(|extension| extension.to_str()) {
+            Some(extension) => format!("{stem} ({counter}).{extension}"),
+            None => format!("{stem} ({counter})"),
+        };
+        candidate = directory.join(&link_name);
+        counter += 1;
+    }
+
+    candidate.to_string_lossy().into_owned()
 }
 
 #[cfg(all(test, windows))]
@@ -541,5 +589,55 @@ mod tests {
         let parsed = file_paths_from_drop_handle(HDROP(handle.0 as isize));
 
         assert_eq!(parsed, paths);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::{create_shortcuts_impl, unique_symlink_path};
+
+    fn test_root(tag: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("dae-link-test-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("create test root");
+        root
+    }
+
+    #[test]
+    fn unique_symlink_path_avoids_collisions() {
+        let root = test_root("collision");
+
+        let first = unique_symlink_path(root.to_str().unwrap(), "report.txt");
+        assert_eq!(first, root.join("report.txt").to_string_lossy());
+
+        std::fs::write(&first, b"taken").expect("occupy the name");
+        let second = unique_symlink_path(root.to_str().unwrap(), "report.txt");
+        assert_eq!(second, root.join("report (2).txt").to_string_lossy());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn create_shortcuts_creates_working_symlinks() {
+        let root = test_root("create");
+        let destination = root.join("destination");
+        std::fs::create_dir_all(&destination).expect("create destination");
+        let target = root.join("notes.txt");
+        std::fs::write(&target, "linked").expect("write target");
+
+        let created = create_shortcuts_impl(
+            &[target.to_string_lossy().into_owned()],
+            &destination.to_string_lossy(),
+        )
+        .expect("create the symlink");
+
+        assert_eq!(created.len(), 1);
+        let link = std::path::Path::new(&created[0]);
+        assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_link(link).unwrap(), target);
+        // Reading through the link reaches the target's contents.
+        assert_eq!(std::fs::read_to_string(link).unwrap(), "linked");
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

@@ -475,9 +475,10 @@ export function ExplorerView({
     [startTransfer],
   );
 
-  /** Windows-style Alt-drag: create .lnk shortcuts for the sources inside the
-   * destination. The backend resolves name collisions with " (2)"… suffixes,
-   * so no conflict dialog is needed here. */
+  /** Explorer-style Alt-drag link: the backend creates .lnk shortcuts on
+   * Windows and real symlinks on macOS/Linux inside the destination. Name
+   * collisions resolve with " (2)"… suffixes, so no conflict dialog is
+   * needed here. */
   const createShortcutsEntries = useCallback((sourcePaths: string[], destinationPath: string) => {
     setOperationError(null);
     commands
