@@ -334,7 +334,7 @@ function PaneRow({
           <EntryIconFrame entry={entry}>
             {isNativeIconSupported(entry) ? (
               <NativeIconImage
-                className="shrink-0"
+                className="shrink-0 entry-icon-pop"
                 entry={entry}
                 fallback={
                   <EntryIcon className={getPresentationIconClassName(presentation)} size={16} />
@@ -343,7 +343,10 @@ function PaneRow({
               />
             ) : (
               <EntryIcon
-                className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
+                className={cn(
+                  "size-4 shrink-0 entry-icon-pop",
+                  getPresentationIconClassName(presentation),
+                )}
                 weight={isDirectory ? "fill" : undefined}
               />
             )}

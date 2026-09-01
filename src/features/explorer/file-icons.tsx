@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import {
   AppWindowIcon,
   DiscIcon,
@@ -41,6 +42,7 @@ import {
   PackageIcon,
   TextAaIcon,
   type Icon,
+  type IconProps,
 } from "@phosphor-icons/react";
 
 import { i18n } from "@/i18n";
@@ -49,6 +51,19 @@ export type PhosphorIcon = Icon;
 
 export const FolderClosedIcon = FolderIcon;
 export const FolderOpenedIcon = FolderOpenIcon;
+
+/**
+ * Presentation icons default to the duotone weight: the 20% underlayer adds
+ * depth beneath the per-category tone so file glyphs stay scannable but feel
+ * less flat than the single-stroke regular weight. Explicit `weight` props
+ * at call sites (fill folders, preview overrides) still win.
+ */
+function duotonePresentationIcon(Icon: PhosphorIcon): PhosphorIcon {
+  const DuotoneIcon = forwardRef<SVGSVGElement, IconProps>(({ weight, ...props }, ref) => (
+    <Icon ref={ref} weight={weight ?? "duotone"} {...props} />
+  ));
+  return DuotoneIcon;
+}
 
 interface ExtensionPresentation {
   icon: PhosphorIcon;
@@ -64,7 +79,7 @@ function localizedPresentation(
   tone?: string,
 ): ExtensionPresentation {
   return {
-    icon,
+    icon: duotonePresentationIcon(icon),
     tone,
     get label() {
       return i18n.t(`explorer:fileType.${labelKey}`);

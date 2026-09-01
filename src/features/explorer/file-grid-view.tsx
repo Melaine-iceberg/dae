@@ -310,7 +310,7 @@ function GridCell({
           ) : isNativeIconSupported(entry) ? (
             <EntryIconFrame badgeSize="md" entry={entry}>
               <NativeIconImage
-                className="shrink-0"
+                className="shrink-0 entry-icon-pop"
                 entry={entry}
                 fallback={
                   <EntryIcon
@@ -325,7 +325,10 @@ function GridCell({
           ) : (
             <EntryIconFrame badgeSize="md" entry={entry}>
               <EntryIcon
-                className={cn("shrink-0", getPresentationIconClassName(presentation))}
+                className={cn(
+                  "shrink-0 entry-icon-pop",
+                  getPresentationIconClassName(presentation),
+                )}
                 size={iconSize}
                 weight={isDirectory ? "fill" : undefined}
               />

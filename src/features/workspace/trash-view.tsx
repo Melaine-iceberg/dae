@@ -457,7 +457,7 @@ function TrashRow({
             <span className="flex min-w-0 items-center gap-2">
               <Icon
                 className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
-                weight={entry.isDirectory ? "fill" : "regular"}
+                weight={entry.isDirectory ? "fill" : undefined}
               />
               <span className="truncate text-[13px]">{entry.name}</span>
             </span>

@@ -201,7 +201,7 @@ function RecentRow({
           >
             <Icon
               className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
-              weight={item.kind === "directory" ? "fill" : "regular"}
+              weight={item.kind === "directory" ? "fill" : undefined}
             />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px]">{item.name}</span>

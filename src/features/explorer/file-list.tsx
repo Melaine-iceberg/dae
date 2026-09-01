@@ -1070,7 +1070,7 @@ function FileListRow({
             <EntryIconFrame entry={entry}>
               {isNativeIconSupported(entry) ? (
                 <NativeIconImage
-                  className="shrink-0"
+                  className="shrink-0 entry-icon-pop"
                   entry={entry}
                   fallback={
                     <EntryIcon className={getPresentationIconClassName(presentation)} size={18} />
@@ -1079,7 +1079,10 @@ function FileListRow({
                 />
               ) : (
                 <EntryIcon
-                  className={cn("shrink-0", getPresentationIconClassName(presentation))}
+                  className={cn(
+                    "shrink-0 entry-icon-pop",
+                    getPresentationIconClassName(presentation),
+                  )}
                   size={18}
                   weight={isDirectory ? "fill" : undefined}
                 />
