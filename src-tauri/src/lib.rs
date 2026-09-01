@@ -1,7 +1,9 @@
+mod deep_link;
 mod file_system;
 mod terminal;
 
 use tauri::Manager;
+use tauri_plugin_deep_link::DeepLinkExt;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -55,6 +57,24 @@ pub fn run() {
             specta.mount_events(app);
             file_system::connections::init(app.handle())?;
             file_system::cloud::accounts::init(app.handle())?;
+
+            // macOS delivers deep links through the plugin's open-url event;
+            // Windows/Linux pass them as CLI args (also for the very first
+            // launch, handled here; duplicate launches arrive through the
+            // single-instance callback below).
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                let urls: Vec<String> = event.urls().iter().map(ToString::to_string).collect();
+                deep_link::handle_activation(&handle, &urls);
+            });
+            let launch_args: Vec<String> = std::env::args().collect();
+            if launch_args
+                .iter()
+                .any(|arg| arg.to_ascii_lowercase().starts_with("dae://"))
+            {
+                deep_link::handle_activation(app.handle(), &launch_args);
+            }
+
             // Answer the startup surface's queries while the webview loads
             // so the first paint resolves them from memory.
             file_system::prefetch::warm_startup_data(app.handle());
@@ -66,10 +86,18 @@ pub fn run() {
         .manage(file_system::UndoRedoState::default())
         .manage(file_system::directory_size::DirectorySizeState::default())
         .manage(file_system::hashing::FileHashState::default())
+        .manage(deep_link::PendingDeepLink::default())
         .manage(terminal::TerminalState::default())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // Must register before single-instance so the forwarded second-launch
+        // args reach the running instance; the callback both focuses the
+        // window and picks up any `dae://` URL the relaunch carried.
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            deep_link::handle_activation(app, &args);
+        }))
         .plugin(
             tauri_plugin_snap_layout::init()
                 .button_id("window-maximize")
@@ -165,13 +193,15 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::smb::test_connection,
             file_system::cloud::accounts::list_cloud_accounts,
             file_system::cloud::accounts::delete_cloud_account,
-            file_system::cloud::oauth::authorize_cloud_account
+            file_system::cloud::oauth::authorize_cloud_account,
+            deep_link::take_pending_open_directory
         ])
         .events(tauri_specta::collect_events![
             file_system::DirectoryChanged,
             file_system::progress::FileOperationProgress,
             file_system::directory_size::DirectorySizeProgress,
             file_system::hashing::FileHashProgress,
-            file_system::undo::UndoRedoChanged
+            file_system::undo::UndoRedoChanged,
+            deep_link::OpenDirectoryRequested
         ])
 }

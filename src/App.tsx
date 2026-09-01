@@ -1,9 +1,10 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 
-import { events } from "@/bindings";
+import { commands, events } from "@/bindings";
 import { useLocaleSync } from "@/i18n/atoms";
 import { ExplorerTabs } from "@/features/explorer/explorer-tabs";
+import { getActivePaneNavigator } from "@/features/explorer/tabs";
 import { propertiesTargetAtom } from "@/features/explorer/properties-atoms";
 import { undoRedoAtom } from "@/features/explorer/tabs";
 import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
@@ -66,6 +67,26 @@ function App() {
       void unlistenPromise.then((unlisten) => unlisten());
     };
   }, [setUndoRedo]);
+
+  // `dae://` deep links ask the explorer to show a directory: the backend
+  // validates the path and focuses the window, then navigates here. A link
+  // that landed before the listener mounted is pulled from the backend's
+  // buffer right after registration, so the startup race cannot drop it.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    const setupPromise = events.deepLinkOpenDirectory.listen(({ payload }) => {
+      void getActivePaneNavigator().navigate(payload);
+    });
+    void setupPromise.then((dispose) => {
+      unlisten = dispose;
+      void commands.takePendingOpenDirectory().then((pendingPath) => {
+        if (pendingPath) void getActivePaneNavigator().navigate(pendingPath);
+      });
+    });
+    return () => {
+      void setupPromise.then(() => unlisten?.());
+    };
+  }, []);
 
   // Global shortcuts: Ctrl/Cmd+K toggles the command bar (SKILL.md §15/§30),
   // Ctrl/Cmd+P opens it in path-jump mode (matching VS Code's Quick Open),
