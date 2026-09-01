@@ -1,9 +1,11 @@
 use super::error::FileSystemError;
 use super::local::LocalBackend;
+use super::progress::FileOperationProgressReporterTrait;
 use super::sftp;
 use super::smb;
 use super::types::{
-    DirectoryView, EntryStat, FileProperties, NewEntryKind, PropertyChanges, SearchResponse,
+    DirectoryView, EntryStat, FileProperties, NewEntryKind, PropertyChanges,
+    RecursivePropertyUpdateOutcome, SearchResponse,
 };
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -174,6 +176,21 @@ pub trait FileSystemBackend: Send + Sync {
         path: &str,
         _changes: &PropertyChanges,
     ) -> Result<(), FileSystemError> {
+        Err(FileSystemError::Unsupported(format!(
+            "This storage backend does not support editing properties: {path}"
+        )))
+    }
+
+    /// Applies property edits to a directory and everything beneath it.
+    /// Progress is reported through `progress`; the outcome separates
+    /// successful entries from failures so the UI can surface partial
+    /// success. The default rejects the operation.
+    fn update_properties_recursive(
+        &self,
+        path: &str,
+        _changes: &PropertyChanges,
+        _progress: &dyn FileOperationProgressReporterTrait,
+    ) -> Result<RecursivePropertyUpdateOutcome, FileSystemError> {
         Err(FileSystemError::Unsupported(format!(
             "This storage backend does not support editing properties: {path}"
         )))

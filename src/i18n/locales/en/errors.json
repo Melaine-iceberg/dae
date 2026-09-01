@@ -11,6 +11,7 @@
       "terminal_launch_failed": "Could not launch the terminal",
       "terminal_not_found": "No terminal found. Install xdg-terminal-exec or set $TERMINAL",
       "open_with_local_only": "Open With only works on local items",
+      "properties_local_only": "Applying properties to enclosed items only works on local folders",
       "open_with_not_found": "The item no longer exists at this location",
       "open_with_unsupported": "The system Open With dialog is not supported on this platform",
       "open_with_picker_unsupported": "The in-app Open With picker is not supported on this platform",

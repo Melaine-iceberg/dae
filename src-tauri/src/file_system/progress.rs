@@ -15,6 +15,7 @@ pub enum FileOperationKind {
     Delete,
     Compress,
     Extract,
+    Properties,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]

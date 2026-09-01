@@ -6,8 +6,8 @@ use super::progress::{
 };
 use super::transfer::{self, TransferSource};
 use super::types::{
-    ConflictAction, DirectoryView, FileProperties, NewEntryKind, PropertyChanges, TransferConflict,
-    TransferItem, TransferPair, path_to_string,
+    ConflictAction, DirectoryView, FileProperties, NewEntryKind, PropertyChanges,
+    RecursivePropertyUpdateOutcome, TransferConflict, TransferItem, TransferPair, path_to_string,
 };
 use super::undo::{self, Operation, TrashRecord, UndoRedoOutcome, UndoRedoState};
 use super::vfs;
@@ -522,6 +522,45 @@ pub async fn update_file_properties(
 ) -> Result<(), FileSystemError> {
     tauri::async_runtime::spawn_blocking(move || {
         vfs::resolve(&path)?.update_properties(&path, &changes)
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+/// Applies property edits to a directory and everything beneath it (the
+/// "apply to enclosed items" option). Progress streams under `operation_id`;
+/// the outcome separates entries that were updated from entries that failed,
+/// so the UI can surface partial success instead of an all-or-nothing error.
+#[tauri::command]
+#[specta::specta]
+pub async fn update_file_properties_recursive(
+    operation_id: String,
+    path: String,
+    changes: PropertyChanges,
+    app: tauri::AppHandle,
+) -> Result<RecursivePropertyUpdateOutcome, FileSystemError> {
+    if !vfs::is_local_path(&path) {
+        return Err(FileSystemError::InvalidInput(
+            "fs.properties_local_only".into(),
+        ));
+    }
+
+    if !Path::new(&path).is_dir() {
+        return Err(FileSystemError::NotDirectory(path));
+    }
+
+    emit_preparing(&app, &operation_id, FileOperationKind::Properties);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let progress = FileOperationProgressReporter::new(
+            app,
+            operation_id,
+            FileOperationKind::Properties,
+        );
+        let outcome =
+            vfs::resolve(&path)?.update_properties_recursive(&path, &changes, &progress)?;
+        progress.finish();
+        Ok(outcome)
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?

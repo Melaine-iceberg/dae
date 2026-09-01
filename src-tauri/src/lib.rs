@@ -122,6 +122,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::open_with::open_with_app,
             file_system::commands::get_file_properties,
             file_system::commands::update_file_properties,
+            file_system::commands::update_file_properties_recursive,
             file_system::system_files::write_files_to_clipboard,
             file_system::system_files::read_files_from_clipboard,
             file_system::system_files::start_drag_out,

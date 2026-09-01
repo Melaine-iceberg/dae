@@ -1548,6 +1548,7 @@ function FileOperationStatusBar({ progress }: { progress: FileOperationProgress 
     delete: t("explorer:progress.opDelete"),
     compress: t("explorer:progress.opCompress"),
     extract: t("explorer:progress.opExtract"),
+    properties: t("explorer:progress.opProperties"),
   };
   const total = progress.total;
   const percentage = total && total > 0 ? Math.round((progress.completed / total) * 100) : 0;

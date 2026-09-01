@@ -60,23 +60,27 @@ const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
 
 /** Editable state derived from a freshly loaded `FileProperties`. */
 interface PropertiesDraft {
-  /** Low 9 permission bits; setuid/setgid/sticky are preserved, not edited. */
+  /** Low 12 permission bits: rwx triplets plus setuid/setgid/sticky. */
   mode: number;
   user: string;
   group: string;
   readOnly: boolean;
   hidden: boolean;
+  archive: boolean;
+  system: boolean;
 }
 
 function createDraft(properties: FileProperties): PropertiesDraft {
   const { platform } = properties;
 
   return {
-    mode: platform.kind === "unix" ? platform.mode & 0o777 : 0,
+    mode: platform.kind === "unix" ? platform.mode & 0o7777 : 0,
     user: platform.kind === "unix" ? (platform.userName ?? String(platform.uid)) : "",
     group: platform.kind === "unix" ? (platform.groupName ?? String(platform.gid)) : "",
     readOnly: platform.kind === "windows" ? platform.readOnly : false,
     hidden: platform.kind === "windows" ? platform.hidden : false,
+    archive: platform.kind === "windows" ? platform.archive : false,
+    system: platform.kind === "windows" ? platform.system : false,
   };
 }
 
@@ -88,8 +92,8 @@ function buildChanges(properties: FileProperties, draft: PropertiesDraft): Prope
   const { platform } = properties;
 
   if (platform.kind === "unix") {
-    if (draft.mode !== (platform.mode & 0o777)) {
-      changes.mode = (platform.mode & 0o7000) | draft.mode;
+    if (draft.mode !== (platform.mode & 0o7777)) {
+      changes.mode = draft.mode & 0o7777;
     }
 
     const owner: OwnerChange = {};
@@ -113,6 +117,12 @@ function buildChanges(properties: FileProperties, draft: PropertiesDraft): Prope
     }
     if (draft.hidden !== platform.hidden) {
       changes.hidden = draft.hidden;
+    }
+    if (draft.archive !== platform.archive) {
+      changes.archive = draft.archive;
+    }
+    if (draft.system !== platform.system) {
+      changes.system = draft.system;
     }
   }
 
@@ -141,9 +151,15 @@ function parentPath(path: string): string {
 }
 
 function formatSymbolicMode(mode: number): string {
-  const triplet = (bits: number) =>
-    `${bits & 4 ? "r" : "-"}${bits & 2 ? "w" : "-"}${bits & 1 ? "x" : "-"}`;
-  return `${triplet(mode >> 6)}${triplet(mode >> 3)}${triplet(mode)}`;
+  const triplet = (bits: number, special: boolean, letter: string) =>
+    `${bits & 4 ? "r" : "-"}${bits & 2 ? "w" : "-"}${
+      bits & 1 ? (special ? letter : "x") : special ? letter.toUpperCase() : "-"
+    }`;
+  return (
+    triplet(mode >> 6, (mode & 0o4000) !== 0, "s") +
+    triplet(mode >> 3, (mode & 0o2000) !== 0, "s") +
+    triplet(mode, (mode & 0o1000) !== 0, "t")
+  );
 }
 
 function describeError(error: unknown): string {
@@ -185,8 +201,9 @@ const HASH_ALGORITHMS: readonly { key: keyof FileHashDigests; label: string }[] 
 ];
 
 /** Global properties dialog (right-click → 属性): common metadata on every
- *  platform, plus a POSIX permission matrix / owner editor on Unix and
- *  read-only/hidden toggles on Windows. */
+ *  platform, plus a POSIX permission matrix with special bits and an owner
+ *  editor on Unix, DOS attribute toggles on Windows, and an optional
+ *  "apply to enclosed items" mode for local folders. */
 export function PropertiesDialog() {
   const { t } = useTranslation("explorer");
   const target = useAtomValue(propertiesTargetAtom);
@@ -195,6 +212,13 @@ export function PropertiesDialog() {
   const [draft, setDraft] = useState<PropertiesDraft | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  // Folder-only option: apply the edits to every enclosed item as well.
+  const [applyToEnclosed, setApplyToEnclosed] = useState(false);
+  // Live item counts streamed while a recursive apply runs.
+  const [saveProgress, setSaveProgress] = useState<{
+    completed: number;
+    total: number | null;
+  } | null>(null);
   const [tab, setTab] = useState<PropertiesTab>("general");
   // Folder sizes are computed on demand here (never in the list, to avoid
   // constant background scans). While a scan runs, the total updates live.
@@ -208,6 +232,8 @@ export function PropertiesDialog() {
     setProperties(null);
     setDraft(null);
     setError(null);
+    setApplyToEnclosed(false);
+    setSaveProgress(null);
     setTab("general");
 
     commands
@@ -266,6 +292,15 @@ export function PropertiesDialog() {
       ? Object.keys(buildChanges(properties, draft)).length > 0
       : false;
 
+  // Folders on the local disk can push their edits into every enclosed item;
+  // remote backends and view-only targets keep the single-item behavior.
+  const isEnclosedApplyAvailable =
+    target !== null &&
+    properties !== null &&
+    target.kind === "directory" &&
+    isLocalExplorerPath(target.path) &&
+    properties.platform.kind !== "basic";
+
   const applyChanges = async () => {
     if (!target || !properties || !draft || isSaving) return;
 
@@ -276,7 +311,30 @@ export function PropertiesDialog() {
     setError(null);
 
     try {
-      await commands.updateFileProperties(target.path, changes);
+      if (isEnclosedApplyAvailable && applyToEnclosed) {
+        const operationId = crypto.randomUUID();
+        const unlisten = await events.explorerFileOperationProgress.listen(({ payload }) => {
+          if (payload.operationId !== operationId) return;
+          setSaveProgress({ completed: payload.completed, total: payload.total });
+        });
+
+        try {
+          const outcome = await commands.updateFilePropertiesRecursive(
+            operationId,
+            target.path,
+            changes,
+          );
+          if (outcome.failed > 0) {
+            setError(t("explorer:properties.partialFailure", { count: outcome.failed }));
+          }
+        } finally {
+          unlisten();
+          setSaveProgress(null);
+        }
+      } else {
+        await commands.updateFileProperties(target.path, changes);
+      }
+
       const refreshed = await commands.getFileProperties(target.path);
       setProperties(refreshed);
       setDraft(createDraft(refreshed));
@@ -410,6 +468,31 @@ export function PropertiesDialog() {
                 {t("explorer:properties.unsupportedPermissions")}
               </p>
             )}
+
+            {isEnclosedApplyAvailable && (
+              <label className="flex items-center gap-2 text-[13px]">
+                <input
+                  checked={applyToEnclosed}
+                  className="size-4 accent-[var(--primary)]"
+                  disabled={isSaving}
+                  onChange={(event) => setApplyToEnclosed(event.target.checked)}
+                  type="checkbox"
+                />
+                {t("explorer:properties.applyToEnclosed")}
+              </label>
+            )}
+
+            {isSaving && saveProgress && (
+              <p className="text-xs text-muted-foreground">
+                {t("explorer:properties.applyingProgress", {
+                  completed: localeNumberFormat().format(saveProgress.completed),
+                  total:
+                    saveProgress.total === null
+                      ? "…"
+                      : localeNumberFormat().format(saveProgress.total),
+                })}
+              </p>
+            )}
           </div>
         )}
 
@@ -443,6 +526,12 @@ const PERMISSION_BITS = [
   { value: 4, labelKey: "permRead" },
   { value: 2, labelKey: "permWrite" },
   { value: 1, labelKey: "permExecute" },
+] as const;
+
+const SPECIAL_BITS = [
+  { value: 0o4000, labelKey: "permSetUid" },
+  { value: 0o2000, labelKey: "permSetGid" },
+  { value: 0o1000, labelKey: "permSticky" },
 ] as const;
 
 function UnixPropertiesEditor({
@@ -499,6 +588,23 @@ function UnixPropertiesEditor({
         </tbody>
       </table>
 
+      <div className="flex flex-col gap-1.5">
+        <p className="text-xs text-muted-foreground">{t("explorer:properties.permSpecial")}</p>
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+          {SPECIAL_BITS.map(({ value, labelKey }) => (
+            <label key={value} className="flex items-center gap-2 text-[13px]">
+              <input
+                checked={(draft.mode & value) !== 0}
+                className="size-4 accent-[var(--primary)]"
+                onChange={() => onUpdateDraft({ mode: draft.mode ^ value })}
+                type="checkbox"
+              />
+              {t(`explorer:properties.${labelKey}`)}
+            </label>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-3">
         <label className="flex flex-col gap-1.5">
           <span className="text-xs text-muted-foreground">
@@ -554,6 +660,24 @@ function WindowsPropertiesEditor({
           type="checkbox"
         />
         {t("explorer:properties.hidden")}
+      </label>
+      <label className="flex items-center gap-2 text-[13px]">
+        <input
+          checked={draft.archive}
+          className="size-4 accent-[var(--primary)]"
+          onChange={(event) => onUpdateDraft({ archive: event.target.checked })}
+          type="checkbox"
+        />
+        {t("explorer:properties.archive")}
+      </label>
+      <label className="flex items-center gap-2 text-[13px]">
+        <input
+          checked={draft.system}
+          className="size-4 accent-[var(--primary)]"
+          onChange={(event) => onUpdateDraft({ system: event.target.checked })}
+          type="checkbox"
+        />
+        {t("explorer:properties.system")}
       </label>
       <p className="text-xs text-muted-foreground">{t("explorer:properties.windowsAclHint")}</p>
     </div>

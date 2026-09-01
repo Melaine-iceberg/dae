@@ -18,8 +18,10 @@ pub use operations::{
 pub use operations::rename_entry_sync;
 
 use crate::file_system::error::FileSystemError;
+use crate::file_system::progress::FileOperationProgressReporterTrait;
 use crate::file_system::types::{
-    DirectoryView, EntryStat, FileProperties, NewEntryKind, PropertyChanges, SearchResponse,
+    DirectoryView, EntryStat, FileProperties, NewEntryKind, PropertyChanges,
+    RecursivePropertyUpdateOutcome, SearchResponse,
 };
 use crate::file_system::vfs::FileSystemBackend;
 use std::io::{Read, Write};
@@ -105,5 +107,14 @@ impl FileSystemBackend for LocalBackend {
         changes: &PropertyChanges,
     ) -> Result<(), FileSystemError> {
         properties::update_properties(Path::new(path), changes)
+    }
+
+    fn update_properties_recursive(
+        &self,
+        path: &str,
+        changes: &PropertyChanges,
+        progress: &dyn FileOperationProgressReporterTrait,
+    ) -> Result<RecursivePropertyUpdateOutcome, FileSystemError> {
+        properties::apply_properties_recursive(Path::new(path), changes, progress)
     }
 }

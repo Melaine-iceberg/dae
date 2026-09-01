@@ -173,6 +173,22 @@ pub struct PropertyChanges {
     /// Windows `SetFileAttributes`: hidden flag.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hidden: Option<bool>,
+    /// Windows `SetFileAttributes`: archive flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archive: Option<bool>,
+    /// Windows `SetFileAttributes`: system flag.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<bool>,
+}
+
+/// Summary of a recursive property update over a directory tree.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecursivePropertyUpdateOutcome {
+    /// Entries whose properties were applied successfully (no-ops included).
+    pub updated: u64,
+    /// Entries that could not be updated; the walk continued past them.
+    pub failed: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
