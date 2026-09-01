@@ -18,6 +18,8 @@ pub enum FileSystemError {
     AlreadyExists(String),
     #[error("The requested operation has invalid input: {0}")]
     InvalidInput(String),
+    #[error("The archive is protected and the password is missing or wrong: {0}")]
+    WrongPassword(String),
     #[error("The storage backend does not support this operation: {0}")]
     Unsupported(String),
     #[error("The directory operation could not complete: {0}")]

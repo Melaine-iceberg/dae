@@ -99,7 +99,7 @@ interface FileListProps {
   isOperationPending: boolean;
   onAddToFavorites: (paths: string[]) => void;
   onAddToSpace: (spaceId: string, paths: string[]) => void;
-  onCompress: (format: ArchiveFormat) => void;
+  onCompress: (format: ArchiveFormat, encrypted: boolean) => void;
   onCopy: () => void;
   onCreateDirectory: () => void;
   onCreateFile: () => void;
@@ -977,7 +977,7 @@ function SortHeaderCell({
 
 /** Bulk action callbacks shared by every row's context menu. */
 export interface MenuActions {
-  onCompress: (format: ArchiveFormat) => void;
+  onCompress: (format: ArchiveFormat, encrypted: boolean) => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;

@@ -10,6 +10,7 @@ import {
   FileZipIcon,
   FilesIcon,
   FolderOpenIcon,
+  LockKeyIcon,
   PencilIcon,
   ScissorsIcon,
   SquaresFourIcon,
@@ -32,11 +33,12 @@ import type { ArchiveFormat } from "@/bindings";
 import { localeNumber } from "@/i18n/format";
 import { MOD_KEY } from "@/lib/platform";
 
-const COMPRESS_FORMATS: { format: ArchiveFormat; labelKey: string }[] = [
+const COMPRESS_FORMATS: { encrypted?: boolean; format: ArchiveFormat; labelKey: string }[] = [
   { format: "zip", labelKey: "zip" },
   { format: "tar", labelKey: "tar" },
   { format: "tar.gz", labelKey: "tarGz" },
   { format: "7z", labelKey: "7z" },
+  { encrypted: true, format: "7z", labelKey: "7zEncrypted" },
 ];
 
 /**
@@ -67,7 +69,7 @@ export function ContextualActionBar({
   isActionDisabled: boolean;
   onAddToSpace: (spaceId: string) => void;
   onClearSelection: () => void;
-  onCompress: (format: ArchiveFormat) => void;
+  onCompress: (format: ArchiveFormat, encrypted: boolean) => void;
   onCopy: () => void;
   onCopyPaths: () => void;
   onCut: () => void;
@@ -175,13 +177,13 @@ export function ContextualActionBar({
               {t("explorer:contextMenu.compressAs")}
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent>
-              {COMPRESS_FORMATS.map(({ format, labelKey }) => (
+              {COMPRESS_FORMATS.map(({ encrypted, format, labelKey }) => (
                 <DropdownMenuItem
-                  key={format}
+                  key={labelKey}
                   disabled={isActionDisabled}
-                  onClick={() => onCompress(format)}
+                  onClick={() => onCompress(format, encrypted ?? false)}
                 >
-                  <FileZipIcon />
+                  {encrypted ? <LockKeyIcon /> : <FileZipIcon />}
                   {t(`explorer:compressFormats.${labelKey}`)}
                 </DropdownMenuItem>
               ))}

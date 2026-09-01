@@ -11,6 +11,7 @@ import {
   FilesIcon,
   FolderOpenIcon,
   InfoIcon,
+  LockKeyIcon,
   PencilIcon,
   ScissorsIcon,
   SquaresFourIcon,
@@ -40,11 +41,12 @@ import type { DirectoryEntry } from "./types";
 
 const ARCHIVE_FILE_PATTERN = /\.(zip|tar|tar\.gz|tgz|7z)$/i;
 
-const COMPRESS_FORMATS: { format: ArchiveFormat; labelKey: string }[] = [
+const COMPRESS_FORMATS: { encrypted?: boolean; format: ArchiveFormat; labelKey: string }[] = [
   { format: "zip", labelKey: "zip" },
   { format: "tar", labelKey: "tar" },
   { format: "tar.gz", labelKey: "tarGz" },
   { format: "7z", labelKey: "7z" },
+  { encrypted: true, format: "7z", labelKey: "7zEncrypted" },
 ];
 
 export function isArchiveFile(entry: DirectoryEntry): boolean {
@@ -57,7 +59,7 @@ export interface EntryActions {
   isSingleSelection: boolean;
   onAddToFavorites: () => void;
   onAddToSpace: (spaceId: string) => void;
-  onCompress: (format: ArchiveFormat) => void;
+  onCompress: (format: ArchiveFormat, encrypted: boolean) => void;
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
@@ -162,13 +164,13 @@ export function EntryContextMenuContent({
             {t("explorer:contextMenu.compressAs")}
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
-            {COMPRESS_FORMATS.map(({ format, labelKey }) => (
+            {COMPRESS_FORMATS.map(({ encrypted, format, labelKey }) => (
               <ContextMenuItem
-                key={format}
+                key={labelKey}
                 disabled={isActionDisabled}
-                onClick={() => onCompress(format)}
+                onClick={() => onCompress(format, encrypted ?? false)}
               >
-                <FileZipIcon />
+                {encrypted ? <LockKeyIcon /> : <FileZipIcon />}
                 {t(`explorer:compressFormats.${labelKey}`)}
               </ContextMenuItem>
             ))}

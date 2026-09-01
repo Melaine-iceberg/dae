@@ -23,7 +23,9 @@
       "ignore_rule_register_failed": "无法注册忽略规则",
       "ignore_rule_build_failed": "无法构建忽略规则",
       "invalid_type_filter": "无效的类型过滤",
-      "type_filter_build_failed": "无法构建类型过滤"
+      "type_filter_build_failed": "无法构建类型过滤",
+      "archive_wrong_password": "密码不正确，请重试",
+      "archive_password_unsupported": "该压缩格式不支持设置密码"
     },
     "term": {
       "pty_create_failed": "创建 PTY 失败",
@@ -58,6 +60,7 @@
     "invalid_input": "无法完成此操作",
     "not_a_directory": "目标不是文件夹",
     "not_directory": "目标不是文件夹",
+    "wrong_password": "压缩包已加密，密码缺失或不正确",
     "io": "文件系统操作失败",
     "internal": "操作失败"
   },

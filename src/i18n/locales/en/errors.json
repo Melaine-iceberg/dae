@@ -23,7 +23,9 @@
       "ignore_rule_register_failed": "Could not register ignore rules",
       "ignore_rule_build_failed": "Could not build ignore rules",
       "invalid_type_filter": "Invalid type filter",
-      "type_filter_build_failed": "Could not build the type filter"
+      "type_filter_build_failed": "Could not build the type filter",
+      "archive_wrong_password": "The password is incorrect, please try again",
+      "archive_password_unsupported": "This archive format does not support passwords"
     },
     "term": {
       "pty_create_failed": "Failed to create the PTY",
@@ -58,6 +60,7 @@
     "invalid_input": "This action cannot be completed",
     "not_a_directory": "The destination is not a folder",
     "not_directory": "The destination is not a folder",
+    "wrong_password": "The archive is protected and the password is missing or wrong",
     "io": "The file system operation failed",
     "internal": "The operation failed"
   },

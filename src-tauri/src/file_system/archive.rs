@@ -9,12 +9,14 @@ use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use serde::{Deserialize, Serialize};
+use sevenz_rust2::encoder_options::{AesEncoderOptions, Lzma2Options};
 use sevenz_rust2::{ArchiveEntry, ArchiveReader, ArchiveWriter, Password};
 use specta::Type;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use zip::CompressionMethod;
 use zip::ZipWriter;
+use zip::result::ZipError;
 use zip::write::SimpleFileOptions;
 
 const STREAM_CHUNK_BYTES: usize = 256 * 1024;
@@ -23,8 +25,31 @@ fn zip_error(error: zip::result::ZipError) -> FileSystemError {
     FileSystemError::Io(error.to_string())
 }
 
+/// Password failures get a dedicated kind so the frontend can retry with a
+/// user-supplied password instead of surfacing a raw io error.
+fn zip_password_error(error: zip::result::ZipError) -> FileSystemError {
+    match error {
+        ZipError::InvalidPassword => {
+            FileSystemError::WrongPassword("fs.archive_wrong_password".into())
+        }
+        other => zip_error(other),
+    }
+}
+
 fn sevenz_error(error: sevenz_rust2::Error) -> FileSystemError {
-    FileSystemError::Io(error.to_string())
+    match error {
+        sevenz_rust2::Error::PasswordRequired | sevenz_rust2::Error::MaybeBadPassword(_) => {
+            FileSystemError::WrongPassword("fs.archive_wrong_password".into())
+        }
+        other => FileSystemError::Io(other.to_string()),
+    }
+}
+
+/// True when the format can carry a password. Zip supports decryption
+/// (ZipCrypto and WinZip AES) but the writer here only creates plaintext
+/// zips; tar has no notion of encryption at all.
+fn format_supports_password(format: ArchiveFormat) -> bool {
+    matches!(format, ArchiveFormat::Zip | ArchiveFormat::SevenZip)
 }
 
 /// Archive containers the explorer can create and extract.
@@ -79,6 +104,7 @@ pub async fn compress_entries(
     sources: Vec<String>,
     destination_dir: String,
     format: ArchiveFormat,
+    password: Option<String>,
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<String, FileSystemError> {
@@ -93,7 +119,13 @@ pub async fn compress_entries(
     tauri::async_runtime::spawn_blocking(move || {
         let progress =
             FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Compress);
-        compress_sync(sources, &destination_dir, format, &progress)
+        compress_sync(
+            sources,
+            &destination_dir,
+            format,
+            password.as_deref(),
+            &progress,
+        )
     })
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -107,6 +139,7 @@ pub async fn compress_entries(
 pub async fn extract_archive(
     archive_path: String,
     destination_dir: Option<String>,
+    password: Option<String>,
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<String, FileSystemError> {
@@ -115,7 +148,12 @@ pub async fn extract_archive(
     tauri::async_runtime::spawn_blocking(move || {
         let progress =
             FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Extract);
-        extract_sync(&archive_path, destination_dir.as_deref(), &progress)
+        extract_sync(
+            &archive_path,
+            destination_dir.as_deref(),
+            password.as_deref(),
+            &progress,
+        )
     })
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -125,11 +163,18 @@ pub(super) fn compress_sync(
     sources: Vec<String>,
     destination_dir: &str,
     format: ArchiveFormat,
+    password: Option<&str>,
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<String, FileSystemError> {
     if vfs::scheme_of(destination_dir)? != vfs::Scheme::Local {
         return Err(FileSystemError::InvalidInput(
             "Archives can only be created in local folders".into(),
+        ));
+    }
+
+    if password.is_some() && !format_supports_password(format) {
+        return Err(FileSystemError::InvalidInput(
+            "fs.archive_password_unsupported".into(),
         ));
     }
 
@@ -148,7 +193,7 @@ pub(super) fn compress_sync(
     };
 
     let archive_path = unique_archive_path(destination_dir, &archive_stem, format.extension())?;
-    let mut sink = ArchiveSink::create(format, &archive_path)?;
+    let mut sink = ArchiveSink::create(format, &archive_path, password)?;
 
     // Sizing pass so the progress bar knows the uncompressed byte total.
     let mut total = 0_u64;
@@ -171,6 +216,7 @@ pub(super) fn compress_sync(
 pub(super) fn extract_sync(
     archive_path: &str,
     destination_dir: Option<&str>,
+    password: Option<&str>,
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<String, FileSystemError> {
     if vfs::scheme_of(archive_path)? != vfs::Scheme::Local {
@@ -191,9 +237,23 @@ pub(super) fn extract_sync(
         ))
     })?;
 
+    if password.is_some() && !format_supports_password(format) {
+        return Err(FileSystemError::InvalidInput(
+            "fs.archive_password_unsupported".into(),
+        ));
+    }
+
+    // Encrypted zips fail late (mid-read) without a password, so probe the
+    // flags up front and ask for one before touching the destination.
+    if password.is_none() && format == ArchiveFormat::Zip && zip_has_encrypted_entries(&archive)? {
+        return Err(FileSystemError::WrongPassword(
+            "fs.archive_wrong_password".into(),
+        ));
+    }
+
     // Sizing pass first: it also rejects unsafe entry names before any part of
     // the destination is created, so a malicious archive leaves nothing behind.
-    let total = measure_uncompressed_size(&archive, format)?;
+    let total = measure_uncompressed_size(&archive, format, password)?;
     progress.start(total);
 
     let destination_root = match destination_dir {
@@ -212,11 +272,16 @@ pub(super) fn extract_sync(
     };
 
     match format {
-        ArchiveFormat::Zip => extract_zip(&archive, &destination_root, progress)?,
+        ArchiveFormat::Zip => extract_zip(&archive, &destination_root, password, progress)?,
         ArchiveFormat::Tar | ArchiveFormat::TarGz => {
             extract_tar(&archive, &destination_root, format, progress)?
         }
-        ArchiveFormat::SevenZip => extract_sevenzip(&archive, &destination_root, progress)?,
+        ArchiveFormat::SevenZip => {
+            let sevenz_password = password
+                .map(Password::new)
+                .unwrap_or_else(Password::empty);
+            extract_sevenzip(&archive, &destination_root, &sevenz_password, progress)?
+        }
     }
 
     progress.finish();
@@ -264,7 +329,11 @@ impl Write for TarBackend {
 }
 
 impl ArchiveSink {
-    fn create(format: ArchiveFormat, path: &Path) -> Result<Self, FileSystemError> {
+    fn create(
+        format: ArchiveFormat,
+        path: &Path,
+        password: Option<&str>,
+    ) -> Result<Self, FileSystemError> {
         match format {
             ArchiveFormat::Zip => {
                 let file = std::fs::File::create(path)?;
@@ -289,7 +358,15 @@ impl ArchiveSink {
                 })
             }
             ArchiveFormat::SevenZip => {
-                let writer = ArchiveWriter::create(path).map_err(sevenz_error)?;
+                let mut writer = ArchiveWriter::create(path).map_err(sevenz_error)?;
+                if let Some(password) = password {
+                    // AES-256 first, then LZMA2: data is compressed and then
+                    // encrypted, and the header is encrypted as well.
+                    writer.set_content_methods(vec![
+                        AesEncoderOptions::new(Password::new(password)).into(),
+                        Lzma2Options::default().into(),
+                    ]);
+                }
                 Ok(ArchiveSink::SevenZip { writer })
             }
         }
@@ -627,6 +704,7 @@ fn sanitized_entry_path(root: &Path, name: &str) -> Result<PathBuf, FileSystemEr
 fn measure_uncompressed_size(
     archive_path: &Path,
     format: ArchiveFormat,
+    password: Option<&str>,
 ) -> Result<u64, FileSystemError> {
     match format {
         ArchiveFormat::Zip => {
@@ -635,7 +713,15 @@ fn measure_uncompressed_size(
 
             let mut total = 0;
             for index in 0..archive.len() {
-                let entry = archive.by_index(index).map_err(zip_error)?;
+                // Encrypted entries refuse plain `by_index`, so route through
+                // the decrypting variant whenever a password is available.
+                let entry = if let Some(password) = password {
+                    archive
+                        .by_index_decrypt(index, password.as_bytes())
+                        .map_err(zip_password_error)?
+                } else {
+                    archive.by_index(index).map_err(zip_error)?
+                };
                 validated_components(entry.name())?;
                 if !entry.is_dir() {
                     total += entry.size();
@@ -661,7 +747,10 @@ fn measure_uncompressed_size(
             Ok(total)
         }
         ArchiveFormat::SevenZip => {
-            let reader = ArchiveReader::open(archive_path, Password::empty())
+            let sevenz_password = password
+                .map(Password::new)
+                .unwrap_or_else(Password::empty);
+            let reader = ArchiveReader::open(archive_path, sevenz_password)
                 .map_err(sevenz_error)?;
             let mut total = 0;
             for entry in &reader.archive().files {
@@ -683,16 +772,38 @@ fn open_tar_reader(archive_path: &Path, format: ArchiveFormat) -> Result<Box<dyn
     }
 }
 
+/// True when any file entry of the zip carries the encryption flag.
+fn zip_has_encrypted_entries(archive_path: &Path) -> Result<bool, FileSystemError> {
+    let file = std::fs::File::open(archive_path)?;
+    let mut archive = zip::ZipArchive::new(file).map_err(zip_error)?;
+
+    for index in 0..archive.len() {
+        let entry = archive.by_index_raw(index).map_err(zip_error)?;
+        if !entry.is_dir() && entry.encrypted() {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
 fn extract_zip(
     archive_path: &Path,
     root: &Path,
+    password: Option<&str>,
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
     let file = std::fs::File::open(archive_path)?;
     let mut archive = zip::ZipArchive::new(file).map_err(zip_error)?;
 
     for index in 0..archive.len() {
-        let mut entry = archive.by_index(index).map_err(zip_error)?;
+        let mut entry = if let Some(password) = password {
+            archive
+                .by_index_decrypt(index, password.as_bytes())
+                .map_err(zip_password_error)?
+        } else {
+            archive.by_index(index).map_err(zip_error)?
+        };
 
         // Symlinks and special nodes are skipped; extraction stays portable.
         if entry.is_symlink() {
@@ -757,10 +868,10 @@ fn extract_tar(
 fn extract_sevenzip(
     archive_path: &Path,
     root: &Path,
+    password: &Password,
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
-    let mut reader =
-        ArchiveReader::open(archive_path, Password::empty()).map_err(sevenz_error)?;
+    let mut reader = ArchiveReader::open(archive_path, password.clone()).map_err(sevenz_error)?;
 
     reader
         .for_each_entries(|entry, data| {
@@ -822,6 +933,7 @@ mod tests {
                 vec![source.to_string_lossy().into_owned()],
                 &output.to_string_lossy(),
                 format,
+                None,
                 &compress_progress,
             )
             .expect("compress archive");
@@ -835,7 +947,7 @@ mod tests {
             );
 
             let extract_progress = TestProgress::new();
-            let destination = extract_sync(&archive_path, None, &extract_progress)
+            let destination = extract_sync(&archive_path, None, None, &extract_progress)
                 .expect("extract archive");
 
             let extracted_root = Path::new(&destination).join("bundle");
@@ -878,14 +990,131 @@ mod tests {
         writer.write_all(b"escaped").expect("write traversal entry");
         writer.finish().expect("finish malicious archive");
 
-        let error = extract_sync(&archive_path.to_string_lossy(), None, &TestProgress::new())
-            .expect_err("traversal entries must be blocked");
+        let error = extract_sync(
+            &archive_path.to_string_lossy(),
+            None,
+            None,
+            &TestProgress::new(),
+        )
+        .expect_err("traversal entries must be blocked");
 
         fs::remove_file(&archive_path).expect("remove malicious archive");
         fs::remove_dir(&root).expect("remove test directory");
 
         assert!(matches!(error, FileSystemError::InvalidInput(_)));
         assert!(!root.join("../escaped.txt").exists());
+    }
+
+    #[test]
+    fn compresses_and_extracts_password_protected_sevenzip() {
+        let root = std::env::temp_dir().join(format!("dae-7z-password-test-{}", std::process::id()));
+        let source = root.join("bundle");
+        let output = root.join("output");
+        fs::create_dir_all(&source).expect("create source directory");
+        fs::create_dir_all(&output).expect("create output directory");
+        make_archive_source_tree(&source);
+
+        let archive_path = compress_sync(
+            vec![source.to_string_lossy().into_owned()],
+            &output.to_string_lossy(),
+            ArchiveFormat::SevenZip,
+            Some("正确密码123"),
+            &TestProgress::new(),
+        )
+        .expect("compress encrypted archive");
+
+        // Without a password the encrypted header cannot be read.
+        let error = extract_sync(&archive_path, None, None, &TestProgress::new())
+            .expect_err("extracting without the password must fail");
+        assert!(matches!(error, FileSystemError::WrongPassword(_)));
+
+        // A wrong password is rejected the same way.
+        let error = extract_sync(&archive_path, None, Some("错误密码"), &TestProgress::new())
+            .expect_err("a wrong password must be rejected");
+        assert!(matches!(error, FileSystemError::WrongPassword(_)));
+
+        // The correct password round-trips the content.
+        let destination =
+            extract_sync(&archive_path, None, Some("正确密码123"), &TestProgress::new())
+                .expect("extract with the correct password");
+        assert_eq!(
+            fs::read_to_string(Path::new(&destination).join("bundle/root.txt"))
+                .expect("read extracted root"),
+            "root content"
+        );
+
+        fs::remove_dir_all(destination).expect("remove extraction folder");
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn rejects_passwords_for_formats_without_encryption() {
+        let root = std::env::temp_dir().join(format!(
+            "dae-archive-password-unsupported-{}",
+            std::process::id()
+        ));
+        let source = root.join("bundle");
+        fs::create_dir_all(&source).expect("create source directory");
+        fs::write(source.join("root.txt"), "root content").expect("write root file");
+
+        for format in [ArchiveFormat::Tar, ArchiveFormat::TarGz] {
+            let error = compress_sync(
+                vec![source.to_string_lossy().into_owned()],
+                &root.to_string_lossy(),
+                format,
+                Some("secret"),
+                &TestProgress::new(),
+            )
+            .expect_err("formats without encryption must reject passwords");
+            assert!(matches!(error, FileSystemError::InvalidInput(_)));
+        }
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn extracts_password_protected_zip() {
+        use std::io::Write;
+        use zip::unstable::write::FileOptionsExt;
+
+        let root = std::env::temp_dir().join(format!("dae-zip-password-test-{}", std::process::id()));
+        fs::create_dir_all(&root).expect("create test directory");
+
+        // The zip writer only offers the legacy ZipCrypto scheme, which is
+        // exactly what decades of existing encrypted zips use.
+        let archive_path = root.join("secret.zip");
+        let file = fs::File::create(&archive_path).expect("create encrypted zip");
+        let mut writer = ZipWriter::new(file);
+        writer
+            .start_file(
+                "root.txt",
+                SimpleFileOptions::default().with_deprecated_encryption(b"letmein"),
+            )
+            .expect("start encrypted entry");
+        writer.write_all(b"secret content").expect("write encrypted entry");
+        writer.finish().expect("finish encrypted zip");
+
+        // Without a password the encrypted entries are detected up front.
+        let error = extract_sync(&archive_path.to_string_lossy(), None, None, &TestProgress::new())
+            .expect_err("extracting an encrypted zip without a password must fail");
+        assert!(matches!(error, FileSystemError::WrongPassword(_)));
+
+        // The correct password decrypts the content.
+        let destination = extract_sync(
+            &archive_path.to_string_lossy(),
+            None,
+            Some("letmein"),
+            &TestProgress::new(),
+        )
+        .expect("extract with the correct password");
+        assert_eq!(
+            fs::read_to_string(Path::new(&destination).join("root.txt"))
+                .expect("read extracted file"),
+            "secret content"
+        );
+
+        fs::remove_dir_all(destination).expect("remove extraction folder");
+        fs::remove_dir_all(root).expect("remove test directory");
     }
 
     #[test]

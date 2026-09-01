@@ -228,7 +228,20 @@
     "zip": "ZIP archive",
     "tar": "TAR archive",
     "tarGz": "TAR.GZ archive",
-    "7z": "7Z archive"
+    "7z": "7Z archive",
+    "7zEncrypted": "7Z archive (encrypted)"
+  },
+  "archivePassword": {
+    "extractTitle": "Extract protected archive",
+    "extractDescription": "\"{{name}}\" is password-protected. Enter the password to extract it.",
+    "compressTitle": "Set archive password",
+    "compressDescription": "Protect the new 7Z archive with a password.",
+    "passwordLabel": "Password",
+    "confirmPasswordLabel": "Confirm password",
+    "passwordRequired": "Enter a password",
+    "mismatch": "The passwords don't match",
+    "extract": "Extract",
+    "compress": "Compress"
   },
   "actionBar": {
     "ariaLabel": "Actions for selected items",

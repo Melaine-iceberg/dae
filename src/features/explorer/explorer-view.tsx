@@ -75,6 +75,7 @@ import { cn } from "@/lib/utils";
 
 import { ContentSearchResults, ContentSearchToolbar, useContentSearch } from "./content-search";
 import { ContextualActionBar } from "./contextual-action-bar";
+import { ArchivePasswordDialog } from "./archive-password-dialog";
 import { BulkRenameDialog } from "./bulk-rename";
 import { DirectorySearch, useDirectorySearch, type ExplorerSearchMode } from "./directory-search";
 import {
@@ -130,6 +131,7 @@ interface ExplorerViewProps {
 }
 
 type FileOperationResult = { ok: true } | { error: string; ok: false; rawError?: unknown };
+type ArchivePasswordRequest = { mode: "compress" } | { archivePath: string; mode: "extract" };
 type ExternalDrop = { sourcePaths: string[]; targetPath: string | null };
 
 /** Floating hint after an undoable operation or an undo/redo step. */
@@ -174,6 +176,10 @@ export function ExplorerView({
   const [newEntryError, setNewEntryError] = useState<string | null>(null);
   const [deleteTargets, setDeleteTargets] = useState<DirectoryEntry[]>([]);
   const [openWithTarget, setOpenWithTarget] = useState<string | null>(null);
+  const [archivePasswordRequest, setArchivePasswordRequest] =
+    useState<ArchivePasswordRequest | null>(null);
+  const [archivePasswordError, setArchivePasswordError] = useState<string | null>(null);
+  const [archivePasswordPending, setArchivePasswordPending] = useState(false);
   const [pendingTransfer, setPendingTransfer] = useState<PendingTransfer | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
   const [isOperationPending, setIsOperationPending] = useState(false);
@@ -669,10 +675,18 @@ export function ExplorerView({
     });
   }, [performFileOperation, selectedEntries]);
 
-  /** Compresses the selection into a unique archive next to the entries. */
+  /** Compresses the selection into a unique archive next to the entries.
+   *  Encrypted requests go through the password dialog first. */
   const compressSelection = useCallback(
-    (format: ArchiveFormat) => {
+    (format: ArchiveFormat, encrypted: boolean) => {
       if (selectedEntries.length === 0 || !directoryPath) return;
+
+      if (encrypted) {
+        setOperationError(null);
+        setArchivePasswordError(null);
+        setArchivePasswordRequest({ mode: "compress" });
+        return;
+      }
 
       setOperationError(null);
       void performFileOperation(
@@ -681,6 +695,7 @@ export function ExplorerView({
             selectedEntries.map((entry) => entry.path),
             directoryPath,
             format,
+            null,
             operationId!,
           ),
         "compress",
@@ -691,18 +706,76 @@ export function ExplorerView({
     [directoryPath, performFileOperation, selectedEntries],
   );
 
-  /** Extracts an archive into a fresh folder next to it. */
+  /** Extracts an archive into a fresh folder next to it. Encrypted archives
+   *  answer with a wrong-password error, which opens the password dialog. */
   const extractSelection = useCallback(
     (archivePath: string) => {
       setOperationError(null);
       void performFileOperation(
-        (operationId) => commands.extractArchive(archivePath, null, operationId!),
+        (operationId) => commands.extractArchive(archivePath, null, null, operationId!),
         "extract",
       ).then((result) => {
-        if (!result.ok) setOperationError(result.error);
+        if (result.ok) return;
+
+        if (isWrongPasswordError(result.rawError)) {
+          setArchivePasswordError(null);
+          setArchivePasswordRequest({ archivePath, mode: "extract" });
+          return;
+        }
+        setOperationError(result.error);
       });
     },
     [performFileOperation],
+  );
+
+  /** Retries the pending archive operation with the supplied password. */
+  const submitArchivePassword = useCallback(
+    (password: string) => {
+      if (!archivePasswordRequest || !directoryPath) return;
+
+      setArchivePasswordError(null);
+      setArchivePasswordPending(true);
+
+      const operation =
+        archivePasswordRequest.mode === "extract"
+          ? (operationId?: string) =>
+              commands.extractArchive(
+                archivePasswordRequest.archivePath,
+                null,
+                password,
+                operationId!,
+              )
+          : (operationId?: string) =>
+              commands.compressEntries(
+                selectedEntries.map((entry) => entry.path),
+                directoryPath,
+                "7z",
+                password,
+                operationId!,
+              );
+
+      void performFileOperation(operation, archivePasswordRequest.mode).then((result) => {
+        setArchivePasswordPending(false);
+
+        if (result.ok) {
+          setArchivePasswordRequest(null);
+          return;
+        }
+
+        // A wrong password keeps the dialog open so it can be corrected.
+        if (
+          archivePasswordRequest.mode === "extract" &&
+          isWrongPasswordError(result.rawError)
+        ) {
+          setArchivePasswordError(result.error);
+          return;
+        }
+
+        setArchivePasswordRequest(null);
+        setOperationError(result.error);
+      });
+    },
+    [archivePasswordRequest, directoryPath, performFileOperation, selectedEntries],
   );
 
   /** Native cross-platform folder picker feeding the existing move pipeline. */
@@ -1564,6 +1637,24 @@ export function ExplorerView({
         }}
         target={openWithTarget}
       />
+      <ArchivePasswordDialog
+        archiveName={
+          archivePasswordRequest?.mode === "extract"
+            ? displayNameOfPath(archivePasswordRequest.archivePath)
+            : ""
+        }
+        error={archivePasswordError}
+        isPending={archivePasswordPending}
+        mode={archivePasswordRequest?.mode ?? "extract"}
+        onOpenChange={(open) => {
+          if (!open && !archivePasswordPending) {
+            setArchivePasswordRequest(null);
+            setArchivePasswordError(null);
+          }
+        }}
+        onSubmit={submitArchivePassword}
+        open={archivePasswordRequest !== null}
+      />
       {pendingTransfer && (
         <TransferConflictDialog
           conflicts={pendingTransfer.conflicts}
@@ -1837,6 +1928,22 @@ function ExplorerErrorAlert({ message, onRetry }: { message: string; onRetry: ()
       </AlertAction>
     </Alert>
   );
+}
+
+/** True when the backend reported an encrypted-archive password failure. */
+function isWrongPasswordError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "kind" in error &&
+    (error as { kind?: unknown }).kind === "wrong_password"
+  );
+}
+
+/** Final path segment used as the dialog's display name. */
+function displayNameOfPath(path: string): string {
+  const segments = path.split(/[\\/]/);
+  return segments[segments.length - 1] || path;
 }
 
 function getCreateEntryErrorMessage(message: string, rawError: unknown): string {
