@@ -7,6 +7,7 @@ import { OverviewView } from "./overview-view";
 import { RecentsView } from "./recents-view";
 import { SpaceView } from "./space-view";
 import { tabSurfaceFamily } from "./tab-surface";
+import { TrashView } from "./trash-view";
 
 /**
  * Renders the active surface of one tab: the workspace surfaces (Overview,
@@ -23,6 +24,8 @@ export function WorkspaceSurfaceView({ tabId }: { tabId: string }) {
       return <RecentsView />;
     case "favorites":
       return <FavoritesView />;
+    case "trash":
+      return <TrashView />;
     case "space":
       return <SpaceView key={surface.spaceId} spaceId={surface.spaceId} />;
     case "folder":

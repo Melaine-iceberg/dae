@@ -3,7 +3,8 @@
     "label": "Sidebar",
     "overview": "Overview",
     "recents": "Recent",
-    "favorites": "Favorites"
+    "favorites": "Favorites",
+    "trash": "Trash"
   },
   "sections": {
     "spaces": "Spaces",

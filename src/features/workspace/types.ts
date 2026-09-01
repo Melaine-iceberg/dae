@@ -11,6 +11,7 @@ export type WorkspaceSurface =
   | { kind: "overview" }
   | { kind: "recents" }
   | { kind: "favorites" }
+  | { kind: "trash" }
   | { kind: "space"; spaceId: string }
   | { kind: "folder" };
 
@@ -26,6 +27,9 @@ export const WORKSPACE_SURFACE_LABELS: Record<Exclude<WorkspaceSurfaceKind, "spa
   },
   get favorites() {
     return i18n.t("workspace:surfaces.favorites");
+  },
+  get trash() {
+    return i18n.t("workspace:surfaces.trash");
   },
   get folder() {
     return i18n.t("workspace:surfaces.folder");

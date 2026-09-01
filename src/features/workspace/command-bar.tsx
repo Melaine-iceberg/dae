@@ -275,6 +275,14 @@ export function CommandBar() {
         icon: StarIcon,
         run: () => openSurface({ kind: "favorites" }),
       },
+      {
+        id: "surface:trash",
+        group: "navigation",
+        label: t("commandBar.navigation.trash"),
+        keywords: "trash recycle bin deleted restore",
+        icon: TrashIcon,
+        run: () => openSurface({ kind: "trash" }),
+      },
     ];
 
     const spaceItems: CommandItem[] = spaces.map((space) => ({

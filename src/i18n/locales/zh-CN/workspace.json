@@ -13,6 +13,7 @@
     "overview": "概览",
     "recents": "最近使用",
     "favorites": "收藏",
+    "trash": "回收站",
     "folder": "文件夹"
   },
   "commandBar": {
@@ -43,7 +44,8 @@
     "navigation": {
       "overview": "前往概览",
       "recents": "前往最近使用",
-      "favorites": "前往收藏"
+      "favorites": "前往收藏",
+      "trash": "前往回收站"
     },
     "commands": {
       "createFolder": "新建文件夹",
@@ -113,6 +115,44 @@
     "openInNewTab": "在新标签页打开",
     "copyPath": "复制文件地址",
     "remove": "从收藏移除"
+  },
+  "trash": {
+    "title": "回收站",
+    "description": "被删除的文件会暂时保存在这里，可以随时恢复。",
+    "summary": "{{count}} 个项目，共 {{size}}",
+    "emptyTitle": "回收站是空的",
+    "emptyDescription": "删除的文件会出现在这里，在恢复或清空之前不会被永久移除。",
+    "loadErrorTitle": "无法读取回收站",
+    "operationErrorTitle": "操作未完成",
+    "restore": "恢复",
+    "restoreSelected_one": "恢复选中 ({{count}})",
+    "restoreSelected_other": "恢复选中 ({{count}})",
+    "deleteForever": "永久删除",
+    "deleteSelected_one": "删除选中 ({{count}})",
+    "deleteSelected_other": "删除选中 ({{count}})",
+    "emptyTrash": "清空回收站",
+    "refresh": "刷新",
+    "selectAll": "全选",
+    "columns": {
+      "name": "名称",
+      "originalLocation": "原位置",
+      "deletedAt": "删除时间",
+      "size": "大小"
+    },
+    "openOriginalLocation": "打开原位置",
+    "confirmEmptyTitle": "清空回收站？",
+    "confirmEmptyDescription_one": "回收站中的 {{count}} 个项目将被永久删除，无法再恢复。",
+    "confirmEmptyDescription_other": "回收站中的 {{count}} 个项目将被永久删除，无法再恢复。",
+    "confirmPurgeTitle_one": "永久删除 {{count}} 个项目？",
+    "confirmPurgeTitle_other": "永久删除 {{count}} 个项目？",
+    "confirmPurgeDescription": "这些文件将被永久删除，无法再恢复。",
+    "confirmPurge": "永久删除",
+    "cancel": "取消",
+    "progress": {
+      "preparing": "准备中…",
+      "restoring": "正在恢复 {{path}}",
+      "deleting": "正在删除 {{path}}"
+    }
   },
   "recents": {
     "title": "最近使用",

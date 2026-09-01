@@ -20,6 +20,7 @@ pub mod sftp;
 pub mod spaces;
 pub mod system_files;
 pub mod transfer;
+pub mod trash_view;
 pub mod types;
 pub mod undo;
 pub mod vfs;

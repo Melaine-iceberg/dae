@@ -3,7 +3,8 @@
     "label": "侧边栏",
     "overview": "概览",
     "recents": "最近使用",
-    "favorites": "收藏"
+    "favorites": "收藏",
+    "trash": "回收站"
   },
   "sections": {
     "spaces": "空间",

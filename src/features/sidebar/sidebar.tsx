@@ -174,6 +174,12 @@ function SidebarContent() {
             onClick={() => openSurface({ kind: "favorites" })}
           />
         </div>
+        <NavItem
+          icon={TrashIcon}
+          isActive={surface.kind === "trash"}
+          label={t("nav.trash")}
+          onClick={() => openSurface({ kind: "trash" })}
+        />
 
         <SectionLabel
           label={t("sections.spaces")}

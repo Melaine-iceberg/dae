@@ -13,6 +13,7 @@
     "overview": "Overview",
     "recents": "Recents",
     "favorites": "Favorites",
+    "trash": "Trash",
     "folder": "Folder"
   },
   "commandBar": {
@@ -43,7 +44,8 @@
     "navigation": {
       "overview": "Go to Overview",
       "recents": "Go to Recents",
-      "favorites": "Go to Favorites"
+      "favorites": "Go to Favorites",
+      "trash": "Go to Trash"
     },
     "commands": {
       "createFolder": "New Folder",
@@ -113,6 +115,44 @@
     "openInNewTab": "Open in New Tab",
     "copyPath": "Copy File Path",
     "remove": "Remove from Favorites"
+  },
+  "trash": {
+    "title": "Trash",
+    "description": "Deleted files stay here temporarily and can be restored anytime.",
+    "summary": "{{count}} items · {{size}}",
+    "emptyTitle": "Trash is empty",
+    "emptyDescription": "Deleted files appear here and are not removed permanently until you restore or empty the trash.",
+    "loadErrorTitle": "Unable to read the trash",
+    "operationErrorTitle": "Operation incomplete",
+    "restore": "Restore",
+    "restoreSelected_one": "Restore ({{count}})",
+    "restoreSelected_other": "Restore ({{count}})",
+    "deleteForever": "Delete Forever",
+    "deleteSelected_one": "Delete ({{count}})",
+    "deleteSelected_other": "Delete ({{count}})",
+    "emptyTrash": "Empty Trash",
+    "refresh": "Refresh",
+    "selectAll": "Select All",
+    "columns": {
+      "name": "Name",
+      "originalLocation": "Original Location",
+      "deletedAt": "Deleted",
+      "size": "Size"
+    },
+    "openOriginalLocation": "Open Original Location",
+    "confirmEmptyTitle": "Empty the trash?",
+    "confirmEmptyDescription_one": "{{count}} item in the trash will be permanently deleted and cannot be recovered.",
+    "confirmEmptyDescription_other": "{{count}} items in the trash will be permanently deleted and cannot be recovered.",
+    "confirmPurgeTitle_one": "Permanently delete {{count}} item?",
+    "confirmPurgeTitle_other": "Permanently delete {{count}} items?",
+    "confirmPurgeDescription": "These files will be permanently deleted and cannot be recovered.",
+    "confirmPurge": "Delete Forever",
+    "cancel": "Cancel",
+    "progress": {
+      "preparing": "Preparing…",
+      "restoring": "Restoring {{path}}",
+      "deleting": "Deleting {{path}}"
+    }
   },
   "recents": {
     "title": "Recents",

@@ -1,4 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -11,6 +19,7 @@ import {
   PlusIcon,
   SquaresFourIcon,
   StarIcon,
+  TrashIcon,
   XIcon,
 } from "@phosphor-icons/react";
 
@@ -189,6 +198,8 @@ function surfaceTitle(
       return t("tabs.recents");
     case "favorites":
       return t("tabs.favorites");
+    case "trash":
+      return t("tabs.trash");
     case "space":
       return spaceName ?? t("tabs.space");
     case "folder":
@@ -236,6 +247,8 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
         return ClockCounterClockwiseIcon;
       case "favorites":
         return StarIcon;
+      case "trash":
+        return TrashIcon;
       case "space":
         return SquaresFourIcon;
       case "folder":
