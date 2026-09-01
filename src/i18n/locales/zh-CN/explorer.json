@@ -93,6 +93,51 @@
     "description": "为“{{name}}”输入新名称。",
     "newNameLabel": "新名称"
   },
+  "bulkRename": {
+    "title": "批量重命名",
+    "description": "为所选的 {{number}} 个项目应用统一的命名规则，扩展名自动保留，可随时用 Ctrl+Z 一键撤销。",
+    "modeLabel": "重命名模式",
+    "modes": {
+      "sequence": "序号",
+      "replace": "替换",
+      "case": "大小写"
+    },
+    "sequence": {
+      "baseName": "名称前缀",
+      "baseNamePlaceholder": "留空则只使用序号",
+      "start": "起始编号",
+      "step": "步长",
+      "padding": "位数"
+    },
+    "replace": {
+      "find": "查找",
+      "replacement": "替换为",
+      "caseSensitive": "区分大小写",
+      "useRegex": "使用正则表达式"
+    },
+    "case": {
+      "label": "转换方式",
+      "lower": "全部小写",
+      "upper": "全部大写",
+      "title": "每词首字母大写",
+      "sentence": "首字母大写"
+    },
+    "preview": {
+      "original": "原名称",
+      "newName": "新名称",
+      "unchanged": "（保持不变）",
+      "more": "…其余 {{hidden}} 项同样适用该规则"
+    },
+    "errors": {
+      "empty": "名称为空",
+      "invalid": "名称包含非法字符",
+      "duplicate": "批次内名称重复",
+      "exists": "已存在同名项目“{{name}}”",
+      "regexInvalid": "正则表达式无效"
+    },
+    "summary": "{{rename}} 个项目将被重命名，{{errors}} 个存在问题",
+    "apply": "重命名 {{number}} 项"
+  },
   "deleteConfirm": {
     "title": "永久删除",
     "single": "“{{name}}”将被永久删除，无法从回收站恢复。",
@@ -168,6 +213,7 @@
     "addToSpace": "添加到空间",
     "addToSpaceNamed": "添加到「{{name}}」",
     "rename": "重命名",
+    "renameBulk": "批量重命名…",
     "copyPath": "复制文件地址",
     "duplicate": "创建副本",
     "compressAs": "压缩为…",

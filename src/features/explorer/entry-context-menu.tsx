@@ -131,9 +131,12 @@ export function EntryContextMenuContent({
             </ContextMenuSubContent>
           </ContextMenuSub>
         )}
-        <ContextMenuItem disabled={isActionDisabled || !isSingleSelection} onClick={onRename}>
+        {/* Multi-selections route to the bulk rename dialog. */}
+        <ContextMenuItem disabled={isActionDisabled} onClick={onRename}>
           <PencilIcon />
-          {t("explorer:contextMenu.rename")}
+          {isSingleSelection
+            ? t("explorer:contextMenu.rename")
+            : t("explorer:contextMenu.renameBulk")}
           <ContextMenuShortcut>F2</ContextMenuShortcut>
         </ContextMenuItem>
         {entry.kind === "directory" && (

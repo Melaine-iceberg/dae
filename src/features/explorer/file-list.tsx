@@ -346,7 +346,9 @@ export function FileList({
       return;
     }
 
-    if (event.key === "F2" && selectedCount === 1 && !actionsDisabled) {
+    // F2 renames a single entry inline; multi-selections open the bulk
+    // rename dialog instead.
+    if (event.key === "F2" && selectedCount > 0 && !actionsDisabled) {
       event.preventDefault();
       onRename();
       return;

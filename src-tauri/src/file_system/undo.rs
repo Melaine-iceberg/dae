@@ -42,6 +42,9 @@ pub enum Operation {
     Move { transfers: Vec<TransferPair> },
     /// One rename; `from`/`to` are the full paths before and after.
     Rename { from: String, to: String },
+    /// Batch rename; each pair holds the full path before and after, so the
+    /// whole batch reverts with a single undo step.
+    RenameBatch { pairs: Vec<TransferPair> },
     /// Batch copy. `created` are the paths the copy produced ("副本"
     /// auto-renames included); `sources`/`destination` re-run the copy on redo.
     Copy {
@@ -65,6 +68,7 @@ impl Operation {
         match self {
             Operation::Move { transfers } => transfers.is_empty(),
             Operation::Rename { .. } => false,
+            Operation::RenameBatch { pairs } => pairs.is_empty(),
             Operation::Copy { created, .. } => created.is_empty(),
             Operation::Trash { records } => records.is_empty(),
             Operation::Create { .. } => false,
@@ -77,7 +81,7 @@ impl Operation {
     pub fn op_code(&self) -> &'static str {
         match self {
             Operation::Move { .. } => "move",
-            Operation::Rename { .. } => "rename",
+            Operation::Rename { .. } | Operation::RenameBatch { .. } => "rename",
             Operation::Copy { .. } => "copy",
             Operation::Trash { .. } => "trash",
             Operation::Create { .. } => "create",
@@ -88,7 +92,9 @@ impl Operation {
     /// The progress-bar operation the undo of this entry performs.
     pub fn undo_kind(&self) -> FileOperationKind {
         match self {
-            Operation::Move { .. } | Operation::Rename { .. } => FileOperationKind::Move,
+            Operation::Move { .. } | Operation::Rename { .. } | Operation::RenameBatch { .. } => {
+                FileOperationKind::Move
+            }
             Operation::Copy { .. }
             | Operation::Trash { .. }
             | Operation::Create { .. }
@@ -99,9 +105,10 @@ impl Operation {
     /// The progress-bar operation the redo of this entry performs.
     pub fn redo_kind(&self) -> FileOperationKind {
         match self {
-            Operation::Move { .. } | Operation::Rename { .. } | Operation::Create { .. } => {
-                FileOperationKind::Move
-            }
+            Operation::Move { .. }
+            | Operation::Rename { .. }
+            | Operation::RenameBatch { .. }
+            | Operation::Create { .. } => FileOperationKind::Move,
             Operation::Copy { .. } | Operation::Duplicate { .. } => FileOperationKind::Copy,
             Operation::Trash { .. } => FileOperationKind::Delete,
         }
@@ -239,6 +246,26 @@ pub fn execute_undo(
             undo_rename(&from, &to)?;
             Ok((1, Some(Operation::Rename { from, to })))
         }
+        Operation::RenameBatch { pairs } => {
+            // Revert every pair in reverse: rename the current location back
+            // to its original name. Staging keeps swaps and chains intact.
+            let reverted: Vec<(String, String)> = pairs
+                .iter()
+                .map(|pair| (pair.destination.clone(), pair.source.clone()))
+                .collect();
+            let applied = apply_rename_pairs(&reverted, progress)?;
+            let count = applied.len() as u64;
+            let redo = (!applied.is_empty()).then(|| Operation::RenameBatch {
+                pairs: applied
+                    .iter()
+                    .map(|pair| TransferPair {
+                        source: pair.destination.clone(),
+                        destination: pair.source.clone(),
+                    })
+                    .collect(),
+            });
+            Ok((count, redo))
+        }
         Operation::Copy {
             sources,
             destination,
@@ -292,6 +319,16 @@ pub fn execute_redo(
         Operation::Rename { from, to } => {
             redo_rename(&from, &to)?;
             Ok((1, Some(Operation::Rename { from, to })))
+        }
+        Operation::RenameBatch { pairs } => {
+            let forward: Vec<(String, String)> = pairs
+                .iter()
+                .map(|pair| (pair.source.clone(), pair.destination.clone()))
+                .collect();
+            let applied = apply_rename_pairs(&forward, progress)?;
+            let count = applied.len() as u64;
+            let undo = (!applied.is_empty()).then(|| Operation::RenameBatch { pairs: applied });
+            Ok((count, undo))
         }
         Operation::Copy {
             sources,
@@ -457,6 +494,138 @@ fn redo_rename(from: &str, to: &str) -> Result<(), FileSystemError> {
 
     let name = last_segment_of(to)?;
     vfs::resolve(from)?.rename_entry(from, &name)
+}
+
+// -- Batch rename ----------------------------------------------------------
+
+/// Applies every `(from, to)` rename pair. Destinations still held by
+/// another member of the batch (name chains like a→b→c or swaps like a↔b)
+/// are resolved by staging the occupant through a temporary name first,
+/// which plain sequential renames cannot express. Case-only flips on
+/// case-insensitive file systems also go through staging, because the
+/// backends reject renames onto their own (differently cased) path.
+/// Already-applied renames stay on disk when a later step fails.
+pub fn apply_rename_pairs(
+    pairs: &[(String, String)],
+    progress: &dyn FileOperationProgressReporterTrait,
+) -> Result<Vec<TransferPair>, FileSystemError> {
+    if pairs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let sources: Vec<&str> = pairs.iter().map(|(from, _)| from.as_str()).collect();
+    let mut current: Vec<String> = pairs.iter().map(|(from, _)| from.clone()).collect();
+    let mut stage_counter = 0usize;
+
+    // Whether `path` is claimed by an entry other than `holder`. Comparisons
+    // on case-insensitive local file systems ignore case, so "a.txt" holds
+    // the spot "A.txt" asks for.
+    let spot_taken = |path: &str, holder: &str| -> Result<bool, FileSystemError> {
+        if !entry_exists(path)? {
+            return Ok(false);
+        }
+        for source in &sources {
+            if same_location(source, path) && !same_location(source, holder) {
+                return Ok(true);
+            }
+        }
+        Ok(!same_location(holder, path))
+    };
+
+    // Phase 1: move aside everything that blocks a destination — batch
+    // members occupying a spot another member needs, and case-flips whose
+    // own name collides with itself on a case-insensitive backend.
+    for index in 0..pairs.len() {
+        let destination = pairs[index].1.as_str();
+        if current[index] == destination {
+            continue;
+        }
+        let holder = pairs[index].0.as_str();
+        if spot_taken(destination, holder)? {
+            current[index] = stage_sibling(&current[index], &mut stage_counter)?;
+        } else if entry_exists(destination)? {
+            // Nothing else holds the spot but the entry itself (case-flip);
+            // renaming straight onto it would read as an overwrite.
+            current[index] = stage_sibling(&current[index], &mut stage_counter)?;
+        }
+    }
+
+    // Phase 2: rename towards the destinations, repeating passes until
+    // every spot has opened up; staging guarantees progress each round.
+    progress.start(pairs.len() as u64);
+    let mut applied = Vec::with_capacity(pairs.len());
+    let mut done: Vec<bool> = pairs
+        .iter()
+        .enumerate()
+        .map(|(index, (_, to))| current[index] == *to)
+        .collect();
+    loop {
+        let mut progressed = false;
+        for index in 0..pairs.len() {
+            if done[index] {
+                continue;
+            }
+            let destination = &pairs[index].1;
+            if current[index] == *destination || spot_taken(destination, &current[index])? {
+                continue;
+            }
+            vfs::resolve(&current[index])?
+                .rename_entry(&current[index], &last_segment_of(destination)?)?;
+            current[index] = destination.clone();
+            done[index] = true;
+            progressed = true;
+            applied.push(TransferPair {
+                source: pairs[index].0.clone(),
+                destination: destination.clone(),
+            });
+            progress.advance(Path::new(destination));
+        }
+
+        if done.iter().all(|finished| *finished) {
+            break;
+        }
+        if !progressed {
+            return Err(FileSystemError::Internal(
+                "Batch rename stalled on an occupied destination".into(),
+            ));
+        }
+    }
+
+    Ok(applied)
+}
+
+/// Whether two explorer paths point at the same directory entry. Local
+/// paths compare case-insensitively (Windows and the macOS default file
+/// systems are); scheme paths stay exact.
+fn same_location(a: &str, b: &str) -> bool {
+    if vfs::is_local_path(a) && vfs::is_local_path(b) {
+        a.eq_ignore_ascii_case(b)
+    } else {
+        a == b
+    }
+}
+
+/// Renames `path` to a fresh temporary name in its own directory and
+/// returns the staged full path. The name stays clearly foreign so a
+/// stalled batch never masquerades as user data.
+fn stage_sibling(path: &str, counter: &mut usize) -> Result<String, FileSystemError> {
+    let backend = vfs::resolve(path)?;
+    let parent = parent_directory(path);
+
+    loop {
+        *counter += 1;
+        let candidate = format!(".dae-bulk-rename-{}-{counter}.tmp", std::process::id());
+        let staged = if vfs::is_local_path(path) {
+            path_to_string(&Path::new(&parent).join(&candidate))
+        } else {
+            format!("{}/{}", parent.trim_end_matches(['/', '\\']), candidate)
+        };
+        if entry_exists(&staged)? {
+            continue;
+        }
+        backend.rename_entry(path, &candidate)?;
+        return Ok(staged);
+    }
 }
 
 // -- Copy / duplicate / create undo ----------------------------------------
@@ -637,7 +806,7 @@ fn trash_error(error: trash::Error) -> FileSystemError {
 // -- Path helpers -----------------------------------------------------------
 
 /// True when the path currently refers to an entry on its backend.
-fn entry_exists(path: &str) -> Result<bool, FileSystemError> {
+pub fn entry_exists(path: &str) -> Result<bool, FileSystemError> {
     match vfs::resolve(path)?.stat(path) {
         Ok(_) => Ok(true),
         Err(FileSystemError::NotFound(_)) => Ok(false),
@@ -788,6 +957,64 @@ mod tests {
         assert_eq!(count, 1);
         assert!(renamed.exists());
         assert!(!file.exists());
+        assert!(undone.is_some());
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[test]
+    fn batch_rename_resolves_swaps_chains_and_case_flips() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-undo-bulk-rename-test-{}", std::process::id()));
+        fs::create_dir_all(&directory).expect("create test directory");
+        fs::write(directory.join("a.txt"), "a").expect("create file a");
+        fs::write(directory.join("b.txt"), "b").expect("create file b");
+        fs::write(directory.join("chain.txt"), "c").expect("create file chain");
+        fs::write(directory.join("case.txt"), "d").expect("create file case");
+
+        let pair = |name: &str| path_to_string(&directory.join(name));
+        let progress = TestProgress::new();
+        let applied = apply_rename_pairs(
+            &[
+                (pair("a.txt"), pair("b.txt")),   // swap
+                (pair("b.txt"), pair("a.txt")),   // swap
+                (pair("chain.txt"), pair("b2.txt")),
+                (pair("case.txt"), pair("CASE.txt")), // case flip
+            ],
+            &progress,
+        )
+        .expect("apply batch rename");
+        assert_eq!(applied.len(), 4);
+        assert_eq!(fs::read_to_string(directory.join("b.txt")).expect("read b"), "a");
+        assert_eq!(fs::read_to_string(directory.join("a.txt")).expect("read a"), "b");
+        assert!(directory.join("b2.txt").exists());
+        assert!(!directory.join("chain.txt").exists());
+        assert!(directory.join("CASE.txt").exists());
+        // No staging leftovers may survive a finished batch.
+        let leftovers = fs::read_dir(&directory)
+            .expect("read directory")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.file_name().to_string_lossy().contains("dae-bulk-rename"))
+            .count();
+        assert_eq!(leftovers, 0);
+
+        // Undo restores every original name in one step.
+        let operation = Operation::RenameBatch { pairs: applied };
+        let (count, redo) =
+            execute_undo(operation, &TestProgress::new()).expect("undo batch rename");
+        assert_eq!(count, 4);
+        assert_eq!(fs::read_to_string(directory.join("a.txt")).expect("read a"), "a");
+        assert_eq!(fs::read_to_string(directory.join("b.txt")).expect("read b"), "b");
+        assert!(directory.join("chain.txt").exists());
+        assert!(directory.join("case.txt").exists());
+
+        // Redo re-applies the batch, including the swap.
+        let (count, undone) =
+            execute_redo(redo.expect("undo reports a redo"), &TestProgress::new())
+                .expect("redo batch rename");
+        assert_eq!(count, 4);
+        assert_eq!(fs::read_to_string(directory.join("b.txt")).expect("read b"), "a");
+        assert_eq!(fs::read_to_string(directory.join("a.txt")).expect("read a"), "b");
         assert!(undone.is_some());
 
         fs::remove_dir_all(directory).expect("remove test directory");

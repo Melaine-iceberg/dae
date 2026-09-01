@@ -32,6 +32,7 @@ import {
   events,
   type ArchiveFormat,
   type ConflictAction,
+  type RenameRequest,
   type TransferConflict,
   type TransferItem,
   type UndoRedoOutcome,
@@ -74,6 +75,7 @@ import { cn } from "@/lib/utils";
 
 import { ContentSearchResults, ContentSearchToolbar, useContentSearch } from "./content-search";
 import { ContextualActionBar } from "./contextual-action-bar";
+import { BulkRenameDialog } from "./bulk-rename";
 import { DirectorySearch, useDirectorySearch, type ExplorerSearchMode } from "./directory-search";
 import {
   getExplorerDropTargetAtPoint,
@@ -165,6 +167,8 @@ export function ExplorerView({
   const [renameTarget, setRenameTarget] = useState<DirectoryEntry | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
+  const [bulkRenameError, setBulkRenameError] = useState<string | null>(null);
   const [newEntryKind, setNewEntryKind] = useState<NewEntryKind | null>(null);
   const [newEntryValue, setNewEntryValue] = useState("");
   const [newEntryError, setNewEntryError] = useState<string | null>(null);
@@ -254,6 +258,7 @@ export function ExplorerView({
   useEffect(() => {
     setSelectedPaths([]);
     setRenameTarget(null);
+    setBulkRenameOpen(false);
     setNewEntryKind(null);
     setDeleteTargets([]);
     setOperationError(null);
@@ -607,7 +612,16 @@ export function ExplorerView({
   }, [clipboard, directoryPath, setClipboard, startTransfer]);
 
   const requestRename = useCallback(() => {
-    if (selectedEntries.length !== 1) return;
+    if (selectedEntries.length === 0) return;
+
+    // A single entry keeps the classic inline dialog; multi-selections open
+    // the patterned bulk rename (numbering, replace, case).
+    if (selectedEntries.length > 1) {
+      setBulkRenameOpen(true);
+      setBulkRenameError(null);
+      setOperationError(null);
+      return;
+    }
 
     const [entry] = selectedEntries;
     setRenameTarget(entry);
@@ -615,6 +629,28 @@ export function ExplorerView({
     setRenameError(null);
     setOperationError(null);
   }, [selectedEntries]);
+
+  /** Applies the bulk-rename plan; the whole batch stays one undo step. */
+  const applyBulkRename = useCallback(
+    (requests: RenameRequest[]) => {
+      setBulkRenameError(null);
+      setOperationError(null);
+
+      void performFileOperation(
+        (operationId) => commands.renameEntriesBatch(requests, operationId!),
+        "move",
+      ).then((result) => {
+        if (!result.ok) {
+          setBulkRenameError(result.error);
+          return;
+        }
+
+        setBulkRenameOpen(false);
+        setSelectedPaths([]);
+      });
+    },
+    [performFileOperation],
+  );
 
   /** Duplicates the selection in place; the backend picks unique "副本" names. */
   const duplicateSelection = useCallback(() => {
@@ -1362,7 +1398,6 @@ export function ExplorerView({
                     (entry) => entry.kind === "directory",
                   )}
                   isActionDisabled={isOperationPending || isLoading}
-                  isSingleSelection={selectedEntries.length === 1}
                   onAddToSpace={(spaceId) =>
                     addToSpace(
                       spaceId,
@@ -1480,6 +1515,26 @@ export function ExplorerView({
         onValueChange={setRenameValue}
         target={renameTarget}
         value={renameValue}
+      />
+      <BulkRenameDialog
+        applyError={bulkRenameError}
+        entries={selectedEntries}
+        existingNames={displayedEntries.map((entry) => entry.name)}
+        isPending={isOperationPending}
+        onApply={applyBulkRename}
+        onClose={() => {
+          if (!isOperationPending) {
+            setBulkRenameOpen(false);
+            setBulkRenameError(null);
+          }
+        }}
+        onOpenChange={(open) => {
+          if (!open && !isOperationPending) {
+            setBulkRenameOpen(false);
+            setBulkRenameError(null);
+          }
+        }}
+        open={bulkRenameOpen}
       />
       <CreateEntryDialog
         error={newEntryError}

@@ -253,6 +253,15 @@ pub struct TransferItem {
     pub on_conflict: ConflictAction,
 }
 
+/// One requested rename in a batch: the entry's current full path paired
+/// with the bare new name it should receive (never a path).
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameRequest {
+    pub path: String,
+    pub new_name: String,
+}
+
 /// One executed (source, destination) pair from a copy or move batch, as
 /// reported by the transfer engines' journal. Destinations reflect what
 /// actually landed on disk, "副本" auto-renames included. Internal to the

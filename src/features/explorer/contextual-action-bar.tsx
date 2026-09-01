@@ -48,7 +48,6 @@ export function ContextualActionBar({
   archiveSelectionPath,
   hasDirectorySelection,
   isActionDisabled,
-  isSingleSelection,
   onAddToSpace,
   onClearSelection,
   onCompress,
@@ -66,7 +65,6 @@ export function ContextualActionBar({
   archiveSelectionPath: string | null;
   hasDirectorySelection: boolean;
   isActionDisabled: boolean;
-  isSingleSelection: boolean;
   onAddToSpace: (spaceId: string) => void;
   onClearSelection: () => void;
   onCompress: (format: ArchiveFormat) => void;
@@ -135,7 +133,7 @@ export function ContextualActionBar({
       </Button>
       <Button
         aria-label={t("explorer:actionBar.renameAria")}
-        disabled={isActionDisabled || !isSingleSelection}
+        disabled={isActionDisabled}
         onClick={onRename}
         size="icon"
         title={t("explorer:actionBar.renameTitle")}

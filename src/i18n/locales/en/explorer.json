@@ -93,6 +93,51 @@
     "description": "Enter a new name for “{{name}}”.",
     "newNameLabel": "New name"
   },
+  "bulkRename": {
+    "title": "Bulk Rename",
+    "description": "Apply one naming pattern to the {{number}} selected items. Extensions are preserved and the whole batch stays one Ctrl+Z away.",
+    "modeLabel": "Rename mode",
+    "modes": {
+      "sequence": "Numbering",
+      "replace": "Replace",
+      "case": "Case"
+    },
+    "sequence": {
+      "baseName": "Name prefix",
+      "baseNamePlaceholder": "Leave empty to use numbers only",
+      "start": "Start at",
+      "step": "Step",
+      "padding": "Digits"
+    },
+    "replace": {
+      "find": "Find",
+      "replacement": "Replace with",
+      "caseSensitive": "Match case",
+      "useRegex": "Use regular expression"
+    },
+    "case": {
+      "label": "Transform",
+      "lower": "lowercase",
+      "upper": "UPPERCASE",
+      "title": "Capitalize Each Word",
+      "sentence": "Capitalize first letter"
+    },
+    "preview": {
+      "original": "Current name",
+      "newName": "New name",
+      "unchanged": "(unchanged)",
+      "more": "…and {{hidden}} more items following the same pattern"
+    },
+    "errors": {
+      "empty": "Name is empty",
+      "invalid": "Name contains invalid characters",
+      "duplicate": "Duplicate name in this batch",
+      "exists": "An item named “{{name}}” already exists",
+      "regexInvalid": "The regular expression is invalid"
+    },
+    "summary": "{{rename}} items will be renamed, {{errors}} have issues",
+    "apply": "Rename {{number}} items"
+  },
   "deleteConfirm": {
     "title": "Delete permanently",
     "single": "“{{name}}” will be permanently deleted and cannot be restored from the recycle bin.",
@@ -168,6 +213,7 @@
     "addToSpace": "Add to space",
     "addToSpaceNamed": "Add to “{{name}}”",
     "rename": "Rename",
+    "renameBulk": "Bulk rename…",
     "copyPath": "Copy file path",
     "duplicate": "Duplicate",
     "compressAs": "Compress as…",

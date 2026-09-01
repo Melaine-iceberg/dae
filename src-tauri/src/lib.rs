@@ -106,6 +106,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::search::search_file_contents,
             file_system::search::cancel_search,
             file_system::commands::rename_entry,
+            file_system::commands::rename_entries_batch,
             file_system::commands::create_entry,
             file_system::commands::copy_entries,
             file_system::commands::move_entries,

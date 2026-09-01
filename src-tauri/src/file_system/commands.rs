@@ -7,10 +7,12 @@ use super::progress::{
 use super::transfer::{self, TransferSource};
 use super::types::{
     ConflictAction, DirectoryView, FileProperties, NewEntryKind, PropertyChanges,
-    RecursivePropertyUpdateOutcome, TransferConflict, TransferItem, TransferPair, path_to_string,
+    RecursivePropertyUpdateOutcome, RenameRequest, TransferConflict, TransferItem, TransferPair,
+    path_to_string,
 };
 use super::undo::{self, Operation, TrashRecord, UndoRedoOutcome, UndoRedoState};
 use super::vfs;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
@@ -65,6 +67,100 @@ pub async fn rename_entry(
                 .record(&app, Operation::Rename { from: path, to });
         }
         Ok(())
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+/// Renames many entries in a single undoable step — the pattern engine of the
+/// bulk-rename dialog. Name chains and swaps resolve through staging, so
+/// "a→b, b→a" works, and the whole batch reverts with one undo. Returns the
+/// destination paths in request order so the UI can reselect them.
+#[tauri::command]
+#[specta::specta]
+pub async fn rename_entries_batch(
+    requests: Vec<RenameRequest>,
+    operation_id: String,
+    app: tauri::AppHandle,
+) -> Result<Vec<String>, FileSystemError> {
+    if requests.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    emit_preparing(&app, &operation_id, FileOperationKind::Move);
+
+    tauri::async_runtime::spawn_blocking(move || {
+        // Derive full destination paths and drop no-ops before touching disk.
+        let mut pairs: Vec<(String, String)> = Vec::with_capacity(requests.len());
+        let mut seen_sources = HashSet::new();
+        let mut seen_destinations = HashSet::new();
+        for request in requests {
+            let destination = undo::renamed_path(&request.path, &request.new_name).ok_or_else(
+                || {
+                    FileSystemError::InvalidInput("The root of a volume cannot be renamed".into())
+                },
+            )?;
+            if destination == request.path {
+                continue;
+            }
+            if !seen_sources.insert(request.path.clone()) {
+                return Err(FileSystemError::InvalidInput(format!(
+                    "The same entry was selected more than once: {}",
+                    request.path
+                )));
+            }
+            if !seen_destinations.insert(destination.to_ascii_lowercase()) {
+                return Err(FileSystemError::AlreadyExists(destination));
+            }
+            pairs.push((request.path, destination));
+        }
+        if pairs.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Reject real collisions before mutating anything: a destination
+        // already claimed by an entry that is not part of the batch.
+        for (_, destination) in &pairs {
+            if !undo::entry_exists(destination)? {
+                continue;
+            }
+            let claimed_externally = pairs
+                .iter()
+                .all(|(source, _)| !source.eq_ignore_ascii_case(destination));
+            if claimed_externally {
+                return Err(FileSystemError::AlreadyExists(destination.clone()));
+            }
+        }
+
+        let progress = FileOperationProgressReporter::new(
+            app.clone(),
+            operation_id,
+            FileOperationKind::Move,
+        );
+        let applied = undo::apply_rename_pairs(&pairs, &progress)?;
+
+        // Report destinations in request order so the UI can reselect them;
+        // entries that failed before applying keep their old selection.
+        let applied_lookup: std::collections::HashMap<&str, &str> = applied
+            .iter()
+            .map(|pair| (pair.source.as_str(), pair.destination.as_str()))
+            .collect();
+        let results: Vec<String> = pairs
+            .iter()
+            .map(|(source, destination)| {
+                applied_lookup
+                    .get(source.as_str())
+                    .map(|applied| (*applied).to_owned())
+                    .unwrap_or_else(|| destination.clone())
+            })
+            .collect();
+
+        if !applied.is_empty() {
+            app.state::<UndoRedoState>().record(&app, Operation::RenameBatch { pairs: applied });
+        }
+        progress.finish();
+
+        Ok(results)
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
