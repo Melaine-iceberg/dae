@@ -791,10 +791,11 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
   }, [started, runId, path]);
 
   const expectedNormalized = expected.trim().toLowerCase();
+  const hasExpected = expectedNormalized.length > 0;
   const match = run.digests
     ? HASH_ALGORITHMS.find(({ key }) => run.digests?.[key] === expectedNormalized)
     : undefined;
-  const mismatch = expectedNormalized.length > 0 && run.status === "done" && !match;
+  const mismatch = hasExpected && run.status === "done" && !match;
   const percent =
     run.totalBytes > 0 ? Math.min(100, Math.round((run.bytesRead / run.totalBytes) * 100)) : 0;
 
@@ -887,6 +888,7 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
       {run.status !== "running" && (
         <Button
           className="self-start"
+          disabled={!hasExpected}
           onClick={() => setRunId(crypto.randomUUID())}
           type="button"
           variant="outline"
