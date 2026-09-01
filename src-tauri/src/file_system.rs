@@ -7,6 +7,7 @@ pub mod error;
 pub mod git;
 pub mod hashing;
 pub mod local;
+pub mod media_meta;
 pub mod open_with;
 pub mod prefetch;
 pub mod preview;

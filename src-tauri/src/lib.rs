@@ -138,6 +138,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::archive::compress_entries,
             file_system::archive::extract_archive,
             file_system::preview::read_text_preview,
+            file_system::media_meta::read_media_preview,
             file_system::sidebar::get_system_places,
             file_system::sidebar::list_disks,
             file_system::sidebar::list_wsl_distros,

@@ -399,3 +399,90 @@
   font-family: var(--font-mono);
   white-space: pre;
 }
+
+/* Markdown preview panel: compact document styling tuned for the small
+   preview surface, themed through the app's palette variables. */
+.markdown-preview > :first-child {
+  margin-top: 0;
+}
+.markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  margin: 0.9em 0 0.4em;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.markdown-preview h1 {
+  font-size: 1.35em;
+}
+.markdown-preview h2 {
+  font-size: 1.2em;
+}
+.markdown-preview h3 {
+  font-size: 1.1em;
+}
+.markdown-preview p {
+  margin: 0.45em 0;
+}
+.markdown-preview a {
+  color: var(--primary);
+}
+.markdown-preview ul,
+.markdown-preview ol {
+  margin: 0.45em 0;
+  padding-left: 1.4em;
+}
+.markdown-preview ul {
+  list-style: disc;
+}
+.markdown-preview ol {
+  list-style: decimal;
+}
+.markdown-preview blockquote {
+  margin: 0.5em 0;
+  padding-left: 0.8em;
+  border-left: 2px solid var(--border);
+  color: var(--muted-foreground);
+}
+.markdown-preview code {
+  padding: 0.1em 0.3em;
+  border-radius: 4px;
+  background: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+.markdown-preview pre {
+  margin: 0.5em 0;
+  padding: 0.6em 0.8em;
+  overflow-x: auto;
+  border-radius: 8px;
+  background: var(--accent);
+}
+.markdown-preview pre code {
+  padding: 0;
+  background: transparent;
+}
+.markdown-preview hr {
+  margin: 0.9em 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+.markdown-preview table {
+  margin: 0.5em 0;
+  border-collapse: collapse;
+}
+.markdown-preview th,
+.markdown-preview td {
+  padding: 0.2em 0.6em;
+  border: 1px solid var(--border);
+}
+.markdown-preview img {
+  max-width: 100%;
+  border-radius: 6px;
+}

@@ -418,13 +418,15 @@ function DisksContent({
 }) {
   const volumes = useDiskVolumes(currentPath);
   const ensureTreeExpanded = useSetAtom(ensureTreeNodeExpandedAtom);
+  const expandedTreePaths = useAtomValue(treeExpandedPathsAtom);
 
-  // Follow the active pane: reveal and expand the tree path leading to the
-  // folder currently shown, so the tree mirrors breadcrumb navigation.
+  // Follow the active pane once a tree is open: expand the path leading to
+  // the folder currently shown. Navigation never opens a tree on its own —
+  // only the disk card's chevron does.
   useEffect(() => {
     if (!volumes || !currentPath) return;
     const volume = volumes.find((candidate) => isPathWithin(currentPath, candidate.mountPoint));
-    if (!volume) return;
+    if (!volume || !expandedTreePaths.has(volume.mountPoint)) return;
 
     ensureTreeExpanded(volume.mountPoint);
     for (const crumb of currentBreadcrumbs) {
@@ -432,7 +434,7 @@ function DisksContent({
         ensureTreeExpanded(crumb.path);
       }
     }
-  }, [currentBreadcrumbs, currentPath, ensureTreeExpanded, volumes]);
+  }, [currentBreadcrumbs, currentPath, ensureTreeExpanded, expandedTreePaths, volumes]);
 
   if (volumes === null) return <SectionSkeleton />;
 

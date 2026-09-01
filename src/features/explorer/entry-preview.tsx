@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { ClipboardTextIcon, FolderOpenIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { openPath } from "@tauri-apps/plugin-opener";
+import { marked } from "marked";
 
-import { commands, type TextPreview } from "@/bindings";
+import { commands, type MediaPreview, type TextPreview } from "@/bindings";
 import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,6 +31,35 @@ const TEXT_PREVIEW_EXTENSIONS = new Set([
   "diff",
   "patch",
   "lock",
+]);
+
+/** Extensions rendered as Markdown instead of a plain-text peek. */
+const MARKDOWN_EXTENSIONS = new Set(["md", "markdown"]);
+
+/**
+ * Audio/video containers probed for metadata. The backend parses container
+ * headers only (a few KB of reads), so this stays cheap even for huge
+ * clips — no decoding or frame extraction happens in Rust.
+ */
+const MEDIA_EXTENSIONS = new Set([
+  "mp3",
+  "flac",
+  "wav",
+  "m4a",
+  "aac",
+  "ogg",
+  "opus",
+  "wma",
+  "aiff",
+  "aif",
+  "mp4",
+  "m4v",
+  "mov",
+  "mkv",
+  "webm",
+  "avi",
+  "wmv",
+  "flv",
 ]);
 
 /** Files above this size skip content preview entirely for performance. */
@@ -74,6 +105,22 @@ function parentDirectory(path: string): string {
   return path.slice(0, separatorIndex);
 }
 
+function formatDuration(durationMs: number): string {
+  const totalSeconds = Math.floor(durationMs / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (value: number) => value.toString().padStart(2, "0");
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
+}
+
+function formatBitrate(bitrateBps: number): string {
+  if (bitrateBps >= 1_000_000) {
+    return `${localeNumberFormat(FILE_SIZE_FORMAT_OPTIONS).format(bitrateBps / 1_000_000)} Mbps`;
+  }
+  return `${Math.round(bitrateBps / 1000)} kbps`;
+}
+
 type TextPreviewState =
   | { status: "loading" }
   | { status: "error" }
@@ -83,6 +130,11 @@ type TextPreviewState =
       html: string | null;
       truncated: boolean;
     };
+
+type MediaPreviewState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ready"; data: MediaPreview };
 
 /**
  * Docked yazi-style preview panel for the current selection (SKILL.md §21):
@@ -99,13 +151,21 @@ export function EntryPreview({
   onOpen: () => void;
 }) {
   const { t } = useTranslation("explorer");
-  const language = entry?.kind === "file" ? getPreviewLanguage(entry.name) : null;
+  const visualExtension = entry?.kind === "file" ? getEntryVisualExtension(entry.name) : "";
+  // Markdown gets rendered styling instead of a code grammar.
+  const supportsMarkdown = MARKDOWN_EXTENSIONS.has(visualExtension);
+  const language =
+    entry?.kind === "file" && !supportsMarkdown ? getPreviewLanguage(entry.name) : null;
   const supportsThumbnail = entry !== null && isThumbnailSupported(entry);
+  // Markdown rides the text-read path even though it skips code highlighting.
   const supportsText =
     entry?.kind === "file" &&
-    (language !== null || TEXT_PREVIEW_EXTENSIONS.has(getEntryVisualExtension(entry.name)));
+    (supportsMarkdown || language !== null || TEXT_PREVIEW_EXTENSIONS.has(visualExtension));
+  const supportsMedia = entry?.kind === "file" && MEDIA_EXTENSIONS.has(visualExtension);
   const isTooLarge = (entry?.size ?? 0) > PREVIEW_MAX_SOURCE_BYTES;
   const [textPreview, setTextPreview] = useState<TextPreviewState | null>(null);
+  const [markdownHtml, setMarkdownHtml] = useState<string | null>(null);
+  const [mediaPreview, setMediaPreview] = useState<MediaPreviewState | null>(null);
 
   useEffect(() => {
     if (!entry || entry.kind !== "file" || isTooLarge || !supportsText) {
@@ -145,8 +205,58 @@ export function EntryPreview({
     };
   }, [entry, isTooLarge, language, supportsText]);
 
+  useEffect(() => {
+    if (!supportsMarkdown || !textPreview || textPreview.status !== "ready") {
+      setMarkdownHtml(null);
+      return;
+    }
+    // Synchronous parse keeps the type narrow; the content is read from the
+    // local file and injected like the Shiki code path.
+    setMarkdownHtml(marked.parse(textPreview.content, { async: false }));
+  }, [supportsMarkdown, textPreview]);
+
+  useEffect(() => {
+    if (!entry || entry.kind !== "file" || !supportsMedia) {
+      setMediaPreview(null);
+      return;
+    }
+
+    setMediaPreview({ status: "loading" });
+    let cancelled = false;
+    void commands
+      .readMediaPreview(entry.path)
+      .then((result: MediaPreview) => {
+        if (!cancelled) setMediaPreview({ status: "ready", data: result });
+      })
+      .catch((error: unknown) => {
+        console.warn(`Unable to read media metadata for ${entry.path}`, error);
+        if (!cancelled) setMediaPreview({ status: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry, supportsMedia]);
+
   const visual = entry ? getEntryPresentation(entry) : null;
   const VisualIcon = visual?.icon;
+
+  function handleMarkdownLinkClick(event: MouseEvent<HTMLDivElement>) {
+    const anchor = (event.target as Element).closest("a");
+    if (!anchor) return;
+    const href = anchor.getAttribute("href");
+    if (!href || href.startsWith("#")) return;
+    // Scheme links never reach here — the app-wide external link guard
+    // intercepts them first and hands them to the system browser.
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return;
+    // A bare click would navigate the app's own webview away from the file
+    // manager; relative doc links resolve against the markdown file's folder.
+    event.preventDefault();
+    if (!entry) return;
+    const target = `${parentDirectory(entry.path)}\\${href.replace(/^\.\//, "")}`;
+    void openPath(target).catch((error) => {
+      console.warn(`Unable to open link ${href}`, error);
+    });
+  }
 
   return (
     <aside
@@ -187,11 +297,26 @@ export function EntryPreview({
               <ThumbnailImage
                 className="flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/40"
                 entry={entry}
+                fallback={
+                  VisualIcon ? (
+                    <VisualIcon
+                      className={cn("size-12", visual?.tone ?? "text-muted-foreground/60")}
+                      weight="duotone"
+                    />
+                  ) : null
+                }
                 requestSize={384}
               />
             ) : textPreview?.status === "ready" ? (
               <div className="flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-muted/40">
-                {textPreview.html !== null ? (
+                {markdownHtml !== null ? (
+                  <div
+                    className="markdown-preview min-h-0 flex-1 overflow-auto p-2.5 text-xs leading-relaxed"
+                    // Rendered locally from file contents via `marked`.
+                    dangerouslySetInnerHTML={{ __html: markdownHtml }}
+                    onClickCapture={handleMarkdownLinkClick}
+                  />
+                ) : textPreview.html !== null ? (
                   <div
                     className="code-preview min-h-0 flex-1 overflow-auto p-2.5 text-xs leading-relaxed"
                     // Shiki output is generated locally from file contents.
@@ -249,6 +374,47 @@ export function EntryPreview({
                 ) : null}
               </div>
             )}
+
+            {mediaPreview?.status === "ready" &&
+              (mediaPreview.data.tags.length > 0 ||
+                mediaPreview.data.durationMs !== null ||
+                mediaPreview.data.width !== null ||
+                mediaPreview.data.bitrateBps !== null) && (
+                <div className="shrink-0 rounded-xl bg-muted/40 p-2.5">
+                  <dl className="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1.5 text-xs">
+                    {mediaPreview.data.tags.map(([label, value]) => (
+                      <div key={label} className="contents">
+                        <dt className="text-muted-foreground">{label}</dt>
+                        <dd className="min-w-0 break-all">{value}</dd>
+                      </div>
+                    ))}
+                    {mediaPreview.data.durationMs !== null && (
+                      <>
+                        <dt className="text-muted-foreground">{t("preview.duration")}</dt>
+                        <dd className="tabular-nums">
+                          {formatDuration(mediaPreview.data.durationMs)}
+                        </dd>
+                      </>
+                    )}
+                    {mediaPreview.data.width !== null && mediaPreview.data.height !== null && (
+                      <>
+                        <dt className="text-muted-foreground">{t("preview.dimensions")}</dt>
+                        <dd className="tabular-nums">
+                          {mediaPreview.data.width} × {mediaPreview.data.height}
+                        </dd>
+                      </>
+                    )}
+                    {mediaPreview.data.bitrateBps !== null && (
+                      <>
+                        <dt className="text-muted-foreground">{t("preview.bitrate")}</dt>
+                        <dd className="tabular-nums">
+                          {formatBitrate(mediaPreview.data.bitrateBps)}
+                        </dd>
+                      </>
+                    )}
+                  </dl>
+                </div>
+              )}
 
             <dl className="grid shrink-0 grid-cols-[5rem_1fr] gap-x-3 gap-y-2 text-xs">
               <dt className="text-muted-foreground">{t("preview.type")}</dt>

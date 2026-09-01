@@ -9,12 +9,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { i18nReady } from "@/i18n";
 import { applySystemTheme } from "@/lib/theme";
 import { setupNativeClipboardBridge } from "@/lib/clipboard-bridge";
+import { setupExternalLinkGuard } from "@/lib/external-links";
 
 if (import.meta.env.DEV) {
   setupDevInvoke();
 }
 
 setupNativeClipboardBridge();
+
+setupExternalLinkGuard();
 
 applySystemTheme();
 

@@ -32,6 +32,13 @@ const THUMBNAIL_MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
 const THUMBNAIL_MAX_DECODED_PIXELS: u64 = 40 * 1024 * 1024;
 const THUMBNAIL_CACHE_MAX_ENTRIES: usize = 256;
 
+/// SVGs pass through to the webview as raw bytes (the browser rasterizes
+/// them), capped so a hand-crafted multi-megabyte vector never floods IPC.
+const SVG_MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024;
+/// Shell thumbnails (PDF first page, video first frame, HEIC) are produced
+/// by the OS handler; a 2GB cap keeps pathological files out.
+const SHELL_THUMBNAIL_MAX_SOURCE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
 /// Capped in-memory cache keyed by path + mtime + size + target size.
 /// Entries are `Arc`'d so lookups never clone image bytes; eviction drops
 /// the oldest entry instead of clearing the map so scrolling back through a
@@ -55,11 +62,26 @@ fn extension_of(path: &Path) -> String {
 }
 
 /// Extensions the `image` crate can decode on every supported platform.
-pub fn is_thumbnail_extension(path: &str) -> bool {
+fn is_image_extension(path: &str) -> bool {
     matches!(
         extension_of(Path::new(path)).as_str(),
         "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "tif" | "tiff" | "ico"
     )
+}
+
+/// Extensions with any thumbnail strategy on some platform. The frontend
+/// uses this to decide which entries get an image slot; the protocol
+/// handler answers 404 when the current platform lacks a producer.
+pub fn is_thumbnail_extension(path: &str) -> bool {
+    let extension = extension_of(Path::new(path));
+    is_image_extension(path)
+        || extension == "svg"
+        // Windows shell handlers render PDF first pages, video first frames,
+        // and HEIC photos (with the HEIF extensions installed).
+        || matches!(
+            extension.as_str(),
+            "pdf" | "mp4" | "m4v" | "mov" | "mkv" | "webm" | "avi" | "wmv" | "heic" | "heif"
+        )
 }
 
 /// Serves `thumbnail://localhost/?path=...&size=...` with raw image bytes.
@@ -157,12 +179,38 @@ fn render_thumbnail(
     size: u16,
 ) -> Result<Option<Arc<RenderedThumbnail>>, FileSystemError> {
     let path = Path::new(path_string);
+    let extension = extension_of(path);
     if !is_thumbnail_extension(path_string) {
         return Ok(None);
     }
 
     let metadata = fs::metadata(path).map_err(FileSystemError::from)?;
-    if !metadata.is_file() || metadata.len() > THUMBNAIL_MAX_SOURCE_BYTES {
+    if !metadata.is_file() {
+        return Ok(None);
+    }
+
+    // SVGs stream straight through as bytes — no decode, no cache entry.
+    if extension == "svg" {
+        if metadata.len() > SVG_MAX_SOURCE_BYTES {
+            return Ok(None);
+        }
+        let bytes = fs::read(path).map_err(FileSystemError::from)?;
+        return Ok(Some(Arc::new(RenderedThumbnail {
+            mime: "image/svg+xml",
+            bytes,
+        })));
+    }
+
+    // Shell thumbnails cover formats Explorer itself thumbs (PDF pages,
+    // video frames, HEIC); they are comparatively expensive, so the cache
+    // matters more than for the cheap `image` crate path.
+    let is_shell_source = !is_image_extension(path_string);
+    let source_cap = if is_shell_source {
+        SHELL_THUMBNAIL_MAX_SOURCE_BYTES
+    } else {
+        THUMBNAIL_MAX_SOURCE_BYTES
+    };
+    if metadata.len() > source_cap {
         return Ok(None);
     }
 
@@ -182,8 +230,21 @@ fn render_thumbnail(
         return Ok(Some(cached));
     }
 
-    let Some(thumbnail) = decode_and_scale(path, size)? else {
-        return Ok(None);
+    let thumbnail = if is_shell_source {
+        // No shell thumbnail handler on this platform (or for this file):
+        // 404 lets the frontend fall back to its type icon.
+        let Some(png) = extract_shell_thumbnail_png(path_string, u32::from(size)) else {
+            return Ok(None);
+        };
+        RenderedThumbnail {
+            mime: "image/png",
+            bytes: png,
+        }
+    } else {
+        let Some(thumbnail) = decode_and_scale(path, size)? else {
+            return Ok(None);
+        };
+        thumbnail
     };
 
     let thumbnail = Arc::new(thumbnail);
@@ -273,15 +334,31 @@ fn render_file_icon(
 /// embedded icon for executables, the registered handler icon otherwise.
 #[cfg(windows)]
 fn extract_file_icon_png(path: &str, size: u32) -> Option<Vec<u8>> {
+    use windows::Win32::UI::Shell::{SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT};
+    // ICONONLY keeps document thumbnails out — views pair these icons
+    // with their own image thumbnails.
+    shell_image_png(path, size, SIIGBF_ICONONLY | SIIGBF_RESIZETOFIT)
+}
+
+/// First-page / first-frame thumbnails from the registered shell thumbnail
+/// handler (Edge for PDFs, the WMP/Media handler for videos, the HEIF
+/// extensions for `.heic`). Files without a handler yield `None`, which the
+/// frontend turns into a type-icon fallback.
+#[cfg(windows)]
+fn extract_shell_thumbnail_png(path: &str, size: u32) -> Option<Vec<u8>> {
+    use windows::Win32::UI::Shell::SIIGBF_RESIZETOFIT;
+    shell_image_png(path, size, SIIGBF_RESIZETOFIT)
+}
+
+/// Shared `IShellItemImageFactory` pipeline: resolves the shell image for
+/// `path` at `size` and rasterizes it to PNG.
+#[cfg(windows)]
+fn shell_image_png(path: &str, size: u32, flags: windows::Win32::UI::Shell::SIIGBF) -> Option<Vec<u8>> {
     use windows::Win32::Foundation::SIZE;
-    use windows::Win32::Graphics::Gdi::{
-        BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, DeleteObject, GetDC, GetDIBits,
-        GetObjectW, HGDIOBJ, ReleaseDC,
-    };
+    use windows::Win32::Graphics::Gdi::DeleteObject;
+    use windows::Win32::Graphics::Gdi::HGDIOBJ;
     use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
-    use windows::Win32::UI::Shell::{
-        IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT,
-    };
+    use windows::Win32::UI::Shell::{IShellItemImageFactory, SHCreateItemFromParsingName};
     use windows::core::HSTRING;
 
     unsafe {
@@ -291,83 +368,99 @@ fn extract_file_icon_png(path: &str, size: u32) -> Option<Vec<u8>> {
 
         let factory: IShellItemImageFactory =
             SHCreateItemFromParsingName(&HSTRING::from(path), None).ok()?;
-        // ICONONLY keeps document thumbnails out — views pair these icons
-        // with their own image thumbnails.
         let bitmap = factory
             .GetImage(
                 SIZE {
                     cx: size as i32,
                     cy: size as i32,
                 },
-                SIIGBF_ICONONLY | SIIGBF_RESIZETOFIT,
+                flags,
             )
             .ok()?;
 
-        let result = (|| {
-            let mut info = BITMAP::default();
-            if GetObjectW(
-                bitmap,
-                std::mem::size_of::<BITMAP>() as i32,
-                Some(&mut info as *mut BITMAP as *mut core::ffi::c_void),
-            ) == 0
-            {
-                return None;
-            }
-            let width = info.bmWidth as usize;
-            let height = info.bmHeight as usize;
-            if width == 0 || height == 0 {
-                return None;
-            }
-
-            // Top-down 32bpp read so scanlines arrive in image order.
-            let mut header = BITMAPINFO {
-                bmiHeader: BITMAPINFOHEADER {
-                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                    biWidth: info.bmWidth,
-                    biHeight: -(info.bmHeight),
-                    biPlanes: 1,
-                    biBitCount: 32,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-            let mut pixels = vec![0u8; width * height * 4];
-            // GetDIBits wants a real DC for format negotiation; the screen DC
-            // is process-wide and costs nothing here.
-            let dc = GetDC(None);
-            let copied = GetDIBits(
-                dc,
-                bitmap,
-                0,
-                height as u32,
-                Some(pixels.as_mut_ptr() as *mut core::ffi::c_void),
-                &mut header,
-                DIB_RGB_COLORS,
-            );
-            let _ = ReleaseDC(None, dc);
-            if copied == 0 {
-                return None;
-            }
-
-            // Shell bitmaps are BGRA; swap channels for the `image` crate.
-            for pixel in pixels.as_chunks_mut::<4>().0 {
-                pixel.swap(0, 2);
-            }
-
-            let image = image::RgbaImage::from_raw(width as u32, height as u32, pixels)?;
-            let mut buffer = Vec::new();
-            image::DynamicImage::ImageRgba8(image)
-                .write_to(
-                    &mut std::io::Cursor::new(&mut buffer),
-                    image::ImageFormat::Png,
-                )
-                .ok()?;
-            Some(buffer)
-        })();
-
+        let result = bitmap_to_png(bitmap);
         let _ = DeleteObject(HGDIOBJ(bitmap.0));
         result
     }
+}
+
+/// Copies a shell-produced HBITMAP into top-down RGBA pixels and encodes it
+/// as PNG.
+#[cfg(windows)]
+fn bitmap_to_png(bitmap: windows::Win32::Graphics::Gdi::HBITMAP) -> Option<Vec<u8>> {
+    use windows::Win32::Graphics::Gdi::{
+        BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, GetDC, GetDIBits, GetObjectW,
+        ReleaseDC,
+    };
+
+    unsafe {
+        let mut info = BITMAP::default();
+        if GetObjectW(
+            bitmap,
+            std::mem::size_of::<BITMAP>() as i32,
+            Some(&mut info as *mut BITMAP as *mut core::ffi::c_void),
+        ) == 0
+        {
+            return None;
+        }
+        let width = info.bmWidth as usize;
+        let height = info.bmHeight as usize;
+        if width == 0 || height == 0 {
+            return None;
+        }
+
+        // Top-down 32bpp read so scanlines arrive in image order.
+        let mut header = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: info.bmWidth,
+                biHeight: -(info.bmHeight),
+                biPlanes: 1,
+                biBitCount: 32,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut pixels = vec![0u8; width * height * 4];
+        // GetDIBits wants a real DC for format negotiation; the screen DC
+        // is process-wide and costs nothing here.
+        let dc = GetDC(None);
+        let copied = GetDIBits(
+            dc,
+            bitmap,
+            0,
+            height as u32,
+            Some(pixels.as_mut_ptr() as *mut core::ffi::c_void),
+            &mut header,
+            DIB_RGB_COLORS,
+        );
+        let _ = ReleaseDC(None, dc);
+        if copied == 0 {
+            return None;
+        }
+
+        // Shell bitmaps are BGRA; swap channels for the `image` crate.
+        for pixel in pixels.as_chunks_mut::<4>().0 {
+            pixel.swap(0, 2);
+        }
+
+        let image = image::RgbaImage::from_raw(width as u32, height as u32, pixels)?;
+        let mut buffer = Vec::new();
+        image::DynamicImage::ImageRgba8(image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut buffer),
+                image::ImageFormat::Png,
+            )
+            .ok()?;
+        Some(buffer)
+    }
+}
+
+// No shell thumbnail rendering on other platforms yet; the frontend falls
+// back to its type-based Phosphor icons for PDF/video/HEIC.
+#[cfg(not(windows))]
+fn extract_shell_thumbnail_png(_path: &str, _size: u32) -> Option<Vec<u8>> {
+    None
 }
 
 // No shell icon extraction on other platforms yet; the frontend falls back
