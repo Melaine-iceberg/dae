@@ -12,6 +12,8 @@ import {
   CaretDownIcon,
   ClipboardTextIcon,
   CopyIcon,
+  EyeSlashIcon,
+  FolderIcon,
   FolderOpenIcon,
   GlobeIcon,
   HardDriveIcon,
@@ -27,6 +29,7 @@ import {
   TrashIcon,
   UsbIcon,
 } from "@phosphor-icons/react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { commands, type Breadcrumb, type StoredCloudAccount } from "@/bindings";
 
@@ -57,19 +60,27 @@ import { i18n } from "@/i18n";
 import { cn, formatBytes } from "@/lib/utils";
 
 import {
+  addFavoritePathsAtom,
   cloudAccountsAtom,
   collapsedLocationSectionsAtom,
   connectionsAtom,
   ensureCloudAccountsLoadedAtom,
   ensureConnectionsLoadedAtom,
+  ensureFavoritesLoadedAtom,
+  ensureSystemPlacesLoadedAtom,
   expandLocationSectionAtom,
+  favoritesAtom,
+  hiddenPlacesAtom,
   reloadCloudAccountsAtom,
   reloadConnectionsAtom,
+  removeFavoriteAtom,
   sidebarVisibleAtom,
+  systemPlacesAtom,
   toggleLocationSectionAtom,
   type LocationSectionId,
 } from "./sidebar-atoms";
-import type { DiskVolume } from "./types";
+import type { DiskVolume, PlaceKind } from "./types";
+import { PLACE_PRESENTATION } from "./place-presentation";
 import { CloudAccountDialog } from "./cloud-account-dialog";
 import { CLOUD_PROVIDER_ICONS } from "./cloud-icons";
 import { ConnectDialog } from "./connect-dialog";
@@ -121,6 +132,7 @@ function SidebarContent() {
   const reloadConnections = useSetAtom(reloadConnectionsAtom);
   const reloadCloudAccounts = useSetAtom(reloadCloudAccountsAtom);
   const expandLocationSection = useSetAtom(expandLocationSectionAtom);
+  const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
   const [creatingSpace, setCreatingSpace] = useState(false);
   const [spaceName, setSpaceName] = useState("");
   const [connectOpen, setConnectOpen] = useState(false);
@@ -145,6 +157,19 @@ function SidebarContent() {
     void createSpace(name).then((space) => {
       if (space) openSurface({ kind: "space", spaceId: space.id });
     });
+  };
+
+  /** Native folder picker for adding folders to favorites. */
+  const addFavoriteFolder = () => {
+    void openDialog({
+      directory: true,
+      multiple: false,
+      title: t("favorites.dialogTitle"),
+    })
+      .then((selected) => {
+        if (typeof selected === "string" && selected) addFavoritePaths([selected]);
+      })
+      .catch((error: unknown) => console.warn("Unable to open folder picker", error));
   };
 
   return (
@@ -180,6 +205,16 @@ function SidebarContent() {
           label={t("nav.trash")}
           onClick={() => openSurface({ kind: "trash" })}
         />
+
+        <SectionLabel
+          label={t("sections.favorites")}
+          onAdd={addFavoriteFolder}
+          addTitle={t("favorites.addFolder")}
+        />
+        {/* Folder entries can be dragged here to favorite them; see drag-drop.ts. */}
+        <div data-sidebar-favorites-drop-target="">
+          <FavoritesContent currentPath={currentPath} onNavigate={navigateToFolder} />
+        </div>
 
         <SectionLabel
           label={t("sections.spaces")}
@@ -410,6 +445,131 @@ function SectionSkeleton() {
     <div aria-hidden="true" className="px-2 py-1">
       <div className="h-7 animate-pulse rounded-sm bg-muted/70" />
     </div>
+  );
+}
+
+/**
+ * The favorites section mirrors the system file manager's quick access: the
+ * well-known system places plus the user's favorited folders, always visible
+ * at the top of the sidebar.
+ */
+function FavoritesContent({
+  currentPath,
+  onNavigate,
+}: {
+  currentPath: string | null;
+  onNavigate: (path: string) => void;
+}) {
+  const { t } = useTranslation("sidebar");
+  const places = useAtomValue(systemPlacesAtom);
+  const ensurePlacesLoaded = useSetAtom(ensureSystemPlacesLoadedAtom);
+  const hiddenPlaces = useAtomValue(hiddenPlacesAtom);
+  const favorites = useAtomValue(favoritesAtom);
+  const ensureFavoritesLoaded = useSetAtom(ensureFavoritesLoadedAtom);
+
+  useEffect(() => {
+    void ensurePlacesLoaded();
+    void ensureFavoritesLoaded();
+  }, [ensurePlacesLoaded, ensureFavoritesLoaded]);
+
+  if (places === null || favorites === null) return <SectionSkeleton />;
+
+  const visiblePlaces = places.filter((place) => !hiddenPlaces.includes(place.kind));
+
+  if (visiblePlaces.length === 0 && favorites.length === 0) {
+    return (
+      <p className="px-3.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
+        {t("favorites.emptyHint")}
+      </p>
+    );
+  }
+
+  return (
+    <>
+      {visiblePlaces.map((place) => {
+        const presentation = PLACE_PRESENTATION[place.kind];
+        return (
+          <FavoritesEntryContextMenu
+            entry={{ kind: "place", placeKind: place.kind }}
+            key={place.kind}
+            path={place.path}
+          >
+            <NavItem
+              icon={presentation.icon}
+              isActive={currentPath === place.path}
+              label={presentation.label}
+              onClick={() => onNavigate(place.path)}
+              title={place.path}
+            />
+          </FavoritesEntryContextMenu>
+        );
+      })}
+      {favorites.map((favorite) => (
+        <FavoritesEntryContextMenu
+          entry={{ kind: "favorite" }}
+          key={favorite.path}
+          path={favorite.path}
+        >
+          <NavItem
+            icon={FolderIcon}
+            isActive={currentPath === favorite.path}
+            label={favorite.name}
+            onClick={() => onNavigate(favorite.path)}
+            title={favorite.path}
+          />
+        </FavoritesEntryContextMenu>
+      ))}
+    </>
+  );
+}
+
+type FavoritesEntry = { kind: "place"; placeKind: PlaceKind } | { kind: "favorite" };
+
+function FavoritesEntryContextMenu({
+  children,
+  entry,
+  path,
+}: {
+  children: ReactNode;
+  entry: FavoritesEntry;
+  path: string;
+}) {
+  const { t } = useTranslation("sidebar");
+  const openInNewTab = useSetAtom(openInNewTabAtom);
+  const hiddenPlaces = useAtomValue(hiddenPlacesAtom);
+  const setHiddenPlaces = useSetAtom(hiddenPlacesAtom);
+  const removeFavorite = useSetAtom(removeFavoriteAtom);
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger>{children}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={() => openInNewTab(path)}>
+            <FolderOpenIcon />
+            {t("contextMenu.openInNewTab")}
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => void copyEntryPath(path)}>
+            <ClipboardTextIcon />
+            {t("contextMenu.copyFilePath")}
+          </ContextMenuItem>
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
+          {entry.kind === "place" ? (
+            <ContextMenuItem onClick={() => setHiddenPlaces([...hiddenPlaces, entry.placeKind])}>
+              <EyeSlashIcon />
+              {t("contextMenu.hideFromFavorites")}
+            </ContextMenuItem>
+          ) : (
+            <ContextMenuItem onClick={() => removeFavorite(path)}>
+              <StarIcon />
+              {t("contextMenu.removeFavorite")}
+            </ContextMenuItem>
+          )}
+        </ContextMenuGroup>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

@@ -210,6 +210,7 @@
     "openWith": "Open with…",
     "openWithOtherApp": "Open in another app…",
     "addToFavorites": "Add to favorites",
+    "removeFromFavorites": "Remove from favorites",
     "addToSpace": "Add to space",
     "addToSpaceNamed": "Add to “{{name}}”",
     "rename": "Rename",

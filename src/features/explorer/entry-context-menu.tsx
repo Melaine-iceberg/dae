@@ -36,6 +36,11 @@ import {
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
+import {
+  ensureFavoritesLoadedAtom,
+  favoritesAtom,
+  removeFavoriteAtom,
+} from "@/features/sidebar/sidebar-atoms";
 
 import type { DirectoryEntry } from "./types";
 
@@ -92,10 +97,15 @@ export function EntryContextMenuContent({
   const spaces = useAtomValue(spacesAtom) ?? [];
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const setPropertiesTarget = useSetAtom(propertiesTargetAtom);
+  const favorites = useAtomValue(favoritesAtom) ?? [];
+  const ensureFavoritesLoaded = useSetAtom(ensureFavoritesLoadedAtom);
+  const removeFavorite = useSetAtom(removeFavoriteAtom);
+  const isFavorited = favorites.some((favorite) => favorite.path === entry.path);
 
   useEffect(() => {
     void ensureSpacesLoaded();
-  }, [ensureSpacesLoaded]);
+    void ensureFavoritesLoaded();
+  }, [ensureFavoritesLoaded, ensureSpacesLoaded]);
 
   return (
     <>
@@ -112,9 +122,14 @@ export function EntryContextMenuContent({
           {t("explorer:contextMenu.openWith")}
         </ContextMenuItem>
         {entry.kind === "directory" && (
-          <ContextMenuItem disabled={isActionDisabled} onClick={onAddToFavorites}>
+          <ContextMenuItem
+            disabled={isActionDisabled}
+            onClick={() => (isFavorited ? removeFavorite(entry.path) : onAddToFavorites())}
+          >
             <StarIcon />
-            {t("explorer:contextMenu.addToFavorites")}
+            {isFavorited
+              ? t("explorer:contextMenu.removeFromFavorites")
+              : t("explorer:contextMenu.addToFavorites")}
           </ContextMenuItem>
         )}
         {entry.kind === "directory" && spaces.length > 0 && (

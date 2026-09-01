@@ -1,16 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
   ArrowRightIcon,
   ClockCounterClockwiseIcon,
+  EyeSlashIcon,
   FolderIcon,
+  PlusIcon,
   SquaresFourIcon,
   StarIcon,
 } from "@phosphor-icons/react";
 
-import { commands, type SystemPlace } from "@/bindings";
 import { cn } from "@/lib/utils";
 
 import {
@@ -34,9 +36,13 @@ import {
 } from "@/features/explorer/file-icons";
 import { PLACE_PRESENTATION } from "@/features/sidebar/place-presentation";
 import {
+  addFavoritePathsAtom,
   ensureFavoritesLoadedAtom,
+  ensureSystemPlacesLoadedAtom,
   favoritesAtom,
   hiddenPlacesAtom,
+  removeFavoriteAtom,
+  systemPlacesAtom,
 } from "@/features/sidebar/sidebar-atoms";
 
 import { ensureRecentsLoadedAtom, recentsAtom, recordRecentItem } from "./recents-atoms";
@@ -54,40 +60,57 @@ import {
 } from "./workspace-components";
 
 const RECENTS_PREVIEW_COUNT = 6;
-const FAVORITES_PREVIEW_COUNT = 6;
 
 /**
- * Overview is the default landing surface: quick access to common locations,
- * recent activity, favorites, and the user's spaces — not a raw filesystem
- * path.
+ * Overview is the default landing surface: favorites (system places plus the
+ * user's favorited folders), recent activity, and the user's spaces — not a
+ * raw filesystem path.
  */
 export function OverviewView() {
   const { t } = useTranslation("workspace");
-  const [places, setPlaces] = useState<SystemPlace[] | null>(null);
+  const places = useAtomValue(systemPlacesAtom);
   const hiddenPlaces = useAtomValue(hiddenPlacesAtom);
   const setHiddenPlaces = useSetAtom(hiddenPlacesAtom);
+  const favorites = useAtomValue(favoritesAtom);
+  const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
+  const removeFavorite = useSetAtom(removeFavoriteAtom);
   const recents = useAtomValue(recentsAtom);
-  const favorites = useAtomValue(favoritesAtom) ?? [];
   const spaces = useAtomValue(spacesAtom);
   const ensureRecentsLoaded = useSetAtom(ensureRecentsLoadedAtom);
   const ensureFavoritesLoaded = useSetAtom(ensureFavoritesLoadedAtom);
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
+  const ensureSystemPlacesLoaded = useSetAtom(ensureSystemPlacesLoadedAtom);
   const navigateToFolder = useSetAtom(navigateToFolderAtom);
   const openSurface = useSetAtom(openSurfaceAtom);
 
   useEffect(() => {
-    void commands
-      .getSystemPlaces()
-      .then(setPlaces)
-      .catch((error: unknown) => console.warn("Unable to load system places", error));
+    void ensureSystemPlacesLoaded();
     void ensureRecentsLoaded();
     void ensureFavoritesLoaded();
     void ensureSpacesLoaded();
-  }, [ensureRecentsLoaded, ensureFavoritesLoaded, ensureSpacesLoaded]);
+  }, [
+    ensureRecentsLoaded,
+    ensureFavoritesLoaded,
+    ensureSpacesLoaded,
+    ensureSystemPlacesLoaded,
+  ]);
 
   const visiblePlaces = (places ?? []).filter((place) => !hiddenPlaces.includes(place.kind));
+  const favoriteList = favorites ?? [];
   const recentPreview = (recents ?? []).slice(0, RECENTS_PREVIEW_COUNT);
-  const favoritePreview = favorites.slice(0, FAVORITES_PREVIEW_COUNT);
+
+  /** Native folder picker feeding favorites, like Explorer's “Pin”. */
+  const addFavoriteFolder = () => {
+    void openDialog({
+      directory: true,
+      multiple: false,
+      title: t("overview.favoritesDialogTitle"),
+    })
+      .then((selected) => {
+        if (typeof selected === "string" && selected) addFavoritePaths([selected]);
+      })
+      .catch((error: unknown) => console.warn("Unable to open folder picker", error));
+  };
 
   const openRecent = (path: string, kind: "directory" | "file") => {
     if (kind === "directory") {
@@ -105,14 +128,50 @@ export function OverviewView() {
 
       <ProjectsSection recents={recents} />
 
-      <section aria-label={t("overview.quickAccess")}>
-        <SectionHeader title={t("overview.quickAccess")} />
-        {places === null ? (
+      <section aria-label={t("overview.favoritesTitle")}>
+        <SectionHeader
+          action={
+            <div className="flex items-center gap-3">
+              {hiddenPlaces.length > 0 && (
+                <button
+                  className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => setHiddenPlaces([])}
+                  type="button"
+                >
+                  <EyeSlashIcon className="size-3" />
+                  {t("overview.restoreHidden", { count: hiddenPlaces.length })}
+                </button>
+              )}
+              <button
+                className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                onClick={addFavoriteFolder}
+                type="button"
+              >
+                <PlusIcon className="size-3" />
+                {t("overview.addFolder")}
+              </button>
+            </div>
+          }
+          title={t("overview.favoritesTitle")}
+        />
+        {places === null || favorites === null ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
               <Skeleton className="h-[62px] rounded-xl" key={index} />
             ))}
           </div>
+        ) : visiblePlaces.length === 0 && favoriteList.length === 0 ? (
+          <Empty className="border-none py-6">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <StarIcon />
+              </EmptyMedia>
+              <EmptyTitle className="text-sm">{t("overview.favoritesEmptyTitle")}</EmptyTitle>
+              <EmptyDescription className="text-xs">
+                {t("overview.favoritesEmptyDescription")}
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {visiblePlaces.map((place) => {
@@ -134,13 +193,36 @@ export function OverviewView() {
                       {t("overview.open")}
                     </ContextMenuItem>
                     <ContextMenuItem onClick={() => setHiddenPlaces([...hiddenPlaces, place.kind])}>
-                      <StarIcon />
-                      {t("overview.hideFromQuickAccess")}
+                      <EyeSlashIcon />
+                      {t("overview.hideFromFavorites")}
                     </ContextMenuItem>
                   </ContextMenuContent>
                 </ContextMenu>
               );
             })}
+            {favoriteList.map((favorite) => (
+              <ContextMenu key={favorite.path}>
+                <ContextMenuTrigger>
+                  <LocationCard
+                    description={favorite.path}
+                    icon={StarIcon}
+                    iconClassName="fill-amber-400 text-amber-500"
+                    onClick={() => navigateToFolder(favorite.path)}
+                    title={favorite.name}
+                  />
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem onClick={() => navigateToFolder(favorite.path)}>
+                    <FolderIcon />
+                    {t("overview.open")}
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => removeFavorite(favorite.path)}>
+                    <StarIcon />
+                    {t("overview.removeFromFavorites")}
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              </ContextMenu>
+            ))}
           </div>
         )}
       </section>
@@ -208,50 +290,6 @@ export function OverviewView() {
               );
             })}
           </ul>
-        )}
-      </section>
-
-      <section aria-label={t("overview.favoritesTitle")}>
-        <SectionHeader
-          action={
-            favorites.length > FAVORITES_PREVIEW_COUNT && (
-              <button
-                className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => openSurface({ kind: "favorites" })}
-                type="button"
-              >
-                {t("overview.viewAll")}
-                <ArrowRightIcon className="size-3" />
-              </button>
-            )
-          }
-          title={t("overview.favoritesTitle")}
-        />
-        {favoritePreview.length === 0 ? (
-          <Empty className="border-none py-6">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <StarIcon />
-              </EmptyMedia>
-              <EmptyTitle className="text-sm">{t("overview.favoritesEmptyTitle")}</EmptyTitle>
-              <EmptyDescription className="text-xs">
-                {t("overview.favoritesEmptyDescription")}
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {favoritePreview.map((favorite) => (
-              <LocationCard
-                description={favorite.path}
-                icon={StarIcon}
-                iconClassName="fill-amber-400 text-amber-500"
-                key={favorite.path}
-                onClick={() => navigateToFolder(favorite.path)}
-                title={favorite.name}
-              />
-            ))}
-          </div>
         )}
       </section>
 

@@ -7,6 +7,7 @@
     "trash": "Trash"
   },
   "sections": {
+    "favorites": "Favorites",
     "spaces": "Spaces",
     "locations": "Locations",
     "disks": "Local disks",
@@ -16,6 +17,11 @@
   },
   "wsl": {
     "empty": "No WSL distributions found"
+  },
+  "favorites": {
+    "addFolder": "Add folder to favorites",
+    "dialogTitle": "Add folder to favorites",
+    "emptyHint": "Click + to add a folder here"
   },
   "spaces": {
     "create": "New space",
@@ -56,6 +62,8 @@
     "copyFilePath": "Copy file path",
     "copy": "Copy",
     "cut": "Cut",
+    "hideFromFavorites": "Hide from favorites",
+    "removeFavorite": "Remove from favorites",
     "removeConnection": "Remove connection"
   },
   "disk": {

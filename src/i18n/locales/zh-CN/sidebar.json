@@ -7,6 +7,7 @@
     "trash": "回收站"
   },
   "sections": {
+    "favorites": "收藏",
     "spaces": "空间",
     "locations": "位置",
     "disks": "本地磁盘",
@@ -16,6 +17,11 @@
   },
   "wsl": {
     "empty": "未检测到 WSL 发行版"
+  },
+  "favorites": {
+    "addFolder": "添加文件夹到收藏",
+    "dialogTitle": "添加文件夹到收藏",
+    "emptyHint": "点击 + 将常用文件夹添加到收藏"
   },
   "spaces": {
     "create": "新建空间",
@@ -56,6 +62,8 @@
     "copyFilePath": "复制文件地址",
     "copy": "复制",
     "cut": "剪切",
+    "hideFromFavorites": "从收藏隐藏",
+    "removeFavorite": "从收藏移除",
     "removeConnection": "移除连接"
   },
   "disk": {

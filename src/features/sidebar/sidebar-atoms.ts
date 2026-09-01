@@ -3,7 +3,7 @@ import { atomWithStorage } from "jotai/utils";
 
 import { commands, type StoredCloudAccount, type StoredConnection } from "@/bindings";
 
-import type { Favorite, PlaceKind } from "./types";
+import type { Favorite, PlaceKind, SystemPlace } from "./types";
 
 export const sidebarVisibleAtom = atomWithStorage("sidebar-visible", true);
 
@@ -82,6 +82,21 @@ export const reloadCloudAccountsAtom = atom(null, async (_get, set) => {
 
 export const hiddenPlacesAtom = atomWithStorage<PlaceKind[]>("sidebar-hidden-places", []);
 
+// `null` means the system places have not been loaded yet. Shared by the
+// sidebar's favorites section and the overview surface.
+export const systemPlacesAtom = atom<SystemPlace[] | null>(null);
+
+export const ensureSystemPlacesLoadedAtom = atom(null, async (get, set) => {
+  if (get(systemPlacesAtom) !== null) return;
+
+  try {
+    set(systemPlacesAtom, await commands.getSystemPlaces());
+  } catch (error) {
+    console.warn("Unable to load system places", error);
+    set(systemPlacesAtom, []);
+  }
+});
+
 // `null` means the favorites have not been loaded yet.
 export const favoritesAtom = atom<Favorite[] | null>(null);
 
@@ -89,12 +104,52 @@ export const ensureFavoritesLoadedAtom = atom(null, async (get, set) => {
   if (get(favoritesAtom) !== null) return;
 
   try {
-    set(favoritesAtom, await commands.loadFavorites());
+    let favorites = await commands.loadFavorites();
+
+    // One-time merge of the legacy quick-access pins into favorites.
+    const merged = mergeLegacyPinnedPlaces(favorites);
+    if (merged) {
+      favorites = merged;
+      void commands
+        .saveFavorites(favorites)
+        .catch((error: unknown) => console.warn("Unable to save favorites", error));
+    }
+
+    set(favoritesAtom, favorites);
   } catch (error) {
     console.warn("Unable to load favorites", error);
     set(favoritesAtom, []);
   }
 });
+
+/** Storage key of the removed quick-access pin list, kept only for the
+ *  one-time migration into favorites. */
+const LEGACY_PINNED_PLACES_STORAGE_KEY = "sidebar-pinned-places";
+
+function mergeLegacyPinnedPlaces(favorites: Favorite[]): Favorite[] | null {
+  const raw = localStorage.getItem(LEGACY_PINNED_PLACES_STORAGE_KEY);
+  localStorage.removeItem(LEGACY_PINNED_PLACES_STORAGE_KEY);
+  if (!raw) return null;
+
+  let pinned: { name?: string; path?: string }[];
+  try {
+    pinned = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(pinned)) return null;
+
+  const existing = new Set(favorites.map((favorite) => favorite.path));
+  const additions = pinned
+    .filter((item) => typeof item?.path === "string" && !existing.has(item.path))
+    .map((item) => ({
+      path: item.path!,
+      name: typeof item.name === "string" && item.name ? item.name : favoriteNameFromPath(item.path!),
+    }));
+
+  return additions.length > 0 ? [...favorites, ...additions] : null;
+}
 
 export const addFavoritePathsAtom = atom(null, (get, set, paths: string[]) => {
   const favorites = get(favoritesAtom) ?? [];
