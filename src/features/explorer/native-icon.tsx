@@ -7,7 +7,11 @@ import { getFileExtension, hasKnownFileExtension } from "./file-icons";
 import type { DirectoryEntry } from "./types";
 
 /** Application-like types whose shell icon is always more informative than
- *  a generic glyph (shortcut targets, embedded executable icons, ...). */
+ *  a generic glyph (shortcut targets, embedded executable icons, ...).
+ *  Keep in sync with `FILE_SPECIFIC_ICON_EXTENSIONS` in
+ *  `src-tauri/src/file_system/preview.rs` — those extensions carry a per-file
+ *  icon and are cached by path there; every other extension is cached once per
+ *  (extension, size) because its handler icon is shared across all such files. */
 const NATIVE_ICON_EXTENSIONS = new Set(["exe", "msi", "lnk", "url", "dll", "scr", "cpl"]);
 
 /** Windows exposes Tauri custom schemes as `http://<scheme>.localhost`. */

@@ -54,6 +54,15 @@ static THUMBNAIL_CACHE: Mutex<Option<RenderedCache>> = Mutex::new(None);
 static ICON_CACHE: Mutex<Option<RenderedCache>> = Mutex::new(None);
 const ICON_CACHE_MAX_ENTRIES: usize = 512;
 
+/// Extensions whose shell icon belongs to the individual file rather than its
+/// type — executable/DLL icon resources, a shortcut's target, a `.url`'s site
+/// icon. These stay path-keyed in `ICON_CACHE`. Every other extension resolves
+/// to its registered handler's icon, identical across all files sharing it, so
+/// one `(extension, size)` entry serves a whole folder and skips a COM/shell
+/// roundtrip per file. Keep in sync with `NATIVE_ICON_EXTENSIONS` in
+/// `src/features/explorer/native-icon.tsx`.
+const FILE_SPECIFIC_ICON_EXTENSIONS: &[&str] = &["exe", "msi", "lnk", "url", "dll", "scr", "cpl"];
+
 fn extension_of(path: &Path) -> String {
     path.extension()
         .and_then(|extension| extension.to_str())
@@ -301,12 +310,22 @@ fn render_file_icon(
         .ok()
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_millis() as u64);
-    let cache_key = format!(
-        "icon|{}|{}|{}|{size}",
-        path_string,
-        modified_at.unwrap_or(0),
-        metadata.len()
-    );
+    let extension = extension_of(path);
+    // A file with no extension has no type association to key on, and the
+    // app-like set carries a per-file icon; both must stay path-keyed. Every
+    // other extension resolves to one shared handler icon.
+    let cache_key = if extension.is_empty()
+        || FILE_SPECIFIC_ICON_EXTENSIONS.contains(&extension.as_str())
+    {
+        format!(
+            "icon|{}|{}|{}|{size}",
+            path_string,
+            modified_at.unwrap_or(0),
+            metadata.len()
+        )
+    } else {
+        format!("icon-ext|{extension}|{size}")
+    };
 
     if let Some(cached) = lookup_cache(&ICON_CACHE, &cache_key) {
         return Ok(Some(cached));
