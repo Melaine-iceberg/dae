@@ -835,7 +835,7 @@ export function FileList({
         {internalDrag && (
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md bg-popover px-3 py-1.5 text-[13px] text-popover-foreground shadow-ambient ring-1 ring-border"
+            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md bg-popover/90 px-3 py-1.5 text-[13px] text-popover-foreground shadow-ambient ring-1 ring-border backdrop-blur-xl"
             style={{ left: internalDrag.position.x + 14, top: internalDrag.position.y + 14 }}
           >
             {internalDrag.target?.kind === "favorites" ? (
@@ -1029,7 +1029,7 @@ function FileListRow({
           className={cn(
             // Desktop row: tonal hover via state-layer, flat selection fill,
             // constant corner radius — no pill morph.
-            "render-contain state-layer grid cursor-grab items-center rounded-xs whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
+            "render-contain state-layer grid cursor-grab items-center rounded-md whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             isSelected && "bg-selection",
             isDragging && "cursor-grabbing opacity-50",

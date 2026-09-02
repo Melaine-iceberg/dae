@@ -1500,7 +1500,7 @@ export function ExplorerView({
                   onPointerEnter={() => setIsUndoToastHovered(true)}
                   onPointerLeave={() => setIsUndoToastHovered(false)}
                 >
-                  <div className="animate-float-in flex items-center gap-2 rounded-lg bg-popover px-4 py-2 text-[13px] text-popover-foreground shadow-ambient-lg ring-1 ring-border">
+                  <div className="animate-float-in flex items-center gap-2 rounded-lg bg-popover/90 px-4 py-2 text-[13px] text-popover-foreground shadow-ambient-lg ring-1 ring-border backdrop-blur-xl">
                     {undoRedoToast.action === "redo" ? (
                       <ArrowClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
                     ) : (

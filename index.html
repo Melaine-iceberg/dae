@@ -10,7 +10,7 @@
          且该未分层样式会压过 Tailwind @layer base 里 body 的 bg-background。 -->
     <style>
       html, body { margin: 0; height: 100%; background: #f5f6f8; }
-      html.dark, html.dark body { background: #1b1c1f; }
+      html.dark, html.dark body { background: #15171d; }
       /* Minimal loading indicator visible only before React mounts. */
       #splash {
         display: flex;
@@ -28,7 +28,7 @@
         animation: spin 0.7s linear infinite;
       }
       html.dark #splash::after {
-        border-color: #4e5157;
+        border-color: #434754;
         border-top-color: #4a80f0;
       }
       @keyframes spin { to { transform: rotate(360deg); } }

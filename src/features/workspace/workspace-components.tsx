@@ -54,7 +54,7 @@ export function WorkspacePageHeader({
 export function SectionHeader({ action, title }: { action?: ReactNode; title: string }) {
   return (
     <div className="mb-3 flex items-center justify-between gap-4">
-      <h2 className="text-label text-muted-foreground">{title}</h2>
+      <h2 className="text-label tracking-[0.05em] text-muted-foreground uppercase">{title}</h2>
       {action}
     </div>
   );
@@ -81,7 +81,9 @@ export function LocationCard({
     <button
       className={cn(
         "group flex w-full items-center gap-3 rounded-xl bg-muted/60 p-3 text-left",
-        "transition-[background-color] duration-fast ease-standard hover:bg-accent/70",
+        "transition-[background-color,box-shadow,translate,scale] duration-fast ease-standard",
+        "hover:-translate-y-0.5 hover:bg-accent/70 hover:shadow-ambient-sm",
+        "active:translate-y-0 active:scale-[0.98] active:shadow-none",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       )}
       onClick={onClick}

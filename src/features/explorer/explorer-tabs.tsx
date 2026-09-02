@@ -260,7 +260,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     <div
       aria-selected={isActive}
       className={cn(
-        "group relative flex h-8 w-52 shrink-0 items-center rounded-md text-[13px] select-none transition-[background-color,color,box-shadow] duration-fast ease-spring-fast",
+        "group relative flex h-8 w-52 shrink-0 items-center rounded-md text-[13px] select-none transition-[background-color,color,box-shadow,scale] duration-fast ease-spring-fast active:scale-[0.98]",
         isActive
           ? "bg-card text-foreground shadow-ambient-sm ring-1 ring-border"
           : "cursor-default text-muted-foreground hover:bg-accent/60 hover:text-foreground",

@@ -280,7 +280,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
 
       {error && (
         <div
-          className="animate-in fade-in-0 absolute bottom-6 left-0 z-50 flex w-80 items-start gap-2 rounded-lg bg-popover p-3 text-xs text-popover-foreground shadow-ambient-lg ring-1 ring-border"
+          className="animate-in fade-in-0 absolute bottom-6 left-0 z-50 flex w-80 items-start gap-2 rounded-lg bg-popover/90 p-3 text-xs text-popover-foreground shadow-ambient-lg ring-1 ring-border backdrop-blur-xl"
           role="alert"
         >
           <WarningIcon className="mt-0.5 size-4 shrink-0 text-destructive" />

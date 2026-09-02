@@ -131,7 +131,9 @@ function ProjectCard({
     <button
       className={cn(
         "group flex w-full flex-col gap-2 rounded-xl bg-muted/60 p-3.5 text-left",
-        "transition-[background-color] duration-fast ease-standard hover:bg-accent/70",
+        "transition-[background-color,box-shadow,translate,scale] duration-fast ease-standard",
+        "hover:-translate-y-0.5 hover:bg-accent/70 hover:shadow-ambient-sm",
+        "active:translate-y-0 active:scale-[0.98] active:shadow-none",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       )}
       onClick={onOpen}

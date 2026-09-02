@@ -93,7 +93,7 @@ export function ContextualActionBar({
     <div className="absolute bottom-4 left-1/2 z-30 -translate-x-1/2">
       <div
         aria-label={t("explorer:actionBar.ariaLabel")}
-        className="animate-float-in flex items-center gap-0.5 rounded-lg bg-popover p-1 shadow-ambient-lg ring-1 ring-border backdrop-blur"
+        className="animate-float-in flex items-center gap-0.5 rounded-lg bg-popover/85 p-1 shadow-ambient-lg ring-1 ring-border backdrop-blur-xl"
         role="toolbar"
       >
       <span className="shrink-0 px-2.5 text-[13px] text-muted-foreground select-none tabular-nums">

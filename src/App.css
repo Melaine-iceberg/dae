@@ -215,30 +215,32 @@
 }
 
 .dark {
-  /* Graphite — dark. The canvas sits a step BELOW the islands: elevated
-     surfaces are always lighter, never darker, so panels float instead of
-     sinking into the window. Popovers step one level higher still. */
+  /* Graphite — dark, cool ink. The canvas sits a step BELOW the islands:
+     elevated surfaces are always lighter, never darker, so panels float
+     instead of sinking into the window. Popovers step one level higher
+     still. Every tone carries a whisper of blue so dark surfaces read as
+     ink rather than charcoal. */
   --shadow-color: #000000;
-  --background: #1b1c1f; /* canvas behind the islands */
+  --background: #15171d; /* canvas behind the islands */
   --foreground: #dfe1e5;
-  --card: #26282c; /* island surface */
+  --card: #1d1f27; /* island surface */
   --card-foreground: #dfe1e5;
-  --popover: #333537;
+  --popover: #262931;
   --popover-foreground: #dfe1e5;
   --primary: #4a80f0;
   --primary-foreground: #ffffff;
   --primary-container: #24467a;
   --on-primary-container: #d8e6ff;
-  --secondary: #393b40;
+  --secondary: #2a2d37;
   --secondary-foreground: #dfe1e5;
-  --secondary-container: #393b40;
+  --secondary-container: #2a2d37;
   --on-secondary-container: #dfe1e5;
   --tertiary: #9da0a8;
-  --tertiary-container: #393b40;
+  --tertiary-container: #2a2d37;
   --on-tertiary-container: #dfe1e5;
-  --muted: #323439;
+  --muted: #20232b;
   --muted-foreground: #9da0a8;
-  --accent: #36383d;
+  --accent: #272a34;
   --accent-foreground: #e6e8eb;
   --error-container: #5c2321;
   --on-error-container: #f5c6c4;
@@ -258,8 +260,8 @@
   --icon-lock: #ff9db4;
   --icon-font: #b5a6ff;
   --destructive: #e55765;
-  --border: #3a3c41;
-  --input: #4e5157;
+  --border: #31343f;
+  --input: #434754;
   --ring: #4a80f0;
   --chart-1: #4a80f0;
   --chart-2: #9da0a8;
@@ -267,13 +269,13 @@
   --chart-4: #e8a33d;
   --chart-5: #dfe1e5;
   --radius: 8px;
-  --sidebar: #26282c;
+  --sidebar: #1d1f27;
   --sidebar-foreground: #dfe1e5;
   --sidebar-primary: #4a80f0;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #36383d;
+  --sidebar-accent: #272a34;
   --sidebar-accent-foreground: #e6e8eb;
-  --sidebar-border: #3a3c41;
+  --sidebar-border: #31343f;
   --sidebar-ring: #4a80f0;
 }
 
@@ -360,6 +362,11 @@
   body,
   #root {
     @apply h-full;
+  }
+
+  /* Text selection follows the accent instead of the OS default blue. */
+  ::selection {
+    background: color-mix(in oklab, var(--primary) 26%, transparent);
   }
 
   /* Overlay scrollbars: thin, unobtrusive, appear only while scrolling. */

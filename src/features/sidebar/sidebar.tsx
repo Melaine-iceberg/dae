@@ -810,7 +810,7 @@ function SectionLabel({
 }) {
   return (
     <div className="mt-3 flex items-center justify-between px-2 pb-1">
-      <span className="text-label text-muted-foreground">{label}</span>
+      <span className="text-label tracking-[0.05em] text-muted-foreground uppercase">{label}</span>
       {onAdd && (
         <button
           aria-label={addTitle}
@@ -845,7 +845,7 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/70",
+        "relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-[background-color,color,scale] duration-fast ease-spring-fast hover:bg-accent/70 active:scale-[0.98]",
         isActive && "bg-selection font-medium text-accent-foreground",
       )}
       onClick={onClick}
