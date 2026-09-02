@@ -402,24 +402,82 @@
   }
 }
 
-/* Shiki code preview emits dual-theme tokens as CSS variables; the app's
-   `.dark` class on <html> picks the active palette. Background stays
-   transparent so blocks blend into the preview surface. */
-.code-preview .shiki,
-.code-preview .shiki span {
-  color: var(--shiki-light);
-  background-color: transparent;
-  font-style: var(--shiki-light-font-style);
-  font-weight: var(--shiki-light-font-weight);
+/* TanStack Highlight emits a stable `th-*` class tree; the GitHub
+   light/dark palettes ride on CSS variables that the app's `.dark` class
+   on <html> switches. Background stays transparent so blocks blend into
+   the preview surface. */
+.code-preview {
+  --th-background: #ffffff;
+  --th-token: #24292f;
+  --th-attr: #0550ae;
+  --th-code-inline: #953800;
+  --th-command: #8250df;
+  --th-comment: #6e7781;
+  --th-deleted: #cf222e;
+  --th-function: #8250df;
+  --th-heading: #0550ae;
+  --th-inserted: #1a7f37;
+  --th-keyword: #cf222e;
+  --th-link: #0969da;
+  --th-literal: #0550ae;
+  --th-meta: #57606a;
+  --th-number: #0550ae;
+  --th-operator: #8250df;
+  --th-property: #0550ae;
+  --th-selector: #116329;
+  --th-string: #0a7f64;
+  --th-tag: #116329;
+  --th-type: #953800;
+  --th-variable: #953800;
 }
-.dark .code-preview .shiki,
-.dark .code-preview .shiki span {
-  color: var(--shiki-dark);
-  background-color: transparent;
-  font-style: var(--shiki-dark-font-style);
-  font-weight: var(--shiki-dark-font-weight);
+.dark .code-preview {
+  --th-background: #0d1117;
+  --th-token: #c9d1d9;
+  --th-attr: #79c0ff;
+  --th-code-inline: #ffa657;
+  --th-command: #d2a8ff;
+  --th-comment: #8b949e;
+  --th-deleted: #ff7b72;
+  --th-function: #d2a8ff;
+  --th-heading: #79c0ff;
+  --th-inserted: #7ee787;
+  --th-keyword: #ff7b72;
+  --th-link: #58a6ff;
+  --th-literal: #79c0ff;
+  --th-meta: #8b949e;
+  --th-number: #79c0ff;
+  --th-operator: #d2a8ff;
+  --th-property: #79c0ff;
+  --th-selector: #7ee787;
+  --th-string: #a5d6ff;
+  --th-tag: #7ee787;
+  --th-type: #ffa657;
+  --th-variable: #ffa657;
 }
-.code-preview .shiki {
+.code-preview .th-token { color: var(--th-token); }
+.code-preview .th-keyword { color: var(--th-keyword); }
+.code-preview .th-string { color: var(--th-string); }
+.code-preview .th-comment { color: var(--th-comment); }
+.code-preview .th-function { color: var(--th-function); }
+.code-preview .th-type { color: var(--th-type); }
+.code-preview .th-property { color: var(--th-property); }
+.code-preview .th-tag { color: var(--th-tag); }
+.code-preview .th-attr { color: var(--th-attr); }
+.code-preview .th-literal { color: var(--th-literal); }
+.code-preview .th-number { color: var(--th-number); }
+.code-preview .th-variable { color: var(--th-variable); }
+.code-preview .th-operator { color: var(--th-operator); }
+.code-preview .th-inserted { color: var(--th-inserted); }
+.code-preview .th-deleted { color: var(--th-deleted); }
+.code-preview .th-meta { color: var(--th-meta); }
+.code-preview .th-heading { color: var(--th-heading); }
+.code-preview .th-link { color: var(--th-link); }
+.code-preview .th-code-inline { color: var(--th-code-inline); }
+.code-preview .th-selector { color: var(--th-selector); }
+.code-preview .th-command { color: var(--th-command); }
+.code-preview pre.th-code {
+  margin: 0;
+  background: transparent;
   font-family: var(--font-mono);
   white-space: pre;
 }

@@ -1,68 +1,91 @@
-import type { HighlighterCore } from "shiki/core";
+import { createHighlighter } from "@tanstack/highlight/core";
+import { css } from "@tanstack/highlight/languages/css";
+import { dockerfile } from "@tanstack/highlight/languages/dockerfile";
+import { env } from "@tanstack/highlight/languages/env";
+import { html } from "@tanstack/highlight/languages/html";
+import { js } from "@tanstack/highlight/languages/js";
+import { json } from "@tanstack/highlight/languages/json";
+import { jsx } from "@tanstack/highlight/languages/jsx";
+import { markdown } from "@tanstack/highlight/languages/markdown";
+import { python } from "@tanstack/highlight/languages/python";
+import { shell } from "@tanstack/highlight/languages/shell";
+import { sql } from "@tanstack/highlight/languages/sql";
+import { svelte } from "@tanstack/highlight/languages/svelte";
+import { toml } from "@tanstack/highlight/languages/toml";
+import { ts } from "@tanstack/highlight/languages/ts";
+import { tsx } from "@tanstack/highlight/languages/tsx";
+import { vue } from "@tanstack/highlight/languages/vue";
+import { yaml } from "@tanstack/highlight/languages/yaml";
 
-/** Preview themes paired with the app's light/dark surfaces. */
-const LIGHT_THEME = "github-light";
-const DARK_THEME = "github-dark";
+import { c, cpp, csharp, go, java, kotlin } from "./languages/c-like";
+import { lua, php, powershell, ruby } from "./languages/scripting";
+import { rust } from "./languages/rust";
 
 /**
- * Per-language grammar modules, imported lazily so only the languages that
- * are actually previewed ever load.
+ * TanStack Highlight tokenizes synchronously and ships every grammar as a
+ * few KB of plain JS — no wasm engine or worker needed, so all preview
+ * languages register up front in one static list. Languages the package
+ * does not ship (Rust, C-family, scripting) come from local grammars.
  */
-const LANGUAGE_IMPORTS = {
-  typescript: () => import("shiki/langs/typescript.mjs"),
-  tsx: () => import("shiki/langs/tsx.mjs"),
-  javascript: () => import("shiki/langs/javascript.mjs"),
-  jsx: () => import("shiki/langs/jsx.mjs"),
-  json: () => import("shiki/langs/json.mjs"),
-  css: () => import("shiki/langs/css.mjs"),
-  scss: () => import("shiki/langs/scss.mjs"),
-  less: () => import("shiki/langs/less.mjs"),
-  html: () => import("shiki/langs/html.mjs"),
-  xml: () => import("shiki/langs/xml.mjs"),
-  vue: () => import("shiki/langs/vue.mjs"),
-  svelte: () => import("shiki/langs/svelte.mjs"),
-  markdown: () => import("shiki/langs/markdown.mjs"),
-  python: () => import("shiki/langs/python.mjs"),
-  ruby: () => import("shiki/langs/ruby.mjs"),
-  rust: () => import("shiki/langs/rust.mjs"),
-  go: () => import("shiki/langs/go.mjs"),
-  java: () => import("shiki/langs/java.mjs"),
-  kotlin: () => import("shiki/langs/kotlin.mjs"),
-  c: () => import("shiki/langs/c.mjs"),
-  cpp: () => import("shiki/langs/cpp.mjs"),
-  csharp: () => import("shiki/langs/csharp.mjs"),
-  bash: () => import("shiki/langs/bash.mjs"),
-  powershell: () => import("shiki/langs/powershell.mjs"),
-  sql: () => import("shiki/langs/sql.mjs"),
-  yaml: () => import("shiki/langs/yaml.mjs"),
-  toml: () => import("shiki/langs/toml.mjs"),
-  ini: () => import("shiki/langs/ini.mjs"),
-  dockerfile: () => import("shiki/langs/dockerfile.mjs"),
-  lua: () => import("shiki/langs/lua.mjs"),
-  php: () => import("shiki/langs/php.mjs"),
-} as const;
+const LANGUAGES = [
+  ts,
+  tsx,
+  js,
+  jsx,
+  json,
+  css,
+  html,
+  vue,
+  svelte,
+  markdown,
+  python,
+  shell,
+  sql,
+  yaml,
+  toml,
+  env,
+  dockerfile,
+  rust,
+  c,
+  cpp,
+  csharp,
+  go,
+  java,
+  kotlin,
+  lua,
+  php,
+  powershell,
+  ruby,
+] as const;
 
-export type CodeLanguage = keyof typeof LANGUAGE_IMPORTS;
+export type CodeLanguage = (typeof LANGUAGES)[number]["name"];
 
-/** File extension → grammar id for the preview panel. */
+const highlighter = createHighlighter({ languages: LANGUAGES });
+
+/**
+ * File extension → grammar id for the preview panel. Dialects without a
+ * dedicated grammar borrow the closest supported one (SCSS/LESS → css,
+ * XML/SVG → html, INI → env); unrecognized text stays plain and the
+ * preview falls back to a text peek.
+ */
 const EXTENSION_TO_LANGUAGE: Record<string, CodeLanguage> = {
-  ts: "typescript",
-  mts: "typescript",
-  cts: "typescript",
+  ts: "ts",
+  mts: "ts",
+  cts: "ts",
   tsx: "tsx",
-  js: "javascript",
-  mjs: "javascript",
-  cjs: "javascript",
+  js: "js",
+  mjs: "js",
+  cjs: "js",
   jsx: "jsx",
   json: "json",
   jsonc: "json",
   css: "css",
-  scss: "scss",
-  less: "less",
+  scss: "css",
+  less: "css",
   html: "html",
   htm: "html",
-  xml: "xml",
-  svg: "xml",
+  xml: "html",
+  svg: "html",
   vue: "vue",
   svelte: "svelte",
   md: "markdown",
@@ -82,16 +105,16 @@ const EXTENSION_TO_LANGUAGE: Record<string, CodeLanguage> = {
   hpp: "cpp",
   hh: "cpp",
   cs: "csharp",
-  sh: "bash",
-  bash: "bash",
-  zsh: "bash",
+  sh: "shell",
+  bash: "shell",
+  zsh: "shell",
   ps1: "powershell",
   sql: "sql",
   yaml: "yaml",
   yml: "yaml",
   toml: "toml",
-  ini: "ini",
-  conf: "ini",
+  ini: "env",
+  conf: "env",
   dockerfile: "dockerfile",
   lua: "lua",
   php: "php",
@@ -107,118 +130,10 @@ export function getPreviewLanguage(fileName: string): CodeLanguage | null {
   return EXTENSION_TO_LANGUAGE[extension] ?? null;
 }
 
-let highlighterPromise: Promise<HighlighterCore> | null = null;
-const loadedLanguages = new Set<CodeLanguage>();
-
-function getHighlighter(): Promise<HighlighterCore> {
-  // The engine, themes and wasm load on first highlight so they stay out of
-  // the application's startup bundle. Oniguruma (the reference TextMate
-  // engine) beats the JS-regex engine by ~8x on heavy grammars like TS.
-  highlighterPromise ??= (async () => {
-    const [{ createHighlighterCore }, { createOnigurumaEngine }] = await Promise.all([
-      import("shiki/core"),
-      import("shiki/engine/oniguruma"),
-    ]);
-    return createHighlighterCore({
-      themes: [import("shiki/themes/github-light.mjs"), import("shiki/themes/github-dark.mjs")],
-      langs: [],
-      engine: await createOnigurumaEngine(import("shiki/wasm")),
-    });
-  })();
-  return highlighterPromise;
-}
-
-async function ensureLanguage(highlighter: HighlighterCore, language: CodeLanguage): Promise<void> {
-  if (loadedLanguages.has(language)) return;
-  await highlighter.loadLanguage(await LANGUAGE_IMPORTS[language]());
-  loadedLanguages.add(language);
-}
-
 /**
- * Highlights code into HTML carrying both themes as CSS variables
- * (`--shiki-light` / `--shiki-dark`); App.css picks the active one.
- * Executed inside the highlight worker.
+ * Highlights code synchronously into a `th-*` class tree; App.css maps the
+ * classes onto the GitHub light/dark palettes through CSS variables.
  */
-export async function highlightText(code: string, language: CodeLanguage): Promise<string> {
-  const highlighter = await getHighlighter();
-  await ensureLanguage(highlighter, language);
-  return highlighter.codeToHtml(code, {
-    lang: language,
-    themes: { light: LIGHT_THEME, dark: DARK_THEME },
-    defaultColor: false,
-  });
-}
-
-/** Messages sent to the highlight worker. */
-export type HighlightRequestMessage = {
-  type: "highlight";
-  id: number;
-  code: string;
-  language: CodeLanguage;
-};
-
-/** Messages sent back from the highlight worker. */
-export type HighlightResponseMessage =
-  | { type: "result"; id: number; html: string }
-  | { type: "error"; id: number; message: string };
-
-type PendingRequest = {
-  resolve: (html: string | null) => void;
-  reject: (error: unknown) => void;
-};
-
-let highlightWorker: Worker | null = null;
-let nextRequestId = 1;
-const pendingRequests = new Map<number, PendingRequest>();
-
-function getHighlightWorker(): Worker {
-  if (highlightWorker !== null) return highlightWorker;
-
-  const worker = new Worker(new URL("./highlight-worker.ts", import.meta.url), {
-    type: "module",
-  });
-  worker.onmessage = (event: MessageEvent<HighlightResponseMessage>) => {
-    const message = event.data;
-    const request = pendingRequests.get(message.id);
-    if (request === undefined) return;
-    pendingRequests.delete(message.id);
-    if (message.type === "result") request.resolve(message.html);
-    else request.reject(new Error(message.message));
-  };
-  worker.onerror = (event: ErrorEvent) => {
-    const error = new Error(event.message || "Highlight worker failed");
-    for (const request of pendingRequests.values()) request.reject(error);
-    pendingRequests.clear();
-    worker.terminate();
-    highlightWorker = null;
-  };
-  highlightWorker = worker;
-  return worker;
-}
-
-/**
- * Highlights code off the main thread. The worker coalesces concurrent
- * requests, so rapid selection changes never stack stale highlighting
- * work. Resolves with `null` when superseded by a newer request.
- */
-export function highlightCode(code: string, language: CodeLanguage): Promise<string | null> {
-  const id = nextRequestId++;
-
-  // Every pending request is older than this one and will never render;
-  // settle them immediately instead of waiting for their results.
-  for (const [pendingId, request] of pendingRequests) {
-    pendingRequests.delete(pendingId);
-    request.resolve(null);
-  }
-
-  const worker = getHighlightWorker();
-  return new Promise((resolve, reject) => {
-    pendingRequests.set(id, { resolve, reject });
-    worker.postMessage({
-      type: "highlight",
-      id,
-      code,
-      language,
-    } satisfies HighlightRequestMessage);
-  });
+export function highlightCode(code: string, language: CodeLanguage): string {
+  return highlighter.highlight(code, { lang: language }).html;
 }

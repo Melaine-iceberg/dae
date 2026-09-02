@@ -67,8 +67,8 @@ const PREVIEW_MAX_SOURCE_BYTES = 512 * 1024;
 const PREVIEW_READ_BYTES = 64 * 1024;
 /**
  * Only this much text goes through the highlighter: the preview viewport
- * shows ~20 lines, so highlighting the full 64KB read would burn hundreds
- * of milliseconds on the main thread for invisible content.
+ * shows ~20 lines, so highlighting the full 64KB read would build a large
+ * DOM tree for invisible content.
  */
 const HIGHLIGHT_MAX_BYTES = 16 * 1024;
 
@@ -177,13 +177,13 @@ export function EntryPreview({
     let cancelled = false;
     void commands
       .readTextPreview(entry.path, PREVIEW_READ_BYTES)
-      .then(async (result: TextPreview) => {
+      .then((result: TextPreview) => {
         let html: string | null = null;
         if (language !== null) {
-          // Highlighting is best-effort in a worker: on failure or
-          // supersede the raw text still renders as plain content.
+          // Highlighting is best-effort: on failure the raw text still
+          // renders as plain content.
           try {
-            html = await highlightCode(sliceForHighlight(result.content), language);
+            html = highlightCode(sliceForHighlight(result.content), language);
           } catch {
             html = null;
           }
@@ -211,7 +211,7 @@ export function EntryPreview({
       return;
     }
     // Synchronous parse keeps the type narrow; the content is read from the
-    // local file and injected like the Shiki code path.
+    // local file and injected like the highlighted code path.
     setMarkdownHtml(marked.parse(textPreview.content, { async: false }));
   }, [supportsMarkdown, textPreview]);
 
@@ -319,7 +319,7 @@ export function EntryPreview({
                 ) : textPreview.html !== null ? (
                   <div
                     className="code-preview min-h-0 flex-1 overflow-auto p-2.5 text-xs leading-relaxed"
-                    // Shiki output is generated locally from file contents.
+                    // Highlighted markup is generated locally from file contents.
                     dangerouslySetInnerHTML={{ __html: textPreview.html }}
                   />
                 ) : (
