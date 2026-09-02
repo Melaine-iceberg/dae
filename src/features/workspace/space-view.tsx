@@ -1,6 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { atom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
@@ -49,18 +48,13 @@ import {
   ensureSpacesLoadedAtom,
   removeSpaceItem,
   renameSpace,
+  spaceRenameRequestAtom,
   spacesAtom,
 } from "./spaces-atoms";
 import { getSpaceAccent } from "./space-identity";
 import { getSpaceDisplayName } from "./types";
 import { navigateToFolderAtom, openSurfaceAtom } from "./workspace-atoms";
 import { LocationCard, WorkspacePage, WorkspacePageHeader } from "./workspace-components";
-
-/**
- * Set by the sidebar's "重命名空间" action so the space view opens directly
- * in rename mode. Holds a space id, or null when idle.
- */
-export const spaceRenameRequestAtom = atom<string | null>(null);
 
 /**
  * One Space: a contextual workspace of pinned folders and locations.

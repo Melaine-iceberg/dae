@@ -1,13 +1,38 @@
+import { lazy, Suspense } from "react";
 import { useAtomValue } from "jotai";
 
-import { SplitExplorerView } from "@/features/explorer/split-view";
+import { Skeleton } from "@/components/ui/skeleton";
 
-import { FavoritesView } from "./favorites-view";
 import { OverviewView } from "./overview-view";
-import { RecentsView } from "./recents-view";
-import { SpaceView } from "./space-view";
 import { tabSurfaceFamily } from "./tab-surface";
-import { TrashView } from "./trash-view";
+
+// Only the Overview surface is rendered on the first frame; every other
+// surface loads its chunk on demand so the initial JS parse stays lean.
+const SplitExplorerView = lazy(() =>
+  import("@/features/explorer/split-view").then((m) => ({ default: m.SplitExplorerView })),
+);
+const RecentsView = lazy(() =>
+  import("./recents-view").then((m) => ({ default: m.RecentsView })),
+);
+const FavoritesView = lazy(() =>
+  import("./favorites-view").then((m) => ({ default: m.FavoritesView })),
+);
+const TrashView = lazy(() =>
+  import("./trash-view").then((m) => ({ default: m.TrashView })),
+);
+const SpaceView = lazy(() =>
+  import("./space-view").then((m) => ({ default: m.SpaceView })),
+);
+
+/** Lightweight placeholder while a lazy surface chunk loads. */
+function SurfaceSkeleton() {
+  return (
+    <div className="flex flex-1 flex-col gap-3 p-4">
+      <Skeleton className="h-5 w-32" />
+      <Skeleton className="h-full w-full rounded-lg" />
+    </div>
+  );
+}
 
 /**
  * Renders the active surface of one tab: the workspace surfaces (Overview,
@@ -21,14 +46,22 @@ export function WorkspaceSurfaceView({ tabId }: { tabId: string }) {
     case "overview":
       return <OverviewView />;
     case "recents":
-      return <RecentsView />;
+      return <Suspense fallback={<SurfaceSkeleton />}><RecentsView /></Suspense>;
     case "favorites":
-      return <FavoritesView />;
+      return <Suspense fallback={<SurfaceSkeleton />}><FavoritesView /></Suspense>;
     case "trash":
-      return <TrashView />;
+      return <Suspense fallback={<SurfaceSkeleton />}><TrashView /></Suspense>;
     case "space":
-      return <SpaceView key={surface.spaceId} spaceId={surface.spaceId} />;
+      return (
+        <Suspense fallback={<SurfaceSkeleton />}>
+          <SpaceView key={surface.spaceId} spaceId={surface.spaceId} />
+        </Suspense>
+      );
     case "folder":
-      return <SplitExplorerView tabId={tabId} />;
+      return (
+        <Suspense fallback={<SurfaceSkeleton />}>
+          <SplitExplorerView tabId={tabId} />
+        </Suspense>
+      );
   }
 }

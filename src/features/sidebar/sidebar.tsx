@@ -2,6 +2,8 @@ import {
   useEffect,
   useState,
   useSyncExternalStore,
+  lazy,
+  Suspense,
   type ComponentType,
   type FormEvent,
   type ReactNode,
@@ -48,9 +50,8 @@ import {
   fileClipboardAtom,
   openInNewTabAtom,
 } from "@/features/explorer/tabs";
-import { spaceRenameRequestAtom } from "@/features/workspace/space-view";
+import { spaceRenameRequestAtom, createSpace, ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
 import { getSpaceAccent } from "@/features/workspace/space-identity";
-import { createSpace, ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
 import {
   activeSurfaceAtom,
   navigateToFolderAtom,
@@ -81,9 +82,16 @@ import {
 } from "./sidebar-atoms";
 import type { DiskVolume, PlaceKind } from "./types";
 import { PLACE_PRESENTATION } from "./place-presentation";
-import { CloudAccountDialog } from "./cloud-account-dialog";
 import { CLOUD_PROVIDER_ICONS } from "./cloud-icons";
-import { ConnectDialog } from "./connect-dialog";
+
+// Dialogs only mount on user action; deferring their chunks keeps the
+// sidebar's first paint free of form/validation/dialog code.
+const CloudAccountDialog = lazy(() =>
+  import("./cloud-account-dialog").then((m) => ({ default: m.CloudAccountDialog })),
+);
+const ConnectDialog = lazy(() =>
+  import("./connect-dialog").then((m) => ({ default: m.ConnectDialog })),
+);
 import {
   FolderTree,
   ensureTreeNodeExpandedAtom,
@@ -338,25 +346,29 @@ function SidebarContent() {
         <LanguageMenu />
       </div>
 
-      <ConnectDialog
-        onOpenChange={setConnectOpen}
-        onSaved={(connection) => {
-          void reloadConnections();
-          expandLocationSection("network");
-          navigateToFolder(connection.id);
-        }}
-        open={connectOpen}
-      />
+      <Suspense fallback={null}>
+        <ConnectDialog
+          onOpenChange={setConnectOpen}
+          onSaved={(connection) => {
+            void reloadConnections();
+            expandLocationSection("network");
+            navigateToFolder(connection.id);
+          }}
+          open={connectOpen}
+        />
+      </Suspense>
 
-      <CloudAccountDialog
-        onAuthorized={(account) => {
-          void reloadCloudAccounts();
-          expandLocationSection("cloud");
-          navigateToFolder(account.id);
-        }}
-        onOpenChange={setCloudOpen}
-        open={cloudOpen}
-      />
+      <Suspense fallback={null}>
+        <CloudAccountDialog
+          onAuthorized={(account) => {
+            void reloadCloudAccounts();
+            expandLocationSection("cloud");
+            navigateToFolder(account.id);
+          }}
+          onOpenChange={setCloudOpen}
+          open={cloudOpen}
+        />
+      </Suspense>
     </nav>
   );
 }

@@ -42,6 +42,13 @@ async function bootstrap() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       getAppWindow()?.show();
+
+      // Prefetch the explorer chunk in idle time: it's the most likely next
+      // navigation target and is now a separate lazy chunk.
+      const idle = window.requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 100));
+      idle(() => {
+        void import("@/features/explorer/split-view");
+      });
     });
   });
 }

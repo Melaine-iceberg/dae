@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -49,7 +49,6 @@ import { ensureRecentsLoadedAtom, recentsAtom, recordRecentItem } from "./recent
 import { ensureSpacesLoadedAtom, spacesAtom } from "./spaces-atoms";
 import { getSpaceAccent } from "./space-identity";
 import { getSpaceDisplayName } from "./types";
-import { ProjectsSection } from "./projects-section";
 import { navigateToFolderAtom, openSurfaceAtom } from "./workspace-atoms";
 import {
   LocationCard,
@@ -58,6 +57,13 @@ import {
   WorkspacePageHeader,
   formatRecentTime,
 } from "./workspace-components";
+
+// The projects section probes recent directories for Git repos, spawning
+// multiple backend commands. Deferring its chunk lets the rest of the
+// overview paint first.
+const ProjectsSection = lazy(() =>
+  import("./projects-section").then((m) => ({ default: m.ProjectsSection })),
+);
 
 const RECENTS_PREVIEW_COUNT = 6;
 
@@ -126,7 +132,9 @@ export function OverviewView() {
     <WorkspacePage aria-label={t("overview.title")}>
       <WorkspacePageHeader title={t("overview.title")} description={t("overview.description")} />
 
-      <ProjectsSection recents={recents} />
+      <Suspense fallback={null}>
+        <ProjectsSection recents={recents} />
+      </Suspense>
 
       <section aria-label={t("overview.favoritesTitle")}>
         <SectionHeader
