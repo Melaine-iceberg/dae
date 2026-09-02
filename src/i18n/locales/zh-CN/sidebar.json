@@ -3,7 +3,6 @@
     "label": "侧边栏",
     "overview": "概览",
     "recents": "最近使用",
-    "favorites": "收藏",
     "trash": "回收站"
   },
   "sections": {
@@ -86,13 +85,6 @@
     "pictures": "图片",
     "music": "音乐",
     "videos": "视频"
-  },
-  "theme": {
-    "label": "主题",
-    "light": "浅色主题",
-    "dark": "深色主题",
-    "system": "跟随系统",
-    "titleWith": "主题：{{name}}"
   },
   "settings": {
     "open": "设置"

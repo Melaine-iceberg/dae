@@ -3,7 +3,6 @@
     "label": "Sidebar",
     "overview": "Overview",
     "recents": "Recent",
-    "favorites": "Favorites",
     "trash": "Trash"
   },
   "sections": {
@@ -86,13 +85,6 @@
     "pictures": "Pictures",
     "music": "Music",
     "videos": "Videos"
-  },
-  "theme": {
-    "label": "Theme",
-    "light": "Light theme",
-    "dark": "Dark theme",
-    "system": "Follow system",
-    "titleWith": "Theme: {{name}}"
   },
   "settings": {
     "open": "Settings"

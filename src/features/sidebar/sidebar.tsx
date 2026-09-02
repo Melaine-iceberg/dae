@@ -102,9 +102,7 @@ import {
   treeExpandedPathsAtom,
 } from "./directory-tree";
 import { FolderContextMenu, copyEntryPath } from "./folder-context-menu";
-import { LanguageMenu } from "@/i18n/language-menu";
 import { CloudSectionIcon, DisksSectionIcon, NetworkSectionIcon } from "./location-icons";
-import { ThemeMenu } from "./theme-menu";
 import { useDiskVolumes } from "./use-disk-volumes";
 import { useWslDistros } from "./use-wsl-distros";
 import { WslIcon } from "./wsl-icon";
@@ -120,8 +118,8 @@ const EMPTY_BREADCRUMBS: readonly Breadcrumb[] = [];
 
 /**
  * The persistent navigation rail. Follows the workspace information
- * architecture: Overview / Recents / Favorites, then Spaces, then Locations
- * (computer, network, cloud).
+ * architecture: Overview / Recents / Trash, then Favorites, then Spaces, then
+ * Locations (computer, network, cloud).
  */
 export function Sidebar() {
   const visible = useAtomValue(sidebarVisibleAtom);
@@ -201,15 +199,6 @@ function SidebarContent() {
           label={t("nav.recents")}
           onClick={() => openSurface({ kind: "recents" })}
         />
-        {/* File entries can be dragged onto Favorites; see drag-drop.ts. */}
-        <div data-sidebar-favorites-drop-target="">
-          <NavItem
-            icon={StarIcon}
-            isActive={surface.kind === "favorites"}
-            label={t("nav.favorites")}
-            onClick={() => openSurface({ kind: "favorites" })}
-          />
-        </div>
         <NavItem
           icon={TrashIcon}
           isActive={surface.kind === "trash"}
@@ -354,8 +343,6 @@ function SidebarContent() {
         >
           <GearIcon className="size-4" />
         </button>
-        <ThemeMenu />
-        <LanguageMenu />
       </div>
 
       <Suspense fallback={null}>

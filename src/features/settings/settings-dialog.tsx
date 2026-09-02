@@ -7,8 +7,8 @@
  * {@link appSettingsAtom} through `useSettings()` (optimistic + backend save).
  *
  * Scope note: shortcuts, terminal, and default-FM live in the TOML store.
- * Theme and language are backed by localStorage (shared with the sidebar
- * footer menus) and are surfaced here through the Appearance pane.
+ * Theme and language are backed by localStorage and are surfaced here through
+ * the Appearance pane.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -116,8 +116,8 @@ function AppearancePane() {
   const [theme, setTheme] = useState<ThemePreference>(() => getStoredThemePreference());
   const [locale, setLocale] = useAtom(localeAtom);
 
-  // Keep in sync when the theme changes elsewhere (e.g. the sidebar menu or an
-  // OS scheme flip while "system" is selected).
+  // Keep in sync when the theme changes elsewhere (e.g. an OS scheme flip
+  // while "system" is selected).
   useEffect(() => {
     const sync = () => setTheme(getStoredThemePreference());
     window.addEventListener("app-theme-change", sync);
