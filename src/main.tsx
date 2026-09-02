@@ -7,6 +7,7 @@ import { setupDevInvoke } from "tauri-plugin-dev-invoke-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { i18nReady } from "@/i18n";
+import { getAppWindow } from "@/lib/app-window";
 import { applySystemTheme } from "@/lib/theme";
 import { setupNativeClipboardBridge } from "@/lib/clipboard-bridge";
 import { setupExternalLinkGuard } from "@/lib/external-links";
@@ -34,6 +35,15 @@ async function bootstrap() {
       </React.StrictMode>
     </QueryClientProvider>,
   );
+
+  // The window starts hidden (tauri.conf visible:false) to avoid a white
+  // flash while the JS bundle loads. Reveal it after the browser has
+  // painted the first frame so the user sees the fully rendered UI.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      getAppWindow()?.show();
+    });
+  });
 }
 
 void bootstrap();

@@ -11,6 +11,27 @@
     <style>
       html, body { margin: 0; height: 100%; background: #f5f6f8; }
       html.dark, html.dark body { background: #1b1c1f; }
+      /* Minimal loading indicator visible only before React mounts. */
+      #splash {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+      }
+      #splash::after {
+        content: "";
+        width: 24px;
+        height: 24px;
+        border: 2.5px solid #c4c8ce;
+        border-top-color: #3574f0;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+      }
+      html.dark #splash::after {
+        border-color: #4e5157;
+        border-top-color: #4a80f0;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
     </style>
     <script>
       try {
@@ -25,7 +46,7 @@
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="splash"></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -78,6 +78,24 @@ pub fn run() {
             // Answer the startup surface's queries while the webview loads
             // so the first paint resolves them from memory.
             file_system::prefetch::warm_startup_data(app.handle());
+
+            // Safety net: the frontend shows the window after its first paint,
+            // but if JS fails to execute (e.g. a missing chunk on a corrupted
+            // install), the window would stay invisible forever. Show it
+            // unconditionally after 8 seconds so the user can at least see
+            // the empty shell and report the problem.
+            let fallback_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(8));
+                if let Some(window) = fallback_handle.get_webview_window("main") {
+                    // Only act if the frontend never managed to show the window.
+                    if !window.is_visible().unwrap_or(true) {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+            });
+
             Ok(())
         })
         .manage(file_system::DirectoryWatcher::default())
