@@ -304,7 +304,7 @@ function PaneRow({
           className={cn(
             // Desktop row: tonal hover via state-layer, flat selection fill,
             // no pill morph so rows keep a constant corner radius.
-            "state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-xs px-2.5 select-none transition-[background-color,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
+            "render-contain state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-xs px-2.5 select-none transition-[background-color,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             (isSelected || isExpanded) && "bg-selection",
             isDragging && "cursor-grabbing opacity-50",

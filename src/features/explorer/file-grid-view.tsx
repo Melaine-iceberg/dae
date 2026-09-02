@@ -278,7 +278,7 @@ function GridCell({
           className={cn(
             // Desktop cell: tonal hover via state-layer, flat selection fill,
             // no lift and no corner morph so tiles stay put.
-            "state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 text-center transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
+            "render-contain state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 text-center transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             isSelected && "bg-selection",
             isDragging && "cursor-grabbing opacity-50",

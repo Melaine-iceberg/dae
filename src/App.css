@@ -332,6 +332,14 @@
       scale: 1.15;
     }
   }
+
+  /* Rendering isolation for virtualized rows/cells: each item becomes its own
+     layout + paint boundary, so a hover or selection repaint on one row can't
+     invalidate its neighbours as the list scrolls. No `size` containment —
+     rows still derive their height from content. */
+  .render-contain {
+    contain: layout style paint;
+  }
 }
 
 @layer base {

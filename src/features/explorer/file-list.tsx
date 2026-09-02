@@ -1044,7 +1044,7 @@ function FileListRow({
           className={cn(
             // Desktop row: tonal hover via state-layer, flat selection fill,
             // constant corner radius — no pill morph.
-            "state-layer grid cursor-grab items-center rounded-xs whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
+            "render-contain state-layer grid cursor-grab items-center rounded-xs whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             isSelected && "bg-selection",
             isDragging && "cursor-grabbing opacity-50",
