@@ -63,7 +63,7 @@ export function ExplorerStatusBar({
   return (
     <footer
       aria-label={t("statusBar.ariaLabel")}
-      className="flex h-7 shrink-0 items-center gap-3 bg-background px-3 text-xs text-muted-foreground select-none"
+      className="flex h-7 shrink-0 items-center gap-3 border-t border-border/60 bg-muted/50 px-3 text-xs text-muted-foreground select-none"
     >
       <span aria-live="polite" className="truncate tabular-nums">
         {countText}

@@ -307,7 +307,7 @@ export function TrashView() {
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="overflow-hidden rounded-xl border bg-background shadow-ambient-xs">
+        <div className="overflow-hidden rounded-xl border border-border/60">
           <div className={cn(ROW_GRID, "border-b px-3 py-2 text-label text-muted-foreground")}>
             <SelectAllToggle allSelected={allSelected} onToggle={toggleSelectAll} />
             <span>{t("trash.columns.name")}</span>
@@ -381,7 +381,7 @@ function TrashProgress({ progress }: { progress: FileOperationProgress }) {
         });
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg border bg-background p-3 shadow-ambient-xs">
+    <div className="flex flex-col gap-1.5 rounded-xl bg-popover p-3 shadow-ambient ring-1 ring-border/80">
       <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span className="truncate">{label}</span>
         {progress.total !== null && (

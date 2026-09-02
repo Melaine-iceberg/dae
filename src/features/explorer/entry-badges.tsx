@@ -20,7 +20,7 @@ function ReadOnlyBadge({ className, size }: { className?: string; size: "sm" | "
     <span
       aria-label={label}
       className={cn(
-        "flex items-center justify-center rounded-full bg-background shadow-ambient-xs ring-1 ring-border/60",
+        "flex items-center justify-center rounded-full bg-card shadow-ambient-xs ring-1 ring-border/60",
         size === "sm" ? "size-2.5" : "size-3",
         className,
       )}

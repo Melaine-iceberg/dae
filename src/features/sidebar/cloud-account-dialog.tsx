@@ -154,7 +154,7 @@ export function CloudAccountDialog({
             </p>
             <div className="flex items-center gap-2">
               <span className="shrink-0 text-muted-foreground">{t("cloud.redirectUri")}</span>
-              <code className="min-w-0 flex-1 truncate rounded-xs bg-background px-1.5 py-0.5 font-mono">
+              <code className="min-w-0 flex-1 truncate rounded-xs bg-foreground/10 px-1.5 py-0.5 font-mono">
                 {REDIRECT_URI}
               </code>
               <button

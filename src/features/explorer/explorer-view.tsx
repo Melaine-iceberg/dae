@@ -1199,7 +1199,7 @@ export function ExplorerView({
     <main className="h-full bg-card">
       <section className="flex h-full w-full flex-col overflow-hidden">
         <header
-          className="flex h-11 shrink-0 items-center gap-1 bg-background px-2"
+          className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 bg-card px-2"
           data-tauri-drag-region="deep"
         >
           <div className="flex shrink-0 items-center gap-0.5">
@@ -1711,7 +1711,7 @@ function FileOperationStatusBar({ progress }: { progress: FileOperationProgress 
   return (
     <footer
       aria-live="polite"
-      className="flex h-10 shrink-0 items-center gap-3 border-t bg-background px-3"
+      className="flex h-10 shrink-0 items-center gap-3 border-t border-border/60 bg-muted/50 px-3"
     >
       <CircleNotchIcon
         className={cn(

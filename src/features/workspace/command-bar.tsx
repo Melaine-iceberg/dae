@@ -848,7 +848,7 @@ export function CommandBar() {
               <div key={section.group}>
                 <p
                   aria-hidden="true"
-                  className="px-3.5 pt-2 pb-1 text-label uppercase text-muted-foreground select-none"
+                  className="px-3.5 pt-2 pb-1 text-label text-muted-foreground select-none"
                 >
                   {groupLabels[section.group]}
                 </p>

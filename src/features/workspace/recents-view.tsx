@@ -155,7 +155,7 @@ export function RecentsView() {
       ) : (
         groups.map((group) => (
           <section aria-label={group.label} key={group.label}>
-            <h2 className="mb-1 text-label uppercase text-muted-foreground">{group.label}</h2>
+            <h2 className="mb-1 text-label text-muted-foreground">{group.label}</h2>
             <ul className="flex flex-col">
               {group.items.map((item) => (
                 <RecentRow

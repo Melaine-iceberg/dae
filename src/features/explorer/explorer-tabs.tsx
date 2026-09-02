@@ -110,7 +110,7 @@ export function ExplorerTabs() {
         <div
           ref={stripRef}
           aria-label={t("tabs.ariaLabel")}
-          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-2 scrollbar-none [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-2.5 scrollbar-none [&::-webkit-scrollbar]:hidden"
           onScroll={syncScrollButtons}
           role="tablist"
         >
@@ -119,7 +119,7 @@ export function ExplorerTabs() {
           ))}
           <button
             aria-label={t("tabs.newTab")}
-            className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground"
             onClick={createTab}
             title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
             type="button"
@@ -136,12 +136,12 @@ export function ExplorerTabs() {
         <WindowControls />
       </header>
 
-      {/* Island shell: panels float on the canvas separated by 8px gutters.
+      {/* Island shell: panels float on the canvas separated by 10px gutters.
           The tab bar stays flush with the window edge so the native window
           controls and snap layouts keep working. */}
-      <div className="flex min-h-0 flex-1 gap-2 px-2 pb-2">
+      <div className="flex min-h-0 flex-1 gap-2.5 px-2.5 pt-1 pb-2.5">
         <Sidebar />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-ambient-xs">
             <WorkspaceSurfaceView key={activeTabId} tabId={activeTabId} />
           </div>
@@ -260,9 +260,9 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     <div
       aria-selected={isActive}
       className={cn(
-        "group relative flex h-7 w-52 shrink-0 items-center rounded-md text-[13px] select-none transition-[background-color,color,box-shadow] duration-fast ease-spring-fast",
+        "group relative flex h-8 w-52 shrink-0 items-center rounded-md text-[13px] select-none transition-[background-color,color,box-shadow] duration-fast ease-spring-fast",
         isActive
-          ? "bg-card text-foreground shadow-ambient-xs ring-1 ring-border"
+          ? "bg-card text-foreground shadow-ambient-sm ring-1 ring-border"
           : "cursor-default text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       )}
       onClick={() => activateTab(tab.id)}

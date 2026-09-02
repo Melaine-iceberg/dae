@@ -401,7 +401,7 @@ function CollapsibleSection({
       <div className="flex items-center gap-0.5">
         <button
           aria-expanded={open}
-          className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-sm px-2 py-1 text-left text-[13px] font-medium transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/70"
+          className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 py-1 text-left text-[13px] font-medium transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/70"
           onClick={() => toggle(id)}
           type="button"
         >
@@ -786,7 +786,7 @@ function SectionLabel({
 }) {
   return (
     <div className="mt-3 flex items-center justify-between px-2 pb-1">
-      <span className="text-label uppercase text-muted-foreground">{label}</span>
+      <span className="text-label text-muted-foreground">{label}</span>
       {onAdd && (
         <button
           aria-label={addTitle}
@@ -821,7 +821,7 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "relative flex w-full items-center gap-2.5 rounded-sm px-2 py-1 text-left text-[13px] transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/70",
+        "relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/70",
         isActive && "bg-selection font-medium text-accent-foreground",
       )}
       onClick={onClick}
@@ -932,7 +932,7 @@ function DiskItem({
   return (
     <div
       className={cn(
-        "w-full rounded-md px-2.5 py-2 transition-[background-color] duration-fast ease-spring-fast hover:bg-accent/60",
+        "w-full rounded-lg px-2.5 py-2 transition-[background-color] duration-fast ease-spring-fast hover:bg-accent/60",
         isActive && "bg-selection",
       )}
     >

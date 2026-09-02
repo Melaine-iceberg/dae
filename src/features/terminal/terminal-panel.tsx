@@ -245,7 +245,10 @@ export function TerminalPanel() {
   return (
     <section
       aria-label={t("panel.label")}
-      className={cn("flex shrink-0 flex-col border-t bg-card", !visible && "hidden")}
+      className={cn(
+        "flex shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-ambient-xs",
+        !visible && "hidden",
+      )}
       style={{ height }}
     >
       <div
@@ -253,7 +256,7 @@ export function TerminalPanel() {
         className="group h-1 w-full shrink-0 cursor-row-resize"
         onPointerDown={startResizeDrag}
       />
-      <header className="flex h-8 shrink-0 items-center gap-1 border-b px-2">
+      <header className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
         <span className="text-xs font-medium text-muted-foreground select-none">
           {t("panel.title")}
         </span>

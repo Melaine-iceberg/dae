@@ -770,7 +770,7 @@ export function FileList({
             onScroll={(event) => onScrollOffsetChange?.(event.currentTarget.scrollTop)}
           >
             <div className="min-w-160">
-              <div className="sticky top-0 z-10 grid h-7 shrink-0 items-center whitespace-nowrap border-b border-border/60 bg-card text-label uppercase text-muted-foreground [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
+              <div className="sticky top-0 z-10 grid h-7 shrink-0 items-center whitespace-nowrap border-b border-border/60 bg-card text-label text-muted-foreground [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
                 <SortHeaderCell
                   active={sortKey === "name"}
                   label={t("explorer:columns.name")}
