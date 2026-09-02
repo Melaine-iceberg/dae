@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ClipboardTextIcon, FolderOpenIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { marked } from "marked";
+import { Markdown } from "@tanstack/markdown/react";
 
 import { commands, type MediaPreview, type TextPreview } from "@/bindings";
 import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-import { getPreviewLanguage, highlightCode } from "./code-highlight";
+import { getPreviewLanguage, highlightCode, highlightMarkdownCode } from "./code-highlight";
 import { getEntryPresentation, getPresentationIconClassName } from "./file-icons";
 import { isNativeIconSupported, NativeIconImage } from "./native-icon";
 import { isThumbnailSupported, ThumbnailImage } from "./thumbnail";
@@ -164,7 +164,6 @@ export function EntryPreview({
   const supportsMedia = entry?.kind === "file" && MEDIA_EXTENSIONS.has(visualExtension);
   const isTooLarge = (entry?.size ?? 0) > PREVIEW_MAX_SOURCE_BYTES;
   const [textPreview, setTextPreview] = useState<TextPreviewState | null>(null);
-  const [markdownHtml, setMarkdownHtml] = useState<string | null>(null);
   const [mediaPreview, setMediaPreview] = useState<MediaPreviewState | null>(null);
 
   useEffect(() => {
@@ -204,16 +203,6 @@ export function EntryPreview({
       cancelled = true;
     };
   }, [entry, isTooLarge, language, supportsText]);
-
-  useEffect(() => {
-    if (!supportsMarkdown || !textPreview || textPreview.status !== "ready") {
-      setMarkdownHtml(null);
-      return;
-    }
-    // Synchronous parse keeps the type narrow; the content is read from the
-    // local file and injected like the highlighted code path.
-    setMarkdownHtml(marked.parse(textPreview.content, { async: false }));
-  }, [supportsMarkdown, textPreview]);
 
   useEffect(() => {
     if (!entry || entry.kind !== "file" || !supportsMedia) {
@@ -309,13 +298,14 @@ export function EntryPreview({
               />
             ) : textPreview?.status === "ready" ? (
               <div className="flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-muted/40">
-                {markdownHtml !== null ? (
+                {supportsMarkdown ? (
                   <div
                     className="markdown-preview min-h-0 flex-1 overflow-auto p-2.5 text-xs leading-relaxed"
-                    // Rendered locally from file contents via `marked`.
-                    dangerouslySetInnerHTML={{ __html: markdownHtml }}
                     onClickCapture={handleMarkdownLinkClick}
-                  />
+                  >
+                    {/* Rendered locally from file contents via TanStack Markdown. */}
+                    <Markdown highlighter={highlightMarkdownCode}>{textPreview.content}</Markdown>
+                  </div>
                 ) : textPreview.html !== null ? (
                   <div
                     className="code-preview min-h-0 flex-1 overflow-auto p-2.5 text-xs leading-relaxed"

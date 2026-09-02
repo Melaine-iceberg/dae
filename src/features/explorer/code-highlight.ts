@@ -16,6 +16,7 @@ import { ts } from "@tanstack/highlight/languages/ts";
 import { tsx } from "@tanstack/highlight/languages/tsx";
 import { vue } from "@tanstack/highlight/languages/vue";
 import { yaml } from "@tanstack/highlight/languages/yaml";
+import { createTanStackMarkdownHighlighter } from "@tanstack/highlight/markdown";
 
 import { c, cpp, csharp, go, java, kotlin } from "./languages/c-like";
 import { lua, php, powershell, ruby } from "./languages/scripting";
@@ -61,6 +62,14 @@ const LANGUAGES = [
 export type CodeLanguage = (typeof LANGUAGES)[number]["name"];
 
 const highlighter = createHighlighter({ languages: LANGUAGES });
+
+/**
+ * Markdown code fences highlight through the same registered grammars; the
+ * adapter returns escaped token markup for TanStack Markdown's own
+ * `<pre><code>` containers. Unregistered fence languages degrade to
+ * escaped plain text.
+ */
+export const highlightMarkdownCode = createTanStackMarkdownHighlighter(highlighter);
 
 /**
  * File extension → grammar id for the preview panel. Dialects without a

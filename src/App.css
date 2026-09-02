@@ -405,8 +405,10 @@
 /* TanStack Highlight emits a stable `th-*` class tree; the GitHub
    light/dark palettes ride on CSS variables that the app's `.dark` class
    on <html> switches. Background stays transparent so blocks blend into
-   the preview surface. */
-.code-preview {
+   the preview surface. Both the code preview and the markdown preview's
+   fenced code blocks share this scope. */
+.code-preview,
+.markdown-preview {
   --th-background: #ffffff;
   --th-token: #24292f;
   --th-attr: #0550ae;
@@ -430,7 +432,8 @@
   --th-type: #953800;
   --th-variable: #953800;
 }
-.dark .code-preview {
+.dark .code-preview,
+.dark .markdown-preview {
   --th-background: #0d1117;
   --th-token: #c9d1d9;
   --th-attr: #79c0ff;
@@ -454,27 +457,45 @@
   --th-type: #ffa657;
   --th-variable: #ffa657;
 }
-.code-preview .th-token { color: var(--th-token); }
-.code-preview .th-keyword { color: var(--th-keyword); }
-.code-preview .th-string { color: var(--th-string); }
-.code-preview .th-comment { color: var(--th-comment); }
-.code-preview .th-function { color: var(--th-function); }
-.code-preview .th-type { color: var(--th-type); }
-.code-preview .th-property { color: var(--th-property); }
-.code-preview .th-tag { color: var(--th-tag); }
-.code-preview .th-attr { color: var(--th-attr); }
-.code-preview .th-literal { color: var(--th-literal); }
-.code-preview .th-number { color: var(--th-number); }
-.code-preview .th-variable { color: var(--th-variable); }
-.code-preview .th-operator { color: var(--th-operator); }
-.code-preview .th-inserted { color: var(--th-inserted); }
-.code-preview .th-deleted { color: var(--th-deleted); }
-.code-preview .th-meta { color: var(--th-meta); }
-.code-preview .th-heading { color: var(--th-heading); }
-.code-preview .th-link { color: var(--th-link); }
-.code-preview .th-code-inline { color: var(--th-code-inline); }
-.code-preview .th-selector { color: var(--th-selector); }
-.code-preview .th-command { color: var(--th-command); }
+:is(.code-preview, .markdown-preview) .th-token { color: var(--th-token); }
+:is(.code-preview, .markdown-preview) .th-keyword { color: var(--th-keyword); }
+:is(.code-preview, .markdown-preview) .th-string { color: var(--th-string); }
+:is(.code-preview, .markdown-preview) .th-comment { color: var(--th-comment); }
+:is(.code-preview, .markdown-preview) .th-function { color: var(--th-function); }
+:is(.code-preview, .markdown-preview) .th-type { color: var(--th-type); }
+:is(.code-preview, .markdown-preview) .th-property { color: var(--th-property); }
+:is(.code-preview, .markdown-preview) .th-tag { color: var(--th-tag); }
+:is(.code-preview, .markdown-preview) .th-attr { color: var(--th-attr); }
+:is(.code-preview, .markdown-preview) .th-literal { color: var(--th-literal); }
+:is(.code-preview, .markdown-preview) .th-number { color: var(--th-number); }
+:is(.code-preview, .markdown-preview) .th-variable { color: var(--th-variable); }
+:is(.code-preview, .markdown-preview) .th-operator { color: var(--th-operator); }
+:is(.code-preview, .markdown-preview) .th-inserted { color: var(--th-inserted); }
+:is(.code-preview, .markdown-preview) .th-deleted { color: var(--th-deleted); }
+:is(.code-preview, .markdown-preview) .th-meta { color: var(--th-meta); }
+:is(.code-preview, .markdown-preview) .th-heading { color: var(--th-heading); }
+:is(.code-preview, .markdown-preview) .th-link { color: var(--th-link); }
+:is(.code-preview, .markdown-preview) .th-code-inline { color: var(--th-code-inline); }
+:is(.code-preview, .markdown-preview) .th-selector { color: var(--th-selector); }
+:is(.code-preview, .markdown-preview) .th-command { color: var(--th-command); }
+/* Line decorations — fence `{2,4-6}` highlight meta and `[!code ++]`/
+   `[!code --]` diff notation — wrap each line in a `th-line` span.
+   inline-block + min-width lets the tinted background span the full code
+   block width instead of just the text on that line. */
+:is(.code-preview, .markdown-preview) .th-line {
+  display: inline-block;
+  min-width: 100%;
+  width: max-content;
+}
+:is(.code-preview, .markdown-preview) .th-line--highlighted {
+  background: color-mix(in srgb, var(--th-token) 10%, transparent);
+}
+:is(.code-preview, .markdown-preview) .th-line--inserted {
+  background: color-mix(in srgb, var(--th-inserted) 14%, transparent);
+}
+:is(.code-preview, .markdown-preview) .th-line--deleted {
+  background: color-mix(in srgb, var(--th-deleted) 14%, transparent);
+}
 .code-preview pre.th-code {
   margin: 0;
   background: transparent;
