@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
+import { useHotkeys } from "@tanstack/react-hotkeys";
 
 import { commands, events } from "@/bindings";
 import { useLocaleSync } from "@/i18n/atoms";
@@ -9,6 +10,14 @@ import { propertiesTargetAtom } from "@/features/explorer/properties-atoms";
 import { undoRedoAtom } from "@/features/explorer/tabs";
 import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
 import { commandBarModeAtom, commandBarOpenAtom } from "@/features/workspace/command-bar-atoms";
+import {
+  appSettingsAtom,
+  hotkeysPausedAtom,
+  settingsOpenAtom,
+  useHydrateSettings,
+} from "@/features/settings/settings-atoms";
+import { resolveBinding } from "@/features/settings/shortcut-registry";
+import { HOTKEY_COMMON_OPTIONS, asHotkey } from "@/features/settings/hotkeys";
 import { applySystemTheme, watchSystemTheme } from "@/lib/theme";
 
 // Overlays that only appear on user action; their chunks load on demand so
@@ -20,6 +29,9 @@ const PropertiesDialog = lazy(() =>
 );
 const CommandBar = lazy(() =>
   import("@/features/workspace/command-bar").then((m) => ({ default: m.CommandBar })),
+);
+const SettingsDialog = lazy(() =>
+  import("@/features/settings/settings-dialog").then((m) => ({ default: m.SettingsDialog })),
 );
 
 // The query devtools panel is debug-only; a dynamic import keeps it (and its
@@ -49,10 +61,16 @@ function App() {
   const setCommandBarMode = useSetAtom(commandBarModeAtom);
   const setTerminalVisible = useSetAtom(terminalVisibleAtom);
   const setUndoRedo = useSetAtom(undoRedoAtom);
+  const setSettingsOpen = useSetAtom(settingsOpenAtom);
+  const settingsOpen = useAtomValue(settingsOpenAtom);
+  const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
+  const hotkeysPaused = useAtomValue(hotkeysPausedAtom);
   const commandBarMounted = useEverOpened(commandBarOpen);
   const propertiesMounted = useEverOpened(useAtomValue(propertiesTargetAtom) !== null);
+  const settingsMounted = useEverOpened(settingsOpen);
 
   useLocaleSync();
+  useHydrateSettings();
 
   useEffect(() => watchSystemTheme(applySystemTheme), []);
 
@@ -88,47 +106,64 @@ function App() {
     };
   }, []);
 
-  // Global shortcuts: Ctrl/Cmd+K toggles the command bar (SKILL.md §15/§30),
-  // Ctrl/Cmd+P opens it in path-jump mode (matching VS Code's Quick Open),
-  // Ctrl+` toggles the integrated terminal.
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.isComposing) return;
-
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        // A second Ctrl+K in command mode toggles the surface closed; from
-        // path mode it switches flavors without closing.
-        if (commandBarOpen && commandBarMode === "commands") {
-          setCommandBarOpen(false);
-        } else {
-          setCommandBarMode("commands");
-          setCommandBarOpen(true);
-        }
-        return;
-      }
-
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "p") {
-        event.preventDefault();
-        // A second Ctrl+P while already jumping closes the surface.
-        if (commandBarOpen && commandBarMode === "path") {
-          setCommandBarOpen(false);
-        } else {
-          setCommandBarMode("path");
-          setCommandBarOpen(true);
-        }
-        return;
-      }
-
-      if (event.ctrlKey && !event.altKey && event.key === "`") {
-        event.preventDefault();
-        setTerminalVisible((open) => !open);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [commandBarMode, commandBarOpen, setCommandBarMode, setCommandBarOpen, setTerminalVisible]);
+  // Global shortcuts, now bound to user-configurable combos (TanStack
+  // Hotkeys). Mod+K toggles the command bar (SKILL.md §15/§30), Mod+P opens it
+  // in path-jump mode (matching VS Code's Quick Open), Control+` toggles the
+  // integrated terminal, and Mod+, opens settings. Each handler swallows the
+  // key only when its action runs and stands down during IME composition or
+  // when another handler already prevented default — matching the previous
+  // window-level listener. The set goes inert while the shortcut recorder is
+  // capturing a new binding.
+  useHotkeys(
+    [
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "app.commandBar")),
+        callback: (event) => {
+          if (event.defaultPrevented || event.isComposing) return;
+          event.preventDefault();
+          // A second Mod+K in command mode toggles the surface closed; from
+          // path mode it switches flavors without closing.
+          if (commandBarOpen && commandBarMode === "commands") {
+            setCommandBarOpen(false);
+          } else {
+            setCommandBarMode("commands");
+            setCommandBarOpen(true);
+          }
+        },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "app.pathJump")),
+        callback: (event) => {
+          if (event.defaultPrevented || event.isComposing) return;
+          event.preventDefault();
+          // A second Mod+P while already jumping closes the surface.
+          if (commandBarOpen && commandBarMode === "path") {
+            setCommandBarOpen(false);
+          } else {
+            setCommandBarMode("path");
+            setCommandBarOpen(true);
+          }
+        },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "app.toggleTerminal")),
+        callback: (event) => {
+          if (event.defaultPrevented || event.isComposing) return;
+          event.preventDefault();
+          setTerminalVisible((open) => !open);
+        },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "app.openSettings")),
+        callback: (event) => {
+          if (event.defaultPrevented || event.isComposing) return;
+          event.preventDefault();
+          setSettingsOpen(true);
+        },
+      },
+    ],
+    { ...HOTKEY_COMMON_OPTIONS, enabled: !hotkeysPaused },
+  );
 
   return (
     <>
@@ -141,6 +176,11 @@ function App() {
       {propertiesMounted && (
         <Suspense fallback={null}>
           <PropertiesDialog />
+        </Suspense>
+      )}
+      {settingsMounted && (
+        <Suspense fallback={null}>
+          <SettingsDialog />
         </Suspense>
       )}
       {import.meta.env.DEV && ReactQueryDevtools && (

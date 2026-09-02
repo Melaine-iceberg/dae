@@ -18,6 +18,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/highlight": "^0.0.10",
     "@tanstack/markdown": "^0.0.13",
+    "@tanstack/react-hotkeys": "^0.10.0",
     "@tanstack/react-query": "^5.102.8",
     "@tanstack/react-query-devtools": "^5.102.8",
     "@tanstack/react-virtual": "^3.14.10",

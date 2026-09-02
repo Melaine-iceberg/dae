@@ -94,6 +94,9 @@
     "system": "跟随系统",
     "titleWith": "主题：{{name}}"
   },
+  "settings": {
+    "open": "设置"
+  },
   "protocols": {
     "smb": "SMB / Windows 共享",
     "sftp": "SFTP / SSH",

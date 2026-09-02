@@ -1,5 +1,7 @@
 mod deep_link;
+mod default_manager;
 mod file_system;
+mod settings;
 mod terminal;
 
 use tauri::Manager;
@@ -57,21 +59,22 @@ pub fn run() {
             specta.mount_events(app);
             file_system::connections::init(app.handle())?;
             file_system::cloud::accounts::init(app.handle())?;
+            settings::init(app.handle())?;
 
             // macOS delivers deep links through the plugin's open-url event;
             // Windows/Linux pass them as CLI args (also for the very first
             // launch, handled here; duplicate launches arrive through the
-            // single-instance callback below).
+            // single-instance callback below). A bare folder path also lands
+            // here when the OS starts dae as the default folder handler, so
+            // fire on any argument beyond argv[0] and let handle_activation
+            // filter for real `dae://` URLs and existing directories.
             let handle = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
                 let urls: Vec<String> = event.urls().iter().map(ToString::to_string).collect();
                 deep_link::handle_activation(&handle, &urls);
             });
             let launch_args: Vec<String> = std::env::args().collect();
-            if launch_args
-                .iter()
-                .any(|arg| arg.to_ascii_lowercase().starts_with("dae://"))
-            {
+            if launch_args.len() > 1 {
                 deep_link::handle_activation(app.handle(), &launch_args);
             }
 
@@ -212,7 +215,12 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::cloud::accounts::list_cloud_accounts,
             file_system::cloud::accounts::delete_cloud_account,
             file_system::cloud::oauth::authorize_cloud_account,
-            deep_link::take_pending_open_directory
+            deep_link::take_pending_open_directory,
+            settings::load_settings,
+            settings::save_settings,
+            default_manager::get_default_file_manager_status,
+            default_manager::set_default_file_manager,
+            default_manager::unset_default_file_manager
         ])
         .events(tauri_specta::collect_events![
             file_system::DirectoryChanged,

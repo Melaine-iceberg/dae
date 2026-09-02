@@ -29,6 +29,7 @@ import {
   FolderIcon,
   FolderPlusIcon,
   FunnelIcon,
+  GearIcon,
   HouseIcon,
   ListIcon,
   MagnifyingGlassIcon,
@@ -82,10 +83,11 @@ import {
   openSurfaceAtom,
 } from "@/features/workspace/workspace-atoms";
 import { fuzzyMatch, rankByFuzzy, type RankedResult } from "@/lib/fuzzy";
-import { MOD_KEY } from "@/lib/platform";
 import { setThemePreference, type ThemePreference } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { commandBarModeAtom, commandBarOpenAtom } from "@/features/workspace/command-bar-atoms";
+import { appSettingsAtom, settingsOpenAtom } from "@/features/settings/settings-atoms";
+import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
 
 const MAX_RECENT_ITEMS = 8;
 const MAX_PATH_RECENT_ITEMS = 12;
@@ -161,6 +163,8 @@ export function CommandBar() {
   const setFoldersFirst = useSetAtom(foldersFirstAtom);
   const setShowHiddenFiles = useSetAtom(showHiddenFilesAtom);
   const setEntryFilters = useSetAtom(entryFiltersAtom);
+  const setSettingsOpen = useSetAtom(settingsOpenAtom);
+  const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
 
   useEffect(() => {
     if (!open) return;
@@ -343,7 +347,7 @@ export function CommandBar() {
       {
         id: "rename",
         label: t("commandBar.commands.rename"),
-        hint: "F2",
+        hint: formatBinding(resolveBinding(shortcuts, "explorer.rename")),
         keywords: "rename",
         icon: PencilIcon,
         command: "rename",
@@ -351,7 +355,7 @@ export function CommandBar() {
       {
         id: "delete",
         label: t("commandBar.commands.delete"),
-        hint: "Delete",
+        hint: formatBinding(resolveBinding(shortcuts, "explorer.trash")),
         keywords: "delete remove trash",
         icon: TrashIcon,
         command: "delete",
@@ -359,7 +363,7 @@ export function CommandBar() {
       {
         id: "copy",
         label: t("commandBar.commands.copy"),
-        hint: `${MOD_KEY}+C`,
+        hint: formatBinding(resolveBinding(shortcuts, "explorer.copy")),
         keywords: "copy",
         icon: CopyIcon,
         command: "copy",
@@ -367,7 +371,7 @@ export function CommandBar() {
       {
         id: "cut",
         label: t("commandBar.commands.cut"),
-        hint: `${MOD_KEY}+X`,
+        hint: formatBinding(resolveBinding(shortcuts, "explorer.cut")),
         keywords: "cut move",
         icon: ScissorsIcon,
         command: "cut",
@@ -375,7 +379,7 @@ export function CommandBar() {
       {
         id: "paste",
         label: t("commandBar.commands.paste"),
-        hint: `${MOD_KEY}+V`,
+        hint: formatBinding(resolveBinding(shortcuts, "explorer.paste")),
         keywords: "paste",
         icon: ClipboardIcon,
         command: "paste",
@@ -390,7 +394,7 @@ export function CommandBar() {
       {
         id: "select-all",
         label: t("commandBar.commands.selectAll"),
-        hint: `${MOD_KEY}+A`,
+        hint: formatBinding(resolveBinding(shortcuts, "explorer.selectAll")),
         keywords: "select all",
         icon: CheckCircleIcon,
         command: "select-all",
@@ -426,7 +430,7 @@ export function CommandBar() {
       {
         id: "open-terminal",
         label: t("commandBar.commands.openTerminal"),
-        hint: `${MOD_KEY}+\``,
+        hint: formatBinding(resolveBinding(shortcuts, "explorer.openSystemTerminal")),
         keywords: "terminal shell console open external",
         icon: TerminalIcon,
         command: "open-terminal",
@@ -441,7 +445,7 @@ export function CommandBar() {
       {
         id: "toggle-split",
         label: t("commandBar.commands.toggleSplitView"),
-        hint: "F6",
+        hint: formatBinding(resolveBinding(shortcuts, "explorer.switchPane")),
         keywords: "split dual pane panel column view",
         icon: ColumnsIcon,
         command: "toggle-split",
@@ -596,6 +600,15 @@ export function CommandBar() {
         icon: RowsIcon,
         run: () => setDensity("spacious" satisfies ExplorerDensity),
       },
+      {
+        id: "open-settings",
+        group: "view",
+        label: t("commandBar.commands.openSettings"),
+        hint: formatBinding(resolveBinding(shortcuts, "app.openSettings")),
+        keywords: "settings preferences shortcuts keyboard terminal default file manager options",
+        icon: GearIcon,
+        run: () => setSettingsOpen(true),
+      },
     ];
 
     // Path mode is a jump list: favorites + recent directories only. Commands,
@@ -622,10 +635,12 @@ export function CommandBar() {
     setDensity,
     setEntryFilters,
     setFoldersFirst,
+    setSettingsOpen,
     setShowHiddenFiles,
     setSortKey,
     setSortOrder,
     setViewMode,
+    shortcuts,
     spaces,
     t,
   ]);
@@ -817,7 +832,9 @@ export function CommandBar() {
             value={query}
           />
           <kbd className="shrink-0 rounded-xs border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
-            {MOD_KEY} {pathMode ? "P" : "K"}
+            {formatBinding(
+              resolveBinding(shortcuts, pathMode ? "app.pathJump" : "app.commandBar"),
+            )}
           </kbd>
         </div>
         <div

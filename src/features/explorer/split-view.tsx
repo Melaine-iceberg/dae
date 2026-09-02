@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
+import { useHotkeys } from "@tanstack/react-hotkeys";
 
 import { cn } from "@/lib/utils";
+import { isEditableElement } from "@/lib/dom";
+import { appSettingsAtom, hotkeysPausedAtom } from "@/features/settings/settings-atoms";
+import { resolveBinding } from "@/features/settings/shortcut-registry";
+import { HOTKEY_COMMON_OPTIONS, asHotkey } from "@/features/settings/hotkeys";
 
 import { ExplorerView } from "./explorer-view";
 import {
@@ -34,21 +39,24 @@ export function SplitExplorerView({ tabId }: { tabId: string }) {
   const [ratio, setRatio] = useAtom(splitRatioFamily(tabId));
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
+  const hotkeysPaused = useAtomValue(hotkeysPausedAtom);
+
   // F6 swaps keyboard focus between the panes while the split layout is up.
-  useEffect(() => {
-    if (!splitEnabled) return undefined;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "F6" || event.defaultPrevented || event.isComposing) return;
-      if (isEditableElement(event.target)) return;
-
-      event.preventDefault();
-      setActivePane((pane) => (pane === "primary" ? "split" : "primary"));
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [setActivePane, splitEnabled]);
+  useHotkeys(
+    [
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.switchPane")),
+        callback: (event) => {
+          if (event.defaultPrevented || event.isComposing) return;
+          if (isEditableElement(event.target)) return;
+          event.preventDefault();
+          setActivePane((pane) => (pane === "primary" ? "split" : "primary"));
+        },
+      },
+    ],
+    { ...HOTKEY_COMMON_OPTIONS, enabled: splitEnabled && !hotkeysPaused },
+  );
 
   const handleDividerPointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -155,11 +163,4 @@ function PaneShell({
       {children}
     </div>
   );
-}
-
-function isEditableElement(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-
-  const tagName = target.tagName;
-  return tagName === "INPUT" || tagName === "TEXTAREA" || target.isContentEditable;
 }

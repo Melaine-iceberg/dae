@@ -16,6 +16,11 @@ import {
 
 import { commands } from "@/bindings";
 import { translateBackendMessage } from "@/i18n/errors";
+import { useAtomValue } from "jotai";
+import { useHotkeys } from "@tanstack/react-hotkeys";
+import { appSettingsAtom, hotkeysPausedAtom } from "@/features/settings/settings-atoms";
+import { resolveBinding } from "@/features/settings/shortcut-registry";
+import { HOTKEY_COMMON_OPTIONS, asHotkey } from "@/features/settings/hotkeys";
 
 import type { ContentSearchController } from "./content-search";
 import type { SearchResponse } from "./types";
@@ -132,23 +137,25 @@ export function DirectorySearch({
   const isSearching = isContentMode ? contentSearch.isSearching : search.isSearching;
   const activeError = isContentMode ? contentSearch.error : search.error;
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const isSearchShortcut =
-        (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f";
+  const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
+  const hotkeysPaused = useAtomValue(hotkeysPausedAtom);
 
-      if (event.defaultPrevented || event.isComposing || !isSearchShortcut || disabled) {
-        return;
-      }
-
-      event.preventDefault();
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [disabled]);
+  // Mod+F focuses and selects the search field. Inactive when this pane is not
+  // the focused one, or while the shortcut recorder is capturing a new binding.
+  useHotkeys(
+    [
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.focusSearch")),
+        callback: (event) => {
+          if (event.defaultPrevented || event.isComposing) return;
+          event.preventDefault();
+          inputRef.current?.focus();
+          inputRef.current?.select();
+        },
+      },
+    ],
+    { ...HOTKEY_COMMON_OPTIONS, enabled: !disabled && !hotkeysPaused },
+  );
 
   const scopeName = directoryName ?? t("directorySearch.currentDirectory");
 

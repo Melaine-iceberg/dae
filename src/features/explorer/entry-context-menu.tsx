@@ -22,7 +22,8 @@ import {
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { commands, type ArchiveFormat } from "@/bindings";
-import { MOD_KEY } from "@/lib/platform";
+import { appSettingsAtom } from "@/features/settings/settings-atoms";
+import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
 
 import { propertiesTargetAtom } from "./properties-atoms";
 
@@ -94,6 +95,7 @@ export function EntryContextMenuContent({
   onRename,
 }: EntryActions) {
   const { t } = useTranslation("explorer");
+  const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
   const spaces = useAtomValue(spacesAtom) ?? [];
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const setPropertiesTarget = useSetAtom(propertiesTargetAtom);
@@ -154,7 +156,9 @@ export function EntryContextMenuContent({
           {isSingleSelection
             ? t("explorer:contextMenu.rename")
             : t("explorer:contextMenu.renameBulk")}
-          <ContextMenuShortcut>F2</ContextMenuShortcut>
+          <ContextMenuShortcut>
+            {formatBinding(resolveBinding(shortcuts, "explorer.rename"))}
+          </ContextMenuShortcut>
         </ContextMenuItem>
         {entry.kind === "directory" && (
           <ContextMenuItem disabled={isActionDisabled} onClick={() => void openTerminalAt(entry.path)}>
@@ -207,12 +211,16 @@ export function EntryContextMenuContent({
         <ContextMenuItem disabled={isActionDisabled} onClick={onCopy}>
           <CopyIcon />
           {t("explorer:contextMenu.copy")}
-          <ContextMenuShortcut>{MOD_KEY}+C</ContextMenuShortcut>
+          <ContextMenuShortcut>
+            {formatBinding(resolveBinding(shortcuts, "explorer.copy"))}
+          </ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem disabled={isActionDisabled} onClick={onCut}>
           <ScissorsIcon />
           {t("explorer:contextMenu.cut")}
-          <ContextMenuShortcut>{MOD_KEY}+X</ContextMenuShortcut>
+          <ContextMenuShortcut>
+            {formatBinding(resolveBinding(shortcuts, "explorer.cut"))}
+          </ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuGroup>
       <ContextMenuSeparator />
@@ -220,7 +228,9 @@ export function EntryContextMenuContent({
         <ContextMenuItem disabled={isActionDisabled} onClick={onDelete} variant="destructive">
           <TrashIcon />
           {t("explorer:contextMenu.delete")}
-          <ContextMenuShortcut>Delete</ContextMenuShortcut>
+          <ContextMenuShortcut>
+            {formatBinding(resolveBinding(shortcuts, "explorer.trash"))}
+          </ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuGroup>
       <ContextMenuSeparator />

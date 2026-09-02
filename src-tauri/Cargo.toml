@@ -30,6 +30,9 @@ russh-sftp = "2.4"
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Serializes the user settings panel (shortcuts, terminal, default file
+# manager) to a human-editable `settings.toml` in the app config dir.
+toml = "0.9"
 specta = "2.0.0-rc.25"
 tauri-specta = { version = "2.0.0-rc.25", features = ["derive", "javascript", "typescript"] }
 specta-typescript = "0.0.12"
@@ -120,6 +123,8 @@ windows = { version = "0.52", features = [
     "Win32_System_Ole",
     "Win32_UI_Shell",
     "Win32_Storage_FileSystem",
+    "Win32_System_Registry",
+    "Win32_Security",
 ] }
 
 # Resolves account names for the properties dialog (getpwnam_r/getgrnam_r),

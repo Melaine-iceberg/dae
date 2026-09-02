@@ -30,6 +30,9 @@ export function applyThemePreference(preference: ThemePreference): void {
 /** Re-applies the stored preference; used when the OS scheme changes. */
 export function applySystemTheme(): void {
   applyThemePreference(getStoredThemePreference());
+  // Notify theme-derived surfaces (e.g. the terminal palette) that the OS
+  // scheme flipped, since `applyThemePreference` only toggles the class.
+  window.dispatchEvent(new CustomEvent("app-theme-change"));
 }
 
 export function watchSystemTheme(onChange: () => void): () => void {

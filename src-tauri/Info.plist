@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		Advertise dae as a handler for folders so LaunchServices will accept
+		LSSetDefaultRoleHandlerForContentType(public.folder, com.melaine.dae).
+		Without this document type the OS rejects dae as a candidate and the
+		"set as default file manager" action silently fails. Tauri merges this
+		file into the generated bundle Info.plist at build time.
+
+		Role "Shell" is the Finder-like role for apps that open a window onto
+		the content; "Alternate" keeps dae a candidate without claiming to own
+		the folder type (Finder remains the system owner).
+	-->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Folder</string>
+			<key>CFBundleTypeRole</key>
+			<string>Shell</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.folder</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

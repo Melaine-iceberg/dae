@@ -51,6 +51,14 @@
       "fetch_failed": "获取远程更新失败",
       "push_failed": "推送失败",
       "pull_failed": "拉取失败"
+    },
+    "settings": {
+      "parse_failed": "设置文件已损坏，无法读取",
+      "save_failed": "设置保存失败",
+      "not_initialized": "设置尚未就绪，请重试"
+    },
+    "default_manager": {
+      "set_failed": "无法更改默认文件管理器"
     }
   },
   "kind": {

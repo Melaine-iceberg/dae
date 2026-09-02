@@ -1,0 +1,88 @@
+{
+  "dialog": {
+    "title": "设置",
+    "navAria": "设置分区"
+  },
+  "nav": {
+    "appearance": "外观",
+    "shortcuts": "快捷键",
+    "terminal": "终端",
+    "defaultFileManager": "默认文件管理器"
+  },
+  "appearance": {
+    "description": "主题与界面语言。更改会立即生效。",
+    "theme": "主题",
+    "themeOptions": {
+      "light": "浅色",
+      "dark": "深色",
+      "system": "跟随系统"
+    },
+    "language": "语言"
+  },
+  "groups": {
+    "app": "全局",
+    "explorer": "文件",
+    "view": "视图与导航"
+  },
+  "actions": {
+    "app": {
+      "commandBar": "命令栏",
+      "pathJump": "快速跳转路径",
+      "toggleTerminal": "切换集成终端",
+      "openSettings": "打开设置"
+    },
+    "explorer": {
+      "clearSelection": "取消选择",
+      "copy": "复制",
+      "cut": "剪切",
+      "paste": "粘贴",
+      "selectAll": "全选",
+      "toggleHidden": "显示/隐藏 隐藏文件",
+      "rename": "重命名",
+      "preview": "快速预览",
+      "undo": "撤销",
+      "redo": "重做",
+      "redoAlt": "重做（备用）",
+      "trash": "移到回收站",
+      "deletePermanent": "永久删除",
+      "openSystemTerminal": "在系统终端中打开",
+      "focusSearch": "聚焦搜索",
+      "switchPane": "切换窗格"
+    }
+  },
+  "recorder": {
+    "listening": "请按下按键…",
+    "conflict": "已被“{{action}}”占用",
+    "replace": "替换",
+    "cancel": "取消",
+    "reset": "恢复默认",
+    "resetAria": "恢复 {{action}} 的默认快捷键",
+    "changeAria": "修改 {{action}} 的快捷键"
+  },
+  "shortcuts": {
+    "description": "点击某个快捷键后按下你想要的组合键。退格或删除键可清除，Esc 取消。",
+    "resetAll": "全部重置"
+  },
+  "terminal": {
+    "description": "集成终端的字体排版。更改会立即生效。",
+    "fontFamily": "字体",
+    "fontFamilyPlaceholder": "Cascadia Code, Consolas, monospace",
+    "fontFamilyHint": "留空则使用内置等宽字体栈。",
+    "fontSize": "字号",
+    "lineHeight": "行高",
+    "lineHeightHint": "取值 0.8 到 3.0 之间的倍数，默认为 1.2。"
+  },
+  "defaultFileManager": {
+    "description": "将 dae 注册为操作系统打开文件夹的程序。",
+    "unsupported": "此平台不提供默认文件管理器设置。",
+    "statusDefault": "dae 已是默认文件管理器。",
+    "statusRegistered": "dae 已注册，请在系统设置中完成选择。",
+    "statusNotDefault": "dae 不是默认文件管理器。",
+    "setDefault": "设为默认",
+    "clearDefault": "取消默认"
+  },
+  "default_manager": {
+    "cannot_unset_macos": "macOS 不允许应用自行取消默认身份，请在访达设置中选择其他应用来更改。",
+    "finish_in_system_settings": "Windows 需要你在刚打开的系统设置页面中确认将 dae 设为默认。"
+  }
+}

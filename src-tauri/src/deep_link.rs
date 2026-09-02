@@ -90,11 +90,14 @@ fn resolve_existing_directory(path: &str) -> Option<String> {
 
 /// Handles one activation whose `args` may carry `dae://` URLs — the
 /// single-instance forward from a duplicate launch, or the initial launch's
-/// own CLI on Windows/Linux. Buffers and emits one navigation event per URL
-/// and brings the running window to the front either way.
+/// own CLI on Windows/Linux. A bare directory path is also honored: that is
+/// what the OS passes when dae is launched as the default folder handler.
+/// Buffers and emits one navigation event per resolvable target and brings
+/// the running window to the front either way.
 pub fn handle_activation(app: &tauri::AppHandle, args: &[String]) {
     for arg in args {
-        if let Some(directory) = parse_open_directory(arg) {
+        let directory = parse_open_directory(arg).or_else(|| raw_directory_arg(arg));
+        if let Some(directory) = directory {
             // Buffer first so a pre-mount deep link survives until the
             // frontend pulls it through `take_pending_open_directory`.
             if let Some(state) = app.try_state::<PendingDeepLink>() {
@@ -105,6 +108,18 @@ pub fn handle_activation(app: &tauri::AppHandle, args: &[String]) {
     }
 
     focus_main_window(app);
+}
+
+/// A bare directory path argument, as the OS supplies when dae is the default
+/// folder handler. Only existing directories qualify, so the program's own
+/// executable path (argv[0], a file), installer flags, and other non-directory
+/// arguments are ignored rather than navigating somewhere unintended.
+fn raw_directory_arg(arg: &str) -> Option<String> {
+    let path = std::path::Path::new(arg);
+    if !path.is_dir() {
+        return None;
+    }
+    path.to_str().map(str::to_owned)
 }
 
 /// Restores and focuses the main window — the single-instance UX expects
@@ -119,7 +134,7 @@ pub fn focus_main_window(app: &tauri::AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_open_directory;
+    use super::{parse_open_directory, raw_directory_arg};
 
     fn encode(path: &str) -> String {
         url::form_urlencoded::byte_serialize(path.as_bytes()).collect()
@@ -166,5 +181,35 @@ mod tests {
         let url = "dae://open?path=%2Fno%2Fsuch%2Fdirectory%2Fanywhere";
 
         assert_eq!(parse_open_directory(url), None);
+    }
+
+    #[test]
+    fn raw_directory_arg_accepts_existing_directory() {
+        let dir = std::env::temp_dir();
+
+        assert_eq!(
+            raw_directory_arg(dir.to_str().unwrap()),
+            Some(dir.to_string_lossy().into_owned())
+        );
+    }
+
+    #[test]
+    fn raw_directory_arg_rejects_file() {
+        // Mirrors argv[0] on an "open with dae" launch: the exe is a file and
+        // must be ignored rather than navigating to its containing folder.
+        let root = std::env::temp_dir().join(format!("dae-raw-arg-{}", std::process::id()));
+        std::fs::create_dir_all(&root).expect("create test root");
+        let file = root.join("not-a-dir.txt");
+        std::fs::write(&file, b"x").expect("write test file");
+
+        assert_eq!(raw_directory_arg(file.to_str().unwrap()), None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn raw_directory_arg_rejects_flags_and_garbage() {
+        assert_eq!(raw_directory_arg("--flag"), None);
+        assert_eq!(raw_directory_arg("dae://open"), None);
+        assert_eq!(raw_directory_arg("/no/such/directory/anywhere"), None);
     }
 }

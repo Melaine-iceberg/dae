@@ -17,6 +17,7 @@ import {
   EyeSlashIcon,
   FolderIcon,
   FolderOpenIcon,
+  GearIcon,
   GlobeIcon,
   HardDriveIcon,
   HouseIcon,
@@ -52,6 +53,7 @@ import {
 } from "@/features/explorer/tabs";
 import { spaceRenameRequestAtom, createSpace, ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
 import { getSpaceAccent } from "@/features/workspace/space-identity";
+import { settingsOpenAtom } from "@/features/settings/settings-atoms";
 import {
   activeSurfaceAtom,
   navigateToFolderAtom,
@@ -145,6 +147,7 @@ function SidebarContent() {
   const [spaceName, setSpaceName] = useState("");
   const [connectOpen, setConnectOpen] = useState(false);
   const [cloudOpen, setCloudOpen] = useState(false);
+  const setSettingsOpen = useSetAtom(settingsOpenAtom);
   // Location rows highlight the focused pane's folder in the active tab.
   const navigator = useAtomValue(activePaneNavigatorAtom);
   const { directory } = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
@@ -342,6 +345,15 @@ function SidebarContent() {
       </div>
 
       <div className="flex shrink-0 items-center justify-end gap-1 border-t border-sidebar-border px-2 py-1.5">
+        <button
+          aria-label={t("settings.open")}
+          className="mr-auto flex size-7 items-center justify-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-accent/70 hover:text-foreground"
+          onClick={() => setSettingsOpen(true)}
+          title={t("settings.open")}
+          type="button"
+        >
+          <GearIcon className="size-4" />
+        </button>
         <ThemeMenu />
         <LanguageMenu />
       </div>

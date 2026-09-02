@@ -8,6 +8,7 @@ import {
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { useHotkeys } from "@tanstack/react-hotkeys";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { commands, type ArchiveFormat } from "@/bindings";
 import { i18n } from "@/i18n";
@@ -47,10 +48,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
+import { appSettingsAtom, hotkeysPausedAtom } from "@/features/settings/settings-atoms";
+import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
+import { HOTKEY_COMMON_OPTIONS, asHotkey, guardedAction } from "@/features/settings/hotkeys";
 
 import {
   canDropEntries,
@@ -294,117 +297,95 @@ export function FileList({
     }
   }, [initialScrollOffset, viewId]);
 
-  const handleKeyDown = (event: KeyboardEvent) => {
-    // In the dual-pane layout only the focused pane reacts to global
-    // shortcuts; the other pane ignores them entirely.
-    if (!isActivePane) return;
-    if (event.defaultPrevented || event.isComposing || isEditableElement(event.target)) return;
+  const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
+  const hotkeysPaused = useAtomValue(hotkeysPausedAtom);
 
-    if (event.key === "Escape" && selectedCount > 0) {
-      onSelectedPathsChange([]);
-      return;
-    }
-
-    const hasModifier = event.ctrlKey || event.metaKey;
-    const key = event.key.toLowerCase();
-
-    if (hasModifier && !event.altKey && key === "c" && selectedCount > 0 && !actionsDisabled) {
-      event.preventDefault();
-      onCopy();
-      return;
-    }
-
-    if (hasModifier && !event.altKey && key === "x" && selectedCount > 0 && !actionsDisabled) {
-      event.preventDefault();
-      onCut();
-      return;
-    }
-
-    if (hasModifier && !event.altKey && key === "v" && !actionsDisabled) {
-      event.preventDefault();
-      onPaste();
-      return;
-    }
-
-    // Ctrl/Cmd+` opens the system terminal in the current directory.
-    if (hasModifier && !event.altKey && key === "`") {
-      event.preventDefault();
-      onOpenTerminal();
-      return;
-    }
-
-    if (hasModifier && !event.altKey && key === "a" && !listIsLoading) {
-      event.preventDefault();
-      onSelectedPathsChange(entries.map((entry) => entry.path));
-      return;
-    }
-
-    // Ctrl/Cmd+H toggles hidden-file visibility, persisted as a preference.
-    if (hasModifier && !event.altKey && key === "h") {
-      event.preventDefault();
-      setShowHiddenFiles((visible) => !visible);
-      return;
-    }
-
-    // F2 renames a single entry inline; multi-selections open the bulk
-    // rename dialog instead.
-    if (event.key === "F2" && selectedCount > 0 && !actionsDisabled) {
-      event.preventDefault();
-      onRename();
-      return;
-    }
-
-    // Space toggles the preview surface for the selection (SKILL.md §30).
-    if (event.key === " " && selectedCount > 0 && !actionsDisabled) {
-      event.preventDefault();
-      onTogglePreview();
-      return;
-    }
-
-    // Ctrl/Cmd+Z undoes the most recent file operation; Ctrl+Shift+Z and
-    // Ctrl/Cmd+Y redo the most recently undone one.
-    if (
-      hasModifier &&
-      !event.altKey &&
-      key === "z" &&
-      !event.shiftKey &&
-      canUndo &&
-      !actionsDisabled
-    ) {
-      event.preventDefault();
-      onUndo();
-      return;
-    }
-
-    if (
-      hasModifier &&
-      !event.altKey &&
-      ((key === "z" && event.shiftKey) || key === "y") &&
-      canRedo &&
-      !actionsDisabled
-    ) {
-      event.preventDefault();
-      onRedo();
-      return;
-    }
-
-    if (event.key === "Delete" && selectedCount > 0 && !actionsDisabled) {
-      event.preventDefault();
-      // Plain Delete moves to the trash (undoable); Shift+Delete is permanent.
-      if (event.shiftKey) {
-        onDeletePermanent();
-      } else {
-        onDelete();
-      }
-    }
-  };
-
-  // The Compiler keeps `handleKeyDown` referentially stable across renders,
-  // so this subscribes once unless a callback it reads actually changes.
-  useEffect(() => {
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleKeyDown]);
+  // Explorer keyboard shortcuts, migrated to user-configurable TanStack
+  // Hotkeys. Every action is gated on this pane being the focused one (the
+  // inactive split pane ignores them entirely) and on the recorder not
+  // capturing a new binding; the per-action conditions mirror the previous
+  // single handler exactly. Event-level guards — already-prevented, IME
+  // composing, focus in an editable surface — and "swallow the key only when
+  // the action runs" live in `guardedAction`, so a combo pressed with nothing
+  // selected still falls through untouched.
+  const hotkeysActive = isActivePane && !hotkeysPaused;
+  const hasSelection = selectedCount > 0;
+  const canModifySelection = hasSelection && !actionsDisabled;
+  useHotkeys(
+    [
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.clearSelection")),
+        callback: guardedAction(() => onSelectedPathsChange([]), { preventDefault: false }),
+        options: { enabled: hotkeysActive && hasSelection },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.copy")),
+        callback: guardedAction(onCopy),
+        options: { enabled: hotkeysActive && canModifySelection },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.cut")),
+        callback: guardedAction(onCut),
+        options: { enabled: hotkeysActive && canModifySelection },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.paste")),
+        callback: guardedAction(onPaste),
+        options: { enabled: hotkeysActive && !actionsDisabled },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.selectAll")),
+        callback: guardedAction(() => onSelectedPathsChange(entries.map((entry) => entry.path))),
+        options: { enabled: hotkeysActive && !listIsLoading },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.toggleHidden")),
+        callback: guardedAction(() => setShowHiddenFiles((visible) => !visible)),
+        options: { enabled: hotkeysActive },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.rename")),
+        callback: guardedAction(onRename),
+        options: { enabled: hotkeysActive && canModifySelection },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.preview")),
+        callback: guardedAction(onTogglePreview),
+        options: { enabled: hotkeysActive && canModifySelection },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.undo")),
+        callback: guardedAction(onUndo),
+        options: { enabled: hotkeysActive && canUndo && !actionsDisabled },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.redo")),
+        callback: guardedAction(onRedo),
+        options: { enabled: hotkeysActive && canRedo && !actionsDisabled },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.redoAlt")),
+        callback: guardedAction(onRedo),
+        options: { enabled: hotkeysActive && canRedo && !actionsDisabled },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.trash")),
+        callback: guardedAction(onDelete),
+        options: { enabled: hotkeysActive && canModifySelection },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.deletePermanent")),
+        callback: guardedAction(onDeletePermanent),
+        options: { enabled: hotkeysActive && canModifySelection },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.openSystemTerminal")),
+        callback: guardedAction(onOpenTerminal),
+        options: { enabled: hotkeysActive },
+      },
+    ],
+    HOTKEY_COMMON_OPTIONS,
+  );
 
   useEffect(() => {
     const updateDrag = (nextDrag: InternalDragState | null) => {
@@ -907,7 +888,9 @@ export function FileList({
           <ContextMenuItem onClick={onOpenTerminal}>
             <TerminalIcon />
             {t("explorer:contextMenu.openInTerminal")}
-            <ContextMenuShortcut>{MOD_KEY}+`</ContextMenuShortcut>
+            <ContextMenuShortcut>
+              {formatBinding(resolveBinding(shortcuts, "explorer.openSystemTerminal"))}
+            </ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem disabled={blankMenuDisabled} onClick={onOpenWith}>
             <AppWindowIcon />
@@ -916,7 +899,9 @@ export function FileList({
           <ContextMenuItem onClick={onPaste}>
             <ClipboardIcon />
             {t("explorer:contextMenu.paste")}
-            <ContextMenuShortcut>{MOD_KEY}+V</ContextMenuShortcut>
+            <ContextMenuShortcut>
+              {formatBinding(resolveBinding(shortcuts, "explorer.paste"))}
+            </ContextMenuShortcut>
           </ContextMenuItem>
         </ContextMenuGroup>
       </ContextMenuContent>
@@ -1155,16 +1140,6 @@ async function openFile(path: string): Promise<void> {
   } catch (error) {
     console.warn(`Unable to open ${path}`, error);
   }
-}
-
-function isEditableElement(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLElement &&
-    (target.isContentEditable ||
-      target.tagName === "INPUT" ||
-      target.tagName === "TEXTAREA" ||
-      target.tagName === "SELECT")
-  );
 }
 
 function formatModifiedAt(modifiedAt: number | null): string {

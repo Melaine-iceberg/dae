@@ -51,6 +51,14 @@
       "fetch_failed": "Fetch failed",
       "push_failed": "Push failed",
       "pull_failed": "Pull failed"
+    },
+    "settings": {
+      "parse_failed": "The settings file is corrupted and could not be read",
+      "save_failed": "The settings could not be saved",
+      "not_initialized": "Settings are not ready yet; please try again"
+    },
+    "default_manager": {
+      "set_failed": "Could not change the default file manager"
     }
   },
   "kind": {

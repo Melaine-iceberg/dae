@@ -1,0 +1,88 @@
+{
+  "dialog": {
+    "title": "Settings",
+    "navAria": "Settings sections"
+  },
+  "nav": {
+    "appearance": "Appearance",
+    "shortcuts": "Shortcuts",
+    "terminal": "Terminal",
+    "defaultFileManager": "Default file manager"
+  },
+  "appearance": {
+    "description": "Theme and display language. Changes apply immediately.",
+    "theme": "Theme",
+    "themeOptions": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "Follow system"
+    },
+    "language": "Language"
+  },
+  "groups": {
+    "app": "Global",
+    "explorer": "Files",
+    "view": "View & navigation"
+  },
+  "actions": {
+    "app": {
+      "commandBar": "Command bar",
+      "pathJump": "Quick open path",
+      "toggleTerminal": "Toggle integrated terminal",
+      "openSettings": "Open settings"
+    },
+    "explorer": {
+      "clearSelection": "Clear selection",
+      "copy": "Copy",
+      "cut": "Cut",
+      "paste": "Paste",
+      "selectAll": "Select all",
+      "toggleHidden": "Toggle hidden files",
+      "rename": "Rename",
+      "preview": "Quick Look preview",
+      "undo": "Undo",
+      "redo": "Redo",
+      "redoAlt": "Redo (alternate)",
+      "trash": "Move to trash",
+      "deletePermanent": "Delete permanently",
+      "openSystemTerminal": "Open in system terminal",
+      "focusSearch": "Focus search",
+      "switchPane": "Switch pane"
+    }
+  },
+  "recorder": {
+    "listening": "Press keys…",
+    "conflict": "Already used by “{{action}}”",
+    "replace": "Replace",
+    "cancel": "Cancel",
+    "reset": "Restore default",
+    "resetAria": "Restore the default shortcut for {{action}}",
+    "changeAria": "Change the shortcut for {{action}}"
+  },
+  "shortcuts": {
+    "description": "Click a shortcut, then press the keys you want. Backspace or Delete clears it; Escape cancels.",
+    "resetAll": "Reset all"
+  },
+  "terminal": {
+    "description": "Typography for the integrated terminal. Changes apply immediately.",
+    "fontFamily": "Font family",
+    "fontFamilyPlaceholder": "Cascadia Code, Consolas, monospace",
+    "fontFamilyHint": "Leave blank to use the built-in monospace stack.",
+    "fontSize": "Font size",
+    "lineHeight": "Line height",
+    "lineHeightHint": "A multiplier from 0.8 to 3.0; 1.2 is the default."
+  },
+  "defaultFileManager": {
+    "description": "Register dae to open folders from the operating system.",
+    "unsupported": "This platform does not expose a default file manager setting.",
+    "statusDefault": "dae is the default file manager.",
+    "statusRegistered": "dae is registered. Finish choosing it in system settings.",
+    "statusNotDefault": "dae is not the default file manager.",
+    "setDefault": "Set as default",
+    "clearDefault": "Remove default"
+  },
+  "default_manager": {
+    "cannot_unset_macos": "macOS does not allow an app to remove itself as the default. Choose another app in Finder settings to change it.",
+    "finish_in_system_settings": "Windows needs you to confirm dae as the default in the system settings page that just opened."
+  }
+}

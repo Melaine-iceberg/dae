@@ -94,6 +94,9 @@
     "system": "Follow system",
     "titleWith": "Theme: {{name}}"
   },
+  "settings": {
+    "open": "Settings"
+  },
   "protocols": {
     "smb": "SMB / Windows share",
     "sftp": "SFTP / SSH",
