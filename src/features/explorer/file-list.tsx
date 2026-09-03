@@ -69,9 +69,10 @@ import {
 import { EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { FileColumnView } from "./file-column-view";
-import { getEntryPresentation, getPresentationIconClassName } from "./file-icons";
+import { getEntryPresentation } from "./file-icons";
 import { FileGridView } from "./file-grid-view";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
+import { TypeIconTile } from "./icon-tile";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
 import { isNativeIconSupported, NativeIconImage } from "./native-icon";
 import {
@@ -1015,7 +1016,6 @@ function FileListRow({
 }) {
   const { t } = useTranslation("explorer");
   const presentation = getEntryPresentation(entry);
-  const EntryIcon = presentation.icon;
   const isDirectory = entry.kind === "directory";
   const entryStatus = getEntryGitStatus(gitStatus, entry);
   const displaySize = isDirectory ? null : entry.size;
@@ -1027,11 +1027,12 @@ function FileListRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            // Desktop row: tonal hover via state-layer, flat selection fill,
-            // constant corner radius — no pill morph.
+            // Desktop row: tonal hover via state-layer; selection is a soft
+            // primary wash with a whisper-thin primary inset ring. Constant
+            // corner radius — no pill morph.
             "render-contain state-layer grid cursor-grab items-center rounded-md whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
             entry.hidden && HIDDEN_ENTRY_CLASS,
-            isSelected && "bg-selection",
+            isSelected && "bg-selection ring-1 ring-primary/35 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
           )}
@@ -1058,18 +1059,20 @@ function FileListRow({
                   className="shrink-0 entry-icon-pop"
                   entry={entry}
                   fallback={
-                    <EntryIcon className={getPresentationIconClassName(presentation)} size={18} />
+                    <TypeIconTile
+                      className="size-[22px] rounded-[7px]"
+                      iconSize={13}
+                      presentation={presentation}
+                    />
                   }
                   pixelSize={18}
                 />
               ) : (
-                <EntryIcon
-                  className={cn(
-                    "shrink-0 entry-icon-pop",
-                    getPresentationIconClassName(presentation),
-                  )}
-                  size={18}
-                  weight={isDirectory ? "fill" : undefined}
+                <TypeIconTile
+                  pop
+                  className="size-[22px] rounded-[7px]"
+                  iconSize={13}
+                  presentation={presentation}
                 />
               )}
             </EntryIconFrame>

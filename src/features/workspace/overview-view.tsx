@@ -13,8 +13,6 @@ import {
   StarIcon,
 } from "@phosphor-icons/react";
 
-import { cn } from "@/lib/utils";
-
 import {
   ContextMenu,
   ContextMenuContent,
@@ -32,9 +30,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   DIRECTORY_PRESENTATION,
   getFilePresentation,
-  getPresentationIconClassName,
 } from "@/features/explorer/file-icons";
-import { PLACE_PRESENTATION } from "@/features/sidebar/place-presentation";
+import { tintStyle, TypeIconTile } from "@/features/explorer/icon-tile";
+import { PLACE_PRESENTATION, PLACE_TONE_VAR } from "@/features/sidebar/place-presentation";
 import {
   addFavoritePathsAtom,
   ensureFavoritesLoadedAtom,
@@ -190,8 +188,8 @@ export function OverviewView() {
                     <LocationCard
                       description={place.path}
                       icon={presentation.icon}
-                      iconClassName="text-muted-foreground"
                       onClick={() => navigateToFolder(place.path)}
+                      tileStyle={tintStyle(PLACE_TONE_VAR[place.kind])}
                       title={presentation.label}
                     />
                   </ContextMenuTrigger>
@@ -214,8 +212,9 @@ export function OverviewView() {
                   <LocationCard
                     description={favorite.path}
                     icon={StarIcon}
-                    iconClassName="fill-amber-400 text-amber-500"
+                    iconClassName="fill-white text-white"
                     onClick={() => navigateToFolder(favorite.path)}
+                    tileClassName="tile-folder"
                     title={favorite.name}
                   />
                 </ContextMenuTrigger>
@@ -274,7 +273,6 @@ export function OverviewView() {
             {recentPreview.map((item) => {
               const presentation =
                 item.kind === "directory" ? DIRECTORY_PRESENTATION : getFilePresentation(item.name);
-              const EntryIcon = presentation.icon;
               return (
                 <li key={item.path}>
                   <button
@@ -285,9 +283,10 @@ export function OverviewView() {
                     title={item.path}
                     type="button"
                   >
-                    <EntryIcon
-                      className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
-                      weight={item.kind === "directory" ? "fill" : undefined}
+                    <TypeIconTile
+                      className="size-6 rounded-[8px]"
+                      iconSize={13}
+                      presentation={presentation}
                     />
                     <span className="min-w-0 flex-1 truncate text-[13px]">{item.name}</span>
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
@@ -322,6 +321,7 @@ export function OverviewView() {
                 iconClassName={getSpaceAccent(space.id).text}
                 key={space.id}
                 onClick={() => openSurface({ kind: "space", spaceId: space.id })}
+                tileClassName={getSpaceAccent(space.id).tile}
                 title={getSpaceDisplayName(space)}
               />
             ))}

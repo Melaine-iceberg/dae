@@ -50,11 +50,11 @@ function readTerminalTheme(ansiOverride: AnsiPalette | null): ITheme {
   const dark = document.documentElement.classList.contains("dark");
   const ansi = resolveAnsiPalette(ansiOverride, dark);
   return {
-    background: token("--card", "#1d1f27"),
+    background: token("--card", "#1a1d26"),
     foreground: token("--foreground", "#dfe1e5"),
     cursor: token("--foreground", "#dfe1e5"),
-    cursorAccent: token("--card", "#1d1f27"),
-    selectionBackground: token("--accent", "#272a34"),
+    cursorAccent: token("--card", "#1a1d26"),
+    selectionBackground: token("--accent", "#262a37"),
     black: ansi[0],
     red: ansi[1],
     green: ansi[2],

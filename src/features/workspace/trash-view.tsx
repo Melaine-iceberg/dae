@@ -53,9 +53,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   DIRECTORY_PRESENTATION,
   getFilePresentation,
-  getPresentationIconClassName,
-  type PhosphorIcon,
 } from "@/features/explorer/file-icons";
+import { TypeIconTile } from "@/features/explorer/icon-tile";
 
 import { navigateToFolderAtom } from "./workspace-atoms";
 import { WorkspacePage, WorkspacePageHeader, baseNameOf } from "./workspace-components";
@@ -433,7 +432,6 @@ function TrashRow({
 }) {
   const { t } = useTranslation("workspace");
   const presentation = entry.isDirectory ? DIRECTORY_PRESENTATION : getFilePresentation(entry.name);
-  const Icon: PhosphorIcon = presentation.icon;
 
   return (
     <li className="border-b last:border-b-0">
@@ -455,9 +453,10 @@ function TrashRow({
           >
             <RowCheckbox isSelected={isSelected} />
             <span className="flex min-w-0 items-center gap-2">
-              <Icon
-                className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
-                weight={entry.isDirectory ? "fill" : undefined}
+              <TypeIconTile
+                className="size-[22px] rounded-[7px]"
+                iconSize={13}
+                presentation={presentation}
               />
               <span className="truncate text-[13px]">{entry.name}</span>
             </span>

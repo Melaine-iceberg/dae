@@ -18,7 +18,8 @@ import { cn } from "@/lib/utils";
 
 import { EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
-import { getEntryPresentation, getPresentationIconClassName } from "./file-icons";
+import { getEntryPresentation } from "./file-icons";
+import { TypeIconTile } from "./icon-tile";
 import type { MenuActions } from "./file-list";
 import { isNativeIconSupported, NativeIconImage } from "./native-icon";
 import {
@@ -293,7 +294,6 @@ function PaneRow({
 }) {
   const isDirectory = entry.kind === "directory";
   const presentation = getEntryPresentation(entry);
-  const EntryIcon = presentation.icon;
   const isExpanded = activeChildPath === entry.path;
 
   return (
@@ -306,7 +306,7 @@ function PaneRow({
             // no pill morph so rows keep a constant corner radius.
             "render-contain state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-xs px-2.5 select-none transition-[background-color,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
-            (isSelected || isExpanded) && "bg-selection",
+            (isSelected || isExpanded) && "bg-selection ring-1 ring-primary/35 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
             dropTargetPath === entry.path && "bg-selection ring-2 ring-primary ring-inset",
           )}
@@ -337,17 +337,20 @@ function PaneRow({
                 className="shrink-0 entry-icon-pop"
                 entry={entry}
                 fallback={
-                  <EntryIcon className={getPresentationIconClassName(presentation)} size={16} />
+                  <TypeIconTile
+                    className="size-[22px] rounded-[7px]"
+                    iconSize={13}
+                    presentation={presentation}
+                  />
                 }
                 pixelSize={16}
               />
             ) : (
-              <EntryIcon
-                className={cn(
-                  "size-4 shrink-0 entry-icon-pop",
-                  getPresentationIconClassName(presentation),
-                )}
-                weight={isDirectory ? "fill" : undefined}
+              <TypeIconTile
+                pop
+                className="size-[22px] rounded-[7px]"
+                iconSize={13}
+                presentation={presentation}
               />
             )}
           </EntryIconFrame>

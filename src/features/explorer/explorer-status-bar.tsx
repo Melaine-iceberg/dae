@@ -120,22 +120,28 @@ function ViewModeSwitcher() {
   const { t } = useTranslation("explorer");
   const [viewMode, setViewMode] = useAtom(viewModeAtom);
 
+  // Segmented control: a tonal track with a raised card for the active mode,
+  // so the current view reads at a glance (macOS / Windows 11 convention).
   return (
-    <div aria-label={t("statusBar.viewModeLabel")} className="flex items-center gap-0.5" role="group">
+    <div
+      aria-label={t("statusBar.viewModeLabel")}
+      className="flex items-center gap-0.5 rounded-md bg-muted p-0.5"
+      role="group"
+    >
       {VIEW_MODE_PRESENTATION.map(({ icon: ModeIcon, label, value: mode }) => (
         <button
           aria-label={t(label)}
           aria-pressed={viewMode === mode}
           className={cn(
-            "flex size-5 items-center justify-center rounded-xs transition-colors hover:bg-accent hover:text-foreground",
-            viewMode === mode && "bg-selection text-primary",
+            "flex h-[18px] w-6 items-center justify-center rounded-[5px] text-muted-foreground transition-[background-color,color,box-shadow] duration-fast hover:text-foreground",
+            viewMode === mode && "bg-card text-primary shadow-ambient-xs",
           )}
           key={mode}
           onClick={() => setViewMode(mode)}
           title={t(label)}
           type="button"
         >
-          <ModeIcon size={13} />
+          <ModeIcon size={12} />
         </button>
       ))}
     </div>

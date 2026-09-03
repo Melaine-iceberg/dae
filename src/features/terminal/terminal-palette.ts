@@ -2,7 +2,7 @@
  * Curated 16-color ANSI palettes for the integrated terminal.
  *
  * xterm's built-in ANSI colors are saturated primaries designed for a pure
- * black background; on the app's graphite surfaces (`--card` is `#1d1f27` dark,
+ * black background; on the app's graphite surfaces (`--card` is `#1a1d26` dark,
  * `#ffffff` light) they are harsh and, in the light theme, several are outright
  * unreadable. These palettes are sampled from the house color tokens in
  * `App.css` and tuned per theme so `ls --color`, git diffs and friends are
@@ -19,7 +19,7 @@
 /** The 16 ANSI slots in canonical order. */
 export type AnsiPalette = readonly string[];
 
-/** Graphite dark, tuned to `--card: #1d1f27` / `--foreground: #dfe1e5`. */
+/** Graphite dark, tuned to `--card: #1a1d26` / `--foreground: #dfe1e5`. */
 export const DARK_ANSI: AnsiPalette = Object.freeze([
   "#31343f", // black — the border tone, never pure #000 (too harsh on graphite)
   "#e55765", // red — --destructive
@@ -43,11 +43,11 @@ export const DARK_ANSI: AnsiPalette = Object.freeze([
 export const LIGHT_ANSI: AnsiPalette = Object.freeze([
   "#24292f", // black — soft near-black, not pure #000
   "#d5373a", // red — --destructive
-  "#2e9e63", // green — --icon-sheet
-  "#a3762a", // yellow — darkened amber so it reads on white
-  "#3574f0", // blue — --primary
-  "#c94fa0", // magenta — --icon-video
-  "#159aa3", // cyan — --icon-image
+  "#31a566", // green — --icon-sheet
+  "#a97c2f", // yellow — darkened amber so it reads on white
+  "#3d74f5", // blue — --primary
+  "#d45fa8", // magenta — --icon-video
+  "#13a3ad", // cyan — --icon-image
   "#c4c8ce", // white — light gray (--input)
   "#6c707e", // brightBlack — --muted-foreground (dim text)
   "#df4a52", // brightRed

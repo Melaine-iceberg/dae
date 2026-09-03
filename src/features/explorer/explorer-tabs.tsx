@@ -142,7 +142,7 @@ export function ExplorerTabs() {
       <div className="flex min-h-0 flex-1 gap-2.5 px-2.5 pt-1 pb-2.5">
         <Sidebar />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-ambient-xs">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-ambient-xs dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.05)]">
             <WorkspaceSurfaceView key={activeTabId} tabId={activeTabId} />
           </div>
           {terminalMounted && (
@@ -262,7 +262,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       className={cn(
         "group relative flex h-8 w-52 shrink-0 items-center rounded-md text-[13px] select-none transition-[background-color,color,box-shadow,scale] duration-fast ease-spring-fast active:scale-[0.98]",
         isActive
-          ? "bg-card text-foreground shadow-ambient-sm ring-1 ring-border"
+          ? "bg-card text-foreground shadow-ambient-sm ring-1 ring-border dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.06)]"
           : "cursor-default text-muted-foreground hover:bg-accent/60 hover:text-foreground",
       )}
       onClick={() => activateTab(tab.id)}

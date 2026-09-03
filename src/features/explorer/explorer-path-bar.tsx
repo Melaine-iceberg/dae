@@ -58,7 +58,7 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
     return (
       <form
         className={cn(
-          "flex h-8 min-w-0 flex-1 items-center rounded-md border bg-muted/70 pr-3 pl-3.5 transition-[background-color,border-color,box-shadow] focus-within:bg-card focus-within:ring-2 focus-within:ring-ring/30",
+          "flex h-8 min-w-0 flex-1 items-center rounded-full border bg-muted/70 pr-3 pl-3.5 transition-[background-color,border-color,box-shadow] focus-within:bg-card focus-within:ring-2 focus-within:ring-ring/30",
           isInvalid ? "border-destructive" : "border-transparent focus-within:border-ring",
         )}
         onSubmit={(event) => void submitPath(event)}
@@ -94,7 +94,7 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
 
   return (
     <div
-      className="flex h-8 min-w-0 flex-1 items-center rounded-md border border-transparent bg-muted/70 px-3.5 transition-colors hover:bg-muted dark:bg-muted/50 dark:hover:bg-muted/70"
+      className="flex h-8 min-w-0 flex-1 items-center rounded-full border border-transparent bg-muted/70 px-3.5 transition-colors hover:bg-muted dark:bg-muted/50 dark:hover:bg-muted/70"
       data-tauri-drag-region="false"
       onClick={startEditing}
       title={t("pathBar.clickToEdit")}

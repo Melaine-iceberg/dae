@@ -35,10 +35,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   DIRECTORY_PRESENTATION,
   getFilePresentation,
-  getPresentationIconClassName,
-  type PhosphorIcon,
 } from "@/features/explorer/file-icons";
-import { cn } from "@/lib/utils";
+import { TypeIconTile } from "@/features/explorer/icon-tile";
 
 import {
   clearRecentItems,
@@ -185,7 +183,6 @@ function RecentRow({
   const { t } = useTranslation("workspace");
   const presentation =
     item.kind === "directory" ? DIRECTORY_PRESENTATION : getFilePresentation(item.name);
-  const Icon: PhosphorIcon = presentation.icon;
   const location = parentPathOf(item.path);
 
   return (
@@ -199,9 +196,10 @@ function RecentRow({
             title={item.path}
             type="button"
           >
-            <Icon
-              className={cn("size-4 shrink-0", getPresentationIconClassName(presentation))}
-              weight={item.kind === "directory" ? "fill" : undefined}
+            <TypeIconTile
+              className="size-6 rounded-[8px]"
+              iconSize={13}
+              presentation={presentation}
             />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px]">{item.name}</span>

@@ -250,8 +250,10 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
                 <LocationCard
                   description={item.path}
                   icon={FolderIcon}
-                  iconClassName="text-folder"
+                  iconClassName="text-white"
+                  iconWeight="fill"
                   onClick={() => navigateToFolder(item.path)}
+                  tileClassName="tile-folder"
                   title={item.name}
                 />
               </ContextMenuTrigger>

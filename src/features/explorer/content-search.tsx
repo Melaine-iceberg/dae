@@ -21,7 +21,8 @@ import { Input } from "@/components/ui/input";
 import { localeNumber } from "@/i18n/format";
 import { translateBackendMessage } from "@/i18n/errors";
 
-import { getFilePresentation, getPresentationIconClassName } from "./file-icons";
+import { getFilePresentation } from "./file-icons";
+import { TypeIconTile } from "./icon-tile";
 
 /** Content scans read every candidate file, so they debounce longer than name search. */
 const CONTENT_SEARCH_DEBOUNCE_MS = 350;
@@ -252,14 +253,17 @@ function FileMatchGroup({
   const [expanded, setExpanded] = useState(false);
   const fileName = fileNameOf(file.path);
   const presentation = getFilePresentation(fileName);
-  const FileIcon = presentation.icon;
   const visibleMatches = expanded ? file.matches : file.matches.slice(0, COLLAPSED_MATCH_ROWS);
   const parentDirectory = parentDirectoryOf(file.path);
 
   return (
     <div className="overflow-hidden rounded-lg border border-foreground/5">
       <div className="flex items-center gap-2 bg-accent/40 px-3 py-1.5">
-        <FileIcon className={`size-4 shrink-0 ${getPresentationIconClassName(presentation)}`} />
+        <TypeIconTile
+          className="size-[22px] rounded-[7px]"
+          iconSize={13}
+          presentation={presentation}
+        />
         <button
           className="min-w-0 flex-1 truncate text-left text-[13px] font-medium"
           onClick={() => setExpanded((value) => !value)}

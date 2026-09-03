@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import { i18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -68,13 +68,21 @@ export function LocationCard({
   description,
   icon: Icon,
   iconClassName,
+  iconWeight,
   onClick,
+  tileClassName,
+  tileStyle,
   title,
 }: {
   description?: string;
   icon: PhosphorIcon;
   iconClassName?: string;
+  iconWeight?: "regular" | "fill" | "bold" | "duotone" | "light" | "thin";
   onClick: () => void;
+  /** Overrides the chip's neutral tone (e.g. "tile-folder", space accents). */
+  tileClassName?: string;
+  /** Inline tint for the chip (see tintStyle in icon-tile.tsx). */
+  tileStyle?: CSSProperties;
   title: string;
 }) {
   return (
@@ -90,8 +98,15 @@ export function LocationCard({
       title={description ? `${title} · ${description}` : title}
       type="button"
     >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary">
-        <Icon className={cn("size-4.5", iconClassName)} />
+      <span
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-lg",
+          !tileClassName && !tileStyle && "bg-secondary",
+          tileClassName,
+        )}
+        style={tileStyle}
+      >
+        <Icon className={cn("size-4.5", iconClassName)} weight={iconWeight} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-medium">{title}</span>

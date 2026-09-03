@@ -43,8 +43,8 @@ import {
   OTHER_PRESENTATION,
   SYMLINK_PRESENTATION,
   getFilePresentation,
-  getPresentationIconClassName,
 } from "./file-icons";
+import { TypeIconTile } from "./icon-tile";
 
 const TIMESTAMP_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   year: "numeric",
@@ -356,7 +356,6 @@ export function PropertiesDialog() {
     });
 
   const presentation = target ? kindPresentation(target.kind, target.name) : DIRECTORY_PRESENTATION;
-  const Icon = presentation.icon;
 
   // Checksums only make sense for real local files; everything else keeps
   // the single-view layout without the tab strip.
@@ -409,9 +408,10 @@ export function PropertiesDialog() {
 
         {target && (
           <div className="flex items-center gap-3">
-            <Icon
-              className={cn("size-8 shrink-0", getPresentationIconClassName(presentation))}
-              weight={target?.kind === "directory" ? "fill" : undefined}
+            <TypeIconTile
+              className="size-10 rounded-[12px]"
+              iconSize={20}
+              presentation={presentation}
             />
             <div className="min-w-0">
               <p className="truncate text-[13px] font-medium" title={target.name}>

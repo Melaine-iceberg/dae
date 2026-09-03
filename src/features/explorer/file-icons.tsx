@@ -65,7 +65,7 @@ function duotonePresentationIcon(Icon: PhosphorIcon): PhosphorIcon {
   return DuotoneIcon;
 }
 
-interface ExtensionPresentation {
+export interface ExtensionPresentation {
   icon: PhosphorIcon;
   /** Semantic tone class; entries without one fall back to muted foreground. */
   tone?: string;

@@ -80,8 +80,9 @@ export function FavoritesView() {
                 <LocationCard
                   description={favorite.path}
                   icon={StarIcon}
-                  iconClassName="fill-amber-400 text-amber-500"
+                  iconClassName="fill-white text-white"
                   onClick={() => navigateToFolder(favorite.path)}
+                  tileClassName="tile-folder"
                   title={favorite.name}
                 />
               </ContextMenuTrigger>

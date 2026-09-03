@@ -184,7 +184,7 @@ function SidebarContent() {
   return (
     <nav
       aria-label={t("nav.label")}
-      className="flex w-56 shrink-0 flex-col overflow-hidden rounded-xl border bg-sidebar shadow-ambient-xs"
+      className="flex w-56 shrink-0 flex-col overflow-hidden rounded-xl border bg-sidebar shadow-ambient-xs dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.05)]"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <NavItem
@@ -839,11 +839,11 @@ function NavItem({
       title={title ?? label}
       type="button"
     >
-      {/* Active indicator: a compact primary tick on the leading edge. */}
+      {/* Active indicator: a compact primary-gradient tick on the leading edge. */}
       <span
         aria-hidden="true"
         className={cn(
-          "absolute left-0.5 h-4 w-[3px] rounded-xs bg-primary transition-[transform,opacity] duration-fast ease-spring-fast",
+          "absolute left-0.5 h-4 w-[3px] rounded-xs bg-[linear-gradient(180deg,var(--primary),var(--primary-2))] transition-[transform,opacity] duration-fast ease-spring-fast",
           isActive ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0",
         )}
       />
@@ -997,8 +997,8 @@ function DiskItem({
         >
           <div
             className={cn(
-              "h-full rounded-xs bg-primary transition-all duration-normal",
-              usedPercent > 90 && "bg-destructive",
+              "capacity-fill h-full rounded-xs transition-all duration-normal",
+              usedPercent > 90 && "capacity-fill--warn",
             )}
             style={{ width: `${usedPercent}%` }}
           />

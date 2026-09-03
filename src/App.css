@@ -56,6 +56,9 @@
 
   --color-selection: var(--selection);
   --color-folder: var(--folder);
+  --color-folder-1: var(--folder-1);
+  --color-folder-2: var(--folder-2);
+  --color-primary-2: var(--primary-2);
 
   /* File-type icon tones: category hues tuned per scheme so file kinds
      stay scannable in both light and dark. */
@@ -154,17 +157,19 @@
 :root {
   /* Graphite — light. Neutral steel-gray canvas with white islands; a single
      blue accent. Islands separate from the canvas by tonal contrast first,
-     borders only whisper. */
+     borders only whisper. The primary hue runs a touch clearer than before
+     and pairs with --primary-2 for gradients on key affordances. */
   --shadow-color: #2f3238;
-  --background: #f5f6f8; /* canvas behind the islands */
+  --background: #eceff5; /* canvas behind the islands */
   --foreground: #1f2328;
   --card: #ffffff; /* island surface */
   --card-foreground: #1f2328;
   --popover: #ffffff; /* menus, dialogs */
   --popover-foreground: #1f2328;
-  --primary: #3574f0;
+  --primary: #3d74f5;
+  --primary-2: #5b8cff; /* gradient end for indicators, capacity bars, CTAs */
   --primary-foreground: #ffffff;
-  --primary-container: #dbe7fd;
+  --primary-container: #dfe9fe;
   --on-primary-container: #12386e;
   --secondary: #eceef2; /* tonal secondary surfaces */
   --secondary-foreground: #1f2328;
@@ -173,45 +178,47 @@
   --tertiary: #6c707e;
   --tertiary-container: #e9ebef;
   --on-tertiary-container: #2c3038;
-  --muted: #f2f3f5;
+  --muted: #f0f2f7;
   --muted-foreground: #6c707e;
-  --accent: #e9ebef; /* hover highlight */
+  --accent: #e8ebf2; /* hover highlight */
   --accent-foreground: #1f2328;
   --error-container: #fde2e1;
   --on-error-container: #6e1712;
-  --selection: #d9e5fb; /* active pills, selection */
+  --selection: #e3ebfd; /* active pills, selection — primary at ~12% */
   --folder: #e8a33d;
-  --icon-pdf: #d64545;
-  --icon-doc: #3b6fe0;
-  --icon-sheet: #2e9e63;
+  --folder-1: #f8c04a; /* folder tile gradient start */
+  --folder-2: #e6952a; /* folder tile gradient end */
+  --icon-pdf: #de5454;
+  --icon-doc: #3f6fe6;
+  --icon-sheet: #31a566;
   --icon-slide: #e0762f;
-  --icon-image: #159aa3;
-  --icon-video: #c94fa0;
-  --icon-audio: #9053d8;
-  --icon-archive: #a3762a;
-  --icon-code: #2085c9;
-  --icon-config: #7a7f96;
+  --icon-image: #13a3ad;
+  --icon-video: #d45fa8;
+  --icon-audio: #8f5bd8;
+  --icon-archive: #a97c2f;
+  --icon-code: #2b8fd6;
+  --icon-config: #7c8296;
   --icon-exec: #5b6478;
-  --icon-lock: #d4506f;
+  --icon-lock: #d8557a;
   --icon-font: #6d5ae0;
-  --destructive: #d5373a;
-  --border: #e3e5e9;
+  --destructive: #d84545;
+  --border: #e1e5ed;
   --input: #c4c8ce;
-  --ring: #3574f0;
-  --chart-1: #3574f0;
+  --ring: #3d74f5;
+  --chart-1: #3d74f5;
   --chart-2: #6c707e;
-  --chart-3: #2e9e63;
+  --chart-3: #31a566;
   --chart-4: #e8a33d;
   --chart-5: #1f2328;
   --radius: 8px;
   --sidebar: #ffffff;
   --sidebar-foreground: #1f2328;
-  --sidebar-primary: #3574f0;
+  --sidebar-primary: #3d74f5;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e9ebef;
+  --sidebar-accent: #e8ebf2;
   --sidebar-accent-foreground: #1f2328;
-  --sidebar-border: #e3e5e9;
-  --sidebar-ring: #3574f0;
+  --sidebar-border: #e1e5ed;
+  --sidebar-ring: #3d74f5;
 }
 
 .dark {
@@ -219,17 +226,19 @@
      elevated surfaces are always lighter, never darker, so panels float
      instead of sinking into the window. Popovers step one level higher
      still. Every tone carries a whisper of blue so dark surfaces read as
-     ink rather than charcoal. */
+     ink rather than charcoal. Islands add a 1px inset top highlight (applied
+     at the component level) so panels visibly lift off the canvas. */
   --shadow-color: #000000;
-  --background: #15171d; /* canvas behind the islands */
+  --background: #101218; /* canvas behind the islands */
   --foreground: #dfe1e5;
-  --card: #1d1f27; /* island surface */
+  --card: #1a1d26; /* island surface */
   --card-foreground: #dfe1e5;
-  --popover: #262931;
+  --popover: #222634;
   --popover-foreground: #dfe1e5;
-  --primary: #4a80f0;
+  --primary: #5b86f5;
+  --primary-2: #7ba0ff; /* gradient end for indicators, capacity bars, CTAs */
   --primary-foreground: #ffffff;
-  --primary-container: #24467a;
+  --primary-container: #274a80;
   --on-primary-container: #d8e6ff;
   --secondary: #2a2d37;
   --secondary-foreground: #dfe1e5;
@@ -238,19 +247,21 @@
   --tertiary: #9da0a8;
   --tertiary-container: #2a2d37;
   --on-tertiary-container: #dfe1e5;
-  --muted: #20232b;
+  --muted: #21242f;
   --muted-foreground: #9da0a8;
-  --accent: #272a34;
+  --accent: #262a37;
   --accent-foreground: #e6e8eb;
   --error-container: #5c2321;
   --on-error-container: #f5c6c4;
-  --selection: #2c4a75;
+  --selection: #283454; /* primary at ~20% over the island surface */
   --folder: #ffc868;
+  --folder-1: #f2b44c; /* folder tile gradient start */
+  --folder-2: #dd9226; /* folder tile gradient end */
   --icon-pdf: #ff8f8f;
   --icon-doc: #93b6ff;
   --icon-sheet: #6fd69d;
   --icon-slide: #ffb066;
-  --icon-image: #66d2da;
+  --icon-image: #5fd2dc;
   --icon-video: #f295d1;
   --icon-audio: #c8a2ff;
   --icon-archive: #dcb26a;
@@ -260,23 +271,23 @@
   --icon-lock: #ff9db4;
   --icon-font: #b5a6ff;
   --destructive: #e55765;
-  --border: #31343f;
+  --border: #2b2f3d;
   --input: #434754;
-  --ring: #4a80f0;
-  --chart-1: #4a80f0;
+  --ring: #5b86f5;
+  --chart-1: #5b86f5;
   --chart-2: #9da0a8;
   --chart-3: #6fd69d;
   --chart-4: #e8a33d;
   --chart-5: #dfe1e5;
   --radius: 8px;
-  --sidebar: #1d1f27;
+  --sidebar: #1a1d26;
   --sidebar-foreground: #dfe1e5;
-  --sidebar-primary: #4a80f0;
+  --sidebar-primary: #5b86f5;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #272a34;
+  --sidebar-accent: #262a37;
   --sidebar-accent-foreground: #e6e8eb;
-  --sidebar-border: #31343f;
-  --sidebar-ring: #4a80f0;
+  --sidebar-border: #2b2f3d;
+  --sidebar-ring: #5b86f5;
 }
 
 @layer components {
@@ -319,6 +330,32 @@
   }
   .state-layer:active::after {
     opacity: 0.12;
+  }
+
+  /* Folder type tile: an amber gradient squircle with a soft top light —
+     the hero tile of the icon system. File glyphs sit on 13% type-color
+     tints instead (see icon-tile.tsx); native shell icons and thumbnails
+     stay bare. */
+  .tile-folder {
+    background: linear-gradient(155deg, var(--folder-1), var(--folder-2));
+    color: #ffffff;
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.35),
+      0 2px 6px color-mix(in oklab, var(--folder-2) 38%, transparent);
+  }
+  .dark .tile-folder {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.22),
+      0 2px 6px rgb(0 0 0 / 0.4);
+  }
+
+  /* Capacity bar fill: primary → violet while healthy, orange → red once
+     the disk is nearly full. */
+  .capacity-fill {
+    background: linear-gradient(90deg, var(--primary), #8b5cf6);
+  }
+  .capacity-fill--warn {
+    background: linear-gradient(90deg, #e0731f, var(--destructive));
   }
 
   /* Entry-icon pop: duotone type icons spring up under the pointer while

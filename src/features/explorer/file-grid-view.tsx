@@ -14,8 +14,9 @@ import { cn } from "@/lib/utils";
 
 import { EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
-import { getEntryPresentation, getPresentationIconClassName } from "./file-icons";
+import { getEntryPresentation } from "./file-icons";
 import type { MenuActions } from "./file-list";
+import { TypeIconTile } from "./icon-tile";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
 import { isNativeIconSupported, NativeIconImage } from "./native-icon";
@@ -29,24 +30,38 @@ const GRID_CELL_MIN_WIDTH: Record<ExplorerDensity, number> = {
   spacious: 120,
 };
 
+/** Native shell icons stay bare; sized a step under the type tiles. */
 const GRID_ICON_SIZE: Record<ExplorerDensity, number> = {
   compact: 30,
   comfortable: 36,
   spacious: 42,
 };
 
-/** Fixed per-density cell height keeps virtualization math uniform. */
-const GRID_CELL_HEIGHT: Record<ExplorerDensity, number> = {
-  compact: 88,
-  comfortable: 96,
-  spacious: 104,
+/** Type tiles carry the grid's color system: squircle + glyph per density. */
+const GRID_TILE_CLASS: Record<ExplorerDensity, string> = {
+  compact: "size-8 rounded-[10px]",
+  comfortable: "size-[42px] rounded-[13px]",
+  spacious: "size-[50px] rounded-[15px]",
 };
 
-/** Static height classes matching GRID_ICON_SIZE so thumbnails keep geometry. */
+const GRID_TILE_ICON_SIZE: Record<ExplorerDensity, number> = {
+  compact: 17,
+  comfortable: 22,
+  spacious: 26,
+};
+
+/** Fixed per-density cell height keeps virtualization math uniform. */
+const GRID_CELL_HEIGHT: Record<ExplorerDensity, number> = {
+  compact: 90,
+  comfortable: 102,
+  spacious: 110,
+};
+
+/** Static height classes matching the tile scale so thumbnails keep geometry. */
 const GRID_IMAGE_ZONE_CLASS: Record<ExplorerDensity, string> = {
   compact: "h-[30px]",
-  comfortable: "h-[36px]",
-  spacious: "h-[42px]",
+  comfortable: "h-[42px]",
+  spacious: "h-[50px]",
 };
 
 const GRID_GAP_PX = 6;
@@ -265,7 +280,6 @@ function GridCell({
 }) {
   const isDirectory = entry.kind === "directory";
   const presentation = getEntryPresentation(entry);
-  const EntryIcon = presentation.icon;
   const iconSize = GRID_ICON_SIZE[density];
   const showThumbnail = isThumbnailSupported(entry);
   const entryStatus: GitEntryStatusKind | undefined = getEntryGitStatus(gitStatus, entry);
@@ -276,11 +290,12 @@ function GridCell({
         <div
           aria-selected={isSelected}
           className={cn(
-            // Desktop cell: tonal hover via state-layer, flat selection fill,
-            // no lift and no corner morph so tiles stay put.
+            // Desktop cell: tonal hover via state-layer; selection is a soft
+            // primary wash plus a thin primary inset ring so picked tiles
+            // read at a glance. No lift and no corner morph.
             "render-contain state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 text-center transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
-            isSelected && "bg-selection",
+            isSelected && "bg-selection ring-[1.5px] ring-primary/45 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
           )}
@@ -313,10 +328,10 @@ function GridCell({
                 className="shrink-0 entry-icon-pop"
                 entry={entry}
                 fallback={
-                  <EntryIcon
-                    className={getPresentationIconClassName(presentation)}
-                    size={iconSize}
-                    weight={isDirectory ? "fill" : undefined}
+                  <TypeIconTile
+                    className={GRID_TILE_CLASS[density]}
+                    iconSize={GRID_TILE_ICON_SIZE[density]}
+                    presentation={presentation}
                   />
                 }
                 pixelSize={iconSize}
@@ -324,13 +339,11 @@ function GridCell({
             </EntryIconFrame>
           ) : (
             <EntryIconFrame badgeSize="md" entry={entry}>
-              <EntryIcon
-                className={cn(
-                  "shrink-0 entry-icon-pop",
-                  getPresentationIconClassName(presentation),
-                )}
-                size={iconSize}
-                weight={isDirectory ? "fill" : undefined}
+              <TypeIconTile
+                pop
+                className={GRID_TILE_CLASS[density]}
+                iconSize={GRID_TILE_ICON_SIZE[density]}
+                presentation={presentation}
               />
             </EntryIconFrame>
           )}
