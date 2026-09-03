@@ -32,7 +32,7 @@ export const DARK_ANSI: AnsiPalette = Object.freeze([
   "#9da0a8", // brightBlack — --muted-foreground (dim text stays legible)
   "#ff8f8f", // brightRed — --icon-pdf
   "#8ce0b3", // brightGreen
-  "#ffc868", // brightYellow — --folder (dark)
+  "#ffc868", // brightYellow — warm amber pastel
   "#93b6ff", // brightBlue — --icon-doc
   "#f295d1", // brightMagenta — --icon-video
   "#8ce0e6", // brightCyan

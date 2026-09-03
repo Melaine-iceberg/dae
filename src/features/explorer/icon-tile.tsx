@@ -6,7 +6,7 @@ import type { ExtensionPresentation } from "./file-icons";
 
 /**
  * Type icon tile: the presentation glyph seated on a soft squircle. Folders
- * get the amber gradient hero tile (`.tile-folder` in App.css) with a white
+ * get the blue gradient hero tile (`.tile-folder` in App.css) with a white
  * fill glyph; typed files sit on a 13% tint of their category color; untoned
  * kinds (plain files, symlinks, others) fall back to a neutral muted tile.
  * Native shell icons and thumbnails never use tiles — they are rich enough

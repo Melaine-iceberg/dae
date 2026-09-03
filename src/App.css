@@ -185,9 +185,9 @@
   --error-container: #fde2e1;
   --on-error-container: #6e1712;
   --selection: #e3ebfd; /* active pills, selection — primary at ~12% */
-  --folder: #e8a33d;
-  --folder-1: #f8c04a; /* folder tile gradient start */
-  --folder-2: #e6952a; /* folder tile gradient end */
+  --folder: #5b84c0;
+  --folder-1: #7ba3d8; /* folder tile gradient start */
+  --folder-2: #4d74b2; /* folder tile gradient end */
   --icon-pdf: #de5454;
   --icon-doc: #3f6fe6;
   --icon-sheet: #31a566;
@@ -254,9 +254,9 @@
   --error-container: #5c2321;
   --on-error-container: #f5c6c4;
   --selection: #283454; /* primary at ~20% over the island surface */
-  --folder: #ffc868;
-  --folder-1: #f2b44c; /* folder tile gradient start */
-  --folder-2: #dd9226; /* folder tile gradient end */
+  --folder: #8fadd9;
+  --folder-1: #6f93c9; /* folder tile gradient start */
+  --folder-2: #5577b3; /* folder tile gradient end */
   --icon-pdf: #ff8f8f;
   --icon-doc: #93b6ff;
   --icon-sheet: #6fd69d;
@@ -332,7 +332,7 @@
     opacity: 0.12;
   }
 
-  /* Folder type tile: an amber gradient squircle with a soft top light —
+  /* Folder type tile: a blue gradient squircle with a soft top light —
      the hero tile of the icon system. File glyphs sit on 13% type-color
      tints instead (see icon-tile.tsx); native shell icons and thumbnails
      stay bare. */
