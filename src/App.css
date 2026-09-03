@@ -301,6 +301,14 @@
     user-select: none;
   }
 
+  /* Number inputs trade the OS spinner for the InputGroup stepper buttons;
+     the wheel still steps when the field is focused. */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+
   #window-maximize:hover,
   #window-maximize.is-hovered {
     color: var(--accent-foreground);

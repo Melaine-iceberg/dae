@@ -70,7 +70,9 @@
     "fontFamilyHint": "留空则使用内置等宽字体栈。",
     "fontSize": "字号",
     "lineHeight": "行高",
-    "lineHeightHint": "取值 0.8 到 3.0 之间的倍数，默认为 1.2。"
+    "lineHeightHint": "取值 0.8 到 3.0 之间的倍数，默认为 1.2。",
+    "lineHeightDecrease": "减小行高",
+    "lineHeightIncrease": "增大行高"
   },
   "defaultFileManager": {
     "description": "将 dae 注册为操作系统打开文件夹的程序。",

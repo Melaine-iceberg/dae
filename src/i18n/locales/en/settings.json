@@ -70,7 +70,9 @@
     "fontFamilyHint": "Leave blank to use the built-in monospace stack.",
     "fontSize": "Font size",
     "lineHeight": "Line height",
-    "lineHeightHint": "A multiplier from 0.8 to 3.0; 1.2 is the default."
+    "lineHeightHint": "A multiplier from 0.8 to 3.0; 1.2 is the default.",
+    "lineHeightDecrease": "Decrease line height",
+    "lineHeightIncrease": "Increase line height"
   },
   "defaultFileManager": {
     "description": "Register dae to open folders from the operating system.",

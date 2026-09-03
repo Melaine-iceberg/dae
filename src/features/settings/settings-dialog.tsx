@@ -19,7 +19,9 @@ import {
   CircleNotchIcon,
   GearIcon,
   KeyboardIcon,
+  MinusIcon,
   PaletteIcon,
+  PlusIcon,
   TerminalIcon,
 } from "@phosphor-icons/react";
 
@@ -40,7 +42,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import { settingsOpenAtom, useSettings } from "./settings-atoms";
 import { ShortcutRecorder } from "./shortcut-recorder";
@@ -133,34 +148,46 @@ function AppearancePane() {
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="settings-appearance-theme">{t("appearance.theme")}</Label>
-        <select
-          className="h-8 w-40 rounded-md border border-input bg-card px-2 text-[13px] outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
-          id="settings-appearance-theme"
-          onChange={(event) => setThemePreference(event.target.value as ThemePreference)}
+        <Select
+          items={Object.fromEntries(
+            THEME_OPTIONS.map((option) => [option, t(`appearance.themeOptions.${option}`)]),
+          )}
+          onValueChange={(value) => setThemePreference(value as ThemePreference)}
           value={theme}
         >
-          {THEME_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {t(`appearance.themeOptions.${option}`)}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-40" id="settings-appearance-theme">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {THEME_OPTIONS.map((option) => (
+              <SelectItem key={option} value={option}>
+                {t(`appearance.themeOptions.${option}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="settings-appearance-language">{t("appearance.language")}</Label>
-        <select
-          className="h-8 w-40 rounded-md border border-input bg-card px-2 text-[13px] outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
-          id="settings-appearance-language"
-          onChange={(event) => setLocale(event.target.value as AppLocale)}
+        <Select
+          items={Object.fromEntries(
+            SUPPORTED_LOCALES.map((value) => [value, t(`common:language.${value}`)]),
+          )}
+          onValueChange={(value) => setLocale(value as AppLocale)}
           value={locale}
         >
-          {SUPPORTED_LOCALES.map((value) => (
-            <option key={value} value={value}>
-              {t(`common:language.${value}`)}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-40" id="settings-appearance-language">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SUPPORTED_LOCALES.map((value) => (
+              <SelectItem key={value} value={value}>
+                {t(`common:language.${value}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );
@@ -243,6 +270,12 @@ function TerminalPane() {
     patch({ terminal: { fontFamily: trimmed.length > 0 ? trimmed : null } });
   };
 
+  const stepLineHeight = (delta: number) => {
+    const current = terminal?.lineHeight ?? 1.2;
+    const next = Math.min(3, Math.max(0.8, Math.round((current + delta) * 10) / 10));
+    patch({ terminal: { lineHeight: next } });
+  };
+
   return (
     <div className="flex flex-col gap-5">
       <header>
@@ -267,35 +300,54 @@ function TerminalPane() {
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="settings-terminal-font-size">{t("terminal.fontSize")}</Label>
-        <select
-          className="h-8 w-40 rounded-md border border-input bg-card px-2 text-[13px] outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
-          id="settings-terminal-font-size"
-          onChange={(event) => patch({ terminal: { fontSize: Number(event.target.value) } })}
+        <Select
+          items={Object.fromEntries(FONT_SIZE_OPTIONS.map((size) => [size, `${size} px`]))}
+          onValueChange={(value) => patch({ terminal: { fontSize: Number(value) } })}
           value={terminal?.fontSize ?? 13}
         >
-          {FONT_SIZE_OPTIONS.map((size) => (
-            <option key={size} value={size}>
-              {size} px
-            </option>
-          ))}
-        </select>
+          <SelectTrigger className="w-40" id="settings-terminal-font-size">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {FONT_SIZE_OPTIONS.map((size) => (
+              <SelectItem key={size} value={size}>
+                {size} px
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex flex-col gap-2">
         <Label htmlFor="settings-terminal-line-height">{t("terminal.lineHeight")}</Label>
-        <Input
-          className="w-40"
-          id="settings-terminal-line-height"
-          max={3}
-          min={0.8}
-          onChange={(event) => {
-            const value = Number(event.target.value);
-            if (Number.isFinite(value)) patch({ terminal: { lineHeight: value } });
-          }}
-          step={0.1}
-          type="number"
-          value={terminal?.lineHeight ?? 1.2}
-        />
+        <InputGroup className="w-40">
+          <InputGroupInput
+            id="settings-terminal-line-height"
+            max={3}
+            min={0.8}
+            onChange={(event) => {
+              const value = Number(event.target.value);
+              if (Number.isFinite(value)) patch({ terminal: { lineHeight: value } });
+            }}
+            step={0.1}
+            type="number"
+            value={terminal?.lineHeight ?? 1.2}
+          />
+          <InputGroupAddon align="inline-end">
+            <InputGroupButton
+              aria-label={t("terminal.lineHeightDecrease")}
+              onClick={() => stepLineHeight(-0.1)}
+            >
+              <MinusIcon />
+            </InputGroupButton>
+            <InputGroupButton
+              aria-label={t("terminal.lineHeightIncrease")}
+              onClick={() => stepLineHeight(0.1)}
+            >
+              <PlusIcon />
+            </InputGroupButton>
+          </InputGroupAddon>
+        </InputGroup>
         <p className="text-xs text-muted-foreground">{t("terminal.lineHeightHint")}</p>
       </div>
     </div>
