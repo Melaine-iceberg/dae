@@ -14,7 +14,6 @@ import {
   CaretLeftIcon,
   CaretRightIcon,
   ClockCounterClockwiseIcon,
-  FolderIcon,
   HouseIcon,
   PlusIcon,
   SquaresFourIcon,
@@ -40,6 +39,7 @@ const TerminalPanel = lazy(() =>
   import("@/features/terminal/terminal-panel").then((m) => ({ default: m.TerminalPanel })),
 );
 
+import { getFolderPresentation } from "./file-icons";
 import {
   activeTabIdAtom,
   activateTabAtom,
@@ -53,6 +53,14 @@ import {
 } from "./tabs";
 
 const TAB_STRIP_SCROLL_AMOUNT = 512;
+
+const WORKSPACE_TAB_ICONS = {
+  overview: HouseIcon,
+  recents: ClockCounterClockwiseIcon,
+  favorites: StarIcon,
+  trash: TrashIcon,
+  space: SquaresFourIcon,
+} as const;
 
 export function ExplorerTabs() {
   const { t } = useTranslation("explorer");
@@ -239,22 +247,13 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     }
   }, [isActive]);
 
-  const TabIcon = (() => {
-    switch (surface.kind) {
-      case "overview":
-        return HouseIcon;
-      case "recents":
-        return ClockCounterClockwiseIcon;
-      case "favorites":
-        return StarIcon;
-      case "trash":
-        return TrashIcon;
-      case "space":
-        return SquaresFourIcon;
-      case "folder":
-        return FolderIcon;
-    }
-  })();
+  // Folder tabs carry the Material Icon Theme artwork for the tab's folder
+  // name (src, node_modules, .git, ... with a generic folder fallback while
+  // the directory is still loading); workspace surfaces keep their Phosphor
+  // UI glyphs, which are out of the MIT icon scope.
+  const folderName = directory?.breadcrumbs.at(-1)?.name ?? "";
+  const FolderTabIcon = getFolderPresentation(folderName).icon;
+  const WorkspaceTabIcon = surface.kind === "folder" ? null : WORKSPACE_TAB_ICONS[surface.kind];
 
   return (
     <div
@@ -283,13 +282,11 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
           : title
       }
     >
-      <TabIcon
-        className={cn(
-          "ml-2 size-3.5 shrink-0",
-          surface.kind === "folder" ? "text-folder" : "text-muted-foreground",
-        )}
-        weight={surface.kind === "folder" ? "fill" : "regular"}
-      />
+      {FolderTabIcon ? (
+        <FolderTabIcon className="ml-2 size-3.5 shrink-0" />
+      ) : WorkspaceTabIcon ? (
+        <WorkspaceTabIcon className="ml-2 size-3.5 shrink-0 text-muted-foreground" />
+      ) : null}
       <span className="w-full truncate pr-7 pl-1.5">{title}</span>
       <button
         aria-label={t("tabs.closeTab", { title })}

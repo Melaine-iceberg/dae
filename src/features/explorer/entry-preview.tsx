@@ -9,10 +9,9 @@ import { commands, type MediaPreview, type TextPreview } from "@/bindings";
 import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 
 import { getPreviewLanguage, highlightCode, highlightMarkdownCode } from "./code-highlight";
-import { getEntryPresentation, getPresentationIconClassName } from "./file-icons";
+import { getEntryPresentation } from "./file-icons";
 import { isNativeIconSupported, NativeIconImage } from "./native-icon";
 import { isThumbnailSupported, ThumbnailImage } from "./thumbnail";
 import type { DirectoryEntry } from "./types";
@@ -254,7 +253,7 @@ export function EntryPreview({
     >
       <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
         {visual && VisualIcon ? (
-          <VisualIcon className={cn("size-4 shrink-0", getPresentationIconClassName(visual))} />
+          <VisualIcon className="size-4 shrink-0" />
         ) : null}
         <p
           className="min-w-0 flex-1 truncate text-[13px] font-medium"
@@ -287,12 +286,7 @@ export function EntryPreview({
                 className="flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/40"
                 entry={entry}
                 fallback={
-                  VisualIcon ? (
-                    <VisualIcon
-                      className={cn("size-12", visual?.tone ?? "text-muted-foreground/60")}
-                      weight="duotone"
-                    />
-                  ) : null
+                  VisualIcon ? <VisualIcon className="size-12" /> : null
                 }
                 requestSize={384}
               />
@@ -347,20 +341,12 @@ export function EntryPreview({
                     className="size-12"
                     entry={entry}
                     fallback={
-                      VisualIcon ? (
-                        <VisualIcon
-                          className={cn("size-12", visual?.tone ?? "text-muted-foreground/60")}
-                          weight="duotone"
-                        />
-                      ) : null
+                      VisualIcon ? <VisualIcon className="size-12" /> : null
                     }
                     pixelSize={48}
                   />
                 ) : VisualIcon ? (
-                  <VisualIcon
-                    className={cn("size-12", visual?.tone ?? "text-muted-foreground/60")}
-                    weight="duotone"
-                  />
+                  <VisualIcon className="size-12" />
                 ) : null}
               </div>
             )}

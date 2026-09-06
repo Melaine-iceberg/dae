@@ -1,9 +1,12 @@
 import type { CSSProperties, ReactNode } from "react";
 
+import type { Icon } from "@phosphor-icons/react";
+
 import { i18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
-import type { PhosphorIcon } from "@/features/explorer/file-icons";
+/** Workspace surface glyphs stay on Phosphor (UI icons, outside MIT scope). */
+type PhosphorIcon = Icon;
 
 /**
  * Shared building blocks for the workspace surfaces (Overview, Recents,

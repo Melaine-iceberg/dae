@@ -6,12 +6,15 @@ import {
   ImageIcon,
   MusicNotesIcon,
   VideoIcon,
+  type Icon,
 } from "@phosphor-icons/react";
 
 import type { PlaceKind } from "@/bindings";
 
-import type { PhosphorIcon } from "@/features/explorer/file-icons";
 import { i18n } from "@/i18n";
+
+/** Sidebar place icons stay on Phosphor (UI glyphs, outside MIT scope). */
+type PhosphorIcon = Icon;
 
 /** Icons and labels for the well-known system places. */
 export const PLACE_PRESENTATION: Record<PlaceKind, { icon: PhosphorIcon; label: string }> = {

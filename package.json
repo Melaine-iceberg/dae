@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "icons:generate": "node scripts/generate-mit-icons.mjs",
     "test:rust": "src-tauri\\target\\bin\\cargo-nextest.exe nextest run --manifest-path src-tauri/Cargo.toml",
     "test:rust:setup": "cargo binstall -y cargo-nextest --install-path src-tauri/target/bin",
     "bindings:export": "cargo run --manifest-path src-tauri/Cargo.toml --bin export_bindings"
@@ -56,6 +57,7 @@
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.1",
     "babel-plugin-react-compiler": "^1.0.0",
+    "material-icon-theme": "^5.38.1",
     "typescript": "~7.0.2",
     "vite": "^8.2.2"
   }

@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import { atom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { CaretDownIcon, FolderIcon } from "@phosphor-icons/react";
+import { CaretDownIcon } from "@phosphor-icons/react";
 
 import { commands, type DirectoryEntry } from "@/bindings";
+import { getFolderPresentation } from "@/features/explorer/file-icons";
 import { filterHiddenEntries, showHiddenFilesAtom } from "@/features/explorer/preferences";
 import { cn } from "@/lib/utils";
 
@@ -194,6 +195,10 @@ function TreeNodeRow({
   // Nodes are assumed expandable until their first read proves otherwise.
   const mayHaveChildren = !state || state.status === "loading" || state.entries.length > 0;
 
+  // Material Icon Theme artwork with per-name variants (src, .git, ...) and
+  // an open variant while the node is expanded.
+  const FolderArt = getFolderPresentation(entry.name, expanded).icon;
+
   return (
     <FolderContextMenu isListed={false} path={entry.path}>
       <div ref={rowRef}>
@@ -231,10 +236,7 @@ function TreeNodeRow({
             title={entry.path}
             type="button"
           >
-            <FolderIcon
-              className={cn("size-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground")}
-              weight={isActive ? "fill" : "regular"}
-            />
+            <FolderArt className="size-4 shrink-0" />
             <span className="min-w-0 truncate">{entry.name}</span>
           </button>
         </div>

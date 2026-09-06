@@ -1,6 +1,5 @@
 import { Fragment, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { FolderIcon } from "@phosphor-icons/react";
 
 import {
   Breadcrumb,
@@ -20,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { getFolderPresentation } from "./file-icons";
 import type { Breadcrumb as BreadcrumbData } from "./types";
 
 interface ExplorerBreadcrumbsProps {
@@ -125,16 +125,19 @@ export function ExplorerBreadcrumbs({ breadcrumbs, onNavigate }: ExplorerBreadcr
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="min-w-48 max-w-80">
                     <DropdownMenuGroup>
-                      {collapsed.map((item) => (
-                        <DropdownMenuItem
-                          key={item.path}
-                          onClick={() => onNavigate(item)}
-                          title={item.path}
-                        >
-                          <FolderIcon />
-                          <span className="truncate">{item.name}</span>
-                        </DropdownMenuItem>
-                      ))}
+                      {collapsed.map((item) => {
+                        const ItemIcon = getFolderPresentation(item.name).icon;
+                        return (
+                          <DropdownMenuItem
+                            key={item.path}
+                            onClick={() => onNavigate(item)}
+                            title={item.path}
+                          >
+                            <ItemIcon className="size-4 shrink-0" />
+                            <span className="truncate">{item.name}</span>
+                          </DropdownMenuItem>
+                        );
+                      })}
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -197,19 +200,30 @@ function CrumbContent({
   plain?: boolean;
   onNavigate?: (breadcrumb: BreadcrumbData) => void;
 }) {
+  // Material Icon Theme folder artwork per crumb name; drive roots and other
+  // unmapped names fall back to the theme's generic folder.
+  const CrumbIcon = getFolderPresentation(breadcrumb.name).icon;
+  const icon = <CrumbIcon className="size-3.5 shrink-0" />;
+
   if (plain) {
     return (
-      <span className={`block truncate ${isCurrent ? "max-w-64" : "max-w-40"}`}>
-        {breadcrumb.name}
+      <span className={`flex items-center gap-1 ${isCurrent ? "max-w-64" : "max-w-40"}`}>
+        {icon}
+        <span className="block truncate">{breadcrumb.name}</span>
       </span>
     );
   }
   if (isCurrent) {
-    return <BreadcrumbPage className="block max-w-64 truncate">{breadcrumb.name}</BreadcrumbPage>;
+    return (
+      <BreadcrumbPage className="flex max-w-64 items-center gap-1">
+        {icon}
+        <span className="truncate">{breadcrumb.name}</span>
+      </BreadcrumbPage>
+    );
   }
   return (
     <BreadcrumbLink
-      className="block max-w-40 truncate"
+      className="flex max-w-40 items-center gap-1"
       render={
         <button
           type="button"
@@ -220,7 +234,8 @@ function CrumbContent({
         />
       }
     >
-      {breadcrumb.name}
+      {icon}
+      <span className="truncate">{breadcrumb.name}</span>
     </BreadcrumbLink>
   );
 }

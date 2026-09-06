@@ -49,6 +49,13 @@ export default defineConfig(async ({ command }) => ({
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
+  build: {
+    // Material Icon Theme artwork must ship as on-disk asset URLs (see
+    // src/features/explorer/mit-icon.tsx): the default 4KB inline limit would
+    // embed ~1100 SVGs as data URLs and bloat the entry chunk past 1.7MB.
+    assetsInlineLimit: (filePath: string) =>
+      filePath.includes("mit-icons") ? false : undefined,
+  },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
     port: 1420,

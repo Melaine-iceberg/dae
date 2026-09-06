@@ -1,256 +1,202 @@
-import { forwardRef } from "react";
-import {
-  AppWindowIcon,
-  DiscIcon,
-  FileArchiveIcon,
-  FileAudioIcon,
-  FileCIcon,
-  FileCodeIcon,
-  FileCppIcon,
-  FileCSharpIcon,
-  FileCssIcon,
-  FileCsvIcon,
-  FileDashedIcon,
-  FileDocIcon,
-  FileHtmlIcon,
-  FileImageIcon,
-  FileIniIcon,
-  FileJpgIcon,
-  FileJsIcon,
-  FileJsxIcon,
-  FileLockIcon,
-  FileMdIcon,
-  FilePdfIcon,
-  FilePngIcon,
-  FilePptIcon,
-  FilePyIcon,
-  FileRsIcon,
-  FileSqlIcon,
-  FileSvgIcon,
-  FileTextIcon,
-  FileTsIcon,
-  FileTsxIcon,
-  FileTxtIcon,
-  FileVideoIcon,
-  FileVueIcon,
-  FileXlsIcon,
-  FileZipIcon,
-  FolderIcon,
-  FolderOpenIcon,
-  GearSixIcon,
-  LinkSimpleIcon,
-  PackageIcon,
-  TextAaIcon,
-  type Icon,
-  type IconProps,
-} from "@phosphor-icons/react";
-
 import { i18n } from "@/i18n";
 
-export type PhosphorIcon = Icon;
-
-export const FolderClosedIcon = FolderIcon;
-export const FolderOpenedIcon = FolderOpenIcon;
+import { mitIcon, type EntryIcon } from "./mit-icon";
+import {
+  DEFAULT_FILE_ICON,
+  DEFAULT_FOLDER_ICON,
+  DEFAULT_FOLDER_OPEN_ICON,
+  DOTFILE_ICON,
+  EXT_ICONS,
+  FILENAME_ICONS,
+  FOLDER_ICONS,
+  FOLDER_OPEN_ICONS,
+  SYMLINK_ICON,
+} from "./mit-icons.generated";
+import type { DirectoryEntry } from "./types";
 
 /**
- * Presentation icons default to the duotone weight: the 20% underlayer adds
- * depth beneath the per-category tone so file glyphs stay scannable but feel
- * less flat than the single-stroke regular weight. Explicit `weight` props
- * at call sites (fill folders, preview overrides) still win.
+ * File/folder presentation is driven by Material Icon Theme's official
+ * mapping tables (see mit-icons.generated.ts). Artwork carries its own
+ * color, so presentations no longer assign a semantic tone per category.
  */
-function duotonePresentationIcon(Icon: PhosphorIcon): PhosphorIcon {
-  const DuotoneIcon = forwardRef<SVGSVGElement, IconProps>(({ weight, ...props }, ref) => (
-    <Icon ref={ref} weight={weight ?? "duotone"} {...props} />
-  ));
-  return DuotoneIcon;
-}
 
 export interface ExtensionPresentation {
-  icon: PhosphorIcon;
-  /** Semantic tone class; entries without one fall back to muted foreground. */
-  tone?: string;
+  icon: EntryIcon;
   label: string;
 }
 
-/** Presentation whose type label resolves against the active locale on read. */
-function localizedPresentation(
-  icon: PhosphorIcon,
-  labelKey: string,
-  tone?: string,
-): ExtensionPresentation {
+/** Localized type labels for the extensions the app names explicitly;
+ *  anything else falls back to the bare uppercased extension ("TOML"). */
+const EXT_LABEL_KEYS: Record<string, string> = {
+  pdf: "pdfDocument",
+  doc: "wordDocument",
+  docx: "wordDocument",
+  odt: "wordDocument",
+  rtf: "wordDocument",
+  xls: "excelSpreadsheet",
+  xlsx: "excelSpreadsheet",
+  ods: "excelSpreadsheet",
+  csv: "csvSpreadsheet",
+  ppt: "presentation",
+  pptx: "presentation",
+  odp: "presentation",
+  jpg: "jpegImage",
+  jpeg: "jpegImage",
+  png: "pngImage",
+  gif: "gifImage",
+  webp: "webpImage",
+  avif: "avifImage",
+  bmp: "bitmapImage",
+  ico: "icon",
+  tif: "tiffImage",
+  tiff: "tiffImage",
+  heic: "heicImage",
+  svg: "svgImage",
+  mp4: "video",
+  mov: "video",
+  avi: "video",
+  mkv: "video",
+  webm: "video",
+  m4v: "video",
+  wmv: "video",
+  flv: "video",
+  mpg: "video",
+  mpeg: "video",
+  srt: "subtitle",
+  vtt: "subtitle",
+  ass: "subtitle",
+  mp3: "audio",
+  wav: "audio",
+  flac: "audio",
+  aac: "audio",
+  ogg: "audio",
+  m4a: "audio",
+  opus: "audio",
+  wma: "audio",
+  aiff: "audio",
+  mid: "audio",
+  midi: "audio",
+  zip: "archive",
+  rar: "archive",
+  "7z": "archive",
+  tar: "archive",
+  gz: "archive",
+  bz2: "archive",
+  xz: "archive",
+  zst: "archive",
+  iso: "diskImage",
+  img: "diskImage",
+  dmg: "diskImage",
+  txt: "textFile",
+  log: "logFile",
+  md: "markdown",
+  markdown: "markdown",
+  html: "html",
+  htm: "html",
+  css: "css",
+  scss: "scss",
+  less: "less",
+  js: "javaScript",
+  mjs: "javaScript",
+  cjs: "javaScript",
+  jsx: "jsx",
+  ts: "typeScript",
+  tsx: "tsx",
+  py: "python",
+  rs: "rust",
+  c: "cSource",
+  h: "cHeader",
+  cpp: "cpp",
+  hpp: "cppHeader",
+  cs: "cSharp",
+  vue: "vue",
+  json: "json",
+  xml: "xml",
+  sh: "shellScript",
+  bash: "shellScript",
+  zsh: "shellScript",
+  fish: "shellScript",
+  bat: "batchFile",
+  cmd: "batchFile",
+  ps1: "powerShell",
+  sql: "sql",
+  patch: "patchFile",
+  diff: "patchFile",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  ini: "iniConfig",
+  conf: "configFile",
+  env: "configFile",
+  properties: "configFile",
+  db: "database",
+  sqlite: "database",
+  sqlite3: "database",
+  mdb: "database",
+  ttf: "font",
+  otf: "font",
+  woff: "font",
+  woff2: "font",
+  eot: "font",
+  exe: "executable",
+  msi: "installer",
+  appimage: "executable",
+  deb: "package",
+  rpm: "package",
+  jar: "package",
+  lnk: "shortcut",
+  url: "shortcut",
+  lock: "lockFile",
+  pem: "privateKey",
+  key: "privateKey",
+  crt: "certificate",
+  cer: "certificate",
+};
+
+/** Well-known filenames whose label goes beyond their (or a missing) extension. */
+const FILENAME_LABEL_KEYS: Record<string, string> = {
+  license: "license",
+  licence: "license",
+  copying: "license",
+  readme: "markdown",
+  changelog: "markdown",
+  authors: "markdown",
+  contributing: "markdown",
+  makefile: "configFile",
+  justfile: "configFile",
+  dockerfile: "configFile",
+  "package.json": "configFile",
+  "tsconfig.json": "configFile",
+};
+
+function localizedLabel(labelKey: string): string {
+  return i18n.t(`explorer:fileType.${labelKey}`);
+}
+
+function presentation(iconName: string, label: () => string): ExtensionPresentation {
   return {
-    icon: duotonePresentationIcon(icon),
-    tone,
+    icon: mitIcon(iconName),
     get label() {
-      return i18n.t(`explorer:fileType.${labelKey}`);
+      return label();
     },
   };
 }
 
-const EXTENSION_PRESENTATION: Record<string, ExtensionPresentation> = {
-  pdf: localizedPresentation(FilePdfIcon, "pdfDocument", "text-icon-pdf"),
-  doc: localizedPresentation(FileDocIcon, "wordDocument", "text-icon-doc"),
-  docx: localizedPresentation(FileDocIcon, "wordDocument", "text-icon-doc"),
-  odt: localizedPresentation(FileDocIcon, "wordDocument", "text-icon-doc"),
-  rtf: localizedPresentation(FileDocIcon, "wordDocument", "text-icon-doc"),
-  xls: localizedPresentation(FileXlsIcon, "excelSpreadsheet", "text-icon-sheet"),
-  xlsx: localizedPresentation(FileXlsIcon, "excelSpreadsheet", "text-icon-sheet"),
-  ods: localizedPresentation(FileXlsIcon, "excelSpreadsheet", "text-icon-sheet"),
-  csv: localizedPresentation(FileCsvIcon, "csvSpreadsheet", "text-icon-sheet"),
-  ppt: localizedPresentation(FilePptIcon, "presentation", "text-icon-slide"),
-  pptx: localizedPresentation(FilePptIcon, "presentation", "text-icon-slide"),
-  odp: localizedPresentation(FilePptIcon, "presentation", "text-icon-slide"),
-  jpg: localizedPresentation(FileJpgIcon, "jpegImage", "text-icon-image"),
-  jpeg: localizedPresentation(FileJpgIcon, "jpegImage", "text-icon-image"),
-  png: localizedPresentation(FilePngIcon, "pngImage", "text-icon-image"),
-  gif: localizedPresentation(FileImageIcon, "gifImage", "text-icon-image"),
-  webp: localizedPresentation(FileImageIcon, "webpImage", "text-icon-image"),
-  avif: localizedPresentation(FileImageIcon, "avifImage", "text-icon-image"),
-  bmp: localizedPresentation(FileImageIcon, "bitmapImage", "text-icon-image"),
-  ico: localizedPresentation(FileImageIcon, "icon", "text-icon-image"),
-  tif: localizedPresentation(FileImageIcon, "tiffImage", "text-icon-image"),
-  tiff: localizedPresentation(FileImageIcon, "tiffImage", "text-icon-image"),
-  heic: localizedPresentation(FileImageIcon, "heicImage", "text-icon-image"),
-  svg: localizedPresentation(FileSvgIcon, "svgImage", "text-icon-image"),
-  mp4: localizedPresentation(FileVideoIcon, "video", "text-icon-video"),
-  mov: localizedPresentation(FileVideoIcon, "video", "text-icon-video"),
-  avi: localizedPresentation(FileVideoIcon, "video", "text-icon-video"),
-  mkv: localizedPresentation(FileVideoIcon, "video", "text-icon-video"),
-  webm: localizedPresentation(FileVideoIcon, "video", "text-icon-video"),
-  m4v: localizedPresentation(FileVideoIcon, "video", "text-icon-video"),
-  wmv: localizedPresentation(FileVideoIcon, "video", "text-icon-video"),
-  flv: localizedPresentation(FileVideoIcon, "video", "text-icon-video"),
-  mpg: localizedPresentation(FileVideoIcon, "video", "text-icon-video"),
-  mpeg: localizedPresentation(FileVideoIcon, "video", "text-icon-video"),
-  srt: localizedPresentation(FileVideoIcon, "subtitle", "text-icon-video"),
-  vtt: localizedPresentation(FileVideoIcon, "subtitle", "text-icon-video"),
-  ass: localizedPresentation(FileVideoIcon, "subtitle", "text-icon-video"),
-  mp3: localizedPresentation(FileAudioIcon, "audio", "text-icon-audio"),
-  wav: localizedPresentation(FileAudioIcon, "audio", "text-icon-audio"),
-  flac: localizedPresentation(FileAudioIcon, "audio", "text-icon-audio"),
-  aac: localizedPresentation(FileAudioIcon, "audio", "text-icon-audio"),
-  ogg: localizedPresentation(FileAudioIcon, "audio", "text-icon-audio"),
-  m4a: localizedPresentation(FileAudioIcon, "audio", "text-icon-audio"),
-  opus: localizedPresentation(FileAudioIcon, "audio", "text-icon-audio"),
-  wma: localizedPresentation(FileAudioIcon, "audio", "text-icon-audio"),
-  aiff: localizedPresentation(FileAudioIcon, "audio", "text-icon-audio"),
-  mid: localizedPresentation(FileAudioIcon, "audio", "text-icon-audio"),
-  midi: localizedPresentation(FileAudioIcon, "audio", "text-icon-audio"),
-  zip: localizedPresentation(FileZipIcon, "archive", "text-icon-archive"),
-  rar: localizedPresentation(FileArchiveIcon, "archive", "text-icon-archive"),
-  "7z": localizedPresentation(FileArchiveIcon, "archive", "text-icon-archive"),
-  tar: localizedPresentation(FileArchiveIcon, "archive", "text-icon-archive"),
-  gz: localizedPresentation(FileArchiveIcon, "archive", "text-icon-archive"),
-  bz2: localizedPresentation(FileArchiveIcon, "archive", "text-icon-archive"),
-  xz: localizedPresentation(FileArchiveIcon, "archive", "text-icon-archive"),
-  zst: localizedPresentation(FileArchiveIcon, "archive", "text-icon-archive"),
-  iso: localizedPresentation(DiscIcon, "diskImage", "text-icon-archive"),
-  img: localizedPresentation(DiscIcon, "diskImage", "text-icon-archive"),
-  dmg: localizedPresentation(DiscIcon, "diskImage", "text-icon-archive"),
-  txt: localizedPresentation(FileTxtIcon, "textFile"),
-  log: localizedPresentation(FileTxtIcon, "logFile"),
-  md: localizedPresentation(FileMdIcon, "markdown", "text-icon-code"),
-  markdown: localizedPresentation(FileMdIcon, "markdown", "text-icon-code"),
-  html: localizedPresentation(FileHtmlIcon, "html", "text-icon-code"),
-  htm: localizedPresentation(FileHtmlIcon, "html", "text-icon-code"),
-  css: localizedPresentation(FileCssIcon, "css", "text-icon-code"),
-  scss: localizedPresentation(FileCssIcon, "scss", "text-icon-code"),
-  less: localizedPresentation(FileCssIcon, "less", "text-icon-code"),
-  js: localizedPresentation(FileJsIcon, "javaScript", "text-icon-code"),
-  mjs: localizedPresentation(FileJsIcon, "javaScript", "text-icon-code"),
-  cjs: localizedPresentation(FileJsIcon, "javaScript", "text-icon-code"),
-  jsx: localizedPresentation(FileJsxIcon, "jsx", "text-icon-code"),
-  ts: localizedPresentation(FileTsIcon, "typeScript", "text-icon-code"),
-  tsx: localizedPresentation(FileTsxIcon, "tsx", "text-icon-code"),
-  py: localizedPresentation(FilePyIcon, "python", "text-icon-code"),
-  rs: localizedPresentation(FileRsIcon, "rust", "text-icon-code"),
-  c: localizedPresentation(FileCIcon, "cSource", "text-icon-code"),
-  h: localizedPresentation(FileCIcon, "cHeader", "text-icon-code"),
-  cpp: localizedPresentation(FileCppIcon, "cpp", "text-icon-code"),
-  hpp: localizedPresentation(FileCppIcon, "cppHeader", "text-icon-code"),
-  cs: localizedPresentation(FileCSharpIcon, "cSharp", "text-icon-code"),
-  vue: localizedPresentation(FileVueIcon, "vue", "text-icon-code"),
-  json: localizedPresentation(FileCodeIcon, "json", "text-icon-code"),
-  xml: localizedPresentation(FileCodeIcon, "xml", "text-icon-code"),
-  sh: localizedPresentation(FileCodeIcon, "shellScript", "text-icon-code"),
-  bash: localizedPresentation(FileCodeIcon, "shellScript", "text-icon-code"),
-  zsh: localizedPresentation(FileCodeIcon, "shellScript", "text-icon-code"),
-  fish: localizedPresentation(FileCodeIcon, "shellScript", "text-icon-code"),
-  bat: localizedPresentation(FileCodeIcon, "batchFile", "text-icon-code"),
-  cmd: localizedPresentation(FileCodeIcon, "batchFile", "text-icon-code"),
-  ps1: localizedPresentation(FileCodeIcon, "powerShell", "text-icon-code"),
-  sql: localizedPresentation(FileSqlIcon, "sql", "text-icon-code"),
-  go: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  java: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  kt: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  swift: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  php: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  rb: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  lua: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  pl: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  r: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  dart: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  zig: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  hs: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  wasm: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  map: localizedPresentation(FileCodeIcon, "sourceCode", "text-icon-code"),
-  patch: localizedPresentation(FileCodeIcon, "patchFile", "text-icon-code"),
-  diff: localizedPresentation(FileCodeIcon, "patchFile", "text-icon-code"),
-  yaml: localizedPresentation(FileIniIcon, "yaml", "text-icon-config"),
-  yml: localizedPresentation(FileIniIcon, "yaml", "text-icon-config"),
-  toml: localizedPresentation(FileIniIcon, "toml", "text-icon-config"),
-  ini: localizedPresentation(FileIniIcon, "iniConfig", "text-icon-config"),
-  conf: localizedPresentation(FileIniIcon, "configFile", "text-icon-config"),
-  env: localizedPresentation(FileIniIcon, "configFile", "text-icon-config"),
-  properties: localizedPresentation(FileIniIcon, "configFile", "text-icon-config"),
-  db: localizedPresentation(FileSqlIcon, "database", "text-icon-sheet"),
-  sqlite: localizedPresentation(FileSqlIcon, "database", "text-icon-sheet"),
-  sqlite3: localizedPresentation(FileSqlIcon, "database", "text-icon-sheet"),
-  mdb: localizedPresentation(FileSqlIcon, "database", "text-icon-sheet"),
-  ttf: localizedPresentation(TextAaIcon, "font", "text-icon-font"),
-  otf: localizedPresentation(TextAaIcon, "font", "text-icon-font"),
-  woff: localizedPresentation(TextAaIcon, "font", "text-icon-font"),
-  woff2: localizedPresentation(TextAaIcon, "font", "text-icon-font"),
-  eot: localizedPresentation(TextAaIcon, "font", "text-icon-font"),
-  exe: localizedPresentation(AppWindowIcon, "executable", "text-icon-exec"),
-  msi: localizedPresentation(AppWindowIcon, "installer", "text-icon-exec"),
-  appimage: localizedPresentation(AppWindowIcon, "executable", "text-icon-exec"),
-  deb: localizedPresentation(PackageIcon, "package", "text-icon-exec"),
-  rpm: localizedPresentation(PackageIcon, "package", "text-icon-exec"),
-  jar: localizedPresentation(PackageIcon, "package", "text-icon-exec"),
-  lnk: localizedPresentation(LinkSimpleIcon, "shortcut", "text-icon-exec"),
-  url: localizedPresentation(LinkSimpleIcon, "shortcut", "text-icon-exec"),
-  lock: localizedPresentation(FileLockIcon, "lockFile", "text-icon-lock"),
-  pem: localizedPresentation(FileLockIcon, "privateKey", "text-icon-lock"),
-  key: localizedPresentation(FileLockIcon, "privateKey", "text-icon-lock"),
-  crt: localizedPresentation(FileLockIcon, "certificate", "text-icon-lock"),
-  cer: localizedPresentation(FileLockIcon, "certificate", "text-icon-lock"),
-};
+function extensionLabel(extension: string): string {
+  const labelKey = EXT_LABEL_KEYS[extension];
+  return labelKey ? localizedLabel(labelKey) : extension.toUpperCase();
+}
 
-const PLAIN_FILE_PRESENTATION: ExtensionPresentation = localizedPresentation(FileTextIcon, "file");
-
-/** Well-known filenames that carry meaning beyond their extension. */
-const FILENAME_PRESENTATION: Record<string, ExtensionPresentation> = {
-  license: localizedPresentation(FileLockIcon, "license", "text-icon-lock"),
-  licence: localizedPresentation(FileLockIcon, "license", "text-icon-lock"),
-  copying: localizedPresentation(FileLockIcon, "license", "text-icon-lock"),
-  readme: localizedPresentation(FileMdIcon, "markdown", "text-icon-code"),
-  changelog: localizedPresentation(FileMdIcon, "markdown", "text-icon-code"),
-  authors: localizedPresentation(FileMdIcon, "markdown", "text-icon-code"),
-  contributing: localizedPresentation(FileMdIcon, "markdown", "text-icon-code"),
-  makefile: localizedPresentation(FileIniIcon, "configFile", "text-icon-config"),
-  justfile: localizedPresentation(FileIniIcon, "configFile", "text-icon-config"),
-  dockerfile: localizedPresentation(FileIniIcon, "configFile", "text-icon-config"),
-  "package.json": localizedPresentation(FileCodeIcon, "configFile", "text-icon-config"),
-  "tsconfig.json": localizedPresentation(FileCodeIcon, "configFile", "text-icon-config"),
-};
-
-/** Leading-dot files (.gitignore, .env, .npmrc, ...) read as configuration. */
-const DOTFILE_PRESENTATION: ExtensionPresentation = localizedPresentation(
-  GearSixIcon,
-  "configFile",
-  "text-icon-config",
-);
+function filenameLabel(lowerName: string, extension: string): string {
+  const labelKey = FILENAME_LABEL_KEYS[lowerName];
+  if (labelKey) {
+    return localizedLabel(labelKey);
+  }
+  if (extension) {
+    return extensionLabel(extension);
+  }
+  return localizedLabel(lowerName.startsWith(".") ? "configFile" : "file");
+}
 
 export function getFileExtension(name: string): string {
   const dotIndex = name.lastIndexOf(".");
@@ -261,53 +207,61 @@ export function getFileExtension(name: string): string {
   return name.slice(dotIndex + 1).toLowerCase();
 }
 
-/** Whether an extension has a built-in presentation mapping; unmapped types
- *  are candidates for OS-native icons (see `native-icon.tsx`). */
+/** Whether an extension has a theme artwork mapping; unmapped types are
+ *  candidates for OS-native icons (see `native-icon.tsx`). */
 export function hasKnownFileExtension(extension: string): boolean {
-  return extension in EXTENSION_PRESENTATION;
+  return extension in EXT_ICONS;
 }
 
 export function getFilePresentation(name: string): ExtensionPresentation {
-  const byName = FILENAME_PRESENTATION[name.toLowerCase()];
-  if (byName) {
-    return byName;
+  const lowerName = name.toLowerCase();
+  const extension = getFileExtension(name);
+
+  const byFilename = FILENAME_ICONS[lowerName];
+  if (byFilename) {
+    return presentation(byFilename, () => filenameLabel(lowerName, extension));
   }
 
-  const extension = getFileExtension(name);
-  if (extension) {
-    return EXTENSION_PRESENTATION[extension] ?? PLAIN_FILE_PRESENTATION;
+  if (extension && extension in EXT_ICONS) {
+    return presentation(EXT_ICONS[extension], () => extensionLabel(extension));
   }
 
   if (name.startsWith(".")) {
-    return DOTFILE_PRESENTATION;
+    return presentation(DOTFILE_ICON, () => localizedLabel("configFile"));
   }
 
-  return PLAIN_FILE_PRESENTATION;
+  return presentation(DEFAULT_FILE_ICON, () => localizedLabel("file"));
 }
 
-export const SYMLINK_PRESENTATION: ExtensionPresentation = localizedPresentation(
-  LinkSimpleIcon,
-  "symlink",
+/** Folders pick up the theme's per-name artwork (src, node_modules, .git,
+ *  ...) with a dedicated open variant where the set provides one. */
+export function getFolderPresentation(name: string, open = false): ExtensionPresentation {
+  const lowerName = name.toLowerCase();
+  const iconName =
+    (open ? FOLDER_OPEN_ICONS[lowerName] : undefined) ??
+    FOLDER_ICONS[lowerName] ??
+    (open ? DEFAULT_FOLDER_OPEN_ICON : DEFAULT_FOLDER_ICON);
+  return presentation(iconName, () => localizedLabel("directory"));
+}
+
+export const SYMLINK_PRESENTATION: ExtensionPresentation = presentation(SYMLINK_ICON, () =>
+  localizedLabel("symlink"),
 );
 
-export const OTHER_PRESENTATION: ExtensionPresentation = localizedPresentation(
-  FileDashedIcon,
-  "other",
+export const OTHER_PRESENTATION: ExtensionPresentation = presentation(DEFAULT_FILE_ICON, () =>
+  localizedLabel("other"),
 );
 
-export const DIRECTORY_PRESENTATION: ExtensionPresentation = localizedPresentation(
-  FolderClosedIcon,
-  "directory",
-  "text-folder",
+export const DIRECTORY_PRESENTATION: ExtensionPresentation = presentation(
+  DEFAULT_FOLDER_ICON,
+  () => localizedLabel("directory"),
 );
 
 /** Kind-aware presentation used by every view and the preview surface. */
-export function getEntryPresentation(
-  entry: import("./types").DirectoryEntry,
-): ExtensionPresentation {
+export function getEntryPresentation(entry: DirectoryEntry): ExtensionPresentation {
   switch (entry.kind) {
     case "directory":
-      return DIRECTORY_PRESENTATION;
+      return getFolderPresentation(entry.name);
     case "symlink":
       return SYMLINK_PRESENTATION;
     case "other":
@@ -315,9 +269,4 @@ export function getEntryPresentation(
     default:
       return getFilePresentation(entry.name);
   }
-}
-
-/** Icon color class for a presentation; untoned kinds stay muted. */
-export function getPresentationIconClassName(presentation: ExtensionPresentation): string {
-  return presentation.tone ?? "text-muted-foreground";
 }

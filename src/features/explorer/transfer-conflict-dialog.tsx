@@ -18,7 +18,6 @@ import type { TransferOperation } from "./drag-drop";
 import {
   DIRECTORY_PRESENTATION,
   getFilePresentation,
-  getPresentationIconClassName,
   OTHER_PRESENTATION,
   SYMLINK_PRESENTATION,
 } from "./file-icons";
@@ -145,7 +144,7 @@ export function TransferConflictDialog({
           <ConflictSideCard
             icon={
               <SourceIcon
-                className={cn("size-5", getPresentationIconClassName(sourcePresentation))}
+                className="size-5"
               />
             }
             metadata={`${sourceLabel} · ${formatConflictSize(conflict.sourceSize)}`}
@@ -157,7 +156,7 @@ export function TransferConflictDialog({
             highlight
             icon={
               <TargetIcon
-                className={cn("size-5", getPresentationIconClassName(targetPresentation))}
+                className="size-5"
               />
             }
             metadata={`${targetLabel} · ${formatConflictSize(conflict.targetSize)}`}

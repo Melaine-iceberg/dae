@@ -1061,7 +1061,7 @@ function FileListRow({
                   fallback={
                     <TypeIconTile
                       className="size-[22px] rounded-[7px]"
-                      iconSize={13}
+                      iconSize={16}
                       presentation={presentation}
                     />
                   }
@@ -1071,7 +1071,7 @@ function FileListRow({
                 <TypeIconTile
                   pop
                   className="size-[22px] rounded-[7px]"
-                  iconSize={13}
+                  iconSize={16}
                   presentation={presentation}
                 />
               )}
