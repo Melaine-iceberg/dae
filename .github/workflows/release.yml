@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            target: ''
+            args: ''
+          - platform: ubuntu-22.04
+            target: ''
+            args: ''
+          # Both macOS jobs run on Apple Silicon; the Intel artifact is
+          # cross-compiled, since GitHub no longer offers x86 macOS runners.
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            args: '--target aarch64-apple-darwin'
+          - platform: macos-latest
+            target: x86_64-apple-darwin
+            args: '--target x86_64-apple-darwin'
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # `bun run build` shells out to `tsc`, and the version check below uses
+      # `node -p`, so pin Node rather than trusting the runner image.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify tag matches app version
+        shell: bash
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Pushed tag ${GITHUB_REF_NAME} but tauri.conf.json declares v$version."
+            echo "::error::Bump the version in both src-tauri/tauri.conf.json and src-tauri/Cargo.toml, then re-tag."
+            exit 1
+          fi
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl wget file pkg-config cmake \
+            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev \
+            libgtk-3-dev librsvg2-dev libxdo-dev \
+            libssl-dev libdbus-1-dev zlib1g-dev rpm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'dae v__VERSION__'
+          releaseBody: 'See the assets below to download and install this version.'
+          releaseDraft: true
+          prerelease: false
+          generateReleaseNotes: true
+          # The updater config and signing requirement live in an overlay so
+          # that local `bun tauri build` keeps working without a signing key.
+          args: '--config src-tauri/tauri.release.conf.json ${{ matrix.args }}'
+          tauriScript: bun tauri
+          # Point latest.json at the NSIS installer rather than the MSI, which
+          # cannot silently replace a running install.
+          updaterJsonPreferNsis: true

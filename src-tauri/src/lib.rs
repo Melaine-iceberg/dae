@@ -3,6 +3,11 @@ mod default_manager;
 mod file_system;
 mod settings;
 mod terminal;
+// Release-only: the updater's endpoint and public key come from
+// `tauri.release.conf.json`, which CI merges in via `--config`. Dev builds have
+// no such config, so there is nothing to check against.
+#[cfg(not(debug_assertions))]
+mod updater;
 
 use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
@@ -32,6 +37,9 @@ pub fn run() {
     let app = app
         .plugin(tauri_plugin_devtools::init())
         .plugin(tauri_plugin_dev_invoke::init());
+
+    #[cfg(not(debug_assertions))]
+    let app = app.plugin(tauri_plugin_updater::Builder::new().build());
 
     let app = app
         // Thumbnails stream as raw image bytes through the webview's HTTP
@@ -98,6 +106,9 @@ pub fn run() {
                     }
                 }
             });
+
+            #[cfg(not(debug_assertions))]
+            updater::spawn_startup_check(app.handle());
 
             Ok(())
         })

@@ -1,6 +1,6 @@
 [package]
 name = "dae"
-version = "0.1.0"
+version = "0.2.0"
 description = "Aesthetic file manager"
 authors = ["melaine"]
 edition = "2024"
@@ -47,6 +47,10 @@ tauri-plugin-dialog = "2"
 # browsers and other apps can open directories in this app.
 tauri-plugin-single-instance = "2"
 tauri-plugin-deep-link = "2"
+# Pulls signed update bundles from the GitHub Release feed. Its endpoint and
+# public key live in `tauri.release.conf.json`, which only CI merges in, so dev
+# builds neither fetch nor verify updates.
+tauri-plugin-updater = "2"
 # Parses `dae://` URLs and percent-decodes the directory they carry.
 url = "2"
 percent-encoding = "2"
