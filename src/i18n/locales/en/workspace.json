@@ -136,6 +136,7 @@
     "deleteSelected_one": "Delete ({{count}})",
     "deleteSelected_other": "Delete ({{count}})",
     "emptyTrash": "Empty Trash",
+    "unknownOriginalLocation": "Original location unknown",
     "refresh": "Refresh",
     "selectAll": "Select All",
     "columns": {

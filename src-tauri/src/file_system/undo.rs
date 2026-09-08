@@ -719,8 +719,9 @@ fn redo_create(path: &str, kind: NewEntryKind) -> Result<(), FileSystemError> {
 /// records actually restored. Entries no longer in the trash (emptied or
 /// restored elsewhere) are skipped.
 ///
-/// Unsupported on macOS: the `trash` crate can only delete there, so undoing
-/// a delete-to-trash reports `fs.trash_undo_unsupported` instead.
+/// On macOS there is no shell trash API: the newest `~/.Trash` entry whose
+/// current or put-back original name matches is moved back to the recorded
+/// `(parent, name)` with a plain rename.
 fn undo_trash(
     records: &[TrashRecord],
     progress: &dyn FileOperationProgressReporterTrait,
@@ -769,10 +770,50 @@ fn undo_trash(
 
     #[cfg(target_os = "macos")]
     {
-        let _ = (records, progress);
-        Err(FileSystemError::Unsupported(
-            "fs.trash_undo_unsupported".into(),
-        ))
+        let entries = crate::file_system::macos_trash::list_entries()?;
+        // (source inside ~/.Trash, destination) pairs, one per record.
+        let mut to_restore: Vec<(PathBuf, PathBuf)> = Vec::new();
+        let mut restored: Vec<TrashRecord> = Vec::new();
+
+        for record in records {
+            // The same (parent, name) can appear multiple times in the trash
+            // from earlier deletions; the newest one is ours. When a put-back
+            // parent exists it must match the journal, but entries without
+            // put-back records match on name alone — macOS records nothing
+            // else to verify against.
+            let match_entry = entries
+                .iter()
+                .filter(|entry| {
+                    let name_matches = entry.name == record.name
+                        || entry.original_name.as_deref() == Some(record.name.as_str());
+                    if !name_matches {
+                        return false;
+                    }
+                    match entry.original_parent.as_deref() {
+                        Some(parent) => Path::new(parent) == Path::new(&record.parent),
+                        None => true,
+                    }
+                })
+                .max_by_key(|entry| entry.time_modified);
+
+            if let Some(entry) = match_entry {
+                restored.push(record.clone());
+                to_restore.push((entry.path.clone(), restore_path(record)));
+            }
+        }
+
+        if to_restore.is_empty() {
+            return Err(FileSystemError::InvalidInput(
+                "fs.undo_trash_missing".into(),
+            ));
+        }
+
+        progress.start(to_restore.len() as u64);
+        for (source, destination) in to_restore {
+            crate::file_system::macos_trash::restore(&source, &destination)?;
+            progress.advance(&destination);
+        }
+        Ok(restored)
     }
 }
 

@@ -50,10 +50,7 @@ import {
 } from "@/components/ui/empty";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  DIRECTORY_PRESENTATION,
-  getFilePresentation,
-} from "@/features/explorer/file-icons";
+import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
 import { TypeIconTile } from "@/features/explorer/icon-tile";
 
 import { navigateToFolderAtom } from "./workspace-atoms";
@@ -432,6 +429,10 @@ function TrashRow({
 }) {
   const { t } = useTranslation("workspace");
   const presentation = entry.isDirectory ? DIRECTORY_PRESENTATION : getFilePresentation(entry.name);
+  // Entries without a put-back record (e.g. trashed outside Finder on macOS)
+  // have no original location to show or navigate to.
+  const originalLocation = entry.originalParent || t("trash.unknownOriginalLocation");
+  const hasOriginalLocation = entry.originalParent.length > 0;
 
   return (
     <li className="border-b last:border-b-0">
@@ -448,7 +449,7 @@ function TrashRow({
             )}
             onClick={onToggleSelected}
             onDoubleClick={onRestore}
-            title={`${entry.name} · ${entry.originalParent}`}
+            title={`${entry.name} · ${originalLocation}`}
             type="button"
           >
             <RowCheckbox isSelected={isSelected} />
@@ -460,7 +461,7 @@ function TrashRow({
               />
               <span className="truncate text-[13px]">{entry.name}</span>
             </span>
-            <span className="truncate text-xs text-muted-foreground">{entry.originalParent}</span>
+            <span className="truncate text-xs text-muted-foreground">{originalLocation}</span>
             <span className="truncate text-xs text-muted-foreground tabular-nums">
               {formatDeletedTime(entry.timeDeleted)}
             </span>
@@ -475,10 +476,12 @@ function TrashRow({
               <ArrowUUpLeftIcon />
               {t("trash.restore")}
             </ContextMenuItem>
-            <ContextMenuItem onClick={onNavigateToOriginalLocation}>
-              <FolderIcon />
-              {t("trash.openOriginalLocation")}
-            </ContextMenuItem>
+            {hasOriginalLocation && (
+              <ContextMenuItem onClick={onNavigateToOriginalLocation}>
+                <FolderIcon />
+                {t("trash.openOriginalLocation")}
+              </ContextMenuItem>
+            )}
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuGroup>

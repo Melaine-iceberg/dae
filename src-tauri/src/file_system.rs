@@ -7,6 +7,8 @@ pub mod error;
 pub mod git;
 pub mod hashing;
 pub mod local;
+#[cfg(target_os = "macos")]
+pub mod macos_trash;
 pub mod media_meta;
 pub mod open_with;
 pub mod prefetch;

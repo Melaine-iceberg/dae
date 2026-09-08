@@ -9,10 +9,9 @@
 //!
 //! `os_limited` only compiles on Windows and freedesktop-compliant Unix:
 //! macOS keeps the Trash as a private Finder domain and the crate supports
-//! only `delete` there. On macOS the four commands stay registered (so the
-//! generated bindings are identical on every platform) but report
-//! `fs.trash_browse_unsupported`, and the sidebar hides the Trash entry —
-//! see `sidebar.tsx`.
+//! only `delete` there. On macOS the four commands run directly against
+//! `~/.Trash` plus the Finder put-back records in `~/.Trash/.DS_Store` —
+//! see `macos_trash.rs` — so the whole trash view works there too.
 
 use serde::Serialize;
 use specta::Type;
@@ -44,9 +43,10 @@ pub struct TrashEntry {
     pub size_bytes: Option<u64>,
 }
 
-/// Error message code reported by every trash-browsing command on macOS.
+/// Error message code reported when a restore is requested for an entry
+/// whose original location is unknown (no put-back record).
 #[cfg(target_os = "macos")]
-const TRASH_BROWSE_UNSUPPORTED: &str = "fs.trash_browse_unsupported";
+const TRASH_RESTORE_NO_ORIGIN: &str = "fs.trash_restore_no_origin";
 
 #[cfg(any(
     target_os = "windows",
@@ -246,58 +246,202 @@ mod browse {
 ))]
 pub use browse::*;
 
-/// macOS stubs: the same four commands so the command table and generated
-/// bindings stay identical on every platform, each reporting the same
-/// `fs.trash_browse_unsupported` code the frontend translates.
+/// macOS implementation: `~/.Trash` is a plain folder, so listing, purging,
+/// and emptying are direct filesystem operations, and restores replay the
+/// Finder "Put Back" records parsed by `macos_trash`. The command
+/// signatures are identical on every platform, so the generated bindings
+/// stay stable.
 #[cfg(target_os = "macos")]
-mod unsupported {
+mod macos_view {
     use super::super::error::FileSystemError;
+    use super::super::progress::{
+        FileOperationKind, FileOperationProgressReporter, emit_preparing,
+    };
+    use super::super::types::path_to_string;
     use super::TrashEntry;
-    use super::TRASH_BROWSE_UNSUPPORTED;
+    use crate::file_system::macos_trash::{self, TrashDiskEntry};
+    use std::cmp::Reverse;
+    use std::path::{Path, PathBuf};
 
-    /// Unsupported on macOS: the Trash is a private Finder domain with no
-    /// API for listing its contents.
+    /// Lists every entry in `~/.Trash`, newest modification first (macOS
+    /// records no deletion time; see `macos_trash`). Runs on a blocking
+    /// thread like the shell-backed implementations.
     #[tauri::command]
     #[specta::specta]
     pub async fn list_trash() -> Result<Vec<TrashEntry>, FileSystemError> {
-        Err(FileSystemError::Unsupported(TRASH_BROWSE_UNSUPPORTED.into()))
+        tauri::async_runtime::spawn_blocking(|| {
+            let mut entries: Vec<TrashEntry> =
+                macos_trash::list_entries()?.iter().map(trash_entry).collect();
+            entries.sort_by_key(|entry| Reverse(entry.time_deleted));
+            Ok(entries)
+        })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
     }
 
-    /// Unsupported on macOS: trashed entries cannot be enumerated or
-    /// restored programmatically.
+    /// Puts trashed entries back to their original locations, replaying the
+    /// Finder put-back records one rename at a time so progress streams and
+    /// a later failure does not roll back earlier successes. Returns the
+    /// number of entries actually restored.
     #[tauri::command]
     #[specta::specta]
     pub async fn restore_trash_entries(
-        _ids: Vec<String>,
-        _operation_id: String,
-        _app: tauri::AppHandle,
+        ids: Vec<String>,
+        operation_id: String,
+        app: tauri::AppHandle,
     ) -> Result<u64, FileSystemError> {
-        Err(FileSystemError::Unsupported(TRASH_BROWSE_UNSUPPORTED.into()))
+        if ids.is_empty() {
+            return Ok(0);
+        }
+
+        emit_preparing(&app, &operation_id, FileOperationKind::Move);
+
+        tauri::async_runtime::spawn_blocking(move || {
+            let selected = take_trash_entries(&ids)?;
+            if selected.is_empty() {
+                return Err(FileSystemError::InvalidInput(
+                    "fs.trash_entries_missing".into(),
+                ));
+            }
+
+            let progress =
+                FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Move);
+            progress.start(selected.len() as u64);
+
+            let mut restored = 0u64;
+            for entry in selected {
+                let Some(destination) = entry.original_destination() else {
+                    return Err(FileSystemError::Unsupported(
+                        super::TRASH_RESTORE_NO_ORIGIN.into(),
+                    ));
+                };
+                macos_trash::restore(&entry.path, &destination)?;
+                restored += 1;
+                progress.advance(&destination);
+            }
+            progress.finish();
+            Ok(restored)
+        })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
     }
 
-    /// Unsupported on macOS: trashed entries cannot be enumerated or
-    /// purged programmatically.
+    /// Permanently deletes trashed entries (selected by their trash ids).
+    /// Returns the number of entries actually purged.
     #[tauri::command]
     #[specta::specta]
     pub async fn delete_trash_entries(
-        _ids: Vec<String>,
-        _operation_id: String,
-        _app: tauri::AppHandle,
+        ids: Vec<String>,
+        operation_id: String,
+        app: tauri::AppHandle,
     ) -> Result<u64, FileSystemError> {
-        Err(FileSystemError::Unsupported(TRASH_BROWSE_UNSUPPORTED.into()))
+        if ids.is_empty() {
+            return Ok(0);
+        }
+
+        emit_preparing(&app, &operation_id, FileOperationKind::Delete);
+
+        tauri::async_runtime::spawn_blocking(move || {
+            let selected = take_trash_entries(&ids)?;
+            if selected.is_empty() {
+                return Err(FileSystemError::InvalidInput(
+                    "fs.trash_entries_missing".into(),
+                ));
+            }
+
+            let progress =
+                FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
+            progress.start(selected.len() as u64);
+
+            let mut purged = 0u64;
+            for entry in selected {
+                macos_trash::purge(&entry.path)?;
+                purged += 1;
+                progress.advance(&entry.path);
+            }
+            progress.finish();
+            Ok(purged)
+        })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
     }
 
-    /// Unsupported on macOS: the Trash is a private Finder domain with no
-    /// API for emptying it programmatically.
+    /// Permanently deletes everything in `~/.Trash`, then drops the stale
+    /// put-back records by removing `.DS_Store` (Finder recreates it on
+    /// demand). Returns the purged count; the UI must confirm before calling
+    /// this command.
     #[tauri::command]
     #[specta::specta]
     pub async fn empty_trash(
-        _operation_id: String,
-        _app: tauri::AppHandle,
+        operation_id: String,
+        app: tauri::AppHandle,
     ) -> Result<u64, FileSystemError> {
-        Err(FileSystemError::Unsupported(TRASH_BROWSE_UNSUPPORTED.into()))
+        emit_preparing(&app, &operation_id, FileOperationKind::Delete);
+
+        tauri::async_runtime::spawn_blocking(move || {
+            let entries = macos_trash::list_entries()?;
+            if entries.is_empty() {
+                return Ok(0);
+            }
+
+            let progress =
+                FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
+            progress.start(entries.len() as u64);
+
+            let mut purged = 0u64;
+            for entry in &entries {
+                macos_trash::purge(&entry.path)?;
+                purged += 1;
+                progress.advance(&entry.path);
+            }
+            progress.finish();
+
+            // All entries survived; stale put-back metadata can go too.
+            let _ = std::fs::remove_file(macos_trash::trash_dir()?.join(".DS_Store"));
+            Ok(purged)
+        })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    }
+
+    /// One listed entry. The trash path doubles as the id the frontend
+    /// round-trips through the restore/purge commands.
+    fn trash_entry(entry: &TrashDiskEntry) -> TrashEntry {
+        TrashEntry {
+            id: path_to_string(&entry.path),
+            name: entry.name.clone(),
+            original_parent: entry.original_parent.clone().unwrap_or_default(),
+            time_deleted: entry.time_modified,
+            is_directory: entry.is_directory,
+            size_bytes: entry.size_bytes,
+        }
+    }
+
+    /// Fetches the current trash contents and keeps only the entries whose
+    /// id the caller asked for. Every id must be a direct child of
+    /// `~/.Trash`, so a crafted id can never touch files outside the trash.
+    /// Entries purged or restored elsewhere meanwhile are reported as an
+    /// error, like on the other platforms.
+    fn take_trash_entries(ids: &[String]) -> Result<Vec<TrashDiskEntry>, FileSystemError> {
+        let wanted: Vec<PathBuf> = ids.iter().map(PathBuf::from).collect();
+        if wanted.iter().any(|path| !macos_trash::is_trash_child(path)) {
+            return Err(FileSystemError::InvalidInput(
+                "fs.trash_entries_missing".into(),
+            ));
+        }
+        let entries = macos_trash::list_entries()?;
+        Ok(entries
+            .into_iter()
+            .filter(|entry| wanted.iter().any(|path| same_path(path, &entry.path)))
+            .collect())
+    }
+
+    /// `~/.Trash` resolves through `$HOME`, so plain component comparison is
+    /// exact enough — no canonicalization of a possibly-vanished entry.
+    fn same_path(left: &Path, right: &Path) -> bool {
+        left == right
     }
 }
 
 #[cfg(target_os = "macos")]
-pub use unsupported::*;
+pub use macos_view::*;

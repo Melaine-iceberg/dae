@@ -34,8 +34,6 @@ import {
 } from "@phosphor-icons/react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
-import { isMacPlatform } from "@/lib/platform";
-
 import { commands, type Breadcrumb, type StoredCloudAccount } from "@/bindings";
 
 import {
@@ -206,16 +204,12 @@ function SidebarContent() {
           label={t("nav.recents")}
           onClick={() => openSurface({ kind: "recents" })}
         />
-        {/* The Trash view needs the `trash` crate's os_limited API, which only
-            exists on Windows and freedesktop Unix; macOS hides the entry. */}
-        {!isMacPlatform && (
-          <NavItem
-            icon={TrashIcon}
-            isActive={surface.kind === "trash"}
-            label={t("nav.trash")}
-            onClick={() => openSurface({ kind: "trash" })}
-          />
-        )}
+        <NavItem
+          icon={TrashIcon}
+          isActive={surface.kind === "trash"}
+          label={t("nav.trash")}
+          onClick={() => openSurface({ kind: "trash" })}
+        />
 
         <SectionLabel
           label={t("sections.favorites")}

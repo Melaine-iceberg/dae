@@ -136,6 +136,7 @@
     "deleteSelected_one": "删除选中 ({{count}})",
     "deleteSelected_other": "删除选中 ({{count}})",
     "emptyTrash": "清空回收站",
+    "unknownOriginalLocation": "原位置未知",
     "refresh": "刷新",
     "selectAll": "全选",
     "columns": {
