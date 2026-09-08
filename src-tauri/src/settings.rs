@@ -64,6 +64,7 @@ pub struct TerminalSettings {
 /// for the first paint before that query resolves.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase", default)]
+#[derive(Default)]
 pub struct DefaultFileManagerState {
     pub is_default: bool,
 }
@@ -89,11 +90,6 @@ impl Default for TerminalSettings {
     }
 }
 
-impl Default for DefaultFileManagerState {
-    fn default() -> Self {
-        Self { is_default: false }
-    }
-}
 
 fn default_font_size() -> u8 {
     13

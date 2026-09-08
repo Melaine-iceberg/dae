@@ -494,7 +494,7 @@ mod windows_impl {
         buffer.truncate(size as usize);
         // REG_SZ is UTF-16LE; strip one trailing null terminator if present.
         let mut as_u16: Vec<u16> = buffer
-            .chunks_exact(2)
+            .as_chunks::<2>().0.iter()
             .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
             .collect();
         if as_u16.last() == Some(&0) {

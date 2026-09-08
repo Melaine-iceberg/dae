@@ -6,16 +6,24 @@
 //! see `commands::trash_entries`. Browsing is a deliberate scan, so this
 //! module runs it on blocking threads and streams progress for the long
 //! restore/purge operations.
+//!
+//! `os_limited` only compiles on Windows and freedesktop-compliant Unix:
+//! macOS keeps the Trash as a private Finder domain and the crate supports
+//! only `delete` there. On macOS the four commands stay registered (so the
+//! generated bindings are identical on every platform) but report
+//! `fs.trash_browse_unsupported`, and the sidebar hides the Trash entry —
+//! see `sidebar.tsx`.
 
-use super::error::FileSystemError;
-use super::progress::{
-    FileOperationKind, FileOperationProgressReporter, FileOperationProgressReporterTrait,
-    emit_preparing,
-};
-use super::types::path_to_string;
 use serde::Serialize;
 use specta::Type;
-use std::ffi::OsString;
+
+/// `true` on platforms where the `trash` crate exposes the full recycle-bin
+/// API (Windows and freedesktop Trash environments).
+#[cfg(any(
+    target_os = "windows",
+    all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))
+))]
+use super::types::path_to_string;
 
 /// One entry currently sitting in the system trash.
 #[derive(Debug, Clone, Serialize, Type)]
@@ -36,6 +44,14 @@ pub struct TrashEntry {
     pub size_bytes: Option<u64>,
 }
 
+/// Error message code reported by every trash-browsing command on macOS.
+#[cfg(target_os = "macos")]
+const TRASH_BROWSE_UNSUPPORTED: &str = "fs.trash_browse_unsupported";
+
+#[cfg(any(
+    target_os = "windows",
+    all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))
+))]
 impl TrashEntry {
     fn from_item(item: &trash::TrashItem) -> Self {
         // Metadata resolution is best effort: an unreadable shell item still
@@ -60,152 +76,228 @@ impl TrashEntry {
     }
 }
 
-/// Lists every entry currently in the system trash, newest deletion first.
-///
-/// This scans the whole recycle bin through the shell API, so it runs on a
-/// blocking thread; the frontend only calls it when opening the trash view
-/// or after a trash operation.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_trash() -> Result<Vec<TrashEntry>, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(|| {
-        let items = trash::os_limited::list().map_err(trash_error)?;
-        let mut entries: Vec<TrashEntry> =
-            items.iter().map(TrashEntry::from_item).collect();
-        entries.sort_by_key(|entry| std::cmp::Reverse(entry.time_deleted));
-        Ok(entries)
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
-}
+#[cfg(any(
+    target_os = "windows",
+    all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))
+))]
+mod browse {
+    use super::super::error::FileSystemError;
+    use super::super::progress::{
+        FileOperationKind, FileOperationProgressReporter, FileOperationProgressReporterTrait,
+        emit_preparing,
+    };
+    use super::TrashEntry;
+    use std::ffi::OsString;
 
-/// Restores trashed entries (selected by their trash ids) to their original
-/// locations, one shell operation per entry so progress streams and a later
-/// collision does not roll back earlier successes. Returns the number of
-/// entries actually restored.
-#[tauri::command]
-#[specta::specta]
-pub async fn restore_trash_entries(
-    ids: Vec<String>,
-    operation_id: String,
-    app: tauri::AppHandle,
-) -> Result<u64, FileSystemError> {
-    if ids.is_empty() {
-        return Ok(0);
+    /// Lists every entry currently in the system trash, newest deletion first.
+    ///
+    /// This scans the whole recycle bin through the shell API, so it runs on a
+    /// blocking thread; the frontend only calls it when opening the trash view
+    /// or after a trash operation.
+    #[tauri::command]
+    #[specta::specta]
+    pub async fn list_trash() -> Result<Vec<TrashEntry>, FileSystemError> {
+        tauri::async_runtime::spawn_blocking(|| {
+            let items = trash::os_limited::list().map_err(trash_error)?;
+            let mut entries: Vec<TrashEntry> =
+                items.iter().map(TrashEntry::from_item).collect();
+            entries.sort_by_key(|entry| std::cmp::Reverse(entry.time_deleted));
+            Ok(entries)
+        })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
     }
 
-    emit_preparing(&app, &operation_id, FileOperationKind::Move);
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let selected = take_trash_items(&ids)?;
-        if selected.is_empty() {
-            return Err(FileSystemError::InvalidInput(
-                "fs.trash_entries_missing".into(),
-            ));
-        }
-
-        let progress =
-            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Move);
-        progress.start(selected.len() as u64);
-
-        let mut restored = 0u64;
-        for item in selected {
-            let original = item.original_path();
-            trash::os_limited::restore_all(std::iter::once(item)).map_err(trash_error)?;
-            restored += 1;
-            progress.advance(&original);
-        }
-        progress.finish();
-        Ok(restored)
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
-}
-
-/// Permanently deletes trashed entries (selected by their trash ids).
-/// Returns the number of entries actually purged.
-#[tauri::command]
-#[specta::specta]
-pub async fn delete_trash_entries(
-    ids: Vec<String>,
-    operation_id: String,
-    app: tauri::AppHandle,
-) -> Result<u64, FileSystemError> {
-    if ids.is_empty() {
-        return Ok(0);
-    }
-
-    emit_preparing(&app, &operation_id, FileOperationKind::Delete);
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let selected = take_trash_items(&ids)?;
-        if selected.is_empty() {
-            return Err(FileSystemError::InvalidInput(
-                "fs.trash_entries_missing".into(),
-            ));
-        }
-
-        let progress =
-            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
-        progress.start(selected.len() as u64);
-
-        let mut purged = 0u64;
-        for item in selected {
-            let original = item.original_path();
-            trash::os_limited::purge_all(std::iter::once(item)).map_err(trash_error)?;
-            purged += 1;
-            progress.advance(&original);
-        }
-        progress.finish();
-        Ok(purged)
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
-}
-
-/// Permanently deletes everything in the trash. Returns the purged count;
-/// the UI must confirm before calling this command.
-#[tauri::command]
-#[specta::specta]
-pub async fn empty_trash(
-    operation_id: String,
-    app: tauri::AppHandle,
-) -> Result<u64, FileSystemError> {
-    emit_preparing(&app, &operation_id, FileOperationKind::Delete);
-
-    tauri::async_runtime::spawn_blocking(move || {
-        let items = trash::os_limited::list().map_err(trash_error)?;
-        if items.is_empty() {
+    /// Restores trashed entries (selected by their trash ids) to their original
+    /// locations, one shell operation per entry so progress streams and a later
+    /// collision does not roll back earlier successes. Returns the number of
+    /// entries actually restored.
+    #[tauri::command]
+    #[specta::specta]
+    pub async fn restore_trash_entries(
+        ids: Vec<String>,
+        operation_id: String,
+        app: tauri::AppHandle,
+    ) -> Result<u64, FileSystemError> {
+        if ids.is_empty() {
             return Ok(0);
         }
 
-        let progress =
-            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
-        progress.start(items.len() as u64);
+        emit_preparing(&app, &operation_id, FileOperationKind::Move);
 
-        let mut purged = 0u64;
-        for item in items {
-            let original = item.original_path();
-            trash::os_limited::purge_all(std::iter::once(item)).map_err(trash_error)?;
-            purged += 1;
-            progress.advance(&original);
+        tauri::async_runtime::spawn_blocking(move || {
+            let selected = take_trash_items(&ids)?;
+            if selected.is_empty() {
+                return Err(FileSystemError::InvalidInput(
+                    "fs.trash_entries_missing".into(),
+                ));
+            }
+
+            let progress =
+                FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Move);
+            progress.start(selected.len() as u64);
+
+            let mut restored = 0u64;
+            for item in selected {
+                let original = item.original_path();
+                trash::os_limited::restore_all(std::iter::once(item)).map_err(trash_error)?;
+                restored += 1;
+                progress.advance(&original);
+            }
+            progress.finish();
+            Ok(restored)
+        })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    }
+
+    /// Permanently deletes trashed entries (selected by their trash ids).
+    /// Returns the number of entries actually purged.
+    #[tauri::command]
+    #[specta::specta]
+    pub async fn delete_trash_entries(
+        ids: Vec<String>,
+        operation_id: String,
+        app: tauri::AppHandle,
+    ) -> Result<u64, FileSystemError> {
+        if ids.is_empty() {
+            return Ok(0);
         }
-        progress.finish();
-        Ok(purged)
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+
+        emit_preparing(&app, &operation_id, FileOperationKind::Delete);
+
+        tauri::async_runtime::spawn_blocking(move || {
+            let selected = take_trash_items(&ids)?;
+            if selected.is_empty() {
+                return Err(FileSystemError::InvalidInput(
+                    "fs.trash_entries_missing".into(),
+                ));
+            }
+
+            let progress =
+                FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
+            progress.start(selected.len() as u64);
+
+            let mut purged = 0u64;
+            for item in selected {
+                let original = item.original_path();
+                trash::os_limited::purge_all(std::iter::once(item)).map_err(trash_error)?;
+                purged += 1;
+                progress.advance(&original);
+            }
+            progress.finish();
+            Ok(purged)
+        })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    }
+
+    /// Permanently deletes everything in the trash. Returns the purged count;
+    /// the UI must confirm before calling this command.
+    #[tauri::command]
+    #[specta::specta]
+    pub async fn empty_trash(
+        operation_id: String,
+        app: tauri::AppHandle,
+    ) -> Result<u64, FileSystemError> {
+        emit_preparing(&app, &operation_id, FileOperationKind::Delete);
+
+        tauri::async_runtime::spawn_blocking(move || {
+            let items = trash::os_limited::list().map_err(trash_error)?;
+            if items.is_empty() {
+                return Ok(0);
+            }
+
+            let progress =
+                FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
+            progress.start(items.len() as u64);
+
+            let mut purged = 0u64;
+            for item in items {
+                let original = item.original_path();
+                trash::os_limited::purge_all(std::iter::once(item)).map_err(trash_error)?;
+                purged += 1;
+                progress.advance(&original);
+            }
+            progress.finish();
+            Ok(purged)
+        })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    }
+
+    /// Fetches the current trash contents and keeps only the items whose id the
+    /// caller asked for. Entries purged or restored elsewhere meanwhile are
+    /// silently dropped; an empty result is reported as an error by the caller.
+    fn take_trash_items(ids: &[String]) -> Result<Vec<trash::TrashItem>, FileSystemError> {
+        let wanted: Vec<OsString> = ids.iter().map(OsString::from).collect();
+        let items = trash::os_limited::list().map_err(trash_error)?;
+        Ok(items.into_iter().filter(|item| wanted.contains(&item.id)).collect())
+    }
+
+    fn trash_error(error: trash::Error) -> FileSystemError {
+        FileSystemError::Internal(error.to_string())
+    }
 }
 
-/// Fetches the current trash contents and keeps only the items whose id the
-/// caller asked for. Entries purged or restored elsewhere meanwhile are
-/// silently dropped; an empty result is reported as an error by the caller.
-fn take_trash_items(ids: &[String]) -> Result<Vec<trash::TrashItem>, FileSystemError> {
-    let wanted: Vec<OsString> = ids.iter().map(OsString::from).collect();
-    let items = trash::os_limited::list().map_err(trash_error)?;
-    Ok(items.into_iter().filter(|item| wanted.contains(&item.id)).collect())
+#[cfg(any(
+    target_os = "windows",
+    all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))
+))]
+pub use browse::*;
+
+/// macOS stubs: the same four commands so the command table and generated
+/// bindings stay identical on every platform, each reporting the same
+/// `fs.trash_browse_unsupported` code the frontend translates.
+#[cfg(target_os = "macos")]
+mod unsupported {
+    use super::super::error::FileSystemError;
+    use super::TrashEntry;
+    use super::TRASH_BROWSE_UNSUPPORTED;
+
+    /// Unsupported on macOS: the Trash is a private Finder domain with no
+    /// API for listing its contents.
+    #[tauri::command]
+    #[specta::specta]
+    pub async fn list_trash() -> Result<Vec<TrashEntry>, FileSystemError> {
+        Err(FileSystemError::Unsupported(TRASH_BROWSE_UNSUPPORTED.into()))
+    }
+
+    /// Unsupported on macOS: trashed entries cannot be enumerated or
+    /// restored programmatically.
+    #[tauri::command]
+    #[specta::specta]
+    pub async fn restore_trash_entries(
+        _ids: Vec<String>,
+        _operation_id: String,
+        _app: tauri::AppHandle,
+    ) -> Result<u64, FileSystemError> {
+        Err(FileSystemError::Unsupported(TRASH_BROWSE_UNSUPPORTED.into()))
+    }
+
+    /// Unsupported on macOS: trashed entries cannot be enumerated or
+    /// purged programmatically.
+    #[tauri::command]
+    #[specta::specta]
+    pub async fn delete_trash_entries(
+        _ids: Vec<String>,
+        _operation_id: String,
+        _app: tauri::AppHandle,
+    ) -> Result<u64, FileSystemError> {
+        Err(FileSystemError::Unsupported(TRASH_BROWSE_UNSUPPORTED.into()))
+    }
+
+    /// Unsupported on macOS: the Trash is a private Finder domain with no
+    /// API for emptying it programmatically.
+    #[tauri::command]
+    #[specta::specta]
+    pub async fn empty_trash(
+        _operation_id: String,
+        _app: tauri::AppHandle,
+    ) -> Result<u64, FileSystemError> {
+        Err(FileSystemError::Unsupported(TRASH_BROWSE_UNSUPPORTED.into()))
+    }
 }
 
-fn trash_error(error: trash::Error) -> FileSystemError {
-    FileSystemError::Internal(error.to_string())
-}
+#[cfg(target_os = "macos")]
+pub use unsupported::*;

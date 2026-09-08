@@ -34,6 +34,8 @@ import {
 } from "@phosphor-icons/react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
+import { isMacPlatform } from "@/lib/platform";
+
 import { commands, type Breadcrumb, type StoredCloudAccount } from "@/bindings";
 
 import {
@@ -51,7 +53,12 @@ import {
   fileClipboardAtom,
   openInNewTabAtom,
 } from "@/features/explorer/tabs";
-import { spaceRenameRequestAtom, createSpace, ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
+import {
+  spaceRenameRequestAtom,
+  createSpace,
+  ensureSpacesLoadedAtom,
+  spacesAtom,
+} from "@/features/workspace/spaces-atoms";
 import { getSpaceAccent } from "@/features/workspace/space-identity";
 import { settingsOpenAtom } from "@/features/settings/settings-atoms";
 import {
@@ -199,12 +206,16 @@ function SidebarContent() {
           label={t("nav.recents")}
           onClick={() => openSurface({ kind: "recents" })}
         />
-        <NavItem
-          icon={TrashIcon}
-          isActive={surface.kind === "trash"}
-          label={t("nav.trash")}
-          onClick={() => openSurface({ kind: "trash" })}
-        />
+        {/* The Trash view needs the `trash` crate's os_limited API, which only
+            exists on Windows and freedesktop Unix; macOS hides the entry. */}
+        {!isMacPlatform && (
+          <NavItem
+            icon={TrashIcon}
+            isActive={surface.kind === "trash"}
+            label={t("nav.trash")}
+            onClick={() => openSurface({ kind: "trash" })}
+          />
+        )}
 
         <SectionLabel
           label={t("sections.favorites")}

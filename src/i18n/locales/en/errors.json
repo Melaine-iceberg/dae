@@ -3,6 +3,8 @@
     "fs": {
       "content_search_local_only": "Content search only works on local folders",
       "trash_local_only": "The Recycle Bin only works with local paths",
+      "trash_browse_unsupported": "Browsing the Trash is not supported on this platform",
+      "trash_undo_unsupported": "Restoring items from the Trash is not supported on this platform",
       "undo_empty": "Nothing to undo",
       "redo_empty": "Nothing to redo",
       "undo_trash_missing": "These items are no longer in the Recycle Bin — it may have been emptied or restored",

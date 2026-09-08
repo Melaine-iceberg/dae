@@ -17,7 +17,7 @@
 use super::error::FileSystemError;
 use super::progress::{FileOperationKind, FileOperationProgressReporterTrait};
 use super::transfer::{self, TransferSource};
-use super::types::{ConflictAction, NewEntryKind, TransferPair, path_to_string};
+use super::types::{path_to_string, ConflictAction, NewEntryKind, TransferPair};
 use super::vfs;
 use serde::Serialize;
 use specta::Type;
@@ -327,7 +327,7 @@ pub fn execute_redo(
                 .collect();
             let applied = apply_rename_pairs(&forward, progress)?;
             let count = applied.len() as u64;
-            let undo = (!applied.is_empty()).then(|| Operation::RenameBatch { pairs: applied });
+            let undo = (!applied.is_empty()).then_some(Operation::RenameBatch { pairs: applied });
             Ok((count, undo))
         }
         Operation::Copy {
@@ -718,40 +718,62 @@ fn redo_create(path: &str, kind: NewEntryKind) -> Result<(), FileSystemError> {
 /// Restores trashed records to their original locations, returning the
 /// records actually restored. Entries no longer in the trash (emptied or
 /// restored elsewhere) are skipped.
+///
+/// Unsupported on macOS: the `trash` crate can only delete there, so undoing
+/// a delete-to-trash reports `fs.trash_undo_unsupported` instead.
 fn undo_trash(
     records: &[TrashRecord],
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<Vec<TrashRecord>, FileSystemError> {
-    let items = trash::os_limited::list().map_err(trash_error)?;
-    let mut to_restore = Vec::new();
-    let mut restored = Vec::new();
+    #[cfg(any(
+        target_os = "windows",
+        all(
+            unix,
+            not(target_os = "macos"),
+            not(target_os = "ios"),
+            not(target_os = "android")
+        )
+    ))]
+    {
+        let items = trash::os_limited::list().map_err(trash_error)?;
+        let mut to_restore = Vec::new();
+        let mut restored = Vec::new();
 
-    for record in records {
-        // The same (parent, name) can appear multiple times in the trash
-        // from earlier deletions; the newest one is ours.
-        let match_item = items
-            .iter()
-            .filter(|item| {
-                item.name.to_string_lossy() == record.name
-                    && same_trash_location(&item.original_parent, &record.parent)
-            })
-            .max_by_key(|item| item.time_deleted);
+        for record in records {
+            // The same (parent, name) can appear multiple times in the trash
+            // from earlier deletions; the newest one is ours.
+            let match_item = items
+                .iter()
+                .filter(|item| {
+                    item.name.to_string_lossy() == record.name
+                        && same_trash_location(&item.original_parent, &record.parent)
+                })
+                .max_by_key(|item| item.time_deleted);
 
-        if let Some(item) = match_item {
-            restored.push(record.clone());
-            to_restore.push(item.clone());
+            if let Some(item) = match_item {
+                restored.push(record.clone());
+                to_restore.push(item.clone());
+            }
         }
+
+        if to_restore.is_empty() {
+            return Err(FileSystemError::InvalidInput(
+                "fs.undo_trash_missing".into(),
+            ));
+        }
+
+        progress.start(to_restore.len() as u64);
+        trash::os_limited::restore_all(to_restore).map_err(trash_error)?;
+        Ok(restored)
     }
 
-    if to_restore.is_empty() {
-        return Err(FileSystemError::InvalidInput(
-            "fs.undo_trash_missing".into(),
-        ));
+    #[cfg(target_os = "macos")]
+    {
+        let _ = (records, progress);
+        Err(FileSystemError::Unsupported(
+            "fs.trash_undo_unsupported".into(),
+        ))
     }
-
-    progress.start(to_restore.len() as u64);
-    trash::os_limited::restore_all(to_restore).map_err(trash_error)?;
-    Ok(restored)
 }
 
 /// Re-trashes the restored records still sitting at their original spots,
@@ -788,6 +810,15 @@ fn restore_path(record: &TrashRecord) -> PathBuf {
 
 /// Windows paths are case-insensitive, so recycle-bin parents recorded from
 /// a deletion must compare that way too.
+#[cfg(any(
+    target_os = "windows",
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
+))]
 fn same_trash_location(left: &Path, right: &str) -> bool {
     #[cfg(windows)]
     {
@@ -889,9 +920,8 @@ mod tests {
         assert!(!source.join("a.txt").exists());
 
         let undo_progress = TestProgress::new();
-        let (count, redo) =
-            execute_undo(Operation::Move { transfers: journal }, &undo_progress)
-                .expect("undo move");
+        let (count, redo) = execute_undo(Operation::Move { transfers: journal }, &undo_progress)
+            .expect("undo move");
         assert_eq!(count, 2);
         assert!(source.join("a.txt").exists());
         assert!(source.join("b.txt").exists());
@@ -899,8 +929,7 @@ mod tests {
 
         let redo_progress = TestProgress::new();
         let redo = redo.expect("undo reports a redo operation");
-        let (count, undone) =
-            execute_redo(redo, &redo_progress).expect("redo move");
+        let (count, undone) = execute_redo(redo, &redo_progress).expect("redo move");
         assert_eq!(count, 2);
         assert!(destination.join("a.txt").exists());
         assert!(destination.join("b.txt").exists());
@@ -915,9 +944,8 @@ mod tests {
             other => panic!("expected a move operation, got {other:?}"),
         };
         let progress = TestProgress::new();
-        let (count, redo) =
-            execute_undo(Operation::Move { transfers: journal }, &progress)
-                .expect("undo move with a missing entry");
+        let (count, redo) = execute_undo(Operation::Move { transfers: journal }, &progress)
+            .expect("undo move with a missing entry");
         assert_eq!(count, 1);
         assert!(source.join("b.txt").exists());
         assert!(!source.join("a.txt").exists());
@@ -951,9 +979,8 @@ mod tests {
         assert!(file.exists());
         assert!(!renamed.exists());
 
-        let (count, undone) =
-            execute_redo(redo.expect("undo reports a redo operation"), &progress)
-                .expect("redo rename");
+        let (count, undone) = execute_redo(redo.expect("undo reports a redo operation"), &progress)
+            .expect("redo rename");
         assert_eq!(count, 1);
         assert!(renamed.exists());
         assert!(!file.exists());
@@ -976,8 +1003,8 @@ mod tests {
         let progress = TestProgress::new();
         let applied = apply_rename_pairs(
             &[
-                (pair("a.txt"), pair("b.txt")),   // swap
-                (pair("b.txt"), pair("a.txt")),   // swap
+                (pair("a.txt"), pair("b.txt")), // swap
+                (pair("b.txt"), pair("a.txt")), // swap
                 (pair("chain.txt"), pair("b2.txt")),
                 (pair("case.txt"), pair("CASE.txt")), // case flip
             ],
@@ -985,8 +1012,14 @@ mod tests {
         )
         .expect("apply batch rename");
         assert_eq!(applied.len(), 4);
-        assert_eq!(fs::read_to_string(directory.join("b.txt")).expect("read b"), "a");
-        assert_eq!(fs::read_to_string(directory.join("a.txt")).expect("read a"), "b");
+        assert_eq!(
+            fs::read_to_string(directory.join("b.txt")).expect("read b"),
+            "a"
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("a.txt")).expect("read a"),
+            "b"
+        );
         assert!(directory.join("b2.txt").exists());
         assert!(!directory.join("chain.txt").exists());
         assert!(directory.join("CASE.txt").exists());
@@ -994,7 +1027,12 @@ mod tests {
         let leftovers = fs::read_dir(&directory)
             .expect("read directory")
             .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.file_name().to_string_lossy().contains("dae-bulk-rename"))
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("dae-bulk-rename")
+            })
             .count();
         assert_eq!(leftovers, 0);
 
@@ -1003,8 +1041,14 @@ mod tests {
         let (count, redo) =
             execute_undo(operation, &TestProgress::new()).expect("undo batch rename");
         assert_eq!(count, 4);
-        assert_eq!(fs::read_to_string(directory.join("a.txt")).expect("read a"), "a");
-        assert_eq!(fs::read_to_string(directory.join("b.txt")).expect("read b"), "b");
+        assert_eq!(
+            fs::read_to_string(directory.join("a.txt")).expect("read a"),
+            "a"
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("b.txt")).expect("read b"),
+            "b"
+        );
         assert!(directory.join("chain.txt").exists());
         assert!(directory.join("case.txt").exists());
 
@@ -1013,8 +1057,14 @@ mod tests {
             execute_redo(redo.expect("undo reports a redo"), &TestProgress::new())
                 .expect("redo batch rename");
         assert_eq!(count, 4);
-        assert_eq!(fs::read_to_string(directory.join("b.txt")).expect("read b"), "a");
-        assert_eq!(fs::read_to_string(directory.join("a.txt")).expect("read a"), "b");
+        assert_eq!(
+            fs::read_to_string(directory.join("b.txt")).expect("read b"),
+            "a"
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("a.txt")).expect("read a"),
+            "b"
+        );
         assert!(undone.is_some());
 
         fs::remove_dir_all(directory).expect("remove test directory");

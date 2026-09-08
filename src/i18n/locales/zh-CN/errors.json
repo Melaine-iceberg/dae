@@ -3,6 +3,8 @@
     "fs": {
       "content_search_local_only": "内容搜索仅支持本地目录",
       "trash_local_only": "回收站仅支持本地路径",
+      "trash_browse_unsupported": "当前平台不支持浏览废纸篓",
+      "trash_undo_unsupported": "当前平台不支持从废纸篓中还原项目",
       "undo_empty": "没有可撤销的操作",
       "redo_empty": "没有可重做的操作",
       "undo_trash_missing": "回收站中已找不到这些项目，可能已被清空或还原",
