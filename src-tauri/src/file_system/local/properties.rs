@@ -9,8 +9,8 @@ use super::directory::entry_kind;
 use crate::file_system::error::FileSystemError;
 use crate::file_system::progress::FileOperationProgressReporterTrait;
 use crate::file_system::types::{
-    EntryKind, FileProperties, PlatformProperties, PropertyChanges,
-    RecursivePropertyUpdateOutcome, display_name_from_path, path_to_string,
+    display_name_from_path, path_to_string, EntryKind, FileProperties, PlatformProperties,
+    PropertyChanges, RecursivePropertyUpdateOutcome,
 };
 use std::fs;
 use std::path::Path;
@@ -23,8 +23,8 @@ use crate::file_system::types::WindowsProperties;
 use windows::core::PCWSTR;
 #[cfg(windows)]
 use windows::Win32::Storage::FileSystem::{
-    FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_SYSTEM,
-    FILE_FLAGS_AND_ATTRIBUTES, SetFileAttributesW,
+    SetFileAttributesW, FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY,
+    FILE_ATTRIBUTE_SYSTEM, FILE_FLAGS_AND_ATTRIBUTES,
 };
 
 pub fn read_properties(path: &Path) -> Result<FileProperties, FileSystemError> {
@@ -90,7 +90,10 @@ pub fn apply_properties_recursive(
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<RecursivePropertyUpdateOutcome, FileSystemError> {
     let plan = PropertyPlan::new(changes)?;
-    let mut outcome = RecursivePropertyUpdateOutcome { updated: 0, failed: 0 };
+    let mut outcome = RecursivePropertyUpdateOutcome {
+        updated: 0,
+        failed: 0,
+    };
     if plan.is_empty() {
         return Ok(outcome);
     }
@@ -450,29 +453,38 @@ mod accounts {
 
         // SAFETY: libc guarantees the pointer outlives the call and points
         // to a valid nul-terminated string.
-        Some(unsafe { CStr::from_ptr(pointer) }.to_string_lossy().into_owned())
+        Some(
+            unsafe { CStr::from_ptr(pointer) }
+                .to_string_lossy()
+                .into_owned(),
+        )
     }
 
     pub fn user_name_by_uid(uid: u32) -> Option<String> {
         let mut buffer = vec![0 as libc::c_char; INITIAL_BUFFER_SIZE];
 
         loop {
+            // SAFETY: `zeroed()` produces a valid all-zero `passwd`; it is a
+            // plain C struct fully initialized by `getpwuid_r` on success.
+            let mut passwd: libc::passwd = unsafe { std::mem::zeroed() };
+            let mut result: *mut libc::passwd = std::ptr::null_mut();
+
             // SAFETY: all pointers reference live, correctly-sized storage.
-            let (code, result) = unsafe {
-                let mut passwd: libc::passwd = std::mem::zeroed();
-                let mut result: *mut libc::passwd = std::ptr::null_mut();
-                let code = libc::getpwuid_r(
+            let code = unsafe {
+                libc::getpwuid_r(
                     uid,
                     &mut passwd,
                     buffer.as_mut_ptr(),
                     buffer.len(),
                     &mut result,
-                );
-                (code, result)
+                )
             };
 
             match code {
-                0 => return cstr_to_string(result.as_ref()?.pw_name),
+                // SAFETY: on success `result` is either null (no entry) or
+                // points to `passwd`, which is still alive here; `as_ref`
+                // performs the null check.
+                0 => return cstr_to_string(unsafe { result.as_ref() }?.pw_name),
                 libc::ERANGE => buffer.resize(buffer.len() * 2, 0),
                 _ => return None,
             }
@@ -484,23 +496,28 @@ mod accounts {
         let mut buffer = vec![0 as libc::c_char; INITIAL_BUFFER_SIZE];
 
         loop {
+            // SAFETY: `zeroed()` produces a valid all-zero `passwd`; it is a
+            // plain C struct fully initialized by `getpwnam_r` on success.
+            let mut passwd: libc::passwd = unsafe { std::mem::zeroed() };
+            let mut result: *mut libc::passwd = std::ptr::null_mut();
+
             // SAFETY: `name` is nul-terminated; other pointers reference
             // live, correctly-sized storage.
-            let (code, result) = unsafe {
-                let mut passwd: libc::passwd = std::mem::zeroed();
-                let mut result: *mut libc::passwd = std::ptr::null_mut();
-                let code = libc::getpwnam_r(
+            let code = unsafe {
+                libc::getpwnam_r(
                     name.as_ptr(),
                     &mut passwd,
                     buffer.as_mut_ptr(),
                     buffer.len(),
                     &mut result,
-                );
-                (code, result)
+                )
             };
 
             match code {
-                0 => return result.as_ref().map(|passwd| passwd.pw_uid),
+                // SAFETY: on success `result` is either null (no entry) or
+                // points to `passwd`, which is still alive here; `as_ref`
+                // performs the null check.
+                0 => return unsafe { result.as_ref() }.map(|passwd| passwd.pw_uid),
                 libc::ERANGE => buffer.resize(buffer.len() * 2, 0),
                 _ => return None,
             }
@@ -511,22 +528,27 @@ mod accounts {
         let mut buffer = vec![0 as libc::c_char; INITIAL_BUFFER_SIZE];
 
         loop {
+            // SAFETY: `zeroed()` produces a valid all-zero `group`; it is a
+            // plain C struct fully initialized by `getgrgid_r` on success.
+            let mut group: libc::group = unsafe { std::mem::zeroed() };
+            let mut result: *mut libc::group = std::ptr::null_mut();
+
             // SAFETY: all pointers reference live, correctly-sized storage.
-            let (code, result) = unsafe {
-                let mut group: libc::group = std::mem::zeroed();
-                let mut result: *mut libc::group = std::ptr::null_mut();
-                let code = libc::getgrgid_r(
+            let code = unsafe {
+                libc::getgrgid_r(
                     gid,
                     &mut group,
                     buffer.as_mut_ptr(),
                     buffer.len(),
                     &mut result,
-                );
-                (code, result)
+                )
             };
 
             match code {
-                0 => return cstr_to_string(result.as_ref()?.gr_name),
+                // SAFETY: on success `result` is either null (no entry) or
+                // points to `group`, which is still alive here; `as_ref`
+                // performs the null check.
+                0 => return cstr_to_string(unsafe { result.as_ref() }?.gr_name),
                 libc::ERANGE => buffer.resize(buffer.len() * 2, 0),
                 _ => return None,
             }
@@ -538,23 +560,28 @@ mod accounts {
         let mut buffer = vec![0 as libc::c_char; INITIAL_BUFFER_SIZE];
 
         loop {
+            // SAFETY: `zeroed()` produces a valid all-zero `group`; it is a
+            // plain C struct fully initialized by `getgrnam_r` on success.
+            let mut group: libc::group = unsafe { std::mem::zeroed() };
+            let mut result: *mut libc::group = std::ptr::null_mut();
+
             // SAFETY: `name` is nul-terminated; other pointers reference
             // live, correctly-sized storage.
-            let (code, result) = unsafe {
-                let mut group: libc::group = std::mem::zeroed();
-                let mut result: *mut libc::group = std::ptr::null_mut();
-                let code = libc::getgrnam_r(
+            let code = unsafe {
+                libc::getgrnam_r(
                     name.as_ptr(),
                     &mut group,
                     buffer.as_mut_ptr(),
                     buffer.len(),
                     &mut result,
-                );
-                (code, result)
+                )
             };
 
             match code {
-                0 => return result.as_ref().map(|group| group.gr_gid),
+                // SAFETY: on success `result` is either null (no entry) or
+                // points to `group`, which is still alive here; `as_ref`
+                // performs the null check.
+                0 => return unsafe { result.as_ref() }.map(|group| group.gr_gid),
                 libc::ERANGE => buffer.resize(buffer.len() * 2, 0),
                 _ => return None,
             }
