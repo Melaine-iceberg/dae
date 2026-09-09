@@ -22,13 +22,13 @@ tauri-build = { version = "2", features = [] }
 # SSH transport for the SFTP backend. `ring` (instead of the default
 # aws-lc-rs) keeps the build free of CMake/NASM requirements on Windows.
 russh = { version = "0.62", default-features = false, features = ["ring", "rsa", "flate2"] }
-russh-sftp = "2.4"
+russh-sftp = "3.0.0"
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Serializes the user settings panel (shortcuts, terminal, default file
 # manager) to a human-editable `settings.toml` in the app config dir.
-toml = "0.9"
+toml = "1.1.5+spec-1.1.0"
 specta = "2.0.0-rc.25"
 tauri-specta = { version = "2.0.0-rc.25", features = ["derive", "javascript", "typescript"] }
 specta-typescript = "0.0.12"
@@ -58,7 +58,7 @@ sysinfo = { version = "0.39", default-features = false, features = ["disk"] }
 # Moves entries to the system trash (recycle bin) and can restore them again,
 # which backs the undoable delete flow in `file_system::commands`.
 trash = "5"
-smb2 = "0.18.1"
+smb2 = "0.21.0"
 keyring = "4.1.6"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "net", "io-util"] }
 image = { version = "0.25", default-features = false, features = [
@@ -70,12 +70,12 @@ image = { version = "0.25", default-features = false, features = [
   "tiff",
   "ico",
 ] }
-base64 = "0.22"
+base64 = "0.23.1"
 # aes-crypto enables decrypting WinZip-AES zips; ZipCrypto decryption is built in.
 zip = { version = "2", default-features = false, features = ["deflate", "aes-crypto"] }
 tar = "0.4"
 flate2 = "1"
-sevenz-rust2 = "0.21"
+sevenz-rust2 = "0.22.2"
 # ripgrep's core search crates: regex line matching + binary-aware file searching.
 grep-regex = "0.1"
 grep-searcher = "0.1"
@@ -98,19 +98,19 @@ reqwest = { version = "0.12", default-features = false, features = [
 ] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 async-trait = "0.1"
-sha2 = "0.10"
+sha2 = "0.11.0"
 # MD5 + SHA-1 alongside `sha2` back the properties dialog's checksum tab
 # (download verification); all three share the `digest` trait, so one read
 # updates every algorithm. `md-5` is RustCrypto's crate (lib name `md5`).
-md-5 = "0.10"
-sha1 = "0.10"
-rand = "0.9"
+md-5 = "0.11.0"
+sha1 = "0.11.0"
+rand = "0.10.2"
 
 [patch.crates-io]
 drag = { path = "vendor/drag" }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.52", features = [
+windows = { version = "0.62.2", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_System_Com",
@@ -131,7 +131,7 @@ libc = "0.2"
 # CoreFoundation bindings for the macOS "Open With" picker: LaunchServices
 # application enumeration and default-handler registration.
 [target.'cfg(target_os = "macos")'.dependencies]
-core-foundation = "0.9"
+core-foundation = "0.10.1"
 # Reads the Finder put-back records (ptbN/ptbL) from ~/.Trash/.DS_Store so
 # the trash view can list and restore entries on macOS, where the `trash`
 # crate only supports `delete`. See file_system/macos_trash.rs.
