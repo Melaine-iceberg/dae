@@ -15,8 +15,8 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use tauri_specta::Event;
@@ -179,7 +179,9 @@ fn hash_and_report(
 
 /// Best-effort file length for the final report after a failed read.
 fn digests_len_hint(path: &Path) -> u64 {
-    std::fs::metadata(path).map(|metadata| metadata.len()).unwrap_or(0)
+    std::fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0)
 }
 
 /// Streams `path` through all three digesters in one pass, reporting the
@@ -217,10 +219,21 @@ pub(super) fn hash_file(
     }
 
     Ok(Some(FileHashDigests {
-        md5: format!("{:x}", md5.finalize()),
-        sha1: format!("{:x}", sha1.finalize()),
-        sha256: format!("{:x}", sha256.finalize()),
+        md5: lowercase_hex(&md5.finalize()),
+        sha1: lowercase_hex(&sha1.finalize()),
+        sha256: lowercase_hex(&sha256.finalize()),
     }))
+}
+
+/// Lowercase hex without any crate dependency. digest 0.11 removed the
+/// `LowerHex` impl that `format!("{:x}", …)` used to rely on.
+fn lowercase_hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
 }
 
 #[cfg(test)]
@@ -256,15 +269,14 @@ mod tests {
     /// the multi-chunk path must produce the same digest as a one-shot hash.
     #[test]
     fn hashes_multi_chunk_files_like_a_single_pass() {
-        let path =
-            std::env::temp_dir().join(format!("dae-hash-chunks-{}.bin", std::process::id()));
+        let path = std::env::temp_dir().join(format!("dae-hash-chunks-{}.bin", std::process::id()));
         // Two and a half chunks of deterministic pseudo-random bytes.
         let content: Vec<u8> = (0..HASH_CHUNK_SIZE * 2 + HASH_CHUNK_SIZE / 2)
             .map(|index| (index * 31 + 7) as u8)
             .collect();
         fs::write(&path, &content).expect("write test file");
 
-        let expected_sha256 = format!("{:x}", sha2::Sha256::digest(&content));
+        let expected_sha256 = lowercase_hex(&sha2::Sha256::digest(&content));
 
         let cancelled = AtomicBool::new(false);
         let mut reports = 0u32;
@@ -280,8 +292,7 @@ mod tests {
 
     #[test]
     fn cancels_hash_runs_before_they_start() {
-        let path =
-            std::env::temp_dir().join(format!("dae-hash-cancel-{}.bin", std::process::id()));
+        let path = std::env::temp_dir().join(format!("dae-hash-cancel-{}.bin", std::process::id()));
         fs::write(&path, "content").expect("write test file");
 
         let cancelled = AtomicBool::new(true);

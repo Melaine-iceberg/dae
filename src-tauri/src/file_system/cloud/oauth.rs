@@ -10,7 +10,7 @@ use super::accounts::{self, StoredCloudAccount};
 use super::provider::{self, CloudProviderKind};
 use crate::file_system::error::FileSystemError;
 use base64::Engine;
-use rand::{Rng, distr::Alphanumeric};
+use rand::{RngExt, distr::Alphanumeric};
 use serde::Deserialize;
 use specta::Type;
 use sha2::{Digest, Sha256};
@@ -290,24 +290,16 @@ fn pkce_challenge(verifier: &str) -> String {
 }
 
 fn open_in_browser(url: &str) -> Result<(), FileSystemError> {
-    let result = {
-        #[cfg(target_os = "windows")]
-        {
-            // Quoted so `&` separators survive cmd's parsing; the empty ""
-            // argument is `start`'s window title slot.
-            std::process::Command::new("cmd.exe")
-                .args(["/c", "start", "", &format!("\"{url}\"")])
-                .spawn()
-        }
-        #[cfg(target_os = "macos")]
-        {
-            std::process::Command::new("open").arg(url).spawn()
-        }
-        #[cfg(all(unix, not(target_os = "macos")))]
-        {
-            std::process::Command::new("xdg-open").arg(url).spawn()
-        }
-    };
+    // Quoted so `&` separators survive cmd's parsing; the empty ""
+    // argument is `start`'s window title slot.
+    #[cfg(target_os = "windows")]
+    let result = std::process::Command::new("cmd.exe")
+        .args(["/c", "start", "", &format!("\"{url}\"")])
+        .spawn();
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let result = std::process::Command::new("xdg-open").arg(url).spawn();
     result.map(|_| ()).map_err(|error| {
         FileSystemError::Io(format!("Could not open the browser for authorization: {error}"))
     })

@@ -104,8 +104,8 @@ mod platform {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
-    use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{GlobalFree, BOOL, HANDLE, HGLOBAL, HWND};
+    use windows::core::{BOOL, HRESULT, PCWSTR};
+    use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, RegisterClipboardFormatW,
         SetClipboardData,
@@ -120,11 +120,11 @@ mod platform {
     const CLIPBOARD_RETRY_DELAY: Duration = Duration::from_millis(10);
 
     fn handle_from_global(global: HGLOBAL) -> HANDLE {
-        HANDLE(global.0 as isize)
+        HANDLE(global.0)
     }
 
     fn global_from_handle(handle: HANDLE) -> HGLOBAL {
-        HGLOBAL(handle.0 as *mut core::ffi::c_void)
+        HGLOBAL(handle.0)
     }
 
     fn drop_from_handle(handle: HANDLE) -> HDROP {
@@ -138,7 +138,7 @@ mod platform {
         fn open() -> Result<Self, FileSystemError> {
             for _ in 0..CLIPBOARD_OPEN_ATTEMPTS {
                 // Other apps can hold the clipboard briefly; retry a few times.
-                if unsafe { OpenClipboard(HWND::default()) }.is_ok() {
+                if unsafe { OpenClipboard(None) }.is_ok() {
                     return Ok(Self);
                 }
                 std::thread::sleep(CLIPBOARD_RETRY_DELAY);
@@ -166,7 +166,7 @@ mod platform {
         let base = unsafe { GlobalLock(handle) }.cast::<u8>();
         if base.is_null() {
             unsafe {
-                let _ = GlobalFree(handle);
+                let _ = GlobalFree(Some(handle));
             }
             return Err(FileSystemError::Internal(
                 "Unable to lock clipboard memory".into(),
@@ -250,8 +250,8 @@ mod platform {
         let session = ClipboardSession::open();
         if session.is_err() {
             unsafe {
-                let _ = GlobalFree(files);
-                let _ = GlobalFree(effect);
+                let _ = GlobalFree(Some(files));
+                let _ = GlobalFree(Some(effect));
             }
             return session.map(|_| ());
         }
@@ -262,19 +262,21 @@ mod platform {
             }
 
             // Once SetClipboardData succeeds the system owns the handles.
-            if let Err(error) = SetClipboardData(CF_HDROP.0 as u32, handle_from_global(files)) {
-                let _ = GlobalFree(files);
-                let _ = GlobalFree(effect);
+            if let Err(error) =
+                SetClipboardData(CF_HDROP.0 as u32, Some(handle_from_global(files)))
+            {
+                let _ = GlobalFree(Some(files));
+                let _ = GlobalFree(Some(effect));
                 return Err(FileSystemError::Internal(error.to_string()));
             }
 
             let format = preferred_drop_effect_format();
             if format != 0
-                && let Err(error) = SetClipboardData(format, handle_from_global(effect))
+                && let Err(error) = SetClipboardData(format, Some(handle_from_global(effect)))
             {
                 // The file list is already on the clipboard; a missing cut
                 // marker only downgrades the paste to a copy.
-                let _ = GlobalFree(effect);
+                let _ = GlobalFree(Some(effect));
                 return Err(FileSystemError::Internal(error.to_string()));
             }
         }
@@ -390,7 +392,7 @@ mod platform {
         destination: &str,
     ) -> Result<Vec<String>, FileSystemError> {
         use std::iter::once;
-        use windows::core::{ComInterface, PCWSTR};
+        use windows::core::{Interface, PCWSTR};
         use windows::Win32::System::Com::{
             CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
             COINIT_APARTMENTTHREADED,
@@ -403,12 +405,18 @@ mod platform {
         struct CoApartment { owned: bool }
         impl CoApartment {
             fn enter() -> Result<Self, FileSystemError> {
-                unsafe {
-                    match CoInitializeEx(Some(std::ptr::null()), COINIT_APARTMENTTHREADED) {
-                        Ok(()) => Ok(Self { owned: true }),
-                        Err(error) if error.code().0 == 1 => Ok(Self { owned: false }),
-                        Err(error) => Err(FileSystemError::Internal(error.to_string())),
-                    }
+                // windows 0.62 returns the raw HRESULT: S_OK (0) initialized a
+                // fresh apartment we must tear down on drop; S_FALSE (0x1)
+                // means the thread already had one and must stay untouched.
+                let result: HRESULT =
+                    unsafe { CoInitializeEx(Some(std::ptr::null()), COINIT_APARTMENTTHREADED) };
+                match result.0 {
+                    0 => Ok(Self { owned: true }),
+                    1 => Ok(Self { owned: false }),
+                    _ => Err(FileSystemError::Internal(format!(
+                        "CoInitializeEx failed with HRESULT {:#010x}",
+                        result.0
+                    ))),
                 }
             }
         }
@@ -586,7 +594,7 @@ mod tests {
         ];
         let handle = build_file_drop_handle(&paths).expect("drop handle");
 
-        let parsed = file_paths_from_drop_handle(HDROP(handle.0 as isize));
+        let parsed = file_paths_from_drop_handle(HDROP(handle.0));
 
         assert_eq!(parsed, paths);
     }

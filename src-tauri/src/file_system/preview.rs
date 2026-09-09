@@ -408,14 +408,14 @@ fn shell_image_png(path: &str, size: u32, flags: windows::Win32::UI::Shell::SIIG
 #[cfg(windows)]
 fn bitmap_to_png(bitmap: windows::Win32::Graphics::Gdi::HBITMAP) -> Option<Vec<u8>> {
     use windows::Win32::Graphics::Gdi::{
-        BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, GetDC, GetDIBits, GetObjectW,
+        BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, GetDC, GetDIBits, GetObjectW, HGDIOBJ,
         ReleaseDC,
     };
 
     unsafe {
         let mut info = BITMAP::default();
         if GetObjectW(
-            bitmap,
+            HGDIOBJ(bitmap.0),
             std::mem::size_of::<BITMAP>() as i32,
             Some(&mut info as *mut BITMAP as *mut core::ffi::c_void),
         ) == 0

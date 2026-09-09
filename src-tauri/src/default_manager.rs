@@ -388,11 +388,12 @@ mod windows_impl {
         let mut handle = HKEY::default();
         // SAFETY: `path` outlives the call and is null-terminated; `handle` is
         // a valid out-pointer. The registry functions are FFI, hence unsafe.
-        unsafe {
+        // windows 0.62 returns the raw WIN32_ERROR; 0 is success.
+        let created = unsafe {
             RegCreateKeyExW(
                 HKEY_CURRENT_USER,
                 PCWSTR(path.as_ptr()),
-                0,
+                Some(0),
                 PCWSTR::null(),
                 REG_OPTION_NON_VOLATILE,
                 KEY_WRITE,
@@ -400,10 +401,13 @@ mod windows_impl {
                 &mut handle,
                 None,
             )
+        };
+        if created.is_err() {
+            return Err(FileSystemError::Internal(format!(
+                "default_manager.set_failed: {}",
+                created.0
+            )));
         }
-        .map_err(|error| {
-            FileSystemError::Internal(format!("default_manager.set_failed: {error}"))
-        })?;
         Ok(handle)
     }
 
@@ -427,14 +431,18 @@ mod windows_impl {
         // SAFETY: `name_w` outlives the call; `value_name` points at it (or is
         // null). `data_bytes` is a valid slice for the REG_SZ branch.
         let result = if data.is_empty() {
-            unsafe { RegSetValueExW(handle, value_name, 0, REG_NONE, None) }
+            unsafe { RegSetValueExW(handle, value_name, Some(0), REG_NONE, None) }
         } else {
             let data_bytes = wide_bytes(data);
-            unsafe { RegSetValueExW(handle, value_name, 0, REG_SZ, Some(&data_bytes)) }
+            unsafe { RegSetValueExW(handle, value_name, Some(0), REG_SZ, Some(&data_bytes)) }
         };
-        result.map_err(|error| {
-            FileSystemError::Internal(format!("default_manager.set_failed: {error}"))
-        })
+        if result.is_err() {
+            return Err(FileSystemError::Internal(format!(
+                "default_manager.set_failed: {}",
+                result.0
+            )));
+        }
+        Ok(())
     }
 
     /// Creates `subkey` and sets its `(Default)` value in one step.
@@ -452,7 +460,7 @@ mod windows_impl {
         // SAFETY: `path` is null-terminated and outlives the call; `handle` is
         // a valid out-pointer.
         let opened =
-            unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()), 0, KEY_READ, &mut handle) };
+            unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()), Some(0), KEY_READ, &mut handle) };
         if opened.is_err() {
             return None;
         }
@@ -509,7 +517,7 @@ mod windows_impl {
         // SAFETY: `path` is null-terminated and outlives the call; `handle` is
         // a valid out-pointer.
         let opened =
-            unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()), 0, KEY_READ, &mut handle) };
+            unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()), Some(0), KEY_READ, &mut handle) };
         if opened.is_err() {
             return false;
         }
@@ -541,7 +549,7 @@ mod windows_impl {
         // SAFETY: `path` is null-terminated and outlives the call; `handle` is
         // a valid out-pointer.
         let opened =
-            unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()), 0, KEY_WRITE, &mut handle) };
+            unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()), Some(0), KEY_WRITE, &mut handle) };
         if opened.is_err() {
             return;
         }

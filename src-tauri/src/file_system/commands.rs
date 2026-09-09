@@ -834,7 +834,7 @@ fn open_system_with_dialog(file: &Path) -> Result<(), FileSystemError> {
         OAIF_ALLOW_REGISTRATION, OAIF_EXEC, OAIF_REGISTER_EXT, OPEN_AS_INFO_FLAGS, OPENASINFO,
         SHOpenWithDialog,
     };
-    use windows::core::PCWSTR;
+    use windows::core::{HRESULT, PCWSTR};
 
     /// RAII COM 套间；S_FALSE (0x1) 表示线程已有套间，此时不能反初始化。
     struct CoApartment {
@@ -843,12 +843,17 @@ fn open_system_with_dialog(file: &Path) -> Result<(), FileSystemError> {
 
     impl CoApartment {
         fn enter() -> Result<Self, FileSystemError> {
-            unsafe {
-                match CoInitializeEx(Some(std::ptr::null()), COINIT_APARTMENTTHREADED) {
-                    Ok(()) => Ok(Self { owned: true }),
-                    Err(error) if error.code().0 == 1 => Ok(Self { owned: false }),
-                    Err(error) => Err(FileSystemError::Internal(error.to_string())),
-                }
+            // windows 0.62 返回裸 HRESULT：S_OK (0) 表示新初始化了套间，
+            // 需要在 drop 时反初始化；S_FALSE (0x1) 表示线程已有套间，不能反初始化。
+            let result: HRESULT =
+                unsafe { CoInitializeEx(Some(std::ptr::null()), COINIT_APARTMENTTHREADED) };
+            match result.0 {
+                0 => Ok(Self { owned: true }),
+                1 => Ok(Self { owned: false }),
+                _ => Err(FileSystemError::Internal(format!(
+                    "CoInitializeEx failed with HRESULT {:#010x}",
+                    result.0
+                ))),
             }
         }
     }
