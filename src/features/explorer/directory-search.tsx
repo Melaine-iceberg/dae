@@ -96,7 +96,7 @@ export function useDirectorySearch(
         })
         .finally(() => {
           if (requestVersion === requestVersionRef.current) {
-            setIsSearching(false);
+            setIsSearching(false);b
           }
         });
     }, SEARCH_DEBOUNCE_MS);
