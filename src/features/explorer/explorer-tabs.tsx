@@ -11,16 +11,16 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
-  CaretLeftIcon,
-  CaretRightIcon,
-  ClockCounterClockwiseIcon,
-  HouseIcon,
-  PlusIcon,
-  SquaresFourIcon,
-  StarIcon,
-  TrashIcon,
-  XIcon,
-} from "@phosphor-icons/react";
+  ChevronLeft,
+  ChevronRight,
+  History,
+  Home,
+  Plus,
+  LayoutGrid,
+  Star,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import { WindowControls } from "@/components/window-controls";
 import { Sidebar } from "@/features/sidebar/sidebar";
@@ -55,11 +55,11 @@ import {
 const TAB_STRIP_SCROLL_AMOUNT = 512;
 
 const WORKSPACE_TAB_ICONS = {
-  overview: HouseIcon,
-  recents: ClockCounterClockwiseIcon,
-  favorites: StarIcon,
-  trash: TrashIcon,
-  space: SquaresFourIcon,
+  overview: Home,
+  recents: History,
+  favorites: Star,
+  trash: Trash2,
+  space: LayoutGrid,
 } as const;
 
 export function ExplorerTabs() {
@@ -132,7 +132,7 @@ export function ExplorerTabs() {
             title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
             type="button"
           >
-            <PlusIcon className="size-3.5" />
+            <Plus className="size-3.5" />
           </button>
         </div>
         <StripScrollButton
@@ -175,7 +175,7 @@ function StripScrollButton({
   onClick: () => void;
   visible: boolean;
 }) {
-  const Icon = direction === -1 ? CaretLeftIcon : CaretRightIcon;
+  const Icon = direction === -1 ? ChevronLeft : ChevronRight;
 
   return (
     <button
@@ -247,10 +247,10 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     }
   }, [isActive]);
 
-  // Folder tabs carry the Material Icon Theme artwork for the tab's folder
+  // Folder tabs carry the Catppuccin artwork for the tab's folder
   // name (src, node_modules, .git, ... with a generic folder fallback while
-  // the directory is still loading); workspace surfaces keep their Phosphor
-  // UI glyphs, which are out of the MIT icon scope.
+  // the directory is still loading); workspace surfaces keep their Lucide
+  // UI glyphs, which are out of the catppuccin icon scope.
   const folderName = directory?.breadcrumbs.at(-1)?.name ?? "";
   const FolderTabIcon = getFolderPresentation(folderName).icon;
   const WorkspaceTabIcon = surface.kind === "folder" ? null : WORKSPACE_TAB_ICONS[surface.kind];
@@ -302,7 +302,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
         }}
         type="button"
       >
-        <XIcon className="size-3" />
+        <X className="size-3" />
       </button>
     </div>
   );

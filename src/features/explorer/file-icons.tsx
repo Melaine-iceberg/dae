@@ -1,6 +1,6 @@
 import { i18n } from "@/i18n";
 
-import { mitIcon, type EntryIcon } from "./mit-icon";
+import { catppuccinIcon, type EntryIcon } from "./catppuccin-icon";
 import {
   DEFAULT_FILE_ICON,
   DEFAULT_FOLDER_ICON,
@@ -11,13 +11,14 @@ import {
   FOLDER_ICONS,
   FOLDER_OPEN_ICONS,
   SYMLINK_ICON,
-} from "./mit-icons.generated";
+} from "./catppuccin-icons.generated";
 import type { DirectoryEntry } from "./types";
 
 /**
  * File/folder presentation is driven by Material Icon Theme's official
- * mapping tables (see mit-icons.generated.ts). Artwork carries its own
- * color, so presentations no longer assign a semantic tone per category.
+ * mapping tables, rendered with Catppuccin artwork (see
+ * catppuccin-icons.generated.ts). Artwork carries its own color, so
+ * presentations do not assign a semantic tone per category.
  */
 
 export interface ExtensionPresentation {
@@ -175,7 +176,7 @@ function localizedLabel(labelKey: string): string {
 
 function presentation(iconName: string, label: () => string): ExtensionPresentation {
   return {
-    icon: mitIcon(iconName),
+    icon: catppuccinIcon(iconName),
     get label() {
       return label();
     },
@@ -252,9 +253,8 @@ export const OTHER_PRESENTATION: ExtensionPresentation = presentation(DEFAULT_FI
   localizedLabel("other"),
 );
 
-export const DIRECTORY_PRESENTATION: ExtensionPresentation = presentation(
-  DEFAULT_FOLDER_ICON,
-  () => localizedLabel("directory"),
+export const DIRECTORY_PRESENTATION: ExtensionPresentation = presentation(DEFAULT_FOLDER_ICON, () =>
+  localizedLabel("directory"),
 );
 
 /** Kind-aware presentation used by every view and the preview surface. */

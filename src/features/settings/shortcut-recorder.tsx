@@ -19,8 +19,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
-import { hasNonModifierKey, normalizeHotkey, normalizeHotkeyFromEvent } from "@tanstack/react-hotkeys";
+import { RotateCcw } from "lucide-react";
+import {
+  hasNonModifierKey,
+  normalizeHotkey,
+  normalizeHotkeyFromEvent,
+} from "@tanstack/react-hotkeys";
 
 import { appSettingsAtom, hotkeysPausedAtom } from "./settings-atoms";
 import {
@@ -172,7 +176,7 @@ export function ShortcutRecorder({ binding, id, onCommit, onReset }: ShortcutRec
             title={t("recorder.reset")}
             type="button"
           >
-            <ArrowCounterClockwiseIcon className="size-3.5" />
+            <RotateCcw className="size-3.5" />
           </button>
         </>
       )}

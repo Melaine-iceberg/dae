@@ -1,14 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import {
-  ArrowsClockwiseIcon,
-  CheckCircleIcon,
-  CheckIcon,
-  CircleNotchIcon,
-  CopyIcon,
-  XCircleIcon,
-} from "@phosphor-icons/react";
+import { RefreshCw, CircleCheck, Check, LoaderCircle, Copy, CircleX } from "lucide-react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { i18n } from "@/i18n";
@@ -359,8 +352,7 @@ export function PropertiesDialog() {
 
   // Checksums only make sense for real local files; everything else keeps
   // the single-view layout without the tab strip.
-  const showHashTab =
-    target !== null && target.kind === "file" && isLocalExplorerPath(target.path);
+  const showHashTab = target !== null && target.kind === "file" && isLocalExplorerPath(target.path);
   const showGeneral = !showHashTab || tab === "general";
 
   // Folder sizes come from the on-demand scan; everything else uses the
@@ -496,17 +488,22 @@ export function PropertiesDialog() {
           </div>
         )}
 
-        {target && showHashTab && (
-          // Keyed by path so switching targets resets the run entirely.
-          <FileHashPanel active={tab === "checksum"} key={target.path} path={target.path} />
-        )}
+        {target &&
+          showHashTab && (
+            // Keyed by path so switching targets resets the run entirely.
+            <FileHashPanel active={tab === "checksum"} key={target.path} path={target.path} />
+          )}
 
         <DialogFooter>
           <Button disabled={isSaving} onClick={close} type="button" variant="outline">
             {t("explorer:actions.close")}
           </Button>
           {showGeneral && (
-            <Button disabled={!isDirty || isSaving} onClick={() => void applyChanges()} type="button">
+            <Button
+              disabled={!isDirty || isSaving}
+              onClick={() => void applyChanges()}
+              type="button"
+            >
               {isSaving ? t("explorer:properties.applying") : t("explorer:properties.apply")}
             </Button>
           )}
@@ -816,7 +813,7 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
         <div className="flex flex-col gap-2">
           <Progress className="w-full" value={percent} />
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <CircleNotchIcon className="size-3.5 animate-spin" />
+            <LoaderCircle className="size-3.5 animate-spin" />
             {run.totalBytes > 0
               ? `${formatSize(run.bytesRead)} / ${formatSize(run.totalBytes)} · ${percent}%`
               : t("explorer:properties.hashCalculating")}
@@ -847,9 +844,9 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
                   type="button"
                 >
                   {copied === label ? (
-                    <CheckIcon className="size-3.5" />
+                    <Check className="size-3.5" />
                   ) : (
-                    <CopyIcon className="size-3.5" />
+                    <Copy className="size-3.5" />
                   )}
                 </button>
               </div>
@@ -872,13 +869,13 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
 
           {match && (
             <p className="flex items-center gap-1.5 text-[13px] text-emerald-600 dark:text-emerald-400">
-              <CheckCircleIcon className="size-4 shrink-0" weight="fill" />
+              <CircleCheck className="size-4 shrink-0" fill="currentColor" />
               {t("explorer:properties.hashMatch", { algorithm: match.label })}
             </p>
           )}
           {mismatch && (
             <p className="flex items-center gap-1.5 text-[13px] text-destructive">
-              <XCircleIcon className="size-4 shrink-0" weight="fill" />
+              <CircleX className="size-4 shrink-0" fill="currentColor" />
               {t("explorer:properties.hashMismatch")}
             </p>
           )}
@@ -893,7 +890,7 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
           type="button"
           variant="outline"
         >
-          <ArrowsClockwiseIcon className="size-3.5" />
+          <RefreshCw className="size-3.5" />
           {t("explorer:properties.hashRecalculate")}
         </Button>
       )}

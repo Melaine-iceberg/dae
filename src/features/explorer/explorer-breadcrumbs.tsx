@@ -247,7 +247,7 @@ function CrumbContent({
   plain?: boolean;
   onNavigate?: (breadcrumb: BreadcrumbData) => void;
 }) {
-  // Material Icon Theme folder artwork per crumb name; drive roots and other
+  // Catppuccin folder artwork per crumb name; drive roots and other
   // unmapped names fall back to the theme's generic folder.
   const CrumbIcon = getFolderPresentation(breadcrumb.name).icon;
   const icon = <CrumbIcon className="size-3.5 shrink-0" />;

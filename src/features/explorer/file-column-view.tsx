@@ -9,7 +9,7 @@ import { useAtomValue } from "jotai";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { CaretRightIcon, CircleNotchIcon, WarningIcon } from "@phosphor-icons/react";
+import { ChevronRight, LoaderCircle, TriangleAlert } from "lucide-react";
 
 import { commands } from "@/bindings";
 
@@ -196,13 +196,13 @@ function Pane({
     >
       {isLoading && (
         <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
-          <CircleNotchIcon className="animate-spin" size={14} />
+          <LoaderCircle className="animate-spin" size={14} />
           {t("explorer:columnView.loading")}
         </div>
       )}
       {!isLoading && isError && (
         <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-destructive">
-          <WarningIcon size={14} />
+          <TriangleAlert size={14} />
           {t("explorer:columnView.readError")}
         </div>
       )}
@@ -364,7 +364,7 @@ function PaneRow({
           >
             {entry.name}
           </span>
-          {isDirectory && <CaretRightIcon className="size-3 shrink-0 text-muted-foreground" />}
+          {isDirectory && <ChevronRight className="size-3 shrink-0 text-muted-foreground" />}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>

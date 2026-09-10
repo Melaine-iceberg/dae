@@ -14,21 +14,21 @@ import { commands, type ArchiveFormat } from "@/bindings";
 import { i18n } from "@/i18n";
 import { localeDateTimeFormat, localeNumber, localeNumberFormat } from "@/i18n/format";
 import {
-  AppWindowIcon,
-  CaretDownIcon,
-  CaretUpIcon,
-  ClipboardIcon,
-  CopyIcon,
-  FilePlusIcon,
-  FolderIcon,
-  FolderPlusIcon,
-  LinkIcon,
-  ScissorsIcon,
-  SquaresFourIcon,
-  StarIcon,
-  TerminalIcon,
-  WarningIcon,
-} from "@phosphor-icons/react";
+  AppWindow,
+  ChevronDown,
+  ChevronUp,
+  Clipboard,
+  Copy,
+  FilePlus,
+  Folder,
+  FolderPlus,
+  Link,
+  Scissors,
+  LayoutGrid,
+  Star,
+  SquareTerminal,
+  TriangleAlert,
+} from "lucide-react";
 
 import {
   ContextMenu,
@@ -720,9 +720,9 @@ export function FileList({
         {entries.length === 0 && !listIsLoading ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center select-none">
             {searchState?.error ? (
-              <WarningIcon className="size-5 text-muted-foreground" />
+              <TriangleAlert className="size-5 text-muted-foreground" />
             ) : (
-              <FolderIcon className="size-7 text-folder" weight="fill" />
+              <Folder className="size-7 text-folder" fill="currentColor" />
             )}
             <p className="text-[13px] text-muted-foreground">
               {searchState
@@ -841,14 +841,14 @@ export function FileList({
           >
             {internalDrag.target?.kind === "favorites" ? (
               <>
-                <StarIcon />
+                <Star />
                 {t("explorer:drag.addToFavorites", {
                   count: draggableDirectoryPaths(entries, internalDrag.sourcePaths).length,
                 })}
               </>
             ) : internalDrag.target?.kind === "space" ? (
               <>
-                <SquaresFourIcon />
+                <LayoutGrid />
                 {t("explorer:drag.addToSpace", {
                   count: draggableDirectoryPaths(entries, internalDrag.sourcePaths).length,
                 })}
@@ -856,11 +856,11 @@ export function FileList({
             ) : (
               <>
                 {internalDrag.operation === "copy" ? (
-                  <CopyIcon />
+                  <Copy />
                 ) : internalDrag.operation === "link" ? (
-                  <LinkIcon />
+                  <Link />
                 ) : (
-                  <ScissorsIcon />
+                  <Scissors />
                 )}
                 {internalDrag.operation === "copy"
                   ? t("explorer:drag.opCopy")
@@ -876,29 +876,29 @@ export function FileList({
       <ContextMenuContent>
         <ContextMenuGroup>
           <ContextMenuItem onClick={onCreateFile}>
-            <FilePlusIcon />
+            <FilePlus />
             {t("explorer:contextMenu.newFile")}
           </ContextMenuItem>
           <ContextMenuItem onClick={onCreateDirectory}>
-            <FolderPlusIcon />
+            <FolderPlus />
             {t("explorer:contextMenu.newFolder")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={onOpenTerminal}>
-            <TerminalIcon />
+            <SquareTerminal />
             {t("explorer:contextMenu.openInTerminal")}
             <ContextMenuShortcut>
               {formatBinding(resolveBinding(shortcuts, "explorer.openSystemTerminal"))}
             </ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem disabled={blankMenuDisabled} onClick={onOpenWith}>
-            <AppWindowIcon />
+            <AppWindow />
             {t("explorer:contextMenu.openWithOtherApp")}
           </ContextMenuItem>
           <ContextMenuItem onClick={onPaste}>
-            <ClipboardIcon />
+            <Clipboard />
             {t("explorer:contextMenu.paste")}
             <ContextMenuShortcut>
               {formatBinding(resolveBinding(shortcuts, "explorer.paste"))}
@@ -952,9 +952,9 @@ function SortHeaderCell({
         <span className="truncate">{label}</span>
         {active &&
           (order === "asc" ? (
-            <CaretUpIcon className="size-3 shrink-0" />
+            <ChevronUp className="size-3 shrink-0" />
           ) : (
-            <CaretDownIcon className="size-3 shrink-0" />
+            <ChevronDown className="size-3 shrink-0" />
           ))}
       </button>
     </div>

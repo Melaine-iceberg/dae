@@ -11,27 +11,29 @@ import {
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import {
-  CaretDownIcon,
-  ClipboardTextIcon,
-  CopyIcon,
-  EyeSlashIcon,
-  FolderIcon,
-  FolderOpenIcon,
-  GearIcon,
-  GlobeIcon,
-  HardDriveIcon,
-  HouseIcon,
-  LinuxLogoIcon,
-  ClockCounterClockwiseIcon,
-  PencilSimpleIcon,
-  PlusIcon,
-  ScissorsIcon,
-  SquaresFourIcon,
-  StarIcon,
-  TabsIcon,
-  TrashIcon,
-  UsbIcon,
-} from "@phosphor-icons/react";
+  ChevronDown,
+  ClipboardList,
+  Cloud,
+  Copy,
+  EyeOff,
+  Folder,
+  FolderOpen,
+  Server,
+  Settings,
+  Globe,
+  HardDrive,
+  Home,
+  Terminal,
+  History,
+  Pencil,
+  Plus,
+  Scissors,
+  LayoutGrid,
+  Star,
+  PanelsTopLeft,
+  Trash2,
+  Usb,
+} from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { commands, type Breadcrumb, type StoredCloudAccount } from "@/bindings";
@@ -107,7 +109,6 @@ import {
   treeExpandedPathsAtom,
 } from "./directory-tree";
 import { FolderContextMenu, copyEntryPath } from "./folder-context-menu";
-import { CloudSectionIcon, DisksSectionIcon, NetworkSectionIcon } from "./location-icons";
 import { useDiskVolumes } from "./use-disk-volumes";
 import { useWslDistros } from "./use-wsl-distros";
 import { WslIcon } from "./wsl-icon";
@@ -193,19 +194,19 @@ function SidebarContent() {
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <NavItem
-          icon={HouseIcon}
+          icon={Home}
           isActive={surface.kind === "overview"}
           label={t("nav.overview")}
           onClick={() => openSurface({ kind: "overview" })}
         />
         <NavItem
-          icon={ClockCounterClockwiseIcon}
+          icon={History}
           isActive={surface.kind === "recents"}
           label={t("nav.recents")}
           onClick={() => openSurface({ kind: "recents" })}
         />
         <NavItem
-          icon={TrashIcon}
+          icon={Trash2}
           isActive={surface.kind === "trash"}
           label={t("nav.trash")}
           onClick={() => openSurface({ kind: "trash" })}
@@ -255,7 +256,7 @@ function SidebarContent() {
             <ContextMenu>
               <ContextMenuTrigger>
                 <NavItem
-                  icon={SquaresFourIcon}
+                  icon={LayoutGrid}
                   iconClassName={getSpaceAccent(space.id).text}
                   isActive={surface.kind === "space" && surface.spaceId === space.id}
                   label={space.name}
@@ -267,13 +268,13 @@ function SidebarContent() {
                   <ContextMenuItem
                     onClick={() => openSurface({ kind: "space", spaceId: space.id })}
                   >
-                    <FolderOpenIcon />
+                    <FolderOpen />
                     {t("contextMenu.open")}
                   </ContextMenuItem>
                   <ContextMenuItem
                     onClick={() => createTabWithSurface({ kind: "space", spaceId: space.id })}
                   >
-                    <TabsIcon />
+                    <PanelsTopLeft />
                     {t("contextMenu.openInNewTab")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
@@ -285,7 +286,7 @@ function SidebarContent() {
                       setSpaceRenameRequest(space.id);
                     }}
                   >
-                    <PencilSimpleIcon />
+                    <Pencil />
                     {t("contextMenu.renameSpace")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
@@ -299,7 +300,7 @@ function SidebarContent() {
         {/* Location groups are collapsed by default and mount their content
             (and its backend queries) only on first expand, keeping cold start
             free of disk enumeration, the `wsl.exe` probe, and store reads. */}
-        <CollapsibleSection icon={DisksSectionIcon} id="disks" label={t("sections.disks")}>
+        <CollapsibleSection icon={HardDrive} id="disks" label={t("sections.disks")}>
           <DisksContent
             currentBreadcrumbs={directory?.breadcrumbs ?? EMPTY_BREADCRUMBS}
             currentPath={currentPath}
@@ -318,7 +319,7 @@ function SidebarContent() {
             label: t("network.connectStorage"),
             onClick: () => setConnectOpen(true),
           }}
-          icon={NetworkSectionIcon}
+          icon={Server}
           id="network"
           label={t("sections.network")}
         >
@@ -330,7 +331,7 @@ function SidebarContent() {
             label: t("cloud.addAccount"),
             onClick: () => setCloudOpen(true),
           }}
-          icon={CloudSectionIcon}
+          icon={Cloud}
           id="cloud"
           label={t("sections.cloudStorage")}
         >
@@ -346,7 +347,7 @@ function SidebarContent() {
           title={t("settings.open")}
           type="button"
         >
-          <GearIcon className="size-4" />
+          <Settings className="size-4" />
         </button>
       </div>
 
@@ -423,7 +424,7 @@ function CollapsibleSection({
         >
           <Icon className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
           <span className="min-w-0 flex-1 truncate">{label}</span>
-          <CaretDownIcon
+          <ChevronDown
             aria-hidden="true"
             className={cn(
               "size-3.5 shrink-0 text-muted-foreground/80 transition-transform duration-fast ease-spring-fast",
@@ -439,7 +440,7 @@ function CollapsibleSection({
             title={action.label}
             type="button"
           >
-            <PlusIcon className="size-4" />
+            <Plus className="size-4" />
           </button>
         )}
       </div>
@@ -527,7 +528,7 @@ function FavoritesContent({
           path={favorite.path}
         >
           <NavItem
-            icon={FolderIcon}
+            icon={Folder}
             isActive={currentPath === favorite.path}
             label={favorite.name}
             onClick={() => onNavigate(favorite.path)}
@@ -562,11 +563,11 @@ function FavoritesEntryContextMenu({
       <ContextMenuContent>
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => openInNewTab(path)}>
-            <FolderOpenIcon />
+            <FolderOpen />
             {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => void copyEntryPath(path)}>
-            <ClipboardTextIcon />
+            <ClipboardList />
             {t("contextMenu.copyFilePath")}
           </ContextMenuItem>
         </ContextMenuGroup>
@@ -574,12 +575,12 @@ function FavoritesEntryContextMenu({
         <ContextMenuGroup>
           {entry.kind === "place" ? (
             <ContextMenuItem onClick={() => setHiddenPlaces([...hiddenPlaces, entry.placeKind])}>
-              <EyeSlashIcon />
+              <EyeOff />
               {t("contextMenu.hideFromFavorites")}
             </ContextMenuItem>
           ) : (
             <ContextMenuItem onClick={() => removeFavorite(path)}>
-              <StarIcon />
+              <Star />
               {t("contextMenu.removeFavorite")}
             </ContextMenuItem>
           )}
@@ -649,7 +650,7 @@ function WslContent({
   return distros.map((distro) => (
     <FolderContextMenu isListed={false} key={distro.path} path={distro.path}>
       <NavItem
-        icon={LinuxLogoIcon}
+        icon={Terminal}
         isActive={currentPath === distro.path}
         label={distro.name}
         onClick={() => onNavigate(distro.path)}
@@ -681,7 +682,7 @@ function NetworkContent({
       {connections.map((connection) => (
         <ConnectionContextMenu key={connection.id} connection={connection}>
           <NavItem
-            icon={GlobeIcon}
+            icon={Globe}
             isActive={
               currentPath === connection.id || currentPath?.startsWith(`${connection.id}/`) === true
             }
@@ -771,18 +772,18 @@ function CloudAccountContextMenu({
       <ContextMenuContent>
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => openInNewTab(path)}>
-            <FolderOpenIcon />
+            <FolderOpen />
             {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => void copyEntryPath(path)}>
-            <ClipboardTextIcon />
+            <ClipboardList />
             {t("contextMenu.copyPath")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={remove}>
-            <TrashIcon />
+            <Trash2 />
             {t("cloud.removeAccount")}
           </ContextMenuItem>
         </ContextMenuGroup>
@@ -811,7 +812,7 @@ function SectionLabel({
           title={addTitle}
           type="button"
         >
-          <PlusIcon className="size-4" />
+          <Plus className="size-4" />
         </button>
       )}
     </div>
@@ -890,29 +891,29 @@ function ConnectionContextMenu({
       <ContextMenuContent>
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => openInNewTab(path)}>
-            <FolderOpenIcon />
+            <FolderOpen />
             {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => void copyEntryPath(path)}>
-            <ClipboardTextIcon />
+            <ClipboardList />
             {t("contextMenu.copyPath")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => setClipboard({ operation: "copy", sourcePaths: [path] })}>
-            <CopyIcon />
+            <Copy />
             {t("contextMenu.copy")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => setClipboard({ operation: "cut", sourcePaths: [path] })}>
-            <ScissorsIcon />
+            <Scissors />
             {t("contextMenu.cut")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={remove}>
-            <TrashIcon />
+            <Trash2 />
             {t("contextMenu.removeConnection")}
           </ContextMenuItem>
         </ContextMenuGroup>
@@ -960,9 +961,9 @@ function DiskItem({
           type="button"
         >
           {volume.isRemovable ? (
-            <UsbIcon className="size-4 shrink-0 text-muted-foreground" />
+            <Usb className="size-4 shrink-0 text-muted-foreground" />
           ) : (
-            <HardDriveIcon className="size-4 shrink-0 text-muted-foreground" />
+            <HardDrive className="size-4 shrink-0 text-muted-foreground" />
           )}
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px]">{presentation.primary}</div>
@@ -976,7 +977,7 @@ function DiskItem({
           onClick={() => toggleTreeNode(volume.mountPoint)}
           type="button"
         >
-          <CaretDownIcon
+          <ChevronDown
             aria-hidden="true"
             className={cn(
               "size-3.5 transition-transform duration-fast ease-spring-fast",

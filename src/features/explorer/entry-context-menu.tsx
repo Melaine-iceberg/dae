@@ -2,23 +2,23 @@ import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import {
-  AppWindowIcon,
-  ArchiveTrayIcon,
-  ArrowsOutCardinalIcon,
-  ClipboardTextIcon,
-  CopyIcon,
-  FileZipIcon,
-  FilesIcon,
-  FolderOpenIcon,
-  InfoIcon,
-  LockKeyIcon,
-  PencilIcon,
-  ScissorsIcon,
-  SquaresFourIcon,
-  StarIcon,
-  TerminalIcon,
-  TrashIcon,
-} from "@phosphor-icons/react";
+  AppWindow,
+  PackageOpen,
+  Move,
+  ClipboardList,
+  Copy,
+  FileArchive,
+  Files,
+  FolderOpen,
+  Info,
+  LockKeyhole,
+  Pencil,
+  Scissors,
+  LayoutGrid,
+  Star,
+  SquareTerminal,
+  Trash2,
+} from "lucide-react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { commands, type ArchiveFormat } from "@/bindings";
@@ -113,14 +113,14 @@ export function EntryContextMenuContent({
     <>
       <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onOpen}>
-          <FolderOpenIcon />
+          <FolderOpen />
           {t("explorer:contextMenu.open")}
           <ContextMenuShortcut>Enter</ContextMenuShortcut>
         </ContextMenuItem>
         {/* Windows keeps the native SHOpenWithDialog; macOS/Linux fall back
             to the in-app picker, both routed through the explorer view. */}
         <ContextMenuItem disabled={isActionDisabled} onClick={onOpenWith}>
-          <AppWindowIcon />
+          <AppWindow />
           {t("explorer:contextMenu.openWith")}
         </ContextMenuItem>
         {entry.kind === "directory" && (
@@ -128,7 +128,7 @@ export function EntryContextMenuContent({
             disabled={isActionDisabled}
             onClick={() => (isFavorited ? removeFavorite(entry.path) : onAddToFavorites())}
           >
-            <StarIcon />
+            <Star />
             {isFavorited
               ? t("explorer:contextMenu.removeFromFavorites")
               : t("explorer:contextMenu.addToFavorites")}
@@ -137,13 +137,13 @@ export function EntryContextMenuContent({
         {entry.kind === "directory" && spaces.length > 0 && (
           <ContextMenuSub>
             <ContextMenuSubTrigger disabled={isActionDisabled}>
-              <SquaresFourIcon />
+              <LayoutGrid />
               {t("explorer:contextMenu.addToSpace")}
             </ContextMenuSubTrigger>
             <ContextMenuSubContent>
               {spaces.map((space) => (
                 <ContextMenuItem key={space.id} onClick={() => onAddToSpace(space.id)}>
-                  <SquaresFourIcon />
+                  <LayoutGrid />
                   {space.name}
                 </ContextMenuItem>
               ))}
@@ -152,7 +152,7 @@ export function EntryContextMenuContent({
         )}
         {/* Multi-selections route to the bulk rename dialog. */}
         <ContextMenuItem disabled={isActionDisabled} onClick={onRename}>
-          <PencilIcon />
+          <Pencil />
           {isSingleSelection
             ? t("explorer:contextMenu.rename")
             : t("explorer:contextMenu.renameBulk")}
@@ -161,25 +161,28 @@ export function EntryContextMenuContent({
           </ContextMenuShortcut>
         </ContextMenuItem>
         {entry.kind === "directory" && (
-          <ContextMenuItem disabled={isActionDisabled} onClick={() => void openTerminalAt(entry.path)}>
-            <TerminalIcon />
+          <ContextMenuItem
+            disabled={isActionDisabled}
+            onClick={() => void openTerminalAt(entry.path)}
+          >
+            <SquareTerminal />
             {t("explorer:contextMenu.openInTerminal")}
           </ContextMenuItem>
         )}
         <ContextMenuItem onClick={() => void copyEntryPath(entry.path)}>
-          <ClipboardTextIcon />
+          <ClipboardList />
           {t("explorer:contextMenu.copyPath")}
         </ContextMenuItem>
       </ContextMenuGroup>
       <ContextMenuSeparator />
       <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onDuplicate}>
-          <FilesIcon />
+          <Files />
           {t("explorer:contextMenu.duplicate")}
         </ContextMenuItem>
         <ContextMenuSub>
           <ContextMenuSubTrigger disabled={isActionDisabled}>
-            <FileZipIcon />
+            <FileArchive />
             {t("explorer:contextMenu.compressAs")}
           </ContextMenuSubTrigger>
           <ContextMenuSubContent>
@@ -189,7 +192,7 @@ export function EntryContextMenuContent({
                 disabled={isActionDisabled}
                 onClick={() => onCompress(format, encrypted ?? false)}
               >
-                {encrypted ? <LockKeyIcon /> : <FileZipIcon />}
+                {encrypted ? <LockKeyhole /> : <FileArchive />}
                 {t(`explorer:compressFormats.${labelKey}`)}
               </ContextMenuItem>
             ))}
@@ -197,26 +200,26 @@ export function EntryContextMenuContent({
         </ContextMenuSub>
         {isArchiveFile(entry) && (
           <ContextMenuItem disabled={isActionDisabled} onClick={() => onExtract(entry.path)}>
-            <ArchiveTrayIcon />
+            <PackageOpen />
             {t("explorer:contextMenu.extractHere")}
           </ContextMenuItem>
         )}
         <ContextMenuItem disabled={isActionDisabled} onClick={onMoveTo}>
-          <ArrowsOutCardinalIcon />
+          <Move />
           {t("explorer:contextMenu.moveTo")}
         </ContextMenuItem>
       </ContextMenuGroup>
       <ContextMenuSeparator />
       <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onCopy}>
-          <CopyIcon />
+          <Copy />
           {t("explorer:contextMenu.copy")}
           <ContextMenuShortcut>
             {formatBinding(resolveBinding(shortcuts, "explorer.copy"))}
           </ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem disabled={isActionDisabled} onClick={onCut}>
-          <ScissorsIcon />
+          <Scissors />
           {t("explorer:contextMenu.cut")}
           <ContextMenuShortcut>
             {formatBinding(resolveBinding(shortcuts, "explorer.cut"))}
@@ -226,7 +229,7 @@ export function EntryContextMenuContent({
       <ContextMenuSeparator />
       <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onDelete} variant="destructive">
-          <TrashIcon />
+          <Trash2 />
           {t("explorer:contextMenu.delete")}
           <ContextMenuShortcut>
             {formatBinding(resolveBinding(shortcuts, "explorer.trash"))}
@@ -239,7 +242,7 @@ export function EntryContextMenuContent({
           disabled={isActionDisabled || !isSingleSelection}
           onClick={() => setPropertiesTarget(entry)}
         >
-          <InfoIcon />
+          <Info />
           {t("explorer:contextMenu.properties")}
           <ContextMenuShortcut>Alt+Enter</ContextMenuShortcut>
         </ContextMenuItem>

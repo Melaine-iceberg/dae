@@ -22,7 +22,7 @@ const FILE_ICON_URL_ORIGIN = isWindowsPlatform
 /**
  * OS icons take over for app-like files and for extensions the built-in map
  * does not know — the shell usually has a registered handler icon there.
- * Known categories keep their toned Phosphor glyphs for a consistent design.
+ * Known categories keep their toned Lucide glyphs for a consistent design.
  */
 export function isNativeIconSupported(entry: DirectoryEntry): boolean {
   if (!isWindowsPlatform || entry.kind !== "file") {
@@ -48,7 +48,7 @@ export function buildFileIconUrl(entry: DirectoryEntry, size: number): string {
 }
 
 /**
- * Lazy OS-native icon: shows the Phosphor fallback until the shell icon
+ * Lazy OS-native icon: shows the Lucide fallback until the shell icon
  * arrives and keeps it forever on any error (missing path, dead shortcut
  * target, non-Windows platform), so every slot always renders something.
  */

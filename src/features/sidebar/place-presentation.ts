@@ -1,61 +1,60 @@
 import {
-  DesktopIcon,
-  DownloadSimpleIcon,
-  FileTextIcon,
-  HouseIcon,
-  ImageIcon,
-  MusicNotesIcon,
-  VideoIcon,
-  type Icon,
-} from "@phosphor-icons/react";
+  Monitor,
+  Download,
+  FileText,
+  Home,
+  Image,
+  Music,
+  Video,
+  type LucideIcon,
+} from "lucide-react";
 
 import type { PlaceKind } from "@/bindings";
 
 import { i18n } from "@/i18n";
 
-/** Sidebar place icons stay on Phosphor (UI glyphs, outside MIT scope). */
-type PhosphorIcon = Icon;
+/** Sidebar place icons stay on Lucide (UI glyphs, outside catppuccin scope). */
 
 /** Icons and labels for the well-known system places. */
-export const PLACE_PRESENTATION: Record<PlaceKind, { icon: PhosphorIcon; label: string }> = {
+export const PLACE_PRESENTATION: Record<PlaceKind, { icon: LucideIcon; label: string }> = {
   home: {
-    icon: HouseIcon,
+    icon: Home,
     get label() {
       return i18n.t("sidebar:places.home");
     },
   },
   desktop: {
-    icon: DesktopIcon,
+    icon: Monitor,
     get label() {
       return i18n.t("sidebar:places.desktop");
     },
   },
   documents: {
-    icon: FileTextIcon,
+    icon: FileText,
     get label() {
       return i18n.t("sidebar:places.documents");
     },
   },
   downloads: {
-    icon: DownloadSimpleIcon,
+    icon: Download,
     get label() {
       return i18n.t("sidebar:places.downloads");
     },
   },
   pictures: {
-    icon: ImageIcon,
+    icon: Image,
     get label() {
       return i18n.t("sidebar:places.pictures");
     },
   },
   music: {
-    icon: MusicNotesIcon,
+    icon: Music,
     get label() {
       return i18n.t("sidebar:places.music");
     },
   },
   videos: {
-    icon: VideoIcon,
+    icon: Video,
     get label() {
       return i18n.t("sidebar:places.videos");
     },

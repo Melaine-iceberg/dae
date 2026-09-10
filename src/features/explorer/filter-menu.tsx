@@ -1,6 +1,6 @@
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { FunnelIcon, XIcon } from "@phosphor-icons/react";
+import { ListFilter, X } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -77,7 +77,7 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
         disabled={disabled}
         title={t("filter.ariaLabel")}
       >
-        <FunnelIcon />
+        <ListFilter className="size-4" />
         {isActive && (
           <span
             aria-hidden="true"
@@ -136,7 +136,7 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem onSelect={() => setFilters(DEFAULT_ENTRY_FILTERS)}>
-                <XIcon />
+                <X />
                 {t("filter.clearAll")}
               </DropdownMenuItem>
             </DropdownMenuGroup>

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { LockIcon } from "@phosphor-icons/react";
+import { Lock } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
@@ -26,16 +26,16 @@ function ReadOnlyBadge({ className, size }: { className?: string; size: "sm" | "
       )}
       title={label}
     >
-      <LockIcon
+      <Lock
         className={cn("text-muted-foreground", size === "sm" ? "size-1.5" : "size-2")}
-        weight="fill"
+        fill="currentColor"
       />
     </span>
   );
 }
 
 /**
- * Positioning layer around any icon variant (Phosphor svg, native shell
+ * Positioning layer around any icon variant (Lucide svg, native shell
  * bitmap, or thumbnail). Read-only files get a lock overlay in the bottom
  * left corner — the OS overlay convention, diagonal to the grid's top-right
  * Git badge. Directories and symlinks are excluded: the DOS READONLY bit on

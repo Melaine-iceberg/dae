@@ -2,18 +2,18 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  ArrowsClockwiseIcon,
-  CheckIcon,
-  CloudArrowDownIcon,
-  DownloadSimpleIcon,
-  GitBranchIcon,
-  PlusIcon,
-  UploadSimpleIcon,
-  WarningIcon,
-  XIcon,
-} from "@phosphor-icons/react";
+  ArrowDown,
+  ArrowUp,
+  RefreshCw,
+  Check,
+  CloudDownload,
+  Download,
+  GitBranch,
+  Plus,
+  Upload,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 
 import { commands, events } from "@/bindings";
 import { Button } from "@/components/ui/button";
@@ -143,19 +143,19 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
           )}
           title={t("git.menuTitle", { branch })}
         >
-          <GitBranchIcon className="size-3.5 shrink-0" />
+          <GitBranch className="size-3.5 shrink-0" />
           <span className="max-w-48 truncate font-mono text-[11px] leading-4">{branch}</span>
           {(ahead > 0 || behind > 0) && (
             <span className="flex shrink-0 items-center gap-0.5 tabular-nums">
               {ahead > 0 && (
                 <span className="flex items-center gap-0.5 text-emerald-600">
-                  <ArrowUpIcon className="size-3" />
+                  <ArrowUp className="size-3" />
                   {ahead}
                 </span>
               )}
               {behind > 0 && (
                 <span className="flex items-center gap-0.5 text-sky-600">
-                  <ArrowDownIcon className="size-3" />
+                  <ArrowDown className="size-3" />
                   {behind}
                 </span>
               )}
@@ -164,7 +164,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-64">
           <DropdownMenuLabel className="flex min-w-0 items-center gap-1.5">
-            <GitBranchIcon className="size-3.5 shrink-0" />
+            <GitBranch className="size-3.5 shrink-0" />
             <span className="truncate font-mono">{branch}</span>
             {branches?.detached ? (
               <span className="ml-auto shrink-0 text-[11px] font-normal">
@@ -192,10 +192,10 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
                   onClick={() => checkout(localBranch.name, false)}
                   title={t("git.switchToBranch", { branch: localBranch.name })}
                 >
-                  <GitBranchIcon className="size-4" />
+                  <GitBranch className="size-4" />
                   <span className="min-w-0 flex-1 truncate">{localBranch.name}</span>
                   {localBranch.isCurrent && (
-                    <CheckIcon className="ml-auto size-3.5 shrink-0 text-primary" />
+                    <Check className="ml-auto size-3.5 shrink-0 text-primary" />
                   )}
                 </DropdownMenuItem>
               ))}
@@ -213,7 +213,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
                   onClick={() => checkout(remoteBranch.name, true)}
                   title={t("git.trackRemoteBranch", { branch: remoteBranch.name })}
                 >
-                  <CloudArrowDownIcon className="size-4" />
+                  <CloudDownload className="size-4" />
                   <span className="min-w-0 flex-1 truncate">{remoteBranch.name}</span>
                 </DropdownMenuItem>
               ))}
@@ -226,7 +226,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
             onClick={() => setIsCreateOpen(true)}
             title={t("git.newBranchTitle")}
           >
-            <PlusIcon className="size-4" />
+            <Plus className="size-4" />
             {t("git.newBranch")}
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -234,7 +234,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
             onClick={() => networkOp(() => commands.gitFetch(root))}
             title={t("git.fetchTitle")}
           >
-            <CloudArrowDownIcon className="size-4" />
+            <CloudDownload className="size-4" />
             {t("git.fetch")}
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -242,7 +242,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
             onClick={() => networkOp(() => commands.gitPull(root))}
             title={t("git.pullTitle")}
           >
-            <DownloadSimpleIcon className="size-4" />
+            <Download className="size-4" />
             {t("git.pull")}
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -250,7 +250,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
             onClick={() => networkOp(() => commands.gitPush(root))}
             title={t("git.pushTitle")}
           >
-            <UploadSimpleIcon className="size-4" />
+            <Upload className="size-4" />
             {t("git.push")}
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -258,7 +258,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
             onClick={() => networkOp(() => commands.gitSync(root))}
             title={t("git.syncTitle")}
           >
-            <ArrowsClockwiseIcon className="size-4" />
+            <RefreshCw className="size-4" />
             {t("git.sync")}
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -275,7 +275,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
         title={t("git.syncTitle")}
         type="button"
       >
-        <ArrowsClockwiseIcon className={cn("size-3.5", isPending && "animate-spin")} />
+        <RefreshCw className={cn("size-3.5", isPending && "animate-spin")} />
       </button>
 
       {error && (
@@ -283,7 +283,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
           className="animate-in fade-in-0 absolute bottom-6 left-0 z-50 flex w-80 items-start gap-2 rounded-lg bg-popover/90 p-3 text-xs text-popover-foreground shadow-ambient-lg ring-1 ring-border backdrop-blur-xl"
           role="alert"
         >
-          <WarningIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
           <div className="min-w-0 flex-1">
             <p className="font-medium">{t("git.operationFailed")}</p>
             <p className="mt-0.5 line-clamp-3 break-words text-muted-foreground" title={error}>
@@ -296,7 +296,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
             onClick={() => setError(null)}
             type="button"
           >
-            <XIcon className="size-3.5" />
+            <X className="size-3.5" />
           </button>
         </div>
       )}

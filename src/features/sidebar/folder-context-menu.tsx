@@ -1,11 +1,5 @@
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import {
-  ClipboardTextIcon,
-  CopyIcon,
-  FolderOpenIcon,
-  ScissorsIcon,
-  StarIcon,
-} from "@phosphor-icons/react";
+import { ClipboardList, Copy, FolderOpen, Scissors, Star } from "lucide-react";
 import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { ComponentProps, ReactNode } from "react";
@@ -49,28 +43,28 @@ export function FolderContextMenu({
       <ContextMenuContent>
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => openInNewTab(path)}>
-            <FolderOpenIcon />
+            <FolderOpen />
             {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
           {!isListed && (
             <ContextMenuItem onClick={() => addFavoritePaths([path])}>
-              <StarIcon />
+              <Star />
               {t("contextMenu.addFavorite")}
             </ContextMenuItem>
           )}
           <ContextMenuItem onClick={() => void copyEntryPath(path)}>
-            <ClipboardTextIcon />
+            <ClipboardList />
             {t("contextMenu.copyFilePath")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => setClipboard({ operation: "copy", sourcePaths: [path] })}>
-            <CopyIcon />
+            <Copy />
             {t("contextMenu.copy")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => setClipboard({ operation: "cut", sourcePaths: [path] })}>
-            <ScissorsIcon />
+            <Scissors />
             {t("contextMenu.cut")}
           </ContextMenuItem>
         </ContextMenuGroup>

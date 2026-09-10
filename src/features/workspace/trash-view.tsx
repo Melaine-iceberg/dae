@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import {
-  ArrowClockwiseIcon,
-  ArrowUUpLeftIcon,
-  CheckIcon,
-  FolderIcon,
-  TrashIcon,
-  TrashSimpleIcon,
-} from "@phosphor-icons/react";
+import { RotateCw, Undo2, Check, Folder, Trash2, Trash } from "lucide-react";
 
 import {
   commands,
@@ -225,7 +218,7 @@ export function TrashView() {
                   size="sm"
                   type="button"
                 >
-                  <ArrowUUpLeftIcon />
+                  <Undo2 />
                   {t("trash.restoreSelected", { count: selectedIds.length })}
                 </Button>
                 <Button
@@ -235,7 +228,7 @@ export function TrashView() {
                   type="button"
                   variant="destructive"
                 >
-                  <TrashSimpleIcon />
+                  <Trash />
                   {t("trash.deleteSelected", { count: selectedIds.length })}
                 </Button>
               </>
@@ -248,7 +241,7 @@ export function TrashView() {
                 type="button"
                 variant="outline"
               >
-                <TrashIcon />
+                <Trash2 />
                 {t("trash.emptyTrash")}
               </Button>
             )}
@@ -260,7 +253,7 @@ export function TrashView() {
               type="button"
               variant="ghost"
             >
-              <ArrowClockwiseIcon />
+              <RotateCw />
             </Button>
           </>
         }
@@ -296,7 +289,7 @@ export function TrashView() {
         <Empty className="min-h-64">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <TrashIcon />
+              <Trash2 />
             </EmptyMedia>
             <EmptyTitle>{t("trash.emptyTitle")}</EmptyTitle>
             <EmptyDescription>{t("trash.emptyDescription")}</EmptyDescription>
@@ -407,7 +400,7 @@ function SelectAllToggle({
       onClick={onToggle}
       type="button"
     >
-      {allSelected && <CheckIcon className="size-3 text-primary" weight="bold" />}
+      {allSelected && <Check className="size-3 text-primary" />}
     </button>
   );
 }
@@ -473,12 +466,12 @@ function TrashRow({
         <ContextMenuContent>
           <ContextMenuGroup>
             <ContextMenuItem onClick={onRestore}>
-              <ArrowUUpLeftIcon />
+              <Undo2 />
               {t("trash.restore")}
             </ContextMenuItem>
             {hasOriginalLocation && (
               <ContextMenuItem onClick={onNavigateToOriginalLocation}>
-                <FolderIcon />
+                <Folder />
                 {t("trash.openOriginalLocation")}
               </ContextMenuItem>
             )}
@@ -486,7 +479,7 @@ function TrashRow({
           <ContextMenuSeparator />
           <ContextMenuGroup>
             <ContextMenuItem onClick={onPurge} variant="destructive">
-              <TrashSimpleIcon />
+              <Trash />
               {t("trash.deleteForever")}
             </ContextMenuItem>
           </ContextMenuGroup>
@@ -505,7 +498,7 @@ function RowCheckbox({ isSelected }: { isSelected: boolean }) {
         isSelected ? "border-primary bg-primary text-primary-foreground" : "border-input",
       )}
     >
-      {isSelected && <CheckIcon className="size-3" weight="bold" />}
+      {isSelected && <Check className="size-3" />}
     </span>
   );
 }

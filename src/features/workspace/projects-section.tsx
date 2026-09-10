@@ -2,9 +2,14 @@ import { useMemo } from "react";
 import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { useQueries } from "@tanstack/react-query";
-import { CheckCircleIcon, GitBranchIcon } from "@phosphor-icons/react";
+import { CircleCheck, GitBranch } from "lucide-react";
 
-import { commands, type GitEntryStatus, type GitEntryStatusKind, type RecentItem } from "@/bindings";
+import {
+  commands,
+  type GitEntryStatus,
+  type GitEntryStatusKind,
+  type RecentItem,
+} from "@/bindings";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -142,7 +147,7 @@ function ProjectCard({
     >
       <span className="flex w-full items-center gap-2.5">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary transition-colors group-hover:bg-primary-container">
-          <GitBranchIcon className="size-4 text-secondary-foreground transition-colors group-hover:text-on-primary-container" />
+          <GitBranch className="size-4 text-secondary-foreground transition-colors group-hover:text-on-primary-container" />
         </span>
         <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{project.name}</span>
         <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
@@ -172,7 +177,7 @@ function ProjectCard({
             )
           ) : (
             <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
-              <CheckCircleIcon className="size-3.5 text-emerald-600" />
+              <CircleCheck className="size-3.5 text-emerald-600" />
               {t("workspace:overview.projectClean")}
             </span>
           ))}

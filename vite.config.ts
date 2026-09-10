@@ -1,36 +1,14 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig } from "vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
-
-// The app only renders the regular/fill/bold/duotone icon weights, but every
-// @phosphor-icons/react def module embeds all six weights as runtime Map
-// data that tree-shaking can't remove. Entries are machine-generated with
-// fixed indentation, so strip the unused weights with a scoped transform.
-// Failure mode is safe: if the format ever changes, nothing matches and the
-// module passes through untouched.
-function stripPhosphorWeights(): Plugin {
-  const entry = /^ {2}\[\n {4}"(?:thin|light)",\n[\s\S]*?^ {2}\],?\n/gm;
-  return {
-    name: "strip-phosphor-weights",
-    transform(code, id) {
-      if (!id.includes("@phosphor-icons") || !/defs[\\/][^\\/]+\.es\.js$/.test(id)) {
-        return null;
-      }
-      const stripped = code.replace(entry, "");
-      return stripped === code ? null : { code: stripped, map: null };
-    },
-  };
-}
 
 // https://vite.dev/config/
 export default defineConfig(async ({ command }) => ({
   plugins: [
-    stripPhosphorWeights(),
     react(),
     // React Compiler auto-memoizes components and values at build time,
     // so manual React.memo/useMemo/useCallback are no longer needed.
@@ -50,11 +28,11 @@ export default defineConfig(async ({ command }) => ({
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
   build: {
-    // Material Icon Theme artwork must ship as on-disk asset URLs (see
-    // src/features/explorer/mit-icon.tsx): the default 4KB inline limit would
-    // embed ~1100 SVGs as data URLs and bloat the entry chunk past 1.7MB.
+    // Catppuccin artwork must ship as on-disk asset URLs (see
+    // src/features/explorer/catppuccin-icon.tsx): the default 4KB inline limit
+    // would embed ~1300 SVGs as data URLs and bloat the entry chunk past 1.7MB.
     assetsInlineLimit: (filePath: string) =>
-      filePath.includes("mit-icons") ? false : undefined,
+      filePath.includes("catppuccin-icons") ? false : undefined,
   },
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
@@ -63,10 +41,10 @@ export default defineConfig(async ({ command }) => ({
     host: host || false,
     hmr: host
       ? {
-        protocol: "ws",
-        host,
-        port: 1421,
-      }
+          protocol: "ws",
+          host,
+          port: 1421,
+        }
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`

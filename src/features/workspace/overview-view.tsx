@@ -3,15 +3,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
-import {
-  ArrowRightIcon,
-  ClockCounterClockwiseIcon,
-  EyeSlashIcon,
-  FolderIcon,
-  PlusIcon,
-  SquaresFourIcon,
-  StarIcon,
-} from "@phosphor-icons/react";
+import { ArrowRight, History, EyeOff, Folder, Plus, LayoutGrid, Star } from "lucide-react";
 
 import {
   ContextMenu,
@@ -27,10 +19,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  DIRECTORY_PRESENTATION,
-  getFilePresentation,
-} from "@/features/explorer/file-icons";
+import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
 import { tintStyle, TypeIconTile } from "@/features/explorer/icon-tile";
 import { PLACE_PRESENTATION, PLACE_TONE_VAR } from "@/features/sidebar/place-presentation";
 import {
@@ -92,12 +81,7 @@ export function OverviewView() {
     void ensureRecentsLoaded();
     void ensureFavoritesLoaded();
     void ensureSpacesLoaded();
-  }, [
-    ensureRecentsLoaded,
-    ensureFavoritesLoaded,
-    ensureSpacesLoaded,
-    ensureSystemPlacesLoaded,
-  ]);
+  }, [ensureRecentsLoaded, ensureFavoritesLoaded, ensureSpacesLoaded, ensureSystemPlacesLoaded]);
 
   const visiblePlaces = (places ?? []).filter((place) => !hiddenPlaces.includes(place.kind));
   const favoriteList = favorites ?? [];
@@ -144,7 +128,7 @@ export function OverviewView() {
                   onClick={() => setHiddenPlaces([])}
                   type="button"
                 >
-                  <EyeSlashIcon className="size-3" />
+                  <EyeOff className="size-3" />
                   {t("overview.restoreHidden", { count: hiddenPlaces.length })}
                 </button>
               )}
@@ -153,7 +137,7 @@ export function OverviewView() {
                 onClick={addFavoriteFolder}
                 type="button"
               >
-                <PlusIcon className="size-3" />
+                <Plus className="size-3" />
                 {t("overview.addFolder")}
               </button>
             </div>
@@ -170,7 +154,7 @@ export function OverviewView() {
           <Empty className="border-none py-6">
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <StarIcon />
+                <Star />
               </EmptyMedia>
               <EmptyTitle className="text-sm">{t("overview.favoritesEmptyTitle")}</EmptyTitle>
               <EmptyDescription className="text-xs">
@@ -195,11 +179,11 @@ export function OverviewView() {
                   </ContextMenuTrigger>
                   <ContextMenuContent>
                     <ContextMenuItem onClick={() => navigateToFolder(place.path)}>
-                      <FolderIcon />
+                      <Folder />
                       {t("overview.open")}
                     </ContextMenuItem>
                     <ContextMenuItem onClick={() => setHiddenPlaces([...hiddenPlaces, place.kind])}>
-                      <EyeSlashIcon />
+                      <EyeOff />
                       {t("overview.hideFromFavorites")}
                     </ContextMenuItem>
                   </ContextMenuContent>
@@ -211,7 +195,7 @@ export function OverviewView() {
                 <ContextMenuTrigger>
                   <LocationCard
                     description={favorite.path}
-                    icon={StarIcon}
+                    icon={Star}
                     iconClassName="fill-white text-white"
                     onClick={() => navigateToFolder(favorite.path)}
                     tileClassName="tile-folder"
@@ -220,11 +204,11 @@ export function OverviewView() {
                 </ContextMenuTrigger>
                 <ContextMenuContent>
                   <ContextMenuItem onClick={() => navigateToFolder(favorite.path)}>
-                    <FolderIcon />
+                    <Folder />
                     {t("overview.open")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => removeFavorite(favorite.path)}>
-                    <StarIcon />
+                    <Star />
                     {t("overview.removeFromFavorites")}
                   </ContextMenuItem>
                 </ContextMenuContent>
@@ -244,7 +228,7 @@ export function OverviewView() {
                 type="button"
               >
                 {t("overview.viewAll")}
-                <ArrowRightIcon className="size-3" />
+                <ArrowRight className="size-3" />
               </button>
             )
           }
@@ -260,7 +244,7 @@ export function OverviewView() {
           <Empty className="border-none py-6">
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <ClockCounterClockwiseIcon />
+                <History />
               </EmptyMedia>
               <EmptyTitle className="text-sm">{t("overview.recentsEmptyTitle")}</EmptyTitle>
               <EmptyDescription className="text-xs">
@@ -317,7 +301,7 @@ export function OverviewView() {
                     ? t("spaces.itemCount", { count: space.items.length })
                     : t("spaces.emptyLabel")
                 }
-                icon={SquaresFourIcon}
+                icon={LayoutGrid}
                 iconClassName={getSpaceAccent(space.id).text}
                 key={space.id}
                 onClick={() => openSurface({ kind: "space", spaceId: space.id })}

@@ -7,7 +7,7 @@ import {
   type SetStateAction,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { CircleNotchIcon, FolderOpenIcon, WarningIcon } from "@phosphor-icons/react";
+import { LoaderCircle, FolderOpen, TriangleAlert } from "lucide-react";
 import { openPath } from "@tauri-apps/plugin-opener";
 
 import {
@@ -178,7 +178,7 @@ export function ContentSearchToolbar({ search }: { search: ContentSearchControll
         value={search.typeFilter}
       />
       <span className="select-none">{t("contentSearch.ignoredHint")}</span>
-      {search.isSearching && <CircleNotchIcon className="animate-spin" size={14} />}
+      {search.isSearching && <LoaderCircle className="animate-spin" size={14} />}
       {!search.isSearching && search.response && (
         <span className="select-none tabular-nums">
           {t("contentSearch.resultSummary", {
@@ -211,7 +211,7 @@ export function ContentSearchResults({
   if (error) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center select-none">
-        <WarningIcon className="size-5 text-destructive" />
+        <TriangleAlert className="size-5 text-destructive" />
         <p className="text-[13px] text-destructive">{error}</p>
       </div>
     );
@@ -283,7 +283,7 @@ function FileMatchGroup({
           type="button"
           variant="ghost"
         >
-          <FolderOpenIcon />
+          <FolderOpen />
         </Button>
       </div>
       <div className="flex flex-col">

@@ -1,6 +1,6 @@
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { ArrowsDownUpIcon } from "@phosphor-icons/react";
+import { ArrowUpDown } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -63,7 +63,7 @@ export function SortMenu({ disabled }: { disabled?: boolean }) {
         disabled={disabled}
         title={t("sort.menuLabel")}
       >
-        <ArrowsDownUpIcon />
+        <ArrowUpDown className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
         <DropdownMenuLabel>{t("sort.sortBy")}</DropdownMenuLabel>
@@ -99,10 +99,7 @@ export function SortMenu({ disabled }: { disabled?: boolean }) {
 
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
-          <DropdownMenuCheckboxItem
-            checked={foldersFirst}
-            onCheckedChange={setFoldersFirst}
-          >
+          <DropdownMenuCheckboxItem checked={foldersFirst} onCheckedChange={setFoldersFirst}>
             {t("sort.foldersFirst")}
           </DropdownMenuCheckboxItem>
         </DropdownMenuGroup>

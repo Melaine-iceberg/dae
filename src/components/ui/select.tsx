@@ -1,5 +1,5 @@
 import { Select as SelectPrimitive } from "@base-ui/react/select";
-import { CaretDownIcon, CheckIcon } from "@phosphor-icons/react";
+import { ChevronDown, Check } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -9,11 +9,7 @@ function Select<Value, Multiple extends boolean | undefined = false>({
   return <SelectPrimitive.Root data-slot="select" {...props} />;
 }
 
-function SelectTrigger({
-  className,
-  children,
-  ...props
-}: SelectPrimitive.Trigger.Props) {
+function SelectTrigger({ className, children, ...props }: SelectPrimitive.Trigger.Props) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
@@ -25,7 +21,7 @@ function SelectTrigger({
     >
       {children}
       <SelectPrimitive.Icon className="flex text-muted-foreground">
-        <CaretDownIcon />
+        <ChevronDown />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );
@@ -49,10 +45,7 @@ function SelectContent({
   className,
   ...props
 }: SelectPrimitive.Popup.Props &
-  Pick<
-    SelectPrimitive.Positioner.Props,
-    "align" | "alignOffset" | "side" | "sideOffset"
-  >) {
+  Pick<SelectPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset">) {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
@@ -75,11 +68,7 @@ function SelectContent({
   );
 }
 
-function SelectItem({
-  className,
-  children,
-  ...props
-}: SelectPrimitive.Item.Props) {
+function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Props) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
@@ -92,7 +81,7 @@ function SelectItem({
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
       <span className="pointer-events-none absolute right-2 flex items-center justify-center">
         <SelectPrimitive.ItemIndicator>
-          <CheckIcon />
+          <Check />
         </SelectPrimitive.ItemIndicator>
       </span>
     </SelectPrimitive.Item>

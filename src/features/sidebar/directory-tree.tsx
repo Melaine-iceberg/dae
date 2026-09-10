@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { atom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { CaretDownIcon } from "@phosphor-icons/react";
+import { ChevronDown } from "lucide-react";
 
 import { commands, type DirectoryEntry } from "@/bindings";
 import { getFolderPresentation } from "@/features/explorer/file-icons";
@@ -195,7 +195,7 @@ function TreeNodeRow({
   // Nodes are assumed expandable until their first read proves otherwise.
   const mayHaveChildren = !state || state.status === "loading" || state.entries.length > 0;
 
-  // Material Icon Theme artwork with per-name variants (src, .git, ...) and
+  // Catppuccin artwork with per-name variants (src, .git, ...) and
   // an open variant while the node is expanded.
   const FolderArt = getFolderPresentation(entry.name, expanded).icon;
 
@@ -211,7 +211,7 @@ function TreeNodeRow({
               onClick={() => toggle(entry.path)}
               type="button"
             >
-              <CaretDownIcon
+              <ChevronDown
                 aria-hidden="true"
                 className={cn(
                   "size-3 transition-transform duration-fast ease-spring-fast",

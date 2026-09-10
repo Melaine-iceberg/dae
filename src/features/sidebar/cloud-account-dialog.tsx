@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { CheckIcon, CircleNotchIcon, CopyIcon } from "@phosphor-icons/react";
+import { Check, LoaderCircle, Copy } from "lucide-react";
 
 import { commands, type CloudProviderKind, type StoredCloudAccount } from "@/bindings";
 import { translateBackendMessage } from "@/i18n/errors";
@@ -149,9 +149,7 @@ export function CloudAccountDialog({
           </div>
 
           <div className="grid gap-2 rounded-md border border-border/60 bg-muted/40 p-3 text-xs">
-            <p className="leading-relaxed text-muted-foreground">
-              {t(`cloud.guide.${provider}`)}
-            </p>
+            <p className="leading-relaxed text-muted-foreground">{t(`cloud.guide.${provider}`)}</p>
             <div className="flex items-center gap-2">
               <span className="shrink-0 text-muted-foreground">{t("cloud.redirectUri")}</span>
               <code className="min-w-0 flex-1 truncate rounded-xs bg-foreground/10 px-1.5 py-0.5 font-mono">
@@ -164,9 +162,9 @@ export function CloudAccountDialog({
                 type="button"
               >
                 {copied ? (
-                  <CheckIcon className="size-3.5 text-primary" />
+                  <Check className="size-3.5 text-primary" />
                 ) : (
-                  <CopyIcon className="size-3.5" />
+                  <Copy className="size-3.5" />
                 )}
               </button>
             </div>
@@ -174,12 +172,14 @@ export function CloudAccountDialog({
 
           {error && <p className="text-[13px] text-destructive">{error}</p>}
           {authorizing && (
-            <p className="text-xs leading-relaxed text-muted-foreground">{t("cloud.waitingHint")}</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {t("cloud.waitingHint")}
+            </p>
           )}
 
           <DialogFooter>
             <Button disabled={authorizing} type="submit">
-              {authorizing && <CircleNotchIcon className="animate-spin" />}
+              {authorizing && <LoaderCircle className="animate-spin" />}
               {authorizing ? t("cloud.waiting") : t("cloud.authorize")}
             </Button>
           </DialogFooter>

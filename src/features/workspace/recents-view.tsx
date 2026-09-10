@@ -3,14 +3,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import {
-  ClockCounterClockwiseIcon,
-  ClipboardTextIcon,
-  FolderIcon,
-  FolderOpenIcon,
-  TrashIcon,
-  XIcon,
-} from "@phosphor-icons/react";
+import { History, ClipboardList, Folder, FolderOpen, Trash2, X } from "lucide-react";
 
 import type { RecentItem } from "@/bindings";
 import { i18n } from "@/i18n";
@@ -32,10 +25,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  DIRECTORY_PRESENTATION,
-  getFilePresentation,
-} from "@/features/explorer/file-icons";
+import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
 import { TypeIconTile } from "@/features/explorer/icon-tile";
 
 import {
@@ -125,7 +115,7 @@ export function RecentsView() {
               type="button"
               variant="outline"
             >
-              <TrashIcon />
+              <Trash2 />
               {t("recents.clearAll")}
             </Button>
           ))
@@ -144,7 +134,7 @@ export function RecentsView() {
         <Empty className="min-h-64">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <ClockCounterClockwiseIcon />
+              <History />
             </EmptyMedia>
             <EmptyTitle>{t("recents.emptyTitle")}</EmptyTitle>
             <EmptyDescription>{t("recents.emptyDescription")}</EmptyDescription>
@@ -215,24 +205,24 @@ function RecentRow({
         <ContextMenuContent>
           <ContextMenuGroup>
             <ContextMenuItem onClick={onOpen}>
-              <FolderOpenIcon />
+              <FolderOpen />
               {t("recents.open")}
             </ContextMenuItem>
             {location && (
               <ContextMenuItem onClick={onOpenContainingFolder}>
-                <FolderIcon />
+                <Folder />
                 {t("recents.openContainingFolder")}
               </ContextMenuItem>
             )}
             <ContextMenuItem onClick={() => void copyPath(item.path)}>
-              <ClipboardTextIcon />
+              <ClipboardList />
               {t("recents.copyPath")}
             </ContextMenuItem>
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuGroup>
             <ContextMenuItem onClick={() => removeRecentItem(item.path)}>
-              <XIcon />
+              <X />
               {t("recents.remove")}
             </ContextMenuItem>
           </ContextMenuGroup>

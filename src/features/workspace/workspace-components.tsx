@@ -1,12 +1,11 @@
 import type { CSSProperties, ReactNode } from "react";
 
-import type { Icon } from "@phosphor-icons/react";
+import type { LucideIcon } from "lucide-react";
 
 import { i18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
-/** Workspace surface glyphs stay on Phosphor (UI icons, outside MIT scope). */
-type PhosphorIcon = Icon;
+/** Workspace surface glyphs stay on Lucide (UI icons, outside catppuccin scope). */
 
 /**
  * Shared building blocks for the workspace surfaces (Overview, Recents,
@@ -71,16 +70,14 @@ export function LocationCard({
   description,
   icon: Icon,
   iconClassName,
-  iconWeight,
   onClick,
   tileClassName,
   tileStyle,
   title,
 }: {
   description?: string;
-  icon: PhosphorIcon;
+  icon: LucideIcon;
   iconClassName?: string;
-  iconWeight?: "regular" | "fill" | "bold" | "duotone" | "light" | "thin";
   onClick: () => void;
   /** Overrides the chip's neutral tone (e.g. "tile-folder", space accents). */
   tileClassName?: string;
@@ -109,7 +106,7 @@ export function LocationCard({
         )}
         style={tileStyle}
       >
-        <Icon className={cn("size-4.5", iconClassName)} weight={iconWeight} />
+        <Icon className={cn("size-4.5", iconClassName)} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-medium">{title}</span>

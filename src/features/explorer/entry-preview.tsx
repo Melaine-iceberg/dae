@@ -1,6 +1,6 @@
 import { useEffect, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { ClipboardTextIcon, FolderOpenIcon, WarningIcon, XIcon } from "@phosphor-icons/react";
+import { ClipboardList, FolderOpen, TriangleAlert, X } from "lucide-react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { Markdown } from "@tanstack/markdown/react";
@@ -252,9 +252,7 @@ export function EntryPreview({
       className="animate-in flex h-full w-[26rem] shrink-0 flex-col overflow-hidden bg-popover/95 backdrop-blur-xl duration-fast fade-in slide-in-from-right-2"
     >
       <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-        {visual && VisualIcon ? (
-          <VisualIcon className="size-4 shrink-0" />
-        ) : null}
+        {visual && VisualIcon ? <VisualIcon className="size-4 shrink-0" /> : null}
         <p
           className="min-w-0 flex-1 truncate text-[13px] font-medium"
           title={entry?.name ?? undefined}
@@ -269,7 +267,7 @@ export function EntryPreview({
           type="button"
           variant="ghost"
         >
-          <XIcon />
+          <X />
         </Button>
       </header>
 
@@ -285,9 +283,7 @@ export function EntryPreview({
               <ThumbnailImage
                 className="flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/40"
                 entry={entry}
-                fallback={
-                  VisualIcon ? <VisualIcon className="size-12" /> : null
-                }
+                fallback={VisualIcon ? <VisualIcon className="size-12" /> : null}
                 requestSize={384}
               />
             ) : textPreview?.status === "ready" ? (
@@ -303,7 +299,8 @@ export function EntryPreview({
                 ) : textPreview.html !== null ? (
                   <div
                     className="code-preview min-h-0 flex-1 overflow-auto p-2.5 text-xs leading-relaxed"
-                    // Highlighted markup is generated locally from file contents.
+                    // Highlighted markup is generated locally from file contents; TanStack Highlight escapes all text nodes (escapeHtml in its core) before tokenizing.
+                    // pi-lens-ignore: dangerously-set-inner-html
                     dangerouslySetInnerHTML={{ __html: textPreview.html }}
                   />
                 ) : (
@@ -325,13 +322,13 @@ export function EntryPreview({
               </div>
             ) : isTooLarge ? (
               <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 px-3 text-center text-xs text-muted-foreground">
-                <WarningIcon className="size-5" />
+                <TriangleAlert className="size-5" />
                 <p>{t("preview.tooLarge", { size: PREVIEW_MAX_SOURCE_BYTES / 1024 / 1024 })}</p>
                 <p>{t("preview.tooLargeHint")}</p>
               </div>
             ) : textPreview?.status === "error" ? (
               <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 text-xs text-muted-foreground">
-                <WarningIcon className="size-5" />
+                <TriangleAlert className="size-5" />
                 <p>{t("preview.readError")}</p>
               </div>
             ) : (
@@ -340,9 +337,7 @@ export function EntryPreview({
                   <NativeIconImage
                     className="size-12"
                     entry={entry}
-                    fallback={
-                      VisualIcon ? <VisualIcon className="size-12" /> : null
-                    }
+                    fallback={VisualIcon ? <VisualIcon className="size-12" /> : null}
                     pixelSize={48}
                   />
                 ) : VisualIcon ? (
@@ -415,7 +410,7 @@ export function EntryPreview({
       {entry !== null && (
         <footer className="flex shrink-0 items-center gap-2 border-t p-2.5">
           <Button onClick={onOpen} size="sm" type="button">
-            <FolderOpenIcon />
+            <FolderOpen />
             {t("preview.open")}
           </Button>
           <Button
@@ -429,7 +424,7 @@ export function EntryPreview({
             type="button"
             variant="outline"
           >
-            <ClipboardTextIcon />
+            <ClipboardList />
             {t("preview.copyPath")}
           </Button>
         </footer>

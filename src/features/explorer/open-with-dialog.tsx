@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AppWindowIcon } from "@phosphor-icons/react";
+import { AppWindow } from "lucide-react";
 
 import { commands, type OpenWithApp } from "@/bindings";
 
@@ -139,7 +139,7 @@ export function OpenWithDialog({
                 role="radio"
                 type="button"
               >
-                <AppWindowIcon className="size-4 shrink-0 text-muted-foreground" />
+                <AppWindow className="size-4 shrink-0 text-muted-foreground" />
                 <span className="truncate">{app.name}</span>
               </button>
             ))}
@@ -163,11 +163,7 @@ export function OpenWithDialog({
             <Button disabled={isPending} onClick={onClose} type="button" variant="outline">
               {t("explorer:actions.cancel")}
             </Button>
-            <Button
-              disabled={isPending || !selectedId}
-              onClick={() => confirm()}
-              type="button"
-            >
+            <Button disabled={isPending || !selectedId} onClick={() => confirm()} type="button">
               {t("explorer:openWith.open")}
             </Button>
           </span>

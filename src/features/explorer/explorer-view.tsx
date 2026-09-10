@@ -13,19 +13,19 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
-  ArrowClockwiseIcon,
-  ArrowCounterClockwiseIcon,
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  ArrowUpIcon,
-  CircleNotchIcon,
-  ColumnsIcon,
-  EyeIcon,
-  SidebarSimpleIcon,
-  StarIcon,
-  WarningIcon,
-  XIcon,
-} from "@phosphor-icons/react";
+  RotateCw,
+  RotateCcw,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  LoaderCircle,
+  Columns3,
+  Eye,
+  PanelLeft,
+  Star,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 
 import {
   commands,
@@ -764,10 +764,7 @@ export function ExplorerView({
         }
 
         // A wrong password keeps the dialog open so it can be corrected.
-        if (
-          archivePasswordRequest.mode === "extract" &&
-          isWrongPasswordError(result.rawError)
-        ) {
+        if (archivePasswordRequest.mode === "extract" && isWrongPasswordError(result.rawError)) {
           setArchivePasswordError(result.error);
           return;
         }
@@ -1219,7 +1216,7 @@ export function ExplorerView({
               type="button"
               variant="ghost"
             >
-              <SidebarSimpleIcon />
+              <PanelLeft />
             </Button>
             <ToolbarSeparator />
             <Button
@@ -1231,7 +1228,7 @@ export function ExplorerView({
               type="button"
               variant="ghost"
             >
-              <ArrowLeftIcon />
+              <ArrowLeft />
             </Button>
             <Button
               aria-label={t("explorer:toolbar.forward")}
@@ -1242,7 +1239,7 @@ export function ExplorerView({
               type="button"
               variant="ghost"
             >
-              <ArrowRightIcon />
+              <ArrowRight />
             </Button>
             <Button
               aria-label={t("explorer:toolbar.up")}
@@ -1253,7 +1250,7 @@ export function ExplorerView({
               type="button"
               variant="ghost"
             >
-              <ArrowUpIcon />
+              <ArrowUp />
             </Button>
             <Button
               aria-label={t("explorer:toolbar.refresh")}
@@ -1264,7 +1261,7 @@ export function ExplorerView({
               type="button"
               variant="ghost"
             >
-              <ArrowClockwiseIcon className={cn(isLoading && "animate-spin")} />
+              <RotateCw className={cn(isLoading && "animate-spin")} />
             </Button>
             <ToolbarSeparator />
             <Button
@@ -1290,7 +1287,7 @@ export function ExplorerView({
               type="button"
               variant="ghost"
             >
-              <StarIcon className={cn(isCurrentFavorited && "fill-amber-400 text-amber-500")} />
+              <Star className={cn(isCurrentFavorited && "fill-amber-400 text-amber-500")} />
             </Button>
           </div>
 
@@ -1334,7 +1331,7 @@ export function ExplorerView({
               type="button"
               variant="ghost"
             >
-              <ColumnsIcon />
+              <Columns3 />
             </Button>
           )}
           <ToolbarSeparator />
@@ -1355,7 +1352,7 @@ export function ExplorerView({
             type="button"
             variant="ghost"
           >
-            <EyeIcon />
+            <Eye />
           </Button>
         </header>
 
@@ -1374,7 +1371,7 @@ export function ExplorerView({
         {operationError && (
           <div className="shrink-0 p-3 pb-0">
             <Alert variant="destructive">
-              <WarningIcon />
+              <TriangleAlert />
               <AlertTitle>{t("explorer:errors.operationFailedTitle")}</AlertTitle>
               <AlertDescription>{operationError}</AlertDescription>
               <AlertAction>
@@ -1502,9 +1499,9 @@ export function ExplorerView({
                 >
                   <div className="animate-float-in flex items-center gap-2 rounded-lg bg-popover/90 px-4 py-2 text-[13px] text-popover-foreground shadow-ambient-lg ring-1 ring-border backdrop-blur-xl">
                     {undoRedoToast.action === "redo" ? (
-                      <ArrowClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
+                      <RotateCw className="size-4 shrink-0 text-muted-foreground" />
                     ) : (
-                      <ArrowCounterClockwiseIcon className="size-4 shrink-0 text-muted-foreground" />
+                      <RotateCcw className="size-4 shrink-0 text-muted-foreground" />
                     )}
                     <span className="whitespace-nowrap">
                       {t(`explorer:undoRedo.toast_${undoRedoToast.outcome.action}`, {
@@ -1528,7 +1525,7 @@ export function ExplorerView({
                       type="button"
                       variant="ghost"
                     >
-                      <XIcon />
+                      <X />
                     </Button>
                   </div>
                 </div>
@@ -1713,7 +1710,7 @@ function FileOperationStatusBar({ progress }: { progress: FileOperationProgress 
       aria-live="polite"
       className="flex h-10 shrink-0 items-center gap-3 border-t border-border/60 bg-muted/50 px-3"
     >
-      <CircleNotchIcon
+      <LoaderCircle
         className={cn(
           "size-3.5 shrink-0 text-primary",
           progress.phase !== "completed" && "animate-spin",
@@ -1919,7 +1916,7 @@ function ExplorerErrorAlert({ message, onRetry }: { message: string; onRetry: ()
 
   return (
     <Alert variant="destructive">
-      <WarningIcon />
+      <TriangleAlert />
       <AlertTitle>{t("explorer:errors.unreadableLocation")}</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
       <AlertAction>

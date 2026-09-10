@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
-import { CircleNotchIcon, MagnifyingGlassIcon, TextAaIcon, XIcon } from "@phosphor-icons/react";
+import { LoaderCircle, Search, Type, X } from "lucide-react";
 
 import {
   InputGroup,
@@ -198,12 +198,12 @@ export function DirectorySearch({
               : t("directorySearch.currentNameTitle")
           }
         >
-          {isContentMode ? <TextAaIcon /> : <MagnifyingGlassIcon />}
+          {isContentMode ? <Type /> : <Search />}
         </InputGroupButton>
       </InputGroupAddon>
       {(isSearching || activeQuery) && (
         <InputGroupAddon align="inline-end">
-          {isSearching && <CircleNotchIcon className="animate-spin" />}
+          {isSearching && <LoaderCircle className="animate-spin" />}
           {activeQuery && (
             <InputGroupButton
               aria-label={t("directorySearch.clearSearch")}
@@ -211,7 +211,7 @@ export function DirectorySearch({
               size="icon-xs"
               title={t("directorySearch.clearSearch")}
             >
-              <XIcon />
+              <X />
             </InputGroupButton>
           )}
         </InputGroupAddon>

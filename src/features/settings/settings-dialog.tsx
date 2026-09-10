@@ -15,32 +15,24 @@ import { useCallback, useEffect, useState } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { useTranslation } from "react-i18next";
 import {
-  CheckCircleIcon,
-  CircleNotchIcon,
-  GearIcon,
-  KeyboardIcon,
-  MinusIcon,
-  PaletteIcon,
-  PlusIcon,
-  TerminalIcon,
-} from "@phosphor-icons/react";
+  CircleCheck,
+  LoaderCircle,
+  Settings,
+  Keyboard,
+  Minus,
+  Palette,
+  Plus,
+  SquareTerminal,
+} from "lucide-react";
 
 import { commands, type DefaultFileManagerStatus } from "@/bindings";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
 import { SUPPORTED_LOCALES, type AppLocale } from "@/i18n";
 import { localeAtom } from "@/i18n/atoms";
 import { cn } from "@/lib/utils";
-import {
-  getStoredThemePreference,
-  setThemePreference,
-  type ThemePreference,
-} from "@/lib/theme";
+import { getStoredThemePreference, setThemePreference, type ThemePreference } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   InputGroup,
@@ -69,11 +61,11 @@ import {
 
 type Pane = "appearance" | "shortcuts" | "terminal" | "defaultFileManager";
 
-const NAV_ITEMS: ReadonlyArray<{ icon: typeof GearIcon; pane: Pane }> = [
-  { icon: PaletteIcon, pane: "appearance" },
-  { icon: KeyboardIcon, pane: "shortcuts" },
-  { icon: TerminalIcon, pane: "terminal" },
-  { icon: GearIcon, pane: "defaultFileManager" },
+const NAV_ITEMS: ReadonlyArray<{ icon: typeof Settings; pane: Pane }> = [
+  { icon: Palette, pane: "appearance" },
+  { icon: Keyboard, pane: "shortcuts" },
+  { icon: SquareTerminal, pane: "terminal" },
+  { icon: Settings, pane: "defaultFileManager" },
 ];
 
 const GROUP_ORDER: readonly ShortcutGroup[] = ["app", "explorer", "view"];
@@ -338,13 +330,13 @@ function TerminalPane() {
               aria-label={t("terminal.lineHeightDecrease")}
               onClick={() => stepLineHeight(-0.1)}
             >
-              <MinusIcon />
+              <Minus />
             </InputGroupButton>
             <InputGroupButton
               aria-label={t("terminal.lineHeightIncrease")}
               onClick={() => stepLineHeight(0.1)}
             >
-              <PlusIcon />
+              <Plus />
             </InputGroupButton>
           </InputGroupAddon>
         </InputGroup>
@@ -414,16 +406,14 @@ function DefaultFileManagerPane() {
       </header>
 
       {!supported ? (
-        <p className="text-[13px] text-muted-foreground">
-          {t("defaultFileManager.unsupported")}
-        </p>
+        <p className="text-[13px] text-muted-foreground">{t("defaultFileManager.unsupported")}</p>
       ) : (
         <>
           <div className="flex items-center gap-2 text-[13px]">
             {busy ? (
-              <CircleNotchIcon className="size-4 animate-spin text-muted-foreground" />
+              <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
             ) : isDefault ? (
-              <CheckCircleIcon className="size-4 text-icon-sheet" />
+              <CircleCheck className="size-4 text-icon-sheet" />
             ) : null}
             <span>
               {isDefault

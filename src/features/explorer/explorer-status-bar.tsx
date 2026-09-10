@@ -1,12 +1,6 @@
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import {
-  ColumnsIcon,
-  ListIcon,
-  RowsIcon,
-  SquaresFourIcon,
-  TerminalIcon,
-} from "@phosphor-icons/react";
+import { Columns3, List, Rows3, LayoutGrid, SquareTerminal } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -101,17 +95,17 @@ function TerminalToggle() {
       title={t("statusBar.terminalTitle")}
       type="button"
     >
-      <TerminalIcon size={13} />
+      <SquareTerminal size={13} />
     </button>
   );
 }
 
 const VIEW_MODE_PRESENTATION = [
-  { icon: ListIcon, label: "statusBar.viewList", value: "list" },
-  { icon: ColumnsIcon, label: "statusBar.viewColumn", value: "column" },
-  { icon: SquaresFourIcon, label: "statusBar.viewGrid", value: "grid" },
+  { icon: List, label: "statusBar.viewList", value: "list" },
+  { icon: Columns3, label: "statusBar.viewColumn", value: "column" },
+  { icon: LayoutGrid, label: "statusBar.viewGrid", value: "grid" },
 ] as const satisfies ReadonlyArray<{
-  icon: typeof ListIcon;
+  icon: typeof List;
   label: string;
   value: ExplorerViewMode;
 }>;
@@ -165,7 +159,7 @@ function DensitySwitcher() {
         className="flex size-5 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         title={t("statusBar.densityLabel")}
       >
-        <RowsIcon size={13} />
+        <Rows3 size={13} />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuRadioGroup

@@ -7,7 +7,7 @@ import type { ExtensionPresentation } from "./file-icons";
 /**
  * Entry icon frame: the type artwork seated in a fixed square cell so it
  * stays aligned with native shell icons and thumbnails in the same view.
- * Material Icon Theme artwork is full-bleed and self-colored, so there is
+ * Catppuccin artwork is full-bleed and self-colored, so there is
  * no tinted squircle behind it — the cell is pure layout.
  */
 
@@ -39,7 +39,11 @@ export function TypeIconTile({
   return (
     <span
       aria-hidden="true"
-      className={cn("flex shrink-0 items-center justify-center", pop && "entry-icon-pop", className)}
+      className={cn(
+        "flex shrink-0 items-center justify-center",
+        pop && "entry-icon-pop",
+        className,
+      )}
     >
       <Icon className={iconClassName} size={iconSize} />
     </span>

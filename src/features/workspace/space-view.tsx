@@ -3,16 +3,16 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
-  CheckIcon,
-  ClipboardTextIcon,
-  FolderIcon,
-  FolderOpenIcon,
-  PencilSimpleIcon,
-  SquaresFourIcon,
-  TabsIcon,
-  TrashIcon,
-  XIcon,
-} from "@phosphor-icons/react";
+  Check,
+  ClipboardList,
+  Folder,
+  FolderOpen,
+  Pencil,
+  LayoutGrid,
+  PanelsTopLeft,
+  Trash2,
+  X,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -112,7 +112,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
         <Empty className="min-h-64">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <SquaresFourIcon />
+              <LayoutGrid />
             </EmptyMedia>
             <EmptyTitle>{t("space.notFoundTitle")}</EmptyTitle>
             <EmptyDescription>{t("space.notFoundDescription")}</EmptyDescription>
@@ -150,7 +150,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
                 type="button"
                 variant="ghost"
               >
-                <PencilSimpleIcon />
+                <Pencil />
               </Button>
               {!space.isPreset && (
                 <Button
@@ -162,7 +162,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
                   type="button"
                   variant="ghost"
                 >
-                  <TrashIcon />
+                  <Trash2 />
                 </Button>
               )}
             </>
@@ -175,7 +175,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
                 getSpaceAccent(space.id).tile,
               )}
             >
-              <SquaresFourIcon className={cn("size-5.5", getSpaceAccent(space.id).text)} />
+              <LayoutGrid className={cn("size-5.5", getSpaceAccent(space.id).text)} />
             </span>
           }
           title={getSpaceDisplayName(space)}
@@ -209,7 +209,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
             type="submit"
             variant="outline"
           >
-            <CheckIcon />
+            <Check />
           </Button>
           <Button
             aria-label={t("space.cancelRename")}
@@ -219,7 +219,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
             type="button"
             variant="ghost"
           >
-            <XIcon />
+            <X />
           </Button>
         </form>
       )}
@@ -234,7 +234,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
         <Empty className="min-h-64">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <SquaresFourIcon />
+              <LayoutGrid />
             </EmptyMedia>
             <EmptyTitle>{t("space.emptyTitle")}</EmptyTitle>
             <EmptyDescription>
@@ -249,9 +249,8 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
               <ContextMenuTrigger>
                 <LocationCard
                   description={item.path}
-                  icon={FolderIcon}
-                  iconClassName="text-white"
-                  iconWeight="fill"
+                  icon={Folder}
+                  iconClassName="text-white fill-current"
                   onClick={() => navigateToFolder(item.path)}
                   tileClassName="tile-folder"
                   title={item.name}
@@ -260,22 +259,22 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
               <ContextMenuContent>
                 <ContextMenuGroup>
                   <ContextMenuItem onClick={() => navigateToFolder(item.path)}>
-                    <FolderOpenIcon />
+                    <FolderOpen />
                     {t("space.open")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => openInNewTab(item.path)}>
-                    <TabsIcon />
+                    <PanelsTopLeft />
                     {t("space.openInNewTab")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => void copyPath(item.path)}>
-                    <ClipboardTextIcon />
+                    <ClipboardList />
                     {t("space.copyPath")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
                 <ContextMenuSeparator />
                 <ContextMenuGroup>
                   <ContextMenuItem onClick={() => void removeSpaceItem(space.id, item.path)}>
-                    <XIcon />
+                    <X />
                     {t("space.remove")}
                   </ContextMenuItem>
                 </ContextMenuGroup>

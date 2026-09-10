@@ -6,7 +6,7 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { CanvasAddon } from "@xterm/addon-canvas";
-import { ArrowCounterClockwiseIcon, XIcon } from "@phosphor-icons/react";
+import { RotateCcw, X } from "lucide-react";
 
 import { activePaneNavigatorAtom, activeTabIdAtom } from "@/features/explorer/tabs";
 import { appSettingsAtom } from "@/features/settings/settings-atoms";
@@ -318,7 +318,7 @@ export function TerminalPanel() {
             title={t("panel.restart.label")}
             type="button"
           >
-            <ArrowCounterClockwiseIcon className="size-3.5" />
+            <RotateCcw className="size-3.5" />
           </button>
           <button
             aria-label={t("panel.close.label")}
@@ -327,7 +327,7 @@ export function TerminalPanel() {
             title={t("panel.close.title")}
             type="button"
           >
-            <XIcon className="size-3.5" />
+            <X className="size-3.5" />
           </button>
         </div>
       </header>
@@ -341,7 +341,7 @@ export function TerminalPanel() {
               onClick={restart}
               type="button"
             >
-              <ArrowCounterClockwiseIcon className="size-3.5" />
+              <RotateCcw className="size-3.5" />
               {t("panel.restart.action")}
             </button>
           </div>
