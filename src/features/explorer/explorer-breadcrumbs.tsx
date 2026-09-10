@@ -27,9 +27,46 @@ interface ExplorerBreadcrumbsProps {
   onNavigate: (breadcrumb: BreadcrumbData) => void;
 }
 
+/**
+ * 折叠策略：首项始终保留，省略号占一个“单元”，余下空间从末项往前尽量多塞。
+ * 返回需要折叠的索引范围 [start, end)，全都能放下时返回 null。
+ *
+ * @param unit 一个面包屑条目之间的固定开销（分隔符宽 + flex 间距）。
+ * @param ellipsisWidth 省略号按钮自身的宽度，调用方需额外加上一个 unit。
+ */
+function computeHiddenRange(
+  widths: readonly number[],
+  availableWidth: number,
+  unit: number,
+  ellipsisWidth: number,
+): [number, number] | null {
+  const count = widths.length;
+  if (count <= 2) {
+    return null;
+  }
+
+  const totalWidth = widths.reduce((sum, width) => sum + width, 0) + unit * (count - 1);
+
+  // 1px 容差吸收子像素舍入，避免恰好卡在边界时反复折叠/展开
+  if (totalWidth <= availableWidth + 1) {
+    return null;
+  }
+
+  let usedWidth = widths[0] + unit + ellipsisWidth;
+  let start = count - 1;
+  while (start > 1 && usedWidth + widths[start - 1] + unit <= availableWidth) {
+    usedWidth += widths[start - 1] + unit;
+    start -= 1;
+  }
+
+  return start <= 1 ? null : [1, start];
+}
+
 export function ExplorerBreadcrumbs({ breadcrumbs, onNavigate }: ExplorerBreadcrumbsProps) {
   const { t } = useTranslation("explorer");
   const containerRef = useRef<HTMLElement | null>(null);
+  const listRef = useRef<HTMLOListElement | null>(null);
+  const measureRef = useRef<HTMLDivElement | null>(null);
   const itemRefs = useRef<(HTMLLIElement | null)[]>([]);
   const separatorRef = useRef<HTMLLIElement | null>(null);
   const ellipsisTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -38,49 +75,51 @@ export function ExplorerBreadcrumbs({ breadcrumbs, onNavigate }: ExplorerBreadcr
 
   useLayoutEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    const list = listRef.current;
+    if (!container || !list) return;
+
+    let disposed = false;
+    // 仅在折叠区间真正变化时写状态：ResizeObserver 每帧都会回调，无谓的
+    // setState 会让拖拽缩放期间的每一帧都重渲染。
+    const setRange = (next: [number, number] | null) => {
+      if (disposed) return;
+      setHiddenRange((previous) => {
+        if (previous === next) return previous;
+        if (previous && next && previous[0] === next[0] && previous[1] === next[1]) {
+          return previous;
+        }
+        return next;
+      });
+    };
 
     const compute = () => {
-      const list = container.querySelector<HTMLElement>("[data-slot='breadcrumb-list']");
-      if (!list) return;
-
       const count = breadcrumbs.length;
       const widths = itemRefs.current
         .slice(0, count)
         .map((element) => element?.getBoundingClientRect().width ?? 0);
       const gap = parseFloat(getComputedStyle(list).columnGap) || 0;
-      const separatorWidth = separatorRef.current?.getBoundingClientRect().width ?? 0;
+      const unit = (separatorRef.current?.getBoundingClientRect().width ?? 0) + gap;
+      const ellipsisWidth = (ellipsisTriggerRef.current?.getBoundingClientRect().width ?? 0) + unit;
 
-      const totalWidth =
-        widths.reduce((sum, width) => sum + width, 0) +
-        (separatorWidth + gap) * Math.max(count - 1, 0);
-
-      if (count <= 2 || totalWidth <= list.clientWidth + 1) {
-        setHiddenRange(null);
-        return;
-      }
-
-      const ellipsisWidth =
-        (ellipsisTriggerRef.current?.getBoundingClientRect().width ?? 0) + separatorWidth + gap;
-
-      // 始终保留首项与尽量多的末尾项，中间折叠为省略号
-      let usedWidth = widths[0] + separatorWidth + gap + ellipsisWidth;
-      let start = count - 1;
-      while (
-        start > 1 &&
-        usedWidth + widths[start - 1] + separatorWidth + gap <= list.clientWidth
-      ) {
-        usedWidth += widths[start - 1] + separatorWidth + gap;
-        start -= 1;
-      }
-
-      setHiddenRange(start <= 1 ? null : [1, start]);
+      setRange(computeHiddenRange(widths, list.clientWidth, unit, ellipsisWidth));
     };
 
     compute();
+    // 导航条宽度（跟随窗口）和隐藏测量层的宽度（跟随字体/目录名）任一变化都要
+    // 重算，否则展开方向没有触发点。
     const observer = new ResizeObserver(compute);
     observer.observe(container);
-    return () => observer.disconnect();
+    if (measureRef.current) {
+      observer.observe(measureRef.current);
+    }
+    if (document.fonts) {
+      void document.fonts.ready.then(compute);
+    }
+
+    return () => {
+      disposed = true;
+      observer.disconnect();
+    };
   }, [breadcrumbs]);
 
   const visible = hiddenRange
@@ -89,8 +128,10 @@ export function ExplorerBreadcrumbs({ breadcrumbs, onNavigate }: ExplorerBreadcr
   const collapsed = hiddenRange ? breadcrumbs.slice(hiddenRange[0], hiddenRange[1]) : undefined;
 
   return (
-    <Breadcrumb ref={containerRef} className="min-w-0">
-      <BreadcrumbList className="flex-nowrap">
+    // flex-1 让导航条宽度恒等于可用宽度；否则它的宽度由内容决定，折叠后内容
+    // 变窄 → 宽度变小 → 计算认为放不下 → 永远回不到展开态。
+    <Breadcrumb ref={containerRef} className="relative min-w-0 flex-1">
+      <BreadcrumbList ref={listRef} className="flex-nowrap">
         {visible.map((breadcrumb, index) => {
           const nodes: ReactNode[] = [];
           if (index > 0) nodes.push(<BreadcrumbSeparator key="sep" />);
@@ -148,42 +189,48 @@ export function ExplorerBreadcrumbs({ breadcrumbs, onNavigate }: ExplorerBreadcr
         })}
       </BreadcrumbList>
 
-      {/* 隐藏测量层：按完整路径渲染，用于测量各项实际宽度 */}
-      <div aria-hidden className="invisible absolute flex-nowrap">
-        <BreadcrumbList className="flex-nowrap">
-          {breadcrumbs.map((breadcrumb, index) => (
-            <Fragment key={breadcrumb.path}>
-              {index > 0 && (
-                <BreadcrumbSeparator
+      {/* 隐藏测量层：按完整路径渲染，用于测量各项自身的（不被压缩的）宽度。
+         外层裁到导航条宽度，超长路径不会撑出横向滚动。 */}
+      <div
+        aria-hidden
+        className="pointer-events-none invisible absolute inset-x-0 top-0 h-0 overflow-hidden"
+      >
+        <div className="flex w-max flex-nowrap" ref={measureRef}>
+          <BreadcrumbList className="flex-nowrap">
+            {breadcrumbs.map((breadcrumb, index) => (
+              <Fragment key={breadcrumb.path}>
+                {index > 0 && (
+                  <BreadcrumbSeparator
+                    ref={(element) => {
+                      separatorRef.current = element;
+                    }}
+                  />
+                )}
+                <BreadcrumbItem
+                  className="min-w-0"
                   ref={(element) => {
-                    separatorRef.current = element;
+                    itemRefs.current[index] = element;
                   }}
-                />
-              )}
-              <BreadcrumbItem
-                className="min-w-0"
-                ref={(element) => {
-                  itemRefs.current[index] = element;
-                }}
-              >
-                <CrumbContent
-                  breadcrumb={breadcrumb}
-                  isCurrent={breadcrumb.path === breadcrumbs.at(-1)?.path}
-                  plain
-                />
-              </BreadcrumbItem>
-            </Fragment>
-          ))}
-        </BreadcrumbList>
-        <Button
-          ref={ellipsisTriggerRef}
-          size="icon-sm"
-          tabIndex={-1}
-          type="button"
-          variant="ghost"
-        >
-          <BreadcrumbEllipsis />
-        </Button>
+                >
+                  <CrumbContent
+                    breadcrumb={breadcrumb}
+                    isCurrent={breadcrumb.path === breadcrumbs.at(-1)?.path}
+                    plain
+                  />
+                </BreadcrumbItem>
+              </Fragment>
+            ))}
+          </BreadcrumbList>
+          <Button
+            ref={ellipsisTriggerRef}
+            size="icon-sm"
+            tabIndex={-1}
+            type="button"
+            variant="ghost"
+          >
+            <BreadcrumbEllipsis />
+          </Button>
+        </div>
       </div>
     </Breadcrumb>
   );
