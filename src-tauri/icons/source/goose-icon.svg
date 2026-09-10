@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#15553f"/>
+      <stop offset="0.55" stop-color="#1f7a54"/>
+      <stop offset="1" stop-color="#2ea06b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- 圆角底（macOS squircle 近似，四角留透明） -->
+  <rect x="0" y="0" width="1024" height="1024" rx="186" fill="url(#bg)"/>
+  <!-- 顶部柔光 -->
+  <ellipse cx="340" cy="240" rx="430" ry="330" fill="url(#glow)"/>
+
+  <!-- 大鹅整体（左移 55 / 上移 12 使视觉居中） -->
+  <g transform="translate(-55,-12)">
+  <!-- 地面投影 -->
+  <ellipse cx="640" cy="798" rx="240" ry="24" fill="#0d3a2b" opacity="0.32"/>
+
+  <!-- 身体（梨形：尾尖->背脊->前胸->下腹->后臀） -->
+  <path d="M 860 570
+           C 800 490, 680 475, 590 500
+           C 490 520, 430 560, 405 625
+           C 390 680, 420 745, 505 775
+           C 570 798, 672 800, 742 770
+           C 810 732, 845 670, 860 570 Z"
+        fill="#f8f6ef"/>
+
+  <!-- 颈部（S 形长颈） -->
+  <path d="M 455 555
+           C 425 485, 392 418, 378 370
+           C 368 336, 368 306, 380 290"
+        stroke="#f8f6ef" stroke-width="60" stroke-linecap="round" fill="none"/>
+
+  <!-- 头部 -->
+  <circle cx="360" cy="345" r="68" fill="#f8f6ef"/>
+
+  <!-- 喙（橙，横长鹅喙） -->
+  <path d="M 318 340
+           C 276 334, 236 344, 206 358
+           Q 188 366 196 374
+           C 232 382, 274 385, 318 388
+           Q 326 360 318 340 Z" fill="#f0943f"/>
+
+  <!-- 额包（大白鹅标志性额瘤，位于喙根上方额头） -->
+  <ellipse cx="316" cy="314" rx="27" ry="21" fill="#f0943f"/>
+
+  <!-- 眼睛 -->
+  <ellipse cx="352" cy="334" rx="8" ry="10" fill="#1e2d26"/>
+
+  <!-- 腹部暖色柔影（立体感） -->
+  <ellipse cx="640" cy="776" rx="178" ry="34" fill="#e6dfcc" opacity="0.5"/>
+
+  <!-- 翅膀折线 -->
+  <path d="M 540 610 C 610 590, 700 606, 770 660" stroke="#e2dbc6" stroke-width="26" stroke-linecap="round" fill="none" opacity="0.85"/>
+  </g>
+</svg>
