@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { FolderIcon } from "@phosphor-icons/react";
 
 import { ExplorerBreadcrumbs } from "./explorer-breadcrumbs";
 import { cn } from "@/lib/utils";
@@ -63,10 +62,6 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
         )}
         onSubmit={(event) => void submitPath(event)}
       >
-        <FolderIcon
-          className="pointer-events-none mr-2 size-3.5 shrink-0 text-folder"
-          weight="fill"
-        />
         <input
           ref={inputRef}
           aria-invalid={isInvalid}
@@ -99,10 +94,6 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
       onClick={startEditing}
       title={t("pathBar.clickToEdit")}
     >
-      <FolderIcon
-        className="pointer-events-none mr-2 size-3.5 shrink-0 text-folder"
-        weight="fill"
-      />
       <ExplorerBreadcrumbs breadcrumbs={directory.breadcrumbs} onNavigate={onNavigate} />
     </div>
   );
