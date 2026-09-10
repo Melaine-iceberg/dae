@@ -222,38 +222,39 @@
 }
 
 .dark {
-  /* Graphite — dark, cool ink. The canvas sits a step BELOW the islands:
-     elevated surfaces are always lighter, never darker, so panels float
-     instead of sinking into the window. Popovers step one level higher
-     still. Every tone carries a whisper of blue so dark surfaces read as
-     ink rather than charcoal. Islands add a 1px inset top highlight (applied
-     at the component level) so panels visibly lift off the canvas. */
+  /* Graphite — dark, neutral ink. Surfaces are pure gray with no blue cast;
+     the only saturated note left is the primary accent itself. The canvas
+     sits a step BELOW the islands: elevated surfaces are always lighter,
+     never darker, so panels float instead of sinking into the window.
+     Popovers step one level higher still. Islands add a 1px inset top
+     highlight (applied at the component level) so panels visibly lift off
+     the canvas. */
   --shadow-color: #000000;
-  --background: #101218; /* canvas behind the islands */
-  --foreground: #dfe1e5;
-  --card: #1a1d26; /* island surface */
-  --card-foreground: #dfe1e5;
-  --popover: #222634;
-  --popover-foreground: #dfe1e5;
+  --background: #131315; /* canvas behind the islands */
+  --foreground: #e3e3e6;
+  --card: #1c1c1f; /* island surface */
+  --card-foreground: #e3e3e6;
+  --popover: #252528;
+  --popover-foreground: #e3e3e6;
   --primary: #5b86f5;
   --primary-2: #7ba0ff; /* gradient end for indicators, capacity bars, CTAs */
   --primary-foreground: #ffffff;
-  --primary-container: #274a80;
-  --on-primary-container: #d8e6ff;
-  --secondary: #2a2d37;
-  --secondary-foreground: #dfe1e5;
-  --secondary-container: #2a2d37;
-  --on-secondary-container: #dfe1e5;
-  --tertiary: #9da0a8;
-  --tertiary-container: #2a2d37;
-  --on-tertiary-container: #dfe1e5;
-  --muted: #21242f;
-  --muted-foreground: #9da0a8;
-  --accent: #262a37;
-  --accent-foreground: #e6e8eb;
-  --error-container: #5c2321;
+  --primary-container: #333a47;
+  --on-primary-container: #dbe4f7;
+  --secondary: #2a2a2e;
+  --secondary-foreground: #e3e3e6;
+  --secondary-container: #2a2a2e;
+  --on-secondary-container: #e3e3e6;
+  --tertiary: #a0a0a6;
+  --tertiary-container: #2a2a2e;
+  --on-tertiary-container: #e3e3e6;
+  --muted: #212124;
+  --muted-foreground: #a0a0a6;
+  --accent: #27272b;
+  --accent-foreground: #ededf0;
+  --error-container: #5a2422;
   --on-error-container: #f5c6c4;
-  --selection: #283454; /* primary at ~20% over the island surface */
+  --selection: #2f3239; /* neutral slate fill — the blue ring carries the accent */
   --folder: #8fadd9;
   --folder-1: #6f93c9; /* folder tile gradient start */
   --folder-2: #5577b3; /* folder tile gradient end */
@@ -266,27 +267,27 @@
   --icon-audio: #c8a2ff;
   --icon-archive: #dcb26a;
   --icon-code: #7fc5ff;
-  --icon-config: #9da1b8;
-  --icon-exec: #adb4c8;
+  --icon-config: #a2a2ac;
+  --icon-exec: #b2b2bb;
   --icon-lock: #ff9db4;
   --icon-font: #b5a6ff;
   --destructive: #e55765;
-  --border: #2b2f3d;
-  --input: #434754;
+  --border: #2e2e32;
+  --input: #46464b;
   --ring: #5b86f5;
   --chart-1: #5b86f5;
-  --chart-2: #9da0a8;
+  --chart-2: #a0a0a6;
   --chart-3: #6fd69d;
   --chart-4: #e8a33d;
-  --chart-5: #dfe1e5;
+  --chart-5: #e3e3e6;
   --radius: 8px;
-  --sidebar: #1a1d26;
-  --sidebar-foreground: #dfe1e5;
+  --sidebar: #1c1c1f;
+  --sidebar-foreground: #e3e3e6;
   --sidebar-primary: #5b86f5;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #262a37;
-  --sidebar-accent-foreground: #e6e8eb;
-  --sidebar-border: #2b2f3d;
+  --sidebar-accent: #27272b;
+  --sidebar-accent-foreground: #ededf0;
+  --sidebar-border: #2e2e32;
   --sidebar-ring: #5b86f5;
 }
 
@@ -509,27 +510,69 @@
   --th-type: #ffa657;
   --th-variable: #ffa657;
 }
-:is(.code-preview, .markdown-preview) .th-token { color: var(--th-token); }
-:is(.code-preview, .markdown-preview) .th-keyword { color: var(--th-keyword); }
-:is(.code-preview, .markdown-preview) .th-string { color: var(--th-string); }
-:is(.code-preview, .markdown-preview) .th-comment { color: var(--th-comment); }
-:is(.code-preview, .markdown-preview) .th-function { color: var(--th-function); }
-:is(.code-preview, .markdown-preview) .th-type { color: var(--th-type); }
-:is(.code-preview, .markdown-preview) .th-property { color: var(--th-property); }
-:is(.code-preview, .markdown-preview) .th-tag { color: var(--th-tag); }
-:is(.code-preview, .markdown-preview) .th-attr { color: var(--th-attr); }
-:is(.code-preview, .markdown-preview) .th-literal { color: var(--th-literal); }
-:is(.code-preview, .markdown-preview) .th-number { color: var(--th-number); }
-:is(.code-preview, .markdown-preview) .th-variable { color: var(--th-variable); }
-:is(.code-preview, .markdown-preview) .th-operator { color: var(--th-operator); }
-:is(.code-preview, .markdown-preview) .th-inserted { color: var(--th-inserted); }
-:is(.code-preview, .markdown-preview) .th-deleted { color: var(--th-deleted); }
-:is(.code-preview, .markdown-preview) .th-meta { color: var(--th-meta); }
-:is(.code-preview, .markdown-preview) .th-heading { color: var(--th-heading); }
-:is(.code-preview, .markdown-preview) .th-link { color: var(--th-link); }
-:is(.code-preview, .markdown-preview) .th-code-inline { color: var(--th-code-inline); }
-:is(.code-preview, .markdown-preview) .th-selector { color: var(--th-selector); }
-:is(.code-preview, .markdown-preview) .th-command { color: var(--th-command); }
+:is(.code-preview, .markdown-preview) .th-token {
+  color: var(--th-token);
+}
+:is(.code-preview, .markdown-preview) .th-keyword {
+  color: var(--th-keyword);
+}
+:is(.code-preview, .markdown-preview) .th-string {
+  color: var(--th-string);
+}
+:is(.code-preview, .markdown-preview) .th-comment {
+  color: var(--th-comment);
+}
+:is(.code-preview, .markdown-preview) .th-function {
+  color: var(--th-function);
+}
+:is(.code-preview, .markdown-preview) .th-type {
+  color: var(--th-type);
+}
+:is(.code-preview, .markdown-preview) .th-property {
+  color: var(--th-property);
+}
+:is(.code-preview, .markdown-preview) .th-tag {
+  color: var(--th-tag);
+}
+:is(.code-preview, .markdown-preview) .th-attr {
+  color: var(--th-attr);
+}
+:is(.code-preview, .markdown-preview) .th-literal {
+  color: var(--th-literal);
+}
+:is(.code-preview, .markdown-preview) .th-number {
+  color: var(--th-number);
+}
+:is(.code-preview, .markdown-preview) .th-variable {
+  color: var(--th-variable);
+}
+:is(.code-preview, .markdown-preview) .th-operator {
+  color: var(--th-operator);
+}
+:is(.code-preview, .markdown-preview) .th-inserted {
+  color: var(--th-inserted);
+}
+:is(.code-preview, .markdown-preview) .th-deleted {
+  color: var(--th-deleted);
+}
+:is(.code-preview, .markdown-preview) .th-meta {
+  color: var(--th-meta);
+}
+:is(.code-preview, .markdown-preview) .th-heading {
+  color: var(--th-heading);
+}
+:is(.code-preview, .markdown-preview) .th-link {
+  color: var(--th-link);
+}
+:is(.code-preview, .markdown-preview) .th-code-inline {
+  color: var(--th-code-inline);
+}
+:is(.code-preview, .markdown-preview) .th-selector {
+  color: var(--th-selector);
+}
+:is(.code-preview, .markdown-preview) .th-command {
+  color: var(--th-command);
+}
 /* Line decorations — fence `{2,4-6}` highlight meta and `[!code ++]`/
    `[!code --]` diff notation — wrap each line in a `th-line` span.
    inline-block + min-width lets the tinted background span the full code

@@ -45,16 +45,15 @@ function currentWorkingDirectory(): string | undefined {
 /** Maps the app's semantic color tokens onto the xterm color scheme. */
 function readTerminalTheme(ansiOverride: AnsiPalette | null): ITheme {
   const style = getComputedStyle(document.documentElement);
-  const token = (name: string, fallback: string) =>
-    style.getPropertyValue(name).trim() || fallback;
+  const token = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
   const dark = document.documentElement.classList.contains("dark");
   const ansi = resolveAnsiPalette(ansiOverride, dark);
   return {
-    background: token("--card", "#1a1d26"),
-    foreground: token("--foreground", "#dfe1e5"),
-    cursor: token("--foreground", "#dfe1e5"),
-    cursorAccent: token("--card", "#1a1d26"),
-    selectionBackground: token("--accent", "#262a37"),
+    background: token("--card", "#1c1c1f"),
+    foreground: token("--foreground", "#e3e3e6"),
+    cursor: token("--foreground", "#e3e3e6"),
+    cursorAccent: token("--card", "#1c1c1f"),
+    selectionBackground: token("--accent", "#27272b"),
     black: ansi[0],
     red: ansi[1],
     green: ansi[2],
