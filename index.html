@@ -9,8 +9,16 @@
          背景跟随 .dark 类而不是系统配色：用户可在应用内显式选择浅色/深色，
          且该未分层样式会压过 Tailwind @layer base 里 body 的 bg-background。 -->
     <style>
-      html, body { margin: 0; height: 100%; background: #eceff5; }
-      html.dark, html.dark body { background: #101218; }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #e0e4ec;
+      }
+      html.dark,
+      html.dark body {
+        background: #07080c;
+      }
       /* Minimal loading indicator visible only before React mounts. */
       #splash {
         display: flex;
@@ -20,18 +28,22 @@
       }
       #splash::after {
         content: "";
-        width: 24px;
-        height: 24px;
-        border: 2.5px solid #c4c8ce;
-        border-top-color: #3d74f5;
+        width: 22px;
+        height: 22px;
+        border: 2px solid #d1d7e2;
+        border-top-color: #2a55ce;
         border-radius: 50%;
-        animation: spin 0.7s linear infinite;
+        animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
       }
       html.dark #splash::after {
-        border-color: #434754;
-        border-top-color: #5b86f5;
+        border-color: #2e3540;
+        border-top-color: #7498ff;
       }
-      @keyframes spin { to { transform: rotate(360deg); } }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
     </style>
     <script>
       try {

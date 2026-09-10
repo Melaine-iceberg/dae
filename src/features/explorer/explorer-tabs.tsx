@@ -106,7 +106,7 @@ export function ExplorerTabs() {
   return (
     <div className="flex h-full flex-col">
       <header
-        className="flex h-10 shrink-0 items-stretch bg-background"
+        className="flex h-10 shrink-0 items-stretch border-b border-border/50 bg-background"
         data-tauri-drag-region="deep"
       >
         <StripScrollButton

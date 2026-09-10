@@ -2,7 +2,7 @@
  * Curated 16-color ANSI palettes for the integrated terminal.
  *
  * xterm's built-in ANSI colors are saturated primaries designed for a pure
- * black background; on the app's graphite surfaces (`--card` is `#1c1c1f` dark,
+ * black background; on the app's graphite surfaces (`--card` is `#16191f` dark,
  * `#ffffff` light) they are harsh and, in the light theme, several are outright
  * unreadable. These palettes are sampled from the house color tokens in
  * `App.css` and tuned per theme so `ls --color`, git diffs and friends are
@@ -19,43 +19,43 @@
 /** The 16 ANSI slots in canonical order. */
 export type AnsiPalette = readonly string[];
 
-/** Graphite dark, tuned to `--card: #1c1c1f` / `--foreground: #e3e3e6`. */
+/** Graphite dark, tuned to `--card: #16191f` / `--foreground: #e7e9ee`. */
 export const DARK_ANSI: AnsiPalette = Object.freeze([
-  "#333338", // black — the border tone, never pure #000 (too harsh on graphite)
-  "#e55765", // red — --destructive
-  "#6fd69d", // green — --icon-sheet
+  "#2e3540", // black — the border tone, never pure #000 (too harsh on graphite)
+  "#ff6b72", // red — --destructive
+  "#63d398", // green — --icon-sheet
   "#e8a33d", // yellow — warm amber (--chart-4)
-  "#6aa5f5", // blue — lightened --primary for contrast on the dark island
+  "#7498ff", // blue — --primary, already light enough for the dark island
   "#c792ea", // magenta
-  "#66d2da", // cyan — --icon-image
-  "#e3e3e6", // white — --foreground
-  "#a0a0a6", // brightBlack — --muted-foreground (dim text stays legible)
-  "#ff8f8f", // brightRed — --icon-pdf
+  "#5acfd9", // cyan — --icon-image
+  "#e7e9ee", // white — --foreground
+  "#a2a9b6", // brightBlack — --muted-foreground (dim text stays legible)
+  "#ff8a8a", // brightRed — --icon-pdf
   "#8ce0b3", // brightGreen
   "#ffc868", // brightYellow — warm amber pastel
-  "#93b6ff", // brightBlue — --icon-doc
-  "#f295d1", // brightMagenta — --icon-video
+  "#8fb2ff", // brightBlue — --icon-doc
+  "#f08fce", // brightMagenta — --icon-video
   "#8ce0e6", // brightCyan
   "#f2f3f5", // brightWhite
 ]);
 
-/** Graphite light, tuned to `--card: #ffffff` / `--foreground: #1f2328`. */
+/** Graphite light, tuned to `--card: #ffffff` / `--foreground: #171a21`. */
 export const LIGHT_ANSI: AnsiPalette = Object.freeze([
-  "#24292f", // black — soft near-black, not pure #000
-  "#d5373a", // red — --destructive
-  "#31a566", // green — --icon-sheet
-  "#a97c2f", // yellow — darkened amber so it reads on white
-  "#3d74f5", // blue — --primary
-  "#d45fa8", // magenta — --icon-video
-  "#13a3ad", // cyan — --icon-image
-  "#c4c8ce", // white — light gray (--input)
-  "#6c707e", // brightBlack — --muted-foreground (dim text)
-  "#df4a52", // brightRed
-  "#4caf7d", // brightGreen
-  "#c08a2e", // brightYellow
-  "#5b93f5", // brightBlue
-  "#d96fb4", // brightMagenta
-  "#2bb3bd", // brightCyan
+  "#171a21", // black — soft near-black, not pure #000
+  "#b93030", // red — --destructive
+  "#17804a", // green — --icon-sheet
+  "#8a6318", // yellow — darkened amber so it reads on white
+  "#2a55ce", // blue — --primary
+  "#b8438a", // magenta — --icon-video
+  "#0d848c", // cyan — --icon-image
+  "#bdc4d1", // white — light gray (--input)
+  "#4e5665", // brightBlack — --muted-foreground (dim text)
+  "#c13434", // brightRed — --icon-pdf
+  "#1f9a5c", // brightGreen
+  "#a97c2f", // brightYellow
+  "#3f68c8", // brightBlue
+  "#cb5fa4", // brightMagenta
+  "#149aa6", // brightCyan
   "#f5f6f8", // brightWhite
 ]);
 

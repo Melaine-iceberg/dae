@@ -1,11 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  CircleNotchIcon,
-  MagnifyingGlassIcon,
-  TextAaIcon,
-  XIcon,
-} from "@phosphor-icons/react";
+import { CircleNotchIcon, MagnifyingGlassIcon, TextAaIcon, XIcon } from "@phosphor-icons/react";
 
 import {
   InputGroup,
@@ -96,7 +91,7 @@ export function useDirectorySearch(
         })
         .finally(() => {
           if (requestVersion === requestVersionRef.current) {
-            setIsSearching(false);b
+            setIsSearching(false);
           }
         });
     }, SEARCH_DEBOUNCE_MS);
@@ -193,9 +188,7 @@ export function DirectorySearch({
       <InputGroupAddon align="inline-start">
         <InputGroupButton
           aria-label={
-            isContentMode
-              ? t("directorySearch.switchToName")
-              : t("directorySearch.switchToContent")
+            isContentMode ? t("directorySearch.switchToName") : t("directorySearch.switchToContent")
           }
           onClick={() => onModeChange(isContentMode ? "name" : "content")}
           size="icon-xs"
