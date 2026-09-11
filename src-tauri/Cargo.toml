@@ -15,6 +15,20 @@ default-run = "dae"
 name = "dae_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Regenerates `src/bindings.ts` for `beforeBuildCommand`; debug builds export the
+# same bindings from `lib.rs::run`. `tauri build` compiles the crate with
+# `cargo build --bins`, which would otherwise turn this helper into a second,
+# shipped release binary, so it stays behind a feature that is off by default.
+[[bin]]
+name = "export_bindings"
+path = "src/bin/export_bindings.rs"
+required-features = ["export-bindings"]
+
+[features]
+# Enables the dev-only `export_bindings` helper above:
+# `cargo run --features export-bindings --bin export_bindings`.
+export-bindings = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

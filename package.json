@@ -12,7 +12,7 @@
     "icons:icon": "bun scripts/render-icon.mjs && bun tauri icon src-tauri/icons/source/goose-master.png",
     "test:rust": "src-tauri\\target\\bin\\cargo-nextest.exe nextest run --manifest-path src-tauri/Cargo.toml",
     "test:rust:setup": "cargo binstall -y cargo-nextest --install-path src-tauri/target/bin",
-    "bindings:export": "cargo run --manifest-path src-tauri/Cargo.toml --bin export_bindings"
+    "bindings:export": "cargo run --manifest-path src-tauri/Cargo.toml --features export-bindings --bin export_bindings"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
