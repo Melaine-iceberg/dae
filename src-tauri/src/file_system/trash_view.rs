@@ -20,7 +20,12 @@ use specta::Type;
 /// API (Windows and freedesktop Trash environments).
 #[cfg(any(
     target_os = "windows",
-    all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
 ))]
 use super::types::path_to_string;
 
@@ -50,7 +55,12 @@ const TRASH_RESTORE_NO_ORIGIN: &str = "fs.trash_restore_no_origin";
 
 #[cfg(any(
     target_os = "windows",
-    all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
 ))]
 impl TrashEntry {
     fn from_item(item: &trash::TrashItem) -> Self {
@@ -78,7 +88,12 @@ impl TrashEntry {
 
 #[cfg(any(
     target_os = "windows",
-    all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
 ))]
 mod browse {
     use super::super::error::FileSystemError;
@@ -99,8 +114,7 @@ mod browse {
     pub async fn list_trash() -> Result<Vec<TrashEntry>, FileSystemError> {
         tauri::async_runtime::spawn_blocking(|| {
             let items = trash::os_limited::list().map_err(trash_error)?;
-            let mut entries: Vec<TrashEntry> =
-                items.iter().map(TrashEntry::from_item).collect();
+            let mut entries: Vec<TrashEntry> = items.iter().map(TrashEntry::from_item).collect();
             entries.sort_by_key(|entry| std::cmp::Reverse(entry.time_deleted));
             Ok(entries)
         })
@@ -232,7 +246,10 @@ mod browse {
     fn take_trash_items(ids: &[String]) -> Result<Vec<trash::TrashItem>, FileSystemError> {
         let wanted: Vec<OsString> = ids.iter().map(OsString::from).collect();
         let items = trash::os_limited::list().map_err(trash_error)?;
-        Ok(items.into_iter().filter(|item| wanted.contains(&item.id)).collect())
+        Ok(items
+            .into_iter()
+            .filter(|item| wanted.contains(&item.id))
+            .collect())
     }
 
     fn trash_error(error: trash::Error) -> FileSystemError {
@@ -242,7 +259,12 @@ mod browse {
 
 #[cfg(any(
     target_os = "windows",
-    all(unix, not(target_os = "macos"), not(target_os = "ios"), not(target_os = "android"))
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
 ))]
 pub use browse::*;
 
@@ -255,7 +277,8 @@ pub use browse::*;
 mod macos_view {
     use super::super::error::FileSystemError;
     use super::super::progress::{
-        FileOperationKind, FileOperationProgressReporter, emit_preparing,
+        FileOperationKind, FileOperationProgressReporter, FileOperationProgressReporterTrait,
+        emit_preparing,
     };
     use super::super::types::path_to_string;
     use super::TrashEntry;
@@ -270,8 +293,10 @@ mod macos_view {
     #[specta::specta]
     pub async fn list_trash() -> Result<Vec<TrashEntry>, FileSystemError> {
         tauri::async_runtime::spawn_blocking(|| {
-            let mut entries: Vec<TrashEntry> =
-                macos_trash::list_entries()?.iter().map(trash_entry).collect();
+            let mut entries: Vec<TrashEntry> = macos_trash::list_entries()?
+                .iter()
+                .map(trash_entry)
+                .collect();
             entries.sort_by_key(|entry| Reverse(entry.time_deleted));
             Ok(entries)
         })
