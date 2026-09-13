@@ -11,5 +11,12 @@
       "title": "关闭面板 (Ctrl+`)"
     },
     "sessionEnded": "终端会话已结束（退出代码 {{code}}）"
+  },
+  "menu": {
+    "copy": "复制",
+    "paste": "粘贴",
+    "selectAll": "全选",
+    "clear": "清屏",
+    "restart": "重启终端"
   }
 }

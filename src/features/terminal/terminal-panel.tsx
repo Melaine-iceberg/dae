@@ -2,16 +2,27 @@ import { useEffect, useRef, useState } from "react";
 import { getDefaultStore, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { CanvasAddon } from "@xterm/addon-canvas";
-import { RotateCcw, X } from "lucide-react";
+import { ClipboardPaste, Copy, Eraser, RotateCcw, TextSelect, X } from "lucide-react";
 
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { activePaneNavigatorAtom, activeTabIdAtom } from "@/features/explorer/tabs";
 import { appSettingsAtom } from "@/features/settings/settings-atoms";
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import { translateBackendMessage } from "@/i18n/errors";
+import { isMacPlatform, MOD_KEY } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import { terminalVisibleAtom } from "./terminal-atoms";
@@ -78,6 +89,35 @@ function readTerminalSettings() {
   return getDefaultStore().get(appSettingsAtom)?.terminal;
 }
 
+/** Focuses the grid now and again on the next frame: a closing context menu
+ *  hands focus back to whatever was focused before it opened (queued as a
+ *  microtask, so it lands after this call) and microtasks always run before
+ *  the next frame. */
+function focusTerminal(terminal: Terminal): void {
+  terminal.focus();
+  requestAnimationFrame(() => {
+    terminal.focus();
+  });
+}
+
+/** Copies the grid's selection; a no-op when nothing is selected. */
+function copySelection(terminal: Terminal): void {
+  const text = terminal.getSelection();
+  if (text) void writeText(text);
+  focusTerminal(terminal);
+}
+
+/** Pastes the system clipboard into the shell (bracketed paste aware). */
+async function pasteClipboard(terminal: Terminal): Promise<void> {
+  try {
+    const text = await readText();
+    if (text) terminal.paste(text);
+  } catch (error) {
+    console.warn("Unable to read the clipboard", error);
+  }
+  focusTerminal(terminal);
+}
+
 /** Fit that tolerates mid-layout containers; the next resize tick recovers. */
 function safeFit(fit: FitAddon): void {
   try {
@@ -101,7 +141,11 @@ export function TerminalPanel() {
   const terminalRef = useRef<Terminal | null>(null);
   const sessionIdRef = useRef<number | null>(null);
   const [hasOpened, setHasOpened] = useState(false);
+  const [hasSelection, setHasSelection] = useState(false);
   const [restartCount, setRestartCount] = useState(0);
+  // Why the menu closed, so focus returns to the grid for every dismissal the
+  // user aimed at the terminal (and never after a click somewhere else).
+  const menuCloseReasonRef = useRef<string | null>(null);
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [height, setHeight] = useState(288);
@@ -135,6 +179,23 @@ export function TerminalPanel() {
     terminal.open(container);
     fitRef.current = fit;
     terminalRef.current = terminal;
+    setHasSelection(false);
+
+    // Copy/paste/select-all follow terminal conventions instead of the shell's
+    // control codes: without this Ctrl+Shift+C would send ETX (SIGINT) to the
+    // running process and Cmd+A would select the whole page.
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown" || event.altKey) return true;
+      const modifier = isMacPlatform ? event.metaKey : event.ctrlKey && event.shiftKey;
+      if (!modifier) return true;
+      const key = event.key.toLowerCase();
+      if (key !== "c" && key !== "v" && key !== "a") return true;
+      event.preventDefault();
+      if (key === "c") copySelection(terminal);
+      else if (key === "v") void pasteClipboard(terminal);
+      else terminal.selectAll();
+      return false;
+    });
 
     // xterm 6 ships no built-in renderer; prefer WebGL and fall back to
     // canvas on init failure or GPU context loss.
@@ -215,6 +276,11 @@ export function TerminalPanel() {
     });
     observer.observe(container);
 
+    // The context menu enables Copy only while the grid has a selection.
+    const selectionSubscription = terminal.onSelectionChange(() => {
+      if (!disposed) setHasSelection(terminal.hasSelection());
+    });
+
     const handleThemeChange = () => {
       terminal.options.theme = readTerminalTheme(readTerminalSettings()?.ansiColors ?? null);
     };
@@ -247,6 +313,7 @@ export function TerminalPanel() {
       observer.disconnect();
       window.removeEventListener("app-theme-change", handleThemeChange);
       unsubSettings();
+      selectionSubscription.dispose();
       dataDisposable?.dispose();
       fitRef.current = null;
       terminalRef.current = null;
@@ -275,6 +342,34 @@ export function TerminalPanel() {
     setExitCode(null);
     setRestartCount((count) => count + 1);
   };
+
+  const copyTerminalSelection = () => {
+    const terminal = terminalRef.current;
+    if (terminal) copySelection(terminal);
+  };
+
+  const pasteIntoTerminal = () => {
+    const terminal = terminalRef.current;
+    if (terminal) void pasteClipboard(terminal);
+  };
+
+  const selectAllInTerminal = () => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    terminal.selectAll();
+    focusTerminal(terminal);
+  };
+
+  const clearTerminal = () => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+    terminal.clear();
+    focusTerminal(terminal);
+  };
+
+  // Mod is Cmd on macOS; elsewhere the terminal keeps Ctrl+Shift for itself.
+  const shortcut = (key: string) =>
+    isMacPlatform ? `${MOD_KEY}+${key}` : `${MOD_KEY}+Shift+${key}`;
 
   const startResizeDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -332,7 +427,47 @@ export function TerminalPanel() {
         </div>
       </header>
       <div className="relative min-h-0 flex-1 px-1 pb-1">
-        <div ref={containerRef} className="h-full w-full" />
+        <ContextMenu
+          onOpenChange={(_open, details) => {
+            menuCloseReasonRef.current = details.reason;
+          }}
+          onOpenChangeComplete={(open) => {
+            if (open || menuCloseReasonRef.current === "outside-press") return;
+            terminalRef.current?.focus();
+          }}
+        >
+          <ContextMenuTrigger ref={containerRef} className="h-full w-full" />
+          <ContextMenuContent className="min-w-44">
+            <ContextMenuGroup>
+              <ContextMenuItem disabled={!hasSelection} onClick={copyTerminalSelection}>
+                <Copy />
+                {t("menu.copy")}
+                <ContextMenuShortcut>{shortcut("C")}</ContextMenuShortcut>
+              </ContextMenuItem>
+              <ContextMenuItem onClick={pasteIntoTerminal}>
+                <ClipboardPaste />
+                {t("menu.paste")}
+                <ContextMenuShortcut>{shortcut("V")}</ContextMenuShortcut>
+              </ContextMenuItem>
+              <ContextMenuItem onClick={selectAllInTerminal}>
+                <TextSelect />
+                {t("menu.selectAll")}
+                <ContextMenuShortcut>{shortcut("A")}</ContextMenuShortcut>
+              </ContextMenuItem>
+            </ContextMenuGroup>
+            <ContextMenuSeparator />
+            <ContextMenuGroup>
+              <ContextMenuItem onClick={clearTerminal}>
+                <Eraser />
+                {t("menu.clear")}
+              </ContextMenuItem>
+              <ContextMenuItem onClick={restart}>
+                <RotateCcw />
+                {t("menu.restart")}
+              </ContextMenuItem>
+            </ContextMenuGroup>
+          </ContextMenuContent>
+        </ContextMenu>
         {exitCode != null && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-card text-sm text-muted-foreground">
             <span>{t("panel.sessionEnded", { code: exitCode })}</span>

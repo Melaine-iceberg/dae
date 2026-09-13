@@ -11,5 +11,12 @@
     "maximize": "Maximize",
     "close": "Close"
   },
-  "duplicateSuffix": "copy"
+  "duplicateSuffix": "copy",
+  "textMenu": {
+    "cut": "Cut",
+    "copy": "Copy",
+    "paste": "Paste",
+    "delete": "Delete",
+    "selectAll": "Select all"
+  }
 }

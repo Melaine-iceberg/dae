@@ -216,6 +216,8 @@
     "rename": "Rename",
     "renameBulk": "Bulk rename…",
     "copyPath": "Copy file path",
+    "copyName": "Copy name",
+    "editPath": "Edit path",
     "duplicate": "Duplicate",
     "compressAs": "Compress as…",
     "extractHere": "Extract here",

@@ -11,5 +11,12 @@
       "title": "Close panel (Ctrl+`)"
     },
     "sessionEnded": "The terminal session ended (exit code {{code}})"
+  },
+  "menu": {
+    "copy": "Copy",
+    "paste": "Paste",
+    "selectAll": "Select all",
+    "clear": "Clear",
+    "restart": "Restart terminal"
   }
 }

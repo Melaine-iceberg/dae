@@ -1,29 +1,40 @@
 /**
- * The UI *is* the webview's own document, so a right-click on any pixel that
- * no app menu claims opens the webview's built-in page menu ("Refresh",
- * "Save as", "Print", "Inspect"), which has nothing to do with a file
- * manager. Base UI's `ContextMenuTrigger` suppresses it on the surfaces that
- * own a menu (entries, places, connections), but that leaves every other
- * region: title bar, tab strip, status bar, empty panels, dialogs, panel
- * splitters, the terminal grid.
+ * The UI *is* the webview's own document, so a right-click on any pixel would
+ * otherwise open WebView2's built-in page menu ("Refresh", "Save as", "Print",
+ * "Inspect"), which has nothing to do with a file manager.
  *
- * Two contexts keep the OS menu, because the app has no replacement for it:
- * - Form fields: undo / cut / copy / paste / select all live nowhere else.
- * - Anywhere with a live text selection (e.g. the properties dialog's
- *   copyable values), so "Copy" stays one right-click away.
+ * The guard owns one rule: the webview menu never appears. What replaces it
+ * depends on the surface:
+ * - Surfaces with a richer menu of their own (file entries, places, the
+ *   terminal grid, the breadcrumb bar, connections) use Base UI's
+ *   `ContextMenuTrigger`, which claims the same event and renders that menu.
+ * - Form fields and live text selections are served by the app's own text
+ *   menu — `<TextContextMenu/>` registers itself here.
+ * - Anywhere else the menu is simply suppressed.
  */
-const EDITABLE_SELECTOR = "input, textarea, [contenteditable]:not([contenteditable='false'])";
+type AppContextMenuOpener = (event: MouseEvent) => boolean;
+
+let openAppContextMenu: AppContextMenuOpener | null = null;
+
+/**
+ * Registers the app-rendered replacement for the webview's text menu. Returns
+ * a disposer that only clears the registration it installed. Until the React
+ * tree mounts, the guard just suppresses the webview menu.
+ */
+export function registerAppContextMenu(opener: AppContextMenuOpener): () => void {
+  openAppContextMenu = opener;
+  return () => {
+    if (openAppContextMenu === opener) openAppContextMenu = null;
+  };
+}
 
 export function setupNativeContextMenuGuard(): void {
   document.addEventListener(
     "contextmenu",
     (event) => {
-      const target = event.target;
-      if (target instanceof Element) {
-        if (target.closest(EDITABLE_SELECTOR)) return;
-        if (hasTextSelection(target)) return;
-      }
-
+      // The app menu opens only where it has something to offer; the webview
+      // menu is suppressed either way.
+      openAppContextMenu?.(event);
       event.preventDefault();
     },
     // Capture phase: the guard has to win even for a component that stops
@@ -31,13 +42,4 @@ export function setupNativeContextMenuGuard(): void {
     // never blocks the app's own menus — they open from the same event.
     true,
   );
-}
-
-/** Whether the selection the user would expect "Copy" to act on lives inside `target`. */
-function hasTextSelection(target: Element): boolean {
-  const selection = target.ownerDocument.getSelection();
-  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
-
-  const anchor = selection.anchorNode;
-  return anchor !== null && target.contains(anchor);
 }

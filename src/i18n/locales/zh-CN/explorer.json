@@ -216,6 +216,8 @@
     "rename": "重命名",
     "renameBulk": "批量重命名…",
     "copyPath": "复制文件地址",
+    "copyName": "复制名称",
+    "editPath": "编辑路径",
     "duplicate": "创建副本",
     "compressAs": "压缩为…",
     "extractHere": "解压到此处",

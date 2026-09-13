@@ -15,6 +15,7 @@ function ContextMenuPortal({ ...props }: ContextMenuPrimitive.Portal.Props) {
 function ContextMenuTrigger({ className, ...props }: ContextMenuPrimitive.Trigger.Props) {
   return (
     <ContextMenuPrimitive.Trigger
+      data-app-context-menu=""
       data-slot="context-menu-trigger"
       className={cn("select-none", className)}
       {...props}
@@ -26,17 +27,22 @@ function ContextMenuContent({
   className,
   align = "start",
   alignOffset = 4,
+  anchor,
   side = "right",
   sideOffset = 0,
   ...props
 }: ContextMenuPrimitive.Popup.Props &
-  Pick<ContextMenuPrimitive.Positioner.Props, "align" | "alignOffset" | "side" | "sideOffset">) {
+  Pick<
+    ContextMenuPrimitive.Positioner.Props,
+    "align" | "alignOffset" | "anchor" | "side" | "sideOffset"
+  >) {
   return (
     <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.Positioner
         className="isolate z-50 outline-none"
         align={align}
         alignOffset={alignOffset}
+        anchor={anchor}
         side={side}
         sideOffset={sideOffset}
       >

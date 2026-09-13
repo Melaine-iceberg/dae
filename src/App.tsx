@@ -3,6 +3,7 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { useHotkeys } from "@tanstack/react-hotkeys";
 
 import { commands, events } from "@/bindings";
+import { TextContextMenu } from "@/components/text-context-menu";
 import { useLocaleSync } from "@/i18n/atoms";
 import { ExplorerTabs } from "@/features/explorer/explorer-tabs";
 import { getActivePaneNavigator } from "@/features/explorer/tabs";
@@ -168,6 +169,7 @@ function App() {
   return (
     <>
       <ExplorerTabs />
+      <TextContextMenu />
       {commandBarMounted && (
         <Suspense fallback={null}>
           <CommandBar />
