@@ -243,41 +243,44 @@
 }
 
 .dark {
-  /* Island — dark, cool ink. The canvas drops to near-black so the islands
-     can hold a real three-step ladder (canvas → island → floating) instead
-     of collapsing into one flat slab. Shadows are multiplied up through
-     --shadow-a*: black-on-near-black does nothing at light-mode strengths,
-     so the depth here is carried by the tonal ladder plus each island's
-     1px inset top highlight (applied at the component level). The accent
-     brightens and the fill's label inverts to ink — white on a vivid blue
-     cannot reach AA, ink on it clears 6.9:1. */
+  /* Island — dark, neutral graphite. The canvas drops to near-black so the
+     islands can hold a real three-step ladder (canvas → island → floating)
+     instead of collapsing into one flat slab. Every neutral surface below is
+     hue-free grey (r ≈ g ≈ b) so the window reads as charcoal, never as navy;
+     the accent, selection tint and file-type hues stay saturated blue-family
+     so the UI still has a single, deliberate chroma. Shadows are multiplied
+     up through --shadow-a*: black-on-near-black does nothing at light-mode
+     strengths, so the depth here is carried by the tonal ladder plus each
+     island's 1px inset top highlight (applied at the component level). The
+     accent brightens and the fill's label inverts to ink — white on a vivid
+     blue cannot reach AA, ink on it clears 6.9:1. */
   --shadow-color: #000000;
   --shadow-a1: 36%;
   --shadow-a2: 46%;
   --shadow-a3: 58%;
   --shadow-a4: 70%;
-  --background: #07080c; /* canvas — near-black ink so the islands can float */
-  --foreground: #e7e9ee;
-  --card: #191d25; /* island surface */
-  --card-foreground: #e7e9ee;
-  --popover: #242933; /* floating layer — one clear step above the islands */
-  --popover-foreground: #e7e9ee;
+  --background: #0a0a0b; /* canvas — neutral near-black so the islands can float */
+  --foreground: #e8e8ea;
+  --card: #1a1a1c; /* island surface — hue-free graphite */
+  --card-foreground: #e8e8ea;
+  --popover: #262629; /* floating layer — one clear step above the islands */
+  --popover-foreground: #e8e8ea;
   --primary: #7ea2ff; /* ≈6.8:1 on an island, 4.7:1 even on a selected row */
   --primary-2: #9bb4ff; /* gradient end for indicators, capacity bars, CTAs */
   --primary-foreground: #0a1020; /* ink label on the vivid fill — 6.9:1 */
-  --primary-container: #232b3d;
+  --primary-container: #232b3d; /* accent-tinted surface — deliberately stays blue */
   --on-primary-container: #dce5fb;
-  --secondary: #1e232d;
-  --secondary-foreground: #e7e9ee;
-  --secondary-container: #1e232d;
-  --on-secondary-container: #e7e9ee;
-  --tertiary: #9aa1ae;
-  --tertiary-container: #1e232d;
-  --on-tertiary-container: #e7e9ee;
-  --muted: #13171e; /* inner recessed surface — tracks, header strips, thumbnails */
-  --muted-foreground: #adb4c1; /* 8.1:1 on an island, 5.6:1 on a selected row */
-  --accent: #222836;
-  --accent-foreground: #edeff4;
+  --secondary: #1f1f21;
+  --secondary-foreground: #e8e8ea;
+  --secondary-container: #1f1f21;
+  --on-secondary-container: #e8e8ea;
+  --tertiary: #a0a0a5;
+  --tertiary-container: #1f1f21;
+  --on-tertiary-container: #e8e8ea;
+  --muted: #141415; /* inner recessed surface — tracks, header strips, thumbnails */
+  --muted-foreground: #b0b0b5; /* 8.0:1 on an island, 5.4:1 on a selected row */
+  --accent: #25252a;
+  --accent-foreground: #eeeef0;
   --error-container: #4e2321;
   --on-error-container: #f7cdc9;
   --selection: #26385f; /* accent-tinted: a selected row reads as chosen, not inert */
@@ -293,27 +296,27 @@
   --icon-audio: #c6a2ff;
   --icon-archive: #dbb268;
   --icon-code: #7cc2ff;
-  --icon-config: #a3aab8;
-  --icon-exec: #b3bac6;
+  --icon-config: #a8a8ad;
+  --icon-exec: #b6b6bb;
   --icon-lock: #ff9ab2;
   --icon-font: #b4a6ff;
   --destructive: #ff6b72;
-  --border: #343b48;
-  --input: #3f4857;
+  --border: #3a3a3e;
+  --input: #454549;
   --ring: #7ea2ff;
   --chart-1: #7ea2ff;
-  --chart-2: #9aa1ae;
+  --chart-2: #a0a0a5;
   --chart-3: #63d398;
   --chart-4: #e8a33d;
-  --chart-5: #e7e9ee;
+  --chart-5: #e8e8ea;
   --radius: 10px;
-  --sidebar: #191d25;
-  --sidebar-foreground: #e7e9ee;
+  --sidebar: #1a1a1c;
+  --sidebar-foreground: #e8e8ea;
   --sidebar-primary: #7ea2ff;
   --sidebar-primary-foreground: #0a1020;
-  --sidebar-accent: #222836;
-  --sidebar-accent-foreground: #edeff4;
-  --sidebar-border: #343b48;
+  --sidebar-accent: #25252a;
+  --sidebar-accent-foreground: #eeeef0;
+  --sidebar-border: #3a3a3e;
   --sidebar-ring: #7ea2ff;
 }
 
