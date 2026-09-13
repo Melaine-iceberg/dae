@@ -11,6 +11,7 @@ import { getAppWindow } from "@/lib/app-window";
 import { applySystemTheme } from "@/lib/theme";
 import { setupNativeClipboardBridge } from "@/lib/clipboard-bridge";
 import { setupExternalLinkGuard } from "@/lib/external-links";
+import { setupNativeContextMenuGuard } from "@/lib/native-context-menu";
 
 if (import.meta.env.DEV) {
   setupDevInvoke();
@@ -19,6 +20,8 @@ if (import.meta.env.DEV) {
 setupNativeClipboardBridge();
 
 setupExternalLinkGuard();
+
+setupNativeContextMenuGuard();
 
 applySystemTheme();
 
