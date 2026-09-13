@@ -23,6 +23,18 @@ import {
   selectAllText,
 } from "@/lib/text-editing";
 
+/**
+ * Hover feedback for a menu whose items never take focus (the edited field
+ * keeps it): the shared items only style `:focus`, which they would never see.
+ */
+const ITEM_HOVER = "hover:bg-accent hover:text-accent-foreground";
+
+/**
+ * The menu surfaces that must never keep focus: the popup itself (plus every
+ * item in it) and the focus guards Base UI wraps around it for Tab trapping.
+ */
+const MENU_POPUP_SELECTOR = '[data-slot="context-menu-content"], [data-base-ui-focus-guard]';
+
 /** Pointer anchor for a menu that is not attached to a trigger element. */
 interface PointerAnchor {
   getBoundingClientRect(): DOMRect;
@@ -83,11 +95,92 @@ export function TextContextMenu() {
     [],
   );
 
+  // Escape closes even after an item has handed focus back to the field it
+  // edits ("select all" focuses it), where the popup never sees the keydown.
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      closeReasonRef.current = "escape-key";
+      setOpen(false);
+    };
+    document.addEventListener("keydown", closeOnEscape, true);
+    return () => document.removeEventListener("keydown", closeOnEscape, true);
+  }, [open]);
+
+  const editable = request?.editable ?? null;
+  // A field only paints its selection while the field itself holds focus, and
+  // the popup helps itself to focus when it opens (and when an item is
+  // pressed) — which would drop the very selection the menu is acting on. Hold
+  // the caret in the field for as long as the menu is up, and only in the field
+  // that owns the menu, so clicking into some other one still moves normally.
+  // Hover never takes it either: `highlightItemOnHover` is off, so items
+  // highlight through `:hover`.
+  useEffect(() => {
+    if (!open) return;
+    const target = editableRef.current;
+    if (!target) return;
+    const keepFocus = () => {
+      if (target.isConnected) target.focus({ preventScroll: true });
+    };
+    // The popup's own focus is queued on a frame, so undo it after that frame's
+    // callbacks have run — and again after a task, for a throttled window where
+    // frames stop firing altogether.
+    const head = setTimeout(keepFocus, 0);
+    let tail: ReturnType<typeof setTimeout> | undefined;
+    const frame = requestAnimationFrame(() => {
+      keepFocus();
+      tail = setTimeout(keepFocus, 0);
+    });
+    // Later grabs (pressing an item focuses it) get undone from outside the
+    // focus event, since a focus() issued inside one is dropped.
+    const onFocusIn = (event: FocusEvent) => {
+      const next = event.target;
+      if (!(next instanceof Element)) return;
+      if (!next.closest(MENU_POPUP_SELECTOR)) return;
+      setTimeout(keepFocus, 0);
+    };
+    document.addEventListener("focusin", onFocusIn, true);
+    return () => {
+      clearTimeout(head);
+      if (tail !== undefined) clearTimeout(tail);
+      cancelAnimationFrame(frame);
+      document.removeEventListener("focusin", onFocusIn, true);
+    };
+  }, [open]);
+
+  // The field can vanish while the menu is up — submitting the path editor
+  // navigates and unmounts it — so close rather than leave a menu anchored to
+  // an element that is no longer there.
+  useEffect(() => {
+    if (!open) return;
+    const target = editableRef.current;
+    if (!target) return;
+    const observer = new MutationObserver(() => {
+      if (!target.isConnected) setOpen(false);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [open]);
+  /** Ends the menu interaction: every item closes the menu on the click, and
+   *  the caret goes back to the field so the user can type or press Enter
+   *  next. The menu focuses the pressed item as part of its own click handling,
+   *  so the field has to be re-asserted after that, and once more after a task
+   *  for a throttled window where neither the frame callback nor the popup's
+   *  exit ever run. */
+  const returnFocusToField = (target: HTMLElement | null | undefined) => {
+    if (!target) return;
+    focusAfterPopupClose(target);
+    setTimeout(() => {
+      if (target.isConnected) target.focus({ preventScroll: true });
+    }, 0);
+  };
+
   const copy = () => {
     const target = request?.editable;
     const text = target ? getSelectedText(target) : (window.getSelection()?.toString() ?? "");
     if (text) void writeText(text);
-    focusAfterPopupClose(target);
+    returnFocusToField(target);
   };
 
   const cut = () => {
@@ -97,7 +190,7 @@ export function TextContextMenu() {
     if (!text) return;
     void writeText(text);
     deleteSelection(target);
-    focusAfterPopupClose(target);
+    returnFocusToField(target);
   };
 
   const paste = () => {
@@ -108,14 +201,17 @@ export function TextContextMenu() {
         if (text) replaceSelection(target, text);
       })
       .catch((error) => console.warn("Unable to read the clipboard", error));
-    focusAfterPopupClose(target);
+    // Paste commits the field (it is the item the user reaches for right
+    // before typing or pressing Enter), so it closes the menu and puts the
+    // caret back.
+    returnFocusToField(target);
   };
 
   const remove = () => {
     const target = request?.editable;
     if (!target) return;
     deleteSelection(target);
-    focusAfterPopupClose(target);
+    returnFocusToField(target);
   };
 
   const selectAll = () => {
@@ -124,10 +220,9 @@ export function TextContextMenu() {
     selectAllText(target);
     // The selected range survives the menu's focus restore, so re-asserting
     // focus is enough to keep the whole value highlighted.
-    focusAfterPopupClose(target);
+    returnFocusToField(target);
   };
 
-  const editable = request?.editable ?? null;
   const writable = editable !== null && !isReadOnly(editable);
   const hasSelection = request?.hasSelection ?? false;
   const shortcut = (key: string) => `${MOD_KEY}+${key}`;
@@ -135,6 +230,10 @@ export function TextContextMenu() {
   return (
     <ContextMenu
       open={open}
+      // The edited field holds focus while the menu is up (see the focus effect
+      // above), so items highlight through `:hover` instead of the `:focus`
+      // styling every other menu relies on.
+      highlightItemOnHover={false}
       onOpenChange={(next, details) => {
         closeReasonRef.current = details.reason;
         setOpen(next);
@@ -150,24 +249,32 @@ export function TextContextMenu() {
     >
       <ContextMenuContent anchor={request?.anchor} className="min-w-44">
         <ContextMenuGroup>
-          <ContextMenuItem disabled={!hasSelection} onClick={copy}>
+          <ContextMenuItem className={ITEM_HOVER} disabled={!hasSelection} onClick={copy}>
             <Copy />
             {t("textMenu.copy")}
             <ContextMenuShortcut>{shortcut("C")}</ContextMenuShortcut>
           </ContextMenuItem>
           {editable && (
             <>
-              <ContextMenuItem disabled={!hasSelection || !writable} onClick={cut}>
+              <ContextMenuItem
+                className={ITEM_HOVER}
+                disabled={!hasSelection || !writable}
+                onClick={cut}
+              >
                 <Scissors />
                 {t("textMenu.cut")}
                 <ContextMenuShortcut>{shortcut("X")}</ContextMenuShortcut>
               </ContextMenuItem>
-              <ContextMenuItem disabled={!writable} onClick={paste}>
+              <ContextMenuItem className={ITEM_HOVER} disabled={!writable} onClick={paste}>
                 <ClipboardPaste />
                 {t("textMenu.paste")}
                 <ContextMenuShortcut>{shortcut("V")}</ContextMenuShortcut>
               </ContextMenuItem>
-              <ContextMenuItem disabled={!hasSelection || !writable} onClick={remove}>
+              <ContextMenuItem
+                className={ITEM_HOVER}
+                disabled={!hasSelection || !writable}
+                onClick={remove}
+              >
                 <Trash2 />
                 {t("textMenu.delete")}
                 <ContextMenuShortcut>Del</ContextMenuShortcut>
@@ -179,7 +286,7 @@ export function TextContextMenu() {
           <>
             <ContextMenuSeparator />
             <ContextMenuGroup>
-              <ContextMenuItem onClick={selectAll}>
+              <ContextMenuItem className={ITEM_HOVER} onClick={selectAll}>
                 <TextSelect />
                 {t("textMenu.selectAll")}
                 <ContextMenuShortcut>{shortcut("A")}</ContextMenuShortcut>

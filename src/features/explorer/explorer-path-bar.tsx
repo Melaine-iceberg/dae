@@ -17,6 +17,10 @@ import { focusAfterPopupClose } from "@/lib/dom";
 import { cn } from "@/lib/utils";
 import type { Breadcrumb, DirectoryView } from "./types";
 
+/** Portaled menu popups that count as "inside" while the path editor is open. */
+const MENU_POPUP_SELECTOR =
+  '[data-slot="context-menu-content"], [data-slot="dropdown-menu-content"]';
+
 interface ExplorerPathBarProps {
   directory: DirectoryView;
   onNavigate: (breadcrumb: Breadcrumb) => void;
@@ -29,6 +33,7 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
   const [value, setValue] = useState("");
   const [isInvalid, setIsInvalid] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const editorRef = useRef<HTMLFormElement>(null);
   const pathBarRef = useRef<HTMLDivElement>(null);
   const currentName = directory.breadcrumbs.at(-1)?.name ?? directory.path;
 
@@ -40,8 +45,36 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
   useEffect(() => {
     if (!isEditing) return;
     const input = inputRef.current;
-    input?.focus();
-    input?.select();
+    if (!input) return;
+    // Seed the editor with the whole path selected, so typing overtypes it.
+    // A menu that opened the editor ("edit path") focuses its own pressed item
+    // after this effect, so re-assert on the next task as well.
+    const selectPath = () => {
+      if (!input.isConnected) return;
+      input.focus({ preventScroll: true });
+      input.select();
+    };
+    selectPath();
+    const timeout = setTimeout(selectPath, 0);
+    return () => clearTimeout(timeout);
+  }, [isEditing]);
+
+  // The editor has to outlive its own focus. The text menu takes focus when it
+  // opens, so closing on blur would tear the field down the moment the menu
+  // appears and leave its items writing into a detached input. Close on a
+  // press outside instead, treating a menu opened from the editor as inside.
+  useEffect(() => {
+    if (!isEditing) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (editorRef.current?.contains(target)) return;
+      if (target.closest(MENU_POPUP_SELECTOR)) return;
+      setIsEditing(false);
+      setIsInvalid(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress, true);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePress, true);
   }, [isEditing]);
 
   /** Keeps the caret on the bar the menu belongs to, instead of handing it
@@ -97,9 +130,19 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
   if (isEditing) {
     return (
       <form
+        ref={editorRef}
+        // The toolbar is a `deep` window-drag region, so the editor has to opt
+        // out of it the same way the bar does: otherwise a press on the form's
+        // own padding starts a window drag, the webview loses focus, and the
+        // selected path stops painting its highlight.
+        data-tauri-drag-region="false"
         className={cn(
-          "flex h-8 min-w-0 flex-1 items-center rounded-full border bg-muted/70 pr-3 pl-3.5 transition-[background-color,border-color,box-shadow] focus-within:bg-card focus-within:ring-2 focus-within:ring-ring/30",
-          isInvalid ? "border-destructive" : "border-transparent focus-within:border-ring",
+          // The editor is the active surface for as long as it is open, so its
+          // active look cannot hang off `focus-within`: a menu opened from it
+          // takes focus, and the bar must not read as having left the edit
+          // state while that menu is up.
+          "flex h-8 min-w-0 flex-1 items-center rounded-full border bg-card pr-3 pl-3.5 ring-2 transition-[background-color,border-color,box-shadow]",
+          isInvalid ? "border-destructive ring-destructive/20" : "border-ring ring-ring/30",
         )}
         onSubmit={(event) => void submitPath(event)}
       >
@@ -112,12 +155,11 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
             setValue(event.target.value);
             setIsInvalid(false);
           }}
-          onBlur={() => {
-            setIsEditing(false);
-            setIsInvalid(false);
-          }}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
+              // Escape belongs to the text menu while it is up: it is the
+              // topmost layer, and the editor should survive its dismissal.
+              if (document.querySelector(MENU_POPUP_SELECTOR)) return;
               setIsEditing(false);
             }
           }}
