@@ -35,7 +35,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # SSH transport for the SFTP backend. `ring` (instead of the default
 # aws-lc-rs) keeps the build free of CMake/NASM requirements on Windows.
-russh = { version = "0.62", default-features = false, features = ["ring", "rsa", "flate2"] }
+russh = { version = "0.63", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = "3.0.0"
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
@@ -86,7 +86,7 @@ image = { version = "0.25", default-features = false, features = [
 ] }
 base64 = "0.23.1"
 # aes-crypto enables decrypting WinZip-AES zips; ZipCrypto decryption is built in.
-zip = { version = "2", default-features = false, features = ["deflate", "aes-crypto"] }
+zip = { version = "8", default-features = false, features = ["deflate", "aes-crypto"] }
 tar = "0.4"
 flate2 = "1"
 sevenz-rust2 = "0.22.2"
@@ -105,10 +105,18 @@ portable-pty = "0.9"
 drag = "2.1.1"
 # OAuth2 + REST for the cloud storage backends. rustls with `ring` (instead
 # of aws-lc-rs or native TLS) keeps the build free of CMake/NASM/OpenSSL
-# requirements, matching the `russh` choice above.
-reqwest = { version = "0.12", default-features = false, features = [
-  "rustls-tls-webpki-roots-no-provider",
+# requirements, matching the `russh` choice above. `rustls-no-provider` leaves
+# provider selection to us — the code installs `ring` via
+# `install_default()` before building a client — and verifies certificates
+# through the platform trust store rather than bundled webpki roots, which
+# 0.13 dropped.
+reqwest = { version = "0.13", default-features = false, features = [
+  "rustls-no-provider",
   "json",
+  # 0.13 made the urlencoded-serialised builders optional; `.form()` and
+  # `.query()` are how every cloud request in `file_system::cloud` is built.
+  "form",
+  "query",
 ] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 async-trait = "0.1"

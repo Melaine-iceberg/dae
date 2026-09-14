@@ -11,14 +11,14 @@ use super::connections::{self, Protocol};
 use super::error::FileSystemError;
 use super::smb::{parse_authority, split_authority};
 use super::types::{
-    Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, FileProperties,
-    NewEntryKind, PlatformProperties, PropertyChanges, SearchEntry, SearchResponse,
-    UnixProperties, entry_sort_key,
+    Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, FileProperties, NewEntryKind,
+    PlatformProperties, PropertyChanges, SearchEntry, SearchResponse, UnixProperties,
+    entry_sort_key,
 };
 use super::vfs::{FileSystemBackend, SharedBackend};
-use russh_sftp::client::fs::File as SftpFile;
-use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::SftpSession;
+use russh_sftp::client::error::Error as SftpError;
+use russh_sftp::client::fs::File as SftpFile;
 use russh_sftp::protocol::{FileAttributes, StatusCode};
 use std::io::{self, Read, Write};
 use std::sync::Arc;
@@ -48,7 +48,7 @@ impl russh::client::Handler for AcceptAnyHostKey {
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKey,
+        _server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
         Ok(true)
     }
@@ -235,7 +235,9 @@ async fn connect_session(
     let config = Arc::new(russh::client::Config::default());
     let mut session = russh::client::connect(config, (host, port), AcceptAnyHostKey)
         .await
-        .map_err(|error| FileSystemError::Io(format!("Could not reach the SFTP server: {error}")))?;
+        .map_err(|error| {
+            FileSystemError::Io(format!("Could not reach the SFTP server: {error}"))
+        })?;
 
     let authenticated = session
         .authenticate_password(username, password)
@@ -254,7 +256,9 @@ async fn connect_session(
     channel
         .request_subsystem(true, "sftp")
         .await
-        .map_err(|error| FileSystemError::Io(format!("The server has no SFTP subsystem: {error}")))?;
+        .map_err(|error| {
+            FileSystemError::Io(format!("The server has no SFTP subsystem: {error}"))
+        })?;
 
     SftpSession::new(channel.into_stream())
         .await
@@ -485,7 +489,9 @@ impl FileSystemBackend for SftpBackend {
 
         let kind = kind_of(&attrs);
         let target = if kind == EntryKind::Symlink {
-            self.runtime.block_on(self.sftp.read_link(parsed.remote())).ok()
+            self.runtime
+                .block_on(self.sftp.read_link(parsed.remote()))
+                .ok()
         } else {
             None
         };
@@ -644,9 +650,9 @@ fn map_sftp_error(error: SftpError) -> FileSystemError {
             }
             _ => FileSystemError::Io(error.to_string()),
         },
-        SftpError::Timeout => FileSystemError::Io(format!(
-            "The SFTP server did not respond in time: {error}"
-        )),
+        SftpError::Timeout => {
+            FileSystemError::Io(format!("The SFTP server did not respond in time: {error}"))
+        }
         _ => FileSystemError::Io(error.to_string()),
     }
 }
@@ -912,6 +918,9 @@ mod sftp_tests {
             FileSystemError::AlreadyExists(_)
         ));
 
-        assert!(matches!(map_sftp_error(SftpError::Timeout), FileSystemError::Io(_)));
+        assert!(matches!(
+            map_sftp_error(SftpError::Timeout),
+            FileSystemError::Io(_)
+        ));
     }
 }
