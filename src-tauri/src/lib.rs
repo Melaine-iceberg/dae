@@ -2,6 +2,7 @@ mod deep_link;
 mod default_manager;
 mod file_system;
 mod settings;
+mod tab_windows;
 mod terminal;
 // Release-only: the updater's endpoint and public key come from
 // `tauri.release.conf.json`, which CI merges in via `--config`. Dev builds have
@@ -119,6 +120,7 @@ pub fn run() {
         .manage(file_system::directory_size::DirectorySizeState::default())
         .manage(file_system::hashing::FileHashState::default())
         .manage(deep_link::PendingDeepLink::default())
+        .manage(tab_windows::TabWindowState::default())
         .manage(terminal::TerminalState::default())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
@@ -231,7 +233,10 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             settings::save_settings,
             default_manager::get_default_file_manager_status,
             default_manager::set_default_file_manager,
-            default_manager::unset_default_file_manager
+            default_manager::unset_default_file_manager,
+            tab_windows::tab_drag_outside,
+            tab_windows::tear_off_tab,
+            tab_windows::take_tab_handoff
         ])
         .events(tauri_specta::collect_events![
             file_system::DirectoryChanged,

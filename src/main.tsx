@@ -6,6 +6,8 @@ import "./App.css";
 import { setupDevInvoke } from "tauri-plugin-dev-invoke-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { commands } from "@/bindings";
+import { restoreInitialTabHandoff } from "@/features/explorer/tabs";
 import { i18nReady } from "@/i18n";
 import { getAppWindow } from "@/lib/app-window";
 import { applySystemTheme } from "@/lib/theme";
@@ -31,6 +33,19 @@ const queryClient = new QueryClient();
 // i18next so the first paint never shows raw translation keys.
 async function bootstrap() {
   await i18nReady;
+
+  const appWindow = getAppWindow();
+  if (appWindow) {
+    try {
+      const handoff = await commands.takeTabHandoff(appWindow.label);
+      if (handoff) restoreInitialTabHandoff(handoff);
+    } catch (error) {
+      // A malformed or unavailable handoff must not strand a hidden window;
+      // it can still open normally on the Overview surface.
+      console.error("Failed to restore detached tab", error);
+    }
+  }
+
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <QueryClientProvider client={queryClient}>
       <React.StrictMode>

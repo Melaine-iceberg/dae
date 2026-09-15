@@ -5,10 +5,20 @@ import { getAppWindow } from "@/lib/app-window";
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import type { WorkspaceSurface } from "@/features/workspace/types";
 
-import { ExplorerNavigator } from "./navigation";
+import { ExplorerNavigator, type ExplorerNavigatorSnapshot } from "./navigation";
 
 export interface ExplorerTab {
   id: string;
+}
+
+interface ExplorerTabHandoff {
+  version: 1;
+  surface: WorkspaceSurface;
+  primary: ExplorerNavigatorSnapshot;
+  split: ExplorerNavigatorSnapshot;
+  splitEnabled: boolean;
+  activePane: ExplorerPaneId;
+  splitRatio: number;
 }
 
 export type FileClipboard = {
@@ -103,6 +113,88 @@ export const activeTabIdAtom = atom<string>(initialTab.id);
 export const fileClipboardAtom = atom<FileClipboard | null>(null);
 export const undoRedoAtom = atom<UndoRedoStatus>({ canUndo: false, canRedo: false });
 
+/** Serializes everything that belongs to one tab for a new webview window. */
+export function serializeTabHandoff(tabId: string): string {
+  const store = getDefaultStore();
+  const handoff: ExplorerTabHandoff = {
+    version: 1,
+    surface: store.get(tabSurfaceFamily(tabId)),
+    primary: getTabNavigator(tabId).createSnapshot(),
+    split: getSplitNavigator(tabId).createSnapshot(),
+    splitEnabled: store.get(splitEnabledFamily(tabId)),
+    activePane: store.get(activePaneFamily(tabId)),
+    splitRatio: store.get(splitRatioFamily(tabId)),
+  };
+
+  return JSON.stringify(handoff);
+}
+
+/** Applies a detached tab to the one initial tab created by this webview. */
+export function restoreInitialTabHandoff(payload: string): void {
+  const handoff = parseTabHandoff(payload);
+  const tabId = initialTab.id;
+  const store = getDefaultStore();
+
+  getTabNavigator(tabId).restoreSnapshot(handoff.primary);
+  getSplitNavigator(tabId).restoreSnapshot(handoff.split);
+  store.set(tabSurfaceFamily(tabId), handoff.surface);
+  store.set(splitEnabledFamily(tabId), handoff.splitEnabled);
+  store.set(activePaneFamily(tabId), handoff.activePane);
+  store.set(splitRatioFamily(tabId), handoff.splitRatio);
+}
+
+function parseTabHandoff(payload: string): ExplorerTabHandoff {
+  const value: unknown = JSON.parse(payload);
+  if (!isRecord(value) || value.version !== 1) {
+    throw new Error("Unsupported tab handoff payload");
+  }
+  if (!isWorkspaceSurface(value.surface)) {
+    throw new Error("Invalid tab surface in handoff payload");
+  }
+  if (!isNavigatorSnapshot(value.primary) || !isNavigatorSnapshot(value.split)) {
+    throw new Error("Invalid tab navigation state in handoff payload");
+  }
+  if (
+    typeof value.splitEnabled !== "boolean" ||
+    (value.activePane !== "primary" && value.activePane !== "split") ||
+    typeof value.splitRatio !== "number" ||
+    !Number.isFinite(value.splitRatio)
+  ) {
+    throw new Error("Invalid split-view state in handoff payload");
+  }
+
+  return value as unknown as ExplorerTabHandoff;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isWorkspaceSurface(value: unknown): value is WorkspaceSurface {
+  if (!isRecord(value) || typeof value.kind !== "string") return false;
+  if (value.kind === "space") return typeof value.spaceId === "string";
+  return ["overview", "recents", "favorites", "trash", "folder"].includes(value.kind);
+}
+
+function isNavigatorSnapshot(value: unknown): value is ExplorerNavigatorSnapshot {
+  if (!isRecord(value) || !isRecord(value.state) || !Array.isArray(value.scrollOffsets)) {
+    return false;
+  }
+
+  return (
+    Array.isArray(value.state.history) &&
+    value.state.history.every((path) => typeof path === "string") &&
+    typeof value.state.historyIndex === "number" &&
+    value.scrollOffsets.every(
+      (entry) =>
+        Array.isArray(entry) &&
+        entry.length === 2 &&
+        typeof entry[0] === "string" &&
+        typeof entry[1] === "number",
+    )
+  );
+}
+
 export const createTabAtom = atom(null, (_get, set) => {
   const tab = createTabEntry();
   set(tabsAtom, (tabs) => [...tabs, tab]);
@@ -137,6 +229,7 @@ export const closeTabAtom = atom(null, (get, set, tabId: string) => {
   const remaining = tabs.filter((tab) => tab.id !== tabId);
   navigators.delete(tabId);
   navigators.delete(`${tabId}${SPLIT_NAVIGATOR_SUFFIX}`);
+  tabSurfaceFamily.remove(tabId);
   splitEnabledFamily.remove(tabId);
   activePaneFamily.remove(tabId);
   splitRatioFamily.remove(tabId);

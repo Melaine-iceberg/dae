@@ -14,6 +14,12 @@ export interface ExplorerState {
   historyIndex: number;
 }
 
+/** Serializable state transferred when a tab moves to another webview. */
+export interface ExplorerNavigatorSnapshot {
+  state: ExplorerState;
+  scrollOffsets: [string, number][];
+}
+
 export type ExplorerListener = () => void;
 
 type NavigationMode = { type: "push" } | { type: "replace" } | { type: "history"; index: number };
@@ -51,6 +57,45 @@ export class ExplorerNavigator {
 
   setScrollOffset(path: string, offset: number): void {
     this.scrollOffsets.set(path, offset);
+  }
+
+  /** Captures the complete navigation model without its non-serializable listeners. */
+  createSnapshot(): ExplorerNavigatorSnapshot {
+    return {
+      state: this.state,
+      scrollOffsets: [...this.scrollOffsets],
+    };
+  }
+
+  /** Restores a snapshot before the destination window's first React render. */
+  restoreSnapshot(snapshot: ExplorerNavigatorSnapshot): void {
+    ++this.requestVersion;
+    this.scrollOffsets.clear();
+    snapshot.scrollOffsets.forEach(([path, offset]) => this.scrollOffsets.set(path, offset));
+
+    const pendingPath = snapshot.state.status === "loading" ? snapshot.state.pendingPath : null;
+    const restoredState: ExplorerState =
+      snapshot.state.status === "loading"
+        ? snapshot.state.directory
+          ? {
+              ...snapshot.state,
+              status: "ready",
+              pendingPath: null,
+              error: null,
+            }
+          : {
+              ...initialState,
+              history: snapshot.state.history,
+              historyIndex: snapshot.state.historyIndex,
+            }
+        : snapshot.state;
+
+    this.setState(restoredState);
+
+    // A navigation request in the source webview cannot continue after the
+    // handoff. Resume it here instead of leaving the destination permanently
+    // in a loading state.
+    if (pendingPath) void this.navigate(pendingPath);
   }
 
   subscribe = (listener: ExplorerListener): (() => void) => {

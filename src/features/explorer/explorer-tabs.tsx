@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 
 import { WindowControls } from "@/components/window-controls";
+import { commands } from "@/bindings";
 import { Sidebar } from "@/features/sidebar/sidebar";
 import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
 import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
@@ -30,6 +32,7 @@ import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import { WorkspaceSurfaceView } from "@/features/workspace/workspace-surface";
 import type { WorkspaceSurface } from "@/features/workspace/types";
 import { MOD_KEY } from "@/lib/platform";
+import { getAppWindow } from "@/lib/app-window";
 import { cn } from "@/lib/utils";
 
 // xterm and its renderer addons are only needed once the terminal panel is
@@ -47,12 +50,16 @@ import {
   createTabAtom,
   getSplitNavigator,
   getTabNavigator,
+  serializeTabHandoff,
   splitEnabledFamily,
   tabsAtom,
   type ExplorerTab,
 } from "./tabs";
 
 const TAB_STRIP_SCROLL_AMOUNT = 512;
+const TAB_DRAG_START_DISTANCE = 6;
+const TAB_OUTSIDE_POLL_INTERVAL = 50;
+const TAB_OUTSIDE_GRACE_PERIOD = 120;
 
 const WORKSPACE_TAB_ICONS = {
   overview: Home,
@@ -240,12 +247,152 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       : (directory?.breadcrumbs.at(-1)?.name ?? t("tabs.loading"));
   const title = surfaceTitle(surface, folderTitle, spaceName, t);
   const elementRef = useRef<HTMLDivElement>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     if (isActive) {
       elementRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
     }
   }, [isActive]);
+
+  useEffect(() => () => dragCleanupRef.current?.(), []);
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || !event.isPrimary) return;
+    if ((event.target as HTMLElement).closest("button")) return;
+
+    const appWindow = getAppWindow();
+    const element = elementRef.current;
+    if (!appWindow || !element) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    activateTab(tab.id);
+    dragCleanupRef.current?.();
+
+    const pointerId = event.pointerId;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    let dragStarted = false;
+    let disposed = false;
+    let tearingOff = false;
+    let outsideSince: number | null = null;
+    let pollTimer: number | undefined;
+    let outsideRequest: Promise<boolean> | null = null;
+
+    const stopPolling = () => {
+      window.clearInterval(pollTimer);
+      pollTimer = undefined;
+    };
+
+    const cleanup = () => {
+      if (disposed) return;
+      disposed = true;
+      stopPolling();
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerEnd, true);
+      window.removeEventListener("pointercancel", handlePointerEnd, true);
+      window.removeEventListener("keydown", handleKeyDown, true);
+      if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
+      dragCleanupRef.current = null;
+      setIsDragging(false);
+    };
+
+    const readOutside = () => {
+      outsideRequest ??= commands
+        .tabDragOutside(appWindow.label)
+        .finally(() => (outsideRequest = null));
+      return outsideRequest;
+    };
+
+    const tearOff = async () => {
+      if (disposed || tearingOff) return;
+      tearingOff = true;
+      stopPolling();
+
+      try {
+        const payload = serializeTabHandoff(tab.id);
+        await commands.tearOffTab(appWindow.label, payload, startX, startY);
+        cleanup();
+        closeTab(tab.id);
+      } catch (error) {
+        console.error("Failed to detach tab", error);
+        cleanup();
+      }
+    };
+
+    const pollOutside = async (detachImmediately = false): Promise<boolean> => {
+      if (disposed || !dragStarted || tearingOff) return false;
+
+      try {
+        const outside = await readOutside();
+        if (disposed || tearingOff) return outside;
+
+        if (!outside) {
+          outsideSince = null;
+          return false;
+        }
+
+        const now = performance.now();
+        if (
+          detachImmediately ||
+          (outsideSince !== null && now - outsideSince >= TAB_OUTSIDE_GRACE_PERIOD)
+        ) {
+          await tearOff();
+        } else if (outsideSince === null) {
+          outsideSince = now;
+        }
+        return true;
+      } catch (error) {
+        console.error("Failed to track tab drag", error);
+        cleanup();
+        return false;
+      }
+    };
+
+    function handlePointerMove(moveEvent: PointerEvent) {
+      if (moveEvent.pointerId !== pointerId || disposed) return;
+
+      if (!dragStarted) {
+        const distance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
+        if (distance < TAB_DRAG_START_DISTANCE) return;
+
+        dragStarted = true;
+        setIsDragging(true);
+        pollTimer = window.setInterval(() => void pollOutside(), TAB_OUTSIDE_POLL_INTERVAL);
+      }
+
+      void pollOutside();
+    }
+
+    function handlePointerEnd(endEvent: PointerEvent) {
+      if (endEvent.pointerId !== pointerId || disposed) return;
+      if (!dragStarted) {
+        cleanup();
+        return;
+      }
+
+      // Pointer capture may deliver the release even after the cursor leaves
+      // the webview. Query the native bounds one final time before cancelling.
+      void pollOutside(true).then((outside) => {
+        if (!outside && !tearingOff) cleanup();
+      });
+    }
+
+    function handleKeyDown(keyEvent: KeyboardEvent) {
+      if (keyEvent.key !== "Escape") return;
+      keyEvent.preventDefault();
+      cleanup();
+    }
+
+    element.setPointerCapture(pointerId);
+    dragCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", handlePointerEnd, true);
+    window.addEventListener("pointercancel", handlePointerEnd, true);
+    window.addEventListener("keydown", handleKeyDown, true);
+  };
 
   // Folder tabs carry the Catppuccin artwork for the tab's folder
   // name (src, node_modules, .git, ... with a generic folder fallback while
@@ -257,13 +404,16 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
 
   return (
     <div
+      aria-grabbed={isDragging}
       aria-selected={isActive}
       className={cn(
-        "group relative flex h-8 w-52 shrink-0 items-center rounded-md text-[13px] select-none transition-[background-color,color,box-shadow,scale] duration-fast ease-spring-fast active:scale-[0.98]",
+        "group relative flex h-8 w-52 shrink-0 touch-none cursor-grab items-center rounded-md text-[13px] select-none transition-[background-color,color,box-shadow,scale,opacity] duration-fast ease-spring-fast active:scale-[0.98] active:cursor-grabbing",
         isActive
           ? "bg-card text-foreground shadow-ambient-sm ring-1 ring-border dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.06)]"
-          : "cursor-default text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+        isDragging && "opacity-70",
       )}
+      data-tauri-drag-region="false"
       onClick={() => activateTab(tab.id)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -271,6 +421,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
           activateTab(tab.id);
         }
       }}
+      onPointerDown={handlePointerDown}
       ref={elementRef}
       role="tab"
       tabIndex={0}
@@ -300,6 +451,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
           event.stopPropagation();
           closeTab(tab.id);
         }}
+        onPointerDown={(event) => event.stopPropagation()}
         type="button"
       >
         <X className="size-3" />
