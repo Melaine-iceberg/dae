@@ -8,6 +8,7 @@ import {
   useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -60,6 +61,13 @@ const TAB_STRIP_SCROLL_AMOUNT = 512;
 const TAB_DRAG_START_DISTANCE = 6;
 const TAB_OUTSIDE_POLL_INTERVAL = 50;
 const TAB_OUTSIDE_GRACE_PERIOD = 120;
+
+type TabDragPreview = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 const WORKSPACE_TAB_ICONS = {
   overview: Home,
@@ -248,7 +256,8 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
   const title = surfaceTitle(surface, folderTitle, spaceName, t);
   const elementRef = useRef<HTMLDivElement>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [dragPreview, setDragPreview] = useState<TabDragPreview | null>(null);
+  const isDragging = dragPreview !== null;
 
   useEffect(() => {
     if (isActive) {
@@ -264,7 +273,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
 
     const appWindow = getAppWindow();
     const element = elementRef.current;
-    if (!appWindow || !element) return;
+    if (!element) return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -274,7 +283,14 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     const pointerId = event.pointerId;
     const startX = event.clientX;
     const startY = event.clientY;
+    const bounds = element.getBoundingClientRect();
+    const grabX = startX - bounds.left;
+    const grabY = startY - bounds.top;
+    let pointerX = startX;
+    let pointerY = startY;
+    let previewFrame: number | undefined;
     let dragStarted = false;
+    let pointerReleased = false;
     let disposed = false;
     let tearingOff = false;
     let outsideSince: number | null = null;
@@ -290,16 +306,30 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       if (disposed) return;
       disposed = true;
       stopPolling();
+      if (previewFrame !== undefined) window.cancelAnimationFrame(previewFrame);
       window.removeEventListener("pointermove", handlePointerMove, true);
       window.removeEventListener("pointerup", handlePointerEnd, true);
-      window.removeEventListener("pointercancel", handlePointerEnd, true);
+      window.removeEventListener("pointercancel", handlePointerCancel, true);
       window.removeEventListener("keydown", handleKeyDown, true);
+      element.removeEventListener("lostpointercapture", handlePointerCancel);
       if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
       dragCleanupRef.current = null;
-      setIsDragging(false);
+      setDragPreview(null);
+    };
+
+    const updatePreview = () => {
+      previewFrame = undefined;
+      if (disposed) return;
+      setDragPreview({
+        x: pointerX - grabX,
+        y: pointerY - grabY,
+        width: bounds.width,
+        height: bounds.height,
+      });
     };
 
     const readOutside = () => {
+      if (!appWindow) return Promise.resolve(false);
       outsideRequest ??= commands
         .tabDragOutside(appWindow.label)
         .finally(() => (outsideRequest = null));
@@ -307,7 +337,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     };
 
     const tearOff = async () => {
-      if (disposed || tearingOff) return;
+      if (!appWindow || disposed || tearingOff) return;
       tearingOff = true;
       stopPolling();
 
@@ -352,22 +382,29 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     };
 
     function handlePointerMove(moveEvent: PointerEvent) {
-      if (moveEvent.pointerId !== pointerId || disposed) return;
+      if (moveEvent.pointerId !== pointerId || disposed || pointerReleased) return;
 
       if (!dragStarted) {
         const distance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
         if (distance < TAB_DRAG_START_DISTANCE) return;
 
         dragStarted = true;
-        setIsDragging(true);
-        pollTimer = window.setInterval(() => void pollOutside(), TAB_OUTSIDE_POLL_INTERVAL);
+        if (appWindow) {
+          pollTimer = window.setInterval(() => void pollOutside(), TAB_OUTSIDE_POLL_INTERVAL);
+        }
       }
 
+      // Keep the original grab point under the cursor, with at most one
+      // visual update per frame regardless of the mouse's polling rate.
+      pointerX = moveEvent.clientX;
+      pointerY = moveEvent.clientY;
+      previewFrame ??= window.requestAnimationFrame(updatePreview);
       void pollOutside();
     }
 
     function handlePointerEnd(endEvent: PointerEvent) {
       if (endEvent.pointerId !== pointerId || disposed) return;
+      pointerReleased = true;
       if (!dragStarted) {
         cleanup();
         return;
@@ -380,6 +417,13 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       });
     }
 
+    function handlePointerCancel(cancelEvent: PointerEvent) {
+      // Pointerup implicitly releases capture; let its final native bounds
+      // check finish instead of cancelling a quick drop outside the window.
+      if (cancelEvent.type === "lostpointercapture" && pointerReleased) return;
+      if (cancelEvent.pointerId === pointerId) cleanup();
+    }
+
     function handleKeyDown(keyEvent: KeyboardEvent) {
       if (keyEvent.key !== "Escape") return;
       keyEvent.preventDefault();
@@ -390,8 +434,9 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     dragCleanupRef.current = cleanup;
     window.addEventListener("pointermove", handlePointerMove, true);
     window.addEventListener("pointerup", handlePointerEnd, true);
-    window.addEventListener("pointercancel", handlePointerEnd, true);
+    window.addEventListener("pointercancel", handlePointerCancel, true);
     window.addEventListener("keydown", handleKeyDown, true);
+    element.addEventListener("lostpointercapture", handlePointerCancel);
   };
 
   // Folder tabs carry the Catppuccin artwork for the tab's folder
@@ -401,6 +446,16 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
   const folderName = directory?.breadcrumbs.at(-1)?.name ?? "";
   const FolderTabIcon = getFolderPresentation(folderName).icon;
   const WorkspaceTabIcon = surface.kind === "folder" ? null : WORKSPACE_TAB_ICONS[surface.kind];
+  const tabContent = (
+    <>
+      {FolderTabIcon ? (
+        <FolderTabIcon className="ml-2 size-3.5 shrink-0" />
+      ) : WorkspaceTabIcon ? (
+        <WorkspaceTabIcon className="ml-2 size-3.5 shrink-0 text-muted-foreground" />
+      ) : null}
+      <span className="w-full truncate pr-7 pl-1.5">{title}</span>
+    </>
+  );
 
   return (
     <div
@@ -411,7 +466,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
         isActive
           ? "bg-card text-foreground shadow-ambient-sm ring-1 ring-border dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.06)]"
           : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-        isDragging && "opacity-70",
+        isDragging && "opacity-30",
       )}
       data-tauri-drag-region="false"
       onClick={() => activateTab(tab.id)}
@@ -433,12 +488,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
           : title
       }
     >
-      {FolderTabIcon ? (
-        <FolderTabIcon className="ml-2 size-3.5 shrink-0" />
-      ) : WorkspaceTabIcon ? (
-        <WorkspaceTabIcon className="ml-2 size-3.5 shrink-0 text-muted-foreground" />
-      ) : null}
-      <span className="w-full truncate pr-7 pl-1.5">{title}</span>
+      {tabContent}
       <button
         aria-label={t("tabs.closeTab", { title })}
         className={cn(
@@ -456,6 +506,26 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       >
         <X className="size-3" />
       </button>
+      {dragPreview &&
+        createPortal(
+          <div
+            aria-hidden="true"
+            className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-md bg-card text-[13px] text-foreground shadow-ambient-lg ring-1 ring-border select-none"
+            data-tab-drag-preview=""
+            style={{
+              width: dragPreview.width,
+              height: dragPreview.height,
+              transform: `translate3d(${dragPreview.x}px, ${dragPreview.y}px, 0)`,
+            }}
+          >
+            {tabContent}
+            <span className="absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center text-muted-foreground">
+              <X className="size-3" />
+            </span>
+          </div>,
+          // Escape the tab strip's overflow clipping and the source tab's opacity.
+          document.body,
+        )}
     </div>
   );
 }
