@@ -68,97 +68,122 @@ type TabDragPreview = {
   height: number;
 };
 
-function roundedRect(
-  context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-) {
-  const clampedRadius = Math.min(radius, width / 2, height / 2);
-  context.beginPath();
-  context.moveTo(x + clampedRadius, y);
-  context.arcTo(x + width, y, x + width, y + height, clampedRadius);
-  context.arcTo(x + width, y + height, x, y + height, clampedRadius);
-  context.arcTo(x, y + height, x, y, clampedRadius);
-  context.arcTo(x, y, x + width, y, clampedRadius);
-  context.closePath();
+/** Room around the ghost for its --shadow-ambient-lg drop shadow (~12px
+ *  sideways, ~32px below) so the native drag image keeps the same floating
+ *  look as the in-window ghost. */
+const DRAG_PREVIEW_PAD = { top: 6, right: 14, bottom: 40, left: 14 } as const;
+
+/** The ghost portal mounts one React commit after the drag threshold, so the
+ *  snapshot waits a bounded number of frames for it to appear. */
+function waitForDragPreviewPortal(tabId: string, frames = 12): Promise<HTMLElement | null> {
+  return new Promise((resolve) => {
+    const tick = (remaining: number) => {
+      const portal = document.querySelector<HTMLElement>(`[data-tab-drag-preview="${tabId}"]`);
+      if (portal) resolve(portal);
+      else if (remaining > 0) requestAnimationFrame(() => tick(remaining - 1));
+      else resolve(null);
+    };
+    requestAnimationFrame(() => tick(frames));
+  });
 }
 
-/** Renders a compact PNG for the OS drag loop. Unlike a DOM portal, the
- * native drag image is not clipped at the WebView window boundary. */
-function createNativeTabDragPreview(
-  element: HTMLElement,
-  title: string,
-  width: number,
-  height: number,
-): string | null {
-  const scale = window.devicePixelRatio || 1;
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.ceil(width * scale);
-  canvas.height = Math.ceil(height * scale);
-  const context = canvas.getContext("2d");
-  if (!context) return null;
+/** Clones the ghost with every computed style inlined and <img> artwork
+ *  embedded as data URLs: an SVG loaded as an image renders in isolation and
+ *  can neither apply page stylesheets nor fetch external resources. */
+async function inlineSubtree(source: Element, clone: Element): Promise<void> {
+  const computed = getComputedStyle(source);
+  for (let index = 0; index < computed.length; index++) {
+    const property = computed.item(index);
+    (clone as HTMLElement | SVGElement).style.setProperty(
+      property,
+      computed.getPropertyValue(property),
+      computed.getPropertyPriority(property),
+    );
+  }
 
-  const rootStyle = getComputedStyle(document.documentElement);
-  const elementStyle = getComputedStyle(element);
-  const card = rootStyle.getPropertyValue("--card").trim() || elementStyle.backgroundColor;
-  const foreground = rootStyle.getPropertyValue("--foreground").trim() || elementStyle.color;
-  const muted = rootStyle.getPropertyValue("--muted-foreground").trim() || foreground;
-  const border = rootStyle.getPropertyValue("--border").trim() || "transparent";
-
-  context.scale(scale, scale);
-  roundedRect(context, 0.5, 0.5, width - 1, height - 1, 6);
-  context.fillStyle = card;
-  context.fill();
-  context.strokeStyle = border;
-  context.lineWidth = 1;
-  context.stroke();
-
-  let textX = 10;
-  const icon = element.querySelector(":scope > img");
-  if (icon instanceof HTMLImageElement && icon.complete && icon.naturalWidth > 0) {
+  if (source instanceof HTMLImageElement && clone instanceof HTMLImageElement) {
     try {
-      context.drawImage(icon, 8, (height - 14) / 2, 14, 14);
-      textX = 28;
+      const blob = await (await fetch(source.src)).blob();
+      clone.src = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
     } catch {
-      // The title still makes a useful preview if an icon cannot be painted.
+      clone.remove();
     }
   }
 
-  const closeCenterX = width - 11;
-  context.strokeStyle = muted;
-  context.lineCap = "round";
-  context.lineWidth = 1.25;
-  context.beginPath();
-  context.moveTo(closeCenterX - 3, height / 2 - 3);
-  context.lineTo(closeCenterX + 3, height / 2 + 3);
-  context.moveTo(closeCenterX + 3, height / 2 - 3);
-  context.lineTo(closeCenterX - 3, height / 2 + 3);
-  context.stroke();
-
-  context.fillStyle = foreground;
-  context.font = `${elementStyle.fontSize} ${elementStyle.fontFamily}`;
-  context.textBaseline = "middle";
-  const maxTextWidth = Math.max(0, closeCenterX - textX - 9);
-  let previewTitle = title;
-  if (context.measureText(previewTitle).width > maxTextWidth) {
-    while (
-      previewTitle.length > 1 &&
-      context.measureText(`${previewTitle}…`).width > maxTextWidth
-    ) {
-      previewTitle = previewTitle.slice(0, -1);
-    }
-    previewTitle += "…";
+  const children = Array.from(source.children);
+  const copies = Array.from(clone.children);
+  for (let index = 0; index < children.length; index++) {
+    await inlineSubtree(children[index]!, copies[index]!);
   }
-  context.fillText(previewTitle, textX, height / 2, maxTextWidth);
+}
 
-  try {
+/** Rasterizes the live ghost portal (plus shadow padding) to a PNG data URL
+ *  for the OS drag loop, so the native drag image is pixel-equal to the tab
+ *  the user was dragging in-window. Unlike a DOM portal it is also not
+ *  clipped at the WebView boundary. Returns null on any failure; the Rust
+ *  side then falls back to the application icon. */
+function snapshotTabDragPreview(tabId: string): Promise<string | null> {
+  return (async () => {
+    const portal = await waitForDragPreviewPortal(tabId);
+    if (!portal) return null;
+
+    const bounds = portal.getBoundingClientRect();
+    const scale = window.devicePixelRatio || 1;
+    const width = bounds.width + DRAG_PREVIEW_PAD.left + DRAG_PREVIEW_PAD.right;
+    const height = bounds.height + DRAG_PREVIEW_PAD.top + DRAG_PREVIEW_PAD.bottom;
+
+    const clone = portal.cloneNode(true) as HTMLElement;
+    await inlineSubtree(portal, clone);
+    clone.style.position = "absolute";
+    clone.style.inset = "auto";
+    clone.style.left = `${DRAG_PREVIEW_PAD.left}px`;
+    clone.style.top = `${DRAG_PREVIEW_PAD.top}px`;
+    clone.style.margin = "0";
+    clone.style.transform = "none";
+
+    // The foreignObject viewport is sized in device pixels; the wrapper lays
+    // the clone out in CSS pixels and scales it so text rasterizes crisply at
+    // the display's pixel ratio instead of relying on drawImage upscaling.
+    const bitmapWidth = Math.round(width * scale);
+    const bitmapHeight = Math.round(height * scale);
+    const svgNamespace = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNamespace, "svg");
+    svg.setAttribute("width", String(bitmapWidth));
+    svg.setAttribute("height", String(bitmapHeight));
+    const foreignObject = document.createElementNS(svgNamespace, "foreignObject");
+    foreignObject.setAttribute("width", String(bitmapWidth));
+    foreignObject.setAttribute("height", String(bitmapHeight));
+    const wrapper = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
+    wrapper.setAttribute(
+      "style",
+      `width:${width}px;height:${height}px;transform:scale(${scale});transform-origin:0 0;`,
+    );
+    wrapper.appendChild(clone);
+    foreignObject.appendChild(wrapper);
+    svg.appendChild(foreignObject);
+
+    const image = new Image();
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("The drag preview SVG failed to rasterize"));
+      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+        new XMLSerializer().serializeToString(svg),
+      )}`;
+    });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmapWidth;
+    canvas.height = bitmapHeight;
+    const context = canvas.getContext("2d");
+    if (!context) return null;
+    context.drawImage(image, 0, 0);
     return canvas.toDataURL("image/png");
-  } catch {
-    return null;
-  }
+  })().catch(() => null);
 }
 
 const WORKSPACE_TAB_ICONS = {
@@ -349,7 +374,8 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
   const elementRef = useRef<HTMLDivElement>(null);
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const [dragPreview, setDragPreview] = useState<TabDragPreview | null>(null);
-  const isDragging = dragPreview !== null;
+  const [dragActive, setDragActive] = useState(false);
+  const isDragging = dragActive;
 
   useEffect(() => {
     if (isActive) {
@@ -386,7 +412,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     let disposed = false;
     let nativeDragStarted = false;
     let tearingOff = false;
-    let nativePreview: string | null = null;
+    let nativePreview: Promise<string | null> | null = null;
     let pollTimer: number | undefined;
     let outsideRequest: Promise<boolean> | null = null;
 
@@ -408,6 +434,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
       dragCleanupRef.current = null;
       setDragPreview(null);
+      setDragActive(false);
     };
 
     const updatePreview = () => {
@@ -458,11 +485,18 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       stopPolling();
 
       try {
+        // The snapshot needs the ghost portal to still be in the DOM.
+        const preview = await nativePreview;
+        if (disposed || tearingOff) return;
+
+        // The OS drag image takes over the gesture; the in-window ghost would
+        // otherwise stay frozen, half-clipped at the WebView edge.
+        setDragPreview(null);
         const outcome = await commands.startTabDrag(
           appWindow.label,
-          nativePreview,
-          grabX * window.devicePixelRatio,
-          grabY * window.devicePixelRatio,
+          preview,
+          (grabX + DRAG_PREVIEW_PAD.left) * window.devicePixelRatio,
+          (grabY + DRAG_PREVIEW_PAD.top) * window.devicePixelRatio,
         );
         if (disposed || tearingOff) return;
 
@@ -495,14 +529,17 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     };
 
     function handlePointerMove(moveEvent: PointerEvent) {
-      if (moveEvent.pointerId !== pointerId || disposed || pointerReleased) return;
+      if (moveEvent.pointerId !== pointerId || disposed || pointerReleased || nativeDragStarted) {
+        return;
+      }
 
       if (!dragStarted) {
         const distance = Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY);
         if (distance < TAB_DRAG_START_DISTANCE) return;
 
         dragStarted = true;
-        nativePreview = createNativeTabDragPreview(element!, title, bounds.width, bounds.height);
+        setDragActive(true);
+        nativePreview = snapshotTabDragPreview(tab.id);
         if (appWindow) {
           pollTimer = window.setInterval(() => void pollOutside(), TAB_OUTSIDE_POLL_INTERVAL);
         }
@@ -632,7 +669,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
           <div
             aria-hidden="true"
             className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-md bg-card text-[13px] text-foreground shadow-ambient-lg ring-1 ring-border select-none"
-            data-tab-drag-preview=""
+            data-tab-drag-preview={tab.id}
             style={{
               width: dragPreview.width,
               height: dragPreview.height,
