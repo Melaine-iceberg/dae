@@ -39,6 +39,7 @@ use windows::{
     },
 };
 
+mod ghost;
 mod image;
 
 static mut OLE_RESULT: Result<()> = Ok(());
@@ -288,22 +289,24 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
                     }
                 }
 
-                // IDragSourceHelper needs an IDataObject to own the drag image,
-                // but a tab drag must not expose or drop a real filesystem path.
+                // A tab drag must not expose or drop a real filesystem path,
+                // so the data object carries no formats at all.
                 let data_object: IDataObject = DataObject::new(Vec::new()).into();
                 let completed_by_release = Arc::new(AtomicBool::new(false));
                 let drop_source: IDropSource =
                     DummyDropSource::new(completed_by_release.clone()).into();
 
-                unsafe {
-                    if let Some(drag_image) = get_drag_image(image, options.drag_image_offset) {
-                        if let Ok(helper) =
-                            create_instance::<IDragSourceHelper>(&CLSID_DragDropHelper)
-                        {
-                            let _ = helper.InitializeFromBitmap(&drag_image, &data_object);
-                        }
-                    }
+                // The Shell composites its own drag image at 75% alpha, which
+                // makes a dragged tab card look see-through, so this drag draws
+                // its preview with a window the crate owns instead.
+                let ghost = ghost::DragGhost::start(
+                    &image,
+                    options
+                        .drag_image_offset
+                        .unwrap_or(CursorPosition { x: 0, y: 0 }),
+                );
 
+                unsafe {
                     let mut out_dropeffect = DROPEFFECT::default();
                     let drop_result = DoDragDrop(
                         &data_object,
@@ -311,6 +314,9 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
                         DROPEFFECT_COPY,
                         &mut out_dropeffect,
                     );
+                    // Take the preview down before reporting the outcome, so it
+                    // never outlives the gesture.
+                    drop(ghost);
                     let mut pt = POINT { x: 0, y: 0 };
                     GetCursorPos(&mut pt)?;
                     if drop_result == DRAGDROP_S_DROP || completed_by_release.load(Ordering::SeqCst)

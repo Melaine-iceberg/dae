@@ -163,7 +163,8 @@ pub struct Options {
     pub skip_animatation_on_cancel_or_failure: bool,
     pub mode: DragMode,
     /// Cursor offset from the drag image's top-left corner, in physical pixels.
-    /// Currently applied by the Windows shell drag implementation.
+    /// Applied by the Windows drag implementations: the preview window used for
+    /// data drags, and the Shell's drag image used for file drags.
     pub drag_image_offset: Option<CursorPosition>,
 }
 

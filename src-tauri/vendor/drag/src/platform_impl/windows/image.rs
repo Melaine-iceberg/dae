@@ -19,7 +19,39 @@ use windows::Win32::{
 
 use crate::Result;
 
-pub(crate) fn read_bytes_to_hbitmap(bytes: &[u8]) -> Result<HBITMAP> {
+/// A decoded image in premultiplied BGRA — the layout both the Shell's drag
+/// image and `UpdateLayeredWindow` expect, so a single decode serves both.
+pub(crate) struct PremultipliedBitmap {
+    pub(crate) width: i32,
+    pub(crate) height: i32,
+    pub(crate) pixels: Vec<u8>,
+}
+
+impl PremultipliedBitmap {
+    /// Wraps the pixels in a device-dependent bitmap, which is all the Shell's
+    /// drag image takes.
+    pub(crate) fn to_device_bitmap(&self) -> HBITMAP {
+        unsafe {
+            CreateBitmap(
+                self.width,
+                self.height,
+                1,
+                32,
+                Some(self.pixels.as_ptr() as *const c_void),
+            )
+        }
+    }
+}
+
+/// Decodes whichever image the caller supplied, whatever format it is in.
+pub(crate) fn read_image(item: &crate::Image) -> Result<PremultipliedBitmap> {
+    match item {
+        crate::Image::Raw(bytes) => read_bytes_to_premultiplied_bgra(bytes),
+        crate::Image::File(path) => read_path_to_premultiplied_bgra(path),
+    }
+}
+
+pub(crate) fn read_bytes_to_premultiplied_bgra(bytes: &[u8]) -> Result<PremultipliedBitmap> {
     unsafe {
         let factory: IWICImagingFactory =
             CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?;
@@ -33,11 +65,11 @@ pub(crate) fn read_bytes_to_hbitmap(bytes: &[u8]) -> Result<HBITMAP> {
             WICDecodeMetadataCacheOnDemand,
         )?;
 
-        decoder_to_hbitmap(decoder)
+        decoder_to_premultiplied_bgra(decoder)
     }
 }
 
-pub(crate) fn read_path_to_hbitmap(path: &Path) -> Result<HBITMAP> {
+pub(crate) fn read_path_to_premultiplied_bgra(path: &Path) -> Result<PremultipliedBitmap> {
     unsafe {
         let factory: IWICImagingFactory =
             CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?;
@@ -52,11 +84,19 @@ pub(crate) fn read_path_to_hbitmap(path: &Path) -> Result<HBITMAP> {
             WICDecodeMetadataCacheOnDemand,
         )?;
 
-        decoder_to_hbitmap(decoder)
+        decoder_to_premultiplied_bgra(decoder)
     }
 }
 
-fn decoder_to_hbitmap(decoder: IWICBitmapDecoder) -> Result<HBITMAP> {
+pub(crate) fn read_bytes_to_hbitmap(bytes: &[u8]) -> Result<HBITMAP> {
+    Ok(read_bytes_to_premultiplied_bgra(bytes)?.to_device_bitmap())
+}
+
+pub(crate) fn read_path_to_hbitmap(path: &Path) -> Result<HBITMAP> {
+    Ok(read_path_to_premultiplied_bgra(path)?.to_device_bitmap())
+}
+
+fn decoder_to_premultiplied_bgra(decoder: IWICBitmapDecoder) -> Result<PremultipliedBitmap> {
     unsafe {
         let frame = decoder.GetFrame(0)?;
 
@@ -64,21 +104,19 @@ fn decoder_to_hbitmap(decoder: IWICBitmapDecoder) -> Result<HBITMAP> {
         let mut height: u32 = 0;
         frame.GetSize(&mut width, &mut height)?;
 
-        let mut pixel_buf: Vec<u8> = vec![0; (width * height * 4) as usize];
+        let mut pixels: Vec<u8> = vec![0; (width * height * 4) as usize];
         let pixel_format = frame.GetPixelFormat()?;
         if pixel_format != GUID_WICPixelFormat32bppPBGRA {
             let bitmap_source = WICConvertBitmapSource(&GUID_WICPixelFormat32bppPBGRA, &frame)?;
-            bitmap_source.CopyPixels(std::ptr::null(), width * 4, &mut pixel_buf)?;
+            bitmap_source.CopyPixels(std::ptr::null(), width * 4, &mut pixels)?;
         } else {
-            frame.CopyPixels(std::ptr::null(), width * 4, &mut pixel_buf)?;
+            frame.CopyPixels(std::ptr::null(), width * 4, &mut pixels)?;
         }
 
-        Ok(CreateBitmap(
-            width as i32,
-            height as i32,
-            1,
-            32,
-            Some(pixel_buf.as_ptr() as *const c_void),
-        ))
+        Ok(PremultipliedBitmap {
+            width: width as i32,
+            height: height as i32,
+            pixels,
+        })
     }
 }
