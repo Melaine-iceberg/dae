@@ -516,13 +516,73 @@ fn read_files_from_clipboard_impl() -> Result<Option<SystemClipboardFiles>, File
 
 #[cfg(not(windows))]
 fn start_drag_out_impl(
-    _paths: Vec<String>,
-    _mode: DragOutMode,
-    _app: &tauri::AppHandle,
+    paths: Vec<String>,
+    mode: DragOutMode,
+    app: &tauri::AppHandle,
 ) -> Result<(), FileSystemError> {
-    Err(FileSystemError::Internal(
-        "Drag-out is only implemented on Windows".into(),
-    ))
+    use std::sync::atomic::AtomicBool;
+    use tauri::Manager;
+
+    let Some(window) = app.get_webview_window("main") else {
+        return Err(FileSystemError::Internal(
+            "The main window was not found".into(),
+        ));
+    };
+
+    /// Drag preview shown by the OS while dragging out of the window.
+    const DRAG_PREVIEW_ICON: &[u8] = include_bytes!("../../icons/32x32.png");
+
+    /// Set while a native drag-out runs. AppKit and GTK run drag sessions
+    /// asynchronously (completion is reported from the drag callback), so the
+    /// flag resets there instead of after a blocking modal loop like
+    /// Windows' DoDragDrop. A re-entrant dispatch while a drag is still
+    /// running must not start a second session over the first.
+    static DRAG_OUT_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+    app.run_on_main_thread(move || {
+        use std::path::PathBuf;
+        use std::sync::atomic::Ordering;
+
+        if DRAG_OUT_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        let item = drag::DragItem::Files(paths.into_iter().map(PathBuf::from).collect());
+        let preview = drag::Image::Raw(DRAG_PREVIEW_ICON.to_vec());
+        let options = drag::Options {
+            skip_animatation_on_cancel_or_failure: false,
+            mode: match mode {
+                DragOutMode::Copy => drag::DragMode::Copy,
+                DragOutMode::Move => drag::DragMode::Move,
+                DragOutMode::Link => drag::DragMode::Link,
+            },
+            drag_image_offset: None,
+        };
+        let finish = move |_, _: drag::CursorPosition| {
+            DRAG_OUT_IN_PROGRESS.store(false, Ordering::SeqCst);
+        };
+
+        #[cfg(target_os = "macos")]
+        let started = drag::start_drag(&window, item, preview, finish, options);
+
+        #[cfg(target_os = "linux")]
+        let started = match window.gtk_window() {
+            Ok(gtk_window) => drag::start_drag(&gtk_window, item, preview, finish, options),
+            Err(error) => {
+                eprintln!("Unable to access the GTK window for the drag-out: {error}");
+                DRAG_OUT_IN_PROGRESS.store(false, Ordering::SeqCst);
+                return;
+            }
+        };
+
+        if let Err(error) = started {
+            eprintln!("Unable to start the drag-out: {error:?}");
+            DRAG_OUT_IN_PROGRESS.store(false, Ordering::SeqCst);
+        }
+    })
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+
+    Ok(())
 }
 
 /// macOS/Linux counterpart of the Windows `.lnk` path: creates a real

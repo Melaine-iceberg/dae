@@ -90,19 +90,27 @@ define_class!(
             ended_at_point: NSPoint,
             operation: objc2_app_kit::NSDragOperation,
         ) {
-            let callback = &self.ivars().on_drop_callback;
+            let ivars = self.ivars();
+            let callback = &ivars.on_drop_callback;
 
             let mouse_location = CursorPosition {
                 x: ended_at_point.x as i32,
                 y: CGDisplay::main().pixels_high() as i32 - ended_at_point.y as i32,
             };
 
+            // A dummy data drag never lands on an accepting target, so it
+            // always ends with NSDragOperationNone; the only way to tell a
+            // plain mouse release from an Escape cancel is whether the
+            // primary button is still held.
+            let released_by_mouse =
+                ivars.count_release_as_drop && (NSEvent::pressedMouseButtons() & 1) == 0;
+
             let callback_closure = callback.as_ref();
 
-            if operation == objc2_app_kit::NSDragOperation::None {
-                callback_closure(DragResult::Cancel, mouse_location);
-            } else {
+            if operation != objc2_app_kit::NSDragOperation::None || released_by_mouse {
                 callback_closure(DragResult::Dropped, mouse_location);
+            } else {
+                callback_closure(DragResult::Cancel, mouse_location);
             }
         }
     }
@@ -112,6 +120,7 @@ struct DragRsSourceIvars {
     on_drop_callback: OnDropCallback,
     animate_on_cancel_or_failure: bool,
     drag_mode: DragMode,
+    count_release_as_drop: bool,
 }
 
 impl DragRsSource {
@@ -119,6 +128,7 @@ impl DragRsSource {
         on_drop_callback: F,
         options: &Options,
         mtm: MainThreadMarker,
+        count_release_as_drop: bool,
     ) -> Retained<Self> {
         let on_drop_callback: OnDropCallback = Box::new(on_drop_callback);
 
@@ -126,6 +136,7 @@ impl DragRsSource {
             on_drop_callback,
             animate_on_cancel_or_failure: !options.skip_animatation_on_cancel_or_failure,
             drag_mode: options.mode,
+            count_release_as_drop,
         });
         unsafe { msg_send![super(this), init] }
     }
@@ -163,16 +174,40 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
                 }
             };
             let img = img.expect("Failed to create NSImage");
+
+            // Dragging frames are measured in points, while preview images
+            // are rendered at the device pixel ratio. Normalize the size to
+            // the window's backing scale so the ghost matches the on-screen
+            // element, and convert the physical grab offset the same way.
+            let backing_scale = window.backingScaleFactor();
+            let pixel_size = img.size();
+            img.setSize(NSSize::new(
+                pixel_size.width / backing_scale,
+                pixel_size.height / backing_scale,
+            ));
             let image_size: NSSize = img.size();
-            let image_rect = NSRect::new(
-                NSPoint::new(
-                    current_position.x - image_size.width / 2.,
-                    current_position.y - image_size.height / 2.,
+            // Window coordinates grow from the bottom-left while the grab
+            // offset is anchored at the image's top-left, hence the flipped
+            // y term.
+            let image_rect = match options.drag_image_offset {
+                Some(offset) => NSRect::new(
+                    NSPoint::new(
+                        current_position.x - offset.x as f64 / backing_scale,
+                        current_position.y - image_size.height + offset.y as f64 / backing_scale,
+                    ),
+                    image_size,
                 ),
-                image_size,
-            );
+                None => NSRect::new(
+                    NSPoint::new(
+                        current_position.x - image_size.width / 2.,
+                        current_position.y - image_size.height / 2.,
+                    ),
+                    image_size,
+                ),
+            };
 
             let dragging_items = NSMutableArray::new();
+            let count_release_as_drop = matches!(item, DragItem::Data { .. });
 
             match item {
                 DragItem::Files(files) => {
@@ -229,9 +264,11 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
                 1.0
             ).expect("Failed to create NSEvent");
 
-            let source = DragRsSource::new(on_drop_callback, &options, mtm);
+            let source = DragRsSource::new(on_drop_callback, &options, mtm, count_release_as_drop);
 
-            let _ = content_view.beginDraggingSessionWithItems_event_source(
+            // Returns a non-null session; AppKit logs its own diagnostics when
+            // a session cannot begin.
+            let _session = content_view.beginDraggingSessionWithItems_event_source(
                 &dragging_items,
                 &drag_event,
                 &ProtocolObject::<dyn NSDraggingSource>::from_retained(source),

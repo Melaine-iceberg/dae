@@ -32,7 +32,7 @@ import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import { WorkspaceSurfaceView } from "@/features/workspace/workspace-surface";
 import type { WorkspaceSurface } from "@/features/workspace/types";
-import { isWindowsPlatform, MOD_KEY } from "@/lib/platform";
+import { MOD_KEY } from "@/lib/platform";
 import { getAppWindow } from "@/lib/app-window";
 import { cn } from "@/lib/utils";
 
@@ -483,7 +483,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       try {
         const outside = await readOutside();
         if (disposed || tearingOff) return outside;
-        if (outside && beginNativeDrag && isWindowsPlatform && !nativeDragStarted) {
+        if (outside && beginNativeDrag && !nativeDragStarted) {
           await startNativeDrag();
         }
         return outside;
@@ -535,8 +535,9 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     }
 
     function handlePointerCancel(cancelEvent: PointerEvent) {
-      // The native OLE loop owns the gesture after it crosses the window edge;
-      // losing DOM capture at that point must not cancel the pending result.
+      // The platform's native drag loop owns the gesture after it crosses the
+      // window edge; losing DOM capture at that point must not cancel the
+      // pending result.
       if (nativeDragStarted) return;
       // Pointerup implicitly releases capture; let its final native bounds
       // check finish instead of cancelling a quick drop outside the window.

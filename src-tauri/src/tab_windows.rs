@@ -1,16 +1,20 @@
 //! Tab tear-off support.
 //!
-//! WebView2 stops delivering pointer events after the cursor leaves a window,
-//! so the frontend cannot reliably decide whether an in-progress tab drag is
-//! outside. These commands query the native window and create the detached
-//! webview window while keeping the opaque tab snapshot in Rust until the new
-//! frontend consumes it.
+//! The WebView stops delivering pointer events once the cursor leaves the
+//! window, so the frontend cannot reliably decide whether an in-progress tab
+//! drag is outside. These commands query the native window and create the
+//! detached webview window while keeping the opaque tab snapshot in Rust until
+//! the new frontend consumes it. Once the gesture crosses the window edge it
+//! is handed to the platform's native drag loop — OLE `DoDragDrop` on Windows,
+//! an `NSDraggingSession` on macOS, and a GTK drag on Linux — which owns the
+//! drag image and mouse capture until the user releases the primary button or
+//! presses Escape.
 
 use std::{
     collections::HashMap,
     sync::{
         Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
 };
@@ -27,11 +31,12 @@ const MIN_WIDTH: f64 = 640.0;
 const MIN_HEIGHT: f64 = 480.0;
 const MAX_WIDTH: f64 = 1280.0;
 const MAX_HEIGHT: f64 = 900.0;
-#[cfg(windows)]
+static TAB_DRAG_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 const TAB_DRAG_FALLBACK_ICON: &[u8] = include_bytes!("../icons/32x32.png");
-#[cfg(windows)]
-static TAB_DRAG_IN_PROGRESS: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+/// MIME type declared by the dummy data drag that carries the tab ghost. No
+/// application accepts it, so the drag stays visual-only; GTK in particular
+/// refuses to start a drag that advertises no target at all.
+const TAB_DRAG_TYPE: &str = "application/x-dae-tab-drag";
 
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -78,8 +83,9 @@ impl TabWindowState {
 
 /// Whether the pointer has left the window a dragged tab came from.
 ///
-/// The frontend polls while a tab drag is in flight because WebView2 may stop
-/// delivering pointer events as soon as the cursor crosses the window edge.
+/// The frontend polls while a tab drag is in flight because the WebView may
+/// stop delivering pointer events as soon as the cursor crosses the window
+/// edge.
 #[tauri::command]
 #[specta::specta]
 pub fn tab_drag_outside(app: tauri::AppHandle, source: String) -> Result<bool, String> {
@@ -102,9 +108,14 @@ pub fn tab_drag_outside(app: tauri::AppHandle, source: String) -> Result<bool, S
     ))
 }
 
-/// Hands an out-of-window tab gesture to the Windows OLE drag loop. The shell
-/// owns the drag image and mouse capture until the user releases the primary
-/// button or presses Escape, so the WebView does not need global mouse hooks.
+/// Hands an out-of-window tab gesture to the platform's native drag loop. The
+/// shell owns the drag image and mouse capture until the user releases the
+/// primary button or presses Escape, so the WebView does not need global mouse
+/// hooks.
+///
+/// Windows blocks in `DoDragDrop` and returns through the main-thread closure;
+/// macOS and GTK run asynchronous drag sessions, so the completion is reported
+/// from the drag callback, possibly after this command has already finished.
 #[tauri::command]
 #[specta::specta]
 pub async fn start_tab_drag(
@@ -114,30 +125,33 @@ pub async fn start_tab_drag(
     offset_x: f64,
     offset_y: f64,
 ) -> Result<TabDragOutcome, String> {
-    #[cfg(not(windows))]
-    {
-        let _ = (app, source, preview, offset_x, offset_y);
-        return Err("Native tab drag is currently only available on Windows".into());
+    if !matches!(std::env::consts::OS, "windows" | "macos" | "linux") {
+        let _ = (&app, &source, &preview, offset_x, offset_y);
+        return Err("Native tab drag is not supported on this platform".into());
     }
+
+    let window = app
+        .get_webview_window(&source)
+        .ok_or_else(|| format!("Source window '{source}' was not found"))?;
+    let preview = decode_drag_preview(preview)?;
+    let image_offset = drag::CursorPosition {
+        x: finite_i32(offset_x),
+        y: finite_i32(offset_y),
+    };
+
+    // The completion channel is consumed exactly once by whichever path
+    // finishes first: the synchronous DoDragDrop loop on Windows, or the
+    // asynchronous drag-session callback on macOS/GTK.
+    let (sender, receiver) = mpsc::sync_channel::<Result<NativeDragSummary, String>>(1);
 
     #[cfg(windows)]
     {
-        let window = app
-            .get_webview_window(&source)
-            .ok_or_else(|| format!("Source window '{source}' was not found"))?;
-        let preview = decode_drag_preview(preview)?;
-        let image_offset = drag::CursorPosition {
-            x: finite_i32(offset_x),
-            y: finite_i32(offset_y),
-        };
         let drag_window = window.clone();
-        let (sender, receiver) =
-            mpsc::sync_channel::<Result<(bool, drag::CursorPosition), String>>(1);
         let dispatch_sender = sender.clone();
 
         app.run_on_main_thread(move || {
             if TAB_DRAG_IN_PROGRESS.swap(true, Ordering::SeqCst) {
-                let _ = dispatch_sender.send(Err("Another tab drag is already active".into()));
+                let _ = dispatch_sender.try_send(Err("Another tab drag is already active".into()));
                 return;
             }
 
@@ -146,12 +160,12 @@ pub async fn start_tab_drag(
                 &drag_window,
                 drag::DragItem::Data {
                     provider: Box::new(|_| None),
-                    types: Vec::new(),
+                    types: vec![TAB_DRAG_TYPE.into()],
                 },
                 drag::Image::Raw(preview),
                 move |result, cursor| {
                     let released = matches!(result, drag::DragResult::Dropped);
-                    let _ = callback_sender.send(Ok((released, cursor)));
+                    let _ = callback_sender.try_send(Ok(NativeDragSummary { released, cursor }));
                 },
                 drag::Options {
                     skip_animatation_on_cancel_or_failure: true,
@@ -167,34 +181,156 @@ pub async fn start_tab_drag(
             TAB_DRAG_IN_PROGRESS.store(false, Ordering::SeqCst);
         })
         .map_err(|error| error.to_string())?;
-        drop(sender);
-
-        let (released, cursor) = tauri::async_runtime::spawn_blocking(move || receiver.recv())
-            .await
-            .map_err(|error| error.to_string())?
-            .map_err(|_| "The native tab drag ended without a result".to_string())??;
-        let position = window.outer_position().map_err(|error| error.to_string())?;
-        let size = window.outer_size().map_err(|error| error.to_string())?;
-        let cursor_x = cursor.x;
-        let cursor_y = cursor.y;
-
-        Ok(TabDragOutcome {
-            released,
-            outside: point_is_outside(
-                f64::from(cursor_x),
-                f64::from(cursor_y),
-                position.x,
-                position.y,
-                size.width,
-                size.height,
-            ),
-            cursor_x,
-            cursor_y,
-        })
     }
+
+    #[cfg(target_os = "macos")]
+    {
+        let drag_window = window.clone();
+        let dispatch_sender = sender.clone();
+
+        // The frontend's poll decided the gesture is outside, so the source
+        // tab sits wherever the last in-window pointer event left it; the
+        // ghost continues from the true cursor position instead.
+        app.run_on_main_thread(move || {
+            if TAB_DRAG_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+                let _ = dispatch_sender.try_send(Err("Another tab drag is already active".into()));
+                return;
+            }
+
+            let callback_sender = dispatch_sender.clone();
+            let callback_window = drag_window.clone();
+            let result = drag::start_drag(
+                &drag_window,
+                drag::DragItem::Data {
+                    provider: Box::new(|_| None),
+                    types: vec![TAB_DRAG_TYPE.into()],
+                },
+                drag::Image::Raw(preview),
+                move |result, _| {
+                    // tao's cursor_position shares the same (quirky but
+                    // self-consistent) coordinate space as outer_position,
+                    // which the outside test and the tear-off placement below
+                    // both rely on, so query through the window rather than
+                    // the drag callback's coordinates.
+                    let cursor = callback_window
+                        .cursor_position()
+                        .map_err(|error| error.to_string())
+                        .map(|position| drag::CursorPosition {
+                            x: position.x.round() as i32,
+                            y: position.y.round() as i32,
+                        });
+                    let summary = match cursor {
+                        Ok(cursor) => Ok(NativeDragSummary {
+                            released: matches!(result, drag::DragResult::Dropped),
+                            cursor,
+                        }),
+                        Err(error) => Err(error),
+                    };
+                    let _ = callback_sender.try_send(summary);
+                    TAB_DRAG_IN_PROGRESS.store(false, Ordering::SeqCst);
+                },
+                drag::Options {
+                    skip_animatation_on_cancel_or_failure: true,
+                    mode: drag::DragMode::Move,
+                    drag_image_offset: Some(image_offset),
+                },
+            );
+
+            if let Err(error) = result {
+                let _ = dispatch_sender
+                    .try_send(Err(format!("Unable to start the native tab drag: {error}")));
+                TAB_DRAG_IN_PROGRESS.store(false, Ordering::SeqCst);
+            }
+        })
+        .map_err(|error| error.to_string())?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let drag_window = window.clone();
+        let dispatch_sender = sender.clone();
+
+        app.run_on_main_thread(move || {
+            if TAB_DRAG_IN_PROGRESS.swap(true, Ordering::SeqCst) {
+                let _ = dispatch_sender.try_send(Err("Another tab drag is already active".into()));
+                return;
+            }
+
+            let gtk_window = match drag_window.gtk_window() {
+                Ok(gtk_window) => gtk_window,
+                Err(error) => {
+                    let _ = dispatch_sender
+                        .try_send(Err(format!("Unable to access the GTK window: {error}")));
+                    TAB_DRAG_IN_PROGRESS.store(false, Ordering::SeqCst);
+                    return;
+                }
+            };
+
+            let callback_sender = dispatch_sender;
+            let result = drag::start_drag(
+                &gtk_window,
+                drag::DragItem::Data {
+                    provider: Box::new(|_| None),
+                    types: vec![TAB_DRAG_TYPE.into()],
+                },
+                drag::Image::Raw(preview),
+                move |result, cursor| {
+                    let _ = callback_sender.try_send(Ok(NativeDragSummary {
+                        released: matches!(result, drag::DragResult::Dropped),
+                        cursor,
+                    }));
+                    TAB_DRAG_IN_PROGRESS.store(false, Ordering::SeqCst);
+                },
+                drag::Options {
+                    skip_animatation_on_cancel_or_failure: true,
+                    mode: drag::DragMode::Move,
+                    drag_image_offset: Some(image_offset),
+                },
+            );
+
+            if let Err(error) = result {
+                let _ = dispatch_sender
+                    .try_send(Err(format!("Unable to start the native tab drag: {error}")));
+                TAB_DRAG_IN_PROGRESS.store(false, Ordering::SeqCst);
+            }
+        })
+        .map_err(|error| error.to_string())?;
+    }
+
+    drop(sender);
+
+    let (released, cursor) =
+        match tauri::async_runtime::spawn_blocking(move || receiver.recv()).await {
+            Ok(Ok(Ok(summary))) => (summary.released, summary.cursor),
+            Ok(Ok(Err(error))) => return Err(error),
+            Ok(Err(_)) => return Err("The native tab drag ended without a result".into()),
+            Err(error) => return Err(error.to_string()),
+        };
+    let position = window.outer_position().map_err(|error| error.to_string())?;
+    let size = window.outer_size().map_err(|error| error.to_string())?;
+    let cursor_x = cursor.x;
+    let cursor_y = cursor.y;
+
+    Ok(TabDragOutcome {
+        released,
+        outside: point_is_outside(
+            f64::from(cursor_x),
+            f64::from(cursor_y),
+            position.x,
+            position.y,
+            size.width,
+            size.height,
+        ),
+        cursor_x,
+        cursor_y,
+    })
 }
 
-#[cfg(windows)]
+struct NativeDragSummary {
+    released: bool,
+    cursor: drag::CursorPosition,
+}
+
 fn decode_drag_preview(preview: Option<String>) -> Result<Vec<u8>, String> {
     let Some(preview) = preview else {
         return Ok(TAB_DRAG_FALLBACK_ICON.to_vec());
@@ -207,7 +343,6 @@ fn decode_drag_preview(preview: Option<String>) -> Result<Vec<u8>, String> {
         .map_err(|error| format!("Unable to decode the tab drag preview: {error}"))
 }
 
-#[cfg(windows)]
 fn finite_i32(value: f64) -> i32 {
     if value.is_finite() {
         value
