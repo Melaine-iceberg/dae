@@ -11,7 +11,10 @@ use std::{
     iter::once,
     os::windows::ffi::OsStrExt,
     path::{Path, PathBuf},
-    sync::Once,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Once,
+    },
 };
 use windows::{
     core::*,
@@ -22,8 +25,8 @@ use windows::{
         System::Memory::*,
         System::Ole::{DoDragDrop, OleInitialize},
         System::Ole::{
-            IDropSource, IDropSource_Impl, CF_HDROP, DROPEFFECT, DROPEFFECT_COPY,
-            DROPEFFECT_LINK, DROPEFFECT_MOVE,
+            IDropSource, IDropSource_Impl, CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_LINK,
+            DROPEFFECT_MOVE,
         },
         System::SystemServices::{MK_LBUTTON, MODIFIERKEYS_FLAGS},
         UI::{
@@ -60,7 +63,7 @@ struct DataObject {
 struct DropSource(());
 
 #[implement(IDropSource)]
-struct DummyDropSource(());
+struct DummyDropSource(Arc<AtomicBool>);
 
 impl DropSource {
     fn new() -> Self {
@@ -86,15 +89,22 @@ impl IDropSource_Impl for DropSource {
 }
 
 impl DummyDropSource {
-    fn new() -> Self {
-        Self(())
+    fn new(completed_by_release: Arc<AtomicBool>) -> Self {
+        Self(completed_by_release)
     }
 }
 
 #[allow(non_snake_case)]
 impl IDropSource_Impl for DummyDropSource {
     fn QueryContinueDrag(&self, fescapepressed: BOOL, grfkeystate: MODIFIERKEYS_FLAGS) -> HRESULT {
-        if fescapepressed.as_bool() || (grfkeystate & MK_LBUTTON) == MODIFIERKEYS_FLAGS(0) {
+        if fescapepressed.as_bool() {
+            self.0.store(false, Ordering::SeqCst);
+            DRAGDROP_S_CANCEL
+        } else if (grfkeystate & MK_LBUTTON) == MODIFIERKEYS_FLAGS(0) {
+            // The data drag intentionally cancels instead of dropping its dummy
+            // payload, but callers still need to distinguish a normal mouse
+            // release from Escape.
+            self.0.store(true, Ordering::SeqCst);
             DRAGDROP_S_CANCEL
         } else {
             S_OK
@@ -102,7 +112,9 @@ impl IDropSource_Impl for DummyDropSource {
     }
 
     fn GiveFeedback(&self, _dweffect: DROPEFFECT) -> HRESULT {
-        DRAGDROP_S_USEDEFAULTCURSORS
+        // The drag image is the feedback; suppress the misleading copy/forbidden
+        // cursor that belongs to the intentionally empty data object.
+        S_OK
     }
 }
 
@@ -240,7 +252,7 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
                 let drop_source: IDropSource = DropSource::new().into();
 
                 unsafe {
-                    if let Some(drag_image) = get_drag_image(image) {
+                    if let Some(drag_image) = get_drag_image(image, options.drag_image_offset) {
                         if let Ok(helper) =
                             create_instance::<IDragSourceHelper>(&CLSID_DragDropHelper)
                         {
@@ -276,13 +288,15 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
                     }
                 }
 
-                let paths = vec![dunce::canonicalize("./")?];
-
-                let data_object: IDataObject = get_file_data_object(&paths).unwrap();
-                let drop_source: IDropSource = DummyDropSource::new().into();
+                // IDragSourceHelper needs an IDataObject to own the drag image,
+                // but a tab drag must not expose or drop a real filesystem path.
+                let data_object: IDataObject = DataObject::new(Vec::new()).into();
+                let completed_by_release = Arc::new(AtomicBool::new(false));
+                let drop_source: IDropSource =
+                    DummyDropSource::new(completed_by_release.clone()).into();
 
                 unsafe {
-                    if let Some(drag_image) = get_drag_image(image) {
+                    if let Some(drag_image) = get_drag_image(image, options.drag_image_offset) {
                         if let Ok(helper) =
                             create_instance::<IDragSourceHelper>(&CLSID_DragDropHelper)
                         {
@@ -299,10 +313,11 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
                     );
                     let mut pt = POINT { x: 0, y: 0 };
                     GetCursorPos(&mut pt)?;
-                    if drop_result == DRAGDROP_S_DROP {
+                    if drop_result == DRAGDROP_S_DROP || completed_by_release.load(Ordering::SeqCst)
+                    {
                         on_drop_callback(DragResult::Dropped, CursorPosition { x: pt.x, y: pt.y });
                     } else {
-                        // DRAGDROP_S_CANCEL
+                        // DRAGDROP_S_CANCEL or Escape
                         on_drop_callback(DragResult::Cancel, CursorPosition { x: pt.x, y: pt.y });
                     }
                 }
@@ -314,7 +329,7 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
     }
 }
 
-fn get_drag_image(image: Image) -> Option<SHDRAGIMAGE> {
+fn get_drag_image(image: Image, offset: Option<CursorPosition>) -> Option<SHDRAGIMAGE> {
     let hbitmap = match image {
         Image::Raw(bytes) => image::read_bytes_to_hbitmap(&bytes).ok(),
         Image::File(path) => image::read_path_to_hbitmap(&path).ok(),
@@ -338,7 +353,12 @@ fn get_drag_image(image: Image) -> Option<SHDRAGIMAGE> {
                 cx: width,
                 cy: height,
             },
-            ptOffset: POINT { x: 0, y: 0 },
+            ptOffset: offset
+                .map(|position| POINT {
+                    x: position.x.clamp(0, width),
+                    y: position.y.clamp(0, height),
+                })
+                .unwrap_or(POINT { x: 0, y: 0 }),
             hbmpDragImage: hbitmap,
             crColorKey: COLORREF(0x00000000),
         }

@@ -162,6 +162,9 @@ pub struct Options {
     // TODO: Fix typo in v3
     pub skip_animatation_on_cancel_or_failure: bool,
     pub mode: DragMode,
+    /// Cursor offset from the drag image's top-left corner, in physical pixels.
+    /// Currently applied by the Windows shell drag implementation.
+    pub drag_image_offset: Option<CursorPosition>,
 }
 
 /// An image definition.
@@ -178,7 +181,7 @@ pub enum Image {
 /// Logical position of the cursor.
 ///
 /// - **Windows**: Currently the win32 API for logical position reports physical position as well, due to the complicated nature of potential multiple monitor with different scaling there's no trivial solution to be incorporated.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct CursorPosition {
     pub x: i32,

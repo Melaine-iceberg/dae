@@ -375,6 +375,7 @@ mod platform {
                 drag::Options {
                     skip_animatation_on_cancel_or_failure: false,
                     mode: drag_mode,
+                    drag_image_offset: None,
                 },
             ) {
                 eprintln!("Unable to start the drag-out: {error:?}");

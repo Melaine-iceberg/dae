@@ -32,7 +32,7 @@ import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import { WorkspaceSurfaceView } from "@/features/workspace/workspace-surface";
 import type { WorkspaceSurface } from "@/features/workspace/types";
-import { MOD_KEY } from "@/lib/platform";
+import { isWindowsPlatform, MOD_KEY } from "@/lib/platform";
 import { getAppWindow } from "@/lib/app-window";
 import { cn } from "@/lib/utils";
 
@@ -60,7 +60,6 @@ import {
 const TAB_STRIP_SCROLL_AMOUNT = 512;
 const TAB_DRAG_START_DISTANCE = 6;
 const TAB_OUTSIDE_POLL_INTERVAL = 50;
-const TAB_OUTSIDE_GRACE_PERIOD = 120;
 
 type TabDragPreview = {
   x: number;
@@ -68,6 +67,99 @@ type TabDragPreview = {
   width: number;
   height: number;
 };
+
+function roundedRect(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  const clampedRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + clampedRadius, y);
+  context.arcTo(x + width, y, x + width, y + height, clampedRadius);
+  context.arcTo(x + width, y + height, x, y + height, clampedRadius);
+  context.arcTo(x, y + height, x, y, clampedRadius);
+  context.arcTo(x, y, x + width, y, clampedRadius);
+  context.closePath();
+}
+
+/** Renders a compact PNG for the OS drag loop. Unlike a DOM portal, the
+ * native drag image is not clipped at the WebView window boundary. */
+function createNativeTabDragPreview(
+  element: HTMLElement,
+  title: string,
+  width: number,
+  height: number,
+): string | null {
+  const scale = window.devicePixelRatio || 1;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(width * scale);
+  canvas.height = Math.ceil(height * scale);
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+
+  const rootStyle = getComputedStyle(document.documentElement);
+  const elementStyle = getComputedStyle(element);
+  const card = rootStyle.getPropertyValue("--card").trim() || elementStyle.backgroundColor;
+  const foreground = rootStyle.getPropertyValue("--foreground").trim() || elementStyle.color;
+  const muted = rootStyle.getPropertyValue("--muted-foreground").trim() || foreground;
+  const border = rootStyle.getPropertyValue("--border").trim() || "transparent";
+
+  context.scale(scale, scale);
+  roundedRect(context, 0.5, 0.5, width - 1, height - 1, 6);
+  context.fillStyle = card;
+  context.fill();
+  context.strokeStyle = border;
+  context.lineWidth = 1;
+  context.stroke();
+
+  let textX = 10;
+  const icon = element.querySelector(":scope > img");
+  if (icon instanceof HTMLImageElement && icon.complete && icon.naturalWidth > 0) {
+    try {
+      context.drawImage(icon, 8, (height - 14) / 2, 14, 14);
+      textX = 28;
+    } catch {
+      // The title still makes a useful preview if an icon cannot be painted.
+    }
+  }
+
+  const closeCenterX = width - 11;
+  context.strokeStyle = muted;
+  context.lineCap = "round";
+  context.lineWidth = 1.25;
+  context.beginPath();
+  context.moveTo(closeCenterX - 3, height / 2 - 3);
+  context.lineTo(closeCenterX + 3, height / 2 + 3);
+  context.moveTo(closeCenterX + 3, height / 2 - 3);
+  context.lineTo(closeCenterX - 3, height / 2 + 3);
+  context.stroke();
+
+  context.fillStyle = foreground;
+  context.font = `${elementStyle.fontSize} ${elementStyle.fontFamily}`;
+  context.textBaseline = "middle";
+  const maxTextWidth = Math.max(0, closeCenterX - textX - 9);
+  let previewTitle = title;
+  if (context.measureText(previewTitle).width > maxTextWidth) {
+    while (
+      previewTitle.length > 1 &&
+      context.measureText(`${previewTitle}…`).width > maxTextWidth
+    ) {
+      previewTitle = previewTitle.slice(0, -1);
+    }
+    previewTitle += "…";
+  }
+  context.fillText(previewTitle, textX, height / 2, maxTextWidth);
+
+  try {
+    return canvas.toDataURL("image/png");
+  } catch {
+    return null;
+  }
+}
 
 const WORKSPACE_TAB_ICONS = {
   overview: Home,
@@ -292,8 +384,9 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     let dragStarted = false;
     let pointerReleased = false;
     let disposed = false;
+    let nativeDragStarted = false;
     let tearingOff = false;
-    let outsideSince: number | null = null;
+    let nativePreview: string | null = null;
     let pollTimer: number | undefined;
     let outsideRequest: Promise<boolean> | null = null;
 
@@ -336,14 +429,21 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       return outsideRequest;
     };
 
-    const tearOff = async () => {
+    const tearOff = async (cursor?: { x: number; y: number }) => {
       if (!appWindow || disposed || tearingOff) return;
       tearingOff = true;
       stopPolling();
 
       try {
         const payload = serializeTabHandoff(tab.id);
-        await commands.tearOffTab(appWindow.label, payload, startX, startY);
+        await commands.tearOffTab(
+          appWindow.label,
+          payload,
+          startX,
+          startY,
+          cursor?.x ?? null,
+          cursor?.y ?? null,
+        );
         cleanup();
         closeTab(tab.id);
       } catch (error) {
@@ -352,28 +452,41 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       }
     };
 
-    const pollOutside = async (detachImmediately = false): Promise<boolean> => {
+    const startNativeDrag = async () => {
+      if (!appWindow || nativeDragStarted || disposed || tearingOff) return;
+      nativeDragStarted = true;
+      stopPolling();
+
+      try {
+        const outcome = await commands.startTabDrag(
+          appWindow.label,
+          nativePreview,
+          grabX * window.devicePixelRatio,
+          grabY * window.devicePixelRatio,
+        );
+        if (disposed || tearingOff) return;
+
+        if (outcome.released && outcome.outside) {
+          await tearOff({ x: outcome.cursorX, y: outcome.cursorY });
+        } else {
+          cleanup();
+        }
+      } catch (error) {
+        console.error("Failed to start native tab drag", error);
+        cleanup();
+      }
+    };
+
+    const pollOutside = async (beginNativeDrag = true): Promise<boolean> => {
       if (disposed || !dragStarted || tearingOff) return false;
 
       try {
         const outside = await readOutside();
         if (disposed || tearingOff) return outside;
-
-        if (!outside) {
-          outsideSince = null;
-          return false;
+        if (outside && beginNativeDrag && isWindowsPlatform && !nativeDragStarted) {
+          await startNativeDrag();
         }
-
-        const now = performance.now();
-        if (
-          detachImmediately ||
-          (outsideSince !== null && now - outsideSince >= TAB_OUTSIDE_GRACE_PERIOD)
-        ) {
-          await tearOff();
-        } else if (outsideSince === null) {
-          outsideSince = now;
-        }
-        return true;
+        return outside;
       } catch (error) {
         console.error("Failed to track tab drag", error);
         cleanup();
@@ -389,6 +502,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
         if (distance < TAB_DRAG_START_DISTANCE) return;
 
         dragStarted = true;
+        nativePreview = createNativeTabDragPreview(element!, title, bounds.width, bounds.height);
         if (appWindow) {
           pollTimer = window.setInterval(() => void pollOutside(), TAB_OUTSIDE_POLL_INTERVAL);
         }
@@ -403,7 +517,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     }
 
     function handlePointerEnd(endEvent: PointerEvent) {
-      if (endEvent.pointerId !== pointerId || disposed) return;
+      if (endEvent.pointerId !== pointerId || disposed || nativeDragStarted) return;
       pointerReleased = true;
       if (!dragStarted) {
         cleanup();
@@ -411,13 +525,19 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       }
 
       // Pointer capture may deliver the release even after the cursor leaves
-      // the webview. Query the native bounds one final time before cancelling.
-      void pollOutside(true).then((outside) => {
-        if (!outside && !tearingOff) cleanup();
+      // the webview. Query the native bounds one final time and only detach now,
+      // never merely because the pointer crossed the edge.
+      void pollOutside(false).then((outside) => {
+        if (disposed || tearingOff) return;
+        if (outside) void tearOff();
+        else cleanup();
       });
     }
 
     function handlePointerCancel(cancelEvent: PointerEvent) {
+      // The native OLE loop owns the gesture after it crosses the window edge;
+      // losing DOM capture at that point must not cancel the pending result.
+      if (nativeDragStarted) return;
       // Pointerup implicitly releases capture; let its final native bounds
       // check finish instead of cancelling a quick drop outside the window.
       if (cancelEvent.type === "lostpointercapture" && pointerReleased) return;
