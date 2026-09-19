@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -19,19 +19,16 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
-            target: ''
-            args: ''
-          - platform: ubuntu-22.04
-            target: ''
-            args: ''
-          # Both macOS jobs run on Apple Silicon; the Intel artifact is
-          # cross-compiled, since GitHub no longer offers x86 macOS runners.
+            target: ""
+            args: ""
+          - platform: ubuntu-26.04
+            target: ""
+            args: ""
+          # The macOS artifact targets Apple Silicon, matching current macOS
+          # software support and the runner architecture.
           - platform: macos-latest
             target: aarch64-apple-darwin
-            args: '--target aarch64-apple-darwin'
-          - platform: macos-latest
-            target: x86_64-apple-darwin
-            args: '--target x86_64-apple-darwin'
+            args: "--target aarch64-apple-darwin"
 
     runs-on: ${{ matrix.platform }}
 
@@ -55,7 +52,7 @@ jobs:
           fi
 
       - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-22.04'
+        if: matrix.platform == 'ubuntu-26.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -87,14 +84,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'dae v__VERSION__'
-          releaseBody: 'See the assets below to download and install this version.'
+          releaseName: "dae v__VERSION__"
+          releaseBody: "See the assets below to download and install this version."
           releaseDraft: true
           prerelease: false
           generateReleaseNotes: true
           # The updater config and signing requirement live in an overlay so
           # that local `bun tauri build` keeps working without a signing key.
-          args: '--config src-tauri/tauri.release.conf.json ${{ matrix.args }}'
+          args: "--config src-tauri/tauri.release.conf.json ${{ matrix.args }}"
           tauriScript: bun tauri
           # Point latest.json at the NSIS installer rather than the MSI, which
           # cannot silently replace a running install.
