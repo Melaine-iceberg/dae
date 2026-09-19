@@ -164,6 +164,25 @@ export function mergeTabFromHandoff(payload: string, index: number): void {
   store.set(activeTabIdAtom, tab.id);
 }
 
+/** Moves a tab to `insertionIndex` within the strip for drag reordering.
+ * The index counts the other tabs (the list without the moved tab), the same
+ * convention the drop indicator uses. No-op when the tab is unknown or
+ * already at the target position. */
+export function moveTab(tabId: string, insertionIndex: number): void {
+  const store = getDefaultStore();
+  const tabs = store.get(tabsAtom);
+  const from = tabs.findIndex((tab) => tab.id === tabId);
+  if (from === -1) return;
+
+  const clamped = Math.min(Math.max(insertionIndex, 0), tabs.length - 1);
+  if (clamped === from) return;
+
+  const reordered = tabs.slice();
+  const [tab] = reordered.splice(from, 1);
+  reordered.splice(clamped, 0, tab);
+  store.set(tabsAtom, reordered);
+}
+
 function parseTabHandoff(payload: string): ExplorerTabHandoff {
   const value: unknown = JSON.parse(payload);
   if (!isRecord(value) || value.version !== 1) {

@@ -53,6 +53,7 @@ import {
   getSplitNavigator,
   getTabNavigator,
   mergeTabFromHandoff,
+  moveTab,
   serializeTabHandoff,
   splitEnabledFamily,
   tabsAtom,
@@ -275,8 +276,13 @@ export function ExplorerTabs() {
           onScroll={syncScrollButtons}
           role="tablist"
         >
-          {tabs.map((tab) => (
-            <TabStripItem key={tab.id} isActive={tab.id === activeTabId} tab={tab} />
+          {tabs.map((tab, index) => (
+            <TabStripItem
+              key={tab.id}
+              index={index}
+              isActive={tab.id === activeTabId}
+              tab={tab}
+            />
           ))}
           <button
             aria-label={t("tabs.newTab")}
@@ -350,6 +356,20 @@ function StripScrollButton({
  * before the first tab whose midpoint is right of the drop point. */
 function tabInsertionIndexAt(strip: HTMLElement, x: number): number {
   const tabs = Array.from(strip.querySelectorAll<HTMLElement>('[role="tab"]'));
+  for (let index = 0; index < tabs.length; index++) {
+    const rect = tabs[index].getBoundingClientRect();
+    if (x < rect.left + rect.width / 2) return index;
+  }
+  return tabs.length;
+}
+
+/** Reorder target for the tab being dragged inside this window: the index
+ * among the *other* tabs whose midpoint the cursor has crossed. Excluding
+ * the dragged element keeps midpoints stable while the strip shifts. */
+function tabReorderIndexAt(strip: HTMLElement, x: number, dragged: HTMLElement): number {
+  const tabs = Array.from(strip.querySelectorAll<HTMLElement>('[role="tab"]')).filter(
+    (element) => element !== dragged,
+  );
   for (let index = 0; index < tabs.length; index++) {
     const rect = tabs[index].getBoundingClientRect();
     if (x < rect.left + rect.width / 2) return index;
@@ -449,7 +469,15 @@ function surfaceTitle(
   }
 }
 
-function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }) {
+function TabStripItem({
+  index,
+  isActive,
+  tab,
+}: {
+  index: number;
+  isActive: boolean;
+  tab: ExplorerTab;
+}) {
   const { t } = useTranslation("explorer");
   const activateTab = useSetAtom(activateTabAtom);
   const closeTab = useSetAtom(closeTabAtom);
@@ -503,6 +531,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     const pointerId = event.pointerId;
     const startX = event.clientX;
     const startY = event.clientY;
+    const originalIndex = index;
     const bounds = element.getBoundingClientRect();
     const grabX = startX - bounds.left;
     const grabY = startY - bounds.top;
@@ -514,6 +543,7 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     let disposed = false;
     let nativeDragStarted = false;
     let tearingOff = false;
+    let lastReorderIndex = -1;
     let nativePreview: Promise<string | null> | null = null;
     let pollTimer: number | undefined;
     let outsideRequest: Promise<boolean> | null = null;
@@ -681,6 +711,22 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       pointerX = moveEvent.clientX;
       pointerY = moveEvent.clientY;
       previewFrame ??= window.requestAnimationFrame(updatePreview);
+
+      // Live reorder: once the cursor crosses a neighbour's midpoint the tab
+      // swaps into that slot while its ghost keeps following the cursor. The
+      // recomputed midpoints stay stable because the dragged element is
+      // excluded from the measurement. (Hoisted function declarations do not
+      // inherit the pointerdown guard's non-null narrowing, hence the ref.)
+      const dragged = elementRef.current;
+      const strip = dragged?.closest<HTMLElement>('[role="tablist"]');
+      if (dragged && strip) {
+        const target = tabReorderIndexAt(strip, moveEvent.clientX, dragged);
+        if (target !== lastReorderIndex) {
+          lastReorderIndex = target;
+          moveTab(tab.id, target);
+        }
+      }
+
       void pollOutside();
     }
 
@@ -716,6 +762,9 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
     function handleKeyDown(keyEvent: KeyboardEvent) {
       if (keyEvent.key !== "Escape") return;
       keyEvent.preventDefault();
+      // Cancelling a reorder puts the tab back where the drag began; moveTab
+      // no-ops when it never left its original slot.
+      if (dragStarted) moveTab(tab.id, originalIndex);
       cleanup();
     }
 
