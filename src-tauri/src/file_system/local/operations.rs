@@ -3,11 +3,41 @@ use crate::file_system::progress::FileOperationProgressReporterTrait;
 use crate::file_system::transfer::duplicate_name;
 use crate::file_system::types::{ConflictAction, NewEntryKind, TransferPair, path_to_string};
 use rayon::prelude::*;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+/// Pool the bulk local tree operations run on.
+///
+/// `par_iter` would otherwise use rayon's *global* pool — the pool directory
+/// listings read per-entry metadata on, which sits on the critical path to
+/// painting the explorer. A copy of a large tree running there would starve
+/// the very listing that is trying to render, so bulk transfers get their own
+/// bounded pool, sized to leave one core for listings, search, and the UI.
+///
+/// Blocking I/O keeps the pool's threads busy by design; the pool is what caps
+/// how much of it can happen at once.
+fn transfer_pool() -> &'static ThreadPool {
+    static POOL: OnceLock<ThreadPool> = OnceLock::new();
+
+    POOL.get_or_init(|| {
+        let threads = std::thread::available_parallelism()
+            .map(|count| count.get())
+            .unwrap_or(4)
+            .saturating_sub(1)
+            .max(2);
+
+        ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .thread_name(|index| format!("dae-transfer-{index}"))
+            .build()
+            .expect("build the transfer thread pool")
+    })
+}
 
 pub fn rename_entry_sync(path: PathBuf, new_name: String) -> Result<(), FileSystemError> {
     validate_entry_name(&new_name)?;
@@ -57,26 +87,28 @@ pub fn copy_entries_with_progress(
     progress: &dyn FileOperationProgressReporterTrait,
     journal: &mut Vec<TransferPair>,
 ) -> Result<(), FileSystemError> {
-    let plan = build_transfer_plan(sources, destination)?;
-    progress.start(
-        plan.iter()
-            .map(|entry| entry.source_units + entry.replacement_units)
-            .sum(),
-    );
+    transfer_pool().install(|| {
+        let plan = build_transfer_plan(sources, destination)?;
+        progress.start(
+            plan.iter()
+                .map(|entry| entry.source_units + entry.replacement_units)
+                .sum(),
+        );
 
-    for entry in plan {
-        if entry.replacement_units > 0 {
-            delete_entry(&entry.destination, progress)?;
+        for entry in plan {
+            if entry.replacement_units > 0 {
+                delete_entry(&entry.destination, progress)?;
+            }
+            copy_entry(&entry.source, &entry.destination, progress)?;
+            journal.push(TransferPair {
+                source: path_to_string(&entry.source),
+                destination: path_to_string(&entry.destination),
+            });
         }
-        copy_entry(&entry.source, &entry.destination, progress)?;
-        journal.push(TransferPair {
-            source: path_to_string(&entry.source),
-            destination: path_to_string(&entry.destination),
-        });
-    }
 
-    progress.finish();
-    Ok(())
+        progress.finish();
+        Ok(())
+    })
 }
 
 pub fn move_entries_with_progress(
@@ -85,60 +117,64 @@ pub fn move_entries_with_progress(
     progress: &dyn FileOperationProgressReporterTrait,
     journal: &mut Vec<TransferPair>,
 ) -> Result<(), FileSystemError> {
-    let plan = build_transfer_plan(sources, destination)?;
-    progress.start(
-        plan.iter()
-            .map(|entry| entry.source_units + entry.replacement_units)
-            .sum(),
-    );
+    transfer_pool().install(|| {
+        let plan = build_transfer_plan(sources, destination)?;
+        progress.start(
+            plan.iter()
+                .map(|entry| entry.source_units + entry.replacement_units)
+                .sum(),
+        );
 
-    for entry in plan {
-        progress.begin_entry(&entry.source);
-        if entry.replacement_units > 0 {
-            delete_entry(&entry.destination, progress)?;
-        }
-        match fs::rename(&entry.source, &entry.destination) {
-            Ok(()) => progress.advance_by(entry.source_units, &entry.source),
-            Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
-                copy_entry(&entry.source, &entry.destination, progress)?;
-                remove_entry(&entry.source)?;
+        for entry in plan {
+            progress.begin_entry(&entry.source);
+            if entry.replacement_units > 0 {
+                delete_entry(&entry.destination, progress)?;
             }
-            Err(error) => return Err(error.into()),
+            match fs::rename(&entry.source, &entry.destination) {
+                Ok(()) => progress.advance_by(entry.source_units, &entry.source),
+                Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
+                    copy_entry(&entry.source, &entry.destination, progress)?;
+                    remove_entry(&entry.source)?;
+                }
+                Err(error) => return Err(error.into()),
+            }
+
+            journal.push(TransferPair {
+                source: path_to_string(&entry.source),
+                destination: path_to_string(&entry.destination),
+            });
         }
 
-        journal.push(TransferPair {
-            source: path_to_string(&entry.source),
-            destination: path_to_string(&entry.destination),
-        });
-    }
-
-    progress.finish();
-    Ok(())
+        progress.finish();
+        Ok(())
+    })
 }
 
 pub fn delete_entries_with_progress(
     paths: Vec<PathBuf>,
     progress: &dyn FileOperationProgressReporterTrait,
 ) -> Result<(), FileSystemError> {
-    ensure_unique_paths(paths.iter().map(|path| path.as_path()))?;
+    transfer_pool().install(|| {
+        ensure_unique_paths(paths.iter().map(|path| path.as_path()))?;
 
-    for path in &paths {
-        fs::symlink_metadata(path)?;
-    }
+        for path in &paths {
+            fs::symlink_metadata(path)?;
+        }
 
-    let total = paths
-        .iter()
-        .try_fold(0_u64, |count, path| -> Result<u64, FileSystemError> {
-            Ok(count + count_entry_units(path)?)
-        })?;
-    progress.start(total);
+        let total = paths
+            .iter()
+            .try_fold(0_u64, |count, path| -> Result<u64, FileSystemError> {
+                Ok(count + count_entry_units(path)?)
+            })?;
+        progress.start(total);
 
-    for path in paths {
-        delete_entry(&path, progress)?;
-    }
+        for path in paths {
+            delete_entry(&path, progress)?;
+        }
 
-    progress.finish();
-    Ok(())
+        progress.finish();
+        Ok(())
+    })
 }
 
 #[derive(Debug)]

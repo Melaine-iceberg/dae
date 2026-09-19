@@ -4,6 +4,7 @@ use crate::file_system::types::{
 };
 use crate::file_system::watch::DirectoryChanged;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use rayon::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri_specta::Event;
@@ -69,16 +70,12 @@ impl DirectoryListingCursor {
     pub fn take(&mut self, count: usize) -> (Vec<DirectoryEntry>, bool) {
         // `count` may be `usize::MAX` when a caller wants everything at once;
         // never reserve that much up front.
-        let mut entries = Vec::with_capacity(count.min(MAX_BATCH_RESERVE));
+        let mut raw_entries = Vec::with_capacity(count.min(MAX_BATCH_RESERVE));
         let mut exhausted = false;
 
         for _ in 0..count {
             match self.iterator.next() {
-                Some(Ok(entry)) => {
-                    if let Some(entry) = directory_entry(entry) {
-                        entries.push(entry);
-                    }
-                }
+                Some(Ok(entry)) => raw_entries.push(entry),
                 // A failing entry is skipped; iteration continues (or ends)
                 // on the next call.
                 Some(Err(_)) => continue,
@@ -89,14 +86,57 @@ impl DirectoryListingCursor {
             }
         }
 
-        entries.sort_by_cached_key(entry_sort_key);
-        (entries, exhausted)
+        (collect_entries(raw_entries), exhausted)
     }
 }
 
 /// Ceiling for the pre-allocation above, so a huge `count` cannot ask the
 /// allocator for gigabytes before a single entry has been read.
 const MAX_BATCH_RESERVE: usize = 8192;
+
+/// Batches at least this large get their metadata reads split across threads.
+/// Reading one entry's metadata is a `lstat`/`statx` on Unix, and that single
+/// system call per entry *is* what a large listing spends its time on, so
+/// concurrency pays off from a fairly low entry count. Below the threshold the
+/// work-stealing dance would cost more than the reads it replaces, and small
+/// directories — the common case when navigating — stay serial.
+#[cfg(unix)]
+const PARALLEL_ENTRY_THRESHOLD: Option<usize> = Some(128);
+
+/// Windows serves `DirEntry::metadata()` out of the `WIN32_FIND_DATA` the
+/// enumeration already returned, so a batch there costs no system call per
+/// entry: it is allocation-bound, and splitting it across threads would only
+/// add scheduling overhead.
+#[cfg(not(unix))]
+const PARALLEL_ENTRY_THRESHOLD: Option<usize> = None;
+
+/// Whether a batch of `len` raw entries is worth splitting across threads.
+fn batch_is_worth_splitting(len: usize) -> bool {
+    PARALLEL_ENTRY_THRESHOLD.is_some_and(|threshold| len >= threshold)
+}
+
+/// Turns raw directory entries into sorted display entries.
+///
+/// The parallel arm runs on rayon's *global* pool — the one shared with the
+/// rest of the UI's work, deliberately kept free of bulk transfers (see the
+/// dedicated transfer pool in [`super::super::local::operations`]), because a
+/// listing is on the critical path to painting the explorer.
+///
+/// `entry_sort_key` ends with the raw name, so the sort is a total order and
+/// the order entries arrive in does not affect the result.
+fn collect_entries(raw_entries: Vec<fs::DirEntry>) -> Vec<DirectoryEntry> {
+    let mut entries: Vec<DirectoryEntry> = if batch_is_worth_splitting(raw_entries.len()) {
+        raw_entries
+            .into_par_iter()
+            .filter_map(directory_entry)
+            .collect()
+    } else {
+        raw_entries.into_iter().filter_map(directory_entry).collect()
+    };
+
+    entries.sort_by_cached_key(entry_sort_key);
+    entries
+}
 
 /// Reads the first `first_batch` entries of a directory. The returned cursor
 /// holds the unread remainder and is `None` when the directory was exhausted,
@@ -143,12 +183,16 @@ pub fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, Fil
     Ok(view)
 }
 
-/// Converts one raw directory entry, or `None` when its type or metadata
-/// cannot be read.
+/// Converts one raw directory entry, or `None` when its metadata cannot be
+/// read.
+///
+/// The kind is derived from the metadata that was read anyway rather than from
+/// `DirEntry::file_type()`, so one entry costs exactly one metadata read: on
+/// Unix `file_type()` is only free while the filesystem reports a usable
+/// `d_type`, and falls back to the very same `lstat` otherwise.
 fn directory_entry(entry: fs::DirEntry) -> Option<DirectoryEntry> {
-    let file_type = entry.file_type().ok()?;
     let metadata = entry.metadata().ok()?;
-    let kind = entry_kind(file_type);
+    let kind = entry_kind(metadata.file_type());
     let size = matches!(&kind, EntryKind::File).then_some(metadata.len());
     let name = entry.file_name().to_string_lossy().into_owned();
     let (hidden, read_only) = entry_state_flags(&metadata, &name);
@@ -348,6 +392,41 @@ mod tests {
             .permissions();
         permissions.set_readonly(false);
         fs::set_permissions(&read_only_file, permissions).expect("clear read-only");
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[test]
+    fn lists_a_batch_wide_enough_for_the_parallel_metadata_read() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-wide-listing-test-{}", std::process::id()));
+        fs::create_dir_all(&directory).expect("create test directory");
+
+        // One past the parallel threshold where there is one; a wide batch
+        // either way on Windows, whose threshold is deliberately absent.
+        let count = PARALLEL_ENTRY_THRESHOLD.map_or(256, |threshold| threshold + 1);
+        for index in 0..count {
+            fs::write(directory.join(format!("entry-{index:04}.txt")), "content")
+                .expect("write file");
+        }
+
+        let view = read_directory_sync(directory.clone()).expect("read wide directory");
+
+        assert_eq!(view.entries.len(), count);
+        let names = view
+            .entries
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>();
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        assert_eq!(names, sorted, "a wide batch is still sorted for display");
+        assert!(
+            view.entries
+                .iter()
+                .all(|entry| entry.size == Some(7) && entry.modified_at.is_some()),
+            "every entry carries the metadata its batch read"
+        );
 
         fs::remove_dir_all(directory).expect("remove test directory");
     }

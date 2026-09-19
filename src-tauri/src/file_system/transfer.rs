@@ -10,9 +10,16 @@ use super::vfs::{FileSystemBackend, SharedBackend};
 use std::collections::HashSet;
 use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::{Arc, LazyLock, RwLock};
+use std::sync::mpsc::{channel, sync_channel};
+use std::sync::{Arc, LazyLock, Mutex, RwLock};
+use std::thread;
 
 const STREAM_CHUNK_BYTES: usize = 256 * 1024;
+
+/// Chunks that may queue between the reading and the writing side. Two is the
+/// minimum that keeps a read outstanding while a write is in flight; a deeper
+/// queue would only hold more of the file in memory.
+const STREAM_PIPELINE_DEPTH: usize = 2;
 
 /// Locale-dependent token appended to duplicate names ("副本" / "copy" / …).
 /// The frontend pushes the localized token at startup and on language
@@ -577,20 +584,115 @@ fn copy_node(
     // Files and symlinks both stream as content; a symlink materializes as a
     // regular file on the destination, which is the only portable mapping.
     let mut reader = source.open_read(source_path)?;
-    let mut writer = destination_backend.open_write(destination_path)?;
-    let mut buffer = vec![0_u8; STREAM_CHUNK_BYTES];
+    let writer = destination_backend.open_write(destination_path)?;
+    copy_stream(reader.as_mut(), writer, source_path, progress)
+}
 
-    loop {
-        let read = reader.read(&mut buffer)?;
-        if read == 0 {
-            break;
+/// One chunk handed from the reading side to the writing side, carrying its
+/// buffer back for reuse once it has been written.
+struct StreamChunk {
+    bytes: Vec<u8>,
+    len: usize,
+}
+
+/// Streams `reader` into `writer` with the reads and the writes running
+/// concurrently, so a destination whose writes are slow to acknowledge (SMB,
+/// SFTP, cloud) no longer makes every read wait behind one.
+///
+/// The caller keeps reading on its own thread while a writer thread drains
+/// chunks over a bounded queue sized [`STREAM_PIPELINE_DEPTH`]; buffers are
+/// recycled along the way rather than reallocated per chunk. `progress` is
+/// advanced on the reading side, which keeps the reporter single-threaded and
+/// means the reported count can lead the bytes that have actually landed by at
+/// most the queue depth.
+fn copy_stream(
+    reader: &mut dyn Read,
+    mut writer: Box<dyn Write + Send>,
+    source_path: &str,
+    progress: &dyn FileOperationProgressReporterTrait,
+) -> Result<(), FileSystemError> {
+    let (chunk_tx, chunk_rx) = sync_channel::<StreamChunk>(STREAM_PIPELINE_DEPTH);
+    let (free_tx, free_rx) = channel::<Vec<u8>>();
+    let write_error = Arc::new(Mutex::new(None));
+
+    let writer_error = Arc::clone(&write_error);
+    let writer_thread = thread::spawn(move || {
+        while let Ok(chunk) = chunk_rx.recv() {
+            if let Err(error) = writer.write_all(&chunk.bytes[..chunk.len]) {
+                *writer_error.lock().expect("stream write error lock") =
+                    Some(FileSystemError::from(error));
+                return;
+            }
+
+            // A failed send means the reading side is gone; the buffer is
+            // dropped with it.
+            let _ = free_tx.send(chunk.bytes);
         }
 
-        writer.write_all(&buffer[..read])?;
-        progress.advance_by(read as u64, Path::new(source_path));
+        if let Err(error) = writer.flush() {
+            *writer_error.lock().expect("stream write error lock") =
+                Some(FileSystemError::from(error));
+        }
+    });
+
+    // The first `STREAM_PIPELINE_DEPTH` chunks are read into fresh buffers,
+    // after which every chunk reuses one the writer handed back.
+    let mut allocate_buffers = STREAM_PIPELINE_DEPTH;
+    let mut read_error = None;
+
+    loop {
+        let mut bytes = if allocate_buffers > 0 {
+            allocate_buffers -= 1;
+            vec![0_u8; STREAM_CHUNK_BYTES]
+        } else {
+            // Only ever blocks while the writer is alive and writing: it
+            // returns a buffer per chunk, and drops its sender on failure,
+            // which is what unblocks this.
+            match free_rx.recv() {
+                Ok(bytes) => bytes,
+                Err(_) => break,
+            }
+        };
+
+        match reader.read(&mut bytes) {
+            Ok(0) => break,
+            Ok(read) => {
+                // Dropping `chunk_tx` below is what ends the writer; a failure
+                // here means the writer already stopped, so there is nothing
+                // left to drain.
+                if chunk_tx.send(StreamChunk { bytes, len: read }).is_err() {
+                    break;
+                }
+                progress.advance_by(read as u64, Path::new(source_path));
+            }
+            Err(error) => {
+                read_error = Some(FileSystemError::from(error));
+                break;
+            }
+        }
     }
 
-    writer.flush()?;
+    // Dropping the sender ends the writer's receive loop. Joining it both
+    // keeps a failed transfer from finishing in the background after it was
+    // reported, and turns a panicking writer into a failure instead of a
+    // truncated file that looks like a success.
+    drop(chunk_tx);
+    let writer_panicked = writer_thread.join().is_err();
+
+    if let Some(error) = read_error {
+        return Err(error);
+    }
+
+    if let Some(error) = write_error.lock().expect("stream write error lock").take() {
+        return Err(error);
+    }
+
+    if writer_panicked {
+        return Err(FileSystemError::Internal(format!(
+            "Writing {source_path} stopped unexpectedly"
+        )));
+    }
+
     Ok(())
 }
 
@@ -919,5 +1021,63 @@ mod tests {
         );
 
         fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn pipelines_a_stream_many_chunks_long() {
+        let root =
+            std::env::temp_dir().join(format!("dae-stream-pipeline-test-{}", std::process::id()));
+        fs::create_dir_all(&root).expect("create test directory");
+        let destination = root.join("pipelined.bin");
+
+        // Comfortably more chunks than the pipeline is deep, so buffers are
+        // being recycled while the reading side is still reading.
+        let payload = (0..STREAM_CHUNK_BYTES * 3 + 4097)
+            .map(|index| (index % 251) as u8)
+            .collect::<Vec<u8>>();
+        let progress = TestProgress::new();
+        progress.start(payload.len() as u64);
+
+        let mut reader = std::io::Cursor::new(payload.clone());
+        copy_stream(
+            &mut reader,
+            Box::new(fs::File::create(&destination).expect("create destination file")),
+            &destination.to_string_lossy(),
+            &progress,
+        )
+        .expect("stream the payload");
+
+        assert_eq!(fs::read(&destination).expect("read destination"), payload);
+        progress.finish();
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn reports_a_destination_failure_instead_of_giving_up_the_thread() {
+        /// Accepts nothing, the way a full or read-only destination behaves.
+        struct FailingDestination;
+
+        impl Write for FailingDestination {
+            fn write(&mut self, _bytes: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("destination is full"))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let progress = TestProgress::new();
+        let mut reader = std::io::Cursor::new(vec![0_u8; STREAM_CHUNK_BYTES * 4]);
+        let error = copy_stream(
+            &mut reader,
+            Box::new(FailingDestination),
+            "src/failing.bin",
+            &progress,
+        )
+        .expect_err("a failing destination must fail the transfer");
+
+        assert!(matches!(error, FileSystemError::Io(_)), "got {error:?}");
     }
 }
