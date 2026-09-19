@@ -1,4 +1,5 @@
 use super::error::FileSystemError;
+use super::listing;
 use super::local;
 use super::progress::{
     FileOperationKind, FileOperationProgressReporter, FileOperationProgressReporterTrait,
@@ -26,7 +27,15 @@ pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemErr
         .map_err(|error| FileSystemError::Internal(error.to_string()))
 }
 
-/// Reads one directory as an immutable snapshot suitable for rendering in the explorer.
+/// Reads one directory for the explorer: a first batch of entries that renders
+/// immediately, plus the stream the rest of them arrive on.
+///
+/// Large local directories stream instead of blocking on one big read: the
+/// response carries the first batch along with the `stream_id` that the
+/// remaining entries arrive under, as `DirectoryEntriesBatch` events (see
+/// [`super::listing`]). Every other backend — and any local directory that
+/// fits in a single batch — answers with a complete view and a `None` stream
+/// id.
 ///
 /// `vfs::resolve` can open a network session (a blocking, runtime-owning
 /// operation), so it must run on a blocking thread — never on the async
@@ -35,6 +44,7 @@ pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemErr
 #[specta::specta]
 pub async fn read_directory(
     path: String,
+    stream_id: String,
     app: tauri::AppHandle,
 ) -> Result<DirectoryView, FileSystemError> {
     // A prefetched snapshot (see `prefetch::warm_startup_data`) is consumed
@@ -45,9 +55,22 @@ pub async fn read_directory(
     {
         return Ok(view);
     }
-    tauri::async_runtime::spawn_blocking(move || vfs::resolve(&path)?.read_dir(&path))
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+
+    // Remote backends enumerate through their own protocol APIs and have no
+    // iterator to hand over, so they keep answering in one piece.
+    if !vfs::is_local_path(&path) {
+        return tauri::async_runtime::spawn_blocking(move || vfs::resolve(&path)?.read_dir(&path))
+            .await
+            .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+    }
+
+    let listing_app = app.clone();
+    let listing_path = PathBuf::from(path);
+    tauri::async_runtime::spawn_blocking(move || {
+        listing::open_streamed_listing(&listing_app, listing_path, stream_id)
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// Renames a single directory entry without allowing a path change.

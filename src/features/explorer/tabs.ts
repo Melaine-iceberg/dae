@@ -267,6 +267,9 @@ export const closeTabAtom = atom(null, (get, set, tabId: string) => {
   if (index === -1) return;
 
   const remaining = tabs.filter((tab) => tab.id !== tabId);
+  // Close the navigators' in-flight directory listings before dropping them.
+  navigators.get(tabId)?.dispose();
+  navigators.get(`${tabId}${SPLIT_NAVIGATOR_SUFFIX}`)?.dispose();
   navigators.delete(tabId);
   navigators.delete(`${tabId}${SPLIT_NAVIGATOR_SUFFIX}`);
   tabSurfaceFamily.remove(tabId);

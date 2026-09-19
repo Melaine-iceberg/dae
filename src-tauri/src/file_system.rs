@@ -6,6 +6,7 @@ pub mod directory_size;
 pub mod error;
 pub mod git;
 pub mod hashing;
+pub mod listing;
 pub mod local;
 #[cfg(target_os = "macos")]
 pub mod macos_trash;

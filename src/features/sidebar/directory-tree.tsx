@@ -3,7 +3,8 @@ import { atom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { ChevronDown } from "lucide-react";
 
-import { commands, type DirectoryEntry } from "@/bindings";
+import { type DirectoryEntry } from "@/bindings";
+import { openDirectoryListing } from "@/features/explorer/directory-listing";
 import { getFolderPresentation } from "@/features/explorer/file-icons";
 import { filterHiddenEntries, showHiddenFilesAtom } from "@/features/explorer/preferences";
 import { cn } from "@/lib/utils";
@@ -31,7 +32,7 @@ const treeChildrenAtom = atom<ReadonlyMap<string, TreeChildrenState>>(new Map())
 
 /** Reads a folder's subdirectories into the tree cache. A second read of the
  *  same path is skipped while one is already in flight. */
-const loadTreeChildrenAtom = atom(null, async (get, set, path: string) => {
+const loadTreeChildrenAtom = atom(null, (get, set, path: string) => {
   const children = get(treeChildrenAtom);
   if (children.get(path)?.status === "loading") return;
 
@@ -43,17 +44,42 @@ const loadTreeChildrenAtom = atom(null, async (get, set, path: string) => {
     }),
   );
 
-  try {
-    const view = await commands.readDirectory(path);
-    const entries = view.entries
-      .filter((entry) => entry.kind === "directory")
-      .sort((a, b) => NAME_COLLATOR.compare(a.name, b.name));
-    set(treeChildrenAtom, withChild(get(treeChildrenAtom), path, { status: "ready", entries }));
-  } catch (error) {
-    console.warn(`Unable to list tree children for ${path}`, error);
-    set(treeChildrenAtom, withChild(get(treeChildrenAtom), path, { status: "error", entries: [] }));
-  }
+  // A large folder streams its listing; the tree keeps growing as the batches
+  // arrive and only leaves the loading state once the read is complete.
+  let latest: DirectoryEntry[] = [];
+  const publish = (status: TreeChildrenState["status"]) =>
+    set(treeChildrenAtom, withChild(get(treeChildrenAtom), path, { status, entries: latest }));
+
+  const listing = openDirectoryListing(path, {
+    onHead: (view) => {
+      latest = treeEntries(view.entries);
+      publish("loading");
+    },
+    onEntries: (entries) => {
+      latest = treeEntries(entries);
+      publish("loading");
+    },
+    onDone: () => publish("ready"),
+    onError: (error) => {
+      console.warn(`Unable to list tree children for ${path}`, error);
+      set(
+        treeChildrenAtom,
+        withChild(get(treeChildrenAtom), path, { status: "error", entries: [] }),
+      );
+    },
+  });
+
+  // Reported through the listener above; this only keeps the rejection from
+  // becoming an unhandled one.
+  void listing.head.catch(() => {});
 });
+
+/** Subdirectories only, in natural name order. */
+function treeEntries(entries: DirectoryEntry[]): DirectoryEntry[] {
+  return entries
+    .filter((entry) => entry.kind === "directory")
+    .sort((left, right) => NAME_COLLATOR.compare(left.name, right.name));
+}
 
 function withChild(
   children: ReadonlyMap<string, TreeChildrenState>,

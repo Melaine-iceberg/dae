@@ -324,6 +324,8 @@ impl FileSystemBackend for SmbBackend {
             path: parsed.url(),
             breadcrumbs: smb_breadcrumbs(&parsed),
             entries,
+            // Remote backends list in one piece; only local reads stream.
+            stream_id: None,
         })
     }
 

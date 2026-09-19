@@ -1,7 +1,8 @@
 import { commands } from "@/bindings";
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
 
-import type { Breadcrumb, DirectoryView, FileSystemError } from "./types";
+import { openDirectoryListing, type DirectoryListing } from "./directory-listing";
+import type { Breadcrumb, DirectoryEntry, DirectoryView, FileSystemError } from "./types";
 
 export type ExplorerStatus = "idle" | "loading" | "ready" | "error";
 
@@ -44,6 +45,8 @@ const fileSystemErrorKinds = new Set<FileSystemError["kind"]>([
 export class ExplorerNavigator {
   private state = initialState;
   private requestVersion = 0;
+  /** Listing whose remaining batches are still streaming into the state. */
+  private listing: DirectoryListing | null = null;
   private readonly scrollOffsets = new Map<string, number>();
   private readonly listeners = new Set<ExplorerListener>();
 
@@ -141,7 +144,7 @@ export class ExplorerNavigator {
     const requestVersion = ++this.requestVersion;
 
     try {
-      const directory = await this.api.readDirectory(path);
+      const directory = await this.readListing(path, requestVersion);
 
       if (requestVersion !== this.requestVersion || this.state.directory?.path !== path) {
         return undefined;
@@ -175,7 +178,7 @@ export class ExplorerNavigator {
     this.setState({ ...this.state, status: "loading", pendingPath: path, error: null });
 
     try {
-      const directory = await this.api.readDirectory(path);
+      const directory = await this.readListing(path, requestVersion);
 
       if (requestVersion !== this.requestVersion) {
         return undefined;
@@ -207,6 +210,53 @@ export class ExplorerNavigator {
 
       return undefined;
     }
+  }
+
+  /**
+   * Reads `path` and folds the batches that follow the first one into the
+   * displayed directory, so a large folder paints as soon as its first batch
+   * is in instead of waiting for the whole walk.
+   *
+   * Any listing that is still streaming is dropped first: a newer read (a
+   * navigation, a watcher refresh) always wins over the one it replaces.
+   */
+  private readListing(path: string, requestVersion: number): Promise<DirectoryView> {
+    this.listing?.dispose();
+    this.listing = null;
+
+    // The head is kept here rather than read back from the state: a batch can
+    // beat `load`/`refresh` to the state update, and it still has to render
+    // against its own head.
+    let head: DirectoryView | null = null;
+    let entries: DirectoryEntry[] | null = null;
+
+    const listing = openDirectoryListing(
+      path,
+      {
+        onHead: (view) => {
+          head = view;
+        },
+        onEntries: (latest) => {
+          entries = latest;
+          if (requestVersion !== this.requestVersion || !head) return;
+          this.setState({ ...this.state, directory: { ...head, entries: latest } });
+        },
+      },
+      this.api,
+    );
+
+    this.listing = listing;
+    // Whatever was published while the head was in flight rides along, so the
+    // caller's state update cannot drop it.
+    return listing.head.then((view) => ({ ...view, entries: entries ?? view.entries }));
+  }
+
+  /** Stops the active listing; the navigator is not used afterwards. */
+  dispose(): void {
+    ++this.requestVersion;
+    this.listing?.dispose();
+    this.listing = null;
+    this.listeners.clear();
   }
 
   navigateBreadcrumb(breadcrumb: Breadcrumb): Promise<DirectoryView | undefined> {

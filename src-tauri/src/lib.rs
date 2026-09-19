@@ -114,6 +114,7 @@ pub fn run() {
             Ok(())
         })
         .manage(file_system::DirectoryWatcher::default())
+        .manage(file_system::listing::DirectoryListingState::default())
         .manage(file_system::prefetch::StartupPrefetch::default())
         .manage(file_system::FileSearchState::default())
         .manage(file_system::UndoRedoState::default())
@@ -159,6 +160,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .commands(tauri_specta::collect_commands![
             file_system::commands::get_home_directory,
             file_system::commands::read_directory,
+            file_system::listing::cancel_directory_listing,
             file_system::watch::watch_directory,
             file_system::directory_size::start_directory_size_calculation,
             file_system::directory_size::cancel_directory_size_calculation,
@@ -241,6 +243,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         ])
         .events(tauri_specta::collect_events![
             file_system::DirectoryChanged,
+            file_system::listing::DirectoryEntriesBatch,
             file_system::progress::FileOperationProgress,
             file_system::directory_size::DirectorySizeProgress,
             file_system::hashing::FileHashProgress,

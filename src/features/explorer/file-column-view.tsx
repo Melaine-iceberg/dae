@@ -7,15 +7,13 @@ import {
 } from "react";
 import { useAtomValue } from "jotai";
 import { useTranslation } from "react-i18next";
-import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChevronRight, LoaderCircle, TriangleAlert } from "lucide-react";
-
-import { commands } from "@/bindings";
 
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 
+import { useDirectoryEntries } from "./directory-listing";
 import { EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { getEntryPresentation } from "./file-icons";
@@ -119,18 +117,14 @@ interface ChildPaneProps extends SharedRowProps {
 }
 
 function ChildPane({ path, ...paneProps }: ChildPaneProps) {
-  const { data, isError, isFetching } = useQuery({
-    queryKey: ["explorer-column", path],
-    queryFn: () => commands.readDirectory(path),
-    retry: false,
-  });
+  const { entries, isError, isLoading } = useDirectoryEntries(path);
   const sortKey = useAtomValue(sortKeyAtom);
   const sortOrder = useAtomValue(sortOrderAtom);
   const foldersFirst = useAtomValue(foldersFirstAtom);
   const showHiddenFiles = useAtomValue(showHiddenFilesAtom);
   // Child panes share the parent's sort and visibility preferences (SKILL.md §18).
   const sortedEntries = sortEntries(
-    filterHiddenEntries(data?.entries ?? [], showHiddenFiles),
+    filterHiddenEntries(entries, showHiddenFiles),
     sortKey,
     sortOrder,
     foldersFirst,
@@ -140,7 +134,9 @@ function ChildPane({ path, ...paneProps }: ChildPaneProps) {
     <Pane
       entries={sortedEntries}
       isError={isError}
-      isLoading={isFetching && !data}
+      // A cached listing keeps painting while its refresh streams, so the
+      // spinner is only for a pane that has nothing to show yet.
+      isLoading={isLoading && entries.length === 0}
       {...paneProps}
     />
   );

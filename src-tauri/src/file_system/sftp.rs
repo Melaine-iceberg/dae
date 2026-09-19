@@ -291,6 +291,8 @@ impl FileSystemBackend for SftpBackend {
             path: parsed.url(),
             breadcrumbs: sftp_breadcrumbs(&parsed),
             entries,
+            // Remote backends list in one piece; only local reads stream.
+            stream_id: None,
         })
     }
 

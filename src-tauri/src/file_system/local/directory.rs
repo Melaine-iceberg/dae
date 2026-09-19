@@ -39,7 +39,72 @@ pub fn create_directory_watcher(
     Ok(watcher)
 }
 
-pub fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, FileSystemError> {
+/// The beginning of a directory listing: the entries that were read, plus a
+/// cursor onto the entries that are still unread.
+///
+/// The split is what makes large directories streamable: the head renders
+/// immediately while [`DirectoryListingCursor`] keeps the OS directory
+/// iterator alive on the thread that streams the rest (see
+/// [`super::super::listing`]).
+pub struct DirectoryListing {
+    pub view: DirectoryView,
+    /// `None` once the directory turned out to fit in the batch, which makes
+    /// `view` complete.
+    pub cursor: Option<DirectoryListingCursor>,
+}
+
+/// The unread remainder of a directory listing: the live `read_dir` iterator.
+///
+/// `std::fs::ReadDir` is `Send`, so the reader thread that streams the
+/// remaining batches can own it. Entries whose metadata cannot be read are
+/// skipped rather than failing the whole listing — WSL's `/proc` and `/run`
+/// over the `\\wsl$` 9P share behave that way.
+pub struct DirectoryListingCursor {
+    iterator: fs::ReadDir,
+}
+
+impl DirectoryListingCursor {
+    /// Pulls up to `count` entries, sorted for display. The boolean reports
+    /// that the directory is exhausted, so the caller can close the stream.
+    pub fn take(&mut self, count: usize) -> (Vec<DirectoryEntry>, bool) {
+        // `count` may be `usize::MAX` when a caller wants everything at once;
+        // never reserve that much up front.
+        let mut entries = Vec::with_capacity(count.min(MAX_BATCH_RESERVE));
+        let mut exhausted = false;
+
+        for _ in 0..count {
+            match self.iterator.next() {
+                Some(Ok(entry)) => {
+                    if let Some(entry) = directory_entry(entry) {
+                        entries.push(entry);
+                    }
+                }
+                // A failing entry is skipped; iteration continues (or ends)
+                // on the next call.
+                Some(Err(_)) => continue,
+                None => {
+                    exhausted = true;
+                    break;
+                }
+            }
+        }
+
+        entries.sort_by_cached_key(entry_sort_key);
+        (entries, exhausted)
+    }
+}
+
+/// Ceiling for the pre-allocation above, so a huge `count` cannot ask the
+/// allocator for gigabytes before a single entry has been read.
+const MAX_BATCH_RESERVE: usize = 8192;
+
+/// Reads the first `first_batch` entries of a directory. The returned cursor
+/// holds the unread remainder and is `None` when the directory was exhausted,
+/// which means the view is already complete.
+pub fn open_directory_listing(
+    requested_path: PathBuf,
+    first_batch: usize,
+) -> Result<DirectoryListing, FileSystemError> {
     let path = requested_path.canonicalize()?;
     let metadata = fs::metadata(&path)?;
 
@@ -47,39 +112,58 @@ pub fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, Fil
         return Err(FileSystemError::NotDirectory(path_to_string(&path)));
     }
 
-    // Entries whose metadata fails to load (WSL's /proc and /run over the
-    // `\\wsl$` 9P share behave this way) are skipped so the directory itself
-    // stays readable instead of failing as a whole.
-    let mut entries = fs::read_dir(&path)?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let file_type = entry.file_type().ok()?;
-            let metadata = entry.metadata().ok()?;
-            let kind = entry_kind(file_type);
-            let size = matches!(&kind, EntryKind::File).then_some(metadata.len());
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let (hidden, read_only) = entry_state_flags(&metadata, &name);
+    let mut cursor = DirectoryListingCursor {
+        iterator: fs::read_dir(&path)?,
+    };
+    let (entries, exhausted) = cursor.take(first_batch);
 
-            Some(DirectoryEntry {
-                name,
-                path: path_to_string(&entry.path()),
-                kind,
-                modified_at: modified_at_millis(&metadata),
-                size,
-                hidden,
-                read_only,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    entries.sort_by_cached_key(entry_sort_key);
-
-    Ok(DirectoryView {
-        path: path_to_string(&path),
-        breadcrumbs: build_breadcrumbs(&path),
-        entries,
+    Ok(DirectoryListing {
+        view: DirectoryView {
+            path: path_to_string(&path),
+            breadcrumbs: build_breadcrumbs(&path),
+            entries,
+            stream_id: None,
+        },
+        cursor: (!exhausted).then_some(cursor),
     })
 }
+
+/// Reads a directory as one complete, sorted snapshot.
+pub fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, FileSystemError> {
+    let DirectoryListing { mut view, cursor } = open_directory_listing(requested_path, usize::MAX)?;
+
+    if let Some(mut cursor) = cursor {
+        // Unreachable with a `usize::MAX` batch size, but draining keeps the
+        // two entry points equivalent if that ever changes.
+        let (rest, _) = cursor.take(usize::MAX);
+        view.entries.extend(rest);
+        view.entries.sort_by_cached_key(entry_sort_key);
+    }
+
+    Ok(view)
+}
+
+/// Converts one raw directory entry, or `None` when its type or metadata
+/// cannot be read.
+fn directory_entry(entry: fs::DirEntry) -> Option<DirectoryEntry> {
+    let file_type = entry.file_type().ok()?;
+    let metadata = entry.metadata().ok()?;
+    let kind = entry_kind(file_type);
+    let size = matches!(&kind, EntryKind::File).then_some(metadata.len());
+    let name = entry.file_name().to_string_lossy().into_owned();
+    let (hidden, read_only) = entry_state_flags(&metadata, &name);
+
+    Some(DirectoryEntry {
+        name,
+        path: path_to_string(&entry.path()),
+        kind,
+        modified_at: modified_at_millis(&metadata),
+        size,
+        hidden,
+        read_only,
+    })
+}
+
 
 pub fn modified_at_millis(metadata: &fs::Metadata) -> Option<u64> {
     metadata

@@ -44,6 +44,12 @@ pub struct DirectoryView {
     pub path: String,
     pub breadcrumbs: Vec<Breadcrumb>,
     pub entries: Vec<DirectoryEntry>,
+    /// Set when `entries` holds only the *first batch* of a streamed listing:
+    /// the remaining entries arrive as `DirectoryEntriesBatch` events that
+    /// echo this id. `None` means the view is complete — every non-local
+    /// backend, a directory that fits in one batch, and the startup prefetch
+    /// all answer that way.
+    pub stream_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]

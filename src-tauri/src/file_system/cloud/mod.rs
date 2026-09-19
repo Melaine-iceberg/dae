@@ -419,6 +419,8 @@ impl FileSystemBackend for CloudBackend {
             path: base,
             breadcrumbs: self.0.breadcrumbs(&parsed)?,
             entries,
+            // Remote backends list in one piece; only local reads stream.
+            stream_id: None,
         })
     }
 
