@@ -48,7 +48,11 @@ const PROTOCOL_LABELS: Record<Protocol, string> = {
 
 const AVAILABLE_PROTOCOLS: Protocol[] = ["smb", "sftp"];
 
-type TestState = { status: "idle" } | { status: "testing" } | { status: "ok" } | { status: "failed"; message: string };
+type TestState =
+  | { status: "idle" }
+  | { status: "testing" }
+  | { status: "ok" }
+  | { status: "failed"; message: string };
 
 export function ConnectDialog({
   onOpenChange,
@@ -78,7 +82,8 @@ export function ConnectDialog({
   }, [open]);
 
   const parsedPort = port.trim() === "" ? null : Number.parseInt(port, 10);
-  const portInvalid = parsedPort !== null && (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535);
+  const portInvalid =
+    parsedPort !== null && (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535);
   const hostInvalid = host.trim() === "";
 
   const buildInput = () => ({
@@ -232,11 +237,18 @@ export function ConnectDialog({
           {test.status === "ok" && (
             <p className="text-[13px] text-primary">{t("connect.testOk")}</p>
           )}
-          {test.status === "failed" && <p className="text-[13px] text-destructive">{test.message}</p>}
+          {test.status === "failed" && (
+            <p className="text-[13px] text-destructive">{test.message}</p>
+          )}
           {error && <p className="text-[13px] text-destructive">{error}</p>}
 
           <DialogFooter className="gap-2 sm:justify-between">
-            <Button disabled={test.status === "testing"} onClick={runTest} type="button" variant="outline">
+            <Button
+              disabled={test.status === "testing"}
+              onClick={runTest}
+              type="button"
+              variant="outline"
+            >
               {test.status === "testing" ? t("connect.testing") : t("connect.test")}
             </Button>
             <Button disabled={saving} type="submit">
@@ -251,11 +263,14 @@ export function ConnectDialog({
 
 function describeError(error: unknown): string {
   let raw: string;
-  if (typeof error === "object" && error !== null) {
-    const message = (error as { message?: unknown }).message;
-    raw = typeof message === "string" && message.trim() !== "" ? message : String(error);
-  } else if (error instanceof Error && error.message) {
+  if (error instanceof Error && error.message) {
     raw = error.message;
+  } else if (typeof error === "object" && error !== null) {
+    const message = (error as { message?: unknown }).message;
+    raw =
+      typeof message === "string" && message.trim() !== ""
+        ? message
+        : (JSON.stringify(error) ?? Object.prototype.toString.call(error));
   } else {
     raw = String(error);
   }

@@ -10,6 +10,23 @@ Rust tests use [cargo-nextest](https://nexte.st/). Run them from the project roo
 bun run test:rust
 ```
 
+## Lint
+
+Run the regular Oxlint checks with Bun:
+
+```bash
+bun run lint
+```
+
+Type-aware linting is also available through `oxlint-tsgolint` and TypeScript 7:
+
+```bash
+bun run lint:type-aware
+```
+
+Auto-fixable issues can be applied with `bun run lint:fix` or
+`bun run lint:type-aware:fix`.
+
 ## App icon
 
 The app icon (a white goose on a pond-green squircle, orange beak) is designed

@@ -191,11 +191,14 @@ export function CloudAccountDialog({
 
 function describeError(error: unknown): string {
   let raw: string;
-  if (typeof error === "object" && error !== null) {
-    const message = (error as { message?: unknown }).message;
-    raw = typeof message === "string" && message.trim() !== "" ? message : String(error);
-  } else if (error instanceof Error && error.message) {
+  if (error instanceof Error && error.message) {
     raw = error.message;
+  } else if (typeof error === "object" && error !== null) {
+    const message = (error as { message?: unknown }).message;
+    raw =
+      typeof message === "string" && message.trim() !== ""
+        ? message
+        : (JSON.stringify(error) ?? Object.prototype.toString.call(error));
   } else {
     raw = String(error);
   }

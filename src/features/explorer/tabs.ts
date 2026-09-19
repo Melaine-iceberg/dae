@@ -275,7 +275,7 @@ export const closeTabAtom = atom(null, (get, set, tabId: string) => {
   splitRatioFamily.remove(tabId);
 
   if (remaining.length === 0) {
-    getAppWindow()?.close();
+    void getAppWindow()?.close();
     return;
   }
 

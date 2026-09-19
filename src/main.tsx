@@ -16,7 +16,7 @@ import { setupExternalLinkGuard } from "@/lib/external-links";
 import { setupNativeContextMenuGuard } from "@/lib/native-context-menu";
 
 if (import.meta.env.DEV) {
-  setupDevInvoke();
+  void setupDevInvoke();
 }
 
 setupNativeClipboardBridge();
@@ -59,7 +59,7 @@ async function bootstrap() {
   // painted the first frame so the user sees the fully rendered UI.
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      getAppWindow()?.show();
+      void getAppWindow()?.show();
 
       // Prefetch the explorer chunk in idle time: it's the most likely next
       // navigation target and is now a separate lazy chunk.
