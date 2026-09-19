@@ -245,6 +245,9 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::directory_size::DirectorySizeProgress,
             file_system::hashing::FileHashProgress,
             file_system::undo::UndoRedoChanged,
-            deep_link::OpenDirectoryRequested
+            deep_link::OpenDirectoryRequested,
+            tab_windows::TabDragHover,
+            tab_windows::TabDragLeave,
+            tab_windows::TabMergedIntoWindow
         ])
 }

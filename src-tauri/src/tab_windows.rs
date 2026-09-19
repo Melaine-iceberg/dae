@@ -1,4 +1,4 @@
-//! Tab tear-off support.
+//! Tab tear-off and cross-window merge support.
 //!
 //! The WebView stops delivering pointer events once the cursor leaves the
 //! window, so the frontend cannot reliably decide whether an in-progress tab
@@ -9,20 +9,27 @@
 //! an `NSDraggingSession` on macOS, and a GTK drag on Linux — which owns the
 //! drag image and mouse capture until the user releases the primary button or
 //! presses Escape.
+//!
+//! When the drag is released over another of this app's windows, the tab is
+//! merged into that window instead of spawning a new one: the source frontend
+//! forwards the serialized handoff through the `TabMergedIntoWindow` event,
+//! and the receiving window inserts the tab at the drop position.
 
 use std::{
     collections::HashMap,
     sync::{
-        Mutex,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
+    time::Duration,
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Serialize;
 use specta::Type;
-use tauri::{Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
+use tauri::{EventTarget, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
+use tauri_specta::Event;
 
 const WINDOW_LABEL_PREFIX: &str = "tab-window-";
 const DEFAULT_WIDTH: f64 = 960.0;
@@ -37,6 +44,35 @@ const TAB_DRAG_FALLBACK_ICON: &[u8] = include_bytes!("../icons/32x32.png");
 /// application accepts it, so the drag stays visual-only; GTK in particular
 /// refuses to start a drag that advertises no target at all.
 const TAB_DRAG_TYPE: &str = "application/x-dae-tab-drag";
+/// How often the hover monitor re-reads the cursor while a native tab drag is
+/// running; fast enough to feel live, slow enough to stay invisible on CPU.
+const TAB_HOVER_POLL_INTERVAL: Duration = Duration::from_millis(33);
+
+/// Hover heartbeat for a window while a tab dragged from another window
+/// crosses its bounds. Coordinates are in the receiving window's CSS pixels.
+#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "tab-drag-hover")]
+pub struct TabDragHover {
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Tells a window that a dragged tab stopped hovering its bounds, either
+/// because the cursor left or because the whole gesture ended.
+#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "tab-drag-leave")]
+pub struct TabDragLeave;
+
+/// Sent window-to-window right after a native drop landed inside the
+/// receiving window. Carries the serialized tab handoff plus the drop point
+/// in the receiver's CSS pixels so it can pick an insertion index.
+#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "tab-merged-into-window")]
+pub struct TabMergedIntoWindow {
+    pub payload: String,
+    pub x: f64,
+    pub y: f64,
+}
 
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
@@ -45,6 +81,13 @@ pub struct TabDragOutcome {
     pub outside: bool,
     pub cursor_x: i32,
     pub cursor_y: i32,
+    /// Label of the app window under the release point, when the tab was
+    /// dropped over another window of this app. The frontend then merges the
+    /// tab into that window instead of tearing off a new one.
+    pub target: Option<String>,
+    /// Release point in the target window's CSS pixel space.
+    pub target_x: f64,
+    pub target_y: f64,
 }
 
 #[derive(Default)]
@@ -116,6 +159,11 @@ pub fn tab_drag_outside(app: tauri::AppHandle, source: String) -> Result<bool, S
 /// Windows blocks in `DoDragDrop` and returns through the main-thread closure;
 /// macOS and GTK run asynchronous drag sessions, so the completion is reported
 /// from the drag callback, possibly after this command has already finished.
+///
+/// While the native loop runs, a hover monitor broadcasts `TabDragHover` /
+/// `TabDragLeave` to the window under the cursor so drop targets can show an
+/// insertion indicator. The outcome also reports which app window received
+/// the drop, if any, so the frontend can merge the tab instead of detaching.
 #[tauri::command]
 #[specta::specta]
 pub async fn start_tab_drag(
@@ -130,6 +178,24 @@ pub async fn start_tab_drag(
         return Err("Native tab drag is not supported on this platform".into());
     }
 
+    let hover_finished = Arc::new(AtomicBool::new(false));
+    spawn_drag_hover_monitor(app.clone(), source.clone(), hover_finished.clone());
+
+    let outcome = run_native_tab_drag(&app, source, preview, offset_x, offset_y).await;
+
+    // Whatever happened — drop, cancel, or failure — the monitor must stop
+    // and deliver its final leave event.
+    hover_finished.store(true, Ordering::SeqCst);
+    outcome
+}
+
+async fn run_native_tab_drag(
+    app: &tauri::AppHandle,
+    source: String,
+    preview: Option<String>,
+    offset_x: f64,
+    offset_y: f64,
+) -> Result<TabDragOutcome, String> {
     let window = app
         .get_webview_window(&source)
         .ok_or_else(|| format!("Source window '{source}' was not found"))?;
@@ -310,25 +376,151 @@ pub async fn start_tab_drag(
     let size = window.outer_size().map_err(|error| error.to_string())?;
     let cursor_x = cursor.x;
     let cursor_y = cursor.y;
+    let outside = point_is_outside(
+        f64::from(cursor_x),
+        f64::from(cursor_y),
+        position.x,
+        position.y,
+        size.width,
+        size.height,
+    );
+
+    // A release outside the source window may still land on another window
+    // of this app; that window receives the tab as a merge instead of a
+    // tear-off. Hover tracking only reports one window per poll, so the
+    // final check re-reads the cursor for the definitive answer.
+    let drop_target = if released && outside {
+        find_drop_target_at(app, &source, cursor_x, cursor_y)
+    } else {
+        None
+    };
 
     Ok(TabDragOutcome {
         released,
-        outside: point_is_outside(
-            f64::from(cursor_x),
-            f64::from(cursor_y),
-            position.x,
-            position.y,
-            size.width,
-            size.height,
-        ),
+        outside,
         cursor_x,
         cursor_y,
+        target: drop_target.as_ref().map(|target| target.label.clone()),
+        target_x: drop_target.as_ref().map_or(0.0, |target| target.local_x),
+        target_y: drop_target.as_ref().map_or(0.0, |target| target.local_y),
     })
 }
 
 struct NativeDragSummary {
     released: bool,
     cursor: drag::CursorPosition,
+}
+
+/// Another application window under the cursor, with the cursor position
+/// translated into that window's CSS pixel space.
+#[derive(Clone)]
+struct DropTarget {
+    label: String,
+    local_x: f64,
+    local_y: f64,
+}
+
+/// Finds the visible application window (other than `source`) containing the
+/// given desktop-space cursor position, if any. Minimized and hidden windows
+/// are skipped; windows that merely sit below another one can still match,
+/// since the desktop z-order is not queryable from here — in practice the
+/// cursor only hovers windows the user can actually see.
+fn find_drop_target_at(
+    app: &tauri::AppHandle,
+    source: &str,
+    cursor_x: i32,
+    cursor_y: i32,
+) -> Option<DropTarget> {
+    for (label, window) in app.webview_windows() {
+        if label == source
+            || !window.is_visible().unwrap_or(false)
+            || window.is_minimized().unwrap_or(false)
+        {
+            continue;
+        }
+        let Ok(position) = window.outer_position() else {
+            continue;
+        };
+        let Ok(size) = window.outer_size() else {
+            continue;
+        };
+        if point_is_outside(
+            f64::from(cursor_x),
+            f64::from(cursor_y),
+            position.x,
+            position.y,
+            size.width,
+            size.height,
+        ) {
+            continue;
+        }
+        let scale = window.scale_factor().unwrap_or(1.0);
+        if !scale.is_finite() || scale <= 0.0 {
+            continue;
+        }
+        return Some(DropTarget {
+            label,
+            local_x: f64::from(cursor_x - position.x) / scale,
+            local_y: f64::from(cursor_y - position.y) / scale,
+        });
+    }
+    None
+}
+
+/// Reads the live cursor through the source window (every window shares the
+/// same desktop coordinate space) and reports which other window, if any,
+/// the dragged tab currently hovers.
+fn find_hover_target(app: &tauri::AppHandle, source: &str) -> Option<DropTarget> {
+    let source_window = app.get_webview_window(source)?;
+    let cursor = source_window.cursor_position().ok()?;
+    find_drop_target_at(
+        app,
+        source,
+        cursor.x.round() as i32,
+        cursor.y.round() as i32,
+    )
+}
+
+/// Broadcasts `TabDragHover`/`TabDragLeave` while the native drag loop runs
+/// so the window under the cursor can preview where the tab would land.
+/// Purely cosmetic: hover state lives in the receiving frontend and every
+/// path that ends the drag flips `finished`, which stops the loop after at
+/// most one more poll and sends the final leave event.
+fn spawn_drag_hover_monitor(app: tauri::AppHandle, source: String, finished: Arc<AtomicBool>) {
+    tauri::async_runtime::spawn(async move {
+        let mut hovered: Option<DropTarget> = None;
+        loop {
+            if finished.load(Ordering::SeqCst) {
+                break;
+            }
+
+            let target = find_hover_target(&app, &source);
+            let same_window = match (&hovered, &target) {
+                (Some(previous), Some(current)) => previous.label == current.label,
+                (None, None) => true,
+                _ => false,
+            };
+
+            if !same_window && let Some(previous) = hovered.take() {
+                let _ = TabDragLeave.emit_to(&app, EventTarget::labeled(previous.label));
+            }
+
+            if let Some(current) = target.as_ref() {
+                let _ = TabDragHover {
+                    x: current.local_x,
+                    y: current.local_y,
+                }
+                .emit_to(&app, EventTarget::labeled(current.label.clone()));
+            }
+            hovered = target;
+
+            tokio::time::sleep(TAB_HOVER_POLL_INTERVAL).await;
+        }
+
+        if let Some(previous) = hovered {
+            let _ = TabDragLeave.emit_to(&app, EventTarget::labeled(previous.label));
+        }
+    });
 }
 
 fn decode_drag_preview(preview: Option<String>) -> Result<Vec<u8>, String> {

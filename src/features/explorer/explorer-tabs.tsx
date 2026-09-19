@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
+import { Window as TauriWindow } from "@tauri-apps/api/window";
 import {
   ChevronLeft,
   ChevronRight,
@@ -25,7 +26,7 @@ import {
 } from "lucide-react";
 
 import { WindowControls } from "@/components/window-controls";
-import { commands } from "@/bindings";
+import { commands, events } from "@/bindings";
 import { Sidebar } from "@/features/sidebar/sidebar";
 import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
 import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
@@ -51,6 +52,7 @@ import {
   createTabAtom,
   getSplitNavigator,
   getTabNavigator,
+  mergeTabFromHandoff,
   serializeTabHandoff,
   splitEnabledFamily,
   tabsAtom,
@@ -215,6 +217,24 @@ export function ExplorerTabs() {
     void ensureSpacesLoaded();
   }, [ensureSpacesLoaded]);
 
+  // Tabs dropped from other windows arrive as window-to-window events; the
+  // handoff carries the full tab state and the drop point picks the
+  // insertion index within this window's strip.
+  useEffect(() => {
+    const unlisten = events.tabMergedIntoWindow.listen((event) => {
+      const { payload: handoff, x } = event.payload;
+      const strip = stripRef.current;
+      const index = strip ? tabInsertionIndexAt(strip, x ?? 0) : Number.MAX_SAFE_INTEGER;
+      try {
+        mergeTabFromHandoff(handoff, index);
+        void getAppWindow()?.setFocus();
+      } catch (error) {
+        console.error("Failed to merge a tab dropped from another window", error);
+      }
+    });
+    return () => void unlisten.then((unlisten) => unlisten());
+  }, []);
+
   const syncScrollButtons = useCallback(() => {
     const strip = stripRef.current;
     if (!strip) return;
@@ -237,6 +257,7 @@ export function ExplorerTabs() {
 
   return (
     <div className="flex h-full flex-col">
+      <TabDropIndicator />
       <header
         className="flex h-10 shrink-0 items-stretch border-b border-border/50 bg-background"
         data-tauri-drag-region="deep"
@@ -322,6 +343,87 @@ function StripScrollButton({
     >
       <Icon className="size-3.5" />
     </button>
+  );
+}
+
+/** Index at which a tab dropped at window-space `x` belongs in the strip:
+ * before the first tab whose midpoint is right of the drop point. */
+function tabInsertionIndexAt(strip: HTMLElement, x: number): number {
+  const tabs = Array.from(strip.querySelectorAll<HTMLElement>('[role="tab"]'));
+  for (let index = 0; index < tabs.length; index++) {
+    const rect = tabs[index].getBoundingClientRect();
+    if (x < rect.left + rect.width / 2) return index;
+  }
+  return tabs.length;
+}
+
+type DropIndicatorGeometry = {
+  left: number;
+  top: number;
+  height: number;
+};
+
+/** Viewport-space placement of the drop indicator for a hover/drop at
+ * window-space `x`, aligned with the tab gap the insertion would occupy. */
+function dropIndicatorGeometryAt(x: number): DropIndicatorGeometry | null {
+  const strip = document.querySelector<HTMLElement>('[role="tablist"]');
+  if (!strip) return null;
+
+  const tabs = Array.from(strip.querySelectorAll<HTMLElement>('[role="tab"]'));
+  if (tabs.length === 0) {
+    const stripRect = strip.getBoundingClientRect();
+    return { left: stripRect.left + 10, top: stripRect.top + 8, height: stripRect.height - 16 };
+  }
+
+  const index = tabInsertionIndexAt(strip, x);
+  const gap = 4; // The strip's gap-1 between neighbouring tabs.
+  const left =
+    index < tabs.length
+      ? tabs[index].getBoundingClientRect().left - gap
+      : (tabs[tabs.length - 1].getBoundingClientRect().right + gap);
+  const tabRect = tabs[0].getBoundingClientRect();
+  return { left, top: tabRect.top, height: tabRect.height };
+}
+
+/** Live insertion preview while a tab from another window is dragged over
+ * this one: the whole window gains a subtle accept ring and the tab strip
+ * shows where the tab would land. Mounts nothing until the first hover. */
+function TabDropIndicator() {
+  const [geometry, setGeometry] = useState<DropIndicatorGeometry | null>(null);
+
+  useEffect(() => {
+    const unlistenHover = events.tabDragHover.listen(({ payload }) => {
+      if (payload.x == null) return;
+      setGeometry((previous) => {
+        const next = dropIndicatorGeometryAt(payload.x as number);
+        if (!next) return previous;
+        return previous && Math.abs(previous.left - next.left) < 0.5 ? previous : next;
+      });
+    });
+    const unlistenLeave = events.tabDragLeave.listen(() => setGeometry(null));
+    const unlistenMerge = events.tabMergedIntoWindow.listen(() => setGeometry(null));
+
+    return () => {
+      void unlistenHover.then((unlisten) => unlisten());
+      void unlistenLeave.then((unlisten) => unlisten());
+      void unlistenMerge.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  if (!geometry) return null;
+
+  return (
+    <>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-40 rounded-lg ring-2 ring-primary/50 ring-inset"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed z-50 w-[3px] rounded-full bg-primary shadow-ambient-sm"
+        style={{ left: geometry.left - 1.5, top: geometry.top, height: geometry.height }}
+      />
+    </>
   );
 }
 
@@ -479,6 +581,19 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
       }
     };
 
+    /** Hands the tab to the window the native drop landed on. Returns false
+     * when the handoff could not be delivered, so the tab stays put. */
+    const mergeIntoWindow = async (targetLabel: string, x: number, y: number): Promise<boolean> => {
+      try {
+        const payload = serializeTabHandoff(tab.id);
+        await events.tabMergedIntoWindow(new TauriWindow(targetLabel)).emit({ payload, x, y });
+        return true;
+      } catch (error) {
+        console.error("Failed to merge the tab into the target window", error);
+        return false;
+      }
+    };
+
     const startNativeDrag = async () => {
       if (!appWindow || nativeDragStarted || disposed || tearingOff) return;
       nativeDragStarted = true;
@@ -501,7 +616,23 @@ function TabStripItem({ isActive, tab }: { isActive: boolean; tab: ExplorerTab }
         if (disposed || tearingOff) return;
 
         if (outcome.released && outcome.outside) {
-          await tearOff({ x: outcome.cursorX, y: outcome.cursorY });
+          if (outcome.target) {
+            // The drop landed on another window of this app: merge the tab
+            // into it rather than tearing off a new window.
+            const merged = await mergeIntoWindow(
+              outcome.target,
+              outcome.targetX ?? 0,
+              outcome.targetY ?? 0,
+            );
+            if (merged) {
+              cleanup();
+              closeTab(tab.id);
+            } else {
+              cleanup();
+            }
+          } else {
+            await tearOff({ x: outcome.cursorX, y: outcome.cursorY });
+          }
         } else {
           cleanup();
         }

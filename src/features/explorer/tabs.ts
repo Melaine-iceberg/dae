@@ -129,10 +129,10 @@ export function serializeTabHandoff(tabId: string): string {
   return JSON.stringify(handoff);
 }
 
-/** Applies a detached tab to the one initial tab created by this webview. */
-export function restoreInitialTabHandoff(payload: string): void {
+/** Applies a serialized tab handoff to a tab, overwriting its navigation
+ * state and layout. Throws on malformed payloads. */
+function applyTabHandoff(tabId: string, payload: string): void {
   const handoff = parseTabHandoff(payload);
-  const tabId = initialTab.id;
   const store = getDefaultStore();
 
   getTabNavigator(tabId).restoreSnapshot(handoff.primary);
@@ -141,6 +141,27 @@ export function restoreInitialTabHandoff(payload: string): void {
   store.set(splitEnabledFamily(tabId), handoff.splitEnabled);
   store.set(activePaneFamily(tabId), handoff.activePane);
   store.set(splitRatioFamily(tabId), handoff.splitRatio);
+}
+
+/** Applies a detached tab to the one initial tab created by this webview. */
+export function restoreInitialTabHandoff(payload: string): void {
+  applyTabHandoff(initialTab.id, payload);
+}
+
+/** Inserts a tab dropped from another window at `index` and activates it.
+ * Mirrors `restoreInitialTabHandoff` but for a window that is already
+ * running, so the merged tab lands beside the existing tabs. */
+export function mergeTabFromHandoff(payload: string, index: number): void {
+  const tab = createTabEntry();
+  applyTabHandoff(tab.id, payload);
+
+  const store = getDefaultStore();
+  const tabs = store.get(tabsAtom);
+  const clamped = Math.min(Math.max(index, 0), tabs.length);
+  const merged = tabs.slice();
+  merged.splice(clamped, 0, tab);
+  store.set(tabsAtom, merged);
+  store.set(activeTabIdAtom, tab.id);
 }
 
 function parseTabHandoff(payload: string): ExplorerTabHandoff {
