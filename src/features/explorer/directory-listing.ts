@@ -176,6 +176,50 @@ function cachedState(path: string): DirectoryEntriesState {
   return { entries: cached ?? [], isError: false, isLoading: cached === undefined };
 }
 
+/**
+ * Whether two listings of a directory describe the same entries.
+ *
+ * A re-read that reports nothing new can be dropped instead of replacing the
+ * displayed directory — see `ExplorerNavigator.refresh`. Field-by-field rather
+ * than a rolling hash, because a hash errs in the dangerous direction:
+ * "unchanged" for a listing that did change leaves the explorer stale until the
+ * next change. Walking 35k entries costs a couple of milliseconds against the
+ * ~123 ms sort and the full list re-render it lets the caller skip.
+ *
+ * The comparison is order-sensitive. The backend sorts every batch by the same
+ * total order, so an unchanged directory comes back in the same order; a
+ * backend that returned the same entries in a different batch order simply
+ * reads as "changed" and gets the full refresh, which is the safe way to be
+ * wrong.
+ */
+export function isSameListing(
+  previous: readonly DirectoryEntry[],
+  next: readonly DirectoryEntry[],
+): boolean {
+  if (previous === next) return true;
+  if (previous.length !== next.length) return false;
+
+  for (let index = 0; index < previous.length; index += 1) {
+    const before = previous[index];
+    const after = next[index];
+    if (before === after) continue;
+
+    if (
+      before.name !== after.name ||
+      before.path !== after.path ||
+      before.kind !== after.kind ||
+      before.modifiedAt !== after.modifiedAt ||
+      before.size !== after.size ||
+      before.hidden !== after.hidden ||
+      before.readOnly !== after.readOnly
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function rememberListing(path: string, entries: DirectoryEntry[]): void {
   completedListings.delete(path);
   completedListings.set(path, entries);

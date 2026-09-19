@@ -1,7 +1,7 @@
 import { commands } from "@/bindings";
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
 
-import { openDirectoryListing, type DirectoryListing } from "./directory-listing";
+import { isSameListing, openDirectoryListing, type DirectoryListing } from "./directory-listing";
 import type { Breadcrumb, DirectoryEntry, DirectoryView, FileSystemError } from "./types";
 
 export type ExplorerStatus = "idle" | "loading" | "ready" | "error";
@@ -47,6 +47,8 @@ export class ExplorerNavigator {
   private requestVersion = 0;
   /** Listing whose remaining batches are still streaming into the state. */
   private listing: DirectoryListing | null = null;
+  /** Releases a settling read that is still waiting on its listing. */
+  private cancelSettle: (() => void) | null = null;
   private readonly scrollOffsets = new Map<string, number>();
   private readonly listeners = new Set<ExplorerListener>();
 
@@ -136,6 +138,16 @@ export class ExplorerNavigator {
     return this.load(path, { type: "push" });
   }
 
+  /**
+   * Re-reads the displayed directory without disturbing it.
+   *
+   * Refreshes are watcher-driven and mostly consecutive, so the cheap outcome
+   * is the common one: a settling read whose entries match what is on screen
+   * leaves the state object untouched. That matters more than it sounds — the
+   * sort, the filters, the selection reconciliation and the row count are all
+   * keyed on `directory`, so replacing it costs a re-sort of the whole listing
+   * and a re-render of it, for a list that did not change.
+   */
   async refresh(path = this.state.directory?.path): Promise<DirectoryView | undefined> {
     if (!path || this.state.directory?.path !== path || this.state.status === "loading") {
       return undefined;
@@ -144,10 +156,20 @@ export class ExplorerNavigator {
     const requestVersion = ++this.requestVersion;
 
     try {
-      const directory = await this.readListing(path, requestVersion);
+      const directory = await this.readListing(path, requestVersion, true);
 
-      if (requestVersion !== this.requestVersion || this.state.directory?.path !== path) {
+      if (
+        directory === null ||
+        requestVersion !== this.requestVersion ||
+        this.state.directory?.path !== path
+      ) {
         return undefined;
+      }
+
+      const displayed = this.state.directory;
+
+      if (isSameListing(displayed.entries, directory.entries)) {
+        return displayed;
       }
 
       this.setState({
@@ -178,9 +200,9 @@ export class ExplorerNavigator {
     this.setState({ ...this.state, status: "loading", pendingPath: path, error: null });
 
     try {
-      const directory = await this.readListing(path, requestVersion);
+      const directory = await this.readListing(path, requestVersion, false);
 
-      if (requestVersion !== this.requestVersion) {
+      if (directory === null || requestVersion !== this.requestVersion) {
         return undefined;
       }
 
@@ -217,18 +239,33 @@ export class ExplorerNavigator {
    * displayed directory, so a large folder paints as soon as its first batch
    * is in instead of waiting for the whole walk.
    *
+   * `settle` inverts that, for a refresh. The explorer already shows a complete
+   * listing there, and publishing the batches would first shrink it back to the
+   * head — 512 entries — before growing it again, which clamps the scroll
+   * offset to a list that is suddenly 70× shorter. A settling read keeps the
+   * current listing on screen and resolves once the walk is finished.
+   *
    * Any listing that is still streaming is dropped first: a newer read (a
    * navigation, a watcher refresh) always wins over the one it replaces.
    */
-  private readListing(path: string, requestVersion: number): Promise<DirectoryView> {
-    this.listing?.dispose();
-    this.listing = null;
+  private readListing(
+    path: string,
+    requestVersion: number,
+    settle: boolean,
+  ): Promise<DirectoryView | null> {
+    this.cancelListing();
 
     // The head is kept here rather than read back from the state: a batch can
     // beat `load`/`refresh` to the state update, and it still has to render
     // against its own head.
     let head: DirectoryView | null = null;
     let entries: DirectoryEntry[] | null = null;
+    let resolveSettled: (() => void) | null = null;
+    const settled = settle
+      ? new Promise<void>((resolve) => {
+          resolveSettled = resolve;
+        })
+      : null;
 
     const listing = openDirectoryListing(
       path,
@@ -238,24 +275,46 @@ export class ExplorerNavigator {
         },
         onEntries: (latest) => {
           entries = latest;
-          if (requestVersion !== this.requestVersion || !head) return;
+          if (settle || requestVersion !== this.requestVersion || !head) return;
           this.setState({ ...this.state, directory: { ...head, entries: latest } });
         },
+        onDone: () => resolveSettled?.(),
       },
       this.api,
     );
 
     this.listing = listing;
-    // Whatever was published while the head was in flight rides along, so the
-    // caller's state update cannot drop it.
-    return listing.head.then((view) => ({ ...view, entries: entries ?? view.entries }));
+    // A settling read that is superseded has to stop waiting; the caller
+    // discards its result through the request version either way.
+    this.cancelSettle = () => resolveSettled?.();
+
+    return listing.head.then(async (view) => {
+      if (settled === null) {
+        // Whatever was published while the head was in flight rides along, so
+        // the caller's state update cannot drop it.
+        return { ...view, entries: entries ?? view.entries };
+      }
+
+      await settled;
+      if (requestVersion !== this.requestVersion) {
+        return null;
+      }
+      return entries === null ? null : { ...view, entries };
+    });
+  }
+
+  /** Drops the active listing and releases a settling read waiting on it. */
+  private cancelListing(): void {
+    this.listing?.dispose();
+    this.listing = null;
+    this.cancelSettle?.();
+    this.cancelSettle = null;
   }
 
   /** Stops the active listing; the navigator is not used afterwards. */
   dispose(): void {
     ++this.requestVersion;
-    this.listing?.dispose();
-    this.listing = null;
+    this.cancelListing();
     this.listeners.clear();
   }
 

@@ -93,6 +93,7 @@ import { useGitStatus } from "./git-status";
 import type { ExplorerNavigator } from "./navigation";
 import { OpenWithDialog } from "./open-with-dialog";
 import { SortMenu } from "./sort-menu";
+import { useSortedEntries } from "./sorted-entries";
 import { TransferConflictDialog } from "./transfer-conflict-dialog";
 import {
   applyEntryFilters,
@@ -100,7 +101,6 @@ import {
   filterHiddenEntries,
   foldersFirstAtom,
   showHiddenFilesAtom,
-  sortEntries,
   sortKeyAtom,
   sortOrderAtom,
 } from "./preferences";
@@ -115,6 +115,9 @@ import type {
 const DIRECTORY_REFRESH_DELAY_MS = 150;
 const COMPLETED_OPERATION_STATUS_DURATION_MS = 900;
 const UNDO_TOAST_DISMISS_MS = 6000;
+/** Shared stand-in for "no listing yet": a fresh `[]` per render would defeat
+ *  the identity checks the entry-ordering hook relies on. */
+const NO_ENTRIES: DirectoryEntry[] = [];
 const appWindow = getAppWindow();
 
 interface ExplorerViewProps {
@@ -212,29 +215,20 @@ export function ExplorerView({
   const foldersFirst = useAtomValue(foldersFirstAtom);
   const showHiddenFiles = useAtomValue(showHiddenFilesAtom);
   const entryFilters = useAtomValue(entryFiltersAtom);
-  const displayedEntries = useMemo(() => {
-    const sourceEntries = search.isActive
-      ? (search.response?.entries ?? [])
-      : (directory?.entries ?? []);
-    return sortEntries(
-      applyEntryFilters(filterHiddenEntries(sourceEntries, showHiddenFiles), entryFilters),
-      sortKey,
-      sortOrder,
-      foldersFirst,
-    );
-  }, [
-    directory?.entries,
-    entryFilters,
-    foldersFirst,
-    search.isActive,
-    search.response,
-    showHiddenFiles,
-    sortKey,
-    sortOrder,
-  ]);
+  const sourceEntries = search.isActive
+    ? (search.response?.entries ?? NO_ENTRIES)
+    : (directory?.entries ?? NO_ENTRIES);
+  // Filtering keeps the source array's identity when nothing is filtered, so a
+  // streamed batch reaches the ordering hook as a plain append.
+  const filteredEntries = useMemo(
+    () => applyEntryFilters(filterHiddenEntries(sourceEntries, showHiddenFiles), entryFilters),
+    [entryFilters, showHiddenFiles, sourceEntries],
+  );
+  const displayedEntries = useSortedEntries(filteredEntries, sortKey, sortOrder, foldersFirst);
+  const selectedPathSet = useMemo(() => new Set(selectedPaths), [selectedPaths]);
   const selectedEntries = useMemo(
-    () => displayedEntries.filter((entry) => selectedPaths.includes(entry.path)),
-    [displayedEntries, selectedPaths],
+    () => displayedEntries.filter((entry) => selectedPathSet.has(entry.path)),
+    [displayedEntries, selectedPathSet],
   );
 
   useEffect(() => {

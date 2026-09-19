@@ -11,10 +11,20 @@ import {
 } from "./file-icons";
 import type { DirectoryEntry } from "./types";
 
+import {
+  createComparator,
+  isNumericSortKey,
+  SORT_COLLATOR_OPTIONS,
+  sortIndices,
+  type ExplorerSortKey,
+  type ExplorerSortOrder,
+  type SortPrimitives,
+} from "./entry-order";
+
+export type { ExplorerSortKey, ExplorerSortOrder } from "./entry-order";
+
 export type ExplorerViewMode = "list" | "grid" | "column";
 export type ExplorerDensity = "compact" | "comfortable" | "spacious";
-export type ExplorerSortKey = "name" | "modified" | "type" | "size";
-export type ExplorerSortOrder = "asc" | "desc";
 export type ExplorerKindFilter = "all" | "folders" | "files" | "images";
 export type ExplorerModifiedFilter = "any" | "today" | "week" | "month";
 export type ExplorerSizeFilter = "any" | "small" | "medium" | "large";
@@ -147,8 +157,6 @@ export function applyEntryFilters(
   });
 }
 
-const NAME_COLLATOR_OPTIONS: Intl.CollatorOptions = { numeric: true, sensitivity: "base" };
-
 function entryTypeLabel(entry: DirectoryEntry): string {
   switch (entry.kind) {
     case "directory":
@@ -163,10 +171,69 @@ function entryTypeLabel(entry: DirectoryEntry): string {
 }
 
 /**
+ * Collects the comparable form of `entries` for the active sort key.
+ *
+ * The point is that it runs once per entry rather than once per comparison.
+ * The `"type"` key used to resolve a localized label inside the comparator,
+ * which for a 35,803 entry directory meant ~1.7M `i18n.t` lookups and icon
+ * table probes per ordering pass.
+ *
+ * For `"name"` the primary *is* the name array, so building the primitives
+ * costs one pass and no extra allocation.
+ */
+export function collectSortPrimitives(
+  entries: readonly DirectoryEntry[],
+  key: ExplorerSortKey,
+): SortPrimitives {
+  const names: string[] = [];
+  const directoryFlags = new Uint8Array(entries.length);
+
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index];
+    names.push(entry.name);
+    directoryFlags[index] = entry.kind === "directory" ? 1 : 0;
+  }
+
+  if (key === "name") {
+    return { directoryFlags, names, primaries: names };
+  }
+
+  if (isNumericSortKey(key)) {
+    const primaries = new Float64Array(entries.length);
+    for (let index = 0; index < entries.length; index++) {
+      const entry = entries[index];
+      // Directories carry no size and no timestamp below the root; the
+      // previous in-place comparator folded those to 0 too.
+      primaries[index] = (key === "modified" ? entry.modifiedAt : entry.size) ?? 0;
+    }
+    return { directoryFlags, names, primaries };
+  }
+
+  const primaries: string[] = [];
+  for (const entry of entries) {
+    primaries.push(entryTypeLabel(entry));
+  }
+  return { directoryFlags, names, primaries };
+}
+
+/**
+ * The collator the whole app orders with, built for the active locale.
+ * Shared with the sort worker so both threads collate identically.
+ */
+export function sortCollator(): Intl.Collator {
+  return localeCollator(SORT_COLLATOR_OPTIONS);
+}
+
+/**
  * Sorts entries for display. With `foldersFirst` (default) directories
  * always group ahead of files regardless of the active key (predictable
  * spatial convention); names break ties with a natural-order collator so
  * file2 < file10. When disabled, entries interleave purely by the key.
+ *
+ * This is the one-shot form, for lists that arrive whole (a Miller column's
+ * siblings, search results). Streamed listings go through
+ * `useSortedEntries`, which folds each batch into the previous order instead
+ * of re-sorting the snapshot.
  */
 export function sortEntries(
   entries: readonly DirectoryEntry[],
@@ -174,27 +241,15 @@ export function sortEntries(
   order: ExplorerSortOrder,
   foldersFirst = true,
 ): DirectoryEntry[] {
-  const direction = order === "asc" ? 1 : -1;
-  const collator = localeCollator(NAME_COLLATOR_OPTIONS);
+  if (entries.length === 0) {
+    return [];
+  }
 
-  return [...entries].sort((left, right) => {
-    if (foldersFirst) {
-      const folderDiff = Number(right.kind === "directory") - Number(left.kind === "directory");
-      if (folderDiff !== 0) return folderDiff;
-    }
+  const compare = createComparator(
+    collectSortPrimitives(entries, key),
+    { foldersFirst, sortKey: key, sortOrder: order },
+    sortCollator(),
+  );
 
-    let comparison = 0;
-    if (key === "name") {
-      comparison = collator.compare(left.name, right.name);
-    } else if (key === "modified") {
-      comparison = (left.modifiedAt ?? 0) - (right.modifiedAt ?? 0);
-    } else if (key === "size") {
-      comparison = (left.size ?? 0) - (right.size ?? 0);
-    } else {
-      comparison = collator.compare(entryTypeLabel(left), entryTypeLabel(right));
-    }
-
-    if (comparison !== 0) return comparison * direction;
-    return collator.compare(left.name, right.name);
-  });
+  return sortIndices(entries.length, compare).map((index) => entries[index]);
 }

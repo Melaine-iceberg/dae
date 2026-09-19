@@ -192,6 +192,9 @@ export function TrashView() {
   };
 
   const allSelected = (entries?.length ?? 0) > 0 && selectedIds.length === entries?.length;
+  // Membership is a Set lookup: the rows are rendered in full, so scanning the
+  // selection per row costs rows × selection per render.
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const toggleSelectAll = () => {
     setSelectedIds(allSelected ? [] : (entries ?? []).map((entry) => entry.id));
   };
@@ -308,7 +311,7 @@ export function TrashView() {
             {entries.map((entry) => (
               <TrashRow
                 entry={entry}
-                isSelected={selectedIds.includes(entry.id)}
+                isSelected={selectedIdSet.has(entry.id)}
                 key={entry.id}
                 onNavigateToOriginalLocation={() => navigateToFolder(entry.originalParent)}
                 onPurge={() => setPurgeRequest({ kind: "selection", ids: [entry.id] })}
