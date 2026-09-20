@@ -12,11 +12,25 @@
   --font-mono:
     "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
 
-  /* Compact desktop type scale: view headers stay modest; a micro label step
-     for section captions. Chrome text is 13px and metadata 12px, so a dense
-     list still scans. Display and title sizes take negative tracking (large
-     text reads loose otherwise); the micro label takes positive tracking so
-     it reads as a caption instead of as very small body text. */
+  /* Compact desktop type scale — a CLOSED six-step ramp. The ramp is the
+     whole point: it is what keeps a dense window (13px rows, 12px metadata,
+     10px keycaps) from drifting into a dozen near-identical sizes. Anything
+     outside these six steps is not legal, so a reviewer can see an
+     off-ramp size at a glance instead of having to compare two pixel values.
+
+       display  18px  view titles
+       title    15px  dialog / section titles
+       lead     14px  the one hero input — the palette search field
+       body     13px  the workhorse — rows, controls, form text
+       caption  12px  secondary metadata, descriptions
+       micro    11px  dense chrome (status bar, capacity, badges)
+       label    11px  UPPERCASE section captions
+       nano     10px  keycap chips and badge letters
+
+     `label` and `micro` deliberately share a size but not a role: label is an
+     uppercased, positively tracked caption; micro is sentence-case metadata.
+     Only the heading steps carry a weight and tracking of their own — body
+     and below inherit, so a call site can go bold without re-declaring size. */
   --text-display: 1.125rem;
   --text-display--line-height: 1.5rem;
   --text-display--font-weight: 650;
@@ -25,27 +39,58 @@
   --text-title--line-height: 1.375rem;
   --text-title--font-weight: 600;
   --text-title--letter-spacing: -0.006em;
+  --text-body: 0.8125rem;
+  --text-body--line-height: 1.25rem;
+  --text-lead: 0.875rem;
+  --text-lead--line-height: 1.25rem;
+  --text-lead--letter-spacing: -0.006em;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1rem;
+  --text-micro: 0.6875rem;
+  --text-micro--line-height: 0.875rem;
   --text-label: 0.6875rem;
   --text-label--line-height: 1rem;
   --text-label--font-weight: 600;
   --text-label--letter-spacing: 0.06em;
+  --text-nano: 0.625rem;
+  --text-nano--line-height: 0.875rem;
 
   /* Linear motion: fast, critically damped, no overshoot. State changes
-     should feel instantaneous, not performed. The "spring" curves are
-     settles (a fast start that eases out) reserved for entrances and
-     transforms; colour-only transitions stay on the flat standard curve so
-     hover never appears to lag. */
-  --ease-spring-fast: cubic-bezier(0.2, 0, 0, 1);
+     should feel instantaneous, not performed.
+
+     Five curves, each with one job — a curve declared twice is a name nobody
+     can reason about, which is how `--ease-emphasized` came to be a byte-for-
+     byte duplicate of `--ease-standard`, and how `--ease-spring-fast` came to
+     sit on colour-only hovers while claiming to be a spring:
+
+       standard             state changes — hover, selection, focus
+       standard-accelerate  exits: a surface leaving the screen
+       spring-fast          transforms and entrances — chevron rotation, the
+                            tab press, a popup opening. easeOutCubic, so a
+                            120ms motion has finished settling before it is
+                            perceived as animated.
+       spring               large surfaces arriving — dialogs, panels
+       spring-slow          the heaviest arrivals
+
+     Only `standard` belongs on a colour-only transition. A settle curve on a
+     hover fill reads as the hover lagging behind the pointer, which is why
+     every `transition-[background-color…]` uses it. */
+  --ease-spring-fast: cubic-bezier(0.215, 0.61, 0.355, 1);
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring-slow: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
 
-  --duration-instant: 80ms;
-  --duration-fast: 120ms;
-  --duration-normal: 160ms;
-  --duration-slow: 240ms;
+  /* Motion durations live under Tailwind's `--transition-duration-*`
+     namespace, which is what makes a `duration-fast` class resolve to a
+     utility at all. They previously sat under a `--duration-*` namespace that
+     Tailwind does not read: the variables were still emitted, so the
+     hand-written CSS below honoured them, but every `duration-*` class in the
+     app silently generated nothing and fell back to Tailwind's stock 150ms. */
+  --transition-duration-instant: 80ms;
+  --transition-duration-fast: 120ms;
+  --transition-duration-normal: 160ms;
+  --transition-duration-slow: 240ms;
 
   /* Elevation: four measured steps, spent on floating layers only — menus,
      dialogs, the command palette, drag ghosts. The window itself is flat:
@@ -69,6 +114,27 @@
     0 20px 48px -12px color-mix(in oklab, var(--shadow-color) var(--shadow-a4), transparent);
 
   --color-selection: var(--selection);
+
+  /* Semantic status roles. The theme shipped --destructive but no positive
+     counterparts, so "fine / attention / new" status was spelled out in raw
+     Tailwind ramps at each call site — three hand-copied versions of the Git
+     badge, two of them with no dark variant at all. These three complete the
+     set: one hue each, tuned per scheme, reused by every status surface. */
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+
+  /* Space identity tones: a decorative six-hue set, deliberately separate
+     from the semantic trio above (a Space is not a status). Declared as
+     tokens so the dark scheme is handled once here instead of by hand-written
+     `dark:` variants repeated on every usage. */
+  --color-tone-blue: var(--tone-blue);
+  --color-tone-violet: var(--tone-violet);
+  --color-tone-emerald: var(--tone-emerald);
+  --color-tone-amber: var(--tone-amber);
+  --color-tone-rose: var(--tone-rose);
+  --color-tone-cyan: var(--tone-cyan);
+
   --color-folder: var(--folder);
   --color-folder-1: var(--folder-1);
   --color-folder-2: var(--folder-2);
@@ -148,11 +214,17 @@
   --radius-3xl: 20px;
   --radius-4xl: 24px;
 
+  /* Dimming layer behind a modal. Declared per scheme rather than written as
+     `bg-black/40` at the call site: on the near-black dark canvas a 40% black
+     scrim is almost invisible, so dark mode needs a stronger one to separate
+     the dialog from the content it covers. */
+  --color-scrim: var(--scrim);
+
   /* Indeterminate progress: a tight linear sweep, no waves. */
   --animate-m3-wave: m3-wave 1.1s linear infinite;
 
   /* Floating layer entrance: a quick fade with a 2px settle. */
-  --animate-float-in: float-in var(--duration-fast) var(--ease-standard) both;
+  --animate-float-in: float-in var(--transition-duration-fast) var(--ease-standard) both;
 
   @keyframes m3-wave {
     to {
@@ -226,7 +298,19 @@
   --icon-exec: #4c5468;
   --icon-lock: #bf3c60;
   --icon-font: #5745c4;
-    --destructive: #c22f2f;
+  --destructive: #c22f2f;
+  /* Status hues reuse the document-icon tones, which were contrast-checked
+     against the white plane already — so "added" is the sheet green, "info"
+     the document blue, and only the amber step is new. */
+  --success: #17804a;
+  --warning: #9c630f;
+  --info: #2b5fd9;
+  --tone-blue: #2b5fd9;
+  --tone-violet: #7443c0;
+  --tone-emerald: #17804a;
+  --tone-amber: #9c630f;
+  --tone-rose: #bf3c60;
+  --tone-cyan: #0d848c;
   --border: #e2e4e8; /* hairline panel edge */
   --input: #d5d8dd;
   --ring: #4649c9;
@@ -236,6 +320,7 @@
   --chart-4: #9c630f;
   --chart-5: #282a30;
   --radius: 10px;
+  --scrim: rgb(0 0 0 / 0.4);
   --sidebar: #f7f8f9; /* Linear sidebar sits ON the canvas, not above it */
   --sidebar-foreground: #282a30;
   --sidebar-primary: #4649c9;
@@ -303,6 +388,15 @@
   --icon-lock: #ff9ab2;
   --icon-font: #b4a6ff;
   --destructive: #ff6b72;
+  --success: #63d398;
+  --warning: #e8a33d;
+  --info: #8fa2ff;
+  --tone-blue: #8fa2ff;
+  --tone-violet: #c6a2ff;
+  --tone-emerald: #63d398;
+  --tone-amber: #e8a33d;
+  --tone-rose: #ff9ab2;
+  --tone-cyan: #5acfd9;
   --border: #26282c; /* hairline — ≈9% white on the canvas */
   --input: #33353a;
   --ring: #8284f8;
@@ -312,6 +406,7 @@
   --chart-4: #e8a33d;
   --chart-5: #f7f8f8;
   --radius: 10px;
+  --scrim: rgb(0 0 0 / 0.6);
   --sidebar: #0c0d0f; /* Linear sidebar — a half-step above the canvas, below the panel */
   --sidebar-foreground: #f7f8f8;
   --sidebar-primary: #8284f8;
@@ -332,6 +427,17 @@
     pointer-events: none;
     user-select: none;
   }
+
+  /* Focus ring: two families, one value each. They exist because a full-bleed
+     row cannot carry an outer ring (it would be clipped by the virtualized
+     scroller), so rows use an inset hairline instead of the controls' 2px
+     halo. What is NOT allowed is a third opacity — the three control values
+     this replaced (/25 on inputs, /40 on buttons, /50 on the tab strip) meant
+     the most important focus target, the text input, had the faintest ring in
+     the app.
+
+       controls  focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40
+       rows      focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset */
 
   /* Number inputs trade the OS spinner for the InputGroup stepper buttons;
      the wheel still steps when the field is focused. */
@@ -359,7 +465,7 @@
     border-radius: inherit;
     background-color: currentColor;
     opacity: 0;
-    transition: opacity var(--duration-fast) var(--ease-standard);
+    transition: opacity var(--transition-duration-fast) var(--ease-standard);
     pointer-events: none;
   }
   .state-layer:hover::after {
@@ -370,6 +476,18 @@
   }
   .state-layer:active::after {
     opacity: 0.16;
+  }
+
+  /* Entry-icon tiles share one optical rule instead of a radius per size: the
+     corner sits at ~31% of the tile's edge, which is what makes a 22px row
+     glyph and a 50px grid cell read as the same squircle family. That ratio is
+     why these cells never matched the static radius scale — and why they had
+     drifted into six hand-tuned arbitrary values (7/8/10/12/13/15px). A
+     percentage radius resolves against each axis, so on these square cells it
+     lands on the same corner the px values drew (22px → 6.8, 42px → 13.0,
+     50px → 15.5). */
+  .tile-radius {
+    border-radius: 31%;
   }
 
   /* Folder type tile: a blue gradient squircle with a soft top light —
@@ -407,7 +525,7 @@
      the damped house springs. */
   @media (prefers-reduced-motion: no-preference) {
     .entry-icon-pop {
-      transition: scale var(--duration-normal) cubic-bezier(0.34, 1.56, 0.64, 1);
+      transition: scale var(--transition-duration-normal) cubic-bezier(0.34, 1.56, 0.64, 1);
     }
     .state-layer:hover .entry-icon-pop,
     .state-layer:focus-visible .entry-icon-pop {
@@ -469,7 +587,7 @@
     background-color: color-mix(in oklab, var(--foreground) 26%, transparent);
     border: 4px solid transparent;
     border-radius: 9999px;
-    transition: background-color var(--duration-fast) var(--ease-standard);
+    transition: background-color var(--transition-duration-fast) var(--ease-standard);
   }
   ::-webkit-scrollbar-thumb:hover {
     background-color: color-mix(in oklab, var(--foreground) 44%, transparent);

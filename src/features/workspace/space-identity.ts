@@ -4,6 +4,11 @@
  * derive one from a hash of their id, so the color never changes between
  * sessions. Accents stay muted and confined to the icon tile to keep the
  * neutral theme coherent (§11).
+ *
+ * The six hues are theme tokens (--tone-*) rather than hand-written Tailwind
+ * ramps: the ramp version needed a `dark:` variant on every entry, and the
+ * one that was easiest to forget was the one that washed out. A token carries
+ * both schemes, so a tone is declared once in App.css and used once here.
  */
 
 interface SpaceAccent {
@@ -12,12 +17,12 @@ interface SpaceAccent {
 }
 
 const SPACE_ACCENTS: readonly SpaceAccent[] = [
-  { tile: "bg-blue-500/15", text: "text-blue-600 dark:text-blue-400" },
-  { tile: "bg-violet-500/15", text: "text-violet-600 dark:text-violet-400" },
-  { tile: "bg-emerald-500/15", text: "text-emerald-600 dark:text-emerald-400" },
-  { tile: "bg-amber-500/15", text: "text-amber-600 dark:text-amber-400" },
-  { tile: "bg-rose-500/15", text: "text-rose-600 dark:text-rose-400" },
-  { tile: "bg-cyan-500/15", text: "text-cyan-600 dark:text-cyan-400" },
+  { tile: "bg-tone-blue/15", text: "text-tone-blue" },
+  { tile: "bg-tone-violet/15", text: "text-tone-violet" },
+  { tile: "bg-tone-emerald/15", text: "text-tone-emerald" },
+  { tile: "bg-tone-amber/15", text: "text-tone-amber" },
+  { tile: "bg-tone-rose/15", text: "text-tone-rose" },
+  { tile: "bg-tone-cyan/15", text: "text-tone-cyan" },
 ];
 
 const PRESET_ACCENTS: Record<string, number> = {

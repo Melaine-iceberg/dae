@@ -71,22 +71,31 @@ export function getEntryGitStatus(
   return undefined;
 }
 
-const GIT_STATUS_PRESENTATION: Record<
+/**
+ * The single definition of how a Git working-tree state is coloured and
+ * labelled. Three surfaces render these (the file-list badge, the project
+ * card's dirty counts, the status bar's ahead/behind chips) and each used to
+ * carry its own hand-copied Tailwind ramp — two of them with no dark variant,
+ * so the same state read three slightly different greens and washed out on the
+ * dark canvas. Exporting one table keeps the state colours a property of the
+ * design system (--success / --warning / --info) rather than of each call site.
+ */
+export const GIT_STATUS_PRESENTATION: Record<
   GitEntryStatusKind,
   { className: string; label: string; letter: string }
 > = {
   added: {
-    className: "bg-emerald-500/15 text-emerald-600",
+    className: "bg-success/15 text-success",
     label: "git.added",
     letter: "A",
   },
   modified: {
-    className: "bg-amber-500/15 text-amber-600",
+    className: "bg-warning/15 text-warning",
     label: "git.modified",
     letter: "M",
   },
   untracked: {
-    className: "bg-sky-500/15 text-sky-600",
+    className: "bg-info/15 text-info",
     label: "git.untracked",
     letter: "U",
   },
@@ -101,7 +110,7 @@ export function GitStatusBadge({ kind }: { kind: GitEntryStatusKind }) {
     <span
       aria-label={t("git.statusTitle", { status: label })}
       className={cn(
-        "shrink-0 rounded-xs px-1.5 text-[10px] leading-4 font-semibold",
+        "shrink-0 rounded-xs px-1.5 text-nano leading-4 font-semibold",
         presentation.className,
       )}
       title={t("git.statusTitle", { status: label })}

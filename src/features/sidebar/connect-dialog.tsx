@@ -224,7 +224,7 @@ export function ConnectDialog({
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
+          <label className="flex items-center gap-2 text-body text-muted-foreground">
             <input
               checked={remember}
               className="size-4 accent-[var(--primary)]"
@@ -235,12 +235,12 @@ export function ConnectDialog({
           </label>
 
           {test.status === "ok" && (
-            <p className="text-[13px] text-primary">{t("connect.testOk")}</p>
+            <p className="text-body text-primary">{t("connect.testOk")}</p>
           )}
           {test.status === "failed" && (
-            <p className="text-[13px] text-destructive">{test.message}</p>
+            <p className="text-body text-destructive">{test.message}</p>
           )}
-          {error && <p className="text-[13px] text-destructive">{error}</p>}
+          {error && <p className="text-body text-destructive">{error}</p>}
 
           <DialogFooter className="gap-2 sm:justify-between">
             <Button

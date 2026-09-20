@@ -211,14 +211,25 @@ function snapshotTabDragPreview(tabId: string): Promise<string | null> {
     foreignObject.appendChild(wrapper);
     svg.appendChild(foreignObject);
 
+    // The serialized SVG goes through a Blob object URL instead of a
+    // percent-encoded `data:` string. The mark-up here is a full tab-strip DOM
+    // dump, so inlining it as a data URL tripled its length on every drag; an
+    // object URL also keeps `image.src` free of any interpolated value. An SVG
+    // loaded as an image is sandboxed — it can neither apply page stylesheets
+    // nor fetch external resources — so this remains a purely local
+    // rasterization step with no outbound request.
+    const svgSource = new XMLSerializer().serializeToString(svg);
+    const objectUrl = URL.createObjectURL(new Blob([svgSource], { type: "image/svg+xml" }));
     const image = new Image();
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error("The drag preview SVG failed to rasterize"));
-      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-        new XMLSerializer().serializeToString(svg),
-      )}`;
-    });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error("The drag preview SVG failed to rasterize"));
+        image.src = objectUrl;
+      });
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
 
     const canvas = document.createElement("canvas");
     canvas.width = bitmapWidth;
@@ -325,7 +336,7 @@ export function ExplorerTabs() {
           ))}
           <button
             aria-label={t("tabs.newTab")}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
             onClick={createTab}
             title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
             type="button"
@@ -848,7 +859,7 @@ function TabStripItem({
         // surface in the strip (one hairline, one shadow step); inactive tabs
         // stay flat text until hovered, so the strip reads as a row of
         // destinations rather than a row of buttons.
-        "group relative flex h-6 w-52 shrink-0 touch-none cursor-grab items-center rounded-md text-[13px] select-none transition-[background-color,color,box-shadow,scale,opacity] duration-fast ease-spring-fast active:scale-[0.98] active:cursor-grabbing",
+        "group relative flex h-6 w-52 shrink-0 touch-none cursor-grab items-center rounded-md text-body select-none transition-[background-color,color,box-shadow,scale,opacity] duration-fast ease-spring-fast active:scale-[0.98] active:cursor-grabbing",
         isActive
           ? "bg-card font-medium text-foreground shadow-ambient-xs ring-1 ring-border dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.05)]"
           : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
@@ -896,7 +907,7 @@ function TabStripItem({
         createPortal(
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-md bg-card text-[13px] text-foreground shadow-ambient-lg ring-1 ring-border select-none"
+            className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-md bg-card text-body text-foreground shadow-ambient-lg ring-1 ring-border select-none"
             data-tab-drag-preview={tab.id}
             style={{
               width: dragPreview.width,

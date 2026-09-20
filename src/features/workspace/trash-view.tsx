@@ -303,7 +303,7 @@ export function TrashView() {
           <div
             className={cn(
               ROW_GRID,
-              "border-b border-border bg-muted/40 px-3 py-1.5 text-label text-muted-foreground/80 uppercase",
+              "border-b border-border bg-muted/40 px-3 py-1.5 text-label text-muted-foreground uppercase",
             )}
           >
             <SelectAllToggle allSelected={allSelected} onToggle={toggleSelectAll} />
@@ -379,7 +379,7 @@ function TrashProgress({ progress }: { progress: FileOperationProgress }) {
 
   return (
     <div className="flex flex-col gap-1.5 rounded-xl bg-popover p-3 shadow-ambient ring-1 ring-border/80">
-      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+      <div className="flex items-center justify-between gap-3 text-caption text-muted-foreground">
         <span className="truncate">{label}</span>
         {progress.total !== null && (
           <span className="shrink-0 font-mono tabular-nums">
@@ -456,17 +456,17 @@ function TrashRow({
             <RowCheckbox isSelected={isSelected} />
             <span className="flex min-w-0 items-center gap-2">
               <TypeIconTile
-                className="size-[22px] rounded-[7px]"
+                className="size-[22px] tile-radius"
                 iconSize={13}
                 presentation={presentation}
               />
-              <span className="truncate text-[13px]">{entry.name}</span>
+              <span className="truncate text-body">{entry.name}</span>
             </span>
-            <span className="truncate text-xs text-muted-foreground">{originalLocation}</span>
-            <span className="truncate text-xs text-muted-foreground tabular-nums">
+            <span className="truncate text-caption text-muted-foreground">{originalLocation}</span>
+            <span className="truncate text-caption text-muted-foreground tabular-nums">
               {formatDeletedTime(entry.timeDeleted)}
             </span>
-            <span className="text-right text-xs text-muted-foreground tabular-nums">
+            <span className="text-right text-caption text-muted-foreground tabular-nums">
               {entry.sizeBytes === null ? "—" : formatBytes(entry.sizeBytes)}
             </span>
           </button>

@@ -254,7 +254,7 @@ export function EntryPreview({
       <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
         {visual && VisualIcon ? <VisualIcon className="size-4 shrink-0" /> : null}
         <p
-          className="min-w-0 flex-1 truncate text-[13px] font-medium"
+          className="min-w-0 flex-1 truncate text-body font-medium"
           title={entry?.name ?? undefined}
         >
           {entry?.name ?? t("preview.noFileSelected")}
@@ -273,7 +273,7 @@ export function EntryPreview({
 
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
         {entry === null ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-xs text-muted-foreground">
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-caption text-muted-foreground">
             <VisualPlaceholder name="preview" />
             <p>{t("preview.selectHint")}</p>
           </div>
@@ -290,7 +290,7 @@ export function EntryPreview({
               <div className="flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-muted/40">
                 {supportsMarkdown ? (
                   <div
-                    className="markdown-preview min-h-0 flex-1 overflow-auto p-2.5 text-xs leading-relaxed"
+                    className="markdown-preview min-h-0 flex-1 overflow-auto p-2.5 text-caption leading-relaxed"
                     onClickCapture={handleMarkdownLinkClick}
                   >
                     {/* Rendered locally from file contents via TanStack Markdown. */}
@@ -298,18 +298,18 @@ export function EntryPreview({
                   </div>
                 ) : textPreview.html !== null ? (
                   <div
-                    className="code-preview min-h-0 flex-1 overflow-auto p-2.5 text-xs leading-relaxed"
+                    className="code-preview min-h-0 flex-1 overflow-auto p-2.5 text-caption leading-relaxed"
                     // Highlighted markup is generated locally from file contents; TanStack Highlight escapes all text nodes (escapeHtml in its core) before tokenizing.
                     // pi-lens-ignore: dangerously-set-inner-html
                     dangerouslySetInnerHTML={{ __html: textPreview.html }}
                   />
                 ) : (
-                  <pre className="min-h-0 flex-1 overflow-auto p-2.5 text-xs leading-relaxed whitespace-pre-wrap break-all">
+                  <pre className="min-h-0 flex-1 overflow-auto p-2.5 text-caption leading-relaxed whitespace-pre-wrap break-all">
                     {textPreview.content}
                   </pre>
                 )}
                 {textPreview.truncated && (
-                  <p className="shrink-0 border-t px-2.5 py-1.5 text-xs text-muted-foreground">
+                  <p className="shrink-0 border-t px-2.5 py-1.5 text-caption text-muted-foreground">
                     {t("preview.truncatedHint", { size: PREVIEW_READ_BYTES / 1024 })}
                   </p>
                 )}
@@ -321,13 +321,13 @@ export function EntryPreview({
                 <Skeleton className="h-3 w-2/3" />
               </div>
             ) : isTooLarge ? (
-              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 px-3 text-center text-xs text-muted-foreground">
+              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 px-3 text-center text-caption text-muted-foreground">
                 <TriangleAlert className="size-5" />
                 <p>{t("preview.tooLarge", { size: PREVIEW_MAX_SOURCE_BYTES / 1024 / 1024 })}</p>
                 <p>{t("preview.tooLargeHint")}</p>
               </div>
             ) : textPreview?.status === "error" ? (
-              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 text-xs text-muted-foreground">
+              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 text-caption text-muted-foreground">
                 <TriangleAlert className="size-5" />
                 <p>{t("preview.readError")}</p>
               </div>
@@ -352,7 +352,7 @@ export function EntryPreview({
                 mediaPreview.data.width !== null ||
                 mediaPreview.data.bitrateBps !== null) && (
                 <div className="shrink-0 rounded-xl bg-muted/40 p-2.5">
-                  <dl className="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1.5 text-xs">
+                  <dl className="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1.5 text-caption">
                     {mediaPreview.data.tags.map(([label, value]) => (
                       <div key={label} className="contents">
                         <dt className="text-muted-foreground">{label}</dt>
@@ -387,7 +387,7 @@ export function EntryPreview({
                 </div>
               )}
 
-            <dl className="grid shrink-0 grid-cols-[5rem_1fr] gap-x-3 gap-y-2 text-xs">
+            <dl className="grid shrink-0 grid-cols-[5rem_1fr] gap-x-3 gap-y-2 text-caption">
               <dt className="text-muted-foreground">{t("preview.type")}</dt>
               <dd className="min-w-0 break-all">{visual?.label ?? "—"}</dd>
               <dt className="text-muted-foreground">{t("preview.size")}</dt>

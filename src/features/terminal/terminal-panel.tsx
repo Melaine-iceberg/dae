@@ -60,11 +60,11 @@ function readTerminalTheme(ansiOverride: AnsiPalette | null): ITheme {
   const dark = document.documentElement.classList.contains("dark");
   const ansi = resolveAnsiPalette(ansiOverride, dark);
   return {
-    background: token("--card", "#1a1a1c"),
-    foreground: token("--foreground", "#e8e8ea"),
-    cursor: token("--foreground", "#e8e8ea"),
-    cursorAccent: token("--card", "#1a1a1c"),
-    selectionBackground: token("--accent", "#25252a"),
+    background: token("--card", "#101112"),
+    foreground: token("--foreground", "#f7f8f8"),
+    cursor: token("--foreground", "#f7f8f8"),
+    cursorAccent: token("--card", "#101112"),
+    selectionBackground: token("--accent", "#1d1e21"),
     black: ansi[0],
     red: ansi[1],
     green: ansi[2],
@@ -402,7 +402,7 @@ export function TerminalPanel() {
         onPointerDown={startResizeDrag}
       />
       <header className="flex h-8 shrink-0 items-center gap-1 border-b border-border px-2">
-        <span className="text-xs font-medium text-muted-foreground select-none">
+        <span className="text-caption font-medium text-muted-foreground select-none">
           {t("panel.title")}
         </span>
         <div className="ml-auto flex items-center gap-0.5">
@@ -469,7 +469,7 @@ export function TerminalPanel() {
           </ContextMenuContent>
         </ContextMenu>
         {exitCode != null && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-card text-sm text-muted-foreground">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-card text-body text-muted-foreground">
             <span>{t("panel.sessionEnded", { code: exitCode })}</span>
             <button
               className="flex h-7 items-center gap-1 rounded-lg border px-3 transition-colors hover:bg-accent hover:text-foreground"
@@ -482,7 +482,7 @@ export function TerminalPanel() {
           </div>
         )}
         {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-card p-4 text-center text-sm text-destructive">
+          <div className="absolute inset-0 flex items-center justify-center bg-card p-4 text-center text-body text-destructive">
             {translateBackendMessage(error)}
           </div>
         )}

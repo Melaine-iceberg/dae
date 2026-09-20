@@ -115,7 +115,7 @@ export function OpenWithDialog({
             </Button>
           </div>
         ) : (apps ?? []).length === 0 ? (
-          <p className="rounded-md border p-3 text-sm text-muted-foreground">
+          <p className="rounded-md border p-3 text-caption text-muted-foreground">
             {t("explorer:openWith.empty")}
           </p>
         ) : (
@@ -128,7 +128,7 @@ export function OpenWithDialog({
               <button
                 aria-checked={app.id === selectedId}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm",
+                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-body",
                   "outline-none hover:bg-accent focus-visible:bg-accent",
                   app.id === selectedId && "bg-accent",
                 )}
@@ -149,7 +149,7 @@ export function OpenWithDialog({
         {openError && <FieldError>{openError}</FieldError>}
 
         <DialogFooter className="items-center sm:justify-between">
-          <label className="flex items-center gap-2 text-sm text-muted-foreground select-none">
+          <label className="flex items-center gap-2 text-body text-muted-foreground select-none">
             <input
               checked={setDefault}
               className="size-4 accent-(--primary)"

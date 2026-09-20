@@ -406,7 +406,7 @@ export function BulkRenameDialog({
                     />
                   </Field>
                 </div>
-                <div className="flex gap-4 text-[13px] text-muted-foreground">
+                <div className="flex gap-4 text-body text-muted-foreground">
                   <label className="flex items-center gap-1.5">
                     <input
                       checked={options.replace.useRegex}
@@ -484,14 +484,14 @@ export function BulkRenameDialog({
           </FieldGroup>
 
           <div className="max-h-56 overflow-y-auto rounded-md border bg-muted/30 px-3 py-2">
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-b pb-1 text-[11px] font-medium text-muted-foreground">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-b pb-1 text-micro font-medium text-muted-foreground">
               <span>{t("explorer:bulkRename.preview.original")}</span>
               <span aria-hidden="true" />
               <span>{t("explorer:bulkRename.preview.newName")}</span>
             </div>
             {plan.items.slice(0, PREVIEW_ROW_LIMIT).map((item) => (
               <div
-                className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-1 text-[13px]"
+                className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 py-1 text-body"
                 key={item.entry.path}
               >
                 <span className="truncate text-muted-foreground" title={item.entry.name}>
@@ -504,14 +504,14 @@ export function BulkRenameDialog({
                       ? "text-destructive"
                       : item.status === "rename"
                         ? "text-primary"
-                        : "text-muted-foreground/60",
+                        : "text-muted-foreground",
                   )}
                 />
                 <span
                   className={cn(
                     "truncate",
                     item.status === "error" && "text-destructive",
-                    item.status === "unchanged" && "text-muted-foreground/60",
+                    item.status === "unchanged" && "text-muted-foreground",
                   )}
                   title={
                     item.status === "error" && item.errorKey
@@ -526,7 +526,7 @@ export function BulkRenameDialog({
               </div>
             ))}
             {plan.items.length > PREVIEW_ROW_LIMIT && (
-              <div className="py-1 text-[12px] text-muted-foreground">
+              <div className="py-1 text-caption text-muted-foreground">
                 {t("explorer:bulkRename.preview.more", {
                   hidden: plan.items.length - PREVIEW_ROW_LIMIT,
                 })}
@@ -535,7 +535,7 @@ export function BulkRenameDialog({
           </div>
 
           <DialogFooter className="items-center gap-2 sm:justify-between">
-            <span className="text-xs text-muted-foreground">
+            <span className="text-caption text-muted-foreground">
               {t("explorer:bulkRename.summary", { rename: renameCount, errors: errorCount })}
             </span>
             <div className="flex gap-2">

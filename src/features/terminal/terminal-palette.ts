@@ -2,7 +2,7 @@
  * Curated 16-color ANSI palettes for the integrated terminal.
  *
  * xterm's built-in ANSI colors are saturated primaries designed for a pure
- * black background; on the app's graphite surfaces (`--card` is `#1a1a1c` dark,
+ * black background; on the app's surfaces (`--card` is `#101112` dark,
  * `#ffffff` light) they are harsh and, in the light theme, several are outright
  * unreadable. These palettes are sampled from the house color tokens in
  * `App.css` and tuned per theme so `ls --color`, git diffs and friends are
@@ -19,37 +19,37 @@
 /** The 16 ANSI slots in canonical order. */
 export type AnsiPalette = readonly string[];
 
-/** Graphite dark, tuned to `--card: #1a1a1c` / `--foreground: #e8e8ea`. */
+/** Dark, tuned to `--card: #101112` / `--foreground: #f7f8f8`. */
 export const DARK_ANSI: AnsiPalette = Object.freeze([
-  "#3a3a3e", // black — the border tone, never pure #000 (too harsh on graphite)
+  "#26282c", // black — the border tone, never pure #000 (too harsh on graphite)
   "#ff6b72", // red — --destructive
-  "#63d398", // green — --icon-sheet
-  "#e8a33d", // yellow — warm amber (--chart-4)
-  "#7498ff", // blue — --primary, already light enough for the dark island
+  "#63d398", // green — --success
+  "#e8a33d", // yellow — warm amber (--warning)
+  "#8284f8", // blue — --primary, already light enough for the dark island
   "#c792ea", // magenta
-  "#5acfd9", // cyan — --icon-image
-  "#e8e8ea", // white — --foreground
-  "#a8a8ad", // brightBlack — --muted-foreground (dim text stays legible)
+  "#5acfd9", // cyan — --tone-cyan
+  "#f7f8f8", // white — --foreground
+  "#8a8f98", // brightBlack — --muted-foreground (dim text stays legible)
   "#ff8a8a", // brightRed — --icon-pdf
   "#8ce0b3", // brightGreen
   "#ffc868", // brightYellow — warm amber pastel
   "#8fb2ff", // brightBlue — --icon-doc
   "#f08fce", // brightMagenta — --icon-video
   "#8ce0e6", // brightCyan
-  "#eeeef0", // brightWhite
+  "#ffffff", // brightWhite
 ]);
 
-/** Graphite light, tuned to `--card: #ffffff` / `--foreground: #171a21`. */
+/** Light, tuned to `--card: #ffffff` / `--foreground: #282a30`. */
 export const LIGHT_ANSI: AnsiPalette = Object.freeze([
-  "#171a21", // black — soft near-black, not pure #000
-  "#b93030", // red — --destructive
-  "#17804a", // green — --icon-sheet
+  "#282a30", // black — soft near-black (--foreground), not pure #000
+  "#c22f2f", // red — --destructive
+  "#17804a", // green — --success
   "#8a6318", // yellow — darkened amber so it reads on white
-  "#2a55ce", // blue — --primary
+  "#4649c9", // blue — --primary
   "#b8438a", // magenta — --icon-video
-  "#0d848c", // cyan — --icon-image
-  "#bdc4d1", // white — light gray (--input)
-  "#4e5665", // brightBlack — --muted-foreground (dim text)
+  "#0d848c", // cyan — --tone-cyan
+  "#d5d8dd", // white — light gray (--input)
+  "#62666e", // brightBlack — --muted-foreground (dim text)
   "#c13434", // brightRed — --icon-pdf
   "#1f9a5c", // brightGreen
   "#a97c2f", // brightYellow

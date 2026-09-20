@@ -96,7 +96,7 @@ export function ContextualActionBar({
         className="animate-float-in flex items-center gap-0.5 rounded-lg bg-popover/85 p-1 shadow-ambient-lg ring-1 ring-border backdrop-blur-xl"
         role="toolbar"
       >
-        <span className="shrink-0 px-2.5 text-[13px] text-muted-foreground select-none tabular-nums">
+        <span className="shrink-0 px-2.5 text-body text-muted-foreground select-none tabular-nums">
           {t("explorer:actionBar.selectedCount", { number: localeNumber(selectedCount) })}
         </span>
         <div aria-hidden="true" className="mr-0.5 h-5 w-px bg-border" />

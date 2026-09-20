@@ -56,7 +56,9 @@
     "collapsePreviewShortcut": "Collapse preview panel (Space)",
     "expandPreviewShortcut": "Expand preview panel (Space)",
     "splitView": "Open split view",
-    "closeSplitView": "Close split view"
+    "closeSplitView": "Close split view",
+    "toggleTerminal": "Toggle integrated terminal",
+    "terminalTitle": "Terminal (Ctrl+`)"
   },
   "split": {
     "resizeAria": "Resize split panes"
@@ -182,7 +184,6 @@
     "descending": "descending",
     "activeTitle": "Sorted by {{column}} in {{direction}} order, click to switch",
     "inactiveTitle": "Sort by {{column}}",
-    "menuLabel": "Sort the current list",
     "sortBy": "Sort by",
     "direction": "Sort direction",
     "keyName": "Name",
@@ -403,8 +404,7 @@
     "currentPath": "Current path",
     "clickToEdit": "Click to edit the path"
   },
-  "statusBar": {
-    "ariaLabel": "Status bar",
+  "listing": {
     "searching": "Searching…",
     "loading": "Loading…",
     "searchFailed": "Search failed",
@@ -413,14 +413,14 @@
     "matchCount_one": "{{display}} match",
     "matchCount_other": "{{display}} matches",
     "truncatedSuffix": " (truncated)",
-    "selectedCount": "{{number}} selected",
-    "gitBranchTitle": "Git branch: {{branch}}",
-    "toggleTerminal": "Toggle integrated terminal",
-    "terminalTitle": "Terminal (Ctrl+`)",
-    "viewModeLabel": "View mode",
-    "viewList": "List view",
-    "viewColumn": "Columns view",
-    "viewGrid": "Grid view",
+    "selectedCount": "{{display}} selected"
+  },
+  "view": {
+    "menuLabel": "View options",
+    "modeLabel": "View mode",
+    "modeList": "List",
+    "modeColumn": "Columns",
+    "modeGrid": "Grid",
     "densityLabel": "Density",
     "densityCompact": "Compact",
     "densityComfortable": "Comfortable",

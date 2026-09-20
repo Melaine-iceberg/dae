@@ -167,7 +167,7 @@ export function TransferConflictDialog({
         </div>
 
         {remaining > 1 && (
-          <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
+          <label className="flex items-center gap-2 text-body text-muted-foreground">
             <input
               checked={applyToAll}
               className="size-4 accent-[var(--primary)]"
@@ -223,15 +223,15 @@ function ConflictSideCard({
         highlight ? "border-primary/40 bg-primary/5" : "border-border/60 bg-muted/40",
       )}
     >
-      <p className="text-xs text-muted-foreground">{subtitle}</p>
+      <p className="text-caption text-muted-foreground">{subtitle}</p>
       <div className="flex min-w-0 items-center gap-2">
         <span className="shrink-0">{icon}</span>
-        <p className="truncate text-[13px] font-medium" title={title}>
+        <p className="truncate text-body font-medium" title={title}>
           {title}
         </p>
       </div>
-      <p className="truncate text-xs text-muted-foreground">{metadata}</p>
-      <p className="text-xs text-muted-foreground">
+      <p className="truncate text-caption text-muted-foreground">{metadata}</p>
+      <p className="text-caption text-muted-foreground">
         {t("conflictDialog.modifiedAt", { date: modifiedAt })}
       </p>
     </div>

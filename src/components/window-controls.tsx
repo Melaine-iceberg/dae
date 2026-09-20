@@ -34,7 +34,7 @@ export function WindowControls() {
   }, []);
 
   const buttonClassName = cn(
-    "flex h-full w-[46px] shrink-0 items-center justify-center transition-colors duration-75 hover:bg-accent hover:text-accent-foreground",
+    "flex h-full w-[46px] shrink-0 items-center justify-center transition-colors duration-instant hover:bg-accent hover:text-accent-foreground",
     focused ? "text-foreground" : "text-muted-foreground",
   );
 

@@ -22,6 +22,7 @@ import {
   Columns3,
   Eye,
   PanelLeft,
+  SquareTerminal,
   Star,
   TriangleAlert,
   X,
@@ -88,7 +89,7 @@ import {
 import { EntryPreview } from "./entry-preview";
 import { isArchiveFile } from "./entry-context-menu";
 import { ExplorerPathBar } from "./explorer-path-bar";
-import { ExplorerStatusBar } from "./explorer-status-bar";
+import { GitBranchControl } from "./git-branches";
 import {
   shellCommandErrorAtom,
 } from "@/features/shell-commands/shell-commands-atoms";
@@ -97,7 +98,6 @@ import { FilterMenu } from "./filter-menu";
 import { useGitStatus } from "./git-status";
 import type { ExplorerNavigator } from "./navigation";
 import { OpenWithDialog } from "./open-with-dialog";
-import { SortMenu } from "./sort-menu";
 import { useSortedEntries } from "./sorted-entries";
 import { TransferConflictDialog } from "./transfer-conflict-dialog";
 import {
@@ -110,6 +110,8 @@ import {
   sortOrderAtom,
 } from "./preferences";
 import { fileClipboardAtom, undoRedoAtom } from "./tabs";
+import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
+import { ViewMenu } from "./view-menu";
 import type {
   DirectoryEntry,
   FileOperationKind,
@@ -1206,6 +1208,27 @@ export function ExplorerView({
   const isCurrentFavorited =
     directory !== null && favorites.some((favorite) => favorite.path === directory.path);
 
+  // Listing status for the path bar's trailing edge. These used to be the
+  // entire prop list of a dedicated status bar; they are computed here so the
+  // count can sit beside the breadcrumbs that name the folder it counts.
+  const listingLoading = isLoading || search.isSearching || contentSearch.isSearching;
+  const listingCount = isContentSearchActive
+    ? (contentSearch.response?.files.length ?? 0)
+    : displayedEntries.length;
+  const listingQuery = isContentSearchActive
+    ? contentSearch.query.trim()
+    : search.isActive
+      ? search.query.trim()
+      : null;
+  const listingError = isContentSearchActive
+    ? contentSearch.error
+    : search.isActive
+      ? search.error
+      : null;
+  const listingTruncated = isContentSearchActive
+    ? (contentSearch.response?.truncated ?? false)
+    : (search.response?.truncated ?? false);
+
   return (
     <main className="h-full bg-card" data-explorer-container="true">
       <section className="flex h-full w-full flex-col overflow-hidden">
@@ -1301,7 +1324,7 @@ export function ExplorerView({
               type="button"
               variant="ghost"
             >
-              <Star className={cn(isCurrentFavorited && "fill-amber-400 text-amber-500")} />
+              <Star className={cn(isCurrentFavorited && "fill-warning/70 text-warning")} />
             </Button>
           </div>
 
@@ -1311,6 +1334,16 @@ export function ExplorerView({
                 directory={directory}
                 onNavigate={(breadcrumb) => void navigator.navigateBreadcrumb(breadcrumb)}
                 onNavigatePath={navigateToPath}
+                trailing={
+                  <ListingStats
+                    isLoading={listingLoading}
+                    itemCount={listingCount}
+                    searchError={listingError}
+                    searchQuery={listingQuery}
+                    selectedCount={selectedPaths.length}
+                    truncated={listingTruncated}
+                  />
+                }
               />
             ) : (
               <Skeleton className="h-6 w-56 max-w-full" />
@@ -1325,8 +1358,14 @@ export function ExplorerView({
             onModeChange={setSearchMode}
             search={search}
           />
-          <SortMenu disabled={!directory} />
+          <ViewMenu disabled={!directory} />
           <FilterMenu disabled={!directory} />
+          {gitStatus && (
+            <>
+              <ToolbarSeparator />
+              <GitBranchControl branch={gitStatus.branch} root={gitStatus.root} />
+            </>
+          )}
           {onToggleSplit && (
             <Button
               aria-label={
@@ -1368,6 +1407,8 @@ export function ExplorerView({
           >
             <Eye />
           </Button>
+          <ToolbarSeparator />
+          <TerminalToggle />
         </header>
 
         {isContentSearchActive && (
@@ -1531,7 +1572,7 @@ export function ExplorerView({
                   onPointerEnter={() => setIsUndoToastHovered(true)}
                   onPointerLeave={() => setIsUndoToastHovered(false)}
                 >
-                  <div className="animate-float-in flex items-center gap-2 rounded-lg bg-popover/90 px-4 py-2 text-[13px] text-popover-foreground shadow-ambient-lg ring-1 ring-border backdrop-blur-xl">
+                  <div className="animate-float-in flex items-center gap-2 rounded-lg bg-popover/90 px-4 py-2 text-body text-popover-foreground shadow-ambient-lg ring-1 ring-border backdrop-blur-xl">
                     {undoRedoToast.action === "redo" ? (
                       <RotateCw className="size-4 shrink-0 text-muted-foreground" />
                     ) : (
@@ -1581,32 +1622,6 @@ export function ExplorerView({
           <FileListSkeleton />
         )}
         {fileOperationProgress && <FileOperationStatusBar progress={fileOperationProgress} />}
-        <ExplorerStatusBar
-          gitBranch={gitStatus?.branch ?? null}
-          gitRoot={gitStatus?.root ?? null}
-          itemCount={
-            isContentSearchActive
-              ? (contentSearch.response?.files.length ?? 0)
-              : displayedEntries.length
-          }
-          isLoading={isLoading || search.isSearching || contentSearch.isSearching}
-          searchError={
-            isContentSearchActive ? contentSearch.error : search.isActive ? search.error : null
-          }
-          searchQuery={
-            isContentSearchActive
-              ? contentSearch.query.trim()
-              : search.isActive
-                ? search.query.trim()
-                : null
-          }
-          selectedCount={selectedPaths.length}
-          truncated={
-            isContentSearchActive
-              ? (contentSearch.response?.truncated ?? false)
-              : (search.response?.truncated ?? false)
-          }
-        />
       </section>
 
       <RenameDialog
@@ -1703,6 +1718,83 @@ function ToolbarSeparator() {
   return <div aria-hidden="true" className="mx-0.5 h-4 w-px bg-border" />;
 }
 
+/**
+ * Inline listing status for the path bar's trailing edge: how many rows the
+ * folder holds, what is selected, and what a search is doing.
+ *
+ * This replaced a dedicated 24px status bar. It belongs beside the breadcrumbs
+ * because it describes the folder they name — and because that strip existed
+ * only to carry these few facts, removing it returns a whole row of chrome to
+ * the listing. Transient activity keeps its own surface: a running file
+ * operation still gets `FileOperationStatusBar`, and a Git failure pops up
+ * under its own control. Only the always-true facts live here.
+ */
+function ListingStats({
+  isLoading,
+  itemCount,
+  searchError,
+  searchQuery,
+  selectedCount,
+  truncated,
+}: {
+  isLoading: boolean;
+  itemCount: number;
+  searchError: string | null;
+  searchQuery: string | null;
+  selectedCount: number;
+  truncated: boolean;
+}) {
+  const { t } = useTranslation("explorer");
+  const status = isLoading
+    ? searchQuery
+      ? t("explorer:listing.searching")
+      : t("explorer:listing.loading")
+    : searchError
+      ? t("explorer:listing.searchFailed")
+      : `${t(searchQuery ? "explorer:listing.matchCount" : "explorer:listing.itemCount", {
+          count: itemCount,
+          display: localeNumber(itemCount),
+        })}${truncated ? t("explorer:listing.truncatedSuffix") : ""}`;
+
+  return (
+    <span
+      aria-live="polite"
+      className="ml-auto flex shrink-0 items-center gap-1.5 pl-3 text-micro text-muted-foreground tabular-nums"
+    >
+      {selectedCount > 0 && (
+        <span className="rounded-xs bg-selection px-1.5 text-foreground">
+          {t("explorer:listing.selectedCount", { display: localeNumber(selectedCount) })}
+        </span>
+      )}
+      <span className="truncate">{status}</span>
+    </span>
+  );
+}
+
+/**
+ * Integrated-terminal toggle. It moved out of the status bar so it sits with
+ * the other view-level controls rather than in a strip of its own.
+ */
+function TerminalToggle() {
+  const { t } = useTranslation("explorer");
+  const [visible, setVisible] = useAtom(terminalVisibleAtom);
+
+  return (
+    <Button
+      aria-label={t("explorer:toolbar.toggleTerminal")}
+      aria-pressed={visible}
+      className={cn(visible && "bg-accent text-foreground")}
+      onClick={() => setVisible((open) => !open)}
+      size="icon"
+      title={t("explorer:toolbar.terminalTitle")}
+      type="button"
+      variant="ghost"
+    >
+      <SquareTerminal />
+    </Button>
+  );
+}
+
 /** Places local files on the OS clipboard (CF_HDROP) so Explorer, browsers,
  *  and chat apps accept a paste; network paths stay app-internal. */
 function mirrorFilesToSystemClipboard(paths: string[], cut: boolean) {
@@ -1751,7 +1843,7 @@ function FileOperationStatusBar({ progress }: { progress: FileOperationProgress 
         )}
       />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-3 text-xs">
+        <div className="flex items-center justify-between gap-3 text-caption">
           <span className="truncate">
             {statusText}
             {currentPath ? ` · ${currentPath}` : ""}

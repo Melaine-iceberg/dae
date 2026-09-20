@@ -11,6 +11,7 @@ import {
   type RecentItem,
 } from "@/bindings";
 import { Skeleton } from "@/components/ui/skeleton";
+import { GIT_STATUS_PRESENTATION } from "@/features/explorer/git-status";
 import { cn } from "@/lib/utils";
 
 import { navigateToFolderAtom } from "./workspace-atoms";
@@ -148,35 +149,35 @@ function ProjectCard({
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary transition-colors group-hover:bg-primary-container">
           <GitBranch className="size-4 text-secondary-foreground transition-colors group-hover:text-on-primary-container" />
         </span>
-        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{project.name}</span>
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+        <span className="min-w-0 flex-1 truncate text-body font-medium">{project.name}</span>
+        <span className="shrink-0 text-caption text-muted-foreground tabular-nums">
           {formatRecentTime(project.accessedAt, t("workspace:recents.groups.yesterday"))}
         </span>
       </span>
       <span className="flex w-full items-center gap-1.5 pl-[42px]">
-        <span className="max-w-[60%] truncate rounded-xs bg-secondary px-2 py-0.5 font-mono text-[11px] leading-4 text-secondary-foreground">
+        <span className="max-w-[60%] truncate rounded-xs bg-secondary px-2 py-0.5 font-mono text-micro leading-4 text-secondary-foreground">
           {project.branch}
         </span>
         {counts !== undefined &&
           (dirty ? (
-            (Object.keys(BADGE_PRESENTATION) as GitEntryStatusKind[]).map((kind) =>
+            (Object.keys(GIT_STATUS_PRESENTATION) as GitEntryStatusKind[]).map((kind) =>
               counts[kind] > 0 ? (
                 <span
                   aria-label={t(`explorer:git.${kind}`)}
                   className={cn(
-                    "shrink-0 rounded-xs px-1.5 text-[10px] leading-4 font-semibold tabular-nums",
-                    BADGE_PRESENTATION[kind].className,
+                    "shrink-0 rounded-xs px-1.5 text-nano leading-4 font-semibold tabular-nums",
+                    GIT_STATUS_PRESENTATION[kind].className,
                   )}
                   key={kind}
                   title={t(`explorer:git.${kind}`)}
                 >
-                  {BADGE_PRESENTATION[kind].letter} {counts[kind]}
+                  {GIT_STATUS_PRESENTATION[kind].letter} {counts[kind]}
                 </span>
               ) : null,
             )
           ) : (
-            <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
-              <CircleCheck className="size-3.5 text-emerald-600" />
+            <span className="flex shrink-0 items-center gap-1 text-micro text-muted-foreground">
+              <CircleCheck className="size-3.5 text-success" />
               {t("workspace:overview.projectClean")}
             </span>
           ))}
@@ -184,12 +185,6 @@ function ProjectCard({
     </button>
   );
 }
-
-const BADGE_PRESENTATION: Record<GitEntryStatusKind, { className: string; letter: string }> = {
-  modified: { className: "bg-amber-500/15 text-amber-600", letter: "M" },
-  added: { className: "bg-emerald-500/15 text-emerald-600", letter: "A" },
-  untracked: { className: "bg-sky-500/15 text-sky-600", letter: "U" },
-};
 
 function countByKind(
   entries: GitEntryStatus[] | undefined,

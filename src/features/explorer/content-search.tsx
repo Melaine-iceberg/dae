@@ -143,7 +143,7 @@ export function ContentSearchToolbar({ search }: { search: ContentSearchControll
     search.response?.files.reduce((total, file) => total + file.matches.length, 0) ?? 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+    <div className="flex flex-wrap items-center gap-2 text-body text-muted-foreground">
       <div className="flex items-center gap-0.5">
         <Button
           aria-label={t("contentSearch.toggleRegex")}
@@ -212,7 +212,7 @@ export function ContentSearchResults({
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center select-none">
         <TriangleAlert className="size-5 text-destructive" />
-        <p className="text-[13px] text-destructive">{error}</p>
+        <p className="text-body text-destructive">{error}</p>
       </div>
     );
   }
@@ -220,7 +220,7 @@ export function ContentSearchResults({
   if (!isSearching && response && response.files.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center select-none">
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           {t("contentSearch.noMatches", { query })}
         </p>
       </div>
@@ -260,18 +260,18 @@ function FileMatchGroup({
     <div className="overflow-hidden rounded-lg border border-border">
       <div className="flex items-center gap-2 bg-accent/40 px-3 py-1.5">
         <TypeIconTile
-          className="size-[22px] rounded-[7px]"
+          className="size-[22px] tile-radius"
           iconSize={13}
           presentation={presentation}
         />
         <button
-          className="min-w-0 flex-1 truncate text-left text-[13px] font-medium"
+          className="min-w-0 flex-1 truncate text-left text-body font-medium"
           onClick={() => setExpanded((value) => !value)}
           title={file.path}
           type="button"
         >
           {file.relativePath || fileName}
-          <span className="ml-2 text-xs font-normal text-muted-foreground">
+          <span className="ml-2 text-caption font-normal text-muted-foreground">
             {t("contentSearch.matchCount", { count: file.matches.length })}
           </span>
         </button>
@@ -289,13 +289,13 @@ function FileMatchGroup({
       <div className="flex flex-col">
         {visibleMatches.map((match) => (
           <button
-            className="flex items-start gap-3 px-3 py-1 text-left text-[13px] transition-colors hover:bg-accent/40"
+            className="flex items-start gap-3 px-3 py-1 text-left text-body transition-colors hover:bg-accent/60"
             key={match.lineNumber}
             onClick={() => void openPath(file.path)}
             title={`${file.path}:${match.lineNumber}`}
             type="button"
           >
-            <span className="w-12 shrink-0 pt-px text-right text-xs text-muted-foreground tabular-nums select-none">
+            <span className="w-12 shrink-0 pt-px text-right text-caption text-muted-foreground tabular-nums select-none">
               {match.lineNumber}
             </span>
             <code className="min-w-0 flex-1 leading-relaxed break-all whitespace-pre-wrap">
@@ -305,7 +305,7 @@ function FileMatchGroup({
         ))}
         {file.matches.length > COLLAPSED_MATCH_ROWS && (
           <button
-            className="px-3 py-1 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="px-3 py-1 text-left text-caption text-muted-foreground transition-colors hover:text-foreground"
             onClick={() => setExpanded((value) => !value)}
             type="button"
           >

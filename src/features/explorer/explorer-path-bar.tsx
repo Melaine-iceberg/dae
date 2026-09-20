@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { ClipboardList, Copy, Pencil, SquareTerminal } from "lucide-react";
@@ -25,9 +25,24 @@ interface ExplorerPathBarProps {
   directory: DirectoryView;
   onNavigate: (breadcrumb: Breadcrumb) => void;
   onNavigatePath: (path: string) => Promise<boolean>;
+  /**
+   * Inline listing status (item count, selection, search state) rendered at
+   * the bar's trailing edge.
+   *
+   * It lives here rather than in a status bar of its own because the count
+   * describes the folder named by the breadcrumbs directly beside it — and
+   * because a permanently 24px-tall strip was the only reason a whole row of
+   * window chrome existed to say "12 items".
+   */
+  trailing?: ReactNode;
 }
 
-export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: ExplorerPathBarProps) {
+export function ExplorerPathBar({
+  directory,
+  onNavigate,
+  onNavigatePath,
+  trailing,
+}: ExplorerPathBarProps) {
   const { t } = useTranslation("explorer");
   const [isEditing, setIsEditing] = useState(false);
   const [value, setValue] = useState("");
@@ -150,7 +165,7 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
           ref={inputRef}
           aria-invalid={isInvalid}
           aria-label={t("pathBar.currentPath")}
-          className="h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none"
+          className="h-full min-w-0 flex-1 bg-transparent text-body outline-none"
           onChange={(event) => {
             setValue(event.target.value);
             setIsInvalid(false);
@@ -184,6 +199,7 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
         title={t("pathBar.clickToEdit")}
       >
         <ExplorerBreadcrumbs breadcrumbs={directory.breadcrumbs} onNavigate={onNavigate} />
+        {trailing}
       </ContextMenuTrigger>
       <ContextMenuContent
         // This menu never hands focus back on close: "edit path" wants the

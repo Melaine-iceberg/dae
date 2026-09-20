@@ -821,7 +821,7 @@ export function CommandBar() {
             aria-expanded="true"
             aria-label={t("commandBar.inputAriaLabel")}
             autoComplete="off"
-            className="h-11 min-w-0 flex-1 bg-transparent text-[14px] tracking-[-0.006em] outline-none placeholder:text-muted-foreground/70"
+            className="h-11 min-w-0 flex-1 bg-transparent text-lead tracking-[-0.006em] outline-none placeholder:text-muted-foreground"
             id="command-bar-input"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleInputKeyDown}
@@ -845,15 +845,15 @@ export function CommandBar() {
         >
           {results.length === 0 ? (
             isSearchingFiles ? (
-              <p className="px-2.5 py-6 text-center text-[13px] text-muted-foreground">
+              <p className="px-2.5 py-6 text-center text-body text-muted-foreground">
                 {pathMode ? t("commandBar.searchingFolders") : t("commandBar.searchingFiles")}
               </p>
             ) : pathMode && !trimmedQuery ? (
-              <p className="px-2.5 py-6 text-center text-[13px] text-muted-foreground">
+              <p className="px-2.5 py-6 text-center text-body text-muted-foreground">
                 {t("commandBar.noPathLocations")}
               </p>
             ) : (
-              <p className="px-2.5 py-6 text-center text-[13px] text-muted-foreground">
+              <p className="px-2.5 py-6 text-center text-body text-muted-foreground">
                 {pathMode
                   ? t("commandBar.noPathResults", { query: trimmedQuery })
                   : t("commandBar.noResults", { query: trimmedQuery })}
@@ -867,7 +867,7 @@ export function CommandBar() {
               >
                 <p
                   aria-hidden="true"
-                  className="px-2 pt-2.5 pb-1 text-label text-muted-foreground/80 uppercase select-none"
+                  className="px-2 pt-2.5 pb-1 text-label text-muted-foreground uppercase select-none"
                 >
                   {groupLabels[section.group]}
                 </p>
@@ -896,19 +896,37 @@ export function CommandBar() {
             ))
           )}
         </div>
-        <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border bg-muted/30 px-3.5 text-[11px] text-muted-foreground select-none">
-          <span className="flex min-w-0 items-center gap-1.5">
-            {isSearchingFiles && <LoaderCircle className="size-3 shrink-0 animate-spin" />}
-            <Kbd className="h-4 px-1 text-[10px]">↑↓</Kbd>
-            <span className="truncate">{t("commandBar.footerNavigateHint")}</span>
+        <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border bg-muted/30 px-3.5 text-micro text-muted-foreground select-none">
+          <span className="flex min-w-0 items-center gap-2.5">
+            <span className="flex shrink-0 items-center gap-1.5">
+              {isSearchingFiles && <LoaderCircle className="size-3 shrink-0 animate-spin" />}
+              <Kbd className="h-4 px-1 text-nano">↑↓</Kbd>
+              <span className="truncate">{t("commandBar.footerNavigateHint")}</span>
+            </span>
+            {/* The sibling palette's entry point, shown only while a palette is
+                already open. This used to be a permanent hint strip in the window
+                chrome, where it taught the shortcut to people who had already
+                learnt it and lost to the view controls on narrow windows; here it
+                is visible exactly when the user is looking at the surface it
+                switches to. */}
+            <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
+              <Kbd className="h-4 px-1 text-nano">
+                {formatBinding(
+                  resolveBinding(shortcuts, pathMode ? "app.commandBar" : "app.pathJump"),
+                )}
+              </Kbd>
+              <span className="truncate">
+                {pathMode ? t("commandBar.title") : t("commandBar.pathTitle")}
+              </span>
+            </span>
           </span>
           <span className="flex shrink-0 items-center gap-3">
             <span className="flex items-center gap-1.5">
-              <Kbd className="h-4 px-1 text-[10px]">↵</Kbd>
+              <Kbd className="h-4 px-1 text-nano">↵</Kbd>
               <span>{t("commandBar.footerExecuteHint")}</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <Kbd className="h-4 px-1 text-[10px]">Esc</Kbd>
+              <Kbd className="h-4 px-1 text-nano">Esc</Kbd>
               <span>{t("commandBar.footerCloseHint")}</span>
             </span>
           </span>
@@ -937,7 +955,7 @@ function CommandResultRow({
       className={cn(
         // Raycast row: 32px, filled selection, no leading tick — the palette,
         // the sidebar and the file list all share one selection language.
-        "group/command-row flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] transition-colors outline-none",
+        "group/command-row flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-body transition-colors outline-none",
         isActive ? "bg-selection text-foreground" : "hover:bg-accent/60",
       )}
       data-command-index={dataIndex}
@@ -953,7 +971,7 @@ function CommandResultRow({
       <HighlightedLabel label={item.label} matchedIndices={matchedIndices} />
       {item.hint && (
         <span
-          className="max-w-[45%] shrink-0 truncate text-xs text-muted-foreground"
+          className="max-w-[45%] shrink-0 truncate text-caption text-muted-foreground"
           title={item.hint}
         >
           {item.hint}

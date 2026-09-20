@@ -26,7 +26,7 @@ export function TypeIconTile({
   pop = false,
   presentation,
 }: {
-  /** Cell geometry: size + corner radius (e.g. "size-11 rounded-[13px]"). */
+  /** Cell geometry: a square size plus `tile-radius` (e.g. "size-11 tile-radius"). */
   className?: string;
   iconClassName?: string;
   iconSize: number;

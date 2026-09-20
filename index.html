@@ -5,19 +5,23 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>dae</title>
-    <!-- 与 --background 保持一致，窗口提前显示时先呈现主题背景而非白屏。
+    <!-- 与 --background / --primary 保持一致，窗口提前显示时先呈现主题背景而非白屏。
          背景跟随 .dark 类而不是系统配色：用户可在应用内显式选择浅色/深色，
-         且该未分层样式会压过 Tailwind @layer base 里 body 的 bg-background。 -->
+         且该未分层样式会压过 Tailwind @layer base 里 body 的 bg-background。
+
+         __DAE_*__ 占位符由 vite.config.ts 的 themeBootStyles 在构建时从
+         src/App.css 实际读取并注入，而不是在这里手抄十六进制值——手抄版本
+         曾经落后调色板两个版本，导致每次冷启动都会闪一下过期的画布色。 -->
     <style>
       html,
       body {
         margin: 0;
         height: 100%;
-        background: #e0e4ec;
+        background: __DAE_CANVAS__;
       }
       html.dark,
       html.dark body {
-        background: #0a0a0b;
+        background: __DAE_CANVAS_DARK__;
       }
       /* Minimal loading indicator visible only before React mounts. */
       #splash {
@@ -30,14 +34,14 @@
         content: "";
         width: 22px;
         height: 22px;
-        border: 2px solid #d1d7e2;
-        border-top-color: #2a55ce;
+        border: 2px solid __DAE_BORDER__;
+        border-top-color: __DAE_PRIMARY__;
         border-radius: 50%;
         animation: spin 0.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
       }
       html.dark #splash::after {
-        border-color: #3a3a3e;
-        border-top-color: #7498ff;
+        border-color: __DAE_BORDER_DARK__;
+        border-top-color: __DAE_PRIMARY_DARK__;
       }
       @keyframes spin {
         to {

@@ -736,7 +736,7 @@ export function FileList({
             ) : (
               <Folder className="size-7 text-folder" fill="currentColor" />
             )}
-            <p className="text-[13px] text-muted-foreground">
+            <p className="text-body text-muted-foreground">
               {searchState
                 ? searchState.error
                   ? t("explorer:list.searchError", { error: searchState.error })
@@ -744,7 +744,7 @@ export function FileList({
                 : t("explorer:list.emptyFolder")}
             </p>
             {!searchState && (
-              <p className="flex items-center gap-1.5 text-xs text-muted-foreground/80">
+              <p className="flex items-center gap-1.5 text-caption text-muted-foreground">
                 <Kbd>{commandBarBinding}</Kbd>
                 <span>{t("explorer:list.emptyHint")}</span>
               </p>
@@ -770,7 +770,7 @@ export function FileList({
             onScroll={(event) => onScrollOffsetChange?.(event.currentTarget.scrollTop)}
           >
             <div className="min-w-160">
-              <div className="sticky top-0 z-10 grid h-7 shrink-0 items-center whitespace-nowrap border-b border-border bg-card text-label text-muted-foreground/80 uppercase [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
+              <div className="sticky top-0 z-10 grid h-7 shrink-0 items-center whitespace-nowrap border-b border-border bg-card text-label text-muted-foreground uppercase [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
                 <SortHeaderCell
                   active={sortKey === "name"}
                   label={t("explorer:columns.name")}
@@ -847,7 +847,7 @@ export function FileList({
           </div>
         )}
         {externalDropItemCount > 0 && (
-          <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 text-[13px] font-medium text-primary">
+          <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 text-body font-medium text-primary">
             {t("explorer:drag.dropToCopy", { count: externalDropItemCount })}
           </div>
         )}
@@ -855,7 +855,7 @@ export function FileList({
         {internalDrag && (
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md bg-popover/90 px-3 py-1.5 text-[13px] text-popover-foreground shadow-ambient ring-1 ring-border backdrop-blur-xl"
+            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md bg-popover/90 px-3 py-1.5 text-body text-popover-foreground shadow-ambient ring-1 ring-border backdrop-blur-xl"
             style={{ left: internalDrag.position.x + 14, top: internalDrag.position.y + 14 }}
           >
             {internalDrag.target?.kind === "favorites" ? (
@@ -1081,7 +1081,7 @@ function FileListRow({
                   entry={entry}
                   fallback={
                     <TypeIconTile
-                      className="size-[22px] rounded-[7px]"
+                      className="size-[22px] tile-radius"
                       iconSize={16}
                       presentation={presentation}
                     />
@@ -1091,29 +1091,29 @@ function FileListRow({
               ) : (
                 <TypeIconTile
                   pop
-                  className="size-[22px] rounded-[7px]"
+                  className="size-[22px] tile-radius"
                   iconSize={16}
                   presentation={presentation}
                 />
               )}
             </EntryIconFrame>
-            <span className="min-w-0 truncate text-[13px]">{entry.name}</span>
+            <span className="min-w-0 truncate text-body">{entry.name}</span>
             {entryStatus && <GitStatusBadge kind={entryStatus} />}
             {entry.relativePath && (
               <span
-                className="ml-auto max-w-[45%] shrink-0 truncate text-xs text-muted-foreground"
+                className="ml-auto max-w-[45%] shrink-0 truncate text-caption text-muted-foreground"
                 title={entry.relativePath}
               >
                 {formatRelativeLocation(entry.relativePath)}
               </span>
             )}
           </div>
-          <div className="px-2.5 text-xs text-muted-foreground tabular-nums">
+          <div className="px-2.5 text-caption text-muted-foreground tabular-nums">
             {formatModifiedAt(entry.modifiedAt)}
           </div>
-          <div className="px-2.5 text-xs text-muted-foreground">{presentation.label}</div>
+          <div className="px-2.5 text-caption text-muted-foreground">{presentation.label}</div>
           <div
-            className="px-2.5 text-right text-xs text-muted-foreground tabular-nums"
+            className="px-2.5 text-right text-caption text-muted-foreground tabular-nums"
             title={
               displaySize === null
                 ? undefined

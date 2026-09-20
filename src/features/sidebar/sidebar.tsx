@@ -232,7 +232,7 @@ function SidebarContent() {
             <Input
               aria-label={t("spaces.name")}
               autoFocus
-              className="h-7 text-[13px]"
+              className="h-7 text-body"
               onBlur={() => {
                 setCreatingSpace(false);
                 setSpaceName("");
@@ -342,7 +342,7 @@ function SidebarContent() {
       <div className="flex shrink-0 items-center justify-end gap-1 border-t border-sidebar-border px-2 py-1.5">
         <button
           aria-label={t("settings.open")}
-          className="mr-auto flex size-7 items-center justify-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-accent/70 hover:text-foreground"
+          className="mr-auto flex size-7 items-center justify-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground"
           onClick={() => setSettingsOpen(true)}
           title={t("settings.open")}
           type="button"
@@ -418,7 +418,7 @@ function CollapsibleSection({
       <div className="group/section flex h-7 items-center gap-0.5">
         <button
           aria-expanded={open}
-          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[13px] font-medium transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/60"
+          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-accent/60"
           onClick={() => toggle(id)}
           type="button"
         >
@@ -427,7 +427,7 @@ function CollapsibleSection({
           <ChevronDown
             aria-hidden="true"
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-spring-fast",
+              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast ease-spring-fast",
               !open && "-rotate-90",
             )}
           />
@@ -495,7 +495,7 @@ function FavoritesContent({
 
   if (visiblePlaces.length === 0 && favorites.length === 0) {
     return (
-      <p className="px-3.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
+      <p className="px-3.5 py-1.5 text-caption leading-relaxed text-muted-foreground">
         {t("favorites.emptyHint")}
       </p>
     );
@@ -644,7 +644,7 @@ function WslContent({
   if (distros === null) return <SectionSkeleton />;
 
   if (distros.length === 0) {
-    return <p className="px-3.5 py-1.5 text-xs text-muted-foreground">{t("wsl.empty")}</p>;
+    return <p className="px-3.5 py-1.5 text-caption text-muted-foreground">{t("wsl.empty")}</p>;
   }
 
   return distros.map((distro) => (
@@ -694,7 +694,7 @@ function NetworkContent({
       ))}
 
       {connections.length === 0 && (
-        <p className="px-3.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
+        <p className="px-3.5 py-1.5 text-caption leading-relaxed text-muted-foreground">
           {t("network.emptyHint")}
         </p>
       )}
@@ -739,7 +739,7 @@ function CloudContent({
       })}
 
       {accounts.length === 0 && (
-        <p className="px-3.5 py-1.5 text-xs leading-relaxed text-muted-foreground">
+        <p className="px-3.5 py-1.5 text-caption leading-relaxed text-muted-foreground">
           {t("cloud.emptyHint")}
         </p>
       )}
@@ -803,11 +803,11 @@ function SectionLabel({
 }) {
   return (
     <div className="group/section mt-4 flex h-5 items-center justify-between px-2">
-      <span className="text-label text-muted-foreground/80 uppercase select-none">{label}</span>
+      <span className="text-label text-muted-foreground uppercase select-none">{label}</span>
       {onAdd && (
         <button
           aria-label={addTitle}
-          className="flex size-4.5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast group-hover/section:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+          className="flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast group-hover/section:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
           onClick={onAdd}
           title={addTitle}
           type="button"
@@ -840,7 +840,7 @@ function NavItem({
       className={cn(
         // Linear nav row: 28px tall, filled selection, no leading tick — the
         // same selection language the file list and the command palette use.
-        "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/60",
+        "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-body transition-[background-color,color] duration-fast ease-standard hover:bg-accent/60",
         isActive && "bg-selection font-medium text-foreground",
       )}
       onClick={onClick}
@@ -943,7 +943,7 @@ function DiskItem({
   return (
     <div
       className={cn(
-        "w-full rounded-lg px-2.5 py-2 transition-[background-color] duration-fast ease-spring-fast hover:bg-accent/60",
+        "w-full rounded-lg px-2.5 py-2 transition-[background-color] duration-fast ease-standard hover:bg-accent/60",
         isActive && "bg-selection",
       )}
     >
@@ -960,14 +960,14 @@ function DiskItem({
             <HardDrive className="size-4 shrink-0 text-muted-foreground" />
           )}
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px]">{presentation.primary}</div>
-            <div className="truncate text-xs text-muted-foreground">{presentation.secondary}</div>
+            <div className="truncate text-body">{presentation.primary}</div>
+            <div className="truncate text-caption text-muted-foreground">{presentation.secondary}</div>
           </div>
         </button>
         <button
           aria-expanded={treeOpen}
           aria-label={t(treeOpen ? "tree.collapse" : "tree.expand")}
-          className="shrink-0 rounded-xs p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+          className="shrink-0 rounded-xs p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           onClick={() => toggleTreeNode(volume.mountPoint)}
           type="button"
         >
@@ -1003,7 +1003,7 @@ function DiskItem({
             style={{ width: `${usedPercent}%` }}
           />
         </div>
-        <div className="mt-1 flex justify-between gap-2 text-[11px] text-muted-foreground">
+        <div className="mt-1 flex justify-between gap-2 text-micro text-muted-foreground">
           <span className="shrink-0">{t("disk.freePercent", { percent: freePercent })}</span>
           <span className="truncate font-mono tabular-nums">
             {t("disk.capacity", {

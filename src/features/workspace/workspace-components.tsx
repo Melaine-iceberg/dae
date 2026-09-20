@@ -45,7 +45,7 @@ export function WorkspacePageHeader({
         {icon}
         <div className="min-w-0">
           <h1 className="text-display">{title}</h1>
-          {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+          {description && <p className="mt-1 text-caption text-muted-foreground">{description}</p>}
         </div>
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -56,7 +56,7 @@ export function WorkspacePageHeader({
 export function SectionHeader({ action, title }: { action?: ReactNode; title: string }) {
   return (
     <div className="mb-3 flex items-center justify-between gap-4">
-      <h2 className="text-label text-muted-foreground/80 uppercase">{title}</h2>
+      <h2 className="text-label text-muted-foreground uppercase">{title}</h2>
       {action}
     </div>
   );
@@ -110,9 +110,9 @@ export function LocationCard({
         <Icon className={cn("size-4", iconClassName)} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium">{title}</span>
+        <span className="block truncate text-body font-medium">{title}</span>
         {description && (
-          <span className="mt-0.5 block truncate text-xs text-muted-foreground">{description}</span>
+          <span className="mt-0.5 block truncate text-caption text-muted-foreground">{description}</span>
         )}
       </span>
     </button>

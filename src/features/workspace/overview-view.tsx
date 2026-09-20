@@ -124,7 +124,7 @@ export function OverviewView() {
             <div className="flex items-center gap-3">
               {hiddenPlaces.length > 0 && (
                 <button
-                  className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                  className="flex items-center gap-1 text-caption text-muted-foreground transition-colors hover:text-foreground"
                   onClick={() => setHiddenPlaces([])}
                   type="button"
                 >
@@ -133,7 +133,7 @@ export function OverviewView() {
                 </button>
               )}
               <button
-                className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                className="flex items-center gap-1 text-caption text-muted-foreground transition-colors hover:text-foreground"
                 onClick={addFavoriteFolder}
                 type="button"
               >
@@ -156,8 +156,8 @@ export function OverviewView() {
               <EmptyMedia variant="icon">
                 <Star />
               </EmptyMedia>
-              <EmptyTitle className="text-sm">{t("overview.favoritesEmptyTitle")}</EmptyTitle>
-              <EmptyDescription className="text-xs">
+              <EmptyTitle>{t("overview.favoritesEmptyTitle")}</EmptyTitle>
+              <EmptyDescription className="text-caption">
                 {t("overview.favoritesEmptyDescription")}
               </EmptyDescription>
             </EmptyHeader>
@@ -223,7 +223,7 @@ export function OverviewView() {
           action={
             (recents?.length ?? 0) > RECENTS_PREVIEW_COUNT && (
               <button
-                className="flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                className="flex items-center gap-1 text-caption text-muted-foreground transition-colors hover:text-foreground"
                 onClick={() => openSurface({ kind: "recents" })}
                 type="button"
               >
@@ -246,8 +246,8 @@ export function OverviewView() {
               <EmptyMedia variant="icon">
                 <History />
               </EmptyMedia>
-              <EmptyTitle className="text-sm">{t("overview.recentsEmptyTitle")}</EmptyTitle>
-              <EmptyDescription className="text-xs">
+              <EmptyTitle>{t("overview.recentsEmptyTitle")}</EmptyTitle>
+              <EmptyDescription className="text-caption">
                 {t("overview.recentsEmptyDescription")}
               </EmptyDescription>
             </EmptyHeader>
@@ -268,12 +268,12 @@ export function OverviewView() {
                     type="button"
                   >
                     <TypeIconTile
-                      className="size-6 rounded-[8px]"
+                      className="size-6 tile-radius"
                       iconSize={13}
                       presentation={presentation}
                     />
-                    <span className="min-w-0 flex-1 truncate text-[13px]">{item.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                    <span className="min-w-0 flex-1 truncate text-body">{item.name}</span>
+                    <span className="shrink-0 text-caption text-muted-foreground tabular-nums">
                       {formatRecentTime(item.accessedAt, t("recents.groups.yesterday"))}
                     </span>
                   </button>

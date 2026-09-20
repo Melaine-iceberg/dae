@@ -134,18 +134,18 @@ export function ShortcutRecorder({ binding, id, onCommit, onReset }: ShortcutRec
     <div className="flex items-center justify-end gap-1.5">
       {confirming && conflictId ? (
         <div className="flex items-center gap-1.5">
-          <span className="max-w-56 truncate text-xs text-muted-foreground">
+          <span className="max-w-56 truncate text-caption text-muted-foreground">
             {t("recorder.conflict", { action: t(`actions.${conflictId}`) })}
           </span>
           <button
-            className="h-6 rounded-sm border border-input px-2 text-xs font-medium transition-colors hover:bg-accent"
+            className="h-6 rounded-sm border border-input px-2 text-caption font-medium transition-colors hover:bg-accent"
             onClick={() => pending != null && commit(pending)}
             type="button"
           >
             {t("recorder.replace")}
           </button>
           <button
-            className="h-6 rounded-sm px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="h-6 rounded-sm px-2 text-caption text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={stopCapture}
             type="button"
           >
@@ -157,7 +157,7 @@ export function ShortcutRecorder({ binding, id, onCommit, onReset }: ShortcutRec
           <button
             aria-label={t("recorder.changeAria", { action: t(`actions.${id}`) })}
             className={cn(
-              "flex h-7 min-w-24 items-center justify-center rounded-sm border px-2 font-mono text-xs transition-colors",
+              "flex h-7 min-w-24 items-center justify-center rounded-sm border px-2 font-mono text-caption transition-colors",
               capturing
                 ? "border-ring bg-primary-container text-on-primary-container ring-2 ring-ring/40"
                 : "border-input text-foreground hover:bg-accent",

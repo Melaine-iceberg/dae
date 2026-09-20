@@ -174,7 +174,7 @@ function TreeChildrenList({
     }
 
     return (
-      <p className="py-0.5 text-xs text-muted-foreground" style={indent}>
+      <p className="py-0.5 text-caption text-muted-foreground" style={indent}>
         {t(state.status === "error" ? "tree.loadError" : "tree.empty")}
       </p>
     );
@@ -233,7 +233,7 @@ function TreeNodeRow({
             <button
               aria-expanded={expanded}
               aria-label={t(expanded ? "tree.collapse" : "tree.expand")}
-              className="flex size-5 shrink-0 items-center justify-center rounded-xs text-muted-foreground/80 transition-colors hover:bg-accent/70 hover:text-foreground"
+              className="flex size-5 shrink-0 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               onClick={() => toggle(entry.path)}
               type="button"
             >
@@ -251,7 +251,7 @@ function TreeNodeRow({
           <button
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-[3px] pr-1.5 text-left text-[13px] transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/60",
+              "flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-[3px] pr-1.5 text-left text-body transition-[background-color,color] duration-fast ease-standard hover:bg-accent/60",
               isActive && "bg-selection font-medium text-foreground",
               entry.hidden && "opacity-60",
             )}

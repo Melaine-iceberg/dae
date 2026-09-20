@@ -92,7 +92,7 @@ export function SettingsDialog() {
               <button
                 aria-current={pane === item}
                 className={cn(
-                  "flex h-8 items-center gap-2 rounded-sm px-2 text-[13px] font-medium transition-colors outline-none",
+                  "flex h-8 items-center gap-2 rounded-sm px-2 text-body font-medium transition-colors outline-none",
                   pane === item
                     ? "bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
@@ -134,8 +134,8 @@ function AppearancePane() {
   return (
     <div className="flex flex-col gap-5">
       <header>
-        <h2 className="font-heading text-sm font-semibold">{t("nav.appearance")}</h2>
-        <p className="text-xs text-muted-foreground">{t("appearance.description")}</p>
+        <h2 className="font-heading text-title">{t("nav.appearance")}</h2>
+        <p className="text-caption text-muted-foreground">{t("appearance.description")}</p>
       </header>
 
       <div className="flex flex-col gap-2">
@@ -209,8 +209,8 @@ function ShortcutsPane() {
     <div className="flex flex-col gap-5">
       <header className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="font-heading text-sm font-semibold">{t("nav.shortcuts")}</h2>
-          <p className="text-xs text-muted-foreground">{t("shortcuts.description")}</p>
+          <h2 className="font-heading text-title">{t("nav.shortcuts")}</h2>
+          <p className="text-caption text-muted-foreground">{t("shortcuts.description")}</p>
         </div>
         <Button disabled={!isCustomized} onClick={resetAll} size="sm" variant="outline">
           {t("shortcuts.resetAll")}
@@ -221,15 +221,15 @@ function ShortcutsPane() {
         if (actions.length === 0) return null;
         return (
           <section className="flex flex-col gap-1" key={group}>
-            <h3 className="mb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+            <h3 className="mb-1 text-caption font-semibold tracking-wide text-muted-foreground uppercase">
               {t(`groups.${group}`)}
             </h3>
             {actions.map((action) => (
               <div
-                className="flex items-center justify-between gap-4 rounded-sm px-1 py-1.5 hover:bg-accent/40"
+                className="flex items-center justify-between gap-4 rounded-sm px-1 py-1.5 hover:bg-accent/60"
                 key={action.id}
               >
-                <span className="text-[13px]">{t(`actions.${action.id}`)}</span>
+                <span className="text-body">{t(`actions.${action.id}`)}</span>
                 <ShortcutRecorder
                   binding={resolveBinding(shortcuts, action.id)}
                   id={action.id}
@@ -271,8 +271,8 @@ function TerminalPane() {
   return (
     <div className="flex flex-col gap-5">
       <header>
-        <h2 className="font-heading text-sm font-semibold">{t("nav.terminal")}</h2>
-        <p className="text-xs text-muted-foreground">{t("terminal.description")}</p>
+        <h2 className="font-heading text-title">{t("nav.terminal")}</h2>
+        <p className="text-caption text-muted-foreground">{t("terminal.description")}</p>
       </header>
 
       <div className="flex flex-col gap-2">
@@ -287,7 +287,7 @@ function TerminalPane() {
           placeholder={t("terminal.fontFamilyPlaceholder")}
           value={fontFamily}
         />
-        <p className="text-xs text-muted-foreground">{t("terminal.fontFamilyHint")}</p>
+        <p className="text-caption text-muted-foreground">{t("terminal.fontFamilyHint")}</p>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -340,7 +340,7 @@ function TerminalPane() {
             </InputGroupButton>
           </InputGroupAddon>
         </InputGroup>
-        <p className="text-xs text-muted-foreground">{t("terminal.lineHeightHint")}</p>
+        <p className="text-caption text-muted-foreground">{t("terminal.lineHeightHint")}</p>
       </div>
     </div>
   );
@@ -401,15 +401,15 @@ function DefaultFileManagerPane() {
   return (
     <div className="flex flex-col gap-4">
       <header>
-        <h2 className="font-heading text-sm font-semibold">{t("nav.defaultFileManager")}</h2>
-        <p className="text-xs text-muted-foreground">{t("defaultFileManager.description")}</p>
+        <h2 className="font-heading text-title">{t("nav.defaultFileManager")}</h2>
+        <p className="text-caption text-muted-foreground">{t("defaultFileManager.description")}</p>
       </header>
 
       {!supported ? (
-        <p className="text-[13px] text-muted-foreground">{t("defaultFileManager.unsupported")}</p>
+        <p className="text-body text-muted-foreground">{t("defaultFileManager.unsupported")}</p>
       ) : (
         <>
-          <div className="flex items-center gap-2 text-[13px]">
+          <div className="flex items-center gap-2 text-body">
             {busy ? (
               <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
             ) : isDefault ? (
@@ -425,7 +425,7 @@ function DefaultFileManagerPane() {
           </div>
 
           {status?.detail && (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-caption text-muted-foreground">
               {t(status.detail, { defaultValue: status.detail })}
             </p>
           )}
@@ -445,7 +445,7 @@ function DefaultFileManagerPane() {
         </>
       )}
 
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && <p className="text-caption text-destructive">{error}</p>}
     </div>
   );
 }

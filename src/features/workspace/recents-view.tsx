@@ -87,7 +87,7 @@ export function RecentsView() {
           (recents?.length ?? 0) > 0 &&
           (confirmingClear ? (
             <>
-              <span className="text-xs text-muted-foreground">{t("recents.clearNotice")}</span>
+              <span className="text-caption text-muted-foreground">{t("recents.clearNotice")}</span>
               <Button
                 onClick={() => {
                   clearRecentItems();
@@ -187,17 +187,17 @@ function RecentRow({
             type="button"
           >
             <TypeIconTile
-              className="size-6 rounded-[8px]"
+              className="size-6 tile-radius"
               iconSize={13}
               presentation={presentation}
             />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px]">{item.name}</span>
+              <span className="block truncate text-body">{item.name}</span>
               {location && (
-                <span className="block truncate text-xs text-muted-foreground">{location}</span>
+                <span className="block truncate text-caption text-muted-foreground">{location}</span>
               )}
             </span>
-            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+            <span className="shrink-0 text-caption text-muted-foreground tabular-nums">
               {formatTime(item.accessedAt)}
             </span>
           </button>

@@ -70,11 +70,14 @@ function useGitBranches(root: string | null) {
 }
 
 /**
- * 状态栏的 Git 区域：分支徽标（点击弹出分支菜单）+ 同步按钮。
+ * 工具栏的 Git 区域：分支徽标（点击弹出分支菜单）+ 同步按钮。
  * 菜单支持查看/切换本地与远程分支、新建分支、获取、拉取、推送与同步；
- * 操作失败时在状态栏上方弹出错误提示。
+ * 操作失败时在控件下方弹出错误提示。
+ *
+ * 它原本挂在 24px 高的状态栏上，改为挂在工具栏中路径栏右侧：分支是
+ * 关于“当前这个文件夹”的上下文，而路径栏正是描述这一点的地方。
  */
-export function StatusBarGit({ root, branch }: { root: string | null; branch: string | null }) {
+export function GitBranchControl({ root, branch }: { root: string | null; branch: string | null }) {
   const { t } = useTranslation("explorer");
   const queryClient = useQueryClient();
   const branches = useGitBranches(root);
@@ -144,17 +147,17 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
           title={t("git.menuTitle", { branch })}
         >
           <GitBranch className="size-3.5 shrink-0" />
-          <span className="max-w-48 truncate font-mono text-[11px] leading-4">{branch}</span>
+          <span className="max-w-32 truncate font-mono text-micro leading-4">{branch}</span>
           {(ahead > 0 || behind > 0) && (
             <span className="flex shrink-0 items-center gap-0.5 tabular-nums">
               {ahead > 0 && (
-                <span className="flex items-center gap-0.5 text-emerald-600">
+                <span className="flex items-center gap-0.5 text-success">
                   <ArrowUp className="size-3" />
                   {ahead}
                 </span>
               )}
               {behind > 0 && (
-                <span className="flex items-center gap-0.5 text-sky-600">
+                <span className="flex items-center gap-0.5 text-info">
                   <ArrowDown className="size-3" />
                   {behind}
                 </span>
@@ -167,15 +170,15 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
             <GitBranch className="size-3.5 shrink-0" />
             <span className="truncate font-mono">{branch}</span>
             {branches?.detached ? (
-              <span className="ml-auto shrink-0 text-[11px] font-normal">
+              <span className="ml-auto shrink-0 text-micro font-normal">
                 {t("git.detachedHint")}
               </span>
             ) : !branches?.hasUpstream ? (
-              <span className="ml-auto shrink-0 text-[11px] font-normal">
+              <span className="ml-auto shrink-0 text-micro font-normal">
                 {t("git.noUpstreamHint")}
               </span>
             ) : ahead > 0 || behind > 0 ? (
-              <span className="ml-auto shrink-0 text-[11px] font-normal tabular-nums">
+              <span className="ml-auto shrink-0 text-micro font-normal tabular-nums">
                 {t("git.aheadBehind", { ahead, behind })}
               </span>
             ) : null}
@@ -280,7 +283,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
 
       {error && (
         <div
-          className="animate-in fade-in-0 absolute bottom-6 left-0 z-50 flex w-80 items-start gap-2 rounded-lg bg-popover/90 p-3 text-xs text-popover-foreground shadow-ambient-lg ring-1 ring-border backdrop-blur-xl"
+          className="animate-in fade-in-0 absolute top-full left-0 z-50 mt-1 flex w-80 items-start gap-2 rounded-lg bg-popover/90 p-3 text-caption text-popover-foreground shadow-ambient-lg ring-1 ring-border backdrop-blur-xl"
           role="alert"
         >
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
@@ -382,7 +385,7 @@ function CreateBranchDialog({
               <FieldError>{error}</FieldError>
             </Field>
           </FieldGroup>
-          <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
+          <label className="flex items-center gap-2 text-body text-muted-foreground">
             <input
               checked={checkout}
               className="size-4 accent-[var(--primary)]"

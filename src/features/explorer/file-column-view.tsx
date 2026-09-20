@@ -193,19 +193,19 @@ function Pane({
       ref={scrollRef}
     >
       {isLoading && (
-        <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 px-2 py-1.5 text-caption text-muted-foreground">
           <LoaderCircle className="animate-spin" size={14} />
           {t("explorer:columnView.loading")}
         </div>
       )}
       {!isLoading && isError && (
-        <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-destructive">
+        <div className="flex items-center gap-2 px-2 py-1.5 text-caption text-destructive">
           <TriangleAlert size={14} />
           {t("explorer:columnView.readError")}
         </div>
       )}
       {!isLoading && !isError && entries.length === 0 && (
-        <p className="px-2 py-1.5 text-xs text-muted-foreground">
+        <p className="px-2 py-1.5 text-caption text-muted-foreground">
           {t("explorer:columnView.emptyFolder")}
         </p>
       )}
@@ -305,7 +305,7 @@ function PaneRow({
           className={cn(
             // Desktop row: tonal hover via state-layer, flat selection fill,
             // no pill morph so rows keep a constant corner radius.
-            "render-contain state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-xs px-2.5 select-none transition-[background-color,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
+            "render-contain state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-xs px-2.5 select-none transition-[background-color,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             (isSelected || isExpanded) && "bg-selection ring-1 ring-primary/30 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
@@ -339,7 +339,7 @@ function PaneRow({
                 entry={entry}
                 fallback={
                   <TypeIconTile
-                    className="size-[22px] rounded-[7px]"
+                    className="size-[22px] tile-radius"
                     iconSize={13}
                     presentation={presentation}
                   />
@@ -349,7 +349,7 @@ function PaneRow({
             ) : (
               <TypeIconTile
                 pop
-                className="size-[22px] rounded-[7px]"
+                className="size-[22px] tile-radius"
                 iconSize={13}
                 presentation={presentation}
               />
@@ -357,7 +357,7 @@ function PaneRow({
           </EntryIconFrame>
           <span
             className={cn(
-              "min-w-0 flex-1 truncate text-sm",
+              "min-w-0 flex-1 truncate text-body",
               // Expressive type scale: the name carries the row's weight and
               // steps up to semibold while selected or expanded.
               isSelected || isExpanded ? "font-semibold" : "font-medium",

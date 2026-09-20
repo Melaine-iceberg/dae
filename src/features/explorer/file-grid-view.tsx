@@ -39,9 +39,9 @@ const GRID_ICON_SIZE: Record<ExplorerDensity, number> = {
 
 /** Type tiles carry the grid's color system: squircle + glyph per density. */
 const GRID_TILE_CLASS: Record<ExplorerDensity, string> = {
-  compact: "size-8 rounded-[10px]",
-  comfortable: "size-[42px] rounded-[13px]",
-  spacious: "size-[50px] rounded-[15px]",
+  compact: "size-8 tile-radius",
+  comfortable: "size-[42px] tile-radius",
+  spacious: "size-[50px] tile-radius",
 };
 
 const GRID_TILE_ICON_SIZE: Record<ExplorerDensity, number> = {
@@ -352,7 +352,7 @@ function GridCell({
           )}
           <span
             className={cn(
-              "line-clamp-2 text-xs leading-snug break-all",
+              "line-clamp-2 text-caption leading-snug break-all",
               // Expressive type scale: the name carries the cell's weight and
               // steps up to semibold while selected.
               isSelected ? "font-semibold" : "font-medium",

@@ -104,7 +104,7 @@ export function CloudAccountDialog({
                 <button
                   aria-pressed={provider === kind}
                   className={cn(
-                    "flex flex-col items-center gap-1.5 rounded-md border px-2 py-2.5 transition-colors duration-fast ease-spring-fast hover:bg-accent/70",
+                    "flex flex-col items-center gap-1.5 rounded-md border px-2 py-2.5 transition-colors duration-fast ease-standard hover:bg-accent",
                     provider === kind ? "border-primary bg-accent" : "border-border",
                   )}
                   disabled={authorizing}
@@ -116,7 +116,7 @@ export function CloudAccountDialog({
                   type="button"
                 >
                   <Icon className="size-6" />
-                  <span className="text-xs">{name}</span>
+                  <span className="text-caption">{name}</span>
                 </button>
               ))}
             </div>
@@ -148,7 +148,7 @@ export function CloudAccountDialog({
             />
           </div>
 
-          <div className="grid gap-2 rounded-md border border-border/60 bg-muted/40 p-3 text-xs">
+          <div className="grid gap-2 rounded-md border border-border/60 bg-muted/40 p-3 text-caption">
             <p className="leading-relaxed text-muted-foreground">{t(`cloud.guide.${provider}`)}</p>
             <div className="flex items-center gap-2">
               <span className="shrink-0 text-muted-foreground">{t("cloud.redirectUri")}</span>
@@ -170,9 +170,9 @@ export function CloudAccountDialog({
             </div>
           </div>
 
-          {error && <p className="text-[13px] text-destructive">{error}</p>}
+          {error && <p className="text-body text-destructive">{error}</p>}
           {authorizing && (
-            <p className="text-xs leading-relaxed text-muted-foreground">
+            <p className="text-caption leading-relaxed text-muted-foreground">
               {t("cloud.waitingHint")}
             </p>
           )}

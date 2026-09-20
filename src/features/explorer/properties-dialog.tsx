@@ -396,31 +396,31 @@ export function PropertiesDialog() {
           </div>
         )}
 
-        {showGeneral && error && <p className="text-[13px] text-destructive">{error}</p>}
+        {showGeneral && error && <p className="text-body text-destructive">{error}</p>}
 
         {target && (
           <div className="flex items-center gap-3">
             <TypeIconTile
-              className="size-10 rounded-[12px]"
+              className="size-10 tile-radius"
               iconSize={20}
               presentation={presentation}
             />
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-medium" title={target.name}>
+              <p className="truncate text-body font-medium" title={target.name}>
                 {target.name}
               </p>
-              <p className="truncate text-xs text-muted-foreground">{presentation.label}</p>
+              <p className="truncate text-caption text-muted-foreground">{presentation.label}</p>
             </div>
           </div>
         )}
 
         {showGeneral && target && !properties && !error && (
-          <p className="text-[13px] text-muted-foreground">{t("explorer:properties.loading")}</p>
+          <p className="text-body text-muted-foreground">{t("explorer:properties.loading")}</p>
         )}
 
         {target && properties && draft && (
           <div className="flex flex-col gap-3" hidden={!showGeneral}>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-body">
               <dt className="text-muted-foreground">{t("explorer:properties.location")}</dt>
               <dd className="truncate" title={parentPath(properties.path)}>
                 {parentPath(properties.path)}
@@ -456,13 +456,13 @@ export function PropertiesDialog() {
               <WindowsPropertiesEditor draft={draft} onUpdateDraft={updateDraft} />
             )}
             {properties.platform.kind === "basic" && (
-              <p className="text-[13px] text-muted-foreground">
+              <p className="text-body text-muted-foreground">
                 {t("explorer:properties.unsupportedPermissions")}
               </p>
             )}
 
             {isEnclosedApplyAvailable && (
-              <label className="flex items-center gap-2 text-[13px]">
+              <label className="flex items-center gap-2 text-body">
                 <input
                   checked={applyToEnclosed}
                   className="size-4 accent-[var(--primary)]"
@@ -475,7 +475,7 @@ export function PropertiesDialog() {
             )}
 
             {isSaving && saveProgress && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-caption text-muted-foreground">
                 {t("explorer:properties.applyingProgress", {
                   completed: localeNumberFormat().format(saveProgress.completed),
                   total:
@@ -545,15 +545,15 @@ function UnixPropertiesEditor({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between gap-4">
-        <p className="text-[13px] font-medium">{t("explorer:properties.permissions")}</p>
-        <p className="font-mono text-xs text-muted-foreground">
+        <p className="text-body font-medium">{t("explorer:properties.permissions")}</p>
+        <p className="font-mono text-caption text-muted-foreground">
           {formatSymbolicMode(draft.mode)} · {draft.mode.toString(8)}
         </p>
       </div>
 
-      <table className="w-full text-[13px]">
+      <table className="w-full text-body">
         <thead>
-          <tr className="text-xs text-muted-foreground">
+          <tr className="text-caption text-muted-foreground">
             <th className="w-1/4" />
             {PERMISSION_BITS.map(({ labelKey }) => (
               <th key={labelKey} className="font-normal">
@@ -586,10 +586,10 @@ function UnixPropertiesEditor({
       </table>
 
       <div className="flex flex-col gap-1.5">
-        <p className="text-xs text-muted-foreground">{t("explorer:properties.permSpecial")}</p>
+        <p className="text-caption text-muted-foreground">{t("explorer:properties.permSpecial")}</p>
         <div className="flex flex-wrap gap-x-4 gap-y-1.5">
           {SPECIAL_BITS.map(({ value, labelKey }) => (
-            <label key={value} className="flex items-center gap-2 text-[13px]">
+            <label key={value} className="flex items-center gap-2 text-body">
               <input
                 checked={(draft.mode & value) !== 0}
                 className="size-4 accent-[var(--primary)]"
@@ -604,7 +604,7 @@ function UnixPropertiesEditor({
 
       <div className="grid grid-cols-2 gap-3">
         <label className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">
+          <span className="text-caption text-muted-foreground">
             {t("explorer:properties.ownerField")}
           </span>
           <Input
@@ -614,7 +614,7 @@ function UnixPropertiesEditor({
           />
         </label>
         <label className="flex flex-col gap-1.5">
-          <span className="text-xs text-muted-foreground">
+          <span className="text-caption text-muted-foreground">
             {t("explorer:properties.groupField")}
           </span>
           <Input
@@ -639,8 +639,8 @@ function WindowsPropertiesEditor({
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[13px] font-medium">{t("explorer:properties.attributes")}</p>
-      <label className="flex items-center gap-2 text-[13px]">
+      <p className="text-body font-medium">{t("explorer:properties.attributes")}</p>
+      <label className="flex items-center gap-2 text-body">
         <input
           checked={draft.readOnly}
           className="size-4 accent-[var(--primary)]"
@@ -649,7 +649,7 @@ function WindowsPropertiesEditor({
         />
         {t("explorer:properties.readOnly")}
       </label>
-      <label className="flex items-center gap-2 text-[13px]">
+      <label className="flex items-center gap-2 text-body">
         <input
           checked={draft.hidden}
           className="size-4 accent-[var(--primary)]"
@@ -658,7 +658,7 @@ function WindowsPropertiesEditor({
         />
         {t("explorer:properties.hidden")}
       </label>
-      <label className="flex items-center gap-2 text-[13px]">
+      <label className="flex items-center gap-2 text-body">
         <input
           checked={draft.archive}
           className="size-4 accent-[var(--primary)]"
@@ -667,7 +667,7 @@ function WindowsPropertiesEditor({
         />
         {t("explorer:properties.archive")}
       </label>
-      <label className="flex items-center gap-2 text-[13px]">
+      <label className="flex items-center gap-2 text-body">
         <input
           checked={draft.system}
           className="size-4 accent-[var(--primary)]"
@@ -676,7 +676,7 @@ function WindowsPropertiesEditor({
         />
         {t("explorer:properties.system")}
       </label>
-      <p className="text-xs text-muted-foreground">{t("explorer:properties.windowsAclHint")}</p>
+      <p className="text-caption text-muted-foreground">{t("explorer:properties.windowsAclHint")}</p>
     </div>
   );
 }
@@ -707,7 +707,7 @@ function PropertiesTabButton({
     <button
       aria-selected={active}
       className={cn(
-        "flex-1 rounded-[5px] px-3 py-1 text-[13px] transition-colors duration-fast",
+        "flex-1 rounded-xs px-3 py-1 text-body transition-colors duration-fast",
         active
           ? "bg-card text-foreground shadow-ambient-xs ring-1 ring-border"
           : "text-muted-foreground hover:text-foreground",
@@ -807,12 +807,12 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
 
   return (
     <div className="flex flex-col gap-3" hidden={!active}>
-      <p className="text-xs text-muted-foreground">{t("explorer:properties.hashHint")}</p>
+      <p className="text-caption text-muted-foreground">{t("explorer:properties.hashHint")}</p>
 
       {run.status === "running" && (
         <div className="flex flex-col gap-2">
           <Progress className="w-full" value={percent} />
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-caption text-muted-foreground">
             <LoaderCircle className="size-3.5 animate-spin" />
             {run.totalBytes > 0
               ? `${formatSize(run.bytesRead)} / ${formatSize(run.totalBytes)} · ${percent}%`
@@ -822,7 +822,7 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
       )}
 
       {run.status === "error" && (
-        <p className="text-[13px] text-destructive">
+        <p className="text-body text-destructive">
           {t("explorer:properties.hashError")}
           {run.error ? `: ${run.error}` : ""}
         </p>
@@ -833,8 +833,8 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
           <dl className="flex flex-col gap-2">
             {HASH_ALGORITHMS.map(({ key, label }) => (
               <div key={key} className="grid grid-cols-[3.5rem_1fr_auto] items-center gap-2">
-                <dt className="text-xs text-muted-foreground">{label}</dt>
-                <dd className="min-w-0 font-mono text-xs break-all select-all">
+                <dt className="text-caption text-muted-foreground">{label}</dt>
+                <dd className="min-w-0 font-mono text-caption break-all select-all">
                   {run.digests?.[key]}
                 </dd>
                 <button
@@ -856,7 +856,7 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
           <Separator />
 
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted-foreground">
+            <span className="text-caption text-muted-foreground">
               {t("explorer:properties.hashExpectedLabel")}
             </span>
             <Input
@@ -868,13 +868,13 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
           </label>
 
           {match && (
-            <p className="flex items-center gap-1.5 text-[13px] text-emerald-600 dark:text-emerald-400">
+            <p className="flex items-center gap-1.5 text-body text-success">
               <CircleCheck className="size-4 shrink-0" fill="currentColor" />
               {t("explorer:properties.hashMatch", { algorithm: match.label })}
             </p>
           )}
           {mismatch && (
-            <p className="flex items-center gap-1.5 text-[13px] text-destructive">
+            <p className="flex items-center gap-1.5 text-body text-destructive">
               <CircleX className="size-4 shrink-0" fill="currentColor" />
               {t("explorer:properties.hashMismatch")}
             </p>
