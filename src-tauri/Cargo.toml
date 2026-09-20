@@ -72,6 +72,13 @@ ignore = "0.4"
 # allocate a whole extra base path (see `types::canonical_path`).
 dunce = "1.0.5"
 rayon = "1.12.0"
+# Global allocator; installed in `main.rs` (bin target only, so the mobile
+# staticlib/cdylib build stays on the system allocator — mobile is untested).
+# The Windows process heap charges ~36 ns per small allocation and listing a
+# large directory allocates per entry: a 35,821-entry directory went
+# 48.3 -> 32.6 ms (-31%), multi-threaded string churn -38%. The screen the UI
+# actually waits on (first 512 entries) only gains 0.17 ms.
+mimalloc = { version = "0.1", default-features = false }
 sysinfo = { version = "0.39", default-features = false, features = ["disk"] }
 # Moves entries to the system trash (recycle bin) and can restore them again,
 # which backs the undoable delete flow in `file_system::commands`.
