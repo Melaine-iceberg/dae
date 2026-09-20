@@ -63,6 +63,7 @@ import {
   sidebarVisibleAtom,
   toggleFavoriteAtom,
 } from "@/features/sidebar/sidebar-atoms";
+import type { Favorite } from "@/features/sidebar/types";
 import {
   clearPendingExplorerCommand,
   pendingExplorerCommandAtom,
@@ -80,6 +81,7 @@ import { BulkRenameDialog } from "./bulk-rename";
 import { DirectorySearch, useDirectorySearch, type ExplorerSearchMode } from "./directory-search";
 import {
   getExplorerDropTargetAtPoint,
+  isExplorerContainerAtPoint,
   isLocalExplorerPath,
   type TransferOperation,
 } from "./drag-drop";
@@ -118,12 +120,17 @@ const UNDO_TOAST_DISMISS_MS = 6000;
 /** Shared stand-in for "no listing yet": a fresh `[]` per render would defeat
  *  the identity checks the entry-ordering hook relies on. */
 const NO_ENTRIES: DirectoryEntry[] = [];
+/** Same deal for unloaded favorites: a fresh `[]` per render would change
+ *  identity every time and break memoization downstream. */
+const NO_FAVORITES: Favorite[] = [];
 const appWindow = getAppWindow();
 
 interface ExplorerViewProps {
   navigator: ExplorerNavigator;
   /** Only the focused pane owns window-level shortcuts and command-bar
-   *  intents; in the single-pane layout this stays true. */
+   *  intents; in the single-pane layout this stays true. It also arbitrates
+   *  external drops that land outside any explorer surface (sidebar, tab
+   *  strip): those go to the active pane rather than every mounted pane. */
   isActivePane?: boolean;
   /** Whether the dual-pane layout is currently up for this tab; drives the
    *  split toggle's state. */
@@ -163,7 +170,7 @@ export function ExplorerView({
   const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
   const [clipboard, setClipboard] = useAtom(fileClipboardAtom);
   const undoRedo = useAtomValue(undoRedoAtom);
-  const favorites = useAtomValue(favoritesAtom) ?? [];
+  const favorites = useAtomValue(favoritesAtom) ?? NO_FAVORITES;
   const toggleFavorite = useSetAtom(toggleFavoriteAtom);
   const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
   const [sidebarVisible, setSidebarVisible] = useAtom(sidebarVisibleAtom);
@@ -513,10 +520,14 @@ export function ExplorerView({
     if (!appWindow) return;
     let disposed = false;
 
+    /** Logical viewport coordinates of a drag-drop event position. */
+    const toLogical = (position: { toLogical: (scaleFactor: number) => { x: number; y: number } }) =>
+      position.toLogical(window.devicePixelRatio);
+
     const getTargetPath = (position: {
       toLogical: (scaleFactor: number) => { x: number; y: number };
     }) => {
-      const logicalPosition = position.toLogical(window.devicePixelRatio);
+      const logicalPosition = toLogical(position);
       return (
         getExplorerDropTargetAtPoint(logicalPosition.x, logicalPosition.y) ?? directoryPath ?? null
       );
@@ -535,8 +546,12 @@ export function ExplorerView({
 
       if (payload.type === "over") {
         const targetPath = getTargetPath(payload.position);
+        // "over" fires at mousemove frequency; only re-render when the
+        // highlighted drop target actually changes.
         setExternalDrop((currentDrop) =>
-          currentDrop ? { ...currentDrop, targetPath } : currentDrop,
+          currentDrop && currentDrop.targetPath !== targetPath
+            ? { ...currentDrop, targetPath }
+            : currentDrop,
         );
         return;
       }
@@ -544,9 +559,17 @@ export function ExplorerView({
       if (payload.type === "drop") {
         const targetPath = getTargetPath(payload.position);
         setExternalDrop(null);
-        if (targetPath) {
-          copyExternalEntries(payload.paths, targetPath);
+        // Every pane in the window hears the same drop. Without a hit-test
+        // the unclaimed drop lands in each pane's own directory (via the
+        // `?? directoryPath` fallback above), duplicating the transfer once
+        // per pane. Only the explorer under the pointer claims it; a drop
+        // over the sidebar, tab strip or terminal goes to the active pane.
+        if (!targetPath) return;
+        const { x, y } = toLogical(payload.position);
+        if (getExplorerDropTargetAtPoint(x, y) === null && !isActivePane) {
+          if (isExplorerContainerAtPoint(x, y)) return;
         }
+        copyExternalEntries(payload.paths, targetPath);
         return;
       }
 
@@ -557,7 +580,7 @@ export function ExplorerView({
       disposed = true;
       void unlistenPromise.then((unlisten) => unlisten());
     };
-  }, [copyExternalEntries, directoryPath]);
+  }, [copyExternalEntries, directoryPath, isActivePane]);
 
   const copySelection = useCallback(() => {
     if (selectedEntries.length === 0) return;
@@ -1187,7 +1210,7 @@ export function ExplorerView({
     directory !== null && favorites.some((favorite) => favorite.path === directory.path);
 
   return (
-    <main className="h-full bg-card">
+    <main className="h-full bg-card" data-explorer-container="true">
       <section className="flex h-full w-full flex-col overflow-hidden">
         <header
           className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 bg-card px-2"

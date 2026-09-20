@@ -87,6 +87,11 @@ import {
 } from "./preferences";
 import type { DirectoryEntry } from "./types";
 
+/** Shared stand-in for "not dragging": a fresh empty Set per render would
+ *  change identity every time and break memoization of the grid/column views
+ *  that receive it as a prop. */
+const NO_DRAGGING_PATHS: Set<string> = new Set();
+
 interface FileListProps {
   canRedo: boolean;
   canUndo: boolean;
@@ -613,7 +618,9 @@ export function FileList({
     selectEntry(entry, index, event);
   };
 
-  const draggingPaths = new Set(internalDrag?.sourcePaths ?? []);
+  const draggingPaths = internalDrag
+    ? new Set(internalDrag.sourcePaths)
+    : NO_DRAGGING_PATHS;
   const internalDropTargetPath =
     internalDrag?.target?.kind === "directory" ? internalDrag.target.path : null;
 

@@ -24,10 +24,10 @@ import {
   filterHiddenEntries,
   foldersFirstAtom,
   showHiddenFilesAtom,
-  sortEntries,
   sortKeyAtom,
   sortOrderAtom,
 } from "./preferences";
+import { useSortedEntries } from "./sorted-entries";
 import type { DirectoryEntry } from "./types";
 
 export interface FileColumnViewProps {
@@ -123,7 +123,9 @@ function ChildPane({ path, ...paneProps }: ChildPaneProps) {
   const foldersFirst = useAtomValue(foldersFirstAtom);
   const showHiddenFiles = useAtomValue(showHiddenFilesAtom);
   // Child panes share the parent's sort and visibility preferences (SKILL.md §18).
-  const sortedEntries = sortEntries(
+  // Their listings stream in batches, so ordering goes through the streaming
+  // hook instead of re-sorting every snapshot from scratch.
+  const sortedEntries = useSortedEntries(
     filterHiddenEntries(entries, showHiddenFiles),
     sortKey,
     sortOrder,

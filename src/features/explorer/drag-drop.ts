@@ -49,6 +49,19 @@ export function getExplorerDropTargetAtPoint(x: number, y: number): string | nul
   return element.closest<HTMLElement>(DROP_TARGET_SELECTOR)?.dataset.explorerDropTarget ?? null;
 }
 
+/** Whether the point is over any explorer surface at all, including its
+ *  header, status bar and dialogs — a much wider net than the drop-target
+ *  lookup above, which only matches the list rows and container. External
+ *  drag-and-drop uses this to hand the drop to the explorer under the
+ *  pointer instead of the pane that happened to be listening first. */
+export function isExplorerContainerAtPoint(x: number, y: number): boolean {
+  const element = document.elementFromPoint(x, y);
+  return (
+    element instanceof HTMLElement &&
+    element.closest('[data-explorer-container="true"]') !== null
+  );
+}
+
 export function isOverSidebarFavoritesAtPoint(x: number, y: number): boolean {
   const element = document.elementFromPoint(x, y);
   return (

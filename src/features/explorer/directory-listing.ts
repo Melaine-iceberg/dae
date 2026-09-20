@@ -19,7 +19,13 @@ type DirectoryListingApi = Pick<typeof commands, "readDirectory" | "cancelDirect
 export interface DirectoryListingListener {
   /** Called once, when the first batch lands. */
   onHead: (view: DirectoryView) => void;
-  /** Called with the complete entry list so far, after every batch. */
+  /**
+   * Called with the complete entry list so far, coalesced to one call per
+   * animation frame while the listing streams — the backend can push several
+   * batches per frame, and publishing each one would cost a full render and a
+   * fresh array copy apiece. A trailing frame owed when the stream finishes is
+   * flushed before `onDone`, so the listener never ends a frame behind.
+   */
   onEntries: (entries: DirectoryEntry[]) => void;
   /** Called once, when the listing is complete (not on disposal). */
   onDone?: () => void;
@@ -46,6 +52,24 @@ export function openDirectoryListing(
   let detached = false;
   let head: DirectoryView | null = null;
   let streamed: DirectoryEntry[] = [];
+  /** How much of `streamed` the last publish already included. */
+  let publishedCount = 0;
+  let flushHandle: number | null = null;
+
+  // Publishes the accumulated batches, at most once per frame. The head is
+  // published synchronously by the request handler below; this only carries
+  // the batches that follow it.
+  const flush = () => {
+    flushHandle = null;
+    if (stopped || !head || streamed.length === publishedCount) return;
+    publishedCount = streamed.length;
+    listener.onEntries([...head.entries, ...streamed]);
+  };
+
+  const scheduleFlush = () => {
+    if (flushHandle !== null) return;
+    flushHandle = requestAnimationFrame(flush);
+  };
 
   // Batches that beat the head here are accumulated and published together
   // with it, so the list is always head-then-batches regardless of arrival
@@ -54,8 +78,8 @@ export function openDirectoryListing(
     if (stopped || payload.streamId !== streamId) return;
 
     if (payload.entries.length > 0) {
-      streamed = streamed.concat(payload.entries);
-      if (head) listener.onEntries([...head.entries, ...streamed]);
+      streamed.push(...payload.entries);
+      scheduleFlush();
     }
 
     if (payload.done) finish();
@@ -64,12 +88,19 @@ export function openDirectoryListing(
   const detach = () => {
     if (detached) return;
     detached = true;
+    if (flushHandle !== null) {
+      cancelAnimationFrame(flushHandle);
+      flushHandle = null;
+    }
     void unlisten.then((stop) => stop());
   };
 
   const finish = () => {
     if (complete || stopped) return;
     complete = true;
+    // Publish the tail synchronously so `onDone` never reports completion for
+    // a listing the listener has not fully seen.
+    flush();
     // A finished listing streams nothing more; the listener would only leak.
     detach();
     listener.onDone?.();
@@ -82,6 +113,7 @@ export function openDirectoryListing(
 
       head = view;
       listener.onHead(view);
+      publishedCount = streamed.length;
       listener.onEntries([...view.entries, ...streamed]);
 
       // A view without a stream id fits in one batch: no event is coming.
