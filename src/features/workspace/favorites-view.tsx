@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { ClipboardList, FolderOpen, Star, PanelsTopLeft, X } from "lucide-react";
+import { ClipboardList, FolderOpen, PictureInPicture2, Star, PanelsTopLeft, X } from "lucide-react";
 
 import {
   ContextMenu,
@@ -20,7 +20,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
-import { openInNewTabAtom } from "@/features/explorer/tabs";
+import { openInNewTabAtom, openPathInNewWindowAtom } from "@/features/explorer/tabs";
 import {
   ensureFavoritesLoadedAtom,
   favoritesAtom,
@@ -38,6 +38,7 @@ export function FavoritesView() {
   const removeFavorite = useSetAtom(removeFavoriteAtom);
   const navigateToFolder = useSetAtom(navigateToFolderAtom);
   const openInNewTab = useSetAtom(openInNewTabAtom);
+  const openInNewWindow = useSetAtom(openPathInNewWindowAtom);
 
   useEffect(() => {
     void ensureFavoritesLoaded();
@@ -86,6 +87,10 @@ export function FavoritesView() {
                   <ContextMenuItem onClick={() => openInNewTab(favorite.path)}>
                     <PanelsTopLeft />
                     {t("favorites.openInNewTab")}
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => openInNewWindow(favorite.path)}>
+                    <PictureInPicture2 />
+                    {t("favorites.openInNewWindow")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => void copyPath(favorite.path)}>
                     <ClipboardList />

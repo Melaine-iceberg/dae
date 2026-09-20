@@ -10,6 +10,7 @@ import {
   Pencil,
   LayoutGrid,
   PanelsTopLeft,
+  PictureInPicture2,
   Trash2,
   X,
 } from "lucide-react";
@@ -40,7 +41,7 @@ import {
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { openInNewTabAtom } from "@/features/explorer/tabs";
+import { openInNewTabAtom, openPathInNewWindowAtom } from "@/features/explorer/tabs";
 import { cn } from "@/lib/utils";
 
 import {
@@ -66,6 +67,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const navigateToFolder = useSetAtom(navigateToFolderAtom);
   const openInNewTab = useSetAtom(openInNewTabAtom);
+  const openInNewWindow = useSetAtom(openPathInNewWindowAtom);
   const openSurface = useSetAtom(openSurfaceAtom);
   const [renameRequest, setRenameRequest] = useAtom(spaceRenameRequestAtom);
   const [renaming, setRenaming] = useState(false);
@@ -265,6 +267,10 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
                   <ContextMenuItem onClick={() => openInNewTab(item.path)}>
                     <PanelsTopLeft />
                     {t("space.openInNewTab")}
+                  </ContextMenuItem>
+                  <ContextMenuItem onClick={() => openInNewWindow(item.path)}>
+                    <PictureInPicture2 />
+                    {t("space.openInNewWindow")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => void copyPath(item.path)}>
                     <ClipboardList />

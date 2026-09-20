@@ -118,6 +118,7 @@
     "emptyDescription": "在文件夹中点击工具栏的星标，或将文件夹拖到侧边栏的“收藏”，即可把常用位置放在这里。",
     "open": "打开",
     "openInNewTab": "在新标签页打开",
+    "openInNewWindow": "在新窗口打开",
     "copyPath": "复制文件地址",
     "remove": "从收藏移除"
   },
@@ -197,6 +198,7 @@
     "emptyDescription": "把文件夹拖到侧边栏中的“{{name}}”，或在文件夹上右键选择“添加到空间”。",
     "open": "打开",
     "openInNewTab": "在新标签页打开",
+    "openInNewWindow": "在新窗口打开",
     "copyPath": "复制文件地址",
     "remove": "从空间中移除",
     "deleteTitle": "删除空间“{{name}}”？",

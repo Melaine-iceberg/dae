@@ -118,6 +118,7 @@
     "emptyDescription": "Click the star in a folder's toolbar, or drag a folder onto “Favorites” in the sidebar, to keep your go-to locations here.",
     "open": "Open",
     "openInNewTab": "Open in New Tab",
+    "openInNewWindow": "Open in New Window",
     "copyPath": "Copy File Path",
     "remove": "Remove from Favorites"
   },
@@ -197,6 +198,7 @@
     "emptyDescription": "Drag folders onto “{{name}}” in the sidebar, or right-click a folder and choose “Add to Space”.",
     "open": "Open",
     "openInNewTab": "Open in New Tab",
+    "openInNewWindow": "Open in New Window",
     "copyPath": "Copy File Path",
     "remove": "Remove from Space",
     "deleteTitle": "Delete space “{{name}}”?",
