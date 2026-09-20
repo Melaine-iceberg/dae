@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { commands } from "@/bindings";
 import { restoreInitialTabHandoff } from "@/features/explorer/tabs";
+import { warmShellCommands } from "@/features/shell-commands/shell-commands-atoms";
 import { preloadExplorerSurface } from "@/features/workspace/workspace-surface";
 import { i18nReady } from "@/i18n";
 import { getAppWindow } from "@/lib/app-window";
@@ -70,6 +71,13 @@ async function bootstrap() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       void getAppWindow()?.show();
+      // The context menu's "应用扩展" section can only be asked for once the
+      // menu is open, and the first answer pays for a COM surrogate per
+      // provider — 211-228 ms measured, against 19 ms once warm, behind the
+      // popup's 120 ms open animation. Spending that here keeps it off the
+      // user's first right-click, where it arrives after the menu has settled
+      // and reads as a flicker. See `warmShellCommands`.
+      warmShellCommands();
     });
   });
 }

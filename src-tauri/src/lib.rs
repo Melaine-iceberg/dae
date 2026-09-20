@@ -231,6 +231,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             settings::save_settings,
             shell_commands::list_shell_commands,
             shell_commands::invoke_shell_command,
+            shell_commands::warm_shell_commands,
             default_manager::get_default_file_manager_status,
             default_manager::set_default_file_manager,
             default_manager::unset_default_file_manager,

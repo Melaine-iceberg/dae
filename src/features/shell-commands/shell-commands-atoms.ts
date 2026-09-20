@@ -111,3 +111,28 @@ export async function invokeShellCommand(
     return getFileOperationErrorMessage(error);
   }
 }
+
+/**
+ * Primes the backend before the first right-click reaches it.
+ *
+ * The menu can only ask for a selection's commands once it is open, and the
+ * first answer is what pays for everything the OS has not done yet: the
+ * manifest scan, the STA thread, and — the bulk of it — the first activation of
+ * each provider's COM surrogate. Measured at 211-228 ms cold against 19 ms once
+ * warm, against the popup's own 120 ms open animation. The first right-click
+ * therefore lands the section *after* the menu has settled, which is the
+ * flicker this exists to remove; every one after it lands before.
+ *
+ * Called once at startup, after the window is revealed, so the cost is spent on
+ * nothing instead of on the user's first menu. A failure is logged and
+ * forgotten: the menu asks for itself when it opens and behaves exactly as it
+ * did before — just with the delay back.
+ */
+export function warmShellCommands(): void {
+  // Every other platform answers with an empty list; not asking saves the IPC.
+  if (!isWindowsPlatform) return;
+
+  void commands.warmShellCommands().catch((error) => {
+    console.warn("Unable to warm shell commands", getFileOperationErrorMessage(error));
+  });
+}

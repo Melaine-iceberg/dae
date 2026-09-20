@@ -357,6 +357,16 @@ pub async fn invoke_shell_command(
     backend::invoke(clsid, paths).await
 }
 
+/// Primes the shell-command path before the user's first right-click.
+///
+/// Called once from the frontend after the window is revealed. See
+/// [`backend::warm`] for what it does and why it is worth doing.
+#[tauri::command]
+#[specta::specta]
+pub async fn warm_shell_commands() -> Result<(), FileSystemError> {
+    backend::warm().await
+}
+
 // ---------------------------------------------------------------------------
 // Windows backend
 // ---------------------------------------------------------------------------
@@ -812,6 +822,50 @@ mod backend {
     // Menu construction
     // -----------------------------------------------------------------------
 
+    /// Primes the one-time costs a first right-click would otherwise pay alone.
+    ///
+    /// Behind the menu's open animation there is a hard threshold: content that
+    /// arrives after it has to be inserted into a popup that has already
+    /// settled, and the resulting height change is what reads as a flicker.
+    /// Measured on the reference machine with the menu's 120 ms animation, a
+    /// cold `list` takes 211-228 ms and a warm one 19 ms — so the section lands
+    /// after the animation on the first right-click and before it afterwards.
+    /// Almost all of that gap is the first activation of each provider's COM
+    /// surrogate; the manifest scan is ~32 ms.
+    ///
+    /// Both seed paths are the machine's own — the temp directory and dae's own
+    /// executable — so nothing of the user's is touched and both always exist.
+    /// Between them they cover the `Directory`, `AllFilesystemObjects` and `*`
+    /// item types, which is where the providers a user meets first live. A
+    /// provider registered for a single extension stays cold; guessing which
+    /// extensions a machine cares about is not worth the surrogate it would
+    /// leave running.
+    ///
+    /// Failures are deliberately swallowed: this is speculative background
+    /// work, and a seed that yields nothing leaves that type exactly as cold as
+    /// it was before.
+    pub(super) async fn warm() -> Result<(), FileSystemError> {
+        // The scan answers for every selection and is pure I/O, so it stays off
+        // the COM apartment the way `list` keeps it.
+        let _ = tauri::async_runtime::spawn_blocking(registrations).await;
+
+        // Started by the first `list` below, but named here so the thread's
+        // cost is not accidentally read as part of a menu.
+        let _ = host()?;
+
+        let mut seeds = vec![std::env::temp_dir()];
+        if let Ok(executable) = std::env::current_exe() {
+            seeds.push(executable);
+        }
+
+        for seed in seeds {
+            let path = seed.to_string_lossy().into_owned();
+            let _ = list(vec![path.clone()], path).await;
+        }
+
+        Ok(())
+    }
+
     pub(super) async fn list(
         paths: Vec<String>,
         primary: String,
@@ -1155,6 +1209,39 @@ mod backend {
                 }
             }
         }
+
+        /// The warm-up has to leave the *next* `list` on the fast path — that is
+        /// its entire purpose. The bound is deliberately loose: a warm `list`
+        /// measures ~19 ms on the reference machine against 211-228 ms cold, so
+        /// 150 ms separates the two without turning a slow machine into a
+        /// failure. Ignored for the same reason as the test above.
+        #[test]
+        #[ignore = "activates the installed apps' COM servers"]
+        fn warming_leaves_the_next_list_on_the_fast_path() {
+            let primary = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("Cargo.toml")
+                .to_string_lossy()
+                .into_owned();
+
+            let started = std::time::Instant::now();
+            tauri::async_runtime::block_on(warm()).expect("warming shell commands");
+            let warming = started.elapsed();
+
+            let paths = vec![primary.clone()];
+            let started = std::time::Instant::now();
+            let items = tauri::async_runtime::block_on(list(paths, primary))
+                .expect("listing shell commands");
+            let first_list = started.elapsed();
+
+            println!(
+                "warm took {warming:?}; the first list after it took {first_list:?} ({} commands)",
+                items.len()
+            );
+            assert!(
+                first_list < std::time::Duration::from_millis(150),
+                "the first list after warming took {first_list:?}, which is the cold path"
+            );
+        }
     }
 }
 
@@ -1184,6 +1271,12 @@ mod backend {
         Err(FileSystemError::Unsupported(
             "fs.shell_commands_windows_only".into(),
         ))
+    }
+
+    /// Nothing to prime: `list` answers empty on every platform without the
+    /// extension point, so there is no cold path to move out of the way.
+    pub(super) async fn warm() -> Result<(), FileSystemError> {
+        Ok(())
     }
 }
 
