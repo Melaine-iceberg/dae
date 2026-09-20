@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // Backend-agnostic data types exchanged with the frontend. Every storage
 // backend produces these, so they must stay free of protocol-specific types.
@@ -349,6 +349,26 @@ pub fn normalize_path_for_display(path: &str) -> String {
     path.to_owned()
 }
 
+/// Resolves `requested` into the path the local backend reads through: the
+/// canonical path, spelled the way `path_to_string` shows it.
+///
+/// On Windows `canonicalize` answers with a verbatim path (`\\?\K:\...`), and
+/// `std::fs` hands exactly that path back as the base of every
+/// `DirEntry::path()` it yields. Building a child path on a verbatim base misses
+/// the cheap "replace or append" arm of `PathBuf::push` and takes one that
+/// rebuilds the *entire* base path (`std/src/path.rs`, "verbatim paths need .
+/// and .. removed"), which measured ~6.8 extra allocations per entry — close to
+/// half of what listing a large directory allocates, and paid once per entry.
+///
+/// The prefix is not simply trimmed off: it is kept wherever dropping it could
+/// name a different entry (a volume GUID root, `CON`, a name ending in a dot or
+/// a space) or run into `MAX_PATH` on paths long enough to need it. Off Windows
+/// this is plain `canonicalize`.
+pub fn canonical_path(requested: &Path) -> std::io::Result<PathBuf> {
+    let resolved = requested.canonicalize()?;
+    Ok(dunce::simplified(&resolved).to_path_buf())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,6 +383,31 @@ mod tests {
         assert_eq!(
             normalize_path_for_display(r"\\?\UNC\server\share\folder"),
             r"\\server\share\folder"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn resolves_paths_without_the_verbatim_prefix() {
+        // `canonicalize` on its own answers with `\\?\...`, which is what made
+        // every listed entry pay for a rebuilt base path.
+        let directory = std::env::temp_dir();
+        assert!(
+            directory
+                .canonicalize()
+                .expect("canonicalize the temp directory")
+                .to_string_lossy()
+                .starts_with(r"\\?\"),
+            "the fixture no longer exercises the prefix this test is about"
+        );
+
+        let resolved = canonical_path(&directory).expect("resolve the temp directory");
+        let spelling = resolved.to_string_lossy().into_owned();
+
+        assert!(resolved.is_absolute());
+        assert!(
+            !spelling.starts_with(r"\\?\"),
+            "a listing rooted at {spelling} would rebuild that base for every entry"
         );
     }
 

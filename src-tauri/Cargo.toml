@@ -67,6 +67,10 @@ percent-encoding = "2"
 thiserror = "2.0.20"
 notify = "8.2.0"
 ignore = "0.4"
+# Drops the `\\?\` prefix `canonicalize` returns on Windows, without letting a
+# path change meaning: a verbatim base makes every child path built on it
+# allocate a whole extra base path (see `types::canonical_path`).
+dunce = "1.0.5"
 rayon = "1.12.0"
 sysinfo = { version = "0.39", default-features = false, features = ["disk"] }
 # Moves entries to the system trash (recycle bin) and can restore them again,

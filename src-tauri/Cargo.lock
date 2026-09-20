@@ -1215,6 +1215,7 @@ dependencies = [
  "base64 0.23.1",
  "core-foundation 0.10.1",
  "drag",
+ "dunce",
  "flate2",
  "git2",
  "grep-matcher",

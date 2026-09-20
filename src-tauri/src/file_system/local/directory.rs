@@ -1,6 +1,7 @@
 use crate::file_system::error::FileSystemError;
 use crate::file_system::types::{
-    Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, entry_sort_key, path_to_string,
+    Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, canonical_path, entry_sort_key,
+    path_to_string,
 };
 use crate::file_system::watch::DirectoryChanged;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -145,7 +146,10 @@ pub fn open_directory_listing(
     requested_path: PathBuf,
     first_batch: usize,
 ) -> Result<DirectoryListing, FileSystemError> {
-    let path = requested_path.canonicalize()?;
+    // `canonical_path` rather than `canonicalize`: the root below is the base
+    // `read_dir` builds every entry's path on, and a verbatim base makes each of
+    // those rebuild it (see `types::canonical_path`).
+    let path = canonical_path(&requested_path)?;
     let metadata = fs::metadata(&path)?;
 
     if !metadata.is_dir() {

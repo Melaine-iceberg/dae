@@ -47,8 +47,17 @@ export default defineConfig(async ({ command }) => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri` and `.workbuddy`
+      ignored: [
+        // Rust build trees are huge and change constantly.
+        "**/src-tauri/**",
+        "**/.workbuddy/**",
+        // Scratch trees under `.workbuddy` are not part of the app, but the
+        // watcher descends into them anyway — and stat-ing a stray symlink
+        // loop there (e.g. the self-referencing `conf*.file` that autoconf
+        // leaves behind when a C build aborts) emits an unhandled `error` on
+        // the FSWatcher, which kills `vite` before Tauri can report anything.
+      ],
     },
   },
 }));
