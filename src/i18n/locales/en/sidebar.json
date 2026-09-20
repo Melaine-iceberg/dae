@@ -55,6 +55,7 @@
   "contextMenu": {
     "open": "Open",
     "openInNewTab": "Open in new tab",
+    "openInNewWindow": "Open in new window",
     "renameSpace": "Rename space",
     "addFavorite": "Add to favorites",
     "copyPath": "Copy address",

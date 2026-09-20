@@ -55,6 +55,7 @@
   "contextMenu": {
     "open": "打开",
     "openInNewTab": "在新标签页打开",
+    "openInNewWindow": "在新窗口打开",
     "renameSpace": "重命名空间",
     "addFavorite": "添加到收藏",
     "copyPath": "复制地址",

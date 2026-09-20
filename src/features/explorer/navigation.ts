@@ -384,6 +384,40 @@ export class ExplorerNavigator {
   }
 }
 
+/** Snapshot of a pane that has never navigated. */
+function idleSnapshot(): ExplorerNavigatorSnapshot {
+  return { state: initialState, scrollOffsets: [] };
+}
+
+/**
+ * Snapshots for a tab that must land on `path` the first time it renders.
+ *
+ * The primary pane is seeded as a *pending* navigation rather than as a
+ * resolved listing: a window opened straight onto a folder has no directory
+ * view of its own to ship, and `restoreSnapshot` resumes the pending read on
+ * the destination side instead of carrying one across. The split pane stays
+ * idle — a handoff never opens dual-pane.
+ */
+export function createFolderNavigationSnapshot(path: string): {
+  primary: ExplorerNavigatorSnapshot;
+  split: ExplorerNavigatorSnapshot;
+} {
+  return {
+    primary: {
+      state: {
+        status: "loading",
+        directory: null,
+        pendingPath: path,
+        error: null,
+        history: [path],
+        historyIndex: 0,
+      },
+      scrollOffsets: [],
+    },
+    split: idleSnapshot(),
+  };
+}
+
 function toFileSystemError(error: unknown): FileSystemError {
   if (isFileSystemError(error)) {
     return error;

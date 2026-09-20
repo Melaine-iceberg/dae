@@ -12,7 +12,9 @@ import {
   FolderOpen,
   Info,
   LockKeyhole,
+  PanelsTopLeft,
   Pencil,
+  PictureInPicture2,
   Scissors,
   LayoutGrid,
   Star,
@@ -26,6 +28,7 @@ import { appSettingsAtom } from "@/features/settings/settings-atoms";
 import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
 
 import { propertiesTargetAtom } from "./properties-atoms";
+import { openInNewTabAtom, openPathInNewWindowAtom } from "./tabs";
 
 import {
   ContextMenuGroup,
@@ -102,6 +105,8 @@ export function EntryContextMenuContent({
   const favorites = useAtomValue(favoritesAtom) ?? [];
   const ensureFavoritesLoaded = useSetAtom(ensureFavoritesLoadedAtom);
   const removeFavorite = useSetAtom(removeFavoriteAtom);
+  const openInNewTab = useSetAtom(openInNewTabAtom);
+  const openInNewWindow = useSetAtom(openPathInNewWindowAtom);
   const isFavorited = favorites.some((favorite) => favorite.path === entry.path);
 
   useEffect(() => {
@@ -117,6 +122,22 @@ export function EntryContextMenuContent({
           {t("explorer:contextMenu.open")}
           <ContextMenuShortcut>Enter</ContextMenuShortcut>
         </ContextMenuItem>
+        {/* Directory-only: a file has no folder to land the new surface on, so
+            both entries stay hidden instead of opening an empty view. Only the
+            right-clicked folder is used — the multi-selection does not fan out
+            into one tab or window per entry. */}
+        {entry.kind === "directory" && (
+          <>
+            <ContextMenuItem onClick={() => openInNewTab(entry.path)}>
+              <PanelsTopLeft />
+              {t("explorer:contextMenu.openInNewTab")}
+            </ContextMenuItem>
+            <ContextMenuItem onClick={() => openInNewWindow(entry.path)}>
+              <PictureInPicture2 />
+              {t("explorer:contextMenu.openInNewWindow")}
+            </ContextMenuItem>
+          </>
+        )}
         {/* Windows keeps the native SHOpenWithDialog; macOS/Linux fall back
             to the in-app picker, both routed through the explorer view. */}
         <ContextMenuItem disabled={isActionDisabled} onClick={onOpenWith}>

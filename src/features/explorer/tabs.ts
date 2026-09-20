@@ -1,11 +1,16 @@
 import { atom, getDefaultStore } from "jotai";
 import { atomFamily } from "jotai-family";
 
+import { commands } from "@/bindings";
 import { getAppWindow } from "@/lib/app-window";
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import type { WorkspaceSurface } from "@/features/workspace/types";
 
-import { ExplorerNavigator, type ExplorerNavigatorSnapshot } from "./navigation";
+import {
+  createFolderNavigationSnapshot,
+  ExplorerNavigator,
+  type ExplorerNavigatorSnapshot,
+} from "./navigation";
 
 export interface ExplorerTab {
   id: string;
@@ -124,6 +129,29 @@ export function serializeTabHandoff(tabId: string): string {
     splitEnabled: store.get(splitEnabledFamily(tabId)),
     activePane: store.get(activePaneFamily(tabId)),
     splitRatio: store.get(splitRatioFamily(tabId)),
+  };
+
+  return JSON.stringify(handoff);
+}
+
+/**
+ * Serializes a brand-new single-pane tab sitting on `path`, in the same shape
+ * a torn-off tab carries.
+ *
+ * A window opened onto a folder needs a handoff but has no source tab to
+ * serialize, and creating one here just to close it again would flash an extra
+ * tab in this window's strip.
+ */
+function createFolderHandoff(path: string): string {
+  const { primary, split } = createFolderNavigationSnapshot(path);
+  const handoff: ExplorerTabHandoff = {
+    version: 1,
+    surface: { kind: "folder" },
+    primary,
+    split,
+    splitEnabled: false,
+    activePane: "primary",
+    splitRatio: 0.5,
   };
 
   return JSON.stringify(handoff);
@@ -255,6 +283,30 @@ export const openInNewTabAtom = atom(null, (_get, set, path: string) => {
   set(activeTabIdAtom, tab.id);
   set(tabSurfaceFamily(tab.id), { kind: "folder" });
   void getTabNavigator(tab.id).navigate(path);
+});
+
+/**
+ * Opens `path` in a window of its own, leaving this window's tabs untouched.
+ *
+ * Deliberately routed through the tab tear-off command: it already owns the
+ * window sizing, the DPI-correct placement and the hidden-until-restored boot
+ * sequence the destination frontend expects, so a folder opened here behaves
+ * exactly like a tab dragged out of the strip.
+ */
+export async function openPathInNewWindow(path: string): Promise<void> {
+  const appWindow = getAppWindow();
+  // The browser preview bridge has no native windows to create.
+  if (!appWindow) return;
+
+  try {
+    await commands.tearOffTab(appWindow.label, createFolderHandoff(path), null, null, null, null);
+  } catch (error) {
+    console.error(`Unable to open ${path} in a new window`, error);
+  }
+}
+
+export const openPathInNewWindowAtom = atom(null, (_get, _set, path: string) => {
+  void openPathInNewWindow(path);
 });
 
 export const activateTabAtom = atom(null, (_get, set, tabId: string) => {

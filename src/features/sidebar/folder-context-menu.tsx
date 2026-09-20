@@ -1,5 +1,5 @@
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { ClipboardList, Copy, FolderOpen, Scissors, Star } from "lucide-react";
+import { ClipboardList, Copy, FolderOpen, PictureInPicture2, Scissors, Star } from "lucide-react";
 import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { ComponentProps, ReactNode } from "react";
@@ -12,14 +12,19 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { fileClipboardAtom, openInNewTabAtom } from "@/features/explorer/tabs";
+import {
+  fileClipboardAtom,
+  openInNewTabAtom,
+  openPathInNewWindowAtom,
+} from "@/features/explorer/tabs";
 
 import { addFavoritePathsAtom } from "./sidebar-atoms";
 
 /**
  * The shared right-click menu for a folder path in the sidebar: open in a new
- * tab, favorite, copy the path, and queue copy/cut transfers. `isListed`
- * hides the favorite action for entries that already appear in Favorites.
+ * tab, open in a new window, favorite, copy the path, and queue copy/cut
+ * transfers. `isListed` hides the favorite action for entries that already
+ * appear in Favorites.
  */
 export function FolderContextMenu({
   children,
@@ -36,6 +41,7 @@ export function FolderContextMenu({
   const setClipboard = useSetAtom(fileClipboardAtom);
   const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
   const openInNewTab = useSetAtom(openInNewTabAtom);
+  const openInNewWindow = useSetAtom(openPathInNewWindowAtom);
 
   return (
     <ContextMenu>
@@ -45,6 +51,10 @@ export function FolderContextMenu({
           <ContextMenuItem onClick={() => openInNewTab(path)}>
             <FolderOpen />
             {t("contextMenu.openInNewTab")}
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => openInNewWindow(path)}>
+            <PictureInPicture2 />
+            {t("contextMenu.openInNewWindow")}
           </ContextMenuItem>
           {!isListed && (
             <ContextMenuItem onClick={() => addFavoritePaths([path])}>

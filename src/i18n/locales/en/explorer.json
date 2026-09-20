@@ -207,6 +207,8 @@
     "openInTerminal": "Open in terminal",
     "paste": "Paste",
     "open": "Open",
+    "openInNewTab": "Open in new tab",
+    "openInNewWindow": "Open in new window",
     "openWith": "Open with…",
     "openWithOtherApp": "Open in another app…",
     "addToFavorites": "Add to favorites",
