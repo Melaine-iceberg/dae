@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { commands } from "@/bindings";
 import { restoreInitialTabHandoff } from "@/features/explorer/tabs";
+import { preloadExplorerSurface } from "@/features/workspace/workspace-surface";
 import { i18nReady } from "@/i18n";
 import { getAppWindow } from "@/lib/app-window";
 import { applySystemTheme } from "@/lib/theme";
@@ -32,7 +33,16 @@ const queryClient = new QueryClient();
 // The startup locale's resources may load from a lazy chunk; wait for
 // i18next so the first paint never shows raw translation keys.
 async function bootstrap() {
+  // The explorer is the surface a click reaches first, and its chunk is what
+  // makes that click wait (see `preloadExplorerSurface`); warm it alongside
+  // the locale work rather than in idle time after the first paint.
+  const explorerPreload = preloadExplorerSurface();
+
   await i18nReady;
+  // The explorer chunk started loading above, in parallel with the locale. By
+  // the time the window is revealed it is in memory, so the first folder open
+  // renders it synchronously instead of suspending on a `lazy()` payload.
+  await explorerPreload;
 
   const appWindow = getAppWindow();
   if (appWindow) {
@@ -60,13 +70,6 @@ async function bootstrap() {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       void getAppWindow()?.show();
-
-      // Prefetch the explorer chunk in idle time: it's the most likely next
-      // navigation target and is now a separate lazy chunk.
-      const idle = window.requestIdleCallback ?? ((cb: () => void) => setTimeout(cb, 100));
-      idle(() => {
-        void import("@/features/explorer/split-view");
-      });
     });
   });
 }
