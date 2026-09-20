@@ -24,8 +24,6 @@ import {
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { commands, type ArchiveFormat } from "@/bindings";
-import { appSettingsAtom } from "@/features/settings/settings-atoms";
-import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
 import { ShellCommandsMenu } from "@/features/shell-commands/shell-commands-menu";
 import { shellCommandErrorAtom } from "@/features/shell-commands/shell-commands-atoms";
 
@@ -107,7 +105,6 @@ export function EntryContextMenuContent({
   selectedPaths,
 }: EntryActions) {
   const { t } = useTranslation("explorer");
-  const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
   const spaces = useAtomValue(spacesAtom) ?? [];
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const setPropertiesTarget = useSetAtom(propertiesTargetAtom);
@@ -136,6 +133,16 @@ export function EntryContextMenuContent({
 
   return (
     <>
+      {/* The entry's own four actions, above everything the menu has to offer.
+          They used to sit further down as rows of their own; those rows are
+          gone, so no action is reachable two ways from this menu. */}
+      <EntryActionRow
+        disabled={isActionDisabled}
+        onCopy={onCopy}
+        onCut={onCut}
+        onDelete={onDelete}
+        onRename={onRename}
+      />
       <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onOpen}>
           <FolderOpen />
@@ -191,16 +198,6 @@ export function EntryContextMenuContent({
             </ContextMenuSubContent>
           </ContextMenuSub>
         )}
-        {/* Multi-selections route to the bulk rename dialog. */}
-        <ContextMenuItem disabled={isActionDisabled} onClick={onRename}>
-          <Pencil />
-          {isSingleSelection
-            ? t("explorer:contextMenu.rename")
-            : t("explorer:contextMenu.renameBulk")}
-          <ContextMenuShortcut>
-            {formatBinding(resolveBinding(shortcuts, "explorer.rename"))}
-          </ContextMenuShortcut>
-        </ContextMenuItem>
         {entry.kind === "directory" && (
           <ContextMenuItem
             disabled={isActionDisabled}
@@ -259,33 +256,6 @@ export function EntryContextMenuContent({
       </ContextMenuGroup>
       <ContextMenuSeparator />
       <ContextMenuGroup>
-        <ContextMenuItem disabled={isActionDisabled} onClick={onCopy}>
-          <Copy />
-          {t("explorer:contextMenu.copy")}
-          <ContextMenuShortcut>
-            {formatBinding(resolveBinding(shortcuts, "explorer.copy"))}
-          </ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem disabled={isActionDisabled} onClick={onCut}>
-          <Scissors />
-          {t("explorer:contextMenu.cut")}
-          <ContextMenuShortcut>
-            {formatBinding(resolveBinding(shortcuts, "explorer.cut"))}
-          </ContextMenuShortcut>
-        </ContextMenuItem>
-      </ContextMenuGroup>
-      <ContextMenuSeparator />
-      <ContextMenuGroup>
-        <ContextMenuItem disabled={isActionDisabled} onClick={onDelete} variant="destructive">
-          <Trash2 />
-          {t("explorer:contextMenu.delete")}
-          <ContextMenuShortcut>
-            {formatBinding(resolveBinding(shortcuts, "explorer.trash"))}
-          </ContextMenuShortcut>
-        </ContextMenuItem>
-      </ContextMenuGroup>
-      <ContextMenuSeparator />
-      <ContextMenuGroup>
         <ContextMenuItem
           disabled={isActionDisabled || !isSingleSelection}
           onClick={() => setPropertiesTarget(entry)}
@@ -296,6 +266,67 @@ export function EntryContextMenuContent({
         </ContextMenuItem>
       </ContextMenuGroup>
     </>
+  );
+}
+
+/**
+ * The 剪切 / 复制 / 重命名 / 删除 row along the top of the entry menu: four icon
+ * buttons with the label under the icon, the way the Windows 11 file menu lays
+ * them out.
+ *
+ * It is there to buy height back. As ordinary menu rows those four actions cost
+ * four rows and two separators, and every row the menu grows pushes more of the
+ * app-contributed commands below it off the bottom of the screen.
+ *
+ * The buttons are menu items rather than `<button>`s: arrow keys, Home/End,
+ * Enter/Shift+Enter and the menu's own focus styling then keep working, all of
+ * which a plain button sitting inside the popup would fall outside of.
+ */
+function EntryActionRow({
+  disabled,
+  onCopy,
+  onCut,
+  onDelete,
+  onRename,
+}: {
+  disabled: boolean;
+  onCopy: () => void;
+  onCut: () => void;
+  onDelete: () => void;
+  onRename: () => void;
+}) {
+  const { t } = useTranslation("explorer");
+
+  const actions = [
+    { Icon: Scissors, label: t("explorer:contextMenu.cut"), onSelect: onCut },
+    { Icon: Copy, label: t("explorer:contextMenu.copy"), onSelect: onCopy },
+    {
+      Icon: Pencil,
+      // Fixed wording, unlike the row this replaced. The four columns share one
+      // row, so letting 批量重命名 appear for a multi-selection would widen all
+      // four of them and stretch the whole menu with it.
+      label: t("explorer:contextMenu.rename"),
+      onSelect: onRename,
+    },
+    { Icon: Trash2, label: t("explorer:contextMenu.delete"), onSelect: onDelete },
+  ];
+
+  return (
+    <ContextMenuGroup className="mb-1 grid grid-cols-4 divide-x divide-border/60 overflow-hidden rounded-lg bg-muted/50 p-0.5 ring-1 ring-border/60">
+      {actions.map(({ Icon, label, onSelect }) => (
+        <ContextMenuItem
+          className="h-auto flex-col justify-center gap-1 rounded-md px-1 py-1 text-caption"
+          disabled={disabled}
+          key={label}
+          onClick={onSelect}
+        >
+          <Icon className="size-[18px]" />
+          {/* A single node: the item is a flex column with a gap, so a label
+              split across nodes would get a gap between its pieces. */}
+          <span className="max-w-full truncate leading-none">{label}</span>
+        </ContextMenuItem>
+      ))}
+    </ContextMenuGroup>
   );
 }
 
