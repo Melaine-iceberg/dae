@@ -13,7 +13,8 @@
 
 use super::error::FileSystemError;
 use super::local::{self, DirectoryListing, DirectoryListingCursor};
-use super::types::{DirectoryEntry, DirectoryView};
+use super::types::{DirectoryEntry, DirectoryView, canonical_path};
+use super::watch;
 use serde::Serialize;
 use specta::Type;
 use std::collections::HashMap;
@@ -99,13 +100,22 @@ pub fn cancel_directory_listing(stream_id: String, app: tauri::AppHandle) {
 /// Opens a streamed listing: reserves `stream_id`, reads the first batch, and
 /// hands the unread remainder to a reader thread.
 ///
+/// `watch` arms the directory watcher for `requested_path` *before* the first
+/// entry is read, so a change landing while the listing runs is either already
+/// in the listing or reported as an event. Arming it afterwards — which is how
+/// the explorer used to do it, from a separate command — left a window in
+/// which a change was invisible to both, and the only way to close it was to
+/// re-read the whole directory; that re-read also cancelled the stream, so a
+/// large directory snapped back to its first batch until the re-read finished.
+///
 /// Blocking — it opens the directory — so callers run it on the blocking pool.
 /// A directory that fits in one batch comes back complete, with its
 /// reservation already released, and streams nothing.
 pub fn open_streamed_listing(
     app: &tauri::AppHandle,
-    path: PathBuf,
+    requested_path: PathBuf,
     stream_id: String,
+    watch: bool,
 ) -> Result<DirectoryView, FileSystemError> {
     let state = app.state::<DirectoryListingState>();
     // Reserved before the directory is opened so that a cancellation arriving
@@ -113,7 +123,22 @@ pub fn open_streamed_listing(
     // ignored as an unknown id.
     let cancelled = state.register(&stream_id);
 
-    let head = match local::open_directory_listing(path, FIRST_BATCH_SIZE) {
+    // Canonicalized once, so the watcher that may be armed below names the
+    // same directory the view reports; the frontend matches events against the
+    // displayed path.
+    let path = match canonical_path(&requested_path) {
+        Ok(path) => path,
+        Err(error) => {
+            state.forget(&stream_id);
+            return Err(error.into());
+        }
+    };
+
+    if watch {
+        watch::arm_local_watcher(app, path.clone());
+    }
+
+    let head = match local::open_canonical_listing(path, FIRST_BATCH_SIZE) {
         Ok(head) => head,
         Err(error) => {
             state.forget(&stream_id);
@@ -245,11 +270,16 @@ mod tests {
             fs::write(directory.join(format!("entry-{index}.txt")), "content").expect("write file");
         }
 
-        let listing =
-            super::super::local::open_directory_listing(directory.clone(), 2).expect("read head");
+        let listing = super::super::local::open_canonical_listing(
+            canonical_path(&directory).expect("canonicalize the test directory"),
+            2,
+        )
+        .expect("read head");
         assert_eq!(listing.view.entries.len(), 2, "the head holds one batch");
 
-        let mut cursor = listing.cursor.expect("a directory of 7 entries has a remainder");
+        let mut cursor = listing
+            .cursor
+            .expect("a directory of 7 entries has a remainder");
         let mut names: Vec<String> = listing
             .view
             .entries
@@ -284,14 +314,20 @@ mod tests {
         fs::create_dir_all(&directory).expect("create test directory");
         fs::write(directory.join("only.txt"), "content").expect("write file");
 
-        let listing =
-            super::super::local::open_directory_listing(directory.clone(), 512).expect("read head");
+        let listing = super::super::local::open_canonical_listing(
+            canonical_path(&directory).expect("canonicalize the test directory"),
+            512,
+        )
+        .expect("read head");
         assert_eq!(listing.view.entries.len(), 1);
         assert!(
             listing.cursor.is_none(),
             "an exhausted directory streams nothing"
         );
-        assert!(listing.view.stream_id.is_none(), "a complete view has no id");
+        assert!(
+            listing.view.stream_id.is_none(),
+            "a complete view has no id"
+        );
 
         fs::remove_dir_all(directory).expect("remove test directory");
     }

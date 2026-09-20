@@ -3,8 +3,8 @@
 
 use crate::file_system::error::FileSystemError;
 use crate::file_system::local;
-use crate::file_system::types::{entry_kind_rank, DirectoryView};
-use crate::file_system::vfs::{self, Scheme, SharedBackend};
+use crate::file_system::types::{DirectoryView, entry_kind_rank, path_to_string};
+use crate::file_system::vfs::SharedBackend;
 use notify::RecommendedWatcher;
 use serde::Serialize;
 use specta::Type;
@@ -66,30 +66,47 @@ impl DirectoryWatcher {
     }
 }
 
-/// Replaces the active watcher with one that tracks the currently displayed directory.
-#[tauri::command]
-#[specta::specta]
-pub async fn watch_directory(path: String, app: tauri::AppHandle) -> Result<(), FileSystemError> {
+/// Arms the OS watcher for a local directory, replacing whatever was watched
+/// before.
+///
+/// `canonical_path` must be canonical (see [`crate::file_system::types::canonical_path`])
+/// — the listing this accompanies reports that spelling, and the events have
+/// to name the same directory.
+///
+/// Failing to watch is not fatal: the explorer still lists the directory, it
+/// just stops seeing live changes, so the error is logged rather than
+/// propagated into the read the user is waiting for.
+pub fn arm_local_watcher(app: &tauri::AppHandle, canonical_path: PathBuf) {
     let generation = app.state::<DirectoryWatcher>().begin_update();
 
-    if vfs::split_scheme(&path)?.0 == Scheme::Local {
-        let watcher_app = app.clone();
-        let watcher = tauri::async_runtime::spawn_blocking(move || {
-            local::create_directory_watcher(PathBuf::from(path), watcher_app)
-        })
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))??;
+    match local::create_directory_watcher(canonical_path.clone(), app.clone()) {
+        Ok(watcher) => {
+            if let Err(error) = app
+                .state::<DirectoryWatcher>()
+                .replace(generation, WatchHandle::Notify(watcher))
+            {
+                eprintln!(
+                    "Unable to store the directory watcher for {}: {error}",
+                    path_to_string(&canonical_path)
+                );
+            }
+        }
+        Err(error) => eprintln!(
+            "Unable to watch {} for changes: {error}",
+            path_to_string(&canonical_path)
+        ),
+    }
+}
 
-        app.state::<DirectoryWatcher>()
-            .replace(generation, WatchHandle::Notify(watcher))
-    } else {
-        let watch_path = path.clone();
-        let backend = tauri::async_runtime::spawn_blocking(move || vfs::resolve(&watch_path))
-            .await
-            .map_err(|error| FileSystemError::Internal(error.to_string()))??;
+/// Arms a snapshot-polling watcher for a non-local directory, replacing
+/// whatever was watched before. Failures are logged, never fatal (see
+/// [`arm_local_watcher`]).
+pub fn arm_polling_watcher(app: &tauri::AppHandle, path: &str, backend: SharedBackend) {
+    let generation = app.state::<DirectoryWatcher>().begin_update();
+    let handle = spawn_polling_watcher(path.to_owned(), backend, app.clone());
 
-        let handle = spawn_polling_watcher(path, backend, app.clone());
-        app.state::<DirectoryWatcher>().replace(generation, handle)
+    if let Err(error) = app.state::<DirectoryWatcher>().replace(generation, handle) {
+        eprintln!("Unable to store the polling watcher for {path}: {error}");
     }
 }
 

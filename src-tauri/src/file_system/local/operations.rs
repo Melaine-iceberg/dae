@@ -578,7 +578,8 @@ mod tests {
         assert_eq!(move_progress.total.load(AtomicOrdering::Relaxed), 1);
 
         let delete_progress = TestProgress::new();
-        delete_entries_with_progress(vec![moved_file.clone()], &delete_progress).expect("delete file");
+        delete_entries_with_progress(vec![moved_file.clone()], &delete_progress)
+            .expect("delete file");
         assert!(!moved_file.exists());
         assert_eq!(delete_progress.completed.load(AtomicOrdering::Relaxed), 1);
         assert_eq!(delete_progress.total.load(AtomicOrdering::Relaxed), 1);
@@ -622,7 +623,8 @@ mod tests {
         }
 
         let delete_progress = TestProgress::new();
-        delete_entries_with_progress(vec![copied_root], &delete_progress).expect("delete nested tree");
+        delete_entries_with_progress(vec![copied_root], &delete_progress)
+            .expect("delete nested tree");
         assert_eq!(delete_progress.completed.load(AtomicOrdering::Relaxed), 7);
         assert_eq!(delete_progress.total.load(AtomicOrdering::Relaxed), 7);
 
@@ -635,8 +637,9 @@ mod tests {
             std::env::temp_dir().join(format!("dae-create-entry-test-{}", std::process::id()));
         fs::create_dir_all(&directory).expect("create test directory");
 
-        let file_path = create_entry_sync(directory.clone(), "notes.txt".into(), NewEntryKind::File)
-            .expect("create file");
+        let file_path =
+            create_entry_sync(directory.clone(), "notes.txt".into(), NewEntryKind::File)
+                .expect("create file");
         assert_eq!(file_path, path_to_string(&directory.join("notes.txt")));
         assert!(directory.join("notes.txt").is_file());
 
@@ -811,17 +814,18 @@ mod tests {
             Path::new(r"K:\folder\pasted")
         ));
 
-        assert!(!is_within(Path::new(r"K:\folder"), Path::new(r"K:\folder-2")));
+        assert!(!is_within(
+            Path::new(r"K:\folder"),
+            Path::new(r"K:\folder-2")
+        ));
         assert!(is_within(Path::new(r"K:\"), Path::new(r"K:\folder\file")));
     }
 
     #[cfg(windows)]
     #[test]
     fn plans_paste_destinations_without_the_verbatim_prefix() {
-        let root = std::env::temp_dir().join(format!(
-            "dae-transfer-plan-spelling-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("dae-transfer-plan-spelling-{}", std::process::id()));
         let source = root.join("source");
         let destination = root.join("destination");
         fs::create_dir_all(&source).expect("create the source");

@@ -13,8 +13,8 @@ use serde::Serialize;
 use specta::Type;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use tauri_specta::Event;
@@ -101,7 +101,9 @@ pub fn start_directory_size_calculation(
             }
             scan_directory(&app, &operation_id, &directory, &cancelled);
         }
-        done_app.state::<DirectorySizeState>().forget(&done_operation_id);
+        done_app
+            .state::<DirectorySizeState>()
+            .forget(&done_operation_id);
     });
 
     Ok(())
@@ -197,7 +199,12 @@ fn emit_size(
             return;
         }
         if last_emit_ms
-            .compare_exchange(last_ms, now_ms, AtomicOrdering::AcqRel, AtomicOrdering::Relaxed)
+            .compare_exchange(
+                last_ms,
+                now_ms,
+                AtomicOrdering::AcqRel,
+                AtomicOrdering::Relaxed,
+            )
             .is_err()
         {
             return;

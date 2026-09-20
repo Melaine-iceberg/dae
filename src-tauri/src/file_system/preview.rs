@@ -314,18 +314,17 @@ fn render_file_icon(
     // A file with no extension has no type association to key on, and the
     // app-like set carries a per-file icon; both must stay path-keyed. Every
     // other extension resolves to one shared handler icon.
-    let cache_key = if extension.is_empty()
-        || FILE_SPECIFIC_ICON_EXTENSIONS.contains(&extension.as_str())
-    {
-        format!(
-            "icon|{}|{}|{}|{size}",
-            path_string,
-            modified_at.unwrap_or(0),
-            metadata.len()
-        )
-    } else {
-        format!("icon-ext|{extension}|{size}")
-    };
+    let cache_key =
+        if extension.is_empty() || FILE_SPECIFIC_ICON_EXTENSIONS.contains(&extension.as_str()) {
+            format!(
+                "icon|{}|{}|{}|{size}",
+                path_string,
+                modified_at.unwrap_or(0),
+                metadata.len()
+            )
+        } else {
+            format!("icon-ext|{extension}|{size}")
+        };
 
     if let Some(cached) = lookup_cache(&ICON_CACHE, &cache_key) {
         return Ok(Some(cached));
@@ -372,7 +371,11 @@ fn extract_shell_thumbnail_png(path: &str, size: u32) -> Option<Vec<u8>> {
 /// Shared `IShellItemImageFactory` pipeline: resolves the shell image for
 /// `path` at `size` and rasterizes it to PNG.
 #[cfg(windows)]
-fn shell_image_png(path: &str, size: u32, flags: windows::Win32::UI::Shell::SIIGBF) -> Option<Vec<u8>> {
+fn shell_image_png(
+    path: &str,
+    size: u32,
+    flags: windows::Win32::UI::Shell::SIIGBF,
+) -> Option<Vec<u8>> {
     use windows::Win32::Foundation::SIZE;
     use windows::Win32::Graphics::Gdi::DeleteObject;
     use windows::Win32::Graphics::Gdi::HGDIOBJ;
@@ -408,8 +411,8 @@ fn shell_image_png(path: &str, size: u32, flags: windows::Win32::UI::Shell::SIIG
 #[cfg(windows)]
 fn bitmap_to_png(bitmap: windows::Win32::Graphics::Gdi::HBITMAP) -> Option<Vec<u8>> {
     use windows::Win32::Graphics::Gdi::{
-        BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, GetDC, GetDIBits, GetObjectW, HGDIOBJ,
-        ReleaseDC,
+        BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, GetDC, GetDIBits, GetObjectW,
+        HGDIOBJ, ReleaseDC,
     };
 
     unsafe {

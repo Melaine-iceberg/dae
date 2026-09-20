@@ -119,14 +119,17 @@ async fn token_request(
         .form(&form)
         .send()
         .await
-        .map_err(|error| FileSystemError::Io(format!("Could not reach the token endpoint: {error}")))?;
+        .map_err(|error| {
+            FileSystemError::Io(format!("Could not reach the token endpoint: {error}"))
+        })?;
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
     if !status.is_success() {
         return Err(map_token_error(status, &text));
     }
-    let parsed: TokenResponse = serde_json::from_str(&text)
-        .map_err(|error| FileSystemError::Internal(format!("Unreadable token response: {error}")))?;
+    let parsed: TokenResponse = serde_json::from_str(&text).map_err(|error| {
+        FileSystemError::Internal(format!("Unreadable token response: {error}"))
+    })?;
     Ok(TokenSet {
         access_token: parsed.access_token,
         expires_in_secs: parsed.expires_in,
@@ -209,11 +212,14 @@ impl CloudProvider for OnedriveProvider {
                 .bearer_auth(access_token)
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach OneDrive: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach OneDrive: {error}"))
+                })?,
         )
         .await?;
-        let user: GraphUser = serde_json::from_str(&text)
-            .map_err(|error| FileSystemError::Internal(format!("Unreadable account info: {error}")))?;
+        let user: GraphUser = serde_json::from_str(&text).map_err(|error| {
+            FileSystemError::Internal(format!("Unreadable account info: {error}"))
+        })?;
         let email = user
             .mail
             .filter(|mail| !mail.is_empty())
@@ -240,17 +246,13 @@ impl CloudProvider for OnedriveProvider {
 
         let mut entries = Vec::new();
         loop {
-            let text = text_checked(
-                client
-                    .get(&url)
-                    .bearer_auth(token)
-                    .send()
-                    .await
-                    .map_err(|error| FileSystemError::Io(format!("Could not reach OneDrive: {error}")))?,
-            )
+            let text = text_checked(client.get(&url).bearer_auth(token).send().await.map_err(
+                |error| FileSystemError::Io(format!("Could not reach OneDrive: {error}")),
+            )?)
             .await?;
-            let page: GraphChildren = serde_json::from_str(&text)
-                .map_err(|error| FileSystemError::Internal(format!("Unreadable listing: {error}")))?;
+            let page: GraphChildren = serde_json::from_str(&text).map_err(|error| {
+                FileSystemError::Internal(format!("Unreadable listing: {error}"))
+            })?;
 
             entries.extend(page.value.into_iter().map(GraphItem::to_meta));
             match page.next_link {
@@ -277,7 +279,9 @@ impl CloudProvider for OnedriveProvider {
                 .bearer_auth(token)
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach OneDrive: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach OneDrive: {error}"))
+                })?,
         )
         .await?;
         let item: GraphItem = serde_json::from_str(&text)
@@ -308,7 +312,9 @@ impl CloudProvider for OnedriveProvider {
                 }))
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach OneDrive: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach OneDrive: {error}"))
+                })?,
         )
         .await?;
         let item: GraphItem = serde_json::from_str(&text)
@@ -330,7 +336,9 @@ impl CloudProvider for OnedriveProvider {
                 .json(&serde_json::json!({ "name": new_name }))
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach OneDrive: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach OneDrive: {error}"))
+                })?,
         )
         .await?;
         Ok(())
@@ -361,7 +369,9 @@ impl CloudProvider for OnedriveProvider {
                 }))
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach OneDrive: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach OneDrive: {error}"))
+                })?,
         )
         .await?;
         Ok(())
@@ -434,8 +444,9 @@ impl CloudProvider for OnedriveProvider {
                     .map_err(|error| FileSystemError::Io(format!("Upload failed: {error}")))?,
             )
             .await?;
-            let item: GraphItem = serde_json::from_str(&text)
-                .map_err(|error| FileSystemError::Internal(format!("Unreadable upload result: {error}")))?;
+            let item: GraphItem = serde_json::from_str(&text).map_err(|error| {
+                FileSystemError::Internal(format!("Unreadable upload result: {error}"))
+            })?;
             return Ok(item.to_meta());
         }
 
@@ -451,8 +462,9 @@ impl CloudProvider for OnedriveProvider {
                 .map_err(|error| FileSystemError::Io(format!("Upload failed: {error}")))?,
         )
         .await?;
-        let session: UploadSession = serde_json::from_str(&session_text)
-            .map_err(|error| FileSystemError::Internal(format!("Unreadable upload session: {error}")))?;
+        let session: UploadSession = serde_json::from_str(&session_text).map_err(|error| {
+            FileSystemError::Internal(format!("Unreadable upload session: {error}"))
+        })?;
 
         let mut file = std::fs::File::open(source).map_err(|error| {
             FileSystemError::Io(format!("Could not read the staged upload file: {error}"))
@@ -471,7 +483,10 @@ impl CloudProvider for OnedriveProvider {
             // The upload URL is pre-authenticated; no bearer header needed.
             let response = client
                 .put(&session.upload_url)
-                .header(reqwest::header::CONTENT_RANGE, format!("bytes {offset}-{end}/{size}"))
+                .header(
+                    reqwest::header::CONTENT_RANGE,
+                    format!("bytes {offset}-{end}/{size}"),
+                )
                 .body(chunk[..read].to_vec())
                 .send()
                 .await
@@ -480,8 +495,9 @@ impl CloudProvider for OnedriveProvider {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
             if status.as_u16() == 200 || status.as_u16() == 201 {
-                let item: GraphItem = serde_json::from_str(&text)
-                    .map_err(|error| FileSystemError::Internal(format!("Unreadable upload result: {error}")))?;
+                let item: GraphItem = serde_json::from_str(&text).map_err(|error| {
+                    FileSystemError::Internal(format!("Unreadable upload result: {error}"))
+                })?;
                 return Ok(item.to_meta());
             }
             if status.as_u16() != 202 {

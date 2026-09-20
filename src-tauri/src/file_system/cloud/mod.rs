@@ -185,7 +185,11 @@ impl CloudInner {
     /// concurrent operations cannot race into a double refresh.
     fn access_token(&self, force: bool) -> Result<String, FileSystemError> {
         let mut state = self.lock_state();
-        if !force && state.expires_at.is_some_and(|expires| Instant::now() < expires) {
+        if !force
+            && state
+                .expires_at
+                .is_some_and(|expires| Instant::now() < expires)
+        {
             return Ok(state.access_token.clone());
         }
 
@@ -203,9 +207,8 @@ impl CloudInner {
         state.access_token = tokens.access_token.clone();
         // Refresh a little before the announced expiry so requests already in
         // flight stay valid.
-        state.expires_at = Some(
-            Instant::now() + Duration::from_secs(tokens.expires_in_secs.saturating_sub(30)),
-        );
+        state.expires_at =
+            Some(Instant::now() + Duration::from_secs(tokens.expires_in_secs.saturating_sub(30)));
         Ok(tokens.access_token)
     }
 
@@ -380,7 +383,11 @@ impl CloudInner {
             let parent = parent_id.to_owned();
             let name = name.to_owned();
             let staged = staged.to_path_buf();
-            async move { provider.upload(&client, &token, &parent, &name, &staged, size).await }
+            async move {
+                provider
+                    .upload(&client, &token, &parent, &name, &staged, size)
+                    .await
+            }
         })?;
         self.adopt_meta(parent_id, &meta);
         Ok(meta)
@@ -664,11 +671,9 @@ impl FileSystemBackend for CloudBackend {
             ));
         }
 
-        let dest_last = to_parsed
-            .segments
-            .last()
-            .cloned()
-            .ok_or_else(|| FileSystemError::InvalidInput(format!("Not an entry path: {destination}")))?;
+        let dest_last = to_parsed.segments.last().cloned().ok_or_else(|| {
+            FileSystemError::InvalidInput(format!("Not an entry path: {destination}"))
+        })?;
         let dest_name = match self.0.metadata(&dest_last) {
             Ok(meta) => meta.name,
             Err(FileSystemError::NotFound(_)) => dest_last,
@@ -871,16 +876,18 @@ mod tests {
         assert_eq!(parsed.account_id, "cloud://google_drive:user@example.com");
         assert!(parsed.segments.is_empty());
 
-        let parsed =
-            parse_cloud_path("dropbox:a@b.io/folder-1/sub-folder").expect("nested path");
+        let parsed = parse_cloud_path("dropbox:a@b.io/folder-1/sub-folder").expect("nested path");
         assert_eq!(parsed.account_id, "cloud://dropbox:a@b.io");
         assert_eq!(parsed.segments, ["folder-1", "sub-folder"]);
 
         // Emails contain dots and at-signs but no colon; the split must use
         // the FIRST colon so a domain never parses as a port.
-        let parsed = parse_cloud_path("onedrive:mail.user+tag@sub.domain.co.uk/id")
-            .expect("complex email");
-        assert_eq!(parsed.account_id, "cloud://onedrive:mail.user+tag@sub.domain.co.uk");
+        let parsed =
+            parse_cloud_path("onedrive:mail.user+tag@sub.domain.co.uk/id").expect("complex email");
+        assert_eq!(
+            parsed.account_id,
+            "cloud://onedrive:mail.user+tag@sub.domain.co.uk"
+        );
 
         // Trailing slashes do not produce empty segments.
         let parsed = parse_cloud_path("google_drive:u@e.com/id/").expect("trailing slash");

@@ -11,16 +11,16 @@ use std::{
     io::{Read, Write},
     path::PathBuf,
     sync::{
-        atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering},
     },
     thread,
     time::Duration,
 };
 
-use portable_pty::{native_pty_system, ChildKiller, CommandBuilder, MasterPty, PtySize};
-use tauri::ipc::{Channel, InvokeResponseBody};
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tauri::State;
+use tauri::ipc::{Channel, InvokeResponseBody};
 
 /// Coalescing window for PTY output. 8ms keeps latency below one frame while
 /// merging bursty output into a handful of IPC messages.
@@ -177,7 +177,11 @@ pub fn terminal_create(
 
 /// Feeds keystrokes (UTF-8 text) into the session's PTY.
 #[tauri::command]
-pub fn terminal_write(state: State<'_, TerminalState>, id: u32, data: String) -> Result<(), String> {
+pub fn terminal_write(
+    state: State<'_, TerminalState>,
+    id: u32,
+    data: String,
+) -> Result<(), String> {
     let mut sessions = state.sessions.lock().unwrap();
     let session = sessions
         .get_mut(&id)
@@ -223,10 +227,9 @@ pub fn terminal_kill(state: State<'_, TerminalState>, id: u32) {
 
 /// Kills every live session; used on app exit so no shells are orphaned.
 pub fn kill_all(state: &TerminalState) {
-    let sessions: Vec<TerminalSession> =
-        std::mem::take(&mut *state.sessions.lock().unwrap())
-            .into_values()
-            .collect();
+    let sessions: Vec<TerminalSession> = std::mem::take(&mut *state.sessions.lock().unwrap())
+        .into_values()
+        .collect();
     for mut session in sessions {
         let _ = session.killer.kill();
     }
@@ -279,10 +282,16 @@ fn shell_command() -> CommandBuilder {
         .ok()
         .filter(|path| !path.is_empty() && PathBuf::from(path).exists())
         .or_else(|| {
-            ["/bin/zsh", "/usr/bin/zsh", "/bin/bash", "/usr/bin/bash", "/bin/sh"]
-                .into_iter()
-                .find(|path| PathBuf::from(path).exists())
-                .map(str::to_string)
+            [
+                "/bin/zsh",
+                "/usr/bin/zsh",
+                "/bin/bash",
+                "/usr/bin/bash",
+                "/bin/sh",
+            ]
+            .into_iter()
+            .find(|path| PathBuf::from(path).exists())
+            .map(str::to_string)
         });
     CommandBuilder::new(shell.unwrap_or_else(|| "/bin/sh".to_string()))
 }

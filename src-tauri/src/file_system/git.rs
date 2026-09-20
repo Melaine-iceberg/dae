@@ -77,8 +77,12 @@ fn git_status(dir: &str) -> Result<Option<GitDirectoryStatus>, FileSystemError> 
     let mut directory_untracked = false;
     let mut badges: HashMap<String, GitEntryStatusKind> = HashMap::new();
     for entry in statuses.iter() {
-        let Ok(status_path) = entry.path() else { continue };
-        let Some(kind) = classify(entry.status()) else { continue };
+        let Ok(status_path) = entry.path() else {
+            continue;
+        };
+        let Some(kind) = classify(entry.status()) else {
+            continue;
+        };
 
         // git2 返回以 `/` 分隔、相对工作区根的路径；未跟踪目录带尾部 `/`。
         let parts: Vec<&str> = status_path
@@ -393,7 +397,9 @@ fn create_branch(dir: &str, name: &str, checkout: bool) -> Result<(), FileSystem
             .is_some_and(|first| first.is_ascii_alphanumeric())
         || !Reference::is_valid_name(&format!("refs/heads/{name}"))
     {
-        return Err(FileSystemError::InvalidInput("git.invalid_branch_name".into()));
+        return Err(FileSystemError::InvalidInput(
+            "git.invalid_branch_name".into(),
+        ));
     }
 
     let head = repo
@@ -413,8 +419,9 @@ fn create_branch(dir: &str, name: &str, checkout: bool) -> Result<(), FileSystem
 
     if checkout {
         let reference_name = branch.get().name().expect("branch reference has a name");
-        repo.set_head(reference_name)
-            .map_err(|error| FileSystemError::Internal(format!("git.create_branch_failed: {error}")))?;
+        repo.set_head(reference_name).map_err(|error| {
+            FileSystemError::Internal(format!("git.create_branch_failed: {error}"))
+        })?;
         repo.checkout_head(Some(&mut CheckoutBuilder::new()))
             .map_err(|error| {
                 FileSystemError::Internal(format!("git.create_branch_failed: {error}"))
@@ -684,7 +691,8 @@ mod tests {
 
     impl TempRepo {
         fn create(name: &str) -> Self {
-            let path = std::env::temp_dir().join(format!("dae-git-test-{}-{name}", std::process::id()));
+            let path =
+                std::env::temp_dir().join(format!("dae-git-test-{}-{name}", std::process::id()));
             let _ = fs::remove_dir_all(&path);
             fs::create_dir_all(&path).expect("create temp dir");
 
@@ -739,8 +747,15 @@ mod tests {
             .and_then(|target| repo.find_commit(target).ok());
         let parents: Vec<&git2::Commit> = head_commit.iter().collect();
 
-        repo.commit(Some("HEAD"), &signature, &signature, message, &tree, &parents)
-            .expect("commit");
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &parents,
+        )
+        .expect("commit");
     }
 
     #[test]
@@ -776,7 +791,9 @@ mod tests {
 
         let repo = temp.repo();
         let mut index = repo.index().expect("index");
-        index.add_path(std::path::Path::new("a.txt")).expect("stage");
+        index
+            .add_path(std::path::Path::new("a.txt"))
+            .expect("stage");
         index.write().expect("write index");
 
         let status = git_status(&temp.path_string())
@@ -851,12 +868,7 @@ mod tests {
     fn commit_two_versions(temp: &TempRepo) -> git2::Oid {
         fs::write(temp.path.join("a.txt"), "v1").expect("write file");
         commit_all(&temp.repo(), "first");
-        let old_commit = temp
-            .repo()
-            .head()
-            .expect("head")
-            .target()
-            .expect("target");
+        let old_commit = temp.repo().head().expect("head").target().expect("target");
 
         fs::write(temp.path.join("a.txt"), "v2").expect("write file");
         commit_all(&temp.repo(), "second");
@@ -870,8 +882,12 @@ mod tests {
 
         let repo = temp.repo();
         let head_commit = repo.head().expect("head").target().expect("target");
-        repo.branch("dev", &repo.find_commit(head_commit).expect("commit"), false)
-            .expect("create branch");
+        repo.branch(
+            "dev",
+            &repo.find_commit(head_commit).expect("commit"),
+            false,
+        )
+        .expect("create branch");
         repo.remote("origin", "https://example.com/repo.git")
             .expect("add remote");
         repo.reference(
@@ -912,7 +928,10 @@ mod tests {
         // 不切换：HEAD 仍在 main。
         create_branch(&temp.path_string(), "dev", false).expect("create branch");
         let repo = temp.repo();
-        assert_eq!(repo.head().expect("head").shorthand().expect("name"), "main");
+        assert_eq!(
+            repo.head().expect("head").shorthand().expect("name"),
+            "main"
+        );
 
         // 切换：HEAD 移到新分支。
         create_branch(&temp.path_string(), "feature", true).expect("create and checkout");
@@ -927,8 +946,8 @@ mod tests {
         let temp = TempRepo::create("create-branch-invalid");
         commit_two_versions(&temp);
 
-        let duplicate = create_branch(&temp.path_string(), "main", false)
-            .expect_err("duplicate rejected");
+        let duplicate =
+            create_branch(&temp.path_string(), "main", false).expect_err("duplicate rejected");
         assert!(matches!(duplicate, FileSystemError::AlreadyExists(_)));
 
         for invalid in ["", "-dash", "bad..name", "a b?"] {
@@ -947,22 +966,15 @@ mod tests {
         let old_commit = commit_two_versions(&temp);
 
         let repo = temp.repo();
-        repo.branch(
-            "old",
-            &repo.find_commit(old_commit).expect("commit"),
-            false,
-        )
-        .expect("create branch");
+        repo.branch("old", &repo.find_commit(old_commit).expect("commit"), false)
+            .expect("create branch");
 
         checkout_branch(&temp.path_string(), "old", false).expect("checkout");
         assert_eq!(
             fs::read_to_string(temp.path.join("a.txt")).expect("read file"),
             "v1"
         );
-        assert_eq!(
-            repo.head().expect("head").shorthand().expect("name"),
-            "old"
-        );
+        assert_eq!(repo.head().expect("head").shorthand().expect("name"), "old");
     }
 
     #[test]
@@ -971,12 +983,8 @@ mod tests {
         let old_commit = commit_two_versions(&temp);
 
         let repo = temp.repo();
-        repo.branch(
-            "old",
-            &repo.find_commit(old_commit).expect("commit"),
-            false,
-        )
-        .expect("create branch");
+        repo.branch("old", &repo.find_commit(old_commit).expect("commit"), false)
+            .expect("create branch");
 
         // 与分支差异无关的未提交修改应当保留（SAFE 检出）。
         fs::write(temp.path.join("notes.txt"), "scratch").expect("write file");
@@ -993,12 +1001,8 @@ mod tests {
         let old_commit = commit_two_versions(&temp);
 
         let repo = temp.repo();
-        repo.branch(
-            "old",
-            &repo.find_commit(old_commit).expect("commit"),
-            false,
-        )
-        .expect("create branch");
+        repo.branch("old", &repo.find_commit(old_commit).expect("commit"), false)
+            .expect("create branch");
 
         // a.txt 在两个分支间不同，且工作区还有未提交修改：检出必须失败。
         fs::write(temp.path.join("a.txt"), "dirty").expect("write file");
@@ -1035,7 +1039,9 @@ mod tests {
             fs::read_to_string(temp.path.join("a.txt")).expect("read file"),
             "v1"
         );
-        let local = repo.find_branch("feature", BranchType::Local).expect("local");
+        let local = repo
+            .find_branch("feature", BranchType::Local)
+            .expect("local");
         assert_eq!(
             local
                 .upstream()
@@ -1069,7 +1075,9 @@ mod tests {
         .expect("remote ref");
         // 让 main 跟踪 origin/main（branch.<name>.remote/merge 配置）。
         let mut config = repo.config().expect("config");
-        config.set_str("branch.main.remote", "origin").expect("set remote");
+        config
+            .set_str("branch.main.remote", "origin")
+            .expect("set remote");
         config
             .set_str("branch.main.merge", "refs/heads/main")
             .expect("set merge");
@@ -1085,8 +1093,10 @@ mod tests {
 
     #[test]
     fn branches_returns_none_outside_worktree() {
-        let dir =
-            std::env::temp_dir().join(format!("dae-git-test-{}-branches-outside", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "dae-git-test-{}-branches-outside",
+            std::process::id()
+        ));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("create dir");
 

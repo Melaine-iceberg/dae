@@ -104,17 +104,15 @@ mod platform {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
-    use windows::core::{BOOL, HRESULT, PCWSTR};
     use windows::Win32::Foundation::{GlobalFree, HANDLE, HGLOBAL};
     use windows::Win32::System::DataExchange::{
         CloseClipboard, EmptyClipboard, GetClipboardData, OpenClipboard, RegisterClipboardFormatW,
         SetClipboardData,
     };
-    use windows::Win32::System::Memory::{
-        GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE,
-    };
+    use windows::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock};
     use windows::Win32::System::Ole::{CF_HDROP, DROPEFFECT_COPY, DROPEFFECT_MOVE};
-    use windows::Win32::UI::Shell::{DragFinish, DragQueryFileW, DROPFILES, HDROP};
+    use windows::Win32::UI::Shell::{DROPFILES, DragFinish, DragQueryFileW, HDROP};
+    use windows::core::{BOOL, HRESULT, PCWSTR};
 
     const CLIPBOARD_OPEN_ATTEMPTS: usize = 10;
     const CLIPBOARD_RETRY_DELAY: Duration = Duration::from_millis(10);
@@ -262,8 +260,7 @@ mod platform {
             }
 
             // Once SetClipboardData succeeds the system owns the handles.
-            if let Err(error) =
-                SetClipboardData(CF_HDROP.0 as u32, Some(handle_from_global(files)))
+            if let Err(error) = SetClipboardData(CF_HDROP.0 as u32, Some(handle_from_global(files)))
             {
                 let _ = GlobalFree(Some(files));
                 let _ = GlobalFree(Some(effect));
@@ -393,17 +390,19 @@ mod platform {
         destination: &str,
     ) -> Result<Vec<String>, FileSystemError> {
         use std::iter::once;
-        use windows::core::{Interface, PCWSTR};
         use windows::Win32::System::Com::{
-            CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
-            COINIT_APARTMENTTHREADED,
+            CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx,
+            CoUninitialize, IPersistFile,
         };
         use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
+        use windows::core::{Interface, PCWSTR};
 
         /// RAII COM apartment. `owned` records whether this call initialized
         /// COM: S_FALSE (0x1) means the thread already had an apartment, so
         /// dropping must not uninitialize it.
-        struct CoApartment { owned: bool }
+        struct CoApartment {
+            owned: bool,
+        }
         impl CoApartment {
             fn enter() -> Result<Self, FileSystemError> {
                 // windows 0.62 returns the raw HRESULT: S_OK (0) initialized a
@@ -455,12 +454,15 @@ mod platform {
                 })?;
             let link_path = unique_shortcut_path(destination, stem);
 
-            let persist: IPersistFile = link.cast::<IPersistFile>().map_err(|error| {
-                FileSystemError::Internal(error.to_string())
-            })?;
+            let persist: IPersistFile = link
+                .cast::<IPersistFile>()
+                .map_err(|error| FileSystemError::Internal(error.to_string()))?;
             unsafe {
                 persist
-                    .Save(PCWSTR::from_raw(link_path.encode_utf16().collect::<Vec<u16>>().as_ptr()), true)
+                    .Save(
+                        PCWSTR::from_raw(link_path.encode_utf16().collect::<Vec<u16>>().as_ptr()),
+                        true,
+                    )
                     .map_err(|error| FileSystemError::Internal(error.to_string()))?;
             }
 
@@ -631,7 +633,10 @@ fn unique_symlink_path(destination: &str, name: &str) -> String {
             .file_stem()
             .and_then(|stem| stem.to_str())
             .unwrap_or(name);
-        link_name = match source_name.extension().and_then(|extension| extension.to_str()) {
+        link_name = match source_name
+            .extension()
+            .and_then(|extension| extension.to_str())
+        {
             Some(extension) => format!("{stem} ({counter}).{extension}"),
             None => format!("{stem} ({counter})"),
         };

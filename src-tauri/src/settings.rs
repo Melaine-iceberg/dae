@@ -90,7 +90,6 @@ impl Default for TerminalSettings {
     }
 }
 
-
 fn default_font_size() -> u8 {
     13
 }
@@ -209,8 +208,9 @@ fn settings_path(config_dir: &Path) -> PathBuf {
 fn read_settings_file(path: &Path) -> Result<AppSettings, FileSystemError> {
     match fs::read_to_string(path) {
         Ok(contents) => {
-            let parsed: AppSettings = toml::from_str(&contents)
-                .map_err(|error| FileSystemError::Internal(format!("settings.parse_failed: {error}")))?;
+            let parsed: AppSettings = toml::from_str(&contents).map_err(|error| {
+                FileSystemError::Internal(format!("settings.parse_failed: {error}"))
+            })?;
             Ok(normalize(parsed))
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(AppSettings::default()),
@@ -242,9 +242,9 @@ fn normalize_terminal(terminal: TerminalSettings) -> TerminalSettings {
     let font_size = terminal.font_size.clamp(MIN_FONT_SIZE, MAX_FONT_SIZE);
     let line_height = terminal.line_height.clamp(MIN_LINE_HEIGHT, MAX_LINE_HEIGHT);
     // A partial palette would mis-color the terminal; drop it unless complete.
-    let ansi_colors = terminal.ansi_colors.and_then(|colors| {
-        (colors.len() == ANSI_PALETTE_LEN).then_some(colors)
-    });
+    let ansi_colors = terminal
+        .ansi_colors
+        .and_then(|colors| (colors.len() == ANSI_PALETTE_LEN).then_some(colors));
     TerminalSettings {
         font_size,
         line_height,
@@ -282,7 +282,8 @@ mod tests {
 
     fn temp_config_dir() -> PathBuf {
         let unique = TEST_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let dir = std::env::temp_dir().join(format!("dae-settings-test-{}-{unique}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("dae-settings-test-{}-{unique}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("create temp config dir");
         dir
@@ -342,7 +343,10 @@ mod tests {
         let loaded = load_settings().expect("load");
         assert_eq!(loaded, saved);
         assert_eq!(loaded.shortcuts["explorer.copy"], "Mod+Shift+C");
-        assert_eq!(loaded.terminal.font_family.as_deref(), Some("JetBrains Mono"));
+        assert_eq!(
+            loaded.terminal.font_family.as_deref(),
+            Some("JetBrains Mono")
+        );
 
         fs::remove_dir_all(&dir).ok();
     }

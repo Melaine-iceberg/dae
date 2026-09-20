@@ -168,14 +168,17 @@ async fn token_request(
         .form(&form)
         .send()
         .await
-        .map_err(|error| FileSystemError::Io(format!("Could not reach the token endpoint: {error}")))?;
+        .map_err(|error| {
+            FileSystemError::Io(format!("Could not reach the token endpoint: {error}"))
+        })?;
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
     if !status.is_success() {
         return Err(map_token_error(status, &text));
     }
-    let parsed: TokenResponse = serde_json::from_str(&text)
-        .map_err(|error| FileSystemError::Internal(format!("Unreadable token response: {error}")))?;
+    let parsed: TokenResponse = serde_json::from_str(&text).map_err(|error| {
+        FileSystemError::Internal(format!("Unreadable token response: {error}"))
+    })?;
     Ok(TokenSet {
         access_token: parsed.access_token,
         expires_in_secs: parsed.expires_in,
@@ -266,8 +269,9 @@ impl CloudProvider for DropboxProvider {
         if !status.is_success() {
             return Err(map_dropbox_error(status, &text));
         }
-        let account: CurrentAccount = serde_json::from_str(&text)
-            .map_err(|error| FileSystemError::Internal(format!("Unreadable account info: {error}")))?;
+        let account: CurrentAccount = serde_json::from_str(&text).map_err(|error| {
+            FileSystemError::Internal(format!("Unreadable account info: {error}"))
+        })?;
         let display = if account.name.display_name.is_empty() {
             account.email.clone()
         } else {
@@ -291,7 +295,9 @@ impl CloudProvider for DropboxProvider {
                 .json(&serde_json::json!({ "path": folder_path, "limit": 1000 }))
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach Dropbox: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach Dropbox: {error}"))
+                })?,
         )
         .await?;
         let mut page: ListFolderResult = serde_json::from_str(&first_text)
@@ -311,11 +317,14 @@ impl CloudProvider for DropboxProvider {
                     .json(&serde_json::json!({ "cursor": page.cursor }))
                     .send()
                     .await
-                    .map_err(|error| FileSystemError::Io(format!("Could not reach Dropbox: {error}")))?,
+                    .map_err(|error| {
+                        FileSystemError::Io(format!("Could not reach Dropbox: {error}"))
+                    })?,
             )
             .await?;
-            page = serde_json::from_str(&text)
-                .map_err(|error| FileSystemError::Internal(format!("Unreadable listing: {error}")))?;
+            page = serde_json::from_str(&text).map_err(|error| {
+                FileSystemError::Internal(format!("Unreadable listing: {error}"))
+            })?;
             entries.extend(
                 page.entries
                     .into_iter()
@@ -351,14 +360,16 @@ impl CloudProvider for DropboxProvider {
                 .json(&serde_json::json!({ "path": id }))
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach Dropbox: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach Dropbox: {error}"))
+                })?,
         )
         .await?;
         let entry: DropboxEntry = serde_json::from_str(&text)
             .map_err(|error| FileSystemError::Internal(format!("Unreadable metadata: {error}")))?;
-        entry.to_meta("").ok_or_else(|| {
-            FileSystemError::NotFound(format!("The Dropbox entry is gone: {id}"))
-        })
+        entry
+            .to_meta("")
+            .ok_or_else(|| FileSystemError::NotFound(format!("The Dropbox entry is gone: {id}")))
     }
 
     async fn create_folder(
@@ -378,7 +389,9 @@ impl CloudProvider for DropboxProvider {
                 }))
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach Dropbox: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach Dropbox: {error}"))
+                })?,
         )
         .await?;
         let wrapped: CreateFolderResult = serde_json::from_str(&text)
@@ -408,7 +421,9 @@ impl CloudProvider for DropboxProvider {
                 .json(&serde_json::json!({ "from_path": from, "to_path": to }))
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach Dropbox: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach Dropbox: {error}"))
+                })?,
         )
         .await?;
         Ok(())
@@ -436,7 +451,9 @@ impl CloudProvider for DropboxProvider {
                 .json(&serde_json::json!({ "from_path": from, "to_path": to }))
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach Dropbox: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach Dropbox: {error}"))
+                })?,
         )
         .await?;
         Ok(())
@@ -455,7 +472,9 @@ impl CloudProvider for DropboxProvider {
                 .json(&serde_json::json!({ "path": id }))
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach Dropbox: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach Dropbox: {error}"))
+                })?,
         )
         .await?;
         Ok(())
@@ -507,8 +526,9 @@ impl CloudProvider for DropboxProvider {
                 .map_err(|error| FileSystemError::Io(format!("Upload failed: {error}")))?,
         )
         .await?;
-        let session: UploadSessionStart = serde_json::from_str(&start_text)
-            .map_err(|error| FileSystemError::Internal(format!("Unreadable upload session: {error}")))?;
+        let session: UploadSessionStart = serde_json::from_str(&start_text).map_err(|error| {
+            FileSystemError::Internal(format!("Unreadable upload session: {error}"))
+        })?;
 
         let mut file = std::fs::File::open(source).map_err(|error| {
             FileSystemError::Io(format!("Could not read the staged upload file: {error}"))
@@ -573,10 +593,13 @@ impl CloudProvider for DropboxProvider {
             if !status.is_success() {
                 return Err(map_dropbox_error(status, &text));
             }
-            let entry: DropboxEntry = serde_json::from_str(&text)
-                .map_err(|error| FileSystemError::Internal(format!("Unreadable upload result: {error}")))?;
+            let entry: DropboxEntry = serde_json::from_str(&text).map_err(|error| {
+                FileSystemError::Internal(format!("Unreadable upload result: {error}"))
+            })?;
             return entry.to_meta(dest_parent_id).ok_or_else(|| {
-                FileSystemError::Internal("Dropbox returned no metadata for the uploaded file".into())
+                FileSystemError::Internal(
+                    "Dropbox returned no metadata for the uploaded file".into(),
+                )
             });
         }
     }

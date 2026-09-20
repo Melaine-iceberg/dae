@@ -171,7 +171,9 @@ mod macos {
     pub fn status(app: &tauri::AppHandle) -> Result<DefaultFileManagerStatus, FileSystemError> {
         let expected = bundle_id(app);
         let content_type = CFString::new(FOLDER_UTI);
-        let handler = unsafe { LSCopyDefaultRoleHandlerForContentType(content_type.as_concrete_TypeRef(), ROLES_ALL) };
+        let handler = unsafe {
+            LSCopyDefaultRoleHandlerForContentType(content_type.as_concrete_TypeRef(), ROLES_ALL)
+        };
         let current = if handler.is_null() {
             None
         } else {
@@ -223,7 +225,7 @@ mod macos {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use super::{current_exe, DefaultFileManagerStatus, FileSystemError};
+    use super::{DefaultFileManagerStatus, FileSystemError, current_exe};
     use std::fs;
     use std::path::PathBuf;
     use std::process::Command;
@@ -296,9 +298,13 @@ mod linux {
         let status = Command::new("xdg-mime")
             .args(["default", DESKTOP_ID, MIME])
             .status()
-            .map_err(|error| FileSystemError::Internal(format!("default_manager.set_failed: {error}")))?;
+            .map_err(|error| {
+                FileSystemError::Internal(format!("default_manager.set_failed: {error}"))
+            })?;
         if !status.success() {
-            return Err(FileSystemError::Internal("default_manager.set_failed".to_string()));
+            return Err(FileSystemError::Internal(
+                "default_manager.set_failed".to_string(),
+            ));
         }
         // Best-effort cache refresh; ignore failures.
         let _ = Command::new("update-desktop-database").arg(&dir).status();
@@ -353,14 +359,14 @@ mod linux {
 
 #[cfg(windows)]
 mod windows_impl {
-    use super::{current_exe, DefaultFileManagerStatus, FileSystemError};
-    use windows::core::PCWSTR;
+    use super::{DefaultFileManagerStatus, FileSystemError, current_exe};
     use windows::Win32::System::Registry::{
+        HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_NONE, REG_OPTION_NON_VOLATILE, REG_SZ,
         RegCloseKey, RegCreateKeyExW, RegDeleteTreeW, RegDeleteValueW, RegOpenKeyExW,
-        RegQueryValueExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_NONE,
-        REG_OPTION_NON_VOLATILE, REG_SZ,
+        RegQueryValueExW, RegSetValueExW,
     };
-    use windows::Win32::UI::Shell::{SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST};
+    use windows::Win32::UI::Shell::{SHCNE_ASSOCCHANGED, SHCNF_IDLIST, SHChangeNotify};
+    use windows::core::PCWSTR;
 
     const PROGID: &str = "dae.folder";
     const CLASSES_DIR_PROGID: &str = r"Software\Classes\Directory";
@@ -459,8 +465,15 @@ mod windows_impl {
         let mut handle = HKEY::default();
         // SAFETY: `path` is null-terminated and outlives the call; `handle` is
         // a valid out-pointer.
-        let opened =
-            unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()), Some(0), KEY_READ, &mut handle) };
+        let opened = unsafe {
+            RegOpenKeyExW(
+                HKEY_CURRENT_USER,
+                PCWSTR(path.as_ptr()),
+                Some(0),
+                KEY_READ,
+                &mut handle,
+            )
+        };
         if opened.is_err() {
             return None;
         }
@@ -475,7 +488,14 @@ mod windows_impl {
         // SAFETY: `name_w` outlives the call; `kind`/`size` are valid
         // out-pointers; `lpdata` is null on the size probe.
         let probe = unsafe {
-            RegQueryValueExW(handle, value_name, None, Some(&mut kind), None, Some(&mut size))
+            RegQueryValueExW(
+                handle,
+                value_name,
+                None,
+                Some(&mut kind),
+                None,
+                Some(&mut size),
+            )
         };
         if probe.is_err() || size == 0 {
             close_key(handle);
@@ -502,7 +522,9 @@ mod windows_impl {
         buffer.truncate(size as usize);
         // REG_SZ is UTF-16LE; strip one trailing null terminator if present.
         let mut as_u16: Vec<u16> = buffer
-            .as_chunks::<2>().0.iter()
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
             .collect();
         if as_u16.last() == Some(&0) {
@@ -516,8 +538,15 @@ mod windows_impl {
         let mut handle = HKEY::default();
         // SAFETY: `path` is null-terminated and outlives the call; `handle` is
         // a valid out-pointer.
-        let opened =
-            unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()), Some(0), KEY_READ, &mut handle) };
+        let opened = unsafe {
+            RegOpenKeyExW(
+                HKEY_CURRENT_USER,
+                PCWSTR(path.as_ptr()),
+                Some(0),
+                KEY_READ,
+                &mut handle,
+            )
+        };
         if opened.is_err() {
             return false;
         }
@@ -530,7 +559,8 @@ mod windows_impl {
         let mut size: u32 = 0;
         // SAFETY: `name_w` outlives the call; `size` is a valid out-pointer;
         // only the size is probed (type/data null).
-        let probe = unsafe { RegQueryValueExW(handle, value_name, None, None, None, Some(&mut size)) };
+        let probe =
+            unsafe { RegQueryValueExW(handle, value_name, None, None, None, Some(&mut size)) };
         close_key(handle);
         probe.is_ok()
     }
@@ -548,8 +578,15 @@ mod windows_impl {
         let mut handle = HKEY::default();
         // SAFETY: `path` is null-terminated and outlives the call; `handle` is
         // a valid out-pointer.
-        let opened =
-            unsafe { RegOpenKeyExW(HKEY_CURRENT_USER, PCWSTR(path.as_ptr()), Some(0), KEY_WRITE, &mut handle) };
+        let opened = unsafe {
+            RegOpenKeyExW(
+                HKEY_CURRENT_USER,
+                PCWSTR(path.as_ptr()),
+                Some(0),
+                KEY_WRITE,
+                &mut handle,
+            )
+        };
         if opened.is_err() {
             return;
         }

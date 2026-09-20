@@ -216,8 +216,7 @@ mod tests {
         assert_eq!(rest, "cloud.example/dav");
 
         let (scheme, rest) =
-            split_scheme("cloud://google_drive:user@example.com/folder-id")
-                .expect("cloud scheme");
+            split_scheme("cloud://google_drive:user@example.com/folder-id").expect("cloud scheme");
         assert_eq!(scheme, Scheme::Cloud);
         assert_eq!(rest, "google_drive:user@example.com/folder-id");
 
@@ -242,9 +241,7 @@ mod tests {
 
     #[test]
     fn rejects_unknown_and_unregistered_schemes() {
-        let unknown = resolve("s3://bucket/data")
-            .err()
-            .expect("unknown scheme");
+        let unknown = resolve("s3://bucket/data").err().expect("unknown scheme");
         assert!(matches!(unknown, FileSystemError::InvalidInput(_)));
 
         // SMB and SFTP resolve to connect attempts these days; ftp is a scheme
@@ -259,7 +256,8 @@ mod tests {
     fn serves_local_paths_through_the_backend_trait() {
         use std::fs;
 
-        let directory = std::env::temp_dir().join(format!("dae-vfs-trait-test-{}", std::process::id()));
+        let directory =
+            std::env::temp_dir().join(format!("dae-vfs-trait-test-{}", std::process::id()));
         fs::create_dir_all(&directory).expect("create test directory");
 
         let path = directory.to_string_lossy().into_owned();

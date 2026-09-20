@@ -2,8 +2,8 @@
 //! strings; the drive root is addressed as `root`.
 
 use super::provider::{
-    CloudMeta, CloudProvider, TokenSet, map_status, map_token_error, parse_timestamp,
-    text_checked, url_encode,
+    CloudMeta, CloudProvider, TokenSet, map_status, map_token_error, parse_timestamp, text_checked,
+    url_encode,
 };
 use crate::file_system::error::FileSystemError;
 use crate::file_system::types::EntryKind;
@@ -31,9 +31,9 @@ fn upload_client() -> Result<reqwest::Client, FileSystemError> {
             .build()
             .map_err(|error| error.to_string())
     });
-    built
-        .clone()
-        .map_err(|error| FileSystemError::Internal(format!("Could not build the HTTP client: {error}")))
+    built.clone().map_err(|error| {
+        FileSystemError::Internal(format!("Could not build the HTTP client: {error}"))
+    })
 }
 
 const UPLOAD_CHUNK_BYTES: usize = 8 * 1024 * 1024;
@@ -104,20 +104,26 @@ struct AboutUser {
     display_name: String,
 }
 
-async fn token_request(client: &reqwest::Client, form: Vec<(&str, &str)>) -> Result<TokenSet, FileSystemError> {
+async fn token_request(
+    client: &reqwest::Client,
+    form: Vec<(&str, &str)>,
+) -> Result<TokenSet, FileSystemError> {
     let response = client
         .post(TOKEN_URL)
         .form(&form)
         .send()
         .await
-        .map_err(|error| FileSystemError::Io(format!("Could not reach the token endpoint: {error}")))?;
+        .map_err(|error| {
+            FileSystemError::Io(format!("Could not reach the token endpoint: {error}"))
+        })?;
     let status = response.status();
     let text = response.text().await.unwrap_or_default();
     if !status.is_success() {
         return Err(map_token_error(status, &text));
     }
-    let parsed: TokenResponse = serde_json::from_str(&text)
-        .map_err(|error| FileSystemError::Internal(format!("Unreadable token response: {error}")))?;
+    let parsed: TokenResponse = serde_json::from_str(&text).map_err(|error| {
+        FileSystemError::Internal(format!("Unreadable token response: {error}"))
+    })?;
     Ok(TokenSet {
         access_token: parsed.access_token,
         expires_in_secs: parsed.expires_in,
@@ -201,11 +207,14 @@ impl CloudProvider for DriveProvider {
                 .bearer_auth(access_token)
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach Google Drive: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach Google Drive: {error}"))
+                })?,
         )
         .await?;
-        let about: About = serde_json::from_str(&text)
-            .map_err(|error| FileSystemError::Internal(format!("Unreadable account info: {error}")))?;
+        let about: About = serde_json::from_str(&text).map_err(|error| {
+            FileSystemError::Internal(format!("Unreadable account info: {error}"))
+        })?;
         let display = if about.user.display_name.is_empty() {
             about.user.email_address.clone()
         } else {
@@ -220,7 +229,11 @@ impl CloudProvider for DriveProvider {
         token: &str,
         folder_id: &str,
     ) -> Result<Vec<CloudMeta>, FileSystemError> {
-        let parent = if folder_id.is_empty() { "root" } else { folder_id };
+        let parent = if folder_id.is_empty() {
+            "root"
+        } else {
+            folder_id
+        };
         let query_filter = format!("'{parent}' in parents and trashed = false");
 
         let mut entries = Vec::new();
@@ -243,11 +256,14 @@ impl CloudProvider for DriveProvider {
                     .bearer_auth(token)
                     .send()
                     .await
-                    .map_err(|error| FileSystemError::Io(format!("Could not reach Google Drive: {error}")))?,
+                    .map_err(|error| {
+                        FileSystemError::Io(format!("Could not reach Google Drive: {error}"))
+                    })?,
             )
             .await?;
-            let page: FileList = serde_json::from_str(&text)
-                .map_err(|error| FileSystemError::Internal(format!("Unreadable listing: {error}")))?;
+            let page: FileList = serde_json::from_str(&text).map_err(|error| {
+                FileSystemError::Internal(format!("Unreadable listing: {error}"))
+            })?;
 
             entries.extend(page.files.into_iter().map(DriveFile::to_meta));
             match page.next_page_token {
@@ -273,7 +289,9 @@ impl CloudProvider for DriveProvider {
                 .bearer_auth(token)
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach Google Drive: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach Google Drive: {error}"))
+                })?,
         )
         .await?;
         let file: DriveFile = serde_json::from_str(&text)
@@ -288,7 +306,11 @@ impl CloudProvider for DriveProvider {
         parent_id: &str,
         name: &str,
     ) -> Result<CloudMeta, FileSystemError> {
-        let parent = if parent_id.is_empty() { "root" } else { parent_id };
+        let parent = if parent_id.is_empty() {
+            "root"
+        } else {
+            parent_id
+        };
         let text = text_checked(
             client
                 .post(format!("{API}/files"))
@@ -301,7 +323,9 @@ impl CloudProvider for DriveProvider {
                 }))
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach Google Drive: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach Google Drive: {error}"))
+                })?,
         )
         .await?;
         let file: DriveFile = serde_json::from_str(&text)
@@ -324,7 +348,9 @@ impl CloudProvider for DriveProvider {
                 .json(&serde_json::json!({ "name": new_name }))
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach Google Drive: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach Google Drive: {error}"))
+                })?,
         )
         .await?;
         Ok(())
@@ -339,7 +365,11 @@ impl CloudProvider for DriveProvider {
         new_name: &str,
     ) -> Result<(), FileSystemError> {
         let current = self.metadata(client, token, id).await?;
-        let dest_parent = if dest_parent_id.is_empty() { "root".to_owned() } else { dest_parent_id.to_owned() };
+        let dest_parent = if dest_parent_id.is_empty() {
+            "root".to_owned()
+        } else {
+            dest_parent_id.to_owned()
+        };
         let mut query = vec![
             ("fields", "id".to_owned()),
             ("addParents", dest_parent),
@@ -357,7 +387,9 @@ impl CloudProvider for DriveProvider {
                 .json(&serde_json::json!({ "name": new_name }))
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach Google Drive: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach Google Drive: {error}"))
+                })?,
         )
         .await?;
         Ok(())
@@ -376,7 +408,9 @@ impl CloudProvider for DriveProvider {
                 .bearer_auth(token)
                 .send()
                 .await
-                .map_err(|error| FileSystemError::Io(format!("Could not reach Google Drive: {error}")))?,
+                .map_err(|error| {
+                    FileSystemError::Io(format!("Could not reach Google Drive: {error}"))
+                })?,
         )
         .await?;
         Ok(())
@@ -394,7 +428,9 @@ impl CloudProvider for DriveProvider {
             .bearer_auth(token)
             .send()
             .await
-            .map_err(|error| FileSystemError::Io(format!("Could not reach Google Drive: {error}")))?;
+            .map_err(|error| {
+                FileSystemError::Io(format!("Could not reach Google Drive: {error}"))
+            })?;
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
@@ -414,7 +450,11 @@ impl CloudProvider for DriveProvider {
     ) -> Result<CloudMeta, FileSystemError> {
         // Drive tolerates duplicate names, so an existing same-name entry
         // must be removed explicitly to keep "create or truncate" semantics.
-        let parent = if dest_parent_id.is_empty() { "root" } else { dest_parent_id };
+        let parent = if dest_parent_id.is_empty() {
+            "root"
+        } else {
+            dest_parent_id
+        };
         for sibling in self.list(client, token, dest_parent_id).await? {
             if sibling.name == name {
                 self.delete(client, token, &sibling.id).await?;
@@ -429,7 +469,9 @@ impl CloudProvider for DriveProvider {
             .json(&serde_json::json!({ "name": name, "parents": [parent] }))
             .send()
             .await
-            .map_err(|error| FileSystemError::Io(format!("Could not reach Google Drive: {error}")))?;
+            .map_err(|error| {
+                FileSystemError::Io(format!("Could not reach Google Drive: {error}"))
+            })?;
         if !start.status().is_success() {
             let status = start.status();
             let text = start.text().await.unwrap_or_default();
@@ -439,7 +481,9 @@ impl CloudProvider for DriveProvider {
             .headers()
             .get(reqwest::header::LOCATION)
             .and_then(|value| value.to_str().ok())
-            .ok_or_else(|| FileSystemError::Internal("Google Drive returned no upload session URL".into()))?
+            .ok_or_else(|| {
+                FileSystemError::Internal("Google Drive returned no upload session URL".into())
+            })?
             .to_owned();
 
         let upload_client = upload_client()?;
@@ -496,8 +540,9 @@ impl CloudProvider for DriveProvider {
             }
         }
 
-        let file: DriveFile = serde_json::from_str(&final_text)
-            .map_err(|error| FileSystemError::Internal(format!("Unreadable upload result: {error}")))?;
+        let file: DriveFile = serde_json::from_str(&final_text).map_err(|error| {
+            FileSystemError::Internal(format!("Unreadable upload result: {error}"))
+        })?;
         Ok(file.to_meta())
     }
 }

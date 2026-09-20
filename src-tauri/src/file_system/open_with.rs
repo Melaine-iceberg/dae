@@ -192,9 +192,7 @@ mod macos {
     pub fn open_app(path: &Path, app_id: &str, set_default: bool) -> Result<(), FileSystemError> {
         let bundle = PathBuf::from(app_id);
         if !bundle.is_dir() {
-            return Err(FileSystemError::NotFound(
-                "fs.open_with_app_missing".into(),
-            ));
+            return Err(FileSystemError::NotFound("fs.open_with_app_missing".into()));
         }
 
         Command::new("open")
@@ -316,7 +314,11 @@ mod linux {
         let data_home = std::env::var("XDG_DATA_HOME")
             .ok()
             .filter(|value| !value.is_empty())
-            .or_else(|| std::env::var("HOME").ok().map(|home| format!("{home}/.local/share")));
+            .or_else(|| {
+                std::env::var("HOME")
+                    .ok()
+                    .map(|home| format!("{home}/.local/share"))
+            });
         if let Some(data_home) = data_home {
             dirs.push(PathBuf::from(data_home).join("applications"));
         }
@@ -609,11 +611,8 @@ mod tests {
 
     #[test]
     fn keeps_quoted_arguments() {
-        let (program, args) = expand_exec(
-            "\"/opt/My App/run\" --profile %u",
-            "/tmp/a.txt",
-            "My App",
-        );
+        let (program, args) =
+            expand_exec("\"/opt/My App/run\" --profile %u", "/tmp/a.txt", "My App");
         assert_eq!(program, "/opt/My App/run");
         assert_eq!(args, ["--profile", "/tmp/a.txt"]);
     }

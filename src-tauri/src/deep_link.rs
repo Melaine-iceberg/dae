@@ -152,7 +152,10 @@ mod tests {
         let dir = std::env::temp_dir();
         let url = format!("dae://open?path={}", encode(dir.to_str().unwrap()));
 
-        assert_eq!(parse_open_directory(&url), Some(dir.to_string_lossy().into_owned()));
+        assert_eq!(
+            parse_open_directory(&url),
+            Some(dir.to_string_lossy().into_owned())
+        );
     }
 
     #[test]
@@ -160,7 +163,10 @@ mod tests {
         let dir = std::env::temp_dir();
         let url = format!("dae://open/{}", encode(dir.to_str().unwrap()));
 
-        assert_eq!(parse_open_directory(&url), Some(dir.to_string_lossy().into_owned()));
+        assert_eq!(
+            parse_open_directory(&url),
+            Some(dir.to_string_lossy().into_owned())
+        );
     }
 
     #[test]
@@ -172,7 +178,10 @@ mod tests {
 
         let url = format!("dae://open?path={}", encode(file.to_str().unwrap()));
 
-        assert_eq!(parse_open_directory(&url), Some(root.to_string_lossy().into_owned()));
+        assert_eq!(
+            parse_open_directory(&url),
+            Some(root.to_string_lossy().into_owned())
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

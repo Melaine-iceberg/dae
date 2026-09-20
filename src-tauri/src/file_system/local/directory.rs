@@ -13,11 +13,16 @@ use tauri_specta::Event;
 #[cfg(windows)]
 use windows::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY};
 
+/// Installs an OS watcher on `path`.
+///
+/// `path` must already be canonical (see [`canonical_path`]): the watcher
+/// names the directory it watches in every event it emits, and the caller
+/// reports the listing under that same spelling, so the frontend can match an
+/// event against the directory on screen.
 pub fn create_directory_watcher(
-    requested_path: PathBuf,
+    path: PathBuf,
     app: tauri::AppHandle,
 ) -> Result<RecommendedWatcher, FileSystemError> {
-    let path = requested_path.canonicalize()?;
     let event_path = path_to_string(&path);
     let mut watcher =
         notify::recommended_watcher(move |result: Result<notify::Event, notify::Error>| {
@@ -132,24 +137,26 @@ fn collect_entries(raw_entries: Vec<fs::DirEntry>) -> Vec<DirectoryEntry> {
             .filter_map(directory_entry)
             .collect()
     } else {
-        raw_entries.into_iter().filter_map(directory_entry).collect()
+        raw_entries
+            .into_iter()
+            .filter_map(directory_entry)
+            .collect()
     };
 
     entries.sort_by_cached_key(entry_sort_key);
     entries
 }
 
-/// Reads the first `first_batch` entries of a directory. The returned cursor
-/// holds the unread remainder and is `None` when the directory was exhausted,
-/// which means the view is already complete.
-pub fn open_directory_listing(
-    requested_path: PathBuf,
+/// Reads the first `first_batch` entries of an already-canonical directory.
+///
+/// The read path canonicalizes once and shares the result with the directory
+/// watcher it arms before calling this (see
+/// [`super::super::listing::open_streamed_listing`]), so the watcher and the
+/// listing cannot disagree about which directory they describe.
+pub fn open_canonical_listing(
+    path: PathBuf,
     first_batch: usize,
 ) -> Result<DirectoryListing, FileSystemError> {
-    // `canonical_path` rather than `canonicalize`: the root below is the base
-    // `read_dir` builds every entry's path on, and a verbatim base makes each of
-    // those rebuild it (see `types::canonical_path`).
-    let path = canonical_path(&requested_path)?;
     let metadata = fs::metadata(&path)?;
 
     if !metadata.is_dir() {
@@ -174,7 +181,8 @@ pub fn open_directory_listing(
 
 /// Reads a directory as one complete, sorted snapshot.
 pub fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, FileSystemError> {
-    let DirectoryListing { mut view, cursor } = open_directory_listing(requested_path, usize::MAX)?;
+    let DirectoryListing { mut view, cursor } =
+        open_canonical_listing(canonical_path(&requested_path)?, usize::MAX)?;
 
     if let Some(mut cursor) = cursor {
         // Unreachable with a `usize::MAX` batch size, but draining keeps the
@@ -211,7 +219,6 @@ fn directory_entry(entry: fs::DirEntry) -> Option<DirectoryEntry> {
         read_only,
     })
 }
-
 
 pub fn modified_at_millis(metadata: &fs::Metadata) -> Option<u64> {
     metadata

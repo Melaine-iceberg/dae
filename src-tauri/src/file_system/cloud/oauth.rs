@@ -12,8 +12,8 @@ use crate::file_system::error::FileSystemError;
 use base64::Engine;
 use rand::{RngExt, distr::Alphanumeric};
 use serde::Deserialize;
-use specta::Type;
 use sha2::{Digest, Sha256};
+use specta::Type;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -133,10 +133,11 @@ async fn wait_for_loopback_callback(expected_state: &str) -> Result<String, File
     let mut buffer = Vec::new();
     let mut chunk = [0_u8; 1024];
     loop {
-        let read = socket
-            .read(&mut chunk)
-            .await
-            .map_err(|error| FileSystemError::Io(format!("Could not read the authorization callback: {error}")))?;
+        let read = socket.read(&mut chunk).await.map_err(|error| {
+            FileSystemError::Io(format!(
+                "Could not read the authorization callback: {error}"
+            ))
+        })?;
         if read == 0 || buffer.len() > 16 * 1024 {
             break;
         }
@@ -158,12 +159,20 @@ async fn wait_for_loopback_callback(expected_state: &str) -> Result<String, File
         ));
     }
 
-    let query = target.split_once('?').map(|(_, query)| query).unwrap_or_default();
+    let query = target
+        .split_once('?')
+        .map(|(_, query)| query)
+        .unwrap_or_default();
     let params = parse_query(query);
 
     if let Some(error) = params.get("error") {
         let description = params.get("error_description").cloned().unwrap_or_default();
-        let _ = respond(&mut socket, false, &format!("Authorization failed: {error}")).await;
+        let _ = respond(
+            &mut socket,
+            false,
+            &format!("Authorization failed: {error}"),
+        )
+        .await;
         return Err(FileSystemError::PermissionDenied(format!(
             "The provider rejected the authorization: {error} {description}"
         )));
@@ -198,12 +207,18 @@ async fn bind_loopback() -> Result<TcpListener, FileSystemError> {
     }
     Err(FileSystemError::Io(format!(
         "Could not listen on {address} for the authorization callback (is another instance running?): {}",
-        last_error.map(|error| error.to_string()).unwrap_or_default()
+        last_error
+            .map(|error| error.to_string())
+            .unwrap_or_default()
     )))
 }
 
 /// Minimal HTML reply so the browser shows a closing hint instead of an error.
-async fn respond(socket: &mut tokio::net::TcpStream, ok: bool, detail: &str) -> std::io::Result<()> {
+async fn respond(
+    socket: &mut tokio::net::TcpStream,
+    ok: bool,
+    detail: &str,
+) -> std::io::Result<()> {
     let body = if ok {
         "<!doctype html><meta charset=\"utf-8\"><title>dae</title>\
          <body style=\"font-family:system-ui,sans-serif;text-align:center;padding-top:12vh\">\
@@ -301,7 +316,9 @@ fn open_in_browser(url: &str) -> Result<(), FileSystemError> {
     #[cfg(all(unix, not(target_os = "macos")))]
     let result = std::process::Command::new("xdg-open").arg(url).spawn();
     result.map(|_| ()).map_err(|error| {
-        FileSystemError::Io(format!("Could not open the browser for authorization: {error}"))
+        FileSystemError::Io(format!(
+            "Could not open the browser for authorization: {error}"
+        ))
     })
 }
 

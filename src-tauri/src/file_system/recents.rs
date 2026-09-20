@@ -35,7 +35,10 @@ pub struct RecentItem {
 #[tauri::command]
 #[specta::specta]
 pub fn list_recents(app: tauri::AppHandle) -> Result<Vec<RecentItem>, FileSystemError> {
-    if let Some(recents) = app.state::<super::prefetch::StartupPrefetch>().take_recents() {
+    if let Some(recents) = app
+        .state::<super::prefetch::StartupPrefetch>()
+        .take_recents()
+    {
         return Ok(recents);
     }
     let path = recents_path(&app)?;

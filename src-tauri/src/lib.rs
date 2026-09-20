@@ -46,16 +46,10 @@ pub fn run() {
         // Thumbnails stream as raw image bytes through the webview's HTTP
         // stack instead of base64 `invoke` payloads, which lets the browser
         // fetch them in parallel and cache them per URL.
-        .register_uri_scheme_protocol(
-            "thumbnail",
-            file_system::preview::handle_thumbnail_protocol,
-        )
+        .register_uri_scheme_protocol("thumbnail", file_system::preview::handle_thumbnail_protocol)
         // OS file icons (shortcuts, executables, registered file types) ride
         // the same raw-bytes pipeline as thumbnails.
-        .register_uri_scheme_protocol(
-            "fileicon",
-            file_system::preview::handle_fileicon_protocol,
-        )
+        .register_uri_scheme_protocol("fileicon", file_system::preview::handle_fileicon_protocol)
         .invoke_handler(move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
             let command = invoke.message.command();
             if command.starts_with("terminal_") {
@@ -139,7 +133,9 @@ pub fn run() {
                 .build(),
         );
 
-    let app = app.build(tauri::generate_context!()).expect("error while building tauri application");
+    let app = app
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
     app.run(|app_handle, event| {
         // Kill live shells so no orphaned processes survive the app.
         if let tauri::RunEvent::Exit = event
@@ -161,7 +157,6 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::commands::get_home_directory,
             file_system::commands::read_directory,
             file_system::listing::cancel_directory_listing,
-            file_system::watch::watch_directory,
             file_system::directory_size::start_directory_size_calculation,
             file_system::directory_size::cancel_directory_size_calculation,
             file_system::hashing::start_file_hash_calculation,

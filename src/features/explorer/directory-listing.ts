@@ -16,6 +16,7 @@ import { commands, events, type DirectoryEntry, type DirectoryView } from "@/bin
 
 type DirectoryListingApi = Pick<typeof commands, "readDirectory" | "cancelDirectoryListing">;
 
+/** The listing events one open directory listing reports. */
 export interface DirectoryListingListener {
   /** Called once, when the first batch lands. */
   onHead: (view: DirectoryView) => void;
@@ -40,11 +41,23 @@ export interface DirectoryListing {
   dispose: () => void;
 }
 
-/** Opens one directory listing, streaming its remaining batches into `listener`. */
+/**
+ * Opens one directory listing, streaming its remaining batches into
+ * `listener`.
+ *
+ * `watch` asks the backend to arm its change watcher for the directory *before*
+ * it reads it. That is what the explorer's own listings want: arming the
+ * watcher afterwards leaves a window in which a change reaches neither the
+ * listing nor an event, and the only way to close it would be to re-read the
+ * directory — which also throws away the batches still streaming in. Reads
+ * that do not display a directory (sidebar tree, Miller columns) pass `false`,
+ * so they cannot take the watcher away from the pane that is displaying it.
+ */
 export function openDirectoryListing(
   path: string,
   listener: DirectoryListingListener,
   api: DirectoryListingApi = commands,
+  watch = false,
 ): DirectoryListing {
   const streamId = crypto.randomUUID();
   let stopped = false;
@@ -107,7 +120,7 @@ export function openDirectoryListing(
   };
 
   const headRequest = api
-    .readDirectory(path, streamId)
+    .readDirectory(path, streamId, watch)
     .then((view) => {
       if (stopped) return view;
 

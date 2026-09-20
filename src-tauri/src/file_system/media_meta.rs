@@ -30,9 +30,7 @@ const AUDIO_EXTENSIONS: &[&str] = &[
 ];
 // `.ts` is intentionally absent: TypeScript sources outweigh MPEG-TS streams
 // in a file manager, and the extension drives the code preview instead.
-const VIDEO_EXTENSIONS: &[&str] = &[
-    "mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv",
-];
+const VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv"];
 
 pub fn is_audio_extension(extension: &str) -> bool {
     AUDIO_EXTENSIONS.contains(&extension)
@@ -116,11 +114,7 @@ fn io_error(error: std::io::Error) -> FileSystemError {
     FileSystemError::Io(error.to_string())
 }
 
-fn read_exact_at(
-    file: &mut File,
-    offset: u64,
-    buffer: &mut [u8],
-) -> Result<(), FileSystemError> {
+fn read_exact_at(file: &mut File, offset: u64, buffer: &mut [u8]) -> Result<(), FileSystemError> {
     file.seek(SeekFrom::Start(offset)).map_err(io_error)?;
     file.read_exact(buffer).map_err(io_error)
 }
@@ -139,7 +133,9 @@ fn u32le(bytes: &[u8]) -> u32 {
 
 /// ID3v2-style synchsafe integer (7 payload bits per byte).
 fn syncsafe(bytes: &[u8]) -> usize {
-    bytes.iter().fold(0usize, |value, byte| (value << 7) | usize::from(byte & 0x7F))
+    bytes.iter().fold(0usize, |value, byte| {
+        (value << 7) | usize::from(byte & 0x7F)
+    })
 }
 
 /// Pushes `(label, value)` unless the value is empty or the label repeats.
@@ -198,8 +194,8 @@ fn parse_mp3(file: &mut File, file_size: u64) -> Result<MediaPreview, FileSystem
     {
         let xing = find_xing_header(&head, frame_offset, version, mono);
         if let Some((frames, xing_bitrate)) = xing {
-            let duration = u64::from(frames) * u64::from(samples_per_frame) * 1000
-                / u64::from(sample_rate);
+            let duration =
+                u64::from(frames) * u64::from(samples_per_frame) * 1000 / u64::from(sample_rate);
             preview.duration_ms = Some(duration);
             preview.bitrate_bps = xing_bitrate.or_else(|| {
                 duration
@@ -226,8 +222,9 @@ fn parse_id3v2_2(frames: &[u8], tags: &mut Vec<(String, String)>) {
         if id[0] == 0 {
             break;
         }
-        let size =
-            (usize::from(frames[offset + 3]) << 16) | (usize::from(frames[offset + 4]) << 8) | usize::from(frames[offset + 5]);
+        let size = (usize::from(frames[offset + 3]) << 16)
+            | (usize::from(frames[offset + 4]) << 8)
+            | usize::from(frames[offset + 5]);
         offset += 6;
         let data_end = offset + size;
         if data_end > frames.len() {
@@ -291,12 +288,12 @@ fn decode_id3_text(data: &[u8]) -> String {
 
 fn decode_utf16_payload(payload: &[u8], respect_bom: bool) -> String {
     let mut units = payload
-        .as_chunks::<2>().0.iter()
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
         .collect::<Vec<_>>();
-    if respect_bom
-        && let Some(first) = units.first().copied()
-    {
+    if respect_bom && let Some(first) = units.first().copied() {
         if first == 0xFEFF {
             units.remove(0);
         } else if first == 0xFFFE {
@@ -331,30 +328,35 @@ fn find_mpeg_frame(head: &[u8], start: usize) -> Option<(usize, u8, u16, u16, u1
                 && bitrate_index < 15
                 && sample_index < 3
             {
-                let (version, samples_per_frame, bitrate_table, sample_rates) =
-                    match version_bits {
-                        0x03 => (
-                            1u8,
-                            1152u16,
-                            [0u16, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320]
-                                .as_slice(),
-                            [44100u16, 48000, 32000].as_slice(),
-                        ),
-                        0x02 => (
-                            2u8,
-                            576u16,
-                            [0u16, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160]
-                                .as_slice(),
-                            [22050u16, 24000, 16000].as_slice(),
-                        ),
-                        _ => (
-                            3u8,
-                            576u16,
-                            [0u16, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160]
-                                .as_slice(),
-                            [11025u16, 12000, 8000].as_slice(),
-                        ),
-                    };
+                let (version, samples_per_frame, bitrate_table, sample_rates) = match version_bits {
+                    0x03 => (
+                        1u8,
+                        1152u16,
+                        [
+                            0u16, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
+                        ]
+                        .as_slice(),
+                        [44100u16, 48000, 32000].as_slice(),
+                    ),
+                    0x02 => (
+                        2u8,
+                        576u16,
+                        [
+                            0u16, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160,
+                        ]
+                        .as_slice(),
+                        [22050u16, 24000, 16000].as_slice(),
+                    ),
+                    _ => (
+                        3u8,
+                        576u16,
+                        [
+                            0u16, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160,
+                        ]
+                        .as_slice(),
+                        [11025u16, 12000, 8000].as_slice(),
+                    ),
+                };
                 return Some((
                     offset,
                     version,
@@ -372,7 +374,12 @@ fn find_mpeg_frame(head: &[u8], start: usize) -> Option<(usize, u8, u16, u16, u1
 
 /// Looks for a Xing/Info tag past the frame's side info; returns the frame
 /// count and, when present, the stored average bitrate in kbps.
-fn find_xing_header(head: &[u8], frame_offset: usize, version: u8, mono: bool) -> Option<(u32, Option<u64>)> {
+fn find_xing_header(
+    head: &[u8],
+    frame_offset: usize,
+    version: u8,
+    mono: bool,
+) -> Option<(u32, Option<u64>)> {
     let side_info_len = match (version == 1, mono) {
         (true, false) => 32,
         (true, true) => 17,
@@ -423,8 +430,9 @@ fn parse_flac(file: &mut File, file_size: u64) -> Result<MediaPreview, FileSyste
         let header = head[offset];
         let is_last = header & 0x80 != 0;
         let block_type = header & 0x7F;
-        let block_size =
-            (usize::from(head[offset + 1]) << 16) | (usize::from(head[offset + 2]) << 8) | usize::from(head[offset + 3]);
+        let block_size = (usize::from(head[offset + 1]) << 16)
+            | (usize::from(head[offset + 2]) << 8)
+            | usize::from(head[offset + 3]);
         offset += 4;
         let block_end = offset + block_size;
         if block_end > head_len {
@@ -452,8 +460,7 @@ fn parse_flac(file: &mut File, file_size: u64) -> Result<MediaPreview, FileSyste
     }
 
     if preview.duration_ms.unwrap_or(0) > 0 {
-        preview.bitrate_bps =
-            Some(file_size * 8 * 1000 / preview.duration_ms.unwrap_or(1));
+        preview.bitrate_bps = Some(file_size * 8 * 1000 / preview.duration_ms.unwrap_or(1));
     }
     Ok(preview)
 }
@@ -466,7 +473,9 @@ fn parse_vorbis_comment(block: &[u8], tags: &mut Vec<(String, String)>) {
     if cursor + 4 > block.len() {
         return;
     }
-    let count = usize::try_from(u32le(&block[cursor..cursor + 4])).unwrap_or(0).min(64);
+    let count = usize::try_from(u32le(&block[cursor..cursor + 4]))
+        .unwrap_or(0)
+        .min(64);
     cursor += 4;
     for _ in 0..count {
         if cursor + 4 > block.len() {
@@ -537,12 +546,20 @@ fn parse_mp4(file: &mut File, file_size: u64) -> Result<MediaPreview, FileSystem
 
     let mut offset = 0u64;
     while offset + 8 <= file_size {
-        let Some((kind, payload_start, box_end)) = read_box_header(file, offset, file_size)?
-        else {
+        let Some((kind, payload_start, box_end)) = read_box_header(file, offset, file_size)? else {
             break;
         };
         if &kind == b"moov" {
-            walk_mp4_moov(file, payload_start, box_end, &mut timescale, &mut duration_units, &mut width, &mut height, &mut preview.tags)?;
+            walk_mp4_moov(
+                file,
+                payload_start,
+                box_end,
+                &mut timescale,
+                &mut duration_units,
+                &mut width,
+                &mut height,
+                &mut preview.tags,
+            )?;
             break;
         }
         if &kind == b"mdat" {
@@ -555,7 +572,15 @@ fn parse_mp4(file: &mut File, file_size: u64) -> Result<MediaPreview, FileSystem
     // after all `mdat` data; scan a bounded tail window for it instead of
     // walking gigabytes of media boxes.
     if timescale.is_none() {
-        parse_mp4_tail(file, file_size, &mut timescale, &mut duration_units, &mut width, &mut height, &mut preview.tags)?;
+        parse_mp4_tail(
+            file,
+            file_size,
+            &mut timescale,
+            &mut duration_units,
+            &mut width,
+            &mut height,
+            &mut preview.tags,
+        )?;
     }
 
     if let (Some(timescale), Some(units)) = (timescale, duration_units)
@@ -595,7 +620,9 @@ fn parse_mp4_tail(
 
     let mut search_from = 0usize;
     while search_from + 8 <= window.len() {
-        let Some(pos) = window[search_from..].windows(4).position(|slice| slice == b"moov")
+        let Some(pos) = window[search_from..]
+            .windows(4)
+            .position(|slice| slice == b"moov")
         else {
             break;
         };
@@ -608,7 +635,16 @@ fn parse_mp4_tail(
                 read_box_header(file, window_start + candidate as u64, file_size)?
                 && &kind == b"moov"
             {
-                walk_mp4_moov(file, payload_start, box_end, timescale, duration_units, width, height, tags)?;
+                walk_mp4_moov(
+                    file,
+                    payload_start,
+                    box_end,
+                    timescale,
+                    duration_units,
+                    width,
+                    height,
+                    tags,
+                )?;
                 if timescale.is_some() {
                     return Ok(());
                 }
@@ -671,7 +707,9 @@ fn walk_mp4_moov(
                 read_exact_at(file, payload_start, &mut payload)?;
                 if !payload.is_empty() && payload[0] == 1 && payload.len() >= 28 {
                     *timescale = Some(u32be(&payload[20..24]));
-                    *duration_units = Some(u64::from_be_bytes(payload[24..32].try_into().unwrap_or([0; 8])));
+                    *duration_units = Some(u64::from_be_bytes(
+                        payload[24..32].try_into().unwrap_or([0; 8]),
+                    ));
                 } else if payload.len() >= 20 {
                     *timescale = Some(u32be(&payload[12..16]));
                     *duration_units = Some(u64::from(u32be(&payload[16..20])));
@@ -805,7 +843,11 @@ fn walk_mp4_ilst(
                         let value_len = (child_end - child_payload - 8).min(1024) as usize;
                         let mut value_bytes = vec![0u8; value_len];
                         read_exact_at(file, child_payload + 8, &mut value_bytes)?;
-                        push_tag(tags, label, String::from_utf8_lossy(&value_bytes).into_owned());
+                        push_tag(
+                            tags,
+                            label,
+                            String::from_utf8_lossy(&value_bytes).into_owned(),
+                        );
                     }
                     break;
                 }
@@ -987,7 +1029,9 @@ fn walk_mkv_container(
 }
 
 fn mkv_uint(payload: &[u8]) -> u64 {
-    payload.iter().fold(0u64, |value, byte| (value << 8) | u64::from(*byte))
+    payload
+        .iter()
+        .fold(0u64, |value, byte| (value << 8) | u64::from(*byte))
 }
 
 fn mkv_float(payload: &[u8]) -> f64 {
@@ -1033,15 +1077,18 @@ fn parse_avi(file: &mut File, file_size: u64) -> Result<MediaPreview, FileSystem
         } else if chunk_id == b"strf" && in_video_stream && payload + 12 <= payload_end {
             // BITMAPINFOHEADER: width @4, signed height @8.
             let stream_width = u32le(&head[payload + 4..payload + 8]);
-            let stream_height = i32::from_le_bytes(
-                head[payload + 8..payload + 12].try_into().unwrap_or([0; 4]),
-            );
+            let stream_height =
+                i32::from_le_bytes(head[payload + 8..payload + 12].try_into().unwrap_or([0; 4]));
             width = Some(stream_width);
             height = Some(stream_height.unsigned_abs());
         }
 
         // LIST chunks are walked into; others are skipped word-aligned.
-        offset = if chunk_id == b"LIST" { payload } else { payload + chunk_size + (chunk_size & 1) };
+        offset = if chunk_id == b"LIST" {
+            payload
+        } else {
+            payload + chunk_size + (chunk_size & 1)
+        };
     }
 
     if let (Some(us_per_frame), Some(frames)) = (microsec_per_frame, total_frames)
@@ -1075,7 +1122,10 @@ mod tests {
         // One-byte size 0x81 -> 1 with the marker stripped.
         assert_eq!(read_vint(&[0x81], false), Some((1, 1)));
         // Element id 0x1A45DFA3 keeps its marker bits.
-        assert_eq!(read_vint(&[0x1A, 0x45, 0xDF, 0xA3], true), Some((0x1A45_DFA3, 4)));
+        assert_eq!(
+            read_vint(&[0x1A, 0x45, 0xDF, 0xA3], true),
+            Some((0x1A45_DFA3, 4))
+        );
     }
 
     #[test]
@@ -1109,8 +1159,8 @@ mod tests {
         let path = std::env::temp_dir().join("dae-media-meta-test.wav");
         std::fs::write(&path, &wav).expect("temp dir is writable");
 
-        let preview = read_media_preview_sync(path.to_str().unwrap())
-            .expect("synthetic WAV parses");
+        let preview =
+            read_media_preview_sync(path.to_str().unwrap()).expect("synthetic WAV parses");
         std::fs::remove_file(&path).ok();
 
         assert_eq!(preview.kind, "audio");

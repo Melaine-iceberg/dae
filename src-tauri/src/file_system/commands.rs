@@ -12,7 +12,7 @@ use super::types::{
     path_to_string,
 };
 use super::undo::{self, Operation, TrashRecord, UndoRedoOutcome, UndoRedoState};
-use super::vfs;
+use super::vfs::{self, SharedBackend};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
@@ -37,6 +37,12 @@ pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemErr
 /// fits in a single batch — answers with a complete view and a `None` stream
 /// id.
 ///
+/// `watch` arms the change watcher for `path` before the directory is read,
+/// so a change landing while the listing runs is either already in it or
+/// reported as an event. The explorer asks for that on the read that
+/// establishes a view; reads that only feed a side pane (sidebar tree, Miller
+/// columns) pass `false`, because the watcher tracks one directory at a time.
+///
 /// `vfs::resolve` can open a network session (a blocking, runtime-owning
 /// operation), so it must run on a blocking thread — never on the async
 /// workers, where a nested runtime panics.
@@ -45,29 +51,51 @@ pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemErr
 pub async fn read_directory(
     path: String,
     stream_id: String,
+    watch: bool,
     app: tauri::AppHandle,
 ) -> Result<DirectoryView, FileSystemError> {
     // A prefetched snapshot (see `prefetch::warm_startup_data`) is consumed
     // on first hit; every later read goes back to the filesystem.
-    if let Some(view) = app
-        .state::<super::prefetch::StartupPrefetch>()
-        .take_directory(&path)
+    //
+    // A watching read never takes the snapshot: it is the one that paints a
+    // pane, and it has to be ordered against its own watcher. The snapshot was
+    // read before the window existed and can be seconds stale by the time it
+    // is displayed, with no watcher armed in between to notice.
+    if !watch
+        && let Some(view) = app
+            .state::<super::prefetch::StartupPrefetch>()
+            .take_directory(&path)
     {
         return Ok(view);
     }
 
     // Remote backends enumerate through their own protocol APIs and have no
-    // iterator to hand over, so they keep answering in one piece.
+    // iterator to hand over, so they keep answering in one piece. Their
+    // watcher polls, and is armed before the read for the same reason the
+    // local one is (see [`listing::open_streamed_listing`]).
     if !vfs::is_local_path(&path) {
-        return tauri::async_runtime::spawn_blocking(move || vfs::resolve(&path)?.read_dir(&path))
-            .await
-            .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+        let watch_app = app.clone();
+        return tauri::async_runtime::spawn_blocking(move || {
+            let backend = vfs::resolve(&path)?;
+
+            if watch {
+                super::watch::arm_polling_watcher(
+                    &watch_app,
+                    &path,
+                    SharedBackend::clone(&backend),
+                );
+            }
+
+            backend.read_dir(&path)
+        })
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?;
     }
 
     let listing_app = app.clone();
     let listing_path = PathBuf::from(path);
     tauri::async_runtime::spawn_blocking(move || {
-        listing::open_streamed_listing(&listing_app, listing_path, stream_id)
+        listing::open_streamed_listing(&listing_app, listing_path, stream_id, watch)
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -118,11 +146,10 @@ pub async fn rename_entries_batch(
         let mut seen_sources = HashSet::new();
         let mut seen_destinations = HashSet::new();
         for request in requests {
-            let destination = undo::renamed_path(&request.path, &request.new_name).ok_or_else(
-                || {
+            let destination =
+                undo::renamed_path(&request.path, &request.new_name).ok_or_else(|| {
                     FileSystemError::InvalidInput("The root of a volume cannot be renamed".into())
-                },
-            )?;
+                })?;
             if destination == request.path {
                 continue;
             }
@@ -155,11 +182,8 @@ pub async fn rename_entries_batch(
             }
         }
 
-        let progress = FileOperationProgressReporter::new(
-            app.clone(),
-            operation_id,
-            FileOperationKind::Move,
-        );
+        let progress =
+            FileOperationProgressReporter::new(app.clone(), operation_id, FileOperationKind::Move);
         let applied = undo::apply_rename_pairs(&pairs, &progress)?;
 
         // Report destinations in request order so the UI can reselect them;
@@ -179,7 +203,8 @@ pub async fn rename_entries_batch(
             .collect();
 
         if !applied.is_empty() {
-            app.state::<UndoRedoState>().record(&app, Operation::RenameBatch { pairs: applied });
+            app.state::<UndoRedoState>()
+                .record(&app, Operation::RenameBatch { pairs: applied });
         }
         progress.finish();
 
@@ -364,7 +389,10 @@ pub async fn delete_entries(
         let progress =
             FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
 
-        if targets.iter().all(|target| vfs::is_local_path(&target.path)) {
+        if targets
+            .iter()
+            .all(|target| vfs::is_local_path(&target.path))
+        {
             let paths = targets
                 .iter()
                 .map(|target| PathBuf::from(&target.path))
@@ -671,11 +699,8 @@ pub async fn update_file_properties_recursive(
     emit_preparing(&app, &operation_id, FileOperationKind::Properties);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let progress = FileOperationProgressReporter::new(
-            app,
-            operation_id,
-            FileOperationKind::Properties,
-        );
+        let progress =
+            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Properties);
         let outcome =
             vfs::resolve(&path)?.update_properties_recursive(&path, &changes, &progress)?;
         progress.finish();
@@ -919,5 +944,8 @@ fn open_system_with_dialog(_file: &Path) -> Result<(), FileSystemError> {
 /// True when every source and the destination sit on the local backend, which
 /// keeps its native rayon transfer path instead of the streaming engine.
 fn is_pure_local(sources: &[TransferSource], destination: &str) -> bool {
-    vfs::is_local_path(destination) && sources.iter().all(|source| vfs::is_local_path(&source.path))
+    vfs::is_local_path(destination)
+        && sources
+            .iter()
+            .all(|source| vfs::is_local_path(&source.path))
 }

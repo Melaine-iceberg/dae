@@ -9,8 +9,8 @@ use super::directory::entry_kind;
 use crate::file_system::error::FileSystemError;
 use crate::file_system::progress::FileOperationProgressReporterTrait;
 use crate::file_system::types::{
-    display_name_from_path, path_to_string, EntryKind, FileProperties, PlatformProperties,
-    PropertyChanges, RecursivePropertyUpdateOutcome,
+    EntryKind, FileProperties, PlatformProperties, PropertyChanges, RecursivePropertyUpdateOutcome,
+    display_name_from_path, path_to_string,
 };
 use std::fs;
 use std::path::Path;
@@ -20,12 +20,12 @@ use crate::file_system::types::UnixProperties;
 #[cfg(windows)]
 use crate::file_system::types::WindowsProperties;
 #[cfg(windows)]
-use windows::core::PCWSTR;
-#[cfg(windows)]
 use windows::Win32::Storage::FileSystem::{
-    SetFileAttributesW, FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY,
-    FILE_ATTRIBUTE_SYSTEM, FILE_FLAGS_AND_ATTRIBUTES,
+    FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_SYSTEM,
+    FILE_FLAGS_AND_ATTRIBUTES, SetFileAttributesW,
 };
+#[cfg(windows)]
+use windows::core::PCWSTR;
 
 pub fn read_properties(path: &Path) -> Result<FileProperties, FileSystemError> {
     let metadata = fs::symlink_metadata(path)?;

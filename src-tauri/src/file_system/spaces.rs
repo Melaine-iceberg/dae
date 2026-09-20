@@ -37,7 +37,10 @@ pub struct Space {
 #[tauri::command]
 #[specta::specta]
 pub fn list_spaces(app: tauri::AppHandle) -> Result<Vec<Space>, FileSystemError> {
-    if let Some(spaces) = app.state::<super::prefetch::StartupPrefetch>().take_spaces() {
+    if let Some(spaces) = app
+        .state::<super::prefetch::StartupPrefetch>()
+        .take_spaces()
+    {
         return Ok(spaces);
     }
     let path = spaces_path(&app)?;

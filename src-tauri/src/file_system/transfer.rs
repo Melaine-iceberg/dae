@@ -1546,8 +1546,8 @@ mod tests {
         fs::write(destination_dir.join("clashing.txt"), "target bytes")
             .expect("write clashing target");
 
-        let backend: Arc<dyn FileSystemBackend> = vfs::resolve(&source_dir.to_string_lossy())
-            .expect("resolve local backend");
+        let backend: Arc<dyn FileSystemBackend> =
+            vfs::resolve(&source_dir.to_string_lossy()).expect("resolve local backend");
 
         let source = |name: &str| TransferSource {
             path: source_dir.join(name).to_string_lossy().into_owned(),

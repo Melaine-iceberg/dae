@@ -101,7 +101,11 @@ pub fn delete_cloud_account(id: String) -> Result<(), FileSystemError> {
 /// Returns the account with `id`, if saved.
 pub fn account_by_id(id: &str) -> Option<StoredCloudAccount> {
     let registry = REGISTRY.lock().expect("cloud registry poisoned");
-    registry.saved.iter().find(|account| account.id == id).cloned()
+    registry
+        .saved
+        .iter()
+        .find(|account| account.id == id)
+        .cloned()
 }
 
 /// Creates or replaces an account, storing its OAuth material. Refresh tokens
@@ -130,12 +134,24 @@ pub fn upsert_account(
     let serialized = serde_json::to_string(&credentials)
         .map_err(|error| FileSystemError::Internal(error.to_string()))?;
 
-    store_secret(&client_credential_key(&account.id), &serialized, &mut |registry| {
-        registry.memory_client_credentials.insert(account.id.clone(), serialized.clone());
-    });
-    store_secret(&refresh_token_key(&account.id), refresh_token, &mut |registry| {
-        registry.memory_refresh_tokens.insert(account.id.clone(), refresh_token.to_owned());
-    });
+    store_secret(
+        &client_credential_key(&account.id),
+        &serialized,
+        &mut |registry| {
+            registry
+                .memory_client_credentials
+                .insert(account.id.clone(), serialized.clone());
+        },
+    );
+    store_secret(
+        &refresh_token_key(&account.id),
+        refresh_token,
+        &mut |registry| {
+            registry
+                .memory_refresh_tokens
+                .insert(account.id.clone(), refresh_token.to_owned());
+        },
+    );
     Ok(())
 }
 
@@ -172,7 +188,9 @@ pub fn token_material(id: &str) -> Result<TokenMaterial, FileSystemError> {
 /// Persists a rotated refresh token (Dropbox refresh-token rotation).
 pub fn save_refresh_token(id: &str, refresh_token: &str) {
     store_secret(&refresh_token_key(id), refresh_token, &mut |registry| {
-        registry.memory_refresh_tokens.insert(id.to_owned(), refresh_token.to_owned());
+        registry
+            .memory_refresh_tokens
+            .insert(id.to_owned(), refresh_token.to_owned());
     });
 }
 
@@ -204,11 +222,7 @@ fn refresh_token_key(id: &str) -> String {
 
 /// Writes a secret to the keychain, falling back to the provided memory
 /// store when no usable keychain exists.
-fn store_secret(
-    key: &str,
-    value: &str,
-    memory_fallback: &mut impl FnMut(&mut RegistryInner),
-) {
+fn store_secret(key: &str, value: &str, memory_fallback: &mut impl FnMut(&mut RegistryInner)) {
     match keyring::Entry::new(KEYRING_SERVICE, key).and_then(|entry| entry.set_password(value)) {
         Ok(()) => {
             let mut registry = REGISTRY.lock().expect("cloud registry poisoned");
@@ -222,7 +236,10 @@ fn store_secret(
     }
 }
 
-fn read_secret(key: &str, memory_fallback: &mut impl FnMut(&RegistryInner) -> Option<String>) -> Option<String> {
+fn read_secret(
+    key: &str,
+    memory_fallback: &mut impl FnMut(&RegistryInner) -> Option<String>,
+) -> Option<String> {
     if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, key)
         && let Ok(value) = entry.get_password()
     {
@@ -259,9 +276,7 @@ fn accounts_path(config_dir: &std::path::Path) -> PathBuf {
     config_dir.join(ACCOUNTS_FILE_NAME)
 }
 
-fn read_accounts_file(
-    path: &std::path::Path,
-) -> Result<Vec<StoredCloudAccount>, FileSystemError> {
+fn read_accounts_file(path: &std::path::Path) -> Result<Vec<StoredCloudAccount>, FileSystemError> {
     match fs::read_to_string(path) {
         Ok(contents) => serde_json::from_str(&contents)
             .map_err(|error| FileSystemError::Internal(error.to_string())),
@@ -317,7 +332,10 @@ mod tests {
         let persisted =
             fs::read_to_string(config_dir.join(ACCOUNTS_FILE_NAME)).expect("accounts file");
         for secret in ["client-1", "secret-1", "refresh-1", "secret"] {
-            assert!(!persisted.contains(secret), "secrets must never be persisted");
+            assert!(
+                !persisted.contains(secret),
+                "secrets must never be persisted"
+            );
         }
 
         // Secrets resolve through the keychain or its memory fallback.

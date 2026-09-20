@@ -17,7 +17,7 @@
 use super::error::FileSystemError;
 use super::progress::{FileOperationKind, FileOperationProgressReporterTrait};
 use super::transfer::{self, TransferSource};
-use super::types::{path_to_string, ConflictAction, NewEntryKind, TransferPair};
+use super::types::{ConflictAction, NewEntryKind, TransferPair, path_to_string};
 use super::vfs;
 use serde::Serialize;
 use specta::Type;

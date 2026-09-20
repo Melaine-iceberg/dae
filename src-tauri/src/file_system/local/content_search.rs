@@ -64,7 +64,9 @@ pub fn search_file_contents_sync(
         .case_insensitive(!params.case_sensitive)
         .fixed_strings(!params.is_regex)
         .build(query)
-        .map_err(|error| FileSystemError::InvalidInput(format!("fs.invalid_search_query: {error}")))?;
+        .map_err(|error| {
+            FileSystemError::InvalidInput(format!("fs.invalid_search_query: {error}"))
+        })?;
 
     let shared = Arc::new(ContentSearchShared {
         files: Mutex::new(Vec::new()),
@@ -77,15 +79,13 @@ pub fn search_file_contents_sync(
 
     let mut overrides = OverrideBuilder::new(&root);
     for pattern in ALWAYS_IGNORED {
-        overrides
-            .add(pattern)
-            .map_err(|error| FileSystemError::Internal(format!("fs.ignore_rule_register_failed: {error}")))?;
+        overrides.add(pattern).map_err(|error| {
+            FileSystemError::Internal(format!("fs.ignore_rule_register_failed: {error}"))
+        })?;
     }
-    builder.overrides(
-        overrides
-            .build()
-            .map_err(|error| FileSystemError::Internal(format!("fs.ignore_rule_build_failed: {error}")))?,
-    );
+    builder.overrides(overrides.build().map_err(|error| {
+        FileSystemError::Internal(format!("fs.ignore_rule_build_failed: {error}"))
+    })?);
 
     if let Some(types) = build_file_types(params.file_filter)? {
         builder.types(types);
@@ -202,7 +202,11 @@ struct ContentSearchShared<'a> {
 
 /// Builds one trimmed, length-capped match row with character-based ranges so
 /// the frontend can highlight without re-decoding bytes.
-fn build_match(line_number: u64, line: &str, matcher: &grep_regex::RegexMatcher) -> ContentSearchMatch {
+fn build_match(
+    line_number: u64,
+    line: &str,
+    matcher: &grep_regex::RegexMatcher,
+) -> ContentSearchMatch {
     let char_count = line.chars().count();
     let keep_chars = char_count.min(MAX_LINE_CHARS);
 
@@ -255,9 +259,9 @@ fn build_file_types(filter: Option<&str>) -> Result<Option<ignore::types::Types>
             format!("*.{}", token.trim_start_matches('.'))
         };
 
-        builder
-            .add("daefilter", &pattern)
-            .map_err(|error| FileSystemError::InvalidInput(format!("fs.invalid_type_filter: {error}")))?;
+        builder.add("daefilter", &pattern).map_err(|error| {
+            FileSystemError::InvalidInput(format!("fs.invalid_type_filter: {error}"))
+        })?;
         has_pattern = true;
     }
 
@@ -266,9 +270,9 @@ fn build_file_types(filter: Option<&str>) -> Result<Option<ignore::types::Types>
     }
 
     builder.select("daefilter");
-    let types = builder
-        .build()
-        .map_err(|error| FileSystemError::Internal(format!("fs.type_filter_build_failed: {error}")))?;
+    let types = builder.build().map_err(|error| {
+        FileSystemError::Internal(format!("fs.type_filter_build_failed: {error}"))
+    })?;
     Ok(Some(types))
 }
 
@@ -283,14 +287,23 @@ mod tests {
         fs::create_dir_all(root.join("node_modules")).expect("create node_modules");
         fs::create_dir_all(root.join("target")).expect("create target");
 
-        fs::write(src.join("notes.txt"), "hello TODO world\ntodo again\nplain line\n")
-            .expect("write notes.txt");
-        fs::write(src.join("nested").join("main.rs"), "fn main() { let n = 42; }\n")
-            .expect("write main.rs");
+        fs::write(
+            src.join("notes.txt"),
+            "hello TODO world\ntodo again\nplain line\n",
+        )
+        .expect("write notes.txt");
+        fs::write(
+            src.join("nested").join("main.rs"),
+            "fn main() { let n = 42; }\n",
+        )
+        .expect("write main.rs");
         fs::write(root.join("node_modules").join("dep.js"), "TODO in deps\n")
             .expect("write dep.js");
-        fs::write(root.join("target").join("build.log"), "TODO in build output\n")
-            .expect("write build.log");
+        fs::write(
+            root.join("target").join("build.log"),
+            "TODO in build output\n",
+        )
+        .expect("write build.log");
     }
 
     #[test]
@@ -305,15 +318,18 @@ mod tests {
             case_sensitive: false,
             file_filter: None,
         };
-        let response =
-            search_file_contents_sync(root.clone(), &params, &|| true).expect("regex content search");
+        let response = search_file_contents_sync(root.clone(), &params, &|| true)
+            .expect("regex content search");
 
         let paths = response
             .files
             .iter()
             .map(|file| file.relative_path.as_str())
             .collect::<Vec<_>>();
-        let expected_notes = Path::new("src").join("notes.txt").to_string_lossy().into_owned();
+        let expected_notes = Path::new("src")
+            .join("notes.txt")
+            .to_string_lossy()
+            .into_owned();
         assert_eq!(paths, vec![expected_notes.as_str()]);
         assert!(!response.truncated);
 

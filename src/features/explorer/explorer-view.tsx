@@ -252,17 +252,6 @@ export function ExplorerView({
   }, [isContentSearchActive]);
 
   useEffect(() => {
-    if (!directoryPath) return;
-
-    void commands
-      .watchDirectory(directoryPath)
-      .then(() => void navigator.refresh(directoryPath))
-      .catch((error: unknown) => {
-        console.warn("Unable to watch directory for changes", error);
-      });
-  }, [navigator, directoryPath]);
-
-  useEffect(() => {
     setSelectedPaths([]);
     setRenameTarget(null);
     setBulkRenameOpen(false);

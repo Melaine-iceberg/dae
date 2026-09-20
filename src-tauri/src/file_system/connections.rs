@@ -330,16 +330,15 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0], saved);
 
-        let persisted =
-            fs::read_to_string(config_dir.join("connections.json")).expect("connections file exists");
+        let persisted = fs::read_to_string(config_dir.join("connections.json"))
+            .expect("connections file exists");
         assert!(
             !persisted.contains("password"),
             "passwords must never be persisted"
         );
         assert!(!persisted.contains("session-only"));
 
-        let (username, password) =
-            resolve_credentials(Protocol::Smb, "MyServer.Local", Some(445));
+        let (username, password) = resolve_credentials(Protocol::Smb, "MyServer.Local", Some(445));
         assert_eq!(username.as_deref(), Some("alice"));
         assert_eq!(password.as_deref(), Some("session-only"));
 
@@ -357,8 +356,7 @@ mod tests {
         let listed = list_connections().expect("list after update");
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].username.as_deref(), Some("bob"));
-        let (_, password) =
-            resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
+        let (_, password) = resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
         assert_eq!(password.as_deref(), Some("session-only"));
 
         // Reopening the store reloads from disk.
@@ -367,13 +365,8 @@ mod tests {
         assert_eq!(listed.len(), 1);
 
         delete_connection("smb://myserver.local:445".into()).expect("delete connection");
-        assert!(
-            list_connections()
-                .expect("list after delete")
-                .is_empty()
-        );
-        let (_, password) =
-            resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
+        assert!(list_connections().expect("list after delete").is_empty());
+        let (_, password) = resolve_credentials(Protocol::Smb, "myserver.local", Some(445));
         assert_eq!(password, None);
 
         fs::remove_dir_all(config_dir).expect("remove test directory");

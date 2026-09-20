@@ -194,7 +194,9 @@ pub fn http_client() -> Result<reqwest::Client, FileSystemError> {
     reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|error| FileSystemError::Internal(format!("Could not build the HTTP client: {error}")))
+        .map_err(|error| {
+            FileSystemError::Internal(format!("Could not build the HTTP client: {error}"))
+        })
 }
 
 /// Minimal percent-encoder for building authorization URLs.
@@ -217,9 +219,9 @@ pub fn url_encode(value: &str) -> String {
 pub fn map_status(status: reqwest::StatusCode, detail: &str) -> FileSystemError {
     let detail = summarize(detail);
     match status.as_u16() {
-        401 => FileSystemError::PermissionDenied(format!(
-            "401 The cloud session expired: {detail}"
-        )),
+        401 => {
+            FileSystemError::PermissionDenied(format!("401 The cloud session expired: {detail}"))
+        }
         403 => FileSystemError::PermissionDenied(detail),
         404 => FileSystemError::NotFound(detail),
         409 => FileSystemError::AlreadyExists(detail),
@@ -249,7 +251,10 @@ pub fn map_token_error(status: reqwest::StatusCode, detail: &str) -> FileSystemE
             "The provider rejected the OAuth credentials (check the client id/secret and the registered redirect URI): {}",
             summarize(detail)
         )),
-        _ => FileSystemError::Io(format!("The token endpoint returned {status}: {}", summarize(detail))),
+        _ => FileSystemError::Io(format!(
+            "The token endpoint returned {status}: {}",
+            summarize(detail)
+        )),
     }
 }
 
@@ -267,7 +272,7 @@ pub fn read_chunk(file: &mut std::fs::File, chunk: &mut [u8]) -> Result<usize, F
             Err(error) => {
                 return Err(FileSystemError::Io(format!(
                     "Could not read the staged upload file: {error}"
-                )))
+                )));
             }
         }
     }
@@ -334,7 +339,11 @@ pub fn parse_timestamp(value: &str) -> Option<u64> {
         Some(sign @ (b'+' | b'-')) => {
             let rest = &value[index + 1..];
             // take(5): offsets like "+02:00" embed a colon among the digits.
-            let digits: String = rest.chars().take(5).filter(|c| c.is_ascii_digit()).collect();
+            let digits: String = rest
+                .chars()
+                .take(5)
+                .filter(|c| c.is_ascii_digit())
+                .collect();
             if digits.len() >= 4 {
                 let offset_hours: i64 = digits[0..2].parse().ok()?;
                 let offset_minutes: i64 = digits[2..4].parse().ok()?;
@@ -389,7 +398,10 @@ mod tests {
             Some(1704164645678)
         );
         // No fraction, explicit offset.
-        assert_eq!(parse_timestamp("2024-01-02T05:04:05+02:00"), Some(1704164645000));
+        assert_eq!(
+            parse_timestamp("2024-01-02T05:04:05+02:00"),
+            Some(1704164645000)
+        );
         // Dropbox's space-separated UTC form.
         assert_eq!(parse_timestamp("2024-01-02 03:04:05"), Some(1704164645000));
         assert_eq!(parse_timestamp("not a date"), None);

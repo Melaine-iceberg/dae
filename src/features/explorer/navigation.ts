@@ -156,7 +156,10 @@ export class ExplorerNavigator {
     const requestVersion = ++this.requestVersion;
 
     try {
-      const directory = await this.readListing(path, requestVersion, true);
+      const directory = await this.readListing(path, requestVersion, {
+        settle: true,
+        watch: false,
+      });
 
       if (
         directory === null ||
@@ -200,7 +203,10 @@ export class ExplorerNavigator {
     this.setState({ ...this.state, status: "loading", pendingPath: path, error: null });
 
     try {
-      const directory = await this.readListing(path, requestVersion, false);
+      const directory = await this.readListing(path, requestVersion, {
+        settle: false,
+        watch: true,
+      });
 
       if (directory === null || requestVersion !== this.requestVersion) {
         return undefined;
@@ -245,13 +251,19 @@ export class ExplorerNavigator {
    * offset to a list that is suddenly 70× shorter. A settling read keeps the
    * current listing on screen and resolves once the walk is finished.
    *
+   * `options.watch` arms the backend's directory watcher as part of the read.
+   * Only the read that establishes a view asks for it: the watcher has to be
+   * armed before the directory is read for the listing and the events to cover
+   * every change between them, and a refresh happens *because* an event
+   * arrived, so the watcher for the directory on screen is already in place.
+   *
    * Any listing that is still streaming is dropped first: a newer read (a
    * navigation, a watcher refresh) always wins over the one it replaces.
    */
   private readListing(
     path: string,
     requestVersion: number,
-    settle: boolean,
+    options: { settle: boolean; watch: boolean },
   ): Promise<DirectoryView | null> {
     this.cancelListing();
 
@@ -261,7 +273,7 @@ export class ExplorerNavigator {
     let head: DirectoryView | null = null;
     let entries: DirectoryEntry[] | null = null;
     let resolveSettled: (() => void) | null = null;
-    const settled = settle
+    const settled = options.settle
       ? new Promise<void>((resolve) => {
           resolveSettled = resolve;
         })
@@ -275,12 +287,13 @@ export class ExplorerNavigator {
         },
         onEntries: (latest) => {
           entries = latest;
-          if (settle || requestVersion !== this.requestVersion || !head) return;
+          if (options.settle || requestVersion !== this.requestVersion || !head) return;
           this.setState({ ...this.state, directory: { ...head, entries: latest } });
         },
         onDone: () => resolveSettled?.(),
       },
       this.api,
+      options.watch,
     );
 
     this.listing = listing;
