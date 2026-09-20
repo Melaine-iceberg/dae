@@ -1,7 +1,7 @@
 use super::directory::{entry_kind, entry_state_flags, modified_at_millis};
 use crate::file_system::error::FileSystemError;
 use crate::file_system::types::{
-    EntryKind, SearchEntry, SearchResponse, entry_kind_rank, path_to_string,
+    EntryKind, SearchEntry, SearchResponse, canonical_path, entry_kind_rank, path_to_string,
 };
 use ignore::{WalkBuilder, WalkState};
 use std::cmp::Ordering;
@@ -26,7 +26,11 @@ pub fn search_directory_sync(
         });
     }
 
-    let path = requested_path.canonicalize()?;
+    // `canonical_path` rather than `canonicalize`: the walker hands this path to
+    // `read_dir` as the base of every entry it yields, and `DirEntry::path()`
+    // rebuilds the whole base when it carries the verbatim prefix (see
+    // `types::canonical_path`). The walk pays that once per entry it visits.
+    let path = canonical_path(&requested_path)?;
     if !fs::metadata(&path)?.is_dir() {
         return Err(FileSystemError::NotDirectory(path_to_string(&path)));
     }

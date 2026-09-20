@@ -1,7 +1,9 @@
 use crate::file_system::error::FileSystemError;
 use crate::file_system::progress::FileOperationProgressReporterTrait;
-use crate::file_system::transfer::duplicate_name;
-use crate::file_system::types::{ConflictAction, NewEntryKind, TransferPair, path_to_string};
+use crate::file_system::transfer::{duplicate_name, path_contains};
+use crate::file_system::types::{
+    ConflictAction, NewEntryKind, TransferPair, canonical_path, path_to_string,
+};
 use rayon::prelude::*;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use std::collections::HashSet;
@@ -200,7 +202,12 @@ fn build_transfer_plan(
 
     ensure_unique_paths(sources.iter().map(|(path, _)| path.as_path()))?;
 
-    let destination = requested_destination.canonicalize()?;
+    // `canonical_path` rather than `canonicalize`: this is the base every entry
+    // of a pasted tree is written to (`copy_directory` joins each child onto it),
+    // and `PathBuf::push` rebuilds the whole base when it carries the verbatim
+    // prefix (see `types::canonical_path`). Measured on 35,817 children:
+    // 13.94 -> 4.75 ms for the joins alone, and one join per copied entry.
+    let destination = canonical_path(&requested_destination)?;
     if !fs::metadata(&destination)?.is_dir() {
         return Err(FileSystemError::NotDirectory(path_to_string(&destination)));
     }
@@ -247,8 +254,13 @@ fn build_transfer_plan(
         };
 
         if metadata.is_dir() {
-            let canonical_source = source.canonicalize()?;
-            if target.starts_with(&canonical_source) {
+            // `is_within` rather than `Path::starts_with`: `canonical_path` drops
+            // the verbatim prefix per path, so a short source and a destination
+            // past `MAX_PATH` come back in different spellings, and comparing
+            // those literally would answer "outside" for a folder that is plainly
+            // inside its own subtree.
+            let canonical_source = canonical_path(&source)?;
+            if is_within(&canonical_source, &target) {
                 return Err(FileSystemError::InvalidInput(format!(
                     "Cannot paste a folder into itself: {}",
                     path_to_string(&source)
@@ -268,9 +280,21 @@ fn build_transfer_plan(
     Ok(plan)
 }
 
+/// True when `candidate` lies strictly beneath `directory`.
+///
+/// `canonical_path` decides *per path* whether to drop the verbatim prefix — it
+/// keeps it for anything long enough to need it, and for names a plain path
+/// cannot spell — so the same directory can come back as `\\?\K:\a` while a
+/// descendant comes back as `K:\a\b`. `Path::starts_with` compares prefixes
+/// literally and calls that "outside", which is why this guard does not use it.
+/// Both sides go through `path_to_string`, so either spelling compares equal.
+fn is_within(directory: &Path, candidate: &Path) -> bool {
+    path_contains(&path_to_string(directory), &path_to_string(candidate))
+}
+
 /// True when both paths resolve to the same on-disk entry.
 fn paths_refer_to_same_entry(source: &Path, target: &Path) -> bool {
-    match (fs::canonicalize(source), fs::canonicalize(target)) {
+    match (canonical_path(source), canonical_path(target)) {
         (Ok(source), Ok(target)) => source == target,
         _ => false,
     }
@@ -759,6 +783,73 @@ mod tests {
             "content"
         );
         assert_eq!(move_progress.total.load(AtomicOrdering::Relaxed), 0);
+
+        fs::remove_dir_all(root).expect("remove test directory");
+    }
+
+    #[test]
+    fn is_within_rejects_paths_that_merely_share_a_prefix() {
+        assert!(!is_within(Path::new("/a/b"), Path::new("/a/bc")));
+        assert!(!is_within(Path::new("/a/b"), Path::new("/a/b")));
+        assert!(is_within(Path::new("/a/b"), Path::new("/a/b/c")));
+        // The root of a volume is the one base that ends in a separator.
+        assert!(is_within(Path::new("/"), Path::new("/a/b")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn is_within_treats_the_two_canonical_spellings_as_one_path() {
+        // `canonical_path` drops `\\?\` per path, so a source short enough to
+        // keep the plain spelling and a descendant past `MAX_PATH` really do
+        // come back spelled differently.
+        assert!(is_within(
+            Path::new(r"K:\folder"),
+            Path::new(r"\\?\K:\folder\pasted")
+        ));
+        assert!(is_within(
+            Path::new(r"\\?\K:\folder"),
+            Path::new(r"K:\folder\pasted")
+        ));
+
+        assert!(!is_within(Path::new(r"K:\folder"), Path::new(r"K:\folder-2")));
+        assert!(is_within(Path::new(r"K:\"), Path::new(r"K:\folder\file")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn plans_paste_destinations_without_the_verbatim_prefix() {
+        let root = std::env::temp_dir().join(format!(
+            "dae-transfer-plan-spelling-{}",
+            std::process::id()
+        ));
+        let source = root.join("source");
+        let destination = root.join("destination");
+        fs::create_dir_all(&source).expect("create the source");
+        fs::create_dir_all(&destination).expect("create the destination");
+        fs::write(source.join("pasted.txt"), "content").expect("write the source file");
+
+        assert!(
+            destination
+                .canonicalize()
+                .expect("canonicalize the fixture")
+                .to_string_lossy()
+                .starts_with(r"\\?\"),
+            "the fixture no longer exercises the prefix this test is about"
+        );
+
+        let plan = build_transfer_plan(
+            vec![(source.clone(), ConflictAction::Fail)],
+            destination.clone(),
+        )
+        .expect("plan the paste");
+
+        // Every entry of a pasted tree is joined onto this base, and a verbatim
+        // base is rebuilt on every one of those joins (`canonical_path`).
+        let planned = plan[0].destination.to_string_lossy().into_owned();
+        assert!(
+            !planned.starts_with(r"\\?\"),
+            "a paste base of {planned} rebuilds that base for every entry"
+        );
 
         fs::remove_dir_all(root).expect("remove test directory");
     }

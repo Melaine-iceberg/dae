@@ -1,6 +1,6 @@
 use crate::file_system::error::FileSystemError;
 use crate::file_system::types::{
-    ContentSearchFile, ContentSearchMatch, ContentSearchResponse, path_to_string,
+    ContentSearchFile, ContentSearchMatch, ContentSearchResponse, canonical_path, path_to_string,
 };
 use grep_matcher::Matcher as _;
 use grep_regex::RegexMatcherBuilder;
@@ -51,7 +51,11 @@ pub fn search_file_contents_sync(
         });
     }
 
-    let root = requested_path.canonicalize()?;
+    // `canonical_path` rather than `canonicalize`, for the same reason as
+    // `search::search_directory_sync`: the walker reads every directory through
+    // this base. `OverrideBuilder` takes the same root, so the ignores keep
+    // matching relative to the walked tree.
+    let root = canonical_path(&requested_path)?;
     if !fs::metadata(&root)?.is_dir() {
         return Err(FileSystemError::NotDirectory(path_to_string(&root)));
     }

@@ -981,7 +981,11 @@ fn join_path(base: &str, name: &str) -> String {
 }
 
 /// True when `descendant` lies inside `ancestor`, on the same backend.
-fn path_contains(ancestor: &str, descendant: &str) -> bool {
+///
+/// Both arguments are path *strings* in one spelling — callers pass display
+/// paths (`path_to_string`), which is what makes it immune to the verbatim
+/// prefix `canonicalize` adds on Windows.
+pub(super) fn path_contains(ancestor: &str, descendant: &str) -> bool {
     let ancestor = ancestor.trim_end_matches(['/', '\\']);
     let descendant = descendant.trim_end_matches(['/', '\\']);
     descendant.len() > ancestor.len()
