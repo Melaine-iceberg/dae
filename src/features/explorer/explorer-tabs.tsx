@@ -12,6 +12,7 @@ import { createPortal } from "react-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
+import { emitTo, type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
 import { Window as TauriWindow } from "@tauri-apps/api/window";
 import {
   ChevronLeft,
@@ -75,6 +76,46 @@ type TabDragPreview = {
  *  sideways, ~32px below) so the native drag image keeps the same floating
  *  look as the in-window ghost. */
 const DRAG_PREVIEW_PAD = { top: 6, right: 14, bottom: 40, left: 14 } as const;
+
+/**
+ * Event name of [`TabMergedIntoWindow`], mirroring the value `bindings.ts`
+ * generates for `events.tabMergedIntoWindow`.
+ *
+ * The generated `events.x(target).emit()` helper cannot address a single
+ * window: it calls `Window.emit`, which broadcasts to every window and ignores
+ * the label of the instance it is called on. `emitTo` is the only API that
+ * routes a handoff to the window the drop landed on.
+ */
+const TAB_MERGED_INTO_WINDOW = "tab-merged-into-window";
+
+/** A generated event, optionally callable with a target to scope its binding. */
+type WindowScopedEvent<T> = {
+  (target: TauriWindow): { listen: (callback: EventCallback<T>) => Promise<UnlistenFn> };
+  listen: (callback: EventCallback<T>) => Promise<UnlistenFn>;
+};
+
+/**
+ * Binds a tab-drag event to the window this webview belongs to.
+ *
+ * Tauri matches JS listeners by the target they registered with, and the
+ * generated `events.x.listen()` helper registers as `EventTarget::Any` — which
+ * the backend hands every emit, including one addressed to a different window.
+ * Unscoped, the source window therefore consumes its own handoff (re-inserting
+ * the tab it just gave away, which also keeps its last tab from ever reaching
+ * zero) and the drop preview lights up in every window. Listening through the
+ * window object keeps this window's traffic to itself. Note this is no defence
+ * against a broadcast — that path applies no filter at all — so the handoff
+ * has to be addressed on the sending side too.
+ */
+function listenInThisWindow<T>(
+  event: WindowScopedEvent<T>,
+  handler: EventCallback<T>,
+): Promise<UnlistenFn> {
+  const appWindow = getAppWindow();
+  // The browser preview bridge has no native window to scope to, so the dev
+  // plumbing falls back to the global listener.
+  return (appWindow ? event(appWindow) : event).listen(handler);
+}
 
 /** The ghost portal mounts one React commit after the drag threshold, so the
  *  snapshot waits a bounded number of frames for it to appear. */
@@ -222,7 +263,7 @@ export function ExplorerTabs() {
   // handoff carries the full tab state and the drop point picks the
   // insertion index within this window's strip.
   useEffect(() => {
-    const unlisten = events.tabMergedIntoWindow.listen((event) => {
+    const unlisten = listenInThisWindow(events.tabMergedIntoWindow, (event) => {
       const { payload: handoff, x } = event.payload;
       const strip = stripRef.current;
       const index = strip ? tabInsertionIndexAt(strip, x ?? 0) : Number.MAX_SAFE_INTEGER;
@@ -277,12 +318,7 @@ export function ExplorerTabs() {
           role="tablist"
         >
           {tabs.map((tab, index) => (
-            <TabStripItem
-              key={tab.id}
-              index={index}
-              isActive={tab.id === activeTabId}
-              tab={tab}
-            />
+            <TabStripItem key={tab.id} index={index} isActive={tab.id === activeTabId} tab={tab} />
           ))}
           <button
             aria-label={t("tabs.newTab")}
@@ -400,7 +436,7 @@ function dropIndicatorGeometryAt(x: number): DropIndicatorGeometry | null {
   const left =
     index < tabs.length
       ? tabs[index].getBoundingClientRect().left - gap
-      : (tabs[tabs.length - 1].getBoundingClientRect().right + gap);
+      : tabs[tabs.length - 1].getBoundingClientRect().right + gap;
   const tabRect = tabs[0].getBoundingClientRect();
   return { left, top: tabRect.top, height: tabRect.height };
 }
@@ -412,7 +448,7 @@ function TabDropIndicator() {
   const [geometry, setGeometry] = useState<DropIndicatorGeometry | null>(null);
 
   useEffect(() => {
-    const unlistenHover = events.tabDragHover.listen(({ payload }) => {
+    const unlistenHover = listenInThisWindow(events.tabDragHover, ({ payload }) => {
       if (payload.x == null) return;
       setGeometry((previous) => {
         const next = dropIndicatorGeometryAt(payload.x as number);
@@ -420,8 +456,8 @@ function TabDropIndicator() {
         return previous && Math.abs(previous.left - next.left) < 0.5 ? previous : next;
       });
     });
-    const unlistenLeave = events.tabDragLeave.listen(() => setGeometry(null));
-    const unlistenMerge = events.tabMergedIntoWindow.listen(() => setGeometry(null));
+    const unlistenLeave = listenInThisWindow(events.tabDragLeave, () => setGeometry(null));
+    const unlistenMerge = listenInThisWindow(events.tabMergedIntoWindow, () => setGeometry(null));
 
     return () => {
       void unlistenHover.then((unlisten) => unlisten());
@@ -616,7 +652,10 @@ function TabStripItem({
     const mergeIntoWindow = async (targetLabel: string, x: number, y: number): Promise<boolean> => {
       try {
         const payload = serializeTabHandoff(tab.id);
-        await events.tabMergedIntoWindow(new TauriWindow(targetLabel)).emit({ payload, x, y });
+        // Addressed rather than broadcast: the receiving window is the only one
+        // that may consume this handoff, and above all the source window must
+        // not, or it would re-insert the tab it is about to close.
+        await emitTo(targetLabel, TAB_MERGED_INTO_WINDOW, { payload, x, y });
         return true;
       } catch (error) {
         console.error("Failed to merge the tab into the target window", error);
