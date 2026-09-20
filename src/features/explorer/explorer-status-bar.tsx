@@ -1,4 +1,4 @@
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { useTranslation } from "react-i18next";
 import { Columns3, List, Rows3, LayoutGrid, SquareTerminal } from "lucide-react";
 
@@ -9,7 +9,10 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Kbd } from "@/components/ui/kbd";
 import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
+import { appSettingsAtom } from "@/features/settings/settings-atoms";
+import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
 import { localeNumber } from "@/i18n/format";
 import { cn } from "@/lib/utils";
 
@@ -57,25 +60,55 @@ export function ExplorerStatusBar({
   return (
     <footer
       aria-label={t("statusBar.ariaLabel")}
-      className="flex h-7 shrink-0 items-center gap-3 border-t border-border/60 bg-muted/50 px-3 text-xs text-muted-foreground select-none"
+      className="flex h-6 shrink-0 items-center gap-2.5 border-t border-border bg-card px-2.5 text-[11px] text-muted-foreground select-none"
     >
       <span aria-live="polite" className="truncate tabular-nums">
         {countText}
       </span>
       {selectedCount > 0 && (
-        <span className="shrink-0 tabular-nums">
+        <span className="shrink-0 rounded-sm bg-selection px-1.5 text-foreground tabular-nums">
           {t("statusBar.selectedCount", { number: localeNumber(selectedCount) })}
         </span>
       )}
       <StatusBarGit branch={gitBranch ?? null} root={gitRoot ?? null} />
-      <div className="ml-auto flex shrink-0 items-center gap-1">
+      <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <PaletteHints />
+        <div aria-hidden="true" className="h-3.5 w-px bg-border" />
         <TerminalToggle />
-        <div aria-hidden="true" className="mx-1 h-4 w-px bg-border" />
+        <div aria-hidden="true" className="h-3.5 w-px bg-border" />
         <DensitySwitcher />
-        <div aria-hidden="true" className="mx-1 h-4 w-px bg-border" />
+        <div aria-hidden="true" className="h-3.5 w-px bg-border" />
         <ViewModeSwitcher />
       </div>
     </footer>
+  );
+}
+
+/**
+ * Raycast hint strip: the two global palette entry points stay visible in the
+ * window instead of living only in the menus. The chips read the live bindings,
+ * so a rebound shortcut shows its new key here immediately; the strip yields to
+ * the view controls on narrow windows.
+ */
+function PaletteHints() {
+  const { t } = useTranslation("workspace");
+  const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
+
+  return (
+    <div className="hidden items-center gap-2.5 lg:flex">
+      <span className="flex shrink-0 items-center gap-1">
+        <Kbd className="h-4 px-1 text-[9px]">
+          {formatBinding(resolveBinding(shortcuts, "app.commandBar"))}
+        </Kbd>
+        {t("commandBar.title")}
+      </span>
+      <span className="flex shrink-0 items-center gap-1">
+        <Kbd className="h-4 px-1 text-[9px]">
+          {formatBinding(resolveBinding(shortcuts, "app.pathJump"))}
+        </Kbd>
+        {t("commandBar.pathTitle")}
+      </span>
+    </div>
   );
 }
 
@@ -88,7 +121,7 @@ function TerminalToggle() {
       aria-label={t("statusBar.toggleTerminal")}
       aria-pressed={visible}
       className={cn(
-        "flex size-5 items-center justify-center rounded-xs transition-colors hover:bg-accent hover:text-foreground",
+        "flex size-5 items-center justify-center rounded-sm transition-colors hover:bg-accent hover:text-foreground",
         visible && "bg-accent text-foreground",
       )}
       onClick={() => setVisible((open) => !open)}
@@ -127,7 +160,7 @@ function ViewModeSwitcher() {
           aria-label={t(label)}
           aria-pressed={viewMode === mode}
           className={cn(
-            "flex h-[18px] w-6 items-center justify-center rounded-[5px] text-muted-foreground transition-[background-color,color,box-shadow] duration-fast hover:text-foreground",
+            "flex h-[18px] w-6 items-center justify-center rounded-sm text-muted-foreground transition-[background-color,color,box-shadow] duration-fast hover:text-foreground",
             viewMode === mode && "bg-card text-primary shadow-ambient-xs",
           )}
           key={mode}
@@ -156,7 +189,7 @@ function DensitySwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={t("statusBar.densityLabel")}
-        className="flex size-5 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        className="flex size-5 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         title={t("statusBar.densityLabel")}
       >
         <Rows3 size={13} />

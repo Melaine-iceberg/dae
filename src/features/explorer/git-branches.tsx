@@ -138,7 +138,7 @@ export function StatusBarGit({ root, branch }: { root: string | null; branch: st
       <DropdownMenu>
         <DropdownMenuTrigger
           className={cn(
-            "flex min-w-0 items-center gap-1 rounded-xs px-1.5 py-0.5 transition-colors",
+            "flex min-w-0 items-center gap-1 rounded-sm px-1.5 py-0.5 transition-colors",
             "hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
           )}
           title={t("git.menuTitle", { branch })}

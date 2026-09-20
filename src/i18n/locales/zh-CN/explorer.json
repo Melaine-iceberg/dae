@@ -165,6 +165,7 @@
     "ariaLabel": "文件列表",
     "loadingAriaLabel": "正在加载文件列表",
     "emptyFolder": "此文件夹为空。",
+    "emptyHint": "运行命令或跳转到其它位置",
     "searchError": "搜索未完成：{{error}}",
     "searchEmpty": "未找到名称包含“{{query}}”的项目",
     "currentFolder": "当前目录",

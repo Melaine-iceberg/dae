@@ -147,7 +147,7 @@ export function OverviewView() {
         {places === null || favorites === null ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
-              <Skeleton className="h-[62px] rounded-xl" key={index} />
+              <Skeleton className="h-[54px] rounded-lg" key={index} />
             ))}
           </div>
         ) : visiblePlaces.length === 0 && favoriteList.length === 0 ? (
@@ -289,7 +289,7 @@ export function OverviewView() {
         {spaces === null ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
-              <Skeleton className="h-[62px] rounded-xl" key={index} />
+              <Skeleton className="h-[54px] rounded-lg" key={index} />
             ))}
           </div>
         ) : (

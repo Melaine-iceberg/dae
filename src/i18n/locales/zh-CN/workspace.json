@@ -29,8 +29,10 @@
     "noPathResults": "没有匹配“{{query}}”的目录",
     "noPathLocations": "暂无收藏或最近使用的目录",
     "openSpace": "打开空间「{{name}}」",
-    "footerNavigateHint": "↑↓ 选择",
-    "footerExecuteHint": "Enter 执行 · Esc 关闭",
+    "pathTitle": "跳转路径",
+    "footerNavigateHint": "选择",
+    "footerExecuteHint": "执行",
+    "footerCloseHint": "关闭",
     "groups": {
       "path": "跳转",
       "search": "搜索",

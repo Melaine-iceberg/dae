@@ -165,6 +165,7 @@
     "ariaLabel": "File list",
     "loadingAriaLabel": "Loading file list",
     "emptyFolder": "This folder is empty.",
+    "emptyHint": "Run a command or jump to another location",
     "searchError": "Search did not finish: {{error}}",
     "searchEmpty": "No items found with a name containing “{{query}}”",
     "currentFolder": "Current folder",

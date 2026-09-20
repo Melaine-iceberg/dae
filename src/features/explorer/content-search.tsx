@@ -257,7 +257,7 @@ function FileMatchGroup({
   const parentDirectory = parentDirectoryOf(file.path);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-foreground/5">
+    <div className="overflow-hidden rounded-lg border border-border">
       <div className="flex items-center gap-2 bg-accent/40 px-3 py-1.5">
         <TypeIconTile
           className="size-[22px] rounded-[7px]"

@@ -40,6 +40,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Kbd } from "@/components/ui/kbd";
 import {
   Table,
   TableBody,
@@ -305,6 +306,10 @@ export function FileList({
 
   const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
   const hotkeysPaused = useAtomValue(hotkeysPausedAtom);
+  // Empty folders teach the palette shortcut (Raycast convention): the one
+  // moment there is nothing to click is the moment worth spending on a
+  // keyboard affordance.
+  const commandBarBinding = formatBinding(resolveBinding(shortcuts, "app.commandBar"));
 
   // Explorer keyboard shortcuts, migrated to user-configurable TanStack
   // Hotkeys. Every action is gated on this pane being the focused one (the
@@ -725,7 +730,7 @@ export function FileList({
         }
       >
         {entries.length === 0 && !listIsLoading ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center select-none">
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2.5 p-6 text-center select-none">
             {searchState?.error ? (
               <TriangleAlert className="size-5 text-muted-foreground" />
             ) : (
@@ -738,6 +743,12 @@ export function FileList({
                   : t("explorer:list.searchEmpty", { query: searchState.query })
                 : t("explorer:list.emptyFolder")}
             </p>
+            {!searchState && (
+              <p className="flex items-center gap-1.5 text-xs text-muted-foreground/80">
+                <Kbd>{commandBarBinding}</Kbd>
+                <span>{t("explorer:list.emptyHint")}</span>
+              </p>
+            )}
           </div>
         ) : activeViewMode === "grid" ? (
           <FileGridView {...viewControls} entries={entries} />
@@ -759,7 +770,7 @@ export function FileList({
             onScroll={(event) => onScrollOffsetChange?.(event.currentTarget.scrollTop)}
           >
             <div className="min-w-160">
-              <div className="sticky top-0 z-10 grid h-7 shrink-0 items-center whitespace-nowrap border-b border-border/60 bg-muted text-label text-muted-foreground [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
+              <div className="sticky top-0 z-10 grid h-7 shrink-0 items-center whitespace-nowrap border-b border-border bg-card text-label text-muted-foreground/80 uppercase [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
                 <SortHeaderCell
                   active={sortKey === "name"}
                   label={t("explorer:columns.name")}
@@ -941,7 +952,7 @@ function SortHeaderCell({
     >
       <button
         className={cn(
-          "state-layer flex min-w-0 items-center gap-1 rounded-xs px-2.5 py-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          "flex min-w-0 items-center gap-1 rounded-sm px-2 text-left transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
           active && "text-foreground",
           align === "right" && "flex-row-reverse",
         )}
@@ -1037,12 +1048,12 @@ function FileListRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            // Desktop row: tonal hover via state-layer; selection is a soft
-            // primary wash with a whisper-thin primary inset ring. Constant
-            // corner radius — no pill morph.
-            "render-contain state-layer grid cursor-grab items-center rounded-md whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
+            // Desktop row: 13px text, tonal hover, filled selection. Selection
+            // never changes the text weight — a re-measuring label makes a
+            // multi-select scan jumpy, and the fill already carries the state.
+            "render-contain state-layer grid cursor-grab items-center rounded-md whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
             entry.hidden && HIDDEN_ENTRY_CLASS,
-            isSelected && "bg-selection ring-1 ring-primary/35 ring-inset",
+            isSelected && "bg-selection ring-1 ring-primary/30 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
           )}
@@ -1086,16 +1097,7 @@ function FileListRow({
                 />
               )}
             </EntryIconFrame>
-            <span
-              className={cn(
-                "min-w-0 truncate text-sm",
-                // Expressive type scale: the name carries the row's weight and
-                // steps up to semibold while selected.
-                isSelected ? "font-semibold" : "font-medium",
-              )}
-            >
-              {entry.name}
-            </span>
+            <span className="min-w-0 truncate text-[13px]">{entry.name}</span>
             {entryStatus && <GitStatusBadge kind={entryStatus} />}
             {entry.relativePath && (
               <span
@@ -1106,12 +1108,12 @@ function FileListRow({
               </span>
             )}
           </div>
-          <div className="px-2.5 text-xs text-muted-foreground">
+          <div className="px-2.5 text-xs text-muted-foreground tabular-nums">
             {formatModifiedAt(entry.modifiedAt)}
           </div>
           <div className="px-2.5 text-xs text-muted-foreground">{presentation.label}</div>
           <div
-            className="px-2.5 text-right text-xs text-muted-foreground"
+            className="px-2.5 text-right text-xs text-muted-foreground tabular-nums"
             title={
               displaySize === null
                 ? undefined

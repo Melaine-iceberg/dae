@@ -229,7 +229,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
       {space === null ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {Array.from({ length: 3 }, (_, index) => (
-            <Skeleton className="h-[62px] rounded-xl" key={index} />
+            <Skeleton className="h-[54px] rounded-lg" key={index} />
           ))}
         </div>
       ) : space.items.length === 0 ? (

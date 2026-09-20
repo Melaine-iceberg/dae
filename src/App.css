@@ -12,11 +12,11 @@
   --font-mono:
     "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
 
-  /* Island type scale: view headers stay modest; a micro label step for
-     section captions. Desktop density beats display drama. Display and
-     title sizes take negative tracking (large text reads loose otherwise);
-     the micro label takes positive tracking so it reads as a caption
-     instead of as very small body text. */
+  /* Compact desktop type scale: view headers stay modest; a micro label step
+     for section captions. Chrome text is 13px and metadata 12px, so a dense
+     list still scans. Display and title sizes take negative tracking (large
+     text reads loose otherwise); the micro label takes positive tracking so
+     it reads as a caption instead of as very small body text. */
   --text-display: 1.125rem;
   --text-display--line-height: 1.5rem;
   --text-display--font-weight: 650;
@@ -28,7 +28,7 @@
   --text-label: 0.6875rem;
   --text-label--line-height: 1rem;
   --text-label--font-weight: 600;
-  --text-label--letter-spacing: 0.015em;
+  --text-label--letter-spacing: 0.06em;
 
   /* Linear motion: fast, critically damped, no overshoot. State changes
      should feel instantaneous, not performed. The "spring" curves are
@@ -47,12 +47,14 @@
   --duration-normal: 160ms;
   --duration-slow: 240ms;
 
-  /* Island elevation: four measured steps. Each step pairs a tight contact
-     shadow with a wide ambient one, so a surface reads as *sitting on* the
-     canvas rather than merely being outlined. Strength is driven by the
-     per-theme --shadow-a* stops below: a black shadow is nearly invisible
-     on a near-black canvas, so dark mode multiplies the same four steps up
-     instead of inventing a second set of shadows. */
+  /* Elevation: four measured steps, spent on floating layers only — menus,
+     dialogs, the command palette, drag ghosts. The window itself is flat:
+     its columns are divided by hairlines, not by shadows. Each step pairs a
+     tight contact shadow with a wide ambient one, so a surface reads as
+     *sitting on* the plane rather than merely being outlined. Strength is
+     driven by the per-theme --shadow-a* stops below: a black shadow is nearly
+     invisible on a near-black canvas, so dark mode multiplies the same four
+     steps up instead of inventing a second set of shadows. */
   --shadow-ambient-xs:
     0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
     0 1px 3px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent);
@@ -130,10 +132,12 @@
   --color-error-container: var(--error-container);
   --color-on-error-container: var(--on-error-container);
 
-  /* Island shape scale: 4px micro chips → 5px tags → 6px controls → 8px
-     inputs → 10px inner surfaces → 13px islands → 16px+ floating layers.
+  /* Shape scale: 4px micro chips → 5px tags → 6px controls → 8px inputs
+     → 10px inner surfaces → 13px islands → 16px+ floating layers.
      Each step is roughly 1.6x its neighbour so two adjacent radii read as
-     deliberately different sizes instead of drifting into one blur. */
+     deliberately different sizes instead of drifting into one blur. In the
+     flat shell, 6px is the row/control default and 10px is the largest
+     radius a row or card may take. */
   --radius-xs: 5px;
   --radius-2xs: 4px;
   --radius-sm: 6px;
@@ -169,12 +173,13 @@
 }
 
 :root {
-  /* Linear — light. A quiet paper canvas carries white panels with hairline
-     edges (border/card ≈ 1.35) so boundaries stay legible before any shadow
-     lands. Depth is a measured ladder — canvas → panel → floating layer,
-     which lifts by shadow alone. The accent is Linear's indigo picked so it
-     clears AA in BOTH of its jobs: as a fill (white on it ≈ 5.4) and as
-     text or icon on any surface in the ladder (≈ 5.4 at worst). */
+  /* Linear — light. A quiet paper canvas carries white content planes with
+     hairline edges (border/card ≈ 1.35) so boundaries stay legible without
+     any shadow. Depth is a measured ladder — canvas → sidebar column →
+     content plane → floating layer, where only the last one lifts. The accent
+     is Linear's indigo picked so it clears AA in BOTH of its jobs: as a fill
+     (white on it ≈ 5.4) and as text or icon on any surface in the ladder
+     (≈ 5.4 at worst). */
   --shadow-color: #232a3d; /* cool ink: shadows tint the canvas, never grey it */
   --shadow-a1: 14%;
   --shadow-a2: 23%;
@@ -243,13 +248,14 @@
 
 .dark {
   /* Linear — dark. A cool near-black canvas (#08090a family) carries a
-     clear three-step ladder: canvas → panel → floating layer, separated by
-     hairline borders and each panel's 1px inset top highlight rather than
-     heavy shadows (black-on-near-black does nothing at light-mode
-     strengths). Every neutral keeps a faint cool cast so the window reads
-     as graphite, not void; the accent is Linear's indigo, brightened for
-     dark surfaces, and the fill's label inverts to ink — white on a vivid
-     indigo cannot reach AA, ink on it clears ≈8:1. */
+     clear ladder: canvas → sidebar column → content plane → floating layer,
+     separated by hairline borders rather than heavy shadows (black-on-near-
+     black does nothing at light-mode strengths); the one raised chrome
+     element, the active tab chip, adds a single 1px inset top highlight.
+     Every neutral keeps a faint cool cast so the window reads as graphite,
+     not void; the accent is Linear's indigo, brightened for dark surfaces,
+     and the fill's label inverts to ink — white on a vivid indigo cannot
+     reach AA, ink on it clears ≈8:1. */
   --shadow-color: #000000;
   --shadow-a1: 36%;
   --shadow-a2: 46%;

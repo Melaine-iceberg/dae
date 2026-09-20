@@ -299,8 +299,13 @@ export function TrashView() {
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-border/60">
-          <div className={cn(ROW_GRID, "border-b px-3 py-2 text-label text-muted-foreground")}>
+        <div className="overflow-hidden rounded-lg border border-border">
+          <div
+            className={cn(
+              ROW_GRID,
+              "border-b border-border bg-muted/40 px-3 py-1.5 text-label text-muted-foreground/80 uppercase",
+            )}
+          >
             <SelectAllToggle allSelected={allSelected} onToggle={toggleSelectAll} />
             <span>{t("trash.columns.name")}</span>
             <span>{t("trash.columns.originalLocation")}</span>
@@ -440,7 +445,7 @@ function TrashRow({
             aria-pressed={isSelected}
             className={cn(
               ROW_GRID,
-              "w-full px-3 py-2 text-left transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              "w-full px-3 py-1.5 text-left transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
               isSelected && "bg-selection",
             )}
             onClick={onToggleSelected}

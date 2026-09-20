@@ -190,7 +190,7 @@ function SidebarContent() {
   return (
     <nav
       aria-label={t("nav.label")}
-      className="flex w-56 shrink-0 flex-col overflow-hidden rounded-xl border bg-sidebar shadow-ambient-xs dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.05)]"
+      className="flex w-56 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <NavItem
@@ -415,19 +415,19 @@ function CollapsibleSection({
 
   return (
     <div className="mt-1">
-      <div className="flex items-center gap-0.5">
+      <div className="group/section flex h-7 items-center gap-0.5">
         <button
           aria-expanded={open}
-          className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 py-1 text-left text-[13px] font-medium transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/70"
+          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-[13px] font-medium transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/60"
           onClick={() => toggle(id)}
           type="button"
         >
-          <Icon className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+          <Icon className="size-4 shrink-0 text-muted-foreground transition-colors group-hover/section:text-foreground" />
           <span className="min-w-0 flex-1 truncate">{label}</span>
           <ChevronDown
             aria-hidden="true"
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground/80 transition-transform duration-fast ease-spring-fast",
+              "size-3.5 shrink-0 text-muted-foreground/70 transition-transform duration-fast ease-spring-fast",
               !open && "-rotate-90",
             )}
           />
@@ -435,12 +435,12 @@ function CollapsibleSection({
         {action && (
           <button
             aria-label={action.label}
-            className="shrink-0 rounded-xs p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+            className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast group-hover/section:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
             onClick={action.onClick}
             title={action.label}
             type="button"
           >
-            <Plus className="size-4" />
+            <Plus className="size-3.5" />
           </button>
         )}
       </div>
@@ -802,17 +802,17 @@ function SectionLabel({
   onAdd?: () => void;
 }) {
   return (
-    <div className="mt-3 flex items-center justify-between px-2 pb-1">
-      <span className="text-label tracking-[0.05em] text-muted-foreground uppercase">{label}</span>
+    <div className="group/section mt-4 flex h-5 items-center justify-between px-2">
+      <span className="text-label text-muted-foreground/80 uppercase select-none">{label}</span>
       {onAdd && (
         <button
           aria-label={addTitle}
-          className="rounded-xs p-0.5 text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+          className="flex size-4.5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast group-hover/section:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
           onClick={onAdd}
           title={addTitle}
           type="button"
         >
-          <Plus className="size-4" />
+          <Plus className="size-3.5" />
         </button>
       )}
     </div>
@@ -838,21 +838,15 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        "relative flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[13px] transition-[background-color,color,scale] duration-fast ease-spring-fast hover:bg-accent/70 active:scale-[0.98]",
-        isActive && "bg-selection font-medium text-accent-foreground",
+        // Linear nav row: 28px tall, filled selection, no leading tick — the
+        // same selection language the file list and the command palette use.
+        "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] transition-[background-color,color] duration-fast ease-spring-fast hover:bg-accent/60",
+        isActive && "bg-selection font-medium text-foreground",
       )}
       onClick={onClick}
       title={title ?? label}
       type="button"
     >
-      {/* Linear active indicator: a quiet accent tick on the leading edge. */}
-      <span
-        aria-hidden="true"
-        className={cn(
-          "absolute left-0.5 h-4 w-[3px] rounded-xs bg-primary transition-[transform,opacity] duration-fast ease-spring-fast",
-          isActive ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0",
-        )}
-      />
       <Icon
         className={cn(
           "size-4 shrink-0",

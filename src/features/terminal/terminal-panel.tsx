@@ -391,7 +391,7 @@ export function TerminalPanel() {
     <section
       aria-label={t("panel.label")}
       className={cn(
-        "flex shrink-0 flex-col overflow-hidden rounded-xl border bg-card shadow-ambient-xs",
+        "flex shrink-0 flex-col overflow-hidden border-t border-border bg-card",
         !visible && "hidden",
       )}
       style={{ height }}
@@ -401,14 +401,14 @@ export function TerminalPanel() {
         className="group h-1 w-full shrink-0 cursor-row-resize"
         onPointerDown={startResizeDrag}
       />
-      <header className="flex h-8 shrink-0 items-center gap-1 border-b border-border/60 px-2">
+      <header className="flex h-8 shrink-0 items-center gap-1 border-b border-border px-2">
         <span className="text-xs font-medium text-muted-foreground select-none">
           {t("panel.title")}
         </span>
         <div className="ml-auto flex items-center gap-0.5">
           <button
             aria-label={t("panel.restart.label")}
-            className="flex size-6 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={restart}
             title={t("panel.restart.label")}
             type="button"
@@ -417,7 +417,7 @@ export function TerminalPanel() {
           </button>
           <button
             aria-label={t("panel.close.label")}
-            className="flex size-6 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             onClick={() => setVisible(false)}
             title={t("panel.close.title")}
             type="button"

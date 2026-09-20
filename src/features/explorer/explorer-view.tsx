@@ -1210,7 +1210,7 @@ export function ExplorerView({
     <main className="h-full bg-card" data-explorer-container="true">
       <section className="flex h-full w-full flex-col overflow-hidden">
         <header
-          className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 bg-card px-2"
+          className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border bg-card px-1.5"
           data-tauri-drag-region="deep"
         >
           <div className="flex shrink-0 items-center gap-0.5">
@@ -1305,7 +1305,7 @@ export function ExplorerView({
             </Button>
           </div>
 
-          <div className="min-w-0 flex-1 px-2">
+          <div className="min-w-0 flex-1 px-1">
             {directory ? (
               <ExplorerPathBar
                 directory={directory}
@@ -1371,7 +1371,7 @@ export function ExplorerView({
         </header>
 
         {isContentSearchActive && (
-          <div className="shrink-0 border-b border-border/60 px-3 py-1.5">
+          <div className="shrink-0 border-b border-border px-2 py-1.5">
             <ContentSearchToolbar search={contentSearch} />
           </div>
         )}
@@ -1700,7 +1700,7 @@ export function ExplorerView({
 }
 
 function ToolbarSeparator() {
-  return <div aria-hidden="true" className="mx-1 h-5 w-px bg-border" />;
+  return <div aria-hidden="true" className="mx-0.5 h-4 w-px bg-border" />;
 }
 
 /** Places local files on the OS clipboard (CF_HDROP) so Explorer, browsers,

@@ -23,7 +23,7 @@ export function WorkspacePage({
 }) {
   return (
     <main aria-label={ariaLabel} className="min-h-0 flex-1 overflow-y-auto bg-card">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-8 pt-8 pb-12">{children}</div>
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-7 px-7 pt-7 pb-10">{children}</div>
     </main>
   );
 }
@@ -56,7 +56,7 @@ export function WorkspacePageHeader({
 export function SectionHeader({ action, title }: { action?: ReactNode; title: string }) {
   return (
     <div className="mb-3 flex items-center justify-between gap-4">
-      <h2 className="text-label tracking-[0.05em] text-muted-foreground uppercase">{title}</h2>
+      <h2 className="text-label text-muted-foreground/80 uppercase">{title}</h2>
       {action}
     </div>
   );
@@ -88,10 +88,11 @@ export function LocationCard({
   return (
     <button
       className={cn(
-        "group flex w-full items-center gap-3 rounded-xl bg-muted/60 p-3 text-left",
-        "transition-[background-color,box-shadow,translate,scale] duration-fast ease-standard",
-        "hover:-translate-y-0.5 hover:bg-accent/70 hover:shadow-ambient-sm",
-        "active:translate-y-0 active:scale-[0.98] active:shadow-none",
+        // Linear card: a quiet tinted block that answers the pointer with tone
+        // and a hairline instead of lift — nothing in the window floats.
+        "group flex w-full items-center gap-3 rounded-lg bg-muted/50 p-2.5 text-left ring-1 ring-transparent",
+        "transition-[background-color,border-color,box-shadow] duration-fast ease-standard",
+        "hover:bg-accent/60 hover:ring-border",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       )}
       onClick={onClick}
@@ -100,13 +101,13 @@ export function LocationCard({
     >
       <span
         className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-lg",
+          "flex size-8 shrink-0 items-center justify-center rounded-md",
           !tileClassName && !tileStyle && "bg-secondary",
           tileClassName,
         )}
         style={tileStyle}
       >
-        <Icon className={cn("size-4.5", iconClassName)} />
+        <Icon className={cn("size-4", iconClassName)} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-medium">{title}</span>

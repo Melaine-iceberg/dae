@@ -29,8 +29,10 @@
     "noPathResults": "No folders match “{{query}}”",
     "noPathLocations": "No favorites or recent folders yet",
     "openSpace": "Open space “{{name}}”",
-    "footerNavigateHint": "↑↓ Navigate",
-    "footerExecuteHint": "Enter to run · Esc to close",
+    "pathTitle": "Jump to path",
+    "footerNavigateHint": "Navigate",
+    "footerExecuteHint": "Run",
+    "footerCloseHint": "Close",
     "groups": {
       "path": "Jump",
       "search": "Search",

@@ -808,11 +808,11 @@ export function CommandBar() {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogContent
-        className="top-24 w-full min-w-0 max-w-[min(37rem,calc(100%-2rem))] translate-y-0 gap-0 overflow-hidden rounded-2xl border border-white/10 bg-popover/90 p-0 shadow-ambient-lg ring-1 ring-border/70 backdrop-blur-2xl backdrop-saturate-150 duration-normal ease-spring data-open:slide-in-from-top-2 sm:max-w-[min(37rem,calc(100%-2rem))]"
+        className="top-[12%] w-full min-w-0 max-w-[min(40rem,calc(100%-2rem))] translate-y-0 gap-0 overflow-hidden rounded-xl border border-border bg-popover/95 p-0 shadow-ambient-lg backdrop-blur-2xl backdrop-saturate-150 duration-fast ease-standard data-open:slide-in-from-top-1 sm:max-w-[min(40rem,calc(100%-2rem))]"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{t("commandBar.title")}</DialogTitle>
-        <div className="flex items-center gap-2.5 border-b border-border/60 px-4">
+        <div className="flex items-center gap-2.5 border-b border-border px-3.5">
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <input
             aria-activedescendant={results.length > 0 ? `command-item-${currentIndex}` : undefined}
@@ -821,7 +821,7 @@ export function CommandBar() {
             aria-expanded="true"
             aria-label={t("commandBar.inputAriaLabel")}
             autoComplete="off"
-            className="h-12 min-w-0 flex-1 bg-transparent text-[15px] tracking-[-0.006em] outline-none placeholder:text-muted-foreground/70"
+            className="h-11 min-w-0 flex-1 bg-transparent text-[14px] tracking-[-0.006em] outline-none placeholder:text-muted-foreground/70"
             id="command-bar-input"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleInputKeyDown}
@@ -860,11 +860,14 @@ export function CommandBar() {
               </p>
             )
           ) : renderGroups ? (
-            renderGroups.map((section) => (
-              <div key={section.group}>
+            renderGroups.map((section, sectionIndex) => (
+              <div
+                className={cn(sectionIndex > 0 && "mt-1 border-t border-border/60")}
+                key={section.group}
+              >
                 <p
                   aria-hidden="true"
-                  className="px-3.5 pt-2 pb-1 text-label text-muted-foreground select-none"
+                  className="px-2 pt-2.5 pb-1 text-label text-muted-foreground/80 uppercase select-none"
                 >
                   {groupLabels[section.group]}
                 </p>
@@ -893,15 +896,21 @@ export function CommandBar() {
             ))
           )}
         </div>
-        <footer className="flex h-9 shrink-0 items-center justify-between border-t border-border/60 bg-muted/30 px-4 text-xs text-muted-foreground select-none">
-          <span className="flex items-center gap-1.5">
-            {isSearchingFiles && <LoaderCircle className="size-3 animate-spin" />}
-            <Kbd className="h-4.5 text-[9px]">↑↓</Kbd>
-            {t("commandBar.footerNavigateHint")}
+        <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border bg-muted/30 px-3.5 text-[11px] text-muted-foreground select-none">
+          <span className="flex min-w-0 items-center gap-1.5">
+            {isSearchingFiles && <LoaderCircle className="size-3 shrink-0 animate-spin" />}
+            <Kbd className="h-4 px-1 text-[10px]">↑↓</Kbd>
+            <span className="truncate">{t("commandBar.footerNavigateHint")}</span>
           </span>
-          <span className="flex items-center gap-1.5">
-            <Kbd className="h-4.5 text-[9px]">↵</Kbd>
-            {t("commandBar.footerExecuteHint")}
+          <span className="flex shrink-0 items-center gap-3">
+            <span className="flex items-center gap-1.5">
+              <Kbd className="h-4 px-1 text-[10px]">↵</Kbd>
+              <span>{t("commandBar.footerExecuteHint")}</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Kbd className="h-4 px-1 text-[10px]">Esc</Kbd>
+              <span>{t("commandBar.footerCloseHint")}</span>
+            </span>
           </span>
         </footer>
       </DialogContent>
@@ -926,8 +935,10 @@ function CommandResultRow({
     <button
       aria-selected={isActive}
       className={cn(
-        "group/command-row relative flex w-full items-center gap-2.5 rounded-md py-1.5 pr-3 pl-3.5 text-left text-[13px] transition-colors outline-none",
-        isActive ? "bg-selection text-accent-foreground" : "hover:bg-accent/60",
+        // Raycast row: 32px, filled selection, no leading tick — the palette,
+        // the sidebar and the file list all share one selection language.
+        "group/command-row flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-[13px] transition-colors outline-none",
+        isActive ? "bg-selection text-foreground" : "hover:bg-accent/60",
       )}
       data-command-index={dataIndex}
       id={`command-item-${dataIndex}`}
@@ -936,14 +947,6 @@ function CommandResultRow({
       tabIndex={-1}
       type="button"
     >
-      {/* Raycast selection tick: an accent bar on the leading edge. */}
-      <span
-        aria-hidden="true"
-        className={cn(
-          "absolute top-1/2 left-1 h-4 w-[3px] -translate-y-1/2 rounded-xs bg-primary transition-[transform,opacity] duration-fast ease-spring-fast",
-          isActive ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0",
-        )}
-      />
       <item.icon
         className={cn("size-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground")}
       />

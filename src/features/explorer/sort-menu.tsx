@@ -13,7 +13,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { cn } from "@/lib/utils";
 
 import {
   DEFAULT_SORT_ORDER,
@@ -57,9 +56,7 @@ export function SortMenu({ disabled }: { disabled?: boolean }) {
     <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={t("sort.menuLabel")}
-        className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-sm text-muted-foreground outline-none transition-colors hover:bg-accent/70 hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground disabled:pointer-events-none disabled:opacity-50",
-        )}
+        className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent/70 hover:text-foreground data-[popup-open]:bg-accent data-[popup-open]:text-foreground disabled:pointer-events-none disabled:opacity-50"
         disabled={disabled}
         title={t("sort.menuLabel")}
       >

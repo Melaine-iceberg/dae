@@ -141,7 +141,7 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
           // active look cannot hang off `focus-within`: a menu opened from it
           // takes focus, and the bar must not read as having left the edit
           // state while that menu is up.
-          "flex h-8 min-w-0 flex-1 items-center rounded-full border bg-card pr-3 pl-3.5 ring-2 transition-[background-color,border-color,box-shadow]",
+          "flex h-7 min-w-0 flex-1 items-center rounded-md border bg-card pr-2.5 pl-2.5 ring-2 transition-[background-color,border-color,box-shadow]",
           isInvalid ? "border-destructive ring-destructive/20" : "border-ring ring-ring/30",
         )}
         onSubmit={(event) => void submitPath(event)}
@@ -176,7 +176,7 @@ export function ExplorerPathBar({ directory, onNavigate, onNavigatePath }: Explo
         // `select-text` restores text selection inside the bar, which the
         // shared trigger class turns off. `tabIndex` makes the bar itself
         // focusable so a menu action can keep the caret here.
-        className="flex h-8 min-w-0 flex-1 select-text items-center rounded-full border border-transparent bg-muted/70 px-3.5 transition-colors hover:bg-muted dark:bg-muted/50 dark:hover:bg-muted/70"
+        className="flex h-7 min-w-0 flex-1 select-text items-center rounded-md bg-muted/60 px-2.5 transition-colors hover:bg-muted dark:bg-muted/40 dark:hover:bg-muted/60"
         data-tauri-drag-region="false"
         onClick={startEditing}
         ref={pathBarRef}

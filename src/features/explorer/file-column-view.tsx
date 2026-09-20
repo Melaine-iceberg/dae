@@ -307,7 +307,7 @@ function PaneRow({
             // no pill morph so rows keep a constant corner radius.
             "render-contain state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-xs px-2.5 select-none transition-[background-color,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/60 focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
-            (isSelected || isExpanded) && "bg-selection ring-1 ring-primary/35 ring-inset",
+            (isSelected || isExpanded) && "bg-selection ring-1 ring-primary/30 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
             dropTargetPath === entry.path && "bg-selection ring-2 ring-primary ring-inset",
           )}

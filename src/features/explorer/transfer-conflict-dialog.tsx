@@ -219,7 +219,7 @@ function ConflictSideCard({
   return (
     <div
       className={cn(
-        "flex flex-col gap-1 rounded-xl border p-3",
+        "flex flex-col gap-1 rounded-lg border p-3",
         highlight ? "border-primary/40 bg-primary/5" : "border-border/60 bg-muted/40",
       )}
     >

@@ -300,8 +300,11 @@ export function ExplorerTabs() {
   return (
     <div className="flex h-full flex-col">
       <TabDropIndicator />
+      {/* Window chrome: one flat 36px bar carrying the tab strip and the native
+          window controls. It shares the sidebar's tone, so the two read as a
+          single frame wrapping the content plane instead of three islands. */}
       <header
-        className="flex h-10 shrink-0 items-stretch border-b border-border/50 bg-background"
+        className="flex h-9 shrink-0 items-stretch border-b border-border bg-sidebar"
         data-tauri-drag-region="deep"
       >
         <StripScrollButton
@@ -313,7 +316,7 @@ export function ExplorerTabs() {
         <div
           ref={stripRef}
           aria-label={t("tabs.ariaLabel")}
-          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-2.5 scrollbar-none [&::-webkit-scrollbar]:hidden"
+          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto px-1.5 scrollbar-none [&::-webkit-scrollbar]:hidden"
           onScroll={syncScrollButtons}
           role="tablist"
         >
@@ -322,7 +325,7 @@ export function ExplorerTabs() {
           ))}
           <button
             aria-label={t("tabs.newTab")}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
             onClick={createTab}
             title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
             type="button"
@@ -339,13 +342,15 @@ export function ExplorerTabs() {
         <WindowControls />
       </header>
 
-      {/* Island shell: panels float on the canvas separated by 10px gutters.
-          The tab bar stays flush with the window edge so the native window
-          controls and snap layouts keep working. */}
-      <div className="flex min-h-0 flex-1 gap-2.5 px-2.5 pt-1 pb-2.5">
+      {/* Flat shell: the sidebar is a tonal column divided from the content
+          plane by a single hairline, and the content plane itself is borderless
+          — elevation is spent on overlays alone. The tab bar stays flush with
+          the window edge so native window controls and snap layouts keep
+          working. */}
+      <div className="flex min-h-0 flex-1">
         <Sidebar />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-ambient-xs dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.05)]">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card">
             <WorkspaceSurfaceView key={activeTabId} tabId={activeTabId} />
           </div>
           {terminalMounted && (
@@ -376,7 +381,7 @@ function StripScrollButton({
     <button
       aria-label={ariaLabel}
       className={cn(
-        "flex w-7 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+        "flex w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
         !visible && "invisible",
       )}
       onClick={onClick}
@@ -839,10 +844,14 @@ function TabStripItem({
       aria-grabbed={isDragging}
       aria-selected={isActive}
       className={cn(
-        "group relative flex h-8 w-52 shrink-0 touch-none cursor-grab items-center rounded-t-md text-[13px] select-none transition-[background-color,color,box-shadow,scale,opacity] duration-fast ease-spring-fast active:scale-[0.98] active:cursor-grabbing",
+        // Linear tab: a compact chip. The active tab is the only raised
+        // surface in the strip (one hairline, one shadow step); inactive tabs
+        // stay flat text until hovered, so the strip reads as a row of
+        // destinations rather than a row of buttons.
+        "group relative flex h-6 w-52 shrink-0 touch-none cursor-grab items-center rounded-md text-[13px] select-none transition-[background-color,color,box-shadow,scale,opacity] duration-fast ease-spring-fast active:scale-[0.98] active:cursor-grabbing",
         isActive
-          ? "bg-accent/70 font-medium text-foreground"
-          : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+          ? "bg-card font-medium text-foreground shadow-ambient-xs ring-1 ring-border dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.05)]"
+          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
         isDragging && "opacity-30",
       )}
       data-tauri-drag-region="false"
@@ -865,20 +874,11 @@ function TabStripItem({
           : title
       }
     >
-      {/* Linear tab: the active state reads through text weight plus a
-          hairline accent underline, not a raised card. */}
-      <span
-        aria-hidden="true"
-        className={cn(
-          "absolute inset-x-2.5 bottom-0 h-0.5 rounded-t-[2px] bg-primary transition-[transform,opacity] duration-fast ease-spring-fast",
-          isActive ? "scale-x-100 opacity-100" : "scale-x-50 opacity-0",
-        )}
-      />
       {tabContent}
       <button
         aria-label={t("tabs.closeTab", { title })}
         className={cn(
-          "absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-xs transition-colors hover:bg-accent",
+          "absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm transition-colors hover:bg-accent",
           isActive
             ? "text-muted-foreground hover:text-foreground"
             : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
