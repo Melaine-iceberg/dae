@@ -49,6 +49,7 @@ import {
 import type { RecentItem, SearchEntry } from "@/bindings";
 import { commands } from "@/bindings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Kbd } from "@/components/ui/kbd";
 import {
   DEFAULT_ENTRY_FILTERS,
   DEFAULT_SORT_ORDER,
@@ -807,11 +808,11 @@ export function CommandBar() {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogContent
-        className="top-20 w-full min-w-0 max-w-[min(36rem,calc(100%-2rem))] translate-y-0 gap-0 overflow-hidden rounded-xl p-0 sm:max-w-[min(36rem,calc(100%-2rem))]"
+        className="top-24 w-full min-w-0 max-w-[min(37rem,calc(100%-2rem))] translate-y-0 gap-0 overflow-hidden rounded-2xl border border-white/10 bg-popover/90 p-0 shadow-ambient-lg ring-1 ring-border/70 backdrop-blur-2xl backdrop-saturate-150 duration-normal ease-spring data-open:slide-in-from-top-2 sm:max-w-[min(37rem,calc(100%-2rem))]"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{t("commandBar.title")}</DialogTitle>
-        <div className="flex items-center gap-2.5 border-b px-3.5">
+        <div className="flex items-center gap-2.5 border-b border-border/60 px-4">
           <Search className="size-4 shrink-0 text-muted-foreground" />
           <input
             aria-activedescendant={results.length > 0 ? `command-item-${currentIndex}` : undefined}
@@ -820,7 +821,7 @@ export function CommandBar() {
             aria-expanded="true"
             aria-label={t("commandBar.inputAriaLabel")}
             autoComplete="off"
-            className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="h-12 min-w-0 flex-1 bg-transparent text-[15px] tracking-[-0.006em] outline-none placeholder:text-muted-foreground/70"
             id="command-bar-input"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleInputKeyDown}
@@ -831,13 +832,13 @@ export function CommandBar() {
             type="text"
             value={query}
           />
-          <kbd className="shrink-0 rounded-xs border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
+          <Kbd>
             {formatBinding(resolveBinding(shortcuts, pathMode ? "app.pathJump" : "app.commandBar"))}
-          </kbd>
+          </Kbd>
         </div>
         <div
           aria-label={t("commandBar.resultsAriaLabel")}
-          className="max-h-80 overflow-y-auto overscroll-contain p-1.5"
+          className="max-h-[21rem] overflow-y-auto overscroll-contain p-1.5"
           id="command-bar-results"
           ref={listRef}
           role="listbox"
@@ -892,12 +893,16 @@ export function CommandBar() {
             ))
           )}
         </div>
-        <footer className="flex h-8 shrink-0 items-center justify-between border-t px-3.5 text-xs text-muted-foreground select-none">
+        <footer className="flex h-9 shrink-0 items-center justify-between border-t border-border/60 bg-muted/30 px-4 text-xs text-muted-foreground select-none">
           <span className="flex items-center gap-1.5">
             {isSearchingFiles && <LoaderCircle className="size-3 animate-spin" />}
+            <Kbd className="h-4.5 text-[9px]">↑↓</Kbd>
             {t("commandBar.footerNavigateHint")}
           </span>
-          <span>{t("commandBar.footerExecuteHint")}</span>
+          <span className="flex items-center gap-1.5">
+            <Kbd className="h-4.5 text-[9px]">↵</Kbd>
+            {t("commandBar.footerExecuteHint")}
+          </span>
         </footer>
       </DialogContent>
     </Dialog>
@@ -921,8 +926,8 @@ function CommandResultRow({
     <button
       aria-selected={isActive}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-sm px-3 py-2 text-left text-[13px] transition-colors outline-none",
-        isActive ? "bg-selection font-medium text-accent-foreground" : "hover:bg-accent/60",
+        "group/command-row relative flex w-full items-center gap-2.5 rounded-md py-1.5 pr-3 pl-3.5 text-left text-[13px] transition-colors outline-none",
+        isActive ? "bg-selection text-accent-foreground" : "hover:bg-accent/60",
       )}
       data-command-index={dataIndex}
       id={`command-item-${dataIndex}`}
@@ -931,6 +936,14 @@ function CommandResultRow({
       tabIndex={-1}
       type="button"
     >
+      {/* Raycast selection tick: an accent bar on the leading edge. */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          "absolute top-1/2 left-1 h-4 w-[3px] -translate-y-1/2 rounded-xs bg-primary transition-[transform,opacity] duration-fast ease-spring-fast",
+          isActive ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0",
+        )}
+      />
       <item.icon
         className={cn("size-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground")}
       />

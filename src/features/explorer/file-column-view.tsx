@@ -236,6 +236,7 @@ function Pane({
                 onPointerDownEntry={onPointerDownEntry}
                 onSelectEntry={onSelectEntry}
                 selectedCount={selectedCount}
+                selectedPathSet={selectedPathSet}
                 virtualStart={virtualRow.start}
               />
             );
@@ -269,6 +270,7 @@ function PaneRow({
   onPointerDownEntry,
   onSelectEntry,
   selectedCount,
+  selectedPathSet,
   virtualStart,
 }: {
   activeChildPath: string | null;
@@ -288,6 +290,7 @@ function PaneRow({
   onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
   onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => void;
   selectedCount: number;
+  selectedPathSet: Set<string>;
   virtualStart: number;
 }) {
   const isDirectory = entry.kind === "directory";
@@ -382,6 +385,7 @@ function PaneRow({
           onOpen={() => onOpenEntry(entry)}
           onOpenWith={() => menuActions.onOpenWith(entry.path)}
           onRename={menuActions.onRename}
+          selectedPaths={[...selectedPathSet]}
         />
       </ContextMenuContent>
     </ContextMenu>

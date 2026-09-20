@@ -2,6 +2,10 @@
   "badges": {
     "readOnly": "Read-only"
   },
+  "shellCommands": {
+    "menu": "App extensions",
+    "launchFailedTitle": "Could not start the app's command"
+  },
   "undoRedo": {
     "toast_undo_one": "Undid: {{op}}",
     "toast_undo_other": "Undid: {{op}} ({{count}} items)",

@@ -845,11 +845,11 @@ function NavItem({
       title={title ?? label}
       type="button"
     >
-      {/* Active indicator: a compact primary-gradient tick on the leading edge. */}
+      {/* Linear active indicator: a quiet accent tick on the leading edge. */}
       <span
         aria-hidden="true"
         className={cn(
-          "absolute left-0.5 h-4 w-[3px] rounded-xs bg-[linear-gradient(180deg,var(--primary),var(--primary-2))] transition-[transform,opacity] duration-fast ease-spring-fast",
+          "absolute left-0.5 h-4 w-[3px] rounded-xs bg-primary transition-[transform,opacity] duration-fast ease-spring-fast",
           isActive ? "scale-y-100 opacity-100" : "scale-y-50 opacity-0",
         )}
       />

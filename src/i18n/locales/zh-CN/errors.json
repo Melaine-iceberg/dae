@@ -27,7 +27,13 @@
       "invalid_type_filter": "无效的类型过滤",
       "type_filter_build_failed": "无法构建类型过滤",
       "archive_wrong_password": "密码不正确，请重试",
-      "archive_password_unsupported": "该压缩格式不支持设置密码"
+      "archive_password_unsupported": "该压缩格式不支持设置密码",
+      "shell_command_empty_selection": "没有选中任何项目",
+      "shell_command_host": "无法启动扩展命令的后台线程",
+      "shell_command_host_dropped": "扩展命令的后台线程在处理完成前已停止",
+      "shell_command_selection": "无法把当前选择传递给系统命令",
+      "shell_command_unknown": "该命令已不可用",
+      "shell_commands_windows_only": "应用扩展仅在 Windows 11 上可用"
     },
     "term": {
       "pty_create_failed": "创建 PTY 失败",

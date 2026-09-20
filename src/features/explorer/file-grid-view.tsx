@@ -228,6 +228,7 @@ export function FileGridView({
                     onPointerDownEntry={onPointerDownEntry}
                     onSelectEntry={onSelectEntry}
                     selectedCount={selectedCount}
+                    selectedPathSet={selectedPathSet}
                   />
                 ))}
             </div>
@@ -260,6 +261,7 @@ function GridCell({
   onPointerDownEntry,
   onSelectEntry,
   selectedCount,
+  selectedPathSet,
 }: {
   density: ExplorerDensity;
   entry: DirectoryEntry;
@@ -277,6 +279,7 @@ function GridCell({
   onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
   onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => void;
   selectedCount: number;
+  selectedPathSet: Set<string>;
 }) {
   const isDirectory = entry.kind === "directory";
   const presentation = getEntryPresentation(entry);
@@ -381,6 +384,7 @@ function GridCell({
           onOpen={() => onOpenEntry(entry)}
           onOpenWith={() => menuActions.onOpenWith(entry.path)}
           onRename={menuActions.onRename}
+          selectedPaths={[...selectedPathSet]}
         />
       </ContextMenuContent>
     </ContextMenu>

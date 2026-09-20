@@ -350,8 +350,11 @@ fn render_file_icon(
 /// Windows shell icon extraction: `IShellItemImageFactory` resolves whatever
 /// Explorer would show — the target icon for `.lnk`/`.url` shortcuts, the
 /// embedded icon for executables, the registered handler icon otherwise.
+///
+/// `shell_commands.rs` reuses it for the icon paths an `IExplorerCommand`
+/// reports.
 #[cfg(windows)]
-fn extract_file_icon_png(path: &str, size: u32) -> Option<Vec<u8>> {
+pub(crate) fn extract_file_icon_png(path: &str, size: u32) -> Option<Vec<u8>> {
     use windows::Win32::UI::Shell::{SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT};
     // ICONONLY keeps document thumbnails out — views pair these icons
     // with their own image thumbnails.
@@ -407,9 +410,10 @@ fn shell_image_png(
 }
 
 /// Copies a shell-produced HBITMAP into top-down RGBA pixels and encodes it
-/// as PNG.
+/// as PNG. Shared with `shell_commands.rs`, which reaches a bitmap through
+/// `SHDefExtractIconW` when a command names an icon resource rather than a file.
 #[cfg(windows)]
-fn bitmap_to_png(bitmap: windows::Win32::Graphics::Gdi::HBITMAP) -> Option<Vec<u8>> {
+pub(crate) fn bitmap_to_png(bitmap: windows::Win32::Graphics::Gdi::HBITMAP) -> Option<Vec<u8>> {
     use windows::Win32::Graphics::Gdi::{
         BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, GetDC, GetDIBits, GetObjectW,
         HGDIOBJ, ReleaseDC,

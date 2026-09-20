@@ -826,6 +826,7 @@ export function FileList({
                         onPointerDownEntry={prepareInternalDrag}
                         onSelectEntry={selectEntryIfNotDragging}
                         selectedCount={selectedCount}
+                        selectedPaths={selectedPaths}
                       />
                     </div>
                   );
@@ -1003,6 +1004,7 @@ function FileListRow({
   onPointerDownEntry,
   onSelectEntry,
   selectedCount,
+  selectedPaths,
 }: {
   densityRowHeight: number;
   entry: DirectoryEntry;
@@ -1020,6 +1022,7 @@ function FileListRow({
   onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
   onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => void;
   selectedCount: number;
+  selectedPaths: string[];
 }) {
   const { t } = useTranslation("explorer");
   const presentation = getEntryPresentation(entry);
@@ -1136,6 +1139,7 @@ function FileListRow({
           onOpen={() => onOpenEntry(entry)}
           onOpenWith={() => menuActions.onOpenWith(entry.path)}
           onRename={menuActions.onRename}
+          selectedPaths={selectedPaths}
         />
       </ContextMenuContent>
     </ContextMenu>

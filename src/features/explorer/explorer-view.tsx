@@ -89,6 +89,9 @@ import { EntryPreview } from "./entry-preview";
 import { isArchiveFile } from "./entry-context-menu";
 import { ExplorerPathBar } from "./explorer-path-bar";
 import { ExplorerStatusBar } from "./explorer-status-bar";
+import {
+  shellCommandErrorAtom,
+} from "@/features/shell-commands/shell-commands-atoms";
 import { FileList, FileListSkeleton } from "./file-list";
 import { FilterMenu } from "./filter-menu";
 import { useGitStatus } from "./git-status";
@@ -192,6 +195,11 @@ export function ExplorerView({
   const [archivePasswordPending, setArchivePasswordPending] = useState(false);
   const [pendingTransfer, setPendingTransfer] = useState<PendingTransfer | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
+  // A shell command reports back only whether the start itself succeeded; the
+  // app it launched says nothing. A failure belongs in the banner above the
+  // list rather than in the menu that has already closed.
+  const shellCommandError = useAtomValue(shellCommandErrorAtom);
+  const setShellCommandError = useSetAtom(shellCommandErrorAtom);
   const [isOperationPending, setIsOperationPending] = useState(false);
   const [fileOperationProgress, setFileOperationProgress] = useState<FileOperationProgress | null>(
     null,
@@ -1383,6 +1391,26 @@ export function ExplorerView({
               <AlertAction>
                 <Button
                   onClick={() => setOperationError(null)}
+                  size="xs"
+                  type="button"
+                  variant="outline"
+                >
+                  {t("explorer:actions.close")}
+                </Button>
+              </AlertAction>
+            </Alert>
+          </div>
+        )}
+
+        {shellCommandError && (
+          <div className="shrink-0 p-3 pb-0">
+            <Alert variant="destructive">
+              <TriangleAlert />
+              <AlertTitle>{t("explorer:shellCommands.launchFailedTitle")}</AlertTitle>
+              <AlertDescription>{shellCommandError}</AlertDescription>
+              <AlertAction>
+                <Button
+                  onClick={() => setShellCommandError(null)}
                   size="xs"
                   type="button"
                   variant="outline"

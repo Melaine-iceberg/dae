@@ -30,11 +30,11 @@
   --text-label--font-weight: 600;
   --text-label--letter-spacing: 0.015em;
 
-  /* Island motion: quick, critically damped transitions. No overshoot, no
-     bounce — state changes should feel instantaneous, not performed. The
-     two "spring" curves are settles (a fast start that eases out) and are
-     reserved for entrances and transforms; colour-only transitions stay on
-     the flat standard curve so hover never appears to lag. */
+  /* Linear motion: fast, critically damped, no overshoot. State changes
+     should feel instantaneous, not performed. The "spring" curves are
+     settles (a fast start that eases out) reserved for entrances and
+     transforms; colour-only transitions stay on the flat standard curve so
+     hover never appears to lag. */
   --ease-spring-fast: cubic-bezier(0.2, 0, 0, 1);
   --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring-slow: cubic-bezier(0.16, 1, 0.3, 1);
@@ -169,46 +169,45 @@
 }
 
 :root {
-  /* Island — light. A cool paper canvas carries white islands, and the
-     island edge is a real hairline (border/card ≈ 1.44) so panel
-     boundaries stay legible before any shadow lands. Depth is a measured
-     ladder — canvas (1.25) → island → floating layer, which lifts by
-     shadow alone. The accent is a deep azure picked so it clears AA in
-     BOTH of its jobs: as a fill (white on it ≈ 6.4) and as text or icon
-     on any surface in the ladder (≈ 4.7 at worst). */
+  /* Linear — light. A quiet paper canvas carries white panels with hairline
+     edges (border/card ≈ 1.35) so boundaries stay legible before any shadow
+     lands. Depth is a measured ladder — canvas → panel → floating layer,
+     which lifts by shadow alone. The accent is Linear's indigo picked so it
+     clears AA in BOTH of its jobs: as a fill (white on it ≈ 5.4) and as
+     text or icon on any surface in the ladder (≈ 5.4 at worst). */
   --shadow-color: #232a3d; /* cool ink: shadows tint the canvas, never grey it */
   --shadow-a1: 14%;
   --shadow-a2: 23%;
   --shadow-a3: 32%;
   --shadow-a4: 42%;
-  --background: #e0e4ec; /* canvas behind the islands — dark enough that a white island visibly floats */
-  --foreground: #171a21;
-  --card: #ffffff; /* island surface */
-  --card-foreground: #171a21;
+  --background: #f7f8f9; /* canvas — near-white grey behind the panels */
+  --foreground: #282a30;
+  --card: #ffffff; /* panel surface */
+  --card-foreground: #282a30;
   --popover: #ffffff; /* menus, dialogs — lift comes from shadow, not tone */
-  --popover-foreground: #171a21;
-  --primary: #2a55ce;
-  --primary-2: #6d93ff; /* gradient end for indicators, capacity bars, CTAs */
+  --popover-foreground: #282a30;
+  --primary: #4649c9; /* Linear indigo */
+  --primary-2: #7d84f5; /* gradient end for indicators, capacity bars, CTAs */
   --primary-foreground: #ffffff;
-  --primary-container: #dce6fd;
-  --on-primary-container: #10305f;
-  --secondary: #eff1f6; /* tonal secondary surfaces */
-  --secondary-foreground: #171a21;
-  --secondary-container: #eff1f6;
-  --on-secondary-container: #262a33;
-  --tertiary: #5f6675;
-  --tertiary-container: #edeff4;
-  --on-tertiary-container: #262a33;
-  --muted: #e9ecf2;
-  --muted-foreground: #464e5d; /* 6.6:1 on the canvas — secondary text never fades out */
-  --accent: #e2e8f4; /* hover highlight */
-  --accent-foreground: #171a21;
+  --primary-container: #e4e5fa;
+  --on-primary-container: #22247a;
+  --secondary: #f1f2f4; /* tonal secondary surfaces */
+  --secondary-foreground: #282a30;
+  --secondary-container: #f1f2f4;
+  --on-secondary-container: #3a3d45;
+  --tertiary: #61656e;
+  --tertiary-container: #eef0f3;
+  --on-tertiary-container: #3a3d45;
+  --muted: #eef0f2;
+  --muted-foreground: #62666e; /* ≈5.6:1 on the canvas — secondary text never fades out */
+  --accent: #e9ebef; /* hover highlight */
+  --accent-foreground: #282a30;
   --error-container: #fde4e2;
   --on-error-container: #6b140f;
-  --selection: #dae4fb; /* selected rows, active pills — accent-tinted, not inert grey */
-  --folder: #4f7dc4;
-  --folder-1: #6e9ad8; /* folder tile gradient start */
-  --folder-2: #3f68ae; /* folder tile gradient end */
+  --selection: #e2e3f9; /* selected rows — indigo-tinted, not inert grey */
+  --folder: #5c63d2;
+  --folder-1: #7a82e0; /* folder tile gradient start */
+  --folder-2: #4a51b4; /* folder tile gradient end */
   --icon-pdf: #c13434;
   --icon-doc: #2b5fd9;
   --icon-sheet: #17804a;
@@ -222,73 +221,70 @@
   --icon-exec: #4c5468;
   --icon-lock: #bf3c60;
   --icon-font: #5745c4;
-  --destructive: #b93030;
-  --border: #cdd4e0;
-  --input: #bdc4d1;
-  --ring: #2a55ce;
-  --chart-1: #2a55ce;
-  --chart-2: #5f6675;
+    --destructive: #c22f2f;
+  --border: #e2e4e8; /* hairline panel edge */
+  --input: #d5d8dd;
+  --ring: #4649c9;
+  --chart-1: #4649c9;
+  --chart-2: #61656e;
   --chart-3: #17804a;
   --chart-4: #9c630f;
-  --chart-5: #171a21;
+  --chart-5: #282a30;
   --radius: 10px;
-  --sidebar: #ffffff;
-  --sidebar-foreground: #171a21;
-  --sidebar-primary: #2a55ce;
+  --sidebar: #f7f8f9; /* Linear sidebar sits ON the canvas, not above it */
+  --sidebar-foreground: #282a30;
+  --sidebar-primary: #4649c9;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e2e8f4;
-  --sidebar-accent-foreground: #171a21;
-  --sidebar-border: #cdd4e0;
-  --sidebar-ring: #2a55ce;
+  --sidebar-accent: #e9ebef;
+  --sidebar-accent-foreground: #282a30;
+  --sidebar-border: #e2e4e8;
+  --sidebar-ring: #4649c9;
 }
 
 .dark {
-  /* Island — dark, neutral graphite. The canvas drops to near-black so the
-     islands can hold a real three-step ladder (canvas → island → floating)
-     instead of collapsing into one flat slab. Every neutral surface below is
-     hue-free grey (r ≈ g ≈ b) so the window reads as charcoal, never as navy;
-     the accent, selection tint and file-type hues stay saturated blue-family
-     so the UI still has a single, deliberate chroma. Shadows are multiplied
-     up through --shadow-a*: black-on-near-black does nothing at light-mode
-     strengths, so the depth here is carried by the tonal ladder plus each
-     island's 1px inset top highlight (applied at the component level). The
-     accent brightens and the fill's label inverts to ink — white on a vivid
-     blue cannot reach AA, ink on it clears 6.9:1. */
+  /* Linear — dark. A cool near-black canvas (#08090a family) carries a
+     clear three-step ladder: canvas → panel → floating layer, separated by
+     hairline borders and each panel's 1px inset top highlight rather than
+     heavy shadows (black-on-near-black does nothing at light-mode
+     strengths). Every neutral keeps a faint cool cast so the window reads
+     as graphite, not void; the accent is Linear's indigo, brightened for
+     dark surfaces, and the fill's label inverts to ink — white on a vivid
+     indigo cannot reach AA, ink on it clears ≈8:1. */
   --shadow-color: #000000;
   --shadow-a1: 36%;
   --shadow-a2: 46%;
   --shadow-a3: 58%;
   --shadow-a4: 70%;
-  --background: #0a0a0b; /* canvas — neutral near-black so the islands can float */
-  --foreground: #e8e8ea;
-  --card: #1a1a1c; /* island surface — hue-free graphite */
-  --card-foreground: #e8e8ea;
-  --popover: #262629; /* floating layer — one clear step above the islands */
-  --popover-foreground: #e8e8ea;
-  --primary: #7ea2ff; /* ≈6.8:1 on an island, 4.7:1 even on a selected row */
-  --primary-2: #9bb4ff; /* gradient end for indicators, capacity bars, CTAs */
-  --primary-foreground: #0a1020; /* ink label on the vivid fill — 6.9:1 */
-  --primary-container: #232b3d; /* accent-tinted surface — deliberately stays blue */
-  --on-primary-container: #dce5fb;
-  --secondary: #1f1f21;
-  --secondary-foreground: #e8e8ea;
-  --secondary-container: #1f1f21;
-  --on-secondary-container: #e8e8ea;
-  --tertiary: #a0a0a5;
-  --tertiary-container: #1f1f21;
-  --on-tertiary-container: #e8e8ea;
-  --muted: #141415; /* inner recessed surface — tracks, header strips, thumbnails */
-  --muted-foreground: #b0b0b5; /* 8.0:1 on an island, 5.4:1 on a selected row */
-  --accent: #25252a;
-  --accent-foreground: #eeeef0;
+  --background: #08090a; /* Linear canvas */
+  --foreground: #f7f8f8;
+  --card: #101112; /* panel surface — Linear's card grey */
+  --card-foreground: #f7f8f8;
+  --popover: #17181a; /* floating layer — one clear step above the panels */
+  --popover-foreground: #f7f8f8;
+  --primary: #8284f8; /* Linear indigo — ≈6:1 on a panel */
+  --primary-2: #a4a6fb; /* gradient end for indicators, capacity bars, CTAs */
+  --primary-foreground: #101116; /* ink label on the vivid fill — ≈8:1 */
+  --primary-container: #27294d; /* accent-tinted surface — deliberately stays indigo */
+  --on-primary-container: #dcdffb;
+  --secondary: #1a1b1d;
+  --secondary-foreground: #f7f8f8;
+  --secondary-container: #1a1b1d;
+  --on-secondary-container: #f7f8f8;
+  --tertiary: #8a8f98; /* Linear's secondary text grey */
+  --tertiary-container: #1a1b1d;
+  --on-tertiary-container: #f7f8f8;
+  --muted: #141517; /* inner recessed surface — tracks, header strips, thumbnails */
+  --muted-foreground: #8a8f98; /* Linear muted — ≈6:1 on a panel */
+  --accent: #1d1e21; /* hover highlight — a half-step above the panel */
+  --accent-foreground: #f7f8f8;
   --error-container: #4e2321;
   --on-error-container: #f7cdc9;
-  --selection: #26385f; /* accent-tinted: a selected row reads as chosen, not inert */
-  --folder: #8fb0dc;
-  --folder-1: #7093cb; /* folder tile gradient start */
-  --folder-2: #5478b4; /* folder tile gradient end */
+  --selection: #2d2e5c; /* indigo-tinted: a selected row reads as chosen, not inert */
+  --folder: #9aa3e8;
+  --folder-1: #7a82d8; /* folder tile gradient start */
+  --folder-2: #5a61b8; /* folder tile gradient end */
   --icon-pdf: #ff8a8a;
-  --icon-doc: #8fb2ff;
+  --icon-doc: #8fa2ff;
   --icon-sheet: #63d398;
   --icon-slide: #ffae63;
   --icon-image: #5acfd9;
@@ -301,23 +297,23 @@
   --icon-lock: #ff9ab2;
   --icon-font: #b4a6ff;
   --destructive: #ff6b72;
-  --border: #3a3a3e;
-  --input: #454549;
-  --ring: #7ea2ff;
-  --chart-1: #7ea2ff;
-  --chart-2: #a0a0a5;
+  --border: #26282c; /* hairline — ≈9% white on the canvas */
+  --input: #33353a;
+  --ring: #8284f8;
+  --chart-1: #8284f8;
+  --chart-2: #8a8f98;
   --chart-3: #63d398;
   --chart-4: #e8a33d;
-  --chart-5: #e8e8ea;
+  --chart-5: #f7f8f8;
   --radius: 10px;
-  --sidebar: #1a1a1c;
-  --sidebar-foreground: #e8e8ea;
-  --sidebar-primary: #7ea2ff;
-  --sidebar-primary-foreground: #0a1020;
-  --sidebar-accent: #25252a;
-  --sidebar-accent-foreground: #eeeef0;
-  --sidebar-border: #3a3a3e;
-  --sidebar-ring: #7ea2ff;
+  --sidebar: #0c0d0f; /* Linear sidebar — a half-step above the canvas, below the panel */
+  --sidebar-foreground: #f7f8f8;
+  --sidebar-primary: #8284f8;
+  --sidebar-primary-foreground: #101116;
+  --sidebar-accent: #1d1e21;
+  --sidebar-accent-foreground: #f7f8f8;
+  --sidebar-border: #26282c;
+  --sidebar-ring: #8284f8;
 }
 
 @layer components {

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import {
@@ -26,6 +26,8 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { commands, type ArchiveFormat } from "@/bindings";
 import { appSettingsAtom } from "@/features/settings/settings-atoms";
 import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
+import { ShellCommandsMenu } from "@/features/shell-commands/shell-commands-menu";
+import { shellCommandErrorAtom } from "@/features/shell-commands/shell-commands-atoms";
 
 import { propertiesTargetAtom } from "./properties-atoms";
 import { openInNewTabAtom, openPathInNewWindowAtom } from "./tabs";
@@ -78,6 +80,12 @@ export interface EntryActions {
   onOpen: () => void;
   onOpenWith: () => void;
   onRename: () => void;
+  /**
+   * Paths the action would run on — the selection when the right-clicked entry
+   * is part of it, otherwise just that entry (the same rule the file operations
+   * follow). The shell-command section runs an app's command on exactly these.
+   */
+  selectedPaths?: readonly string[];
 }
 
 export function EntryContextMenuContent({
@@ -96,6 +104,7 @@ export function EntryContextMenuContent({
   onOpen,
   onOpenWith,
   onRename,
+  selectedPaths,
 }: EntryActions) {
   const { t } = useTranslation("explorer");
   const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
@@ -107,12 +116,23 @@ export function EntryContextMenuContent({
   const removeFavorite = useSetAtom(removeFavoriteAtom);
   const openInNewTab = useSetAtom(openInNewTabAtom);
   const openInNewWindow = useSetAtom(openPathInNewWindowAtom);
+  const setShellCommandError = useSetAtom(shellCommandErrorAtom);
   const isFavorited = favorites.some((favorite) => favorite.path === entry.path);
 
   useEffect(() => {
     void ensureSpacesLoaded();
     void ensureFavoritesLoaded();
   }, [ensureFavoritesLoaded, ensureSpacesLoaded]);
+
+  // The selection the entry actions run on: the whole selection when the
+  // right-clicked entry is part of it, otherwise just that entry.
+  const actionPaths = useMemo(
+    () =>
+      selectedPaths && selectedPaths.length > 0 && selectedPaths.includes(entry.path)
+        ? [...selectedPaths]
+        : [entry.path],
+    [entry.path, selectedPaths],
+  );
 
   return (
     <>
@@ -195,6 +215,13 @@ export function EntryContextMenuContent({
           {t("explorer:contextMenu.copyPath")}
         </ContextMenuItem>
       </ContextMenuGroup>
+      {/* The installed apps' own right-click commands, under the one heading
+          dae has always used for them. */}
+      <ShellCommandsMenu
+        onError={setShellCommandError}
+        paths={actionPaths}
+        primary={entry.path}
+      />
       <ContextMenuSeparator />
       <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onDuplicate}>

@@ -839,10 +839,10 @@ function TabStripItem({
       aria-grabbed={isDragging}
       aria-selected={isActive}
       className={cn(
-        "group relative flex h-8 w-52 shrink-0 touch-none cursor-grab items-center rounded-md text-[13px] select-none transition-[background-color,color,box-shadow,scale,opacity] duration-fast ease-spring-fast active:scale-[0.98] active:cursor-grabbing",
+        "group relative flex h-8 w-52 shrink-0 touch-none cursor-grab items-center rounded-t-md text-[13px] select-none transition-[background-color,color,box-shadow,scale,opacity] duration-fast ease-spring-fast active:scale-[0.98] active:cursor-grabbing",
         isActive
-          ? "bg-card text-foreground shadow-ambient-sm ring-1 ring-border dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.06)]"
-          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+          ? "bg-accent/70 font-medium text-foreground"
+          : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
         isDragging && "opacity-30",
       )}
       data-tauri-drag-region="false"
@@ -865,6 +865,15 @@ function TabStripItem({
           : title
       }
     >
+      {/* Linear tab: the active state reads through text weight plus a
+          hairline accent underline, not a raised card. */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          "absolute inset-x-2.5 bottom-0 h-0.5 rounded-t-[2px] bg-primary transition-[transform,opacity] duration-fast ease-spring-fast",
+          isActive ? "scale-x-100 opacity-100" : "scale-x-50 opacity-0",
+        )}
+      />
       {tabContent}
       <button
         aria-label={t("tabs.closeTab", { title })}

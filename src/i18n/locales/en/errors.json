@@ -27,7 +27,13 @@
       "invalid_type_filter": "Invalid type filter",
       "type_filter_build_failed": "Could not build the type filter",
       "archive_wrong_password": "The password is incorrect, please try again",
-      "archive_password_unsupported": "This archive format does not support passwords"
+      "archive_password_unsupported": "This archive format does not support passwords",
+      "shell_command_empty_selection": "Nothing is selected",
+      "shell_command_host": "The extension host could not be started",
+      "shell_command_host_dropped": "The extension host stopped before it answered",
+      "shell_command_selection": "The current selection cannot be passed to a system command",
+      "shell_command_unknown": "That command is no longer available",
+      "shell_commands_windows_only": "App extensions are only available on Windows 11"
     },
     "term": {
       "pty_create_failed": "Failed to create the PTY",

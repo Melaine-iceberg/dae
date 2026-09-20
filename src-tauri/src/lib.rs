@@ -2,6 +2,7 @@ mod deep_link;
 mod default_manager;
 mod file_system;
 mod settings;
+mod shell_commands;
 mod tab_windows;
 mod terminal;
 // Release-only: the updater's endpoint and public key come from
@@ -228,6 +229,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             deep_link::take_pending_open_directory,
             settings::load_settings,
             settings::save_settings,
+            shell_commands::list_shell_commands,
+            shell_commands::invoke_shell_command,
             default_manager::get_default_file_manager_status,
             default_manager::set_default_file_manager,
             default_manager::unset_default_file_manager,
