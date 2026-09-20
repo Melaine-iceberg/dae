@@ -4,6 +4,7 @@
       "content_search_local_only": "Content search only works on local folders",
       "trash_local_only": "The Recycle Bin only works with local paths",
       "trash_entries_missing": "These items are no longer in the Recycle Bin — it may have been emptied or restored",
+      "trash_unavailable": "The system Recycle Bin could not be read. Check access to that drive",
       "trash_restore_no_origin": "The original location of this item is unknown, so it cannot be put back automatically",
       "undo_empty": "Nothing to undo",
       "redo_empty": "Nothing to redo",

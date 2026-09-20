@@ -4,6 +4,7 @@
       "content_search_local_only": "内容搜索仅支持本地目录",
       "trash_local_only": "回收站仅支持本地路径",
       "trash_entries_missing": "回收站中已找不到这些项目，可能已被清空或还原",
+      "trash_unavailable": "无法读取系统回收站，请检查该磁盘的访问权限",
       "trash_restore_no_origin": "此项目的原位置未知，无法自动放回原处",
       "undo_empty": "没有可撤销的操作",
       "redo_empty": "没有可重做的操作",

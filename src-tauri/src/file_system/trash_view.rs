@@ -1,31 +1,30 @@
 //! Trash (recycle bin) browsing: listing, restoring, purging, and emptying.
 //!
-//! The `trash` crate's `os_limited` API enumerates the whole recycle bin
-//! through the shell (IFileOperation on Windows), which is slow enough that
-//! the delete flow records `(parent, name)` pairs instead of enumerating —
-//! see `commands::trash_entries`. Browsing is a deliberate scan, so this
-//! module runs it on blocking threads and streams progress for the long
-//! restore/purge operations.
+//! Listing the whole bin is expensive through the shell, so the delete flow
+//! records `(parent, name)` pairs instead of enumerating — see
+//! `commands::trash_entries` — and Windows lists the bin by parsing its own
+//! metadata files — see `recycle_bin`. Restoring, purging, and emptying stay on
+//! the shell on every platform: they are user-initiated, confirmed, and
+//! progress-reported, so their cost is paid once per operation.
 //!
-//! `os_limited` only compiles on Windows and freedesktop-compliant Unix:
-//! macOS keeps the Trash as a private Finder domain and the crate supports
-//! only `delete` there. On macOS the four commands run directly against
-//! `~/.Trash` plus the Finder put-back records in `~/.Trash/.DS_Store` —
-//! see `macos_trash.rs` — so the whole trash view works there too.
+//! Listing is a deliberate scan, so it runs on blocking threads; the long
+//! restore/purge operations stream progress.
+//!
+//! Freedesktop systems list through the `trash` crate, whose `os_limited` API
+//! only compiles on Windows and freedesktop-compliant Unix: macOS keeps the
+//! Trash as a private Finder domain and the crate supports only `delete` there.
+//! On macOS the four commands run directly against `~/.Trash` plus the Finder
+//! put-back records in `~/.Trash/.DS_Store` — see `macos_trash.rs` — so the
+//! whole trash view works there too.
 
 use serde::Serialize;
 use specta::Type;
 
-/// `true` on platforms where the `trash` crate exposes the full recycle-bin
-/// API (Windows and freedesktop Trash environments).
-#[cfg(any(
-    target_os = "windows",
-    all(
-        unix,
-        not(target_os = "macos"),
-        not(target_os = "ios"),
-        not(target_os = "android")
-    )
+#[cfg(all(
+    unix,
+    not(target_os = "macos"),
+    not(target_os = "ios"),
+    not(target_os = "android")
 ))]
 use super::types::path_to_string;
 
@@ -42,7 +41,7 @@ pub struct TrashEntry {
     pub original_parent: String,
     /// Unix seconds at which the entry was deleted.
     pub time_deleted: i64,
-    /// True when shell metadata reported the entry as a directory.
+    /// True when the entry itself is a directory.
     pub is_directory: bool,
     /// File size in bytes; `None` for directories and unknown sizes.
     pub size_bytes: Option<u64>,
@@ -53,14 +52,15 @@ pub struct TrashEntry {
 #[cfg(target_os = "macos")]
 const TRASH_RESTORE_NO_ORIGIN: &str = "fs.trash_restore_no_origin";
 
-#[cfg(any(
-    target_os = "windows",
-    all(
-        unix,
-        not(target_os = "macos"),
-        not(target_os = "ios"),
-        not(target_os = "android")
-    )
+/// Freedesktop systems list the trash through the `trash` crate, which reads
+/// the `.trashinfo` file stored beside every entry. Windows parses the recycle
+/// bin directly instead (see [`recycle_bin`]); macOS keeps its Trash as a
+/// private Finder domain (see [`macos_view`]).
+#[cfg(all(
+    unix,
+    not(target_os = "macos"),
+    not(target_os = "ios"),
+    not(target_os = "android")
 ))]
 impl TrashEntry {
     fn from_item(item: &trash::TrashItem) -> Self {
@@ -86,6 +86,13 @@ impl TrashEntry {
     }
 }
 
+/// Windows reads the recycle bin's `$I` metadata files instead of enumerating
+/// the bin through the shell; see the module for the measured cost.
+#[cfg(target_os = "windows")]
+mod recycle_bin;
+
+/// The shell-backed implementation: restore, purge, and empty on every
+/// platform the `trash` crate supports, plus listing on freedesktop systems.
 #[cfg(any(
     target_os = "windows",
     all(
@@ -106,20 +113,32 @@ mod browse {
 
     /// Lists every entry currently in the system trash, newest deletion first.
     ///
-    /// This scans the whole recycle bin through the shell API, so it runs on a
-    /// blocking thread; the frontend only calls it when opening the trash view
-    /// or after a trash operation.
+    /// Either implementation walks the whole bin, so this runs on a blocking
+    /// thread; the frontend only calls it when opening the trash view or after
+    /// a trash operation.
     #[tauri::command]
     #[specta::specta]
     pub async fn list_trash() -> Result<Vec<TrashEntry>, FileSystemError> {
         tauri::async_runtime::spawn_blocking(|| {
-            let items = trash::os_limited::list().map_err(trash_error)?;
-            let mut entries: Vec<TrashEntry> = items.iter().map(TrashEntry::from_item).collect();
+            let mut entries = collect_entries()?;
             entries.sort_by_key(|entry| std::cmp::Reverse(entry.time_deleted));
             Ok(entries)
         })
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
+    }
+
+    /// Every entry in the system trash, in no particular order.
+    #[cfg(target_os = "windows")]
+    fn collect_entries() -> Result<Vec<TrashEntry>, FileSystemError> {
+        super::recycle_bin::scan()
+    }
+
+    /// Every entry in the system trash, in no particular order.
+    #[cfg(not(target_os = "windows"))]
+    fn collect_entries() -> Result<Vec<TrashEntry>, FileSystemError> {
+        let items = trash::os_limited::list().map_err(trash_error)?;
+        Ok(items.iter().map(TrashEntry::from_item).collect())
     }
 
     /// Restores trashed entries (selected by their trash ids) to their original
