@@ -286,12 +286,51 @@ export const openInNewTabAtom = atom(null, (_get, set, path: string) => {
 });
 
 /**
+ * Cascade step, in logical pixels, for a window opened from a context menu.
+ * The new window's top-left corner lands this far down-right of the source
+ * window's, so the two read as a stack instead of hiding each other.
+ */
+const CASCADE_OFFSET = 32;
+
+/**
+ * Turns a cascade offset into the four placement arguments `tear_off_tab`
+ * expects.
+ *
+ * That command places the window at `cursor - grab * scale`, where the cursor
+ * is a physical desktop coordinate and `grab` is a logical offset inside the
+ * window being dragged. Context menus have no drag, so the pointer has to be
+ * taken out of the equation: pass a zero grab and hand the command an explicit
+ * cursor sitting at the source window's corner, and that cursor value passes
+ * straight through as the landing position. Offsetting through `grab` instead
+ * is not possible — the command clamps it to `[0, width]`, so a negative grab
+ * degenerates to zero and the window lands exactly on the source.
+ *
+ * Scaling by the source window's factor keeps the visual step identical on
+ * mixed-DPI monitor layouts, where a physical pixel is not a fixed visual
+ * size.
+ */
+function cascadePlacement(
+  sourceOuter: { x: number; y: number },
+  scale: number,
+  offset: number,
+): { grabX: number; grabY: number; cursorX: number; cursorY: number } {
+  return {
+    grabX: 0,
+    grabY: 0,
+    cursorX: sourceOuter.x + offset * scale,
+    cursorY: sourceOuter.y + offset * scale,
+  };
+}
+
+/**
  * Opens `path` in a window of its own, leaving this window's tabs untouched.
  *
  * Deliberately routed through the tab tear-off command: it already owns the
  * window sizing, the DPI-correct placement and the hidden-until-restored boot
  * sequence the destination frontend expects, so a folder opened here behaves
- * exactly like a tab dragged out of the strip.
+ * exactly like a tab dragged out of the strip — apart from where it lands,
+ * which is cascaded off the source window rather than pinned to the pointer
+ * the way an actual drag-out is.
  */
 export async function openPathInNewWindow(path: string): Promise<void> {
   const appWindow = getAppWindow();
@@ -299,7 +338,20 @@ export async function openPathInNewWindow(path: string): Promise<void> {
   if (!appWindow) return;
 
   try {
-    await commands.tearOffTab(appWindow.label, createFolderHandoff(path), null, null, null, null);
+    const [sourceOuter, scale] = await Promise.all([
+      appWindow.outerPosition(),
+      appWindow.scaleFactor(),
+    ]);
+    const placement = cascadePlacement(sourceOuter, scale, CASCADE_OFFSET);
+
+    await commands.tearOffTab(
+      appWindow.label,
+      createFolderHandoff(path),
+      placement.grabX,
+      placement.grabY,
+      placement.cursorX,
+      placement.cursorY,
+    );
   } catch (error) {
     console.error(`Unable to open ${path} in a new window`, error);
   }
