@@ -4,13 +4,111 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ---------------------------------------------------------------------------
+   Bundled typefaces — the window renders identically on every platform instead
+   of borrowing whatever the OS happens to supply.
+
+   Two sources are combined, and the split is deliberate:
+
+     Latin → Inter Variable   a real 100–900 axis, so every weight in the ramp
+                              below (including 500 Medium, and 650 for
+                              `--text-display`) is a drawn shape rather than a
+                              synthesised one. Inter is also what Linear and
+                              Raycast themselves use.
+     CJK   → Sarasa UI SC     Inter's Latin paired with Source Han Sans' CJK,
+                              so both scripts share one optical weight.
+
+   Sarasa alone would have been simpler, but it ships no 500 — and since its
+   weights are independently optimised (76% of glyphs change point count
+   between Regular and SemiBold) a Medium cannot be interpolated back. Every
+   `font-medium` (33 call sites) would have collapsed to Regular. Inter alone
+   has no CJK. Splitting the two keeps both intact.
+
+   ORDER IS LOAD-BEARING. The Sarasa faces are declared first and Inter last,
+   because for two faces of one family that both match a character, the one
+   declared *later* wins. Inter is the only face carrying a `unicode-range`, so
+   routing falls out as:
+
+     Latin → both match, Inter declared later → Inter
+     CJK   → Inter's range excludes it         → Sarasa
+
+   Reordering these blocks silently routes CJK to a face that claims the
+   codepoint but has no glyph for it, which browsers resolve inconsistently.
+
+   `unicode-range` also keeps the ~4.5MB of CJK faces off the wire until the UI
+   actually contains a CJK character: an English-only session downloads the
+   48KB Latin face and nothing else.
+
+   Both sources are SIL OFL 1.1 and keep their original family names. Neither
+   declares a Reserved Font Name ('Sarasa' is not one — the only RFN in
+   Sarasa's licence is Adobe's 'Source'), so shipping these subsets is
+   permitted. The copyright notices and full licence text sit beside the files
+   as the licence requires.
+   --------------------------------------------------------------------------- */
+
+/* CJK: Sarasa UI SC. Declared before Inter on purpose — see above. */
+@font-face {
+  font-family: "dae Sans";
+  font-style: normal;
+  font-weight: 400;
+  /* Never hold text back waiting on a 1.5MB face. */
+  font-display: swap;
+  src: url("./assets/fonts/sarasa-ui-sc-regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "dae Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/sarasa-ui-sc-semibold.woff2") format("woff2");
+}
+
+/* Latin: Inter Variable. Declared last so it wins the overlaps above. */
+@font-face {
+  font-family: "dae Sans";
+  font-style: normal;
+  font-weight: 100 900;
+  /* 48KB and local, so blocking is free here and avoids a visible reflow. */
+  font-display: block;
+  src: url("./assets/fonts/inter-latin-variable.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+
+/* Mono, behind the terminal and every `font-mono` surface. Sarasa Term is
+   Iosevka + Source Han Sans and is built for terminals: no ligatures, and CJK
+   locked to a 2:1 cell so columns line up. The stack used to name
+   "Noto Sans Mono CJK SC", which most machines do not have — Chinese in the
+   terminal fell back to a proportional face and broke alignment. */
+@font-face {
+  font-family: "dae Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./assets/fonts/sarasa-term-sc-regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "dae Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./assets/fonts/sarasa-term-sc-bold.woff2") format("woff2");
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
+  /* The bundled families lead. The platform names stay behind them so a glyph
+     the subsets do not carry — a hanzi outside GB2312, say — still resolves to
+     something readable instead of a blank. */
   --font-sans:
-    system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
-    "PingFang SC", "Noto Sans", sans-serif;
+    "dae Sans", system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI",
+    "Microsoft YaHei UI", "PingFang SC", "Noto Sans", sans-serif;
   --font-mono:
-    "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
+    "dae Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Consolas,
+    "Courier New", monospace;
 
   /* Compact desktop type scale — a CLOSED six-step ramp. The ramp is the
      whole point: it is what keeps a dense window (13px rows, 12px metadata,

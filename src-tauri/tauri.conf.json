@@ -39,6 +39,10 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "../src/assets/fonts/LICENSE-Inter.txt": "licenses/LICENSE-Inter.txt",
+      "../src/assets/fonts/LICENSE-Sarasa-Gothic.txt": "licenses/LICENSE-Sarasa-Gothic.txt"
+    }
   }
 }

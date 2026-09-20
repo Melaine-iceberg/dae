@@ -31,7 +31,7 @@ import { resolveAnsiPalette, type AnsiPalette } from "./terminal-palette";
 import "@xterm/xterm/css/xterm.css";
 
 const FONT_STACK =
-  '"Cascadia Code", Consolas, Menlo, Monaco, "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono CJK SC", monospace';
+  '"dae Mono", "Cascadia Code", Consolas, Menlo, Monaco, "DejaVu Sans Mono", "Liberation Mono", monospace';
 
 const DEFAULT_FONT_SIZE = 13;
 const DEFAULT_LINE_HEIGHT = 1.2;
