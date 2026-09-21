@@ -199,6 +199,19 @@ const DRAG_START_DISTANCE_PX = 6;
  */
 const LIST_COLUMN_MIN_WIDTH_PX = { modified: 340, size: 480, type: 640 } as const;
 
+/**
+ * Where the last column ends, shared by the sticky header grid and every row
+ * wrapper: 36.5rem of name plus the 9.5+6.5+5.5 rem the three metadata tracks
+ * ask for.
+ *
+ * The name track is `1fr`, so this cap is what makes the two grids resolve
+ * that track identically: a header free to span a wider pane would pour the
+ * extra width into its own name column and slide the modified/type/size
+ * headings out from under the values they label. Cap one without the other
+ * and the columns drift by exactly `pane width - 58rem`.
+ */
+const LIST_CONTENT_MAX_WIDTH = "58rem";
+
 interface ListColumns {
   modified: boolean;
   size: boolean;
@@ -840,41 +853,49 @@ export function FileList({
             onScroll={(event) => onScrollOffsetChange?.(event.currentTarget.scrollTop)}
           >
             <div>
-              <div
-                className="sticky top-0 z-10 grid h-7 shrink-0 items-center justify-start border-b border-border bg-card text-label whitespace-nowrap text-muted-foreground uppercase"
-                style={{ gridTemplateColumns: listTemplate }}
-              >
-                <SortHeaderCell
-                  active={sortKey === "name"}
-                  label={t("explorer:columns.name")}
-                  onSort={() => applySort("name")}
-                  order={sortOrder}
-                />
-                {listColumns.modified && (
+              {/*
+                The bar itself stays full-width so its background and border
+                still cover the rows scrolling underneath; only the column
+                track is capped, to the same edge the rows stop at.
+              */}
+              <div className="sticky top-0 z-10 h-7 shrink-0 border-b border-border bg-card">
+                <div
+                  className="grid h-full items-center justify-start text-label whitespace-nowrap text-muted-foreground uppercase"
+                  style={{ gridTemplateColumns: listTemplate, maxWidth: LIST_CONTENT_MAX_WIDTH }}
+                >
                   <SortHeaderCell
-                    active={sortKey === "modified"}
-                    label={t("explorer:columns.modified")}
-                    onSort={() => applySort("modified")}
+                    active={sortKey === "name"}
+                    inset="name"
+                    label={t("explorer:columns.name")}
+                    onSort={() => applySort("name")}
                     order={sortOrder}
                   />
-                )}
-                {listColumns.type && (
-                  <SortHeaderCell
-                    active={sortKey === "type"}
-                    label={t("explorer:columns.type")}
-                    onSort={() => applySort("type")}
-                    order={sortOrder}
-                  />
-                )}
-                {listColumns.size && (
-                  <SortHeaderCell
-                    active={sortKey === "size"}
-                    align="right"
-                    label={t("explorer:columns.size")}
-                    onSort={() => applySort("size")}
-                    order={sortOrder}
-                  />
-                )}
+                  {listColumns.modified && (
+                    <SortHeaderCell
+                      active={sortKey === "modified"}
+                      label={t("explorer:columns.modified")}
+                      onSort={() => applySort("modified")}
+                      order={sortOrder}
+                    />
+                  )}
+                  {listColumns.type && (
+                    <SortHeaderCell
+                      active={sortKey === "type"}
+                      label={t("explorer:columns.type")}
+                      onSort={() => applySort("type")}
+                      order={sortOrder}
+                    />
+                  )}
+                  {listColumns.size && (
+                    <SortHeaderCell
+                      active={sortKey === "size"}
+                      align="right"
+                      label={t("explorer:columns.size")}
+                      onSort={() => applySort("size")}
+                      order={sortOrder}
+                    />
+                  )}
+                </div>
               </div>
               <div
                 aria-multiselectable="true"
@@ -887,15 +908,18 @@ export function FileList({
                   if (!entry) return null;
 
                   // Windows detail-view geometry: rows stop at the size
-                  // column's right edge (34+11+7+6 rem = 58rem) instead of
-                  // stretching across the window, so the area right of the
-                  // columns stays blank background for clicks and marquee
-                  // starts.
+                  // column's right edge instead of stretching across the
+                  // window, so the area right of the columns stays blank
+                  // background for clicks and marquee starts. The cap is
+                  // shared with the header grid — see LIST_CONTENT_MAX_WIDTH.
                   return (
                     <div
                       key={entry.path}
-                      className="absolute left-0 top-0 w-full max-w-232"
-                      style={{ transform: `translateY(${virtualRow.start}px)` }}
+                      className="absolute left-0 top-0 w-full"
+                      style={{
+                        maxWidth: LIST_CONTENT_MAX_WIDTH,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
                     >
                       <FileListRow
                         columns={listColumns}
@@ -1040,12 +1064,15 @@ export function FileList({
 function SortHeaderCell({
   active,
   align = "left",
+  inset = "meta",
   label,
   onSort,
   order,
 }: {
   active: boolean;
   align?: "left" | "right";
+  /** Which row cell this heading labels — the two insets in `FileListRow`. */
+  inset?: "meta" | "name";
   label: string;
   onSort: () => void;
   order: "asc" | "desc";
@@ -1060,9 +1087,19 @@ function SortHeaderCell({
     >
       <button
         className={cn(
-          "flex min-w-0 items-center gap-1 rounded-sm px-2 text-left transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
+          // The horizontal inset is the row cell's, so a heading sits on the
+          // same text edge as the values under it — `px-3` over the name
+          // column (where the icon starts), `px-2.5` over the metadata ones.
+          "flex min-w-0 items-center gap-1 rounded-sm text-left transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
+          inset === "name" ? "px-3" : "px-2.5",
           active && "text-foreground",
-          align === "right" && "flex-row-reverse",
+          // `w-full` is load bearing, not cosmetic: a `<button>` shrink-wraps
+          // its content even when it is a flex container, so a right-aligned
+          // heading needs the box to reach the cell's right edge before
+          // `flex-row-reverse` has anything to push the label against. Without
+          // it the size heading sits at the column's left edge while every
+          // value under it is flush right.
+          align === "right" && "w-full flex-row-reverse",
         )}
         onClick={onSort}
         title={
