@@ -34,7 +34,7 @@ export function WindowControls() {
   }, []);
 
   const buttonClassName = cn(
-    "flex h-full w-[46px] shrink-0 items-center justify-center transition-colors duration-instant hover:bg-accent hover:text-accent-foreground",
+    "flex h-full w-window-control shrink-0 items-center justify-center transition-colors duration-instant hover:bg-accent hover:text-accent-foreground",
     focused ? "text-foreground" : "text-muted-foreground",
   );
 
@@ -65,7 +65,7 @@ export function WindowControls() {
       </button>
       <button
         aria-label={t("windowControls.close")}
-        className={cn(buttonClassName, "hover:bg-destructive hover:text-white")}
+        className={cn(buttonClassName, "hover:bg-destructive hover:text-on-destructive")}
         onClick={() => void appWindow?.close()}
         title={t("windowControls.close")}
         type="button"

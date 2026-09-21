@@ -94,8 +94,8 @@ export function ProjectsSection({ recents }: { recents: RecentItem[] | null }) {
       <section aria-label={t("workspace:overview.projectsTitle")}>
         <SectionHeader title={t("workspace:overview.projectsTitle")} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Skeleton className="h-[74px] rounded-lg" />
-          <Skeleton className="h-[74px] rounded-lg" />
+          <Skeleton className="h-project-card rounded-lg" />
+          <Skeleton className="h-project-card rounded-lg" />
         </div>
       </section>
     );
@@ -154,6 +154,10 @@ function ProjectCard({
           {formatRecentTime(project.accessedAt, t("workspace:recents.groups.yesterday"))}
         </span>
       </span>
+      {/* 42px is derived, not chosen: it is the row above's 32px avatar
+          (`size-8`) plus its 10px gap (`gap-2.5`), so this line starts exactly
+          where the project name does. Change either and this number is wrong —
+          the note is here because the number cannot state that itself. */}
       <span className="flex w-full items-center gap-1.5 pl-[42px]">
         <span className="max-w-[60%] truncate rounded-xs bg-secondary px-2 py-0.5 font-mono text-micro leading-4 text-secondary-foreground">
           {project.branch}

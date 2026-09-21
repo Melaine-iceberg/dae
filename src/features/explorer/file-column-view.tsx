@@ -342,7 +342,7 @@ function PaneRow({
                 entry={entry}
                 fallback={
                   <TypeIconTile
-                    className="size-[22px] tile-radius"
+                    className="size-tile-list tile-radius"
                     iconSize={13}
                     presentation={presentation}
                   />
@@ -352,7 +352,7 @@ function PaneRow({
             ) : (
               <TypeIconTile
                 pop
-                className="size-[22px] tile-radius"
+                className="size-tile-list tile-radius"
                 iconSize={13}
                 presentation={presentation}
               />
@@ -382,6 +382,7 @@ function PaneRow({
           onCopy={menuActions.onCopy}
           onCut={menuActions.onCut}
           onDelete={menuActions.onDelete}
+          onDeletePermanent={menuActions.onDeletePermanent}
           onDuplicate={menuActions.onDuplicate}
           onExtract={menuActions.onExtract}
           onMoveTo={menuActions.onMoveTo}

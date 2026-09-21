@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSetAtom } from "jotai";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from "react";
+import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
+import { useHotkeys } from "@tanstack/react-hotkeys";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { RotateCw, Undo2, Check, Folder, Trash2, Trash } from "lucide-react";
 
 import {
@@ -23,6 +32,7 @@ import {
   ContextMenuGroup,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
@@ -41,16 +51,43 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Kbd } from "@/components/ui/kbd";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
 import { TypeIconTile } from "@/features/explorer/icon-tile";
+import { HOTKEY_COMMON_OPTIONS, asHotkey, guardedAction } from "@/features/settings/hotkeys";
+import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
+import { appSettingsAtom, hotkeysPausedAtom, useBinding } from "@/features/settings/settings-atoms";
 
+import {
+  jumpTrashIndex,
+  stepTrashIndex,
+  trashPurgeTargets,
+  typeAheadTrashIndex,
+} from "./trash-navigation";
 import { navigateToFolderAtom } from "./workspace-atoms";
 import { WorkspacePage, WorkspacePageHeader, baseNameOf } from "./workspace-components";
 
 /** How long the finished progress bar stays visible before clearing. */
 const COMPLETED_OPERATION_STATUS_DURATION_MS = 900;
+
+/** How long a type-ahead buffer survives after the last keystroke. */
+const TYPE_AHEAD_TIMEOUT_MS = 800;
+
+/**
+ * Row geometry: a 22px icon cell plus 12px of vertical padding.
+ *
+ * The virtualizer estimates with this number and the row sets it as an inline
+ * height, so the two cannot drift — a mismatch shows up as rows creeping away
+ * from the scroller's position, which is the classic fixed-height-virtualization
+ * bug and is invisible in code review.
+ */
+const TRASH_ROW_HEIGHT = 34;
+
+/** Rows kept mounted beyond the viewport. Wide enough that the `last:` border
+ *  rule on a row is never applied to a row the reader can see. */
+const TRASH_OVERSCAN = 12;
 
 /** Row layout: checkbox · name · original location · deleted at · size. */
 const ROW_GRID =
@@ -171,6 +208,14 @@ export function TrashView() {
     [isOperationPending, runTrashOperation],
   );
 
+  const requestPurge = useCallback(
+    (ids: string[]) => {
+      if (ids.length === 0 || isOperationPending) return;
+      setPurgeRequest({ kind: "selection", ids });
+    },
+    [isOperationPending],
+  );
+
   const confirmPurge = () => {
     if (!purgeRequest || isOperationPending) return;
 
@@ -185,16 +230,13 @@ export function TrashView() {
     );
   };
 
-  const toggleSelected = (id: string) => {
+  const toggleSelected = useCallback((id: string) => {
     setSelectedIds((ids) =>
       ids.includes(id) ? ids.filter((candidate) => candidate !== id) : [...ids, id],
     );
-  };
+  }, []);
 
   const allSelected = (entries?.length ?? 0) > 0 && selectedIds.length === entries?.length;
-  // Membership is a Set lookup: the rows are rendered in full, so scanning the
-  // selection per row costs rows × selection per render.
-  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const toggleSelectAll = () => {
     setSelectedIds(allSelected ? [] : (entries ?? []).map((entry) => entry.id));
   };
@@ -203,10 +245,12 @@ export function TrashView() {
     () => (entries ?? []).reduce((total, entry) => total + (entry.sizeBytes ?? 0), 0),
     [entries],
   );
-  const description =
+  const summary =
     entries === null
       ? t("trash.description")
       : t("trash.summary", { count: entries.length, size: formatBytes(totalBytes) });
+
+  const clearSelectionBinding = formatBinding(useBinding("explorer.clearSelection"));
 
   return (
     <WorkspacePage aria-label={t("trash.title")}>
@@ -226,7 +270,7 @@ export function TrashView() {
                 </Button>
                 <Button
                   disabled={isOperationPending}
-                  onClick={() => setPurgeRequest({ kind: "selection", ids: selectedIds })}
+                  onClick={() => requestPurge(selectedIds)}
                   size="sm"
                   type="button"
                   variant="destructive"
@@ -260,7 +304,20 @@ export function TrashView() {
             </Button>
           </>
         }
-        description={description}
+        description={
+          <>
+            {summary}
+            {/* A selection is the one state where "how do I get out of this"
+                is a real question — same chip the explorer puts beside its
+                listing stats, and only while there is something to clear. */}
+            {selectedIds.length > 0 && (
+              <span className="ml-2.5 inline-flex items-center gap-1">
+                <Kbd className="h-4 px-1 text-nano">{clearSelectionBinding}</Kbd>
+                {t("trash.clearSelectionHint")}
+              </span>
+            )}
+          </>
+        }
         title={t("trash.title")}
       />
 
@@ -306,33 +363,18 @@ export function TrashView() {
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
-          <div
-            className={cn(
-              ROW_GRID,
-              "border-b border-border bg-muted/40 px-3 py-1.5 text-label text-muted-foreground uppercase",
-            )}
-          >
-            <SelectAllToggle allSelected={allSelected} onToggle={toggleSelectAll} />
-            <span>{t("trash.columns.name")}</span>
-            <span>{t("trash.columns.originalLocation")}</span>
-            <span>{t("trash.columns.deletedAt")}</span>
-            <span className="text-right">{t("trash.columns.size")}</span>
-          </div>
-          <ul className="flex flex-col">
-            {entries.map((entry) => (
-              <TrashRow
-                entry={entry}
-                isSelected={selectedIdSet.has(entry.id)}
-                key={entry.id}
-                onNavigateToOriginalLocation={() => navigateToFolder(entry.originalParent)}
-                onPurge={() => setPurgeRequest({ kind: "selection", ids: [entry.id] })}
-                onRestore={() => restoreIds([entry.id])}
-                onToggleSelected={() => toggleSelected(entry.id)}
-              />
-            ))}
-          </ul>
-        </div>
+        <TrashList
+          allSelected={allSelected}
+          entries={entries}
+          isOperationPending={isOperationPending}
+          onNavigateToOriginalLocation={navigateToFolder}
+          onPurge={requestPurge}
+          onClearSelection={() => setSelectedIds([])}
+          onRestore={restoreIds}
+          onSelectAll={toggleSelectAll}
+          onToggleSelected={toggleSelected}
+          selectedIds={selectedIds}
+        />
       )}
 
       <Dialog
@@ -367,6 +409,275 @@ export function TrashView() {
         </DialogContent>
       </Dialog>
     </WorkspacePage>
+  );
+}
+
+/**
+ * The bin's rows: a virtualized listbox with a keyboard cursor.
+ *
+ * Two problems, one answer. Rows used to be rendered in full and reachable by
+ * pointer only, so a bin with a few thousand entries paid for every row on
+ * every selection change and could not be walked at all from the keyboard.
+ *
+ * The list is a `role="listbox"` that holds focus itself and points at the
+ * cursor row with `aria-activedescendant`. That is what makes virtualization
+ * compatible with the keyboard: focus never has to move to a row, so a row
+ * scrolling out of the mounted window cannot take the focus with it and leave
+ * the list unresponsive. Arrow keys, Home/End, paging and type-to-jump are
+ * handled here; the actions that *are* rebindable (select all, delete, clear
+ * selection) go through the registry-backed hotkeys below, so a rebound key
+ * keeps working and the chords the header advertises are really listening.
+ */
+function TrashList({
+  allSelected,
+  entries,
+  isOperationPending,
+  onClearSelection,
+  onNavigateToOriginalLocation,
+  onPurge,
+  onRestore,
+  onSelectAll,
+  onToggleSelected,
+  selectedIds,
+}: {
+  allSelected: boolean;
+  entries: TrashEntry[];
+  isOperationPending: boolean;
+  onClearSelection: () => void;
+  onNavigateToOriginalLocation: (path: string) => void;
+  onPurge: (ids: string[]) => void;
+  onRestore: (ids: string[]) => void;
+  onSelectAll: () => void;
+  onToggleSelected: (id: string) => void;
+  selectedIds: string[];
+}) {
+  const { t } = useTranslation("workspace");
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const typeAheadRef = useRef<{ buffer: string; timer: number | null }>({ buffer: "", timer: null });
+  const purgeBinding = formatBinding(useBinding("explorer.trash"));
+  const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
+  const hotkeysPaused = useAtomValue(hotkeysPausedAtom);
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  // Names for type-to-jump, kept out of the key handler so a keystroke does not
+  // rebuild the array for every row.
+  const names = useMemo(() => entries.map((entry) => entry.name), [entries]);
+
+  const virtualizer = useVirtualizer({
+    count: entries.length,
+    getScrollElement: () => scrollerRef.current,
+    estimateSize: () => TRASH_ROW_HEIGHT,
+    overscan: TRASH_OVERSCAN,
+  });
+
+  // A cursor may not outlive its row: restoring or purging shortens the list
+  // under the keyboard's feet, and an index past the end would leave Enter and
+  // Delete with nothing to act on.
+  useEffect(() => {
+    setActiveIndex((index) => (index < entries.length ? index : entries.length - 1));
+  }, [entries.length]);
+
+  useEffect(
+    () => () => {
+      if (typeAheadRef.current.timer !== null) window.clearTimeout(typeAheadRef.current.timer);
+    },
+    [],
+  );
+
+  const moveCursor = useCallback(
+    (index: number) => {
+      if (index < 0) return;
+      setActiveIndex(index);
+      virtualizer.scrollToIndex(index, { align: "auto" });
+    },
+    [virtualizer],
+  );
+
+  const purgeCursor = useCallback(() => {
+    if (isOperationPending) return;
+    onPurge(trashPurgeTargets(entries, activeIndex, selectedIds));
+  }, [activeIndex, entries, isOperationPending, onPurge, selectedIds]);
+
+  // Delete acts on the selection when the cursor is inside it, exactly like the
+  // explorer's trash command — a Delete press must never quietly spare the rows
+  // the user can see highlighted.
+  useHotkeys(
+    [
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.trash")),
+        callback: guardedAction(purgeCursor),
+        options: { enabled: !hotkeysPaused && !isOperationPending },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.deletePermanent")),
+        callback: guardedAction(purgeCursor),
+        options: { enabled: !hotkeysPaused && !isOperationPending },
+      },
+      {
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.selectAll")),
+        callback: guardedAction(onSelectAll),
+        options: { enabled: !hotkeysPaused },
+      },
+      {
+        // The list header advertises this chord while anything is selected, so
+        // the list has to answer it. `explorer.clearSelection` is registered by
+        // the explorer's file list, and a tab renders exactly one surface: with
+        // the bin up, nothing else was listening, and the chip was telling the
+        // user about a key that did nothing. Same shape as the explorer's
+        // registration, including `preventDefault: false` — Escape never
+        // swallowed the key and still must not.
+        hotkey: asHotkey(resolveBinding(shortcuts, "explorer.clearSelection")),
+        callback: guardedAction(onClearSelection, { preventDefault: false }),
+        options: { enabled: !hotkeysPaused && selectedIds.length > 0 },
+      },
+    ],
+    HOTKEY_COMMON_OPTIONS,
+  );
+
+  const runTypeAhead = (character: string) => {
+    const state = typeAheadRef.current;
+    if (state.timer !== null) window.clearTimeout(state.timer);
+    const buffer = state.buffer + character;
+    typeAheadRef.current = {
+      buffer,
+      timer: window.setTimeout(() => {
+        typeAheadRef.current = { buffer: "", timer: null };
+      }, TYPE_AHEAD_TIMEOUT_MS),
+    };
+
+    moveCursor(typeAheadTrashIndex(names, buffer, activeIndex));
+  };
+
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    // `isComposing` lives on the native event: React's keyboard type omits it,
+    // and letting an IME composition through would type-jump on拼音 input.
+    if (event.defaultPrevented || event.nativeEvent.isComposing) return;
+    // Modified keys belong to the registered shortcuts, not to navigation.
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+
+    const count = entries.length;
+    // One page is "as many rows as the scroller is showing", minus the row the
+    // cursor is on, so paging always leaves a landmark on screen.
+    const pageSize = Math.max(
+      1,
+      Math.floor((scrollerRef.current?.clientHeight ?? TRASH_ROW_HEIGHT) / TRASH_ROW_HEIGHT) - 1,
+    );
+
+    switch (event.key) {
+      case "ArrowDown":
+      case "ArrowUp": {
+        event.preventDefault();
+        moveCursor(stepTrashIndex(activeIndex, count, event.key === "ArrowDown" ? 1 : -1));
+        return;
+      }
+      case "Home":
+      case "End":
+      case "PageUp":
+      case "PageDown": {
+        event.preventDefault();
+        const jump =
+          event.key === "Home"
+            ? "first"
+            : event.key === "End"
+              ? "last"
+              : event.key === "PageUp"
+                ? "pageUp"
+                : "pageDown";
+        moveCursor(jumpTrashIndex(activeIndex, count, jump, pageSize));
+        return;
+      }
+      case "Enter": {
+        if (activeIndex < 0) return;
+        event.preventDefault();
+        onRestore([entries[activeIndex].id]);
+        return;
+      }
+      case " ": {
+        if (activeIndex < 0) return;
+        event.preventDefault();
+        onToggleSelected(entries[activeIndex].id);
+        return;
+      }
+      default: {
+        if (event.key.length === 1 && !event.repeat) runTypeAhead(event.key);
+      }
+    }
+  };
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      {/* The column labels describe the whole list, so they stay outside the
+          scroller: pinning them costs nothing and scrolling them away costs
+          the reader a column. */}
+      <div
+        className={cn(
+          ROW_GRID,
+          "border-b border-border bg-muted/40 px-3 py-1.5 text-label text-muted-foreground uppercase",
+        )}
+      >
+        <SelectAllToggle allSelected={allSelected} onToggle={onSelectAll} />
+        <span>{t("trash.columns.name")}</span>
+        <span>{t("trash.columns.originalLocation")}</span>
+        <span>{t("trash.columns.deletedAt")}</span>
+        <span className="text-right">{t("trash.columns.size")}</span>
+      </div>
+      <div
+        aria-activedescendant={activeIndex >= 0 ? trashRowId(activeIndex) : undefined}
+        aria-label={t("trash.listAriaLabel")}
+        aria-multiselectable="true"
+        className="group/list max-h-trash-list overflow-y-auto focus-visible:outline-none"
+        onFocus={() => {
+          // Tab into the list has to land on a row, not on nothing — but it
+          // must not scroll: this handler also runs when a row click focuses
+          // the list, and a scroll there would move the row out from under the
+          // pointer before the click lands on it.
+          setActiveIndex((index) => (index < 0 ? 0 : index));
+        }}
+        onKeyDown={handleKeyDown}
+        ref={scrollerRef}
+        role="listbox"
+        tabIndex={0}
+      >
+        <div className="relative" role="presentation" style={{ height: virtualizer.getTotalSize() }}>
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const entry = entries[virtualRow.index];
+            const isSelected = selectedIdSet.has(entry.id);
+            const isActive = virtualRow.index === activeIndex;
+
+            return (
+              <div
+                // `last:` resolves against the last *mounted* row, which the
+                // overscan keeps far below the viewport — so a row the reader
+                // can see always keeps its separator.
+                className="absolute inset-x-0 top-0 border-b last:border-b-0"
+                key={entry.id}
+                role="presentation"
+                style={{
+                  height: virtualRow.size,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                <TrashRow
+                  entry={entry}
+                  id={trashRowId(virtualRow.index)}
+                  isActive={isActive}
+                  isSelected={isSelected}
+                  onNavigateToOriginalLocation={() =>
+                    onNavigateToOriginalLocation(entry.originalParent)
+                  }
+                  onPointerDown={() => scrollerRef.current?.focus({ preventScroll: true })}
+                  onPurge={() => onPurge([entry.id])}
+                  onRestore={() => onRestore([entry.id])}
+                  onSetCursor={() => setActiveIndex(virtualRow.index)}
+                  onToggleSelected={() => onToggleSelected(entry.id)}
+                  purgeBinding={purgeBinding}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -420,20 +731,35 @@ function SelectAllToggle({
   );
 }
 
+/** Stable DOM id for a row, so `aria-activedescendant` can point at it. */
+function trashRowId(index: number): string {
+  return `trash-row-${index}`;
+}
+
 function TrashRow({
   entry,
+  id,
+  isActive,
   isSelected,
   onNavigateToOriginalLocation,
+  onPointerDown,
   onPurge,
   onRestore,
+  onSetCursor,
   onToggleSelected,
+  purgeBinding,
 }: {
   entry: TrashEntry;
+  id: string;
+  isActive: boolean;
   isSelected: boolean;
   onNavigateToOriginalLocation: () => void;
+  onPointerDown: () => void;
   onPurge: () => void;
   onRestore: () => void;
+  onSetCursor: () => void;
   onToggleSelected: () => void;
+  purgeBinding: string;
 }) {
   const { t } = useTranslation("workspace");
   const presentation = entry.isDirectory ? DIRECTORY_PRESENTATION : getFilePresentation(entry.name);
@@ -443,64 +769,80 @@ function TrashRow({
   const hasOriginalLocation = entry.originalParent.length > 0;
 
   return (
-    <li className="border-b last:border-b-0">
-      <ContextMenu>
-        <ContextMenuTrigger>
-          {/* The row body toggles selection; double-click restores, like Explorer. */}
-          <button
-            aria-label={entry.name}
-            aria-pressed={isSelected}
-            className={cn(
-              ROW_GRID,
-              "w-full px-3 py-1.5 text-left transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
-              isSelected && "bg-selection",
-            )}
-            onClick={onToggleSelected}
-            onDoubleClick={onRestore}
-            title={`${entry.name} · ${originalLocation}`}
-            type="button"
-          >
-            <RowCheckbox isSelected={isSelected} />
-            <span className="flex min-w-0 items-center gap-2">
-              <TypeIconTile
-                className="size-[22px] tile-radius"
-                iconSize={13}
-                presentation={presentation}
-              />
-              <span className="truncate text-body">{entry.name}</span>
-            </span>
-            <span className="truncate text-caption text-muted-foreground">{originalLocation}</span>
-            <span className="truncate text-caption text-muted-foreground tabular-nums">
-              {formatDeletedTime(entry.timeDeleted)}
-            </span>
-            <span className="text-right text-caption text-muted-foreground tabular-nums">
-              {entry.sizeBytes === null ? "—" : formatBytes(entry.sizeBytes)}
-            </span>
-          </button>
-        </ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuGroup>
-            <ContextMenuItem onClick={onRestore}>
-              <Undo2 />
-              {t("trash.restore")}
+    <ContextMenu>
+      <ContextMenuTrigger>
+        {/* The row body toggles selection; double-click restores, like Explorer.
+            It is a role="option" rather than a button because the listbox owns
+            focus — the row only has to be clickable and to describe itself. */}
+        <div
+          aria-label={entry.name}
+          aria-selected={isSelected}
+          className={cn(
+            ROW_GRID,
+            "h-full w-full px-3 text-left transition-colors hover:bg-accent/60",
+            isSelected && "bg-selection",
+            // The cursor is the row ring the rest of the app uses for rows, and
+            // it only shows while the list itself holds keyboard focus.
+            isActive &&
+              "group-focus-visible/list:ring-1 group-focus-visible/list:ring-ring group-focus-visible/list:ring-inset",
+          )}
+          id={id}
+          onClick={() => {
+            onSetCursor();
+            onToggleSelected();
+          }}
+          onContextMenu={onSetCursor}
+          onDoubleClick={onRestore}
+          onPointerDown={onPointerDown}
+          role="option"
+          title={`${entry.name} · ${originalLocation}`}
+        >
+          <RowCheckbox isSelected={isSelected} />
+          <span className="flex min-w-0 items-center gap-2">
+            <TypeIconTile
+              className="size-tile-list tile-radius"
+              iconSize={13}
+              presentation={presentation}
+            />
+            <span className="truncate text-body">{entry.name}</span>
+          </span>
+          <span className="truncate text-caption text-muted-foreground">{originalLocation}</span>
+          <span className="truncate text-caption text-muted-foreground tabular-nums">
+            {formatDeletedTime(entry.timeDeleted)}
+          </span>
+          <span className="text-right text-caption text-muted-foreground tabular-nums">
+            {entry.sizeBytes === null ? "—" : formatBytes(entry.sizeBytes)}
+          </span>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={onRestore}>
+            <Undo2 />
+            {t("trash.restore")}
+            {/* Enter is not a rebindable action — it is what double-click does
+                — so this hint is a literal, like the explorer menu's. */}
+            <ContextMenuShortcut>Enter</ContextMenuShortcut>
+          </ContextMenuItem>
+          {hasOriginalLocation && (
+            <ContextMenuItem onClick={onNavigateToOriginalLocation}>
+              <Folder />
+              {t("trash.openOriginalLocation")}
             </ContextMenuItem>
-            {hasOriginalLocation && (
-              <ContextMenuItem onClick={onNavigateToOriginalLocation}>
-                <Folder />
-                {t("trash.openOriginalLocation")}
-              </ContextMenuItem>
-            )}
-          </ContextMenuGroup>
-          <ContextMenuSeparator />
-          <ContextMenuGroup>
-            <ContextMenuItem onClick={onPurge} variant="destructive">
-              <Trash />
-              {t("trash.deleteForever")}
-            </ContextMenuItem>
-          </ContextMenuGroup>
-        </ContextMenuContent>
-      </ContextMenu>
-    </li>
+          )}
+        </ContextMenuGroup>
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
+          {/* In the bin, delete *is* permanent, so this row carries the live
+              `explorer.trash` binding — the chord the list actually answers to. */}
+          <ContextMenuItem onClick={onPurge} variant="destructive">
+            <Trash />
+            {t("trash.deleteForever")}
+            <ContextMenuShortcut>{purgeBinding}</ContextMenuShortcut>
+          </ContextMenuItem>
+        </ContextMenuGroup>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 

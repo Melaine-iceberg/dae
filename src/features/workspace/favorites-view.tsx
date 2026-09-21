@@ -63,7 +63,7 @@ export function FavoritesView() {
       ) : favorites === null ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {Array.from({ length: 3 }, (_, index) => (
-            <Skeleton className="h-[54px] rounded-lg" key={index} />
+            <Skeleton className="h-location-card rounded-lg" key={index} />
           ))}
         </div>
       ) : favorites.length === 0 ? (
@@ -84,7 +84,7 @@ export function FavoritesView() {
                 <LocationCard
                   description={favorite.path}
                   icon={Star}
-                  iconClassName="fill-white text-white"
+                  iconClassName="fill-current"
                   onClick={() => navigateToFolder(favorite.path)}
                   tileClassName="tile-folder"
                   title={favorite.name}

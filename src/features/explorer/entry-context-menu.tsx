@@ -20,13 +20,14 @@ import {
   LayoutGrid,
   Star,
   SquareTerminal,
+  Trash,
   Trash2,
 } from "lucide-react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { commands, type ArchiveFormat } from "@/bindings";
-import { formatBinding } from "@/features/settings/shortcut-registry";
-import { useBinding } from "@/features/settings/settings-atoms";
+import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
+import { appSettingsAtom, useBinding } from "@/features/settings/settings-atoms";
 import { ShellCommandsMenu } from "@/features/shell-commands/shell-commands-menu";
 import { shellCommandErrorAtom } from "@/features/shell-commands/shell-commands-atoms";
 
@@ -75,6 +76,15 @@ export interface EntryActions {
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
+  /**
+   * Bypasses the trash and asks for a permanent deletion. It is the action
+   * behind `Shift+Delete`, which until now existed only as a hotkey: nothing in
+   * the window named it, so the chord was unteachable unless you read the
+   * settings pane. It sits in the file-operations group with its keycap, next
+   * to the trashing `onDelete` it is the escalation of. The confirmation dialog
+   * stays the safety net, so the row is discoverable without being unguarded.
+   */
+  onDeletePermanent: () => void;
   onDuplicate: () => void;
   onExtract: (path: string) => void;
   onMoveTo: () => void;
@@ -106,6 +116,7 @@ export function EntryContextMenuContent({
   onCopy,
   onCut,
   onDelete,
+  onDeletePermanent,
   onDuplicate,
   onExtract,
   onMoveTo,
@@ -117,6 +128,7 @@ export function EntryContextMenuContent({
 }: EntryActions) {
   const { t } = useTranslation("explorer");
   const previewBinding = formatBinding(useBinding("explorer.preview"));
+  const permanentDeleteBinding = formatBinding(useBinding("explorer.deletePermanent"));
   const spaces = useAtomValue(spacesAtom) ?? [];
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const setPropertiesTarget = useSetAtom(propertiesTargetAtom);
@@ -270,6 +282,18 @@ export function EntryContextMenuContent({
           <Move />
           {t("explorer:contextMenu.moveTo")}
         </ContextMenuItem>
+        {/* The escalation of the 删除 cell above, and the only place the
+            permanent-delete chord is written down. Destructive styling because
+            it does not go through the recycle bin. */}
+        <ContextMenuItem
+          disabled={isActionDisabled}
+          onClick={onDeletePermanent}
+          variant="destructive"
+        >
+          <Trash />
+          {t("explorer:contextMenu.deletePermanently")}
+          <ContextMenuShortcut>{permanentDeleteBinding}</ContextMenuShortcut>
+        </ContextMenuItem>
       </ContextMenuGroup>
       <ContextMenuSeparator />
       <ContextMenuGroup>
@@ -295,6 +319,18 @@ export function EntryContextMenuContent({
  * four rows and two separators, and every row the menu grows pushes more of the
  * app-contributed commands below it off the bottom of the screen.
  *
+ * Each cell now carries its live binding under the label. That was the open
+ * question when this row was introduced — a keycap under one cell would have
+ * made that cell taller than its three siblings — and the answer is to give all
+ * four the same slot, so the row grows by exactly one keycap line and the four
+ * labels stay on one baseline. The alternative (chips beside the labels) was
+ * rejected on width: `Ctrl+X` plus a two-character label needs ≈50px per cell,
+ * which the equal-width grid would have to take from the whole menu.
+ *
+ * The bindings are read from the registry rather than written here: a
+ * hard-coded `Del` would keep claiming the old key after a rebind, which is the
+ * failure mode the whole shortcut pass exists to remove.
+ *
  * The buttons are menu items rather than `<button>`s: arrow keys, Home/End,
  * Enter/Shift+Enter and the menu's own focus styling then keep working, all of
  * which a plain button sitting inside the popup would fall outside of.
@@ -313,10 +349,21 @@ function EntryActionRow({
   onRename: () => void;
 }) {
   const { t } = useTranslation("explorer");
+  const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
 
   const actions = [
-    { Icon: Scissors, label: t("explorer:contextMenu.cut"), onSelect: onCut },
-    { Icon: Copy, label: t("explorer:contextMenu.copy"), onSelect: onCopy },
+    {
+      Icon: Scissors,
+      label: t("explorer:contextMenu.cut"),
+      onSelect: onCut,
+      shortcut: formatBinding(resolveBinding(shortcuts, "explorer.cut")),
+    },
+    {
+      Icon: Copy,
+      label: t("explorer:contextMenu.copy"),
+      onSelect: onCopy,
+      shortcut: formatBinding(resolveBinding(shortcuts, "explorer.copy")),
+    },
     {
       Icon: Pencil,
       // Fixed wording, unlike the row this replaced. The four columns share one
@@ -324,23 +371,34 @@ function EntryActionRow({
       // four of them and stretch the whole menu with it.
       label: t("explorer:contextMenu.rename"),
       onSelect: onRename,
+      shortcut: formatBinding(resolveBinding(shortcuts, "explorer.rename")),
     },
-    { Icon: Trash2, label: t("explorer:contextMenu.delete"), onSelect: onDelete },
+    {
+      Icon: Trash2,
+      label: t("explorer:contextMenu.delete"),
+      onSelect: onDelete,
+      shortcut: formatBinding(resolveBinding(shortcuts, "explorer.trash")),
+    },
   ];
 
   return (
     <ContextMenuGroup className="mb-1 grid grid-cols-4 divide-x divide-border/60 overflow-hidden rounded-lg bg-muted/50 p-0.5 ring-1 ring-border/60">
-      {actions.map(({ Icon, label, onSelect }) => (
+      {actions.map(({ Icon, label, onSelect, shortcut }) => (
         <ContextMenuItem
           className="h-auto flex-col justify-center gap-1 rounded-md px-1 py-1 text-caption"
           disabled={disabled}
           key={label}
           onClick={onSelect}
         >
-          <Icon className="size-[18px]" />
+          <Icon className="size-action-glyph" />
           {/* A single node: the item is a flex column with a gap, so a label
               split across nodes would get a gap between its pieces. */}
           <span className="max-w-full truncate leading-none">{label}</span>
+          {/* Menu rows use the plain shortcut text, not the keycap chip — here
+              at the nano step, since four of them share one row. */}
+          <ContextMenuShortcut className="ml-0 text-nano tracking-normal">
+            {shortcut}
+          </ContextMenuShortcut>
         </ContextMenuItem>
       ))}
     </ContextMenuGroup>

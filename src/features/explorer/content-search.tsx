@@ -260,7 +260,7 @@ function FileMatchGroup({
     <div className="overflow-hidden rounded-lg border border-border">
       <div className="flex items-center gap-2 bg-accent/40 px-3 py-1.5">
         <TypeIconTile
-          className="size-[22px] tile-radius"
+          className="size-tile-list tile-radius"
           iconSize={13}
           presentation={presentation}
         />

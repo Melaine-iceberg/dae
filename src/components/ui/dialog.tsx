@@ -48,7 +48,14 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-2xl bg-popover p-5 text-body text-popover-foreground shadow-ambient-lg ring-1 ring-border duration-normal ease-standard outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-98 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-98 data-closed:duration-fast data-closed:ease-standard data-closed:fill-mode-forwards",
+          // A dialog is the one surface whose height is not chosen by the app:
+          // a properties pane or a conflict list is as tall as its content, and
+          // a short window would push the title bar and both buttons off-screen
+          // with nothing to scroll. The cap plus the scroll container is that
+          // guarantee, applied once here instead of per dialog. Dialogs that
+          // manage their own height (settings) are unaffected: their body
+          // already caps below this, so this scrollport never engages.
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-2xl bg-popover p-5 text-body text-popover-foreground shadow-ambient-lg ring-1 ring-border duration-normal ease-standard outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-98 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-98 data-closed:duration-fast data-closed:ease-standard data-closed:fill-mode-forwards",
           className,
         )}
         {...props}

@@ -235,6 +235,7 @@
     "copy": "Copy",
     "cut": "Cut",
     "delete": "Delete",
+    "deletePermanently": "Delete Permanently",
     "properties": "Properties"
   },
   "compressFormats": {

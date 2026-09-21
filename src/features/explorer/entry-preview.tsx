@@ -249,7 +249,7 @@ export function EntryPreview({
   return (
     <aside
       aria-label={t("preview.ariaLabel")}
-      className="animate-in flex h-full w-[26rem] shrink-0 flex-col overflow-hidden border-l border-border bg-card duration-fast fade-in"
+      className="animate-in flex h-full w-preview shrink-0 flex-col overflow-hidden border-l border-border bg-card duration-fast fade-in"
     >
       <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
         {visual && VisualIcon ? <VisualIcon className="size-4 shrink-0" /> : null}

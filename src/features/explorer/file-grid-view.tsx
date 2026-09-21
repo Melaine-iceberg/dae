@@ -40,9 +40,9 @@ const GRID_ICON_SIZE: Record<ExplorerDensity, number> = {
 
 /** Type tiles carry the grid's color system: squircle + glyph per density. */
 const GRID_TILE_CLASS: Record<ExplorerDensity, string> = {
-  compact: "size-8 tile-radius",
-  comfortable: "size-[42px] tile-radius",
-  spacious: "size-[50px] tile-radius",
+  compact: "size-tile-grid-compact tile-radius",
+  comfortable: "size-tile-grid-comfortable tile-radius",
+  spacious: "size-tile-grid-spacious tile-radius",
 };
 
 const GRID_TILE_ICON_SIZE: Record<ExplorerDensity, number> = {
@@ -60,9 +60,9 @@ const GRID_CELL_HEIGHT: Record<ExplorerDensity, number> = {
 
 /** Static height classes matching the tile scale so thumbnails keep geometry. */
 const GRID_IMAGE_ZONE_CLASS: Record<ExplorerDensity, string> = {
-  compact: "h-[30px]",
-  comfortable: "h-[42px]",
-  spacious: "h-[50px]",
+  compact: "h-image-zone-compact",
+  comfortable: "h-image-zone-comfortable",
+  spacious: "h-image-zone-spacious",
 };
 
 const GRID_GAP_PX = 6;
@@ -381,6 +381,7 @@ function GridCell({
           onCopy={menuActions.onCopy}
           onCut={menuActions.onCut}
           onDelete={menuActions.onDelete}
+          onDeletePermanent={menuActions.onDeletePermanent}
           onDuplicate={menuActions.onDuplicate}
           onExtract={menuActions.onExtract}
           onMoveTo={menuActions.onMoveTo}

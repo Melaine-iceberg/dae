@@ -238,6 +238,15 @@
   --color-folder-2: var(--folder-2);
   --color-primary-2: var(--primary-2);
 
+  /* Ink on a saturated tile or a destructive fill. Named rather than written
+     as `white` at the call site: the folder tile is a *gradient of the accent*,
+     so an icon hard-coded to `fill-white` stops matching the moment the tile
+     is retinted. Both themes carry the token, and dark's destructive ink
+     inverts to near-black the way `--primary-foreground` does — the dark
+     destructive is a light red, where white lands at ≈2:1. */
+  --color-tile-ink: var(--tile-ink);
+  --color-on-destructive: var(--on-destructive);
+
   /* File-type icon tones: category hues tuned per scheme so file kinds
      stay scannable in both light and dark. */
   --color-icon-pdf: var(--icon-pdf);
@@ -312,6 +321,39 @@
   --radius-3xl: 20px;
   --radius-4xl: 24px;
 
+  /* Geometry: the cells, stand-ins and panel widths that used to be written as
+     arbitrary px at each call site (`size-[22px]` six times, the card skeleton
+     four). Named by role rather than by value, so an entry-icon cell and a
+     grid cell read as different things instead of as two similar numbers, and
+     so a change to one density cannot leave a sibling behind.
+
+     Namespace matters: Tailwind resolves `size-*` against `--size-*` first,
+     `h-*`/`max-h-*` against `--height-*`, `w-*` against `--width-*`, and only
+     then falls back to `--spacing-*`. A token declared under the wrong prefix
+     still emits its variable and still generates no utility — which is exactly
+     how the `--duration-*` mistake above stayed invisible for a release. */
+  --size-tile-list: 22px; /* entry icon cell in a 28/34/42px row */
+  --size-tile-detail: 40px; /* dialog header tile */
+  --size-tile-grid-compact: 32px;
+  --size-tile-grid-comfortable: 42px;
+  --size-tile-grid-spacious: 50px;
+  --size-action-glyph: 18px; /* entry-menu quick-action glyph */
+  /* The bare thumbnail above a grid cell is a step narrower than the tinted
+     tile at the compact density, so a full-bleed image does not read heavier
+     than the squircle it replaces. */
+  --height-image-zone-compact: 30px;
+  --height-image-zone-comfortable: 42px;
+  --height-image-zone-spacious: 50px;
+  --height-location-card: 54px; /* LocationCard — its skeleton must match */
+  --height-project-card: 74px;
+  --height-settings-body: 30rem; /* settings dialog body at a comfortable window */
+  /* The bin's list scrolls inside its own surface rather than pushing the page
+     header off the top: the header, the progress bar and the summary stay put
+     while the rows move. */
+  --height-trash-list: 70vh;
+  --width-window-control: 46px;
+  --width-preview: 26rem;
+
   /* Dimming layer behind a modal. Declared per scheme rather than written as
      `bg-black/40` at the call site: on the near-black dark canvas a 40% black
      scrim is almost invisible, so dark mode needs a stronger one to separate
@@ -364,6 +406,8 @@
   --primary: #4649c9; /* Linear indigo */
   --primary-2: #7d84f5; /* gradient end for indicators, capacity bars, CTAs */
   --primary-foreground: #ffffff;
+  --tile-ink: #ffffff; /* ink on the folder-tile gradient and other saturated fills */
+  --on-destructive: #ffffff;
   --primary-container: #e4e5fa;
   --on-primary-container: #22247a;
   --secondary: #f1f2f4; /* tonal secondary surfaces */
@@ -453,6 +497,8 @@
   --primary: #8284f8; /* Linear indigo — ≈6:1 on a panel */
   --primary-2: #a4a6fb; /* gradient end for indicators, capacity bars, CTAs */
   --primary-foreground: #101116; /* ink label on the vivid fill — ≈8:1 */
+  --tile-ink: #ffffff; /* the tile gradient stays dark in both schemes */
+  --on-destructive: #101116; /* the dark destructive is a light red: white on it ≈2:1 */
   --primary-container: #27294d; /* accent-tinted surface — deliberately stays indigo */
   --on-primary-container: #dcdffb;
   --secondary: #1a1b1d;
@@ -591,18 +637,20 @@
   /* Folder type tile: a blue gradient squircle with a soft top light —
      the hero tile of the icon system. File glyphs sit on 13% type-color
      tints instead (see icon-tile.tsx); native shell icons and thumbnails
-     stay bare. */
+     stay bare. The ink is the token, not `#ffffff`: call sites used to
+     re-state it (`fill-white text-white`), which is a copy that stops
+     matching the gradient the moment the gradient moves. */
   .tile-folder {
     background: linear-gradient(155deg, var(--folder-1), var(--folder-2));
-    color: #ffffff;
+    color: var(--tile-ink);
     box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.32),
+      inset 0 1px 0 color-mix(in oklab, var(--tile-ink) 32%, transparent),
       0 1px 2px -1px color-mix(in oklab, var(--folder-2) 30%, transparent),
       0 4px 10px -3px color-mix(in oklab, var(--folder-2) 34%, transparent);
   }
   .dark .tile-folder {
     box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.2),
+      inset 0 1px 0 color-mix(in oklab, var(--tile-ink) 20%, transparent),
       0 4px 10px -3px rgb(0 0 0 / 0.55);
   }
 

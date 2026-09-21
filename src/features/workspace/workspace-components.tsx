@@ -35,7 +35,9 @@ export function WorkspacePageHeader({
   title,
 }: {
   actions?: ReactNode;
-  description?: string;
+  /** A node rather than a string: the Trash pairs its summary with a keycap
+   *  hint when a selection exists. */
+  description?: ReactNode;
   icon?: ReactNode;
   title: string;
 }) {

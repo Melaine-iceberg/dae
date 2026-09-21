@@ -401,7 +401,7 @@ export function PropertiesDialog() {
         {target && (
           <div className="flex items-center gap-3">
             <TypeIconTile
-              className="size-10 tile-radius"
+              className="size-tile-detail tile-radius"
               iconSize={20}
               presentation={presentation}
             />

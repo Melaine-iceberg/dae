@@ -142,6 +142,8 @@
     "unknownOriginalLocation": "Original location unknown",
     "refresh": "Refresh",
     "selectAll": "Select All",
+    "listAriaLabel": "Trash items",
+    "clearSelectionHint": "Clear selection",
     "columns": {
       "name": "Name",
       "originalLocation": "Original Location",

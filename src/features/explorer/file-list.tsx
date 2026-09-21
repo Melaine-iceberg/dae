@@ -688,6 +688,7 @@ export function FileList({
     onCopy,
     onCut,
     onDelete,
+    onDeletePermanent,
     onDuplicate,
     onExtract,
     onMoveTo,
@@ -1078,6 +1079,7 @@ export interface MenuActions {
   onCopy: () => void;
   onCut: () => void;
   onDelete: () => void;
+  onDeletePermanent: () => void;
   onDuplicate: () => void;
   onExtract: (path: string) => void;
   onMoveTo: () => void;
@@ -1178,7 +1180,7 @@ function FileListRow({
                   entry={entry}
                   fallback={
                     <TypeIconTile
-                      className="size-[22px] tile-radius"
+                      className="size-tile-list tile-radius"
                       iconSize={16}
                       presentation={presentation}
                     />
@@ -1188,7 +1190,7 @@ function FileListRow({
               ) : (
                 <TypeIconTile
                   pop
-                  className="size-[22px] tile-radius"
+                  className="size-tile-list tile-radius"
                   iconSize={16}
                   presentation={presentation}
                 />
@@ -1238,6 +1240,7 @@ function FileListRow({
           onCopy={menuActions.onCopy}
           onCut={menuActions.onCut}
           onDelete={menuActions.onDelete}
+          onDeletePermanent={menuActions.onDeletePermanent}
           onDuplicate={menuActions.onDuplicate}
           onExtract={menuActions.onExtract}
           onMoveTo={menuActions.onMoveTo}

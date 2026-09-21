@@ -142,6 +142,8 @@
     "unknownOriginalLocation": "原位置未知",
     "refresh": "刷新",
     "selectAll": "全选",
+    "listAriaLabel": "回收站项目",
+    "clearSelectionHint": "取消选择",
     "columns": {
       "name": "名称",
       "originalLocation": "原位置",

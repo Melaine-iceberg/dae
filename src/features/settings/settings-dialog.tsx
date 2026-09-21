@@ -87,10 +87,13 @@ export function SettingsDialog() {
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogTitle className="sr-only">{t("dialog.title")}</DialogTitle>
-        <div className="flex h-[30rem] max-h-[calc(100vh-4rem)]">
+        {/* The body caps below the dialog's own max-height, so a short window
+            shrinks the two panes instead of scrolling the whole dialog out
+            from under its rounded frame. */}
+        <div className="flex h-settings-body max-h-[calc(100dvh-4rem)]">
           <nav
             aria-label={t("dialog.navAria")}
-            className="flex w-44 shrink-0 flex-col gap-0.5 border-r border-border bg-muted/30 p-2"
+            className="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border bg-muted/30 p-2"
           >
             {NAV_ITEMS.map(({ icon: Icon, pane: item }) => (
               <button

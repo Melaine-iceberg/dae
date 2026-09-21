@@ -235,6 +235,7 @@
     "copy": "复制",
     "cut": "剪切",
     "delete": "删除",
+    "deletePermanently": "永久删除",
     "properties": "属性"
   },
   "compressFormats": {
