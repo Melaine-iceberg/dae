@@ -387,6 +387,7 @@ function GridCell({
           onOpen={() => onOpenEntry(entry)}
           onOpenWith={() => menuActions.onOpenWith(entry.path)}
           onRename={menuActions.onRename}
+          onTogglePreview={menuActions.onTogglePreview}
           selectedPaths={[...selectedPathSet]}
         />
       </ContextMenuContent>

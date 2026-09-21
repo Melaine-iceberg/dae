@@ -20,10 +20,12 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/ui/error-state";
 import { openInNewTabAtom, openPathInNewWindowAtom } from "@/features/explorer/tabs";
 import {
   ensureFavoritesLoadedAtom,
   favoritesAtom,
+  favoritesErrorAtom,
   removeFavoriteAtom,
 } from "@/features/sidebar/sidebar-atoms";
 
@@ -34,6 +36,7 @@ import { LocationCard, WorkspacePage, WorkspacePageHeader } from "./workspace-co
 export function FavoritesView() {
   const { t } = useTranslation("workspace");
   const favorites = useAtomValue(favoritesAtom);
+  const favoritesError = useAtomValue(favoritesErrorAtom);
   const ensureFavoritesLoaded = useSetAtom(ensureFavoritesLoadedAtom);
   const removeFavorite = useSetAtom(removeFavoriteAtom);
   const navigateToFolder = useSetAtom(navigateToFolderAtom);
@@ -48,7 +51,16 @@ export function FavoritesView() {
     <WorkspacePage aria-label={t("favorites.title")}>
       <WorkspacePageHeader title={t("favorites.title")} description={t("favorites.description")} />
 
-      {favorites === null ? (
+      {favoritesError !== null ? (
+        // A failed read is not an empty list: say so, and offer the one action
+        // that can change the outcome.
+        <ErrorState
+          className="min-h-64"
+          description={favoritesError}
+          onRetry={() => void ensureFavoritesLoaded()}
+          title={t("loadError.favoritesTitle")}
+        />
+      ) : favorites === null ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {Array.from({ length: 3 }, (_, index) => (
             <Skeleton className="h-[54px] rounded-lg" key={index} />

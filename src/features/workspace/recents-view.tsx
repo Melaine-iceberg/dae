@@ -25,6 +25,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/ui/error-state";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
 import { TypeIconTile } from "@/features/explorer/icon-tile";
 
@@ -32,6 +33,7 @@ import {
   clearRecentItems,
   ensureRecentsLoadedAtom,
   recentsAtom,
+  recentsErrorAtom,
   recordRecentItem,
   removeRecentItem,
 } from "./recents-atoms";
@@ -44,6 +46,7 @@ type RecentGroup = { label: string; items: RecentItem[] };
 export function RecentsView() {
   const { t } = useTranslation("workspace");
   const recents = useAtomValue(recentsAtom);
+  const recentsError = useAtomValue(recentsErrorAtom);
   const ensureRecentsLoaded = useSetAtom(ensureRecentsLoadedAtom);
   const navigateToFolder = useSetAtom(navigateToFolderAtom);
   const [confirmingClear, setConfirmingClear] = useState(false);
@@ -124,7 +127,14 @@ export function RecentsView() {
         title={t("recents.title")}
       />
 
-      {recents === null ? (
+      {recentsError !== null ? (
+        <ErrorState
+          className="min-h-64"
+          description={recentsError}
+          onRetry={() => void ensureRecentsLoaded()}
+          title={t("loadError.recentsTitle")}
+        />
+      ) : recents === null ? (
         <div className="flex flex-col gap-1">
           {Array.from({ length: 6 }, (_, index) => (
             <Skeleton className="h-9 rounded-lg" key={index} />

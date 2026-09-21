@@ -12,9 +12,11 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MOD_KEY } from "@/lib/platform";
+import { formatBinding } from "@/features/settings/shortcut-registry";
+import { useBinding } from "@/features/settings/settings-atoms";
 import { cn } from "@/lib/utils";
 
 import {
@@ -58,6 +60,7 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
   const [filters, setFilters] = useAtom(entryFiltersAtom);
   const [showHiddenFiles, setShowHiddenFiles] = useAtom(showHiddenFilesAtom);
   const isActive = hasActiveEntryFilters(filters);
+  const toggleHiddenBinding = formatBinding(useBinding("explorer.toggleHidden"));
 
   const updateFilter = <TKey extends keyof ExplorerEntryFilters>(
     key: TKey,
@@ -127,7 +130,11 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuCheckboxItem checked={showHiddenFiles} onCheckedChange={setShowHiddenFiles}>
-            {t("filter.showHiddenFiles", { modifier: MOD_KEY })}
+            {t("filter.showHiddenFiles")}
+            {/* Was a hardcoded `Mod` from the platform module, which drifted
+                the moment the action was rebound. The chip reads the live
+                binding, like every other shortcut hint in the app. */}
+            <DropdownMenuShortcut>{toggleHiddenBinding}</DropdownMenuShortcut>
           </DropdownMenuCheckboxItem>
         </DropdownMenuGroup>
 

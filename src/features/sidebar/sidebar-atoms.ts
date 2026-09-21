@@ -2,6 +2,7 @@ import { atom } from "jotai";
 import { atomWithStorage } from "jotai/utils";
 
 import { commands, type StoredCloudAccount, type StoredConnection } from "@/bindings";
+import { getFileOperationErrorMessage } from "@/i18n/errors";
 
 import type { Favorite, PlaceKind, SystemPlace } from "./types";
 
@@ -86,23 +87,35 @@ export const hiddenPlacesAtom = atomWithStorage<PlaceKind[]>("sidebar-hidden-pla
 // sidebar's favorites section and the overview surface.
 export const systemPlacesAtom = atom<SystemPlace[] | null>(null);
 
+/**
+ * Why the last load failed, or `null`. A failed read leaves the data atom at
+ * `null` so a retry re-queries instead of short-circuiting on a fabricated
+ * empty list — see the note in `workspace/recents-atoms.ts`.
+ */
+export const systemPlacesErrorAtom = atom<string | null>(null);
+
 export const ensureSystemPlacesLoadedAtom = atom(null, async (get, set) => {
   if (get(systemPlacesAtom) !== null) return;
 
+  set(systemPlacesErrorAtom, null);
   try {
     set(systemPlacesAtom, await commands.getSystemPlaces());
   } catch (error) {
     console.warn("Unable to load system places", error);
-    set(systemPlacesAtom, []);
+    set(systemPlacesErrorAtom, getFileOperationErrorMessage(error));
   }
 });
 
 // `null` means the favorites have not been loaded yet.
 export const favoritesAtom = atom<Favorite[] | null>(null);
 
+/** Why the last favorites load failed, or `null`. See above. */
+export const favoritesErrorAtom = atom<string | null>(null);
+
 export const ensureFavoritesLoadedAtom = atom(null, async (get, set) => {
   if (get(favoritesAtom) !== null) return;
 
+  set(favoritesErrorAtom, null);
   try {
     let favorites = await commands.loadFavorites();
 
@@ -118,7 +131,7 @@ export const ensureFavoritesLoadedAtom = atom(null, async (get, set) => {
     set(favoritesAtom, favorites);
   } catch (error) {
     console.warn("Unable to load favorites", error);
-    set(favoritesAtom, []);
+    set(favoritesErrorAtom, getFileOperationErrorMessage(error));
   }
 });
 
@@ -151,8 +164,16 @@ function mergeLegacyPinnedPlaces(favorites: Favorite[]): Favorite[] | null {
   return additions.length > 0 ? [...favorites, ...additions] : null;
 }
 
+// Every mutator below is a read-modify-write against `favoritesAtom` followed
+// by a whole-list save, so an unloaded list cannot be edited: `?? []` would
+// write back only the new entry and silently drop every favorite the backend
+// still holds. Callers load first (the sidebar and the overview both ensure on
+// mount); while the list is unloaded — or failed to load — the edit is a no-op
+// and the surface shows the retry it already has.
 export const addFavoritePathsAtom = atom(null, (get, set, paths: string[]) => {
-  const favorites = get(favoritesAtom) ?? [];
+  const favorites = get(favoritesAtom);
+  if (favorites === null) return;
+
   const existing = new Set(favorites.map((favorite) => favorite.path));
   const additions = paths
     .filter((path) => !existing.has(path))
@@ -164,7 +185,8 @@ export const addFavoritePathsAtom = atom(null, (get, set, paths: string[]) => {
 });
 
 export const removeFavoriteAtom = atom(null, (get, set, path: string) => {
-  const favorites = get(favoritesAtom) ?? [];
+  const favorites = get(favoritesAtom);
+  if (favorites === null) return;
   if (!favorites.some((favorite) => favorite.path === path)) return;
 
   persistFavorites(
@@ -174,7 +196,8 @@ export const removeFavoriteAtom = atom(null, (get, set, path: string) => {
 });
 
 export const toggleFavoriteAtom = atom(null, (get, set, favorite: Favorite) => {
-  const favorites = get(favoritesAtom) ?? [];
+  const favorites = get(favoritesAtom);
+  if (favorites === null) return;
   if (favorites.some((item) => item.path === favorite.path)) {
     persistFavorites(
       set,

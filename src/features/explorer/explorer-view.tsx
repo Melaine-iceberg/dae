@@ -56,8 +56,11 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Kbd } from "@/components/ui/kbd";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatBinding } from "@/features/settings/shortcut-registry";
+import { useBinding } from "@/features/settings/settings-atoms";
 import {
   addFavoritePathsAtom,
   favoritesAtom,
@@ -133,6 +136,20 @@ const NO_FAVORITES: Favorite[] = [];
  *  collecting while that dialog is open. */
 const NO_NAMES: string[] = [];
 const appWindow = getAppWindow();
+
+/**
+ * Controls the toolbar gives up on a narrow window.
+ *
+ * The toolbar is a single non-wrapping row of `shrink-0` controls, and the
+ * pane it lives in has `overflow-hidden` — so below a certain width the
+ * trailing controls were not merely cramped, they were clipped and
+ * unreachable. The path bar is `flex-1` and the search field shrinks, which
+ * covers most of the range; what is left over is paid for by the two controls
+ * that are reachable some other way: the favorite toggle (the folder's context
+ * menu) and the split-view toggle (a per-tab layout choice, not a per-folder
+ * one). Both come back as the window widens.
+ */
+const TOOLBAR_OVERFLOW_CLASS = "max-[880px]:hidden";
 
 interface ExplorerViewProps {
   navigator: ExplorerNavigator;
@@ -214,6 +231,12 @@ export function ExplorerView({
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("name");
   const [undoRedoToast, setUndoRedoToast] = useState<UndoRedoToast | null>(null);
+  // Live bindings for the toolbar's tooltips. They used to be baked into the
+  // translation strings ("收起预览面板 (Space)"), which meant a rebind left the
+  // tooltip teaching a key that no longer did anything.
+  const previewBinding = formatBinding(useBinding("explorer.preview"));
+  const undoBinding = formatBinding(useBinding("explorer.undo"));
+  const redoBinding = formatBinding(useBinding("explorer.redo"));
   // Operation IDs started with the "auto" progress kind: the backend announces
   // the kind with its first progress event, so the ID is adopted there.
   const deferredProgressIdsRef = useRef<Set<string>>(new Set());
@@ -1342,13 +1365,14 @@ export function ExplorerView({
             >
               <RotateCw className={cn(isLoading && "animate-spin")} />
             </Button>
-            <ToolbarSeparator />
+            <ToolbarSeparator className={TOOLBAR_OVERFLOW_CLASS} />
             <Button
               aria-label={
                 isCurrentFavorited
                   ? t("explorer:toolbar.removeFavorite")
                   : t("explorer:toolbar.addFavorite")
               }
+              className={TOOLBAR_OVERFLOW_CLASS}
               disabled={!directory}
               onClick={() =>
                 directory &&
@@ -1416,6 +1440,7 @@ export function ExplorerView({
                   : t("explorer:toolbar.splitView")
               }
               aria-pressed={splitEnabled}
+              className={TOOLBAR_OVERFLOW_CLASS}
               onClick={onToggleSplit}
               size="icon"
               title={
@@ -1441,8 +1466,8 @@ export function ExplorerView({
             size="icon"
             title={
               isPreviewOpen
-                ? t("explorer:toolbar.collapsePreviewShortcut")
-                : t("explorer:toolbar.expandPreviewShortcut")
+                ? t("explorer:toolbar.collapsePreviewShortcut", { shortcut: previewBinding })
+                : t("explorer:toolbar.expandPreviewShortcut", { shortcut: previewBinding })
             }
             type="button"
             variant="ghost"
@@ -1557,6 +1582,7 @@ export function ExplorerView({
                       ? undefined
                       : (offset) => navigator.setScrollOffset(directory.path, offset)
                   }
+                  onSelectAll={selectAll}
                   onSelectedPathsChange={setSelectedPaths}
                   onTogglePreview={togglePreview}
                   searchState={
@@ -1629,10 +1655,12 @@ export function ExplorerView({
                     {undoRedoToast.action === "redo" ? (
                       <Button onClick={redoLastOperation} size="xs" type="button" variant="outline">
                         {t("explorer:actions.redo")}
+                        <Kbd className="h-4 px-1 text-nano">{redoBinding}</Kbd>
                       </Button>
                     ) : (
                       <Button onClick={undoLastOperation} size="xs" type="button" variant="outline">
                         {t("explorer:actions.undo")}
+                        <Kbd className="h-4 px-1 text-nano">{undoBinding}</Kbd>
                       </Button>
                     )}
                     <Button
@@ -1756,8 +1784,13 @@ export function ExplorerView({
   );
 }
 
-function ToolbarSeparator() {
-  return <div aria-hidden="true" className="mx-0.5 h-4 w-px bg-border" />;
+/**
+ * Hairline between toolbar groups. `className` exists so a group can take its
+ * separator down with it on narrow windows — a lone divider with nothing on
+ * one side reads as a rendering bug.
+ */
+function ToolbarSeparator({ className }: { className?: string }) {
+  return <div aria-hidden="true" className={cn("mx-0.5 h-4 w-px bg-border", className)} />;
 }
 
 /**
@@ -1787,6 +1820,7 @@ function ListingStats({
   truncated: boolean;
 }) {
   const { t } = useTranslation("explorer");
+  const clearSelectionBinding = formatBinding(useBinding("explorer.clearSelection"));
   const status = isLoading
     ? searchQuery
       ? t("explorer:listing.searching")
@@ -1804,9 +1838,19 @@ function ListingStats({
       className="ml-auto flex shrink-0 items-center gap-1.5 pl-3 text-micro text-muted-foreground tabular-nums"
     >
       {selectedCount > 0 && (
-        <span className="rounded-xs bg-selection px-1.5 text-foreground">
-          {t("explorer:listing.selectedCount", { display: localeNumber(selectedCount) })}
-        </span>
+        <>
+          <span className="rounded-xs bg-selection px-1.5 text-foreground">
+            {t("explorer:listing.selectedCount", { display: localeNumber(selectedCount) })}
+          </span>
+          {/* A selection is the one state where "how do I get out of this"
+              is a real question, so the way out is spelled out here instead of
+              being left to the keyboard. Hidden on narrow panes, where the
+              path bar has no room to spare for it. */}
+          <span className="hidden shrink-0 items-center gap-1 min-[840px]:flex">
+            <Kbd className="h-4 px-1 text-nano">{clearSelectionBinding}</Kbd>
+            {t("explorer:listing.clearSelectionHint")}
+          </span>
+        </>
       )}
       <span className="truncate">{status}</span>
     </span>
@@ -1820,6 +1864,7 @@ function ListingStats({
 function TerminalToggle() {
   const { t } = useTranslation("explorer");
   const [visible, setVisible] = useAtom(terminalVisibleAtom);
+  const toggleBinding = formatBinding(useBinding("app.toggleTerminal"));
 
   return (
     <Button
@@ -1828,7 +1873,7 @@ function TerminalToggle() {
       className={cn(visible && "bg-accent text-foreground")}
       onClick={() => setVisible((open) => !open)}
       size="icon"
-      title={t("explorer:toolbar.terminalTitle")}
+      title={t("explorer:toolbar.terminalTitle", { shortcut: toggleBinding })}
       type="button"
       variant="ghost"
     >

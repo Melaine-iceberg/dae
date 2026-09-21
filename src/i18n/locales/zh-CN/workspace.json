@@ -205,5 +205,13 @@
     "remove": "从空间中移除",
     "deleteTitle": "删除空间“{{name}}”？",
     "deleteDescription": "只会删除这个空间的组织方式，里面的文件夹和文件不会被删除。"
+  },
+  "loadError": {
+    "title": "加载失败",
+    "favoritesTitle": "无法加载收藏",
+    "placesTitle": "无法加载系统位置",
+    "recentsTitle": "无法加载最近使用",
+    "retry": "重试",
+    "spacesTitle": "无法加载空间"
   }
 }

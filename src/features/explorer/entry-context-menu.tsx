@@ -7,6 +7,7 @@ import {
   Move,
   ClipboardList,
   Copy,
+  Eye,
   FileArchive,
   Files,
   FolderOpen,
@@ -24,6 +25,8 @@ import {
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { commands, type ArchiveFormat } from "@/bindings";
+import { formatBinding } from "@/features/settings/shortcut-registry";
+import { useBinding } from "@/features/settings/settings-atoms";
 import { ShellCommandsMenu } from "@/features/shell-commands/shell-commands-menu";
 import { shellCommandErrorAtom } from "@/features/shell-commands/shell-commands-atoms";
 
@@ -79,6 +82,13 @@ export interface EntryActions {
   onOpenWith: () => void;
   onRename: () => void;
   /**
+   * Toggles the preview panel for the right-clicked entry. It is the same
+   * action as the toolbar's eye button and the `Space` shortcut, which until
+   * now had no menu presence at all — the shortcut existed, the action did
+   * not, so nothing in the window taught either.
+   */
+  onTogglePreview: () => void;
+  /**
    * Paths the action would run on — the selection when the right-clicked entry
    * is part of it, otherwise just that entry (the same rule the file operations
    * follow). The shell-command section runs an app's command on exactly these.
@@ -102,9 +112,11 @@ export function EntryContextMenuContent({
   onOpen,
   onOpenWith,
   onRename,
+  onTogglePreview,
   selectedPaths,
 }: EntryActions) {
   const { t } = useTranslation("explorer");
+  const previewBinding = formatBinding(useBinding("explorer.preview"));
   const spaces = useAtomValue(spacesAtom) ?? [];
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const setPropertiesTarget = useSetAtom(propertiesTargetAtom);
@@ -170,6 +182,11 @@ export function EntryContextMenuContent({
         <ContextMenuItem disabled={isActionDisabled} onClick={onOpenWith}>
           <AppWindow />
           {t("explorer:contextMenu.openWith")}
+        </ContextMenuItem>
+        <ContextMenuItem disabled={isActionDisabled || !isSingleSelection} onClick={onTogglePreview}>
+          <Eye />
+          {t("explorer:contextMenu.preview")}
+          <ContextMenuShortcut>{previewBinding}</ContextMenuShortcut>
         </ContextMenuItem>
         {entry.kind === "directory" && (
           <ContextMenuItem

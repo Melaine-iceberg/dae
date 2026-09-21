@@ -53,12 +53,12 @@
     "addFavorite": "Add current folder to favorites",
     "collapsePreview": "Collapse preview panel",
     "expandPreview": "Expand preview panel",
-    "collapsePreviewShortcut": "Collapse preview panel (Space)",
-    "expandPreviewShortcut": "Expand preview panel (Space)",
+    "collapsePreviewShortcut": "Collapse preview panel ({{shortcut}})",
+    "expandPreviewShortcut": "Expand preview panel ({{shortcut}})",
     "splitView": "Open split view",
     "closeSplitView": "Close split view",
     "toggleTerminal": "Toggle integrated terminal",
-    "terminalTitle": "Terminal (Ctrl+`)"
+    "terminalTitle": "Terminal ({{shortcut}})"
   },
   "split": {
     "resizeAria": "Resize split panes"
@@ -217,6 +217,7 @@
     "openInNewWindow": "Open in new window",
     "openWith": "Open with…",
     "openWithOtherApp": "Open in another app…",
+    "preview": "Preview",
     "addToFavorites": "Add to favorites",
     "removeFromFavorites": "Remove from favorites",
     "addToSpace": "Add to space",
@@ -230,6 +231,7 @@
     "compressAs": "Compress as…",
     "extractHere": "Extract here",
     "moveTo": "Move to…",
+    "selectAll": "Select all",
     "copy": "Copy",
     "cut": "Cut",
     "delete": "Delete",
@@ -413,7 +415,8 @@
     "matchCount_one": "{{display}} match",
     "matchCount_other": "{{display}} matches",
     "truncatedSuffix": " (truncated)",
-    "selectedCount": "{{display}} selected"
+    "selectedCount": "{{display}} selected",
+    "clearSelectionHint": "clear"
   },
   "view": {
     "menuLabel": "View options",
@@ -457,7 +460,7 @@
     "sizeSmall": "Smaller than 1 MB",
     "sizeMedium": "1 MB – 100 MB",
     "sizeLarge": "Larger than 100 MB",
-    "showHiddenFiles": "Show hidden files ({{modifier}}+H)",
+    "showHiddenFiles": "Show hidden files",
     "clearAll": "Clear all filters"
   },
   "directorySearch": {

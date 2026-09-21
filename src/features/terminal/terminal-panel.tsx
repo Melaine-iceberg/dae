@@ -18,8 +18,10 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Kbd } from "@/components/ui/kbd";
 import { activePaneNavigatorAtom, activeTabIdAtom } from "@/features/explorer/tabs";
-import { appSettingsAtom } from "@/features/settings/settings-atoms";
+import { formatBinding } from "@/features/settings/shortcut-registry";
+import { appSettingsAtom, useBinding } from "@/features/settings/settings-atoms";
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import { translateBackendMessage } from "@/i18n/errors";
 import { isMacPlatform, MOD_KEY } from "@/lib/platform";
@@ -371,6 +373,8 @@ export function TerminalPanel() {
   const shortcut = (key: string) =>
     isMacPlatform ? `${MOD_KEY}+${key}` : `${MOD_KEY}+Shift+${key}`;
 
+  const toggleBinding = formatBinding(useBinding("app.toggleTerminal"));
+
   const startResizeDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const panel = event.currentTarget.parentElement;
@@ -405,6 +409,10 @@ export function TerminalPanel() {
         <span className="text-caption font-medium text-muted-foreground select-none">
           {t("panel.title")}
         </span>
+        {/* The panel's own toggle, shown where the panel is: the key that
+            hides it is the same key that brought it up, and there was nothing
+            in the window saying so. */}
+        <Kbd className="h-4 px-1 text-nano">{toggleBinding}</Kbd>
         <div className="ml-auto flex items-center gap-0.5">
           <button
             aria-label={t("panel.restart.label")}

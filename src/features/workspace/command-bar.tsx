@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
   RotateCw,
@@ -90,11 +91,18 @@ import { commandBarModeAtom, commandBarOpenAtom } from "@/features/workspace/com
 import { appSettingsAtom, settingsOpenAtom } from "@/features/settings/settings-atoms";
 import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
 
+import { buildPaletteRows, rankIntoGroups, rowIndicesByResult } from "./palette-rows";
+
 const MAX_RECENT_ITEMS = 8;
 const MAX_PATH_RECENT_ITEMS = 12;
 const MAX_FILE_RESULTS = 12;
 const FILE_SEARCH_DEBOUNCE_MS = 220;
 const MIN_FILE_QUERY_LENGTH = 2;
+
+/** Row metrics of the palette list, in px. Both heights are fixed, which is
+ *  what lets the virtualizer position rows without measuring them. */
+const RESULT_ROW_HEIGHT_PX = 32;
+const SECTION_HEADER_HEIGHT_PX = 30;
 
 /** Absolute-path shapes: drive letter, home alias, UNC share, POSIX root. */
 const PATH_LIKE_PATTERN = /^([a-zA-Z]:[\\/]|~(?=$|[\\/])|\\\\|\/)/;
@@ -705,7 +713,7 @@ export function CommandBar() {
       }));
   }, [fileResults, navigateToFolder, pathMode]);
 
-  const results = useMemo<RankedResult<CommandItem>[]>(() => {
+  const rankedResults = useMemo<RankedResult<CommandItem>[]>(() => {
     const ranked = rankByFuzzy(trimmedQuery, [...items, ...fileResultItems], (item) =>
       `${item.label} ${item.keywords ?? ""} ${item.hint ?? ""}`.trim(),
     );
@@ -725,28 +733,21 @@ export function CommandBar() {
     ];
   }, [directPathItem, fileResultItems, items, trimmedQuery]);
 
-  // Grouped sections for the unfiltered list; the flattened order still
-  // drives keyboard navigation.
-  const renderGroups = useMemo(() => {
-    if (trimmedQuery) return null;
+  // Sections, ordered by their best match — see `rankIntoGroups`. This is what
+  // keeps the group headings on screen while a query is typed; previously the
+  // palette gave up on them and rendered one flat list.
+  const sections = useMemo(
+    () => rankIntoGroups(rankedResults, (item) => item.group, GROUP_ORDER),
+    [rankedResults],
+  );
 
-    const groups: {
-      group: CommandGroup;
-      startIndex: number;
-      entries: RankedResult<CommandItem>[];
-    }[] = [];
+  /** Flat result order — the index space ArrowUp/ArrowDown and Enter move in. */
+  const results = useMemo(() => sections.flatMap((section) => section.entries), [sections]);
 
-    results.forEach((result, index) => {
-      const last = groups.at(-1);
-      if (last?.group === result.item.group) {
-        last.entries.push(result);
-      } else {
-        groups.push({ group: result.item.group, startIndex: index, entries: [result] });
-      }
-    });
+  const rows = useMemo(() => buildPaletteRows(sections), [sections]);
 
-    return groups;
-  }, [results, trimmedQuery]);
+  /** Result index -> virtualizer row index (sections cost a header each). */
+  const rowIndices = useMemo(() => rowIndicesByResult(rows), [rows]);
 
   const groupLabels: Record<CommandGroup, string> = {
     path: t("commandBar.groups.path"),
@@ -761,15 +762,26 @@ export function CommandBar() {
 
   const currentIndex = Math.min(activeIndex, Math.max(results.length - 1, 0));
 
+  const resultsVirtualizer = useVirtualizer({
+    count: rows.length,
+    estimateSize: (rowIndex) =>
+      rows[rowIndex]?.kind === "header" ? SECTION_HEADER_HEIGHT_PX : RESULT_ROW_HEIGHT_PX,
+    getScrollElement: () => listRef.current,
+    overscan: 8,
+  });
+
   useEffect(() => {
     setActiveIndex(0);
   }, [trimmedQuery]);
 
+  // Keyboard navigation has to be able to reach a row that is not mounted:
+  // `scrollToIndex` walks the scroll container, where scrolling to the DOM node
+  // (what this did before the list was virtualized) only ever found rows the
+  // viewport already contained.
   useEffect(() => {
-    listRef.current
-      ?.querySelector(`[data-command-index="${currentIndex}"]`)
-      ?.scrollIntoView({ block: "nearest" });
-  }, [currentIndex, results.length]);
+    const rowIndex = rowIndices[currentIndex];
+    if (rowIndex !== undefined) resultsVirtualizer.scrollToIndex(rowIndex, { align: "auto" });
+  }, [currentIndex, resultsVirtualizer, rowIndices]);
 
   const runCommand = (item: CommandItem) => {
     setOpen(false);
@@ -843,7 +855,7 @@ export function CommandBar() {
           ref={listRef}
           role="listbox"
         >
-          {results.length === 0 ? (
+          {rows.length === 0 ? (
             isSearchingFiles ? (
               <p className="px-2.5 py-6 text-center text-body text-muted-foreground">
                 {pathMode ? t("commandBar.searchingFolders") : t("commandBar.searchingFiles")}
@@ -859,41 +871,42 @@ export function CommandBar() {
                   : t("commandBar.noResults", { query: trimmedQuery })}
               </p>
             )
-          ) : renderGroups ? (
-            renderGroups.map((section, sectionIndex) => (
-              <div
-                className={cn(sectionIndex > 0 && "mt-1 border-t border-border/60")}
-                key={section.group}
-              >
-                <p
-                  aria-hidden="true"
-                  className="px-2 pt-2.5 pb-1 text-label text-muted-foreground uppercase select-none"
-                >
-                  {groupLabels[section.group]}
-                </p>
-                {section.entries.map((entry, localIndex) => (
-                  <CommandResultRow
-                    dataIndex={section.startIndex + localIndex}
-                    isActive={section.startIndex + localIndex === currentIndex}
-                    item={entry.item}
-                    key={entry.item.id}
-                    matchedIndices={entry.matchedIndices}
-                    onSelect={() => runCommand(entry.item)}
-                  />
-                ))}
-              </div>
-            ))
           ) : (
-            results.map((entry, index) => (
-              <CommandResultRow
-                dataIndex={index}
-                isActive={index === currentIndex}
-                item={entry.item}
-                key={entry.item.id}
-                matchedIndices={entry.matchedIndices}
-                onSelect={() => runCommand(entry.item)}
-              />
-            ))
+            <div className="relative" style={{ height: resultsVirtualizer.getTotalSize() }}>
+              {resultsVirtualizer.getVirtualItems().map((virtualRow) => {
+                const row = rows[virtualRow.index];
+                return (
+                  <div
+                    className="absolute top-0 left-0 w-full"
+                    key={row.key}
+                    style={{
+                      height: virtualRow.size,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                  >
+                    {row.kind === "header" ? (
+                      <p
+                        aria-hidden="true"
+                        className={cn(
+                          "flex h-full items-end px-2 pb-1 text-label text-muted-foreground uppercase select-none",
+                          row.separator && "border-t border-border/60",
+                        )}
+                      >
+                        {groupLabels[row.group]}
+                      </p>
+                    ) : (
+                      <CommandResultRow
+                        dataIndex={row.resultIndex}
+                        isActive={row.resultIndex === currentIndex}
+                        item={row.entry.item}
+                        matchedIndices={row.entry.matchedIndices}
+                        onSelect={() => runCommand(row.entry.item)}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
         <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border bg-muted/30 px-3.5 text-micro text-muted-foreground select-none">

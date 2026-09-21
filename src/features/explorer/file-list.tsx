@@ -15,6 +15,7 @@ import { i18n } from "@/i18n";
 import { localeDateTimeFormat, localeNumber, localeNumberFormat } from "@/i18n/format";
 import {
   AppWindow,
+  BoxSelect,
   ChevronDown,
   ChevronUp,
   Clipboard,
@@ -23,11 +24,13 @@ import {
   Folder,
   FolderPlus,
   Link,
+  Redo2,
   Scissors,
   LayoutGrid,
   Star,
   SquareTerminal,
   TriangleAlert,
+  Undo2,
 } from "lucide-react";
 
 import {
@@ -50,6 +53,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { useMeasuredWidth } from "@/lib/use-element-width";
 
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
 import { appSettingsAtom, hotkeysPausedAtom } from "@/features/settings/settings-atoms";
@@ -139,6 +143,7 @@ interface FileListProps {
   onRedo: () => void;
   onRename: () => void;
   onScrollOffsetChange?: (offset: number) => void;
+  onSelectAll: () => void;
   onSelectedPathsChange: (paths: string[]) => void;
   onTogglePreview: () => void;
   onUndo: () => void;
@@ -170,6 +175,51 @@ const FILE_SIZE_FORMAT_OPTIONS: Intl.NumberFormatOptions = {
 const FILE_SIZE_UNITS = ["B", "KB", "MB", "GB", "TB"] as const;
 
 const DRAG_START_DISTANCE_PX = 6;
+
+/**
+ * Column thresholds for the detail listing, measured against the pane the
+ * listing is drawn in (see `useElementWidth`).
+ *
+ * The row used to be a fixed 58rem grid with a `min-w-160` floor on its
+ * wrapper, so a pane narrower than that scrolled sideways and every row's
+ * cells slid out from under their headers. Columns are now dropped instead, in
+ * the order that costs the least: type first (it is already implied by the
+ * icon), then size, then the modified date — which is the last column worth
+ * losing, because the sort order may be keyed on it.
+ *
+ * The name column is `1fr`, so a wide pane gives the extra room to the one
+ * column that can use it and the row never exceeds its container.
+ */
+const LIST_COLUMN_MIN_WIDTH_PX = { modified: 340, size: 480, type: 640 } as const;
+
+interface ListColumns {
+  modified: boolean;
+  size: boolean;
+  type: boolean;
+}
+
+const ALL_LIST_COLUMNS: ListColumns = { modified: true, size: true, type: true };
+
+function listColumnsForWidth(width: number): ListColumns {
+  if (width <= 0) return ALL_LIST_COLUMNS;
+  return {
+    modified: width >= LIST_COLUMN_MIN_WIDTH_PX.modified,
+    size: width >= LIST_COLUMN_MIN_WIDTH_PX.size,
+    type: width >= LIST_COLUMN_MIN_WIDTH_PX.type,
+  };
+}
+
+/** Grid template matching `columns` cell-for-cell — the two must not drift. */
+function listGridTemplate(columns: ListColumns): string {
+  return [
+    "minmax(0,1fr)",
+    columns.modified ? "minmax(0,9.5rem)" : null,
+    columns.type ? "minmax(0,6.5rem)" : null,
+    columns.size ? "minmax(0,5.5rem)" : null,
+  ]
+    .filter((track): track is string => track !== null)
+    .join(" ");
+}
 const LIST_HEADER_HEIGHT_PX = 28;
 
 type InternalDragTarget =
@@ -263,6 +313,7 @@ export function FileList({
   onRedo,
   onRename,
   onScrollOffsetChange,
+  onSelectAll,
   onSelectedPathsChange,
   onTogglePreview,
   onUndo,
@@ -288,6 +339,11 @@ export function FileList({
   const actionsDisabled = listIsLoading || isOperationPending;
   const selectedCount = selectedPaths.length;
   const activeViewMode = viewMode === "column" && searchState ? "list" : viewMode;
+  // Which detail columns fit in this pane. `0` (unmeasured, or the listing is
+  // not mounted at all because the grid view is showing) reads as "all of
+  // them", so the first paint is never missing a column it should have.
+  const listColumns = listColumnsForWidth(useMeasuredWidth(scrollRef, activeViewMode));
+  const listTemplate = listGridTemplate(listColumns);
   const virtualizer = useVirtualizer({
     count: entries.count,
     getScrollElement: () => scrollRef.current,
@@ -637,6 +693,7 @@ export function FileList({
     onMoveTo,
     onOpenWith,
     onRename,
+    onTogglePreview,
   };
 
   const blankMenuDisabled = actionsDisabled || Boolean(searchState);
@@ -766,33 +823,42 @@ export function FileList({
             }}
             onScroll={(event) => onScrollOffsetChange?.(event.currentTarget.scrollTop)}
           >
-            <div className="min-w-160">
-              <div className="sticky top-0 z-10 grid h-7 shrink-0 items-center whitespace-nowrap border-b border-border bg-card text-label text-muted-foreground uppercase [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]">
+            <div>
+              <div
+                className="sticky top-0 z-10 grid h-7 shrink-0 items-center justify-start border-b border-border bg-card text-label whitespace-nowrap text-muted-foreground uppercase"
+                style={{ gridTemplateColumns: listTemplate }}
+              >
                 <SortHeaderCell
                   active={sortKey === "name"}
                   label={t("explorer:columns.name")}
                   onSort={() => applySort("name")}
                   order={sortOrder}
                 />
-                <SortHeaderCell
-                  active={sortKey === "modified"}
-                  label={t("explorer:columns.modified")}
-                  onSort={() => applySort("modified")}
-                  order={sortOrder}
-                />
-                <SortHeaderCell
-                  active={sortKey === "type"}
-                  label={t("explorer:columns.type")}
-                  onSort={() => applySort("type")}
-                  order={sortOrder}
-                />
-                <SortHeaderCell
-                  active={sortKey === "size"}
-                  align="right"
-                  label={t("explorer:columns.size")}
-                  onSort={() => applySort("size")}
-                  order={sortOrder}
-                />
+                {listColumns.modified && (
+                  <SortHeaderCell
+                    active={sortKey === "modified"}
+                    label={t("explorer:columns.modified")}
+                    onSort={() => applySort("modified")}
+                    order={sortOrder}
+                  />
+                )}
+                {listColumns.type && (
+                  <SortHeaderCell
+                    active={sortKey === "type"}
+                    label={t("explorer:columns.type")}
+                    onSort={() => applySort("type")}
+                    order={sortOrder}
+                  />
+                )}
+                {listColumns.size && (
+                  <SortHeaderCell
+                    active={sortKey === "size"}
+                    align="right"
+                    label={t("explorer:columns.size")}
+                    onSort={() => applySort("size")}
+                    order={sortOrder}
+                  />
+                )}
               </div>
               <div
                 aria-multiselectable="true"
@@ -816,6 +882,7 @@ export function FileList({
                       style={{ transform: `translateY(${virtualRow.start}px)` }}
                     >
                       <FileListRow
+                        columns={listColumns}
                         densityRowHeight={rowHeight}
                         entry={entry}
                         gitStatus={gitStatus}
@@ -922,6 +989,33 @@ export function FileList({
             </ContextMenuShortcut>
           </ContextMenuItem>
         </ContextMenuGroup>
+        {/* Selection and history: the three actions that only ever exist as
+            keystrokes. Nothing in the window named them before, so they were
+            discoverable only by trying keys at random. */}
+        <ContextMenuSeparator />
+        <ContextMenuGroup>
+          <ContextMenuItem onClick={onSelectAll}>
+            <BoxSelect />
+            {t("explorer:contextMenu.selectAll")}
+            <ContextMenuShortcut>
+              {formatBinding(resolveBinding(shortcuts, "explorer.selectAll"))}
+            </ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem disabled={!canUndo} onClick={onUndo}>
+            <Undo2 />
+            {t("explorer:actions.undo")}
+            <ContextMenuShortcut>
+              {formatBinding(resolveBinding(shortcuts, "explorer.undo"))}
+            </ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem disabled={!canRedo} onClick={onRedo}>
+            <Redo2 />
+            {t("explorer:actions.redo")}
+            <ContextMenuShortcut>
+              {formatBinding(resolveBinding(shortcuts, "explorer.redo"))}
+            </ContextMenuShortcut>
+          </ContextMenuItem>
+        </ContextMenuGroup>
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -989,6 +1083,7 @@ export interface MenuActions {
   onMoveTo: () => void;
   onOpenWith: (path: string) => void;
   onRename: () => void;
+  onTogglePreview: () => void;
 }
 
 /**
@@ -997,6 +1092,7 @@ export interface MenuActions {
  * actually changed.
  */
 function FileListRow({
+  columns,
   densityRowHeight,
   entry,
   gitStatus,
@@ -1015,6 +1111,9 @@ function FileListRow({
   selectedCount,
   selectedPaths,
 }: {
+  /** Detail columns this pane has room for; the row renders exactly these and
+   *  the grid template is derived from the same object. */
+  columns: ListColumns;
   densityRowHeight: number;
   entry: DirectoryEntry;
   gitStatus?: ExplorerGitStatus | null;
@@ -1049,7 +1148,7 @@ function FileListRow({
             // Desktop row: 13px text, tonal hover, filled selection. Selection
             // never changes the text weight — a re-measuring label makes a
             // multi-select scan jumpy, and the fill already carries the state.
-            "render-contain state-layer grid cursor-grab items-center rounded-md whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset [grid-template-columns:minmax(0,34rem)_11rem_7rem_6rem] [justify-content:start]",
+            "render-contain state-layer grid cursor-grab items-center justify-start rounded-md whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             isSelected && "bg-selection ring-1 ring-primary/30 ring-inset",
             isDragging && "cursor-grabbing opacity-50",
@@ -1069,7 +1168,7 @@ function FileListRow({
           role="option"
           tabIndex={0}
           title={entry.path}
-          style={{ height: densityRowHeight }}
+          style={{ gridTemplateColumns: listGridTemplate(columns), height: densityRowHeight }}
         >
           <div className="flex min-w-0 items-center gap-2.5 px-3">
             <EntryIconFrame entry={entry}>
@@ -1106,20 +1205,26 @@ function FileListRow({
               </span>
             )}
           </div>
-          <div className="px-2.5 text-caption text-muted-foreground tabular-nums">
-            {formatModifiedAt(entry.modifiedAt)}
-          </div>
-          <div className="px-2.5 text-caption text-muted-foreground">{presentation.label}</div>
-          <div
-            className="px-2.5 text-right text-caption text-muted-foreground tabular-nums"
-            title={
-              displaySize === null
-                ? undefined
-                : t("explorer:list.bytesTitle", { size: localeNumber(displaySize) })
-            }
-          >
-            {formatFileSize(displaySize)}
-          </div>
+          {columns.modified && (
+            <div className="px-2.5 text-caption text-muted-foreground tabular-nums">
+              {formatModifiedAt(entry.modifiedAt)}
+            </div>
+          )}
+          {columns.type && (
+            <div className="px-2.5 text-caption text-muted-foreground">{presentation.label}</div>
+          )}
+          {columns.size && (
+            <div
+              className="px-2.5 text-right text-caption text-muted-foreground tabular-nums"
+              title={
+                displaySize === null
+                  ? undefined
+                  : t("explorer:list.bytesTitle", { size: localeNumber(displaySize) })
+              }
+            >
+              {formatFileSize(displaySize)}
+            </div>
+          )}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
@@ -1139,6 +1244,7 @@ function FileListRow({
           onOpen={() => onOpenEntry(entry)}
           onOpenWith={() => menuActions.onOpenWith(entry.path)}
           onRename={menuActions.onRename}
+          onTogglePreview={menuActions.onTogglePreview}
           selectedPaths={selectedPaths}
         />
       </ContextMenuContent>

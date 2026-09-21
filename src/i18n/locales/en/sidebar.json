@@ -112,5 +112,10 @@
     "test": "Test connection",
     "saving": "Saving…",
     "connect": "Connect"
+  },
+  "loadError": {
+    "favorites": "Could not load favorites",
+    "places": "Could not load system locations",
+    "retry": "Retry"
   }
 }

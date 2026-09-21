@@ -11,6 +11,9 @@
     "maximize": "Maximize",
     "close": "Close"
   },
+  "errors": {
+    "retry": "Retry"
+  },
   "duplicateSuffix": "copy",
   "textMenu": {
     "cut": "Cut",

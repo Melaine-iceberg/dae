@@ -1,11 +1,19 @@
 import { atom, getDefaultStore } from "jotai";
 
 import { commands, type Space } from "@/bindings";
+import { getFileOperationErrorMessage } from "@/i18n/errors";
 
 const store = getDefaultStore();
 
 /** `null` means the spaces have not been loaded from the backend yet. */
 export const spacesAtom = atom<Space[] | null>(null);
+
+/**
+ * Why the last load failed, or `null`. A failed read leaves `spacesAtom` at
+ * `null` so a retry re-queries instead of short-circuiting — see the note in
+ * `recents-atoms.ts`.
+ */
+export const spacesErrorAtom = atom<string | null>(null);
 
 /**
  * Set by the sidebar's "Rename space" action so the space view opens directly
@@ -16,11 +24,12 @@ export const spaceRenameRequestAtom = atom<string | null>(null);
 export const ensureSpacesLoadedAtom = atom(null, async (get, set) => {
   if (get(spacesAtom) !== null) return;
 
+  set(spacesErrorAtom, null);
   try {
     set(spacesAtom, await commands.listSpaces());
   } catch (error) {
     console.warn("Unable to load spaces", error);
-    set(spacesAtom, []);
+    set(spacesErrorAtom, getFileOperationErrorMessage(error));
   }
 });
 

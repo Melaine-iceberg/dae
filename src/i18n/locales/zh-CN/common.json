@@ -11,6 +11,9 @@
     "maximize": "最大化",
     "close": "关闭"
   },
+  "errors": {
+    "retry": "重试"
+  },
   "duplicateSuffix": "副本",
   "textMenu": {
     "cut": "剪切",

@@ -205,5 +205,13 @@
     "remove": "Remove from Space",
     "deleteTitle": "Delete space “{{name}}”?",
     "deleteDescription": "Only this space's organization is deleted — the folders and files inside are kept."
+  },
+  "loadError": {
+    "title": "Could not load",
+    "favoritesTitle": "Could not load favorites",
+    "placesTitle": "Could not load system locations",
+    "recentsTitle": "Could not load recent items",
+    "retry": "Retry",
+    "spacesTitle": "Could not load spaces"
   }
 }

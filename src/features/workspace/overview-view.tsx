@@ -19,6 +19,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/ui/error-state";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
 import { tintStyle, TypeIconTile } from "@/features/explorer/icon-tile";
 import { PLACE_PRESENTATION, PLACE_TONE_VAR } from "@/features/sidebar/place-presentation";
@@ -27,13 +28,20 @@ import {
   ensureFavoritesLoadedAtom,
   ensureSystemPlacesLoadedAtom,
   favoritesAtom,
+  favoritesErrorAtom,
   hiddenPlacesAtom,
   removeFavoriteAtom,
   systemPlacesAtom,
+  systemPlacesErrorAtom,
 } from "@/features/sidebar/sidebar-atoms";
 
-import { ensureRecentsLoadedAtom, recentsAtom, recordRecentItem } from "./recents-atoms";
-import { ensureSpacesLoadedAtom, spacesAtom } from "./spaces-atoms";
+import {
+  ensureRecentsLoadedAtom,
+  recentsAtom,
+  recentsErrorAtom,
+  recordRecentItem,
+} from "./recents-atoms";
+import { ensureSpacesLoadedAtom, spacesAtom, spacesErrorAtom } from "./spaces-atoms";
 import { getSpaceAccent } from "./space-identity";
 import { getSpaceDisplayName } from "./types";
 import { navigateToFolderAtom, openSurfaceAtom } from "./workspace-atoms";
@@ -65,6 +73,10 @@ export function OverviewView() {
   const hiddenPlaces = useAtomValue(hiddenPlacesAtom);
   const setHiddenPlaces = useSetAtom(hiddenPlacesAtom);
   const favorites = useAtomValue(favoritesAtom);
+  const favoritesError = useAtomValue(favoritesErrorAtom);
+  const placesError = useAtomValue(systemPlacesErrorAtom);
+  const recentsError = useAtomValue(recentsErrorAtom);
+  const spacesError = useAtomValue(spacesErrorAtom);
   const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
   const removeFavorite = useSetAtom(removeFavoriteAtom);
   const recents = useAtomValue(recentsAtom);
@@ -144,7 +156,22 @@ export function OverviewView() {
           }
           title={t("overview.favoritesTitle")}
         />
-        {places === null || favorites === null ? (
+        {placesError !== null || favoritesError !== null ? (
+          // Section-sized failure: same block as the page-level one, but it
+          // must not swallow the whole surface — the other two sections may be
+          // perfectly healthy.
+          <ErrorState
+            className="min-h-0 py-4"
+            description={placesError ?? favoritesError}
+            onRetry={() => {
+              void ensureSystemPlacesLoaded();
+              void ensureFavoritesLoaded();
+            }}
+            title={
+              placesError !== null ? t("loadError.placesTitle") : t("loadError.favoritesTitle")
+            }
+          />
+        ) : places === null || favorites === null ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
               <Skeleton className="h-[54px] rounded-lg" key={index} />
@@ -234,7 +261,14 @@ export function OverviewView() {
           }
           title={t("overview.recentsTitle")}
         />
-        {recents === null ? (
+        {recentsError !== null ? (
+          <ErrorState
+            className="min-h-0 py-4"
+            description={recentsError}
+            onRetry={() => void ensureRecentsLoaded()}
+            title={t("loadError.recentsTitle")}
+          />
+        ) : recents === null ? (
           <div className="flex flex-col gap-1">
             {Array.from({ length: 3 }, (_, index) => (
               <Skeleton className="h-9 rounded-lg" key={index} />
@@ -286,7 +320,14 @@ export function OverviewView() {
 
       <section aria-label={t("overview.spacesTitle")}>
         <SectionHeader title={t("overview.spacesTitle")} />
-        {spaces === null ? (
+        {spacesError !== null ? (
+          <ErrorState
+            className="min-h-0 py-4"
+            description={spacesError}
+            onRetry={() => void ensureSpacesLoaded()}
+            title={t("loadError.spacesTitle")}
+          />
+        ) : spaces === null ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
               <Skeleton className="h-[54px] rounded-lg" key={index} />

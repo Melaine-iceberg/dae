@@ -32,6 +32,7 @@ import {
   Star,
   PanelsTopLeft,
   Trash2,
+  TriangleAlert,
   Usb,
 } from "lucide-react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -80,12 +81,14 @@ import {
   ensureSystemPlacesLoadedAtom,
   expandLocationSectionAtom,
   favoritesAtom,
+  favoritesErrorAtom,
   hiddenPlacesAtom,
   reloadCloudAccountsAtom,
   reloadConnectionsAtom,
   removeFavoriteAtom,
   sidebarVisibleAtom,
   systemPlacesAtom,
+  systemPlacesErrorAtom,
   toggleLocationSectionAtom,
   type LocationSectionId,
 } from "./sidebar-atoms";
@@ -479,15 +482,40 @@ function FavoritesContent({
 }) {
   const { t } = useTranslation("sidebar");
   const places = useAtomValue(systemPlacesAtom);
+  const placesError = useAtomValue(systemPlacesErrorAtom);
   const ensurePlacesLoaded = useSetAtom(ensureSystemPlacesLoadedAtom);
   const hiddenPlaces = useAtomValue(hiddenPlacesAtom);
   const favorites = useAtomValue(favoritesAtom);
+  const favoritesError = useAtomValue(favoritesErrorAtom);
   const ensureFavoritesLoaded = useSetAtom(ensureFavoritesLoadedAtom);
 
   useEffect(() => {
     void ensurePlacesLoaded();
     void ensureFavoritesLoaded();
   }, [ensurePlacesLoaded, ensureFavoritesLoaded]);
+
+  // The sidebar is 224px wide, so the surface-sized error block would not fit;
+  // this is the same answer in a rail: what failed, and how to retry it.
+  if (placesError !== null || favoritesError !== null) {
+    return (
+      <div className="flex items-start gap-1.5 px-3.5 py-1.5">
+        <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+        <span className="min-w-0 flex-1 text-caption leading-relaxed text-muted-foreground">
+          {placesError !== null ? t("loadError.places") : t("loadError.favorites")}{" "}
+          <button
+            className="text-foreground underline underline-offset-2 transition-colors hover:text-primary"
+            onClick={() => {
+              void ensurePlacesLoaded();
+              void ensureFavoritesLoaded();
+            }}
+            type="button"
+          >
+            {t("loadError.retry")}
+          </button>
+        </span>
+      </div>
+    );
+  }
 
   if (places === null || favorites === null) return <SectionSkeleton />;
 

@@ -38,3 +38,5 @@ src/bindings.ts
 .workbuddy/
 .qoder-cn/settings.json
 design/ui-redesign-mockup.html
+dae-ui-spec.html
+linear-style-designer.md

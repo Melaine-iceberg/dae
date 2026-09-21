@@ -15,7 +15,7 @@ import { i18n } from "@/i18n";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
 import { cn, formatBytes } from "@/lib/utils";
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -267,9 +267,16 @@ export function TrashView() {
       {progress && <TrashProgress progress={progress} />}
 
       {loadError && (
+        // An error banner with no way forward is a dead end; the recycle bin
+        // read is cheap, so the retry is the whole recovery path.
         <Alert variant="destructive">
           <AlertTitle>{t("trash.loadErrorTitle")}</AlertTitle>
           <AlertDescription>{loadError}</AlertDescription>
+          <AlertAction>
+            <Button onClick={() => void reload()} size="xs" type="button" variant="outline">
+              {t("loadError.retry")}
+            </Button>
+          </AlertAction>
         </Alert>
       )}
 

@@ -1,6 +1,7 @@
 import { atom, getDefaultStore } from "jotai";
 
 import { commands, type EntryKind, type RecentItem, type RecentSource } from "@/bindings";
+import { getFileOperationErrorMessage } from "@/i18n/errors";
 
 const MAX_RECENT_ITEMS = 300;
 const store = getDefaultStore();
@@ -8,14 +9,26 @@ const store = getDefaultStore();
 /** `null` means the recents have not been loaded from the backend yet. */
 export const recentsAtom = atom<RecentItem[] | null>(null);
 
+/**
+ * Why the last load failed, or `null` while there is nothing to report.
+ *
+ * A failed read leaves `recentsAtom` at `null` rather than substituting `[]`:
+ * `null` keeps meaning "not loaded", so the next `ensureRecentsLoaded` — a
+ * remount, or the retry button — re-runs the query instead of short-circuiting
+ * on a fabricated empty list, and the surfaces can tell "empty" apart from
+ * "failed" instead of showing 还没有记录 for a broken read.
+ */
+export const recentsErrorAtom = atom<string | null>(null);
+
 export const ensureRecentsLoadedAtom = atom(null, async (get, set) => {
   if (get(recentsAtom) !== null) return;
 
+  set(recentsErrorAtom, null);
   try {
     set(recentsAtom, await commands.listRecents());
   } catch (error) {
     console.warn("Unable to load recent items", error);
-    set(recentsAtom, []);
+    set(recentsErrorAtom, getFileOperationErrorMessage(error));
   }
 });
 

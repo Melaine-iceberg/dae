@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ErrorState } from "@/components/ui/error-state";
 import { openInNewTabAtom, openPathInNewWindowAtom } from "@/features/explorer/tabs";
 import { cn } from "@/lib/utils";
 
@@ -51,6 +52,7 @@ import {
   renameSpace,
   spaceRenameRequestAtom,
   spacesAtom,
+  spacesErrorAtom,
 } from "./spaces-atoms";
 import { getSpaceAccent } from "./space-identity";
 import { getSpaceDisplayName } from "./types";
@@ -64,6 +66,7 @@ import { LocationCard, WorkspacePage, WorkspacePageHeader } from "./workspace-co
 export function SpaceView({ spaceId }: { spaceId: string }) {
   const { t } = useTranslation("workspace");
   const spaces = useAtomValue(spacesAtom);
+  const spacesError = useAtomValue(spacesErrorAtom);
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const navigateToFolder = useSetAtom(navigateToFolderAtom);
   const openInNewTab = useSetAtom(openInNewTabAtom);
@@ -107,6 +110,21 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
       openSurface({ kind: "overview" });
     }
   };
+
+  // A failed spaces read is neither "loading" nor "this space is gone" — it
+  // gets its own answer, with the retry that can actually resolve it.
+  if (spacesError !== null) {
+    return (
+      <WorkspacePage aria-label={t("space.ariaLabel")}>
+        <ErrorState
+          className="min-h-64"
+          description={spacesError}
+          onRetry={() => void ensureSpacesLoaded()}
+          title={t("loadError.spacesTitle")}
+        />
+      </WorkspacePage>
+    );
+  }
 
   if (spaces !== null && space === null) {
     return (

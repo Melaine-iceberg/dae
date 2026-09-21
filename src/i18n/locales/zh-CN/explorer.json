@@ -53,12 +53,12 @@
     "addFavorite": "将当前目录添加到常用位置",
     "collapsePreview": "收起预览面板",
     "expandPreview": "展开预览面板",
-    "collapsePreviewShortcut": "收起预览面板 (Space)",
-    "expandPreviewShortcut": "展开预览面板 (Space)",
+    "collapsePreviewShortcut": "收起预览面板 ({{shortcut}})",
+    "expandPreviewShortcut": "展开预览面板 ({{shortcut}})",
     "splitView": "打开分屏视图",
     "closeSplitView": "关闭分屏视图",
     "toggleTerminal": "切换集成终端",
-    "terminalTitle": "集成终端 (Ctrl+`)"
+    "terminalTitle": "集成终端 ({{shortcut}})"
   },
   "split": {
     "resizeAria": "调整分屏宽度"
@@ -217,6 +217,7 @@
     "openInNewWindow": "在新窗口打开",
     "openWith": "打开方式…",
     "openWithOtherApp": "在其它应用中打开…",
+    "preview": "预览",
     "addToFavorites": "添加到收藏",
     "removeFromFavorites": "从收藏移除",
     "addToSpace": "添加到空间",
@@ -230,6 +231,7 @@
     "compressAs": "压缩为…",
     "extractHere": "解压到此处",
     "moveTo": "移动到…",
+    "selectAll": "全选",
     "copy": "复制",
     "cut": "剪切",
     "delete": "删除",
@@ -413,7 +415,8 @@
     "matchCount_one": "{{display}} 个匹配项",
     "matchCount_other": "{{display}} 个匹配项",
     "truncatedSuffix": "（已截断）",
-    "selectedCount": "已选 {{display}} 项"
+    "selectedCount": "已选 {{display}} 项",
+    "clearSelectionHint": "取消选择"
   },
   "view": {
     "menuLabel": "视图选项",
@@ -457,7 +460,7 @@
     "sizeSmall": "小于 1 MB",
     "sizeMedium": "1 MB – 100 MB",
     "sizeLarge": "大于 100 MB",
-    "showHiddenFiles": "显示隐藏文件 ({{modifier}}+H)",
+    "showHiddenFiles": "显示隐藏文件",
     "clearAll": "清除所有过滤器"
   },
   "directorySearch": {

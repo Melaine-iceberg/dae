@@ -112,5 +112,10 @@
     "test": "测试连接",
     "saving": "保存中…",
     "connect": "连接"
+  },
+  "loadError": {
+    "favorites": "收藏加载失败",
+    "places": "系统位置加载失败",
+    "retry": "重试"
   }
 }

@@ -8,13 +8,14 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
+import { Kbd } from "@/components/ui/kbd";
 
 import { commands } from "@/bindings";
 import { translateBackendMessage } from "@/i18n/errors";
 import { useAtomValue } from "jotai";
 import { useHotkeys } from "@tanstack/react-hotkeys";
 import { appSettingsAtom, hotkeysPausedAtom } from "@/features/settings/settings-atoms";
-import { resolveBinding } from "@/features/settings/shortcut-registry";
+import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
 import { HOTKEY_COMMON_OPTIONS, asHotkey } from "@/features/settings/hotkeys";
 
 import type { ContentSearchController } from "./content-search";
@@ -126,6 +127,7 @@ export function DirectorySearch({
 }) {
   const { t } = useTranslation("explorer");
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isFocused, setIsFocused] = useState(false);
   const isContentMode = mode === "content";
   const activeQuery = isContentMode ? contentSearch.query : search.query;
   const setActiveQuery = isContentMode ? contentSearch.setQuery : search.setQuery;
@@ -153,9 +155,14 @@ export function DirectorySearch({
   );
 
   const scopeName = directoryName ?? t("directorySearch.currentDirectory");
+  const focusBinding = formatBinding(resolveBinding(shortcuts, "explorer.focusSearch"));
 
   return (
-    <InputGroup className="h-7 w-56 shrink-0">
+    // `shrink` rather than `shrink-0`: the toolbar is one non-wrapping row, and
+    // a fixed 224px field was the first thing to push the controls past the
+    // pane's edge. `min-w-24` keeps the field usable down to the narrowest
+    // window instead of letting it collapse to an icon-less sliver.
+    <InputGroup className="h-7 w-56 min-w-24 shrink">
       <InputGroupInput
         ref={inputRef}
         aria-invalid={Boolean(activeError)}
@@ -166,6 +173,8 @@ export function DirectorySearch({
         }
         disabled={disabled}
         onChange={(event) => setActiveQuery(event.target.value)}
+        onBlur={() => setIsFocused(false)}
+        onFocus={() => setIsFocused(true)}
         onKeyDown={(event) => {
           if (event.key === "Escape" && activeQuery) {
             event.preventDefault();
@@ -214,6 +223,15 @@ export function DirectorySearch({
               <X />
             </InputGroupButton>
           )}
+        </InputGroupAddon>
+      )}
+      {/* Idle, unfocused, empty: the field has nothing to say about its own
+          state, so it says how to reach itself instead. The hint is dropped as
+          soon as the caret is in the box — at that point the key has done its
+          job and the chip would only crowd the placeholder. */}
+      {!isFocused && !isSearching && !activeQuery && (
+        <InputGroupAddon align="inline-end">
+          <Kbd className="h-4 px-1 text-nano">{focusBinding}</Kbd>
         </InputGroupAddon>
       )}
     </InputGroup>
