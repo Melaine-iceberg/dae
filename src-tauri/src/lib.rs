@@ -11,8 +11,20 @@ mod terminal;
 #[cfg(not(debug_assertions))]
 mod updater;
 
+use log::LevelFilter;
 use tauri::Manager;
 use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind, TimezoneStrategy};
+
+/// Size at which the live log file rotates. The plugin's 40 kB default is a
+/// couple of large directory listings' worth of noise — enough to push the
+/// failure that mattered out of the file before anyone reads it.
+const LOG_FILE_BYTES: u128 = 4 * 1024 * 1024;
+
+/// Rotated files kept alongside the live one. A report usually arrives days
+/// after the session that showed the problem, so a single file is not enough
+/// history; five bounds the directory at five times [`LOG_FILE_BYTES`].
+const LOG_FILES_KEPT: usize = 5;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -76,6 +88,16 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // Every registered plugin has run its setup by now, so the file
+            // target is open. From this point on a panic leaves a record
+            // instead of an app that silently disappears.
+            install_panic_logger();
+
+            // Sessions share one log file, so this is what tells a later reader
+            // where one run ended and the next began — and which build produced
+            // the entries in between.
+            log::info!("dae {} started", app.package_info().version);
+
             specta.mount_events(app);
             file_system::connections::init(app.handle())?;
             file_system::cloud::accounts::init(app.handle())?;
@@ -135,6 +157,54 @@ pub fn run() {
         .manage(deep_link::PendingDeepLink::default())
         .manage(tab_windows::TabWindowState::default())
         .manage(terminal::TerminalState::default())
+        // Registered ahead of the other plugins so that in a release build its
+        // logger is installed before their setup hooks run and can capture their
+        // startup failures.
+        .plugin({
+            let builder = tauri_plugin_log::Builder::new()
+                // The plugin defaults to `Trace`, and the dependency tree has
+                // plenty of crates that emit at that level (`notify`, `reqwest`,
+                // `tauri`). At `Info` the file holds our own events plus what a
+                // dependency considers worth reporting, and nothing else.
+                .level(LevelFilter::Info)
+                .max_file_size(LOG_FILE_BYTES)
+                .rotation_strategy(RotationStrategy::KeepSome(LOG_FILES_KEPT))
+                // The plugin defaults to UTC, which reads as a wrong clock to the
+                // person who just hit the bug: their file timestamps and these
+                // entries would disagree by the UTC offset.
+                //
+                // Note this setter also replaces the dispatch's formatter, and the
+                // one it installs orders the fields `[time][level][target]` — the
+                // reverse of `Default`'s `[time][target][level]`. Harmless, but a
+                // later `.format()` call would silently reorder every line.
+                .timezone_strategy(TimezoneStrategy::UseLocal)
+                // Only a file: stdout is worth nothing in a release build, which
+                // is a GUI subsystem binary no terminal is attached to, and in
+                // development this plugin does not install anything at all (see
+                // below). `targets` replaces the defaults rather than adding to
+                // them — `target` would leave the plugin's own `LogDir` in place
+                // and two writers would share one file.
+                .targets([Target::new(TargetKind::LogDir {
+                    file_name: Some("dae".to_owned()),
+                })]);
+
+            // In development the devtools plugin has already taken the `log`
+            // global: its `tracing_subscriber` setup installs a `LogTracer`, and
+            // a process gets exactly one logger. `tauri_plugin_devtools::init()`
+            // runs that setup the moment it is called — before any plugin's
+            // setup hook, whatever the registration order — so ours would always
+            // be the loser, and `attach_logger` reports the loss as an error that
+            // aborts startup with `PluginInitialization("log", ...)`.
+            //
+            // Yielding costs nothing in development, where the tracer already
+            // sends `log::*` to the terminal and the devtools panel. The file
+            // target is for the release build, which does not compile devtools
+            // in and therefore has the slot free.
+            #[cfg(debug_assertions)]
+            let builder = builder.skip_logger();
+
+            builder.build()
+        })
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -162,6 +232,35 @@ pub fn run() {
             terminal::kill_all(&state);
         }
     });
+}
+
+/// Routes panics into the log file.
+///
+/// The release profile sets `panic = "abort"`, so a panic ends the process
+/// without unwinding, and the GUI subsystem build has no console to fall back
+/// on. Without this hook a crash is a window that vanishes and nothing else —
+/// precisely the report there is no way to act on.
+fn install_panic_logger() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info.payload();
+        let message = payload
+            .downcast_ref::<&str>()
+            .copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("a panic payload that is not a string");
+        let location = info.location().map_or_else(
+            || "an unknown location".to_owned(),
+            |location| format!("{}:{}", location.file(), location.line()),
+        );
+
+        log::error!(target: "dae::panic", "Panicked at {location}: {message}");
+
+        // Keeps the default handler's stderr report and, under `RUST_BACKTRACE`,
+        // its backtrace — the more useful half while developing, and free in
+        // release, where nothing is attached to stderr in the first place.
+        previous(info);
+    }));
 }
 
 /// Creates the shared command registry for Tauri and TypeScript binding export.

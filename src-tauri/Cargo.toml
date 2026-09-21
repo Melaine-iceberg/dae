@@ -52,6 +52,15 @@ tauri-plugin-snap-layout = "1.0.9"
 tauri-plugin-opener = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
+# Ships the log targets. The release build sets `windows_subsystem = "windows"`
+# (nothing reads stderr) and `panic = "abort"` (no unwind), so without a file
+# target a failure on a user's machine leaves no trace at all — see
+# `install_panic_logger` in `lib.rs`.
+tauri-plugin-log = "2"
+# The facade the call sites write through. Declared directly because `log` is
+# not re-exported: the plugin depends on it, but only direct dependencies are
+# nameable, and a build without this line fails on every `log::error!` below.
+log = "0.4"
 # Rejects duplicate launches (the second instance forwards its CLI args, e.g.
 # `dae://` URLs, to the running one) and registers the `dae://` protocol so
 # browsers and other apps can open directories in this app.

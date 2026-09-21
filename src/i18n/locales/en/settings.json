@@ -7,7 +7,8 @@
     "appearance": "Appearance",
     "shortcuts": "Shortcuts",
     "terminal": "Terminal",
-    "defaultFileManager": "Default file manager"
+    "defaultFileManager": "Default file manager",
+    "logs": "Logs"
   },
   "appearance": {
     "description": "Theme and display language. Changes apply immediately.",
@@ -82,6 +83,11 @@
     "statusNotDefault": "dae is not the default file manager.",
     "setDefault": "Set as default",
     "clearDefault": "Remove default"
+  },
+  "logs": {
+    "description": "A record of what the app did while it ran. When something goes wrong, the log file is here.",
+    "openDirectory": "Open log folder",
+    "privacy": "Logs include local details such as the paths you opened. Review them before sharing."
   },
   "default_manager": {
     "cannot_unset_macos": "macOS does not allow an app to remove itself as the default. Choose another app in Finder settings to change it.",

@@ -98,13 +98,13 @@ pub fn arm_local_watcher(app: &tauri::AppHandle, canonical_path: PathBuf) {
                 .state::<DirectoryWatcher>()
                 .replace(generation, WatchHandle::Notify(watcher))
             {
-                eprintln!(
+                log::warn!(
                     "Unable to store the directory watcher for {}: {error}",
                     path_to_string(&canonical_path)
                 );
             }
         }
-        Err(error) => eprintln!(
+        Err(error) => log::warn!(
             "Unable to watch {} for changes: {error}",
             path_to_string(&canonical_path)
         ),
@@ -119,7 +119,7 @@ pub fn arm_polling_watcher(app: &tauri::AppHandle, path: &str, backend: SharedBa
     let handle = spawn_polling_watcher(path.to_owned(), backend, app.clone());
 
     if let Err(error) = app.state::<DirectoryWatcher>().replace(generation, handle) {
-        eprintln!("Unable to store the polling watcher for {path}: {error}");
+        log::warn!("Unable to store the polling watcher for {path}: {error}");
     }
 }
 

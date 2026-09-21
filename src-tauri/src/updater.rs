@@ -15,7 +15,7 @@ pub fn spawn_startup_check(app: &AppHandle) {
             // A missing endpoint config (a local release build without the
             // `tauri.release.conf.json` overlay) lands here too, which is why
             // this stays a log line rather than a user-facing failure.
-            Err(error) => eprintln!("Update check failed: {error}"),
+            Err(error) => log::warn!("Update check failed: {error}"),
         }
     });
 }

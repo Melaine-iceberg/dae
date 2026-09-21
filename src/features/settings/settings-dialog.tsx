@@ -22,8 +22,11 @@ import {
   Minus,
   Palette,
   Plus,
+  ScrollText,
   SquareTerminal,
 } from "lucide-react";
+import { appLogDir } from "@tauri-apps/api/path";
+import { openPath } from "@tauri-apps/plugin-opener";
 
 import { commands, type DefaultFileManagerStatus } from "@/bindings";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
@@ -59,13 +62,14 @@ import {
   type ShortcutId,
 } from "./shortcut-registry";
 
-type Pane = "appearance" | "shortcuts" | "terminal" | "defaultFileManager";
+type Pane = "appearance" | "shortcuts" | "terminal" | "defaultFileManager" | "logs";
 
 const NAV_ITEMS: ReadonlyArray<{ icon: typeof Settings; pane: Pane }> = [
   { icon: Palette, pane: "appearance" },
   { icon: Keyboard, pane: "shortcuts" },
   { icon: SquareTerminal, pane: "terminal" },
   { icon: Settings, pane: "defaultFileManager" },
+  { icon: ScrollText, pane: "logs" },
 ];
 
 const GROUP_ORDER: readonly ShortcutGroup[] = ["app", "explorer", "view"];
@@ -111,6 +115,7 @@ export function SettingsDialog() {
             {pane === "shortcuts" && <ShortcutsPane />}
             {pane === "terminal" && <TerminalPane />}
             {pane === "defaultFileManager" && <DefaultFileManagerPane />}
+            {pane === "logs" && <LogsPane />}
           </div>
         </div>
       </DialogContent>
@@ -444,6 +449,48 @@ function DefaultFileManagerPane() {
           </div>
         </>
       )}
+
+      {error && <p className="text-caption text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * Where the log file is, and the button that opens it.
+ *
+ * The app never uploads the log anywhere — it holds paths the user may consider
+ * private, so reading it stays their decision, and sending it stays a manual
+ * step they take.
+ */
+function LogsPane() {
+  const { t } = useTranslation("settings");
+  const [error, setError] = useState<string | null>(null);
+
+  const openLogDirectory = useCallback(async () => {
+    setError(null);
+    try {
+      // The backend's `LogDir` target resolves the same directory through the
+      // same Tauri API. `appLogDir` rides `path|resolve_directory`, which
+      // `core:path:default` already grants, so no capability entry is needed.
+      await openPath(await appLogDir());
+    } catch (reason) {
+      setError(getFileOperationErrorMessage(reason));
+    }
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <header>
+        <h2 className="font-heading text-title">{t("nav.logs")}</h2>
+        <p className="text-caption text-muted-foreground">{t("logs.description")}</p>
+      </header>
+
+      <div className="flex flex-col gap-2">
+        <Button className="self-start" onClick={() => void openLogDirectory()} variant="outline">
+          {t("logs.openDirectory")}
+        </Button>
+        <p className="text-caption text-muted-foreground">{t("logs.privacy")}</p>
+      </div>
 
       {error && <p className="text-caption text-destructive">{error}</p>}
     </div>

@@ -930,7 +930,7 @@ mod backend {
         let array = match shell_item_array(paths) {
             Ok(array) => array,
             Err(error) => {
-                eprintln!("Unable to build a shell item array: {error}");
+                log::warn!("Unable to build a shell item array: {error}");
                 return Vec::new();
             }
         };
@@ -1002,7 +1002,7 @@ mod backend {
         }
         *reported = true;
         for (clsid, error) in &cache.broken {
-            eprintln!("Shell command {clsid} is unavailable: {error}");
+            log::warn!("Shell command {clsid} is unavailable: {error}");
         }
     }
 

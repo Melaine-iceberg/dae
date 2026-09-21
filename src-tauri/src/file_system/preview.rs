@@ -312,7 +312,7 @@ fn render_queue() -> &'static Sender<RenderJob> {
                 // Degraded, not fatal: the workers that did start still drain the
                 // queue, so the worst case is a slower thumbnail, not a missing
                 // one.
-                eprintln!("Unable to start render worker {index}: {error}");
+                log::warn!("Unable to start render worker {index}: {error}");
             }
         }
 
@@ -339,7 +339,7 @@ fn enter_render_apartment() {
     // and even then the `image` decode path is unaffected.
     let result: HRESULT = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
     if result.0 < 0 {
-        eprintln!(
+        log::warn!(
             "Unable to initialize COM on a render worker: HRESULT {:#010x}",
             result.0
         );

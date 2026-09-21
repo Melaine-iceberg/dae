@@ -15,7 +15,13 @@ import { getAppWindow } from "@/lib/app-window";
 import { applySystemTheme } from "@/lib/theme";
 import { setupNativeClipboardBridge } from "@/lib/clipboard-bridge";
 import { setupExternalLinkGuard } from "@/lib/external-links";
+import { forwardConsoleToLogFile } from "@/lib/logging";
 import { setupNativeContextMenuGuard } from "@/lib/native-context-menu";
+
+// First, so that anything failing during the rest of startup is recorded: the
+// release build's webview has no console anyone will read, and this is what
+// turns its errors into a file the user can attach to a bug report.
+forwardConsoleToLogFile();
 
 if (import.meta.env.DEV) {
   void setupDevInvoke();

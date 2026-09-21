@@ -375,7 +375,9 @@ mod platform {
                     drag_image_offset: None,
                 },
             ) {
-                eprintln!("Unable to start the drag-out: {error:?}");
+                // Runs on a spawned thread, so the failure has no caller left to
+                // return to: the log file is the only place it can surface.
+                log::error!("Unable to start the drag-out: {error:?}");
             }
 
             DRAG_OUT_IN_PROGRESS.store(false, Ordering::SeqCst);
@@ -571,14 +573,14 @@ fn start_drag_out_impl(
         let started = match window.gtk_window() {
             Ok(gtk_window) => drag::start_drag(&gtk_window, item, preview, finish, options),
             Err(error) => {
-                eprintln!("Unable to access the GTK window for the drag-out: {error}");
+                log::error!("Unable to access the GTK window for the drag-out: {error}");
                 DRAG_OUT_IN_PROGRESS.store(false, Ordering::SeqCst);
                 return;
             }
         };
 
         if let Err(error) = started {
-            eprintln!("Unable to start the drag-out: {error:?}");
+            log::error!("Unable to start the drag-out: {error:?}");
             DRAG_OUT_IN_PROGRESS.store(false, Ordering::SeqCst);
         }
     })
