@@ -33,7 +33,11 @@ import { resolveAnsiPalette, type AnsiPalette } from "./terminal-palette";
 import "@xterm/xterm/css/xterm.css";
 
 const FONT_STACK =
-  '"dae Mono", "Cascadia Code", Consolas, Menlo, Monaco, "DejaVu Sans Mono", "Liberation Mono", monospace';
+  '"dae Mono", "Cascadia Code", Consolas, Menlo, Monaco, "DejaVu Sans Mono", "Liberation Mono", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", monospace';
+
+/** The bundled mono face, as declared in App.css. Named separately because
+ *  `document.fonts.load` needs a family, not a stack. */
+const BUNDLED_MONO_FAMILY = '"dae Mono"';
 
 const DEFAULT_FONT_SIZE = 13;
 const DEFAULT_LINE_HEIGHT = 1.2;
@@ -146,6 +150,13 @@ export function TerminalPanel() {
   const terminalRef = useRef<Terminal | null>(null);
   const sessionIdRef = useRef<number | null>(null);
   const [hasOpened, setHasOpened] = useState(false);
+  /* xterm measures one cell from the Latin advance of whatever face the canvas
+     can resolve at that moment and never re-measures on its own. The bundled
+     face is 2.3MB, so when the panel is first revealed it can still be in
+     flight — and every column would then be sized for the fallback face. Hold
+     the Terminal until the face is in. The promise settles even when the face
+     is missing or undecodable, so this cannot wedge the panel. */
+  const [monoReady, setMonoReady] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
   const [restartCount, setRestartCount] = useState(0);
   // Why the menu closed, so focus returns to the grid for every dismissal the
@@ -160,7 +171,25 @@ export function TerminalPanel() {
   }, [visible]);
 
   useEffect(() => {
-    if (!hasOpened) return;
+    let cancelled = false;
+    const settle = () => {
+      if (!cancelled) setMonoReady(true);
+    };
+    /* Both weights, not just the one a cell is measured from: until the 700
+       face is in, the renderer synthesises bold from the 400 face, and the
+       synthetic advance is 7.6px inside a 6.5px cell — bold text overlaps the
+       column after it. Measured in Chromium, not assumed. */
+    void Promise.all([
+      document.fonts.load(`${DEFAULT_FONT_SIZE}px ${BUNDLED_MONO_FAMILY}`),
+      document.fonts.load(`700 ${DEFAULT_FONT_SIZE}px ${BUNDLED_MONO_FAMILY}`),
+    ]).then(settle, settle);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hasOpened || !monoReady) return;
     const container = containerRef.current;
     if (!container) return;
 
@@ -327,7 +356,7 @@ export function TerminalPanel() {
       if (sessionId != null) void invoke("terminal_kill", { id: sessionId });
       terminal.dispose();
     };
-  }, [hasOpened, restartCount]);
+  }, [hasOpened, monoReady, restartCount]);
 
   // Refit and focus after the panel reappears with real layout dimensions.
   useEffect(() => {

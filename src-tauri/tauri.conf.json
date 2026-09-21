@@ -41,8 +41,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../src/assets/fonts/LICENSE-Inter.txt": "licenses/LICENSE-Inter.txt",
-      "../src/assets/fonts/LICENSE-Sarasa-Gothic.txt": "licenses/LICENSE-Sarasa-Gothic.txt"
+      "../src/assets/fonts/LICENSE-Sarasa-Gothic.txt": "licenses/LICENSE-Sarasa-Gothic.txt",
+      "../src/assets/fonts/NOTICE-Nerd-Fonts.txt": "licenses/NOTICE-Nerd-Fonts.txt"
     }
   }
 }

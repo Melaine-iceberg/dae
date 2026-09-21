@@ -1,0 +1,58 @@
+Attribution for sarasa-term-sc-nerd-{regular,bold}.woff2
+========================================================
+
+These two faces are a subset of
+
+    Sarasa Term SC Nerd — Sarasa v1.0.27, ttfautohint v1.8.4, Nerds 3.3.0
+    https://github.com/laishulu/Sarasa-Term-SC-Nerd
+
+which is 'Sarasa Term SC' patched with the Nerd Fonts icon sets listed below.
+They were subset with HarfBuzz to the codepoints this application ships
+(scripts/build-mono-font.py). No outline, advance, hinting program or name
+record was altered, and the upstream family name is kept, so no Reserved Font
+Name is claimed or reused by this project.
+
+The Sarasa licence — SIL Open Font License 1.1, covering Iosevka, Source Han
+Sans and the Inter portions — ships beside this file as
+LICENSE-Sarasa-Gothic.txt, and is installed with the application under
+licenses/ (see src-tauri/tauri.conf.json). Each face also carries the upstream
+copyright notice in its own name table:
+
+    Copyright (c) 2015-2025, Renzhi Li (aka. Belleve Invis, belleve@typeof.net).
+    Portions Copyright (c) 2016 The Inter Project Authors.
+    Portions Copyright (c) 2014-2021 Adobe Systems Incorporated
+      (http://www.adobe.com/), with Reserved Font Name 'Source'.
+    Portions Copyright (c) 2012 Google Inc.
+
+Icon sets
+---------
+
+Nerd Fonts' own tooling — font-patcher and its scripts — is MIT licensed. The
+glyph sets it merges keep their own licences:
+
+    Codicons                     CC BY 4.0
+    Devicons                     MIT
+    Font Awesome                 CC BY 4.0        (the icon set; the font files are OFL)
+    Font Awesome Extension       MIT
+    Font Logos                   no licence stated upstream
+    IEC Power Symbols            MIT
+    Material Design Icons        Apache 2.0 (Pictogrammers Free License)
+    Octicons                     MIT
+    Pomicons                     SIL OFL 1.1      (Reserved Font Name 'Pomicons')
+    Powerline Extra Symbols      MIT
+    Powerline Symbols            Free License     (no conditions stated upstream)
+    Seti-UI + Custom (modified)  MIT
+    Weather Icons                SIL OFL 1.1
+
+Source for that table: https://github.com/ryanoasis/nerd-fonts/blob/master/license-audit.md
+
+What shipping these faces obliges, and where it is met
+------------------------------------------------------
+
+  * OFL 1.1 (Sarasa, Pomicons, Weather Icons) — the licence text travels with
+    the fonts: LICENSE-Sarasa-Gothic.txt here and in the bundle's licenses/.
+    Pomicons and Weather Icons declare no Reserved Font Name of their own
+    beyond 'Pomicons'; neither name is used as this project's font name.
+  * CC BY 4.0 (Codicons, Font Awesome) — attribution, which is this file.
+  * Apache 2.0 (Material Design Icons) — licence and notice, which is this
+    file, plus LICENSE-Sarasa-Gothic.txt for the OFL portions.
