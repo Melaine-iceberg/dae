@@ -47,10 +47,24 @@ pub fn run() {
         // Thumbnails stream as raw image bytes through the webview's HTTP
         // stack instead of base64 `invoke` payloads, which lets the browser
         // fetch them in parallel and cache them per URL.
-        .register_uri_scheme_protocol("thumbnail", file_system::preview::handle_thumbnail_protocol)
+        //
+        // Registered *asynchronously* on purpose. The synchronous form runs the
+        // handler inline in the WebView's `WebResourceRequested` callback, which
+        // is the UI thread — so a cold image decode froze the window, and every
+        // request queued behind it, for the length of the decode. The
+        // asynchronous form hands the responder to the render pool instead (see
+        // `file_system::preview`).
+        .register_asynchronous_uri_scheme_protocol(
+            "thumbnail",
+            file_system::preview::handle_thumbnail_protocol,
+        )
         // OS file icons (shortcuts, executables, registered file types) ride
-        // the same raw-bytes pipeline as thumbnails.
-        .register_uri_scheme_protocol("fileicon", file_system::preview::handle_fileicon_protocol)
+        // the same raw-bytes pipeline as thumbnails, and are off the UI thread
+        // for the same reason: a shell icon is a COM round-trip.
+        .register_asynchronous_uri_scheme_protocol(
+            "fileicon",
+            file_system::preview::handle_fileicon_protocol,
+        )
         .invoke_handler(move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
             let command = invoke.message.command();
             if command.starts_with("terminal_") {

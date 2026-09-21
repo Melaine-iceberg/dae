@@ -27,8 +27,8 @@ use std::path::{Path, PathBuf};
 use windows::Win32::Storage::FileSystem::{GetDriveTypeW, GetLogicalDrives};
 use windows::core::PCWSTR;
 
-use super::TrashEntry;
 use super::super::types::path_to_string;
+use super::TrashEntry;
 
 /// `$I<id>` header: format version, payload size, then the deletion time.
 const METADATA_HEADER_LEN: usize = 24;
@@ -177,7 +177,9 @@ fn decode_metadata(bytes: &[u8]) -> Option<Metadata> {
     };
     let path_bytes = bytes.get(METADATA_HEADER_LEN + length_prefix..)?;
     let units: Vec<u16> = path_bytes
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
         .take_while(|unit| *unit != 0)
         .collect();
@@ -238,7 +240,11 @@ fn local_volumes() -> Vec<PathBuf> {
 fn find_child(parent: &Path, wanted: &str) -> Option<PathBuf> {
     let entries = fs::read_dir(parent).ok()?;
     for entry in entries.flatten() {
-        if entry.file_name().to_string_lossy().eq_ignore_ascii_case(wanted) {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(wanted)
+        {
             return Some(entry.path());
         }
     }
