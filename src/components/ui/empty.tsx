@@ -7,7 +7,7 @@ function Empty({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="empty"
       className={cn(
-        "flex w-full min-w-0 flex-1 flex-col items-center justify-center gap-4 rounded-xl border-dashed p-6 text-center text-balance",
+        "flex w-full min-w-0 flex-1 flex-col items-center justify-center gap-4 p-6 text-center text-balance",
         className,
       )}
       {...props}
@@ -31,7 +31,12 @@ const emptyMediaVariants = cva(
     variants: {
       variant: {
         default: "bg-transparent",
-        icon: "flex size-8 shrink-0 items-center justify-center rounded-md bg-secondary-container text-on-secondary-container [&_svg:not([class*='size-'])]:size-5",
+        // The empty-state anatomy: a 32px glyph inside a 56px recessed tile.
+        // No illustration, no emoji — one icon on the `muted` rung, which is
+        // the same tile size at every surface scale. A sidebar-sized block
+        // overrides the tile through `className` rather than getting a second
+        // variant, so the anatomy stays one shape.
+        icon: "flex size-14 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground [&_svg:not([class*='size-'])]:size-8",
       },
     },
     defaultVariants: {

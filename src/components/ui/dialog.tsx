@@ -26,7 +26,9 @@ function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) 
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-scrim backdrop-blur-sm duration-fast data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 data-closed:fill-mode-forwards",
+        // Per-scheme scrim, no blur: the dark canvas needs a stronger scrim
+        // than the light one, and the backdrop's job is to dim, not to frost.
+        "fixed inset-0 isolate z-50 bg-scrim duration-fast data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 data-closed:fill-mode-forwards",
         className,
       )}
       {...props}
@@ -55,7 +57,12 @@ function DialogContent({
           // guarantee, applied once here instead of per dialog. Dialogs that
           // manage their own height (settings) are unaffected: their body
           // already caps below this, so this scrollport never engages.
-          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-2xl bg-popover p-5 text-body text-popover-foreground shadow-ambient-lg ring-1 ring-border duration-normal ease-standard outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-98 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-98 data-closed:duration-fast data-closed:ease-standard data-closed:fill-mode-forwards",
+          //
+          // Entrance is float-in only — fade plus a 2px rise on the house
+          // standard curve. A dialog that scales up from the centre is the one
+          // motion this language does not have, and it would also fight the
+          // centring translate below.
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl border border-border bg-popover p-5 text-body text-popover-foreground shadow-ambient-lg outline-none sm:max-w-sm data-open:animate-float-in data-closed:animate-out data-closed:fade-out-0 data-closed:duration-instant data-closed:ease-standard-accelerate data-closed:fill-mode-forwards",
           className,
         )}
         {...props}
@@ -64,7 +71,7 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            render={<Button variant="ghost" className="absolute top-2 right-2" size="icon-sm" />}
+            render={<Button variant="ghost" className="absolute top-2.5 right-2.5" size="icon-sm" />}
           >
             <X />
             <span className="sr-only">Close</span>
@@ -77,10 +84,16 @@ function DialogContent({
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div data-slot="dialog-header" className={cn("flex flex-col gap-2", className)} {...props} />
+    <div data-slot="dialog-header" className={cn("flex flex-col gap-1.5", className)} {...props} />
   );
 }
 
+/**
+ * Footer: the dialog's action row, divided from the body by a hairline rather
+ * than tinted into a second surface — the shell's depth ladder has no rung for
+ * a footer band. Cancel sits left of the primary action (ghost, outline or
+ * destructive), right-aligned.
+ */
 function DialogFooter({
   className,
   showCloseButton = false,
@@ -93,7 +106,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-5 -mb-5 flex flex-col-reverse gap-2 rounded-b-2xl border-t border-border bg-muted/40 p-4 sm:flex-row sm:justify-end",
+        "-mx-5 -mb-5 flex flex-col-reverse gap-2 rounded-b-xl border-t border-border px-5 py-4 sm:flex-row sm:justify-end",
         className,
       )}
       {...props}

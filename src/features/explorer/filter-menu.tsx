@@ -88,7 +88,7 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
           />
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-44">
+      <DropdownMenuContent align="end" className="min-w-menu">
         <DropdownMenuLabel>{t("filter.kindLabel")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           onValueChange={(value) => updateFilter("kind", value as ExplorerKindFilter)}

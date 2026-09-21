@@ -11,7 +11,7 @@
  * the Appearance pane.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { useTranslation } from "react-i18next";
 import {
@@ -85,7 +85,7 @@ export function SettingsDialog() {
 
   return (
     <Dialog onOpenChange={setOpen} open={open}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <DialogTitle className="sr-only">{t("dialog.title")}</DialogTitle>
         {/* The body caps below the dialog's own max-height, so a short window
             shrinks the two panes instead of scrolling the whole dialog out
@@ -93,16 +93,16 @@ export function SettingsDialog() {
         <div className="flex h-settings-body max-h-[calc(100dvh-4rem)]">
           <nav
             aria-label={t("dialog.navAria")}
-            className="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border bg-muted/30 p-2"
+            className="flex w-48 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border bg-muted p-2"
           >
             {NAV_ITEMS.map(({ icon: Icon, pane: item }) => (
               <button
                 aria-current={pane === item}
                 className={cn(
-                  "flex h-8 items-center gap-2 rounded-sm px-2 text-body font-medium transition-colors outline-none",
+                  "flex h-7 items-center gap-2 rounded-sm px-2 text-body font-medium transition-colors duration-fast ease-standard outline-none",
                   pane === item
                     ? "bg-accent text-foreground"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
                 key={item}
                 onClick={() => setPane(item)}
@@ -113,7 +113,7 @@ export function SettingsDialog() {
               </button>
             ))}
           </nav>
-          <div className="min-w-0 flex-1 overflow-y-auto p-5">
+          <div className="min-w-0 flex-1 overflow-y-auto px-6 py-5">
             {pane === "appearance" && <AppearancePane />}
             {pane === "shortcuts" && <ShortcutsPane />}
             {pane === "terminal" && <TerminalPane />}
@@ -123,6 +123,59 @@ export function SettingsDialog() {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Settings pane title: `text-title` heading over one `text-caption` line, the
+ * same header shape every other surface uses.
+ */
+function PaneHeader({ description, title }: { description: string; title: string }) {
+  return (
+    <header className="mb-5">
+      <h2 className="text-title">{title}</h2>
+      <p className="mt-0.5 text-caption text-muted-foreground">{description}</p>
+    </header>
+  );
+}
+
+/**
+ * A block of setting rows divided by hairlines rather than boxed into cards —
+ * the settings body has no second surface to spare, and the rows already
+ * carry the rhythm.
+ */
+function SettingRows({ children }: { children: ReactNode }) {
+  return <div className="flex flex-col">{children}</div>;
+}
+
+/**
+ * One Linear-style setting row: label and description on the left, the control
+ * hard right. The row is the unit of rhythm here, so a pane of settings reads
+ * as a list rather than as a stack of labelled fields.
+ */
+function SettingRow({
+  control,
+  description,
+  htmlFor,
+  label,
+}: {
+  control: ReactNode;
+  description?: ReactNode;
+  htmlFor?: string;
+  label: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-6 border-b border-border py-3 last:border-b-0">
+      <div className="min-w-0">
+        <Label className="text-body font-medium" htmlFor={htmlFor}>
+          {label}
+        </Label>
+        {description && (
+          <p className="mt-0.5 text-caption text-muted-foreground">{description}</p>
+        )}
+      </div>
+      <div className="shrink-0">{control}</div>
+    </div>
   );
 }
 
@@ -140,55 +193,59 @@ function AppearancePane() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-5">
-      <header>
-        <h2 className="font-heading text-title">{t("nav.appearance")}</h2>
-        <p className="text-caption text-muted-foreground">{t("appearance.description")}</p>
-      </header>
+    <div className="flex flex-col">
+      <PaneHeader description={t("appearance.description")} title={t("nav.appearance")} />
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="settings-appearance-theme">{t("appearance.theme")}</Label>
-        <Select
-          items={Object.fromEntries(
-            THEME_OPTIONS.map((option) => [option, t(`appearance.themeOptions.${option}`)]),
-          )}
-          onValueChange={(value) => setThemePreference(value as ThemePreference)}
-          value={theme}
-        >
-          <SelectTrigger className="w-40" id="settings-appearance-theme">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {THEME_OPTIONS.map((option) => (
-              <SelectItem key={option} value={option}>
-                {t(`appearance.themeOptions.${option}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="settings-appearance-language">{t("appearance.language")}</Label>
-        <Select
-          items={Object.fromEntries(
-            SUPPORTED_LOCALES.map((value) => [value, t(`common:language.${value}`)]),
-          )}
-          onValueChange={(value) => setLocale(value as AppLocale)}
-          value={locale}
-        >
-          <SelectTrigger className="w-40" id="settings-appearance-language">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SUPPORTED_LOCALES.map((value) => (
-              <SelectItem key={value} value={value}>
-                {t(`common:language.${value}`)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <SettingRows>
+        <SettingRow
+          control={
+            <Select
+              items={Object.fromEntries(
+                THEME_OPTIONS.map((option) => [option, t(`appearance.themeOptions.${option}`)]),
+              )}
+              onValueChange={(value) => setThemePreference(value as ThemePreference)}
+              value={theme}
+            >
+              <SelectTrigger className="w-40" id="settings-appearance-theme">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {THEME_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {t(`appearance.themeOptions.${option}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+          htmlFor="settings-appearance-theme"
+          label={t("appearance.theme")}
+        />
+        <SettingRow
+          control={
+            <Select
+              items={Object.fromEntries(
+                SUPPORTED_LOCALES.map((value) => [value, t(`common:language.${value}`)]),
+              )}
+              onValueChange={(value) => setLocale(value as AppLocale)}
+              value={locale}
+            >
+              <SelectTrigger className="w-40" id="settings-appearance-language">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SUPPORTED_LOCALES.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {t(`common:language.${value}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+          htmlFor="settings-appearance-language"
+          label={t("appearance.language")}
+        />
+      </SettingRows>
     </div>
   );
 }
@@ -214,11 +271,13 @@ function ShortcutsPane() {
   );
 
   return (
-    <div className="flex flex-col gap-5">
-      <header className="flex items-center justify-between gap-3">
+    <div className="flex flex-col">
+      <header className="mb-5 flex items-center justify-between gap-3">
         <div>
-          <h2 className="font-heading text-title">{t("nav.shortcuts")}</h2>
-          <p className="text-caption text-muted-foreground">{t("shortcuts.description")}</p>
+          <h2 className="text-title">{t("nav.shortcuts")}</h2>
+          <p className="mt-0.5 text-caption text-muted-foreground">
+            {t("shortcuts.description")}
+          </p>
         </div>
         <Button disabled={!isCustomized} onClick={resetAll} size="sm" variant="outline">
           {t("shortcuts.resetAll")}
@@ -228,16 +287,16 @@ function ShortcutsPane() {
         const actions = SHORTCUT_ACTIONS.filter((action) => action.group === group);
         if (actions.length === 0) return null;
         return (
-          <section className="flex flex-col gap-1" key={group}>
-            <h3 className="mb-1 text-caption font-semibold tracking-wide text-muted-foreground uppercase">
+          <section className="mb-4 flex flex-col last:mb-0" key={group}>
+            <h3 className="mb-1 text-label text-muted-foreground uppercase">
               {t(`groups.${group}`)}
             </h3>
             {actions.map((action) => (
               <div
-                className="flex items-center justify-between gap-4 rounded-sm px-1 py-1.5 hover:bg-accent/60"
+                className="flex min-h-8 items-center justify-between gap-4 rounded-sm px-2 text-body transition-colors duration-fast ease-standard hover:bg-accent"
                 key={action.id}
               >
-                <span className="text-body">{t(`actions.${action.id}`)}</span>
+                <span>{t(`actions.${action.id}`)}</span>
                 <ShortcutRecorder
                   binding={resolveBinding(shortcuts, action.id)}
                   id={action.id}
@@ -277,79 +336,87 @@ function TerminalPane() {
   };
 
   return (
-    <div className="flex flex-col gap-5">
-      <header>
-        <h2 className="font-heading text-title">{t("nav.terminal")}</h2>
-        <p className="text-caption text-muted-foreground">{t("terminal.description")}</p>
-      </header>
+    <div className="flex flex-col">
+      <PaneHeader description={t("terminal.description")} title={t("nav.terminal")} />
 
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="settings-terminal-font-family">{t("terminal.fontFamily")}</Label>
-        <Input
-          id="settings-terminal-font-family"
-          onBlur={(event) => commitFontFamily(event.target.value)}
-          onChange={(event) => setFontFamily(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") commitFontFamily((event.target as HTMLInputElement).value);
-          }}
-          placeholder={t("terminal.fontFamilyPlaceholder")}
-          value={fontFamily}
+      <SettingRows>
+        <SettingRow
+          control={
+            <Input
+              className="w-64"
+              id="settings-terminal-font-family"
+              onBlur={(event) => commitFontFamily(event.target.value)}
+              onChange={(event) => setFontFamily(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter")
+                  commitFontFamily((event.target as HTMLInputElement).value);
+              }}
+              placeholder={t("terminal.fontFamilyPlaceholder")}
+              value={fontFamily}
+            />
+          }
+          description={t("terminal.fontFamilyHint")}
+          htmlFor="settings-terminal-font-family"
+          label={t("terminal.fontFamily")}
         />
-        <p className="text-caption text-muted-foreground">{t("terminal.fontFamilyHint")}</p>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="settings-terminal-font-size">{t("terminal.fontSize")}</Label>
-        <Select
-          items={Object.fromEntries(FONT_SIZE_OPTIONS.map((size) => [size, `${size} px`]))}
-          onValueChange={(value) => patch({ terminal: { fontSize: Number(value) } })}
-          value={terminal?.fontSize ?? 13}
-        >
-          <SelectTrigger className="w-40" id="settings-terminal-font-size">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {FONT_SIZE_OPTIONS.map((size) => (
-              <SelectItem key={size} value={size}>
-                {size} px
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <Label htmlFor="settings-terminal-line-height">{t("terminal.lineHeight")}</Label>
-        <InputGroup className="w-40">
-          <InputGroupInput
-            id="settings-terminal-line-height"
-            max={3}
-            min={0.8}
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              if (Number.isFinite(value)) patch({ terminal: { lineHeight: value } });
-            }}
-            step={0.1}
-            type="number"
-            value={terminal?.lineHeight ?? 1.2}
-          />
-          <InputGroupAddon align="inline-end">
-            <InputGroupButton
-              aria-label={t("terminal.lineHeightDecrease")}
-              onClick={() => stepLineHeight(-0.1)}
+        <SettingRow
+          control={
+            <Select
+              items={Object.fromEntries(FONT_SIZE_OPTIONS.map((size) => [size, `${size} px`]))}
+              onValueChange={(value) => patch({ terminal: { fontSize: Number(value) } })}
+              value={terminal?.fontSize ?? 13}
             >
-              <Minus />
-            </InputGroupButton>
-            <InputGroupButton
-              aria-label={t("terminal.lineHeightIncrease")}
-              onClick={() => stepLineHeight(0.1)}
-            >
-              <Plus />
-            </InputGroupButton>
-          </InputGroupAddon>
-        </InputGroup>
-        <p className="text-caption text-muted-foreground">{t("terminal.lineHeightHint")}</p>
-      </div>
+              <SelectTrigger className="w-40" id="settings-terminal-font-size">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FONT_SIZE_OPTIONS.map((size) => (
+                  <SelectItem key={size} value={size}>
+                    {size} px
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+          htmlFor="settings-terminal-font-size"
+          label={t("terminal.fontSize")}
+        />
+        <SettingRow
+          control={
+            <InputGroup className="w-40">
+              <InputGroupInput
+                id="settings-terminal-line-height"
+                max={3}
+                min={0.8}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (Number.isFinite(value)) patch({ terminal: { lineHeight: value } });
+                }}
+                step={0.1}
+                type="number"
+                value={terminal?.lineHeight ?? 1.2}
+              />
+              <InputGroupAddon align="inline-end">
+                <InputGroupButton
+                  aria-label={t("terminal.lineHeightDecrease")}
+                  onClick={() => stepLineHeight(-0.1)}
+                >
+                  <Minus />
+                </InputGroupButton>
+                <InputGroupButton
+                  aria-label={t("terminal.lineHeightIncrease")}
+                  onClick={() => stepLineHeight(0.1)}
+                >
+                  <Plus />
+                </InputGroupButton>
+              </InputGroupAddon>
+            </InputGroup>
+          }
+          description={t("terminal.lineHeightHint")}
+          htmlFor="settings-terminal-line-height"
+          label={t("terminal.lineHeight")}
+        />
+      </SettingRows>
     </div>
   );
 }
@@ -407,11 +474,11 @@ function DefaultFileManagerPane() {
   const isDefault = status?.isDefault ?? false;
 
   return (
-    <div className="flex flex-col gap-4">
-      <header>
-        <h2 className="font-heading text-title">{t("nav.defaultFileManager")}</h2>
-        <p className="text-caption text-muted-foreground">{t("defaultFileManager.description")}</p>
-      </header>
+    <div className="flex flex-col">
+      <PaneHeader
+        description={t("defaultFileManager.description")}
+        title={t("nav.defaultFileManager")}
+      />
 
       {!supported ? (
         <p className="text-body text-muted-foreground">{t("defaultFileManager.unsupported")}</p>
@@ -421,7 +488,7 @@ function DefaultFileManagerPane() {
             {busy ? (
               <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
             ) : isDefault ? (
-              <CircleCheck className="size-4 text-icon-sheet" />
+              <CircleCheck className="size-4 text-success" />
             ) : null}
             <span>
               {isDefault
@@ -482,11 +549,8 @@ function LogsPane() {
   }, []);
 
   return (
-    <div className="flex flex-col gap-4">
-      <header>
-        <h2 className="font-heading text-title">{t("nav.logs")}</h2>
-        <p className="text-caption text-muted-foreground">{t("logs.description")}</p>
-      </header>
+    <div className="flex flex-col">
+      <PaneHeader description={t("logs.description")} title={t("nav.logs")} />
 
       <div className="flex flex-col gap-2">
         <Button className="self-start" onClick={() => void openLogDirectory()} variant="outline">

@@ -399,7 +399,7 @@ export function TrashView() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <DialogClose render={<Button disabled={isOperationPending} variant="outline" />}>
+            <DialogClose render={<Button disabled={isOperationPending} variant="ghost" />}>
               {t("trash.cancel")}
             </DialogClose>
             <Button disabled={isOperationPending} onClick={confirmPurge} variant="destructive">
@@ -696,7 +696,7 @@ function TrashProgress({ progress }: { progress: FileOperationProgress }) {
         });
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-xl bg-popover p-3 shadow-ambient ring-1 ring-border/80">
+    <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-popover p-3 shadow-ambient">
       <div className="flex items-center justify-between gap-3 text-caption text-muted-foreground">
         <span className="truncate">{label}</span>
         {progress.total !== null && (
@@ -779,7 +779,7 @@ function TrashRow({
           aria-selected={isSelected}
           className={cn(
             ROW_GRID,
-            "h-full w-full px-3 text-left transition-colors hover:bg-accent/60",
+            "h-full w-full px-3 text-left transition-colors hover:bg-accent",
             isSelected && "bg-selection",
             // The cursor is the row ring the rest of the app uses for rows, and
             // it only shows while the list itself holds keyboard focus.

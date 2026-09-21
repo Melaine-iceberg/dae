@@ -255,24 +255,31 @@ export function BulkRenameDialog({
           </DialogDescription>
         </DialogHeader>
         <form className="flex flex-col gap-4" onSubmit={submit}>
+          {/* Mode switcher as underline tabs rather than a row of buttons: it
+              changes what the form below asks for, so it has to read as
+              navigation, not as three actions you could press. */}
           <div
             aria-label={t("explorer:bulkRename.modeLabel")}
-            className="flex gap-1"
+            className="flex gap-2 border-b border-border"
             role="tablist"
           >
             {(["sequence", "replace", "case"] as const).map((mode) => (
-              <Button
+              <button
                 aria-selected={options.mode === mode}
+                className={cn(
+                  "relative -mb-px rounded-sm px-3 py-1.5 text-body transition-colors duration-fast ease-standard focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
+                  options.mode === mode
+                    ? "font-medium text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
                 disabled={isPending}
                 key={mode}
                 onClick={() => setMode(mode)}
                 role="tab"
-                size="sm"
                 type="button"
-                variant={options.mode === mode ? "secondary" : "ghost"}
               >
                 {t(`explorer:bulkRename.modes.${mode}`)}
-              </Button>
+              </button>
             ))}
           </div>
 
@@ -539,7 +546,7 @@ export function BulkRenameDialog({
               {t("explorer:bulkRename.summary", { rename: renameCount, errors: errorCount })}
             </span>
             <div className="flex gap-2">
-              <Button disabled={isPending} onClick={onClose} type="button" variant="outline">
+              <Button disabled={isPending} onClick={onClose} type="button" variant="ghost">
                 {t("explorer:actions.cancel")}
               </Button>
               <Button disabled={!canApply} type="submit">

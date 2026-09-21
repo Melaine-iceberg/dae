@@ -386,7 +386,7 @@ export function PropertiesDialog() {
         </DialogHeader>
 
         {showHashTab && (
-          <div className="flex gap-1 rounded-md bg-muted/60 p-0.5" role="tablist">
+          <div className="flex gap-2 border-b border-border" role="tablist">
             <PropertiesTabButton active={showGeneral} onClick={() => setTab("general")}>
               {t("explorer:properties.tabGeneral")}
             </PropertiesTabButton>
@@ -495,7 +495,7 @@ export function PropertiesDialog() {
           )}
 
         <DialogFooter>
-          <Button disabled={isSaving} onClick={close} type="button" variant="outline">
+          <Button disabled={isSaving} onClick={close} type="button" variant="ghost">
             {t("explorer:actions.close")}
           </Button>
           {showGeneral && (
@@ -704,12 +704,15 @@ function PropertiesTabButton({
   onClick: () => void;
 }) {
   return (
+    // Underline tabs, not pills: an in-page tab strip is navigation, and the
+    // 2px accent underline is the same mark the language uses for the section
+    // you are in. A filled pill would read as a pressed button instead.
     <button
       aria-selected={active}
       className={cn(
-        "flex-1 rounded-xs px-3 py-1 text-body transition-colors duration-fast",
+        "relative -mb-px rounded-sm px-3 py-1.5 text-body transition-colors duration-fast ease-standard focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
         active
-          ? "bg-card text-foreground shadow-ambient-xs ring-1 ring-border"
+          ? "font-medium text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary"
           : "text-muted-foreground hover:text-foreground",
       )}
       onClick={onClick}

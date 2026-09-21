@@ -128,7 +128,7 @@ export function ArchivePasswordDialog({
               disabled={isPending}
               onClick={() => onOpenChange(false)}
               type="button"
-              variant="outline"
+              variant="ghost"
             >
               {t("explorer:actions.cancel")}
             </Button>

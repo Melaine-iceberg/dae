@@ -33,6 +33,7 @@ import {
   resolveBinding,
   type ShortcutId,
 } from "./shortcut-registry";
+import { KbdShortcut } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 
 type Mode = "idle" | "capturing" | "confirm";
@@ -129,23 +130,26 @@ export function ShortcutRecorder({ binding, id, onCommit, onReset }: ShortcutRec
 
   const capturing = mode === "capturing";
   const confirming = mode === "confirm";
+  const label = formatBinding(binding);
 
   return (
     <div className="flex items-center justify-end gap-1.5">
       {confirming && conflictId ? (
         <div className="flex items-center gap-1.5">
-          <span className="max-w-56 truncate text-caption text-muted-foreground">
+          {/* A conflict is a warning, not an error: the app is fine, the
+              binding is taken. Hence `--warning`, not `--destructive`. */}
+          <span className="max-w-56 truncate text-caption text-warning">
             {t("recorder.conflict", { action: t(`actions.${conflictId}`) })}
           </span>
           <button
-            className="h-6 rounded-sm border border-input px-2 text-caption font-medium transition-colors hover:bg-accent"
+            className="h-6 rounded-sm border border-input px-2 text-caption font-medium transition-colors duration-fast ease-standard hover:bg-accent"
             onClick={() => pending != null && commit(pending)}
             type="button"
           >
             {t("recorder.replace")}
           </button>
           <button
-            className="h-6 rounded-sm px-2 text-caption text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="h-6 rounded-sm px-2 text-caption text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground"
             onClick={stopCapture}
             type="button"
           >
@@ -157,20 +161,29 @@ export function ShortcutRecorder({ binding, id, onCommit, onReset }: ShortcutRec
           <button
             aria-label={t("recorder.changeAria", { action: t(`actions.${id}`) })}
             className={cn(
-              "flex h-7 min-w-24 items-center justify-center rounded-sm border px-2 font-mono text-caption transition-colors",
+              // The field renders the chord, not its spelling: one Kbd chip per
+              // key, so a rebound binding re-renders instead of re-measuring.
+              // Recording is the controls' 2px focus halo in a held state.
+              "flex h-7 min-w-24 items-center justify-center gap-0.5 rounded-sm border px-2 transition-[background-color,border-color,box-shadow] duration-fast ease-standard",
               capturing
-                ? "border-ring bg-primary-container text-on-primary-container ring-2 ring-ring/40"
-                : "border-input text-foreground hover:bg-accent",
+                ? "border-ring text-caption text-muted-foreground ring-2 ring-ring/40"
+                : "border-input hover:bg-accent",
             )}
             onClick={() => setMode(capturing ? "idle" : "capturing")}
             ref={buttonRef}
             type="button"
           >
-            {capturing ? t("recorder.listening") : formatBinding(binding)}
+            {capturing ? (
+              t("recorder.listening")
+            ) : label === "—" ? (
+              <span className="text-caption text-muted-foreground">{label}</span>
+            ) : (
+              <KbdShortcut keys={label} />
+            )}
           </button>
           <button
             aria-label={t("recorder.resetAria", { action: t(`actions.${id}`) })}
-            className="flex size-7 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            className="flex size-7 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
             disabled={binding === DEFAULT_BINDINGS[id]}
             onClick={onReset}
             title={t("recorder.reset")}

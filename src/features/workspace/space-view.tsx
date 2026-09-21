@@ -191,7 +191,10 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
             <span
               aria-hidden="true"
               className={cn(
-                "flex size-11 shrink-0 items-center justify-center rounded-xl",
+                // Icon tiles take the house squircle (31% of the edge) rather
+                // than a step on the px scale, so this 44px identity tile, the
+                // 22px row cell and the 50px grid cell read as one family.
+                "flex size-11 shrink-0 items-center justify-center tile-radius",
                 getSpaceAccent(space.id).tile,
               )}
             >
@@ -321,7 +324,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
               disabled={isDeleting}
               onClick={() => setConfirmingDelete(false)}
               type="button"
-              variant="outline"
+              variant="ghost"
             >
               {t("space.cancel")}
             </Button>

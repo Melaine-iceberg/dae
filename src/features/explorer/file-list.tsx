@@ -45,6 +45,13 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Kbd } from "@/components/ui/kbd";
 import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
   Table,
   TableBody,
   TableCell,
@@ -785,26 +792,34 @@ export function FileList({
         }
       >
         {entries.count === 0 && !listIsLoading ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2.5 p-6 text-center select-none">
-            {searchState?.error ? (
-              <TriangleAlert className="size-5 text-muted-foreground" />
-            ) : (
-              <Folder className="size-7 text-folder" fill="currentColor" />
-            )}
-            <p className="text-body text-muted-foreground">
-              {searchState
-                ? searchState.error
-                  ? t("explorer:list.searchError", { error: searchState.error })
-                  : t("explorer:list.searchEmpty", { query: searchState.query })
-                : t("explorer:list.emptyFolder")}
-            </p>
-            {!searchState && (
-              <p className="flex items-center gap-1.5 text-caption text-muted-foreground">
-                <Kbd>{commandBarBinding}</Kbd>
-                <span>{t("explorer:list.emptyHint")}</span>
-              </p>
-            )}
-          </div>
+          // The empty-state anatomy, shared with every other surface: one icon
+          // on a recessed tile, a title, one line of description, and the
+          // single action that can change the outcome. An empty folder and a
+          // failed search differ only in the glyph's hue.
+          <Empty className="min-h-0 flex-1 select-none">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                {searchState?.error ? (
+                  <TriangleAlert className="text-warning" />
+                ) : (
+                  <Folder className="text-folder" fill="currentColor" />
+                )}
+              </EmptyMedia>
+              <EmptyTitle>
+                {searchState
+                  ? searchState.error
+                    ? t("explorer:list.searchError", { error: searchState.error })
+                    : t("explorer:list.searchEmpty", { query: searchState.query })
+                  : t("explorer:list.emptyFolder")}
+              </EmptyTitle>
+              {!searchState && (
+                <EmptyDescription className="flex items-center gap-1.5">
+                  <Kbd>{commandBarBinding}</Kbd>
+                  <span>{t("explorer:list.emptyHint")}</span>
+                </EmptyDescription>
+              )}
+            </EmptyHeader>
+          </Empty>
         ) : activeViewMode === "grid" ? (
           <FileGridView {...viewControls} entries={entries} />
         ) : activeViewMode === "column" ? (
@@ -921,7 +936,7 @@ export function FileList({
         {internalDrag && (
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md bg-popover/90 px-3 py-1.5 text-body text-popover-foreground shadow-ambient ring-1 ring-border backdrop-blur-xl"
+            className="pointer-events-none fixed z-50 flex items-center gap-2 rounded-md border border-border bg-popover px-3 py-1.5 text-body text-popover-foreground shadow-ambient"
             style={{ left: internalDrag.position.x + 14, top: internalDrag.position.y + 14 }}
           >
             {internalDrag.target?.kind === "favorites" ? (
@@ -1150,11 +1165,14 @@ function FileListRow({
             // Desktop row: 13px text, tonal hover, filled selection. Selection
             // never changes the text weight — a re-measuring label makes a
             // multi-select scan jumpy, and the fill already carries the state.
-            "render-contain state-layer grid cursor-grab items-center justify-start rounded-md whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+            // Focus is the rows' inset hairline (an outer ring would be clipped
+            // by the virtual scroller); the drop target is the only state that
+            // adds an accent ring.
+            "render-contain state-layer grid cursor-grab items-center justify-start rounded-sm whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
-            isSelected && "bg-selection ring-1 ring-primary/30 ring-inset",
+            isSelected && "bg-selection",
             isDragging && "cursor-grabbing opacity-50",
-            isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
+            isDropTarget && "bg-primary/10 ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={handleSelect}
@@ -1200,7 +1218,7 @@ function FileListRow({
             {entryStatus && <GitStatusBadge kind={entryStatus} />}
             {entry.relativePath && (
               <span
-                className="ml-auto max-w-[45%] shrink-0 truncate text-caption text-muted-foreground"
+                className="ml-auto max-w-row-meta shrink-0 truncate text-caption text-muted-foreground"
                 title={entry.relativePath}
               >
                 {formatRelativeLocation(entry.relativePath)}

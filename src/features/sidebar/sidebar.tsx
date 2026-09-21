@@ -193,7 +193,7 @@ function SidebarContent() {
   return (
     <nav
       aria-label={t("nav.label")}
-      className="flex w-56 shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar"
+      className="flex w-sidebar shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <NavItem
@@ -421,7 +421,7 @@ function CollapsibleSection({
       <div className="group/section flex h-7 items-center gap-0.5">
         <button
           aria-expanded={open}
-          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-accent/60"
+          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-sm px-2 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
           onClick={() => toggle(id)}
           type="button"
         >
@@ -866,10 +866,12 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        // Linear nav row: 28px tall, filled selection, no leading tick — the
-        // same selection language the file list and the command palette use.
-        "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-body transition-[background-color,color] duration-fast ease-standard hover:bg-accent/60",
-        isActive && "bg-selection font-medium text-foreground",
+        // Linear nav row: 28px tall on the 6px control radius. Hover and active
+        // both fill with the sidebar's own accent rung — the sidebar is a tonal
+        // column, and indigo is reserved for focus and content selection, so an
+        // active nav row is *filled*, not tinted.
+        "flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left text-body transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent",
+        isActive && "bg-sidebar-accent font-medium text-foreground",
       )}
       onClick={onClick}
       title={title ?? label}
@@ -878,7 +880,7 @@ function NavItem({
       <Icon
         className={cn(
           "size-4 shrink-0",
-          isActive ? "text-primary" : "text-muted-foreground",
+          isActive ? "text-foreground" : "text-muted-foreground",
           iconClassName,
         )}
       />
@@ -971,8 +973,8 @@ function DiskItem({
   return (
     <div
       className={cn(
-        "w-full rounded-lg px-2.5 py-2 transition-[background-color] duration-fast ease-standard hover:bg-accent/60",
-        isActive && "bg-selection",
+        "w-full rounded-sm px-2.5 py-2 transition-[background-color] duration-fast ease-standard hover:bg-sidebar-accent",
+        isActive && "bg-sidebar-accent",
       )}
     >
       <div className="flex items-center gap-1">
@@ -1020,12 +1022,12 @@ function DiskItem({
           aria-valuemax={100}
           aria-valuemin={0}
           aria-valuenow={usedPercent}
-          className="h-1 w-full overflow-hidden rounded-xs bg-muted"
+          className="h-capacity-bar w-full overflow-hidden rounded-full bg-muted"
           role="progressbar"
         >
           <div
             className={cn(
-              "capacity-fill h-full rounded-xs transition-all duration-normal",
+              "capacity-fill h-full rounded-full transition-[width] duration-normal ease-standard",
               usedPercent > 90 && "capacity-fill--warn",
             )}
             style={{ width: `${usedPercent}%` }}

@@ -137,7 +137,7 @@ export function RecentsView() {
       ) : recents === null ? (
         <div className="flex flex-col gap-1">
           {Array.from({ length: 6 }, (_, index) => (
-            <Skeleton className="h-9 rounded-lg" key={index} />
+            <Skeleton className="h-8.5 rounded-sm" key={index} />
           ))}
         </div>
       ) : groups.length === 0 ? (
@@ -191,14 +191,14 @@ function RecentRow({
         <ContextMenuTrigger>
           <button
             aria-label={`${presentation.label} ${item.name}`}
-            className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="flex h-8.5 w-full items-center gap-2.5 rounded-sm px-2 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             onClick={onOpen}
             title={item.path}
             type="button"
           >
             <TypeIconTile
-              className="size-6 tile-radius"
-              iconSize={13}
+              className="size-tile-list tile-radius"
+              iconSize={16}
               presentation={presentation}
             />
             <span className="min-w-0 flex-1">

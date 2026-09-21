@@ -289,7 +289,7 @@ function FileMatchGroup({
       <div className="flex flex-col">
         {visibleMatches.map((match) => (
           <button
-            className="flex items-start gap-3 px-3 py-1 text-left text-body transition-colors hover:bg-accent/60"
+            className="flex items-start gap-3 px-3 py-1 text-left text-body transition-colors hover:bg-accent"
             key={match.lineNumber}
             onClick={() => void openPath(file.path)}
             title={`${file.path}:${match.lineNumber}`}

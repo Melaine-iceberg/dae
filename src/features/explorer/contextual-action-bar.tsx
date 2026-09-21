@@ -93,7 +93,7 @@ export function ContextualActionBar({
     <div className="absolute bottom-4 left-1/2 z-30 -translate-x-1/2">
       <div
         aria-label={t("explorer:actionBar.ariaLabel")}
-        className="animate-float-in flex items-center gap-0.5 rounded-lg bg-popover/85 p-1 shadow-ambient-lg ring-1 ring-border backdrop-blur-xl"
+        className="animate-float-in flex h-9 items-center gap-0.5 rounded-lg border border-border bg-popover p-1 shadow-ambient"
         role="toolbar"
       >
         <span className="shrink-0 px-2.5 text-body text-muted-foreground select-none tabular-nums">
@@ -109,7 +109,7 @@ export function ContextualActionBar({
           type="button"
           variant="ghost"
         >
-          <FolderOpen />
+          <FolderOpen className="size-action-glyph" />
         </Button>
         <Button
           aria-label={t("explorer:actionBar.copyAria")}
@@ -120,7 +120,7 @@ export function ContextualActionBar({
           type="button"
           variant="ghost"
         >
-          <Copy />
+          <Copy className="size-action-glyph" />
         </Button>
         <Button
           aria-label={t("explorer:actionBar.cutAria")}
@@ -131,7 +131,7 @@ export function ContextualActionBar({
           type="button"
           variant="ghost"
         >
-          <Scissors />
+          <Scissors className="size-action-glyph" />
         </Button>
         <Button
           aria-label={t("explorer:actionBar.renameAria")}
@@ -142,7 +142,7 @@ export function ContextualActionBar({
           type="button"
           variant="ghost"
         >
-          <Pencil />
+          <Pencil className="size-action-glyph" />
         </Button>
         {archiveSelectionPath && (
           <Button
@@ -154,17 +154,17 @@ export function ContextualActionBar({
             type="button"
             variant="ghost"
           >
-            <PackageOpen />
+            <PackageOpen className="size-action-glyph" />
           </Button>
         )}
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label={t("explorer:actionBar.moreAria")}
-            className="flex size-8 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            className="flex size-7 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
             disabled={isActionDisabled}
             title={t("explorer:actionBar.moreTitle")}
           >
-            <Ellipsis className="size-4" />
+            <Ellipsis className="size-action-glyph" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="center" side="top">
             <DropdownMenuItem disabled={isActionDisabled} onClick={onDuplicate}>
@@ -216,7 +216,7 @@ export function ContextualActionBar({
           type="button"
           variant="ghost"
         >
-          <Trash2 />
+          <Trash2 className="size-action-glyph" />
         </Button>
         <div aria-hidden="true" className="ml-0.5 h-5 w-px bg-border" />
         <Button
@@ -227,7 +227,7 @@ export function ContextualActionBar({
           type="button"
           variant="ghost"
         >
-          <X />
+          <X className="size-action-glyph" />
         </Button>
       </div>
     </div>

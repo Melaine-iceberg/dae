@@ -281,13 +281,13 @@ export function EntryPreview({
           <>
             {supportsThumbnail ? (
               <ThumbnailImage
-                className="flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/40"
+                className="flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted"
                 entry={entry}
                 fallback={VisualIcon ? <VisualIcon className="size-12" /> : null}
                 requestSize={384}
               />
             ) : textPreview?.status === "ready" ? (
-              <div className="flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-muted/40">
+              <div className="flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-lg bg-muted">
                 {supportsMarkdown ? (
                   <div
                     className="markdown-preview min-h-0 flex-1 overflow-auto p-2.5 text-caption leading-relaxed"
@@ -315,24 +315,24 @@ export function EntryPreview({
                 )}
               </div>
             ) : textPreview?.status === "loading" ? (
-              <div className="flex shrink-0 flex-col gap-2 rounded-xl bg-muted/40 p-2.5">
+              <div className="flex shrink-0 flex-col gap-2 rounded-lg bg-muted p-2.5">
                 <Skeleton className="h-3 w-3/4" />
                 <Skeleton className="h-3 w-1/2" />
                 <Skeleton className="h-3 w-2/3" />
               </div>
             ) : isTooLarge ? (
-              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 px-3 text-center text-caption text-muted-foreground">
+              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-lg bg-muted px-3 text-center text-caption text-muted-foreground">
                 <TriangleAlert className="size-5" />
                 <p>{t("preview.tooLarge", { size: PREVIEW_MAX_SOURCE_BYTES / 1024 / 1024 })}</p>
                 <p>{t("preview.tooLargeHint")}</p>
               </div>
             ) : textPreview?.status === "error" ? (
-              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted/40 text-caption text-muted-foreground">
+              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-lg bg-muted text-caption text-muted-foreground">
                 <TriangleAlert className="size-5" />
                 <p>{t("preview.readError")}</p>
               </div>
             ) : (
-              <div className="flex h-32 shrink-0 items-center justify-center rounded-xl bg-muted/40">
+              <div className="flex h-32 shrink-0 items-center justify-center rounded-lg bg-muted">
                 {entry && isNativeIconSupported(entry) ? (
                   <NativeIconImage
                     className="size-12"
@@ -351,7 +351,7 @@ export function EntryPreview({
                 mediaPreview.data.durationMs !== null ||
                 mediaPreview.data.width !== null ||
                 mediaPreview.data.bitrateBps !== null) && (
-                <div className="shrink-0 rounded-xl bg-muted/40 p-2.5">
+                <div className="shrink-0 rounded-lg bg-muted p-2.5">
                   <dl className="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1.5 text-caption">
                     {mediaPreview.data.tags.map(([label, value]) => (
                       <div key={label} className="contents">

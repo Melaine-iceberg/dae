@@ -190,7 +190,7 @@ function Pane({
 
   return (
     <div
-      className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border/60 px-1.5 py-2"
+      className="flex w-column-view shrink-0 flex-col overflow-y-auto border-r border-border px-1.5 py-2"
       ref={scrollRef}
     >
       {isLoading && (
@@ -308,11 +308,16 @@ function PaneRow({
           className={cn(
             // Desktop row: tonal hover via state-layer, flat selection fill,
             // no pill morph so rows keep a constant corner radius.
-            "render-contain state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-xs px-2.5 select-none transition-[background-color,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+            "render-contain state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-sm px-2.5 select-none transition-[background-color,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
-            (isSelected || isExpanded) && "bg-selection ring-1 ring-primary/30 ring-inset",
+            // The column holding the selection ancestor keeps the softer fill
+            // (60%) so the path stays readable; the chosen row itself takes the
+            // full-strength tint. Neither adds an accent ring — rows get the
+            // fill, the drop target gets the ring.
+            isSelected && "bg-selection",
+            !isSelected && isExpanded && "bg-selection/60",
             isDragging && "cursor-grabbing opacity-50",
-            dropTargetPath === entry.path && "bg-selection ring-2 ring-primary ring-inset",
+            dropTargetPath === entry.path && "bg-primary/10 ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={(event) => {

@@ -182,14 +182,34 @@ export function TransferConflictDialog({
           <Button onClick={onCancel} type="button" variant="ghost">
             {t("conflictDialog.cancelAction", { action: actionVerb })}
           </Button>
-          <div className="flex gap-2">
-            <Button onClick={() => choose("skip")} type="button" variant="outline">
+          {/* One segmented choice rather than three loose buttons: the three
+              outcomes are mutually exclusive answers to the same question, so
+              they share a frame. Only a Replace that will be repeated over
+              every remaining conflict wears the destructive fill — a single
+              replace is an ordinary action. */}
+          <div className="flex overflow-hidden rounded-sm border border-border">
+            <Button
+              className="rounded-none border-0 border-r border-border"
+              onClick={() => choose("skip")}
+              type="button"
+              variant="ghost"
+            >
               {t("conflictDialog.skip")}
             </Button>
-            <Button onClick={() => choose("keep_both")} type="button" variant="outline">
+            <Button
+              className="rounded-none border-0 border-r border-border"
+              onClick={() => choose("keep_both")}
+              type="button"
+              variant="ghost"
+            >
               {t("conflictDialog.keepBoth")}
             </Button>
-            <Button onClick={() => choose("replace")} type="button" variant="destructive">
+            <Button
+              className="rounded-none border-0"
+              onClick={() => choose("replace")}
+              type="button"
+              variant={applyToAll ? "destructive" : "default"}
+            >
               {t("conflictDialog.replace")}
             </Button>
           </div>
@@ -220,7 +240,7 @@ function ConflictSideCard({
     <div
       className={cn(
         "flex flex-col gap-1 rounded-lg border p-3",
-        highlight ? "border-primary/40 bg-primary/5" : "border-border/60 bg-muted/40",
+        highlight ? "border-primary/40 bg-primary/5" : "border-border bg-muted/40",
       )}
     >
       <p className="text-caption text-muted-foreground">{subtitle}</p>

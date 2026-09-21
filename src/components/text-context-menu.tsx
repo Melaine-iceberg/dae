@@ -247,7 +247,7 @@ export function TextContextMenu() {
         if (target?.isConnected) target.focus({ preventScroll: true });
       }}
     >
-      <ContextMenuContent anchor={request?.anchor} className="min-w-44">
+      <ContextMenuContent anchor={request?.anchor} className="min-w-menu">
         <ContextMenuGroup>
           <ContextMenuItem className={ITEM_HOVER} disabled={!hasSelection} onClick={copy}>
             <Copy />

@@ -5,23 +5,25 @@ import { cn } from "@/lib/utils";
 
 /* Linear/Raycast buttons: compact corners, tight paddings, quick state
    transitions. The filled variant stays restrained — a single accent tone,
-   hover brightens slightly, no shape morphing. Press settles at 97% scale,
-   the one expressive cue shared by every button in the house. */
+   hover brightens slightly, no shape morphing. Only the filled variants press
+   (`active:scale-[0.98]`): a ghost or outline button that shrinks on click
+   reads as a shape change its 1px border cannot follow, and those variants
+   already answer with a hover fill. */
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-md border border-transparent bg-clip-padding text-body font-medium whitespace-nowrap transition-[background-color,border-color,color,box-shadow,scale] duration-fast ease-standard outline-none select-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-sm border border-transparent bg-clip-padding text-body font-medium whitespace-nowrap transition-[background-color,border-color,color,box-shadow,scale] duration-fast ease-standard outline-none select-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground hover:bg-[color-mix(in_oklab,var(--primary),var(--primary-foreground)_10%)]",
+          "bg-primary text-primary-foreground hover:bg-[color-mix(in_oklab,var(--primary),var(--primary-foreground)_10%)] active:scale-[0.98]",
         outline:
           "border-input bg-transparent text-foreground hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklab,var(--secondary),var(--secondary-foreground)_10%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklab,var(--secondary),var(--secondary-foreground)_10%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground active:scale-[0.98]",
         ghost:
           "hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+          "bg-destructive text-on-destructive hover:bg-[color-mix(in_oklab,var(--destructive),var(--on-destructive)_10%)] focus-visible:border-destructive focus-visible:ring-destructive/40 active:scale-[0.98]",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

@@ -1298,7 +1298,7 @@ export function ExplorerView({
     <main className="h-full bg-card" data-explorer-container="true">
       <section className="flex h-full w-full flex-col overflow-hidden">
         <header
-          className="flex h-9 shrink-0 items-center gap-0.5 border-b border-border bg-card px-1.5"
+          className="flex h-toolbar shrink-0 items-center gap-0.5 border-b border-border bg-card px-1.5"
           data-tauri-drag-region="deep"
         >
           <div className="flex shrink-0 items-center gap-0.5">
@@ -1640,7 +1640,7 @@ export function ExplorerView({
                   onPointerEnter={() => setIsUndoToastHovered(true)}
                   onPointerLeave={() => setIsUndoToastHovered(false)}
                 >
-                  <div className="animate-float-in flex items-center gap-2 rounded-lg bg-popover/90 px-4 py-2 text-body text-popover-foreground shadow-ambient-lg ring-1 ring-border backdrop-blur-xl">
+                  <div className="animate-float-in flex items-center gap-2 rounded-lg border border-border bg-popover px-4 py-2 text-body text-popover-foreground shadow-ambient-lg">
                     {undoRedoToast.action === "redo" ? (
                       <RotateCw className="size-4 shrink-0 text-muted-foreground" />
                     ) : (
@@ -1921,7 +1921,7 @@ function FileOperationStatusBar({ progress }: { progress: FileOperationProgress 
   return (
     <footer
       aria-live="polite"
-      className="flex h-10 shrink-0 items-center gap-3 border-t border-border/60 bg-muted/50 px-3"
+      className="flex h-status-strip shrink-0 items-center gap-3 border-t border-border bg-card px-3"
     >
       <LoaderCircle
         className={cn(
@@ -1930,7 +1930,7 @@ function FileOperationStatusBar({ progress }: { progress: FileOperationProgress 
         )}
       />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-3 text-caption">
+        <div className="flex items-center justify-between gap-3 text-micro">
           <span className="truncate">
             {statusText}
             {currentPath ? ` · ${currentPath}` : ""}
@@ -1945,7 +1945,7 @@ function FileOperationStatusBar({ progress }: { progress: FileOperationProgress 
                 })}
           </span>
         </div>
-        <Progress className="mt-1.5 w-full" value={percentage} />
+        <Progress className="mt-1.5 w-full" size="sm" value={percentage} />
       </div>
     </footer>
   );
@@ -1998,7 +1998,7 @@ function RenameDialog({
             </Field>
           </FieldGroup>
           <DialogFooter>
-            <Button disabled={isPending} onClick={onClose} type="button" variant="outline">
+            <Button disabled={isPending} onClick={onClose} type="button" variant="ghost">
               {t("explorer:actions.cancel")}
             </Button>
             <Button disabled={isPending} type="submit">
@@ -2069,7 +2069,7 @@ function CreateEntryDialog({
             </Field>
           </FieldGroup>
           <DialogFooter>
-            <Button disabled={isPending} onClick={onClose} type="button" variant="outline">
+            <Button disabled={isPending} onClick={onClose} type="button" variant="ghost">
               {t("explorer:actions.cancel")}
             </Button>
             <Button disabled={isPending} type="submit">
@@ -2112,7 +2112,7 @@ function DeleteDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button disabled={isPending} onClick={onClose} type="button" variant="outline">
+          <Button disabled={isPending} onClick={onClose} type="button" variant="ghost">
             {t("explorer:actions.cancel")}
           </Button>
           <Button disabled={isPending} onClick={onConfirm} type="button" variant="destructive">

@@ -45,14 +45,16 @@ export function ErrorState({
   return (
     <Empty className={cn("min-h-40", className)} role="alert">
       <EmptyHeader>
-        <EmptyMedia variant="icon">
+        {/* A failed read is a warning, not a crash: the app is fine, the folder
+            is not. `--destructive` is reserved for things the user must undo. */}
+        <EmptyMedia className="text-warning" variant="icon">
           <TriangleAlert />
         </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         {description && <EmptyDescription>{description}</EmptyDescription>}
       </EmptyHeader>
       {onRetry && (
-        <Button onClick={onRetry} size="sm" type="button" variant="outline">
+        <Button onClick={onRetry} type="button">
           <RotateCw />
           {t("errors.retry")}
         </Button>

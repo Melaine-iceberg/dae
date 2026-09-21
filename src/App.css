@@ -345,13 +345,25 @@
   --height-image-zone-comfortable: 42px;
   --height-image-zone-spacious: 50px;
   --height-location-card: 54px; /* LocationCard — its skeleton must match */
-  --height-project-card: 74px;
+  --height-project-card: 84px;
   --height-settings-body: 30rem; /* settings dialog body at a comfortable window */
   /* The bin's list scrolls inside its own surface rather than pushing the page
      header off the top: the header, the progress bar and the summary stay put
      while the rows move. */
   --height-trash-list: 70vh;
+  /* Chrome geometry. The tab strip, the pane toolbar and the transfer strip
+     each appear in more than one place (both panes of a split, every tab),
+     so their heights are named instead of hand-written per call site. */
+  --height-tab-strip: 38px;
+  --height-toolbar: 40px;
+  --height-status-strip: 32px;
+  --height-capacity-bar: 3px; /* disk capacity fill in the sidebar */
   --width-window-control: 46px;
+  --min-width-menu: 11.25rem; /* 180px — the floor for any popup menu */
+  --max-width-command-bar: 40rem; /* 640px — the palette's cap */
+  --max-width-row-meta: 45%; /* trailing metadata share of an explorer row */
+  --width-column-view: 13.75rem; /* 220px — one Miller column */
+  --width-sidebar: 15rem; /* 240px — the nav column */
   --width-preview: 26rem;
 
   /* Dimming layer behind a modal. Declared per scheme rather than written as
@@ -363,7 +375,11 @@
   /* Indeterminate progress: a tight linear sweep, no waves. */
   --animate-m3-wave: m3-wave 1.1s linear infinite;
 
-  /* Floating layer entrance: a quick fade with a 2px settle. */
+  /* Floating layer entrance: a quick fade with a 2px settle. Every popup,
+     menu, dialog and the command bar enters with this and nothing else —
+     Linear's overlays do not travel and do not scale. It animates `transform`
+     rather than `translate`, which is a separate property, so a centred
+     dialog keeps its own `-translate-x-1/2 -translate-y-1/2` while rising. */
   --animate-float-in: float-in var(--transition-duration-fast) var(--ease-standard) both;
 
   @keyframes m3-wave {
@@ -582,6 +598,27 @@
 
        controls  focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40
        rows      focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset */
+
+  /* The one sanctioned highlight in the shell: the active tab chip's 1px
+     inset top edge. It is what separates the chip from the canvas now that
+     the chip carries no shadow — panels, rows and the toolbar are all flat,
+     and the tab strip is the only place a raised element is expected to be
+     part of the frame. Mixed from the foreground token so it reads as a light
+     edge on the dark canvas and as a faint seam on the light one, which is
+     why it needs no hand-written `dark:` variant. */
+  .tab-chip-active {
+    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--foreground) 8%, transparent);
+  }
+
+  /* Path hints keep their filename readable: flipped text direction moves the
+     overflow — and therefore the ellipsis — to the head, while `plaintext`
+     keeps every string laid out by its own (always LTR in this app) content.
+     Paired with `truncate`; used by the command bar's result paths. */
+  .path-ellipsis {
+    direction: rtl;
+    text-align: left;
+    unicode-bidi: plaintext;
+  }
 
   /* Number inputs trade the OS spinner for the InputGroup stepper buttons;
      the wheel still steps when the field is focused. */

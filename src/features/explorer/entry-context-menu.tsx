@@ -382,10 +382,14 @@ function EntryActionRow({
   ];
 
   return (
-    <ContextMenuGroup className="mb-1 grid grid-cols-4 divide-x divide-border/60 overflow-hidden rounded-lg bg-muted/50 p-0.5 ring-1 ring-border/60">
+    // Four quick actions across the top of the menu. They are separated from
+    // the rest by the hairline the menu draws below them, not by a tinted box:
+    // a nested surface inside a popover would be a second rung the menu does
+    // not have to spend.
+    <ContextMenuGroup className="mb-1 grid grid-cols-4 divide-x divide-border pb-1">
       {actions.map(({ Icon, label, onSelect, shortcut }) => (
         <ContextMenuItem
-          className="h-auto flex-col justify-center gap-1 rounded-md px-1 py-1 text-caption"
+          className="h-auto flex-col justify-center gap-1 rounded-sm px-1 py-1 text-caption"
           disabled={disabled}
           key={label}
           onClick={onSelect}
@@ -394,11 +398,10 @@ function EntryActionRow({
           {/* A single node: the item is a flex column with a gap, so a label
               split across nodes would get a gap between its pieces. */}
           <span className="max-w-full truncate leading-none">{label}</span>
-          {/* Menu rows use the plain shortcut text, not the keycap chip — here
-              at the nano step, since four of them share one row. */}
-          <ContextMenuShortcut className="ml-0 text-nano tracking-normal">
-            {shortcut}
-          </ContextMenuShortcut>
+          {/* Nano keycaps rather than the plain shortcut text the other rows
+              use: four hints share one row, so they have to read as keys at a
+              glance. */}
+          <ContextMenuShortcut className="ml-0">{shortcut}</ContextMenuShortcut>
         </ContextMenuItem>
       ))}
     </ContextMenuGroup>

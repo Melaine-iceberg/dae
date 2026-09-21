@@ -90,11 +90,13 @@ export function LocationCard({
   return (
     <button
       className={cn(
-        // Linear card: a quiet tinted block that answers the pointer with tone
-        // and a hairline instead of lift — nothing in the window floats.
-        "group flex w-full items-center gap-3 rounded-lg bg-muted/50 p-2.5 text-left ring-1 ring-transparent",
-        "transition-[background-color,border-color,box-shadow] duration-fast ease-standard",
-        "hover:bg-accent/60 hover:ring-border",
+        // Linear card: a hairline box on the surface's own rung — it answers
+        // the pointer by brightening that hairline and washing the fill, never
+        // by lifting. The height is the token its skeleton already uses, so
+        // the placeholder and the real card are the same box.
+        "group state-layer flex h-location-card w-full items-center gap-3 rounded-lg border border-border bg-card p-2 text-left",
+        "transition-[background-color,border-color] duration-fast ease-standard",
+        "hover:border-input",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       )}
       onClick={onClick}
@@ -103,7 +105,7 @@ export function LocationCard({
     >
       <span
         className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-md",
+          "flex size-8 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground",
           !tileClassName && !tileStyle && "bg-secondary",
           tileClassName,
         )}

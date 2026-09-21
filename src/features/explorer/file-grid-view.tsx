@@ -296,14 +296,15 @@ function GridCell({
         <div
           aria-selected={isSelected}
           className={cn(
-            // Desktop cell: tonal hover via state-layer; selection is a soft
-            // primary wash plus a thin primary inset ring so picked tiles
-            // read at a glance. No lift and no corner morph.
-            "render-contain state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-lg px-2 py-2.5 text-center transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+            // Desktop cell: tonal hover via state-layer, and selection as the
+            // filled wash on the medium radius — a cell is the largest thing a
+            // row-level radius may be spent on. No lift, no corner morph, no
+            // accent ring: the drop target is the only state that rings.
+            "render-contain state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-md px-2 py-2.5 text-center transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
-            isSelected && "bg-selection ring-1 ring-primary/30 ring-inset",
+            isSelected && "bg-selection",
             isDragging && "cursor-grabbing opacity-50",
-            isDropTarget && "bg-selection ring-2 ring-primary ring-inset",
+            isDropTarget && "bg-primary/10 ring-2 ring-primary ring-inset",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={(event) => onSelectEntry(entry, index, event)}
@@ -355,10 +356,10 @@ function GridCell({
           )}
           <span
             className={cn(
-              "line-clamp-2 text-caption leading-snug break-all",
-              // Expressive type scale: the name carries the cell's weight and
-              // steps up to semibold while selected.
-              isSelected ? "font-semibold" : "font-medium",
+              // The cell's label keeps one weight in every state: the selection
+              // fill already carries the state, and a re-measuring label makes a
+              // multi-select scan jumpy (same rule as the list rows).
+              "line-clamp-2 text-caption leading-snug font-medium break-all",
             )}
           >
             {entry.name}

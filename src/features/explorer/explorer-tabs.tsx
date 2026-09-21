@@ -311,11 +311,12 @@ export function ExplorerTabs() {
   return (
     <div className="flex h-full flex-col">
       <TabDropIndicator />
-      {/* Window chrome: one flat 36px bar carrying the tab strip and the native
-          window controls. It shares the sidebar's tone, so the two read as a
-          single frame wrapping the content plane instead of three islands. */}
+      {/* Window chrome: one flat 38px bar carrying the tab strip and the native
+          window controls. It sits on the canvas rung so the frame reads as the
+          window itself rather than as a third panel, and the 1px hairline
+          below it is what separates the frame from the content plane. */}
       <header
-        className="flex h-9 shrink-0 items-stretch border-b border-border bg-sidebar"
+        className="flex h-tab-strip shrink-0 items-stretch border-b border-border bg-background"
         data-tauri-drag-region="deep"
       >
         <StripScrollButton
@@ -336,7 +337,7 @@ export function ExplorerTabs() {
           ))}
           <button
             aria-label={t("tabs.newTab")}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+            className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
             onClick={createTab}
             title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
             type="button"
@@ -492,8 +493,8 @@ function TabDropIndicator() {
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed z-50 w-[3px] rounded-full bg-primary shadow-ambient-sm"
-        style={{ left: geometry.left - 1.5, top: geometry.top, height: geometry.height }}
+        className="pointer-events-none fixed z-50 w-0.5 rounded-full bg-primary"
+        style={{ left: geometry.left - 1, top: geometry.top, height: geometry.height }}
       />
     </>
   );
@@ -842,9 +843,9 @@ function TabStripItem({
   const tabContent = (
     <>
       {FolderTabIcon ? (
-        <FolderTabIcon className="ml-2 size-3.5 shrink-0" />
+        <FolderTabIcon className="ml-2 size-4 shrink-0" />
       ) : WorkspaceTabIcon ? (
-        <WorkspaceTabIcon className="ml-2 size-3.5 shrink-0 text-muted-foreground" />
+        <WorkspaceTabIcon className="ml-2 size-4 shrink-0 text-muted-foreground" />
       ) : null}
       <span className="w-full truncate pr-7 pl-1.5">{title}</span>
     </>
@@ -855,14 +856,15 @@ function TabStripItem({
       aria-grabbed={isDragging}
       aria-selected={isActive}
       className={cn(
-        // Linear tab: a compact chip. The active tab is the only raised
-        // surface in the strip (one hairline, one shadow step); inactive tabs
-        // stay flat text until hovered, so the strip reads as a row of
+        // Linear tab: a compact 28px chip inside the 38px strip. The active
+        // tab is the only raised surface in the shell — `bg-card` fill, one
+        // hairline, and the sanctioned 1px inset top edge — while inactive
+        // tabs stay flat text until hovered, so the strip reads as a row of
         // destinations rather than a row of buttons.
-        "group relative flex h-6 w-52 shrink-0 touch-none cursor-grab items-center rounded-md text-body select-none transition-[background-color,color,box-shadow,scale,opacity] duration-fast ease-spring-fast active:scale-[0.98] active:cursor-grabbing",
+        "group state-layer relative flex h-7 w-52 shrink-0 touch-none cursor-grab items-center rounded-sm text-body select-none transition-[background-color,color,scale,opacity] duration-fast ease-spring-fast active:scale-[0.98] active:cursor-grabbing",
         isActive
-          ? "bg-card font-medium text-foreground shadow-ambient-xs ring-1 ring-border dark:inset-shadow-[0_1px_0_rgb(255_255_255/0.05)]"
-          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+          ? "tab-chip-active border border-border bg-card font-medium text-foreground"
+          : "text-muted-foreground hover:text-foreground",
         isDragging && "opacity-30",
       )}
       data-tauri-drag-region="false"
@@ -907,7 +909,7 @@ function TabStripItem({
         createPortal(
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-md bg-card text-body text-foreground shadow-ambient-lg ring-1 ring-border select-none"
+            className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-sm border border-border bg-card text-body text-foreground shadow-ambient-lg select-none"
             data-tab-drag-preview={tab.id}
             style={{
               width: dragPreview.width,

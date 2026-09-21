@@ -136,9 +136,12 @@ function ProjectCard({
   return (
     <button
       className={cn(
-        "group flex w-full flex-col gap-2 rounded-lg bg-muted/50 p-3 text-left ring-1 ring-transparent",
-        "transition-[background-color,border-color,box-shadow] duration-fast ease-standard",
-        "hover:bg-accent/60 hover:ring-border",
+        // Same card anatomy as LocationCard: hairline box on the plane's own
+        // rung, hover brightens the hairline. Height comes from the token its
+        // skeleton uses.
+        "group state-layer flex h-project-card w-full flex-col gap-2 rounded-lg border border-border bg-card p-3 text-left",
+        "transition-[background-color,border-color] duration-fast ease-standard",
+        "hover:border-input",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       )}
       onClick={onOpen}
@@ -156,9 +159,9 @@ function ProjectCard({
       </span>
       {/* 42px is derived, not chosen: it is the row above's 32px avatar
           (`size-8`) plus its 10px gap (`gap-2.5`), so this line starts exactly
-          where the project name does. Change either and this number is wrong —
-          the note is here because the number cannot state that itself. */}
-      <span className="flex w-full items-center gap-1.5 pl-[42px]">
+          where the project name does. `pl-10.5` is that sum on the 4px grid —
+          change either the avatar or the gap and this number is wrong. */}
+      <span className="flex w-full items-center gap-1.5 pl-10.5">
         <span className="max-w-[60%] truncate rounded-xs bg-secondary px-2 py-0.5 font-mono text-micro leading-4 text-secondary-foreground">
           {project.branch}
         </span>

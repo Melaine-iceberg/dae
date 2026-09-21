@@ -148,7 +148,7 @@ export function CloudAccountDialog({
             />
           </div>
 
-          <div className="grid gap-2 rounded-md border border-border/60 bg-muted/40 p-3 text-caption">
+          <div className="grid gap-2 rounded-md border border-border bg-muted/40 p-3 text-caption">
             <p className="leading-relaxed text-muted-foreground">{t(`cloud.guide.${provider}`)}</p>
             <div className="flex items-center gap-2">
               <span className="shrink-0 text-muted-foreground">{t("cloud.redirectUri")}</span>

@@ -2,9 +2,18 @@ import { Progress as ProgressPrimitive } from "@base-ui/react/progress";
 
 import { cn } from "@/lib/utils";
 
-/* Island progress: a thin 4px track with a squared 3px-corner fill. No
-   decorative waves — a progress bar's job is to communicate state, fast. */
-function Progress({ className, children, value, ...props }: ProgressPrimitive.Root.Props) {
+/* Island progress: a thin track with a rounded fill. No decorative waves — a
+   progress bar's job is to communicate state, fast.
+
+   Two sizes, because the strip progress sits in a 32px status bar built out of
+   `text-micro` text, where a 4px track out-weighs the line above it. */
+function Progress({
+  className,
+  children,
+  size = "default",
+  value,
+  ...props
+}: ProgressPrimitive.Root.Props & { size?: "default" | "sm" }) {
   return (
     <ProgressPrimitive.Root
       value={value}
@@ -13,8 +22,8 @@ function Progress({ className, children, value, ...props }: ProgressPrimitive.Ro
       {...props}
     >
       {children}
-      <ProgressTrack>
-        <ProgressIndicator />
+      <ProgressTrack className={cn(size === "sm" && "h-0.5")}>
+        <ProgressIndicator className={cn(size === "sm" && "rounded-full")} />
       </ProgressTrack>
     </ProgressPrimitive.Root>
   );

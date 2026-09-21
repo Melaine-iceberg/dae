@@ -62,9 +62,12 @@ function readTerminalTheme(ansiOverride: AnsiPalette | null): ITheme {
   const dark = document.documentElement.classList.contains("dark");
   const ansi = resolveAnsiPalette(ansiOverride, dark);
   return {
+    // The panel is the one surface whose *content* may deviate from the
+    // neutral ladder; its chrome above may not. background/foreground follow
+    // the content plane, and the caret is the one accent in the block.
     background: token("--card", "#101112"),
     foreground: token("--foreground", "#f7f8f8"),
-    cursor: token("--foreground", "#f7f8f8"),
+    cursor: token("--primary", "#8284f8"),
     cursorAccent: token("--card", "#101112"),
     selectionBackground: token("--accent", "#1d1e21"),
     black: ansi[0],
@@ -406,7 +409,7 @@ export function TerminalPanel() {
         onPointerDown={startResizeDrag}
       />
       <header className="flex h-8 shrink-0 items-center gap-1 border-b border-border px-2">
-        <span className="text-caption font-medium text-muted-foreground select-none">
+        <span className="text-micro font-medium text-muted-foreground select-none">
           {t("panel.title")}
         </span>
         {/* The panel's own toggle, shown where the panel is: the key that
@@ -416,7 +419,7 @@ export function TerminalPanel() {
         <div className="ml-auto flex items-center gap-0.5">
           <button
             aria-label={t("panel.restart.label")}
-            className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground"
             onClick={restart}
             title={t("panel.restart.label")}
             type="button"
@@ -425,7 +428,7 @@ export function TerminalPanel() {
           </button>
           <button
             aria-label={t("panel.close.label")}
-            className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground"
             onClick={() => setVisible(false)}
             title={t("panel.close.title")}
             type="button"
@@ -445,7 +448,7 @@ export function TerminalPanel() {
           }}
         >
           <ContextMenuTrigger ref={containerRef} className="h-full w-full" />
-          <ContextMenuContent className="min-w-44">
+          <ContextMenuContent className="min-w-menu">
             <ContextMenuGroup>
               <ContextMenuItem disabled={!hasSelection} onClick={copyTerminalSelection}>
                 <Copy />

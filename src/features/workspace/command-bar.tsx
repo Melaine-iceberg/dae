@@ -50,7 +50,7 @@ import {
 import type { RecentItem, SearchEntry } from "@/bindings";
 import { commands } from "@/bindings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Kbd } from "@/components/ui/kbd";
+import { Kbd, KbdShortcut } from "@/components/ui/kbd";
 import {
   DEFAULT_ENTRY_FILTERS,
   DEFAULT_SORT_ORDER,
@@ -124,6 +124,10 @@ interface CommandItem {
   group: CommandGroup;
   label: string;
   hint?: string;
+  /** How the right-hand hint reads: a filesystem path (head-ellipsized, so the
+   *  filename stays visible) or a key binding (drawn as Kbd chips). The two
+   *  cannot be told apart from the string alone. */
+  hintKind?: "path" | "keys";
   keywords?: string;
   icon: ComponentType<{ className?: string }>;
   run: () => void;
@@ -312,6 +316,7 @@ export function CommandBar() {
       group: "favorites",
       label: favorite.name,
       hint: favorite.path,
+      hintKind: "path",
       keywords: "favorite open folder",
       icon: Folder,
       run: () => navigateToFolder(favorite.path),
@@ -326,6 +331,7 @@ export function CommandBar() {
         group: "recents",
         label: recent.name,
         hint: recent.path,
+        hintKind: "path",
         keywords: "recent open",
         icon: recent.kind === "directory" ? Folder : File,
         run: () => openRecentItem(recent),
@@ -335,6 +341,7 @@ export function CommandBar() {
       id: string;
       label: string;
       hint?: string;
+      hintKind?: "path" | "keys";
       keywords: string;
       icon: ComponentType<{ className?: string }>;
       command: ExplorerCommandId;
@@ -357,6 +364,7 @@ export function CommandBar() {
         id: "rename",
         label: t("commandBar.commands.rename"),
         hint: formatBinding(resolveBinding(shortcuts, "explorer.rename")),
+        hintKind: "keys",
         keywords: "rename",
         icon: Pencil,
         command: "rename",
@@ -365,6 +373,7 @@ export function CommandBar() {
         id: "delete",
         label: t("commandBar.commands.delete"),
         hint: formatBinding(resolveBinding(shortcuts, "explorer.trash")),
+        hintKind: "keys",
         keywords: "delete remove trash",
         icon: Trash2,
         command: "delete",
@@ -373,6 +382,7 @@ export function CommandBar() {
         id: "copy",
         label: t("commandBar.commands.copy"),
         hint: formatBinding(resolveBinding(shortcuts, "explorer.copy")),
+        hintKind: "keys",
         keywords: "copy",
         icon: Copy,
         command: "copy",
@@ -381,6 +391,7 @@ export function CommandBar() {
         id: "cut",
         label: t("commandBar.commands.cut"),
         hint: formatBinding(resolveBinding(shortcuts, "explorer.cut")),
+        hintKind: "keys",
         keywords: "cut move",
         icon: Scissors,
         command: "cut",
@@ -389,6 +400,7 @@ export function CommandBar() {
         id: "paste",
         label: t("commandBar.commands.paste"),
         hint: formatBinding(resolveBinding(shortcuts, "explorer.paste")),
+        hintKind: "keys",
         keywords: "paste",
         icon: Clipboard,
         command: "paste",
@@ -404,6 +416,7 @@ export function CommandBar() {
         id: "select-all",
         label: t("commandBar.commands.selectAll"),
         hint: formatBinding(resolveBinding(shortcuts, "explorer.selectAll")),
+        hintKind: "keys",
         keywords: "select all",
         icon: CircleCheck,
         command: "select-all",
@@ -440,6 +453,7 @@ export function CommandBar() {
         id: "open-terminal",
         label: t("commandBar.commands.openTerminal"),
         hint: formatBinding(resolveBinding(shortcuts, "explorer.openSystemTerminal")),
+        hintKind: "keys",
         keywords: "terminal shell console open external",
         icon: SquareTerminal,
         command: "open-terminal",
@@ -455,6 +469,7 @@ export function CommandBar() {
         id: "toggle-split",
         label: t("commandBar.commands.toggleSplitView"),
         hint: formatBinding(resolveBinding(shortcuts, "explorer.switchPane")),
+        hintKind: "keys",
         keywords: "split dual pane panel column view",
         icon: Columns3,
         command: "toggle-split",
@@ -467,6 +482,7 @@ export function CommandBar() {
           group: "files",
           label: entry.label,
           hint: entry.hint,
+          hintKind: entry.hintKind,
           keywords: entry.keywords,
           icon: entry.icon,
           run: () => dispatchExplorerCommand(entry.command),
@@ -614,6 +630,7 @@ export function CommandBar() {
         group: "view",
         label: t("commandBar.commands.openSettings"),
         hint: formatBinding(resolveBinding(shortcuts, "app.openSettings")),
+        hintKind: "keys",
         keywords: "settings preferences shortcuts keyboard terminal default file manager options",
         icon: Settings,
         run: () => setSettingsOpen(true),
@@ -667,6 +684,7 @@ export function CommandBar() {
       group: "path",
       label: t("commandBar.jumpToPath", { path: target }),
       hint: target,
+      hintKind: "path",
       icon: ArrowRight,
       run: () => {
         void (async () => {
@@ -707,6 +725,7 @@ export function CommandBar() {
         group: "search",
         label: entry.name,
         hint: entry.relativePath,
+        hintKind: "path",
         keywords: "file search",
         icon: entry.kind === "directory" ? Folder : File,
         run: () => openSearchEntry(entry),
@@ -820,7 +839,7 @@ export function CommandBar() {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogContent
-        className="top-[12%] w-full min-w-0 max-w-[min(40rem,calc(100%-2rem))] translate-y-0 gap-0 overflow-hidden rounded-xl border border-border bg-popover/95 p-0 shadow-ambient-lg backdrop-blur-2xl backdrop-saturate-150 duration-fast ease-standard data-open:slide-in-from-top-1 sm:max-w-[min(40rem,calc(100%-2rem))]"
+        className="top-[15%] w-[calc(100%-2rem)] max-w-command-bar translate-y-0 gap-0 overflow-hidden rounded-xl border border-border bg-popover p-0 shadow-ambient-lg"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{t("commandBar.title")}</DialogTitle>
@@ -833,7 +852,7 @@ export function CommandBar() {
             aria-expanded="true"
             aria-label={t("commandBar.inputAriaLabel")}
             autoComplete="off"
-            className="h-11 min-w-0 flex-1 bg-transparent text-lead tracking-[-0.006em] outline-none placeholder:text-muted-foreground"
+            className="h-12 min-w-0 flex-1 bg-transparent text-lead outline-none placeholder:text-muted-foreground"
             id="command-bar-input"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleInputKeyDown}
@@ -844,13 +863,15 @@ export function CommandBar() {
             type="text"
             value={query}
           />
-          <Kbd>
-            {formatBinding(resolveBinding(shortcuts, pathMode ? "app.pathJump" : "app.commandBar"))}
-          </Kbd>
+          <KbdShortcut
+            keys={formatBinding(
+              resolveBinding(shortcuts, pathMode ? "app.pathJump" : "app.commandBar"),
+            )}
+          />
         </div>
         <div
           aria-label={t("commandBar.resultsAriaLabel")}
-          className="max-h-[21rem] overflow-y-auto overscroll-contain p-1.5"
+          className="max-h-[21rem] overflow-y-auto overscroll-contain p-1"
           id="command-bar-results"
           ref={listRef}
           role="listbox"
@@ -859,8 +880,7 @@ export function CommandBar() {
             isSearchingFiles ? (
               <p className="px-2.5 py-6 text-center text-body text-muted-foreground">
                 {pathMode ? t("commandBar.searchingFolders") : t("commandBar.searchingFiles")}
-              </p>
-            ) : pathMode && !trimmedQuery ? (
+              </p>            ) : pathMode && !trimmedQuery ? (
               <p className="px-2.5 py-6 text-center text-body text-muted-foreground">
                 {t("commandBar.noPathLocations")}
               </p>
@@ -889,7 +909,7 @@ export function CommandBar() {
                         aria-hidden="true"
                         className={cn(
                           "flex h-full items-end px-2 pb-1 text-label text-muted-foreground uppercase select-none",
-                          row.separator && "border-t border-border/60",
+                          row.separator && "border-t border-border",
                         )}
                       >
                         {groupLabels[row.group]}
@@ -909,7 +929,7 @@ export function CommandBar() {
             </div>
           )}
         </div>
-        <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border bg-muted/30 px-3.5 text-micro text-muted-foreground select-none">
+        <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border bg-muted px-3.5 text-micro text-muted-foreground select-none">
           <span className="flex min-w-0 items-center gap-2.5">
             <span className="flex shrink-0 items-center gap-1.5">
               {isSearchingFiles && <LoaderCircle className="size-3 shrink-0 animate-spin" />}
@@ -966,10 +986,11 @@ function CommandResultRow({
     <button
       aria-selected={isActive}
       className={cn(
-        // Raycast row: 32px, filled selection, no leading tick — the palette,
-        // the sidebar and the file list all share one selection language.
-        "group/command-row flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left text-body transition-colors outline-none",
-        isActive ? "bg-selection text-foreground" : "hover:bg-accent/60",
+        // Palette row: 32px, quiet control radius, filled selection — the
+        // palette, the sidebar and the file list all share one selection
+        // language (a fill, never a leading tick).
+        "group/command-row flex h-8 w-full items-center gap-2.5 rounded-sm px-3 text-left text-body transition-colors duration-fast ease-standard outline-none",
+        isActive ? "bg-accent text-foreground" : "hover:bg-accent",
       )}
       data-command-index={dataIndex}
       id={`command-item-${dataIndex}`}
@@ -979,17 +1000,25 @@ function CommandResultRow({
       type="button"
     >
       <item.icon
-        className={cn("size-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground")}
+        className={cn(
+          "size-4 shrink-0",
+          isActive ? "text-foreground" : "text-muted-foreground",
+        )}
       />
       <HighlightedLabel label={item.label} matchedIndices={matchedIndices} />
-      {item.hint && (
-        <span
-          className="max-w-[45%] shrink-0 truncate text-caption text-muted-foreground"
-          title={item.hint}
-        >
-          {item.hint}
-        </span>
-      )}
+      {item.hint &&
+        (item.hintKind === "keys" ? (
+          <KbdShortcut className="ml-auto" keys={item.hint} />
+        ) : (
+          <span
+            className={cn(
+              "path-ellipsis ml-auto max-w-row-meta shrink-0 truncate text-caption text-muted-foreground",
+            )}
+            title={item.hint}
+          >
+            {item.hint}
+          </span>
+        ))}
     </button>
   );
 }

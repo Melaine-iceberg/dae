@@ -283,7 +283,7 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
 
       {error && (
         <div
-          className="animate-in fade-in-0 absolute top-full left-0 z-50 mt-1 flex w-80 items-start gap-2 rounded-lg bg-popover/90 p-3 text-caption text-popover-foreground shadow-ambient-lg ring-1 ring-border backdrop-blur-xl"
+          className="animate-in fade-in-0 absolute top-full left-0 z-50 mt-1 flex w-80 items-start gap-2 rounded-lg border border-border bg-popover p-3 text-caption text-popover-foreground shadow-ambient"
           role="alert"
         >
           <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
@@ -395,7 +395,7 @@ function CreateBranchDialog({
             {t("git.switchAfterCreate")}
           </label>
           <DialogFooter>
-            <Button disabled={isSubmitting} onClick={onClose} type="button" variant="outline">
+            <Button disabled={isSubmitting} onClick={onClose} type="button" variant="ghost">
               {t("actions.cancel")}
             </Button>
             <Button disabled={isSubmitting || !name.trim()} type="submit">

@@ -191,7 +191,7 @@ export function ExplorerPathBar({
         // `select-text` restores text selection inside the bar, which the
         // shared trigger class turns off. `tabIndex` makes the bar itself
         // focusable so a menu action can keep the caret here.
-        className="flex h-7 min-w-0 flex-1 select-text items-center rounded-md bg-muted/60 px-2.5 transition-colors hover:bg-muted dark:bg-muted/40 dark:hover:bg-muted/60"
+        className="flex h-7 min-w-0 flex-1 select-text items-center rounded-md border border-border bg-card px-2.5 transition-[background-color,border-color] duration-fast ease-standard hover:border-input"
         data-tauri-drag-region="false"
         onClick={startEditing}
         ref={pathBarRef}
@@ -206,7 +206,7 @@ export function ExplorerPathBar({
         // freshly mounted editor to keep it, and the other items keep it on
         // the bar (see `focusPathBar`) rather than on an unrelated field.
         finalFocus={false}
-        className="min-w-44"
+        className="min-w-menu"
       >
         <ContextMenuGroup>
           <ContextMenuItem onClick={copyPath}>
