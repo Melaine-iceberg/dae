@@ -600,9 +600,18 @@ fn parse_mp4(file: &mut File, file_size: u64) -> Result<MediaPreview, FileSystem
     Ok(preview)
 }
 
-/// Scans the last 32MB of the file for an appended `moov` box. The window
-/// covers long fragmented recordings (the box grows with fragment count)
-/// while keeping the probe bounded to one read regardless of file size.
+/// Tail of the file to search first, and the bound for the fallback.
+///
+/// `moov` sits at the very end of a non-faststart file, so a small window answers
+/// almost every probe: 64 KiB read instead of 32 MiB. That matters because the
+/// preview panel probes on every selection change and cannot cancel the backend
+/// work it started (`entry-preview.tsx`), so arrow-keying down a folder of
+/// recordings fires one probe per keystroke. Only fragmented recordings — whose
+/// `moov` grows with the fragment count — need the fallback window.
+const SMALL_TAIL_WINDOW: u64 = 64 * 1024;
+const FULL_TAIL_WINDOW: u64 = 32 * 1024 * 1024;
+
+/// Scans the tail of the file for an appended `moov` box.
 #[allow(clippy::too_many_arguments)]
 fn parse_mp4_tail(
     file: &mut File,
@@ -613,8 +622,50 @@ fn parse_mp4_tail(
     height: &mut Option<u32>,
     tags: &mut Vec<(String, String)>,
 ) -> Result<(), FileSystemError> {
-    const TAIL_WINDOW: u64 = 32 * 1024 * 1024;
-    let window_start = file_size.saturating_sub(TAIL_WINDOW);
+    // The small window is a subset of the full one, so trying it first cannot
+    // miss a `moov` — it only saves the 32 MiB read for the files that do not
+    // need it.
+    let found = scan_mp4_tail(
+        file,
+        file_size,
+        SMALL_TAIL_WINDOW,
+        timescale,
+        duration_units,
+        width,
+        height,
+        tags,
+    )?;
+    if found {
+        return Ok(());
+    }
+
+    scan_mp4_tail(
+        file,
+        file_size,
+        FULL_TAIL_WINDOW,
+        timescale,
+        duration_units,
+        width,
+        height,
+        tags,
+    )?;
+    Ok(())
+}
+
+/// Scans the last `window_size` bytes for an appended `moov` box. `true` when one
+/// was walked far enough to yield a timescale.
+#[allow(clippy::too_many_arguments)]
+fn scan_mp4_tail(
+    file: &mut File,
+    file_size: u64,
+    window_size: u64,
+    timescale: &mut Option<u32>,
+    duration_units: &mut Option<u64>,
+    width: &mut Option<u32>,
+    height: &mut Option<u32>,
+    tags: &mut Vec<(String, String)>,
+) -> Result<bool, FileSystemError> {
+    let window_start = file_size.saturating_sub(window_size);
     let mut window = vec![0u8; (file_size - window_start) as usize];
     read_exact_at(file, window_start, &mut window)?;
 
@@ -646,13 +697,14 @@ fn parse_mp4_tail(
                     tags,
                 )?;
                 if timescale.is_some() {
-                    return Ok(());
+                    return Ok(true);
                 }
             }
         }
         search_from = type_pos + 4;
     }
-    Ok(())
+
+    Ok(false)
 }
 
 /// Reads an ISO-BMFF box header at `offset`; returns `(type, payload_start,
@@ -1109,7 +1161,7 @@ fn parse_avi(file: &mut File, file_size: u64) -> Result<MediaPreview, FileSystem
 
 #[cfg(test)]
 mod tests {
-    use super::{read_media_preview_sync, read_vint, syncsafe, tag_label};
+    use super::{MediaPreview, read_media_preview_sync, read_vint, syncsafe, tag_label};
 
     #[test]
     fn syncsafe_decodes_id3_sizes() {
@@ -1134,6 +1186,68 @@ mod tests {
         assert_eq!(tag_label("\u{a9}ART"), Some("Artist"));
         assert_eq!(tag_label("ALBUM"), Some("Album"));
         assert_eq!(tag_label("xxxx"), None);
+    }
+
+    /// 一个 ISO-BMFF box：32 位尺寸 + 4CC + 负载。
+    fn mp4_box(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(8 + payload.len());
+        bytes.extend_from_slice(&((8 + payload.len()) as u32).to_be_bytes());
+        bytes.extend_from_slice(kind);
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+
+    /// 只带一个 `mvhd` 的 `moov`，也就是 `walk_mp4_moov` 推出 timescale 所需的全部。
+    /// `padding` 用来把 `moov` 的 4CC 推离文件末尾。
+    fn moov_with_timescale(timescale: u32, duration: u32, padding: usize) -> Vec<u8> {
+        // version+flags、creation、modification 共 12 字节：走 mvhd 的 version-0 分支，
+        // timescale 在负载偏移 12、duration 在 16。
+        let mut mvhd = vec![0u8; 12];
+        mvhd.extend_from_slice(&timescale.to_be_bytes());
+        mvhd.extend_from_slice(&duration.to_be_bytes());
+        mvhd.extend(std::iter::repeat_n(0u8, padding));
+
+        mp4_box(b"moov", &mp4_box(b"mvhd", &mvhd))
+    }
+
+    /// `ftyp` + `mdat` + `moov` 的合成片段，写进临时文件并返回解析结果。
+    ///
+    /// `mdat` 在 `moov` 之前是关键：只有在媒体数据先出现时，解析器才会跳过
+    /// 正向 box 遍历、改走尾部探查（这也是非 faststart 文件的真实布局）。
+    fn parse_synthetic_mp4(name: &str, moov: Vec<u8>) -> MediaPreview {
+        let mut bytes = mp4_box(b"ftyp", b"isom\x00\x00\x02\x00iso2mp41");
+        bytes.extend_from_slice(&mp4_box(b"mdat", &vec![0u8; 64 * 1024]));
+        bytes.extend_from_slice(&moov);
+
+        let path =
+            std::env::temp_dir().join(format!("dae-media-meta-{name}-{}.mp4", std::process::id()));
+        std::fs::write(&path, &bytes).expect("temp dir is writable");
+
+        let preview =
+            read_media_preview_sync(&path.to_string_lossy()).expect("synthetic mp4 parses");
+        let _ = std::fs::remove_file(&path);
+        preview
+    }
+
+    /// 常见情形：`moov` 就在末尾，小的尾部窗口（64 KiB）就能命中。
+    #[test]
+    fn finds_a_trailing_moov_inside_the_small_tail_window() {
+        let preview = parse_synthetic_mp4("small-moov", moov_with_timescale(1000, 2500, 0));
+
+        assert_eq!(preview.duration_ms, Some(2500));
+    }
+
+    /// 关键回归守卫：`moov` 自身比小窗口还大时，它的 4CC 落在文件末尾 64 KiB
+    /// **之外**，只有回退的完整窗口能找到。两段式探查若把回退写错，这里会失败。
+    #[test]
+    fn falls_back_to_the_full_window_for_a_moov_larger_than_the_small_one() {
+        let preview = parse_synthetic_mp4("huge-moov", moov_with_timescale(1000, 4000, 512 * 1024));
+
+        assert_eq!(
+            preview.duration_ms,
+            Some(4000),
+            "a moov beyond the small window still has to be found"
+        );
     }
 
     #[test]

@@ -11,7 +11,6 @@
 //! warming them here would spend startup time (the WSL probe spawns
 //! `wsl.exe`) on data that is usually never shown.
 
-use std::collections::HashMap;
 use std::sync::Mutex;
 
 use tauri::Manager;
@@ -19,12 +18,9 @@ use tauri::Manager;
 use super::recents::{self, RecentItem};
 use super::sidebar::{self, Favorite, SystemPlace};
 use super::spaces::{self, Space};
-use super::types::{DirectoryView, path_to_string};
-use super::vfs;
 
 #[derive(Default)]
 pub struct StartupPrefetch {
-    directories: Mutex<HashMap<String, DirectoryView>>,
     system_places: Mutex<Option<Vec<SystemPlace>>>,
     favorites: Mutex<Option<Vec<Favorite>>>,
     recents: Mutex<Option<Vec<RecentItem>>>,
@@ -42,10 +38,6 @@ fn store<T>(slot: &Mutex<Option<T>>, value: T) {
 }
 
 impl StartupPrefetch {
-    pub fn take_directory(&self, requested_path: &str) -> Option<DirectoryView> {
-        self.directories.lock().ok()?.remove(requested_path)
-    }
-
     pub fn take_system_places(&self) -> Option<Vec<SystemPlace>> {
         take(&self.system_places)
     }
@@ -64,25 +56,11 @@ impl StartupPrefetch {
 }
 
 /// Answers the startup surface's queries on a background thread while the
-/// webview loads. A plain thread, not the async runtime: `vfs::resolve` may
-/// block on opening a network session.
+/// webview loads. A plain thread, not the async runtime: `get_system_places`
+/// asks the OS for its volumes, which blocks on a dead mapped drive.
 pub fn warm_startup_data(app: &tauri::AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
-        // Not on the startup path, but the first folder tab (e.g. via the
-        // Home quick-access tile) calls `initialize()` which reads the home
-        // directory. The cache key must match the exact string
-        // `get_home_directory` returns, which is what the frontend requests.
-        if let Ok(home) = app.path().home_dir() {
-            let requested = path_to_string(&home);
-            let view = vfs::resolve(&requested).and_then(|backend| backend.read_dir(&requested));
-            if let (Ok(view), Ok(mut directories)) =
-                (view, app.state::<StartupPrefetch>().directories.lock())
-            {
-                directories.insert(requested, view);
-            }
-        }
-
         let state = app.state::<StartupPrefetch>();
 
         // The overview and sidebar first-frame queries. Fallible reads stay

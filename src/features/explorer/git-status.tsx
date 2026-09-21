@@ -17,17 +17,36 @@ export interface ExplorerGitStatus {
 export const GIT_STATUS_QUERY_KEY = "git-status";
 
 /**
- * 当前目录的 Git 装饰信息。状态由 git2 在后端阻塞线程计算并按路径缓存；
- * 目录变更事件与窗口聚焦会触发重新拉取，保证徽标始终新鲜且不阻塞 UI。
+ * 目录变更事件合并到这个间隔再拉取。
+ *
+ * 后端每个变更推一次事件，而一次构建、一次下载、一次 checkout 会推出成百上千
+ * 个——每个都拉一次就是「每个事件一次全工作区 git2 状态扫描」，跟列举抢同一块
+ * 磁盘。与 explorer 自身的刷新（`DIRECTORY_REFRESH_DELAY_MS`）同样的做法，只是
+ * 这里的单次代价高得多，所以窗口也宽得多。`placeholderData` 会在等待期间继续
+ * 显示上一次的徽标，所以合并不会让徽标闪烁。
+ */
+const GIT_STATUS_REFRESH_DELAY_MS = 400;
+
+/**
+ * 当前目录的 Git 装饰信息。状态由 git2 在后端阻塞线程计算；目录变更事件与
+ * 窗口聚焦会触发重新拉取（合并后），保证徽标始终新鲜且不阻塞 UI。
  */
 export function useGitStatus(directoryPath: string | null): ExplorerGitStatus | null {
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    let refreshTimeout: number | undefined;
+
     const unlistenPromise = events.explorerDirectoryChanged.listen(() => {
-      void queryClient.invalidateQueries({ queryKey: [GIT_STATUS_QUERY_KEY] });
+      window.clearTimeout(refreshTimeout);
+      refreshTimeout = window.setTimeout(() => {
+        refreshTimeout = undefined;
+        void queryClient.invalidateQueries({ queryKey: [GIT_STATUS_QUERY_KEY] });
+      }, GIT_STATUS_REFRESH_DELAY_MS);
     });
+
     return () => {
+      window.clearTimeout(refreshTimeout);
       void unlistenPromise.then((unlisten) => unlisten());
     };
   }, [queryClient]);

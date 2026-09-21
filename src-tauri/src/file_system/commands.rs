@@ -113,20 +113,12 @@ async fn read_directory_into(
     app: tauri::AppHandle,
     sink: listing::BatchSink,
 ) -> Result<DirectoryView, FileSystemError> {
-    // A prefetched snapshot (see `prefetch::warm_startup_data`) is consumed
-    // on first hit; every later read goes back to the filesystem.
-    //
-    // A watching read never takes the snapshot: it is the one that paints a
-    // pane, and it has to be ordered against its own watcher. The snapshot was
-    // read before the window existed and can be seconds stale by the time it
-    // is displayed, with no watcher armed in between to notice.
-    if !watch
-        && let Some(view) = app
-            .state::<super::prefetch::StartupPrefetch>()
-            .take_directory(&path)
-    {
-        return Ok(view);
-    }
+    // 这里原先会消费 `prefetch::warm_startup_data` 预读的目录快照，但那条路径
+    // 从来没有生效过：唯一会被预读的是 home 目录，而它只由 `initialize()` 读取，
+    // 且带着 `watch: true`（`navigation.ts`）——带 watch 的读**故意不接受**快照
+    // （快照在窗口存在之前就读好了，可能已经陈旧，中间又没有 watcher 兜底）。
+    // 于是那次预读只是和真正的首读抢磁盘与分配器，现已删掉（连同这条分支）。
+    // 若将来要让首屏用上预热，正确做法是让快照能被接受**并**在它之上挂 watcher。
 
     // Remote backends enumerate through their own protocol APIs and have no
     // iterator to hand over, so they keep answering in one piece. Their

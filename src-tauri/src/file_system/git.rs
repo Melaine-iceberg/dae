@@ -56,6 +56,13 @@ fn git_status(dir: &str) -> Result<Option<GitDirectoryStatus>, FileSystemError> 
     // 裸仓库没有工作区可供装饰。
     let workdir = path_to_string(repo.workdir().expect("workdir verified above"));
 
+    // 目录不在工作区内时直接返回。原先这一步在 `statuses` 之后，等于先付一次
+    // 全工作区扫描再把结果丢掉；软链接与 junction 都可能让路径落到工作区外。
+    let Some(relative_segments) = relative_segments(&workdir, dir) else {
+        return Ok(None);
+    };
+    let depth = relative_segments.len();
+
     let branch = branch_name(&repo);
 
     let mut options = StatusOptions::new();
@@ -63,14 +70,17 @@ fn git_status(dir: &str) -> Result<Option<GitDirectoryStatus>, FileSystemError> 
         .include_untracked(true)
         .recurse_untracked_dirs(false)
         .include_ignored(false);
+
+    // 注意：这里**不能**用 `options.pathspec(..)` 把扫描限制到当前目录。
+    // 试过，被现有的 `untracked_subdirectory_aggregates_on_parent_and_resolves_inside`
+    // 当场拦下：pathspec 会让 libgit2 从该目录内部起步，未跟踪目录不再被折叠成
+    // 一条记录而是展开成子项，`directory_untracked` 因此变 false，前端「整个目录
+    // 未跟踪则所有子项标 U」的契约就破了。要拿这个收益得先决定那个契约怎么改。
+    // （另：真要用 pathspec，字面路径要用 `disable_pathspec_match(true)` 选项，见
+    // git2 `StatusOptions::pathspec` 的文档，而不是 `:(literal)` 字符串前缀。）
     let statuses = repo
         .statuses(Some(&mut options))
         .map_err(|error| FileSystemError::Internal(error.to_string()))?;
-
-    let Some(relative_segments) = relative_segments(&workdir, dir) else {
-        return Ok(None);
-    };
-    let depth = relative_segments.len();
 
     // 聚合当前目录直接子项的状态：文件取自身状态，目录取后代状态中
     // 优先级最高者（M > A > U）。

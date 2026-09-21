@@ -129,6 +129,9 @@ const NO_ENTRIES: DirectoryEntry[] = [];
 /** Same deal for unloaded favorites: a fresh `[]` per render would change
  *  identity every time and break memoization downstream. */
 const NO_FAVORITES: Favorite[] = [];
+/** And for the name list the bulk-rename dialog reads, which is only worth
+ *  collecting while that dialog is open. */
+const NO_NAMES: string[] = [];
 const appWindow = getAppWindow();
 
 interface ExplorerViewProps {
@@ -253,11 +256,30 @@ export function ExplorerView({
     foldersFirst,
   );
   const selectedPathSet = useMemo(() => new Set(selectedPaths), [selectedPaths]);
+  // Latest selection, for the prune effect further down to read without making
+  // the selection one of its dependencies: a marquee drag rewrites the selection
+  // on every pointer move (`marquee.tsx`), and a full-listing scan per move is
+  // exactly what the effect's current shape exists to avoid.
+  //
+  // Synced in an effect rather than during render. A render-phase ref write is an
+  // error to React Compiler's validator — verified by injecting one into a
+  // component that compiles, which drops it from compilation — so writing it
+  // during render would keep this component out of the compiler pass even after
+  // its other bailouts are fixed. Declared *before* the prune effect, so the ref
+  // is already current when that one runs in the same commit.
+  const selectedPathsRef = useRef(selectedPaths);
+  useEffect(() => {
+    selectedPathsRef.current = selectedPaths;
+  }, [selectedPaths]);
   // Materialised for the selection only: the scan runs over paths, so rows that
-  // are not selected are never built.
+  // are not selected are never built. Nothing selected is the common case, and
+  // it is worth stating explicitly — the scan walks the whole listing either way.
   const selectedEntries = useMemo(
-    () => entriesWhere(displayedListing, (path) => selectedPathSet.has(path)),
-    [displayedListing, selectedPathSet],
+    () =>
+      selectedPaths.length === 0
+        ? NO_ENTRIES
+        : entriesWhere(displayedListing, (path) => selectedPathSet.has(path)),
+    [displayedListing, selectedPathSet, selectedPaths.length],
   );
 
   useEffect(() => {
@@ -285,6 +307,14 @@ export function ExplorerView({
   }, [directoryPath, search.query]);
 
   useEffect(() => {
+    // With nothing selected there is nothing to prune, and building the
+    // available-path set would walk the whole listing to filter an empty array.
+    // This runs on every streamed batch, so on a large directory it is the
+    // difference between a scan per batch and none.
+    if (selectedPathsRef.current.length === 0) {
+      return;
+    }
+
     const availablePaths = new Set(allPaths(displayedListing));
     setSelectedPaths((paths) => {
       const availableSelection = paths.filter((path) => availablePaths.has(path));
@@ -1651,7 +1681,7 @@ export function ExplorerView({
       <BulkRenameDialog
         applyError={bulkRenameError}
         entries={selectedEntries}
-        existingNames={allNames(displayedListing)}
+        existingNames={bulkRenameOpen ? allNames(displayedListing) : NO_NAMES}
         isPending={isOperationPending}
         onApply={applyBulkRename}
         onClose={() => {

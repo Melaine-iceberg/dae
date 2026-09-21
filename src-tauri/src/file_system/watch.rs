@@ -17,7 +17,20 @@ use std::time::Duration;
 use tauri::Manager;
 use tauri_specta::Event;
 
+/// How long to wait between polls of a remote directory, and the ceiling that
+/// wait backs off to while nothing changes.
+///
+/// A *change* resets the wait to the base, so a folder someone is working in
+/// stays exactly as fresh as it is today. An idle folder converges on the
+/// ceiling instead of re-enumerating forever: one enumeration of a large share
+/// can take longer than the base interval, in which case the poller never stops
+/// working and competes with transfers on the same session.
+///
+/// The price is staleness on an idle directory — up to `POLL_INTERVAL_MAX` before
+/// a change made elsewhere shows up (4s while anything is happening, and a local
+/// directory is watched by the OS and unaffected).
 const POLL_INTERVAL: Duration = Duration::from_secs(4);
+const POLL_INTERVAL_MAX: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
 #[tauri_specta(event_name = "explorer-directory-changed")]
@@ -129,9 +142,10 @@ pub fn spawn_polling_watcher(
             // session went away between the two calls. Nothing to watch.
             Err(_) => return,
         };
+        let mut interval = POLL_INTERVAL;
 
         loop {
-            thread::sleep(POLL_INTERVAL);
+            thread::sleep(interval);
 
             if stop_flag.load(AtomicOrdering::Relaxed) {
                 return;
@@ -140,17 +154,43 @@ pub fn spawn_polling_watcher(
             match backend.read_dir(&path) {
                 Ok(view) => {
                     let current = fingerprint(&view);
-                    if current != snapshot {
-                        snapshot = current;
-                        let _ = DirectoryChanged(view.path.clone()).emit(&app);
+                    let changed = current != snapshot;
+                    interval = next_poll_interval(interval, changed);
+                    if !changed {
+                        // Nothing new here, so ask again later rather than
+                        // spending a full enumeration on an idle directory.
+                        continue;
                     }
+
+                    snapshot = current;
+                    // Something is happening, so go back to watching closely.
+                    let _ = DirectoryChanged(view.path.clone()).emit(&app);
                 }
+                // A transient read error skips a tick instead of killing the
+                // poller, so a briefly unreachable server does not blind the
+                // explorer permanently. The interval is deliberately *not*
+                // grown here: an unreachable server answers with an error
+                // immediately, so retrying is cheap, unlike a successful
+                // enumeration of a large share.
                 Err(_) => continue,
             }
         }
     });
 
     WatchHandle::Poll(stop)
+}
+
+/// The wait before the next poll, given what the last one found.
+///
+/// Extracted so the policy is one testable expression rather than being spread
+/// through the loop: a change goes back to the base interval, an unchanged poll
+/// backs off towards the ceiling.
+fn next_poll_interval(current: Duration, changed: bool) -> Duration {
+    if changed {
+        POLL_INTERVAL
+    } else {
+        (current * 2).min(POLL_INTERVAL_MAX)
+    }
 }
 
 /// Folds the snapshot into a 64-bit hash instead of building one formatted
@@ -169,4 +209,81 @@ fn fingerprint(view: &DirectoryView) -> u64 {
         entry.modified_at.hash(&mut hasher);
     }
     hasher.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::file_system::types::{DirectoryEntry, EntryKind};
+
+    fn entry(name: &str) -> DirectoryEntry {
+        DirectoryEntry {
+            name: name.to_owned(),
+            path: format!("remote:/dir/{name}"),
+            kind: EntryKind::File,
+            modified_at: Some(1),
+            size: Some(10),
+            hidden: false,
+            read_only: false,
+        }
+    }
+
+    fn view(entries: Vec<DirectoryEntry>) -> DirectoryView {
+        DirectoryView {
+            path: "remote:/dir".to_owned(),
+            breadcrumbs: Vec::new(),
+            entries,
+            stream_id: None,
+        }
+    }
+
+    #[test]
+    fn backs_off_while_nothing_changes_and_resets_on_a_change() {
+        // An idle directory climbs towards the ceiling and then stays there
+        // rather than doubling without bound.
+        let mut interval = POLL_INTERVAL;
+        for _ in 0..12 {
+            interval = next_poll_interval(interval, false);
+        }
+        assert_eq!(interval, POLL_INTERVAL_MAX);
+
+        // Any change goes straight back to the base interval, so a directory
+        // someone is working in stays as fresh as it was before the backoff.
+        assert_eq!(next_poll_interval(interval, true), POLL_INTERVAL);
+        assert_eq!(next_poll_interval(POLL_INTERVAL, true), POLL_INTERVAL);
+    }
+
+    /// The fingerprint is the poller's only comparison, so a field missing from
+    /// it is a class of change that is never noticed — the poller would sit
+    /// there reporting "unchanged" forever. Each assertion below is one field.
+    #[test]
+    fn fingerprint_notices_every_field_it_folds_in() {
+        let base = fingerprint(&view(vec![entry("a.txt")]));
+
+        let mut renamed = entry("a.txt");
+        renamed.name = "b.txt".to_owned();
+        assert_ne!(base, fingerprint(&view(vec![renamed])), "name");
+
+        let mut resized = entry("a.txt");
+        resized.size = Some(11);
+        assert_ne!(base, fingerprint(&view(vec![resized])), "size");
+
+        let mut touched = entry("a.txt");
+        touched.modified_at = Some(2);
+        assert_ne!(base, fingerprint(&view(vec![touched])), "modified_at");
+
+        let mut retyped = entry("a.txt");
+        retyped.kind = EntryKind::Directory;
+        assert_ne!(base, fingerprint(&view(vec![retyped])), "kind");
+
+        assert_ne!(
+            base,
+            fingerprint(&view(vec![entry("a.txt"), entry("c.txt")])),
+            "the entry count, so an add or a remove is noticed"
+        );
+
+        // Identical content has to fingerprint identically, or every single poll
+        // would report a change and the explorer would re-read continuously.
+        assert_eq!(base, fingerprint(&view(vec![entry("a.txt")])));
+    }
 }

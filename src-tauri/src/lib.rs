@@ -127,6 +127,7 @@ pub fn run() {
         .manage(file_system::DirectoryWatcher::default())
         .manage(file_system::listing::DirectoryListingState::default())
         .manage(file_system::prefetch::StartupPrefetch::default())
+        .manage(file_system::recents::RecentsState::default())
         .manage(file_system::FileSearchState::default())
         .manage(file_system::UndoRedoState::default())
         .manage(file_system::directory_size::DirectorySizeState::default())
