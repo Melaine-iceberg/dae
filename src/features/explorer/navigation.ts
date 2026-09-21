@@ -1,14 +1,30 @@
 import { commands } from "@/bindings";
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
 
-import { isSameListing, openDirectoryListing, type DirectoryListing } from "./directory-listing";
-import type { Breadcrumb, DirectoryEntry, DirectoryView, FileSystemError } from "./types";
+import { isSameListing, openPacketDirectoryListing, type DirectoryListing } from "./directory-listing";
+import { listingViewOf, type ListingView } from "./listing-view";
+import type { Breadcrumb, DirectoryView, FileSystemError } from "./types";
 
 export type ExplorerStatus = "idle" | "loading" | "ready" | "error";
 
 export interface ExplorerState {
   status: ExplorerStatus;
+  /**
+   * The directory's metadata and its first batch. `entries` here is the head
+   * only once a listing streams — `listing` is what holds the whole thing, and
+   * it is what every consumer of the entries reads.
+   */
   directory: DirectoryView | null;
+  /**
+   * The readable listing behind `directory`.
+   *
+   * Not part of `ExplorerNavigatorSnapshot`, and deliberately so: it is either
+   * an array of objects or a set of packed buffers, and a tab handoff goes
+   * through `JSON.stringify`. A restored pane therefore starts without one and
+   * re-reads (see `restoreSnapshot`), which is also what the snapshot did
+   * before for a listing that had only partly streamed.
+   */
+  listing: ListingView | null;
   pendingPath: string | null;
   error: FileSystemError | null;
   history: string[];
@@ -21,6 +37,12 @@ export interface ExplorerNavigatorSnapshot {
   scrollOffsets: [string, number][];
 }
 
+/** One completed read: the backend's view, and the listing that reads it. */
+interface ReadListing {
+  directory: DirectoryView;
+  listing: ListingView;
+}
+
 export type ExplorerListener = () => void;
 
 type NavigationMode = { type: "push" } | { type: "replace" } | { type: "history"; index: number };
@@ -28,6 +50,7 @@ type NavigationMode = { type: "push" } | { type: "replace" } | { type: "history"
 const initialState: ExplorerState = {
   status: "idle",
   directory: null,
+  listing: null,
   pendingPath: null,
   error: null,
   history: [],
@@ -64,10 +87,16 @@ export class ExplorerNavigator {
     this.scrollOffsets.set(path, offset);
   }
 
-  /** Captures the complete navigation model without its non-serializable listeners. */
+  /**
+   * Captures the complete navigation model without its non-serializable
+   * listeners — and without its listing, which is either a set of packet
+   * buffers or a row cache. The destination re-reads instead (see
+   * `restoreSnapshot`). Carrying a listing across was never lossless anyway: a
+   * snapshot taken mid-stream only ever held the batches that had arrived.
+   */
   createSnapshot(): ExplorerNavigatorSnapshot {
     return {
-      state: this.state,
+      state: { ...this.state, listing: null },
       scrollOffsets: [...this.scrollOffsets],
     };
   }
@@ -79,11 +108,18 @@ export class ExplorerNavigator {
     snapshot.scrollOffsets.forEach(([path, offset]) => this.scrollOffsets.set(path, offset));
 
     const pendingPath = snapshot.state.status === "loading" ? snapshot.state.pendingPath : null;
+    // A snapshot never carries a listing (see `createSnapshot`), so a directory
+    // that arrives with one is shown as its head and re-read to completion
+    // below instead of being trusted as complete.
+    const carried = snapshot.state.directory;
+    const staleListing = carried !== null && snapshot.state.status === "ready";
+
     const restoredState: ExplorerState =
       snapshot.state.status === "loading"
-        ? snapshot.state.directory
+        ? carried
           ? {
               ...snapshot.state,
+              listing: null,
               status: "ready",
               pendingPath: null,
               error: null,
@@ -93,14 +129,19 @@ export class ExplorerNavigator {
               history: snapshot.state.history,
               historyIndex: snapshot.state.historyIndex,
             }
-        : snapshot.state;
+        : { ...snapshot.state, listing: null };
 
     this.setState(restoredState);
 
     // A navigation request in the source webview cannot continue after the
     // handoff. Resume it here instead of leaving the destination permanently
     // in a loading state.
-    if (pendingPath) void this.navigate(pendingPath);
+    if (pendingPath) {
+      void this.navigate(pendingPath);
+    } else if (staleListing) {
+      // The pane paints the head it was handed and fills in behind it.
+      void this.refresh(carried.path);
+    }
   }
 
   subscribe = (listener: ExplorerListener): (() => void) => {
@@ -156,13 +197,13 @@ export class ExplorerNavigator {
     const requestVersion = ++this.requestVersion;
 
     try {
-      const directory = await this.readListing(path, requestVersion, {
+      const read = await this.readListing(path, requestVersion, {
         settle: true,
         watch: false,
       });
 
       if (
-        directory === null ||
+        read === null ||
         requestVersion !== this.requestVersion ||
         this.state.directory?.path !== path
       ) {
@@ -171,19 +212,25 @@ export class ExplorerNavigator {
 
       const displayed = this.state.directory;
 
-      if (isSameListing(displayed.entries, directory.entries)) {
+      // A restored pane has no listing of its own (see `ExplorerState`), so the
+      // head it carries stands in for one. That comparison is the conservative
+      // direction: a head against a complete listing reads as changed.
+      const previous = this.state.listing ?? listingViewOf(displayed.entries);
+
+      if (isSameListing(previous, read.listing)) {
         return displayed;
       }
 
       this.setState({
         ...this.state,
         status: "ready",
-        directory,
+        directory: read.directory,
+        listing: read.listing,
         pendingPath: null,
         error: null,
       });
 
-      return directory;
+      return read.directory;
     } catch (error) {
       if (requestVersion === this.requestVersion && this.state.directory?.path === path) {
         this.setState({
@@ -203,19 +250,20 @@ export class ExplorerNavigator {
     this.setState({ ...this.state, status: "loading", pendingPath: path, error: null });
 
     try {
-      const directory = await this.readListing(path, requestVersion, {
+      const read = await this.readListing(path, requestVersion, {
         settle: false,
         watch: true,
       });
 
-      if (directory === null || requestVersion !== this.requestVersion) {
+      if (read === null || requestVersion !== this.requestVersion) {
         return undefined;
       }
 
-      const history = this.updateHistory(directory.path, mode);
+      const history = this.updateHistory(read.directory.path, mode);
       this.setState({
         status: "ready",
-        directory,
+        directory: read.directory,
+        listing: read.listing,
         pendingPath: null,
         error: null,
         ...history,
@@ -223,9 +271,9 @@ export class ExplorerNavigator {
 
       // Every successful navigation counts as a directory visit, so the
       // workspace Recents surface reflects where the user actually went.
-      recordRecentItem(directory.path, "directory", "visited");
+      recordRecentItem(read.directory.path, "directory", "visited");
 
-      return directory;
+      return read.directory;
     } catch (error) {
       if (requestVersion === this.requestVersion) {
         this.setState({
@@ -264,14 +312,14 @@ export class ExplorerNavigator {
     path: string,
     requestVersion: number,
     options: { settle: boolean; watch: boolean },
-  ): Promise<DirectoryView | null> {
+  ): Promise<ReadListing | null> {
     this.cancelListing();
 
     // The head is kept here rather than read back from the state: a batch can
     // beat `load`/`refresh` to the state update, and it still has to render
     // against its own head.
     let head: DirectoryView | null = null;
-    let entries: DirectoryEntry[] | null = null;
+    let listing: ListingView | null = null;
     let resolveSettled: (() => void) | null = null;
     const settled = options.settle
       ? new Promise<void>((resolve) => {
@@ -279,16 +327,19 @@ export class ExplorerNavigator {
         })
       : null;
 
-    const listing = openDirectoryListing(
+    // One opener for both transports: the batches that follow the head arrive
+    // as columnar packets, the head itself as the JSON view the rest of the app
+    // already reads.
+    const stream = openPacketDirectoryListing(
       path,
       {
         onHead: (view) => {
           head = view;
         },
-        onEntries: (latest) => {
-          entries = latest;
+        onListing: (latest) => {
+          listing = latest;
           if (options.settle || requestVersion !== this.requestVersion || !head) return;
-          this.setState({ ...this.state, directory: { ...head, entries: latest } });
+          this.setState({ ...this.state, directory: head, listing: latest });
         },
         onDone: () => resolveSettled?.(),
       },
@@ -296,23 +347,23 @@ export class ExplorerNavigator {
       options.watch,
     );
 
-    this.listing = listing;
+    this.listing = stream;
     // A settling read that is superseded has to stop waiting; the caller
     // discards its result through the request version either way.
     this.cancelSettle = () => resolveSettled?.();
 
-    return listing.head.then(async (view) => {
+    return stream.head.then(async (view) => {
       if (settled === null) {
         // Whatever was published while the head was in flight rides along, so
         // the caller's state update cannot drop it.
-        return { ...view, entries: entries ?? view.entries };
+        return { directory: view, listing: listing ?? listingViewOf(view.entries) };
       }
 
       await settled;
       if (requestVersion !== this.requestVersion) {
         return null;
       }
-      return entries === null ? null : { ...view, entries };
+      return listing === null ? null : { directory: view, listing };
     });
   }
 
@@ -407,6 +458,7 @@ export function createFolderNavigationSnapshot(path: string): {
       state: {
         status: "loading",
         directory: null,
+        listing: null,
         pendingPath: path,
         error: null,
         history: [path],

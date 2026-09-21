@@ -24,7 +24,7 @@ function themeBootStyles() {
     transformIndexHtml: {
       order: "pre" as const,
       handler(html: string) {
-        const css = readFileSync(path.resolve(__dirname, "src/App.css"), "utf8");
+        const css = readFileSync(path.resolve(import.meta.dirname, "src/App.css"), "utf8");
 
         /** The body of the first `selector { … }` block, up to a closing brace
          *  in column 0. Anchoring on the line start keeps `.dark {` from
@@ -74,7 +74,7 @@ export default defineConfig(async ({ command }) => ({
   ],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
 

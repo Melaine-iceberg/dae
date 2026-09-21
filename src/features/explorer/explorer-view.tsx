@@ -96,14 +96,15 @@ import {
 import { FileList, FileListSkeleton } from "./file-list";
 import { FilterMenu } from "./filter-menu";
 import { useGitStatus } from "./git-status";
+import { allNames, allPaths, entriesWhere, listingViewOf } from "./listing-view";
 import type { ExplorerNavigator } from "./navigation";
 import { OpenWithDialog } from "./open-with-dialog";
-import { useSortedEntries } from "./sorted-entries";
+import { useSortedListingView } from "./sorted-entries";
 import { TransferConflictDialog } from "./transfer-conflict-dialog";
 import {
   applyEntryFilters,
   entryFiltersAtom,
-  filterHiddenEntries,
+  filterHidden,
   foldersFirstAtom,
   showHiddenFilesAtom,
   sortKeyAtom,
@@ -214,6 +215,7 @@ export function ExplorerView({
   // the kind with its first progress event, so the ID is adopted there.
   const deferredProgressIdsRef = useRef<Set<string>>(new Set());
   const directory = state.directory;
+  const listing = state.listing;
   const directoryPath = directory?.path;
   const isLoading = state.status === "loading";
   const canGoBack = !isLoading && state.historyIndex > 0;
@@ -232,20 +234,30 @@ export function ExplorerView({
   const foldersFirst = useAtomValue(foldersFirstAtom);
   const showHiddenFiles = useAtomValue(showHiddenFilesAtom);
   const entryFilters = useAtomValue(entryFiltersAtom);
-  const sourceEntries = search.isActive
-    ? (search.response?.entries ?? NO_ENTRIES)
-    : (directory?.entries ?? NO_ENTRIES);
-  // Filtering keeps the source array's identity when nothing is filtered, so a
+  // The listing the pane reads. A search replaces the directory's listing with
+  // its own results; otherwise it is the one the navigator holds — and while a
+  // restored pane is still re-reading, the head that came with the handoff.
+  const sourceListing = search.isActive
+    ? listingViewOf(search.response?.entries ?? NO_ENTRIES)
+    : (listing ?? listingViewOf(directory?.entries ?? NO_ENTRIES));
+  // Filtering keeps the source view's identity when nothing is filtered, so a
   // streamed batch reaches the ordering hook as a plain append.
-  const filteredEntries = useMemo(
-    () => applyEntryFilters(filterHiddenEntries(sourceEntries, showHiddenFiles), entryFilters),
-    [entryFilters, showHiddenFiles, sourceEntries],
+  const filteredListing = useMemo(
+    () => applyEntryFilters(filterHidden(sourceListing, showHiddenFiles), entryFilters),
+    [entryFilters, showHiddenFiles, sourceListing],
   );
-  const displayedEntries = useSortedEntries(filteredEntries, sortKey, sortOrder, foldersFirst);
+  const displayedListing = useSortedListingView(
+    filteredListing,
+    sortKey,
+    sortOrder,
+    foldersFirst,
+  );
   const selectedPathSet = useMemo(() => new Set(selectedPaths), [selectedPaths]);
+  // Materialised for the selection only: the scan runs over paths, so rows that
+  // are not selected are never built.
   const selectedEntries = useMemo(
-    () => displayedEntries.filter((entry) => selectedPathSet.has(entry.path)),
-    [displayedEntries, selectedPathSet],
+    () => entriesWhere(displayedListing, (path) => selectedPathSet.has(path)),
+    [displayedListing, selectedPathSet],
   );
 
   useEffect(() => {
@@ -273,12 +285,12 @@ export function ExplorerView({
   }, [directoryPath, search.query]);
 
   useEffect(() => {
-    const availablePaths = new Set(displayedEntries.map((entry) => entry.path));
+    const availablePaths = new Set(allPaths(displayedListing));
     setSelectedPaths((paths) => {
       const availableSelection = paths.filter((path) => availablePaths.has(path));
       return availableSelection.length === paths.length ? paths : availableSelection;
     });
-  }, [displayedEntries]);
+  }, [displayedListing]);
 
   useEffect(() => {
     let disposed = false;
@@ -1106,8 +1118,8 @@ export function ExplorerView({
   }, [isOperationPending, navigator, selectedEntries]);
 
   const selectAll = useCallback(() => {
-    setSelectedPaths(displayedEntries.map((entry) => entry.path));
-  }, [displayedEntries]);
+    setSelectedPaths(allPaths(displayedListing));
+  }, [displayedListing]);
 
   /** Space toggles the preview surface for the first selected entry. */
   const togglePreview = useCallback(() => {
@@ -1214,7 +1226,7 @@ export function ExplorerView({
   const listingLoading = isLoading || search.isSearching || contentSearch.isSearching;
   const listingCount = isContentSearchActive
     ? (contentSearch.response?.files.length ?? 0)
-    : displayedEntries.length;
+    : displayedListing.count;
   const listingQuery = isContentSearchActive
     ? contentSearch.query.trim()
     : search.isActive
@@ -1477,7 +1489,7 @@ export function ExplorerView({
               ) : (
                 <FileList
                   currentDirectoryPath={directory.path}
-                  entries={displayedEntries}
+                  entries={displayedListing}
                   externalDropItemCount={externalDrop?.sourcePaths.length ?? 0}
                   externalDropTargetPath={externalDrop?.targetPath ?? null}
                   gitStatus={gitStatus}
@@ -1639,7 +1651,7 @@ export function ExplorerView({
       <BulkRenameDialog
         applyError={bulkRenameError}
         entries={selectedEntries}
-        existingNames={displayedEntries.map((entry) => entry.name)}
+        existingNames={allNames(displayedListing)}
         isPending={isOperationPending}
         onApply={applyBulkRename}
         onClose={() => {

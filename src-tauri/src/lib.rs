@@ -26,9 +26,9 @@ pub fn run() {
         )
         .expect("Failed to export TypeScript bindings");
 
-    // The terminal commands push raw bytes over IPC channels, which has no
-    // specta type, so they live outside the generated bindings and are
-    // dispatched before the specta registry sees them.
+    // The terminal and the packet-mode directory listing push raw bytes over
+    // IPC channels, which has no specta type, so they live outside the generated
+    // bindings and are dispatched before the specta registry sees them.
     let specta_handler = specta.invoke_handler();
 
     // DevTools must be the first plugin registered so its tracing subscriber
@@ -55,6 +55,8 @@ pub fn run() {
             let command = invoke.message.command();
             if command.starts_with("terminal_") {
                 terminal::handle_invoke(invoke)
+            } else if command == "read_directory_packets" {
+                file_system::commands::handle_raw_invoke(invoke)
             } else {
                 specta_handler(invoke)
             }

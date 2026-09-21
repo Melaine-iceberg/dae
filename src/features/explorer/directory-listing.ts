@@ -1,6 +1,10 @@
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 
 import { commands, events, type DirectoryEntry, type DirectoryView } from "@/bindings";
+
+import { ListingPacket } from "./entry-codec";
+import { packetStreamView, type ListingView } from "./listing-view";
 
 /**
  * Directory listings arrive in batches: `readDirectory` answers with the first
@@ -155,12 +159,165 @@ export function openDirectoryListing(
 }
 
 /**
+ * The packet-mode read.
+ *
+ * Not in `bindings.ts`: it takes a channel of raw responses, and a raw
+ * response has no TypeScript type to generate. `lib.rs` therefore dispatches it
+ * by name instead of through the specta registry, and it is invoked by hand
+ * here. Everything else about it mirrors `readDirectory`, including the shape
+ * of the response — the head is the same JSON `DirectoryView`.
+ */
+function readDirectoryPackets(
+  path: string,
+  streamId: string,
+  watch: boolean,
+  onBatch: Channel<ArrayBuffer>,
+): Promise<DirectoryView> {
+  return invoke<DirectoryView>("read_directory_packets", { onBatch, path, streamId, watch });
+}
+
+/** What a packet-mode listing reports. */
+export interface PacketListingListener {
+  /** Called once, when the head lands. */
+  onHead?: (view: DirectoryView) => void;
+  /**
+   * Called with the readable listing so far, coalesced to one call per
+   * animation frame while the listing streams — the backend can push several
+   * batches per frame, and publishing each one would cost a full render apiece.
+   * A trailing frame owed when the stream finishes is flushed before `onDone`.
+   */
+  onListing: (listing: ListingView) => void;
+  /** Called once, when the listing is complete (not on disposal). */
+  onDone?: () => void;
+  /** Called when the read failed (batches never fail individually). */
+  onError?: (error: unknown) => void;
+}
+
+/**
+ * Opens one directory listing, streaming its remaining batches into `listener`
+ * as columnar packets rather than as `DirectoryEntry` objects.
+ *
+ * The difference that matters is what the batches cost to receive. An event
+ * payload is evaluated as JavaScript source, so the 89 % of a 35,803 entry
+ * list that arrives after the head cost the webview 25 ms of parsing on its own
+ * thread (measured); the same bytes over an IPC channel arrive as one
+ * `ArrayBuffer` the frontend never parses — 0.56 ms to hand over, and 0.01 ms
+ * to turn the 40 rows a frame paints into objects.
+ *
+ * The head stays JSON, and so does `read_dir`'s answer for every backend that
+ * enumerates in one piece: it is 512 entries, and keeping it means the error
+ * path and the surrounding `DirectoryView` are the ones the explorer already
+ * handles.
+ *
+ * `watch` has the same meaning as in `openDirectoryListing`.
+ */
+export function openPacketDirectoryListing(
+  path: string,
+  listener: PacketListingListener,
+  api: DirectoryListingApi = commands,
+  watch = false,
+): DirectoryListing {
+  const streamId = crypto.randomUUID();
+  let stopped = false;
+  let complete = false;
+  let head: DirectoryView | null = null;
+  let announced = false;
+  let flushHandle: number | null = null;
+  /** Packets received so far. Appended to, never mutated: the view is rebuilt. */
+  const packets: ListingPacket[] = [];
+
+  const publish = () => {
+    flushHandle = null;
+    if (stopped || head === null) return;
+    listener.onListing(packetStreamView(head.entries, [...packets]));
+  };
+
+  const scheduleFlush = () => {
+    if (flushHandle !== null) return;
+    flushHandle = requestAnimationFrame(publish);
+  };
+
+  // Completion is reported only once both halves have landed: the head, and the
+  // final packet. Either can arrive first, and `onDone` for a listing the
+  // listener has not fully seen would be a lie.
+  const announceDone = () => {
+    if (announced || !complete || head === null || stopped) return;
+    announced = true;
+    listener.onDone?.();
+  };
+
+  const finish = () => {
+    if (complete || stopped) return;
+    complete = true;
+    publish();
+    announceDone();
+  };
+
+  const channel = new Channel<ArrayBuffer>();
+  channel.onmessage = (data) => {
+    if (stopped) return;
+
+    let packet: ListingPacket;
+    try {
+      packet = ListingPacket.parse(data);
+    } catch (error) {
+      listener.onError?.(error);
+      return;
+    }
+
+    packets.push(packet);
+    // The final packet carries the last batch *and* closes the stream, so it is
+    // published before the listing is reported complete.
+    if (packet.isFinal()) {
+      finish();
+      return;
+    }
+    scheduleFlush();
+  };
+
+  const headRequest = readDirectoryPackets(path, streamId, watch, channel)
+    .then((view) => {
+      if (stopped) return view;
+
+      head = view;
+      listener.onHead?.(view);
+      publish();
+
+      // A view without a stream id fits in one batch: no packet is coming.
+      if (view.streamId === null) finish();
+      else announceDone();
+
+      return view;
+    })
+    .catch((error: unknown) => {
+      if (!stopped) {
+        stopped = true;
+        listener.onError?.(error);
+      }
+      throw error;
+    });
+
+  return {
+    head: headRequest,
+    dispose: () => {
+      if (stopped) return;
+      stopped = true;
+      if (flushHandle !== null) {
+        cancelAnimationFrame(flushHandle);
+        flushHandle = null;
+      }
+      // Ids the backend already finished with are ignored there.
+      void api.cancelDirectoryListing(streamId).catch(() => {});
+    },
+  };
+}
+
+/**
  * Completed listings by path, so re-opening a folder (drilling back out of a
  * Miller column, expanding a section again) paints immediately instead of
  * flashing an empty pane while the read runs.
  */
 const completedListings = new Map<string, DirectoryEntry[]>();
-
 /** Cap on cached listings; tabs rarely revisit more paths than this at once. */
 const MAX_CACHED_LISTINGS = 16;
 
@@ -228,8 +385,10 @@ function cachedState(path: string): DirectoryEntriesState {
  * displayed directory — see `ExplorerNavigator.refresh`. Field-by-field rather
  * than a rolling hash, because a hash errs in the dangerous direction:
  * "unchanged" for a listing that did change leaves the explorer stale until the
- * next change. Walking 35k entries costs a couple of milliseconds against the
- * ~123 ms sort and the full list re-render it lets the caller skip.
+ * next change. Walking 35k entries through the scalar accessors costs about
+ * 2 ms against the ~123 ms sort and the full list re-render it lets the caller
+ * skip — and it is a walk either way, so it does not matter whether the rows
+ * behind the view are objects or packed bytes.
  *
  * The comparison is order-sensitive. The backend sorts every batch by the same
  * total order, so an unchanged directory comes back in the same order; a
@@ -237,26 +396,19 @@ function cachedState(path: string): DirectoryEntriesState {
  * reads as "changed" and gets the full refresh, which is the safe way to be
  * wrong.
  */
-export function isSameListing(
-  previous: readonly DirectoryEntry[],
-  next: readonly DirectoryEntry[],
-): boolean {
+export function isSameListing(previous: ListingView, next: ListingView): boolean {
   if (previous === next) return true;
-  if (previous.length !== next.length) return false;
+  if (previous.count !== next.count) return false;
 
-  for (let index = 0; index < previous.length; index += 1) {
-    const before = previous[index];
-    const after = next[index];
-    if (before === after) continue;
-
+  for (let index = 0; index < previous.count; index += 1) {
     if (
-      before.name !== after.name ||
-      before.path !== after.path ||
-      before.kind !== after.kind ||
-      before.modifiedAt !== after.modifiedAt ||
-      before.size !== after.size ||
-      before.hidden !== after.hidden ||
-      before.readOnly !== after.readOnly
+      previous.nameAt(index) !== next.nameAt(index) ||
+      previous.pathAt(index) !== next.pathAt(index) ||
+      previous.kindAt(index) !== next.kindAt(index) ||
+      previous.modifiedAt(index) !== next.modifiedAt(index) ||
+      previous.sizeAt(index) !== next.sizeAt(index) ||
+      previous.hiddenAt(index) !== next.hiddenAt(index) ||
+      previous.readOnlyAt(index) !== next.readOnlyAt(index)
     ) {
       return false;
     }

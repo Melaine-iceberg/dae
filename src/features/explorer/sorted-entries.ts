@@ -4,17 +4,23 @@ import { i18n } from "@/i18n";
 
 import { orderSignature, type ExplorerSortKey, type ExplorerSortOrder } from "./entry-order";
 import type { SortRequest, SortResponse } from "./entry-sort-worker";
-import { collectSortPrimitives, sortEntries } from "./preferences";
+import {
+  entriesInRange,
+  listingViewOf,
+  sharedRowCount,
+  sortedListingView,
+  type ListingView,
+} from "./listing-view";
+import { collectSortPrimitives, sortListingView } from "./preferences";
 import type { DirectoryEntry } from "./types";
 
 /**
  * Orders streamed directory listings without blocking the UI thread.
  *
- * A big directory reaches the explorer as growing snapshots — `readDirectory`
- * answers with 512 entries, then events push the rest in batches that double
- * up to 8,192. Ordering each snapshot from scratch cost ~123 ms of main-thread
- * time for a 35,803 entry directory (measured), all of it `Intl.Collator`
- * comparisons.
+ * A big directory reaches the explorer as growing snapshots — the first batch,
+ * then the batches that follow in sizes that double up to 8,192. Ordering each
+ * snapshot from scratch cost ~123 ms of main-thread time for a 35,803 entry
+ * directory (measured), all of it `Intl.Collator` comparisons.
  *
  * That ordering cannot be made cheaper without changing what the user sees: a
  * hand-built sort key reproduces American-English order but not ICU's, which
@@ -23,6 +29,12 @@ import type { DirectoryEntry } from "./types";
  * and the reply is a permutation transferred as an `Int32Array` — for the same
  * directory that is ~5 ms of main-thread work in total, mostly structured
  * clone of the names.
+ *
+ * Ordering is expressed over a `ListingView` and returns one, so the same code
+ * runs whether the rows behind it are objects or packed bytes. What crosses to
+ * the worker is the primitives — names, the numeric column, directory flags —
+ * not the rows: a byte-backed view is decoded once, on the main thread, for the
+ * batch that just arrived, and never materialised as entries.
  *
  * Lists at or below `SYNC_SORT_LIMIT` are ordered inline: they are what the
  * explorer hits on almost every navigation, and one sort of a few hundred
@@ -42,18 +54,18 @@ interface OrderResult {
   /** Ordering options the result was produced for. */
   signature: string;
   /** The snapshot the permutation indexes into. */
-  source: readonly DirectoryEntry[];
-  ordered: DirectoryEntry[];
+  source: ListingView;
+  order: Int32Array;
 }
 
 interface Session {
   worker: Worker;
   requestId: number;
   /** What the worker's accumulated state corresponds to; `null` forces a reset. */
-  source: readonly DirectoryEntry[] | null;
+  source: ListingView | null;
   signature: string;
   /** The request whose reply is still worth applying. */
-  pending: { requestId: number; signature: string; source: readonly DirectoryEntry[] } | null;
+  pending: { requestId: number; signature: string; source: ListingView } | null;
 }
 
 function spawnWorker(): Worker | null {
@@ -70,38 +82,15 @@ function spawnWorker(): Worker | null {
 }
 
 /**
- * Whether `previous` is an unchanged prefix of `next`, which is what a
- * streamed batch looks like: the same entries in the same order, plus a tail.
- * A pointer comparison per entry is enough — the listings reuse the entry
- * objects they were built from.
- */
-function extendsSource(
-  previous: readonly DirectoryEntry[],
-  next: readonly DirectoryEntry[],
-): boolean {
-  if (previous.length > next.length) {
-    return false;
-  }
-
-  for (let index = 0; index < previous.length; index++) {
-    if (previous[index] !== next[index]) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-/**
- * Orders `entries` for display, keeping the previous result visible while the
+ * Orders `view` for display, keeping the previous result visible while the
  * worker catches up with a new snapshot or a new sort key.
  */
-export function useSortedEntries(
-  entries: readonly DirectoryEntry[],
+export function useSortedListingView(
+  view: ListingView,
   sortKey: ExplorerSortKey,
   sortOrder: ExplorerSortOrder,
   foldersFirst: boolean,
-): DirectoryEntry[] {
+): ListingView {
   // The locale is part of the signature: it decides how names collate, so a
   // language switch has to reorder from scratch rather than merge.
   const signature = `${orderSignature({ foldersFirst, sortKey, sortOrder })}|${i18n.language}`;
@@ -112,7 +101,7 @@ export function useSortedEntries(
   const [canStream, setCanStream] = useState(false);
 
   useEffect(() => {
-    if (entries.length <= SYNC_SORT_LIMIT) {
+    if (view.count <= SYNC_SORT_LIMIT) {
       // Nothing worth offloading. Forgetting the source makes the next large
       // listing reset instead of appending to a prefix it no longer shares.
       if (sessionRef.current) {
@@ -141,17 +130,11 @@ export function useSortedEntries(
         const pending = created.pending;
 
         // A superseded reply describes a snapshot the explorer has moved past.
-        if (!pending || pending.requestId !== requestId || count !== pending.source.length) {
+        if (!pending || pending.requestId !== requestId || count !== pending.source.count) {
           return;
         }
 
-        const source = pending.source;
-        const ordered: DirectoryEntry[] = [];
-        for (let index = 0; index < count; index++) {
-          ordered.push(source[order[index]]);
-        }
-
-        setStreamed({ ordered, signature: pending.signature, source });
+        setStreamed({ order, signature: pending.signature, source: pending.source });
       };
 
       worker.onerror = () => {
@@ -169,15 +152,19 @@ export function useSortedEntries(
     // Messages reach a worker in order, so recording the optimistic state
     // before the reply is what makes the next batch's prefix check valid.
     const previous = session.source;
-    const append =
-      previous !== null && session.signature === signature && extendsSource(previous, entries);
-    const base = append && previous !== null ? previous.length : 0;
-    const primitives = collectSortPrimitives(base === 0 ? entries : entries.slice(base), sortKey);
+    // A non-null answer means the new snapshot really is the old one grown, so
+    // the worker can fold the tail into the order it already holds. Anything
+    // else — a directory switch, a filter change, a sort key that collates
+    // differently — re-sends the whole listing.
+    const append = previous !== null && session.signature === signature &&
+      sharedRowCount(previous, view) !== null;
+    const base = append && previous !== null ? previous.count : 0;
+    const primitives = collectSortPrimitives(view, sortKey, base, view.count);
 
     const requestId = ++session.requestId;
-    session.source = entries;
+    session.source = view;
     session.signature = signature;
-    session.pending = { requestId, signature, source: entries };
+    session.pending = { requestId, signature, source: view };
 
     session.worker.postMessage({
       directoryFlags: primitives.directoryFlags,
@@ -188,7 +175,7 @@ export function useSortedEntries(
       requestId,
       type: append ? "append" : "reset",
     } satisfies SortRequest);
-  }, [entries, foldersFirst, signature, sortKey, sortOrder]);
+  }, [foldersFirst, signature, sortKey, sortOrder, view]);
 
   useEffect(
     () => () => {
@@ -199,24 +186,50 @@ export function useSortedEntries(
   );
 
   return useMemo(() => {
-    if (entries.length === 0) {
-      return NO_ENTRIES;
+    if (view.count === 0) {
+      return view;
     }
 
-    if (entries.length <= SYNC_SORT_LIMIT) {
-      return sortEntries(entries, sortKey, sortOrder, foldersFirst);
+    if (view.count <= SYNC_SORT_LIMIT) {
+      return sortListingView(view, sortKey, sortOrder, foldersFirst);
     }
 
     // A result for an earlier prefix of this same listing is worth showing:
     // it is at most one batch behind, and it usually carries the right order
     // already. That covers a sort key change too, where waiting the few
     // milliseconds for the worker beats re-sorting a huge list inline.
-    if (streamed && canStream && extendsSource(streamed.source, entries)) {
-      return streamed.ordered;
+    if (
+      streamed &&
+      canStream &&
+      sharedRowCount(streamed.source, view) === streamed.source.count
+    ) {
+      return sortedListingView(streamed.source, streamed.order);
     }
 
     // First snapshot past the limit, or a directory switch while the worker is
     // still busy. Ordered inline so the list is never painted in read order.
-    return sortEntries(entries, sortKey, sortOrder, foldersFirst);
-  }, [canStream, entries, foldersFirst, sortKey, sortOrder, streamed]);
+    return sortListingView(view, sortKey, sortOrder, foldersFirst);
+  }, [canStream, foldersFirst, sortKey, sortOrder, streamed, view]);
+}
+
+/**
+ * Orders a plain array — a Miller column's children, a search result.
+ *
+ * The array-backed form of `useSortedListingView`: it wraps the array in a
+ * view, orders that, and materialises the result. The work is the same one the
+ * ordering hook does, so the two cannot drift apart; only the last step differs,
+ * and an array is what this caller asked for.
+ */
+export function useSortedEntries(
+  entries: readonly DirectoryEntry[],
+  sortKey: ExplorerSortKey,
+  sortOrder: ExplorerSortOrder,
+  foldersFirst: boolean,
+): DirectoryEntry[] {
+  const sorted = useSortedListingView(listingViewOf(entries), sortKey, sortOrder, foldersFirst);
+
+  return useMemo(
+    () => (sorted.count === 0 ? NO_ENTRIES : entriesInRange(sorted, 0, sorted.count)),
+    [sorted],
+  );
 }

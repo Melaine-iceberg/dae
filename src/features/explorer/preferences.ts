@@ -9,7 +9,8 @@ import {
   getFileExtension,
   getFilePresentation,
 } from "./file-icons";
-import type { DirectoryEntry } from "./types";
+import type { DirectoryEntry, EntryKind } from "./types";
+import { filteredListingView, sortedListingView, type ListingView } from "./listing-view";
 
 import {
   createComparator,
@@ -64,6 +65,16 @@ export function filterHiddenEntries(
   return showHiddenFiles ? (entries as DirectoryEntry[]) : entries.filter((entry) => !entry.hidden);
 }
 
+/**
+ * The same rule over a view. `hidden` is a header flag on a packed row, so the
+ * scan reads one byte per entry instead of building an entry to look at it.
+ */
+export function filterHidden(view: ListingView, showHiddenFiles: boolean): ListingView {
+  return showHiddenFiles
+    ? view
+    : filteredListingView(view, (index) => !view.hiddenAt(index));
+}
+
 export interface ExplorerEntryFilters {
   kind: ExplorerKindFilter;
   modified: ExplorerModifiedFilter;
@@ -116,13 +127,18 @@ const MS_PER_DAY = 86_400_000;
  * Filters entries by kind / modified time / size (SKILL.md §16). Runs before
  * sorting on every render, so the predicate stays allocation-free and cheap;
  * a single pass skips early when no filter is active.
+ *
+ * Reads the view's scalar accessors rather than materialising rows: the scan
+ * covers every entry, and building an object per entry to look at two fields of
+ * it would both cost the allocation and evict the painted rows from the row
+ * cache.
  */
 export function applyEntryFilters(
-  entries: readonly DirectoryEntry[],
+  view: ListingView,
   filters: ExplorerEntryFilters,
-): DirectoryEntry[] {
+): ListingView {
   if (!hasActiveEntryFilters(filters)) {
-    return entries as DirectoryEntry[];
+    return view;
   }
 
   const now = Date.now();
@@ -136,20 +152,23 @@ export function applyEntryFilters(
           : 0;
   const sizeRange = filters.size === "any" ? null : SIZE_FILTER_RANGES[filters.size];
 
-  return entries.filter((entry) => {
+  return filteredListingView(view, (index) => {
+    const kind = view.kindAt(index);
+
     if (filters.kind === "folders") {
-      if (entry.kind !== "directory") return false;
+      if (kind !== "directory") return false;
     } else if (filters.kind === "files") {
-      if (entry.kind !== "file") return false;
+      if (kind !== "file") return false;
     } else if (filters.kind === "images") {
-      if (entry.kind !== "file" || !IMAGE_EXTENSIONS.has(getFileExtension(entry.name))) {
+      const name = view.nameAt(index);
+      if (kind !== "file" || name === undefined || !IMAGE_EXTENSIONS.has(getFileExtension(name))) {
         return false;
       }
     }
 
-    if (modifiedCutoff > 0 && (entry.modifiedAt ?? 0) < modifiedCutoff) return false;
-    if (sizeRange && entry.kind === "file") {
-      const size = entry.size ?? 0;
+    if (modifiedCutoff > 0 && (view.modifiedAt(index) ?? 0) < modifiedCutoff) return false;
+    if (sizeRange && kind === "file") {
+      const size = view.sizeAt(index) ?? 0;
       if (size < sizeRange[0] || size >= sizeRange[1]) return false;
     }
 
@@ -157,8 +176,8 @@ export function applyEntryFilters(
   });
 }
 
-function entryTypeLabel(entry: DirectoryEntry): string {
-  switch (entry.kind) {
+function entryTypeLabel(kind: EntryKind, name: string): string {
+  switch (kind) {
     case "directory":
       return DIRECTORY_PRESENTATION.label;
     case "symlink":
@@ -166,12 +185,12 @@ function entryTypeLabel(entry: DirectoryEntry): string {
     case "other":
       return OTHER_PRESENTATION.label;
     default:
-      return getFilePresentation(entry.name).label;
+      return getFilePresentation(name).label;
   }
 }
 
 /**
- * Collects the comparable form of `entries` for the active sort key.
+ * Collects the comparable form of `view[from, to)` for the active sort key.
  *
  * The point is that it runs once per entry rather than once per comparison.
  * The `"type"` key used to resolve a localized label inside the comparator,
@@ -180,18 +199,29 @@ function entryTypeLabel(entry: DirectoryEntry): string {
  *
  * For `"name"` the primary *is* the name array, so building the primitives
  * costs one pass and no extra allocation.
+ *
+ * The range form is what a streamed listing uses: the ordering hook only ever
+ * asks for the rows a batch added, because the worker keeps everything before
+ * them.
+ *
+ * `"type"` is the one key the worker cannot derive for itself — the label it
+ * sorts by is localized, and `entry-order.ts` may not reach for i18n — so its
+ * primaries are always collected here, on the main thread.
  */
 export function collectSortPrimitives(
-  entries: readonly DirectoryEntry[],
+  view: ListingView,
   key: ExplorerSortKey,
+  from = 0,
+  to = view.count,
 ): SortPrimitives {
+  const count = Math.max(0, to - from);
   const names: string[] = [];
-  const directoryFlags = new Uint8Array(entries.length);
+  const directoryFlags = new Uint8Array(count);
 
-  for (let index = 0; index < entries.length; index++) {
-    const entry = entries[index];
-    names.push(entry.name);
-    directoryFlags[index] = entry.kind === "directory" ? 1 : 0;
+  for (let offset = 0; offset < count; offset++) {
+    const index = from + offset;
+    names.push(view.nameAt(index) ?? "");
+    directoryFlags[offset] = view.kindAt(index) === "directory" ? 1 : 0;
   }
 
   if (key === "name") {
@@ -199,19 +229,20 @@ export function collectSortPrimitives(
   }
 
   if (isNumericSortKey(key)) {
-    const primaries = new Float64Array(entries.length);
-    for (let index = 0; index < entries.length; index++) {
-      const entry = entries[index];
+    const primaries = new Float64Array(count);
+    for (let offset = 0; offset < count; offset++) {
+      const index = from + offset;
       // Directories carry no size and no timestamp below the root; the
       // previous in-place comparator folded those to 0 too.
-      primaries[index] = (key === "modified" ? entry.modifiedAt : entry.size) ?? 0;
+      primaries[offset] = (key === "modified" ? view.modifiedAt(index) : view.sizeAt(index)) ?? 0;
     }
     return { directoryFlags, names, primaries };
   }
 
   const primaries: string[] = [];
-  for (const entry of entries) {
-    primaries.push(entryTypeLabel(entry));
+  for (let offset = 0; offset < count; offset++) {
+    const index = from + offset;
+    primaries.push(entryTypeLabel(view.kindAt(index) ?? "other", view.nameAt(index) ?? ""));
   }
   return { directoryFlags, names, primaries };
 }
@@ -225,31 +256,32 @@ export function sortCollator(): Intl.Collator {
 }
 
 /**
- * Sorts entries for display. With `foldersFirst` (default) directories
- * always group ahead of files regardless of the active key (predictable
- * spatial convention); names break ties with a natural-order collator so
- * file2 < file10. When disabled, entries interleave purely by the key.
+ * Sorts a view for display, returning a view that reads the source through the
+ * permutation. With `foldersFirst` (default) directories always group ahead of
+ * files regardless of the active key (predictable spatial convention); names
+ * break ties with a natural-order collator so file2 < file10. When disabled,
+ * entries interleave purely by the key.
  *
- * This is the one-shot form, for lists that arrive whole (a Miller column's
- * siblings, search results). Streamed listings go through
- * `useSortedEntries`, which folds each batch into the previous order instead
- * of re-sorting the snapshot.
+ * This is the one-shot form, for lists that arrive whole and for the snapshots
+ * below the streaming threshold. Streamed listings go through
+ * `useSortedListingView`, which folds each batch into the previous order
+ * instead of re-sorting the snapshot.
  */
-export function sortEntries(
-  entries: readonly DirectoryEntry[],
+export function sortListingView(
+  view: ListingView,
   key: ExplorerSortKey,
   order: ExplorerSortOrder,
   foldersFirst = true,
-): DirectoryEntry[] {
-  if (entries.length === 0) {
-    return [];
+): ListingView {
+  if (view.count === 0) {
+    return view;
   }
 
   const compare = createComparator(
-    collectSortPrimitives(entries, key),
+    collectSortPrimitives(view, key),
     { foldersFirst, sortKey: key, sortOrder: order },
     sortCollator(),
   );
 
-  return sortIndices(entries.length, compare).map((index) => entries[index]);
+  return sortedListingView(view, Int32Array.from(sortIndices(view.count, compare)));
 }

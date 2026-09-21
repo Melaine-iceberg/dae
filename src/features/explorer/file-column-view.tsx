@@ -19,6 +19,7 @@ import { EntryContextMenuContent } from "./entry-context-menu";
 import { getEntryPresentation } from "./file-icons";
 import { TypeIconTile } from "./icon-tile";
 import type { MenuActions } from "./file-list";
+import { listingViewOf, type ListingView } from "./listing-view";
 import { isNativeIconSupported, NativeIconImage } from "./native-icon";
 import {
   filterHiddenEntries,
@@ -41,7 +42,7 @@ export interface FileColumnViewProps {
   onOpenEntry: (entry: DirectoryEntry) => void;
   onPointerDownEntry: (entry: DirectoryEntry, event: ReactPointerEvent) => void;
   onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => void;
-  rootEntries: DirectoryEntry[];
+  rootEntries: ListingView;
   selectedCount: number;
   selectedPathSet: Set<string>;
   viewId: string;
@@ -134,7 +135,7 @@ function ChildPane({ path, ...paneProps }: ChildPaneProps) {
 
   return (
     <Pane
-      entries={sortedEntries}
+      entries={listingViewOf(sortedEntries)}
       isError={isError}
       // A cached listing keeps painting while its refresh streams, so the
       // spinner is only for a pane that has nothing to show yet.
@@ -147,7 +148,7 @@ function ChildPane({ path, ...paneProps }: ChildPaneProps) {
 interface PaneProps extends SharedRowProps {
   activeChildPath: string | null;
   depth: number;
-  entries: DirectoryEntry[];
+  entries: ListingView;
   isError?: boolean;
   isLoading?: boolean;
   onDrill: (path: string, depth: number) => void;
@@ -180,7 +181,7 @@ function Pane({
   const { t } = useTranslation("explorer");
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
-    count: entries.length,
+    count: entries.count,
     estimateSize: () => PANE_ROW_HEIGHT,
     getScrollElement: () => scrollRef.current,
     overscan: 8,
@@ -204,18 +205,20 @@ function Pane({
           {t("explorer:columnView.readError")}
         </div>
       )}
-      {!isLoading && !isError && entries.length === 0 && (
+      {!isLoading && !isError && entries.count === 0 && (
         <p className="px-2 py-1.5 text-caption text-muted-foreground">
           {t("explorer:columnView.emptyFolder")}
         </p>
       )}
-      {entries.length > 0 && (
+      {entries.count > 0 && (
         <div
           className="relative"
           style={{ height: virtualizer.getTotalSize() + PANE_VERTICAL_PADDING_PX * 2 }}
         >
           {virtualizer.getVirtualItems().map((virtualRow) => {
-            const entry = entries[virtualRow.index];
+            const entry = entries.entryAt(virtualRow.index);
+            if (!entry) return null;
+
             return (
               <PaneRow
                 activeChildPath={activeChildPath}

@@ -1261,7 +1261,7 @@ mod smb_tests {
             let pool = ConnectionPool::<usize>::new();
             pool.seed(7);
 
-            let mut held = pool
+            let held = pool
                 .checkout(1, PATIENT, || Ok::<_, ()>(0))
                 .ok()
                 .expect("take the only session");

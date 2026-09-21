@@ -11,6 +11,7 @@
 //! owns nothing but the OS directory iterator, so JSON serialization of batch
 //! *n* overlaps with the disk walk for batch *n + 1* instead of delaying it.
 
+use super::entry_codec::{self, HEADER_FLAG_FINAL};
 use super::error::FileSystemError;
 use super::local::{self, DirectoryListing, DirectoryListingCursor};
 use super::types::{DirectoryEntry, DirectoryView, canonical_path};
@@ -24,6 +25,7 @@ use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tauri::Manager;
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri_specta::Event;
 
 /// Entries in the batch `read_directory` answers with. Small enough that a
@@ -51,6 +53,56 @@ pub struct DirectoryEntriesBatch {
     pub entries: Vec<DirectoryEntry>,
     /// True on the final batch: the listing is complete.
     pub done: bool,
+}
+
+/// Where the batches of a streamed listing go.
+///
+/// The explorer's own pane takes them as columnar packets over an IPC channel,
+/// which is the only transport that carries raw bytes: an event payload is
+/// evaluated as JavaScript source, so a 5 MB listing costs the webview 25 ms of
+/// parsing on the thread that paints (measured). The sidebar and the Miller
+/// columns keep taking the event, which carries `DirectoryEntry` objects
+/// directly and is what they already consume.
+pub enum BatchSink {
+    Events,
+    Channel(Channel<InvokeResponseBody>),
+}
+
+impl BatchSink {
+    /// Delivers one batch. `false` means the other end is gone — the app is
+    /// shutting down, or the webview dropped the channel — and the emitter
+    /// should stop instead of packing batches nobody will read.
+    ///
+    /// `done` travels differently per transport and that is deliberate: an event
+    /// says so in a field, a packet says so in its header flags, because the
+    /// entries cannot express "there are no more of me".
+    fn send(
+        &self,
+        app: &tauri::AppHandle,
+        stream_id: &str,
+        path: &str,
+        entries: Vec<DirectoryEntry>,
+        done: bool,
+    ) -> bool {
+        match self {
+            Self::Events => DirectoryEntriesBatch {
+                stream_id: stream_id.to_owned(),
+                path: path.to_owned(),
+                entries,
+                done,
+            }
+            .emit(app)
+            .is_ok(),
+            Self::Channel(channel) => {
+                let flags = if done { HEADER_FLAG_FINAL } else { 0 };
+                channel
+                    .send(InvokeResponseBody::Raw(
+                        entry_codec::pack_with_header_flags(&entries, flags),
+                    ))
+                    .is_ok()
+            }
+        }
+    }
 }
 
 /// Live listings keyed by stream id, so navigating away stops the read
@@ -116,6 +168,7 @@ pub fn open_streamed_listing(
     requested_path: PathBuf,
     stream_id: String,
     watch: bool,
+    sink: BatchSink,
 ) -> Result<DirectoryView, FileSystemError> {
     let state = app.state::<DirectoryListingState>();
     // Reserved before the directory is opened so that a cancellation arriving
@@ -153,7 +206,7 @@ pub fn open_streamed_listing(
     };
 
     view.stream_id = Some(stream_id.clone());
-    spawn_listing_reader(app, stream_id, view.path.clone(), cursor, cancelled);
+    spawn_listing_reader(app, stream_id, view.path.clone(), cursor, cancelled, sink);
     Ok(view)
 }
 
@@ -169,6 +222,7 @@ fn spawn_listing_reader(
     path: String,
     cursor: DirectoryListingCursor,
     cancelled: Arc<AtomicBool>,
+    sink: BatchSink,
 ) {
     let (batch_tx, batch_rx) = sync_channel::<(Vec<DirectoryEntry>, bool)>(PIPELINE_DEPTH);
 
@@ -180,6 +234,7 @@ fn spawn_listing_reader(
         stream_id.clone(),
         path,
         Arc::clone(&cancelled),
+        sink,
         batch_rx,
     );
 
@@ -198,6 +253,7 @@ fn spawn_batch_emitter(
     stream_id: String,
     path: String,
     cancelled: Arc<AtomicBool>,
+    sink: BatchSink,
     batches: Receiver<(Vec<DirectoryEntry>, bool)>,
 ) {
     thread::spawn(move || {
@@ -208,13 +264,11 @@ fn spawn_batch_emitter(
                 return;
             }
 
-            let _ = DirectoryEntriesBatch {
-                stream_id: stream_id.clone(),
-                path: path.clone(),
-                entries,
-                done,
+            // A delivery that fails ends the stream: the reader thread would
+            // otherwise keep packing batches into a channel nobody holds.
+            if !sink.send(&app, &stream_id, &path, entries, done) {
+                return;
             }
-            .emit(&app);
 
             if done {
                 return;

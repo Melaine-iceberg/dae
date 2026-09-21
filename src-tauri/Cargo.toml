@@ -190,6 +190,17 @@ mime_guess = "2"
 [dev-dependencies]
 keyring-core = "1"
 
+# rustc 1.98 surfaces MSVC link.exe's informational stdout ("正在创建库 …" /
+# "正在创建对象 …") as `linker_messages` warnings on every link step. Nothing
+# failed — the linker is only reporting what it wrote — so this is pure noise
+# that buries real warnings.
+#
+# Silenced through `[lints]` rather than `rustflags` in `.cargo/config.toml`:
+# rustflags feed into the fingerprint of every crate, so a cosmetic fix there
+# would force a full rebuild of all dependencies.
+[lints.rust]
+linker_messages = "allow"
+
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
 codegen-units = 1

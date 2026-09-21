@@ -18,6 +18,7 @@ import { getEntryPresentation } from "./file-icons";
 import type { MenuActions } from "./file-list";
 import { TypeIconTile } from "./icon-tile";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
+import { entriesInRange, type ListingView } from "./listing-view";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
 import { isNativeIconSupported, NativeIconImage } from "./native-icon";
 import { densityAtom, type ExplorerDensity } from "./preferences";
@@ -71,7 +72,7 @@ export interface FileGridViewProps {
   actionsDisabled: boolean;
   draggingPaths: Set<string>;
   dropTargetPath: string | null;
-  entries: DirectoryEntry[];
+  entries: ListingView;
   gitStatus?: ExplorerGitStatus | null;
   menuActions: MenuActions;
   onAddToFavorites: (entry: DirectoryEntry) => void;
@@ -131,7 +132,7 @@ export function FileGridView({
     1,
     Math.floor((viewportWidth - GRID_PADDING_PX * 2 + GRID_GAP_PX) / (cellMinWidth + GRID_GAP_PX)),
   );
-  const rowCount = Math.ceil(entries.length / columnCount);
+  const rowCount = Math.ceil(entries.count / columnCount);
   const virtualizer = useVirtualizer({
     count: rowCount,
     estimateSize: () => rowStride,
@@ -162,8 +163,8 @@ export function FileGridView({
         const cellLeft = column * cellStrideX;
         if (cellLeft + cellWidth < leftContent || cellLeft > rightContent) continue;
 
-        const entry = entries[row * columnCount + column];
-        if (entry) matchedPaths.push(entry.path);
+        const path = entries.pathAt(row * columnCount + column);
+        if (path !== undefined) matchedPaths.push(path);
       }
     }
     return matchedPaths;
@@ -207,30 +208,32 @@ export function FileGridView({
                 transform: `translateY(${GRID_PADDING_PX + virtualRow.start}px)`,
               }}
             >
-              {entries
-                .slice(virtualRow.index * columnCount, (virtualRow.index + 1) * columnCount)
-                .map((entry, sliceIndex) => (
-                  <GridCell
-                    density={density}
-                    entry={entry}
-                    gitStatus={gitStatus}
-                    index={virtualRow.index * columnCount + sliceIndex}
-                    isActionDisabled={actionsDisabled}
-                    isDragging={draggingPaths.has(entry.path)}
-                    isDropTarget={dropTargetPath === entry.path}
-                    isSelected={selectedPathSet.has(entry.path)}
-                    key={entry.path}
-                    menuActions={menuActions}
-                    onAddToFavorites={onAddToFavorites}
-                    onAddToSpace={onAddToSpace}
-                    onContextMenuEntry={onContextMenuEntry}
-                    onOpenEntry={onOpenEntry}
-                    onPointerDownEntry={onPointerDownEntry}
-                    onSelectEntry={onSelectEntry}
-                    selectedCount={selectedCount}
-                    selectedPathSet={selectedPathSet}
-                  />
-                ))}
+              {entriesInRange(
+                entries,
+                virtualRow.index * columnCount,
+                (virtualRow.index + 1) * columnCount,
+              ).map((entry, sliceIndex) => (
+                <GridCell
+                  density={density}
+                  entry={entry}
+                  gitStatus={gitStatus}
+                  index={virtualRow.index * columnCount + sliceIndex}
+                  isActionDisabled={actionsDisabled}
+                  isDragging={draggingPaths.has(entry.path)}
+                  isDropTarget={dropTargetPath === entry.path}
+                  isSelected={selectedPathSet.has(entry.path)}
+                  key={entry.path}
+                  menuActions={menuActions}
+                  onAddToFavorites={onAddToFavorites}
+                  onAddToSpace={onAddToSpace}
+                  onContextMenuEntry={onContextMenuEntry}
+                  onOpenEntry={onOpenEntry}
+                  onPointerDownEntry={onPointerDownEntry}
+                  onSelectEntry={onSelectEntry}
+                  selectedCount={selectedCount}
+                  selectedPathSet={selectedPathSet}
+                />
+              ))}
             </div>
           ))}
         </div>

@@ -3,6 +3,7 @@ pub mod cloud;
 pub mod commands;
 pub mod connections;
 pub mod directory_size;
+pub mod entry_codec;
 pub mod error;
 pub mod git;
 pub mod hashing;

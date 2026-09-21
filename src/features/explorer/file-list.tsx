@@ -74,6 +74,13 @@ import { getEntryPresentation } from "./file-icons";
 import { FileGridView } from "./file-grid-view";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { TypeIconTile } from "./icon-tile";
+import {
+  allPaths,
+  directoryPathSet,
+  draggableDirectoryPaths,
+  pathsInRange,
+  type ListingView,
+} from "./listing-view";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
 import { isNativeIconSupported, NativeIconImage } from "./native-icon";
 import {
@@ -97,7 +104,7 @@ interface FileListProps {
   canRedo: boolean;
   canUndo: boolean;
   currentDirectoryPath: string;
-  entries: DirectoryEntry[];
+  entries: ListingView;
   externalDropItemCount: number;
   externalDropTargetPath: string | null;
   gitStatus?: ExplorerGitStatus | null;
@@ -186,7 +193,7 @@ type DragCandidate = {
 };
 
 function resolveDragTarget(
-  entries: DirectoryEntry[],
+  entries: ListingView,
   sourcePaths: string[],
   x: number,
   y: number,
@@ -221,14 +228,6 @@ function targetsAreEqual(
   if (left.kind === "space") return left.spaceId === (right as { spaceId: string }).spaceId;
 
   return left.path === (right as { path: string }).path;
-}
-
-function draggableDirectoryPaths(entries: DirectoryEntry[], sourcePaths: string[]): string[] {
-  const directoryPaths = new Set(
-    entries.filter((entry) => entry.kind === "directory").map((entry) => entry.path),
-  );
-
-  return sourcePaths.filter((path) => directoryPaths.has(path));
 }
 
 export function FileList({
@@ -290,7 +289,7 @@ export function FileList({
   const selectedCount = selectedPaths.length;
   const activeViewMode = viewMode === "column" && searchState ? "list" : viewMode;
   const virtualizer = useVirtualizer({
-    count: entries.length,
+    count: entries.count,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => rowHeight,
     initialOffset: initialScrollOffset,
@@ -346,7 +345,7 @@ export function FileList({
       },
       {
         hotkey: asHotkey(resolveBinding(shortcuts, "explorer.selectAll")),
-        callback: guardedAction(() => onSelectedPathsChange(entries.map((entry) => entry.path))),
+        callback: guardedAction(() => onSelectedPathsChange(allPaths(entries))),
         options: { enabled: hotkeysActive && !listIsLoading },
       },
       {
@@ -521,7 +520,7 @@ export function FileList({
 
     if (event.shiftKey && anchorIndex !== null && index >= 0) {
       const [start, end] = [anchorIndex, index].sort((left, right) => left - right);
-      const range = entries.slice(start, end + 1).map((item) => item.path);
+      const range = pathsInRange(entries, start, end + 1);
       const nextSelection = isToggleSelection
         ? new Set([...selectedPaths, ...range])
         : new Set(range);
@@ -593,9 +592,7 @@ export function FileList({
    */
   const directoryPathsForEntry = (entry: DirectoryEntry): string[] => {
     const sourcePaths = selectedPathSet.has(entry.path) ? selectedPaths : [entry.path];
-    const knownDirectories = new Set(
-      entries.filter((item) => item.kind === "directory").map((item) => item.path),
-    );
+    const knownDirectories = directoryPathSet(entries);
 
     return sourcePaths.filter((path) =>
       path === entry.path ? entry.kind === "directory" : knownDirectories.has(path),
@@ -666,10 +663,10 @@ export function FileList({
       if (bottomContent <= 0) return [];
 
       const firstRow = Math.max(0, Math.floor(topContent / rowHeight));
-      const lastRow = Math.min(entries.length - 1, Math.ceil(bottomContent / rowHeight) - 1);
+      const lastRow = Math.min(entries.count - 1, Math.ceil(bottomContent / rowHeight) - 1);
       if (lastRow < firstRow) return [];
 
-      return entries.slice(firstRow, lastRow + 1).map((entry) => entry.path);
+      return pathsInRange(entries, firstRow, lastRow + 1);
     },
     onSelectionChange: onSelectedPathsChange,
     scrollElementRef: scrollRef,
@@ -729,7 +726,7 @@ export function FileList({
           />
         }
       >
-        {entries.length === 0 && !listIsLoading ? (
+        {entries.count === 0 && !listIsLoading ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2.5 p-6 text-center select-none">
             {searchState?.error ? (
               <TriangleAlert className="size-5 text-muted-foreground" />
@@ -804,7 +801,8 @@ export function FileList({
                 style={{ height: virtualizer.getTotalSize() }}
               >
                 {virtualizer.getVirtualItems().map((virtualRow) => {
-                  const entry = entries[virtualRow.index];
+                  const entry = entries.entryAt(virtualRow.index);
+                  if (!entry) return null;
 
                   // Windows detail-view geometry: rows stop at the size
                   // column's right edge (34+11+7+6 rem = 58rem) instead of
