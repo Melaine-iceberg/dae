@@ -62,6 +62,29 @@ export function guardedAction(
 }
 
 /**
+ * Like {@link guardedAction}, for actions that move the *background* while an
+ * overlay may be up (navigation: Backspace, Alt+arrows, F5, the path-bar
+ * focus keys). Those keys are harmless behind a modal whose surface handles
+ * them itself, but they are not harmless behind the properties dialog or the
+ * settings window — a Backspace on a dialog button must edit nothing and
+ * navigate nothing. The press is left untouched so the overlay keeps it.
+ */
+export function guardedBackgroundAction(action: () => void): HotkeyCallback {
+  return (event, options) => {
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target.closest(
+        '[role="dialog"], [data-slot="dropdown-menu-content"], [data-slot="context-menu-content"]',
+      )
+    ) {
+      return;
+    }
+    guardedAction(action)(event, options);
+  };
+}
+
+/**
  * Widens a stored binding string to the library's {@link RegisterableHotkey}.
  *
  * TanStack types a registerable combo as a narrow template-literal union

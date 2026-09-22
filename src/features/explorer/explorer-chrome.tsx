@@ -75,7 +75,13 @@ export function ListingStats({
       aria-live="polite"
       className="ml-auto flex shrink-0 items-center gap-1.5 pl-3 text-micro text-muted-foreground tabular-nums"
     >
-      {selectedCount > 0 && (
+      {selectedCount > 0 ? (
+        // While a selection exists it is the salient fact, and the bar is
+        // narrow enough that chip + hint + item count together squeezed the
+        // breadcrumbs into a sub-10px box whose text then painted across the
+        // chip. Dropping the (still visible in the empty selection state, and
+        // moot across a navigation that clears the selection) total reclaims
+        // the room the crumbs need.
         <>
           <span className="rounded-xs bg-selection px-1.5 text-foreground">
             {t("explorer:listing.selectedCount", { display: localeNumber(selectedCount) })}
@@ -89,8 +95,9 @@ export function ListingStats({
             {t("explorer:listing.clearSelectionHint")}
           </span>
         </>
+      ) : (
+        <span className="truncate">{status}</span>
       )}
-      <span className="truncate">{status}</span>
     </span>
   );
 }

@@ -51,6 +51,7 @@ import {
   WorkspacePage,
   WorkspacePageHeader,
   formatRecentTime,
+  parentPathOf,
 } from "./workspace-components";
 
 // The projects section probes recent directories for Git repos, spawning
@@ -306,7 +307,16 @@ export function OverviewView() {
                       iconSize={16}
                       presentation={presentation}
                     />
-                    <span className="min-w-0 flex-1 truncate text-body">{item.name}</span>
+                    <span className="shrink-0 text-body font-medium">{item.name}</span>
+                    {/* The parent path fills the row between the name and the
+                        timestamp: without it a 1400px-wide row reads as a name
+                        with a stray time on the far side, and the path is the
+                        one fact that tells two "build" entries apart. */}
+                    <span
+                      className="path-ellipsis min-w-0 flex-1 truncate text-caption text-muted-foreground"
+                    >
+                      {parentPathOf(item.path)}
+                    </span>
                     <span className="shrink-0 text-caption text-muted-foreground tabular-nums">
                       {formatRecentTime(item.accessedAt, t("recents.groups.yesterday"))}
                     </span>

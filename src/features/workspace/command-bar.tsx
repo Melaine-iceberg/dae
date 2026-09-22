@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type ComponentType,
@@ -801,6 +802,28 @@ export function CommandBar() {
     const rowIndex = rowIndices[currentIndex];
     if (rowIndex !== undefined) resultsVirtualizer.scrollToIndex(rowIndex, { align: "auto" });
   }, [currentIndex, resultsVirtualizer, rowIndices]);
+
+  // The palette mounts inside the dialog's first frame, and until the
+  // virtualizer has observed a *measured* scroll element it renders zero rows
+  // out of a correctly sized track — an empty box with a scrollbar on first
+  // open that a later state change (typing a query) would repaint. The
+  // observer's own notification never reaches a re-render here, so re-measure
+  // explicitly and force one render one frame later, once the dialog has laid
+  // itself out. The reducer tick is deliberately not read: dispatching it is
+  // the whole point.
+  const [, renderResultRows] = useReducer((tick: number) => tick + 1, 0);
+  useEffect(() => {
+    if (!open) return;
+    let secondFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      resultsVirtualizer.measure();
+      secondFrame = requestAnimationFrame(renderResultRows);
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [open, renderResultRows, resultsVirtualizer]);
 
   const runCommand = (item: CommandItem) => {
     setOpen(false);

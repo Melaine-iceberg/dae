@@ -60,12 +60,9 @@ import { HOTKEY_COMMON_OPTIONS, asHotkey, guardedAction } from "@/features/setti
 import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
 import { appSettingsAtom, hotkeysPausedAtom, useBinding } from "@/features/settings/settings-atoms";
 
-import {
-  jumpTrashIndex,
-  stepTrashIndex,
-  trashPurgeTargets,
-  typeAheadTrashIndex,
-} from "./trash-navigation";
+import { jumpListIndex, stepListIndex, typeAheadIndex } from "@/lib/list-navigation";
+
+import { trashPurgeTargets } from "./trash-navigation";
 import { navigateToFolderAtom } from "./workspace-atoms";
 import { WorkspacePage, WorkspacePageHeader, baseNameOf } from "./workspace-components";
 
@@ -545,7 +542,7 @@ function TrashList({
       }, TYPE_AHEAD_TIMEOUT_MS),
     };
 
-    moveCursor(typeAheadTrashIndex(names, buffer, activeIndex));
+    moveCursor(typeAheadIndex(names, buffer, activeIndex));
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -567,7 +564,7 @@ function TrashList({
       case "ArrowDown":
       case "ArrowUp": {
         event.preventDefault();
-        moveCursor(stepTrashIndex(activeIndex, count, event.key === "ArrowDown" ? 1 : -1));
+        moveCursor(stepListIndex(activeIndex, count, event.key === "ArrowDown" ? 1 : -1));
         return;
       }
       case "Home":
@@ -583,7 +580,7 @@ function TrashList({
               : event.key === "PageUp"
                 ? "pageUp"
                 : "pageDown";
-        moveCursor(jumpTrashIndex(activeIndex, count, jump, pageSize));
+        moveCursor(jumpListIndex(activeIndex, count, jump, pageSize));
         return;
       }
       case "Enter": {

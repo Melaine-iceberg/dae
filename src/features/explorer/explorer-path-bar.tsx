@@ -23,6 +23,9 @@ const MENU_POPUP_SELECTOR =
 
 interface ExplorerPathBarProps {
   directory: DirectoryView;
+  /** Bumped by the pane when Ctrl+L / Alt+D fires: each increment opens the
+   *  inline editor with the current path selected. */
+  editSignal?: number;
   onNavigate: (breadcrumb: Breadcrumb) => void;
   onNavigatePath: (path: string) => Promise<boolean>;
   /**
@@ -39,6 +42,7 @@ interface ExplorerPathBarProps {
 
 export function ExplorerPathBar({
   directory,
+  editSignal = 0,
   onNavigate,
   onNavigatePath,
   trailing,
@@ -106,6 +110,20 @@ export function ExplorerPathBar({
     setIsInvalid(false);
     setIsEditing(true);
   };
+
+  // Ctrl+L / Alt+D (Chrome's and Explorer's address-bar chords) ask the pane
+  // for the editor; the pane answers by bumping `editSignal`. The `> 0` guard
+  // keeps the first render from opening an editor nobody asked for.
+  //
+  // Deliberately keyed on the signal alone: adding `directory.path` would
+  // re-run this on every navigation with the old signal still set, so each
+  // directory change would pop the editor open unasked. The callback that
+  // runs is the one from the render where the signal arrived, so it seeds
+  // with the path current at that moment — no stale value, no extra dep.
+  useEffect(() => {
+    if (editSignal > 0) beginEditing();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editSignal]);
 
   const copyPath = () => {
     void copyText(directory.path);

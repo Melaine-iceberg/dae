@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -15,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { getEntryPresentation } from "./file-icons";
-import type { MenuActions } from "./file-list";
+import type { ListingNavContext, MenuActions } from "./file-list";
 import { TypeIconTile } from "./icon-tile";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { entriesInRange, type ListingView } from "./listing-view";
@@ -26,7 +27,11 @@ import { isThumbnailSupported, ThumbnailImage } from "./thumbnail";
 import type { DirectoryEntry } from "./types";
 
 const GRID_CELL_MIN_WIDTH: Record<ExplorerDensity, number> = {
-  compact: 88,
+  // 96 rather than 88: the text box of a compact cell is cell minus 16px of
+  // padding, and 80px at 12px font-medium is what common names like
+  // "package.json" need for one line. At 88 they wrapped mid-token —
+  // "package.jso / n" — which reads as a rendering bug, not as a long name.
+  compact: 96,
   comfortable: 104,
   spacious: 120,
 };
@@ -57,7 +62,6 @@ const GRID_CELL_HEIGHT: Record<ExplorerDensity, number> = {
   comfortable: 102,
   spacious: 110,
 };
-
 /** Static height classes matching the tile scale so thumbnails keep geometry. */
 const GRID_IMAGE_ZONE_CLASS: Record<ExplorerDensity, string> = {
   compact: "h-image-zone-compact",
@@ -70,11 +74,19 @@ const GRID_PADDING_PX = 12;
 
 export interface FileGridViewProps {
   actionsDisabled: boolean;
+  /** The keyboard cursor's entry index — the grid's roving tab stop. */
+  cursorIndex: number | null;
   draggingPaths: Set<string>;
   dropTargetPath: string | null;
   entries: ListingView;
   gitStatus?: ExplorerGitStatus | null;
   menuActions: MenuActions;
+  /** The shared list keyboard model from `FileList`; the grid supplies its own
+   *  geometry (column count, stride, virtual-row scroll) as the context. */
+  onNavKeyDown: (
+    event: ReactKeyboardEvent<HTMLDivElement>,
+    context: ListingNavContext,
+  ) => void;
   onAddToFavorites: (entry: DirectoryEntry) => void;
   onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
   onContextMenuEntry: (entry: DirectoryEntry, index: number) => void;
@@ -92,6 +104,7 @@ export interface FileGridViewProps {
  */
 export function FileGridView({
   actionsDisabled,
+  cursorIndex,
   draggingPaths,
   dropTargetPath,
   entries,
@@ -100,6 +113,7 @@ export function FileGridView({
   onAddToFavorites,
   onAddToSpace,
   onContextMenuEntry,
+  onNavKeyDown,
   onOpenEntry,
   onPointerDownEntry,
   onSelectEntry,
@@ -183,6 +197,20 @@ export function FileGridView({
       <div
         aria-multiselectable="true"
         className="h-full overflow-auto"
+        onKeyDown={(event) =>
+          onNavKeyDown(event, {
+            container: event.currentTarget,
+            columns: columnCount,
+            leadingOffset: GRID_PADDING_PX,
+            rowStride,
+            // The virtualizer windows whole rows: bring the target's row into
+            // view and the cell inside it mounts with it.
+            scrollToEntry: (index) =>
+              virtualizer.scrollToIndex(Math.floor(index / Math.max(1, columnCount)), {
+                align: "auto",
+              }),
+          })
+        }
         onPointerDown={(event) => {
           if (event.target instanceof Element && event.target.closest('[role="option"]')) {
             return;
@@ -219,6 +247,7 @@ export function FileGridView({
                   gitStatus={gitStatus}
                   index={virtualRow.index * columnCount + sliceIndex}
                   isActionDisabled={actionsDisabled}
+                  isCursor={virtualRow.index * columnCount + sliceIndex === (cursorIndex ?? 0)}
                   isDragging={draggingPaths.has(entry.path)}
                   isDropTarget={dropTargetPath === entry.path}
                   isSelected={selectedPathSet.has(entry.path)}
@@ -253,6 +282,7 @@ function GridCell({
   gitStatus,
   index,
   isActionDisabled,
+  isCursor,
   isDragging,
   isDropTarget,
   isSelected,
@@ -271,6 +301,8 @@ function GridCell({
   gitStatus?: ExplorerGitStatus | null;
   index: number;
   isActionDisabled: boolean;
+  /** The roving tab stop — exactly one cell answers Tab. */
+  isCursor: boolean;
   isDragging: boolean;
   isDropTarget: boolean;
   isSelected: boolean;
@@ -306,6 +338,7 @@ function GridCell({
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-primary/10 ring-2 ring-primary ring-inset",
           )}
+          data-entry-path={entry.path}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={(event) => onSelectEntry(entry, index, event)}
           onContextMenu={() => onContextMenuEntry(entry, index)}
@@ -318,7 +351,7 @@ function GridCell({
           }}
           onPointerDown={(event) => onPointerDownEntry(entry, event)}
           role="option"
-          tabIndex={0}
+          tabIndex={isCursor ? 0 : -1}
           title={entry.path}
         >
           {showThumbnail ? (
@@ -356,9 +389,15 @@ function GridCell({
           )}
           <span
             className={cn(
-              // The cell's label keeps one weight in every state: the selection
-              // fill already carries the state, and a re-measuring label makes a
-              // multi-select scan jumpy (same rule as the list rows).
+              // `break-all` (not `break-words`): the label is a line-clamped
+              // `-webkit-box`, and Blink does not apply `overflow-wrap:
+              // break-word` inside it — with `break-words` an overlong name
+              // ("tsconfig.node.tsbuildinfo") stopped wrapping entirely and
+              // painted over its neighbours instead. `break-all` wraps at the
+              // clamp width every time; the common names that used to split
+              // ("package.jso / n") now fit on one line because the compact
+              // cell grew to 96px, so the mid-token break only fires for names
+              // that genuinely cannot fit.
               "line-clamp-2 text-caption leading-snug font-medium break-all",
             )}
           >

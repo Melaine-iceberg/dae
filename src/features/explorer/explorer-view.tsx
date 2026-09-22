@@ -33,7 +33,16 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { formatBinding } from "@/features/settings/shortcut-registry";
-import { useBinding } from "@/features/settings/settings-atoms";
+import {
+  hotkeysPausedAtom,
+  useBinding,
+} from "@/features/settings/settings-atoms";
+import {
+  HOTKEY_COMMON_OPTIONS,
+  asHotkey,
+  guardedBackgroundAction,
+} from "@/features/settings/hotkeys";
+import { useHotkeys } from "@tanstack/react-hotkeys";
 import {
   addFavoritePathsAtom,
   favoritesAtom,
@@ -135,6 +144,9 @@ export function ExplorerView({
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("name");
   const [undoRedoToast, setUndoRedoToast] = useState<UndoRedoToast | null>(null);
+  /** Bumped by Ctrl+L / Alt+D; the path bar edits on every increment. The
+   *  signal is pane-local, so in a split only the active pane's bar reacts. */
+  const [pathEditSignal, setPathEditSignal] = useState(0);
   // Live bindings for the undo toast's buttons. They used to be baked into
   // the translation strings ("收起预览面板 (Space)"), which meant a rebind left
   // the tooltip teaching a key that no longer did anything.
@@ -188,6 +200,66 @@ export function ExplorerView({
   const clearSelection = useCallback(() => setSelectedPaths([]), [setSelectedPaths]);
 
   const refresh = useCallback((path: string) => navigator.refresh(path), [navigator]);
+
+  const hotkeysPaused = useAtomValue(hotkeysPausedAtom);
+  // Pane-local navigation keys: the platform file-manager chords that never
+  // made it into the window before. They are fixed rather than rebindable —
+  // the registry mirrors the Rust defaults one-for-one, and Backspace/Alt+arrow
+  // are OS conventions rather than dae bindings. Each handler self-gates on its
+  // own pane (`isActivePane`) the same way the file list's registrations do.
+  useHotkeys(
+    [
+      {
+        hotkey: asHotkey("Backspace"),
+        callback: guardedBackgroundAction(() => void navigator.goUp()),
+        options: { enabled: isActivePane && !hotkeysPaused && canGoUp },
+      },
+      {
+        hotkey: asHotkey("Alt+ArrowLeft"),
+        callback: guardedBackgroundAction(() => void navigator.goBack()),
+        options: { enabled: isActivePane && !hotkeysPaused && canGoBack },
+      },
+      {
+        hotkey: asHotkey("Alt+ArrowRight"),
+        callback: guardedBackgroundAction(() => void navigator.goForward()),
+        options: { enabled: isActivePane && !hotkeysPaused && canGoForward },
+      },
+      {
+        hotkey: asHotkey("Alt+ArrowUp"),
+        callback: guardedBackgroundAction(() => void navigator.goUp()),
+        options: { enabled: isActivePane && !hotkeysPaused && canGoUp },
+      },
+      {
+        // F5 is Explorer's refresh; Ctrl+R is the browser/webview habit that
+        // would otherwise reload the whole app out from under the user.
+        hotkey: asHotkey("F5"),
+        callback: guardedBackgroundAction(() =>
+          directory ? void navigator.navigate(directory.path) : undefined,
+        ),
+        options: { enabled: isActivePane && !hotkeysPaused && directory !== null },
+      },
+      {
+        hotkey: asHotkey("Control+R"),
+        callback: guardedBackgroundAction(() =>
+          directory ? void navigator.navigate(directory.path) : undefined,
+        ),
+        options: { enabled: isActivePane && !hotkeysPaused && directory !== null },
+      },
+      {
+        // Ctrl+L (Chrome) and Alt+D (Explorer) both put the caret in the
+        // address/path bar — the two conventions users bring with them.
+        hotkey: asHotkey("Control+L"),
+        callback: guardedBackgroundAction(() => setPathEditSignal((signal) => signal + 1)),
+        options: { enabled: isActivePane && !hotkeysPaused },
+      },
+      {
+        hotkey: asHotkey("Alt+D"),
+        callback: guardedBackgroundAction(() => setPathEditSignal((signal) => signal + 1)),
+        options: { enabled: isActivePane && !hotkeysPaused },
+      },
+    ],
+    { ...HOTKEY_COMMON_OPTIONS },
+  );
   const {
     performFileOperation,
     fileOperationProgress,
@@ -589,6 +661,7 @@ export function ExplorerView({
           onTogglePreview={togglePreview}
           onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
           onToggleSplit={onToggleSplit}
+          pathEditSignal={pathEditSignal}
           search={search}
           searchMode={searchMode}
           sidebarVisible={sidebarVisible}

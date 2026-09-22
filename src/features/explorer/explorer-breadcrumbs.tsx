@@ -130,7 +130,12 @@ export function ExplorerBreadcrumbs({ breadcrumbs, onNavigate }: ExplorerBreadcr
   return (
     // flex-1 让导航条宽度恒等于可用宽度；否则它的宽度由内容决定，折叠后内容
     // 变窄 → 宽度变小 → 计算认为放不下 → 永远回不到展开态。
-    <Breadcrumb ref={containerRef} className="relative min-w-0 flex-1">
+    //
+    // overflow-hidden is the backstop for the squeeze: with a selection the
+    // stats chip claims most of the bar, the flex item shrinks below its
+    // content, and without the clip the crumb text paints across the stats
+    // instead of truncating at its own box.
+    <Breadcrumb ref={containerRef} className="relative min-w-0 flex-1 overflow-hidden">
       <BreadcrumbList ref={listRef} className="flex-nowrap">
         {visible.map((breadcrumb, index) => {
           const nodes: ReactNode[] = [];

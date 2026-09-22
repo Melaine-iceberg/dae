@@ -1,7 +1,9 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -60,6 +62,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { isEditableElement } from "@/lib/dom";
+import { jumpListIndex, stepListIndex, typeAheadIndex } from "@/lib/list-navigation";
 import { useMeasuredWidth } from "@/lib/use-element-width";
 
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
@@ -165,6 +169,38 @@ interface FileListSearchState {
   query: string;
   truncated: boolean;
 }
+
+/**
+ * What a listing surface must provide for the shared keyboard navigation
+ * (`FileList.handleNavKeyDown`). The detail list and the grid both mount
+ * their own scroller and their own virtualizer, so they describe their
+ * geometry here and get cursor movement, type-ahead, paging and focus back
+ * for free.
+ */
+export interface ListingNavContext {
+  /** The scroller the key event bubbled through; focus targets are searched
+   *  within it so a split pane's twin list is never focused by mistake. */
+  container: HTMLElement;
+  /** 1 in the detail list (vertical only), the measured count in the grid. */
+  columns: number;
+  /** Distance between row tops — row height in the list, cell height + gap in
+   *  the grid — so paging follows the real geometry. */
+  rowStride: number;
+  /** Scroll content above the first row (the list's sticky column header). */
+  leadingOffset: number;
+  /** Brings the target into view before focus moves: the list scrolls its
+   *  row, the grid its whole virtual row. */
+  scrollToEntry: (index: number) => void;
+}
+
+/** How many frames a focus request may wait for its virtualized row to mount.
+ *  A second is the budget: a smooth scroll or a re-windowed virtual row can
+ *  take several frames to land, and a focus that gives up early strands the
+ *  keyboard on the previous row. */
+const FOCUS_RETRY_FRAMES = 60;
+
+/** How long a type-ahead buffer survives after the last keystroke. */
+const TYPE_AHEAD_TIMEOUT_MS = 800;
 
 const MODIFIED_DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   year: "numeric",
@@ -344,6 +380,13 @@ export function FileList({
   const { t } = useTranslation("explorer");
   const scrollRef = useRef<HTMLDivElement>(null);
   const selectionAnchorIndexRef = useRef<number | null>(null);
+  /** Index of the row the keyboard is on — the roving tab stop and the range
+   *  origin for Shift+arrows. Null until the first click or key press. */
+  const [cursorIndex, setCursorIndex] = useState<number | null>(null);
+  /** Latest focus request; a newer move cancels an older retry loop so two
+   *  quick arrow presses cannot leave focus on the first target. */
+  const focusRequestRef = useRef<string | null>(null);
+  const typeAheadRef = useRef<{ buffer: string; timer: number | null }>({ buffer: "", timer: null });
   const dragCandidateRef = useRef<DragCandidate | null>(null);
   const internalDragRef = useRef<InternalDragState | null>(null);
   const suppressNextClickRef = useRef(false);
@@ -374,10 +417,44 @@ export function FileList({
 
   useEffect(() => {
     selectionAnchorIndexRef.current = null;
+    setCursorIndex(null);
+    focusRequestRef.current = null;
     if (scrollRef.current) {
       scrollRef.current.scrollTop = initialScrollOffset;
     }
   }, [initialScrollOffset, viewId]);
+
+  // The cursor may not outlive its row: a filter, a re-sort or a delete
+  // shortens the listing under the keyboard's feet, and an index past the end
+  // would send the next arrow press out of range.
+  useEffect(() => {
+    setCursorIndex((current) => {
+      if (current === null) return null;
+      if (entries.count === 0) return null;
+      return current < entries.count ? current : entries.count - 1;
+    });
+  }, [entries.count]);
+
+  // Type-to-jump names, kept out of the key handler so one keystroke does not
+  // rebuild the array for every row.
+  const entryNames = useMemo(() => {
+    const names: string[] = [];
+    for (let index = 0; index < entries.count; index += 1) {
+      const entry = entries.entryAt(index);
+      if (entry) names.push(entry.name);
+    }
+    return names;
+  }, [entries]);
+
+  // Stops the buffered type-ahead timer when the tab (and this list) unmounts.
+  useEffect(
+    () => () => {
+      if (typeAheadRef.current.timer !== null) {
+        window.clearTimeout(typeAheadRef.current.timer);
+      }
+    },
+    [],
+  );
 
   const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
   const hotkeysPaused = useAtomValue(hotkeysPausedAtom);
@@ -468,6 +545,15 @@ export function FileList({
         hotkey: asHotkey(resolveBinding(shortcuts, "explorer.openSystemTerminal")),
         callback: guardedAction(onOpenTerminal),
         options: { enabled: hotkeysActive },
+      },
+      {
+        // The creation shortcut every file manager has; the blank-area context
+        // menu was its only entry point. Fixed like the list's other
+        // non-rebindable keys (arrows, type-ahead) rather than registered —
+        // the registry mirrors the Rust defaults one-for-one.
+        hotkey: asHotkey("Mod+Shift+N"),
+        callback: guardedAction(onCreateDirectory),
+        options: { enabled: hotkeysActive && !actionsDisabled },
       },
     ],
     HOTKEY_COMMON_OPTIONS,
@@ -600,12 +686,16 @@ export function FileList({
       const nextSelection = isToggleSelection
         ? new Set([...selectedPaths, ...range])
         : new Set(range);
+      // The range origin stays where it was; only the cursor follows the
+      // click, so a second Shift+click still extends from the same anchor.
+      setCursorIndex(index);
       onSelectedPathsChange([...nextSelection]);
       return;
     }
 
     if (index >= 0) {
       selectionAnchorIndexRef.current = index;
+      setCursorIndex(index);
     }
 
     if (isToggleSelection) {
@@ -627,6 +717,7 @@ export function FileList({
 
     if (index >= 0) {
       selectionAnchorIndexRef.current = index;
+      setCursorIndex(index);
     }
 
     onSelectedPathsChange([entry.path]);
@@ -659,6 +750,166 @@ export function FileList({
     }
 
     void openFile(entry.path);
+  };
+
+  /**
+   * Moves the keyboard cursor to `next`: the selection collapses to that row,
+   * or — with Shift — extends to the range from the anchor. Scrolling and
+   * focus are the caller's job through {@link ListingNavContext}, because the
+   * detail list and the grid virtualize differently.
+   */
+  const moveCursorTo = (next: number, extend: boolean) => {
+    if (actionsDisabled || next < 0 || next >= entries.count) return;
+    const path = entries.pathAt(next);
+    if (path === undefined) return;
+
+    if (extend) {
+      const anchor = selectionAnchorIndexRef.current ?? cursorIndex;
+      if (anchor !== null && anchor >= 0 && anchor < entries.count) {
+        const [start, end] = [anchor, next].sort((left, right) => left - right);
+        onSelectedPathsChange(pathsInRange(entries, start, end + 1));
+      } else {
+        selectionAnchorIndexRef.current = next;
+        onSelectedPathsChange([path]);
+      }
+    } else {
+      selectionAnchorIndexRef.current = next;
+      onSelectedPathsChange([path]);
+    }
+    setCursorIndex(next);
+  };
+
+  /**
+   * Focuses the row for `path` once virtualization has mounted it. The scroll
+   * happens first (each view already called its own `scrollToEntry`), so the
+   * row usually exists on the first frame; the retries cover the frame the
+   * virtualizer still needs to commit. A newer request cancels an older loop.
+   */
+  const focusEntryRow = (container: HTMLElement, path: string) => {
+    focusRequestRef.current = path;
+    let frames = 0;
+    const attempt = () => {
+      if (focusRequestRef.current !== path || !container.isConnected) return;
+      const row = Array.from(container.querySelectorAll<HTMLElement>("[data-entry-path]")).find(
+        (element) => element.dataset.entryPath === path,
+      );
+      if (row) {
+        row.focus({ preventScroll: true });
+        focusRequestRef.current = null;
+        return;
+      }
+      if (frames < FOCUS_RETRY_FRAMES) {
+        frames += 1;
+        requestAnimationFrame(attempt);
+      }
+    };
+    requestAnimationFrame(attempt);
+  };
+
+  /**
+   * Shared keyboard model for the detail list and the grid: arrows, Home/End,
+   * paging, Enter and Windows-style type-to-jump (SKILL.md: the explorer's
+   * rows used to be pointer-only — arrows now move the selection and the
+   * roving tab stop together, exactly like the Trash list already did).
+   *
+   * Modified keys stand down for the registered hotkeys, an editable target
+   * (the inline rename cell, the path editor) types rather than navigates, and
+   * Space is left to the preview binding — which is also why it never joins
+   * the type-ahead buffer.
+   */
+  const handleNavKeyDown = (event: ReactKeyboardEvent<HTMLElement>, context: ListingNavContext) => {
+    if (event.defaultPrevented || event.nativeEvent.isComposing) return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    if (actionsDisabled) return;
+    const target = event.target;
+    if (target instanceof Element && isEditableElement(target)) return;
+
+    const count = entries.count;
+    if (count === 0) return;
+    const current = cursorIndex ?? -1;
+    const extend = event.shiftKey;
+
+    const commit = (next: number) => {
+      if (next < 0 || next >= count) return;
+      moveCursorTo(next, extend);
+      context.scrollToEntry(next);
+      const path = entries.pathAt(next);
+      if (path !== undefined) focusEntryRow(context.container, path);
+    };
+
+    switch (event.key) {
+      case "ArrowDown":
+        event.preventDefault();
+        commit(stepListIndex(current, count, context.columns));
+        return;
+      case "ArrowUp":
+        event.preventDefault();
+        commit(stepListIndex(current, count, -context.columns));
+        return;
+      case "ArrowLeft":
+      case "ArrowRight": {
+        // A vertical list has no horizontal neighbour to move to; the grid
+        // moves linearly, so a press at a row's edge crosses into the adjacent
+        // row the way Explorer's icon view does.
+        if (context.columns <= 1) return;
+        event.preventDefault();
+        commit(stepListIndex(current, count, event.key === "ArrowRight" ? 1 : -1));
+        return;
+      }
+      case "Home":
+        event.preventDefault();
+        commit(0);
+        return;
+      case "End":
+        event.preventDefault();
+        commit(count - 1);
+        return;
+      case "PageUp":
+      case "PageDown": {
+        event.preventDefault();
+        const rowsPerPage = Math.max(
+          1,
+          Math.floor((context.container.clientHeight - context.leadingOffset) / context.rowStride) -
+            1,
+        );
+        commit(
+          jumpListIndex(
+            current,
+            count,
+            event.key === "PageUp" ? "pageUp" : "pageDown",
+            rowsPerPage * context.columns,
+          ),
+        );
+        return;
+      }
+      case "Enter": {
+        // A focused row handled this press first and marked it prevented;
+        // this branch is for a press whose focus sat on the header or on a row
+        // that virtualization has since unmounted — open the cursor's entry.
+        if (event.defaultPrevented) return;
+        const entry = current >= 0 ? entries.entryAt(current) : undefined;
+        if (!entry) return;
+        event.preventDefault();
+        openEntry(entry);
+        return;
+      }
+      default:
+        break;
+    }
+
+    if (event.key.length === 1 && event.key !== " " && !event.repeat) {
+      const state = typeAheadRef.current;
+      if (state.timer !== null) window.clearTimeout(state.timer);
+      const buffer = state.buffer + event.key;
+      typeAheadRef.current = {
+        buffer,
+        timer: window.setTimeout(() => {
+          typeAheadRef.current = { buffer: "", timer: null };
+        }, TYPE_AHEAD_TIMEOUT_MS),
+      };
+      const match = typeAheadIndex(entryNames, buffer, current);
+      if (match >= 0) commit(match);
+    }
   };
 
   /**
@@ -834,13 +1085,27 @@ export function FileList({
             </EmptyHeader>
           </Empty>
         ) : activeViewMode === "grid" ? (
-          <FileGridView {...viewControls} entries={entries} />
+          <FileGridView
+            {...viewControls}
+            cursorIndex={cursorIndex}
+            entries={entries}
+            onNavKeyDown={handleNavKeyDown}
+          />
         ) : activeViewMode === "column" ? (
           <FileColumnView {...viewControls} rootEntries={entries} viewId={viewId} />
         ) : (
           <div
             ref={scrollRef}
             className="min-h-0 flex-1 overflow-auto"
+            onKeyDown={(event) =>
+              handleNavKeyDown(event, {
+                container: event.currentTarget,
+                columns: 1,
+                leadingOffset: LIST_HEADER_HEIGHT_PX,
+                rowStride: rowHeight,
+                scrollToEntry: (index) => virtualizer.scrollToIndex(index, { align: "auto" }),
+              })
+            }
             onPointerDown={(event) => {
               if (
                 event.target instanceof Element &&
@@ -928,6 +1193,7 @@ export function FileList({
                         gitStatus={gitStatus}
                         index={virtualRow.index}
                         isActionDisabled={actionsDisabled}
+                        isCursor={virtualRow.index === (cursorIndex ?? 0)}
                         isDragging={draggingPaths.has(entry.path)}
                         isDropTarget={
                           internalDropTargetPath === entry.path ||
@@ -1006,6 +1272,7 @@ export function FileList({
           <ContextMenuItem onClick={onCreateDirectory}>
             <FolderPlus />
             {t("explorer:contextMenu.newFolder")}
+            <ContextMenuShortcut>{formatBinding("Mod+Shift+N")}</ContextMenuShortcut>
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
@@ -1152,6 +1419,7 @@ function FileListRow({
   gitStatus,
   index,
   isActionDisabled,
+  isCursor,
   isDragging,
   isDropTarget,
   isSelected,
@@ -1173,6 +1441,9 @@ function FileListRow({
   gitStatus?: ExplorerGitStatus | null;
   index: number;
   isActionDisabled: boolean;
+  /** The roving tab stop: exactly one row answers Tab, and the keyboard's
+   *  arrows move it together with the selection. */
+  isCursor: boolean;
   isDragging: boolean;
   isDropTarget: boolean;
   isSelected: boolean;
@@ -1211,6 +1482,7 @@ function FileListRow({
             isDragging && "cursor-grabbing opacity-50",
             isDropTarget && "bg-primary/10 ring-2 ring-primary ring-inset",
           )}
+          data-entry-path={entry.path}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={handleSelect}
           onContextMenu={() => onContextMenuEntry(entry, index)}
@@ -1223,7 +1495,7 @@ function FileListRow({
           }}
           onPointerDown={(event) => onPointerDownEntry(entry, event)}
           role="option"
-          tabIndex={0}
+          tabIndex={isCursor ? 0 : -1}
           title={entry.path}
           style={{ gridTemplateColumns: listGridTemplate(columns), height: densityRowHeight }}
         >

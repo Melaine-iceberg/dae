@@ -73,6 +73,9 @@ export interface ExplorerToolbarProps {
   searchMode: ExplorerSearchMode;
   onSearchModeChange: (mode: ExplorerSearchMode) => void;
   gitStatus: ExplorerGitStatus | null;
+  /** Incremented by the pane's Ctrl+L / Alt+D; forwarded to the path bar so
+   *  its inline editor opens. */
+  pathEditSignal: number;
   splitEnabled: boolean;
   onToggleSplit?: () => void;
   isPreviewOpen: boolean;
@@ -101,6 +104,7 @@ export function ExplorerToolbar({
   searchMode,
   onSearchModeChange,
   gitStatus,
+  pathEditSignal,
   splitEnabled,
   onToggleSplit,
   isPreviewOpen,
@@ -204,6 +208,7 @@ export function ExplorerToolbar({
         {directory ? (
           <ExplorerPathBar
             directory={directory}
+            editSignal={pathEditSignal}
             onNavigate={onNavigateBreadcrumb}
             onNavigatePath={onNavigatePath}
             trailing={<ListingStats {...stats} />}
