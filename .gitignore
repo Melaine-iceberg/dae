@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# winapp CLI (MSIX): the self-signed signing key and packed output are build
+# artifacts, never source.
+devcert.pfx
+*.msix
+
 # Editor directories and files
 /.codex/
 /.claude/

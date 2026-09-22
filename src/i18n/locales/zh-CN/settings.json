@@ -8,7 +8,8 @@
     "shortcuts": "快捷键",
     "terminal": "终端",
     "defaultFileManager": "默认文件管理器",
-    "logs": "日志"
+    "logs": "日志",
+    "about": "关于"
   },
   "appearance": {
     "description": "主题与界面语言。更改会立即生效。",
@@ -88,6 +89,13 @@
     "description": "应用运行时留下的记录。遇到问题时，日志文件就在这里。",
     "openDirectory": "打开日志目录",
     "privacy": "日志会包含你打开过的文件路径等本机信息，分享前请自行确认。"
+  },
+  "about": {
+    "description": "版本与 Windows 包身份。",
+    "version": "版本",
+    "packageIdentity": "包系列名称（Package family name）",
+    "identityActive": "已以包身份运行 —— 通知等需要包身份的 API 可用。",
+    "identityInactive": "未以包身份运行。可通过 winapp run 调试或安装 MSIX 获取。"
   },
   "default_manager": {
     "cannot_unset_macos": "macOS 不允许应用自行取消默认身份，请在访达设置中选择其他应用来更改。",

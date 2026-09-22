@@ -26,6 +26,34 @@ const LOG_FILE_BYTES: u128 = 4 * 1024 * 1024;
 /// history; five bounds the directory at five times [`LOG_FILE_BYTES`].
 const LOG_FILES_KEPT: usize = 5;
 
+/// The Windows package family name this process runs under, or the reason it
+/// has none — the check that tells a packaged launch (MSIX install or
+/// `winapp run`) from a plain `cargo build` one, per the winapp CLI's Tauri
+/// guide. Only identity-gated APIs (notifications, Phi Silica, …) need the
+/// packaged form.
+#[tauri::command]
+#[specta::specta]
+fn get_package_family_name() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::ApplicationModel::Package;
+        match Package::Current() {
+            Ok(package) => match package.Id() {
+                Ok(id) => match id.FamilyName() {
+                    Ok(name) => name.to_string(),
+                    Err(_) => "Error retrieving Family Name".to_string(),
+                },
+                Err(_) => "Error retrieving Package ID".to_string(),
+            },
+            Err(_) => "No package identity".to_string(),
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        "Not running on Windows".to_string()
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let specta = specta_builder();
@@ -355,7 +383,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             tab_windows::tab_drag_hover_ack,
             tab_windows::start_tab_drag,
             tab_windows::tear_off_tab,
-            tab_windows::take_tab_handoff
+            tab_windows::take_tab_handoff,
+            get_package_family_name
         ])
         .events(tauri_specta::collect_events![
             file_system::DirectoryChanged,

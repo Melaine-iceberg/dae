@@ -8,7 +8,8 @@
     "shortcuts": "Shortcuts",
     "terminal": "Terminal",
     "defaultFileManager": "Default file manager",
-    "logs": "Logs"
+    "logs": "Logs",
+    "about": "About"
   },
   "appearance": {
     "description": "Theme and display language. Changes apply immediately.",
@@ -88,6 +89,13 @@
     "description": "A record of what the app did while it ran. When something goes wrong, the log file is here.",
     "openDirectory": "Open log folder",
     "privacy": "Logs include local details such as the paths you opened. Review them before sharing."
+  },
+  "about": {
+    "description": "Version and Windows package identity.",
+    "version": "Version",
+    "packageIdentity": "Package family name",
+    "identityActive": "Running with package identity — notifications and other identity APIs are available.",
+    "identityInactive": "Not running with package identity. Run 'winapp run' or install the MSIX to get it."
   },
   "default_manager": {
     "cannot_unset_macos": "macOS does not allow an app to remove itself as the default. Choose another app in Finder settings to change it.",

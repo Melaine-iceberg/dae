@@ -18,6 +18,7 @@ import {
   CircleCheck,
   LoaderCircle,
   Settings,
+  Info,
   Keyboard,
   Minus,
   Palette,
@@ -25,6 +26,7 @@ import {
   ScrollText,
   SquareTerminal,
 } from "lucide-react";
+import { getVersion } from "@tauri-apps/api/app";
 import { appLogDir } from "@tauri-apps/api/path";
 import { openPath } from "@tauri-apps/plugin-opener";
 
@@ -62,7 +64,7 @@ import {
   type ShortcutId,
 } from "./shortcut-registry";
 
-type Pane = "appearance" | "shortcuts" | "terminal" | "defaultFileManager" | "logs";
+type Pane = "appearance" | "shortcuts" | "terminal" | "defaultFileManager" | "logs" | "about";
 
 const NAV_ITEMS: ReadonlyArray<{ icon: typeof Settings; pane: Pane }> = [
   { icon: Palette, pane: "appearance" },
@@ -70,6 +72,7 @@ const NAV_ITEMS: ReadonlyArray<{ icon: typeof Settings; pane: Pane }> = [
   { icon: SquareTerminal, pane: "terminal" },
   { icon: Settings, pane: "defaultFileManager" },
   { icon: ScrollText, pane: "logs" },
+  { icon: Info, pane: "about" },
 ];
 
 const GROUP_ORDER: readonly ShortcutGroup[] = ["app", "explorer", "view"];
@@ -119,6 +122,7 @@ export function SettingsDialog() {
             {pane === "terminal" && <TerminalPane />}
             {pane === "defaultFileManager" && <DefaultFileManagerPane />}
             {pane === "logs" && <LogsPane />}
+            {pane === "about" && <AboutPane />}
           </div>
         </div>
       </DialogContent>
@@ -560,6 +564,87 @@ function LogsPane() {
       </div>
 
       {error && <p className="text-caption text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+/**
+ * App version and the Windows package family name.
+ *
+ * The identity row is the visible half of the winapp CLI's Tauri-guide check:
+ * a plain `cargo build` run answers "No package identity", while a
+ * `winapp run` session or an installed MSIX shows the family name — which is
+ * what unlocks the APIs that require package identity (notifications,
+ * on-device AI, …).
+ */
+function AboutPane() {
+  const { t } = useTranslation("settings");
+  const [version, setVersion] = useState<string | null>(null);
+  const [familyName, setFamilyName] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const value = await getVersion();
+        if (!cancelled) setVersion(value);
+      } catch {
+        // A missing `core:app` grant only costs the version row; the identity
+        // check below still renders.
+      }
+      try {
+        const value = await commands.getPackageFamilyName();
+        if (!cancelled) setFamilyName(value);
+      } catch {
+        // The command answers with a reason string rather than an error
+        // whenever identity is absent; only a real IPC failure lands here.
+        if (!cancelled) setFamilyName("Error retrieving Family Name");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Mirrors the guide's frontend check: absent identity arrives as one of the
+  // reason strings above, never as a thrown error.
+  const hasIdentity =
+    familyName !== null &&
+    familyName !== "No package identity" &&
+    familyName !== "Not running on Windows" &&
+    !familyName.startsWith("Error");
+
+  return (
+    <div className="flex flex-col">
+      <PaneHeader description={t("about.description")} title={t("nav.about")} />
+
+      <SettingRows>
+        <SettingRow
+          control={
+            <span className="text-body text-muted-foreground">
+              {version === null ? "…" : `dae ${version}`}
+            </span>
+          }
+          label={t("about.version")}
+        />
+        <SettingRow
+          control={
+            hasIdentity ? (
+              <span className="font-mono text-caption">{familyName}</span>
+            ) : (
+              <span className="text-caption text-muted-foreground">
+                {familyName === null ? "…" : "—"}
+              </span>
+            )
+          }
+          description={
+            familyName === null
+              ? undefined
+              : t(hasIdentity ? "about.identityActive" : "about.identityInactive")
+          }
+          label={t("about.packageIdentity")}
+        />
+      </SettingRows>
     </div>
   );
 }
