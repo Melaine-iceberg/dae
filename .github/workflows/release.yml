@@ -45,9 +45,16 @@ jobs:
         shell: bash
         run: |
           version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          pkg=$(node -p "require('./package.json').version")
           if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
             echo "::error::Pushed tag ${GITHUB_REF_NAME} but tauri.conf.json declares v$version."
-            echo "::error::Bump the version in both src-tauri/tauri.conf.json and src-tauri/Cargo.toml, then re-tag."
+            echo "::error::Bump the version in src-tauri/tauri.conf.json, src-tauri/Cargo.toml and package.json, then re-tag."
+            exit 1
+          fi
+          # The MSIX version follows package.json (scripts/sync-msix-version.mjs),
+          # so a drifted package.json would ship an installer whose version lies.
+          if [ "$pkg" != "$version" ]; then
+            echo "::error::package.json declares v$pkg but tauri.conf.json declares v$version."
             exit 1
           fi
 
@@ -64,6 +71,13 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      # Windows leg only: the MSIX steps below need winapp on PATH. Nothing
+      # else to run after it — there is no winapp.yaml to `winapp restore`
+      # because Tauri brings its own Rust bindings (see the winapp Tauri guide).
+      - name: Install winapp CLI
+        if: matrix.platform == 'windows-latest'
+        uses: microsoft/setup-WinAppCli@v0.1
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -96,3 +110,43 @@ jobs:
           # Point latest.json at the NSIS installer rather than the MSI, which
           # cannot silently replace a running install.
           updaterJsonPreferNsis: true
+
+      # The MSIX ships the release exe tauri-action just built: its
+      # beforeBuildCommand already left the frontend in dist/, so only the exe
+      # is copied in. The committed Package.appxmanifest + Assets/ at the repo
+      # root are what `winapp pack` picks up (it auto-detects the manifest from
+      # the working directory). No `winapp run` registration happens in CI.
+      - name: Package MSIX
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          # Optional real code-signing certificate as a base64-encoded .pfx:
+          #   [Convert]::ToBase64String([IO.File]::ReadAllBytes("cert.pfx"))
+          # Whichever cert is used, its subject must match the manifest's
+          # Publisher (CN=Mt342) or installs fail. Without the secret the
+          # package falls back to a throwaway development certificate — fine
+          # for a draft release, but every user then has to trust a
+          # self-signed publisher.
+          MSIX_CERTIFICATE: ${{ secrets.MSIX_CERTIFICATE }}
+          MSIX_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_CERTIFICATE_PASSWORD }}
+        run: |
+          node scripts/sync-msix-version.mjs --release
+          Copy-Item src-tauri\target\release\dae.exe dist\ -Force
+          if ($env:MSIX_CERTIFICATE) {
+            [IO.File]::WriteAllBytes("release.pfx", [Convert]::FromBase64String($env:MSIX_CERTIFICATE))
+            winapp pack .\dist --cert .\release.pfx --cert-password "$env:MSIX_CERTIFICATE_PASSWORD"
+          } else {
+            winapp cert generate --if-exists skip
+            winapp pack .\dist --cert .\devcert.pfx
+          }
+
+      # tauri-action created the release as a draft; append the MSIX to that
+      # same draft so one manual publish ships every installer. `draft: true`
+      # is load-bearing: without it this action PUBLISHES the draft after
+      # uploading. Release name/body/notes set by tauri-action are retained.
+      - name: Attach MSIX to release
+        if: matrix.platform == 'windows-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.msix"
+          draft: true

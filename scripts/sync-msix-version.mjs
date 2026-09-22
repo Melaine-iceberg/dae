@@ -16,6 +16,9 @@
  *  - If a *higher* base track is installed (e.g. the pre-unification 1.0.x
  *    track), no revision can catch up: fail loudly and ask for an uninstall
  *    instead of producing an .msix that will be refused at install time.
+ *  - `--release` (CI, after a tag push): the revision resets to 0 so the tag
+ *    ships as `<app>.0` regardless of what local packs left in the manifest,
+ *    and version drift becomes a hard error instead of a warning.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
@@ -38,6 +41,7 @@ function readJson(relPath) {
 }
 
 const appVersion = readJson("package.json").version;
+const releaseMode = process.argv.includes("--release");
 if (!/^\d+\.\d+\.\d+$/.test(appVersion)) {
   console.error(`✖ package.json version "${appVersion}" is not MAJOR.MINOR.PATCH`);
   process.exit(1);
@@ -51,6 +55,10 @@ const drift = [
 ].filter(([, version]) => version !== appVersion);
 for (const [file, version] of drift) {
   console.warn(`⚠ version drift: package.json ${appVersion} vs ${file} ${version}`);
+}
+if (releaseMode && drift.length > 0) {
+  console.error("✖ release build: package.json, tauri.conf.json and Cargo.toml must agree (see warnings above)");
+  process.exit(1);
 }
 
 /** Installed MSIX version, or null when nothing is installed / not on Windows. */
@@ -87,10 +95,13 @@ if (!current) {
 }
 
 // Start from package.json, carrying the revision over (plus one) when the
-// base is unchanged since the last pack.
-let revision = current.startsWith(`${appVersion}.`)
-  ? Number(current.slice(appVersion.length + 1)) + 1
-  : 0;
+// base is unchanged since the last pack. A `--release` build instead starts
+// at .0: CI builds the tag from scratch, so local pack history must not leak
+// into the version users see.
+let revision =
+  !releaseMode && current.startsWith(`${appVersion}.`)
+    ? Number(current.slice(appVersion.length + 1)) + 1
+    : 0;
 
 const installed = installedVersion();
 if (installed) {
