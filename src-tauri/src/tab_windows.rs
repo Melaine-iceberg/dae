@@ -22,7 +22,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -47,6 +47,13 @@ const TAB_DRAG_TYPE: &str = "application/x-dae-tab-drag";
 /// How often the hover monitor re-reads the cursor while a native tab drag is
 /// running; fast enough to feel live, slow enough to stay invisible on CPU.
 const TAB_HOVER_POLL_INTERVAL: Duration = Duration::from_millis(33);
+/// Set while a `TabDragHover` push has been handed to the receiving window but
+/// not yet rendered by it. The monitor holds the next push back until the
+/// acknowledgement arrives; see [`spawn_drag_hover_monitor`].
+static HOVER_PUSH_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+/// How long the monitor waits for that acknowledgement before pushing anyway.
+/// A hidden or wedged receiver must not stall the indicator forever.
+const HOVER_PUSH_ACK_TIMEOUT: Duration = Duration::from_millis(500);
 
 /// Hover heartbeat for a window while a tab dragged from another window
 /// crosses its bounds. Coordinates are in the receiving window's CSS pixels.
@@ -489,6 +496,10 @@ fn find_hover_target(app: &tauri::AppHandle, source: &str) -> Option<DropTarget>
 fn spawn_drag_hover_monitor(app: tauri::AppHandle, source: String, finished: Arc<AtomicBool>) {
     tauri::async_runtime::spawn(async move {
         let mut hovered: Option<DropTarget> = None;
+        // What the receiving window is currently showing: pushing the same
+        // window/point again would cost an eval and change nothing.
+        let mut pushed: Option<(String, f64, f64)> = None;
+        let mut pushed_at: Option<Instant> = None;
         loop {
             if finished.load(Ordering::SeqCst) {
                 break;
@@ -502,15 +513,45 @@ fn spawn_drag_hover_monitor(app: tauri::AppHandle, source: String, finished: Arc
             };
 
             if !same_window && let Some(previous) = hovered.take() {
+                pushed = None;
                 let _ = TabDragLeave.emit_to(&app, EventTarget::labeled(previous.label));
             }
 
-            if let Some(current) = target.as_ref() {
-                let _ = TabDragHover {
-                    x: current.local_x,
-                    y: current.local_y,
+            match target.as_ref() {
+                Some(current) => {
+                    // One unacknowledged push at a time. Every push is a
+                    // `wry::eval`, and wry keeps that eval's tracing span
+                    // entered until WebView2's completion callback runs — so
+                    // pushes issued while the main thread is parked in the
+                    // OLE drag loop nest into a span parent chain that
+                    // tracing-subscriber later closes with one stack frame per
+                    // level. That chain overflowed the default 1 MB stack at
+                    // ~2300 levels, and re-entering the registry's slab clear
+                    // can also deadlock it; bounding the depth to one removes
+                    // both failure modes without slowing the indicator down
+                    // (the round trip is well inside the poll interval).
+                    if HOVER_PUSH_IN_FLIGHT.load(Ordering::SeqCst)
+                        && pushed_at.is_some_and(|sent| sent.elapsed() > HOVER_PUSH_ACK_TIMEOUT)
+                    {
+                        HOVER_PUSH_IN_FLIGHT.store(false, Ordering::SeqCst);
+                    }
+
+                    let position = (current.label.clone(), current.local_x, current.local_y);
+                    if pushed.as_ref() != Some(&position)
+                        && !HOVER_PUSH_IN_FLIGHT.swap(true, Ordering::SeqCst)
+                    {
+                        pushed = Some(position);
+                        pushed_at = Some(Instant::now());
+                        let _ = TabDragHover {
+                            x: current.local_x,
+                            y: current.local_y,
+                        }
+                        .emit_to(&app, EventTarget::labeled(current.label.clone()));
+                    }
                 }
-                .emit_to(&app, EventTarget::labeled(current.label.clone()));
+                // Nothing hovered: the next push must go out even when it
+                // lands on the same coordinates as the previous one.
+                None => pushed = None,
             }
             hovered = target;
 
@@ -521,6 +562,17 @@ fn spawn_drag_hover_monitor(app: tauri::AppHandle, source: String, finished: Arc
             let _ = TabDragLeave.emit_to(&app, EventTarget::labeled(previous.label));
         }
     });
+}
+
+/// Called by the window that has just rendered a `TabDragHover` indicator.
+/// Releases the monitor's in-flight slot so the next position can go out.
+///
+/// This acknowledgement is what bounds the host-side cost of a cross-window
+/// drag: see [`spawn_drag_hover_monitor`] for what happens without it.
+#[tauri::command]
+#[specta::specta]
+pub fn tab_drag_hover_ack() {
+    HOVER_PUSH_IN_FLIGHT.store(false, Ordering::SeqCst);
 }
 
 fn decode_drag_preview(preview: Option<String>) -> Result<Vec<u8>, String> {

@@ -476,6 +476,12 @@ function TabDropIndicator() {
 
   useEffect(() => {
     const unlistenHover = listenInThisWindow(events.tabDragHover, ({ payload }) => {
+      // Release the host's in-flight slot before anything else: the hover
+      // monitor holds the next position back until this push has rendered,
+      // which is what keeps its `wry::eval` span chain on the host bounded to
+      // a single level during a cross-window drag (an unbounded chain is
+      // closed recursively, one stack frame per level, when the drag ends).
+      void commands.tabDragHoverAck();
       if (payload.x == null) return;
       setGeometry((previous) => {
         const next = dropIndicatorGeometryAt(payload.x as number);

@@ -352,6 +352,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             default_manager::set_default_file_manager,
             default_manager::unset_default_file_manager,
             tab_windows::tab_drag_outside,
+            tab_windows::tab_drag_hover_ack,
             tab_windows::start_tab_drag,
             tab_windows::tear_off_tab,
             tab_windows::take_tab_handoff
