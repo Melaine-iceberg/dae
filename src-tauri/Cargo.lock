@@ -1226,7 +1226,7 @@ dependencies = [
 
 [[package]]
 name = "dae"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "base64 0.23.1",

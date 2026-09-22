@@ -1,6 +1,6 @@
 [package]
 name = "dae"
-version = "0.2.1"
+version = "0.3.0"
 description = "Aesthetic file manager"
 authors = ["melaine"]
 edition = "2024"
