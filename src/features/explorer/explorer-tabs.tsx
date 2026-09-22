@@ -211,25 +211,29 @@ function snapshotTabDragPreview(tabId: string): Promise<string | null> {
     foreignObject.appendChild(wrapper);
     svg.appendChild(foreignObject);
 
-    // The serialized SVG goes through a Blob object URL instead of a
-    // percent-encoded `data:` string. The mark-up here is a full tab-strip DOM
-    // dump, so inlining it as a data URL tripled its length on every drag; an
-    // object URL also keeps `image.src` free of any interpolated value. An SVG
-    // loaded as an image is sandboxed — it can neither apply page stylesheets
-    // nor fetch external resources — so this remains a purely local
-    // rasterization step with no outbound request.
+    // The serialized SVG reaches the image as a base64 `data:` URL, never a
+    // `blob:` object URL: Chromium treats an SVG that contains a
+    // `<foreignObject>` as cross-origin when it is loaded from a blob URL, so
+    // drawing it taints the canvas below and `toDataURL` throws a
+    // `SecurityError` — the snapshot then degraded to the application icon on
+    // the OS drag image. A data URL stays origin-clean, and base64 keeps it at
+    // 4/3 of the mark-up where percent-encoding tripled it. An SVG loaded as an
+    // image is sandboxed — it can neither apply page stylesheets nor fetch
+    // external resources — so this remains a purely local rasterization step
+    // with no outbound request.
     const svgSource = new XMLSerializer().serializeToString(svg);
-    const objectUrl = URL.createObjectURL(new Blob([svgSource], { type: "image/svg+xml" }));
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(new Blob([svgSource], { type: "image/svg+xml" }));
+    });
     const image = new Image();
-    try {
-      await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve();
-        image.onerror = () => reject(new Error("The drag preview SVG failed to rasterize"));
-        image.src = objectUrl;
-      });
-    } finally {
-      URL.revokeObjectURL(objectUrl);
-    }
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error("The drag preview SVG failed to rasterize"));
+      image.src = dataUrl;
+    });
 
     const canvas = document.createElement("canvas");
     canvas.width = bitmapWidth;
@@ -238,7 +242,13 @@ function snapshotTabDragPreview(tabId: string): Promise<string | null> {
     if (!context) return null;
     context.drawImage(image, 0, 0);
     return canvas.toDataURL("image/png");
-  })().catch(() => null);
+  })().catch((error) => {
+    // The Rust side falls back to the application icon, which looks enough
+    // like a preview to hide a broken snapshot: a tainted canvas or a failed
+    // rasterization has to be visible in the log, not just in the drag image.
+    console.error("Failed to snapshot the tab drag preview", error);
+    return null;
+  });
 }
 
 const WORKSPACE_TAB_ICONS = {
