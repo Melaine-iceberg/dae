@@ -1,64 +1,37 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type FormEvent,
-} from "react";
+/**
+ * The explorer pane: navigation, listing, selection and every file operation
+ * the user can start from it.
+ *
+ * This file is the orchestration layer only. The pieces it used to contain
+ * now live behind explicit boundaries:
+ *
+ * - `explorer-toolbar.tsx`      — the toolbar's markup (props in, buttons out)
+ * - `explorer-dialogs.tsx`      — presentational rename/create/delete/error dialogs
+ * - `explorer-chrome.tsx`       — listing stats, terminal toggle, progress strip
+ * - `use-entry-dialogs.ts`      — dialog state + submission flows
+ * - `use-file-operations.ts`    — the operation runner (progress/pending/error)
+ * - `use-transfers.ts`          — copy/move pipeline + conflict resolution
+ * - `use-explorer-clipboard.ts` — copy/cut/paste incl. the system-clipboard mirror
+ * - `use-explorer-selection.ts` — selection state, pruning and resets
+ * - `use-explorer-events.ts`    — directory refresh + external drag-drop
+ * - `use-pending-explorer-command.ts` — the command-bus consumer
+ *
+ * What remains here is the listing pipeline, the entry actions that compose
+ * the pieces above (delete/archive/undo/redo/open-with…), and the layout.
+ */
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
-import {
-  RotateCw,
-  RotateCcw,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  LoaderCircle,
-  Columns3,
-  Eye,
-  PanelLeft,
-  SquareTerminal,
-  Star,
-  TriangleAlert,
-  X,
-} from "lucide-react";
+import { RotateCw, RotateCcw, TriangleAlert, X } from "lucide-react";
 
-import {
-  commands,
-  events,
-  type ArchiveFormat,
-  type ConflictAction,
-  type RenameRequest,
-  type TransferConflict,
-  type TransferItem,
-  type UndoRedoOutcome,
-} from "@/bindings";
-
-import { getAppWindow } from "@/lib/app-window";
-import { i18n } from "@/i18n";
-import { localeNumber } from "@/i18n/format";
-import { getFileOperationErrorMessage } from "@/i18n/errors";
+import { commands, type ArchiveFormat, type UndoRedoOutcome } from "@/bindings";
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/kbd";
-import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
 import { formatBinding } from "@/features/settings/shortcut-registry";
 import { useBinding } from "@/features/settings/settings-atoms";
 import {
@@ -68,38 +41,27 @@ import {
   toggleFavoriteAtom,
 } from "@/features/sidebar/sidebar-atoms";
 import type { Favorite } from "@/features/sidebar/types";
-import {
-  clearPendingExplorerCommand,
-  pendingExplorerCommandAtom,
-  type ExplorerCommandId,
-} from "@/features/workspace/explorer-command-bus";
 import { addItemsToSpace } from "@/features/workspace/spaces-atoms";
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
+import { shellCommandErrorAtom } from "@/features/shell-commands/shell-commands-atoms";
+import { getFileOperationErrorMessage } from "@/i18n/errors";
 import { isWindowsPlatform } from "@/lib/platform";
-import { cn } from "@/lib/utils";
 
 import { ContentSearchResults, ContentSearchToolbar, useContentSearch } from "./content-search";
 import { ContextualActionBar } from "./contextual-action-bar";
 import { ArchivePasswordDialog } from "./archive-password-dialog";
 import { BulkRenameDialog } from "./bulk-rename";
-import { DirectorySearch, useDirectorySearch, type ExplorerSearchMode } from "./directory-search";
-import {
-  getExplorerDropTargetAtPoint,
-  isExplorerContainerAtPoint,
-  isLocalExplorerPath,
-  type TransferOperation,
-} from "./drag-drop";
+import { useDirectorySearch, type ExplorerSearchMode } from "./directory-search";
+import { isLocalExplorerPath } from "./drag-drop";
 import { EntryPreview } from "./entry-preview";
 import { isArchiveFile } from "./entry-context-menu";
-import { ExplorerPathBar } from "./explorer-path-bar";
-import { GitBranchControl } from "./git-branches";
-import {
-  shellCommandErrorAtom,
-} from "@/features/shell-commands/shell-commands-atoms";
+import { displayNameOfPath, isWrongPasswordError } from "./explorer-errors";
+import { DeleteDialog, ExplorerErrorAlert, RenameDialog, CreateEntryDialog } from "./explorer-dialogs";
+import { FileOperationStatusBar } from "./explorer-chrome";
+import { ExplorerToolbar } from "./explorer-toolbar";
 import { FileList, FileListSkeleton } from "./file-list";
-import { FilterMenu } from "./filter-menu";
 import { useGitStatus } from "./git-status";
-import { allNames, allPaths, entriesWhere, listingViewOf } from "./listing-view";
+import { listingViewOf, allNames } from "./listing-view";
 import type { ExplorerNavigator } from "./navigation";
 import { OpenWithDialog } from "./open-with-dialog";
 import { useSortedListingView } from "./sorted-entries";
@@ -113,43 +75,22 @@ import {
   sortKeyAtom,
   sortOrderAtom,
 } from "./preferences";
-import { fileClipboardAtom, undoRedoAtom } from "./tabs";
-import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
-import { ViewMenu } from "./view-menu";
-import type {
-  DirectoryEntry,
-  FileOperationKind,
-  FileOperationProgress,
-  NewEntryKind,
-} from "./types";
+import { undoRedoAtom } from "./tabs";
+import { useEntryDialogs } from "./use-entry-dialogs";
+import { useFileOperations } from "./use-file-operations";
+import { useTransfers } from "./use-transfers";
+import { useExplorerClipboard } from "./use-explorer-clipboard";
+import { NO_ENTRIES, useExplorerSelection } from "./use-explorer-selection";
+import { useDirectoryRefresh, useExternalDrop } from "./use-explorer-events";
+import { usePendingExplorerCommand } from "./use-pending-explorer-command";
 
-const DIRECTORY_REFRESH_DELAY_MS = 150;
-const COMPLETED_OPERATION_STATUS_DURATION_MS = 900;
 const UNDO_TOAST_DISMISS_MS = 6000;
-/** Shared stand-in for "no listing yet": a fresh `[]` per render would defeat
- *  the identity checks the entry-ordering hook relies on. */
-const NO_ENTRIES: DirectoryEntry[] = [];
-/** Same deal for unloaded favorites: a fresh `[]` per render would change
- *  identity every time and break memoization downstream. */
+/** Same deal as `NO_ENTRIES` in the selection hook: unloaded favorites need a
+ *  stable identity so memoization downstream doesn't churn on every render. */
 const NO_FAVORITES: Favorite[] = [];
-/** And for the name list the bulk-rename dialog reads, which is only worth
- *  collecting while that dialog is open. */
+/** The name list the bulk-rename dialog reads, which is only worth collecting
+ *  while that dialog is open. */
 const NO_NAMES: string[] = [];
-const appWindow = getAppWindow();
-
-/**
- * Controls the toolbar gives up on a narrow window.
- *
- * The toolbar is a single non-wrapping row of `shrink-0` controls, and the
- * pane it lives in has `overflow-hidden` — so below a certain width the
- * trailing controls were not merely cramped, they were clipped and
- * unreachable. The path bar is `flex-1` and the search field shrinks, which
- * covers most of the range; what is left over is paid for by the two controls
- * that are reachable some other way: the favorite toggle (the folder's context
- * menu) and the split-view toggle (a per-tab layout choice, not a per-folder
- * one). Both come back as the window widens.
- */
-const TOOLBAR_OVERFLOW_CLASS = "max-[880px]:hidden";
 
 interface ExplorerViewProps {
   navigator: ExplorerNavigator;
@@ -166,24 +107,11 @@ interface ExplorerViewProps {
   onToggleSplit?: () => void;
 }
 
-type FileOperationResult = { ok: true } | { error: string; ok: false; rawError?: unknown };
-type ArchivePasswordRequest = { mode: "compress" } | { archivePath: string; mode: "extract" };
-type ExternalDrop = { sourcePaths: string[]; targetPath: string | null };
-
 /** Floating hint after an undoable operation or an undo/redo step. */
 type UndoRedoToast = {
   outcome: { action: string; count: number; op: string };
   /** Follow-up action offered on the toast. */
   action: "undo" | "redo";
-};
-
-/** A transfer paused on the conflict dialog, waiting for per-item decisions. */
-type PendingTransfer = {
-  conflicts: TransferConflict[];
-  destinationPath: string;
-  operation: TransferOperation;
-  sourcePaths: string[];
-  onSuccess: () => void;
 };
 
 export function ExplorerView({
@@ -194,52 +122,25 @@ export function ExplorerView({
 }: ExplorerViewProps) {
   const { t } = useTranslation("explorer");
   const state = useSyncExternalStore(navigator.subscribe, navigator.getSnapshot);
-  const [clipboard, setClipboard] = useAtom(fileClipboardAtom);
   const undoRedo = useAtomValue(undoRedoAtom);
   const favorites = useAtomValue(favoritesAtom) ?? NO_FAVORITES;
   const toggleFavorite = useSetAtom(toggleFavoriteAtom);
   const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
   const [sidebarVisible, setSidebarVisible] = useAtom(sidebarVisibleAtom);
-  const pendingCommand = useAtomValue(pendingExplorerCommandAtom);
-  const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
-  const [renameTarget, setRenameTarget] = useState<DirectoryEntry | null>(null);
-  const [renameValue, setRenameValue] = useState("");
-  const [renameError, setRenameError] = useState<string | null>(null);
-  const [bulkRenameOpen, setBulkRenameOpen] = useState(false);
-  const [bulkRenameError, setBulkRenameError] = useState<string | null>(null);
-  const [newEntryKind, setNewEntryKind] = useState<NewEntryKind | null>(null);
-  const [newEntryValue, setNewEntryValue] = useState("");
-  const [newEntryError, setNewEntryError] = useState<string | null>(null);
-  const [deleteTargets, setDeleteTargets] = useState<DirectoryEntry[]>([]);
-  const [openWithTarget, setOpenWithTarget] = useState<string | null>(null);
-  const [archivePasswordRequest, setArchivePasswordRequest] =
-    useState<ArchivePasswordRequest | null>(null);
-  const [archivePasswordError, setArchivePasswordError] = useState<string | null>(null);
-  const [archivePasswordPending, setArchivePasswordPending] = useState(false);
-  const [pendingTransfer, setPendingTransfer] = useState<PendingTransfer | null>(null);
-  const [operationError, setOperationError] = useState<string | null>(null);
   // A shell command reports back only whether the start itself succeeded; the
   // app it launched says nothing. A failure belongs in the banner above the
   // list rather than in the menu that has already closed.
   const shellCommandError = useAtomValue(shellCommandErrorAtom);
   const setShellCommandError = useSetAtom(shellCommandErrorAtom);
-  const [isOperationPending, setIsOperationPending] = useState(false);
-  const [fileOperationProgress, setFileOperationProgress] = useState<FileOperationProgress | null>(
-    null,
-  );
-  const [externalDrop, setExternalDrop] = useState<ExternalDrop | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("name");
   const [undoRedoToast, setUndoRedoToast] = useState<UndoRedoToast | null>(null);
-  // Live bindings for the toolbar's tooltips. They used to be baked into the
-  // translation strings ("收起预览面板 (Space)"), which meant a rebind left the
-  // tooltip teaching a key that no longer did anything.
-  const previewBinding = formatBinding(useBinding("explorer.preview"));
+  // Live bindings for the undo toast's buttons. They used to be baked into
+  // the translation strings ("收起预览面板 (Space)"), which meant a rebind left
+  // the tooltip teaching a key that no longer did anything.
   const undoBinding = formatBinding(useBinding("explorer.undo"));
   const redoBinding = formatBinding(useBinding("explorer.redo"));
-  // Operation IDs started with the "auto" progress kind: the backend announces
-  // the kind with its first progress event, so the ID is adopted there.
-  const deferredProgressIdsRef = useRef<Set<string>>(new Set());
+
   const directory = state.directory;
   const listing = state.listing;
   const directoryPath = directory?.path;
@@ -247,19 +148,18 @@ export function ExplorerView({
   const canGoBack = !isLoading && state.historyIndex > 0;
   const canGoForward = !isLoading && state.historyIndex < state.history.length - 1;
   const canGoUp = !isLoading && (directory?.breadcrumbs.length ?? 0) > 1;
+
   const search = useDirectorySearch(directoryPath ?? null, directory, searchMode === "name");
-  const contentSearch = useContentSearch(
-    directoryPath ?? null,
-    directory,
-    searchMode === "content",
-  );
+  const contentSearch = useContentSearch(directoryPath ?? null, directory, searchMode === "content");
   const gitStatus = useGitStatus(directoryPath ?? null);
   const isContentSearchActive = searchMode === "content" && contentSearch.isActive;
+
   const sortKey = useAtomValue(sortKeyAtom);
   const sortOrder = useAtomValue(sortOrderAtom);
   const foldersFirst = useAtomValue(foldersFirstAtom);
   const showHiddenFiles = useAtomValue(showHiddenFilesAtom);
   const entryFilters = useAtomValue(entryFiltersAtom);
+
   // The listing the pane reads. A search replaces the directory's listing with
   // its own results; otherwise it is the one the navigator holds — and while a
   // restored pane is still re-reading, the head that came with the handoff.
@@ -272,38 +172,66 @@ export function ExplorerView({
     () => applyEntryFilters(filterHidden(sourceListing, showHiddenFiles), entryFilters),
     [entryFilters, showHiddenFiles, sourceListing],
   );
-  const displayedListing = useSortedListingView(
-    filteredListing,
-    sortKey,
-    sortOrder,
-    foldersFirst,
-  );
-  const selectedPathSet = useMemo(() => new Set(selectedPaths), [selectedPaths]);
-  // Latest selection, for the prune effect further down to read without making
-  // the selection one of its dependencies: a marquee drag rewrites the selection
-  // on every pointer move (`marquee.tsx`), and a full-listing scan per move is
-  // exactly what the effect's current shape exists to avoid.
-  //
-  // Synced in an effect rather than during render. A render-phase ref write is an
-  // error to React Compiler's validator — verified by injecting one into a
-  // component that compiles, which drops it from compilation — so writing it
-  // during render would keep this component out of the compiler pass even after
-  // its other bailouts are fixed. Declared *before* the prune effect, so the ref
-  // is already current when that one runs in the same commit.
-  const selectedPathsRef = useRef(selectedPaths);
-  useEffect(() => {
-    selectedPathsRef.current = selectedPaths;
-  }, [selectedPaths]);
-  // Materialised for the selection only: the scan runs over paths, so rows that
-  // are not selected are never built. Nothing selected is the common case, and
-  // it is worth stating explicitly — the scan walks the whole listing either way.
-  const selectedEntries = useMemo(
-    () =>
-      selectedPaths.length === 0
-        ? NO_ENTRIES
-        : entriesWhere(displayedListing, (path) => selectedPathSet.has(path)),
-    [displayedListing, selectedPathSet, selectedPaths.length],
-  );
+  const displayedListing = useSortedListingView(filteredListing, sortKey, sortOrder, foldersFirst);
+
+  const {
+    selectedPaths,
+    setSelectedPaths,
+    selectedEntries,
+    selectAll,
+  } = useExplorerSelection({
+    displayedListing,
+    isContentSearchActive,
+    directoryPath,
+    searchQuery: search.query,
+  });
+  const clearSelection = useCallback(() => setSelectedPaths([]), [setSelectedPaths]);
+
+  const refresh = useCallback((path: string) => navigator.refresh(path), [navigator]);
+  const {
+    performFileOperation,
+    fileOperationProgress,
+    isOperationPending,
+    operationError,
+    setOperationError,
+  } = useFileOperations({ directoryPath, refresh });
+
+  const {
+    pendingTransfer,
+    startTransfer,
+    transferEntries,
+    copyExternalEntries,
+    createShortcutsEntries,
+    resolveTransferConflicts,
+    cancelTransferConflicts,
+  } = useTransfers({ performFileOperation, setOperationError, clearSelection });
+
+  const { copySelection, cutSelection, pasteClipboard } = useExplorerClipboard({
+    selectedEntries,
+    directoryPath,
+    startTransfer,
+    setOperationError,
+    clearSelection,
+  });
+
+  const dialogs = useEntryDialogs({
+    performFileOperation,
+    setOperationError,
+    isOperationPending,
+    selectedEntries,
+    directoryPath,
+    searchActive: search.isActive,
+    setSelectedPaths,
+    searchQuery: search.query,
+  });
+
+  const { externalDrop } = useExternalDrop({
+    directoryPath,
+    searchQuery: search.query,
+    isActivePane,
+    onDropPaths: copyExternalEntries,
+  });
+  useDirectoryRefresh(navigator);
 
   useEffect(() => {
     if (navigator.getSnapshot().status === "idle") {
@@ -311,787 +239,13 @@ export function ExplorerView({
     }
   }, [navigator]);
 
-  // File selection belongs to the entry list, which content search replaces.
+  // A new directory/query also resets the view-local surfaces that neither
+  // the dialog hook nor the selection hook owns: the error banner and the
+  // preview pane.
   useEffect(() => {
-    if (isContentSearchActive) {
-      setSelectedPaths([]);
-    }
-  }, [isContentSearchActive]);
-
-  useEffect(() => {
-    setSelectedPaths([]);
-    setRenameTarget(null);
-    setBulkRenameOpen(false);
-    setNewEntryKind(null);
-    setDeleteTargets([]);
     setOperationError(null);
-    setExternalDrop(null);
     setIsPreviewOpen(false);
-  }, [directoryPath, search.query]);
-
-  useEffect(() => {
-    // With nothing selected there is nothing to prune, and building the
-    // available-path set would walk the whole listing to filter an empty array.
-    // This runs on every streamed batch, so on a large directory it is the
-    // difference between a scan per batch and none.
-    if (selectedPathsRef.current.length === 0) {
-      return;
-    }
-
-    const availablePaths = new Set(allPaths(displayedListing));
-    setSelectedPaths((paths) => {
-      const availableSelection = paths.filter((path) => availablePaths.has(path));
-      return availableSelection.length === paths.length ? paths : availableSelection;
-    });
-  }, [displayedListing]);
-
-  useEffect(() => {
-    let disposed = false;
-    let refreshTimeout: number | undefined;
-
-    const scheduleRefresh = (path: string) => {
-      if (disposed || navigator.getSnapshot().directory?.path !== path) return;
-
-      window.clearTimeout(refreshTimeout);
-      refreshTimeout = window.setTimeout(() => {
-        refreshTimeout = undefined;
-        void navigator.refresh(path);
-      }, DIRECTORY_REFRESH_DELAY_MS);
-    };
-
-    const unlistenChangesPromise = events.explorerDirectoryChanged.listen(({ payload }) => {
-      scheduleRefresh(payload);
-    });
-    const unlistenFocusPromise = appWindow
-      ? appWindow.onFocusChanged(({ payload: focused }) => {
-          const currentPath = navigator.getSnapshot().directory?.path;
-          if (focused && currentPath) scheduleRefresh(currentPath);
-        })
-      : Promise.resolve(() => {});
-
-    return () => {
-      disposed = true;
-      window.clearTimeout(refreshTimeout);
-      void Promise.all([unlistenChangesPromise, unlistenFocusPromise]).then((unlisten) => {
-        unlisten.forEach((stopListening) => stopListening());
-      });
-    };
-  }, [navigator]);
-
-  useEffect(() => {
-    const unlistenProgressPromise = events.explorerFileOperationProgress.listen(({ payload }) => {
-      setFileOperationProgress((currentProgress) => {
-        if (!currentProgress) {
-          // "auto" operations (undo/redo) have no frontend-known kind; adopt
-          // the backend's first event for an operation this view started.
-          return deferredProgressIdsRef.current.has(payload.operationId) ? payload : null;
-        }
-
-        if (
-          currentProgress.operationId !== payload.operationId ||
-          currentProgress.phase === "completed"
-        ) {
-          return currentProgress;
-        }
-
-        return payload;
-      });
-      deferredProgressIdsRef.current.delete(payload.operationId);
-    });
-
-    return () => {
-      void unlistenProgressPromise.then((unlisten) => unlisten());
-    };
-  }, []);
-
-  const performFileOperation = useCallback(
-    async (
-      operation: (operationId?: string) => Promise<unknown>,
-      progressOperation?: FileOperationKind | "auto",
-    ): Promise<FileOperationResult> => {
-      if (!directoryPath) {
-        return { error: t("explorer:errors.directoryUnavailable"), ok: false };
-      }
-
-      const operationId = progressOperation ? crypto.randomUUID() : undefined;
-      const announcedProgressOperation =
-        progressOperation && progressOperation !== "auto" ? progressOperation : null;
-      if (announcedProgressOperation && operationId) {
-        setFileOperationProgress({
-          operationId,
-          operation: announcedProgressOperation,
-          phase: "preparing",
-          completed: 0,
-          total: null,
-          currentPath: null,
-        });
-      } else if (operationId) {
-        // "auto": the kind is only known to the backend (undo/redo); the
-        // progress state is adopted from its first progress event.
-        deferredProgressIdsRef.current.add(operationId);
-      }
-      setIsOperationPending(true);
-
-      try {
-        await operation(operationId);
-        await navigator.refresh(directoryPath);
-        if (operationId) {
-          setFileOperationProgress((currentProgress) => {
-            if (!currentProgress || currentProgress.operationId !== operationId) {
-              return currentProgress;
-            }
-
-            return {
-              ...currentProgress,
-              phase: "completed",
-              completed: currentProgress.total ?? currentProgress.completed,
-            };
-          });
-          window.setTimeout(() => {
-            setFileOperationProgress((currentProgress) =>
-              currentProgress?.operationId === operationId ? null : currentProgress,
-            );
-          }, COMPLETED_OPERATION_STATUS_DURATION_MS);
-        }
-        return { ok: true };
-      } catch (error) {
-        if (operationId) {
-          setFileOperationProgress((currentProgress) =>
-            currentProgress?.operationId === operationId ? null : currentProgress,
-          );
-        }
-        return {
-          error: getFileOperationErrorMessage(error),
-          ok: false,
-          rawError: error,
-        };
-      } finally {
-        if (operationId) {
-          deferredProgressIdsRef.current.delete(operationId);
-        }
-        setIsOperationPending(false);
-      }
-    },
-    [directoryPath, navigator, t],
-  );
-
-  /** Executes a transfer whose conflicts (if any) have already been resolved. */
-  const executeTransfer = useCallback(
-    (
-      sourcePaths: string[],
-      destinationPath: string,
-      operation: TransferOperation,
-      decisions: Record<string, ConflictAction>,
-      onSuccess: () => void,
-    ) => {
-      const items: TransferItem[] = sourcePaths.map((path) => ({
-        path,
-        onConflict: decisions[path] ?? "fail",
-      }));
-
-      void performFileOperation(
-        (operationId) =>
-          operation === "copy"
-            ? commands.copyEntries(items, destinationPath, operationId!)
-            : commands.moveEntries(items, destinationPath, operationId!),
-        operation,
-      ).then((result) => {
-        if (!result.ok) {
-          setOperationError(result.error);
-          return;
-        }
-
-        onSuccess();
-      });
-    },
-    [performFileOperation],
-  );
-
-  /** Pre-checks conflicts, then either executes directly or opens the conflict dialog. */
-  const startTransfer = useCallback(
-    (
-      sourcePaths: string[],
-      destinationPath: string,
-      operation: TransferOperation,
-      onSuccess: () => void,
-    ) => {
-      if (sourcePaths.length === 0) return;
-
-      setOperationError(null);
-      commands
-        .checkTransferConflicts(sourcePaths, destinationPath)
-        .then((conflicts) => {
-          if (conflicts.length === 0) {
-            executeTransfer(sourcePaths, destinationPath, operation, {}, onSuccess);
-            return;
-          }
-
-          setPendingTransfer({ conflicts, destinationPath, operation, sourcePaths, onSuccess });
-        })
-        .catch((error: unknown) => setOperationError(getFileOperationErrorMessage(error)));
-    },
-    [executeTransfer],
-  );
-
-  const transferEntries = useCallback(
-    (sourcePaths: string[], destinationPath: string, operation: TransferOperation) => {
-      startTransfer(sourcePaths, destinationPath, operation, () => setSelectedPaths([]));
-    },
-    [startTransfer],
-  );
-
-  /** Explorer-style Alt-drag link: the backend creates .lnk shortcuts on
-   * Windows and real symlinks on macOS/Linux inside the destination. Name
-   * collisions resolve with " (2)"… suffixes, so no conflict dialog is
-   * needed here. */
-  const createShortcutsEntries = useCallback((sourcePaths: string[], destinationPath: string) => {
-    setOperationError(null);
-    commands
-      .createShortcuts(sourcePaths, destinationPath)
-      .then(() => setSelectedPaths([]))
-      .catch((error: unknown) => setOperationError(getFileOperationErrorMessage(error)));
-  }, []);
-
-  const copyExternalEntries = useCallback(
-    (sourcePaths: string[], destinationPath: string) => {
-      startTransfer(sourcePaths, destinationPath, "copy", () => setSelectedPaths([]));
-    },
-    [startTransfer],
-  );
-
-  const resolveTransferConflicts = useCallback(
-    (decisions: Record<string, ConflictAction>) => {
-      const transfer = pendingTransfer;
-      if (!transfer) return;
-
-      setPendingTransfer(null);
-      executeTransfer(
-        transfer.sourcePaths,
-        transfer.destinationPath,
-        transfer.operation,
-        decisions,
-        transfer.onSuccess,
-      );
-    },
-    [executeTransfer, pendingTransfer],
-  );
-
-  const cancelTransferConflicts = useCallback(() => {
-    setPendingTransfer(null);
-  }, []);
-
-  useEffect(() => {
-    if (!appWindow) return;
-    let disposed = false;
-
-    /** Logical viewport coordinates of a drag-drop event position. */
-    const toLogical = (position: { toLogical: (scaleFactor: number) => { x: number; y: number } }) =>
-      position.toLogical(window.devicePixelRatio);
-
-    const getTargetPath = (position: {
-      toLogical: (scaleFactor: number) => { x: number; y: number };
-    }) => {
-      const logicalPosition = toLogical(position);
-      return (
-        getExplorerDropTargetAtPoint(logicalPosition.x, logicalPosition.y) ?? directoryPath ?? null
-      );
-    };
-
-    const unlistenPromise = appWindow.onDragDropEvent(({ payload }) => {
-      if (disposed) return;
-
-      if (payload.type === "enter") {
-        setExternalDrop({
-          sourcePaths: payload.paths,
-          targetPath: getTargetPath(payload.position),
-        });
-        return;
-      }
-
-      if (payload.type === "over") {
-        const targetPath = getTargetPath(payload.position);
-        // "over" fires at mousemove frequency; only re-render when the
-        // highlighted drop target actually changes.
-        setExternalDrop((currentDrop) =>
-          currentDrop && currentDrop.targetPath !== targetPath
-            ? { ...currentDrop, targetPath }
-            : currentDrop,
-        );
-        return;
-      }
-
-      if (payload.type === "drop") {
-        const targetPath = getTargetPath(payload.position);
-        setExternalDrop(null);
-        // Every pane in the window hears the same drop. Without a hit-test
-        // the unclaimed drop lands in each pane's own directory (via the
-        // `?? directoryPath` fallback above), duplicating the transfer once
-        // per pane. Only the explorer under the pointer claims it; a drop
-        // over the sidebar, tab strip or terminal goes to the active pane.
-        if (!targetPath) return;
-        const { x, y } = toLogical(payload.position);
-        if (getExplorerDropTargetAtPoint(x, y) === null && !isActivePane) {
-          if (isExplorerContainerAtPoint(x, y)) return;
-        }
-        copyExternalEntries(payload.paths, targetPath);
-        return;
-      }
-
-      setExternalDrop(null);
-    });
-
-    return () => {
-      disposed = true;
-      void unlistenPromise.then((unlisten) => unlisten());
-    };
-  }, [copyExternalEntries, directoryPath, isActivePane]);
-
-  const copySelection = useCallback(() => {
-    if (selectedEntries.length === 0) return;
-
-    const sourcePaths = selectedEntries.map((entry) => entry.path);
-    setClipboard({ operation: "copy", sourcePaths });
-    mirrorFilesToSystemClipboard(sourcePaths, false);
-    setOperationError(null);
-  }, [selectedEntries, setClipboard]);
-
-  const cutSelection = useCallback(() => {
-    if (selectedEntries.length === 0) return;
-
-    const sourcePaths = selectedEntries.map((entry) => entry.path);
-    setClipboard({ operation: "cut", sourcePaths });
-    mirrorFilesToSystemClipboard(sourcePaths, true);
-    setOperationError(null);
-  }, [selectedEntries, setClipboard]);
-
-  const pasteClipboard = useCallback(() => {
-    if (!directoryPath) return;
-
-    setOperationError(null);
-
-    // The system clipboard wins when it holds a different file list, because
-    // copying files in Explorer or another app replaces our mirror while the
-    // app-internal atom keeps its previous contents. Network paths never
-    // reach the system clipboard, so those stay app-internal.
-    void commands
-      .readFilesFromClipboard()
-      .then((systemFiles) => {
-        const systemPaths = systemFiles?.paths ?? [];
-        const systemIsMirror =
-          clipboard !== null && pathListsEqual(systemPaths, clipboard.sourcePaths);
-        const fromSystem = systemPaths.length > 0 && !systemIsMirror;
-
-        const paths = fromSystem ? systemPaths : (clipboard?.sourcePaths ?? []);
-        if (paths.length === 0) return;
-
-        const isCut = fromSystem ? systemFiles?.cut === true : clipboard?.operation === "cut";
-        const operation: TransferOperation = isCut ? "move" : "copy";
-
-        startTransfer(paths, directoryPath, operation, () => {
-          if (isCut && !fromSystem) {
-            setClipboard(null);
-          }
-          setSelectedPaths([]);
-        });
-      })
-      .catch((error) => {
-        console.warn("Unable to read the system clipboard", error);
-      });
-  }, [clipboard, directoryPath, setClipboard, startTransfer]);
-
-  const requestRename = useCallback(() => {
-    if (selectedEntries.length === 0) return;
-
-    // A single entry keeps the classic inline dialog; multi-selections open
-    // the patterned bulk rename (numbering, replace, case).
-    if (selectedEntries.length > 1) {
-      setBulkRenameOpen(true);
-      setBulkRenameError(null);
-      setOperationError(null);
-      return;
-    }
-
-    const [entry] = selectedEntries;
-    setRenameTarget(entry);
-    setRenameValue(entry.name);
-    setRenameError(null);
-    setOperationError(null);
-  }, [selectedEntries]);
-
-  /** Applies the bulk-rename plan; the whole batch stays one undo step. */
-  const applyBulkRename = useCallback(
-    (requests: RenameRequest[]) => {
-      setBulkRenameError(null);
-      setOperationError(null);
-
-      void performFileOperation(
-        (operationId) => commands.renameEntriesBatch(requests, operationId!),
-        "move",
-      ).then((result) => {
-        if (!result.ok) {
-          setBulkRenameError(result.error);
-          return;
-        }
-
-        setBulkRenameOpen(false);
-        setSelectedPaths([]);
-      });
-    },
-    [performFileOperation],
-  );
-
-  /** Duplicates the selection in place; the backend picks unique "副本" names. */
-  const duplicateSelection = useCallback(() => {
-    if (selectedEntries.length === 0) return;
-
-    setOperationError(null);
-    void performFileOperation(
-      (operationId) =>
-        commands.duplicateEntries(
-          selectedEntries.map((entry) => entry.path),
-          operationId!,
-        ),
-      "copy",
-    ).then((result) => {
-      if (!result.ok) setOperationError(result.error);
-    });
-  }, [performFileOperation, selectedEntries]);
-
-  /** Compresses the selection into a unique archive next to the entries.
-   *  Encrypted requests go through the password dialog first. */
-  const compressSelection = useCallback(
-    (format: ArchiveFormat, encrypted: boolean) => {
-      if (selectedEntries.length === 0 || !directoryPath) return;
-
-      if (encrypted) {
-        setOperationError(null);
-        setArchivePasswordError(null);
-        setArchivePasswordRequest({ mode: "compress" });
-        return;
-      }
-
-      setOperationError(null);
-      void performFileOperation(
-        (operationId) =>
-          commands.compressEntries(
-            selectedEntries.map((entry) => entry.path),
-            directoryPath,
-            format,
-            null,
-            operationId!,
-          ),
-        "compress",
-      ).then((result) => {
-        if (!result.ok) setOperationError(result.error);
-      });
-    },
-    [directoryPath, performFileOperation, selectedEntries],
-  );
-
-  /** Extracts an archive into a fresh folder next to it. Encrypted archives
-   *  answer with a wrong-password error, which opens the password dialog. */
-  const extractSelection = useCallback(
-    (archivePath: string) => {
-      setOperationError(null);
-      void performFileOperation(
-        (operationId) => commands.extractArchive(archivePath, null, null, operationId!),
-        "extract",
-      ).then((result) => {
-        if (result.ok) return;
-
-        if (isWrongPasswordError(result.rawError)) {
-          setArchivePasswordError(null);
-          setArchivePasswordRequest({ archivePath, mode: "extract" });
-          return;
-        }
-        setOperationError(result.error);
-      });
-    },
-    [performFileOperation],
-  );
-
-  /** Retries the pending archive operation with the supplied password. */
-  const submitArchivePassword = useCallback(
-    (password: string) => {
-      if (!archivePasswordRequest || !directoryPath) return;
-
-      setArchivePasswordError(null);
-      setArchivePasswordPending(true);
-
-      const operation =
-        archivePasswordRequest.mode === "extract"
-          ? (operationId?: string) =>
-              commands.extractArchive(
-                archivePasswordRequest.archivePath,
-                null,
-                password,
-                operationId!,
-              )
-          : (operationId?: string) =>
-              commands.compressEntries(
-                selectedEntries.map((entry) => entry.path),
-                directoryPath,
-                "7z",
-                password,
-                operationId!,
-              );
-
-      void performFileOperation(operation, archivePasswordRequest.mode).then((result) => {
-        setArchivePasswordPending(false);
-
-        if (result.ok) {
-          setArchivePasswordRequest(null);
-          return;
-        }
-
-        // A wrong password keeps the dialog open so it can be corrected.
-        if (archivePasswordRequest.mode === "extract" && isWrongPasswordError(result.rawError)) {
-          setArchivePasswordError(result.error);
-          return;
-        }
-
-        setArchivePasswordRequest(null);
-        setOperationError(result.error);
-      });
-    },
-    [archivePasswordRequest, directoryPath, performFileOperation, selectedEntries],
-  );
-
-  /** Native cross-platform folder picker feeding the existing move pipeline. */
-  const moveSelectionTo = useCallback(() => {
-    if (selectedEntries.length === 0 || !directoryPath) return;
-
-    const sourcePaths = selectedEntries.map((entry) => entry.path);
-    setOperationError(null);
-
-    void openDialog({
-      defaultPath: directoryPath,
-      directory: true,
-      multiple: false,
-      title: t("explorer:moveTo.dialogTitle"),
-    })
-      .then((destination) => {
-        if (typeof destination !== "string" || !destination || destination === directoryPath) {
-          return;
-        }
-
-        transferEntries(sourcePaths, destination, "move");
-      })
-      .catch((error: unknown) => {
-        console.warn("Unable to open destination picker", error);
-      });
-  }, [directoryPath, selectedEntries, t, transferEntries]);
-
-  const closeRenameDialog = () => {
-    if (isOperationPending) return;
-
-    setRenameTarget(null);
-    setRenameError(null);
-  };
-
-  const submitRename = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!renameTarget) return;
-
-    const nextName = renameValue.trim();
-    if (!nextName) {
-      setRenameError(t("explorer:validation.nameEmpty"));
-      return;
-    }
-
-    setRenameError(null);
-    setOperationError(null);
-    const sourcePath = renameTarget.path;
-
-    void performFileOperation(() => commands.renameEntry(sourcePath, nextName)).then((result) => {
-      if (!result.ok) {
-        setRenameError(result.error);
-        return;
-      }
-
-      setRenameTarget(null);
-      setSelectedPaths([]);
-    });
-  };
-
-  const requestCreate = useCallback(
-    (kind: NewEntryKind) => {
-      if (!directoryPath || search.isActive) return;
-
-      setNewEntryKind(kind);
-      setNewEntryValue(
-        kind === "file"
-          ? t("explorer:newEntry.defaultNameExt", { name: t("explorer:newEntry.fileDefaultName") })
-          : t("explorer:newEntry.folderDefaultName"),
-      );
-      setNewEntryError(null);
-      setOperationError(null);
-    },
-    [directoryPath, search.isActive, t],
-  );
-
-  const closeCreateDialog = () => {
-    if (isOperationPending) return;
-
-    setNewEntryKind(null);
-    setNewEntryError(null);
-  };
-
-  const submitCreate = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!newEntryKind || !directoryPath) return;
-
-    const nextName = newEntryValue.trim();
-    if (!nextName) {
-      setNewEntryError(t("explorer:validation.nameEmpty"));
-      return;
-    }
-
-    setNewEntryError(null);
-    setOperationError(null);
-    const kind = newEntryKind;
-    let createdPath: string | null = null;
-
-    void performFileOperation(async () => {
-      createdPath = await commands.createEntry(directoryPath, nextName, kind);
-    }).then((result) => {
-      if (!result.ok) {
-        setNewEntryError(getCreateEntryErrorMessage(result.error, result.rawError));
-        return;
-      }
-
-      setNewEntryKind(null);
-      setSelectedPaths(createdPath ? [createdPath] : []);
-    });
-  };
-
-  /** Moves the selection into the system trash; the batch stays undoable. */
-  const trashSelection = useCallback(() => {
-    if (selectedEntries.length === 0) return;
-
-    const paths = selectedEntries.map((entry) => entry.path);
-    setOperationError(null);
-    setSelectedPaths([]);
-
-    void performFileOperation(
-      (operationId) => commands.trashEntries(paths, operationId!),
-      "delete",
-    ).then((result) => {
-      if (!result.ok) {
-        setOperationError(result.error);
-        setSelectedPaths(paths);
-        return;
-      }
-      setUndoRedoToast({
-        outcome: { action: "trash", count: paths.length, op: "trash" },
-        action: "undo",
-      });
-    });
-  }, [performFileOperation, selectedEntries]);
-
-  /** Delete moves the selection to the trash when every entry is local;
-   *  network locations have no recycle bin, so they keep the permanent-delete
-   *  confirmation dialog. */
-  const requestDelete = useCallback(() => {
-    if (selectedEntries.length === 0) return;
-
-    if (selectedEntries.every((entry) => isLocalExplorerPath(entry.path))) {
-      trashSelection();
-      return;
-    }
-
-    setDeleteTargets(selectedEntries);
-    setOperationError(null);
-  }, [selectedEntries, trashSelection]);
-
-  /** Shift+Delete bypasses the trash and asks for permanent deletion. */
-  const requestPermanentDelete = useCallback(() => {
-    if (selectedEntries.length === 0) return;
-
-    setDeleteTargets(selectedEntries);
-    setOperationError(null);
-  }, [selectedEntries]);
-
-  /** Reverts the most recent recorded operation (move, rename, copy, trash,
-   *  create, duplicate) through the backend history stack. */
-  const undoLastOperation = useCallback(() => {
-    if (!undoRedo.canUndo || isOperationPending) return;
-
-    setUndoRedoToast(null);
-    setOperationError(null);
-    let outcome: UndoRedoOutcome | null = null;
-    void performFileOperation(async (operationId) => {
-      outcome = await commands.undoOperation(operationId!);
-    }, "auto").then((result) => {
-      if (!result.ok) {
-        setOperationError(t("explorer:undoRedo.failedUndo", { detail: result.error }));
-        return;
-      }
-      if (outcome) {
-        setUndoRedoToast({ outcome, action: "redo" });
-      }
-    });
-  }, [isOperationPending, performFileOperation, t, undoRedo.canUndo]);
-
-  /** Re-applies the most recently undone operation. */
-  const redoLastOperation = useCallback(() => {
-    if (!undoRedo.canRedo || isOperationPending) return;
-
-    setUndoRedoToast(null);
-    setOperationError(null);
-    let outcome: UndoRedoOutcome | null = null;
-    void performFileOperation(async (operationId) => {
-      outcome = await commands.redoOperation(operationId!);
-    }, "auto").then((result) => {
-      if (!result.ok) {
-        setOperationError(t("explorer:undoRedo.failedRedo", { detail: result.error }));
-        return;
-      }
-      if (outcome) {
-        setUndoRedoToast({ outcome, action: "undo" });
-      }
-    });
-  }, [isOperationPending, performFileOperation, t, undoRedo.canRedo]);
-
-  // The undo toast auto-dismisses after a delay; hovering pauses the timer
-  // so the pointer can reach the action button before the toast disappears.
-  const [isUndoToastHovered, setIsUndoToastHovered] = useState(false);
-
-  useEffect(() => {
-    if (!undoRedoToast || isUndoToastHovered) return undefined;
-
-    const timer = window.setTimeout(() => setUndoRedoToast(null), UNDO_TOAST_DISMISS_MS);
-    return () => window.clearTimeout(timer);
-  }, [isUndoToastHovered, undoRedoToast]);
-
-  const closeDeleteDialog = () => {
-    if (!isOperationPending) {
-      setDeleteTargets([]);
-    }
-  };
-
-  const confirmDelete = () => {
-    if (deleteTargets.length === 0) return;
-
-    setOperationError(null);
-    const paths = deleteTargets.map((entry) => entry.path);
-    const targets = deleteTargets;
-
-    setDeleteTargets([]);
-    setSelectedPaths([]);
-
-    void performFileOperation(
-      (operationId) => commands.deleteEntries(paths, operationId!),
-      "delete",
-    ).then((result) => {
-      if (!result.ok) {
-        setOperationError(result.error);
-        setDeleteTargets(targets);
-        setSelectedPaths(paths);
-        return;
-      }
-    });
-  };
+  }, [directoryPath, search.query, setOperationError]);
 
   const retry = () => {
     if (directory) {
@@ -1130,7 +284,7 @@ export function ExplorerView({
         );
       });
     },
-    [t],
+    [setOperationError, t],
   );
 
   /** Opens the "Open With" picker for a local file or folder: the native
@@ -1146,9 +300,9 @@ export function ExplorerView({
         });
         return;
       }
-      setOpenWithTarget(path);
+      dialogs.setOpenWithTarget(path);
     },
-    [t],
+    [dialogs.setOpenWithTarget, setOperationError, t],
   );
 
   /** Opens every selected file and navigates into the first selected folder. */
@@ -1170,105 +324,216 @@ export function ExplorerView({
     }
   }, [isOperationPending, navigator, selectedEntries]);
 
-  const selectAll = useCallback(() => {
-    setSelectedPaths(allPaths(displayedListing));
-  }, [displayedListing]);
-
   /** Space toggles the preview surface for the first selected entry. */
   const togglePreview = useCallback(() => {
     setIsPreviewOpen((isOpen) => !isOpen);
   }, []);
 
-  const executeExplorerCommand = useCallback(
-    (command: ExplorerCommandId) => {
-      switch (command) {
-        case "create-folder":
-          requestCreate("directory");
-          break;
-        case "create-file":
-          requestCreate("file");
-          break;
-        case "rename":
-          requestRename();
-          break;
-        case "delete":
-          requestDelete();
-          break;
-        case "copy":
-          copySelection();
-          break;
-        case "cut":
-          cutSelection();
-          break;
-        case "paste":
-          pasteClipboard();
-          break;
-        case "copy-paths":
-          copySelectedPaths();
-          break;
-        case "select-all":
-          selectAll();
-          break;
-        case "refresh":
-          if (directory) void navigator.refresh(directory.path);
-          break;
-        case "go-back":
-          void navigator.goBack();
-          break;
-        case "go-forward":
-          void navigator.goForward();
-          break;
-        case "go-up":
-          void navigator.goUp();
-          break;
-        case "open-terminal":
-          if (directoryPath) openTerminalHere(directoryPath);
-          break;
-        case "toggle-favorite":
-          if (directory) {
-            toggleFavorite({
-              path: directory.path,
-              name: directory.breadcrumbs.at(-1)?.name ?? directory.path,
-            });
-          }
-          break;
-        case "toggle-split":
-          onToggleSplit?.();
-          break;
+  /** Duplicates the selection in place; the backend picks unique "副本" names. */
+  const duplicateSelection = useCallback(() => {
+    if (selectedEntries.length === 0) return;
+
+    setOperationError(null);
+    void performFileOperation(
+      (operationId) =>
+        commands.duplicateEntries(
+          selectedEntries.map((entry) => entry.path),
+          operationId!,
+        ),
+      "copy",
+    ).then((result) => {
+      if (!result.ok) setOperationError(result.error);
+    });
+  }, [performFileOperation, selectedEntries, setOperationError]);
+
+  /** Compresses the selection into a unique archive next to the entries.
+   *  Encrypted requests go through the password dialog first. */
+  const compressSelection = useCallback(
+    (format: ArchiveFormat, encrypted: boolean) => {
+      if (selectedEntries.length === 0 || !directoryPath) return;
+
+      setOperationError(null);
+      if (encrypted) {
+        dialogs.openArchivePassword({ mode: "compress" });
+        return;
       }
+
+      void performFileOperation(
+        (operationId) =>
+          commands.compressEntries(
+            selectedEntries.map((entry) => entry.path),
+            directoryPath,
+            format,
+            null,
+            operationId!,
+          ),
+        "compress",
+      ).then((result) => {
+        if (!result.ok) setOperationError(result.error);
+      });
     },
-    [
-      copySelectedPaths,
-      copySelection,
-      cutSelection,
-      directory,
-      directoryPath,
-      navigator,
-      onToggleSplit,
-      openTerminalHere,
-      pasteClipboard,
-      requestCreate,
-      requestDelete,
-      requestRename,
-      selectAll,
-      toggleFavorite,
-    ],
+    [dialogs.openArchivePassword, directoryPath, performFileOperation, selectedEntries, setOperationError],
   );
 
-  // The command bar drops intents into the bus; the mounted (active tab)
-  // explorer consumes them. In the dual-pane layout only the focused pane
-  // executes, so the same intent never runs twice. Ids are tracked so React
-  // StrictMode's double effect invocation cannot execute a command twice.
-  const executedCommandIdsRef = useRef(new Set<number>());
+  /** Extracts an archive into a fresh folder next to it. Encrypted archives
+   *  answer with a wrong-password error, which opens the password dialog. */
+  const extractSelection = useCallback(
+    (archivePath: string) => {
+      setOperationError(null);
+      void performFileOperation(
+        (operationId) => commands.extractArchive(archivePath, null, null, operationId!),
+        "extract",
+      ).then((result) => {
+        if (result.ok) return;
+
+        if (isWrongPasswordError(result.rawError)) {
+          dialogs.openArchivePassword({ archivePath, mode: "extract" });
+          return;
+        }
+        setOperationError(result.error);
+      });
+    },
+    [dialogs.openArchivePassword, performFileOperation, setOperationError],
+  );
+
+  /** Native cross-platform folder picker feeding the existing move pipeline. */
+  const moveSelectionTo = useCallback(() => {
+    if (selectedEntries.length === 0 || !directoryPath) return;
+
+    const sourcePaths = selectedEntries.map((entry) => entry.path);
+    setOperationError(null);
+
+    void openDialog({
+      defaultPath: directoryPath,
+      directory: true,
+      multiple: false,
+      title: t("explorer:moveTo.dialogTitle"),
+    })
+      .then((destination) => {
+        if (typeof destination !== "string" || !destination || destination === directoryPath) {
+          return;
+        }
+
+        transferEntries(sourcePaths, destination, "move");
+      })
+      .catch((error: unknown) => {
+        console.warn("Unable to open destination picker", error);
+      });
+  }, [directoryPath, selectedEntries, setOperationError, t, transferEntries]);
+
+  /** Moves the selection into the system trash; the batch stays undoable. */
+  const trashSelection = useCallback(() => {
+    if (selectedEntries.length === 0) return;
+
+    const paths = selectedEntries.map((entry) => entry.path);
+    setOperationError(null);
+    setSelectedPaths([]);
+
+    void performFileOperation(
+      (operationId) => commands.trashEntries(paths, operationId!),
+      "delete",
+    ).then((result) => {
+      if (!result.ok) {
+        setOperationError(result.error);
+        setSelectedPaths(paths);
+        return;
+      }
+      setUndoRedoToast({
+        outcome: { action: "trash", count: paths.length, op: "trash" },
+        action: "undo",
+      });
+    });
+  }, [performFileOperation, selectedEntries, setOperationError, setSelectedPaths]);
+
+  /** Delete moves the selection to the trash when every entry is local;
+   *  network locations have no recycle bin, so they keep the permanent-delete
+   *  confirmation dialog. */
+  const requestDelete = useCallback(() => {
+    if (selectedEntries.length === 0) return;
+
+    if (selectedEntries.every((entry) => isLocalExplorerPath(entry.path))) {
+      trashSelection();
+      return;
+    }
+
+    dialogs.openDeleteDialog(selectedEntries);
+  }, [dialogs.openDeleteDialog, selectedEntries, trashSelection]);
+
+  /** Shift+Delete bypasses the trash and asks for permanent deletion. */
+  const requestPermanentDelete = useCallback(() => {
+    if (selectedEntries.length === 0) return;
+
+    dialogs.openDeleteDialog(selectedEntries);
+  }, [dialogs.openDeleteDialog, selectedEntries]);
+
+  /** Reverts the most recent recorded operation (move, rename, copy, trash,
+   *  create, duplicate) through the backend history stack. */
+  const undoLastOperation = useCallback(() => {
+    if (!undoRedo.canUndo || isOperationPending) return;
+
+    setUndoRedoToast(null);
+    setOperationError(null);
+    let outcome: UndoRedoOutcome | null = null;
+    void performFileOperation(async (operationId) => {
+      outcome = await commands.undoOperation(operationId!);
+    }, "auto").then((result) => {
+      if (!result.ok) {
+        setOperationError(t("explorer:undoRedo.failedUndo", { detail: result.error }));
+        return;
+      }
+      if (outcome) {
+        setUndoRedoToast({ outcome, action: "redo" });
+      }
+    });
+  }, [isOperationPending, performFileOperation, setOperationError, t, undoRedo.canUndo]);
+
+  /** Re-applies the most recently undone operation. */
+  const redoLastOperation = useCallback(() => {
+    if (!undoRedo.canRedo || isOperationPending) return;
+
+    setUndoRedoToast(null);
+    setOperationError(null);
+    let outcome: UndoRedoOutcome | null = null;
+    void performFileOperation(async (operationId) => {
+      outcome = await commands.redoOperation(operationId!);
+    }, "auto").then((result) => {
+      if (!result.ok) {
+        setOperationError(t("explorer:undoRedo.failedRedo", { detail: result.error }));
+        return;
+      }
+      if (outcome) {
+        setUndoRedoToast({ outcome, action: "undo" });
+      }
+    });
+  }, [isOperationPending, performFileOperation, setOperationError, t, undoRedo.canRedo]);
+
+  // The undo toast auto-dismisses after a delay; hovering pauses the timer
+  // so the pointer can reach the action button before the toast disappears.
+  const [isUndoToastHovered, setIsUndoToastHovered] = useState(false);
 
   useEffect(() => {
-    if (!pendingCommand || !isActivePane) return;
-    if (executedCommandIdsRef.current.has(pendingCommand.id)) return;
+    if (!undoRedoToast || isUndoToastHovered) return undefined;
 
-    executedCommandIdsRef.current.add(pendingCommand.id);
-    clearPendingExplorerCommand();
-    executeExplorerCommand(pendingCommand.command);
-  }, [pendingCommand, executeExplorerCommand, isActivePane]);
+    const timer = window.setTimeout(() => setUndoRedoToast(null), UNDO_TOAST_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [isUndoToastHovered, undoRedoToast]);
+
+  usePendingExplorerCommand({
+    isActivePane,
+    navigator,
+    directory,
+    directoryPath,
+    requestCreate: dialogs.requestCreate,
+    requestRename: dialogs.requestRename,
+    requestDelete,
+    copySelection,
+    cutSelection,
+    pasteClipboard,
+    copySelectedPaths,
+    selectAll,
+    openTerminalHere,
+    onToggleSplit,
+  });
 
   const isCurrentFavorited =
     directory !== null && favorites.some((favorite) => favorite.path === directory.path);
@@ -1297,186 +562,46 @@ export function ExplorerView({
   return (
     <main className="h-full bg-card" data-explorer-container="true">
       <section className="flex h-full w-full flex-col overflow-hidden">
-        <header
-          className="flex h-toolbar shrink-0 items-center gap-0.5 border-b border-border bg-card px-1.5"
-          data-tauri-drag-region="deep"
-        >
-          <div className="flex shrink-0 items-center gap-0.5">
-            <Button
-              aria-label={
-                sidebarVisible
-                  ? t("explorer:toolbar.hideSidebar")
-                  : t("explorer:toolbar.showSidebar")
-              }
-              onClick={() => setSidebarVisible(!sidebarVisible)}
-              size="icon"
-              title={
-                sidebarVisible
-                  ? t("explorer:toolbar.hideSidebar")
-                  : t("explorer:toolbar.showSidebar")
-              }
-              type="button"
-              variant="ghost"
-            >
-              <PanelLeft />
-            </Button>
-            <ToolbarSeparator />
-            <Button
-              aria-label={t("explorer:toolbar.back")}
-              disabled={!canGoBack}
-              onClick={() => void navigator.goBack()}
-              size="icon"
-              title={t("explorer:toolbar.back")}
-              type="button"
-              variant="ghost"
-            >
-              <ArrowLeft />
-            </Button>
-            <Button
-              aria-label={t("explorer:toolbar.forward")}
-              disabled={!canGoForward}
-              onClick={() => void navigator.goForward()}
-              size="icon"
-              title={t("explorer:toolbar.forward")}
-              type="button"
-              variant="ghost"
-            >
-              <ArrowRight />
-            </Button>
-            <Button
-              aria-label={t("explorer:toolbar.up")}
-              disabled={!canGoUp}
-              onClick={() => void navigator.goUp()}
-              size="icon"
-              title={t("explorer:toolbar.up")}
-              type="button"
-              variant="ghost"
-            >
-              <ArrowUp />
-            </Button>
-            <Button
-              aria-label={t("explorer:toolbar.refresh")}
-              disabled={isLoading || !directory}
-              onClick={() => directory && void navigator.navigate(directory.path)}
-              size="icon"
-              title={t("explorer:toolbar.refresh")}
-              type="button"
-              variant="ghost"
-            >
-              <RotateCw className={cn(isLoading && "animate-spin")} />
-            </Button>
-            <ToolbarSeparator className={TOOLBAR_OVERFLOW_CLASS} />
-            <Button
-              aria-label={
-                isCurrentFavorited
-                  ? t("explorer:toolbar.removeFavorite")
-                  : t("explorer:toolbar.addFavorite")
-              }
-              className={TOOLBAR_OVERFLOW_CLASS}
-              disabled={!directory}
-              onClick={() =>
-                directory &&
-                toggleFavorite({
-                  path: directory.path,
-                  name: directory.breadcrumbs.at(-1)?.name ?? directory.path,
-                })
-              }
-              size="icon"
-              title={
-                isCurrentFavorited
-                  ? t("explorer:toolbar.removeFavorite")
-                  : t("explorer:toolbar.addFavorite")
-              }
-              type="button"
-              variant="ghost"
-            >
-              <Star className={cn(isCurrentFavorited && "fill-warning/70 text-warning")} />
-            </Button>
-          </div>
-
-          <div className="min-w-0 flex-1 px-1">
-            {directory ? (
-              <ExplorerPathBar
-                directory={directory}
-                onNavigate={(breadcrumb) => void navigator.navigateBreadcrumb(breadcrumb)}
-                onNavigatePath={navigateToPath}
-                trailing={
-                  <ListingStats
-                    isLoading={listingLoading}
-                    itemCount={listingCount}
-                    searchError={listingError}
-                    searchQuery={listingQuery}
-                    selectedCount={selectedPaths.length}
-                    truncated={listingTruncated}
-                  />
-                }
-              />
-            ) : (
-              <Skeleton className="h-6 w-56 max-w-full" />
-            )}
-          </div>
-
-          <DirectorySearch
-            contentSearch={contentSearch}
-            directoryName={directory?.breadcrumbs.at(-1)?.name ?? null}
-            disabled={isLoading}
-            mode={searchMode}
-            onModeChange={setSearchMode}
-            search={search}
-          />
-          <ViewMenu disabled={!directory} />
-          <FilterMenu disabled={!directory} />
-          {gitStatus && (
-            <>
-              <ToolbarSeparator />
-              <GitBranchControl branch={gitStatus.branch} root={gitStatus.root} />
-            </>
-          )}
-          {onToggleSplit && (
-            <Button
-              aria-label={
-                splitEnabled
-                  ? t("explorer:toolbar.closeSplitView")
-                  : t("explorer:toolbar.splitView")
-              }
-              aria-pressed={splitEnabled}
-              className={TOOLBAR_OVERFLOW_CLASS}
-              onClick={onToggleSplit}
-              size="icon"
-              title={
-                splitEnabled
-                  ? t("explorer:toolbar.closeSplitView")
-                  : t("explorer:toolbar.splitView")
-              }
-              type="button"
-              variant="ghost"
-            >
-              <Columns3 />
-            </Button>
-          )}
-          <ToolbarSeparator />
-          <Button
-            aria-label={
-              isPreviewOpen
-                ? t("explorer:toolbar.collapsePreview")
-                : t("explorer:toolbar.expandPreview")
-            }
-            aria-pressed={isPreviewOpen}
-            onClick={() => setIsPreviewOpen((isOpen) => !isOpen)}
-            size="icon"
-            title={
-              isPreviewOpen
-                ? t("explorer:toolbar.collapsePreviewShortcut", { shortcut: previewBinding })
-                : t("explorer:toolbar.expandPreviewShortcut", { shortcut: previewBinding })
-            }
-            type="button"
-            variant="ghost"
-          >
-            <Eye />
-          </Button>
-          <ToolbarSeparator />
-          <TerminalToggle />
-        </header>
+        <ExplorerToolbar
+          canGoBack={canGoBack}
+          canGoForward={canGoForward}
+          canGoUp={canGoUp}
+          contentSearch={contentSearch}
+          directory={directory}
+          gitStatus={gitStatus}
+          isCurrentFavorited={isCurrentFavorited}
+          isLoading={isLoading}
+          isPreviewOpen={isPreviewOpen}
+          onGoBack={() => void navigator.goBack()}
+          onGoForward={() => void navigator.goForward()}
+          onGoUp={() => void navigator.goUp()}
+          onNavigateBreadcrumb={(breadcrumb) => void navigator.navigateBreadcrumb(breadcrumb)}
+          onNavigatePath={navigateToPath}
+          onRefresh={() => directory && void navigator.navigate(directory.path)}
+          onSearchModeChange={setSearchMode}
+          onToggleFavorite={() =>
+            directory &&
+            toggleFavorite({
+              path: directory.path,
+              name: directory.breadcrumbs.at(-1)?.name ?? directory.path,
+            })
+          }
+          onTogglePreview={togglePreview}
+          onToggleSidebar={() => setSidebarVisible(!sidebarVisible)}
+          onToggleSplit={onToggleSplit}
+          search={search}
+          searchMode={searchMode}
+          sidebarVisible={sidebarVisible}
+          splitEnabled={splitEnabled}
+          stats={{
+            isLoading: listingLoading,
+            itemCount: listingCount,
+            searchError: listingError,
+            searchQuery: listingQuery,
+            selectedCount: selectedPaths.length,
+            truncated: listingTruncated,
+          }}
+        />
 
         {isContentSearchActive && (
           <div className="shrink-0 border-b border-border px-2 py-1.5">
@@ -1560,8 +685,8 @@ export function ExplorerView({
                   onAddToSpace={addToSpace}
                   onCompress={compressSelection}
                   onCopy={copySelection}
-                  onCreateDirectory={() => requestCreate("directory")}
-                  onCreateFile={() => requestCreate("file")}
+                  onCreateDirectory={() => dialogs.requestCreate("directory")}
+                  onCreateFile={() => dialogs.requestCreate("file")}
                   onCut={cutSelection}
                   onDelete={requestDelete}
                   onDeletePermanent={requestPermanentDelete}
@@ -1574,7 +699,7 @@ export function ExplorerView({
                   onOpenTerminal={() => directory.path && openTerminalHere(directory.path)}
                   onOpenWith={() => directory.path && openWithHere(directory.path)}
                   onPaste={pasteClipboard}
-                  onRename={requestRename}
+                  onRename={dialogs.requestRename}
                   onRedo={redoLastOperation}
                   onUndo={undoLastOperation}
                   onScrollOffsetChange={
@@ -1620,7 +745,7 @@ export function ExplorerView({
                         .map((entry) => entry.path),
                     )
                   }
-                  onClearSelection={() => setSelectedPaths([])}
+                  onClearSelection={clearSelection}
                   onCompress={compressSelection}
                   onCopy={copySelection}
                   onCopyPaths={copySelectedPaths}
@@ -1630,7 +755,7 @@ export function ExplorerView({
                   onExtract={extractSelection}
                   onMoveTo={moveSelectionTo}
                   onOpen={openSelectedEntries}
-                  onRename={requestRename}
+                  onRename={dialogs.requestRename}
                   selectedCount={selectedPaths.length}
                 />
               )}
@@ -1695,82 +820,71 @@ export function ExplorerView({
       </section>
 
       <RenameDialog
-        error={renameError}
+        error={dialogs.renameError}
         isPending={isOperationPending}
-        onClose={closeRenameDialog}
+        onClose={dialogs.closeRenameDialog}
         onOpenChange={(open) => {
-          if (!open) closeRenameDialog();
+          if (!open) dialogs.closeRenameDialog();
         }}
-        onSubmit={submitRename}
-        onValueChange={setRenameValue}
-        target={renameTarget}
-        value={renameValue}
+        onSubmit={dialogs.submitRename}
+        onValueChange={dialogs.setRenameValue}
+        target={dialogs.renameTarget}
+        value={dialogs.renameValue}
       />
       <BulkRenameDialog
-        applyError={bulkRenameError}
+        applyError={dialogs.bulkRenameError}
         entries={selectedEntries}
-        existingNames={bulkRenameOpen ? allNames(displayedListing) : NO_NAMES}
+        existingNames={dialogs.bulkRenameOpen ? allNames(displayedListing) : NO_NAMES}
         isPending={isOperationPending}
-        onApply={applyBulkRename}
-        onClose={() => {
-          if (!isOperationPending) {
-            setBulkRenameOpen(false);
-            setBulkRenameError(null);
-          }
-        }}
+        onApply={dialogs.applyBulkRename}
+        onClose={dialogs.closeBulkRename}
         onOpenChange={(open) => {
-          if (!open && !isOperationPending) {
-            setBulkRenameOpen(false);
-            setBulkRenameError(null);
-          }
+          if (!open) dialogs.closeBulkRename();
         }}
-        open={bulkRenameOpen}
+        open={dialogs.bulkRenameOpen}
       />
       <CreateEntryDialog
-        error={newEntryError}
+        error={dialogs.newEntryError}
         isPending={isOperationPending}
-        kind={newEntryKind}
-        onClose={closeCreateDialog}
+        kind={dialogs.newEntryKind}
+        onClose={dialogs.closeCreateDialog}
         onOpenChange={(open) => {
-          if (!open) closeCreateDialog();
+          if (!open) dialogs.closeCreateDialog();
         }}
-        onSubmit={submitCreate}
-        onValueChange={setNewEntryValue}
-        value={newEntryValue}
+        onSubmit={dialogs.submitCreate}
+        onValueChange={dialogs.setNewEntryValue}
+        value={dialogs.newEntryValue}
       />
       <DeleteDialog
-        entries={deleteTargets}
+        entries={dialogs.deleteTargets}
         isPending={isOperationPending}
-        onClose={closeDeleteDialog}
-        onConfirm={confirmDelete}
+        onClose={dialogs.closeDeleteDialog}
+        onConfirm={dialogs.confirmDelete}
         onOpenChange={(open) => {
-          if (!open) closeDeleteDialog();
+          if (!open) dialogs.closeDeleteDialog();
         }}
       />
       <OpenWithDialog
-        onClose={() => setOpenWithTarget(null)}
+        onClose={() => dialogs.setOpenWithTarget(null)}
         onOpenChange={(open) => {
-          if (!open) setOpenWithTarget(null);
+          if (!open) dialogs.setOpenWithTarget(null);
         }}
-        target={openWithTarget}
+        target={dialogs.openWithTarget}
       />
       <ArchivePasswordDialog
         archiveName={
-          archivePasswordRequest?.mode === "extract"
-            ? displayNameOfPath(archivePasswordRequest.archivePath)
+          dialogs.archivePasswordRequest?.mode === "extract"
+            ? displayNameOfPath(dialogs.archivePasswordRequest.archivePath)
             : ""
         }
-        error={archivePasswordError}
-        isPending={archivePasswordPending}
-        mode={archivePasswordRequest?.mode ?? "extract"}
+        error={dialogs.archivePasswordError}
+        isPending={dialogs.archivePasswordPending}
+        mode={dialogs.archivePasswordRequest?.mode ?? "extract"}
         onOpenChange={(open) => {
-          if (!open && !archivePasswordPending) {
-            setArchivePasswordRequest(null);
-            setArchivePasswordError(null);
-          }
+          if (!open) dialogs.closeArchivePassword();
         }}
-        onSubmit={submitArchivePassword}
-        open={archivePasswordRequest !== null}
+        onSubmit={dialogs.submitArchivePassword}
+        open={dialogs.archivePasswordRequest !== null}
       />
       {pendingTransfer && (
         <TransferConflictDialog
@@ -1782,404 +896,4 @@ export function ExplorerView({
       )}
     </main>
   );
-}
-
-/**
- * Hairline between toolbar groups. `className` exists so a group can take its
- * separator down with it on narrow windows — a lone divider with nothing on
- * one side reads as a rendering bug.
- */
-function ToolbarSeparator({ className }: { className?: string }) {
-  return <div aria-hidden="true" className={cn("mx-0.5 h-4 w-px bg-border", className)} />;
-}
-
-/**
- * Inline listing status for the path bar's trailing edge: how many rows the
- * folder holds, what is selected, and what a search is doing.
- *
- * This replaced a dedicated 24px status bar. It belongs beside the breadcrumbs
- * because it describes the folder they name — and because that strip existed
- * only to carry these few facts, removing it returns a whole row of chrome to
- * the listing. Transient activity keeps its own surface: a running file
- * operation still gets `FileOperationStatusBar`, and a Git failure pops up
- * under its own control. Only the always-true facts live here.
- */
-function ListingStats({
-  isLoading,
-  itemCount,
-  searchError,
-  searchQuery,
-  selectedCount,
-  truncated,
-}: {
-  isLoading: boolean;
-  itemCount: number;
-  searchError: string | null;
-  searchQuery: string | null;
-  selectedCount: number;
-  truncated: boolean;
-}) {
-  const { t } = useTranslation("explorer");
-  const clearSelectionBinding = formatBinding(useBinding("explorer.clearSelection"));
-  const status = isLoading
-    ? searchQuery
-      ? t("explorer:listing.searching")
-      : t("explorer:listing.loading")
-    : searchError
-      ? t("explorer:listing.searchFailed")
-      : `${t(searchQuery ? "explorer:listing.matchCount" : "explorer:listing.itemCount", {
-          count: itemCount,
-          display: localeNumber(itemCount),
-        })}${truncated ? t("explorer:listing.truncatedSuffix") : ""}`;
-
-  return (
-    <span
-      aria-live="polite"
-      className="ml-auto flex shrink-0 items-center gap-1.5 pl-3 text-micro text-muted-foreground tabular-nums"
-    >
-      {selectedCount > 0 && (
-        <>
-          <span className="rounded-xs bg-selection px-1.5 text-foreground">
-            {t("explorer:listing.selectedCount", { display: localeNumber(selectedCount) })}
-          </span>
-          {/* A selection is the one state where "how do I get out of this"
-              is a real question, so the way out is spelled out here instead of
-              being left to the keyboard. Hidden on narrow panes, where the
-              path bar has no room to spare for it. */}
-          <span className="hidden shrink-0 items-center gap-1 min-[840px]:flex">
-            <Kbd className="h-4 px-1 text-nano">{clearSelectionBinding}</Kbd>
-            {t("explorer:listing.clearSelectionHint")}
-          </span>
-        </>
-      )}
-      <span className="truncate">{status}</span>
-    </span>
-  );
-}
-
-/**
- * Integrated-terminal toggle. It moved out of the status bar so it sits with
- * the other view-level controls rather than in a strip of its own.
- */
-function TerminalToggle() {
-  const { t } = useTranslation("explorer");
-  const [visible, setVisible] = useAtom(terminalVisibleAtom);
-  const toggleBinding = formatBinding(useBinding("app.toggleTerminal"));
-
-  return (
-    <Button
-      aria-label={t("explorer:toolbar.toggleTerminal")}
-      aria-pressed={visible}
-      className={cn(visible && "bg-accent text-foreground")}
-      onClick={() => setVisible((open) => !open)}
-      size="icon"
-      title={t("explorer:toolbar.terminalTitle", { shortcut: toggleBinding })}
-      type="button"
-      variant="ghost"
-    >
-      <SquareTerminal />
-    </Button>
-  );
-}
-
-/** Places local files on the OS clipboard (CF_HDROP) so Explorer, browsers,
- *  and chat apps accept a paste; network paths stay app-internal. */
-function mirrorFilesToSystemClipboard(paths: string[], cut: boolean) {
-  const localPaths = paths.filter(isLocalExplorerPath);
-  if (localPaths.length === 0) return;
-
-  void commands.writeFilesToClipboard(localPaths, cut).catch((error) => {
-    console.warn("Unable to place files on the system clipboard", error);
-  });
-}
-
-function pathListsEqual(a: string[], b: string[]): boolean {
-  return a.length === b.length && a.every((path, index) => path === b[index]);
-}
-
-function FileOperationStatusBar({ progress }: { progress: FileOperationProgress }) {
-  const { t } = useTranslation("explorer");
-  const operationLabel: Record<FileOperationKind, string> = {
-    copy: t("explorer:progress.opCopy"),
-    move: t("explorer:progress.opMove"),
-    delete: t("explorer:progress.opDelete"),
-    compress: t("explorer:progress.opCompress"),
-    extract: t("explorer:progress.opExtract"),
-    properties: t("explorer:progress.opProperties"),
-  };
-  const total = progress.total;
-  const percentage = total && total > 0 ? Math.round((progress.completed / total) * 100) : 0;
-  const currentPath = progress.currentPath;
-  const operationName = operationLabel[progress.operation];
-  const statusText =
-    progress.phase === "preparing"
-      ? t("explorer:progress.preparing", { op: operationName })
-      : progress.phase === "completed"
-        ? t("explorer:progress.completed", { op: operationName })
-        : t("explorer:progress.inProgress", { op: operationName });
-
-  return (
-    <footer
-      aria-live="polite"
-      className="flex h-status-strip shrink-0 items-center gap-3 border-t border-border bg-card px-3"
-    >
-      <LoaderCircle
-        className={cn(
-          "size-3.5 shrink-0 text-primary",
-          progress.phase !== "completed" && "animate-spin",
-        )}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-3 text-micro">
-          <span className="truncate">
-            {statusText}
-            {currentPath ? ` · ${currentPath}` : ""}
-          </span>
-          <span className="shrink-0 tabular-nums text-muted-foreground">
-            {total === null
-              ? t("explorer:progress.counting")
-              : t("explorer:progress.counter", {
-                  completed: localeNumber(progress.completed),
-                  total: localeNumber(total),
-                  percentage,
-                })}
-          </span>
-        </div>
-        <Progress className="mt-1.5 w-full" size="sm" value={percentage} />
-      </div>
-    </footer>
-  );
-}
-
-function RenameDialog({
-  error,
-  isPending,
-  onClose,
-  onOpenChange,
-  onSubmit,
-  onValueChange,
-  target,
-  value,
-}: {
-  error: string | null;
-  isPending: boolean;
-  onClose: () => void;
-  onOpenChange: (open: boolean) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onValueChange: (value: string) => void;
-  target: DirectoryEntry | null;
-  value: string;
-}) {
-  const { t } = useTranslation("explorer");
-
-  return (
-    <Dialog onOpenChange={onOpenChange} open={target !== null}>
-      <DialogContent showCloseButton={!isPending}>
-        <DialogHeader>
-          <DialogTitle>{t("explorer:rename.title")}</DialogTitle>
-          <DialogDescription>
-            {t("explorer:rename.description", { name: target?.name ?? "" })}
-          </DialogDescription>
-        </DialogHeader>
-        <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-          <FieldGroup>
-            <Field data-invalid={Boolean(error)}>
-              <FieldLabel htmlFor="rename-entry">{t("explorer:rename.newNameLabel")}</FieldLabel>
-              <Input
-                aria-invalid={Boolean(error)}
-                autoFocus
-                disabled={isPending}
-                id="rename-entry"
-                onChange={(event) => onValueChange(event.target.value)}
-                onFocus={(event) => event.currentTarget.select()}
-                value={value}
-              />
-              <FieldError>{error}</FieldError>
-            </Field>
-          </FieldGroup>
-          <DialogFooter>
-            <Button disabled={isPending} onClick={onClose} type="button" variant="ghost">
-              {t("explorer:actions.cancel")}
-            </Button>
-            <Button disabled={isPending} type="submit">
-              {t("explorer:actions.rename")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function CreateEntryDialog({
-  error,
-  isPending,
-  kind,
-  onClose,
-  onOpenChange,
-  onSubmit,
-  onValueChange,
-  value,
-}: {
-  error: string | null;
-  isPending: boolean;
-  kind: NewEntryKind | null;
-  onClose: () => void;
-  onOpenChange: (open: boolean) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onValueChange: (value: string) => void;
-  value: string;
-}) {
-  const { t } = useTranslation("explorer");
-  const isFile = kind === "file";
-
-  return (
-    <Dialog onOpenChange={onOpenChange} open={kind !== null}>
-      <DialogContent showCloseButton={!isPending}>
-        <DialogHeader>
-          <DialogTitle>
-            {isFile
-              ? t("explorer:newEntry.fileDialogTitle")
-              : t("explorer:newEntry.folderDialogTitle")}
-          </DialogTitle>
-          <DialogDescription>
-            {isFile
-              ? t("explorer:newEntry.fileDescription")
-              : t("explorer:newEntry.folderDescription")}
-          </DialogDescription>
-        </DialogHeader>
-        <form className="flex flex-col gap-4" onSubmit={onSubmit}>
-          <FieldGroup>
-            <Field data-invalid={Boolean(error)}>
-              <FieldLabel htmlFor="create-entry">{t("explorer:newEntry.nameLabel")}</FieldLabel>
-              <Input
-                aria-invalid={Boolean(error)}
-                autoFocus
-                disabled={isPending}
-                id="create-entry"
-                onChange={(event) => onValueChange(event.target.value)}
-                onFocus={(event) => {
-                  const input = event.currentTarget;
-                  const dotIndex = isFile ? input.value.lastIndexOf(".") : -1;
-                  input.setSelectionRange(0, dotIndex > 0 ? dotIndex : input.value.length);
-                }}
-                value={value}
-              />
-              <FieldError>{error}</FieldError>
-            </Field>
-          </FieldGroup>
-          <DialogFooter>
-            <Button disabled={isPending} onClick={onClose} type="button" variant="ghost">
-              {t("explorer:actions.cancel")}
-            </Button>
-            <Button disabled={isPending} type="submit">
-              {t("explorer:actions.create")}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function DeleteDialog({
-  entries,
-  isPending,
-  onClose,
-  onConfirm,
-  onOpenChange,
-}: {
-  entries: DirectoryEntry[];
-  isPending: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const { t } = useTranslation("explorer");
-  const description =
-    entries.length === 1
-      ? t("explorer:deleteConfirm.single", { name: entries[0].name })
-      : t("explorer:deleteConfirm.multiple", { number: entries.length });
-
-  return (
-    <Dialog onOpenChange={onOpenChange} open={entries.length > 0}>
-      <DialogContent showCloseButton={!isPending}>
-        <DialogHeader>
-          <DialogTitle>{t("explorer:deleteConfirm.title")}</DialogTitle>
-          <DialogDescription>
-            {description}
-            {t("explorer:deleteConfirm.hint")}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button disabled={isPending} onClick={onClose} type="button" variant="ghost">
-            {t("explorer:actions.cancel")}
-          </Button>
-          <Button disabled={isPending} onClick={onConfirm} type="button" variant="destructive">
-            {t("explorer:actions.deletePermanent")}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ExplorerErrorAlert({ message, onRetry }: { message: string; onRetry: () => void }) {
-  const { t } = useTranslation("explorer");
-
-  return (
-    <Alert variant="destructive">
-      <TriangleAlert />
-      <AlertTitle>{t("explorer:errors.unreadableLocation")}</AlertTitle>
-      <AlertDescription>{message}</AlertDescription>
-      <AlertAction>
-        <Button onClick={onRetry} size="xs" type="button" variant="outline">
-          {t("explorer:actions.retry")}
-        </Button>
-      </AlertAction>
-    </Alert>
-  );
-}
-
-/** True when the backend reported an encrypted-archive password failure. */
-function isWrongPasswordError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "kind" in error &&
-    (error as { kind?: unknown }).kind === "wrong_password"
-  );
-}
-
-/** Final path segment used as the dialog's display name. */
-function displayNameOfPath(path: string): string {
-  const segments = path.split(/[\\/]/);
-  return segments[segments.length - 1] || path;
-}
-
-function getCreateEntryErrorMessage(message: string, rawError: unknown): string {
-  const kind =
-    typeof rawError === "object" &&
-    rawError !== null &&
-    "kind" in rawError &&
-    typeof (rawError as { kind?: unknown }).kind === "string"
-      ? (rawError as { kind: string }).kind
-      : null;
-
-  switch (kind) {
-    case "already_exists":
-      return i18n.t("explorer:createEntryError.alreadyExists");
-    case "permission_denied":
-      return i18n.t("explorer:createEntryError.permissionDenied");
-    case "not_found":
-      return i18n.t("explorer:createEntryError.notFound");
-    case "not_directory":
-      return i18n.t("explorer:createEntryError.notDirectory");
-  }
-
-  if (message.includes("must not contain a path separator")) {
-    return i18n.t("explorer:createEntryError.pathSeparator");
-  }
-
-  return message;
 }
