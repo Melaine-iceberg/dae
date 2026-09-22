@@ -151,6 +151,16 @@ sha2 = "0.11.0"
 md-5 = "0.11.0"
 sha1 = "0.11.0"
 rand = "0.10.2"
+# Maps file paths to freedesktop MIME types. The Linux "Open With" picker uses
+# it to match applications declared in `.desktop` files, and the shell-command
+# section uses it to match KDE service menus the same way.
+#
+# Declared for every platform rather than behind `cfg(target_os = "linux")` on
+# purpose: `shell_commands/linux.rs` is compiled under `cfg(test)` too, so the
+# Linux backend at least type-checks — and its host-independent tests run — on a
+# Windows machine, which is where it is written. The crate is pure Rust and was
+# already in the dependency tree.
+mime_guess = "2"
 
 [patch.crates-io]
 drag = { path = "vendor/drag" }
@@ -184,15 +194,22 @@ libc = "0.2"
 # application enumeration and default-handler registration.
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10.1"
+# The context menu's macOS side: `NSPerformService` hands a selection to an
+# application's declared service, through an `NSPasteboard` of file URLs, and
+# `UTType` decides which services apply to a file. `NSApplication` is not
+# optional — it is the feature that gates `NSPerformService` itself.
+#
+# Already in the dependency tree (tao, arboard and tray-icon all bind AppKit),
+# so declaring them here adds no build time. `objc2` reaches the rest of the
+# crates' `Retained` and `ProtocolObject`, which is why it is named directly.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSPasteboard"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSLocale", "NSString", "NSURL"] }
+objc2-uniform-type-identifiers = "0.3"
 # Reads the Finder put-back records (ptbN/ptbL) from ~/.Trash/.DS_Store so
 # the trash view can list and restore entries on macOS, where the `trash`
 # crate only supports `delete`. See file_system/macos_trash.rs.
 trash-core = { version = "0.3", default-features = false, features = ["macos"] }
-
-# Maps file paths to freedesktop MIME types so the Linux "Open With" picker
-# can match applications declared in `.desktop` files.
-[target.'cfg(target_os = "linux")'.dependencies]
-mime_guess = "2"
 
 # The in-memory mock credential store for the cloud account tests, keeping
 # them away from the real OS keychain.

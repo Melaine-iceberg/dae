@@ -1,11 +1,13 @@
 /**
- * Windows 11 shell commands for a selection — the third-party right-click items
- * Explorer shows, hosted by the OS through `shell_commands` in the backend.
+ * Third-party commands for a selection — the right-click items the installed
+ * applications contribute, which each platform's OS exposes through a different
+ * mechanism (`shell_commands` in the backend hosts all three).
  *
- * These are deliberately *not* declared to dae the way the "应用扩展"
- * manifest extensions are: the OS owns the list, the apps own the wording, and
- * the only way to know what applies is to ask. Asking costs a COM round trip
- * per selection, so the answer is cached here and the menu renders from the
+ * These are deliberately *not* declared to dae the way the "应用扩展" manifest
+ * extensions are: the platform owns the list, the apps own the wording, and the
+ * only way to know what applies is to ask. Asking costs real work per selection
+ * — a COM round trip on Windows, an `Info.plist` scan on macOS, a service-menu
+ * scan on Linux — so the answer is cached here and the menu renders from the
  * cache.
  *
  * The cache key is the whole selection — every path *and* the right-clicked
@@ -14,9 +16,7 @@
  * command is a different string in a different language per install.
  *
  * Until a selection has been resolved the section renders nothing and the items
- * appear in place once the reply lands. The worst case is a few hundred
- * milliseconds, dominated by the first activation of each provider's COM
- * surrogate; afterwards the backend reuses the connection.
+ * appear in place once the reply lands.
  */
 
 import { atom, getDefaultStore, useAtomValue } from "jotai";
@@ -24,7 +24,6 @@ import { useEffect } from "react";
 
 import { commands, type ShellCommand } from "@/bindings";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
-import { isWindowsPlatform } from "@/lib/platform";
 
 const store = getDefaultStore();
 
@@ -65,9 +64,6 @@ function storeCommands(signature: string, found: readonly ShellCommand[]): void 
  * every time the same menu opens.
  */
 function ensureShellCommands(paths: readonly string[], primary: string): void {
-  // Every other platform answers with an empty list; not asking saves the IPC.
-  if (!isWindowsPlatform) return;
-
   const signature = selectionSignature(paths, primary);
   if (store.get(shellCommandsAtom).has(signature) || inFlight.has(signature)) return;
   inFlight.add(signature);
@@ -99,13 +95,16 @@ export function useShellCommands(paths: readonly string[], primary: string): rea
 /**
  * Starts a command. Returns the failure message for the caller to surface, or
  * `null` when it ran; a command that starts successfully says nothing.
+ *
+ * On macOS the reply only means the service was *dispatched* — see the module
+ * docs in `shell_commands/macos.rs` for why it is not awaited there.
  */
 export async function invokeShellCommand(
-  clsid: string,
+  id: string,
   paths: readonly string[],
 ): Promise<string | null> {
   try {
-    await commands.invokeShellCommand(clsid, [...paths]);
+    await commands.invokeShellCommand(id, [...paths]);
     return null;
   } catch (error) {
     return getFileOperationErrorMessage(error);
@@ -116,12 +115,13 @@ export async function invokeShellCommand(
  * Primes the backend before the first right-click reaches it.
  *
  * The menu can only ask for a selection's commands once it is open, and the
- * first answer is what pays for everything the OS has not done yet: the
- * manifest scan, the STA thread, and — the bulk of it — the first activation of
- * each provider's COM surrogate. Measured at 211-228 ms cold against 19 ms once
- * warm, against the popup's own 120 ms open animation. The first right-click
- * therefore lands the section *after* the menu has settled, which is the
- * flicker this exists to remove; every one after it lands before.
+ * first answer is what pays for everything the platform has not done yet:
+ * Windows starts an STA thread and activates each provider's COM surrogate
+ * (measured at 211-228 ms cold against 19 ms once warm, against the popup's own
+ * 120 ms open animation), macOS reads every installed bundle's `Info.plist`, and
+ * Linux reads the service-menu directories. The first right-click therefore
+ * lands the section *after* the menu has settled, which is the flicker this
+ * exists to remove; every one after it lands before.
  *
  * Called once at startup, after the window is revealed, so the cost is spent on
  * nothing instead of on the user's first menu. A failure is logged and
@@ -129,9 +129,6 @@ export async function invokeShellCommand(
  * did before — just with the delay back.
  */
 export function warmShellCommands(): void {
-  // Every other platform answers with an empty list; not asking saves the IPC.
-  if (!isWindowsPlatform) return;
-
   void commands.warmShellCommands().catch((error) => {
     console.warn("Unable to warm shell commands", getFileOperationErrorMessage(error));
   });

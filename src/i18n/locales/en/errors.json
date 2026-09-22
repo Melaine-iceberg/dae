@@ -34,7 +34,10 @@
       "shell_command_host_dropped": "The extension host stopped before it answered",
       "shell_command_selection": "The current selection cannot be passed to a system command",
       "shell_command_unknown": "That command is no longer available",
-      "shell_commands_windows_only": "App extensions are only available on Windows 11"
+      "shell_command_empty_exec": "That command has nothing to run",
+      "shell_command_spawn": "The command could not be started",
+      "shell_command_dispatch": "The command could not be handed to the system",
+      "shell_command_unsupported_platform": "App extensions are not available on this platform"
     },
     "term": {
       "pty_create_failed": "Failed to create the PTY",

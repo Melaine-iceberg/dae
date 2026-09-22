@@ -1,12 +1,15 @@
 /**
  * The "应用扩展" submenu: the third-party right-click commands the installed
- * apps declare to Windows, activated out of process by the backend.
+ * apps declare, hosted through whichever mechanism the platform provides
+ * (Windows shell verbs, macOS Services, Linux KDE service menus).
  *
  * Commands arrive the way Explorer arranges them — one row each, except that an
  * app contributing more than one command gets its own nested submenu named after
- * it, so two rows from the same app never read as two unrelated tools.
+ * it, so two rows from the same app never read as two unrelated tools. The other
+ * platforms have no grouping convention of their own, so this is the shape they
+ * get too, which is what keeps the section recognisable across all three.
  *
- * Everything inside comes from the OS through `shell-commands-atoms`,
+ * Everything inside comes from the platform through `shell-commands-atoms`,
  * including the wording: a command's label is whatever its app decided to call
  * it in the user's language, which is why none of these rows are translated.
  */
@@ -63,7 +66,7 @@ export function ShellCommandsMenu({ paths, primary, onError }: ShellCommandsMenu
         </ContextMenuSubTrigger>
         <ContextMenuSubContent>
           {inline.map((item, index) => (
-            <Fragment key={item.clsid}>
+            <Fragment key={item.id}>
               {item.separatorBefore && index > 0 && <ContextMenuSeparator />}
               <ShellCommandItem item={item} paths={paths} onError={onError} />
             </Fragment>
@@ -76,7 +79,7 @@ export function ShellCommandsMenu({ paths, primary, onError }: ShellCommandsMenu
               </ContextMenuSubTrigger>
               <ContextMenuSubContent>
                 {appItems.map((item) => (
-                  <ShellCommandItem key={item.clsid} item={item} paths={paths} onError={onError} />
+                  <ShellCommandItem key={item.id} item={item} paths={paths} onError={onError} />
                 ))}
               </ContextMenuSubContent>
             </ContextMenuSub>
@@ -101,7 +104,7 @@ function ShellCommandItem({
       disabled={item.disabled}
       onClick={() => {
         onError(null);
-        void invokeShellCommand(item.clsid, paths).then(onError);
+        void invokeShellCommand(item.id, paths).then(onError);
       }}
     >
       <ShellCommandIcon item={item} />

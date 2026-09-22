@@ -34,7 +34,10 @@
       "shell_command_host_dropped": "扩展命令的后台线程在处理完成前已停止",
       "shell_command_selection": "无法把当前选择传递给系统命令",
       "shell_command_unknown": "该命令已不可用",
-      "shell_commands_windows_only": "应用扩展仅在 Windows 11 上可用"
+      "shell_command_empty_exec": "该命令没有可执行的内容",
+      "shell_command_spawn": "无法启动该命令",
+      "shell_command_dispatch": "无法把该命令交给系统执行",
+      "shell_command_unsupported_platform": "应用扩展在当前平台上不可用"
     },
     "term": {
       "pty_create_failed": "创建 PTY 失败",
