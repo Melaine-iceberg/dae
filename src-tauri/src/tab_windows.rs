@@ -339,7 +339,7 @@ async fn run_native_tab_drag(
                 }
             };
 
-            let callback_sender = dispatch_sender;
+            let callback_sender = dispatch_sender.clone();
             let result = drag::start_drag(
                 &gtk_window,
                 drag::DragItem::Data {
