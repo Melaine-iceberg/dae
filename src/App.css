@@ -15,7 +15,7 @@
    — is the intent rather than a compromise. The CJK families stay named behind
    `system-ui` so a Chinese string can never land on a face without the glyphs.
 
-   The price is weight fidelity. `--text-display` (650) and `font-medium` (500)
+   The price is weight fidelity. `--text-title` (600) and `font-medium` (500)
    are real axes in Segoe UI Variable and in SF, but a platform whose UI face
    only carries Regular/SemiBold/Bold snaps them to the nearest. Accepted
    deliberately: the alternative was bundling a third family to draw a 500.
@@ -80,29 +80,31 @@
     "Courier New", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC",
     "Source Han Sans SC", monospace;
 
-  /* Compact desktop type scale — a CLOSED six-step ramp. The ramp is the
+  /* Compact desktop type scale — a CLOSED seven-step ramp. The ramp is the
      whole point: it is what keeps a dense window (13px rows, 12px metadata,
      10px keycaps) from drifting into a dozen near-identical sizes. Anything
-     outside these six steps is not legal, so a reviewer can see an
+     outside these seven steps is not legal, so a reviewer can see an
      off-ramp size at a glance instead of having to compare two pixel values.
 
-       display  18px  view titles
-       title    15px  dialog / section titles
+       title    15px  page, dialog and section titles
        lead     14px  the one hero input — the palette search field
        body     13px  the workhorse — rows, controls, form text
-       caption  12px  secondary metadata, descriptions
+       caption  12px  secondary metadata, descriptions, group headers
        micro    11px  dense chrome (status bar, capacity, badges)
-       label    11px  UPPERCASE section captions
+       label    11px  dense group captions (table and menu headings)
        nano     10px  keycap chips and badge letters
 
-     `label` and `micro` deliberately share a size but not a role: label is an
-     uppercased, positively tracked caption; micro is sentence-case metadata.
-     Only the heading steps carry a weight and tracking of their own — body
-     and below inherit, so a call site can go bold without re-declaring size. */
-  --text-display: 1.125rem;
-  --text-display--line-height: 1.5rem;
-  --text-display--font-weight: 650;
-  --text-display--letter-spacing: -0.011em;
+     There is no display step: 18px/650 was only ever spent on one page
+     heading, and a file manager's home surface is a list of places, not a
+     landing page. `title` is the largest thing in the window.
+
+     `label` and `micro` deliberately share a size but not a role: label is a
+     group caption, micro is sentence-case metadata. `label` is NOT tracked
+     out or uppercased any more — the old 0.06em/600/`uppercase` treatment
+     does nothing for the hanzi it usually sets and reads as decoration on
+     the Latin it occasionally sets. Only `title` and `lead` carry a weight
+     and tracking of their own — body and below inherit, so a call site can
+     go bold without re-declaring size. */
   --text-title: 0.9375rem;
   --text-title--line-height: 1.375rem;
   --text-title--font-weight: 600;
@@ -118,8 +120,7 @@
   --text-micro--line-height: 0.875rem;
   --text-label: 0.6875rem;
   --text-label--line-height: 1rem;
-  --text-label--font-weight: 600;
-  --text-label--letter-spacing: 0.06em;
+  --text-label--font-weight: 500;
   --text-nano: 0.625rem;
   --text-nano--line-height: 0.875rem;
 
@@ -204,17 +205,11 @@
   --color-tone-cyan: var(--tone-cyan);
 
   --color-folder: var(--folder);
-  --color-folder-1: var(--folder-1);
-  --color-folder-2: var(--folder-2);
-  --color-primary-2: var(--primary-2);
 
-  /* Ink on a saturated tile or a destructive fill. Named rather than written
-     as `white` at the call site: the folder tile is a *gradient of the accent*,
-     so an icon hard-coded to `fill-white` stops matching the moment the tile
-     is retinted. Both themes carry the token, and dark's destructive ink
-     inverts to near-black the way `--primary-foreground` does — the dark
-     destructive is a light red, where white lands at ≈2:1. */
-  --color-tile-ink: var(--tile-ink);
+  /* Ink on a destructive fill. Named rather than written as `white` at the
+     call site so both themes carry it: dark's destructive ink inverts to
+     near-black the way `--primary-foreground` does — the dark destructive is
+     a light red, where white lands at ≈2:1. */
   --color-on-destructive: var(--on-destructive);
 
   /* File-type icon tones: category hues tuned per scheme so file kinds
@@ -390,9 +385,7 @@
   --popover: #ffffff; /* menus, dialogs — lift comes from shadow, not tone */
   --popover-foreground: #282a30;
   --primary: #4649c9; /* Linear indigo */
-  --primary-2: #7d84f5; /* gradient end for indicators, capacity bars, CTAs */
   --primary-foreground: #ffffff;
-  --tile-ink: #ffffff; /* ink on the folder-tile gradient and other saturated fills */
   --on-destructive: #ffffff;
   --primary-container: #e4e5fa;
   --on-primary-container: #22247a;
@@ -411,8 +404,6 @@
   --on-error-container: #6b140f;
   --selection: #e2e3f9; /* selected rows — indigo-tinted, not inert grey */
   --folder: #5c63d2;
-  --folder-1: #7a82e0; /* folder tile gradient start */
-  --folder-2: #4a51b4; /* folder tile gradient end */
   --icon-pdf: #c13434;
   --icon-doc: #2b5fd9;
   --icon-sheet: #17804a;
@@ -481,9 +472,7 @@
   --popover: #17181a; /* floating layer — one clear step above the panels */
   --popover-foreground: #f7f8f8;
   --primary: #8284f8; /* Linear indigo — ≈6:1 on a panel */
-  --primary-2: #a4a6fb; /* gradient end for indicators, capacity bars, CTAs */
   --primary-foreground: #101116; /* ink label on the vivid fill — ≈8:1 */
-  --tile-ink: #ffffff; /* the tile gradient stays dark in both schemes */
   --on-destructive: #101116; /* the dark destructive is a light red: white on it ≈2:1 */
   --primary-container: #27294d; /* accent-tinted surface — deliberately stays indigo */
   --on-primary-container: #dcdffb;
@@ -502,8 +491,6 @@
   --on-error-container: #f7cdc9;
   --selection: #2d2e5c; /* indigo-tinted: a selected row reads as chosen, not inert */
   --folder: #9aa3e8;
-  --folder-1: #7a82d8; /* folder tile gradient start */
-  --folder-2: #5a61b8; /* folder tile gradient end */
   --icon-pdf: #ff8a8a;
   --icon-doc: #8fa2ff;
   --icon-sheet: #63d398;
@@ -641,49 +628,16 @@
     border-radius: 31%;
   }
 
-  /* Folder type tile: a blue gradient squircle with a soft top light —
-     the hero tile of the icon system. File glyphs sit on 13% type-color
-     tints instead (see icon-tile.tsx); native shell icons and thumbnails
-     stay bare. The ink is the token, not `#ffffff`: call sites used to
-     re-state it (`fill-white text-white`), which is a copy that stops
-     matching the gradient the moment the gradient moves. */
-  .tile-folder {
-    background: linear-gradient(155deg, var(--folder-1), var(--folder-2));
-    color: var(--tile-ink);
-    box-shadow:
-      inset 0 1px 0 color-mix(in oklab, var(--tile-ink) 32%, transparent),
-      0 1px 2px -1px color-mix(in oklab, var(--folder-2) 30%, transparent),
-      0 4px 10px -3px color-mix(in oklab, var(--folder-2) 34%, transparent);
-  }
-  .dark .tile-folder {
-    box-shadow:
-      inset 0 1px 0 color-mix(in oklab, var(--tile-ink) 20%, transparent),
-      0 4px 10px -3px rgb(0 0 0 / 0.55);
-  }
-
-  /* Capacity bar fill: a single-hue sweep from the accent to its lighter
-     gradient partner while healthy, amber → red once the disk is nearly
-     full. Keeping the healthy bar in one hue leaves the warm pair as the
-     only "something is wrong" signal in the window. */
+  /* Capacity bar fill: one flat hue while healthy, amber once the disk is
+     nearly full. There is no sweep and no two-stop ramp here — a 3px bar
+     behind the sidebar's drive list does not need a gradient to be read, and
+     the warm step is the only "something is wrong" signal in the window, so
+     it has to survive being the single thing that changes. */
   .capacity-fill {
-    background: linear-gradient(90deg, var(--primary), var(--primary-2));
+    background: var(--primary);
   }
   .capacity-fill--warn {
-    background: linear-gradient(90deg, var(--chart-4), var(--destructive));
-  }
-
-  /* Entry-icon pop: duotone type icons spring up under the pointer while
-     their row or cell is hovered or keyboard-focused. The overshooting
-     curve is a deliberate one-off — every other list transition stays on
-     the damped house springs. */
-  @media (prefers-reduced-motion: no-preference) {
-    .entry-icon-pop {
-      transition: scale var(--transition-duration-normal) cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    .state-layer:hover .entry-icon-pop,
-    .state-layer:focus-visible .entry-icon-pop {
-      scale: 1.15;
-    }
+    background: var(--warning);
   }
 
   /* Rendering isolation for virtualized rows/cells: each item becomes its own

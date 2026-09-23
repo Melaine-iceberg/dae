@@ -242,9 +242,11 @@ export function TrashView() {
     () => (entries ?? []).reduce((total, entry) => total + (entry.sizeBytes ?? 0), 0),
     [entries],
   );
+  // While the bin is still loading there is no summary to show, and no
+  // placeholder slogan to put in its place either.
   const summary =
     entries === null
-      ? t("trash.description")
+      ? undefined
       : t("trash.summary", { count: entries.length, size: formatBytes(totalBytes) });
 
   const clearSelectionBinding = formatBinding(useBinding("explorer.clearSelection"));
@@ -609,7 +611,7 @@ function TrashList({
       <div
         className={cn(
           ROW_GRID,
-          "border-b border-border bg-muted/40 px-3 py-1.5 text-label text-muted-foreground uppercase",
+          "border-b border-border bg-muted/40 px-3 py-1.5 text-label text-muted-foreground",
         )}
       >
         <SelectAllToggle allSelected={allSelected} onToggle={onSelectAll} />

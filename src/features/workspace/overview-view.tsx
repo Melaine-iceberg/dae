@@ -21,8 +21,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
-import { tintStyle, TypeIconTile } from "@/features/explorer/icon-tile";
-import { PLACE_PRESENTATION, PLACE_TONE_VAR } from "@/features/sidebar/place-presentation";
+import { TypeIconTile } from "@/features/explorer/icon-tile";
+import { PLACE_PRESENTATION } from "@/features/sidebar/place-presentation";
 import {
   addFavoritePathsAtom,
   ensureFavoritesLoadedAtom,
@@ -42,7 +42,7 @@ import {
   recordRecentItem,
 } from "./recents-atoms";
 import { ensureSpacesLoadedAtom, spacesAtom, spacesErrorAtom } from "./spaces-atoms";
-import { getSpaceAccent } from "./space-identity";
+import { getSpaceAccentClass } from "./space-identity";
 import { getSpaceDisplayName } from "./types";
 import { navigateToFolderAtom, openSurfaceAtom } from "./workspace-atoms";
 import {
@@ -125,7 +125,9 @@ export function OverviewView() {
 
   return (
     <WorkspacePage aria-label={t("overview.title")}>
-      <WorkspacePageHeader title={t("overview.title")} description={t("overview.description")} />
+      {/* No subtitle under the title: "your projects, places and recent work
+          at a glance" describes the section the user is already reading. */}
+      <WorkspacePageHeader title={t("overview.title")} />
 
       <Suspense fallback={null}>
         <ProjectsSection recents={recents} />
@@ -175,7 +177,7 @@ export function OverviewView() {
         ) : places === null || favorites === null ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
-              <Skeleton className="h-location-card rounded-lg" key={index} />
+              <Skeleton className="h-location-card rounded-md" key={index} />
             ))}
           </div>
         ) : visiblePlaces.length === 0 && favoriteList.length === 0 ? (
@@ -201,7 +203,6 @@ export function OverviewView() {
                       description={place.path}
                       icon={presentation.icon}
                       onClick={() => navigateToFolder(place.path)}
-                      tileStyle={tintStyle(PLACE_TONE_VAR[place.kind])}
                       title={presentation.label}
                     />
                   </ContextMenuTrigger>
@@ -224,9 +225,8 @@ export function OverviewView() {
                   <LocationCard
                     description={favorite.path}
                     icon={Star}
-                    iconClassName="fill-current"
+                    iconClassName="fill-current text-primary"
                     onClick={() => navigateToFolder(favorite.path)}
-                    tileClassName="tile-folder"
                     title={favorite.name}
                   />
                 </ContextMenuTrigger>
@@ -282,9 +282,6 @@ export function OverviewView() {
                 <History />
               </EmptyMedia>
               <EmptyTitle>{t("overview.recentsEmptyTitle")}</EmptyTitle>
-              <EmptyDescription className="text-caption">
-                {t("overview.recentsEmptyDescription")}
-              </EmptyDescription>
             </EmptyHeader>
           </Empty>
         ) : (
@@ -340,7 +337,7 @@ export function OverviewView() {
         ) : spaces === null ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
-              <Skeleton className="h-location-card rounded-lg" key={index} />
+              <Skeleton className="h-location-card rounded-md" key={index} />
             ))}
           </div>
         ) : (
@@ -353,10 +350,9 @@ export function OverviewView() {
                     : t("spaces.emptyLabel")
                 }
                 icon={LayoutGrid}
-                iconClassName={getSpaceAccent(space.id).text}
+                iconClassName={getSpaceAccentClass(space.id)}
                 key={space.id}
                 onClick={() => openSurface({ kind: "space", spaceId: space.id })}
-                tileClassName={getSpaceAccent(space.id).tile}
                 title={getSpaceDisplayName(space)}
               />
             ))}

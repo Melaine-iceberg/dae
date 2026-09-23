@@ -862,7 +862,7 @@ export function CommandBar() {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogContent
-        className="top-[15%] w-[calc(100%-2rem)] max-w-command-bar translate-y-0 gap-0 overflow-hidden rounded-xl border border-border bg-popover p-0 shadow-ambient-lg"
+        className="top-[15%] w-[calc(100%-2rem)] max-w-command-bar translate-y-0 gap-0 overflow-hidden rounded-lg border border-border bg-popover p-0 shadow-ambient-lg"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{t("commandBar.title")}</DialogTitle>
@@ -931,7 +931,7 @@ export function CommandBar() {
                       <p
                         aria-hidden="true"
                         className={cn(
-                          "flex h-full items-end px-2 pb-1 text-label text-muted-foreground uppercase select-none",
+                          "flex h-full items-end px-2 pb-1 text-label text-muted-foreground select-none",
                           row.separator && "border-t border-border",
                         )}
                       >

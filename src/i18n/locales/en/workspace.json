@@ -6,8 +6,7 @@
     "archive": "Archive",
     "itemCount_one": "{{count}} location",
     "itemCount_other": "{{count}} locations",
-    "emptyLabel": "Empty space",
-    "emptyHint": "Gather related folders here."
+    "emptyLabel": "Empty space"
   },
   "surfaces": {
     "overview": "Overview",
@@ -94,7 +93,6 @@
   },
   "overview": {
     "title": "Overview",
-    "description": "Your projects, locations, and recent work at a glance.",
     "projectsTitle": "Projects",
     "projectClean": "Clean",
     "addFolder": "Add folder",
@@ -107,7 +105,6 @@
     "viewAll": "View all",
     "recentsTitle": "Recents",
     "recentsEmptyTitle": "No recent items",
-    "recentsEmptyDescription": "Folders you browse and files you open will show up here.",
     "favoritesTitle": "Favorites",
     "favoritesEmptyTitle": "No favorites yet",
     "favoritesEmptyDescription": "Add a folder or restore the hidden entries to see them here.",
@@ -115,9 +112,8 @@
   },
   "favorites": {
     "title": "Favorites",
-    "description": "Your go-to folders, one click away.",
     "emptyTitle": "No favorites yet",
-    "emptyDescription": "Click the star in a folder's toolbar, or drag a folder onto “Favorites” in the sidebar, to keep your go-to locations here.",
+    "emptyDescription": "Click the star in a folder's toolbar, or drag a folder onto “Favorites” in the sidebar.",
     "open": "Open",
     "openInNewTab": "Open in New Tab",
     "openInNewWindow": "Open in New Window",
@@ -126,10 +122,9 @@
   },
   "trash": {
     "title": "Trash",
-    "description": "Deleted files stay here temporarily and can be restored anytime.",
     "summary": "{{count}} items · {{size}}",
     "emptyTitle": "Trash is empty",
-    "emptyDescription": "Deleted files appear here and are not removed permanently until you restore or empty the trash.",
+    "emptyDescription": "Deleted files are not removed permanently until you restore or empty the trash.",
     "loadErrorTitle": "Unable to read the trash",
     "operationErrorTitle": "Operation incomplete",
     "restore": "Restore",
@@ -167,13 +162,11 @@
   },
   "recents": {
     "title": "Recents",
-    "description": "Folders you've browsed and files you've opened.",
     "clearNotice": "Clears history only — no files are deleted",
     "confirmClear": "Clear",
     "cancel": "Cancel",
     "clearAll": "Clear All",
     "emptyTitle": "No recent items",
-    "emptyDescription": "Folders you browse and files you open will appear here, grouped by time.",
     "groups": {
       "today": "Today",
       "yesterday": "Yesterday",

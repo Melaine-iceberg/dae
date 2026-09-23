@@ -292,7 +292,7 @@ function ShortcutsPane() {
         if (actions.length === 0) return null;
         return (
           <section className="mb-4 flex flex-col last:mb-0" key={group}>
-            <h3 className="mb-1 text-label text-muted-foreground uppercase">
+            <h3 className="mb-1 text-caption font-medium text-muted-foreground">
               {t(`groups.${group}`)}
             </h3>
             {actions.map((action) => (

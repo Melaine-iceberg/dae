@@ -49,7 +49,8 @@ export function FavoritesView() {
 
   return (
     <WorkspacePage aria-label={t("favorites.title")}>
-      <WorkspacePageHeader title={t("favorites.title")} description={t("favorites.description")} />
+      {/* No subtitle: "常用文件夹，一键直达。" is a tagline, not information. */}
+      <WorkspacePageHeader title={t("favorites.title")} />
 
       {favoritesError !== null ? (
         // A failed read is not an empty list: say so, and offer the one action
@@ -63,7 +64,7 @@ export function FavoritesView() {
       ) : favorites === null ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {Array.from({ length: 3 }, (_, index) => (
-            <Skeleton className="h-location-card rounded-lg" key={index} />
+            <Skeleton className="h-location-card rounded-md" key={index} />
           ))}
         </div>
       ) : favorites.length === 0 ? (
@@ -84,9 +85,8 @@ export function FavoritesView() {
                 <LocationCard
                   description={favorite.path}
                   icon={Star}
-                  iconClassName="fill-current"
+                  iconClassName="fill-current text-primary"
                   onClick={() => navigateToFolder(favorite.path)}
-                  tileClassName="tile-folder"
                   title={favorite.name}
                 />
               </ContextMenuTrigger>

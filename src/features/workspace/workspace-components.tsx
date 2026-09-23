@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import type { LucideIcon } from "lucide-react";
 
@@ -46,7 +46,10 @@ export function WorkspacePageHeader({
       <div className="flex min-w-0 items-center gap-3.5">
         {icon}
         <div className="min-w-0">
-          <h1 className="text-display">{title}</h1>
+          {/* `title`, not a display step: this is a file manager's home
+              surface. An 18px/650 heading over a slogan reads as a landing
+              page, which is exactly the impression to avoid. */}
+          <h1 className="text-title">{title}</h1>
           {description && <p className="mt-1 text-caption text-muted-foreground">{description}</p>}
         </div>
       </div>
@@ -58,33 +61,37 @@ export function WorkspacePageHeader({
 export function SectionHeader({ action, title }: { action?: ReactNode; title: string }) {
   return (
     <div className="mb-3 flex items-center justify-between gap-4">
-      <h2 className="text-label text-muted-foreground uppercase">{title}</h2>
+      {/* Sentence case, no tracking: a group caption in a file manager is a
+          quiet 12px label. Uppercasing and tracking it out does nothing for
+          the hanzi this is usually set in and reads as decoration when it is
+          set in Latin. */}
+      <h2 className="text-caption font-medium text-muted-foreground">{title}</h2>
       {action}
     </div>
   );
 }
 
 /**
- * Expressive card for a folder, location, or space — one of the few places
- * the design system uses cards. Hierarchy: icon → name → useful metadata.
+ * Card for a folder, location, or space — one of the few places the design
+ * system uses cards. Hierarchy: icon → name → useful metadata.
+ *
+ * The chip is always `bg-secondary`. Colour, where there is any, lives on the
+ * glyph and only when it carries meaning (a favourite's accent star) or
+ * identity (a Space's hue). The gradient squircle that used to sit here was
+ * the loudest thing on the surface and said nothing the name did not.
  */
 export function LocationCard({
   description,
   icon: Icon,
   iconClassName,
   onClick,
-  tileClassName,
-  tileStyle,
   title,
 }: {
   description?: string;
   icon: LucideIcon;
+  /** Colour or weight for the glyph only; the chip plate stays neutral. */
   iconClassName?: string;
   onClick: () => void;
-  /** Overrides the chip's neutral tone (e.g. "tile-folder", space accents). */
-  tileClassName?: string;
-  /** Inline tint for the chip (see tintStyle in icon-tile.tsx). */
-  tileStyle?: CSSProperties;
   title: string;
 }) {
   return (
@@ -94,7 +101,7 @@ export function LocationCard({
         // the pointer by brightening that hairline and washing the fill, never
         // by lifting. The height is the token its skeleton already uses, so
         // the placeholder and the real card are the same box.
-        "group state-layer flex h-location-card w-full items-center gap-3 rounded-lg border border-border bg-card p-2 text-left",
+        "group state-layer flex h-location-card w-full items-center gap-3 rounded-md border border-border bg-card p-2 text-left",
         "transition-[background-color,border-color] duration-fast ease-standard",
         "hover:border-input",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
@@ -103,14 +110,7 @@ export function LocationCard({
       title={description ? `${title} · ${description}` : title}
       type="button"
     >
-      <span
-        className={cn(
-          "flex size-8 shrink-0 items-center justify-center rounded-md bg-secondary text-secondary-foreground",
-          !tileClassName && !tileStyle && "bg-secondary",
-          tileClassName,
-        )}
-        style={tileStyle}
-      >
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-sm bg-secondary text-secondary-foreground">
         <Icon className={cn("size-4", iconClassName)} />
       </span>
       <span className="min-w-0 flex-1">

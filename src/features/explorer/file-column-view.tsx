@@ -343,7 +343,7 @@ function PaneRow({
           <EntryIconFrame entry={entry}>
             {isNativeIconSupported(entry) ? (
               <NativeIconImage
-                className="shrink-0 entry-icon-pop"
+                className="shrink-0"
                 entry={entry}
                 fallback={
                   <TypeIconTile
@@ -356,7 +356,6 @@ function PaneRow({
               />
             ) : (
               <TypeIconTile
-                pop
                 className="size-tile-list tile-radius"
                 iconSize={13}
                 presentation={presentation}

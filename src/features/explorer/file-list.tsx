@@ -1125,7 +1125,7 @@ export function FileList({
               */}
               <div className="sticky top-0 z-10 h-7 shrink-0 border-b border-border bg-card">
                 <div
-                  className="grid h-full items-center justify-start text-label whitespace-nowrap text-muted-foreground uppercase"
+                  className="grid h-full items-center justify-start text-label whitespace-nowrap text-muted-foreground"
                   style={{ gridTemplateColumns: listTemplate, maxWidth: LIST_CONTENT_MAX_WIDTH }}
                 >
                   <SortHeaderCell
@@ -1503,7 +1503,7 @@ function FileListRow({
             <EntryIconFrame entry={entry}>
               {isNativeIconSupported(entry) ? (
                 <NativeIconImage
-                  className="shrink-0 entry-icon-pop"
+                  className="shrink-0"
                   entry={entry}
                   fallback={
                     <TypeIconTile
@@ -1516,7 +1516,6 @@ function FileListRow({
                 />
               ) : (
                 <TypeIconTile
-                  pop
                   className="size-tile-list tile-radius"
                   iconSize={16}
                   presentation={presentation}

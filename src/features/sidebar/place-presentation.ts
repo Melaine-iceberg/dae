@@ -60,18 +60,3 @@ export const PLACE_PRESENTATION: Record<PlaceKind, { icon: LucideIcon; label: st
     },
   },
 };
-
-/**
- * Semantic tone (a theme color variable) per place, used to tint icon chips
- * on workspace cards. Reuses the file-type palette so the whole app speaks
- * one color language: documents blue, pictures teal, music violet, ...
- */
-export const PLACE_TONE_VAR: Record<PlaceKind, string> = {
-  home: "--primary",
-  desktop: "--icon-code",
-  documents: "--icon-doc",
-  downloads: "--icon-sheet",
-  pictures: "--icon-image",
-  music: "--icon-audio",
-  videos: "--icon-video",
-};

@@ -54,7 +54,10 @@ export function ErrorState({
         {description && <EmptyDescription>{description}</EmptyDescription>}
       </EmptyHeader>
       {onRetry && (
-        <Button onClick={onRetry} type="button">
+        // Outline, not filled: the failure block already has a warning glyph
+        // and a bold fact. A saturated button under them turns "this read
+        // failed" into a call to action.
+        <Button onClick={onRetry} type="button" variant="outline">
           <RotateCw />
           {t("errors.retry")}
         </Button>

@@ -19,7 +19,6 @@ import {
 } from "@/components/ui/context-menu";
 import {
   Empty,
-  EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
@@ -123,7 +122,6 @@ export function RecentsView() {
             </Button>
           ))
         }
-        description={t("recents.description")}
         title={t("recents.title")}
       />
 
@@ -147,7 +145,6 @@ export function RecentsView() {
               <History />
             </EmptyMedia>
             <EmptyTitle>{t("recents.emptyTitle")}</EmptyTitle>
-            <EmptyDescription>{t("recents.emptyDescription")}</EmptyDescription>
           </EmptyHeader>
         </Empty>
       ) : (

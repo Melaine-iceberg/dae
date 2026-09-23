@@ -54,7 +54,7 @@ import {
   spacesAtom,
   spacesErrorAtom,
 } from "./spaces-atoms";
-import { getSpaceAccent } from "./space-identity";
+import { getSpaceAccentClass } from "./space-identity";
 import { getSpaceDisplayName } from "./types";
 import { navigateToFolderAtom, openSurfaceAtom } from "./workspace-atoms";
 import { LocationCard, WorkspacePage, WorkspacePageHeader } from "./workspace-components";
@@ -190,22 +190,15 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
           icon={
             <span
               aria-hidden="true"
-              className={cn(
-                // Icon tiles take the house squircle (31% of the edge) rather
-                // than a step on the px scale, so this 44px identity tile, the
-                // 22px row cell and the 50px grid cell read as one family.
-                "flex size-11 shrink-0 items-center justify-center tile-radius",
-                getSpaceAccent(space.id).tile,
-              )}
+              className="flex size-11 shrink-0 items-center justify-center rounded-md bg-secondary"
             >
-              <LayoutGrid className={cn("size-5.5", getSpaceAccent(space.id).text)} />
+              {/* Identity lives in the glyph's hue, never in a tinted plate. */}
+              <LayoutGrid className={cn("size-5.5", getSpaceAccentClass(space.id))} />
             </span>
           }
           title={getSpaceDisplayName(space)}
           description={
-            space.items.length > 0
-              ? t("spaces.itemCount", { count: space.items.length })
-              : t("spaces.emptyHint")
+            space.items.length > 0 ? t("spaces.itemCount", { count: space.items.length }) : undefined
           }
         />
       )}
@@ -250,7 +243,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
       {space === null ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {Array.from({ length: 3 }, (_, index) => (
-            <Skeleton className="h-location-card rounded-lg" key={index} />
+            <Skeleton className="h-location-card rounded-md" key={index} />
           ))}
         </div>
       ) : space.items.length === 0 ? (
@@ -273,9 +266,8 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
                 <LocationCard
                   description={item.path}
                   icon={Folder}
-                  iconClassName="fill-current"
+                  iconClassName="fill-current text-folder"
                   onClick={() => navigateToFolder(item.path)}
-                  tileClassName="tile-folder"
                   title={item.name}
                 />
               </ContextMenuTrigger>

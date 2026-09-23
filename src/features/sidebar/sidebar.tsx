@@ -60,7 +60,7 @@ import {
   ensureSpacesLoadedAtom,
   spacesAtom,
 } from "@/features/workspace/spaces-atoms";
-import { getSpaceAccent } from "@/features/workspace/space-identity";
+import { getSpaceAccentClass } from "@/features/workspace/space-identity";
 import { settingsOpenAtom } from "@/features/settings/settings-atoms";
 import {
   activeSurfaceAtom,
@@ -260,7 +260,7 @@ function SidebarContent() {
               <ContextMenuTrigger>
                 <NavItem
                   icon={LayoutGrid}
-                  iconClassName={getSpaceAccent(space.id).text}
+                  iconClassName={getSpaceAccentClass(space.id)}
                   isActive={surface.kind === "space" && surface.spaceId === space.id}
                   label={space.name}
                   onClick={() => openSurface({ kind: "space", spaceId: space.id })}
@@ -831,7 +831,7 @@ function SectionLabel({
 }) {
   return (
     <div className="group/section mt-4 flex h-5 items-center justify-between px-2">
-      <span className="text-label text-muted-foreground uppercase select-none">{label}</span>
+      <span className="text-caption font-medium text-muted-foreground select-none">{label}</span>
       {onAdd && (
         <button
           aria-label={addTitle}

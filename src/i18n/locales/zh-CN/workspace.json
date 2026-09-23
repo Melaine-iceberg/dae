@@ -6,8 +6,7 @@
     "archive": "归档",
     "itemCount_one": "{{count}} 个位置",
     "itemCount_other": "{{count}} 个位置",
-    "emptyLabel": "空空间",
-    "emptyHint": "把相关的文件夹聚集到这里。"
+    "emptyLabel": "空空间"
   },
   "surfaces": {
     "overview": "概览",
@@ -94,7 +93,6 @@
   },
   "overview": {
     "title": "概览",
-    "description": "你的项目、位置和最近的工作，一目了然。",
     "projectsTitle": "项目",
     "projectClean": "干净",
     "addFolder": "添加文件夹",
@@ -107,7 +105,6 @@
     "viewAll": "查看全部",
     "recentsTitle": "最近使用",
     "recentsEmptyTitle": "暂无最近使用",
-    "recentsEmptyDescription": "你浏览的文件夹和打开的文件会显示在这里。",
     "favoritesTitle": "收藏",
     "favoritesEmptyTitle": "暂无收藏",
     "favoritesEmptyDescription": "点击“添加文件夹”，或恢复已隐藏的入口。",
@@ -115,9 +112,8 @@
   },
   "favorites": {
     "title": "收藏",
-    "description": "常用文件夹，一键直达。",
     "emptyTitle": "暂无收藏",
-    "emptyDescription": "在文件夹中点击工具栏的星标，或将文件夹拖到侧边栏的“收藏”，即可把常用位置放在这里。",
+    "emptyDescription": "点击工具栏上的星标，或把文件夹拖到侧边栏的“收藏”。",
     "open": "打开",
     "openInNewTab": "在新标签页打开",
     "openInNewWindow": "在新窗口打开",
@@ -126,10 +122,9 @@
   },
   "trash": {
     "title": "回收站",
-    "description": "被删除的文件会暂时保存在这里，可以随时恢复。",
     "summary": "{{count}} 个项目，共 {{size}}",
     "emptyTitle": "回收站是空的",
-    "emptyDescription": "删除的文件会出现在这里，在恢复或清空之前不会被永久移除。",
+    "emptyDescription": "在恢复或清空回收站之前，删除的文件不会被永久移除。",
     "loadErrorTitle": "无法读取回收站",
     "operationErrorTitle": "操作未完成",
     "restore": "恢复",
@@ -167,13 +162,11 @@
   },
   "recents": {
     "title": "最近使用",
-    "description": "你浏览过的文件夹和打开过的文件。",
     "clearNotice": "仅清除记录，不会删除文件",
     "confirmClear": "确认清除",
     "cancel": "取消",
     "clearAll": "清除全部",
     "emptyTitle": "暂无最近使用",
-    "emptyDescription": "你浏览的文件夹和打开的文件会按时间显示在这里。",
     "groups": {
       "today": "今天",
       "yesterday": "昨天",
