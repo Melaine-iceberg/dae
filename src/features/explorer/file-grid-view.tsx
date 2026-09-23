@@ -43,11 +43,11 @@ const GRID_ICON_SIZE: Record<ExplorerDensity, number> = {
   spacious: 42,
 };
 
-/** Type tiles carry the grid's color system: squircle + glyph per density. */
+/** Type tiles seat the glyph in a fixed square per density. */
 const GRID_TILE_CLASS: Record<ExplorerDensity, string> = {
-  compact: "size-tile-grid-compact tile-radius",
-  comfortable: "size-tile-grid-comfortable tile-radius",
-  spacious: "size-tile-grid-spacious tile-radius",
+  compact: "size-tile-grid-compact",
+  comfortable: "size-tile-grid-comfortable",
+  spacious: "size-tile-grid-spacious",
 };
 
 const GRID_TILE_ICON_SIZE: Record<ExplorerDensity, number> = {

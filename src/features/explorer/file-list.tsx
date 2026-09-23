@@ -1507,7 +1507,7 @@ function FileListRow({
                   entry={entry}
                   fallback={
                     <TypeIconTile
-                      className="size-tile-list tile-radius"
+                      className="size-tile-list"
                       iconSize={16}
                       presentation={presentation}
                     />
@@ -1516,7 +1516,7 @@ function FileListRow({
                 />
               ) : (
                 <TypeIconTile
-                  className="size-tile-list tile-radius"
+                  className="size-tile-list"
                   iconSize={16}
                   presentation={presentation}
                 />

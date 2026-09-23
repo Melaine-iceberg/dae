@@ -347,7 +347,7 @@ function PaneRow({
                 entry={entry}
                 fallback={
                   <TypeIconTile
-                    className="size-tile-list tile-radius"
+                    className="size-tile-list"
                     iconSize={13}
                     presentation={presentation}
                   />
@@ -356,7 +356,7 @@ function PaneRow({
               />
             ) : (
               <TypeIconTile
-                className="size-tile-list tile-radius"
+                className="size-tile-list"
                 iconSize={13}
                 presentation={presentation}
               />

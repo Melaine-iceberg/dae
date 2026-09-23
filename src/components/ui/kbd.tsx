@@ -13,7 +13,7 @@ function Kbd({ className, ...props }: ComponentProps<"kbd">) {
   return (
     <kbd
       className={cn(
-        "inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-2xs border border-border bg-muted px-1 font-sans text-nano font-medium text-muted-foreground tabular-nums select-none",
+        "inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-xs border border-border bg-muted px-1 font-sans text-nano font-medium text-muted-foreground tabular-nums select-none",
         className,
       )}
       {...props}

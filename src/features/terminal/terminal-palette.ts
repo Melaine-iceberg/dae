@@ -30,11 +30,11 @@ export const DARK_ANSI: AnsiPalette = Object.freeze([
   "#5acfd9", // cyan — --tone-cyan
   "#f7f8f8", // white — --foreground
   "#8a8f98", // brightBlack — --muted-foreground (dim text stays legible)
-  "#ff8a8a", // brightRed — --icon-pdf
+  "#ff8a8a", // brightRed
   "#8ce0b3", // brightGreen
   "#ffc868", // brightYellow — warm amber pastel
-  "#8fb2ff", // brightBlue — --icon-doc
-  "#f08fce", // brightMagenta — --icon-video
+  "#8fb2ff", // brightBlue
+  "#f08fce", // brightMagenta
   "#8ce0e6", // brightCyan
   "#ffffff", // brightWhite
 ]);
@@ -46,11 +46,11 @@ export const LIGHT_ANSI: AnsiPalette = Object.freeze([
   "#17804a", // green — --success
   "#8a6318", // yellow — darkened amber so it reads on white
   "#4649c9", // blue — --primary
-  "#b8438a", // magenta — --icon-video
+  "#b8438a", // magenta
   "#0d848c", // cyan — --tone-cyan
   "#d5d8dd", // white — light gray (--input)
   "#62666e", // brightBlack — --muted-foreground (dim text)
-  "#c13434", // brightRed — --icon-pdf
+  "#c13434", // brightRed
   "#1f9a5c", // brightGreen
   "#a97c2f", // brightYellow
   "#3f68c8", // brightBlue

@@ -20,6 +20,7 @@ import {
 import { resolveBinding } from "@/features/settings/shortcut-registry";
 import { HOTKEY_COMMON_OPTIONS, asHotkey } from "@/features/settings/hotkeys";
 import { applySystemTheme, watchSystemTheme } from "@/lib/theme";
+import { applySystemAccent, watchSystemAccent } from "@/lib/system-accent";
 
 // Overlays that only appear on user action; their chunks load on demand so
 // the first frame stays lean.
@@ -74,6 +75,13 @@ function App() {
   useHydrateSettings();
 
   useEffect(() => watchSystemTheme(applySystemTheme), []);
+  // System accent (see src/lib/system-accent.ts). `watchSystemAccent` is the
+  // seam's only unimplemented half: it reads the OS accent and hands each
+  // reading straight to `applySystemAccent`, which is already the complete
+  // write side. Until a platform reader lands it returns a no-op disposer and
+  // the shell keeps its shipped indigo via the CSS fallbacks — no call site
+  // here changes when it starts working.
+  useEffect(() => watchSystemAccent(applySystemAccent), []);
 
   // The undo/redo stacks live in the backend; mirror their availability so
   // every surface (not just the explorer that ran the last operation) can

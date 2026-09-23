@@ -212,21 +212,8 @@
      a light red, where white lands at ≈2:1. */
   --color-on-destructive: var(--on-destructive);
 
-  /* File-type icon tones: category hues tuned per scheme so file kinds
-     stay scannable in both light and dark. */
-  --color-icon-pdf: var(--icon-pdf);
-  --color-icon-doc: var(--icon-doc);
-  --color-icon-sheet: var(--icon-sheet);
-  --color-icon-slide: var(--icon-slide);
-  --color-icon-image: var(--icon-image);
-  --color-icon-video: var(--icon-video);
-  --color-icon-audio: var(--icon-audio);
-  --color-icon-archive: var(--icon-archive);
-  --color-icon-code: var(--icon-code);
-  --color-icon-config: var(--icon-config);
-  --color-icon-exec: var(--icon-exec);
-  --color-icon-lock: var(--icon-lock);
-  --color-icon-font: var(--icon-font);
+  /* The sidebar has its own ladder — it is a column, not a panel — so it
+     carries the whole shadcn sidebar set as one group. */
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -235,11 +222,6 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -259,32 +241,30 @@
   --color-foreground: var(--foreground);
   --color-background: var(--background);
 
-  /* Extra tonal roles kept for compatibility with expressive components. */
-  --color-primary-container: var(--primary-container);
-  --color-on-primary-container: var(--on-primary-container);
-  --color-secondary-container: var(--secondary-container);
-  --color-on-secondary-container: var(--on-secondary-container);
-  --color-tertiary: var(--tertiary);
-  --color-tertiary-container: var(--tertiary-container);
-  --color-on-tertiary-container: var(--on-tertiary-container);
+  /* The one tonal role left from the Material-shaped set this theme started
+     life as: an alert needs a tinted band carrying its own ink, and it is the
+     only surface in the shell that is coloured end to end. The rest of that
+     set (primary/secondary/tertiary containers) went with the folder gradient
+     — accent-washed plates that turned every card into a coloured chip. */
   --color-error-container: var(--error-container);
   --color-on-error-container: var(--on-error-container);
 
-  /* Shape scale: 4px micro chips → 5px tags → 6px controls → 8px inputs
-     → 10px inner surfaces → 13px islands → 16px+ floating layers.
-     Each step is roughly 1.6x its neighbour so two adjacent radii read as
-     deliberately different sizes instead of drifting into one blur. In the
-     flat shell, 6px is the row/control default and 10px is the largest
-     radius a row or card may take. */
+  /* Shape scale: four steps plus a pill, spent in ascending order of how
+     much the thing draws attention — 5px micro chips and keycaps → 6px
+     controls, rows and small cards → 8px inputs, menus and panels → 10px
+     floating layers.
+
+     That is the whole scale; a radius outside it is not legal. It used to
+     run to nine steps (4/5/6/8/10/13/16/20/24) of which only the first five
+     were ever used. A 4px and a 5px corner sitting side by side read as one
+     size drawn twice rather than as two deliberate sizes, and the 13-24px
+     end existed only to give dialogs and the command palette a roundness the
+     rest of the shell does not have — which is how a floating layer ended up
+     rounder than the window it belongs to. */
   --radius-xs: 5px;
-  --radius-2xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
-  --radius-xl: 13px;
-  --radius-2xl: 16px;
-  --radius-3xl: 20px;
-  --radius-4xl: 24px;
 
   /* Geometry: the cells, stand-ins and panel widths that used to be written as
      arbitrary px at each call site (`size-[22px]` six times, the card skeleton
@@ -324,6 +304,10 @@
   --height-status-strip: 32px;
   --height-capacity-bar: 3px; /* disk capacity fill in the sidebar */
   --width-window-control: 46px;
+  /* macOS traffic lights: 8px leading inset + 3 × 12px stoplights + 2 × 8px
+     gaps. Named rather than left to a `w-*` at the call site because it is
+     the leading inset of the whole tab strip, not just of the buttons. */
+  --width-traffic-lights: 3.75rem;
   --min-width-menu: 11.25rem; /* 180px — the floor for any popup menu */
   --max-width-command-bar: 40rem; /* 640px — the palette's cap */
   --max-width-row-meta: 45%; /* trailing metadata share of an explorer row */
@@ -384,43 +368,20 @@
   --card-foreground: #282a30;
   --popover: #ffffff; /* menus, dialogs — lift comes from shadow, not tone */
   --popover-foreground: #282a30;
-  --primary: #4649c9; /* Linear indigo */
-  --primary-foreground: #ffffff;
+  --accent-default: #4649c9; /* shipped accent; see the accent seam below */
+  --accent-default-ink: #ffffff;
   --on-destructive: #ffffff;
-  --primary-container: #e4e5fa;
-  --on-primary-container: #22247a;
   --secondary: #f1f2f4; /* tonal secondary surfaces */
   --secondary-foreground: #282a30;
-  --secondary-container: #f1f2f4;
-  --on-secondary-container: #3a3d45;
-  --tertiary: #61656e;
-  --tertiary-container: #eef0f3;
-  --on-tertiary-container: #3a3d45;
   --muted: #eef0f2;
   --muted-foreground: #62666e; /* ≈5.6:1 on the canvas — secondary text never fades out */
   --accent: #e9ebef; /* hover highlight */
   --accent-foreground: #282a30;
   --error-container: #fde4e2;
   --on-error-container: #6b140f;
-  --selection: #e2e3f9; /* selected rows — indigo-tinted, not inert grey */
   --folder: #5c63d2;
-  --icon-pdf: #c13434;
-  --icon-doc: #2b5fd9;
-  --icon-sheet: #17804a;
-  --icon-slide: #bd5c1c;
-  --icon-image: #0d848c;
-  --icon-video: #b8438a;
-  --icon-audio: #7443c0;
-  --icon-archive: #8a6318;
-  --icon-code: #1d78ba;
-  --icon-config: #6b7285;
-  --icon-exec: #4c5468;
-  --icon-lock: #bf3c60;
-  --icon-font: #5745c4;
   --destructive: #c22f2f;
-  /* Status hues reuse the document-icon tones, which were contrast-checked
-     against the white plane already — so "added" is the sheet green, "info"
-     the document blue, and only the amber step is new. */
+  /* Status hues: one hue each, contrast-checked against the white plane. */
   --success: #17804a;
   --warning: #9c630f;
   --info: #2b5fd9;
@@ -432,22 +393,13 @@
   --tone-cyan: #0d848c;
   --border: #e2e4e8; /* hairline panel edge */
   --input: #d5d8dd;
-  --ring: #4649c9;
-  --chart-1: #4649c9;
-  --chart-2: #61656e;
-  --chart-3: #17804a;
-  --chart-4: #9c630f;
-  --chart-5: #282a30;
   --radius: 10px;
   --scrim: rgb(0 0 0 / 0.4);
   --sidebar: #f7f8f9; /* Linear sidebar sits ON the canvas, not above it */
   --sidebar-foreground: #282a30;
-  --sidebar-primary: #4649c9;
-  --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #e9ebef;
   --sidebar-accent-foreground: #282a30;
   --sidebar-border: #e2e4e8;
-  --sidebar-ring: #4649c9;
 }
 
 .dark {
@@ -471,39 +423,18 @@
   --card-foreground: #f7f8f8;
   --popover: #17181a; /* floating layer — one clear step above the panels */
   --popover-foreground: #f7f8f8;
-  --primary: #8284f8; /* Linear indigo — ≈6:1 on a panel */
-  --primary-foreground: #101116; /* ink label on the vivid fill — ≈8:1 */
+  --accent-default: #8284f8; /* shipped accent — ≈6:1 on a panel */
+  --accent-default-ink: #101116; /* ink label on the vivid fill — ≈8:1 */
   --on-destructive: #101116; /* the dark destructive is a light red: white on it ≈2:1 */
-  --primary-container: #27294d; /* accent-tinted surface — deliberately stays indigo */
-  --on-primary-container: #dcdffb;
   --secondary: #1a1b1d;
   --secondary-foreground: #f7f8f8;
-  --secondary-container: #1a1b1d;
-  --on-secondary-container: #f7f8f8;
-  --tertiary: #8a8f98; /* Linear's secondary text grey */
-  --tertiary-container: #1a1b1d;
-  --on-tertiary-container: #f7f8f8;
   --muted: #141517; /* inner recessed surface — tracks, header strips, thumbnails */
   --muted-foreground: #8a8f98; /* Linear muted — ≈6:1 on a panel */
   --accent: #1d1e21; /* hover highlight — a half-step above the panel */
   --accent-foreground: #f7f8f8;
   --error-container: #4e2321;
   --on-error-container: #f7cdc9;
-  --selection: #2d2e5c; /* indigo-tinted: a selected row reads as chosen, not inert */
   --folder: #9aa3e8;
-  --icon-pdf: #ff8a8a;
-  --icon-doc: #8fa2ff;
-  --icon-sheet: #63d398;
-  --icon-slide: #ffae63;
-  --icon-image: #5acfd9;
-  --icon-video: #f08fce;
-  --icon-audio: #c6a2ff;
-  --icon-archive: #dbb268;
-  --icon-code: #7cc2ff;
-  --icon-config: #a8a8ad;
-  --icon-exec: #b6b6bb;
-  --icon-lock: #ff9ab2;
-  --icon-font: #b4a6ff;
   --destructive: #ff6b72;
   --success: #63d398;
   --warning: #e8a33d;
@@ -516,33 +447,128 @@
   --tone-cyan: #5acfd9;
   --border: #26282c; /* hairline — ≈9% white on the canvas */
   --input: #33353a;
-  --ring: #8284f8;
-  --chart-1: #8284f8;
-  --chart-2: #8a8f98;
-  --chart-3: #63d398;
-  --chart-4: #e8a33d;
-  --chart-5: #f7f8f8;
   --radius: 10px;
   --scrim: rgb(0 0 0 / 0.6);
   --sidebar: #0c0d0f; /* Linear sidebar — a half-step above the canvas, below the panel */
   --sidebar-foreground: #f7f8f8;
-  --sidebar-primary: #8284f8;
-  --sidebar-primary-foreground: #101116;
   --sidebar-accent: #1d1e21;
   --sidebar-accent-foreground: #f7f8f8;
   --sidebar-border: #26282c;
-  --sidebar-ring: #8284f8;
+}
+
+/* ---------------------------------------------------------------------------
+   THE ACCENT SEAM — see src/lib/system-accent.ts.
+
+   Everything in this theme that means "the accent" resolves through the two
+   properties below and nothing else. A platform bridge that has read the OS
+   accent writes `--system-accent` / `--system-accent-ink` on <html>, and the
+   whole window retints — filled buttons, focus rings, selection, the
+   active-tab underline, the capacity bar, the sidebar's accent roles — with
+   no other change anywhere.
+
+     --system-accent      the accent hue, any CSS <color>
+     --system-accent-ink  a label colour that clears ≈4.5:1 ON that hue
+
+   They are deliberately left UNDEFINED in this file rather than given a
+   default. `var(--system-accent, …)` falls back to the shipped indigo
+   exactly while the bridge has said nothing, and stops falling back the
+   instant it has. Declaring `--system-accent: initial` on this element would
+   still *define* it and therefore defeat the fallback — the one mistake this
+   pattern permits.
+
+   Two inputs, not one: a user-picked accent can be any lightness and no
+   CSS-only contrast test is portable (`color-contrast()` is Safari-only), so
+   the ink is chosen in `applySystemAccent()` from the hue's relative
+   luminance. A bridge normally supplies only the hue.
+
+   `--accent-default*` above are the shipped indigo, per scheme. They are also
+   what vite.config.ts bakes into index.html's pre-React splash, where no
+   bridge has run yet — so there the default is the correct colour and not
+   merely a fallback.
+
+   NOT part of the seam, on purpose: `--folder` and the six `--tone-*` are
+   category colours — they say what a thing *is*, not that it is selected or
+   primary — and `--destructive` / `--success` / `--warning` / `--info` are
+   semantic. Letting the accent retint any of them would make an ordinary
+   folder look active in whatever hue the user happens to have picked. They
+   stay put for the same reason the semantic set does.
+   --------------------------------------------------------------------------- */
+:root {
+  --primary: var(--system-accent, var(--accent-default));
+  --primary-foreground: var(--system-accent-ink, var(--accent-default-ink));
+  --ring: var(--primary);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-ring: var(--primary);
+  /* Selection is the accent at low strength rather than a second colour, so a
+     row reads as *chosen* in whatever hue the user picked. Transparent by
+     construction, so it tints the plane underneath instead of replacing it. */
+  --selection: color-mix(in oklab, var(--primary) 13%, transparent);
+}
+.dark {
+  /* The dark canvas is near-black: the same mix would land too faint to read
+     as a selection at all, so the strength roughly doubles per scheme the way
+     the shadow ladder does. */
+  --selection: color-mix(in oklab, var(--primary) 26%, transparent);
 }
 
 @layer components {
-  .window-control-glyph {
-    font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets";
-    font-size: 10px;
-    font-style: normal;
-    font-weight: 400;
-    line-height: 1;
+  /* macOS window chrome. The three stoplights are one control: their glyphs
+     stay invisible until the pointer enters the group, and the set drains to
+     grey while the window is inactive. Both are AppKit's own behaviour and
+     both are pure CSS here.
+
+     The fills are platform constants, deliberately NOT theme tokens. Apple
+     ships the same stoplights in light and dark appearance, and these are
+     the only brand colours left in the shell — a token would invite a
+     `dark:` variant, which is exactly how a copy of a brand colour stops
+     matching the original. */
+  .traffic-lights {
+    --traffic-close: #ff5f57;
+    --traffic-minimize: #febc2e;
+    --traffic-zoom: #28c840;
+    --traffic-idle: #d3d2cf;
+    --traffic-ink: rgb(48 22 14 / 0.55);
+  }
+
+  .traffic-light {
+    display: flex;
+    width: 0.75rem;
+    height: 0.75rem;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    outline: none;
+    transition: background-color var(--transition-duration-instant) var(--ease-standard);
+  }
+  .traffic-light[data-light="close"] {
+    background-color: var(--traffic-close);
+  }
+  .traffic-light[data-light="minimize"] {
+    background-color: var(--traffic-minimize);
+  }
+  .traffic-light[data-light="zoom"] {
+    background-color: var(--traffic-zoom);
+  }
+  /* Outranks the per-light fill above: same element, one more class. */
+  .traffic-lights[data-focused="false"] .traffic-light {
+    background-color: var(--traffic-idle);
+  }
+  .traffic-light:focus-visible {
+    box-shadow: 0 0 0 2px var(--ring);
+  }
+
+  .traffic-glyph {
+    display: flex;
+    color: var(--traffic-ink);
+    opacity: 0;
     pointer-events: none;
-    user-select: none;
+    transition: opacity var(--transition-duration-fast) var(--ease-standard);
+  }
+  .traffic-lights:hover .traffic-glyph,
+  .traffic-lights:focus-within .traffic-glyph {
+    opacity: 1;
   }
 
   /* Focus ring: two families, one value each. They exist because a full-bleed
@@ -616,17 +642,11 @@
     opacity: 0.16;
   }
 
-  /* Entry-icon tiles share one optical rule instead of a radius per size: the
-     corner sits at ~31% of the tile's edge, which is what makes a 22px row
-     glyph and a 50px grid cell read as the same squircle family. That ratio is
-     why these cells never matched the static radius scale — and why they had
-     drifted into six hand-tuned arbitrary values (7/8/10/12/13/15px). A
-     percentage radius resolves against each axis, so on these square cells it
-     lands on the same corner the px values drew (22px → 6.8, 42px → 13.0,
-     50px → 15.5). */
-  .tile-radius {
-    border-radius: 31%;
-  }
+  /* Entry-icon tiles take their corner from the shared shape scale, like
+     every other square in the shell. They used to carry a 31% "squircle"
+     radius of their own, inherited from the tinted plates this icon system
+     once sat on; with the plates gone the class rounded nothing and the
+     comment above it kept claiming a squircle family that no longer existed. */
 
   /* Capacity bar fill: one flat hue while healthy, amber once the disk is
      nearly full. There is no sweep and no two-stop ramp here — a 3px bar

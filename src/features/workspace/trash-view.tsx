@@ -799,7 +799,7 @@ function TrashRow({
           <RowCheckbox isSelected={isSelected} />
           <span className="flex min-w-0 items-center gap-2">
             <TypeIconTile
-              className="size-tile-list tile-radius"
+              className="size-tile-list"
               iconSize={13}
               presentation={presentation}
             />

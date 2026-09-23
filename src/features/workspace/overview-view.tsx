@@ -300,7 +300,7 @@ export function OverviewView() {
                     type="button"
                   >
                     <TypeIconTile
-                      className="size-tile-list tile-radius"
+                      className="size-tile-list"
                       iconSize={16}
                       presentation={presentation}
                     />
