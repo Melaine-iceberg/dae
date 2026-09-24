@@ -209,7 +209,7 @@ export function ExplorerPathBar({
         // `select-text` restores text selection inside the bar, which the
         // shared trigger class turns off. `tabIndex` makes the bar itself
         // focusable so a menu action can keep the caret here.
-        className="flex h-7 min-w-0 flex-1 select-text items-center rounded-md border border-border bg-card px-2.5 transition-[background-color,border-color] duration-fast ease-standard hover:border-input"
+        className="flex h-7 min-w-0 flex-1 select-text items-center rounded-md border border-transparent bg-transparent px-2.5 transition-[background-color,border-color] duration-fast ease-standard hover:border-border hover:bg-card"
         data-tauri-drag-region="false"
         onClick={startEditing}
         ref={pathBarRef}

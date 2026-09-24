@@ -68,6 +68,7 @@ import {
   openSurfaceAtom,
 } from "@/features/workspace/workspace-atoms";
 import { i18n } from "@/i18n";
+import { isWindowsPlatform } from "@/lib/platform";
 import { cn, formatBytes } from "@/lib/utils";
 
 import {
@@ -117,7 +118,7 @@ import { useWslDistros } from "./use-wsl-distros";
 import { WslIcon } from "./wsl-icon";
 
 /** WSL only exists on Windows; elsewhere the section is hidden entirely. */
-const IS_WINDOWS = navigator.userAgent.includes("Windows");
+const IS_WINDOWS = isWindowsPlatform;
 
 /** Matches the grid-rows collapse transition (duration-normal). */
 const COLLAPSE_ANIMATION_MS = 160;
@@ -973,7 +974,7 @@ function DiskItem({
   return (
     <div
       className={cn(
-        "w-full rounded-sm px-2.5 py-2 transition-[background-color] duration-fast ease-standard hover:bg-sidebar-accent",
+        "w-full rounded-sm px-2.5 py-1.5 transition-[background-color] duration-fast ease-standard hover:bg-sidebar-accent",
         isActive && "bg-sidebar-accent",
       )}
     >

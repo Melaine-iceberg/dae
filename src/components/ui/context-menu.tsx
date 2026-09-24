@@ -144,7 +144,7 @@ function ContextMenuSubContent({ ...props }: React.ComponentProps<typeof Context
   return (
     <ContextMenuContent
       data-slot="context-menu-sub-content"
-      className="shadow-ambient"
+      className="w-auto"
       side="right"
       {...props}
     />

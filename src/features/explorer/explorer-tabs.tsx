@@ -877,7 +877,7 @@ function TabStripItem({
         // hairline, and the sanctioned 1px inset top edge — while inactive
         // tabs stay flat text until hovered, so the strip reads as a row of
         // destinations rather than a row of buttons.
-        "group state-layer relative flex h-7 w-52 shrink-0 touch-none cursor-grab items-center rounded-sm text-body select-none transition-[background-color,color,scale,opacity] duration-fast ease-spring-fast active:scale-[0.98] active:cursor-grabbing",
+        "group state-layer relative flex h-7 w-52 shrink-0 touch-none cursor-grab items-center rounded-sm text-body select-none transition-[background-color,color,opacity] duration-fast ease-standard active:cursor-grabbing",
         isActive
           ? "tab-chip-active border border-border bg-card font-medium text-foreground"
           : "text-muted-foreground hover:text-foreground",
