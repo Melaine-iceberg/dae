@@ -161,6 +161,13 @@ rand = "0.10.2"
 # Windows machine, which is where it is written. The crate is pure Rust and was
 # already in the dependency tree.
 mime_guess = "2"
+# Reads the Linux accent from the freedesktop settings portal
+# (system_accent/linux.rs). Target-gated to Linux: the Windows and macOS
+# backends read their own settings and do not want a D-Bus stack behind them.
+# zbus is already in the dependency tree through Tauri's Linux integration, so
+# this adds no compile time there.
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "5"
 
 [patch.crates-io]
 drag = { path = "vendor/drag" }

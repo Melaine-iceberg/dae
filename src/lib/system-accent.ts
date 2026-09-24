@@ -7,44 +7,36 @@
  * imitating any of them. It is also the only place this design system allows
  * a saturated colour that is not carrying meaning.
  *
- * Reading that colour is platform work and is deliberately NOT done here:
+ * Reading that colour is platform work and lives on the Rust side: the
+ * `system_accent` module takes it from the DWM registry key on Windows, from
+ * `NSColor.controlAccentColor` on macOS and from the freedesktop settings
+ * portal on Linux, and reports every change as it happens.
  *
- *   Windows   HKCU\Software\Microsoft\Windows\DWM\AccentColor (ARGB)
- *   macOS     NSColor.controlAccentColor (needs a native call)
- *   Linux     org.freedesktop.appearance accent-color via the settings
- *             portal, falling back to the GTK theme's accent
- *
- * This module is the seam instead. It owns the shape of the answer and the
- * CSS contract, so the platform reader has exactly one function to replace
- * and one call site to leave alone, and can land on its own schedule.
- *
- * The contract, in full — mirror `lib/theme.ts`, which is why these two are
- * named as a pair:
+ * This module is the other half — what the answer means to CSS — and the two
+ * halves meet at exactly two functions, named as a pair with `lib/theme.ts`:
  *
  *   useEffect(() => watchSystemAccent(applySystemAccent), []);   // App.tsx
  *
- * `applySystemAccent` is implemented and is the whole write side. It writes
- * two custom properties on <html>; everything accent-coloured in App.css
- * derives from them and falls back to the shipped indigo until it has run
- * once. `watchSystemAccent` is the read side and is a stub — it is where a
- * `commands.getSystemAccent()` plus a change event goes, and replacing its
- * body is the entire job. Its argument is already `applySystemAccent`, so no
- * call site changes when it starts working.
+ * `applySystemAccent` is the whole write side. It writes two custom
+ * properties on <html>; everything accent-coloured in App.css derives from
+ * them and falls back to the shipped indigo until it has run once.
+ * `watchSystemAccent` is the read side and is the only caller.
  *
- * Two properties, not one. A user-picked accent can be any lightness, and no
+ * Two properties, not one. The OS accent can be any lightness, and no
  * CSS-only contrast test is portable enough to derive a label colour from it
  * (`color-contrast()` is Safari-only), so the ink is chosen here from the
- * hue's relative luminance. A bridge normally supplies only the hue; pass an
- * ink explicitly when the platform already guarantees one (macOS ships
- * labelColor resolved against controlAccentColor).
+ * hue's relative luminance. `watchSystemAccent` therefore supplies only the
+ * hue; pass an ink explicitly when the platform already guarantees one (macOS
+ * ships labelColor resolved against controlAccentColor).
  */
+
+import { commands, events } from "@/bindings";
 
 /** Written on `<html>`; the accent hue, any CSS `<color>`. */
 export const SYSTEM_ACCENT_PROPERTY = "--system-accent";
 
 /** Written on `<html>`; a label colour that clears ≈4.5:1 on the hue. */
 export const SYSTEM_ACCENT_INK_PROPERTY = "--system-accent-ink";
-
 /** The two inks `applySystemAccent` picks between, by luminance. */
 const INK_LIGHT = "#ffffff";
 const INK_DARK = "#101116";
@@ -146,12 +138,13 @@ export function applySystemAccent(accent: string | null, ink?: string): void {
   root.style.setProperty(SYSTEM_ACCENT_INK_PROPERTY, ink ?? resolved.ink);
   window.dispatchEvent(new CustomEvent("app-system-accent-change"));
 }
-/**
- * The accent currently in force, or `null` while the shell is on its shipped
- * default. For surfaces that need to know which way they went — the terminal
- * palette hands xterm plain hex values, so it cannot follow a CSS variable
- * and has to be told.
- */
+/** The accent currently in force, or `null` while the shell is on its shipped
+ *  default. For surfaces that need to know which way they went — the terminal
+ *  palette hands xterm plain hex values, so it cannot follow a CSS variable
+ *  and has to be told.
+ *
+ *  Reads what `applySystemAccent` last wrote. Use `commands.getSystemAccent()`
+ *  for what the OS says right now. */
 export function getSystemAccent(): string | null {
   return document.documentElement.style.getPropertyValue(SYSTEM_ACCENT_PROPERTY) || null;
 }
@@ -159,21 +152,43 @@ export function getSystemAccent(): string | null {
 /**
  * Follows the OS accent and hands each reading to `onChange`.
  *
- * THE STUB. This is the only thing left to implement, and the shape of it is
- * fixed so that implementing it changes nothing else:
+ * The read side of the seam. `src-tauri/src/system_accent` reads the platform
+ * setting and emits `system-accent-changed` whenever it moves; this turns that
+ * into the pair of calls the rest of the frontend already speaks.
  *
- *   1. read the platform accent into a CSS colour string (see the platform
- *      notes at the top of this file);
- *   2. call `onChange(colour)`, and again whenever the platform reports a
- *      change — Windows posts WM_DWMCOLORIZATIONCOLORCHANGED, macOS KVO on
- *      NSUserDefaults AppleAccentColor, Linux a portal SettingsChanged;
- *   3. return a disposer that stops listening.
+ * The listener is registered *before* the first read on purpose. The watcher
+ * thread starts before the webview mounts, so its opening report can arrive
+ * and be dropped; subscribing first closes that gap, and the pull that follows
+ * is then a snapshot rather than the only source of truth. The other order
+ * would let a stale snapshot overwrite a change that had already arrived.
  *
- * Pass `null` through `onChange` when the platform has no accent setting, and
- * `applySystemAccent` will fall back to the shipped indigo. Today it does
- * nothing at all, which is why the shell looks the way it always has.
+ * `onChange(null)` means the platform has no accent setting — or could not
+ * read one — and `applySystemAccent` will hold the shell's own default.
  */
 export function watchSystemAccent(onChange: (accent: string | null) => void): () => void {
-  void onChange;
-  return () => {};
+  let disposed = false;
+  let unlisten: (() => void) | null = null;
+
+  const start = async () => {
+    unlisten = await events.systemAccentChanged.listen(({ payload }) => {
+      if (!disposed) onChange(payload);
+    });
+    if (disposed) {
+      unlisten();
+      unlisten = null;
+      return;
+    }
+
+    onChange(await commands.getSystemAccent());
+  };
+
+  void start().catch((error: unknown) => {
+    console.warn("Unable to follow the system accent", error);
+  });
+
+  return () => {
+    disposed = true;
+    unlisten?.();
+    unlisten = null;
+  };
 }

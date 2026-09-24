@@ -1291,6 +1291,7 @@ dependencies = [
  "trash-core",
  "url",
  "windows 0.62.2",
+ "zbus",
  "zip 8.6.0",
 ]
 

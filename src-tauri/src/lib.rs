@@ -3,6 +3,7 @@ mod default_manager;
 mod file_system;
 mod settings;
 mod shell_commands;
+mod system_accent;
 mod tab_windows;
 mod terminal;
 // Release-only: the updater's endpoint and public key come from
@@ -130,6 +131,11 @@ pub fn run() {
             file_system::connections::init(app.handle())?;
             file_system::cloud::accounts::init(app.handle())?;
             settings::init(app.handle())?;
+            // Spawns the platform accent watcher. Its first report lands before
+            // the webview has necessarily mounted a listener, which is why the
+            // frontend also pulls `get_system_accent` once — the pair is the
+            // same read-late-or-early race the deep link buffer closes.
+            system_accent::init(app.handle());
 
             // macOS delivers deep links through the plugin's open-url event;
             // Windows/Linux pass them as CLI args (also for the very first
@@ -384,6 +390,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             tab_windows::start_tab_drag,
             tab_windows::tear_off_tab,
             tab_windows::take_tab_handoff,
+            system_accent::get_system_accent,
             get_package_family_name
         ])
         .events(tauri_specta::collect_events![
@@ -396,6 +403,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             deep_link::OpenDirectoryRequested,
             tab_windows::TabDragHover,
             tab_windows::TabDragLeave,
-            tab_windows::TabMergedIntoWindow
+            tab_windows::TabMergedIntoWindow,
+            system_accent::SystemAccentChanged
         ])
 }
