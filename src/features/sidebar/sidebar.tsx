@@ -992,7 +992,9 @@ function DiskItem({
           )}
           <div className="min-w-0 flex-1">
             <div className="truncate text-body">{presentation.primary}</div>
-            <div className="truncate text-caption text-muted-foreground">{presentation.secondary}</div>
+            <div className="truncate text-caption text-muted-foreground">
+              {presentation.secondary}
+            </div>
           </div>
         </button>
         <button

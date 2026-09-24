@@ -80,10 +80,7 @@ function ContextMenuLabel({
     <ContextMenuPrimitive.GroupLabel
       data-slot="context-menu-label"
       data-inset={inset}
-      className={cn(
-        "px-2 pt-1.5 pb-1 text-label text-muted-foreground data-inset:pl-7",
-        className,
-      )}
+      className={cn("px-2 pt-1.5 pb-1 text-label text-muted-foreground data-inset:pl-7", className)}
       {...props}
     />
   );
@@ -231,11 +228,7 @@ function ContextMenuSeparator({ className, ...props }: ContextMenuPrimitive.Sepa
  */
 function ContextMenuShortcut({ className, children, ...props }: React.ComponentProps<"span">) {
   return (
-    <span
-      data-slot="context-menu-shortcut"
-      className={cn("ml-auto", className)}
-      {...props}
-    >
+    <span data-slot="context-menu-shortcut" className={cn("ml-auto", className)} {...props}>
       {typeof children === "string" ? <KbdShortcut keys={children} /> : children}
     </span>
   );
