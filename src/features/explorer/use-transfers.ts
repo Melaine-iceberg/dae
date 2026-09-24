@@ -12,7 +12,7 @@ import { useCallback, useState } from "react";
 import { commands, type ConflictAction, type TransferConflict, type TransferItem } from "@/bindings";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
 
-import type { TransferOperation } from "./drag-drop";
+import type { FileTransferOperation, TransferOperation } from "./drag-drop";
 import type { FileOperationResult, PerformFileOperation } from "./use-file-operations";
 
 /** A transfer paused on the conflict dialog, waiting for per-item decisions. */
@@ -48,7 +48,11 @@ export function useTransfers({
     destinationPath: string,
     operation: TransferOperation,
   ) => void;
-  copyExternalEntries: (sourcePaths: string[], destinationPath: string) => void;
+  dropExternalEntries: (
+    sourcePaths: string[],
+    destinationPath: string,
+    operation: FileTransferOperation,
+  ) => void;
   createShortcutsEntries: (sourcePaths: string[], destinationPath: string) => void;
   resolveTransferConflicts: (decisions: Record<string, ConflictAction>) => void;
   cancelTransferConflicts: () => void;
@@ -135,11 +139,19 @@ export function useTransfers({
     [clearSelection, setOperationError],
   );
 
-  const copyExternalEntries = useCallback(
-    (sourcePaths: string[], destinationPath: string) => {
-      startTransfer(sourcePaths, destinationPath, "copy", clearSelection);
+  /** Files dragged in from outside the window. The drop has already resolved
+   *  its operation (modifiers pin one, a plain drop follows the volume rule),
+   *  and a "link" answer creates shortcuts the way an Alt-drop inside the
+   *  window does instead of entering the transfer pipeline. */
+  const dropExternalEntries = useCallback(
+    (sourcePaths: string[], destinationPath: string, operation: FileTransferOperation) => {
+      if (operation === "link") {
+        createShortcutsEntries(sourcePaths, destinationPath);
+        return;
+      }
+      startTransfer(sourcePaths, destinationPath, operation, clearSelection);
     },
-    [clearSelection, startTransfer],
+    [clearSelection, createShortcutsEntries, startTransfer],
   );
 
   const resolveTransferConflicts = useCallback(
@@ -167,7 +179,7 @@ export function useTransfers({
     pendingTransfer,
     startTransfer,
     transferEntries,
-    copyExternalEntries,
+    dropExternalEntries,
     createShortcutsEntries,
     resolveTransferConflicts,
     cancelTransferConflicts,

@@ -1,6 +1,9 @@
-# Vendored copy of drag 2.1.1 (CrabNebula, Apache-2.0 OR MIT) with a local
-# patch: `DragMode::Link` so drag-out can advertise DROPEFFECT_LINK and let
-# drop targets create shortcuts, matching Windows Explorer's Alt-drag.
+# Vendored copy of drag 2.1.1 (CrabNebula, Apache-2.0 OR MIT) with two local
+# patches: `DragMode::Link` so drag-out can advertise DROPEFFECT_LINK and let
+# drop targets create shortcuts (Windows Explorer's Alt-drag), and
+# `DragMode::Any` so a plain drag advertises copy + move + link together and
+# the drop target picks the effect (Explorer's plain drag: same-volume drops
+# move, cross-volume drops copy).
 # Upstream: https://github.com/crabnebula-dev/drag-rs
 
 [package]

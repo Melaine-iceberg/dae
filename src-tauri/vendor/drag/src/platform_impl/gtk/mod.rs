@@ -32,6 +32,8 @@ pub fn start_drag<F: Fn(DragResult, CursorPosition) + Send + 'static>(
         DragMode::Copy => gdk::DragAction::COPY,
         DragMode::Move => gdk::DragAction::MOVE,
         DragMode::Link => gdk::DragAction::LINK,
+        // Same "let the drop target choose" contract as the Windows build.
+        DragMode::Any => gdk::DragAction::COPY | gdk::DragAction::MOVE | gdk::DragAction::LINK,
     };
 
     // GTK refuses to run a drag without at least one advertised target, so

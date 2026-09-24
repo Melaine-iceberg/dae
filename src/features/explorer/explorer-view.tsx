@@ -272,7 +272,7 @@ export function ExplorerView({
     pendingTransfer,
     startTransfer,
     transferEntries,
-    copyExternalEntries,
+    dropExternalEntries,
     createShortcutsEntries,
     resolveTransferConflicts,
     cancelTransferConflicts,
@@ -301,7 +301,7 @@ export function ExplorerView({
     directoryPath,
     searchQuery: search.query,
     isActivePane,
-    onDropPaths: copyExternalEntries,
+    onDropPaths: dropExternalEntries,
   });
   useDirectoryRefresh(navigator);
 
@@ -744,6 +744,7 @@ export function ExplorerView({
                   currentDirectoryPath={directory.path}
                   entries={displayedListing}
                   externalDropItemCount={externalDrop?.sourcePaths.length ?? 0}
+                  externalDropOperation={externalDrop?.operation ?? null}
                   externalDropTargetPath={externalDrop?.targetPath ?? null}
                   gitStatus={gitStatus}
                   initialScrollOffset={

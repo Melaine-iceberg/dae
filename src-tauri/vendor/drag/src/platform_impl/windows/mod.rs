@@ -262,10 +262,16 @@ pub fn start_drag<W: HasWindowHandle, F: Fn(DragResult, CursorPosition) + Send +
                     }
 
                     let mut out_dropeffect = DROPEFFECT::default();
+                    // `dwOKEEffects` is the set of effects the target may
+                    // pick from, not a command: `Any` hands copy/move/link to
+                    // the drop target (a Shell folder then moves same-volume
+                    // drops and copies across volumes, like an Explorer drag),
+                    // while the forced modes pin the gesture to one effect.
                     let effect = match options.mode {
                         DragMode::Copy => DROPEFFECT_COPY,
                         DragMode::Move => DROPEFFECT_MOVE,
                         DragMode::Link => DROPEFFECT_LINK,
+                        DragMode::Any => DROPEFFECT_COPY | DROPEFFECT_MOVE | DROPEFFECT_LINK,
                     };
 
                     let drop_result =

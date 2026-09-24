@@ -197,6 +197,10 @@
   "drag": {
     "dropToCopy_one": "松开以复制 {{count}} 个项目",
     "dropToCopy_other": "松开以复制 {{count}} 个项目",
+    "dropToMove_one": "松开以移动 {{count}} 个项目",
+    "dropToMove_other": "松开以移动 {{count}} 个项目",
+    "dropToLink_one": "松开以创建 {{count}} 个快捷方式",
+    "dropToLink_other": "松开以创建 {{count}} 个快捷方式",
     "addToFavorites_one": "添加 {{count}} 个文件夹到收藏",
     "addToFavorites_other": "添加 {{count}} 个文件夹到收藏",
     "addToSpace_one": "添加 {{count}} 个文件夹到空间",

@@ -9,17 +9,31 @@
  */
 import { useEffect, useState } from "react";
 
-import { events } from "@/bindings";
+import { commands, events, type KeyModifiers } from "@/bindings";
 
 import { getAppWindow } from "@/lib/app-window";
 
 import {
   getExplorerDropTargetAtPoint,
   isExplorerContainerAtPoint,
+  resolveDropOperation,
+  type FileTransferOperation,
 } from "./drag-drop";
 import type { ExplorerNavigator } from "./navigation";
 
 const DIRECTORY_REFRESH_DELAY_MS = 150;
+
+/** How often the held modifier keys are re-read while an outside drag hovers:
+ *  no DOM key event fires during a native drag, and the operation the badge
+ *  announces has to follow a key the user presses mid-hover. */
+const DROP_MODIFIER_POLL_MS = 200;
+
+const NO_KEY_MODIFIERS: KeyModifiers = {
+  altKey: false,
+  ctrlKey: false,
+  metaKey: false,
+  shiftKey: false,
+};
 
 const appWindow = getAppWindow();
 
@@ -64,7 +78,14 @@ export function useDirectoryRefresh(navigator: ExplorerNavigator): void {
 }
 
 /** Highlight state for a drag of files from outside the window. */
-export type ExternalDrop = { sourcePaths: string[]; targetPath: string | null };
+export type ExternalDrop = {
+  sourcePaths: string[];
+  targetPath: string | null;
+  /** What dropping here would do right now — modifiers pin one effect, a
+   *  plain gesture follows the volume rule (same volume moves, crossing one
+   *  copies). */
+  operation: FileTransferOperation;
+};
 
 /**
  * Tracks a window-level drag of external files: which pane claims it (via
@@ -79,16 +100,47 @@ export function useExternalDrop({
   directoryPath: string | undefined;
   searchQuery: string;
   isActivePane: boolean;
-  /** Handles a claimed drop — the transfer pipeline's copy entry point. */
-  onDropPaths: (sourcePaths: string[], targetPath: string) => void;
+  /** Handles a claimed drop — the transfer pipeline's entry point for files
+   *  dragged in from outside the window. */
+  onDropPaths: (
+    sourcePaths: string[],
+    targetPath: string,
+    operation: FileTransferOperation,
+  ) => void;
 }): { externalDrop: ExternalDrop | null } {
-  const [externalDrop, setExternalDrop] = useState<ExternalDrop | null>(null);
+  const [hovered, setHovered] = useState<{
+    sourcePaths: string[];
+    targetPath: string | null;
+  } | null>(null);
+  const [modifiers, setModifiers] = useState<KeyModifiers>(NO_KEY_MODIFIERS);
 
   // A new directory or query means the surface being hovered no longer
   // exists; the highlight would point at rows that already went away.
   useEffect(() => {
-    setExternalDrop(null);
+    setHovered(null);
   }, [directoryPath, searchQuery]);
+
+  // Modifiers arrive with DOM keyboard events, which the webview never gets
+  // while another application owns the drag — ask the OS instead, once on
+  // arrival and at a human interval afterwards.
+  const dragActive = hovered !== null;
+  useEffect(() => {
+    if (!dragActive) return;
+    let disposed = false;
+
+    const refreshModifiers = () => {
+      void commands.getKeyModifiers().then((next) => {
+        if (!disposed) setModifiers(next);
+      });
+    };
+
+    refreshModifiers();
+    const poll = window.setInterval(refreshModifiers, DROP_MODIFIER_POLL_MS);
+    return () => {
+      disposed = true;
+      window.clearInterval(poll);
+    };
+  }, [dragActive]);
 
   useEffect(() => {
     if (!appWindow) return;
@@ -111,7 +163,7 @@ export function useExternalDrop({
       if (disposed) return;
 
       if (payload.type === "enter") {
-        setExternalDrop({
+        setHovered({
           sourcePaths: payload.paths,
           targetPath: getTargetPath(payload.position),
         });
@@ -122,7 +174,7 @@ export function useExternalDrop({
         const targetPath = getTargetPath(payload.position);
         // "over" fires at mousemove frequency; only re-render when the
         // highlighted drop target actually changes.
-        setExternalDrop((currentDrop) =>
+        setHovered((currentDrop) =>
           currentDrop && currentDrop.targetPath !== targetPath
             ? { ...currentDrop, targetPath }
             : currentDrop,
@@ -132,7 +184,7 @@ export function useExternalDrop({
 
       if (payload.type === "drop") {
         const targetPath = getTargetPath(payload.position);
-        setExternalDrop(null);
+        setHovered(null);
         // Every pane in the window hears the same drop. Without a hit-test
         // the unclaimed drop lands in each pane's own directory (via the
         // `?? directoryPath` fallback above), duplicating the transfer once
@@ -143,11 +195,22 @@ export function useExternalDrop({
         if (getExplorerDropTargetAtPoint(x, y) === null && !isActivePane) {
           if (isExplorerContainerAtPoint(x, y)) return;
         }
-        onDropPaths(payload.paths, targetPath);
+        // The key state is read again rather than reused from the hover poll:
+        // the modifiers held at the moment of the drop are the ones that count.
+        void commands
+          .getKeyModifiers()
+          .catch(() => NO_KEY_MODIFIERS)
+          .then((next) =>
+            onDropPaths(
+              payload.paths,
+              targetPath,
+              resolveDropOperation(next, payload.paths, targetPath),
+            ),
+          );
         return;
       }
 
-      setExternalDrop(null);
+      setHovered(null);
     });
 
     return () => {
@@ -155,6 +218,18 @@ export function useExternalDrop({
       void unlistenPromise.then((unlisten) => unlisten());
     };
   }, [directoryPath, isActivePane, onDropPaths]);
+
+  const externalDrop: ExternalDrop | null = hovered
+    ? {
+        sourcePaths: hovered.sourcePaths,
+        targetPath: hovered.targetPath,
+        operation: resolveDropOperation(
+          modifiers,
+          hovered.sourcePaths,
+          hovered.targetPath ?? directoryPath ?? "",
+        ),
+      }
+    : null;
 
   return { externalDrop };
 }

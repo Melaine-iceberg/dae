@@ -189,6 +189,10 @@ windows = { version = "0.62.2", features = [
   # pumps the STA message queue while it waits on them.
   "Win32_UI_Shell_Common",
   "Win32_UI_WindowsAndMessaging",
+  # `system_files::get_key_modifiers` reads the held Ctrl/Shift/Alt/Win keys
+  # (`GetAsyncKeyState`) so a native drag-and-drop can honor them — the webview
+  # receives no DOM keyboard events while another application drags.
+  "Win32_UI_Input_KeyboardAndMouse",
   "Win32_System_Threading",
   "Win32_Storage_FileSystem",
   "Win32_System_Registry",

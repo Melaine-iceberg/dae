@@ -197,6 +197,10 @@
   "drag": {
     "dropToCopy_one": "Drop to copy 1 item",
     "dropToCopy_other": "Drop to copy {{count}} items",
+    "dropToMove_one": "Drop to move 1 item",
+    "dropToMove_other": "Drop to move {{count}} items",
+    "dropToLink_one": "Drop to create 1 shortcut",
+    "dropToLink_other": "Drop to create {{count}} shortcuts",
     "addToFavorites_one": "Add 1 folder to favorites",
     "addToFavorites_other": "Add {{count}} folders to favorites",
     "addToSpace_one": "Add 1 folder to a space",

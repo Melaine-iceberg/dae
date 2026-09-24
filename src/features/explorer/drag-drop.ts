@@ -1,3 +1,5 @@
+import type { DragOutMode, KeyModifiers } from "@/bindings";
+
 /** Transfer intent of a drag gesture, including Windows-style "link"
  * (create shortcut, Alt-drag). */
 export type FileTransferOperation = "copy" | "move" | "link";
@@ -6,30 +8,84 @@ export type FileTransferOperation = "copy" | "move" | "link";
  * are handled by their own command and never reach the conflict dialog. */
 export type TransferOperation = Exclude<FileTransferOperation, "link">;
 
+/** Whether a modifier key pins the drag to one effect. */
+function isForcedDragOperation(modifiers: KeyModifiers): boolean {
+  return modifiers.altKey || modifiers.ctrlKey || modifiers.metaKey || modifiers.shiftKey;
+}
+
 /** Resolves the Windows-explorer-style modifier state to a drag operation:
  * Alt (or Ctrl+Shift) creates shortcuts, Ctrl copies, plain/Shift moves. */
-export function dragOperationFromModifiers(event: {
-  altKey: boolean;
-  ctrlKey: boolean;
-  metaKey: boolean;
-  shiftKey: boolean;
-}): FileTransferOperation {
+export function dragOperationFromModifiers(event: KeyModifiers): FileTransferOperation {
   if (event.altKey || (event.ctrlKey && event.shiftKey)) return "link";
   if (event.ctrlKey || event.metaKey) return "copy";
   return "move";
 }
 
-/** Same Windows conventions for drags that leave the window, where the plain
- * gesture copies (Explorer's cross-volume default). */
-export function dragOutModeFromModifiers(event: {
-  altKey: boolean;
-  ctrlKey: boolean;
-  metaKey: boolean;
-  shiftKey: boolean;
-}): "copy" | "move" | "link" {
-  if (event.altKey || (event.ctrlKey && event.shiftKey)) return "link";
-  if (event.shiftKey) return "move";
-  return "copy";
+/** The native drag-out a gesture advertises: a modifier key pins it to one
+ * effect, while the plain gesture offers copy + move + link and lets the drop
+ * target choose. Which effect a plain drop lands on is the *target's* call — a
+ * Shell folder moves same-volume drops and copies across volumes — and the
+ * source cannot make that choice itself: it does not know where the drop will
+ * land. */
+export function dragOutModeFromModifiers(event: KeyModifiers): DragOutMode {
+  return isForcedDragOperation(event) ? dragOperationFromModifiers(event) : "any";
+}
+
+/** The operation a drop of outside files performs: the modifiers held at the
+ * drop pin one effect, a plain gesture follows the volume rule. */
+export function resolveDropOperation(
+  modifiers: KeyModifiers,
+  sourcePaths: string[],
+  destinationPath: string,
+): FileTransferOperation {
+  if (isForcedDragOperation(modifiers)) return dragOperationFromModifiers(modifiers);
+  return defaultTransferOperation(sourcePaths, destinationPath);
+}
+
+/** Explorer's plain-drag default: a transfer moves when source and destination
+ * share a volume and copies when it crosses one. A batch only moves when every
+ * source shares the destination's volume — a mixed batch copies, so nothing
+ * leaves its volume without a modifier key saying so. */
+export function defaultTransferOperation(
+  sourcePaths: string[],
+  destinationPath: string,
+): TransferOperation {
+  if (sourcePaths.length === 0) return "copy";
+
+  const destinationRoot = volumeRoot(destinationPath);
+  return sourcePaths.every((sourcePath) => volumeRoot(sourcePath) === destinationRoot)
+    ? "move"
+    : "copy";
+}
+
+/** Identity of the volume a path lives on — two paths share one exactly when
+ * moving between them is a rename. Drive letters and UNC shares are exact;
+ * `scheme://host` network paths treat one host as one volume, and POSIX paths
+ * only separate `/Volumes/<name>` mounts from the root filesystem, which is
+ * coarse but conservative (an unreadable distinction copies instead of
+ * moving). */
+function volumeRoot(path: string): string {
+  let rest = path;
+
+  // `\\?\C:\x`, `\\?\UNC\server\share\x`: a verbatim prefix must come off
+  // before the drive and UNC rules below can read the path — and a verbatim
+  // UNC path spells its root as `UNC\server\share`, not `\\server\share`.
+  const verbatim = /^[\\/]{2}\?[\\/](.+)$/.exec(rest);
+  if (verbatim) {
+    rest = verbatim[1].replace(/^UNC[\\/]/i, "\\\\");
+  }
+
+  const drive = /^([a-zA-Z]):/.exec(rest);
+  if (drive) return drive[1].toLowerCase();
+
+  const unc = /^[\\/]{2}([^\\/]+)[\\/]([^\\/]+)/.exec(rest);
+  if (unc) return `\\\\${unc[1]}\\${unc[2]}`.toLowerCase();
+
+  const networkUrl = /^([a-zA-Z][a-zA-Z0-9+.-]*):\/\/([^/]*)/.exec(rest);
+  if (networkUrl) return `${networkUrl[1]}://${networkUrl[2]}`.toLowerCase();
+
+  const mountedVolume = /^\/Volumes\/([^/]+)/.exec(rest);
+  return mountedVolume ? `/Volumes/${mountedVolume[1]}`.toLowerCase() : "/";
 }
 
 const DIRECTORY_DROP_TARGET_SELECTOR = "[data-explorer-directory-drop-target]";

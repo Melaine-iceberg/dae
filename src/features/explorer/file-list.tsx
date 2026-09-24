@@ -79,6 +79,7 @@ import {
   getSidebarSpaceDropTargetAtPoint,
   isLocalExplorerPath,
   isOverSidebarFavoritesAtPoint,
+  resolveDropOperation,
   type FileTransferOperation,
   type TransferOperation,
 } from "./drag-drop";
@@ -121,6 +122,8 @@ interface FileListProps {
   currentDirectoryPath: string;
   entries: ListingView;
   externalDropItemCount: number;
+  /** What dropping the outside files here would do — drives the badge verb. */
+  externalDropOperation: FileTransferOperation | null;
   externalDropTargetPath: string | null;
   gitStatus?: ExplorerGitStatus | null;
   initialScrollOffset?: number;
@@ -342,6 +345,7 @@ export function FileList({
   currentDirectoryPath,
   entries,
   externalDropItemCount,
+  externalDropOperation,
   externalDropTargetPath,
   gitStatus,
   initialScrollOffset = 0,
@@ -597,8 +601,11 @@ export function FileList({
 
         const localPaths = dragPaths.filter(isLocalExplorerPath);
         if (localPaths.length > 0) {
-          // Windows conventions: plain/Ctrl copies out, Shift moves,
-          // Alt (or Ctrl+Shift) creates shortcuts at the drop target.
+          // Windows conventions: Ctrl copies, Shift moves, Alt (or Ctrl+Shift)
+          // creates shortcuts at the drop target, and a plain gesture offers
+          // all three so the target applies its own rule — a Shell folder then
+          // moves same-volume drops and copies across volumes, exactly like an
+          // Explorer drag.
           const dragOutMode = dragOutModeFromModifiers(event);
           void commands.startDragOut(localPaths, dragOutMode).catch((error) => {
             console.warn("Unable to start the native drag-out", error);
@@ -607,15 +614,21 @@ export function FileList({
         return;
       }
 
-      // Windows conventions inside the window: Alt (or Ctrl+Shift) links,
-      // Ctrl copies, plain/Shift moves (Explorer's same-volume default).
-      const operation: FileTransferOperation = dragOperationFromModifiers(event);
       const nextTarget = resolveDragTarget(
         entries,
         candidate.sourcePaths,
         event.clientX,
         event.clientY,
       );
+
+      // Windows conventions inside the window: Alt (or Ctrl+Shift) links,
+      // Ctrl copies, Shift moves — and a plain gesture over a folder follows
+      // the volume rule (same volume moves, crossing one copies), exactly like
+      // the drops this window receives from outside.
+      const operation: FileTransferOperation =
+        nextTarget?.kind === "directory"
+          ? resolveDropOperation(event, candidate.sourcePaths, nextTarget.path)
+          : dragOperationFromModifiers(event);
       const previousDrag = internalDragRef.current;
 
       if (
@@ -1219,7 +1232,14 @@ export function FileList({
         )}
         {externalDropItemCount > 0 && (
           <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 text-body font-medium text-primary">
-            {t("explorer:drag.dropToCopy", { count: externalDropItemCount })}
+            {t(
+              externalDropOperation === "link"
+                ? "explorer:drag.dropToLink"
+                : externalDropOperation === "move"
+                  ? "explorer:drag.dropToMove"
+                  : "explorer:drag.dropToCopy",
+              { count: externalDropItemCount },
+            )}
           </div>
         )}
         <MarqueeOverlay rect={listMarquee.rect} />

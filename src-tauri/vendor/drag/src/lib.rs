@@ -144,6 +144,13 @@ pub enum DragMode {
     // Local patch: link/shortcut effect (DROPEFFECT_LINK, GDK_ACTION_LINK,
     // NSDragOperationLink).
     Link = 4,
+    // Local patch: advertise copy, move and link at once and let the drop
+    // target pick the effect — Windows Explorer's plain drag. The Shell folder
+    // target is what decides move vs copy (same volume moves, across volumes
+    // copies), and it can only do so when every effect is on offer; the forced
+    // variants above stay for the modifier keys (Ctrl copies, Shift moves, Alt
+    // links). The value is the union of the three effects above.
+    Any = 21,
 }
 
 #[cfg(target_os = "macos")]
@@ -153,6 +160,11 @@ impl From<DragMode> for objc2_app_kit::NSDragOperation {
             DragMode::Copy => objc2_app_kit::NSDragOperation::Copy,
             DragMode::Move => objc2_app_kit::NSDragOperation::Move,
             DragMode::Link => objc2_app_kit::NSDragOperation::Link,
+            DragMode::Any => {
+                objc2_app_kit::NSDragOperation::Copy
+                    | objc2_app_kit::NSDragOperation::Move
+                    | objc2_app_kit::NSDragOperation::Link
+            }
         }
     }
 }

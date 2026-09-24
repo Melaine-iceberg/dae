@@ -53,6 +53,58 @@ pub enum DragOutMode {
     /// Drop targets create shortcuts instead of transferring the files
     /// (DROPEFFECT_LINK — Windows Explorer's Alt-drag behavior).
     Link,
+    /// Advertises copy, move and link together and leaves the choice to the
+    /// drop target — Windows Explorer's plain drag. Whether such a drop moves
+    /// or copies is the *target's* call: a Shell folder moves same-volume
+    /// drops and copies across volumes, which is exactly the split a source
+    /// cannot make on its own (it does not know where the drop will land).
+    Any,
+}
+
+/// The modifier keys held down right now, named like the DOM keyboard events
+/// the webview never receives during a native drag-and-drop.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyModifiers {
+    pub alt_key: bool,
+    pub ctrl_key: bool,
+    pub meta_key: bool,
+    pub shift_key: bool,
+}
+
+/// Reports the modifier keys currently held, straight from the OS. Tauri's
+/// drag-drop events carry only paths and a position, so a drop of files from
+/// another application cannot read Ctrl/Shift/Alt off a DOM event the way the
+/// in-window drag does; the frontend polls this instead while a drag hovers.
+#[tauri::command]
+#[specta::specta]
+pub fn get_key_modifiers() -> KeyModifiers {
+    #[cfg(windows)]
+    {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{
+            GetAsyncKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+        };
+
+        // `GetAsyncKeyState` returns the high bit for "down right now" and the
+        // low bit for "pressed since the last call" — only the former counts.
+        fn held(key: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY) -> bool {
+            (unsafe { GetAsyncKeyState(key.0 as i32) }) < 0
+        }
+
+        KeyModifiers {
+            alt_key: held(VK_MENU),
+            ctrl_key: held(VK_CONTROL),
+            meta_key: held(VK_LWIN) || held(VK_RWIN),
+            shift_key: held(VK_SHIFT),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        // No global key-state query wired up on the other platforms yet, so
+        // their drops fall back to the volume rule (same volume moves, across
+        // volumes copies) with no modifier overrides.
+        KeyModifiers::default()
+    }
 }
 
 /// Starts a native drag carrying the given files out of the window, e.g. into
@@ -360,6 +412,7 @@ mod platform {
                 DragOutMode::Copy => drag::DragMode::Copy,
                 DragOutMode::Move => drag::DragMode::Move,
                 DragOutMode::Link => drag::DragMode::Link,
+                DragOutMode::Any => drag::DragMode::Any,
             };
             // DoDragDrop blocks in a modal loop that pumps window messages
             // until the user drops or cancels, so the main thread stays
@@ -559,6 +612,7 @@ fn start_drag_out_impl(
                 DragOutMode::Copy => drag::DragMode::Copy,
                 DragOutMode::Move => drag::DragMode::Move,
                 DragOutMode::Link => drag::DragMode::Link,
+                DragOutMode::Any => drag::DragMode::Any,
             },
             drag_image_offset: None,
         };
