@@ -18,10 +18,12 @@ import {
   DEFAULT_SORT_ORDER,
   densityAtom,
   foldersFirstAtom,
+  iconStyleAtom,
   sortKeyAtom,
   sortOrderAtom,
   viewModeAtom,
   type ExplorerDensity,
+  type ExplorerIconStyle,
   type ExplorerSortKey,
   type ExplorerSortOrder,
   type ExplorerViewMode,
@@ -39,6 +41,11 @@ const DENSITY_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerDensity }> 
   { label: "view.densitySpacious", value: "spacious" },
 ];
 
+const ICON_STYLE_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerIconStyle }> = [
+  { label: "view.iconSystem", value: "system" },
+  { label: "view.iconThemed", value: "themed" },
+];
+
 const SORT_KEY_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerSortKey }> = [
   { label: "sort.keyName", value: "name" },
   { label: "sort.keySize", value: "size" },
@@ -53,7 +60,7 @@ const SORT_ORDER_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerSortOrde
 
 /**
  * The toolbar's single display menu: how the listing is arranged (view mode,
- * density, sort, folder pinning).
+ * density, icon set, sort, folder pinning).
  *
  * These used to be split across three surfaces — a view-mode segmented control
  * and a density dropdown in the status bar, plus a sort dropdown in the
@@ -71,6 +78,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
   const { t } = useTranslation("explorer");
   const [viewMode, setViewMode] = useAtom(viewModeAtom);
   const [density, setDensity] = useAtom(densityAtom);
+  const [iconStyle, setIconStyle] = useAtom(iconStyleAtom);
   const [sortKey, setSortKey] = useAtom(sortKeyAtom);
   const [sortOrder, setSortOrder] = useAtom(sortOrderAtom);
   const [foldersFirst, setFoldersFirst] = useAtom(foldersFirstAtom);
@@ -105,6 +113,19 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
           value={density}
         >
           {DENSITY_OPTIONS.map((option) => (
+            <DropdownMenuRadioItem key={option.value} value={option.value}>
+              {t(option.label)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel>{t("view.iconStyleLabel")}</DropdownMenuLabel>
+        <DropdownMenuRadioGroup
+          onValueChange={(value) => setIconStyle(value as ExplorerIconStyle)}
+          value={iconStyle}
+        >
+          {ICON_STYLE_OPTIONS.map((option) => (
             <DropdownMenuRadioItem key={option.value} value={option.value}>
               {t(option.label)}
             </DropdownMenuRadioItem>

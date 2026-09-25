@@ -432,7 +432,10 @@
     "densityLabel": "Density",
     "densityCompact": "Compact",
     "densityComfortable": "Comfortable",
-    "densitySpacious": "Spacious"
+    "densitySpacious": "Spacious",
+    "iconStyleLabel": "Icons",
+    "iconSystem": "System icons",
+    "iconThemed": "Built-in icons"
   },
   "tabs": {
     "ariaLabel": "File tabs",

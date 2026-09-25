@@ -1,9 +1,11 @@
+import { useAtomValue } from "jotai";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { isWindowsPlatform } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import { getFileExtension, hasKnownFileExtension } from "./file-icons";
+import { iconStyleAtom } from "./preferences";
 import type { DirectoryEntry } from "./types";
 
 /** Application-like types whose shell icon is always more informative than
@@ -20,11 +22,35 @@ const FILE_ICON_URL_ORIGIN = isWindowsPlatform
   : "fileicon://localhost";
 
 /**
- * OS icons take over for app-like files and for extensions the built-in map
- * does not know — the shell usually has a registered handler icon there.
- * Known categories keep their toned Lucide glyphs for a consistent design.
+ * Whether this row should draw the operating system's icon for its entry.
+ *
+ * A hook because the answer is a preference. It takes a nullable entry so a
+ * caller with an optional one (`entry-preview.tsx`) can still call it
+ * unconditionally.
+ *
+ * `"system"` has no platform gate to apply: every platform now answers
+ * `fileicon://` for files and folders alike, and when the shell has nothing for
+ * a path the protocol 404s and `NativeIconImage` keeps the drawn glyph.
  */
-export function isNativeIconSupported(entry: DirectoryEntry): boolean {
+export function useNativeIconFor(entry: DirectoryEntry | null | undefined): boolean {
+  const iconStyle = useAtomValue(iconStyleAtom);
+  if (!entry) {
+    return false;
+  }
+  if (iconStyle === "system") {
+    return entry.kind === "file" || entry.kind === "directory";
+  }
+  return usesShellIconWhereNoGlyphExists(entry);
+}
+
+/**
+ * The rule that predates the preference, and what `"themed"` still means:
+ * OS icons take over for app-like files and for extensions the built-in map
+ * does not know — the Windows shell usually has a registered handler icon
+ * there. Known categories keep their toned Lucide glyphs for a consistent
+ * design.
+ */
+function usesShellIconWhereNoGlyphExists(entry: DirectoryEntry): boolean {
   if (!isWindowsPlatform || entry.kind !== "file") {
     return false;
   }
@@ -50,7 +76,8 @@ export function buildFileIconUrl(entry: DirectoryEntry, size: number): string {
 /**
  * Lazy OS-native icon: shows the Lucide fallback until the shell icon
  * arrives and keeps it forever on any error (missing path, dead shortcut
- * target, non-Windows platform), so every slot always renders something.
+ * target, a platform whose shell has nothing for this file), so every slot
+ * always renders something.
  */
 export function NativeIconImage({
   className,

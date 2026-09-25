@@ -432,7 +432,10 @@
     "densityLabel": "显示密度",
     "densityCompact": "紧凑",
     "densityComfortable": "舒适",
-    "densitySpacious": "宽松"
+    "densitySpacious": "宽松",
+    "iconStyleLabel": "图标",
+    "iconSystem": "系统图标",
+    "iconThemed": "内置图标"
   },
   "tabs": {
     "ariaLabel": "文件标签页",

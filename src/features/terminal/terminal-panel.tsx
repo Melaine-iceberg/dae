@@ -69,11 +69,11 @@ function readTerminalTheme(ansiOverride: AnsiPalette | null): ITheme {
     // The panel is the one surface whose *content* may deviate from the
     // neutral ladder; its chrome above may not. background/foreground follow
     // the content plane, and the caret is the one accent in the block.
-    background: token("--card", "#101112"),
-    foreground: token("--foreground", "#f7f8f8"),
-    cursor: token("--primary", "#8284f8"),
-    cursorAccent: token("--card", "#101112"),
-    selectionBackground: token("--accent", "#1d1e21"),
+    background: token("--card", "#27292c"),
+    foreground: token("--foreground", "#e5e6e8"),
+    cursor: token("--primary", "#9496ff"),
+    cursorAccent: token("--card", "#27292c"),
+    selectionBackground: token("--accent", "#35373c"),
     black: ansi[0],
     red: ansi[1],
     green: ansi[2],

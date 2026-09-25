@@ -241,8 +241,8 @@ pub fn handle_thumbnail_protocol(
 }
 
 /// Serves `fileicon://localhost/?path=...&size=...` with the operating
-/// system's icon for the file (Windows shell icon extraction; other platforms
-/// answer 404 so the frontend keeps its Phosphor fallback).
+/// system's icon for the file or folder, on every platform — the extraction
+/// itself is in [`crate::file_icons`].
 ///
 /// Asynchronous for the same reason as [`handle_thumbnail_protocol`]: a shell
 /// icon is a COM round-trip, and it used to happen on the UI thread.
@@ -582,8 +582,8 @@ fn render_thumbnail(
     Ok(Some(thumbnail))
 }
 
-/// Renders the OS icon for `path_string` as PNG; `None` means the frontend
-/// should keep its type-based Phosphor icon.
+/// Renders the OS icon for `path_string`; `None` means the frontend keeps its
+/// own type artwork.
 fn render_file_icon(
     path_string: &str,
     size: u16,
@@ -592,7 +592,11 @@ fn render_file_icon(
     let path = Path::new(path_string);
 
     let metadata = fs::metadata(path).map_err(FileSystemError::from)?;
-    if !metadata.is_file() {
+    // Folders are the case a user sees first and the one this function used to
+    // reject outright: `!metadata.is_file()` answered `None` for every
+    // directory, so the folder column never reached an OS icon on any platform.
+    let is_dir = metadata.is_dir();
+    if !is_dir && !metadata.is_file() {
         return Ok(None);
     }
 
@@ -602,48 +606,53 @@ fn render_file_icon(
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_millis() as u64);
     let extension = extension_of(path);
-    // A file with no extension has no type association to key on, and the
-    // app-like set carries a per-file icon; both must stay path-keyed. Every
-    // other extension resolves to one shared handler icon.
-    let cache_key =
-        if extension.is_empty() || FILE_SPECIFIC_ICON_EXTENSIONS.contains(&extension.as_str()) {
-            format!(
-                "icon|{}|{}|{}|{size}",
-                path_string,
-                modified_at.unwrap_or(0),
-                metadata.len()
-            )
-        } else {
-            format!("icon-ext|{extension}|{size}")
-        };
+    // What may be keyed by extension is whatever resolves by *type*, because
+    // every file sharing a type gets the same icon. A directory does not: it
+    // carries a per-folder icon wherever the user has dropped one, and macOS
+    // badges the volume icons it draws for things like `/Applications`. So do
+    // the app-like types, and so does a file with no extension to key on.
+    let by_type = !is_dir
+        && !extension.is_empty()
+        && !FILE_SPECIFIC_ICON_EXTENSIONS.contains(&extension.as_str());
+    let cache_key = if by_type {
+        format!("icon-ext|{extension}|{size}")
+    } else {
+        format!(
+            "icon|{}|{}|{}|{size}",
+            path_string,
+            modified_at.unwrap_or(0),
+            metadata.len()
+        )
+    };
 
     if let Some(cached) = lookup_cache(&ICON_CACHE, &cache_key) {
         return Ok(Some(cached));
     }
 
-    let Some(bytes) = extract_file_icon_png(path_string, u32::from(size)) else {
+    let Some(icon) = crate::file_icons::extract(path_string, u32::from(size), is_dir) else {
         return Ok(None);
     };
 
-    let icon = Arc::new(RenderedThumbnail {
-        mime: "image/png",
-        bytes,
+    let rendered = Arc::new(RenderedThumbnail {
+        mime: icon.mime,
+        bytes: icon.bytes,
     });
     store_cache(
         &ICON_CACHE,
         ICON_CACHE_MAX_ENTRIES,
         cache_key,
-        Arc::clone(&icon),
+        Arc::clone(&rendered),
     );
-    Ok(Some(icon))
+    Ok(Some(rendered))
 }
 
 /// Windows shell icon extraction: `IShellItemImageFactory` resolves whatever
 /// Explorer would show — the target icon for `.lnk`/`.url` shortcuts, the
 /// embedded icon for executables, the registered handler icon otherwise.
 ///
-/// `shell_commands.rs` reuses it for the icon paths an `IExplorerCommand`
-/// reports.
+/// Two callers: [`crate::file_icons`] on the render pool, and `shell_commands.rs`
+/// for the icon paths an `IExplorerCommand` reports. They share the apartment
+/// and the cache here for exactly that reason.
 #[cfg(windows)]
 pub(crate) fn extract_file_icon_png(path: &str, size: u32) -> Option<Vec<u8>> {
     use windows::Win32::UI::Shell::{SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT};
@@ -777,13 +786,6 @@ pub(crate) fn bitmap_to_png(bitmap: windows::Win32::Graphics::Gdi::HBITMAP) -> O
 // back to its type-based Phosphor icons for PDF/video/HEIC.
 #[cfg(not(windows))]
 fn extract_shell_thumbnail_png(_path: &str, _size: u32) -> Option<Vec<u8>> {
-    None
-}
-
-// No shell icon extraction on other platforms yet; the frontend falls back
-// to its type-based Phosphor icons.
-#[cfg(not(windows))]
-fn extract_file_icon_png(_path: &str, _size: u32) -> Option<Vec<u8>> {
     None
 }
 

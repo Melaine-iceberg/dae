@@ -26,6 +26,7 @@ export type { ExplorerSortKey, ExplorerSortOrder } from "./entry-order";
 
 export type ExplorerViewMode = "list" | "grid" | "column";
 export type ExplorerDensity = "compact" | "comfortable" | "spacious";
+export type ExplorerIconStyle = "system" | "themed";
 export type ExplorerKindFilter = "all" | "folders" | "files" | "images";
 export type ExplorerModifiedFilter = "any" | "today" | "week" | "month";
 export type ExplorerSizeFilter = "any" | "small" | "medium" | "large";
@@ -49,6 +50,17 @@ export const densityAtom = atomWithStorage<ExplorerDensity>("explorer.density", 
 export const sortKeyAtom = atomWithStorage<ExplorerSortKey>("explorer.sortKey", "name");
 export const sortOrderAtom = atomWithStorage<ExplorerSortOrder>("explorer.sortOrder", "asc");
 export const foldersFirstAtom = atomWithStorage<boolean>("explorer.foldersFirst", true);
+
+/**
+ * Which icons a listing draws.
+ *
+ * `"system"` asks the shell for every file and folder — the OS's own artwork is
+ * what makes a file manager read as part of the desktop rather than as an app
+ * drawn in its colours. `"themed"` keeps the built-in glyph set and defers to
+ * the shell only where a glyph cannot say what the file is (Windows shortcuts,
+ * installers, and extensions the map does not know); see `native-icon.tsx`.
+ */
+export const iconStyleAtom = atomWithStorage<ExplorerIconStyle>("explorer.iconStyle", "system");
 
 /**
  * Whether hidden entries are listed at all. Defaults to `true` (the app has

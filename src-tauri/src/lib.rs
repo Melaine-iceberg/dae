@@ -1,11 +1,17 @@
 mod deep_link;
 mod default_manager;
+mod file_icons;
 mod file_system;
 mod settings;
 mod shell_commands;
 mod system_accent;
 mod tab_windows;
 mod terminal;
+// XDG base-directory resolution, shared by `file_icons` and `shell_commands`.
+mod xdg;
+// Decides whether the OS paints anything behind this window (Mica, vibrancy)
+// and has to be asked before the first window is built — see its module docs.
+mod window_material;
 // Release-only: the updater's endpoint and public key come from
 // `tauri.release.conf.json`, which CI merges in via `--config`. Dev builds have
 // no such config, so there is nothing to check against.
@@ -128,6 +134,23 @@ pub fn run() {
             log::info!("dae {} started", app.package_info().version);
 
             specta.mount_events(app);
+
+            // The config declares this window but no longer creates it, because
+            // whether it must be transparent is a run-time question that has to be
+            // answered before the window exists: Mica and vibrancy are invisible
+            // through an opaque webview, and a transparent window on a platform
+            // with no backdrop shows the desktop through the tab strip. `create:
+            // false` keeps `tauri.conf.json` the single description of the window
+            // itself while `window_material` adds that one flag. Building it first
+            // also means everything below — the deep link, the reveal fallback —
+            // finds a window that already exists.
+            let builder = tauri::WebviewWindowBuilder::from_config(
+                app.handle(),
+                &app.config().app.windows[0],
+            )?;
+            let main_window = window_material::configure(builder).build()?;
+            window_material::attach(&main_window);
+
             file_system::connections::init(app.handle())?;
             file_system::cloud::accounts::init(app.handle())?;
             settings::init(app.handle())?;
@@ -136,6 +159,12 @@ pub fn run() {
             // frontend also pulls `get_system_accent` once — the pair is the
             // same read-late-or-early race the deep link buffer closes.
             system_accent::init(app.handle());
+            // Same shape as the accent watcher: an OS setting that can move while
+            // the app runs (the transparency toggle in Settings › Personalisation)
+            // is re-read rather than polled by the frontend. Unlike the accent, its
+            // answer can only ever go down, because a window built opaque cannot be
+            // made to show a backdrop — see `window_material::clamp`.
+            window_material::init(app.handle());
 
             // macOS delivers deep links through the plugin's open-url event;
             // Windows/Linux pass them as CLI args (also for the very first
@@ -392,6 +421,8 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             tab_windows::tear_off_tab,
             tab_windows::take_tab_handoff,
             system_accent::get_system_accent,
+            window_material::get_window_material,
+            window_material::set_window_material_appearance,
             get_package_family_name
         ])
         .events(tauri_specta::collect_events![
@@ -405,6 +436,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             tab_windows::TabDragHover,
             tab_windows::TabDragLeave,
             tab_windows::TabMergedIntoWindow,
-            system_accent::SystemAccentChanged
+            system_accent::SystemAccentChanged,
+            window_material::WindowMaterialChanged
         ])
 }

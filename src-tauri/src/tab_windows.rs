@@ -645,7 +645,7 @@ pub async fn tear_off_tab(
 
     state.insert(label.clone(), payload)?;
 
-    let build_result =
+    let build_result = crate::window_material::configure(
         WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html".into()))
             .title("dae")
             .inner_size(
@@ -663,8 +663,9 @@ pub async fn tear_off_tab(
             .position(logical_x, logical_y)
             .decorations(false)
             .visible(false)
-            .focused(true)
-            .build();
+            .focused(true),
+    )
+    .build();
 
     let window = match build_result {
         Ok(window) => window,
@@ -688,6 +689,8 @@ pub async fn tear_off_tab(
     // the new window has a monitor of its own. Correct the final placement in
     // physical desktop coordinates so mixed-DPI monitor layouts stay aligned.
     let _ = window.set_position(PhysicalPosition::new(physical_x, physical_y));
+
+    crate::window_material::attach(&window);
 
     if let Err(error) = window.show() {
         let _ = window.close();

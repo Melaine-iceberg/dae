@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { getPreviewLanguage, highlightCode, highlightMarkdownCode } from "./code-highlight";
 import { getEntryPresentation } from "./file-icons";
-import { isNativeIconSupported, NativeIconImage } from "./native-icon";
+import { NativeIconImage, useNativeIconFor } from "./native-icon";
 import { isThumbnailSupported, ThumbnailImage } from "./thumbnail";
 import type { DirectoryEntry } from "./types";
 
@@ -156,6 +156,7 @@ export function EntryPreview({
   const language =
     entry?.kind === "file" && !supportsMarkdown ? getPreviewLanguage(entry.name) : null;
   const supportsThumbnail = entry !== null && isThumbnailSupported(entry);
+  const showNativeIcon = useNativeIconFor(entry);
   // Markdown rides the text-read path even though it skips code highlighting.
   const supportsText =
     entry?.kind === "file" &&
@@ -333,7 +334,7 @@ export function EntryPreview({
               </div>
             ) : (
               <div className="flex h-32 shrink-0 items-center justify-center rounded-lg bg-muted">
-                {entry && isNativeIconSupported(entry) ? (
+                {showNativeIcon ? (
                   <NativeIconImage
                     className="size-12"
                     entry={entry}

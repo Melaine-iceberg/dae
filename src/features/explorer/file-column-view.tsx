@@ -20,7 +20,7 @@ import { getEntryPresentation } from "./file-icons";
 import { TypeIconTile } from "./icon-tile";
 import type { MenuActions } from "./file-list";
 import { listingViewOf, type ListingView } from "./listing-view";
-import { isNativeIconSupported, NativeIconImage } from "./native-icon";
+import { NativeIconImage, useNativeIconFor } from "./native-icon";
 import {
   filterHiddenEntries,
   foldersFirstAtom,
@@ -298,6 +298,7 @@ function PaneRow({
 }) {
   const isDirectory = entry.kind === "directory";
   const presentation = getEntryPresentation(entry);
+  const showNativeIcon = useNativeIconFor(entry);
   const isExpanded = activeChildPath === entry.path;
 
   return (
@@ -341,7 +342,7 @@ function PaneRow({
           title={entry.path}
         >
           <EntryIconFrame entry={entry}>
-            {isNativeIconSupported(entry) ? (
+            {showNativeIcon ? (
               <NativeIconImage
                 className="shrink-0"
                 entry={entry}

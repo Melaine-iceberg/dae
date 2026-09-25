@@ -48,6 +48,17 @@
           transform: rotate(360deg);
         }
       }
+      /* 系统窗口材质（Win11 Mica / macOS vibrancy）只会在“这张文档什么都没画”的
+         地方透出来，所以首帧就要按材质决定画布是否透明：等 React 挂载再改，等于
+         在整包加载期间用一块不透明画布把材质盖住。属性由下面的启动脚本写入，
+         与 src/lib/window-material.ts 挂载后写的是同一个，App.css 的材质块读的
+         也是同一个。`data-window-material="none"` 不在此列，即沿用上面两行。 */
+      html[data-window-material="mica"],
+      html[data-window-material="vibrancy"],
+      html[data-window-material="mica"] body,
+      html[data-window-material="vibrancy"] body {
+        background: transparent;
+      }
     </style>
     <script>
       try {
@@ -58,6 +69,14 @@
         if (dark) document.documentElement.classList.add("dark");
         document.documentElement.style.colorScheme = dark ? "dark" : "light";
       } catch (e) {}
+    </script>
+    <!-- 材质结论由 Rust 侧以 initialization_script 在任何页面脚本之前注入
+         （window_material::boot_script），因此这里同步可读，不需要一次异步 IPC，
+         也不会出现“先不透明、随后才透明”的闪动。认不得的值一律按“没有材质”处理。 -->
+    <script>
+      var material = window.__DAE_WINDOW_MATERIAL__;
+      document.documentElement.dataset.windowMaterial =
+        material === "mica" || material === "vibrancy" ? material : "none";
     </script>
   </head>
 

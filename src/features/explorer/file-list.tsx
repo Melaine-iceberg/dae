@@ -98,7 +98,7 @@ import {
   type ListingView,
 } from "./listing-view";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
-import { isNativeIconSupported, NativeIconImage } from "./native-icon";
+import { NativeIconImage, useNativeIconFor } from "./native-icon";
 import {
   DEFAULT_SORT_ORDER,
   DENSITY_ROW_HEIGHT,
@@ -1479,6 +1479,7 @@ function FileListRow({
 }) {
   const { t } = useTranslation("explorer");
   const presentation = getEntryPresentation(entry);
+  const showNativeIcon = useNativeIconFor(entry);
   const isDirectory = entry.kind === "directory";
   const entryStatus = getEntryGitStatus(gitStatus, entry);
   const displaySize = isDirectory ? null : entry.size;
@@ -1521,7 +1522,7 @@ function FileListRow({
         >
           <div className="flex min-w-0 items-center gap-2.5 px-3">
             <EntryIconFrame entry={entry}>
-              {isNativeIconSupported(entry) ? (
+              {showNativeIcon ? (
                 <NativeIconImage
                   className="shrink-0"
                   entry={entry}

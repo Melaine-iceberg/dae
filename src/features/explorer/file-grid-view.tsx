@@ -21,7 +21,7 @@ import { TypeIconTile } from "./icon-tile";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { entriesInRange, type ListingView } from "./listing-view";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
-import { isNativeIconSupported, NativeIconImage } from "./native-icon";
+import { NativeIconImage, useNativeIconFor } from "./native-icon";
 import { densityAtom, type ExplorerDensity } from "./preferences";
 import { isThumbnailSupported, ThumbnailImage } from "./thumbnail";
 import type { DirectoryEntry } from "./types";
@@ -318,6 +318,7 @@ function GridCell({
 }) {
   const isDirectory = entry.kind === "directory";
   const presentation = getEntryPresentation(entry);
+  const showNativeIcon = useNativeIconFor(entry);
   const iconSize = GRID_ICON_SIZE[density];
   const showThumbnail = isThumbnailSupported(entry);
   const entryStatus: GitEntryStatusKind | undefined = getEntryGitStatus(gitStatus, entry);
@@ -362,7 +363,7 @@ function GridCell({
                 requestSize={128}
               />
             </EntryIconFrame>
-          ) : isNativeIconSupported(entry) ? (
+          ) : showNativeIcon ? (
             <EntryIconFrame badgeSize="md" entry={entry}>
               <NativeIconImage
                 className="shrink-0"

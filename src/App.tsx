@@ -21,6 +21,11 @@ import { resolveBinding } from "@/features/settings/shortcut-registry";
 import { HOTKEY_COMMON_OPTIONS, asHotkey } from "@/features/settings/hotkeys";
 import { applySystemTheme, watchSystemTheme } from "@/lib/theme";
 import { applySystemAccent, watchSystemAccent } from "@/lib/system-accent";
+import {
+  applyWindowMaterial,
+  syncWindowMaterialTheme,
+  watchWindowMaterial,
+} from "@/lib/window-material";
 
 // Overlays that only appear on user action; their chunks load on demand so
 // the first frame stays lean.
@@ -82,6 +87,21 @@ function App() {
   // the shell keeps its shipped indigo via the CSS fallbacks — no call site
   // here changes when it starts working.
   useEffect(() => watchSystemAccent(applySystemAccent), []);
+  // Window backdrop (see src/lib/window-material.ts): `<html>` carries whatever
+  // the platform can actually composite, and App.css's material block lets the
+  // canvas and the nav column show it.
+  useEffect(() => watchWindowMaterial(applyWindowMaterial), []);
+  // The backdrop tints itself from the *system* appearance, which is not
+  // necessarily the one this shell is pinned to — so the theme is reported on
+  // mount and again on every change. Both `setThemePreference` and
+  // `applySystemTheme` dispatch the event, and they fire before this window's
+  // backdrop is applied as often as not, which is why the first call is here
+  // rather than only in the listener.
+  useEffect(() => {
+    syncWindowMaterialTheme();
+    window.addEventListener("app-theme-change", syncWindowMaterialTheme);
+    return () => window.removeEventListener("app-theme-change", syncWindowMaterialTheme);
+  }, []);
 
   // The undo/redo stacks live in the backend; mirror their availability so
   // every surface (not just the explorer that ran the last operation) can

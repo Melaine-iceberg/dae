@@ -166,9 +166,12 @@
      its columns are divided by hairlines, not by shadows. Each step pairs a
      tight contact shadow with a wide ambient one, so a surface reads as
      *sitting on* the plane rather than merely being outlined. Strength is
-     driven by the per-theme --shadow-a* stops below: a black shadow is nearly
-     invisible on a near-black canvas, so dark mode multiplies the same four
-     steps up instead of inventing a second set of shadows. */
+     driven by the per-theme --shadow-a* stops below, and both schemes now run
+     nearly the same four: a black shadow used to do no work at all on a
+     near-black canvas (measured, the old 36/46/58/70 stops moved the canvas by
+     only −1.9 to −2.4 L*, so the four steps were one blur), which is why dark
+     mode once needed inflated stops. On a graphite canvas the light stops
+     resolve into a ladder. */
   --shadow-ambient-xs:
     0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
     0 1px 3px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent);
@@ -316,9 +319,11 @@
   --width-preview: 26rem;
 
   /* Dimming layer behind a modal. Declared per scheme rather than written as
-     `bg-black/40` at the call site: on the near-black dark canvas a 40% black
-     scrim is almost invisible, so dark mode needs a stronger one to separate
-     the dialog from the content it covers. */
+     `bg-black/40` at the call site because the two schemes have different
+     room to fall: 40% black takes paper down ≈18 L*, and dark mode needs the
+     stronger 60% to reach ≈8 on a graphite canvas. (Under the old near-black
+     canvas even 60% only moved it 1.4 — the modal floated over an undimmed
+     window.) */
   --color-scrim: var(--scrim);
 
   /* Indeterminate progress: a tight linear sweep, no waves. */
@@ -403,39 +408,49 @@
 }
 
 .dark {
-  /* Linear — dark. A cool near-black canvas (#08090a family) carries a
-     clear ladder: canvas → sidebar column → content plane → floating layer,
-     separated by hairline borders rather than heavy shadows (black-on-near-
-     black does nothing at light-mode strengths); the one raised chrome
-     element, the active tab chip, adds a single 1px inset top highlight.
-     Every neutral keeps a faint cool cast so the window reads as graphite,
-     not void; the accent is Linear's indigo, brightened for dark surfaces,
-     and the fill's label inverts to ink — white on a vivid indigo cannot
-     reach AA, ink on it clears ≈8:1. */
+  /* Linear — dark, lifted into the band the platforms actually use. Every dark
+     window this shell can appear in sits between L* 12 and L* 24 — macOS'
+     `windowBackgroundColor`, Win11's Mica over a dark desktop, Adwaita dark all
+     land there. A near-black canvas is the video-editor convention, not the
+     system-application one, and against real OS file icons it read as a hole
+     punched in the desktop.
+
+     The ladder is measured rather than eyeballed: canvas → sidebar column →
+     content plane → recessed surface → floating layer → tonal secondary →
+     hover → hairline, each a clear L* jump instead of a hex or two. Columns are
+     still divided by hairlines rather than shadows; the one raised chrome
+     element, the active tab chip, adds a single 1px inset top highlight. Every
+     neutral keeps a faint cool cast so the window reads as graphite, not void.
+
+     Because the surfaces moved up, everything sitting on them moved with them.
+     Labels pull in from near-white — #f7f8f8 was ≈18:1 on the old panel, far
+     past what 13px text needs, and the surplus read as glare on a mid-grey —
+     and the accent and status hues brighten once more to hold ≈4.5:1 against
+     the lightest surface they appear on, the hover highlight. */
   --shadow-color: #000000;
-  --shadow-a1: 36%;
-  --shadow-a2: 46%;
-  --shadow-a3: 58%;
-  --shadow-a4: 70%;
-  --background: #08090a; /* Linear canvas */
-  --foreground: #f7f8f8;
-  --card: #101112; /* panel surface — Linear's card grey */
-  --card-foreground: #f7f8f8;
-  --popover: #17181a; /* floating layer — one clear step above the panels */
-  --popover-foreground: #f7f8f8;
-  --accent-default: #8284f8; /* shipped accent — ≈6:1 on a panel */
-  --accent-default-ink: #101116; /* ink label on the vivid fill — ≈8:1 */
-  --on-destructive: #101116; /* the dark destructive is a light red: white on it ≈2:1 */
-  --secondary: #1a1b1d;
-  --secondary-foreground: #f7f8f8;
-  --muted: #141517; /* inner recessed surface — tracks, header strips, thumbnails */
-  --muted-foreground: #8a8f98; /* Linear muted — ≈6:1 on a panel */
-  --accent: #1d1e21; /* hover highlight — a half-step above the panel */
-  --accent-foreground: #f7f8f8;
-  --error-container: #4e2321;
+  --shadow-a1: 14%;
+  --shadow-a2: 22%;
+  --shadow-a3: 30%;
+  --shadow-a4: 42%;
+  --background: #1f2023; /* canvas — the L* 12 the platforms start at */
+  --foreground: #e5e6e8;
+  --card: #27292c; /* panel surface */
+  --card-foreground: #e5e6e8;
+  --popover: #2f3136; /* floating layer — two clear steps above the panels */
+  --popover-foreground: #e5e6e8;
+  --accent-default: #9496ff; /* shipped accent — 5.6:1 on a panel, 4.6 worst */
+  --accent-default-ink: #101116; /* ink label on the vivid fill — 7.2:1 */
+  --on-destructive: #101116; /* the dark destructive is a light red: white on it 2.4:1 */
+  --secondary: #323439;
+  --secondary-foreground: #e5e6e8;
+  --muted: #2b2d31; /* inner recessed surface — tracks, header strips, thumbnails */
+  --muted-foreground: #9ba0a9; /* 5.6:1 on a panel, 4.5 on the hover highlight */
+  --accent: #35373c; /* hover highlight — a half-step above the panel */
+  --accent-foreground: #e5e6e8;
+  --error-container: #6a312d;
   --on-error-container: #f7cdc9;
   --folder: #9aa3e8;
-  --destructive: #ff6b72;
+  --destructive: #ff8288;
   --success: #63d398;
   --warning: #e8a33d;
   --info: #8fa2ff;
@@ -445,15 +460,15 @@
   --tone-amber: #e8a33d;
   --tone-rose: #ff9ab2;
   --tone-cyan: #5acfd9;
-  --border: #26282c; /* hairline — ≈9% white on the canvas */
-  --input: #33353a;
+  --border: #3a3c42; /* hairline — 1.32:1 on a panel, the same step as light */
+  --input: #474a51;
   --radius: 10px;
   --scrim: rgb(0 0 0 / 0.6);
-  --sidebar: #0c0d0f; /* Linear sidebar — a half-step above the canvas, below the panel */
-  --sidebar-foreground: #f7f8f8;
-  --sidebar-accent: #1d1e21;
-  --sidebar-accent-foreground: #f7f8f8;
-  --sidebar-border: #26282c;
+  --sidebar: #212226; /* Linear sidebar — a half-step above the canvas, below the panel */
+  --sidebar-foreground: #e5e6e8;
+  --sidebar-accent: #35373c;
+  --sidebar-accent-foreground: #e5e6e8;
+  --sidebar-border: #3a3c42;
 }
 
 /* ---------------------------------------------------------------------------
@@ -506,10 +521,45 @@
   --selection: color-mix(in oklab, var(--primary) 13%, transparent);
 }
 .dark {
-  /* The dark canvas is near-black: the same mix would land too faint to read
-     as a selection at all, so the strength roughly doubles per scheme the way
-     the shadow ladder does. */
+  /* Double the light strength, for a measured reason rather than the
+     near-black canvas that is no longer true of it: a selected row has to move
+     the panel further than hovering it already does, and on these surfaces the
+     hover highlight is worth +6.6 L*. At 13% the accent would buy only +6.4 —
+     a selection you could not tell from a pointer — so the strength doubles to
+     land on +13.0. */
   --selection: color-mix(in oklab, var(--primary) 26%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+   THE WINDOW-MATERIAL SEAM — see src/lib/window-material.ts.
+
+   Two roles here are the *window* rather than a surface inside it: the canvas
+   the panels sit on, and the nav column. Where the OS composites a backdrop
+   behind a window — Mica on Windows 11, the sidebar material on macOS — those
+   two are exactly where Explorer and Finder let it through, so they stop
+   painting and the desktop shows instead. Nothing else does: the content plane
+   is `--card`, and a file list over a live blur is unreadable, which is as true
+   of the platforms as of this shell.
+
+   Nothing asks for an effect and nothing offers a switch for it. <html> carries
+   `data-window-material` as the Rust side answers, and the answer is `"none"`
+   on a machine with no usable backdrop — Windows 10, any Linux desktop, and any
+   Windows whose user has turned transparency effects off, which the watcher
+   re-reads live. That is also why there is no `prefers-reduced-transparency`
+   guard here: on Windows the setting arrives as `"none"` one step before CSS
+   could second-guess it, and on macOS the material view substitutes its own
+   solid fill behind this same transparent chrome, which is what a native sidebar
+   does. Either way the platform, not this file, decides.
+
+   The override is an `html[…]` selector rather than a second `:root` because it
+   has to outrank both scheme blocks — `:root` and `.dark` declare these two
+   tokens with the same specificity, and repeating their values per scheme to win
+   on order is how a palette change ends up half-applied.
+   --------------------------------------------------------------------------- */
+html[data-window-material="mica"],
+html[data-window-material="vibrancy"] {
+  --background: transparent;
+  --sidebar: transparent;
 }
 
 @layer components {

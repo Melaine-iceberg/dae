@@ -50,9 +50,9 @@ use super::desktop_entry::{
 };
 use super::{Selection, SelectionKind, ShellCommand, assign_groups};
 use crate::file_system::error::FileSystemError;
+use crate::xdg::data_roots;
 use std::collections::HashSet;
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -61,71 +61,9 @@ use std::time::{Duration, Instant};
 /// every right-click is not worth it.
 const SCAN_TTL: Duration = Duration::from_secs(300);
 
-/// Subdirectories of an icon theme, largest first. A menu row renders at 16px,
-/// but scaled displays are common enough that a 48px source is worth preferring
-/// over a 16px one.
-const ICON_SIZES: &[&str] = &["48x48", "64x64", "32x32", "128x128", "256x256", "scalable"];
-/// Themes to try, in the order KDE and GNOME fall back.
-const ICON_THEMES: &[&str] = &["hicolor", "Adwaita", "breeze"];
-
 // ---------------------------------------------------------------------------
 // Discovery
 // ---------------------------------------------------------------------------
-
-fn home_dir() -> PathBuf {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .unwrap_or_else(|| PathBuf::from("/"))
-}
-
-/// The XDG data roots, most specific first: `$XDG_DATA_HOME`, then each
-/// `$XDG_DATA_DIRS` entry, each defaulted as the spec prescribes.
-fn data_roots() -> Vec<PathBuf> {
-    resolve_data_roots(
-        std::env::var_os("XDG_DATA_HOME").as_deref(),
-        std::env::var_os("XDG_DATA_DIRS").as_deref(),
-    )
-}
-
-/// The root list, from the raw environment values.
-///
-/// Split from the reads above so the *rules* can be tested rather than the
-/// host's environment. The spec is explicit about two cases that are silent
-/// failures when unhandled, both of which yield a root list that is quietly
-/// wrong instead of empty:
-///
-/// - An unset **or empty** `XDG_DATA_HOME` means `$HOME/.local/share`. An empty
-///   value taken at face value becomes the empty path, so icon lookups would
-///   scan `icons/…` relative to the working directory and find nothing.
-/// - A relative path in either variable is invalid and is ignored, rather than
-///   resolved against the working directory.
-fn resolve_data_roots(data_home: Option<&OsStr>, data_dirs: Option<&OsStr>) -> Vec<PathBuf> {
-    let mut roots = vec![
-        data_home
-            .map(PathBuf::from)
-            .filter(|path| path.is_absolute())
-            .unwrap_or_else(|| home_dir().join(".local/share")),
-    ];
-
-    match data_dirs {
-        Some(value) if !value.is_empty() => roots.extend(
-            value
-                .to_str()
-                .into_iter()
-                .flat_map(|value| value.split(':'))
-                .filter(|entry| !entry.is_empty())
-                .map(PathBuf::from)
-                .filter(|path| path.is_absolute()),
-        ),
-        _ => roots.extend([
-            PathBuf::from("/usr/local/share"),
-            PathBuf::from("/usr/share"),
-        ]),
-    }
-
-    roots
-}
 
 /// The service-menu directories, most specific first.
 ///
@@ -230,62 +168,24 @@ fn mime_of(path: &str, kind: SelectionKind) -> String {
 
 /// Resolves an `Icon=` value to a `data:` URL.
 ///
-/// The value is either an absolute path or a themed icon name. `xpm` is
-/// deliberately absent from the search: no webview renders it, and a row with a
-/// broken image is worse than one with dae's own glyph.
+/// The lookup itself is [`crate::file_icons`]s — one theme reader in the crate
+/// rather than two that disagree about what a theme contains. This only wraps
+/// the bytes for the channel a context menu travels over, which is a `data:` URL
+/// rather than the `fileicon://` protocol a listing uses because a menu is built
+/// once, on demand, and handed over in a single message.
+///
+/// This is deliberately wider than the search it replaced. That one tried three
+/// named themes in the `apps` context only, so a `.desktop` pointing at an icon
+/// that lived under `status/`, or that shipped in the user's theme rather than in
+/// `hicolor`, drew nothing.
 fn resolve_icon(value: &str) -> Option<String> {
-    if value.is_empty() || value == "-" {
-        return None;
-    }
-    if value.starts_with('/') {
-        return read_icon(Path::new(value));
-    }
-
-    for root in data_roots() {
-        let icons = root.join("icons");
-        for theme in ICON_THEMES {
-            for size in ICON_SIZES {
-                for extension in ["svg", "png"] {
-                    let candidate = icons
-                        .join(theme)
-                        .join(size)
-                        .join("apps")
-                        .join(format!("{value}.{extension}"));
-                    if let Some(resolved) = read_icon(&candidate) {
-                        return Some(resolved);
-                    }
-                }
-            }
-        }
-    }
-
-    // Last resort: `/usr/share/pixmaps`, where packages without a theme put
-    // their icons and which has no theme or size structure at all.
-    for extension in ["svg", "png"] {
-        if let Some(resolved) =
-            read_icon(&Path::new("/usr/share/pixmaps").join(format!("{value}.{extension}")))
-        {
-            return Some(resolved);
-        }
-    }
-
-    None
-}
-
-/// Reads an icon file as a `data:` URL with the right MIME type, so the SVG case
-/// renders as vector rather than as a missing image.
-fn read_icon(path: &Path) -> Option<String> {
     use base64::Engine as _;
 
-    let mime = match path.extension().and_then(|extension| extension.to_str()) {
-        Some("svg") => "image/svg+xml",
-        Some("png") => "image/png",
-        _ => return None,
-    };
-    let bytes = std::fs::read(path).ok()?;
+    let icon = crate::file_icons::resolve_named_icon(value)?;
     Some(format!(
-        "data:{mime};base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(bytes)
+        "data:{};base64,{}",
+        icon.mime,
+        base64::engine::general_purpose::STANDARD.encode(&icon.bytes)
     ))
 }
 
@@ -429,53 +329,6 @@ mod tests {
         assert_eq!(resolve_icon(""), None);
         assert_eq!(resolve_icon("-"), None);
         assert_eq!(resolve_icon("/nonexistent/path/icon.png"), None);
-    }
-
-    #[test]
-    fn reads_a_theme_root_from_the_data_directories() {
-        // The rules, not the machine's environment. Asserted through
-        // `resolve_data_roots` because the interesting inputs are the ones a
-        // working desktop never has — `XDG_DATA_HOME` set to nothing is the
-        // ordinary way to unset it, and it must not become the empty path.
-        //
-        // "Rooted" satisfies the shape check as well as "absolute" does: on a
-        // Unix host the defaults are absolute, and the fallbacks are `/`-rooted
-        // paths whose absoluteness is the host's business, not this module's.
-        let rooted = |roots: &[PathBuf]| {
-            roots
-                .iter()
-                .all(|root| !root.as_os_str().is_empty() && (root.is_absolute() || root.has_root()))
-        };
-
-        // Nothing set: `$HOME/.local/share` plus the two documented defaults.
-        let unset = resolve_data_roots(None, None);
-        assert!(rooted(&unset));
-        assert!(unset.contains(&PathBuf::from("/usr/share")));
-
-        // Set to the empty string, which the spec reads as unset.
-        let empty = resolve_data_roots(Some(OsStr::new("")), Some(OsStr::new("")));
-        assert!(rooted(&empty));
-        assert!(empty.contains(&PathBuf::from("/usr/share")));
-
-        // A relative element is invalid and dropped rather than resolved
-        // against the working directory.
-        let relative = resolve_data_roots(
-            Some(OsStr::new("share")),
-            Some(OsStr::new("share:/usr/share")),
-        );
-        assert!(rooted(&relative));
-        assert!(!relative.contains(&PathBuf::from("share")));
-
-        // What the absolute entries around it do is a Unix question: XDG paths
-        // are Unix paths, and on a Windows host — where this module's tests are
-        // compiled only to type-check it — `/usr/share` is root-relative and the
-        // "ignore relative entries" rule drops it along with the genuinely
-        // relative one. Asserted where the rule has its real meaning.
-        #[cfg(unix)]
-        {
-            assert!(relative.contains(&PathBuf::from("/usr/share")));
-            assert!(relative.iter().all(|root| root.is_absolute()));
-        }
     }
 
     #[test]

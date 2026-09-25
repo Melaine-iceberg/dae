@@ -37,7 +37,16 @@ tauri-build = { version = "2", features = [] }
 # aws-lc-rs) keeps the build free of CMake/NASM requirements on Windows.
 russh = { version = "0.63", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = "3.0.0"
-tauri = { version = "2", features = [] }
+# `macos-private-api` is the feature that makes a `transparent` window
+# compile on macOS at all (`WebviewWindowBuilder::transparent` is
+# `cfg`-gated on it), and `window_material` needs transparent windows to show
+# Mica / sidebar vibrancy through the chrome. It has to sit here rather than in
+# the macOS target table below because `tauri-build` compares this one line
+# against the `macOSPrivateApi` flag in `tauri.conf.json` on every host. On
+# Windows and Linux it only forwards to wry features that gate macOS code, so
+# it costs nothing there — what it does cost is Mac App Store eligibility,
+# which is a decision to make later rather than a surprise.
+tauri = { version = "2", features = ["macos-private-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Serializes the user settings panel (shortcuts, terminal, default file
@@ -217,8 +226,32 @@ core-foundation = "0.10.1"
 # so declaring them here adds no build time. `objc2` reaches the rest of the
 # crates' `Retained` and `ProtocolObject`, which is why it is named directly.
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSPasteboard"] }
-objc2-foundation = { version = "0.3", features = ["NSArray", "NSLocale", "NSString", "NSURL"] }
+objc2-app-kit = { version = "0.3", features = [
+  "NSApplication",
+  "NSPasteboard",
+  # `file_icons::macos` reads the Finder's icon: `iconForFile:` hands back an
+  # `NSImage`, whose `representations` are downcast to `NSBitmapImageRep` for a
+  # lossless TIFF that the `image` crate then re-encodes as PNG. Each of those
+  # three steps is behind its own feature.
+  "NSWorkspace",
+  "NSImage",
+  "NSImageRep",
+  "NSBitmapImageRep",
+] }
+objc2-foundation = { version = "0.3", features = [
+  "NSArray",
+  # `NSArray::iter` — how `file_icons::macos` walks an icon's representations —
+  # is behind this feature, and `NSArray` alone does not turn it on. Same reason
+  # `NSData` is named below.
+  "NSEnumerator",
+  "NSLocale",
+  "NSString",
+  "NSURL",
+  # Named directly for `NSData::to_vec()`. The AppKit features above turn it on
+  # transitively, but a transitive feature does not make a type nameable here —
+  # same reason `log` is declared above despite the plugin depending on it.
+  "NSData",
+] }
 objc2-uniform-type-identifiers = "0.3"
 # Reads the Finder put-back records (ptbN/ptbL) from ~/.Trash/.DS_Store so
 # the trash view can list and restore entries on macOS, where the `trash`
