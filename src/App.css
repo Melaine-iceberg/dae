@@ -531,6 +531,45 @@
 }
 
 /* ---------------------------------------------------------------------------
+   THE INACTIVE APPEARANCE — see src/lib/window-focus.ts.
+
+   A window that is not the user's current window stops asserting itself. The
+   user's accent is the loudest thing this shell paints — it is what marks a
+   row as chosen, a button as primary, a bar as nearly full — and while the
+   window is behind another one, none of those are asking for attention. So
+   the accent drains towards the neutral mid (`--muted-foreground`, one value
+   per scheme, so this rule needs no dark variant) and everything derived from
+   it drains with it: selection, filled buttons, focus rings, the capacity bar,
+   the active-tab underline, text selection. A quarter of the hue survives, so
+   the colour still identifies as the user's own choice and its return when
+   the window is refocused is the signal that the window is back.
+
+   The fill keeps the ink it was paired with, because 75% of the way to a
+   mid-grey lands in the same contrast band `--muted-foreground` was tuned to:
+   white on it in light is ≈5.5:1, the dark ink on the light grey in dark is
+   ≈7:1. The semantic set (`--destructive` / `--success` / `--warning` /
+   `--info`) stays put — a failed copy is just as failed in a background
+   window, and greying it out is how a status gets missed.
+
+   The one thing outside the seam is the active tab chip's raised edge
+   (`.tab-chip-active`): it is the shell's only "this element is part of the
+   frame" highlight and it has nothing to do while the frame is inactive. The
+   chip keeps its fill, its border and its weight — the active tab is still
+   the active tab, and a chip that changed size on a focus change would jitter.
+   The stoplights have their own AppKit behaviour in `window-controls.tsx`.
+   --------------------------------------------------------------------------- */
+html[data-window-focused="false"] {
+  --primary: color-mix(
+    in oklab,
+    var(--system-accent, var(--accent-default)) 25%,
+    var(--muted-foreground)
+  );
+}
+html[data-window-focused="false"] .tab-chip-active {
+  box-shadow: none;
+}
+
+/* ---------------------------------------------------------------------------
    THE WINDOW-MATERIAL SEAM — see src/lib/window-material.ts.
 
    Two roles here are the *window* rather than a surface inside it: the canvas
@@ -692,6 +731,38 @@ html[data-window-material="vibrancy"] {
     opacity: 0.16;
   }
 
+  /* Drop target: the one state a drag paints on a *destination*. A 10% wash
+     of the accent plus an inset 2px ring in the same hue — no glow, no scale,
+     no dash: the row it lands on is the only thing that changes, and it
+     changes the same way in every view. Named rather than left as the
+     `bg-primary/10 ring-2 ring-primary ring-inset` string three call sites
+     used to copy, so a fourth view cannot draw a fourth drop treatment, and
+     so the forced-colors block has one thing to re-express. */
+  .drop-target {
+    background: color-mix(in oklab, var(--primary) 10%, transparent);
+    box-shadow: inset 0 0 0 2px var(--primary);
+  }
+
+  /* Marquee: the rubber band drawn while a drag-selection is being pulled
+     across empty space. The same accent wash as the drop target at a third of
+     its ring strength — the rectangle is a gesture in progress, not a state
+     anyone is reading, so it is the quieter of the two. Named for the same
+     reason as `.drop-target`: one rectangle, one treatment. */
+  .marquee {
+    border: 1px solid color-mix(in oklab, var(--primary) 60%, transparent);
+    border-radius: var(--radius-sm);
+    background: color-mix(in oklab, var(--primary) 10%, transparent);
+  }
+
+  /* Image plate: the hairline under a thumbnail, so a white photograph or a
+     white PDF page cannot dissolve into the white panel behind it. The corner
+     comes from the call site — the shape scale descends inward (6px inside the
+     grid cell's 8px) — and the stroke is inset so it frames the pixels without
+     growing the box. */
+  .image-plate {
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--foreground) 8%, transparent);
+  }
+
   /* Entry-icon tiles take their corner from the shared shape scale, like
      every other square in the shell. They used to carry a 31% "squircle"
      radius of their own, inherited from the tinted plates this icon system
@@ -778,7 +849,9 @@ html[data-window-material="vibrancy"] {
 }
 
 /* Respect the OS reduced-motion preference: motion stays functional but
-   collapses to near-instant state changes. */
+   collapses to near-instant state changes. The view-transition pseudos are
+   not matched by the `*` above — they are tree-abiding pseudo-elements of the
+   document, not of any element — so they are listed here too. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -787,6 +860,213 @@ html[data-window-material="vibrancy"] {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   THE SHARED-ELEMENT TRANSITION — see src/lib/view-transition.ts.
+
+   One morph in the shell, spent on the Quick Look gesture: the entry's visual
+   grows into the preview's hero when a preview opens. The name below is the
+   target half of the pair (the source half is written on the entry's icon
+   frame for the length of one transition), and it lives here rather than
+   inline so there is one place that says which element is the hero.
+
+   It is a name, not an animation: the motion is the API's default morph, and
+   everything the name does not cover falls to the root crossfade, which is
+   the same fade the panel already entered with.
+   --------------------------------------------------------------------------- */
+.entry-preview-hero {
+  view-transition-name: entry-preview-hero;
+}
+
+/* ---------------------------------------------------------------------------
+   CONTRAST MODES — two settings that ask for a different shell, and what each
+   of them actually asks for.
+
+   `prefers-contrast: more` is a request for stronger separation *inside* this
+   design: the hairlines, the secondary ink and the state washes were tuned
+   for a comfortable window, and the user wants them to stop being subtle.
+   Everything here derives from `--foreground` and `--primary`, so one rule
+   serves both schemes and lands in each scheme's own ladder. (macOS Increase
+   Contrast and the GNOME high-contrast preference arrive this way.)
+
+   `forced-colors: active` is a different request: the palette is not this
+   shell's any more. What the forcing does to this shell's vocabulary, measured
+   in Chromium 154 — the WebView2 engine, which is where this mode exists:
+
+     * every `background-color` becomes `Canvas` at the specified alpha, so a
+       tint becomes a wash of the canvas over the canvas: the selection fill,
+       the modal scrim, the drop-target wash and the state layer all render as
+       nothing;
+     * every text and border colour becomes `CanvasText`, which is why the
+       hairlines survive at full strength and why the palette's text would sit
+       on whatever the selection fill became;
+     * `box-shadow` and `background-image` are removed outright — every focus
+       ring, the drop target's ring, the tab chip's raised edge and the
+       floating layers' shadows go with them. The layers keep their border,
+       which is why they still read as layers;
+     * a value written as a system-colour keyword (`Highlight`, `HighlightText`,
+       `CanvasText`, `ButtonFace`) is left alone — but only as a bare keyword:
+       `color-mix()` with one inside is computed first and then forced like any
+       other colour.
+
+   So this block re-expresses the affordances those treatments carried in the
+   only vocabulary that survives. It does not repaint the shell: the identity
+   colours (`--folder`, the six `--tone-*`) and the semantic set have no
+   equivalent in a user's palette and are left to the forcing, because they
+   say what a thing *is* and every row already says that in words.
+   --------------------------------------------------------------------------- */
+@media (prefers-contrast: more) {
+  /* The1.3:1 hairline is the first thing to give up: panel edges and input
+     borders move to roughly 3:1 against the surface they sit on. */
+  :root {
+    --border: color-mix(in oklab, var(--foreground) 34%, transparent);
+    --input: color-mix(in oklab, var(--foreground) 42%, transparent);
+    --sidebar-border: color-mix(in oklab, var(--foreground) 34%, transparent);
+    /* Secondary text keeps its role in the type ramp and loses its fade. */
+    --muted-foreground: color-mix(in oklab, var(--foreground) 82%, transparent);
+    --selection: color-mix(in oklab, var(--primary) 22%, transparent);
+  }
+  .dark {
+    --selection: color-mix(in oklab, var(--primary) 34%, transparent);
+  }
+  /* The state washes run at roughly double: a hovered row should not be a
+     hover the user has to hunt for. */
+  .state-layer:hover::after {
+    opacity: 0.14;
+  }
+  .state-layer:focus-visible::after {
+    opacity: 0.2;
+  }
+  .state-layer:active::after {
+    opacity: 0.26;
+  }
+}
+
+@media (forced-colors: active) {
+  /* Selection is the palette's own pair, and the ink is enforced onto the row
+     and everything inside it: a child that declared its own grey would
+     otherwise paint palette-grey on palette-highlight, two colours the user
+     never chose to see together. `aria-current` is the same idea one level up
+     — the sidebar entry, tree node, settings pane and breadcrumb segment that
+     say where the user *is*. */
+  :root {
+    --selection: Highlight;
+    /* The scrim's fill is gone to the canvas colour, which in a light palette
+       hides what is behind the dialog instead of dimming it. The dialog keeps
+       its border and that is the whole modal signal here. */
+    --scrim: transparent;
+    /* Hover is a fill in this shell, and the palette's only control fill is
+       `ButtonFace`. A palette that sets it to the canvas leaves hover silent,
+       which is why buttons also carry the edge below — accepted over
+       inventing a hover colour the palette does not express. */
+    --accent: ButtonFace;
+    --accent-foreground: ButtonText;
+    /* `focus-visible:border-ring` is a border and survives the forcing, so the
+       focus colour goes here; the ring half of the focus treatment is one of
+       the shadows the forcing removes. */
+    --ring: Highlight;
+  }
+
+  .bg-selection,
+  [aria-selected="true"],
+  [data-state="selected"],
+  [aria-current] {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+  .bg-selection *,
+  [aria-selected="true"] *,
+  [data-state="selected"] *,
+  [aria-current] * {
+    color: inherit;
+  }
+
+  /* Text selection inside inputs and other editable text. */
+  ::selection {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  /* The keyboard cursor. Menus and selects move DOM focus to the item the
+     keyboard is on; the fill they ask for is `--accent` above, which is not
+     guaranteed to separate from the menu in any given palette. "Which item am
+     I on" is the one thing that must never be subtle. */
+  [role="menuitem"]:focus,
+  [role="menuitemcheckbox"]:focus,
+  [role="menuitemradio"]:focus,
+  [role="option"]:focus {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+  [role="menuitem"]:focus *,
+  [role="menuitemcheckbox"]:focus *,
+  [role="menuitemradio"]:focus *,
+  [role="option"]:focus * {
+    color: inherit;
+  }
+
+  /* The state layer is a wash of the element's own ink at 7-16%, and the
+     forcing turns that wash into the canvas colour. `CanvasText` is the same
+     idea in the palette's terms — a wash of the ink — and the strengths step
+     up once, because a neutral wash is all the hover a two-colour palette
+     gets. */
+  .state-layer::after {
+    background-color: CanvasText;
+  }
+  .state-layer:hover::after {
+    opacity: 0.12;
+  }
+  .state-layer:focus-visible::after {
+    opacity: 0.16;
+  }
+  .state-layer:active::after {
+    opacity: 0.22;
+  }
+
+  /* Focus rings are `box-shadow` here and the forcing removes them, so focus
+     is an outline instead — inset, because a virtualized row scroller clips
+     anything drawn outside its rows. */
+  :focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  /* The edge that stands in for a button's hover fill. A button carrying a
+     state layer already has its wash, and a focused button already has the
+     outline above. */
+  button:hover:not(.state-layer):not(:focus-visible) {
+    outline: 1px solid CanvasText;
+    outline-offset: -1px;
+  }
+
+  /* The drop target's wash and ring are both gone; the ring's replacement is
+     the focus outline at the same strength. */
+  .drop-target {
+    background-color: transparent;
+    box-shadow: none;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  /* Data bars: a fill is a background, so the palette's ink draws them. The
+     warning step keeps `Highlight` — the one palette colour that means "attend
+     to this" — and the capacity text beside it says what changed. */
+  .capacity-fill {
+    background-color: CanvasText;
+  }
+  .capacity-fill--warn {
+    background-color: Highlight;
+  }
+  [data-slot="progress-indicator"] {
+    background-color: CanvasText;
   }
 }
 

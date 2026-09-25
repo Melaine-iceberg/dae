@@ -55,6 +55,7 @@ import { recordRecentItem } from "@/features/workspace/recents-atoms";
 import { shellCommandErrorAtom } from "@/features/shell-commands/shell-commands-atoms";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
 import { isWindowsPlatform } from "@/lib/platform";
+import { findEntryVisual, withSharedElement } from "@/lib/view-transition";
 
 import { ContentSearchResults, ContentSearchToolbar, useContentSearch } from "./content-search";
 import { ContextualActionBar } from "./contextual-action-bar";
@@ -398,8 +399,18 @@ export function ExplorerView({
 
   /** Space toggles the preview surface for the first selected entry. */
   const togglePreview = useCallback(() => {
-    setIsPreviewOpen((isOpen) => !isOpen);
-  }, []);
+    if (isPreviewOpen) {
+      setIsPreviewOpen(false);
+      return;
+    }
+    // Quick Look (src/lib/view-transition.ts): the entry's visual grows into
+    // the preview's hero. `findEntryVisual` hands back null when the
+    // virtualized listing has scrolled that entry out of the DOM — then this
+    // is the plain open it was before, under the panel's own fade.
+    withSharedElement(findEntryVisual(selectedEntries[0]?.path ?? null), () => {
+      setIsPreviewOpen(true);
+    });
+  }, [isPreviewOpen, selectedEntries]);
 
   /** Duplicates the selection in place; the backend picks unique "副本" names. */
   const duplicateSelection = useCallback(() => {

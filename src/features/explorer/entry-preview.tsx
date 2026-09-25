@@ -9,6 +9,7 @@ import { commands, type MediaPreview, type TextPreview } from "@/bindings";
 import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 import { getPreviewLanguage, highlightCode, highlightMarkdownCode } from "./code-highlight";
 import { getEntryPresentation } from "./file-icons";
@@ -253,7 +254,18 @@ export function EntryPreview({
       className="animate-in flex h-full w-preview shrink-0 flex-col overflow-hidden border-l border-border bg-card duration-fast fade-in"
     >
       <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-        {visual && VisualIcon ? <VisualIcon className="size-4 shrink-0" /> : null}
+        {visual && VisualIcon ? (
+          // The header icon is the transition's target when the entry has no
+          // thumbnail plate to grow into — one hero per preview, never two.
+          <span
+            className={cn(
+              "flex shrink-0",
+              !supportsThumbnail && "entry-preview-hero",
+            )}
+          >
+            <VisualIcon className="size-4 shrink-0" />
+          </span>
+        ) : null}
         <p
           className="min-w-0 flex-1 truncate text-body font-medium"
           title={entry?.name ?? undefined}
@@ -282,10 +294,10 @@ export function EntryPreview({
           <>
             {supportsThumbnail ? (
               <ThumbnailImage
-                className="flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted"
+                className="entry-preview-hero flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted"
                 entry={entry}
                 fallback={VisualIcon ? <VisualIcon className="size-12" /> : null}
-                requestSize={384}
+                displaySize={384}
               />
             ) : textPreview?.status === "ready" ? (
               <div className="flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-lg bg-muted">

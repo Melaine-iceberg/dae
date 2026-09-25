@@ -216,7 +216,7 @@ export function MarqueeOverlay({ rect }: { rect: MarqueeRect | null }) {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed z-40 rounded-sm border border-primary/60 bg-primary/10"
+      className="marquee pointer-events-none fixed z-40"
       style={{ height: rect.height, left: rect.left, top: rect.top, width: rect.width }}
     />
   );

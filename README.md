@@ -2,6 +2,15 @@
 
 This template should help get you started developing with Tauri, React and Typescript in Vite.
 
+## Design
+
+Visual and interaction changes are judged against
+[`docs/design-principles.md`](docs/design-principles.md): what the shell
+borrows from macOS, Windows 11 and GNOME, the closed type/radius/motion
+scales, and the tell list of treatments that make an application read as
+AI-made. The token source of truth is `src/App.css`; the document explains
+why the tokens are shaped the way they are.
+
 ## Tests
 
 Rust tests use [cargo-nextest](https://nexte.st/). Run them from the project root:

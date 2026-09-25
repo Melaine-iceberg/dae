@@ -13,7 +13,7 @@ import type { GitEntryStatusKind } from "@/bindings";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 
-import { EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
+import { DRAG_SOURCE_CLASS, EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { getEntryPresentation } from "./file-icons";
 import type { ListingNavContext, MenuActions } from "./file-list";
@@ -336,8 +336,8 @@ function GridCell({
             "render-contain state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-md px-2 py-2.5 text-center transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             isSelected && "bg-selection",
-            isDragging && "cursor-grabbing opacity-50",
-            isDropTarget && "bg-primary/10 ring-2 ring-primary ring-inset",
+            isDragging && DRAG_SOURCE_CLASS,
+            isDropTarget && "drop-target",
           )}
           data-entry-path={entry.path}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
@@ -358,9 +358,12 @@ function GridCell({
           {showThumbnail ? (
             <EntryIconFrame badgeSize="md" className="w-full" entry={entry}>
               <ThumbnailImage
-                className={cn("w-full shrink-0 self-center", GRID_IMAGE_ZONE_CLASS[density])}
+                className={cn(
+                  "w-full shrink-0 self-center rounded-sm",
+                  GRID_IMAGE_ZONE_CLASS[density],
+                )}
                 entry={entry}
-                requestSize={128}
+                displaySize={128}
               />
             </EntryIconFrame>
           ) : showNativeIcon ? (

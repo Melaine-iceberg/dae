@@ -14,7 +14,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/component
 import { cn } from "@/lib/utils";
 
 import { useDirectoryEntries } from "./directory-listing";
-import { EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
+import { DRAG_SOURCE_CLASS, EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { getEntryPresentation } from "./file-icons";
 import { TypeIconTile } from "./icon-tile";
@@ -317,8 +317,8 @@ function PaneRow({
             // fill, the drop target gets the ring.
             isSelected && "bg-selection",
             !isSelected && isExpanded && "bg-selection/60",
-            isDragging && "cursor-grabbing opacity-50",
-            dropTargetPath === entry.path && "bg-primary/10 ring-2 ring-primary ring-inset",
+            isDragging && DRAG_SOURCE_CLASS,
+            dropTargetPath === entry.path && "drop-target",
           )}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={(event) => {

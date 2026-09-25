@@ -83,7 +83,7 @@ import {
   type FileTransferOperation,
   type TransferOperation,
 } from "./drag-drop";
-import { EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
+import { DRAG_SOURCE_CLASS, EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { FileColumnView } from "./file-column-view";
 import { getEntryPresentation } from "./file-icons";
@@ -1500,8 +1500,8 @@ function FileListRow({
             "render-contain state-layer grid cursor-grab items-center justify-start rounded-sm whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             isSelected && "bg-selection",
-            isDragging && "cursor-grabbing opacity-50",
-            isDropTarget && "bg-primary/10 ring-2 ring-primary ring-inset",
+            isDragging && DRAG_SOURCE_CLASS,
+            isDropTarget && "drop-target",
           )}
           data-entry-path={entry.path}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}

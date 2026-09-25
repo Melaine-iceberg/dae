@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { isWindowsPlatform } from "@/lib/platform";
+import { cn } from "@/lib/utils";
 
 import { getFileExtension } from "./file-icons";
 import type { DirectoryEntry } from "./types";
@@ -79,28 +80,46 @@ export function buildThumbnailUrl(entry: DirectoryEntry, size: number): string {
 }
 
 /**
+ * The device-pixel size to request for a box of `cssSize` CSS pixels.
+ *
+ * The protocol hands back a bitmap of exactly the requested size, so a
+ * request made in CSS pixels is the one thing that makes a thumbnail look
+ * soft on a HiDPI screen: the webview then has to invent the missing rows.
+ * Doubling closes that, and the cap at 2x is where a thumbnail read at a
+ * glance stops earning its bytes — the cache key includes the size, so the
+ * extra pixels cost a decode once per file, not per scroll.
+ */
+function devicePixelSize(cssSize: number): number {
+  const ratio = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
+  return Math.round(cssSize * ratio);
+}
+
+/**
  * Lazy thumbnail image: renders nothing but a subtle placeholder until the
  * element approaches the viewport, then loads through the custom protocol
  * (parallel fetches + browser cache, no base64 IPC payload). Formats whose
  * producer is platform-dependent (PDF/video/HEIC shell thumbnails) may 404;
  * the optional `fallback` node takes over in that case.
+ *
+ * `displaySize` is the CSS size of the box the image has to cover — the
+ * component asks the protocol for the device pixels behind it.
  */
 export function ThumbnailImage({
   className,
   entry,
   fallback,
-  requestSize,
+  displaySize,
 }: {
   className?: string;
   entry: DirectoryEntry;
   fallback?: ReactNode;
-  requestSize: number;
+  displaySize: number;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isFailed, setIsFailed] = useState(false);
-  const thumbnailUrl = buildThumbnailUrl(entry, requestSize);
+  const thumbnailUrl = buildThumbnailUrl(entry, devicePixelSize(displaySize));
 
   useEffect(() => {
     setIsLoaded(false);
@@ -132,7 +151,9 @@ export function ThumbnailImage({
   }, []);
 
   return (
-    <div className={className} ref={containerRef}>
+    // `image-plate` is the hairline frame (App.css): the corner stays the
+    // call site's, from the shape scale.
+    <div className={cn("image-plate", className)} ref={containerRef}>
       {isVisible && !isFailed && (
         <img
           alt=""

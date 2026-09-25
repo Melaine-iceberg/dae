@@ -26,6 +26,7 @@ import {
   syncWindowMaterialTheme,
   watchWindowMaterial,
 } from "@/lib/window-material";
+import { applyWindowFocus, watchWindowFocus } from "@/lib/window-focus";
 
 // Overlays that only appear on user action; their chunks load on demand so
 // the first frame stays lean.
@@ -91,6 +92,11 @@ function App() {
   // the platform can actually composite, and App.css's material block lets the
   // canvas and the nav column show it.
   useEffect(() => watchWindowMaterial(applyWindowMaterial), []);
+  // Window focus (see src/lib/window-focus.ts): a window that is not the
+  // user's current one stops asserting itself — `<html data-window-focused>`
+  // drives the inactive appearance in App.css, and the window chrome reads
+  // the same seam for the stoplights and caption glyphs.
+  useEffect(() => watchWindowFocus(applyWindowFocus), []);
   // The backdrop tints itself from the *system* appearance, which is not
   // necessarily the one this shell is pinned to — so the theme is reported on
   // mount and again on every change. Both `setThemePreference` and

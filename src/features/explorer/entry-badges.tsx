@@ -8,9 +8,19 @@ import type { DirectoryEntry } from "./types";
 
 /**
  * Hidden entries stay listed but dimmed (Finder-style). Keep this before the
- * dragging `opacity-50` inside `cn()` so tailwind-merge lets dragging win.
+ * dragging class inside `cn()` so tailwind-merge lets dragging win.
  */
 export const HIDDEN_ENTRY_CLASS = "opacity-60";
+
+/**
+ * The drag source: the row the pointer is carrying, half-faded so the
+ * destination reads louder than the thing being moved. Named here beside
+ * `HIDDEN_ENTRY_CLASS` rather than copied at each view — list, grid and column
+ * all draw one drag treatment, and the opacity has to stay a utility so
+ * tailwind-merge resolves it against the hidden dim above instead of a
+ * component-layer class losing to it.
+ */
+export const DRAG_SOURCE_CLASS = "cursor-grabbing opacity-50";
 
 function ReadOnlyBadge({ className, size }: { className?: string; size: "sm" | "md" }) {
   const { t } = useTranslation("explorer");
@@ -53,7 +63,10 @@ export function EntryIconFrame({
   entry: DirectoryEntry;
 }) {
   return (
-    <span className={cn("relative inline-flex shrink-0", className)}>
+    // `data-entry-visual` is the hook a shared-element transition starts from
+    // (src/lib/view-transition.ts): one frame around every icon variant, one
+    // attribute to find it by.
+    <span className={cn("relative inline-flex shrink-0", className)} data-entry-visual={entry.path}>
       {children}
       {entry.kind === "file" && entry.readOnly && (
         <ReadOnlyBadge className="absolute -bottom-0.5 -left-0.5" size={badgeSize} />

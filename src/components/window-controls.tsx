@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { getAppWindow } from "@/lib/app-window";
 import { isMacPlatform } from "@/lib/platform";
+import { watchWindowFocus } from "@/lib/window-focus";
 
 const appWindow = getAppWindow();
 
@@ -59,7 +60,11 @@ function CaptionGlyph({ kind }: { kind: "close" | "maximize" | "minimize" | "res
 export function WindowControls() {
   const { t } = useTranslation("common");
   const [maximized, setMaximized] = useState(false);
+  // The window's focus is a seam of its own (src/lib/window-focus.ts) — this
+  // component is a second consumer of the same reading, not a second reader.
   const [focused, setFocused] = useState(true);
+
+  useEffect(() => watchWindowFocus(setFocused), []);
 
   useEffect(() => {
     if (!appWindow) return;
@@ -71,15 +76,10 @@ export function WindowControls() {
 
     sync();
     const unlistenResizePromise = appWindow.onResized(sync);
-    const unlistenFocusPromise = appWindow.onFocusChanged(({ payload }) => {
-      if (!disposed) setFocused(payload);
-    });
 
     return () => {
       disposed = true;
-      void Promise.all([unlistenResizePromise, unlistenFocusPromise]).then((unlisten) => {
-        unlisten.forEach((stopListening) => stopListening());
-      });
+      void unlistenResizePromise.then((unlisten) => unlisten());
     };
   }, []);
 
