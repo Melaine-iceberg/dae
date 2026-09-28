@@ -68,6 +68,7 @@
   },
   "disk": {
     "localDisk": "Local Disk ({{letter}}:)",
+    "systemVolume": "System",
     "title": "{{name}} · {{free}} free of {{total}}",
     "freePercent": "{{percent}}% free",
     "capacity": "{{free}} / {{total}}"

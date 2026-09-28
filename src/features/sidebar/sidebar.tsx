@@ -1061,19 +1061,29 @@ function DiskItem({
 
 function getDiskPresentation(volume: DiskVolume): { primary: string; secondary: string } {
   const driveLetter = /^([a-zA-Z]):[\\/]*$/.exec(volume.mountPoint)?.[1]?.toUpperCase();
+  const label = volume.name.trim();
+  const fileSystem = volume.fileSystem.trim();
 
   if (driveLetter) {
-    const label = volume.name.trim();
     return {
       primary: label
         ? `${label} (${driveLetter}:)`
         : i18n.t("sidebar:disk.localDisk", { letter: driveLetter }),
-      secondary: volume.fileSystem,
+      secondary: fileSystem,
     };
   }
 
+  // macOS supplies a volume name here; Linux only labels a filesystem that
+  // actually has a label, so an unlabelled mount is named after the last
+  // component of where it is mounted (`/mnt/win-c` → "win-c").
   return {
-    primary: volume.name.trim() || volume.mountPoint,
-    secondary: volume.mountPoint,
+    primary: label || mountLabel(volume.mountPoint),
+    secondary: fileSystem ? `${fileSystem} · ${volume.mountPoint}` : volume.mountPoint,
   };
+}
+
+/** The root mount has no last component to show, so it gets a fixed name. */
+function mountLabel(mountPoint: string): string {
+  const lastSegment = mountPoint.replace(/[/\\]+$/, "").split(/[/\\]/).pop();
+  return lastSegment || i18n.t("sidebar:disk.systemVolume");
 }

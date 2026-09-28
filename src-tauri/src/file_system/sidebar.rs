@@ -2,7 +2,13 @@ use super::error::FileSystemError;
 use super::types::path_to_string;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+#[cfg(target_os = "linux")]
+use std::collections::HashMap;
 use std::fs;
+#[cfg(target_os = "linux")]
+use std::os::unix::ffi::OsStrExt;
+#[cfg(target_os = "linux")]
+use std::path::Path;
 use std::path::PathBuf;
 use sysinfo::Disks;
 use tauri::Manager;
@@ -174,6 +180,10 @@ pub(super) fn list_disks_sync() -> Vec<DiskVolume> {
     #[cfg(target_os = "linux")]
     collapse_duplicate_mounts(&mut volumes);
 
+    // After collapsing, while `name` still identifies the device to look up.
+    #[cfg(target_os = "linux")]
+    replace_devices_with_labels(&mut volumes);
+
     volumes.sort_by(|a, b| {
         is_system_volume(b).cmp(&is_system_volume(a)).then_with(|| {
             a.mount_point
@@ -211,6 +221,89 @@ fn collapse_duplicate_mounts(volumes: &mut Vec<DiskVolume>) {
     // worth listing separately.
     let mut filesystems = HashSet::with_capacity(volumes.len());
     volumes.retain(|volume| filesystems.insert((volume.name.clone(), volume.total_bytes)));
+}
+
+/// Replaces the `fs_spec` device path in `name` with the volume label, leaving it
+/// empty where the filesystem has none so the sidebar can name the mount instead.
+///
+/// `/proc/mounts` carries no label, and pulling one from the super block would
+/// mean `blkid`, so labels come from udev's `/dev/disk/by-label` symlinks: the
+/// file name is the label and the target is the device carrying it.
+#[cfg(target_os = "linux")]
+fn replace_devices_with_labels(volumes: &mut [DiskVolume]) {
+    let labels = udev_volume_labels();
+
+    for volume in volumes {
+        volume.name = label_for_device(Path::new(&volume.name), &labels).unwrap_or_default();
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn udev_volume_labels() -> HashMap<PathBuf, String> {
+    let Ok(entries) = fs::read_dir("/dev/disk/by-label") else {
+        return HashMap::new();
+    };
+
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            let device = fs::canonicalize(entry.path()).ok()?;
+            let label = decode_udev_name(&entry.file_name().as_os_str().as_bytes());
+            Some((device, label))
+        })
+        .collect()
+}
+
+/// Resolves a mount's device to its label, following stacked devices downward:
+/// a LUKS or BitLocker container is mounted through its mapper node, while the
+/// label sits on the partition it was opened from.
+#[cfg(target_os = "linux")]
+fn label_for_device(device: &Path, labels: &HashMap<PathBuf, String>) -> Option<String> {
+    let node = fs::canonicalize(device).ok()?;
+    if let Some(label) = labels.get(&node) {
+        return Some(label.clone());
+    }
+
+    let slaves = Path::new("/sys/class/block")
+        .join(node.file_name()?)
+        .join("slaves");
+    fs::read_dir(slaves).ok()?.flatten().find_map(|slave| {
+        let node = fs::canonicalize(Path::new("/dev").join(slave.file_name())).ok()?;
+        labels.get(&node).cloned()
+    })
+}
+
+/// Turns udev's file-name escaping back into text: characters it cannot put in a
+/// link name survive as `\xNN` (`TUF\x20C:` is `TUF C:`).
+#[cfg(target_os = "linux")]
+fn decode_udev_name(bytes: &[u8]) -> String {
+    let mut decoded: Vec<u8> = Vec::with_capacity(bytes.len());
+
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' if index + 3 < bytes.len() && bytes[index + 1] == b'x' => {
+                let hex = std::str::from_utf8(&bytes[index + 2..index + 4]).ok();
+                match hex.and_then(|hex| u8::from_str_radix(hex, 16).ok()) {
+                    Some(byte) => {
+                        decoded.push(byte);
+                        index += 4;
+                    }
+                    // Not an escape after all: keep the backslash.
+                    None => {
+                        decoded.push(b'\\');
+                        index += 1;
+                    }
+                }
+            }
+            byte => {
+                decoded.push(byte);
+                index += 1;
+            }
+        }
+    }
+
+    String::from_utf8_lossy(&decoded).into_owned()
 }
 
 pub(super) fn list_wsl_distros_sync() -> Vec<WslDistro> {
@@ -432,6 +525,19 @@ mod tests {
         collapse_duplicate_mounts(&mut volumes);
 
         assert_eq!(volumes.len(), 2);
+    }
+
+    /// A BitLocker volume labelled `TUF C: 2026/9/26` reaches udev's directory
+    /// as `TUF\x20C:\x202026\x2f9\x2f26`, because `/` cannot be in a file name.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn decodes_udev_label_escapes() {
+        assert_eq!(
+            decode_udev_name(br"TUF\x20C:\x202026\x2f9\x2f26"),
+            "TUF C: 2026/9/26"
+        );
+        assert_eq!(decode_udev_name(b"DATA"), "DATA");
+        assert_eq!(decode_udev_name(br"BAD\x2g"), "BAD\\x2g");
     }
 
     #[test]

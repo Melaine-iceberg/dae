@@ -68,6 +68,7 @@
   },
   "disk": {
     "localDisk": "本地磁盘 ({{letter}}:)",
+    "systemVolume": "系统盘",
     "title": "{{name}} · {{free}} 可用，共 {{total}}",
     "freePercent": "剩余 {{percent}}%",
     "capacity": "{{free}} / 共 {{total}}"
