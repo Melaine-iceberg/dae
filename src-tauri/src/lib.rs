@@ -2,6 +2,16 @@ mod deep_link;
 mod default_manager;
 mod file_icons;
 mod file_system;
+// Answers the Wayland/NVIDIA startup crash a file manager should not ask its
+// user to know about, and has to be asked before GTK exists — see its module
+// docs. Built under `cfg(test)` on every host, the same way
+// `window_material::linux` is, so its host-independent tests run on the Windows
+// machine this is developed on; only the call site below is Linux-gated, which
+// is what leaves the module unreachable there and needs the same
+// `allow(dead_code)` that module carries.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(test, allow(dead_code))]
+mod linux_graphics;
 mod settings;
 mod shell_commands;
 mod system_accent;
@@ -63,6 +73,12 @@ fn get_package_family_name() -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before Tauri, before GTK, before any thread: the graphics stack reads
+    // this process's environment exactly once, when it initializes. See
+    // `linux_graphics` for the defect and for why the check is this narrow.
+    #[cfg(target_os = "linux")]
+    linux_graphics::apply();
+
     let specta = specta_builder();
 
     #[cfg(debug_assertions)]
@@ -132,6 +148,15 @@ pub fn run() {
             // where one run ended and the next began — and which build produced
             // the entries in between.
             log::info!("dae {} started", app.package_info().version);
+
+            // A process environment change is invisible from outside the
+            // process, so it is recorded alongside everything else a bug report
+            // would want. The file target is open by now; `linux_graphics` only
+            // measures, and this line is what reports.
+            #[cfg(target_os = "linux")]
+            if linux_graphics::applied() {
+                log::info!("__NV_DISABLE_EXPLICIT_SYNC=1 set for this Wayland/NVIDIA session");
+            }
 
             specta.mount_events(app);
 
