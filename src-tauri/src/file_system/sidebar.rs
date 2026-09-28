@@ -171,6 +171,9 @@ pub(super) fn list_disks_sync() -> Vec<DiskVolume> {
         })
         .collect();
 
+    #[cfg(target_os = "linux")]
+    collapse_duplicate_mounts(&mut volumes);
+
     volumes.sort_by(|a, b| {
         is_system_volume(b).cmp(&is_system_volume(a)).then_with(|| {
             a.mount_point
@@ -180,6 +183,34 @@ pub(super) fn list_disks_sync() -> Vec<DiskVolume> {
     });
 
     volumes
+}
+
+/// Keeps one sidebar entry per underlying filesystem.
+///
+/// `sysinfo` builds one disk per `/proc/mounts` line and exposes the `fs_spec`
+/// column through `Disk::name()`, so a btrfs filesystem mounted as several
+/// subvolumes — openSUSE and CachyOS mount `/`, `/home`, `/var/log`, … that way —
+/// or reached through extra bind mounts is listed once per mount point, each time
+/// with the same capacity. Windows enumerates volumes rather than mounts, which
+/// is why only Linux shows the duplicates.
+#[cfg(target_os = "linux")]
+fn collapse_duplicate_mounts(volumes: &mut Vec<DiskVolume>) {
+    use std::collections::HashSet;
+
+    // Sort shallowest first so the survivor is the mount whose tree contains all
+    // the others (`/` rather than `/var/log`); the sort is stable, so equal depths
+    // keep the kernel's mount order.
+    volumes.sort_by_key(|volume| {
+        std::path::Path::new(&volume.mount_point)
+            .components()
+            .count()
+    });
+
+    // Total size is part of the key because one device node can back
+    // differently-sized views (ZFS datasets report their quota), and those are
+    // worth listing separately.
+    let mut filesystems = HashSet::with_capacity(volumes.len());
+    volumes.retain(|volume| filesystems.insert((volume.name.clone(), volume.total_bytes)));
 }
 
 pub(super) fn list_wsl_distros_sync() -> Vec<WslDistro> {
@@ -359,6 +390,48 @@ mod tests {
         assert!(is_visible_file_system("FAT32"));
         assert!(is_visible_file_system("exFAT"));
         assert!(is_visible_file_system("iso9660"));
+    }
+
+    #[cfg(target_os = "linux")]
+    fn volume(mount_point: &str, name: &str, total_bytes: u64) -> DiskVolume {
+        DiskVolume {
+            mount_point: mount_point.into(),
+            name: name.into(),
+            file_system: "btrfs".into(),
+            total_bytes,
+            available_bytes: total_bytes / 2,
+            is_removable: false,
+        }
+    }
+
+    /// The mount table of a btrfs install: one device, seven subvolume mounts.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn keeps_the_shallowest_mount_of_a_repeatedly_mounted_filesystem() {
+        let mut volumes = vec![
+            volume("/home", "/dev/mapper/luks-root", 1_000),
+            volume("/var/log", "/dev/mapper/luks-root", 1_000),
+            volume("/", "/dev/mapper/luks-root", 1_000),
+            volume("/boot", "/dev/nvme1n1p1", 4_000),
+        ];
+
+        collapse_duplicate_mounts(&mut volumes);
+
+        let mount_points: Vec<&str> = volumes.iter().map(|v| v.mount_point.as_str()).collect();
+        assert_eq!(mount_points, ["/", "/boot"]);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn keeps_views_that_report_their_own_capacity() {
+        let mut volumes = vec![
+            volume("/data", "/dev/zfs", 500),
+            volume("/quota", "/dev/zfs", 100),
+        ];
+
+        collapse_duplicate_mounts(&mut volumes);
+
+        assert_eq!(volumes.len(), 2);
     }
 
     #[test]
