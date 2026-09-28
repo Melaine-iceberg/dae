@@ -24,6 +24,12 @@ pub struct OpenWithApp {
     pub id: String,
     /// Display name.
     pub name: String,
+    /// What to draw the row with: a freedesktop icon name or, where the entry
+    /// gives one, an absolute icon path — handed to `fileicon://?name=` rather
+    /// than resolved here, because a list of these as base64 runs to megabytes.
+    /// `None` when the launcher names no icon, and always on macOS, whose shell
+    /// keys icons on a file rather than a name.
+    pub icon_name: Option<String>,
 }
 
 /// Lists the applications registered as able to open the local file or
@@ -287,6 +293,10 @@ mod macos {
             apps.push(OpenWithApp {
                 id: app_path.to_string_lossy().into_owned(),
                 name: name.to_owned(),
+                // The bundle's `.icns` is reachable through `file_icons`, but
+                // that means an AppKit call per row on a blocking thread that is
+                // not the render pool, so the picker keeps its drawn glyph.
+                icon_name: None,
             });
         }
     }
@@ -295,130 +305,127 @@ mod macos {
 #[cfg(target_os = "linux")]
 mod linux {
     use super::{FileSystemError, OpenWithApp};
+    use crate::shell_commands::SelectionKind;
+    use crate::shell_commands::desktop_entry::{
+        expand_exec, localized, mime_matches, parse_groups, split_list, user_language,
+    };
+    use crate::xdg::data_roots;
     use std::collections::HashSet;
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
-    /// One parsed `[Desktop Entry]` group.
-    struct DesktopEntry {
+    /// One application launcher, reduced to what the picker needs.
+    struct Application {
+        /// The `.desktop` file name, which is both the id the frontend sends
+        /// back and the value `xdg-mime` stores as a handler.
+        id: String,
+        /// The `.desktop` file itself, absolute — what `%k` expands to.
+        path: PathBuf,
+        /// Display name, localized the way the desktop's own menus localize.
         name: String,
+        /// The raw `Exec` line, field codes still in place.
         exec: String,
+        /// The raw `Icon=` value: a themed name, or an absolute path. Both are
+        /// answered by the same theme search.
+        icon: Option<String>,
+        /// The declared `MimeType` list, lowercased.
         mime_types: Vec<String>,
     }
 
-    /// XDG data dirs' `applications` directories, user scope first so its
-    /// `.desktop` files win the id deduplication.
+    /// The `applications` directory under each XDG data root, most specific
+    /// first, so a user's own entry wins the deduplication below.
     fn application_dirs() -> Vec<PathBuf> {
-        let mut dirs = Vec::new();
-
-        let data_home = std::env::var("XDG_DATA_HOME")
-            .ok()
-            .filter(|value| !value.is_empty())
-            .or_else(|| {
-                std::env::var("HOME")
-                    .ok()
-                    .map(|home| format!("{home}/.local/share"))
-            });
-        if let Some(data_home) = data_home {
-            dirs.push(PathBuf::from(data_home).join("applications"));
-        }
-
-        let data_dirs =
-            std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
-        for dir in data_dirs.split(':').filter(|dir| !dir.is_empty()) {
-            dirs.push(PathBuf::from(dir).join("applications"));
-        }
-        dirs
+        data_roots()
+            .into_iter()
+            .map(|root| root.join("applications"))
+            .collect()
     }
 
-    /// Parses the keys the picker needs from a desktop entry file, skipping
-    /// entries that stay out of menus (`NoDisplay`/`Hidden`) or need a
-    /// terminal host (`Terminal=true`, which cannot be launched reliably from
-    /// a GUI context without desktop-specific wrapping).
-    fn parse_desktop_entry(content: &str) -> Option<DesktopEntry> {
-        let mut name: Option<String> = None;
-        let mut exec: Option<String> = None;
-        let mut mime_types: Vec<String> = Vec::new();
-        let mut terminal = false;
-        let mut no_display = false;
-        let mut hidden = false;
-        let mut in_main_group = false;
+    /// Reads the keys the picker needs from a desktop entry file, skipping the
+    /// entries that stay out of menus (`NoDisplay`/`Hidden`), that need a
+    /// terminal host (`Terminal=true`, which cannot be launched reliably from a
+    /// GUI context without desktop-specific wrapping), and that are not
+    /// launchers at all (`Type=Link`, `Type=Directory`).
+    fn parse_application(
+        path: &Path,
+        content: &str,
+        language: Option<&str>,
+    ) -> Option<Application> {
+        let entry = parse_groups(content).remove("Desktop Entry")?;
 
-        for line in content.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if line.starts_with('[') {
-                in_main_group = line == "[Desktop Entry]";
-                continue;
-            }
-            if !in_main_group {
-                continue;
-            }
-            let Some((key, value)) = line.split_once('=') else {
-                continue;
-            };
-            match key {
-                "Name" => name = Some(value.to_owned()),
-                "Exec" => exec = Some(value.to_owned()),
-                "MimeType" => {
-                    mime_types = value
-                        .split(';')
-                        .filter(|mime| !mime.is_empty())
-                        .map(str::to_owned)
-                        .collect();
-                }
-                "Terminal" => terminal = value.eq_ignore_ascii_case("true"),
-                "NoDisplay" => no_display = value.eq_ignore_ascii_case("true"),
-                "Hidden" => hidden = value.eq_ignore_ascii_case("true"),
-                _ => {}
-            }
-        }
-
-        if no_display || hidden || terminal {
+        let is_disabled = |key: &str| {
+            entry
+                .get(key)
+                .is_some_and(|value| value.eq_ignore_ascii_case("true"))
+        };
+        if is_disabled("NoDisplay") || is_disabled("Hidden") || is_disabled("Terminal") {
             return None;
         }
-        Some(DesktopEntry {
-            name: name?,
-            exec: exec?,
-            mime_types,
+        // Omitted means `Application`, which is what the pre-spec files are.
+        match entry.get("Type").map(String::as_str) {
+            None | Some("Application") => {}
+            _ => return None,
+        }
+
+        let name = localized(&entry, "Name", language)?.to_owned();
+        let exec = entry
+            .get("Exec")
+            .filter(|value| !value.trim().is_empty())?
+            .clone();
+
+        Some(Application {
+            id: path.file_name()?.to_string_lossy().into_owned(),
+            path: path.to_path_buf(),
+            name,
+            exec,
+            icon: localized(&entry, "Icon", language).map(str::to_owned),
+            mime_types: entry
+                .get("MimeType")
+                .map(|value| split_list(value).map(str::to_lowercase).collect())
+                .unwrap_or_default(),
         })
     }
 
-    /// Reads every candidate desktop entry, keyed by its desktop id (the
-    /// file name), keeping the first copy found in the higher-priority dir.
-    fn collect_entries() -> Vec<(String, DesktopEntry)> {
+    /// Reads every candidate launcher on the machine. Real file-system work, so
+    /// callers keep it off the async command thread.
+    fn collect_applications() -> Vec<Application> {
+        let language = user_language();
         let mut seen = HashSet::new();
-        let mut entries = Vec::new();
+        let mut applications = Vec::new();
 
         for dir in application_dirs() {
             let Ok(files) = std::fs::read_dir(&dir) else {
                 continue;
             };
-            for file in files.flatten() {
-                let path = file.path();
-                if path.extension().and_then(|e| e.to_str()) != Some("desktop") {
+            // `read_dir` yields an unspecified order; sorting keeps the list
+            // stable between runs, so the picker does not reshuffle.
+            let mut files: Vec<PathBuf> = files.flatten().map(|file| file.path()).collect();
+            files.sort();
+
+            for path in files {
+                if path.extension().and_then(|name| name.to_str()) != Some("desktop") {
                     continue;
                 }
-                let Some(id) = path.file_name().and_then(|n| n.to_str()).map(str::to_owned) else {
+                let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
                     continue;
                 };
-                if !seen.insert(id.clone()) {
+                if !seen.insert(name.to_owned()) {
                     continue;
                 }
+                // A root-owned entry from a half-installed package must not
+                // hide the rest of the list.
                 let Ok(content) = std::fs::read_to_string(&path) else {
                     continue;
                 };
-                if let Some(entry) = parse_desktop_entry(&content) {
-                    entries.push((id, entry));
+                if let Some(application) = parse_application(&path, &content, language.as_deref()) {
+                    applications.push(application);
                 }
             }
         }
-        entries
+        applications
     }
 
-    /// The freedesktop MIME type LaunchServices-style matching keys on.
+    /// The freedesktop MIME type the matching keys on.
     fn detect_mime(path: &Path) -> String {
         if path.is_dir() {
             return "inode/directory".into();
@@ -431,59 +438,79 @@ mod linux {
 
     pub fn list_apps(path: &Path) -> Result<Vec<OpenWithApp>, FileSystemError> {
         let mime = detect_mime(path);
-        let entries = collect_entries();
+        let kind = if path.is_dir() {
+            SelectionKind::Directory
+        } else {
+            SelectionKind::File
+        };
+        let applications = collect_applications();
 
-        let mut apps: Vec<OpenWithApp> = entries
+        let mut matching: Vec<&Application> = applications
             .iter()
-            .filter(|(_, entry)| entry.mime_types.iter().any(|candidate| candidate == &mime))
-            .map(|(id, entry)| OpenWithApp {
-                id: id.clone(),
-                name: entry.name.clone(),
+            .filter(|application| {
+                application
+                    .mime_types
+                    .iter()
+                    .any(|declared| mime_matches(declared, &mime, kind))
             })
             .collect();
 
-        if apps.is_empty() {
+        if matching.is_empty() {
             // Unrecognized types still deserve a picker: offer everything.
-            apps = entries
-                .iter()
-                .map(|(id, entry)| OpenWithApp {
-                    id: id.clone(),
-                    name: entry.name.clone(),
-                })
-                .collect();
+            matching = applications.iter().collect();
         }
 
-        apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        Ok(apps)
+        matching.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+        Ok(matching
+            .iter()
+            .map(|application| OpenWithApp {
+                id: application.id.clone(),
+                name: application.name.clone(),
+                icon_name: application.icon.clone(),
+            })
+            .collect())
     }
 
     pub fn open_app(path: &Path, app_id: &str, set_default: bool) -> Result<(), FileSystemError> {
-        let entries = collect_entries();
-        let entry = entries
-            .iter()
-            .find(|(id, _)| id == app_id)
-            .map(|(_, entry)| entry)
+        let application = collect_applications()
+            .into_iter()
+            .find(|application| application.id == app_id)
             .ok_or_else(|| FileSystemError::NotFound("fs.open_with_app_missing".into()))?;
 
         let file = path.to_string_lossy().into_owned();
-        let (program, args) = expand_exec(&entry.exec, &file, &entry.name);
-        if program.is_empty() {
-            return Err(FileSystemError::Internal(
-                "fs.open_with_launch_failed".into(),
-            ));
-        }
+        let desktop_file = application.path.to_string_lossy().into_owned();
+        // Expands to an argument vector with the program first. Deliberately not
+        // through a shell — the `Exec` line is data from a `.desktop` file, and
+        // shell semantics would let a selected filename containing `;` or `$(…)`
+        // change what runs.
+        let arguments = expand_exec(
+            &application.exec,
+            std::slice::from_ref(&file),
+            &application.name,
+            &desktop_file,
+        );
+        let (program, rest) = arguments
+            .split_first()
+            .ok_or_else(|| FileSystemError::Internal("fs.open_with_launch_failed".into()))?;
 
-        Command::new(&program)
-            .args(&args)
-            .spawn()
-            .map_err(|error| {
-                FileSystemError::Internal(format!("fs.open_with_launch_failed: {error}"))
-            })?;
+        let child = Command::new(program).args(rest).spawn().map_err(|error| {
+            FileSystemError::Internal(format!("fs.open_with_launch_failed: {error}"))
+        })?;
+        reap(child);
 
         if set_default {
             set_default_handler(app_id, &detect_mime(path))?;
         }
         Ok(())
+    }
+
+    /// Reaps the launched application so it does not outlive its parent as a
+    /// zombie. Its exit status is of no interest here; only that it is collected.
+    fn reap(mut child: std::process::Child) {
+        std::thread::spawn(move || {
+            let _ = child.wait();
+        });
     }
 
     /// Registers the desktop entry as the default handler via `xdg-mime`.
@@ -502,118 +529,83 @@ mod linux {
         Ok(())
     }
 
-    /// Splits a desktop entry `Exec` value into program and arguments with the
-    /// file substituted into the `%f`/`%F`/`%u`/`%U` field codes. Quoted
-    /// arguments survive intact; unknown codes stay literal.
-    fn expand_exec(exec: &str, file: &str, app_name: &str) -> (String, Vec<String>) {
-        let tokens = tokenize_exec(exec);
-        let mut program = String::new();
-        let mut args: Vec<String> = Vec::new();
-        let mut has_file = false;
+    #[cfg(test)]
+    mod tests {
+        use super::*;
 
-        for (index, token) in tokens.iter().enumerate() {
-            let mut expanded = String::new();
-            let mut chars = token.chars();
-            while let Some(c) = chars.next() {
-                if c != '%' {
-                    expanded.push(c);
-                    continue;
-                }
-                match chars.next() {
-                    Some('f') | Some('F') | Some('u') | Some('U') => {
-                        expanded.push_str(file);
-                        has_file = true;
-                    }
-                    // The application's display name substitutes `%c`.
-                    Some('c') => expanded.push_str(app_name),
-                    // `%i` (icon) and `%k` (desktop file path) carry no
-                    // useful value in this context.
-                    Some('i') | Some('k') => {}
-                    Some('%') => expanded.push('%'),
-                    Some(other) => {
-                        expanded.push('%');
-                        expanded.push(other);
-                    }
-                    None => expanded.push('%'),
-                }
-            }
-
-            if index == 0 {
-                program = expanded;
-            } else {
-                args.push(expanded);
-            }
+        fn parse(text: &str) -> Option<Application> {
+            parse_application(
+                Path::new("/usr/share/applications/tool.desktop"),
+                text,
+                Some("zh_CN"),
+            )
         }
 
-        // Entries without any file field code take the path as a trailing
-        // argument, matching the desktop entry spec's recommendation.
-        if !has_file {
-            args.push(file.to_owned());
+        #[test]
+        fn takes_the_users_language_and_the_icon_the_entry_names() {
+            // The two things a hand-rolled parser of this file's own design got
+            // wrong: an entry that ships `Name[zh_CN]` has no business drawing
+            // English next to a Chinese menu, and an entry with an icon is not
+            // the generic window glyph.
+            let application = parse(
+                "[Desktop Entry]\n\
+                 Type=Application\n\
+                 Name=Archive Manager\n\
+                 Name[zh_CN]=归档管理器\n\
+                 Icon=org.kde.ark\n\
+                 Exec=ark %f\n\
+                 MimeType=application/zip;text/plain;\n",
+            )
+            .expect("a launcher");
+
+            assert_eq!(application.id, "tool.desktop");
+            assert_eq!(application.name, "归档管理器");
+            assert_eq!(application.icon.as_deref(), Some("org.kde.ark"));
+            assert_eq!(application.exec, "ark %f");
+            assert_eq!(
+                application.mime_types,
+                ["application/zip".to_string(), "text/plain".to_string()]
+            );
         }
-        (program, args)
-    }
 
-    /// Tokenizes an `Exec` value per the desktop entry spec: spaces separate
-    /// arguments, double quotes group them, and backslash escapes a quoted
-    /// reserved character.
-    fn tokenize_exec(exec: &str) -> Vec<String> {
-        let mut tokens = Vec::new();
-        let mut current = String::new();
-        let mut in_quotes = false;
+        #[test]
+        fn falls_back_to_the_bare_name_when_the_locale_is_absent() {
+            let application = parse(
+                "[Desktop Entry]\n\
+                 Name=Firefox\n\
+                 Icon=firefox\n\
+                 Exec=firefox %u\n",
+            )
+            .expect("a launcher");
 
-        let mut chars = exec.chars();
-        while let Some(c) = chars.next() {
-            if in_quotes {
-                if c == '\\' {
-                    if let Some(escaped) = chars.next() {
-                        current.push(escaped);
-                    }
-                } else if c == '"' {
-                    in_quotes = false;
-                } else {
-                    current.push(c);
-                }
-            } else if c == '"' {
-                in_quotes = true;
-            } else if c.is_whitespace() {
-                if !current.is_empty() {
-                    tokens.push(std::mem::take(&mut current));
-                }
-            } else {
-                current.push(c);
+            assert_eq!(application.name, "Firefox");
+        }
+
+        #[test]
+        fn keeps_an_entry_that_declares_no_type() {
+            // `Type` is required by the spec but its only meaningful default is
+            // `Application`, and pre-spec entries omit it.
+            assert!(parse("[Desktop Entry]\nName=T\nExec=t\n").is_some());
+        }
+
+        #[test]
+        fn skips_what_a_desktop_would_not_offer() {
+            for entry in [
+                // Hidden from menus by the packager.
+                "[Desktop Entry]\nName=T\nExec=t\nNoDisplay=true\n",
+                "[Desktop Entry]\nName=T\nExec=t\nHidden=true\n",
+                // Needs a terminal this picker cannot give it.
+                "[Desktop Entry]\nName=T\nExec=t\nTerminal=true\n",
+                // Not a launcher: a bookmark and an icon-theme directory.
+                "[Desktop Entry]\nType=Link\nName=T\nURL=https://example.com\n",
+                "[Desktop Entry]\nType=Directory\nName=T\n",
+                // Nothing to run.
+                "[Desktop Entry]\nName=T\nExec=   \n",
+                // No name to show.
+                "[Desktop Entry]\nExec=t\n",
+            ] {
+                assert!(parse(entry).is_none(), "accepted {entry:?}");
             }
         }
-        if !current.is_empty() {
-            tokens.push(current);
-        }
-        tokens
-    }
-}
-
-// The helpers under test live in the Linux-only module, so the tests follow it.
-#[cfg(all(test, target_os = "linux"))]
-mod tests {
-    use super::linux::expand_exec;
-
-    #[test]
-    fn expands_single_file_code() {
-        let (program, args) = expand_exec("gedit %f", "/tmp/a b.txt", "Gedit");
-        assert_eq!(program, "gedit");
-        assert_eq!(args, ["/tmp/a b.txt"]);
-    }
-
-    #[test]
-    fn appends_file_without_field_code() {
-        let (program, args) = expand_exec("code", "/tmp/a.txt", "Code");
-        assert_eq!(program, "code");
-        assert_eq!(args, ["/tmp/a.txt"]);
-    }
-
-    #[test]
-    fn keeps_quoted_arguments() {
-        let (program, args) =
-            expand_exec("\"/opt/My App/run\" --profile %u", "/tmp/a.txt", "My App");
-        assert_eq!(program, "/opt/My App/run");
-        assert_eq!(args, ["--profile", "/tmp/a.txt"]);
     }
 }

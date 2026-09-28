@@ -39,16 +39,17 @@
 //!
 //! # Where the parsing lives
 //!
-//! Everything except discovery, spawning and icon lookup is in
-//! [`super::desktop_entry`] — a platform-independent module, so its tests run on
-//! any host. That split is load-bearing: this file cannot be compiled on the
-//! machine it was written on, and argument expansion is exactly the sort of code
-//! that is silently wrong rather than obviously broken.
+//! Everything except discovery and spawning is in [`super::desktop_entry`] — a
+//! platform-independent module, so its tests run on any host. That split is
+//! load-bearing: this file cannot be compiled on the machine it was written on,
+//! and argument expansion is exactly the sort of code that is silently wrong
+//! rather than obviously broken.
 
 use super::desktop_entry::{
     ANY_FILE, ServiceMenu, expand_exec, mime_matches, parse_service_menu, split_id, user_language,
 };
 use super::{Selection, SelectionKind, ShellCommand, assign_groups};
+use crate::file_icons::named_icon_data_url;
 use crate::file_system::error::FileSystemError;
 use crate::xdg::data_roots;
 use std::collections::HashSet;
@@ -163,33 +164,6 @@ fn mime_of(path: &str, kind: SelectionKind) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Icons
-// ---------------------------------------------------------------------------
-
-/// Resolves an `Icon=` value to a `data:` URL.
-///
-/// The lookup itself is [`crate::file_icons`]s — one theme reader in the crate
-/// rather than two that disagree about what a theme contains. This only wraps
-/// the bytes for the channel a context menu travels over, which is a `data:` URL
-/// rather than the `fileicon://` protocol a listing uses because a menu is built
-/// once, on demand, and handed over in a single message.
-///
-/// This is deliberately wider than the search it replaced. That one tried three
-/// named themes in the `apps` context only, so a `.desktop` pointing at an icon
-/// that lived under `status/`, or that shipped in the user's theme rather than in
-/// `hicolor`, drew nothing.
-fn resolve_icon(value: &str) -> Option<String> {
-    use base64::Engine as _;
-
-    let icon = crate::file_icons::resolve_named_icon(value)?;
-    Some(format!(
-        "data:{};base64,{}",
-        icon.mime,
-        base64::engine::general_purpose::STANDARD.encode(&icon.bytes)
-    ))
-}
-
-// ---------------------------------------------------------------------------
 // Entry points
 // ---------------------------------------------------------------------------
 
@@ -228,7 +202,13 @@ pub(super) async fn list(
                     ShellCommand {
                         id: super::desktop_entry::id_of(&menu.path, &action.id),
                         label: action.name,
-                        icon_data_url: action.icon.as_deref().and_then(resolve_icon),
+                        // A menu glyph is 16 CSS pixels; the search takes the
+                        // theme's smallest icon at least that large, so a scaled
+                        // display still gets a crisp one.
+                        icon_data_url: action
+                            .icon
+                            .as_deref()
+                            .and_then(|icon| named_icon_data_url(icon, 16)),
                         group: None,
                         // Neither concept exists in a `.desktop` service menu,
                         // so the frontend's separator and disabled paths stay
@@ -320,16 +300,6 @@ pub(super) async fn invoke(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn resolves_an_unknown_icon_name_to_nothing() {
-        // A name that cannot be on any machine, so this exercises the miss path
-        // rather than depending on the host's icon set.
-        assert_eq!(resolve_icon("dae-no-such-icon-name-zzz"), None);
-        assert_eq!(resolve_icon(""), None);
-        assert_eq!(resolve_icon("-"), None);
-        assert_eq!(resolve_icon("/nonexistent/path/icon.png"), None);
-    }
 
     #[test]
     fn classifies_the_selection_before_matching_mime_types() {

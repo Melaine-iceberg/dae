@@ -66,23 +66,45 @@ pub(super) fn extract(path: &str, size: u32, is_dir: bool) -> Option<FileIcon> {
 }
 
 /// A themed icon name (a `.desktop`'s `Icon=`, which is where the context menu
-/// gets its glyphs) resolved for the context menu's purposes.
+/// and the "Open With" picker get their glyphs) resolved at `size` pixels.
 ///
 /// Fronted onto the same search as the file icons so there is one theme reader
 /// in the crate rather than two that disagree about what a theme contains. The
 /// context list is wider here because an application may name an icon from any
-/// of them, and narrower in ambition because a menu row that finds nothing just
-/// draws without one.
-pub(crate) fn resolve_named_icon(name: &str) -> Option<FileIcon> {
+/// of them, and narrower in ambition because a row that finds nothing just draws
+/// without one.
+pub(crate) fn resolve_named_icon(name: &str, size: u32) -> Option<FileIcon> {
     if name.is_empty() || name == "-" {
         return None;
     }
 
-    const APP_CONTEXTS: &[&str] = &["apps", "actions", "status", "mimetypes", "places"];
+    // The spec's context for an application icon is `Applications`, while the
+    // *directory* holding them is conventionally named `apps` — so asking for
+    // `apps` here matches nothing in any shipped theme. The rest are contexts a
+    // launcher's `Icon=` really does name, because packs place their glyphs
+    // inconsistently.
+    const APP_CONTEXTS: &[&str] = &["applications", "actions", "status", "mimetypes", "places"];
     let names = [name];
-    // Menu rows render at 16px, but a scaled display is common enough that the
-    // ranking prefers an oversize raster over an undersize one regardless.
-    lookup(&names, APP_CONTEXTS, 16)
+    lookup(&names, APP_CONTEXTS, size)
+}
+
+/// [`resolve_named_icon`]'s bytes wrapped as a `data:` URL.
+///
+/// Rows that are built as a whole list and handed over in one message — a
+/// context menu — take this rather than a `fileicon://` URL, because the protocol
+/// would cost the webview a request per row for bytes the backend already holds.
+/// A list too long for that is the "Open With" picker, which goes through the
+/// protocol instead: a theme's application icons run to hundreds of kilobytes
+/// each, so a full list of them does not belong in one `invoke` reply.
+pub(crate) fn named_icon_data_url(name: &str, size: u32) -> Option<String> {
+    use base64::Engine as _;
+
+    let icon = resolve_named_icon(name, size)?;
+    Some(format!(
+        "data:{};base64,{}",
+        icon.mime,
+        base64::engine::general_purpose::STANDARD.encode(&icon.bytes)
+    ))
 }
 
 /// The icon names to try for one path, best first.
@@ -545,7 +567,7 @@ mod tests {
 [Icon Theme]
 Name=Test
 Comment=A test theme
-Directories=scalable/mimetypes,48x48/places,16x16/actions
+Directories=scalable/mimetypes,48x48/places,16x16/actions,16x16/apps
 Inherits=hicolor
 
 [scalable/mimetypes]
@@ -563,6 +585,11 @@ Type=Fixed
 Context=Actions
 Size=16
 Type=Fixed
+
+[16x16/apps]
+Context=Applications
+Size=16
+Type=Fixed
 ";
 
     #[test]
@@ -571,7 +598,7 @@ Type=Fixed
 
         assert_eq!(theme.name, "Test");
         assert_eq!(inherits, vec!["hicolor".to_owned()]);
-        assert_eq!(theme.directories.len(), 3);
+        assert_eq!(theme.directories.len(), 4);
     }
 
     /// `index.theme` keys are case-insensitive, which is the one thing a
@@ -585,7 +612,7 @@ Type=Fixed
         // Lowercased on the way in, because every lookup name is lowercase and
         // a `Places` that must be compared case-insensitively is a footgun
         // waiting for the theme that spells it differently.
-        assert_eq!(contexts, ["mimetypes", "places", "actions"]);
+        assert_eq!(contexts, ["mimetypes", "places", "actions", "applications"]);
     }
 
     #[test]
@@ -623,6 +650,21 @@ Type=Fixed
             vec!["scalable/mimetypes", "48x48/places"]
         );
         assert!(theme.directories_for(&["filesystems"], 22).is_empty());
+    }
+
+    /// The context an application icon's directory declares is `Applications`,
+    /// while the directory itself is named `apps` — the only context in the spec
+    /// whose name and path segment differ, which is why asking for `apps` finds
+    /// nothing in every theme shipped.
+    #[test]
+    fn an_application_icon_lives_under_the_applications_context() {
+        let ReadTheme { theme, .. } = parse_theme("Test", INDEX);
+
+        assert_eq!(
+            theme.directories_for(&["applications"], 16),
+            vec!["16x16/apps"]
+        );
+        assert!(theme.directories_for(&["apps"], 16).is_empty());
     }
 
     #[test]
@@ -676,8 +718,8 @@ Type=Fixed
     #[test]
     fn an_unresolvable_name_is_none_not_a_panic() {
         assert!(lookup(&["dae-no-such-icon-name-zzz"], &["apps"], 16).is_none());
-        assert!(resolve_named_icon("").is_none());
-        assert!(resolve_named_icon("-").is_none());
+        assert!(resolve_named_icon("", 16).is_none());
+        assert!(resolve_named_icon("-", 16).is_none());
     }
 
     #[test]

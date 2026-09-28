@@ -129,6 +129,15 @@ enum RenderKind {
     FileIcon,
 }
 
+/// What a render request points at.
+enum RenderSubject {
+    /// A file on disk, drawn with whatever icon or thumbnail the OS has for it.
+    Path(String),
+    /// A freedesktop icon-theme name (or an absolute icon path, which the same
+    /// search answers). Only `FileIcon` can render this.
+    IconName(String),
+}
+
 /// Everyone waiting on one resource, and the lock that lets them arrive while
 /// it renders.
 struct InflightRender<T> {
@@ -243,6 +252,10 @@ pub fn handle_thumbnail_protocol(
 /// Serves `fileicon://localhost/?path=...&size=...` with the operating
 /// system's icon for the file or folder, on every platform — the extraction
 /// itself is in [`crate::file_icons`].
+///
+/// `?name=...&size=...` instead answers with the icon theme's own icon for a
+/// freedesktop icon name, which is what a row describing an application rather
+/// than a document needs.
 ///
 /// Asynchronous for the same reason as [`handle_thumbnail_protocol`]: a shell
 /// icon is a COM round-trip, and it used to happen on the UI thread.
@@ -416,9 +429,14 @@ fn render_loop(receiver: &Mutex<Receiver<RenderJob>>) {
 
 /// Produces the response for one request. Runs on a render worker.
 fn render_response(kind: RenderKind, query: &str) -> ProtocolResponse {
-    let rendered = thumbnail_request_params(query).map(|(path, size)| match kind {
-        RenderKind::Thumbnail => render_thumbnail(&path, size),
-        RenderKind::FileIcon => render_file_icon(&path, size),
+    let rendered = render_request_params(query).and_then(|(subject, size)| match (kind, subject) {
+        (RenderKind::Thumbnail, RenderSubject::Path(path)) => Some(render_thumbnail(&path, size)),
+        (RenderKind::FileIcon, RenderSubject::Path(path)) => Some(render_file_icon(&path, size)),
+        (RenderKind::FileIcon, RenderSubject::IconName(name)) => {
+            Some(render_named_icon(&name, size))
+        }
+        // Nothing has a thumbnail for a theme name, so the request is malformed.
+        (RenderKind::Thumbnail, RenderSubject::IconName(_)) => None,
     });
 
     match rendered {
@@ -443,22 +461,28 @@ fn empty_response(status: u16) -> ProtocolResponse {
         .expect("static protocol response is always valid")
 }
 
-/// Extracts `path` and `size` from the request query string.
-fn thumbnail_request_params(query: &str) -> Option<(String, u16)> {
-    let mut path: Option<String> = None;
+/// Extracts what a render request names and the size it wants.
+///
+/// A request names either a file — the listing and the preview pane — or a
+/// freedesktop icon-theme name, which is how a row that describes an
+/// application rather than a document (the "Open With" picker) gets the icon the
+/// desktop would draw for it.
+fn render_request_params(query: &str) -> Option<(RenderSubject, u16)> {
+    let mut subject: Option<RenderSubject> = None;
     let mut size: Option<u16> = None;
 
     for pair in query.split('&') {
         let (key, value) = pair.split_once('=')?;
         match key {
-            "path" => path = Some(percent_decode(value)),
+            "path" => subject = Some(RenderSubject::Path(percent_decode(value))),
+            "name" => subject = Some(RenderSubject::IconName(percent_decode(value))),
             "size" => size = value.parse().ok(),
             // `v` is a cache-busting version tag the backend can ignore.
             _ => {}
         }
     }
 
-    path.map(|path| (path, size.unwrap_or(256)))
+    subject.map(|subject| (subject, size.unwrap_or(256)))
 }
 
 /// Percent-decoder for `encodeURIComponent`-encoded query values.
@@ -630,6 +654,41 @@ fn render_file_icon(
     }
 
     let Some(icon) = crate::file_icons::extract(path_string, u32::from(size), is_dir) else {
+        return Ok(None);
+    };
+
+    let rendered = Arc::new(RenderedThumbnail {
+        mime: icon.mime,
+        bytes: icon.bytes,
+    });
+    store_cache(
+        &ICON_CACHE,
+        ICON_CACHE_MAX_ENTRIES,
+        cache_key,
+        Arc::clone(&rendered),
+    );
+    Ok(Some(rendered))
+}
+
+/// The theme's icon for an application name, for a row that describes a program
+/// rather than a document.
+///
+/// Keyed by name + size alone. There is no `mtime` to version by — the name is
+/// not a path, and the theme that answers it is fixed for the life of the
+/// process — so a name that resolves once keeps resolving the same way, which is
+/// what the immutable cache header on the response promises.
+fn render_named_icon(
+    name: &str,
+    size: u16,
+) -> Result<Option<Arc<RenderedThumbnail>>, FileSystemError> {
+    let size = size.clamp(16, 256);
+    let cache_key = format!("icon-name|{name}|{size}");
+
+    if let Some(cached) = lookup_cache(&ICON_CACHE, &cache_key) {
+        return Ok(Some(cached));
+    }
+
+    let Some(icon) = crate::file_icons::named(name, u32::from(size)) else {
         return Ok(None);
     };
 
@@ -1051,6 +1110,27 @@ mod render_tests {
         );
         assert_eq!(render_response(RenderKind::Thumbnail, "").status(), 400);
         assert_eq!(render_response(RenderKind::FileIcon, "").status(), 400);
+    }
+
+    /// A request that names an icon theme entry rather than a file is the "Open
+    /// With" picker's.
+    ///
+    /// Asserted as a miss rather than a hit: whether `org.kde.dolphin` has an
+    /// icon is the machine's business, whereas what the frontend's `onError`
+    /// fallback depends on is that an unanswerable name reads as a 404 — the same
+    /// answer an unresolvable file gives — and not as a failed request.
+    #[test]
+    fn answers_a_named_icon_with_a_miss_not_an_error() {
+        assert_eq!(
+            render_response(RenderKind::FileIcon, "name=dae-no-such-icon-zzz&size=32").status(),
+            404
+        );
+        // A thumbnail is made from a file's bytes, so a theme name is no
+        // resource for it at all.
+        assert_eq!(
+            render_response(RenderKind::Thumbnail, "name=dae-no-such-icon-zzz&size=32").status(),
+            400
+        );
     }
 }
 

@@ -18,6 +18,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
 import { cn } from "@/lib/utils";
 
+import { buildNamedIconUrl } from "./native-icon";
+
 const LOADING_ROW_COUNT = 6;
 
 /**
@@ -139,7 +141,7 @@ export function OpenWithDialog({
                 role="radio"
                 type="button"
               >
-                <AppWindow className="size-4 shrink-0 text-muted-foreground" />
+                <AppIcon name={app.iconName} />
                 <span className="truncate">{app.name}</span>
               </button>
             ))}
@@ -170,5 +172,39 @@ export function OpenWithDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * The icon the desktop would draw for an application, fetched from the icon
+ * theme through `fileicon://` rather than sent with the list — a folder's worth
+ * of theme icons base64-encoded is megabytes of `invoke` payload for a dialog
+ * that shows a dozen at a time.
+ *
+ * The failure is per row and silent on purpose: a name no theme answers, or a
+ * platform with no theme at all, keeps the drawn glyph.
+ */
+function AppIcon({ name }: { name: string | null }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [name]);
+
+  if (!name || failed) {
+    return <AppWindow className="size-4 shrink-0 text-muted-foreground" />;
+  }
+
+  return (
+    <img
+      alt=""
+      className="size-4 shrink-0"
+      decoding="async"
+      draggable={false}
+      onError={() => setFailed(true)}
+      // Asked for at 2x the 16px the row renders at, so a scaled display gets
+      // real pixels rather than an upscale.
+      src={buildNamedIconUrl(name, 32)}
+    />
   );
 }

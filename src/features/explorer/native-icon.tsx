@@ -74,6 +74,16 @@ export function buildFileIconUrl(entry: DirectoryEntry, size: number): string {
 }
 
 /**
+ * URL for the icon theme's own icon for a name — a `.desktop`'s `Icon=`, which
+ * may equally be an absolute path — rather than for a file. Same handler and
+ * same render pool as {@link buildFileIconUrl}; on a platform whose shell keys
+ * icons on a file the request 404s, so a caller needs the same fallback.
+ */
+export function buildNamedIconUrl(name: string, size: number): string {
+  return `${FILE_ICON_URL_ORIGIN}/?name=${encodeURIComponent(name)}&size=${size}`;
+}
+
+/**
  * Lazy OS-native icon: shows the Lucide fallback until the shell icon
  * arrives and keeps it forever on any error (missing path, dead shortcut
  * target, a platform whose shell has nothing for this file), so every slot

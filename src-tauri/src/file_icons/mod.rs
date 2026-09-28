@@ -34,13 +34,15 @@ mod macos;
 #[cfg(windows)]
 mod windows;
 
-/// The freedesktop theme search, re-exported for the context menu's `Icon=`
-/// values. Same cfg as the module's own, which is the same one
-/// `shell_commands::linux` carries — both are built on a Linux host and both are
-/// built under `test`, so a Windows machine can type-check and run them.
+/// The freedesktop theme search wrapped for the rows that name an icon rather
+/// than a file and travel as one message — a `.desktop`'s `Icon=`, which is
+/// where the context menu gets its glyphs. Same cfg as the module's own, which
+/// is the same one `shell_commands::linux` carries — both are built on a Linux
+/// host and both are built under `test`, so a Windows machine can type-check and
+/// run them.
 #[cfg(any(target_os = "linux", test))]
 #[cfg_attr(test, allow(dead_code))]
-pub(crate) use linux::resolve_named_icon;
+pub(crate) use linux::named_icon_data_url;
 
 #[cfg(target_os = "linux")]
 use linux as backend;
@@ -68,4 +70,19 @@ mod backend {
 /// and guessing from the path would be wrong for a symlink to either.
 pub(crate) fn extract(path: &str, size: u32, is_dir: bool) -> Option<FileIcon> {
     backend::extract(path, size, is_dir)
+}
+
+/// The theme's own icon for a name — a `.desktop`'s `Icon=` value — at `size`.
+///
+/// Linux only. The other two platforms key their icons on a file, and a name
+/// that is not one means nothing to their shells, so the request goes unanswered
+/// and the row keeps the glyph the frontend draws.
+#[cfg(target_os = "linux")]
+pub(crate) fn named(name: &str, size: u32) -> Option<FileIcon> {
+    linux::resolve_named_icon(name, size)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn named(_name: &str, _size: u32) -> Option<FileIcon> {
+    None
 }
