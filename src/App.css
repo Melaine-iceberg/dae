@@ -306,7 +306,14 @@
   --height-toolbar: 40px;
   --height-status-strip: 32px;
   --height-capacity-bar: 3px; /* disk capacity fill in the sidebar */
-  --width-window-control: 46px;
+  /* Window-control geometry, two numbers because the target and the plate are
+     two things: `--size-window-control` is the painted square, and
+     `--width-window-control` is the full-height hit area around it. 30 in a
+     38px bar leaves 4px of frame above, below and to the right of every plate,
+     and puts 8px between them. See the `.window-control` block in the
+     components layer for why the two must not be the same number. */
+  --size-window-control: 30px;
+  --width-window-control: 38px;
   /* macOS traffic lights: 8px leading inset + 3 × 12px stoplights + 2 × 8px
      gaps. Named rather than left to a `w-*` at the call site because it is
      the leading inset of the whole tab strip, not just of the buttons. */
@@ -618,6 +625,11 @@ html[data-window-material="vibrancy"] {
     --traffic-zoom: #28c840;
     --traffic-idle: #d3d2cf;
     --traffic-ink: rgb(48 22 14 / 0.55);
+    /* AppKit rings every stoplight with a hairline, which is what keeps the
+       yellow from dissolving into a light window. A platform constant like the
+       fills above, and invisible against `--traffic-idle`, so the drain to
+       grey needs no second value. */
+    --traffic-edge: rgb(0 0 0 / 0.14);
   }
 
   .traffic-light {
@@ -629,6 +641,7 @@ html[data-window-material="vibrancy"] {
     justify-content: center;
     border-radius: 9999px;
     outline: none;
+    box-shadow: inset 0 0 0 0.5px var(--traffic-edge);
     transition: background-color var(--transition-duration-instant) var(--ease-standard);
   }
   .traffic-light[data-light="close"] {
@@ -645,7 +658,11 @@ html[data-window-material="vibrancy"] {
     background-color: var(--traffic-idle);
   }
   .traffic-light:focus-visible {
-    box-shadow: 0 0 0 2px var(--ring);
+    /* The ring replaces the shadow, so the edge has to be re-stated with it —
+       a focused stoplight is still a stoplight. */
+    box-shadow:
+      0 0 0 2px var(--ring),
+      inset 0 0 0 0.5px var(--traffic-edge);
   }
 
   .traffic-glyph {
@@ -658,6 +675,98 @@ html[data-window-material="vibrancy"] {
   .traffic-lights:hover .traffic-glyph,
   .traffic-lights:focus-within .traffic-glyph {
     opacity: 1;
+  }
+
+  /* ---------------------------------------------------------------------------
+     Window controls, the other frame — Windows and Linux, where the three
+     operations sit as a cluster at the trailing edge.
+
+     They are *plates*, not slabs. The old treatment was the caption button
+     every toolkit ships: a 46px slab running the full height of the bar, flush
+     to the window corner, with a glyph in the middle. Correct, and deliberately
+     indistinguishable from the platform's own chrome — which is the opposite of
+     what a shell that draws its own window is after.
+
+     So the target and the plate are split, and the split is the whole design:
+
+       target   `--width-window-control` × the bar — reaches the window edge,
+                because a maximized window is closed by flinging the pointer
+                into the corner and a target that stops 4px short of it is a
+                target that gets missed (Fitts);
+       plate    `--size-window-control` square, 4px inside the frame on every
+                side, 8px from its neighbours — a rounded key with room to
+                carry a fill, which the slab could not have without painting a
+                band across the frame.
+
+     Nothing is painted at rest: three quiet glyphs on the bar, and a fill only
+     under the pointer. The idle ink is `--muted-foreground`, the rung the
+     inactive tabs already use — the frame is chrome, and the loudest thing on
+     the bar should be the tab the user is actually in. Hover is the full
+     `--accent` fill and foreground ink, and the press travels: the one
+     transform in the frame, on the one gesture that is a movement rather than
+     a state change.
+     --------------------------------------------------------------------------- */
+  .window-control {
+    outline: none;
+  }
+
+  .window-control-plate {
+    color: var(--muted-foreground);
+    /* Colour on the state-change curve, transform on the settle curve — the
+       split every other control in the shell makes. */
+    transition:
+      background-color var(--transition-duration-instant) var(--ease-standard),
+      color var(--transition-duration-instant) var(--ease-standard),
+      transform var(--transition-duration-fast) var(--ease-spring-fast);
+  }
+
+  /* An inactive window stops asserting itself (src/lib/window-focus.ts), and
+     its caption glyphs go quiet with it the way Windows' own do. 70% of the
+     muted ink still clears ≈4:1 on the bar: a control that is still clickable
+     still owes the pointer a target it can see. */
+  .window-controls[data-focused="false"] .window-control-plate {
+    color: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+  }
+
+  /* Pointer feedback — and the one place where a native plugin forces the shape
+     of this file. The snap layout overlay (src-tauri/src/lib.rs) covers the
+     maximize button and swallows `:hover` over it, mirroring the matching rule
+     onto `.is-hovered` instead; so the id has to appear in a `:hover` rule of
+     its own for the state to survive at all. Written out in full rather than
+     left to inherit from the rule above, because the mirroring copies a rule,
+     not a cascade. */
+  .window-control:hover .window-control-plate,
+  #window-maximize:hover .window-control-plate,
+  #window-maximize.is-hovered .window-control-plate {
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+  }
+
+  /* Close tints while the pointer is over it and only fills when it is pressed.
+     The shell's wash vocabulary — a 10% accent drop target, a 7% state layer —
+     says a hue at low strength is enough to name what a thing does; the solid
+     fill is spent on the moment the intent is committed rather than the moment
+     it is approached. Hover and press are then a real hierarchy: move over it
+     and the glyph says red, press it and the key says red. */
+  .window-control[data-action="close"]:hover .window-control-plate {
+    background-color: color-mix(in oklab, var(--destructive) 16%, transparent);
+    color: var(--destructive);
+  }
+  .window-control[data-action="close"]:active .window-control-plate {
+    background-color: var(--destructive);
+    color: var(--on-destructive);
+  }
+
+  .window-control:active .window-control-plate {
+    transform: scale(0.9);
+  }
+
+  /* These are the stoplights' family, so they take the stoplights' ring: the
+     full-strength 2px halo that `--ring` allows, rather than the 40% the wider
+     controls in the app run — a 30px key has the room, and the window frame is
+     a place to land on with the keyboard and no visible cue otherwise. */
+  .window-control:focus-visible .window-control-plate {
+    box-shadow: 0 0 0 2px var(--ring);
   }
 
   /* Focus ring: two families, one value each. They exist because a full-bleed
@@ -698,12 +807,6 @@ html[data-window-material="vibrancy"] {
   input[type="number"]::-webkit-outer-spin-button {
     appearance: none;
     margin: 0;
-  }
-
-  #window-maximize:hover,
-  #window-maximize.is-hovered {
-    color: var(--accent-foreground);
-    background-color: var(--accent);
   }
 
   /* State layer: hover/focus tint mixed from the foreground token of the
@@ -948,6 +1051,12 @@ html[data-window-material="vibrancy"] {
   .state-layer:active::after {
     opacity: 0.26;
   }
+  /* The close plate's wash doubles with them, and for the same reason: at 16%
+     the hue is what names the action, and this mode is the user saying that
+     naming is not enough to read at a glance. */
+  .window-control[data-action="close"]:hover .window-control-plate {
+    background-color: color-mix(in oklab, var(--destructive) 26%, transparent);
+  }
 }
 
 @media (forced-colors: active) {
@@ -1045,6 +1154,16 @@ html[data-window-material="vibrancy"] {
   button:hover:not(.state-layer):not(:focus-visible) {
     outline: 1px solid CanvasText;
     outline-offset: -1px;
+  }
+
+  /* The close plate's press is a fill, and every fill is a wash of the canvas
+     over the canvas in this mode — so the press borrows the palette's one
+     "attend to this" colour, the substitution the capacity bar already makes.
+     Its hover tint is left alone to the rule above, which is the palette's own
+     answer to hover. */
+  .window-control[data-action="close"]:active .window-control-plate {
+    background-color: Highlight;
+    color: HighlightText;
   }
 
   /* The drop target's wash and ring are both gone; the ring's replacement is
