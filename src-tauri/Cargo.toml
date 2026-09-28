@@ -187,6 +187,12 @@ zbus = "5"
 # Linux integration already depends on `gio` — and it is what the Files
 # window being imitated is built on.
 gio = "0.18"
+# Opens the short-lived second connection to the compositor that
+# `linux_graphics` uses to ask whether `linux-drm-syncobj-v1` is advertised,
+# before GTK can step on the answer. Already compiled into the library —
+# `tauri-plugin-clipboard-manager` reaches it through `arboard`/`wl-clipboard-rs`
+# on this platform — so naming it directly adds no build time.
+wayland-client = "0.31"
 
 [patch.crates-io]
 drag = { path = "vendor/drag" }

@@ -23,13 +23,19 @@
 //! Why this is a session-time decision rather than an unconditional one: the
 //! affected set follows the protocol, not the desktop name. KWin advertises
 //! `linux-drm-syncobj-v1` from 6.1 on and fails exactly the way GNOME does — a
-//! gate narrowed to GNOME was tried and withdrawn when KDE reproduced the
-//! crash — while a compositor that does not advertise the protocol has no sync
-//! object to arm, and the variable is inert there. An X11 session fails
+//! gate narrowed to GNOME by name was tried and withdrawn when KDE reproduced
+//! the crash — while a compositor that does not advertise the protocol has no
+//! sync object to arm, and the variable is inert there. An X11 session fails
 //! differently if it fails at all (a blank white webview, from the GBM buffer
-//! path). The compositor's protocol list is only readable from inside a Wayland
-//! connection — the very thing this code has to run before — so the gate is as
-//! close to the defect's conditions as a check that early can get.
+//! path), so a `GDK_BACKEND` that sends GTK to X11 ends the question before the
+//! compositor is even asked.
+//!
+//! The gate is therefore the defect's own condition, asked of the compositor
+//! directly: [`explicit_sync_is_advertised`] opens a second, short-lived
+//! Wayland connection ahead of GTK's, walks the registry for the
+//! [`EXPLICIT_SYNC_GLOBAL`] global, and hangs up. A session the probe
+//! cannot ask — no compositor, a refusal, an error — is left alone, and its
+//! user keeps the three variables [`already_answered`] honors.
 //!
 //! `__NV_DISABLE_EXPLICIT_SYNC=1` turns off the NVIDIA half of the pair and
 //! leaves the DMA-BUF renderer — the fast path — in place, which is the trade
@@ -54,6 +60,11 @@ const NVIDIA_EXPLICIT_SYNC: &str = "__NV_DISABLE_EXPLICIT_SYNC";
 /// `/sys/class/drm/card*/device/vendor` spells it.
 const NVIDIA_VENDOR_ID: &str = "0x10de";
 
+/// The registry global that says the compositor speaks the protocol. The
+/// protocol is named `linux-drm-syncobj-v1`, but a staging protocol carries the
+/// `wp_` namespace, and it is the prefixed spelling the registry lists.
+const EXPLICIT_SYNC_GLOBAL: &str = "wp_linux_drm_syncobj_manager_v1";
+
 /// The routes a user, a packager, or a future version of this module may have
 /// already taken. Any of them means the question is settled.
 const ANSWERED_ELSEWHERE: [&str; 3] = [
@@ -75,6 +86,14 @@ static APPLIED: AtomicBool = AtomicBool::new(false);
 /// GTK has loaded is a variable that had no effect.
 pub fn apply() {
     if !wayland_is_the_backend() || !nvidia_is_present() || already_answered() {
+        return;
+    }
+
+    // A statement of its own, and host-gated: only the probe speaks Wayland,
+    // while the rest of the gate stays host-independent so its tests run
+    // everywhere the module does.
+    #[cfg(target_os = "linux")]
+    if !explicit_sync_is_advertised() {
         return;
     }
 
@@ -147,6 +166,53 @@ fn already_answered() -> bool {
     ANSWERED_ELSEWHERE
         .iter()
         .any(|name| std::env::var_os(name).is_some())
+}
+
+/// Whether the compositor advertises `linux-drm-syncobj-v1`, the protocol that
+/// carries the NVIDIA driver's sync objects — the half of the pair that can be
+/// asked about this early, before an EGL context exists to hold the other.
+///
+/// A registry walk on a connection of the module's own: `apply` runs before
+/// GTK opens the session's real connection, and a second connection to the
+/// same compositor is the only way to have the answer in time. Nothing is
+/// bound, and nothing is kept — the walk lasts one roundtrip, and the socket
+/// is dropped on the way out.
+#[cfg(target_os = "linux")]
+fn explicit_sync_is_advertised() -> bool {
+    use wayland_client::protocol::wl_registry;
+    use wayland_client::{Connection, Dispatch, QueueHandle};
+
+    /// The registry walk, reduced to its one question.
+    struct Walk {
+        advertised: bool,
+    }
+
+    impl Dispatch<wl_registry::WlRegistry, ()> for Walk {
+        fn event(
+            state: &mut Self,
+            _registry: &wl_registry::WlRegistry,
+            event: wl_registry::Event,
+            _data: &(),
+            _connection: &Connection,
+            _queue: &QueueHandle<Self>,
+        ) {
+            let wl_registry::Event::Global { interface, .. } = event else {
+                return;
+            };
+            if interface == EXPLICIT_SYNC_GLOBAL {
+                state.advertised = true;
+            }
+        }
+    }
+
+    let Ok(connection) = Connection::connect_to_env() else {
+        return false;
+    };
+    let mut queue = connection.new_event_queue();
+    let _registry = connection.display().get_registry(&queue.handle(), ());
+    let mut walk = Walk { advertised: false };
+    let answered = queue.roundtrip(&mut walk).is_ok();
+    walk.advertised && answered
 }
 
 #[cfg(test)]
