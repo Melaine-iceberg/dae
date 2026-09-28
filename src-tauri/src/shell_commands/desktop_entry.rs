@@ -1,14 +1,6 @@
 //! XDG desktop-entry parsing for the Linux backend — the parts that are pure
-//! string work, kept out of the modules that call them so they compile and are
-//! tested on any host.
-//!
-//! Two consumers read these today: [`super::linux`] renders KDE's service menus,
-//! and [`crate::file_system::open_with`] lists the applications that can open a
-//! file. Both need the same three things — an INI reader, a localization picker
-//! and an `Exec` expander — and the picker is the reason those are shared rather
-//! than each module having its own: a `.desktop` that draws `Name` but not
-//! `Name[zh_CN]` shows English next to a Chinese menu, which is exactly the
-//! inconsistency that made the app picker look unstyled.
+//! string work, kept out of `linux.rs` so they compile and are tested on any
+//! host.
 //!
 //! This split is not cosmetic. The machine this module was written on cannot
 //! build the Linux backend at all (its dependencies need a Linux sysroot), so
@@ -155,7 +147,7 @@ fn is_service_menu(entry: &HashMap<String, String>) -> bool {
 
 /// Splits a desktop entry's `;`-separated list, dropping the empty trailing
 /// element the format requires and any padding a packager added.
-pub(crate) fn split_list(value: &str) -> impl Iterator<Item = &str> {
+fn split_list(value: &str) -> impl Iterator<Item = &str> {
     value
         .split(';')
         .map(str::trim)
@@ -164,7 +156,7 @@ pub(crate) fn split_list(value: &str) -> impl Iterator<Item = &str> {
 
 /// Picks the best available localization of `key`: the exact language, then the
 /// language without its territory, then the unlocalized value.
-pub(crate) fn localized<'a>(
+fn localized<'a>(
     group: &'a HashMap<String, String>,
     key: &str,
     language: Option<&str>,
@@ -188,7 +180,7 @@ pub(crate) fn localized<'a>(
 /// separator inside a value, which is why the two are checked separately.
 /// Values are otherwise kept verbatim, including the backslash escapes an
 /// `Exec` line relies on — expansion happens later, in [`expand_exec`].
-pub(crate) fn parse_groups(text: &str) -> HashMap<String, HashMap<String, String>> {
+fn parse_groups(text: &str) -> HashMap<String, HashMap<String, String>> {
     let mut groups: HashMap<String, HashMap<String, String>> = HashMap::new();
     let mut current: Option<String> = None;
 
@@ -224,7 +216,7 @@ pub(crate) fn parse_groups(text: &str) -> HashMap<String, HashMap<String, String
 
 /// The user's language for desktop-entry localization, in the `ll_CC` form the
 /// format's `Name[ll_CC]` keys use.
-pub(crate) fn user_language() -> Option<String> {
+pub(super) fn user_language() -> Option<String> {
     for variable in ["LC_ALL", "LC_MESSAGES", "LANG"] {
         if let Ok(value) = std::env::var(variable)
             && !value.is_empty()
@@ -255,7 +247,7 @@ pub(crate) fn user_language() -> Option<String> {
 /// `.py` file, though the shared-mime-info database says `text/x-python`
 /// inherits from it. Reading that database is a much larger job than this
 /// section is worth today.
-pub(crate) fn mime_matches(declared: &str, mime: &str, kind: SelectionKind) -> bool {
+pub(super) fn mime_matches(declared: &str, mime: &str, kind: SelectionKind) -> bool {
     match declared {
         // KDE's spelling of "any file". A directory is not a file.
         ANY_FILE => kind == SelectionKind::File,
@@ -287,7 +279,7 @@ pub(crate) fn mime_matches(declared: &str, mime: &str, kind: SelectionKind) -> b
 /// or URL code at all, the selection is appended — the same fallback KDE
 /// applies, and the reason a menu written as `Exec=some-tool --flag` still
 /// works on a selection.
-pub(crate) fn expand_exec(
+pub(super) fn expand_exec(
     exec: &str,
     paths: &[String],
     name: &str,

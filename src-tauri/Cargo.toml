@@ -160,9 +160,9 @@ sha2 = "0.11.0"
 md-5 = "0.11.0"
 sha1 = "0.11.0"
 rand = "0.10.2"
-# Maps file paths to freedesktop MIME types. The Linux "Open With" picker uses
-# it to match applications declared in `.desktop` files, and the shell-command
-# section uses it to match KDE service menus the same way.
+# Maps file paths to freedesktop MIME types. The two Linux backends that name a
+# path's type use it: `shell_commands` matches KDE service menus with it, and
+# `file_icons` picks the mimetype icon to draw.
 #
 # Declared for every platform rather than behind `cfg(target_os = "linux")` on
 # purpose: `shell_commands/linux.rs` is compiled under `cfg(test)` too, so the
@@ -177,6 +177,16 @@ mime_guess = "2"
 # this adds no compile time there.
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = "5"
+# The desktop's own application database, for the "Open With" picker
+# (`file_system::open_with::linux`). Reading `.desktop` files by hand can only
+# ever approximate what the desktop lists: glib is the one that knows the
+# shared-mime-info inheritance tree (an editor declaring `text/plain` is a
+# handler for `.py`), the flatpak and snap export directories that were folded
+# into `XDG_DATA_DIRS`, the `mime.cache` index, and which entries the current
+# `XDG_CURRENT_DESKTOP` hides. Linking it costs nothing extra — Tauri's own
+# Linux integration already depends on `gio` — and it is what the Files
+# window being imitated is built on.
+gio = "0.18"
 
 [patch.crates-io]
 drag = { path = "vendor/drag" }

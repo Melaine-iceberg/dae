@@ -4,10 +4,10 @@
 //! `commands`): since Windows 10 that dialog ignores the registration flags
 //! and can no longer set default associations, and the OS offers no supported
 //! programmatic replacement, so no custom picker is provided there. macOS and
-//! Linux expose no system picker at all, so these commands enumerate candidate
-//! applications (LaunchServices on macOS, freedesktop `.desktop` entries on
-//! Linux) for the in-app picker, which can open the item once or set a new
-//! default handler.
+//! Linux expose no system picker at all, so these commands ask the platform's
+//! own database what can open the item — LaunchServices on macOS, glib's
+//! application registry on Linux — and hand the answer to the in-app picker,
+//! which opens the item once or registers it as the new default handler.
 
 use super::error::FileSystemError;
 use super::vfs;
@@ -32,12 +32,30 @@ pub struct OpenWithApp {
     pub icon_name: Option<String>,
 }
 
+/// The picker's content, in the three groups a desktop file manager uses.
+///
+/// The shape is not an invention to imitate: it is what GNOME's Files draws, and
+/// the groups come from three genuinely different questions rather than one list
+/// sliced up. Only `other` is a large list, which is why it is a section behind a
+/// filter box rather than a flat continuation of `recommended`.
+#[derive(Debug, Default, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenWithChoices {
+    /// The handler the desktop would use right now, shown at the top so the
+    /// row the user is about to change is also the row they see first.
+    pub default: Option<OpenWithApp>,
+    /// Applications that name this exact type in their own metadata.
+    pub recommended: Vec<OpenWithApp>,
+    /// Every other application the desktop would offer. Empty on macOS, where
+    /// LaunchServices has no "all applications" answer that is worth a dialog.
+    pub other: Vec<OpenWithApp>,
+}
+
 /// Lists the applications registered as able to open the local file or
-/// directory at `path`. When no application advertises the item's type, all
-/// visible applications are returned so the picker still has content.
+/// directory at `path`, grouped the way a desktop's own picker groups them.
 #[tauri::command]
 #[specta::specta]
-pub async fn list_open_with_apps(path: String) -> Result<Vec<OpenWithApp>, FileSystemError> {
+pub async fn list_open_with_apps(path: String) -> Result<OpenWithChoices, FileSystemError> {
     if !vfs::is_local_path(&path) {
         return Err(FileSystemError::InvalidInput(
             "fs.open_with_local_only".into(),
@@ -84,7 +102,7 @@ pub async fn open_with_app(
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-fn list_apps(path: &Path) -> Result<Vec<OpenWithApp>, FileSystemError> {
+fn list_apps(path: &Path) -> Result<OpenWithChoices, FileSystemError> {
     #[cfg(target_os = "macos")]
     return macos::list_apps(path);
 
@@ -118,7 +136,7 @@ fn open_app(path: &Path, app_id: &str, set_default: bool) -> Result<(), FileSyst
 
 #[cfg(target_os = "macos")]
 mod macos {
-    use super::{FileSystemError, OpenWithApp};
+    use super::{FileSystemError, OpenWithApp, OpenWithChoices};
     use core_foundation::array::{CFArray, CFArrayRef};
     use core_foundation::base::TCFType;
     use core_foundation::string::{CFString, CFStringRef};
@@ -192,7 +210,14 @@ mod macos {
         }
 
         apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        Ok(apps)
+        // LaunchServices answers one question — what can open this URL — so the
+        // macOS picker has one group. The default handler and the "all
+        // applications" list would each need a separate query, and the second is
+        // a directory walk of every `.app` on the machine.
+        Ok(OpenWithChoices {
+            recommended: apps,
+            ..Default::default()
+        })
     }
 
     pub fn open_app(path: &Path, app_id: &str, set_default: bool) -> Result<(), FileSystemError> {
@@ -304,227 +329,148 @@ mod macos {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use super::{FileSystemError, OpenWithApp};
-    use crate::shell_commands::SelectionKind;
-    use crate::shell_commands::desktop_entry::{
-        expand_exec, localized, mime_matches, parse_groups, split_list, user_language,
-    };
-    use crate::xdg::data_roots;
+    use super::{FileSystemError, OpenWithApp, OpenWithChoices};
+    use gio::prelude::*;
     use std::collections::HashSet;
-    use std::path::{Path, PathBuf};
-    use std::process::Command;
+    use std::path::Path;
 
-    /// One application launcher, reduced to what the picker needs.
-    struct Application {
-        /// The `.desktop` file name, which is both the id the frontend sends
-        /// back and the value `xdg-mime` stores as a handler.
-        id: String,
-        /// The `.desktop` file itself, absolute — what `%k` expands to.
-        path: PathBuf,
-        /// Display name, localized the way the desktop's own menus localize.
-        name: String,
-        /// The raw `Exec` line, field codes still in place.
-        exec: String,
-        /// The raw `Icon=` value: a themed name, or an absolute path. Both are
-        /// answered by the same theme search.
-        icon: Option<String>,
-        /// The declared `MimeType` list, lowercased.
-        mime_types: Vec<String>,
-    }
-
-    /// The `applications` directory under each XDG data root, most specific
-    /// first, so a user's own entry wins the deduplication below.
-    fn application_dirs() -> Vec<PathBuf> {
-        data_roots()
-            .into_iter()
-            .map(|root| root.join("applications"))
-            .collect()
-    }
-
-    /// Reads the keys the picker needs from a desktop entry file, skipping the
-    /// entries that stay out of menus (`NoDisplay`/`Hidden`), that need a
-    /// terminal host (`Terminal=true`, which cannot be launched reliably from a
-    /// GUI context without desktop-specific wrapping), and that are not
-    /// launchers at all (`Type=Link`, `Type=Directory`).
-    fn parse_application(
-        path: &Path,
-        content: &str,
-        language: Option<&str>,
-    ) -> Option<Application> {
-        let entry = parse_groups(content).remove("Desktop Entry")?;
-
-        let is_disabled = |key: &str| {
-            entry
-                .get(key)
-                .is_some_and(|value| value.eq_ignore_ascii_case("true"))
-        };
-        if is_disabled("NoDisplay") || is_disabled("Hidden") || is_disabled("Terminal") {
-            return None;
-        }
-        // Omitted means `Application`, which is what the pre-spec files are.
-        match entry.get("Type").map(String::as_str) {
-            None | Some("Application") => {}
-            _ => return None,
-        }
-
-        let name = localized(&entry, "Name", language)?.to_owned();
-        let exec = entry
-            .get("Exec")
-            .filter(|value| !value.trim().is_empty())?
-            .clone();
-
-        Some(Application {
-            id: path.file_name()?.to_string_lossy().into_owned(),
-            path: path.to_path_buf(),
-            name,
-            exec,
-            icon: localized(&entry, "Icon", language).map(str::to_owned),
-            mime_types: entry
-                .get("MimeType")
-                .map(|value| split_list(value).map(str::to_lowercase).collect())
-                .unwrap_or_default(),
-        })
-    }
-
-    /// Reads every candidate launcher on the machine. Real file-system work, so
-    /// callers keep it off the async command thread.
-    fn collect_applications() -> Vec<Application> {
-        let language = user_language();
-        let mut seen = HashSet::new();
-        let mut applications = Vec::new();
-
-        for dir in application_dirs() {
-            let Ok(files) = std::fs::read_dir(&dir) else {
-                continue;
-            };
-            // `read_dir` yields an unspecified order; sorting keeps the list
-            // stable between runs, so the picker does not reshuffle.
-            let mut files: Vec<PathBuf> = files.flatten().map(|file| file.path()).collect();
-            files.sort();
-
-            for path in files {
-                if path.extension().and_then(|name| name.to_str()) != Some("desktop") {
-                    continue;
-                }
-                let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-                    continue;
-                };
-                if !seen.insert(name.to_owned()) {
-                    continue;
-                }
-                // A root-owned entry from a half-installed package must not
-                // hide the rest of the list.
-                let Ok(content) = std::fs::read_to_string(&path) else {
-                    continue;
-                };
-                if let Some(application) = parse_application(&path, &content, language.as_deref()) {
-                    applications.push(application);
-                }
-            }
-        }
-        applications
-    }
-
-    /// The freedesktop MIME type the matching keys on.
-    fn detect_mime(path: &Path) -> String {
+    /// The freedesktop type applications get matched on.
+    ///
+    /// Asked of glib rather than read off the extension, because this one string
+    /// decides the whole list: the local file backend consults the shared mime
+    /// info globs *and* the file's magic bytes, so an extensionless PNG is
+    /// `image/png` and gets image viewers, and `/bin/bash` is
+    /// `application/x-executable` rather than "unknown".
+    fn content_type(path: &Path) -> String {
         if path.is_dir() {
             return "inode/directory".into();
         }
-        mime_guess::from_path(path)
-            .first_raw()
-            .unwrap_or("application/octet-stream")
-            .to_owned()
-    }
 
-    pub fn list_apps(path: &Path) -> Result<Vec<OpenWithApp>, FileSystemError> {
-        let mime = detect_mime(path);
-        let kind = if path.is_dir() {
-            SelectionKind::Directory
-        } else {
-            SelectionKind::File
-        };
-        let applications = collect_applications();
-
-        let mut matching: Vec<&Application> = applications
-            .iter()
-            .filter(|application| {
-                application
-                    .mime_types
-                    .iter()
-                    .any(|declared| mime_matches(declared, &mime, kind))
-            })
-            .collect();
-
-        if matching.is_empty() {
-            // Unrecognized types still deserve a picker: offer everything.
-            matching = applications.iter().collect();
+        let file = gio::File::for_path(path);
+        if let Ok(info) = file.query_info(
+            "standard::content-type",
+            gio::FileQueryInfoFlags::NONE,
+            None::<&gio::Cancellable>,
+        ) && let Some(kind) = info.content_type()
+        {
+            return kind.into();
         }
 
-        matching.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        // Unreadable, or a type with no rule for it. `octet-stream` is what glib
+        // itself calls the unknown, and the picker still has its third section.
+        "application/octet-stream".into()
+    }
 
-        Ok(matching
+    /// The candidate icon names, colon-joined for the protocol.
+    ///
+    /// Empty entries are dropped because glib hands them through — an entry whose
+    /// `Icon=` is a bare `;` yields a list containing one — and an empty element
+    /// would travel as `::` and be looked up as the empty name.
+    fn icon_query<'a>(names: impl Iterator<Item = &'a str>) -> Option<String> {
+        let names: Vec<&str> = names.filter(|name| !name.is_empty()).collect();
+        (!names.is_empty()).then(|| names.join(":"))
+    }
+
+    /// Every name this launcher's icon could answer to, in the order the Icon
+    /// Theme spec says to try them.
+    ///
+    /// glib hands back a `ThemedIcon`, not the raw `Icon=` value, and the list it
+    /// carries is longer than what the file says: `dev.zed.Zed.desktop` yields
+    /// `zed` as well, which is the name older themes actually ship.
+    /// Colon-joined because the protocol takes one parameter and `:` cannot appear
+    /// in an icon name. An `Icon=` that points at a file rather than a theme gives
+    /// some other icon type, and that row keeps the drawn glyph.
+    fn icon_names(icon: Option<&gio::Icon>) -> Option<String> {
+        let themed = icon?.downcast_ref::<gio::ThemedIcon>()?;
+        icon_query(themed.names().iter().map(|name| name.as_str()))
+    }
+
+    /// One row of the picker, or `None` for an entry glib could not name.
+    fn row(app: &gio::AppInfo) -> Option<OpenWithApp> {
+        Some(OpenWithApp {
+            id: app.id()?.into(),
+            name: app.display_name().into(),
+            icon_name: icon_names(app.icon().as_ref()),
+        })
+    }
+
+    /// glib's application list, as rows ordered the way the dialog shows them.
+    ///
+    /// `visible` is the filter a desktop applies to its own launcher list: not
+    /// `NoDisplay`, not `Hidden`, and allowed by the running `XDG_CURRENT_DESKTOP`
+    /// — which is why a KDE-only entry stays out of the dialog here, exactly as it
+    /// stays out of the desktop's overview.
+    ///
+    /// It keeps `Terminal=true` entries, which the hand-rolled version of this list
+    /// dropped for fear of launching a text user interface into nothing. glib wraps
+    /// those in a terminal of its own (`xdg-terminal-exec`, then the known
+    /// emulators) and reports a real error when the machine has none, so the rows
+    /// this filter dropped were simply missing, not safer.
+    fn rows(apps: Vec<gio::AppInfo>, visible: bool) -> Vec<OpenWithApp> {
+        let mut rows: Vec<OpenWithApp> = apps
             .iter()
-            .map(|application| OpenWithApp {
-                id: application.id.clone(),
-                name: application.name.clone(),
-                icon_name: application.icon.clone(),
-            })
-            .collect())
+            .filter(|app| !visible || app.should_show())
+            .filter_map(row)
+            .collect();
+        rows.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        rows
+    }
+
+    pub fn list_apps(path: &Path) -> Result<OpenWithChoices, FileSystemError> {
+        let mime = content_type(path);
+
+        // Three different questions, not one list sliced three ways.
+        // `recommended_for_type` is the entries naming this type in their own
+        // `MimeType=`; `all()` is every launcher on the machine, which is how an
+        // entry declaring no `MimeType=` at all — WeChat, here — ends up in the
+        // desktop's dialog for a text file. The gap between the two is wider than
+        // it looks: glib resolves `text/x-python` against shared-mime-info's
+        // `inherits-from` chain, so an editor that only ever wrote `text/plain` is
+        // a handler for a `.py` file and still not a recommendation for one.
+        let default = gio::AppInfo::default_for_type(&mime, false)
+            .as_ref()
+            .and_then(row);
+        let recommended = rows(gio::AppInfo::recommended_for_type(&mime), true);
+
+        // The default stays inside 推荐应用: Files draws it in both places, once to
+        // say what will happen and once to say it was chosen. Only the tail is
+        // trimmed, so no row appears twice.
+        let mut other = rows(gio::AppInfo::all(), true);
+        let taken: HashSet<String> = recommended.iter().map(|app| app.id.clone()).collect();
+        other.retain(|app| !taken.contains(&app.id));
+
+        Ok(OpenWithChoices {
+            default,
+            recommended,
+            other,
+        })
     }
 
     pub fn open_app(path: &Path, app_id: &str, set_default: bool) -> Result<(), FileSystemError> {
-        let application = collect_applications()
+        // Matched against the launchers glib itself found rather than handed to
+        // `DesktopAppInfo::new`: the id comes back from the webview, and building
+        // an entry by name would accept any readable `.desktop` file on the
+        // machine instead of one this list offered.
+        let app = gio::AppInfo::all()
             .into_iter()
-            .find(|application| application.id == app_id)
+            .find(|app| app.id().as_deref() == Some(app_id))
             .ok_or_else(|| FileSystemError::NotFound("fs.open_with_app_missing".into()))?;
 
-        let file = path.to_string_lossy().into_owned();
-        let desktop_file = application.path.to_string_lossy().into_owned();
-        // Expands to an argument vector with the program first. Deliberately not
-        // through a shell — the `Exec` line is data from a `.desktop` file, and
-        // shell semantics would let a selected filename containing `;` or `$(…)`
-        // change what runs.
-        let arguments = expand_exec(
-            &application.exec,
-            std::slice::from_ref(&file),
-            &application.name,
-            &desktop_file,
-        );
-        let (program, rest) = arguments
-            .split_first()
-            .ok_or_else(|| FileSystemError::Internal("fs.open_with_launch_failed".into()))?;
-
-        let child = Command::new(program).args(rest).spawn().map_err(|error| {
-            FileSystemError::Internal(format!("fs.open_with_launch_failed: {error}"))
-        })?;
-        reap(child);
+        let uri = gio::File::for_path(path).uri().to_string();
+        // glib expands the `Exec` line, chooses `%f` over `%U` by what the entry
+        // declares, does the startup-notification handshake, and reaps the child —
+        // four things the hand-built argv did not do, one of which needed a thread
+        // of its own.
+        app.launch_uris(&[uri.as_str()], None::<&gio::AppLaunchContext>)
+            .map_err(|error| {
+                FileSystemError::Internal(format!("fs.open_with_launch_failed: {error}"))
+            })?;
 
         if set_default {
-            set_default_handler(app_id, &detect_mime(path))?;
-        }
-        Ok(())
-    }
-
-    /// Reaps the launched application so it does not outlive its parent as a
-    /// zombie. Its exit status is of no interest here; only that it is collected.
-    fn reap(mut child: std::process::Child) {
-        std::thread::spawn(move || {
-            let _ = child.wait();
-        });
-    }
-
-    /// Registers the desktop entry as the default handler via `xdg-mime`.
-    fn set_default_handler(app_id: &str, mime: &str) -> Result<(), FileSystemError> {
-        let status = Command::new("xdg-mime")
-            .args(["default", app_id, mime])
-            .status()
-            .map_err(|error| {
-                FileSystemError::Internal(format!("fs.open_with_default_failed: {error}"))
-            })?;
-        if !status.success() {
-            return Err(FileSystemError::Internal(
-                "fs.open_with_default_failed".into(),
-            ));
+            app.set_as_default_for_type(&content_type(path))
+                .map_err(|error| {
+                    FileSystemError::Internal(format!("fs.open_with_default_failed: {error}"))
+                })?;
         }
         Ok(())
     }
@@ -533,79 +479,56 @@ mod linux {
     mod tests {
         use super::*;
 
-        fn parse(text: &str) -> Option<Application> {
-            parse_application(
-                Path::new("/usr/share/applications/tool.desktop"),
-                text,
-                Some("zh_CN"),
-            )
-        }
-
         #[test]
-        fn takes_the_users_language_and_the_icon_the_entry_names() {
-            // The two things a hand-rolled parser of this file's own design got
-            // wrong: an entry that ships `Name[zh_CN]` has no business drawing
-            // English next to a Chinese menu, and an entry with an icon is not
-            // the generic window glyph.
-            let application = parse(
-                "[Desktop Entry]\n\
-                 Type=Application\n\
-                 Name=Archive Manager\n\
-                 Name[zh_CN]=归档管理器\n\
-                 Icon=org.kde.ark\n\
-                 Exec=ark %f\n\
-                 MimeType=application/zip;text/plain;\n",
-            )
-            .expect("a launcher");
-
-            assert_eq!(application.id, "tool.desktop");
-            assert_eq!(application.name, "归档管理器");
-            assert_eq!(application.icon.as_deref(), Some("org.kde.ark"));
-            assert_eq!(application.exec, "ark %f");
+        fn joins_the_theme_candidates_and_drops_the_empty_ones() {
             assert_eq!(
-                application.mime_types,
-                ["application/zip".to_string(), "text/plain".to_string()]
+                icon_query(["text-editor", "accessories-text-editor"].into_iter()).as_deref(),
+                Some("text-editor:accessories-text-editor")
             );
+            assert_eq!(
+                icon_query(["a", "", "b"].into_iter()).as_deref(),
+                Some("a:b")
+            );
+            assert_eq!(icon_query(["", ""].into_iter()), None);
+            assert_eq!(icon_query(std::iter::empty()), None);
+        }
+
+        /// The order the theme asked for is the order the lookup gets: glib puts
+        /// the `Icon=` value first and the names derived from the desktop id after
+        /// it, and taking only the first would lose every older theme that ships
+        /// the shorter name. (`-symbolic` variants trail, which glib appends.)
+        #[test]
+        fn keeps_the_theme_name_order_the_lookup_has_to_try() {
+            let themed = gio::ThemedIcon::from_names(&["dev.zed.Zed", "zed"]);
+            assert_eq!(
+                icon_names(Some(&themed.upcast())).as_deref(),
+                Some("dev.zed.Zed:zed:dev.zed.Zed-symbolic:zed-symbolic")
+            );
+            // No icon at all is a row with no image, not a row that is missing.
+            assert_eq!(icon_names(None), None);
         }
 
         #[test]
-        fn falls_back_to_the_bare_name_when_the_locale_is_absent() {
-            let application = parse(
-                "[Desktop Entry]\n\
-                 Name=Firefox\n\
-                 Icon=firefox\n\
-                 Exec=firefox %u\n",
-            )
-            .expect("a launcher");
+        fn calls_a_directory_and_an_unreadable_file_what_they_are() {
+            // A directory is its own type, which is the difference between
+            // offering a file manager and offering a text editor.
+            assert_eq!(content_type(Path::new("/tmp")), "inode/directory");
+            // No magic bytes to read, so no claim better than "data". Guessing
+            // from the suffix instead would promise image viewers for a file the
+            // user cannot open.
+            assert_eq!(
+                content_type(Path::new("/nonexistent/image.png")),
+                "application/octet-stream"
+            );
 
-            assert_eq!(application.name, "Firefox");
-        }
-
-        #[test]
-        fn keeps_an_entry_that_declares_no_type() {
-            // `Type` is required by the spec but its only meaningful default is
-            // `Application`, and pre-spec entries omit it.
-            assert!(parse("[Desktop Entry]\nName=T\nExec=t\n").is_some());
-        }
-
-        #[test]
-        fn skips_what_a_desktop_would_not_offer() {
-            for entry in [
-                // Hidden from menus by the packager.
-                "[Desktop Entry]\nName=T\nExec=t\nNoDisplay=true\n",
-                "[Desktop Entry]\nName=T\nExec=t\nHidden=true\n",
-                // Needs a terminal this picker cannot give it.
-                "[Desktop Entry]\nName=T\nExec=t\nTerminal=true\n",
-                // Not a launcher: a bookmark and an icon-theme directory.
-                "[Desktop Entry]\nType=Link\nName=T\nURL=https://example.com\n",
-                "[Desktop Entry]\nType=Directory\nName=T\n",
-                // Nothing to run.
-                "[Desktop Entry]\nName=T\nExec=   \n",
-                // No name to show.
-                "[Desktop Entry]\nExec=t\n",
-            ] {
-                assert!(parse(entry).is_none(), "accepted {entry:?}");
-            }
+            // And where the file *is* readable, the answer is not the name: this
+            // one has no extension at all, so only the content can say what it is.
+            let mut probe = std::env::temp_dir();
+            probe.push(format!("dae-open-with-probe-{}", std::process::id()));
+            std::fs::write(&probe, "just some words\n").expect("a writable temp dir");
+            let kind = content_type(&probe);
+            let _ = std::fs::remove_file(&probe);
+            assert_eq!(kind, "text/plain");
         }
     }
 }

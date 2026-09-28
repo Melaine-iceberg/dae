@@ -1236,6 +1236,7 @@ dependencies = [
  "drag",
  "dunce",
  "flate2",
+ "gio",
  "git2",
  "grep-matcher",
  "grep-regex",

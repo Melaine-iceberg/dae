@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AppWindow } from "lucide-react";
+import { AppWindow, Search } from "lucide-react";
 
-import { commands, type OpenWithApp } from "@/bindings";
+import { commands, type OpenWithChoices } from "@/bindings";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { FieldError } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
 import { cn } from "@/lib/utils";
@@ -24,8 +25,10 @@ const LOADING_ROW_COUNT = 6;
 
 /**
  * In-app "Open With" picker for macOS and Linux, where the OS exposes no
- * system dialog. Lists applications registered for the item's type and can
- * open it once or register the pick as the new default handler.
+ * system dialog. Shows the desktop's own answer to "what can open this" — the
+ * current default, the applications that advertise the type, and everything
+ * else the desktop would offer — and opens the item once or registers the pick
+ * as the new default handler.
  */
 export function OpenWithDialog({
   onClose,
@@ -37,21 +40,24 @@ export function OpenWithDialog({
   target: string | null;
 }) {
   const { t } = useTranslation("explorer");
-  const [apps, setApps] = useState<OpenWithApp[] | null>(null);
+  const [choices, setChoices] = useState<OpenWithChoices | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [setDefault, setSetDefault] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [openError, setOpenError] = useState<string | null>(null);
 
   const loadApps = useCallback((path: string) => {
-    setApps(null);
+    setChoices(null);
     setLoadError(null);
     void commands
       .listOpenWithApps(path)
-      .then((list) => {
-        setApps(list);
-        setSelectedId(list[0]?.id ?? null);
+      .then((result) => {
+        setChoices(result);
+        setSelectedId(
+          result.default?.id ?? result.recommended[0]?.id ?? result.other[0]?.id ?? null,
+        );
       })
       .catch((error: unknown) => {
         setLoadError(getFileOperationErrorMessage(error));
@@ -61,6 +67,7 @@ export function OpenWithDialog({
   useEffect(() => {
     if (!target) return;
 
+    setQuery("");
     setSetDefault(false);
     setIsPending(false);
     setOpenError(null);
@@ -68,6 +75,37 @@ export function OpenWithDialog({
   }, [loadApps, target]);
 
   const targetName = target ? (target.split(/[\\/]/).filter(Boolean).pop() ?? target) : "";
+
+  // The groups are the backend's, and so is the duplication between them: the
+  // desktop draws the default app twice on purpose, once to say what will happen
+  // and once to say it was chosen. Filtering keeps that, so a search for the
+  // current default lights up two rows.
+  const sections = useMemo(() => {
+    if (!choices) {
+      return [];
+    }
+    const needle = query.trim().toLowerCase();
+    return [
+      {
+        key: "default",
+        label: t("explorer:openWith.defaultSection"),
+        apps: choices.default ? [choices.default] : [],
+      },
+      {
+        key: "recommended",
+        label: t("explorer:openWith.recommendedSection"),
+        apps: choices.recommended,
+      },
+      { key: "other", label: t("explorer:openWith.otherSection"), apps: choices.other },
+    ]
+      .map((section) => ({
+        ...section,
+        apps: needle
+          ? section.apps.filter((app) => app.name.toLowerCase().includes(needle))
+          : section.apps,
+      }))
+      .filter((section) => section.apps.length > 0);
+  }, [choices, query, t]);
 
   const confirm = useCallback(
     (appId?: string) => {
@@ -87,6 +125,11 @@ export function OpenWithDialog({
     [isPending, onClose, selectedId, setDefault, target],
   );
 
+  const totalRows = (choices?.recommended.length ?? 0) + (choices?.other.length ?? 0);
+  // Only the platform with an unfiltered tail list needs a filter for it, and
+  // only a list long enough to scroll needs the field before it can be used.
+  const needsFilter = (choices?.other.length ?? 0) > 0 && totalRows > 8;
+
   return (
     <Dialog onOpenChange={onOpenChange} open={target !== null}>
       <DialogContent showCloseButton={!isPending}>
@@ -97,7 +140,7 @@ export function OpenWithDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {apps === null && !loadError ? (
+        {choices === null && !loadError ? (
           <div className="flex flex-col gap-1 rounded-md border p-1" role="status">
             {Array.from({ length: LOADING_ROW_COUNT }, (_, index) => (
               <Skeleton key={index} className="h-8 w-full" />
@@ -116,35 +159,60 @@ export function OpenWithDialog({
               {t("explorer:actions.retry")}
             </Button>
           </div>
-        ) : (apps ?? []).length === 0 ? (
-          <p className="rounded-md border p-3 text-caption text-muted-foreground">
-            {t("explorer:openWith.empty")}
-          </p>
         ) : (
-          <div
-            aria-label={t("explorer:openWith.listAriaLabel")}
-            className="max-h-64 overflow-y-auto rounded-md border p-1"
-            role="radiogroup"
-          >
-            {(apps ?? []).map((app) => (
-              <button
-                aria-checked={app.id === selectedId}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-body",
-                  "outline-none hover:bg-accent focus-visible:bg-accent",
-                  app.id === selectedId && "bg-accent",
-                )}
-                disabled={isPending}
-                key={app.id}
-                onClick={() => setSelectedId(app.id)}
-                onDoubleClick={() => confirm(app.id)}
-                role="radio"
-                type="button"
+          <div className="flex flex-col gap-2">
+            {needsFilter && (
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  aria-label={t("explorer:openWith.filterAriaLabel")}
+                  className="pl-7"
+                  disabled={isPending}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={t("explorer:openWith.filterPlaceholder")}
+                  type="search"
+                  value={query}
+                />
+              </div>
+            )}
+            {sections.length === 0 ? (
+              <p className="rounded-md border p-3 text-caption text-muted-foreground">
+                {query ? t("explorer:openWith.noMatch", { query }) : t("explorer:openWith.empty")}
+              </p>
+            ) : (
+              <div
+                aria-label={t("explorer:openWith.listAriaLabel")}
+                className="max-h-72 overflow-y-auto rounded-md border p-1"
+                role="radiogroup"
               >
-                <AppIcon name={app.iconName} />
-                <span className="truncate">{app.name}</span>
-              </button>
-            ))}
+                {sections.map((section) => (
+                  <div key={section.key}>
+                    <p className="px-2 pt-1.5 pb-1 text-caption font-medium text-muted-foreground">
+                      {section.label}
+                    </p>
+                    {section.apps.map((app) => (
+                      <button
+                        aria-checked={app.id === selectedId}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-body",
+                          "outline-none hover:bg-accent focus-visible:bg-accent",
+                          app.id === selectedId && "bg-accent",
+                        )}
+                        disabled={isPending}
+                        key={`${section.key}-${app.id}`}
+                        onClick={() => setSelectedId(app.id)}
+                        onDoubleClick={() => confirm(app.id)}
+                        role="radio"
+                        type="button"
+                      >
+                        <AppIcon name={app.iconName} />
+                        <span className="truncate">{app.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -155,7 +223,7 @@ export function OpenWithDialog({
             <input
               checked={setDefault}
               className="size-4 accent-(--primary)"
-              disabled={isPending || apps === null || apps.length === 0}
+              disabled={isPending || !selectedId}
               onChange={(event) => setSetDefault(event.target.checked)}
               type="checkbox"
             />

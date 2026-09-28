@@ -1061,7 +1061,7 @@ function DiskItem({
 
 function getDiskPresentation(volume: DiskVolume): { primary: string; secondary: string } {
   const driveLetter = /^([a-zA-Z]):[\\/]*$/.exec(volume.mountPoint)?.[1]?.toUpperCase();
-  const label = volume.name.trim();
+ const label = volume.name.trim();
   const fileSystem = volume.fileSystem.trim();
 
   if (driveLetter) {

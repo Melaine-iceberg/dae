@@ -65,7 +65,7 @@ pub(super) fn extract(path: &str, size: u32, is_dir: bool) -> Option<FileIcon> {
     lookup(&names, contexts, size)
 }
 
-/// A themed icon name (a `.desktop`'s `Icon=`, which is where the context menu
+/// Themed icon names (a `.desktop`'s `Icon=`, which is where the context menu
 /// and the "Open With" picker get their glyphs) resolved at `size` pixels.
 ///
 /// Fronted onto the same search as the file icons so there is one theme reader
@@ -73,8 +73,15 @@ pub(super) fn extract(path: &str, size: u32, is_dir: bool) -> Option<FileIcon> {
 /// context list is wider here because an application may name an icon from any
 /// of them, and narrower in ambition because a row that finds nothing just draws
 /// without one.
+///
+/// `name` carries a colon-separated *list*, which is how glib reports one
+/// launcher's icon: `dev.zed.Zed.desktop` answers to `dev.zed.Zed` *and* to the
+/// `zed` derived from the desktop id, and older themes ship only the shorter one.
+/// The order is the theme spec's, so it is preserved; `:` cannot appear inside an
+/// icon name, which is what lets the whole list ride in one query parameter.
 pub(crate) fn resolve_named_icon(name: &str, size: u32) -> Option<FileIcon> {
-    if name.is_empty() || name == "-" {
+    let names = icon_candidates(name);
+    if names.is_empty() {
         return None;
     }
 
@@ -84,8 +91,15 @@ pub(crate) fn resolve_named_icon(name: &str, size: u32) -> Option<FileIcon> {
     // launcher's `Icon=` really does name, because packs place their glyphs
     // inconsistently.
     const APP_CONTEXTS: &[&str] = &["applications", "actions", "status", "mimetypes", "places"];
-    let names = [name];
     lookup(&names, APP_CONTEXTS, size)
+}
+
+/// The names in one colon-joined icon field, in the order to try them.
+fn icon_candidates(name: &str) -> Vec<&str> {
+    // `-` is the desktop entry's own spelling for "no icon".
+    name.split(':')
+        .filter(|candidate| !candidate.is_empty() && *candidate != "-")
+        .collect()
 }
 
 /// [`resolve_named_icon`]'s bytes wrapped as a `data:` URL.
@@ -720,6 +734,22 @@ Type=Fixed
         assert!(lookup(&["dae-no-such-icon-name-zzz"], &["apps"], 16).is_none());
         assert!(resolve_named_icon("", 16).is_none());
         assert!(resolve_named_icon("-", 16).is_none());
+    }
+
+    /// One field carrying the list glib reports for a launcher, split without
+    /// losing the order — the search takes the first name that resolves, so a
+    /// reordered list draws the app with its monochrome fallback.
+    #[test]
+    fn splits_the_icon_field_without_reshuffling_it() {
+        assert_eq!(
+            icon_candidates("dev.zed.Zed:zed:zed-symbolic"),
+            ["dev.zed.Zed", "zed", "zed-symbolic"]
+        );
+        // Empty elements come from an `Icon=` that is a bare `;`, and `-` is the
+        // entry saying it has no icon at all; neither is a name to look up.
+        assert_eq!(icon_candidates("a::b"), ["a", "b"]);
+        assert!(icon_candidates("-").is_empty());
+        assert!(icon_candidates("").is_empty());
     }
 
     #[test]
