@@ -191,6 +191,12 @@ pub fn run() {
             // made to show a backdrop — see `window_material::clamp`.
             window_material::init(app.handle());
 
+            // Device and mount changes (a USB stick plugged in, a phone, a
+            // share unmounted) are pushed to the sidebar the moment the OS
+            // reports them; without this it only re-lists on its poll, up to a
+            // minute late.
+            file_system::volume_monitor::spawn(app.handle());
+
             // macOS delivers deep links through the plugin's open-url event;
             // Windows/Linux pass them as CLI args (also for the very first
             // launch, handled here; duplicate launches arrive through the
@@ -361,6 +367,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .commands(tauri_specta::collect_commands![
             file_system::commands::get_home_directory,
             file_system::commands::read_directory,
+            file_system::watch::unwatch_directory,
             file_system::listing::cancel_directory_listing,
             file_system::directory_size::start_directory_size_calculation,
             file_system::directory_size::cancel_directory_size_calculation,
@@ -457,6 +464,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::directory_size::DirectorySizeProgress,
             file_system::hashing::FileHashProgress,
             file_system::undo::UndoRedoChanged,
+            file_system::volume_monitor::VolumesChanged,
             deep_link::OpenDirectoryRequested,
             tab_windows::TabDragHover,
             tab_windows::TabDragLeave,

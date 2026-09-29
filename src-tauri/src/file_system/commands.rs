@@ -37,11 +37,12 @@ pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemErr
 /// fits in a single batch — answers with a complete view and a `None` stream
 /// id.
 ///
-/// `watch` arms the change watcher for `path` before the directory is read,
-/// so a change landing while the listing runs is either already in it or
-/// reported as an event. The explorer asks for that on the read that
-/// establishes a view; reads that only feed a side pane (sidebar tree, Miller
-/// columns) pass `false`, because the watcher tracks one directory at a time.
+/// `watcher_id` names the view asking, and arms its change watcher for `path`
+/// before the directory is read, so a change landing while the listing runs is
+/// either already in it or reported as an event. The explorer passes the id it
+/// minted for the pane; reads that only feed a side pane (sidebar tree, Miller
+/// columns) pass `None`, because a view that does not display the directory
+/// has no business watching it.
 ///
 /// `vfs::resolve` can open a network session (a blocking, runtime-owning
 /// operation), so it must run on a blocking thread — never on the async
@@ -51,10 +52,17 @@ pub fn get_home_directory(app: tauri::AppHandle) -> Result<String, FileSystemErr
 pub async fn read_directory(
     path: String,
     stream_id: String,
-    watch: bool,
+    watcher_id: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<DirectoryView, FileSystemError> {
-    read_directory_into(path, stream_id, watch, app, listing::BatchSink::Events).await
+    read_directory_into(
+        path,
+        stream_id,
+        watcher_id,
+        app,
+        listing::BatchSink::Events,
+    )
+    .await
 }
 
 /// The same read as [`read_directory`], but the batches that follow the head
@@ -81,14 +89,14 @@ pub async fn read_directory(
 pub async fn read_directory_packets(
     path: String,
     stream_id: String,
-    watch: bool,
+    watcher_id: Option<String>,
     on_batch: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>,
     app: tauri::AppHandle,
 ) -> Result<DirectoryView, FileSystemError> {
     read_directory_into(
         path,
         stream_id,
-        watch,
+        watcher_id,
         app,
         listing::BatchSink::Channel(on_batch),
     )
@@ -109,13 +117,13 @@ pub fn handle_raw_invoke(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
 async fn read_directory_into(
     path: String,
     stream_id: String,
-    watch: bool,
+    watcher_id: Option<String>,
     app: tauri::AppHandle,
     sink: listing::BatchSink,
 ) -> Result<DirectoryView, FileSystemError> {
     // 这里原先会消费 `prefetch::warm_startup_data` 预读的目录快照，但那条路径
     // 从来没有生效过：唯一会被预读的是 home 目录，而它只由 `initialize()` 读取，
-    // 且带着 `watch: true`（`navigation.ts`）——带 watch 的读**故意不接受**快照
+    // 且带着 watcher（`navigation.ts`）——带 watcher 的读**故意不接受**快照
     // （快照在窗口存在之前就读好了，可能已经陈旧，中间又没有 watcher 兜底）。
     // 于是那次预读只是和真正的首读抢磁盘与分配器，现已删掉（连同这条分支）。
     // 若将来要让首屏用上预热，正确做法是让快照能被接受**并**在它之上挂 watcher。
@@ -129,11 +137,12 @@ async fn read_directory_into(
         return tauri::async_runtime::spawn_blocking(move || {
             let backend = vfs::resolve(&path)?;
 
-            if watch {
+            if let Some(watcher_id) = &watcher_id {
                 super::watch::arm_polling_watcher(
                     &watch_app,
                     &path,
                     SharedBackend::clone(&backend),
+                    watcher_id,
                 );
             }
 
@@ -146,7 +155,7 @@ async fn read_directory_into(
     let listing_app = app.clone();
     let listing_path = PathBuf::from(path);
     tauri::async_runtime::spawn_blocking(move || {
-        listing::open_streamed_listing(&listing_app, listing_path, stream_id, watch, sink)
+        listing::open_streamed_listing(&listing_app, listing_path, stream_id, watcher_id, sink)
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?

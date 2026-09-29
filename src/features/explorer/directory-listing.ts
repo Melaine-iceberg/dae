@@ -49,19 +49,20 @@ export interface DirectoryListing {
  * Opens one directory listing, streaming its remaining batches into
  * `listener`.
  *
- * `watch` asks the backend to arm its change watcher for the directory *before*
- * it reads it. That is what the explorer's own listings want: arming the
- * watcher afterwards leaves a window in which a change reaches neither the
- * listing nor an event, and the only way to close it would be to re-read the
- * directory — which also throws away the batches still streaming in. Reads
- * that do not display a directory (sidebar tree, Miller columns) pass `false`,
- * so they cannot take the watcher away from the pane that is displaying it.
+ * `watcherId` names the view displaying this directory; when present, the
+ * backend arms that view's change watcher for the directory *before* it reads
+ * it. That is what the explorer's own listings want: arming the watcher
+ * afterwards leaves a window in which a change reaches neither the listing nor
+ * an event, and the only way to close it would be to re-read the directory —
+ * which also throws away the batches still streaming in. Reads that do not
+ * display a directory (sidebar tree, Miller columns) pass `null`: they have no
+ * view of their own to watch for, and watching would only duplicate events.
  */
 export function openDirectoryListing(
   path: string,
   listener: DirectoryListingListener,
   api: DirectoryListingApi = commands,
-  watch = false,
+  watcherId: string | null = null,
 ): DirectoryListing {
   const streamId = crypto.randomUUID();
   let stopped = false;
@@ -124,7 +125,7 @@ export function openDirectoryListing(
   };
 
   const headRequest = api
-    .readDirectory(path, streamId, watch)
+    .readDirectory(path, streamId, watcherId)
     .then((view) => {
       if (stopped) return view;
 
@@ -170,10 +171,15 @@ export function openDirectoryListing(
 function readDirectoryPackets(
   path: string,
   streamId: string,
-  watch: boolean,
+  watcherId: string | null,
   onBatch: Channel<ArrayBuffer>,
 ): Promise<DirectoryView> {
-  return invoke<DirectoryView>("read_directory_packets", { onBatch, path, streamId, watch });
+  return invoke<DirectoryView>("read_directory_packets", {
+    onBatch,
+    path,
+    streamId,
+    watcherId,
+  });
 }
 
 /** What a packet-mode listing reports. */
@@ -209,13 +215,13 @@ export interface PacketListingListener {
  * path and the surrounding `DirectoryView` are the ones the explorer already
  * handles.
  *
- * `watch` has the same meaning as in `openDirectoryListing`.
+ * `watcherId` has the same meaning as in `openDirectoryListing`.
  */
 export function openPacketDirectoryListing(
   path: string,
   listener: PacketListingListener,
   api: DirectoryListingApi = commands,
-  watch = false,
+  watcherId: string | null = null,
 ): DirectoryListing {
   const streamId = crypto.randomUUID();
   let stopped = false;
@@ -275,7 +281,7 @@ export function openPacketDirectoryListing(
     scheduleFlush();
   };
 
-  const headRequest = readDirectoryPackets(path, streamId, watch, channel)
+  const headRequest = readDirectoryPackets(path, streamId, watcherId, channel)
     .then((view) => {
       if (stopped) return view;
 

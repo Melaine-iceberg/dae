@@ -41,6 +41,13 @@ const appWindow = getAppWindow();
  * Refreshes the pane's directory when the backend reports it changed, or when
  * the window regains focus — with a short debounce, because watcher events
  * arrive in bursts around a write.
+ *
+ * The pane also refreshes once on mount. A pane that mounts is a pane that was
+ * hidden (its tab was switched away from) or is being restored: its watch was
+ * released when it went away, so a change landing meanwhile reached neither an
+ * event nor this pane. The mount read catches up on exactly that, and re-arms
+ * the watch for the view — which the backend skips when it already watches the
+ * directory.
  */
 export function useDirectoryRefresh(navigator: ExplorerNavigator): void {
   useEffect(() => {
@@ -67,12 +74,22 @@ export function useDirectoryRefresh(navigator: ExplorerNavigator): void {
         })
       : Promise.resolve(() => {});
 
+    // A restored pane paints the directory it was handed while its first read
+    // catches up; `refresh` keeps that listing on screen either way.
+    const snapshot = navigator.getSnapshot();
+    if (snapshot.status === "ready" && snapshot.directory) {
+      void navigator.refresh(snapshot.directory.path);
+    }
+
     return () => {
       disposed = true;
       window.clearTimeout(refreshTimeout);
       void Promise.all([unlistenChangesPromise, unlistenFocusPromise]).then((unlisten) => {
         unlisten.forEach((stopListening) => stopListening());
       });
+      // The pane is going away: stop paying for its OS watch. The mount
+      // refresh above restores it if the pane comes back.
+      navigator.releaseWatcher();
     };
   }, [navigator]);
 }

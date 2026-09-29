@@ -1,16 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 
-import { commands } from "@/bindings";
+import { commands, events } from "@/bindings";
 
 import type { DiskVolume } from "./types";
 
 const DISK_POLL_INTERVAL_MS = 60_000;
 const NAVIGATION_REFRESH_THROTTLE_MS = 30_000;
 
+/** Volume signals arrive in bursts around one device event (drive, volume and
+ *  mount all speak); the re-list waits for the burst to finish. */
+const VOLUMES_REFRESH_DELAY_MS = 150;
+
 /**
- * Lists disk volumes and keeps them fresh: polls on an interval, refreshes when
- * the window regains focus, and (throttled) whenever the viewed path changes,
- * since moving across volumes is when capacity or removable media change.
+ * Lists disk volumes and keeps them fresh: re-reads when the OS reports a
+ * device or mount change, polls on a slow interval as a backstop, refreshes
+ * when the window regains focus, and (throttled) whenever the viewed path
+ * changes, since moving across volumes is when capacity or removable media
+ * change.
  *
  * Returns `null` until the first fetch resolves so callers can tell loading
  * apart from an empty machine. Meant to be mounted lazily (collapsed sidebar
@@ -48,6 +54,31 @@ export function useDiskVolumes(viewedPath: string | null): DiskVolume[] | null {
       disposed = true;
       window.clearInterval(interval);
       window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
+
+  // The OS's own device report — the difference between a USB stick showing up
+  // when it is plugged in and up to a minute later, when the poll catches it.
+  // The signals fire in bursts (drive connected + volume added + mount added),
+  // so the re-list waits for the burst to settle.
+  useEffect(() => {
+    let disposed = false;
+    let refreshTimeout: number | undefined;
+
+    const unlistenPromise = events.volumesChanged.listen(() => {
+      if (disposed) return;
+
+      window.clearTimeout(refreshTimeout);
+      refreshTimeout = window.setTimeout(() => {
+        refreshTimeout = undefined;
+        refreshRef.current(true);
+      }, VOLUMES_REFRESH_DELAY_MS);
+    });
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(refreshTimeout);
+      void unlistenPromise.then((stopListening) => stopListening());
     };
   }, []);
 

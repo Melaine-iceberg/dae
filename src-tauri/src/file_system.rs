@@ -28,6 +28,7 @@ pub mod trash_view;
 pub mod types;
 pub mod undo;
 pub mod vfs;
+pub mod volume_monitor;
 pub mod watch;
 
 #[cfg(test)]

@@ -68,6 +68,14 @@ const fileSystemErrorKinds = new Set<FileSystemError["kind"]>([
 export class ExplorerNavigator {
   private state = initialState;
   private requestVersion = 0;
+  /**
+   * This view's identity in the backend's watcher registry. One id per
+   * navigator, for its whole life: navigation re-targets the watch rather than
+   * minting a new one, so a stale read can never arm a directory this view is
+   * no longer showing (see `arm_local_watcher`), and every read of the
+   * displayed directory can safely (re-)arm it.
+   */
+  private readonly watcherId = crypto.randomUUID();
   /** Listing whose remaining batches are still streaming into the state. */
   private listing: DirectoryListing | null = null;
   /** Releases a settling read that is still waiting on its listing. */
@@ -197,10 +205,7 @@ export class ExplorerNavigator {
     const requestVersion = ++this.requestVersion;
 
     try {
-      const read = await this.readListing(path, requestVersion, {
-        settle: true,
-        watch: false,
-      });
+      const read = await this.readListing(path, requestVersion, { settle: true });
 
       if (
         read === null ||
@@ -250,10 +255,7 @@ export class ExplorerNavigator {
     this.setState({ ...this.state, status: "loading", pendingPath: path, error: null });
 
     try {
-      const read = await this.readListing(path, requestVersion, {
-        settle: false,
-        watch: true,
-      });
+      const read = await this.readListing(path, requestVersion, { settle: false });
 
       if (read === null || requestVersion !== this.requestVersion) {
         return undefined;
@@ -299,11 +301,12 @@ export class ExplorerNavigator {
    * offset to a list that is suddenly 70× shorter. A settling read keeps the
    * current listing on screen and resolves once the walk is finished.
    *
-   * `options.watch` arms the backend's directory watcher as part of the read.
-   * Only the read that establishes a view asks for it: the watcher has to be
-   * armed before the directory is read for the listing and the events to cover
-   * every change between them, and a refresh happens *because* an event
-   * arrived, so the watcher for the directory on screen is already in place.
+   * Every read arms this view's watcher for the directory being read (see
+   * `watcherId`). Arming it before the first entry is read is what makes the
+   * listing and the events cover every change between them; re-arming on a
+   * refresh is free when the view already watches the same directory — the
+   * backend skips that — and is what restores the watch after the pane
+   * unmounted and released it (see `releaseWatcher`).
    *
    * Any listing that is still streaming is dropped first: a newer read (a
    * navigation, a watcher refresh) always wins over the one it replaces.
@@ -311,7 +314,7 @@ export class ExplorerNavigator {
   private readListing(
     path: string,
     requestVersion: number,
-    options: { settle: boolean; watch: boolean },
+    options: { settle: boolean },
   ): Promise<ReadListing | null> {
     this.cancelListing();
 
@@ -344,7 +347,7 @@ export class ExplorerNavigator {
         onDone: () => resolveSettled?.(),
       },
       this.api,
-      options.watch,
+      this.watcherId,
     );
 
     this.listing = stream;
@@ -375,10 +378,22 @@ export class ExplorerNavigator {
     this.cancelSettle = null;
   }
 
+  /**
+   * Releases this view's directory watch on the backend. Called when the pane
+   * displaying the view goes away (a tab switched away from, a split pane
+   * closed); a view that comes back re-arms on its next read. Safe to call
+   * more than once, and while a read is still in flight — a late arm for a
+   * released id simply installs a watcher that the next release stops.
+   */
+  releaseWatcher(): void {
+    void this.api.unwatchDirectory(this.watcherId).catch(() => {});
+  }
+
   /** Stops the active listing; the navigator is not used afterwards. */
   dispose(): void {
     ++this.requestVersion;
     this.cancelListing();
+    this.releaseWatcher();
     this.listeners.clear();
   }
 

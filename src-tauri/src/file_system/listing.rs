@@ -152,13 +152,16 @@ pub fn cancel_directory_listing(stream_id: String, app: tauri::AppHandle) {
 /// Opens a streamed listing: reserves `stream_id`, reads the first batch, and
 /// hands the unread remainder to a reader thread.
 ///
-/// `watch` arms the directory watcher for `requested_path` *before* the first
+/// `watcher_id` names the view this listing belongs to; when present, the
+/// directory watcher for `requested_path` is armed under it *before* the first
 /// entry is read, so a change landing while the listing runs is either already
 /// in the listing or reported as an event. Arming it afterwards — which is how
 /// the explorer used to do it, from a separate command — left a window in
 /// which a change was invisible to both, and the only way to close it was to
 /// re-read the whole directory; that re-read also cancelled the stream, so a
 /// large directory snapped back to its first batch until the re-read finished.
+/// Reads that do not display a directory (sidebar tree, Miller columns) pass
+/// `None` and stay unobserved.
 ///
 /// Blocking — it opens the directory — so callers run it on the blocking pool.
 /// A directory that fits in one batch comes back complete, with its
@@ -167,7 +170,7 @@ pub fn open_streamed_listing(
     app: &tauri::AppHandle,
     requested_path: PathBuf,
     stream_id: String,
-    watch: bool,
+    watcher_id: Option<String>,
     sink: BatchSink,
 ) -> Result<DirectoryView, FileSystemError> {
     let state = app.state::<DirectoryListingState>();
@@ -187,8 +190,8 @@ pub fn open_streamed_listing(
         }
     };
 
-    if watch {
-        watch::arm_local_watcher(app, path.clone());
+    if let Some(watcher_id) = &watcher_id {
+        watch::arm_local_watcher(app, path.clone(), watcher_id);
     }
 
     let head = match local::open_canonical_listing(path, FIRST_BATCH_SIZE) {
