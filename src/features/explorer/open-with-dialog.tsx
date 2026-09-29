@@ -5,6 +5,7 @@ import { AppWindow, Search } from "lucide-react";
 import { commands, type OpenWithChoices } from "@/bindings";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -220,12 +221,10 @@ export function OpenWithDialog({
 
         <DialogFooter className="items-center sm:justify-between">
           <label className="flex items-center gap-2 text-body text-muted-foreground select-none">
-            <input
+            <Checkbox
               checked={setDefault}
-              className="size-4 accent-(--primary)"
               disabled={isPending || !selectedId}
-              onChange={(event) => setSetDefault(event.target.checked)}
-              type="checkbox"
+              onCheckedChange={setSetDefault}
             />
             {t("explorer:openWith.setDefault")}
           </label>

@@ -8,6 +8,7 @@ import { isWindowsPlatform } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -415,17 +416,15 @@ export function BulkRenameDialog({
                 </div>
                 <div className="flex gap-4 text-body text-muted-foreground">
                   <label className="flex items-center gap-1.5">
-                    <input
+                    <Checkbox
                       checked={options.replace.useRegex}
-                      className="accent-primary"
                       disabled={isPending}
-                      onChange={(event) =>
+                      onCheckedChange={(checked) =>
                         setOptions((current) => ({
                           ...current,
-                          replace: { ...current.replace, useRegex: event.target.checked },
+                          replace: { ...current.replace, useRegex: checked },
                         }))
                       }
-                      type="checkbox"
                     />
                     {t("explorer:bulkRename.replace.useRegex")}
                   </label>
@@ -435,17 +434,15 @@ export function BulkRenameDialog({
                       options.replace.useRegex && "opacity-50",
                     )}
                   >
-                    <input
+                    <Checkbox
                       checked={options.replace.caseSensitive}
-                      className="accent-primary"
                       disabled={isPending || options.replace.useRegex}
-                      onChange={(event) =>
+                      onCheckedChange={(checked) =>
                         setOptions((current) => ({
                           ...current,
-                          replace: { ...current.replace, caseSensitive: event.target.checked },
+                          replace: { ...current.replace, caseSensitive: checked },
                         }))
                       }
-                      type="checkbox"
                     />
                     {t("explorer:bulkRename.replace.caseSensitive")}
                   </label>

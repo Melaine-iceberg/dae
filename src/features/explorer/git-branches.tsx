@@ -17,6 +17,7 @@ import {
 
 import { commands, events } from "@/bindings";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -386,12 +387,7 @@ function CreateBranchDialog({
             </Field>
           </FieldGroup>
           <label className="flex items-center gap-2 text-body text-muted-foreground">
-            <input
-              checked={checkout}
-              className="size-4 accent-[var(--primary)]"
-              onChange={(event) => setCheckout(event.target.checked)}
-              type="checkbox"
-            />
+            <Checkbox checked={checkout} onCheckedChange={setCheckout} />
             {t("git.switchAfterCreate")}
           </label>
           <DialogFooter>

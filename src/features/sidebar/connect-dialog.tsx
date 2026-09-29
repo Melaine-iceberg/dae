@@ -5,6 +5,7 @@ import { commands, type Protocol, type StoredConnection } from "@/bindings";
 import { translateBackendMessage } from "@/i18n/errors";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -225,12 +226,7 @@ export function ConnectDialog({
           </div>
 
           <label className="flex items-center gap-2 text-body text-muted-foreground">
-            <input
-              checked={remember}
-              className="size-4 accent-[var(--primary)]"
-              onChange={(event) => setRemember(event.target.checked)}
-              type="checkbox"
-            />
+            <Checkbox checked={remember} onCheckedChange={setRemember} />
             {t("connect.rememberPassword")}
           </label>
 

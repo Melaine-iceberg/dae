@@ -16,6 +16,7 @@ import {
   type PropertyChanges,
 } from "@/bindings";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -463,12 +464,10 @@ export function PropertiesDialog() {
 
             {isEnclosedApplyAvailable && (
               <label className="flex items-center gap-2 text-body">
-                <input
+                <Checkbox
                   checked={applyToEnclosed}
-                  className="size-4 accent-[var(--primary)]"
                   disabled={isSaving}
-                  onChange={(event) => setApplyToEnclosed(event.target.checked)}
-                  type="checkbox"
+                  onCheckedChange={setApplyToEnclosed}
                 />
                 {t("explorer:properties.applyToEnclosed")}
               </label>
@@ -570,12 +569,10 @@ function UnixPropertiesEditor({
                 <td className="text-muted-foreground">{subjectLabel}</td>
                 {PERMISSION_BITS.map(({ value, labelKey: bitLabelKey }) => (
                   <td key={bitLabelKey} className="text-center">
-                    <input
+                    <Checkbox
                       aria-label={`${subjectLabel} · ${t(`explorer:properties.${bitLabelKey}`)}`}
                       checked={((draft.mode >> shift) & value) !== 0}
-                      className="size-4 accent-[var(--primary)]"
-                      onChange={() => onTogglePermission(key, value)}
-                      type="checkbox"
+                      onCheckedChange={() => onTogglePermission(key, value)}
                     />
                   </td>
                 ))}
@@ -590,11 +587,9 @@ function UnixPropertiesEditor({
         <div className="flex flex-wrap gap-x-4 gap-y-1.5">
           {SPECIAL_BITS.map(({ value, labelKey }) => (
             <label key={value} className="flex items-center gap-2 text-body">
-              <input
+              <Checkbox
                 checked={(draft.mode & value) !== 0}
-                className="size-4 accent-[var(--primary)]"
-                onChange={() => onUpdateDraft({ mode: draft.mode ^ value })}
-                type="checkbox"
+                onCheckedChange={() => onUpdateDraft({ mode: draft.mode ^ value })}
               />
               {t(`explorer:properties.${labelKey}`)}
             </label>
@@ -641,38 +636,30 @@ function WindowsPropertiesEditor({
     <div className="flex flex-col gap-3">
       <p className="text-body font-medium">{t("explorer:properties.attributes")}</p>
       <label className="flex items-center gap-2 text-body">
-        <input
+        <Checkbox
           checked={draft.readOnly}
-          className="size-4 accent-[var(--primary)]"
-          onChange={(event) => onUpdateDraft({ readOnly: event.target.checked })}
-          type="checkbox"
+          onCheckedChange={(checked) => onUpdateDraft({ readOnly: checked })}
         />
         {t("explorer:properties.readOnly")}
       </label>
       <label className="flex items-center gap-2 text-body">
-        <input
+        <Checkbox
           checked={draft.hidden}
-          className="size-4 accent-[var(--primary)]"
-          onChange={(event) => onUpdateDraft({ hidden: event.target.checked })}
-          type="checkbox"
+          onCheckedChange={(checked) => onUpdateDraft({ hidden: checked })}
         />
         {t("explorer:properties.hidden")}
       </label>
       <label className="flex items-center gap-2 text-body">
-        <input
+        <Checkbox
           checked={draft.archive}
-          className="size-4 accent-[var(--primary)]"
-          onChange={(event) => onUpdateDraft({ archive: event.target.checked })}
-          type="checkbox"
+          onCheckedChange={(checked) => onUpdateDraft({ archive: checked })}
         />
         {t("explorer:properties.archive")}
       </label>
       <label className="flex items-center gap-2 text-body">
-        <input
+        <Checkbox
           checked={draft.system}
-          className="size-4 accent-[var(--primary)]"
-          onChange={(event) => onUpdateDraft({ system: event.target.checked })}
-          type="checkbox"
+          onCheckedChange={(checked) => onUpdateDraft({ system: checked })}
         />
         {t("explorer:properties.system")}
       </label>

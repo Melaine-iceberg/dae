@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { ConflictAction, EntryKind, TransferConflict } from "@/bindings";
 import { localeDateTimeFormat, localeNumber, localeNumberFormat } from "@/i18n/format";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -168,12 +169,7 @@ export function TransferConflictDialog({
 
         {remaining > 1 && (
           <label className="flex items-center gap-2 text-body text-muted-foreground">
-            <input
-              checked={applyToAll}
-              className="size-4 accent-[var(--primary)]"
-              onChange={(event) => setApplyToAll(event.target.checked)}
-              type="checkbox"
-            />
+            <Checkbox checked={applyToAll} onCheckedChange={setApplyToAll} />
             {t("conflictDialog.applyToAll", { count: localeNumber(remaining) })}
           </label>
         )}
