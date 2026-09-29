@@ -94,7 +94,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
         <SlidersHorizontal className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-48">
-        <DropdownMenuLabel>{t("view.modeLabel")}</DropdownMenuLabel>
+        <DropdownMenuLabel inset>{t("view.modeLabel")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           onValueChange={(value) => setViewMode(value as ExplorerViewMode)}
           value={viewMode}
@@ -107,7 +107,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
         </DropdownMenuRadioGroup>
 
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>{t("view.densityLabel")}</DropdownMenuLabel>
+        <DropdownMenuLabel inset>{t("view.densityLabel")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           onValueChange={(value) => setDensity(value as ExplorerDensity)}
           value={density}
@@ -120,7 +120,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
         </DropdownMenuRadioGroup>
 
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>{t("view.iconStyleLabel")}</DropdownMenuLabel>
+        <DropdownMenuLabel inset>{t("view.iconStyleLabel")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           onValueChange={(value) => setIconStyle(value as ExplorerIconStyle)}
           value={iconStyle}
@@ -133,7 +133,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
         </DropdownMenuRadioGroup>
 
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>{t("sort.sortBy")}</DropdownMenuLabel>
+        <DropdownMenuLabel inset>{t("sort.sortBy")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           onValueChange={(value) => {
             const key = value as ExplorerSortKey;
@@ -152,7 +152,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
         </DropdownMenuRadioGroup>
 
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>{t("sort.direction")}</DropdownMenuLabel>
+        <DropdownMenuLabel inset>{t("sort.direction")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           onValueChange={(value) => setSortOrder(value as ExplorerSortOrder)}
           value={sortOrder}

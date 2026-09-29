@@ -76,15 +76,15 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex h-7 cursor-default items-center gap-2 rounded-sm pr-8 pl-2 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:text-muted-foreground",
+        "relative flex h-7 cursor-default items-center gap-2 rounded-sm pr-2 pl-7 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
       )}
       {...props}
     >
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-      <span className="pointer-events-none absolute right-2 flex items-center justify-center text-primary [&>svg]:size-3">
+      <span className="pointer-events-none absolute left-2 flex items-center justify-center text-primary">
         <SelectPrimitive.ItemIndicator>
-          <Check />
+          <Check className="size-3" />
         </SelectPrimitive.ItemIndicator>
       </span>
     </SelectPrimitive.Item>

@@ -157,28 +157,24 @@ function DropdownMenuCheckboxItem({
   className,
   children,
   checked,
-  inset,
   ...props
-}: MenuPrimitive.CheckboxItem.Props & {
-  inset?: boolean;
-}) {
+}: MenuPrimitive.CheckboxItem.Props) {
   return (
     <MenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
-      data-inset={inset}
       className={cn(
-        "relative flex h-7 cursor-default items-center gap-2 rounded-sm pr-8 pl-2 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:text-muted-foreground",
+        "relative flex h-7 cursor-default items-center gap-2 rounded-sm pr-2 pl-7 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
       )}
       checked={checked}
       {...props}
     >
       <span
-        className="pointer-events-none absolute right-2 flex items-center justify-center text-primary [&>svg]:size-3"
+        className="pointer-events-none absolute left-2 flex items-center justify-center text-primary"
         data-slot="dropdown-menu-checkbox-item-indicator"
       >
         <MenuPrimitive.CheckboxItemIndicator>
-          <Check />
+          <Check className="size-3" />
         </MenuPrimitive.CheckboxItemIndicator>
       </span>
       {children}
@@ -193,27 +189,27 @@ function DropdownMenuRadioGroup({ ...props }: MenuPrimitive.RadioGroup.Props) {
 function DropdownMenuRadioItem({
   className,
   children,
-  inset,
   ...props
-}: MenuPrimitive.RadioItem.Props & {
-  inset?: boolean;
-}) {
+}: MenuPrimitive.RadioItem.Props) {
   return (
     <MenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
-      data-inset={inset}
       className={cn(
-        "relative flex h-7 cursor-default items-center gap-2 rounded-sm pr-8 pl-2 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:text-muted-foreground",
+        "relative flex h-7 cursor-default items-center gap-2 rounded-sm pr-2 pl-7 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
       )}
       {...props}
     >
+      {/* The tick lives in a fixed 20px gutter on the leading edge, the way
+          macOS and Fluent menus do it: the label keeps the same x whether the
+          row is chosen or not, and the trailing edge stays free for the
+          shortcut chip. */}
       <span
-        className="pointer-events-none absolute right-2 flex items-center justify-center text-primary [&>svg]:size-3"
+        className="pointer-events-none absolute left-2 flex items-center justify-center text-primary"
         data-slot="dropdown-menu-radio-item-indicator"
       >
         <MenuPrimitive.RadioItemIndicator>
-          <Check />
+          <Check className="size-3" />
         </MenuPrimitive.RadioItemIndicator>
       </span>
       {children}

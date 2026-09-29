@@ -89,7 +89,7 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-menu">
-        <DropdownMenuLabel>{t("filter.kindLabel")}</DropdownMenuLabel>
+        <DropdownMenuLabel inset>{t("filter.kindLabel")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           onValueChange={(value) => updateFilter("kind", value as ExplorerKindFilter)}
           value={filters.kind}
@@ -102,7 +102,7 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
         </DropdownMenuRadioGroup>
 
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>{t("filter.modifiedLabel")}</DropdownMenuLabel>
+        <DropdownMenuLabel inset>{t("filter.modifiedLabel")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           onValueChange={(value) => updateFilter("modified", value as ExplorerModifiedFilter)}
           value={filters.modified}
@@ -115,7 +115,7 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
         </DropdownMenuRadioGroup>
 
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>{t("filter.sizeLabel")}</DropdownMenuLabel>
+        <DropdownMenuLabel inset>{t("filter.sizeLabel")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           onValueChange={(value) => updateFilter("size", value as ExplorerSizeFilter)}
           value={filters.size}
