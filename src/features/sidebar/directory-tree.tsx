@@ -218,8 +218,15 @@ function TreeNodeRow({
     }
   }, [isActive]);
 
-  // Nodes are assumed expandable until their first read proves otherwise.
-  const mayHaveChildren = !state || state.status === "loading" || state.entries.length > 0;
+  // Nodes are assumed expandable until their first read proves otherwise. An
+  // open node keeps its chevron whatever that read said, though: a folder that
+  // failed to list — a permission wall like `/root`, a share that went away —
+  // is expanded around nothing but an error line, and taking the chevron away
+  // there leaves the row with no control able to close it again. So "not
+  // ready" (still loading, or failed) counts as may-have-children too, and a
+  // tree that failed can be retried by clicking its own chevron.
+  const mayHaveChildren =
+    expanded || !state || state.status !== "ready" || state.entries.length > 0;
 
   // Catppuccin artwork with per-name variants (src, .git, ...) and
   // an open variant while the node is expanded.
