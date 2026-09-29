@@ -1,5 +1,5 @@
 import { Select as SelectPrimitive } from "@base-ui/react/select";
-import { ChevronDown, Check } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -82,9 +82,13 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
       {...props}
     >
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-      <span className="pointer-events-none absolute left-2 flex items-center justify-center text-primary">
+      {/* A select list is single-choice, so it takes the same dot as the menu
+          radio items rather than the tick reserved for booleans. Select rows
+          carry no leading icon, so the dot stays in the leading gutter. The
+          child is explicit because the indicator ships a default tick. */}
+      <span className="pointer-events-none absolute left-2 flex size-3 items-center justify-center">
         <SelectPrimitive.ItemIndicator>
-          <Check className="size-3" />
+          <span className="block size-1.5 rounded-full bg-primary" />
         </SelectPrimitive.ItemIndicator>
       </span>
     </SelectPrimitive.Item>

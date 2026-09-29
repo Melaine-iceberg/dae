@@ -3,7 +3,7 @@ import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 
 import { cn } from "@/lib/utils";
 import { KbdShortcut } from "@/components/ui/kbd";
-import { ChevronRight, Check } from "lucide-react";
+import { ChevronRight, Check, type LucideIcon } from "lucide-react";
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
@@ -189,30 +189,37 @@ function DropdownMenuRadioGroup({ ...props }: MenuPrimitive.RadioGroup.Props) {
 function DropdownMenuRadioItem({
   className,
   children,
+  icon: Icon,
   ...props
-}: MenuPrimitive.RadioItem.Props) {
+}: MenuPrimitive.RadioItem.Props & {
+  icon?: LucideIcon;
+}) {
   return (
     <MenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
       className={cn(
-        "relative flex h-7 cursor-default items-center gap-2 rounded-sm pr-2 pl-7 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+        "group/dropdown-menu-radio-item relative flex h-7 cursor-default items-center gap-2 rounded-sm px-2 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
       )}
       {...props}
     >
-      {/* The tick lives in a fixed 20px gutter on the leading edge, the way
-          macOS and Fluent menus do it: the label keeps the same x whether the
-          row is chosen or not, and the trailing edge stays free for the
-          shortcut chip. */}
+      {Icon ? (
+        <Icon className="text-muted-foreground group-data-[checked]/dropdown-menu-radio-item:text-primary" />
+      ) : null}
+      {children}
+      {/* Chosen-ness is marked by a dot on the trailing edge, and the leading
+          slot is left to the option's own icon. A boolean item still ticks:
+          "which one of these" and "also this" are different questions and used
+          to print the same glyph. The trailing box keeps its width whether or
+          not the row is chosen, so labels and shortcut chips line up. */}
       <span
-        className="pointer-events-none absolute left-2 flex items-center justify-center text-primary"
+        className="pointer-events-none ml-auto flex size-3 shrink-0 items-center justify-center"
         data-slot="dropdown-menu-radio-item-indicator"
       >
         <MenuPrimitive.RadioItemIndicator>
-          <Check className="size-3" />
+          <span className="block size-1.5 rounded-full bg-primary" />
         </MenuPrimitive.RadioItemIndicator>
       </span>
-      {children}
     </MenuPrimitive.RadioItem>
   );
 }

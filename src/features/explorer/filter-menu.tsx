@@ -1,6 +1,22 @@
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { ListFilter, X } from "lucide-react";
+import {
+  CalendarClock,
+  CalendarDays,
+  CalendarRange,
+  ChevronsLeft,
+  ChevronsLeftRight,
+  ChevronsRight,
+  Clock,
+  File,
+  Folder,
+  Image,
+  Layers,
+  ListFilter,
+  MoveHorizontal,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 
 import {
   DropdownMenu,
@@ -30,25 +46,27 @@ import {
   type ExplorerSizeFilter,
 } from "./preferences";
 
-const KIND_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerKindFilter }> = [
-  { label: "filter.kindAll", value: "all" },
-  { label: "filter.kindFolders", value: "folders" },
-  { label: "filter.kindFiles", value: "files" },
-  { label: "filter.kindImages", value: "images" },
+type Option<TValue> = Readonly<{ label: string; value: TValue; icon: LucideIcon }>;
+
+const KIND_OPTIONS: ReadonlyArray<Option<ExplorerKindFilter>> = [
+  { label: "filter.kindAll", value: "all", icon: Layers },
+  { label: "filter.kindFolders", value: "folders", icon: Folder },
+  { label: "filter.kindFiles", value: "files", icon: File },
+  { label: "filter.kindImages", value: "images", icon: Image },
 ];
 
-const MODIFIED_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerModifiedFilter }> = [
-  { label: "filter.modifiedAny", value: "any" },
-  { label: "filter.modifiedToday", value: "today" },
-  { label: "filter.modifiedWeek", value: "week" },
-  { label: "filter.modifiedMonth", value: "month" },
+const MODIFIED_OPTIONS: ReadonlyArray<Option<ExplorerModifiedFilter>> = [
+  { label: "filter.modifiedAny", value: "any", icon: Clock },
+  { label: "filter.modifiedToday", value: "today", icon: CalendarDays },
+  { label: "filter.modifiedWeek", value: "week", icon: CalendarRange },
+  { label: "filter.modifiedMonth", value: "month", icon: CalendarClock },
 ];
 
-const SIZE_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerSizeFilter }> = [
-  { label: "filter.sizeAny", value: "any" },
-  { label: "filter.sizeSmall", value: "small" },
-  { label: "filter.sizeMedium", value: "medium" },
-  { label: "filter.sizeLarge", value: "large" },
+const SIZE_OPTIONS: ReadonlyArray<Option<ExplorerSizeFilter>> = [
+  { label: "filter.sizeAny", value: "any", icon: MoveHorizontal },
+  { label: "filter.sizeSmall", value: "small", icon: ChevronsLeft },
+  { label: "filter.sizeMedium", value: "medium", icon: ChevronsLeftRight },
+  { label: "filter.sizeLarge", value: "large", icon: ChevronsRight },
 ];
 
 /**
@@ -88,14 +106,19 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
           />
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-menu">
+      {/* `w-auto`: the anchor is a 28px icon button, so the shared
+          anchor-width rule would lock the popup to the 180px floor — 16px
+          short of the hidden-files row once its two key chips and the tick
+          gutter are paid for, which wrapped the label inside a fixed 28px
+          row. The floor still holds the narrow menus up. */}
+      <DropdownMenuContent align="end" className="w-auto min-w-menu">
         <DropdownMenuLabel inset>{t("filter.kindLabel")}</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           onValueChange={(value) => updateFilter("kind", value as ExplorerKindFilter)}
           value={filters.kind}
         >
           {KIND_OPTIONS.map((option) => (
-            <DropdownMenuRadioItem key={option.value} value={option.value}>
+            <DropdownMenuRadioItem key={option.value} value={option.value} icon={option.icon}>
               {t(option.label)}
             </DropdownMenuRadioItem>
           ))}
@@ -108,7 +131,7 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
           value={filters.modified}
         >
           {MODIFIED_OPTIONS.map((option) => (
-            <DropdownMenuRadioItem key={option.value} value={option.value}>
+            <DropdownMenuRadioItem key={option.value} value={option.value} icon={option.icon}>
               {t(option.label)}
             </DropdownMenuRadioItem>
           ))}
@@ -121,7 +144,7 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
           value={filters.size}
         >
           {SIZE_OPTIONS.map((option) => (
-            <DropdownMenuRadioItem key={option.value} value={option.value}>
+            <DropdownMenuRadioItem key={option.value} value={option.value} icon={option.icon}>
               {t(option.label)}
             </DropdownMenuRadioItem>
           ))}

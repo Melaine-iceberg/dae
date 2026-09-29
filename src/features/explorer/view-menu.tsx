@@ -1,6 +1,23 @@
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { SlidersHorizontal } from "lucide-react";
+import {
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide,
+  Calendar,
+  Columns3,
+  HardDrive,
+  LayoutGrid,
+  List,
+  Monitor,
+  Palette,
+  Rows2,
+  Rows3,
+  Rows4,
+  Shapes,
+  SlidersHorizontal,
+  Type,
+  type LucideIcon,
+} from "lucide-react";
 
 import {
   DropdownMenu,
@@ -29,33 +46,35 @@ import {
   type ExplorerViewMode,
 } from "./preferences";
 
-const VIEW_MODE_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerViewMode }> = [
-  { label: "view.modeList", value: "list" },
-  { label: "view.modeColumn", value: "column" },
-  { label: "view.modeGrid", value: "grid" },
+type Option<TValue> = Readonly<{ label: string; value: TValue; icon: LucideIcon }>;
+
+const VIEW_MODE_OPTIONS: ReadonlyArray<Option<ExplorerViewMode>> = [
+  { label: "view.modeList", value: "list", icon: List },
+  { label: "view.modeColumn", value: "column", icon: Columns3 },
+  { label: "view.modeGrid", value: "grid", icon: LayoutGrid },
 ];
 
-const DENSITY_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerDensity }> = [
-  { label: "view.densityCompact", value: "compact" },
-  { label: "view.densityComfortable", value: "comfortable" },
-  { label: "view.densitySpacious", value: "spacious" },
+const DENSITY_OPTIONS: ReadonlyArray<Option<ExplorerDensity>> = [
+  { label: "view.densityCompact", value: "compact", icon: Rows4 },
+  { label: "view.densityComfortable", value: "comfortable", icon: Rows3 },
+  { label: "view.densitySpacious", value: "spacious", icon: Rows2 },
 ];
 
-const ICON_STYLE_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerIconStyle }> = [
-  { label: "view.iconSystem", value: "system" },
-  { label: "view.iconThemed", value: "themed" },
+const ICON_STYLE_OPTIONS: ReadonlyArray<Option<ExplorerIconStyle>> = [
+  { label: "view.iconSystem", value: "system", icon: Monitor },
+  { label: "view.iconThemed", value: "themed", icon: Palette },
 ];
 
-const SORT_KEY_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerSortKey }> = [
-  { label: "sort.keyName", value: "name" },
-  { label: "sort.keySize", value: "size" },
-  { label: "sort.keyModified", value: "modified" },
-  { label: "sort.keyType", value: "type" },
+const SORT_KEY_OPTIONS: ReadonlyArray<Option<ExplorerSortKey>> = [
+  { label: "sort.keyName", value: "name", icon: Type },
+  { label: "sort.keySize", value: "size", icon: HardDrive },
+  { label: "sort.keyModified", value: "modified", icon: Calendar },
+  { label: "sort.keyType", value: "type", icon: Shapes },
 ];
 
-const SORT_ORDER_OPTIONS: ReadonlyArray<{ label: string; value: ExplorerSortOrder }> = [
-  { label: "sort.orderAscending", value: "asc" },
-  { label: "sort.orderDescending", value: "desc" },
+const SORT_ORDER_OPTIONS: ReadonlyArray<Option<ExplorerSortOrder>> = [
+  { label: "sort.orderAscending", value: "asc", icon: ArrowUpNarrowWide },
+  { label: "sort.orderDescending", value: "desc", icon: ArrowDownWideNarrow },
 ];
 
 /**
@@ -100,7 +119,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
           value={viewMode}
         >
           {VIEW_MODE_OPTIONS.map((option) => (
-            <DropdownMenuRadioItem key={option.value} value={option.value}>
+            <DropdownMenuRadioItem key={option.value} value={option.value} icon={option.icon}>
               {t(option.label)}
             </DropdownMenuRadioItem>
           ))}
@@ -113,7 +132,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
           value={density}
         >
           {DENSITY_OPTIONS.map((option) => (
-            <DropdownMenuRadioItem key={option.value} value={option.value}>
+            <DropdownMenuRadioItem key={option.value} value={option.value} icon={option.icon}>
               {t(option.label)}
             </DropdownMenuRadioItem>
           ))}
@@ -126,7 +145,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
           value={iconStyle}
         >
           {ICON_STYLE_OPTIONS.map((option) => (
-            <DropdownMenuRadioItem key={option.value} value={option.value}>
+            <DropdownMenuRadioItem key={option.value} value={option.value} icon={option.icon}>
               {t(option.label)}
             </DropdownMenuRadioItem>
           ))}
@@ -145,7 +164,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
           value={sortKey}
         >
           {SORT_KEY_OPTIONS.map((option) => (
-            <DropdownMenuRadioItem key={option.value} value={option.value}>
+            <DropdownMenuRadioItem key={option.value} value={option.value} icon={option.icon}>
               {t(option.label)}
             </DropdownMenuRadioItem>
           ))}
@@ -158,7 +177,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
           value={sortOrder}
         >
           {SORT_ORDER_OPTIONS.map((option) => (
-            <DropdownMenuRadioItem key={option.value} value={option.value}>
+            <DropdownMenuRadioItem key={option.value} value={option.value} icon={option.icon}>
               {t(option.label)}
             </DropdownMenuRadioItem>
           ))}

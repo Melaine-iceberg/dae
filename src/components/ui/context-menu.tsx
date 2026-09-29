@@ -3,7 +3,7 @@ import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu
 
 import { cn } from "@/lib/utils";
 import { KbdShortcut } from "@/components/ui/kbd";
-import { ChevronRight, Check } from "lucide-react";
+import { ChevronRight, Check, type LucideIcon } from "lucide-react";
 
 function ContextMenu({ ...props }: ContextMenuPrimitive.Root.Props) {
   return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />;
@@ -181,23 +181,34 @@ function ContextMenuRadioGroup({ ...props }: ContextMenuPrimitive.RadioGroup.Pro
 function ContextMenuRadioItem({
   className,
   children,
+  icon: Icon,
   ...props
-}: ContextMenuPrimitive.RadioItem.Props) {
+}: ContextMenuPrimitive.RadioItem.Props & {
+  icon?: LucideIcon;
+}) {
   return (
     <ContextMenuPrimitive.RadioItem
       data-slot="context-menu-radio-item"
       className={cn(
-        "relative flex h-7 cursor-default items-center gap-2 rounded-sm pr-2 pl-7 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+        "group/context-menu-radio-item relative flex h-7 cursor-default items-center gap-2 rounded-sm px-2 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
       )}
       {...props}
     >
-      <span className="pointer-events-none absolute left-2 flex items-center justify-center text-primary">
+      {Icon ? (
+        <Icon className="text-muted-foreground group-data-[checked]/context-menu-radio-item:text-primary" />
+      ) : null}
+      {children}
+      {/* Matches the dropdown menu: a dot marks the chosen row, the tick stays
+          on boolean items. */}
+      <span
+        className="pointer-events-none ml-auto flex size-3 shrink-0 items-center justify-center"
+        data-slot="context-menu-radio-item-indicator"
+      >
         <ContextMenuPrimitive.RadioItemIndicator>
-          <Check className="size-3" />
+          <span className="block size-1.5 rounded-full bg-primary" />
         </ContextMenuPrimitive.RadioItemIndicator>
       </span>
-      {children}
     </ContextMenuPrimitive.RadioItem>
   );
 }
