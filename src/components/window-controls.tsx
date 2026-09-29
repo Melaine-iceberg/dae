@@ -46,22 +46,48 @@ function CaptionGlyph({ kind, size = 12 }: { kind: GlyphKind; size?: number }) {
       width={size}
     >
       {kind === "minimize" && <path d="M2.5 6h7" />}
-      {kind === "maximize" && <rect height="7" width="7" x="2.5" y="2.5" />}
-      {/* Restore is two 5-unit squares offset by 3, not by 2. At a 1px stroke a
-          2-unit offset leaves only 1px of channel between the pair's two right
-          edges, and at 12px that reads as one smudged double line rather than
-          as two windows; 3 leaves 2px of air, the least that still separates
-          them. The pair then spans 9 units against the single square's 8, so
-          toggling maximize does not read as the glyph shrinking.
+      {/* Maximize is four corner brackets — a frame opening outward — rather
+          than the closed square every platform draws. The square is the one
+          glyph in this set made entirely of right angles, and at a 1px stroke
+          those read as four clipped points instead of as a shape; the bracket
+          keeps the corners and drops the edges that carried no information,
+          saying "this fills the frame" with less than half the ink.
 
-          The back plate is an open path that stops on the front square's own
-          edges, so the two never cross: its leg starts on the front's top edge
-          and ends on its right edge, which is what makes the pair read as
-          stacked rather than as overlapping. */}
+          The box is 1.5–10.5 with 2.5-unit arms and a 1-unit radius: lucide's
+          `maximize`, the library the rest of the app's icons come from, at
+          half scale — 9 units on the 12 grid, the 75% it gives the glyph on
+          24. Each edge lands on a half-unit, so the hairline sits on the pixel
+          instead of straddling it. */}
+      {kind === "maximize" && (
+        <>
+          <path d="M4 1.5H2.5a1 1 0 0 0-1 1V4" />
+          <path d="M10.5 4V2.5a1 1 0 0 0-1-1H8" />
+          <path d="M1.5 8v1.5a1 1 0 0 0 1 1H4" />
+          <path d="M8 10.5h1.5a1 1 0 0 0 1-1V8" />
+        </>
+      )}
+      {/* Restore is what maximize would leave behind: the window you are in
+          (5 units, front) lying on the window it came from (7, behind), the
+          pair offset by 3 on the diagonal. The brackets and the stack share
+          the same 9-unit box, so toggling changes the window inside the frame
+          rather than the size of the glyph.
+
+          The back card is an open path, not a rect — its lower-left corner is
+          hidden by the front card, and the two legs that walk into that corner
+          stop 1 unit short of the front's edge. The round cap spends the other
+          half: the front's edge stroke ends at 5.0 and the back's cap begins
+          at 4.5, so the outlines clear each other by exactly the half-unit of
+          air that reads as "stacked". Stopping *on* the front's edges — the
+          obvious first draft — welds the two strokes into one shape.
+
+          Both cards wear a 20% radius (1 on 5, 1.4 on 7) so the size step
+          does not break them into two shapes, and the offset leaves the back
+          card's exposed left and bottom legs 1.1 units each: long enough to
+          read as a card edge, short enough to stay a peek. */}
       {kind === "restore" && (
         <>
-          <path d="M5 5V2h5v5h-3" />
-          <rect height="5" width="5" x="2" y="5" />
+          <path d="M3.5 4V2.9a1.4 1.4 0 0 1 1.4-1.4H9.1a1.4 1.4 0 0 1 1.4 1.4V7.1a1.4 1.4 0 0 1-1.4 1.4H8" />
+          <rect height="5" rx="1" width="5" x="1.5" y="5.5" />
         </>
       )}
       {/* Round caps put the X's ends a hair past its box, so it is drawn a
