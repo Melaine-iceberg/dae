@@ -206,6 +206,9 @@ windows = { version = "0.62.2", features = [
   "Win32_Graphics_Gdi",
   "Win32_System_Com",
   "Win32_System_DataExchange",
+  # `GetModuleHandleW` — the instance the volume monitor's hidden window class
+  # registers against (`file_system::volume_monitor::windows`).
+  "Win32_System_LibraryLoader",
   "Win32_System_Memory",
   "Win32_System_Ole",
   "Win32_UI_Shell",
@@ -269,6 +272,11 @@ objc2-foundation = { version = "0.3", features = [
   "NSData",
 ] }
 objc2-uniform-type-identifiers = "0.3"
+# Builds the blocks `NSNotificationCenter`'s observer API takes, which is how
+# `file_system::volume_monitor::macos` hears about mounts. Already compiled
+# into the tree — `objc2-foundation`'s default features pull it in — so naming
+# it directly adds no build time.
+block2 = "0.6"
 # Reads the Finder put-back records (ptbN/ptbL) from ~/.Trash/.DS_Store so
 # the trash view can list and restore entries on macOS, where the `trash`
 # crate only supports `delete`. See file_system/macos_trash.rs.
