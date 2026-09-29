@@ -180,11 +180,18 @@ fn on_drop_failed<F: Fn(DragResult, CursorPosition) + Send + 'static>(
                 return Propagation::Proceed;
             }
             log::debug!("Drag failed or cancelled ({drag_result:?})");
-            // A dummy data drag has no targets, so a plain mouse release also
-            // ends as GTK_DRAG_RESULT_NO_TARGET; only an Escape keypress (or
-            // another genuine failure) is a real cancel.
-            let released_by_mouse =
-                count_release_as_drop && drag_result == gtk::DragResult::NoTarget;
+            // A data drag has no target outside this application, so a plain
+            // mouse release ends as GTK_DRAG_RESULT_NO_TARGET — and under
+            // Wayland as GTK_DRAG_RESULT_ERROR, because the compositor reports
+            // "the drag ended with nothing to receive it" as a protocol error
+            // rather than as a missing target. An Escape keypress is the one
+            // outcome that really is a cancel, and it arrives as
+            // GTK_DRAG_RESULT_USER_CANCELLED.
+            let released_by_mouse = count_release_as_drop
+                && matches!(
+                    drag_result,
+                    gtk::DragResult::NoTarget | gtk::DragResult::Error
+                );
             let result = if released_by_mouse {
                 DragResult::Dropped
             } else {

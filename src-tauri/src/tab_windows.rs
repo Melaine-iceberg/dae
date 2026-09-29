@@ -40,10 +40,158 @@ const MAX_WIDTH: f64 = 1280.0;
 const MAX_HEIGHT: f64 = 900.0;
 static TAB_DRAG_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 const TAB_DRAG_FALLBACK_ICON: &[u8] = include_bytes!("../icons/32x32.png");
-/// MIME type declared by the dummy data drag that carries the tab ghost. No
-/// application accepts it, so the drag stays visual-only; GTK in particular
-/// refuses to start a drag that advertises no target at all.
+/// MIME type this application advertises while a tab is dragged. Nothing
+/// outside the application understands it, so a drop anywhere else is offered
+/// the tab and refuses it — but the application's own windows accept it, which
+/// is how the drag learns where it landed (see [`attach_tab_drop_target`]).
+/// GTK in particular refuses to start a drag that advertises no target at all.
 const TAB_DRAG_TYPE: &str = "application/x-dae-tab-drag";
+
+/// Where a finished native drag landed, as reported by the window that accepted
+/// the drop.
+#[derive(Clone)]
+struct TabDropTarget {
+    label: String,
+    x: f64,
+    y: f64,
+}
+
+/// Set while a native tab drag is in flight, by the window whose WebView
+/// accepted the drop. Read once by the drag that started it.
+///
+/// This is the Linux answer to a question the other platforms answer with
+/// desktop coordinates: a Wayland session exposes neither a global pointer
+/// position nor a window position, so the coordinate hit test can answer
+/// nothing there. The platform's own drag routing, by contrast, does still
+/// deliver the drop to the window under the pointer — so the window that
+/// handled it *is* the drop target. Only one native drag can be in flight at a
+/// time ([`TAB_DRAG_IN_PROGRESS`]), so one slot is enough.
+#[cfg(target_os = "linux")]
+static TAB_DROP_TARGET: Mutex<Option<TabDropTarget>> = Mutex::new(None);
+
+/// Forgets the previous drag's drop, so a stale one cannot decide a later drag.
+#[cfg(target_os = "linux")]
+fn clear_tab_drop_target() {
+    if let Ok(mut slot) = TAB_DROP_TARGET.lock() {
+        *slot = None;
+    }
+}
+
+/// Consumes the drop the drag that just finished produced, if any.
+#[cfg(target_os = "linux")]
+fn take_tab_drop_target() -> Option<TabDropTarget> {
+    TAB_DROP_TARGET.lock().ok().and_then(|mut slot| slot.take())
+}
+
+/// Whether the drag in progress offers [`TAB_DRAG_TYPE`], so a window's handlers
+/// only speak for tab drags and leave every other drag to WebKit.
+#[cfg(target_os = "linux")]
+fn offers_tab_drag(context: &gtk::gdk::DragContext) -> bool {
+    context
+        .list_targets()
+        .into_iter()
+        .any(|atom| atom.name().as_str() == TAB_DRAG_TYPE)
+}
+
+/// Answers the drag while it is over this window.
+///
+/// A destination that never calls `drag_status` is one the drag is never
+/// offered to: GDK reads the silence as a refusal, and the compositor ends the
+/// session as soon as the button comes up without ever delivering a drop — which
+/// from the source is indistinguishable from releasing over the desktop.
+#[cfg(target_os = "linux")]
+fn accept_tab_drag(context: &gtk::gdk::DragContext, time: u32) -> bool {
+    if !offers_tab_drag(context) {
+        return false;
+    }
+    context.drag_status(gtk::gdk::DragAction::MOVE, time);
+    true
+}
+
+/// Records a tab dropped on this window and accepts it.
+///
+/// Accepting is what tells the source its tab found a home; the tab itself then
+/// travels as a window-to-window handoff rather than as drag data, so nothing
+/// has to be marshalled through the clipboard here — and equally important, the
+/// WebView's own target list is left alone, so the page keeps its HTML5 drag
+/// and drop.
+#[cfg(target_os = "linux")]
+fn handle_tab_drop(
+    label: &str,
+    context: &gtk::gdk::DragContext,
+    x: i32,
+    y: i32,
+    time: u32,
+) -> bool {
+    use gtk::prelude::*;
+
+    if !offers_tab_drag(context) {
+        return false;
+    }
+    if let Ok(mut slot) = TAB_DROP_TARGET.lock() {
+        *slot = Some(TabDropTarget {
+            label: label.to_owned(),
+            x: f64::from(x),
+            y: f64::from(y),
+        });
+    }
+    context.drag_finish(true, false, time);
+    true
+}
+
+/// Makes `window` report a dropped tab back to the drag that started it.
+///
+/// Must be called on the main thread: every GTK call below asserts it.
+///
+/// The destination has to be declared on the toplevel: GTK engages with a drag
+/// — dispatching motion, and delivering a drop at all — only for a window that
+/// claims to accept it, and with no claim the compositor refuses the drag
+/// outright and nothing but `drag-leave` arrives anywhere. The drop itself is
+/// still delivered to the WebView under the pointer, which is where it is
+/// caught.
+///
+/// Accepting the drop is what tells the source its tab found a home. The tab
+/// then travels as a window-to-window handoff rather than as drag data, so
+/// nothing has to be marshalled through the clipboard here — and equally
+/// important, the WebView's own target list is left completely alone, so the
+/// page keeps its HTML5 drag and drop.
+#[cfg(target_os = "linux")]
+pub fn attach_tab_drop_target(window: &tauri::WebviewWindow) -> Result<(), String> {
+    use gtk::{gdk, prelude::*};
+
+    let gtk_window = window.gtk_window().map_err(|error| error.to_string())?;
+    let entries = [gtk::TargetEntry::new(
+        TAB_DRAG_TYPE,
+        gtk::TargetFlags::empty(),
+        0,
+    )];
+    gtk_window.drag_dest_set(gtk::DestDefaults::MOTION, &entries, gdk::DragAction::MOVE);
+    gtk_window.drag_dest_set_track_motion(true);
+
+    // The window declares the destination and answers the drag; the WebView is
+    // where the drop itself lands.
+    gtk_window.connect_drag_motion(move |_, context, _x, _y, time| {
+        accept_tab_drag(context, time)
+    });
+    let window_label = window.label().to_owned();
+    gtk_window.connect_drag_drop(move |_, context, x, y, time| {
+        handle_tab_drop(&window_label, context, x, y, time)
+    });
+
+    let label = window.label().to_owned();
+
+    window
+        .with_webview(move |webview| {
+            let widget: gtk::Widget = webview.inner().upcast();
+            widget.connect_drag_motion(move |_, context, _x, _y, time| {
+                accept_tab_drag(context, time)
+            });
+            widget.connect_drag_drop(move |_, context, x, y, time| {
+                handle_tab_drop(&label, context, x, y, time)
+            });
+        })
+        .map_err(|error| error.to_string())
+}
 /// How often the hover monitor re-reads the cursor while a native tab drag is
 /// running; fast enough to feel live, slow enough to stay invisible on CPU.
 const TAB_HOVER_POLL_INTERVAL: Duration = Duration::from_millis(33);
@@ -158,6 +306,32 @@ pub fn tab_drag_outside(app: tauri::AppHandle, source: String) -> Result<bool, S
     ))
 }
 
+/// Whether a tab drag has to be settled from the frontend's own pointer bounds
+/// instead of by the native drag loop.
+///
+/// A Wayland session denies clients every global coordinate: `tao`'s
+/// `cursor_position` answers `(0, 0)` there and a toplevel has no
+/// `outer_position`, so [`tab_drag_outside`] can only ever report "inside" and
+/// [`start_tab_drag`] can never observe a release outside the window either.
+/// The WebView's own pointer events do keep carrying coordinates past the
+/// window edge under Wayland, so the frontend measures the edge itself — and
+/// must not hand the pointer to the GTK drag loop, which would take the
+/// remaining events with it.
+///
+/// Always `false` off Linux, where the native path is authoritative.
+#[tauri::command]
+#[specta::specta]
+pub fn tab_drag_uses_frontend_bounds() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        crate::linux_graphics::wayland_is_the_backend()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
 /// Hands an out-of-window tab gesture to the platform's native drag loop. The
 /// shell owns the drag image and mouse capture until the user releases the
 /// primary button or presses Escape, so the WebView does not need global mouse
@@ -184,6 +358,10 @@ pub async fn start_tab_drag(
         let _ = (&app, &source, &preview, offset_x, offset_y);
         return Err("Native tab drag is not supported on this platform".into());
     }
+
+    // A drop left over from an earlier drag must not decide this one.
+    #[cfg(target_os = "linux")]
+    clear_tab_drop_target();
 
     let hover_finished = Arc::new(AtomicBool::new(false));
     spawn_drag_hover_monitor(app.clone(), source.clone(), hover_finished.clone());
@@ -379,28 +557,9 @@ async fn run_native_tab_drag(
             Ok(Err(_)) => return Err("The native tab drag ended without a result".into()),
             Err(error) => return Err(error.to_string()),
         };
-    let position = window.outer_position().map_err(|error| error.to_string())?;
-    let size = window.outer_size().map_err(|error| error.to_string())?;
     let cursor_x = cursor.x;
     let cursor_y = cursor.y;
-    let outside = point_is_outside(
-        f64::from(cursor_x),
-        f64::from(cursor_y),
-        position.x,
-        position.y,
-        size.width,
-        size.height,
-    );
-
-    // A release outside the source window may still land on another window
-    // of this app; that window receives the tab as a merge instead of a
-    // tear-off. Hover tracking only reports one window per poll, so the
-    // final check re-reads the cursor for the definitive answer.
-    let drop_target = if released && outside {
-        find_drop_target_at(app, &source, cursor_x, cursor_y)
-    } else {
-        None
-    };
+    let (outside, drop_target) = resolve_native_drop(app, &source, &window, released, cursor)?;
 
     Ok(TabDragOutcome {
         released,
@@ -411,6 +570,71 @@ async fn run_native_tab_drag(
         target_x: drop_target.as_ref().map_or(0.0, |target| target.local_x),
         target_y: drop_target.as_ref().map_or(0.0, |target| target.local_y),
     })
+}
+
+/// Where a finished native drag ended, as far as this platform can tell.
+///
+/// Linux answers from the drag routing itself: whichever window's WebView
+/// accepted the drop is the window the pointer was over, which is the one piece
+/// of placement evidence a Wayland session offers — it has neither a global
+/// pointer position nor a window position to measure against. Everywhere else
+/// the desktop coordinates still decide it, which leaves the platform's own
+/// drag loop, its drag image and its cross-window hit test untouched.
+fn resolve_native_drop(
+    app: &tauri::AppHandle,
+    source: &str,
+    window: &tauri::WebviewWindow,
+    released: bool,
+    cursor: drag::CursorPosition,
+) -> Result<(bool, Option<DropTarget>), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let _ = (app, window, cursor);
+        if !released {
+            return Ok((false, None));
+        }
+        return Ok(match take_tab_drop_target() {
+            // Dropped back on the window it came from: neither a tear-off nor
+            // anything to merge.
+            Some(drop) if drop.label == source => (false, None),
+            Some(drop) => (
+                true,
+                Some(DropTarget {
+                    label: drop.label,
+                    local_x: drop.x,
+                    local_y: drop.y,
+                }),
+            ),
+            // No window accepted it: released over the desktop, or over an
+            // application that does not take tabs.
+            None => (true, None),
+        });
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let position = window.outer_position().map_err(|error| error.to_string())?;
+        let size = window.outer_size().map_err(|error| error.to_string())?;
+        let outside = point_is_outside(
+            f64::from(cursor.x),
+            f64::from(cursor.y),
+            position.x,
+            position.y,
+            size.width,
+            size.height,
+        );
+
+        // A release outside the source window may still land on another window
+        // of this app; that window receives the tab as a merge instead of a
+        // tear-off.
+        let drop_target = if released && outside {
+            find_drop_target_at(app, source, cursor.x, cursor.y)
+        } else {
+            None
+        };
+
+        Ok((outside, drop_target))
+    }
 }
 
 struct NativeDragSummary {
@@ -691,6 +915,22 @@ pub async fn tear_off_tab(
     let _ = window.set_position(PhysicalPosition::new(physical_x, physical_y));
 
     crate::window_material::attach(&window);
+
+    // A window that does not declare itself a tab drop destination is one GTK
+    // refuses the drag for outright, so a window able to receive a torn-off tab
+    // has to say so before the next drag starts. GTK may only be touched from
+    // the main thread, and this command runs on the async runtime's worker, so
+    // the registration has to be dispatched back.
+    #[cfg(target_os = "linux")]
+    {
+        let drop_app = app.clone();
+        let drop_window = window.clone();
+        let _ = drop_app.run_on_main_thread(move || {
+            if let Err(error) = attach_tab_drop_target(&drop_window) {
+                log::warn!("Unable to register the tab drop target: {error}");
+            }
+        });
+    }
 
     if let Err(error) = window.show() {
         let _ = window.close();

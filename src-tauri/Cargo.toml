@@ -187,6 +187,11 @@ zbus = "5"
 # Linux integration already depends on `gio` — and it is what the Files
 # window being imitated is built on.
 gio = "0.18"
+# GTK widget plumbing for the tab drop target: a dragged tab is caught on the
+# window's WebView, and its GTK signal is the only place that drop is visible.
+# The same 0.18 line Tauri's own Linux integration already compiles, so naming
+# it directly adds no build time.
+gtk = "0.18"
 # Opens the short-lived second connection to the compositor that
 # `linux_graphics` uses to ask whether `linux-drm-syncobj-v1` is advertised,
 # before GTK can step on the answer. Already compiled into the library —

@@ -175,6 +175,13 @@ pub fn run() {
             )?;
             let main_window = window_material::configure(builder).build()?;
             window_material::attach(&main_window);
+            // Registered before any drag can start: a window that does not
+            // declare itself a tab drop destination is one GTK refuses the drag
+            // for outright, so a miss here costs every tear-off and merge.
+            #[cfg(target_os = "linux")]
+            if let Err(error) = tab_windows::attach_tab_drop_target(&main_window) {
+                log::warn!("Unable to register the tab drop target: {error}");
+            }
 
             file_system::connections::init(app.handle())?;
             file_system::cloud::accounts::init(app.handle())?;
@@ -448,6 +455,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             default_manager::set_default_file_manager,
             default_manager::unset_default_file_manager,
             tab_windows::tab_drag_outside,
+            tab_windows::tab_drag_uses_frontend_bounds,
             tab_windows::tab_drag_hover_ack,
             tab_windows::start_tab_drag,
             tab_windows::tear_off_tab,

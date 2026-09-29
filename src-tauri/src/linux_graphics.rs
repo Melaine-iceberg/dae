@@ -118,7 +118,11 @@ pub fn applied() -> bool {
 /// Whether GDK will talk to Wayland, which is what raises the error — a session
 /// that has a `WAYLAND_DISPLAY` but was sent to X11 by `GDK_BACKEND` is not
 /// affected, and `GDK_BACKEND=x11` is itself a documented workaround.
-fn wayland_is_the_backend() -> bool {
+///
+/// `pub(crate)` because the tab drag has the same question to answer: a Wayland
+/// session is the one that exposes no global pointer or window position, which
+/// is decided in `tab_windows::tab_drag_uses_frontend_bounds`.
+pub(crate) fn wayland_is_the_backend() -> bool {
     if std::env::var_os("WAYLAND_DISPLAY").is_none() {
         return false;
     }

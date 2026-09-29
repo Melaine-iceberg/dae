@@ -77,6 +77,52 @@ type TabDragPreview = {
  *  look as the in-window ghost. */
 const DRAG_PREVIEW_PAD = { top: 6, right: 14, bottom: 40, left: 14 } as const;
 
+/** Whether window-space coordinates lie outside the WebView's viewport.
+ *
+ *  The WebView keeps delivering pointer events past the window edge, and on
+ *  Wayland those events are the only bound signal that exists: the session
+ *  exposes no global pointer position, and the platform clamps the coordinates
+ *  of a pointer that has left to exactly `innerWidth`/`innerHeight` rather than
+ *  to one pixel short of them. */
+function isOutsideViewport(x: number, y: number): boolean {
+  return x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight;
+}
+
+/**
+ * Whether this session hides the pointer's global position, leaving the WebView's
+ * own bounds as the only way to tell that a tab drag has left the window.
+ *
+ * Asked once and cached: the answer is a property of the session, not of the
+ * drag. The request is warmed on pointer down so the answer is already in hand
+ * by the time the drag threshold is crossed.
+ *
+ * See the Rust `tab_drag_uses_frontend_bounds` command for what Wayland denies
+ * the native path. It does not decide the *outcome* of a drag — the platform's
+ * drag routing does that, and does it better — only which signals the frontend
+ * has to watch while the gesture is still its own.
+ */
+let frontendBoundsAnswer: boolean | null = null;
+let frontendBoundsRequest: Promise<boolean> | null = null;
+
+function resolveFrontendBounds(): Promise<boolean> {
+  frontendBoundsRequest ??= commands
+    .tabDragUsesFrontendBounds()
+    .then((value) => {
+      frontendBoundsAnswer = value;
+      return value;
+    })
+    .catch(() => {
+      frontendBoundsAnswer = false;
+      return false;
+    });
+  return frontendBoundsRequest;
+}
+
+/** The cached answer, defaulting to a session with global coordinates. */
+function usesFrontendBounds(): boolean {
+  return frontendBoundsAnswer ?? false;
+}
+
 /**
  * Event name of [`TabMergedIntoWindow`], mirroring the value `bindings.ts`
  * generates for `events.tabMergedIntoWindow`.
@@ -596,6 +642,9 @@ function TabStripItem({
     event.stopPropagation();
     activateTab(tab.id);
     dragCleanupRef.current?.();
+    // Warm the session's bound authority now, so the threshold check does not
+    // wait on IPC and `usesFrontendBounds` can answer synchronously.
+    void resolveFrontendBounds();
 
     const pointerId = event.pointerId;
     const startX = event.clientX;
@@ -609,6 +658,7 @@ function TabStripItem({
     let previewFrame: number | undefined;
     let dragStarted = false;
     let pointerReleased = false;
+    let pointerOutside = false;
     let disposed = false;
     let nativeDragStarted = false;
     let tearingOff = false;
@@ -649,12 +699,25 @@ function TabStripItem({
       });
     };
 
-    const readOutside = () => {
+    /** The native edge query, for the platforms whose WebView stops reporting
+     *  pointer events past the window edge. */
+    const readNativeOutside = () => {
       if (!appWindow) return Promise.resolve(false);
       outsideRequest ??= commands
         .tabDragOutside(appWindow.label)
         .finally(() => (outsideRequest = null));
       return outsideRequest;
+    };
+
+    /** Whether the pointer has left the window.
+     *
+     *  The WebView's own bounds answer first: on a session without global
+     *  coordinates (see `resolveFrontendBounds`) they are the only answer there
+     *  is, and asking the native side first would cost an IPC round trip per
+     *  poll for a question it cannot answer. */
+    const readOutside = async () => {
+      if (pointerOutside) return true;
+      return readNativeOutside();
     };
 
     const tearOff = async (cursor?: { x: number; y: number }) => {
@@ -740,7 +803,12 @@ function TabStripItem({
         }
       } catch (error) {
         console.error("Failed to start native tab drag", error);
-        cleanup();
+        // The native loop is the only path that can report a merge, but failing
+        // to start it — a Wayland compositor refusing a drag begun just past
+        // the window edge, say — must not also lose the tear-off the frontend
+        // has already established for itself.
+        if (pointerOutside) void tearOff();
+        else cleanup();
       }
     };
 
@@ -750,6 +818,9 @@ function TabStripItem({
       try {
         const outside = await readOutside();
         if (disposed || tearingOff) return outside;
+        // The native drag is what draws the drag image outside the window and
+        // what routes the drop to the window under the pointer, so it takes
+        // over as soon as the gesture leaves — on every platform.
         if (outside && beginNativeDrag && !nativeDragStarted) {
           await startNativeDrag();
         }
@@ -782,6 +853,11 @@ function TabStripItem({
       // visual update per frame regardless of the mouse's polling rate.
       pointerX = moveEvent.clientX;
       pointerY = moveEvent.clientY;
+      // Past the viewport is the edge a session without global coordinates has
+      // no other way to see; `readOutside` starts from this flag. Assigned
+      // rather than latched, so dragging back inside and releasing inside is
+      // not mistaken for a drop outside.
+      pointerOutside = isOutsideViewport(moveEvent.clientX, moveEvent.clientY);
       previewFrame ??= window.requestAnimationFrame(updatePreview);
 
       // Live reorder: once the cursor crosses a neighbour's midpoint the tab
@@ -811,8 +887,8 @@ function TabStripItem({
       }
 
       // Pointer capture may deliver the release even after the cursor leaves
-      // the webview. Query the native bounds one final time and only detach now,
-      // never merely because the pointer crossed the edge.
+      // the webview. Query the bounds one final time and only detach now, never
+      // merely because the pointer crossed the edge.
       void pollOutside(false).then((outside) => {
         if (disposed || tearingOff) return;
         if (outside) void tearOff();
@@ -828,7 +904,19 @@ function TabStripItem({
       // Pointerup implicitly releases capture; let its final native bounds
       // check finish instead of cancelling a quick drop outside the window.
       if (cancelEvent.type === "lostpointercapture" && pointerReleased) return;
-      if (cancelEvent.pointerId === pointerId) cleanup();
+      if (cancelEvent.pointerId !== pointerId) return;
+      // A Wayland session withdraws pointer capture the moment the cursor
+      // leaves the window and sends no `pointerup` afterwards, so a capture
+      // loss while the gesture is under way *is* the drop. That covers every
+      // edge, including the left and top ones, where the platform clamps the
+      // coordinate onto the border and it stops being distinguishable from a
+      // legitimate position inside the window.
+      if (usesFrontendBounds() && dragStarted) {
+        pointerReleased = true;
+        void tearOff();
+        return;
+      }
+      cleanup();
     }
 
     function handleKeyDown(keyEvent: KeyboardEvent) {
