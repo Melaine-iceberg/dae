@@ -1,15 +1,21 @@
 //! Tab tear-off and cross-window merge support.
 //!
-//! A tab drag is handed to the platform's native drag loop as soon as the cursor
-//! leaves the tab bar — OLE `DoDragDrop` on Windows, an `NSDraggingSession` on
-//! macOS, a GTK drag on Linux — which then owns the drag image and mouse capture
-//! until the user releases the primary button or presses Escape. The bar is a
-//! region of the window the frontend can measure and keeps receiving pointer
-//! events for, so that boundary is the frontend's call; [`tab_drag_outside`]
-//! answers for the edge where a WebView stops reporting the pointer altogether,
-//! which leaves no position to measure. The same commands create the detached
-//! webview window while keeping the opaque tab snapshot in Rust until the new
-//! frontend consumes it.
+//! A tab drag stays the frontend's own affair — live reorder, its own ghost —
+//! until the cursor leaves the *window*, and only then is it handed to the
+//! platform's native drag loop as soon as it does: OLE `DoDragDrop` on Windows,
+//! an `NSDraggingSession` on macOS, a GTK drag on Linux, each of which owns the
+//! drag image and mouse capture until the user releases the primary button or
+//! presses Escape. The distinction matters because the loop can report only
+//! what it can see: handing the pointer over while it is still inside this
+//! window leaves it with nothing to say about a release *here*, which then reads
+//! as a drop on the desktop and tears off a window. From past the window edge,
+//! the absence of a drop target is finally evidence of something.
+//! [`tab_drag_outside`] answers for the platforms whose WebView stops reporting
+//! the pointer at that edge, which leaves no position to measure; Wayland has
+//! neither, so the frontend measures the edge from its own events.
+//!
+//! The same commands create the detached webview window while keeping the
+//! opaque tab snapshot in Rust until the new frontend consumes it.
 //!
 //! When the drag is released over another of this app's windows, the tab is
 //! merged into that window instead of spawning a new one: the source frontend
@@ -373,7 +379,7 @@ pub fn tab_drag_uses_frontend_bounds() -> bool {
     }
 }
 
-/// Hands a tab gesture that has left the tab bar to the platform's native drag
+/// Hands a tab gesture that has left the window to the platform's native drag
 /// loop. The shell owns the drag image and mouse capture until the user releases
 /// the primary button or presses Escape, so the WebView does not need global
 /// mouse hooks.
@@ -384,7 +390,8 @@ pub fn tab_drag_uses_frontend_bounds() -> bool {
 ///
 /// While the native loop runs, a hover monitor broadcasts `TabDragHover` /
 /// `TabDragLeave` to the window under the cursor so drop targets can show an
-/// insertion indicator. The outcome also reports which app window received
+/// insertion indicator — everywhere a session reveals the cursor's desktop
+/// position to begin with. The outcome also reports which app window received
 /// the drop, if any, so the frontend can merge the tab instead of detaching.
 #[tauri::command]
 #[specta::specta]
@@ -404,8 +411,15 @@ pub async fn start_tab_drag(
     #[cfg(target_os = "linux")]
     clear_tab_drop_target();
 
+    // The monitor hit-tests desktop coordinates, which a Wayland session
+    // exposes to nobody: polling there matches whichever window sits at (0, 0)
+    // and lights up its insertion indicator for a pointer no one can see. The
+    // drop still arrives with the receiver's own coordinates, so a merge has
+    // everything it needs without the preview.
     let hover_finished = Arc::new(AtomicBool::new(false));
-    spawn_drag_hover_monitor(app.clone(), source.clone(), hover_finished.clone());
+    if !tab_drag_uses_frontend_bounds() {
+        spawn_drag_hover_monitor(app.clone(), source.clone(), hover_finished.clone());
+    }
 
     let outcome = run_native_tab_drag(&app, source, preview, offset_x, offset_y).await;
 
