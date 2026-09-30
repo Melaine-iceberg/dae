@@ -92,6 +92,45 @@ function isOutsideViewport(x: number, y: number): boolean {
   return x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight;
 }
 
+/** The tab bar's box in viewport pixels: the chrome header with the native
+ *  window controls cut out of it.
+ *
+ *  A tab drag whose cursor is inside it is still the WebView's business; past it
+ *  the platform's drag loop takes over (see `startNativeDrag`), because that is
+ *  the only thing that can draw a drag image, hold the pointer grab and route
+ *  the drop across windows. */
+type TabBarBounds = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
+/** Measures the bar, dropping the caption buttons out of it.
+ *
+ *  They are chrome, but they answer to the window rather than to the strip, so a
+ *  tab dragged over them has left the bar even though it never left the header.
+ *  They sit flush against whichever end the platform puts them at, so whatever
+ *  lies between them and the far edge is the bar. */
+function measureTabBar(): TabBarBounds | null {
+  const header = document.querySelector<HTMLElement>("[data-tab-bar]");
+  if (!header) return null;
+
+  const chrome = header.getBoundingClientRect();
+  const controls = header
+    .querySelector<HTMLElement>('[data-slot="window-controls"]')
+    ?.getBoundingClientRect();
+  if (!controls) return chrome;
+
+  return (controls.left + controls.right) / 2 < (chrome.left + chrome.right) / 2
+    ? { left: controls.right, top: chrome.top, right: chrome.right, bottom: chrome.bottom }
+    : { left: chrome.left, top: chrome.top, right: controls.left, bottom: chrome.bottom };
+}
+
+function isOutsideTabBar(bar: TabBarBounds, x: number, y: number): boolean {
+  return x < bar.left || x >= bar.right || y < bar.top || y >= bar.bottom;
+}
+
 /**
  * Whether this session hides the pointer's global position, leaving the WebView's
  * own bounds as the only way to tell that a tab drag has left the window.
@@ -387,6 +426,7 @@ export function ExplorerTabs() {
           below it is what separates the frame from the content plane. */}
       <header
         className="flex h-tab-strip shrink-0 items-stretch border-b border-border bg-background"
+        data-tab-bar="true"
         data-tauri-drag-region="deep"
       >
         <StripScrollButton
@@ -667,6 +707,10 @@ function TabStripItem({
     const bounds = element.getBoundingClientRect();
     const grabX = startX - bounds.left;
     const grabY = startY - bounds.top;
+    // Read once for the whole gesture: nothing in the bar moves while a drag is
+    // under way, and a mid-drag relayout (a tab closing behind the cursor) would
+    // otherwise hand the gesture over on a boundary the user never crossed.
+    const tabBar = measureTabBar();
     let pointerX = startX;
     let pointerY = startY;
     let previewFrame: number | undefined;
@@ -704,7 +748,13 @@ function TabStripItem({
 
     const updatePreview = () => {
       previewFrame = undefined;
-      if (disposed) return;
+      // The hand-off clears the ghost to hand the cursor to the OS drag image,
+      // and it may well run before the frame this one was scheduled from ever
+      // fires — the snapshot it waits on is already in hand whenever the gesture
+      // left the bar late enough to have rasterized. Repainting here would leave
+      // the DOM ghost frozen on screen beside the native one for the rest of the
+      // drag, the native loop having taken the pointer events that would move it.
+      if (disposed || nativeDragStarted) return;
       setDragPreview({
         x: pointerX - grabX,
         y: pointerY - grabY,
@@ -832,15 +882,18 @@ function TabStripItem({
       }
     };
 
+    /** The hand-off fallback for a cursor that left through the window edge,
+     *  where the bar check in `handlePointerMove` may get no event to run on.
+     *
+     *  Crossing the bar normally arrives as a pointer event; a platform whose
+     *  WebView stops reporting them at the window boundary only shows up here,
+     *  and a pointer that has left the window has necessarily left the bar too. */
     const pollOutside = async (beginNativeDrag = true): Promise<boolean> => {
       if (disposed || !dragStarted || tearingOff) return false;
 
       try {
         const outside = await readOutside();
         if (disposed || tearingOff) return outside;
-        // The native drag is what draws the drag image outside the window and
-        // what routes the drop to the window under the pointer, so it takes
-        // over as soon as the gesture leaves — on every platform.
         if (outside && beginNativeDrag && !nativeDragStarted) {
           await startNativeDrag();
         }
@@ -893,6 +946,15 @@ function TabStripItem({
           lastReorderIndex = target;
           moveTab(tab.id, target);
         }
+      }
+
+      // The hand-off: past the bar the platform's drag loop takes the gesture, so
+      // the switch to the OS drag image lands where the tab leaves the chrome
+      // rather than where it leaves the window. A pointer that has left the
+      // window has left the bar too, so this covers `pollOutside`'s edge as well.
+      if (tabBar && isOutsideTabBar(tabBar, pointerX, pointerY)) {
+        void startNativeDrag();
+        return;
       }
 
       void pollOutside();

@@ -1,14 +1,15 @@
 //! Tab tear-off and cross-window merge support.
 //!
-//! The WebView stops delivering pointer events once the cursor leaves the
-//! window, so the frontend cannot reliably decide whether an in-progress tab
-//! drag is outside. These commands query the native window and create the
-//! detached webview window while keeping the opaque tab snapshot in Rust until
-//! the new frontend consumes it. Once the gesture crosses the window edge it
-//! is handed to the platform's native drag loop — OLE `DoDragDrop` on Windows,
-//! an `NSDraggingSession` on macOS, and a GTK drag on Linux — which owns the
-//! drag image and mouse capture until the user releases the primary button or
-//! presses Escape.
+//! A tab drag is handed to the platform's native drag loop as soon as the cursor
+//! leaves the tab bar — OLE `DoDragDrop` on Windows, an `NSDraggingSession` on
+//! macOS, a GTK drag on Linux — which then owns the drag image and mouse capture
+//! until the user releases the primary button or presses Escape. The bar is a
+//! region of the window the frontend can measure and keeps receiving pointer
+//! events for, so that boundary is the frontend's call; [`tab_drag_outside`]
+//! answers for the edge where a WebView stops reporting the pointer altogether,
+//! which leaves no position to measure. The same commands create the detached
+//! webview window while keeping the opaque tab snapshot in Rust until the new
+//! frontend consumes it.
 //!
 //! When the drag is released over another of this app's windows, the tab is
 //! merged into that window instead of spawning a new one: the source frontend
@@ -319,9 +320,11 @@ impl TabWindowState {
 
 /// Whether the pointer has left the window a dragged tab came from.
 ///
-/// The frontend polls while a tab drag is in flight because the WebView may
-/// stop delivering pointer events as soon as the cursor crosses the window
-/// edge.
+/// The bar hand-off the frontend measures from its own layout covers a pointer
+/// it still hears about, so this is the fallback for a platform whose WebView
+/// stops delivering pointer events at the window edge: polled while a tab drag
+/// is in flight, it reports the gesture outside the moment nobody can say
+/// otherwise. A position outside the window is outside the tab bar in any case.
 #[tauri::command]
 #[specta::specta]
 pub fn tab_drag_outside(app: tauri::AppHandle, source: String) -> Result<bool, String> {
@@ -370,10 +373,10 @@ pub fn tab_drag_uses_frontend_bounds() -> bool {
     }
 }
 
-/// Hands an out-of-window tab gesture to the platform's native drag loop. The
-/// shell owns the drag image and mouse capture until the user releases the
-/// primary button or presses Escape, so the WebView does not need global mouse
-/// hooks.
+/// Hands a tab gesture that has left the tab bar to the platform's native drag
+/// loop. The shell owns the drag image and mouse capture until the user releases
+/// the primary button or presses Escape, so the WebView does not need global
+/// mouse hooks.
 ///
 /// Windows blocks in `DoDragDrop` and returns through the main-thread closure;
 /// macOS and GTK run asynchronous drag sessions, so the completion is reported
@@ -477,9 +480,9 @@ async fn run_native_tab_drag(
         let drag_window = window.clone();
         let dispatch_sender = sender.clone();
 
-        // The frontend's poll decided the gesture is outside, so the source
-        // tab sits wherever the last in-window pointer event left it; the
-        // ghost continues from the true cursor position instead.
+        // The frontend decides when to hand over from its own pointer events, so
+        // the source tab sits wherever the last of them left it; the ghost
+        // continues from the true cursor position instead.
         app.run_on_main_thread(move || {
             if TAB_DRAG_IN_PROGRESS.swap(true, Ordering::SeqCst) {
                 let _ = dispatch_sender.try_send(Err("Another tab drag is already active".into()));

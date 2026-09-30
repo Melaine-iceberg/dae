@@ -81,9 +81,9 @@ pub fn start_drag<F: Fn(DragResult, CursorPosition) + Send + 'static>(
         {
             log::debug!("Drag context created successfully");
             let callback = Rc::new(on_drop_callback);
-            // drag-failed and drop-performed are mutually exclusive for one
-            // drag, but guard against a double delivery anyway: callers hand
-            // the outcome to a one-shot channel.
+            // drag-failed, drop-performed and drag-end are meant to be mutually
+            // exclusive reports of one ending, but guard against a double
+            // delivery anyway: callers hand the outcome to a one-shot channel.
             let fired = Rc::new(Cell::new(false));
             on_drop_failed(
                 callback.clone(),
@@ -99,6 +99,13 @@ pub fn start_drag<F: Fn(DragResult, CursorPosition) + Send + 'static>(
                 window,
                 &handler_ids,
                 &drag_context,
+            );
+            on_drag_end(
+                callback.clone(),
+                fired.clone(),
+                window,
+                &handler_ids,
+                count_release_as_drop,
             );
 
             log::debug!("Setting up drag icon");
@@ -210,6 +217,48 @@ fn on_drop_failed<F: Fn(DragResult, CursorPosition) + Send + 'static>(
             } else {
                 Propagation::Proceed
             }
+        }));
+}
+
+fn on_drag_end<F: Fn(DragResult, CursorPosition) + Send + 'static>(
+    callback: Rc<F>,
+    fired: Rc<Cell<bool>>,
+    window: &gtk::ApplicationWindow,
+    handler_ids: &Arc<Mutex<Vec<SignalHandlerId>>>,
+    count_release_as_drop: bool,
+) {
+    log::debug!("Setting up drag end handler");
+    let window_clone = window.clone();
+    let handler_ids_clone = handler_ids.clone();
+
+    // `drag-end` is the one ending GTK guarantees the source widget, and for a
+    // drop that never left the process it is the *only* one: `gtk_drag_finish`
+    // reports a local drag straight back to the source, so no Xdnd traffic ever
+    // arrives to raise `drop-performed`, and nothing raises `drag-failed` either
+    // because the drop succeeded. Any release over a window of the dragging
+    // application's own process — the window the drag came from above all —
+    // would otherwise never end as far as the caller is concerned.
+    //
+    // Reaching this handler at all means neither of the two more specific
+    // signals spoke first, and a cancel always speaks first (Escape arrives as
+    // `drag-failed` with USER_CANCELLED). What is left is a mouse release, which
+    // is exactly what `drag-failed` above counts a data drag as.
+    handler_ids
+        .lock()
+        .unwrap()
+        .push(window.connect_drag_end(move |_, context| {
+            if fired.replace(true) {
+                return;
+            }
+            log::debug!("Drag ended ({:?})", context.selected_action());
+            let result = if count_release_as_drop {
+                DragResult::Dropped
+            } else {
+                DragResult::Cancel
+            };
+            callback(result, get_cursor_position(&window_clone).unwrap());
+
+            cleanup_signal_handlers(&handler_ids_clone, &window_clone);
         }));
 }
 
