@@ -84,6 +84,8 @@ pub fn update_properties(path: &Path, changes: &PropertyChanges) -> Result<(), F
 /// follow links, so touching them would modify targets outside the tree.
 /// Entries that cannot be updated are counted as failures and the walk moves
 /// on; the result distinguishes the two so the UI can report partial success.
+/// Directories are updated after their entries, deepest first, so a restrictive
+/// POSIX mode cannot lock the walk out of the tree it is still descending.
 pub fn apply_properties_recursive(
     root: &Path,
     changes: &PropertyChanges,
@@ -101,8 +103,7 @@ pub fn apply_properties_recursive(
     let total = count_walkable_entries(root)?;
     progress.start(total);
 
-    process_entry(root, &plan, progress, &mut outcome);
-
+    let mut directories = vec![root.to_path_buf()];
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         // Entries under an unreadable directory were never included in
@@ -125,11 +126,20 @@ pub fn apply_properties_recursive(
                 continue;
             }
 
-            process_entry(&path, &plan, progress, &mut outcome);
             if file_type.is_dir() {
-                stack.push(path);
+                stack.push(path.clone());
+                directories.push(path);
+            } else {
+                process_entry(&path, &plan, progress, &mut outcome);
             }
         }
+    }
+
+    // Reversing discovery order puts every directory after all of its
+    // descendants, which is what keeps a POSIX mode without the owner execute
+    // bit from stranding the entries still inside.
+    for dir in directories.into_iter().rev() {
+        process_entry(&dir, &plan, progress, &mut outcome);
     }
 
     if outcome.updated == 0 && outcome.failed > 0 {
@@ -599,6 +609,18 @@ mod tests {
         std::env::temp_dir().join(format!("dae-properties-{tag}-{}", std::process::id()))
     }
 
+    /// `remove_dir_all` needs write and execute on every directory it walks, and
+    /// the mode tests deliberately strip both.
+    #[cfg(unix)]
+    fn restore_traversal(paths: &[&Path]) {
+        use std::os::unix::fs::PermissionsExt;
+
+        for path in paths {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+                .expect("restore directory permissions");
+        }
+    }
+
     #[cfg(windows)]
     fn windows_flags(properties: &FileProperties) -> &WindowsProperties {
         match &properties.platform {
@@ -728,10 +750,19 @@ mod tests {
             progress.total.load(AtomicOrdering::Relaxed)
         );
 
-        for path in [&directory, &top_file, &nested, &nested_file] {
-            let mode = fs::metadata(path).expect("read metadata").mode() & 0o7777;
-            assert_eq!(mode, 0o640, "{path:?} kept mode {mode:o}");
-        }
+        // A mode without the execute bit leaves the caller unable to stat inside
+        // the tree, so each level is checked before its traversal is handed back.
+        let mode_of = |path: &Path| fs::metadata(path).expect("read metadata").mode() & 0o7777;
+        assert_eq!(mode_of(&directory), 0o640);
+        restore_traversal(&[&directory]);
+        assert_eq!(mode_of(&top_file), 0o640, "{top_file:?} kept its mode");
+        assert_eq!(mode_of(&nested), 0o640, "{nested:?} kept its mode");
+        restore_traversal(&[&nested]);
+        assert_eq!(
+            mode_of(&nested_file),
+            0o640,
+            "{nested_file:?} kept its mode"
+        );
 
         fs::remove_dir_all(directory).expect("remove test directory");
     }
@@ -776,6 +807,7 @@ mod tests {
             "the symlink target outside the tree was modified"
         );
 
+        restore_traversal(&[&directory]);
         fs::remove_dir_all(directory).expect("remove test directory");
         fs::remove_dir_all(outside_dir).expect("remove outside directory");
     }
