@@ -3,10 +3,12 @@ import { cn } from "@/lib/utils";
 import type { ExtensionPresentation } from "./file-icons";
 
 /**
- * Entry icon frame: the type artwork seated in a fixed square cell so it
- * stays aligned with native shell icons and thumbnails in the same view.
- * Catppuccin artwork is full-bleed and self-colored, so there is
- * no tinted squircle behind it — the cell is pure layout.
+ * Entry icon frame: the type glyph seated in a fixed square cell so it stays
+ * aligned with native shell icons and thumbnails in the same view.
+ *
+ * The cell is pure layout — there is no tinted plate behind the glyph. A type
+ * glyph is a 16px silhouette that already carries its category colour, so a
+ * coloured plate under it would only add a second, competing shape.
  */
 
 export function TypeIconTile({

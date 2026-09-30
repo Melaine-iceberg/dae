@@ -54,13 +54,16 @@ export const foldersFirstAtom = atomWithStorage<boolean>("explorer.foldersFirst"
 /**
  * Which icons a listing draws.
  *
- * `"system"` asks the shell for every file and folder — the OS's own artwork is
- * what makes a file manager read as part of the desktop rather than as an app
- * drawn in its colours. `"themed"` keeps the built-in glyph set and defers to
- * the shell only where a glyph cannot say what the file is (Windows shortcuts,
- * installers, and extensions the map does not know); see `native-icon.tsx`.
+ * `"themed"` — the default — draws the built-in glyph set, coloured from the
+ * theme's own category tokens, and defers to the shell only where a glyph
+ * cannot say what the file is (Windows shortcuts, installers, and extensions
+ * the type table does not know); see `native-icon.tsx`.
+ *
+ * `"system"` asks the shell for every file and folder instead: the OS's own
+ * artwork is what makes a file manager read as part of the desktop rather than
+ * as an app drawn in its colours.
  */
-export const iconStyleAtom = atomWithStorage<ExplorerIconStyle>("explorer.iconStyle", "system");
+export const iconStyleAtom = atomWithStorage<ExplorerIconStyle>("explorer.iconStyle", "themed");
 
 /**
  * Whether hidden entries are listed at all. Defaults to `true` (the app has

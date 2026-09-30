@@ -72,10 +72,14 @@ type TabDragPreview = {
   height: number;
 };
 
-/** Room around the ghost for its --shadow-ambient-lg drop shadow (~12px
- *  sideways, ~32px below) so the native drag image keeps the same floating
- *  look as the in-window ghost. */
-const DRAG_PREVIEW_PAD = { top: 6, right: 14, bottom: 40, left: 14 } as const;
+/** Cushion the snapshot keeps around the ghost, in CSS pixels, on every side.
+ *
+ *  Antialiasing slack only, so it stays small and — deliberately — symmetric.
+ *  Nothing of the tab is painted outside its border box, because the drag image
+ *  carries no elevation (see [`clearBoxShadows`]); the two device pixels only
+ *  cover the half-covered pixel straddling the border box, where the rounded
+ *  corners' edge lands. */
+const DRAG_PREVIEW_PAD = 2;
 
 /** Whether window-space coordinates lie outside the WebView's viewport.
  *
@@ -212,11 +216,28 @@ async function inlineSubtree(source: Element, clone: Element): Promise<void> {
   }
 }
 
-/** Rasterizes the live ghost portal (plus shadow padding) to a PNG data URL
- *  for the OS drag loop, so the native drag image is pixel-equal to the tab
- *  the user was dragging in-window. Unlike a DOM portal it is also not
- *  clipped at the WebView boundary. Returns null on any failure; the Rust
- *  side then falls back to the application icon. */
+/** Clears every box-shadow {@link inlineSubtree} inlined into the clone.
+ *
+ *  The native drag image is composited by the OS under the pointer with nothing
+ *  behind it, so elevation does not read there as the in-window float it was
+ *  drawn for — a rasterized copy of `--shadow-ambient-lg` trails the tab across
+ *  the desktop as a stray smear, and its blurred edge is cut off wherever it
+ *  overruns the bitmap. Kept as the snapshot's own guarantee rather than as a
+ *  reflection of the ghost's current styling, and applied to the whole subtree,
+ *  not just the root: a shadow on any descendant would be baked in the same
+ *  way, and the snapshot must stay flat whatever the ghost becomes. */
+function clearBoxShadows(root: Element): void {
+  if (root instanceof HTMLElement) root.style.boxShadow = "none";
+  for (const node of root.querySelectorAll<HTMLElement>("*")) {
+    node.style.boxShadow = "none";
+  }
+}
+
+/** Rasterizes the live ghost portal (plus the antialiasing cushion) to a PNG
+ *  data URL for the OS drag loop, so the native drag image carries the same tab
+ *  the user was dragging in-window. Unlike a DOM portal it is also not clipped
+ *  at the WebView boundary. Returns null on any failure; the Rust side then
+ *  falls back to the application icon. */
 function snapshotTabDragPreview(tabId: string): Promise<string | null> {
   return (async () => {
     const portal = await waitForDragPreviewPortal(tabId);
@@ -224,23 +245,27 @@ function snapshotTabDragPreview(tabId: string): Promise<string | null> {
 
     const bounds = portal.getBoundingClientRect();
     const scale = window.devicePixelRatio || 1;
-    const width = bounds.width + DRAG_PREVIEW_PAD.left + DRAG_PREVIEW_PAD.right;
-    const height = bounds.height + DRAG_PREVIEW_PAD.top + DRAG_PREVIEW_PAD.bottom;
+    const width = bounds.width + DRAG_PREVIEW_PAD * 2;
+    const height = bounds.height + DRAG_PREVIEW_PAD * 2;
 
     const clone = portal.cloneNode(true) as HTMLElement;
     await inlineSubtree(portal, clone);
+    clearBoxShadows(clone);
     clone.style.position = "absolute";
     clone.style.inset = "auto";
-    clone.style.left = `${DRAG_PREVIEW_PAD.left}px`;
-    clone.style.top = `${DRAG_PREVIEW_PAD.top}px`;
+    clone.style.left = `${DRAG_PREVIEW_PAD}px`;
+    clone.style.top = `${DRAG_PREVIEW_PAD}px`;
     clone.style.margin = "0";
     clone.style.transform = "none";
 
     // The foreignObject viewport is sized in device pixels; the wrapper lays
     // the clone out in CSS pixels and scales it so text rasterizes crisply at
     // the display's pixel ratio instead of relying on drawImage upscaling.
-    const bitmapWidth = Math.round(width * scale);
-    const bitmapHeight = Math.round(height * scale);
+    // Rounded up, never down: at a fractional display scale a viewport rounded
+    // short of the content shaves that fraction off the far edge, and `ceil`
+    // only ever costs a transparent pixel that nothing paints.
+    const bitmapWidth = Math.ceil(width * scale);
+    const bitmapHeight = Math.ceil(height * scale);
     const svgNamespace = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(svgNamespace, "svg");
     svg.setAttribute("width", String(bitmapWidth));
@@ -774,12 +799,12 @@ function TabStripItem({
         setDragPreview(null);
         // The grab point is handed over in the preview bitmap's own pixels, the
         // grid the platform spots the drag image against, so the snapshot's
-        // padding and the device pixel ratio are both part of it.
+        // cushion and the device pixel ratio are both part of it.
         const outcome = await commands.startTabDrag(
           appWindow.label,
           preview,
-          (grabX + DRAG_PREVIEW_PAD.left) * window.devicePixelRatio,
-          (grabY + DRAG_PREVIEW_PAD.top) * window.devicePixelRatio,
+          (grabX + DRAG_PREVIEW_PAD) * window.devicePixelRatio,
+          (grabY + DRAG_PREVIEW_PAD) * window.devicePixelRatio,
         );
         if (disposed || tearingOff) return;
 
@@ -940,12 +965,9 @@ function TabStripItem({
     element.addEventListener("lostpointercapture", handlePointerCancel);
   };
 
-  // Folder tabs carry the Catppuccin artwork for the tab's folder
-  // name (src, node_modules, .git, ... with a generic folder fallback while
-  // the directory is still loading); workspace surfaces keep their Lucide
-  // UI glyphs, which are out of the catppuccin icon scope.
-  const folderName = directory?.breadcrumbs.at(-1)?.name ?? "";
-  const FolderTabIcon = getFolderPresentation(folderName).icon;
+  // Folder tabs carry the folder's type glyph; workspace surfaces keep their
+  // Lucide UI glyphs, which are app chrome rather than file types.
+  const FolderTabIcon = getFolderPresentation().icon;
   const WorkspaceTabIcon = surface.kind === "folder" ? null : WORKSPACE_TAB_ICONS[surface.kind];
   const tabContent = (
     <>
@@ -1012,11 +1034,16 @@ function TabStripItem({
       >
         <X className="size-3" />
       </button>
+      {/* No elevation on the ghost, deliberately: the ghost *is* the drag
+          image. The OS composites a snapshot of this element under the pointer
+          with nothing behind it, where a drop shadow is a smear on the desktop
+          rather than a float over the shell, so the two only stay identical if
+          neither carries one. */}
       {dragPreview &&
         createPortal(
           <div
             aria-hidden="true"
-            className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-sm border border-border bg-card text-body text-foreground shadow-ambient-lg select-none"
+            className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-sm border border-border bg-card text-body text-foreground select-none"
             data-tab-drag-preview={tab.id}
             style={{
               width: dragPreview.width,

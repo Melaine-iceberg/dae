@@ -5,7 +5,7 @@ import type { LucideIcon } from "lucide-react";
 import { i18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
-/** Workspace surface glyphs stay on Lucide (UI icons, outside catppuccin scope). */
+/** Workspace surface glyphs stay on Lucide — that is UI chrome, not file type. */
 
 /**
  * Shared building blocks for the workspace surfaces (Overview, Recents,

@@ -172,7 +172,7 @@ export function ExplorerBreadcrumbs({ breadcrumbs, onNavigate }: ExplorerBreadcr
                   <DropdownMenuContent align="start" className="min-w-48 max-w-80">
                     <DropdownMenuGroup>
                       {collapsed.map((item) => {
-                        const ItemIcon = getFolderPresentation(item.name).icon;
+                        const ItemIcon = getFolderPresentation().icon;
                         return (
                           <DropdownMenuItem
                             key={item.path}
@@ -252,9 +252,8 @@ function CrumbContent({
   plain?: boolean;
   onNavigate?: (breadcrumb: BreadcrumbData) => void;
 }) {
-  // Catppuccin folder artwork per crumb name; drive roots and other
-  // unmapped names fall back to the theme's generic folder.
-  const CrumbIcon = getFolderPresentation(breadcrumb.name).icon;
+  // Every crumb draws the same folder glyph — drive roots and folders alike.
+  const CrumbIcon = getFolderPresentation().icon;
   const icon = <CrumbIcon className="size-3.5 shrink-0" />;
 
   if (plain) {

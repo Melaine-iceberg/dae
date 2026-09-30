@@ -13,7 +13,7 @@ import type { PlaceKind } from "@/bindings";
 
 import { i18n } from "@/i18n";
 
-/** Sidebar place icons stay on Lucide (UI glyphs, outside catppuccin scope). */
+/** Sidebar place icons stay on Lucide — that is UI chrome, not file type. */
 
 /** Icons and labels for the well-known system places. */
 export const PLACE_PRESENTATION: Record<PlaceKind, { icon: LucideIcon; label: string }> = {

@@ -228,9 +228,10 @@ function TreeNodeRow({
   const mayHaveChildren =
     expanded || !state || state.status !== "ready" || state.entries.length > 0;
 
-  // Catppuccin artwork with per-name variants (src, .git, ...) and
-  // an open variant while the node is expanded.
-  const FolderArt = getFolderPresentation(entry.name, expanded).icon;
+  // One folder glyph, drawn open while the node is expanded. Colour comes
+  // from the presentation itself (`--folder`), so the tree, the breadcrumbs
+  // and the space cards all agree on what a folder looks like.
+  const FolderArt = getFolderPresentation(expanded).icon;
 
   return (
     <FolderContextMenu isListed={false} path={entry.path}>

@@ -45,11 +45,11 @@ function ReadOnlyBadge({ className, size }: { className?: string; size: "sm" | "
 }
 
 /**
- * Positioning layer around any icon variant (Lucide svg, native shell
- * bitmap, or thumbnail). Read-only files get a lock overlay in the bottom
- * left corner — the OS overlay convention, diagonal to the grid's top-right
- * Git badge. Directories and symlinks are excluded: the DOS READONLY bit on
- * folders is vestigial, and links report the target's attributes.
+ * Positioning layer around any icon variant (type glyph, native shell bitmap,
+ * or thumbnail). Read-only files get a lock overlay in the bottom left corner
+ * — the OS overlay convention, diagonal to the grid's top-right Git badge.
+ * Directories and symlinks are excluded: the DOS READONLY bit on folders is
+ * vestigial, and links report the target's attributes.
  */
 export function EntryIconFrame({
   badgeSize = "sm",

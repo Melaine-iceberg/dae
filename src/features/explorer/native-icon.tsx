@@ -45,10 +45,10 @@ export function useNativeIconFor(entry: DirectoryEntry | null | undefined): bool
 
 /**
  * The rule that predates the preference, and what `"themed"` still means:
- * OS icons take over for app-like files and for extensions the built-in map
- * does not know — the Windows shell usually has a registered handler icon
- * there. Known categories keep their toned Lucide glyphs for a consistent
- * design.
+ * OS icons take over for app-like files and for extensions the built-in type
+ * table does not know — the Windows shell usually has a registered handler
+ * icon there. Known categories keep their toned type glyphs, which is what
+ * makes the listing read as one design.
  */
 function usesShellIconWhereNoGlyphExists(entry: DirectoryEntry): boolean {
   if (!isWindowsPlatform || entry.kind !== "file") {
