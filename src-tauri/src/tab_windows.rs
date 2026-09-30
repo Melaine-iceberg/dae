@@ -29,7 +29,6 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::Serialize;
 use specta::Type;
 use tauri::{EventTarget, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
-use tauri_specta::Event;
 
 const WINDOW_LABEL_PREFIX: &str = "tab-window-";
 const DEFAULT_WIDTH: f64 = 960.0;
@@ -227,6 +226,45 @@ pub struct TabMergedIntoWindow {
     pub payload: String,
     pub x: f64,
     pub y: f64,
+}
+
+/// Delivers an event from the platform's main thread.
+///
+/// Emitting from any other thread can freeze the whole application on Linux:
+/// `emit` holds tauri's `webviews` lock for the whole loop in which it
+/// round-trips each webview's `eval` back to the main thread, and the main
+/// thread wants that same lock inside WebKitGTK's `ipc://` callback to resolve
+/// the webview an invoke arrived on. The two then wait on each other, and the
+/// lock is the only thing left running. On the main thread the `eval` runs
+/// inline rather than being waited for, so the lock is never held across it.
+fn emit_to_window<E>(app: &tauri::AppHandle, label: String, event: E)
+where
+    E: tauri_specta::Event + Serialize + Clone + Send + 'static,
+{
+    let emitter = app.clone();
+    if let Err(error) = app.run_on_main_thread(move || {
+        let _ = event.emit_to(&emitter, EventTarget::labeled(label));
+    }) {
+        log::warn!("Unable to deliver a tab drag event: {error}");
+    }
+}
+
+/// Hands a merged tab to the window the native drop landed on.
+///
+/// The frontend cannot emit [`TabMergedIntoWindow`] itself, however convenient
+/// `emitTo` would be: that is an invoke, and its handler emits on the async
+/// runtime — the one thread [`emit_to_window`] exists to keep emitting off. As
+/// a non-`async` command the emit happens to run on the main thread anyway.
+#[tauri::command]
+#[specta::specta]
+pub fn merge_tab_into_window(
+    app: tauri::AppHandle,
+    target: String,
+    payload: String,
+    x: f64,
+    y: f64,
+) {
+    emit_to_window(&app, target, TabMergedIntoWindow { payload, x, y });
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -738,7 +776,7 @@ fn spawn_drag_hover_monitor(app: tauri::AppHandle, source: String, finished: Arc
 
             if !same_window && let Some(previous) = hovered.take() {
                 pushed = None;
-                let _ = TabDragLeave.emit_to(&app, EventTarget::labeled(previous.label));
+                emit_to_window(&app, previous.label, TabDragLeave);
             }
 
             match target.as_ref() {
@@ -766,11 +804,14 @@ fn spawn_drag_hover_monitor(app: tauri::AppHandle, source: String, finished: Arc
                     {
                         pushed = Some(position);
                         pushed_at = Some(Instant::now());
-                        let _ = TabDragHover {
-                            x: current.local_x,
-                            y: current.local_y,
-                        }
-                        .emit_to(&app, EventTarget::labeled(current.label.clone()));
+                        emit_to_window(
+                            &app,
+                            current.label.clone(),
+                            TabDragHover {
+                                x: current.local_x,
+                                y: current.local_y,
+                            },
+                        );
                     }
                 }
                 // Nothing hovered: the next push must go out even when it
@@ -783,7 +824,7 @@ fn spawn_drag_hover_monitor(app: tauri::AppHandle, source: String, finished: Arc
         }
 
         if let Some(previous) = hovered {
-            let _ = TabDragLeave.emit_to(&app, EventTarget::labeled(previous.label));
+            emit_to_window(&app, previous.label, TabDragLeave);
         }
     });
 }
@@ -828,10 +869,17 @@ fn finite_i32(value: f64) -> i32 {
 /// the original pointer coordinates inside the webview in CSS pixels, keeping
 /// the same point of the window pinned beneath the release position. The
 /// optional cursor coordinates preserve the exact native drop point.
+///
+/// Deliberately not `async`: building a webview window ends with tauri's
+/// `webview-created` broadcast, which holds the `webviews` lock across an
+/// `eval` round trip — see [`emit_to_window`] for what that costs on a worker
+/// thread. A non-`async` command runs inline on the thread that received the
+/// invoke, which on every platform this app builds windows on is the one that
+/// owns the event loop, so the eval completes where it is issued.
 #[tauri::command]
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
-pub async fn tear_off_tab(
+pub fn tear_off_tab(
     app: tauri::AppHandle,
     state: tauri::State<'_, TabWindowState>,
     source: String,
@@ -918,18 +966,11 @@ pub async fn tear_off_tab(
 
     // A window that does not declare itself a tab drop destination is one GTK
     // refuses the drag for outright, so a window able to receive a torn-off tab
-    // has to say so before the next drag starts. GTK may only be touched from
-    // the main thread, and this command runs on the async runtime's worker, so
-    // the registration has to be dispatched back.
+    // has to say so before the next drag starts. This command runs on the main
+    // thread, which is the only thread GTK may be touched from.
     #[cfg(target_os = "linux")]
-    {
-        let drop_app = app.clone();
-        let drop_window = window.clone();
-        let _ = drop_app.run_on_main_thread(move || {
-            if let Err(error) = attach_tab_drop_target(&drop_window) {
-                log::warn!("Unable to register the tab drop target: {error}");
-            }
-        });
+    if let Err(error) = attach_tab_drop_target(&window) {
+        log::warn!("Unable to register the tab drop target: {error}");
     }
 
     if let Err(error) = window.show() {

@@ -12,7 +12,7 @@ import { createPortal } from "react-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { emitTo, type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
+import { type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
 import { Window as TauriWindow } from "@tauri-apps/api/window";
 import {
   ChevronLeft,
@@ -126,17 +126,6 @@ function resolveFrontendBounds(): Promise<boolean> {
 function usesFrontendBounds(): boolean {
   return frontendBoundsAnswer ?? false;
 }
-
-/**
- * Event name of [`TabMergedIntoWindow`], mirroring the value `bindings.ts`
- * generates for `events.tabMergedIntoWindow`.
- *
- * The generated `events.x(target).emit()` helper cannot address a single
- * window: it calls `Window.emit`, which broadcasts to every window and ignores
- * the label of the instance it is called on. `emitTo` is the only API that
- * routes a handoff to the window the drop landed on.
- */
-const TAB_MERGED_INTO_WINDOW = "tab-merged-into-window";
 
 /** A generated event, optionally callable with a target to scope its binding. */
 type WindowScopedEvent<T> = {
@@ -775,8 +764,11 @@ function TabStripItem({
         const payload = serializeTabHandoff(tab.id);
         // Addressed rather than broadcast: the receiving window is the only one
         // that may consume this handoff, and above all the source window must
-        // not, or it would re-insert the tab it is about to close.
-        await emitTo(targetLabel, TAB_MERGED_INTO_WINDOW, { payload, x, y });
+        // not, or it would re-insert the tab it is about to close. The backend
+        // does the emitting: `emitTo` here would run on the async runtime, and
+        // an emit from that thread can freeze the app on Linux — see the
+        // `merge_tab_into_window` command.
+        await commands.mergeTabIntoWindow(targetLabel, payload, x, y);
         return true;
       } catch (error) {
         console.error("Failed to merge the tab into the target window", error);
