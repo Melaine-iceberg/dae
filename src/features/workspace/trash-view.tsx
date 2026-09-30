@@ -453,7 +453,10 @@ function TrashList({
   const { t } = useTranslation("workspace");
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [activeIndex, setActiveIndex] = useState(-1);
-  const typeAheadRef = useRef<{ buffer: string; timer: number | null }>({ buffer: "", timer: null });
+  const typeAheadRef = useRef<{ buffer: string; timer: number | null }>({
+    buffer: "",
+    timer: null,
+  });
   const purgeBinding = formatBinding(useBinding("explorer.trash"));
   const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
   const hotkeysPaused = useAtomValue(hotkeysPausedAtom);
@@ -637,7 +640,11 @@ function TrashList({
         role="listbox"
         tabIndex={0}
       >
-        <div className="relative" role="presentation" style={{ height: virtualizer.getTotalSize() }}>
+        <div
+          className="relative"
+          role="presentation"
+          style={{ height: virtualizer.getTotalSize() }}
+        >
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const entry = entries[virtualRow.index];
             const isSelected = selectedIdSet.has(entry.id);
@@ -798,11 +805,7 @@ function TrashRow({
         >
           <RowCheckbox isSelected={isSelected} />
           <span className="flex min-w-0 items-center gap-2">
-            <TypeIconTile
-              className="size-tile-list"
-              iconSize={13}
-              presentation={presentation}
-            />
+            <TypeIconTile className="size-tile-list" iconSize={13} presentation={presentation} />
             <span className="truncate text-body">{entry.name}</span>
           </span>
           <span className="truncate text-caption text-muted-foreground">{originalLocation}</span>

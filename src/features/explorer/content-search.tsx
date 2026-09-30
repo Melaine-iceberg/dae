@@ -220,9 +220,7 @@ export function ContentSearchResults({
   if (!isSearching && response && response.files.length === 0) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-6 text-center select-none">
-        <p className="text-body text-muted-foreground">
-          {t("contentSearch.noMatches", { query })}
-        </p>
+        <p className="text-body text-muted-foreground">{t("contentSearch.noMatches", { query })}</p>
       </div>
     );
   }
@@ -259,11 +257,7 @@ function FileMatchGroup({
   return (
     <div className="overflow-hidden rounded-lg border border-border">
       <div className="flex items-center gap-2 bg-accent/40 px-3 py-1.5">
-        <TypeIconTile
-          className="size-tile-list"
-          iconSize={13}
-          presentation={presentation}
-        />
+        <TypeIconTile className="size-tile-list" iconSize={13} presentation={presentation} />
         <button
           className="min-w-0 flex-1 truncate text-left text-body font-medium"
           onClick={() => setExpanded((value) => !value)}

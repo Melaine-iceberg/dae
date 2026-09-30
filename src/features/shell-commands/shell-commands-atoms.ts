@@ -79,7 +79,10 @@ function ensureShellCommands(paths: readonly string[], primary: string): void {
 }
 
 /** Reads a selection's commands, asking for them on the first render. */
-export function useShellCommands(paths: readonly string[], primary: string): readonly ShellCommand[] {
+export function useShellCommands(
+  paths: readonly string[],
+  primary: string,
+): readonly ShellCommand[] {
   const cache = useAtomValue(shellCommandsAtom);
   const signature = selectionSignature(paths, primary);
 

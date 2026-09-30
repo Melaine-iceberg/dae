@@ -164,8 +164,9 @@ export function useExternalDrop({
     let disposed = false;
 
     /** Logical viewport coordinates of a drag-drop event position. */
-    const toLogical = (position: { toLogical: (scaleFactor: number) => { x: number; y: number } }) =>
-      position.toLogical(window.devicePixelRatio);
+    const toLogical = (position: {
+      toLogical: (scaleFactor: number) => { x: number; y: number };
+    }) => position.toLogical(window.devicePixelRatio);
 
     const getTargetPath = (position: {
       toLogical: (scaleFactor: number) => { x: number; y: number };

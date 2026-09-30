@@ -51,13 +51,20 @@ if (!/^\d+\.\d+\.\d+$/.test(appVersion)) {
 // this script, and a hard stop here would only ever fire mid-release.
 const drift = [
   ["src-tauri/tauri.conf.json", readJson("src-tauri/tauri.conf.json").version],
-  ["src-tauri/Cargo.toml", /^version\s*=\s*"([^"]+)"/m.exec(readFileSync(path.join(root, "src-tauri/Cargo.toml"), "utf8"))?.[1]],
+  [
+    "src-tauri/Cargo.toml",
+    /^version\s*=\s*"([^"]+)"/m.exec(
+      readFileSync(path.join(root, "src-tauri/Cargo.toml"), "utf8"),
+    )?.[1],
+  ],
 ].filter(([, version]) => version !== appVersion);
 for (const [file, version] of drift) {
   console.warn(`⚠ version drift: package.json ${appVersion} vs ${file} ${version}`);
 }
 if (releaseMode && drift.length > 0) {
-  console.error("✖ release build: package.json, tauri.conf.json and Cargo.toml must agree (see warnings above)");
+  console.error(
+    "✖ release build: package.json, tauri.conf.json and Cargo.toml must agree (see warnings above)",
+  );
   process.exit(1);
 }
 
@@ -123,4 +130,6 @@ if (installed) {
 
 const target = `${appVersion}.${revision}`;
 writeFileSync(manifestPath, manifest.replace(/(Version=")\d+\.\d+\.\d+\.\d+(")/, `$1${target}$2`));
-console.log(`✅ MSIX version: ${current} → ${target} (app ${appVersion}${installed ? `, installed ${installed}` : ""})`);
+console.log(
+  `✅ MSIX version: ${current} → ${target} (app ${appVersion}${installed ? `, installed ${installed}` : ""})`,
+);

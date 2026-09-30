@@ -903,7 +903,8 @@ export function CommandBar() {
             isSearchingFiles ? (
               <p className="px-2.5 py-6 text-center text-body text-muted-foreground">
                 {pathMode ? t("commandBar.searchingFolders") : t("commandBar.searchingFiles")}
-              </p>            ) : pathMode && !trimmedQuery ? (
+              </p>
+            ) : pathMode && !trimmedQuery ? (
               <p className="px-2.5 py-6 text-center text-body text-muted-foreground">
                 {t("commandBar.noPathLocations")}
               </p>
@@ -1023,10 +1024,7 @@ function CommandResultRow({
       type="button"
     >
       <item.icon
-        className={cn(
-          "size-4 shrink-0",
-          isActive ? "text-foreground" : "text-muted-foreground",
-        )}
+        className={cn("size-4 shrink-0", isActive ? "text-foreground" : "text-muted-foreground")}
       />
       <HighlightedLabel label={item.label} matchedIndices={matchedIndices} />
       {item.hint &&

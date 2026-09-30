@@ -80,10 +80,9 @@ export const SHORTCUT_ACTIONS: readonly ShortcutAction[] = [
 
 /** id -> default binding, for first paint and per-row resets. */
 export const DEFAULT_BINDINGS: Readonly<Record<ShortcutId, string>> = Object.freeze(
-  Object.fromEntries(SHORTCUT_ACTIONS.map((action) => [action.id, action.defaultBinding])) as Record<
-    ShortcutId,
-    string
-  >,
+  Object.fromEntries(
+    SHORTCUT_ACTIONS.map((action) => [action.id, action.defaultBinding]),
+  ) as Record<ShortcutId, string>,
 );
 
 /**

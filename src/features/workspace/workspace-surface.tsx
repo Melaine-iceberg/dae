@@ -11,18 +11,12 @@ import { tabSurfaceFamily } from "./tab-surface";
 const LazySplitExplorerView = lazy(() =>
   import("@/features/explorer/split-view").then((m) => ({ default: m.SplitExplorerView })),
 );
-const RecentsView = lazy(() =>
-  import("./recents-view").then((m) => ({ default: m.RecentsView })),
-);
+const RecentsView = lazy(() => import("./recents-view").then((m) => ({ default: m.RecentsView })));
 const FavoritesView = lazy(() =>
   import("./favorites-view").then((m) => ({ default: m.FavoritesView })),
 );
-const TrashView = lazy(() =>
-  import("./trash-view").then((m) => ({ default: m.TrashView })),
-);
-const SpaceView = lazy(() =>
-  import("./space-view").then((m) => ({ default: m.SpaceView })),
-);
+const TrashView = lazy(() => import("./trash-view").then((m) => ({ default: m.TrashView })));
+const SpaceView = lazy(() => import("./space-view").then((m) => ({ default: m.SpaceView })));
 
 type SplitExplorerProps = { tabId: string };
 
@@ -84,11 +78,23 @@ export function WorkspaceSurfaceView({ tabId }: { tabId: string }) {
     case "overview":
       return <OverviewView />;
     case "recents":
-      return <Suspense fallback={<SurfaceSkeleton />}><RecentsView /></Suspense>;
+      return (
+        <Suspense fallback={<SurfaceSkeleton />}>
+          <RecentsView />
+        </Suspense>
+      );
     case "favorites":
-      return <Suspense fallback={<SurfaceSkeleton />}><FavoritesView /></Suspense>;
+      return (
+        <Suspense fallback={<SurfaceSkeleton />}>
+          <FavoritesView />
+        </Suspense>
+      );
     case "trash":
-      return <Suspense fallback={<SurfaceSkeleton />}><TrashView /></Suspense>;
+      return (
+        <Suspense fallback={<SurfaceSkeleton />}>
+          <TrashView />
+        </Suspense>
+      );
     case "space":
       return (
         <Suspense fallback={<SurfaceSkeleton />}>

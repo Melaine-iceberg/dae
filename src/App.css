@@ -68,17 +68,16 @@
      CJK families follow it, because that face is Latin-only everywhere: a
      hanzi has to reach a family that actually carries it. */
   --font-sans:
-    system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI",
-    "Microsoft YaHei UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC",
-    "Source Han Sans SC", "Noto Sans", sans-serif;
+    system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
+    "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Noto Sans",
+    sans-serif;
   /* The CJK families are named after the mono faces rather than left to the
      generic last resort: they only ever serve a glyph `dae Mono` lacks, and at
      1.000em against a 0.500em cell they land on exactly two columns — which is
      the same place the terminal's grid already put them. */
   --font-mono:
-    "dae Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Consolas,
-    "Courier New", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC",
-    "Source Han Sans SC", monospace;
+    "dae Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Consolas, "Courier New",
+    "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", monospace;
 
   /* Compact desktop type scale — a CLOSED seven-step ramp. The ramp is the
      whole point: it is what keeps a dense window (13px rows, 12px metadata,

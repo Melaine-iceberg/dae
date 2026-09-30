@@ -143,11 +143,7 @@ export function TransferConflictDialog({
 
         <div className="grid grid-cols-2 gap-3">
           <ConflictSideCard
-            icon={
-              <SourceIcon
-                className="size-5"
-              />
-            }
+            icon={<SourceIcon className="size-5" />}
             metadata={`${sourceLabel} · ${formatConflictSize(conflict.sourceSize)}`}
             modifiedAt={formatConflictDate(conflict.sourceModifiedAt)}
             title={conflict.name}
@@ -155,11 +151,7 @@ export function TransferConflictDialog({
           />
           <ConflictSideCard
             highlight
-            icon={
-              <TargetIcon
-                className="size-5"
-              />
-            }
+            icon={<TargetIcon className="size-5" />}
             metadata={`${targetLabel} · ${formatConflictSize(conflict.targetSize)}`}
             modifiedAt={formatConflictDate(conflict.targetModifiedAt)}
             title={conflict.name}

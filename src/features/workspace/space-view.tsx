@@ -198,7 +198,9 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
           }
           title={getSpaceDisplayName(space)}
           description={
-            space.items.length > 0 ? t("spaces.itemCount", { count: space.items.length }) : undefined
+            space.items.length > 0
+              ? t("spaces.itemCount", { count: space.items.length })
+              : undefined
           }
         />
       )}

@@ -195,7 +195,10 @@ export function EntryContextMenuContent({
           <AppWindow />
           {t("explorer:contextMenu.openWith")}
         </ContextMenuItem>
-        <ContextMenuItem disabled={isActionDisabled || !isSingleSelection} onClick={onTogglePreview}>
+        <ContextMenuItem
+          disabled={isActionDisabled || !isSingleSelection}
+          onClick={onTogglePreview}
+        >
           <Eye />
           {t("explorer:contextMenu.preview")}
           <ContextMenuShortcut>{previewBinding}</ContextMenuShortcut>
@@ -243,11 +246,7 @@ export function EntryContextMenuContent({
       </ContextMenuGroup>
       {/* The installed apps' own right-click commands, under the one heading
           dae has always used for them. */}
-      <ShellCommandsMenu
-        onError={setShellCommandError}
-        paths={actionPaths}
-        primary={entry.path}
-      />
+      <ShellCommandsMenu onError={setShellCommandError} paths={actionPaths} primary={entry.path} />
       <ContextMenuSeparator />
       <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onDuplicate}>

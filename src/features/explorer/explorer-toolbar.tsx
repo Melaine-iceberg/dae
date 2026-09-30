@@ -8,7 +8,16 @@
  * behaviour (`TOOLBAR_OVERFLOW_CLASS`) documented in one place.
  */
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, ArrowRight, ArrowUp, Columns3, Eye, PanelLeft, RotateCw, Star } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Columns3,
+  Eye,
+  PanelLeft,
+  RotateCw,
+  Star,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";

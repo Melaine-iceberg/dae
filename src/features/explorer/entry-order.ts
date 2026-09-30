@@ -154,9 +154,7 @@ export function mergeRuns(
 
   while (leftIndex < left.length && rightIndex < right.length) {
     merged.push(
-      compare(right[rightIndex], left[leftIndex]) < 0
-        ? right[rightIndex++]
-        : left[leftIndex++],
+      compare(right[rightIndex], left[leftIndex]) < 0 ? right[rightIndex++] : left[leftIndex++],
     );
   }
   while (leftIndex < left.length) merged.push(left[leftIndex++]);

@@ -156,7 +156,9 @@ export function useSortedListingView(
     // the worker can fold the tail into the order it already holds. Anything
     // else — a directory switch, a filter change, a sort key that collates
     // differently — re-sends the whole listing.
-    const append = previous !== null && session.signature === signature &&
+    const append =
+      previous !== null &&
+      session.signature === signature &&
       sharedRowCount(previous, view) !== null;
     const base = append && previous !== null ? previous.count : 0;
     const primitives = collectSortPrimitives(view, sortKey, base, view.count);
@@ -198,11 +200,7 @@ export function useSortedListingView(
     // it is at most one batch behind, and it usually carries the right order
     // already. That covers a sort key change too, where waiting the few
     // milliseconds for the worker beats re-sorting a huge list inline.
-    if (
-      streamed &&
-      canStream &&
-      sharedRowCount(streamed.source, view) === streamed.source.count
-    ) {
+    if (streamed && canStream && sharedRowCount(streamed.source, view) === streamed.source.count) {
       return sortedListingView(streamed.source, streamed.order);
     }
 

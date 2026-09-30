@@ -309,9 +309,7 @@ export function OverviewView() {
                         timestamp: without it a 1400px-wide row reads as a name
                         with a stray time on the far side, and the path is the
                         one fact that tells two "build" entries apart. */}
-                    <span
-                      className="path-ellipsis min-w-0 flex-1 truncate text-caption text-muted-foreground"
-                    >
+                    <span className="path-ellipsis min-w-0 flex-1 truncate text-caption text-muted-foreground">
                       {parentPathOf(item.path)}
                     </span>
                     <span className="shrink-0 text-caption text-muted-foreground tabular-nums">

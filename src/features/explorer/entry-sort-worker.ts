@@ -45,10 +45,7 @@ export interface SortResponse {
 }
 
 interface WorkerScope {
-  addEventListener(
-    type: "message",
-    listener: (event: MessageEvent<SortRequest>) => void,
-  ): void;
+  addEventListener(type: "message", listener: (event: MessageEvent<SortRequest>) => void): void;
   postMessage(message: SortResponse, transfer: Transferable[]): void;
 }
 

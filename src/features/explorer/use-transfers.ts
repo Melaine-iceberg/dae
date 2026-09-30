@@ -9,7 +9,12 @@
  */
 import { useCallback, useState } from "react";
 
-import { commands, type ConflictAction, type TransferConflict, type TransferItem } from "@/bindings";
+import {
+  commands,
+  type ConflictAction,
+  type TransferConflict,
+  type TransferItem,
+} from "@/bindings";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
 
 import type { FileTransferOperation, TransferOperation } from "./drag-drop";

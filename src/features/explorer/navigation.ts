@@ -1,7 +1,11 @@
 import { commands } from "@/bindings";
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
 
-import { isSameListing, openPacketDirectoryListing, type DirectoryListing } from "./directory-listing";
+import {
+  isSameListing,
+  openPacketDirectoryListing,
+  type DirectoryListing,
+} from "./directory-listing";
 import { listingViewOf, type ListingView } from "./listing-view";
 import type { Breadcrumb, DirectoryView, FileSystemError } from "./types";
 

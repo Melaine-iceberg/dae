@@ -236,11 +236,7 @@ function DropdownMenuSeparator({ className, ...props }: MenuPrimitive.Separator.
 
 function DropdownMenuShortcut({ className, children, ...props }: React.ComponentProps<"span">) {
   return (
-    <span
-      data-slot="dropdown-menu-shortcut"
-      className={cn("ml-auto", className)}
-      {...props}
-    >
+    <span data-slot="dropdown-menu-shortcut" className={cn("ml-auto", className)} {...props}>
       {typeof children === "string" ? <KbdShortcut keys={children} /> : children}
     </span>
   );

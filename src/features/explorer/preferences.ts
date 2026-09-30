@@ -85,9 +85,7 @@ export function filterHiddenEntries(
  * scan reads one byte per entry instead of building an entry to look at it.
  */
 export function filterHidden(view: ListingView, showHiddenFiles: boolean): ListingView {
-  return showHiddenFiles
-    ? view
-    : filteredListingView(view, (index) => !view.hiddenAt(index));
+  return showHiddenFiles ? view : filteredListingView(view, (index) => !view.hiddenAt(index));
 }
 
 export interface ExplorerEntryFilters {
@@ -148,10 +146,7 @@ const MS_PER_DAY = 86_400_000;
  * it would both cost the allocation and evict the painted rows from the row
  * cache.
  */
-export function applyEntryFilters(
-  view: ListingView,
-  filters: ExplorerEntryFilters,
-): ListingView {
+export function applyEntryFilters(view: ListingView, filters: ExplorerEntryFilters): ListingView {
   if (!hasActiveEntryFilters(filters)) {
     return view;
   }

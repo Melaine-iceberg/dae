@@ -83,10 +83,7 @@ export interface FileGridViewProps {
   menuActions: MenuActions;
   /** The shared list keyboard model from `FileList`; the grid supplies its own
    *  geometry (column count, stride, virtual-row scroll) as the context. */
-  onNavKeyDown: (
-    event: ReactKeyboardEvent<HTMLDivElement>,
-    context: ListingNavContext,
-  ) => void;
+  onNavKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>, context: ListingNavContext) => void;
   onAddToFavorites: (entry: DirectoryEntry) => void;
   onAddToSpace: (entry: DirectoryEntry, spaceId: string) => void;
   onContextMenuEntry: (entry: DirectoryEntry, index: number) => void;

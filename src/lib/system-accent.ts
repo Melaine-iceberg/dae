@@ -96,7 +96,7 @@ function resolveInk(accent: string): { contrast: number; ink: string } {
   return lightContrast >= darkContrast
     ? { contrast: lightContrast, ink: INK_LIGHT }
     : { contrast: darkContrast, ink: INK_DARK };
-}/**
+} /**
  * Retints the shell to `accent`, or hands it back to the shipped indigo when
  * given `null`.
  *

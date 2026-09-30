@@ -1061,7 +1061,7 @@ function DiskItem({
 
 function getDiskPresentation(volume: DiskVolume): { primary: string; secondary: string } {
   const driveLetter = /^([a-zA-Z]):[\\/]*$/.exec(volume.mountPoint)?.[1]?.toUpperCase();
- const label = volume.name.trim();
+  const label = volume.name.trim();
   const fileSystem = volume.fileSystem.trim();
 
   if (driveLetter) {
@@ -1084,6 +1084,9 @@ function getDiskPresentation(volume: DiskVolume): { primary: string; secondary: 
 
 /** The root mount has no last component to show, so it gets a fixed name. */
 function mountLabel(mountPoint: string): string {
-  const lastSegment = mountPoint.replace(/[/\\]+$/, "").split(/[/\\]/).pop();
+  const lastSegment = mountPoint
+    .replace(/[/\\]+$/, "")
+    .split(/[/\\]/)
+    .pop();
   return lastSegment || i18n.t("sidebar:disk.systemVolume");
 }

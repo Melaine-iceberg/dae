@@ -228,6 +228,9 @@ export function rectsIntersect(
   other: { bottom: number; left: number; right: number; top: number },
 ): boolean {
   return (
-    rect.left < other.right && rect.right > other.left && rect.top < other.bottom && rect.bottom > other.top
+    rect.left < other.right &&
+    rect.right > other.left &&
+    rect.top < other.bottom &&
+    rect.bottom > other.top
   );
 }

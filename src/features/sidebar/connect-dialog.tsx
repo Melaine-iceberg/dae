@@ -230,12 +230,8 @@ export function ConnectDialog({
             {t("connect.rememberPassword")}
           </label>
 
-          {test.status === "ok" && (
-            <p className="text-body text-primary">{t("connect.testOk")}</p>
-          )}
-          {test.status === "failed" && (
-            <p className="text-body text-destructive">{test.message}</p>
-          )}
+          {test.status === "ok" && <p className="text-body text-primary">{t("connect.testOk")}</p>}
+          {test.status === "failed" && <p className="text-body text-destructive">{test.message}</p>}
           {error && <p className="text-body text-destructive">{error}</p>}
 
           <DialogFooter className="gap-2 sm:justify-between">

@@ -301,7 +301,13 @@ export function useEntryDialogs({
         setOperationError(result.error);
       });
     },
-    [archivePasswordRequest, directoryPath, performFileOperation, selectedEntries, setOperationError],
+    [
+      archivePasswordRequest,
+      directoryPath,
+      performFileOperation,
+      selectedEntries,
+      setOperationError,
+    ],
   );
 
   return {

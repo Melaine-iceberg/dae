@@ -113,8 +113,7 @@ export function getExplorerDropTargetAtPoint(x: number, y: number): string | nul
 export function isExplorerContainerAtPoint(x: number, y: number): boolean {
   const element = document.elementFromPoint(x, y);
   return (
-    element instanceof HTMLElement &&
-    element.closest('[data-explorer-container="true"]') !== null
+    element instanceof HTMLElement && element.closest('[data-explorer-container="true"]') !== null
   );
 }
 

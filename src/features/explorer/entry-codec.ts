@@ -305,7 +305,8 @@ export class ListingPacket {
     if (!this.inRange(index)) return undefined;
 
     const offsets = isName ? this.layout.nameOffsets : this.layout.pathOffsets;
-    const blobLen = (isName ? this.layout.paths : this.layout.byteLen) -
+    const blobLen =
+      (isName ? this.layout.paths : this.layout.byteLen) -
       (isName ? this.layout.names : this.layout.paths);
     const start = this.view.getUint32(offsets + index * 4, true);
     const end = this.view.getUint32(offsets + (index + 1) * 4, true);

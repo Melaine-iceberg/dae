@@ -17,12 +17,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import {
-  Empty,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
@@ -193,15 +188,13 @@ function RecentRow({
             title={item.path}
             type="button"
           >
-            <TypeIconTile
-              className="size-tile-list"
-              iconSize={16}
-              presentation={presentation}
-            />
+            <TypeIconTile className="size-tile-list" iconSize={16} presentation={presentation} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-body">{item.name}</span>
               {location && (
-                <span className="block truncate text-caption text-muted-foreground">{location}</span>
+                <span className="block truncate text-caption text-muted-foreground">
+                  {location}
+                </span>
               )}
             </span>
             <span className="shrink-0 text-caption text-muted-foreground tabular-nums">

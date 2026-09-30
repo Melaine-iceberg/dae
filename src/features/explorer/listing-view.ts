@@ -532,10 +532,7 @@ export function allNames(view: ListingView): string[] {
  * runs over `pathAt`, so the rows that do not match are never built and never
  * enter the row cache.
  */
-export function entriesWhere(
-  view: ListingView,
-  keep: (path: string) => boolean,
-): DirectoryEntry[] {
+export function entriesWhere(view: ListingView, keep: (path: string) => boolean): DirectoryEntry[] {
   const found: DirectoryEntry[] = [];
   for (let index = 0; index < view.count; index += 1) {
     const path = view.pathAt(index);

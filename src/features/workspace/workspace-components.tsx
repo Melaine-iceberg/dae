@@ -116,7 +116,9 @@ export function LocationCard({
       <span className="min-w-0 flex-1">
         <span className="block truncate text-body font-medium">{title}</span>
         {description && (
-          <span className="mt-0.5 block truncate text-caption text-muted-foreground">{description}</span>
+          <span className="mt-0.5 block truncate text-caption text-muted-foreground">
+            {description}
+          </span>
         )}
       </span>
     </button>

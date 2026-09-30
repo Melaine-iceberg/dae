@@ -257,12 +257,7 @@ export function EntryPreview({
         {visual && VisualIcon ? (
           // The header icon is the transition's target when the entry has no
           // thumbnail plate to grow into — one hero per preview, never two.
-          <span
-            className={cn(
-              "flex shrink-0",
-              !supportsThumbnail && "entry-preview-hero",
-            )}
-          >
+          <span className={cn("flex shrink-0", !supportsThumbnail && "entry-preview-hero")}>
             <VisualIcon className="size-4 shrink-0" />
           </span>
         ) : null}

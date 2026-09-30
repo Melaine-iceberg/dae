@@ -390,7 +390,10 @@ export function FileList({
   /** Latest focus request; a newer move cancels an older retry loop so two
    *  quick arrow presses cannot leave focus on the first target. */
   const focusRequestRef = useRef<string | null>(null);
-  const typeAheadRef = useRef<{ buffer: string; timer: number | null }>({ buffer: "", timer: null });
+  const typeAheadRef = useRef<{ buffer: string; timer: number | null }>({
+    buffer: "",
+    timer: null,
+  });
   const dragCandidateRef = useRef<DragCandidate | null>(null);
   const internalDragRef = useRef<InternalDragState | null>(null);
   const suppressNextClickRef = useRef(false);
@@ -960,9 +963,7 @@ export function FileList({
     selectEntry(entry, index, event);
   };
 
-  const draggingPaths = internalDrag
-    ? new Set(internalDrag.sourcePaths)
-    : NO_DRAGGING_PATHS;
+  const draggingPaths = internalDrag ? new Set(internalDrag.sourcePaths) : NO_DRAGGING_PATHS;
   const internalDropTargetPath =
     internalDrag?.target?.kind === "directory" ? internalDrag.target.path : null;
 

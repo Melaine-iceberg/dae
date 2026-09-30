@@ -33,10 +33,7 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { formatBinding } from "@/features/settings/shortcut-registry";
-import {
-  hotkeysPausedAtom,
-  useBinding,
-} from "@/features/settings/settings-atoms";
+import { hotkeysPausedAtom, useBinding } from "@/features/settings/settings-atoms";
 import {
   HOTKEY_COMMON_OPTIONS,
   asHotkey,
@@ -66,7 +63,12 @@ import { isLocalExplorerPath } from "./drag-drop";
 import { EntryPreview } from "./entry-preview";
 import { isArchiveFile } from "./entry-context-menu";
 import { displayNameOfPath, isWrongPasswordError } from "./explorer-errors";
-import { DeleteDialog, ExplorerErrorAlert, RenameDialog, CreateEntryDialog } from "./explorer-dialogs";
+import {
+  DeleteDialog,
+  ExplorerErrorAlert,
+  RenameDialog,
+  CreateEntryDialog,
+} from "./explorer-dialogs";
 import { FileOperationStatusBar } from "./explorer-chrome";
 import { ExplorerToolbar } from "./explorer-toolbar";
 import { FileList, FileListSkeleton } from "./file-list";
@@ -163,7 +165,11 @@ export function ExplorerView({
   const canGoUp = !isLoading && (directory?.breadcrumbs.length ?? 0) > 1;
 
   const search = useDirectorySearch(directoryPath ?? null, directory, searchMode === "name");
-  const contentSearch = useContentSearch(directoryPath ?? null, directory, searchMode === "content");
+  const contentSearch = useContentSearch(
+    directoryPath ?? null,
+    directory,
+    searchMode === "content",
+  );
   const gitStatus = useGitStatus(directoryPath ?? null);
   const isContentSearchActive = searchMode === "content" && contentSearch.isActive;
 
@@ -187,12 +193,7 @@ export function ExplorerView({
   );
   const displayedListing = useSortedListingView(filteredListing, sortKey, sortOrder, foldersFirst);
 
-  const {
-    selectedPaths,
-    setSelectedPaths,
-    selectedEntries,
-    selectAll,
-  } = useExplorerSelection({
+  const { selectedPaths, setSelectedPaths, selectedEntries, selectAll } = useExplorerSelection({
     displayedListing,
     isContentSearchActive,
     directoryPath,
@@ -455,7 +456,13 @@ export function ExplorerView({
         if (!result.ok) setOperationError(result.error);
       });
     },
-    [dialogs.openArchivePassword, directoryPath, performFileOperation, selectedEntries, setOperationError],
+    [
+      dialogs.openArchivePassword,
+      directoryPath,
+      performFileOperation,
+      selectedEntries,
+      setOperationError,
+    ],
   );
 
   /** Extracts an archive into a fresh folder next to it. Encrypted archives

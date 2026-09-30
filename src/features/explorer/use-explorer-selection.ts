@@ -8,7 +8,15 @@
  * pointer move, and a full-listing scan per move is exactly what the ref
  * exists to avoid.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 
 import { allPaths, entriesWhere, type ListingView } from "./listing-view";
 import type { DirectoryEntry } from "./types";

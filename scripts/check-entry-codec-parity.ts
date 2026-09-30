@@ -940,8 +940,7 @@ function reportStreamed(
   // into the sort are cheap to collect straight off the packet.
   const widest = packets.reduce(
     (wide, packet) =>
-      packet.count > wide.count ||
-      (packet.count === wide.count && packet.byteLen > wide.byteLen)
+      packet.count > wide.count || (packet.count === wide.count && packet.byteLen > wide.byteLen)
         ? packet
         : wide,
     packets[0],
@@ -991,9 +990,8 @@ function reportStreamed(
   console.log(`\nwhat a listing-wide scan costs on the main thread:`);
   measure(`allPaths over ${view.count} rows`, () => allPaths(view));
   measure("the same scan over the array it replaced", () => entries.map((entry) => entry.path));
-  measure(
-    `collect the sort tail (rows ${tailFrom}-${tailTo}, ${widest.count} names)`,
-    () => nameScanRange(view, tailFrom, tailTo),
+  measure(`collect the sort tail (rows ${tailFrom}-${tailTo}, ${widest.count} names)`, () =>
+    nameScanRange(view, tailFrom, tailTo),
   );
   measure("its oracle: the same names off the array", () => {
     let seen = 0;

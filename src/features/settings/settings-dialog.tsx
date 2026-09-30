@@ -174,9 +174,7 @@ function SettingRow({
         <Label className="text-body font-medium" htmlFor={htmlFor}>
           {label}
         </Label>
-        {description && (
-          <p className="mt-0.5 text-caption text-muted-foreground">{description}</p>
-        )}
+        {description && <p className="mt-0.5 text-caption text-muted-foreground">{description}</p>}
       </div>
       <div className="shrink-0">{control}</div>
     </div>
@@ -279,9 +277,7 @@ function ShortcutsPane() {
       <header className="mb-5 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-title">{t("nav.shortcuts")}</h2>
-          <p className="mt-0.5 text-caption text-muted-foreground">
-            {t("shortcuts.description")}
-          </p>
+          <p className="mt-0.5 text-caption text-muted-foreground">{t("shortcuts.description")}</p>
         </div>
         <Button disabled={!isCustomized} onClick={resetAll} size="sm" variant="outline">
           {t("shortcuts.resetAll")}

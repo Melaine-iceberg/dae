@@ -13,14 +13,15 @@ export const sidebarVisibleAtom = atomWithStorage("sidebar-visible", true);
  *  connections store read — each group loads on first expand. */
 export type LocationSectionId = "disks" | "wsl" | "network" | "cloud";
 
-export const collapsedLocationSectionsAtom = atomWithStorage<
-  Record<LocationSectionId, boolean>
->("sidebar-collapsed-locations", {
-  disks: true,
-  wsl: true,
-  network: true,
-  cloud: true,
-});
+export const collapsedLocationSectionsAtom = atomWithStorage<Record<LocationSectionId, boolean>>(
+  "sidebar-collapsed-locations",
+  {
+    disks: true,
+    wsl: true,
+    network: true,
+    cloud: true,
+  },
+);
 
 export const toggleLocationSectionAtom = atom(null, (get, set, id: LocationSectionId) => {
   const collapsed = get(collapsedLocationSectionsAtom);
@@ -158,7 +159,8 @@ function mergeLegacyPinnedPlaces(favorites: Favorite[]): Favorite[] | null {
     .filter((item) => typeof item?.path === "string" && !existing.has(item.path))
     .map((item) => ({
       path: item.path!,
-      name: typeof item.name === "string" && item.name ? item.name : favoriteNameFromPath(item.path!),
+      name:
+        typeof item.name === "string" && item.name ? item.name : favoriteNameFromPath(item.path!),
     }));
 
   return additions.length > 0 ? [...favorites, ...additions] : null;

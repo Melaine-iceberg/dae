@@ -356,11 +356,7 @@ function PaneRow({
                 pixelSize={16}
               />
             ) : (
-              <TypeIconTile
-                className="size-tile-list"
-                iconSize={13}
-                presentation={presentation}
-              />
+              <TypeIconTile className="size-tile-list" iconSize={13} presentation={presentation} />
             )}
           </EntryIconFrame>
           <span

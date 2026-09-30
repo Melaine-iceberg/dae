@@ -44,7 +44,10 @@ const zhModules = import.meta.glob("./locales/zh-CN/*.json", { eager: true });
 const enModules = import.meta.glob("./locales/en/*.json");
 
 function namespaceOf(path: string): string {
-  return path.split("/").pop()!.replace(/\.json$/, "");
+  return path
+    .split("/")
+    .pop()!
+    .replace(/\.json$/, "");
 }
 
 function bundle(modules: Record<string, unknown>): ResourceLanguage {

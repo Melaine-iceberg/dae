@@ -401,11 +401,7 @@ export function PropertiesDialog() {
 
         {target && (
           <div className="flex items-center gap-3">
-            <TypeIconTile
-              className="size-tile-detail"
-              iconSize={20}
-              presentation={presentation}
-            />
+            <TypeIconTile className="size-tile-detail" iconSize={20} presentation={presentation} />
             <div className="min-w-0">
               <p className="truncate text-body font-medium" title={target.name}>
                 {target.name}
@@ -487,11 +483,10 @@ export function PropertiesDialog() {
           </div>
         )}
 
-        {target &&
-          showHashTab && (
-            // Keyed by path so switching targets resets the run entirely.
-            <FileHashPanel active={tab === "checksum"} key={target.path} path={target.path} />
-          )}
+        {target && showHashTab && (
+          // Keyed by path so switching targets resets the run entirely.
+          <FileHashPanel active={tab === "checksum"} key={target.path} path={target.path} />
+        )}
 
         <DialogFooter>
           <Button disabled={isSaving} onClick={close} type="button" variant="ghost">
@@ -663,7 +658,9 @@ function WindowsPropertiesEditor({
         />
         {t("explorer:properties.system")}
       </label>
-      <p className="text-caption text-muted-foreground">{t("explorer:properties.windowsAclHint")}</p>
+      <p className="text-caption text-muted-foreground">
+        {t("explorer:properties.windowsAclHint")}
+      </p>
     </div>
   );
 }

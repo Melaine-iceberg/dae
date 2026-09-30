@@ -133,9 +133,7 @@ export function ArchivePasswordDialog({
               {t("explorer:actions.cancel")}
             </Button>
             <Button disabled={isPending} type="submit">
-              {mode === "extract"
-                ? t("archivePassword.extract")
-                : t("archivePassword.compress")}
+              {mode === "extract" ? t("archivePassword.extract") : t("archivePassword.compress")}
             </Button>
           </DialogFooter>
         </form>
