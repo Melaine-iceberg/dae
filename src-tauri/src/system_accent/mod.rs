@@ -75,6 +75,7 @@ pub fn init(app: &tauri::AppHandle) {
 }
 
 /// Formats 8-bit sRGB channels as the `#rrggbb` the CSS seam takes.
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 fn srgb_hex(r: u8, g: u8, b: u8) -> String {
     format!("#{r:02x}{g:02x}{b:02x}")
 }
@@ -88,6 +89,7 @@ fn report(app: &tauri::AppHandle, accent: Option<String>) {
 /// Unpacks `0xAARRGGBB`, the layout WinRT's `UIColorType::Accent` and
 /// `HKCU\...\DWM!ColorizationColor` use. In practice this is the fallback for
 /// a Windows 10 build whose DWM key has no `AccentColor` yet.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn from_argb(packed: u32) -> Option<String> {
     if packed == 0 {
         return None;
@@ -109,6 +111,7 @@ fn from_argb(packed: u32) -> Option<String> {
 /// default Windows blue accent, `AccentColor` reads `0xFFD47800` and
 /// `ColorizationColor` reads `0xC40078D4`, and these two functions are what
 /// make both of them `#0078d4`.
+#[cfg_attr(not(windows), allow(dead_code))]
 fn from_abgr(packed: u32) -> Option<String> {
     if packed == 0 {
         return None;

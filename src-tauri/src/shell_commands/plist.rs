@@ -146,6 +146,7 @@ fn menu_title(item: &Value, language: Option<&str>) -> Option<String> {
 
 /// The UTI a directory is matched under. A folder has no filename extension, so
 /// no UTI can be derived for it and this one is asserted instead.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(super) const FOLDER_TYPE: &str = "public.folder";
 
 /// The UTI standing in for "a file whose type is not otherwise known" — a file
@@ -153,6 +154,7 @@ pub(super) const FOLDER_TYPE: &str = "public.folder";
 /// Narrower than `public.item` on purpose: claiming `public.item` for everything
 /// would also claim directories, and a service that accepts files but not
 /// folders must not be offered for a folder.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(super) const UNKNOWN_FILE_TYPE: &str = "public.data";
 
 /// `dyn.` is the prefix LaunchServices gives a type it has no declaration for.
