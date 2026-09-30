@@ -86,6 +86,12 @@ export default defineConfig(async ({ command }) => ({
       builtin: true,
     },
   },
+  // `vp fmt` walks the workspace, and oxfmt 0.70 also rewrites TOML: it reflows
+  // Cargo.toml tables and inlines arrays in the Tauri manifests. Those files
+  // follow rustfmt conventions, not ours.
+  fmt: {
+    ignorePatterns: ["src-tauri/**"],
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
