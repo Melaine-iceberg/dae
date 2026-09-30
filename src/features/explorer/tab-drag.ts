@@ -10,9 +10,14 @@ export const TAB_DRAG_START_DISTANCE = 6;
  *  carries no elevation; the two device pixels only cover the half-covered
  *  pixel straddling the border box, where the rounded corners' edge lands. */
 export const TAB_DRAG_PREVIEW_PAD = 2;
-/** Room past the strip's lower edge before a dragged tab counts as detached.
- *  The strip is 38px and the chip inside it 28px, so a straight horizontal
- *  drag has a few pixels of slack before it pops the tab out. */
+/** Room past the strip's edges before a dragged tab counts as detached.
+ *
+ *  Asymmetric on purpose. Above the strip there is the window's own edge, so a
+ *  few pixels of slack is all a drag can want. Below it, a pull of a whole strip
+ *  height is what reads as "this tab is its own window now": a hand travelling
+ *  horizontally dips and rises by a few dozen pixels as a matter of course, and
+ *  a band that punished that would freeze the reorder halfway across the strip.
+ *  Matches how far Chrome has to drag a tab down before it floats. */
 const BAND_SLOP = 6;
 /** Width of the strip's auto-scroll zones at each end, in CSS px. */
 const SCROLL_EDGE = 28;
@@ -87,7 +92,10 @@ export function measureTabBand(): TabDragBand | null {
   const header = document.querySelector<HTMLElement>("[data-tab-bar]");
   if (!header) return null;
   const chrome = header.getBoundingClientRect();
-  return { top: chrome.top - BAND_SLOP, bottom: chrome.bottom + BAND_SLOP };
+  return {
+    top: chrome.top - BAND_SLOP,
+    bottom: chrome.bottom + Math.max(BAND_SLOP, chrome.height),
+  };
 }
 
 export function isInsideBand(band: TabDragBand, y: number): boolean {
@@ -227,6 +235,13 @@ export type TabDragController = {
 export function beginTabDragGesture(deps: TabDragDeps): TabDragController {
   const { element, pointerId, tabId } = deps;
   const strip = element.closest<HTMLElement>('[role="tablist"]');
+  // The pointer is pinned to the strip rather than to the tab: the live reorder
+  // moves the tab's node from slot to slot, and an engine that reads that move
+  // as a capture loss would otherwise end the gesture on its first swap — which
+  // is what makes a tab look as though it can only trade places with a
+  // neighbour. The strip itself never moves, so a loss on it means what it is
+  // supposed to mean: the WebView stopped reporting this pointer.
+  const captureTarget = strip ?? element;
   // Read once for the whole gesture: the header does not move while a drag is
   // under way, and a mid-drag relayout (a tab closing behind the cursor) would
   // otherwise pop the tab on a boundary the user never crossed.
@@ -253,8 +268,8 @@ export function beginTabDragGesture(deps: TabDragDeps): TabDragController {
     window.removeEventListener("pointerup", handlePointerUp, true);
     window.removeEventListener("pointercancel", handlePointerGone, true);
     window.removeEventListener("keydown", handleKeyDown, true);
-    element.removeEventListener("lostpointercapture", handlePointerGone);
-    if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId);
+    captureTarget.removeEventListener("lostpointercapture", handleCaptureLost);
+    if (captureTarget.hasPointerCapture(pointerId)) captureTarget.releasePointerCapture(pointerId);
     deps.onGhost(null);
     deps.onDragging(false);
   };
@@ -421,6 +436,15 @@ export function beginTabDragGesture(deps: TabDragDeps): TabDragController {
     else end();
   };
 
+  /** The capture loss for the node the pointer is pinned to, and only for it:
+   *  the dragged tab's own node reports one every time the reorder moves it,
+   *  bubbling up through the strip, and dismissing that is the whole point of
+   *  pinning to the strip in the first place. */
+  const handleCaptureLost = (event: PointerEvent) => {
+    if (event.target !== captureTarget) return;
+    handlePointerGone(event);
+  };
+
   function handleKeyDown(keyEvent: KeyboardEvent) {
     if (keyEvent.key !== "Escape") return;
     keyEvent.preventDefault();
@@ -432,12 +456,12 @@ export function beginTabDragGesture(deps: TabDragDeps): TabDragController {
   }
 
   void resolveFrontendBounds();
-  element.setPointerCapture(pointerId);
+  captureTarget.setPointerCapture(pointerId);
   window.addEventListener("pointermove", handlePointerMove, true);
   window.addEventListener("pointerup", handlePointerUp, true);
   window.addEventListener("pointercancel", handlePointerGone, true);
   window.addEventListener("keydown", handleKeyDown, true);
-  element.addEventListener("lostpointercapture", handlePointerGone);
+  captureTarget.addEventListener("lostpointercapture", handleCaptureLost);
 
   return { end };
 }
