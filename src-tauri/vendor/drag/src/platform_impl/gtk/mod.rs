@@ -10,7 +10,8 @@ use gdkx11::{
 use gtk::{
     gdk_pixbuf,
     prelude::{
-        DeviceExt, DragContextExtManual, PixbufLoaderExt, SeatExt, WidgetExt, WidgetExtManual,
+        DeviceExt, DragContextExtManual, GdkPixbufExt, PixbufLoaderExt, SeatExt, WidgetExt,
+        WidgetExtManual,
     },
 };
 use std::{
@@ -109,28 +110,32 @@ pub fn start_drag<F: Fn(DragResult, CursorPosition) + Send + 'static>(
                 },
             };
             if let Some(icon) = icon_pixbuf {
-                // GDK positions the drag icon in logical pixels while preview
-                // images are rendered at the device pixel ratio, so both the
-                // icon and the grab offset shrink by the window's scale.
-                let scale = f64::from(window.scale_factor().max(1));
-                let icon = if scale != 1.0 {
-                    icon.scale_simple(
-                        (f64::from(icon.width()) / scale).round() as i32,
-                        (f64::from(icon.height()) / scale).round() as i32,
-                        gdk_pixbuf::InterpType::Bilinear,
-                    )
-                    .unwrap_or(icon)
-                } else {
-                    icon
-                };
-                let (hot_x, hot_y) = match options.drag_image_offset {
-                    Some(offset) => (
-                        (f64::from(offset.x) / scale).round() as i32,
-                        (f64::from(offset.y) / scale).round() as i32,
-                    ),
-                    None => (0, 0),
-                };
-                drag_context.drag_set_icon_pixbuf(&icon, hot_x, hot_y);
+                // A cairo surface is the only way to hand GDK a bitmap *and* its
+                // pixel density. `gtk_drag_set_icon_pixbuf` registers the pixbuf
+                // as a scale-1 image — one image pixel per logical pixel — so a
+                // preview rendered at the device pixel ratio would come out at
+                // twice its intended size, and shrinking it back to logical
+                // pixels to compensate is what made the drag image softer than
+                // the in-window ghost: the compositor then scales those fewer
+                // pixels back up. A surface that carries the scale keeps every
+                // device pixel the frontend rendered: GDK sizes the icon window
+                // from the surface's logical extents, which the device scale
+                // divides, and paints the pattern one to one.
+                let scale = window.scale_factor().max(1);
+                if let Some(surface) =
+                    GdkPixbufExt::create_surface(&icon, scale, window.window().as_ref())
+                {
+                    // The cursor lands on the surface's (0,0), so shifting the
+                    // surface by the grab point — in device pixels, matching
+                    // the bitmap's own pixel grid — puts the grabbed pixel, and
+                    // only that pixel, under the pointer.
+                    let (grab_x, grab_y) = match options.drag_image_offset {
+                        Some(offset) => (offset.x, offset.y),
+                        None => (0, 0),
+                    };
+                    surface.set_device_offset(-f64::from(grab_x), -f64::from(grab_y));
+                    drag_context.drag_set_icon_surface(&surface);
+                }
             }
 
             Ok(())

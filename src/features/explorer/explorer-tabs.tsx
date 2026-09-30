@@ -772,6 +772,9 @@ function TabStripItem({
         // The OS drag image takes over the gesture; the in-window ghost would
         // otherwise stay frozen, half-clipped at the WebView edge.
         setDragPreview(null);
+        // The grab point is handed over in the preview bitmap's own pixels, the
+        // grid the platform spots the drag image against, so the snapshot's
+        // padding and the device pixel ratio are both part of it.
         const outcome = await commands.startTabDrag(
           appWindow.label,
           preview,
