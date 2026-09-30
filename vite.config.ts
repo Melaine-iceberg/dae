@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vite-plus";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
@@ -76,6 +76,16 @@ export default defineConfig(async ({ command }) => ({
     tailwindcss(),
     themeBootStyles(),
   ],
+  // Vite+ reads lint/fmt policy from here; `.oxlintrc.json` is ignored by `vp`.
+  lint: {
+    plugins: ["typescript", "unicorn", "oxc"],
+    categories: {
+      correctness: "error",
+    },
+    env: {
+      builtin: true,
+    },
+  },
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),

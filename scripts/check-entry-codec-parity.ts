@@ -764,8 +764,7 @@ function checkTheSortPath(entries: DirectoryEntry[], packet: ListingPacket): str
   orderFromJson.sort((left, right) => collator.compare(entries[left].name, entries[right].name));
 
   const started = performance.now();
-  const names = new Array<string>(packet.count);
-  for (let index = 0; index < packet.count; index++) names[index] = packet.name(index)!;
+  const names = Array.from({ length: packet.count }, (_, index) => packet.name(index)!);
   const decoding = performance.now() - started;
 
   const orderFromPacket = Array.from({ length: packet.count }, (_, index) => index);

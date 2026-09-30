@@ -4,13 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "lint": "oxlint src vite.config.ts",
-    "lint:type-aware": "oxlint --type-aware src vite.config.ts",
-    "lint:fix": "oxlint --fix src vite.config.ts",
-    "lint:type-aware:fix": "oxlint --type-aware --fix src vite.config.ts",
-    "preview": "vite preview",
+    "dev": "vp dev",
+    "build": "tsc && vp build",
+    "lint": "vp lint src vite.config.ts",
+    "lint:type-aware": "vp lint --type-aware src vite.config.ts",
+    "lint:fix": "vp lint --fix src vite.config.ts",
+    "lint:type-aware:fix": "vp lint --type-aware --fix src vite.config.ts",
+    "preview": "vp preview",
     "tauri": "tauri",
     "tauri:dev:withidentity": "bun run bindings:export && bun run build && cargo build --manifest-path src-tauri/Cargo.toml && (if not exist dist mkdir dist) && copy /Y src-tauri\\target\\debug\\dae.exe dist\\ >nul && winapp run .\\dist",
     "pack:msix": "node scripts/sync-msix-version.mjs && bun tauri build --no-bundle && (if not exist dist mkdir dist) && copy /Y src-tauri\\target\\release\\dae.exe dist\\ >nul && winapp pack .\\dist --cert .\\devcert.pfx",
@@ -44,8 +44,6 @@
     "jotai": "^3.0.0",
     "jotai-family": "^1.1.0",
     "lucide-react": "^1.48.0",
-    "oxfmt": "^0.67.0",
-    "oxlint": "^1.85.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-i18next": "^17.0.15",
@@ -66,9 +64,19 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
     "babel-plugin-react-compiler": "^1.0.0",
-    "oxlint-tsgolint": "7.0.2002",
     "sharp": "^0.35.5",
     "typescript": "~7.0.2",
-    "vite": "^8.3.1"
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0",
+    "vite-plus": "1.0.0"
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": "1.4.2",
+      "onFail": "download"
+    }
   }
 }

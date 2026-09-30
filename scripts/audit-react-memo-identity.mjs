@@ -46,7 +46,7 @@ const targets = [
 ];
 
 /** The compiler output, JSX left intact so element counts are visible. */
-function compile(file, prop) {
+function compile(file) {
   const path = resolve(root, file);
   return transformFileSync(path, {
     babelrc: false,
@@ -245,7 +245,7 @@ function describe(node) {
 }
 
 function audit({ file, component, prop }) {
-  const source = compile(file, prop);
+  const source = compile(file);
   const ast = parse(source, { sourceType: "module", plugins: ["jsx", "typescript"] });
 
   const declaration = ast.program.body.find(
