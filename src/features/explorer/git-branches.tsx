@@ -11,8 +11,6 @@ import {
   GitBranch,
   Plus,
   Upload,
-  TriangleAlert,
-  X,
 } from "lucide-react";
 
 import { commands, events } from "@/bindings";
@@ -37,6 +35,7 @@ import {
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { getFileOperationErrorMessage, translateBackendMessage } from "@/i18n/errors";
+import { notify } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 
 import { GIT_STATUS_QUERY_KEY } from "./git-status";
@@ -84,17 +83,23 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
   const branches = useGitBranches(root);
 
   const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  /** 执行一个 Git 操作；成功后失效分支/状态查询，失败时返回错误文案。 */
+  /**
+   * 执行一个 Git 操作；成功后失效分支/状态查询，失败时返回错误文案。
+   *
+   * A failure is reported as a notification by default. These operations are
+   * started from a dropdown that has already closed, and the branch control
+   * itself is a 20px button in the toolbar — neither has anywhere to put a
+   * sentence. `silent` is for the one caller that renders its own error: the
+   * create-branch dialog writes the failure under its input.
+   */
   const run = useCallback(
     async (
       operation: () => Promise<unknown>,
       options?: { silent?: boolean },
     ): Promise<{ error?: string; ok: boolean }> => {
       setIsPending(true);
-      setError(null);
       try {
         await operation();
         await Promise.all([
@@ -104,13 +109,13 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
         return { ok: true };
       } catch (caught) {
         const message = getGitErrorMessage(caught);
-        if (!options?.silent) setError(message);
+        if (!options?.silent) notify.error(message, { title: t("git.operationFailed") });
         return { error: message, ok: false };
       } finally {
         setIsPending(false);
       }
     },
-    [queryClient],
+    [queryClient, t],
   );
 
   const checkout = useCallback(
@@ -281,29 +286,6 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
       >
         <RefreshCw className={cn("size-3.5", isPending && "animate-spin")} />
       </button>
-
-      {error && (
-        <div
-          className="animate-in fade-in-0 absolute top-full left-0 z-50 mt-1 flex w-80 items-start gap-2 rounded-lg border border-border bg-popover p-3 text-caption text-popover-foreground shadow-ambient"
-          role="alert"
-        >
-          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-destructive" />
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">{t("git.operationFailed")}</p>
-            <p className="mt-0.5 line-clamp-3 break-words text-muted-foreground" title={error}>
-              {error}
-            </p>
-          </div>
-          <button
-            aria-label={t("git.dismissError")}
-            className="shrink-0 rounded-xs p-0.5 transition-colors hover:bg-accent"
-            onClick={() => setError(null)}
-            type="button"
-          >
-            <X className="size-3.5" />
-          </button>
-        </div>
-      )}
 
       <CreateBranchDialog
         onClose={() => setIsCreateOpen(false)}

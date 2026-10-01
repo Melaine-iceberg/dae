@@ -7,7 +7,6 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { ClipboardList, Copy, Pencil, SquareTerminal } from "lucide-react";
 
 import {
@@ -21,6 +20,7 @@ import { commands } from "@/bindings";
 
 import { ExplorerBreadcrumbs } from "./explorer-breadcrumbs";
 import { focusAfterPopupClose } from "@/lib/dom";
+import { copyWithNotice } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 import type { Breadcrumb, DirectoryView } from "./types";
 
@@ -133,12 +133,12 @@ export function ExplorerPathBar({
   }, [editSignal]);
 
   const copyPath = () => {
-    void copyText(directory.path);
+    void copyWithNotice(directory.path);
     focusPathBar();
   };
 
   const copyName = () => {
-    void copyText(currentName);
+    void copyWithNotice(currentName);
     focusPathBar();
   };
 
@@ -254,15 +254,6 @@ export function ExplorerPathBar({
       </ContextMenuContent>
     </ContextMenu>
   );
-}
-
-/** Copies text to the system clipboard; failures are logged, never thrown. */
-async function copyText(text: string): Promise<void> {
-  try {
-    await writeText(text);
-  } catch (error) {
-    console.warn(`Unable to copy ${text}`, error);
-  }
 }
 
 /** Opens the system terminal at `path`; failures are logged, never thrown. */

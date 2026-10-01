@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { ClipboardList, FolderOpen, PictureInPicture2, Star, PanelsTopLeft, X } from "lucide-react";
 
 import {
@@ -28,6 +27,7 @@ import {
   favoritesErrorAtom,
   removeFavoriteAtom,
 } from "@/features/sidebar/sidebar-atoms";
+import { copyWithNotice } from "@/lib/notifications";
 
 import { navigateToFolderAtom } from "./workspace-atoms";
 import { LocationCard, WorkspacePage, WorkspacePageHeader } from "./workspace-components";
@@ -104,7 +104,7 @@ export function FavoritesView() {
                     <PictureInPicture2 />
                     {t("favorites.openInNewWindow")}
                   </ContextMenuItem>
-                  <ContextMenuItem onClick={() => void copyPath(favorite.path)}>
+                  <ContextMenuItem onClick={() => void copyWithNotice(favorite.path)}>
                     <ClipboardList />
                     {t("favorites.copyPath")}
                   </ContextMenuItem>
@@ -123,12 +123,4 @@ export function FavoritesView() {
       )}
     </WorkspacePage>
   );
-}
-
-async function copyPath(path: string): Promise<void> {
-  try {
-    await writeText(path);
-  } catch (error) {
-    console.warn(`Unable to copy path ${path}`, error);
-  }
 }

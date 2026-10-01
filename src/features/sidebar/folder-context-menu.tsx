@@ -1,4 +1,3 @@
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { ClipboardList, Copy, FolderOpen, PictureInPicture2, Scissors, Star } from "lucide-react";
 import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
@@ -17,6 +16,7 @@ import {
   openInNewTabAtom,
   openPathInNewWindowAtom,
 } from "@/features/explorer/tabs";
+import { copyWithNotice } from "@/lib/notifications";
 
 import { addFavoritePathsAtom } from "./sidebar-atoms";
 
@@ -62,7 +62,7 @@ export function FolderContextMenu({
               {t("contextMenu.addFavorite")}
             </ContextMenuItem>
           )}
-          <ContextMenuItem onClick={() => void copyEntryPath(path)}>
+          <ContextMenuItem onClick={() => void copyWithNotice(path)}>
             <ClipboardList />
             {t("contextMenu.copyFilePath")}
           </ContextMenuItem>
@@ -81,12 +81,4 @@ export function FolderContextMenu({
       </ContextMenuContent>
     </ContextMenu>
   );
-}
-
-export async function copyEntryPath(path: string): Promise<void> {
-  try {
-    await writeText(path);
-  } catch (error) {
-    console.warn(`Unable to copy path ${path}`, error);
-  }
 }

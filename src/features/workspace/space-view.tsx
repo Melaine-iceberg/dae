@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import {
   Check,
   ClipboardList,
@@ -43,6 +42,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { openInNewTabAtom, openPathInNewWindowAtom } from "@/features/explorer/tabs";
+import { copyWithNotice } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 
 import {
@@ -287,7 +287,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
                     <PictureInPicture2 />
                     {t("space.openInNewWindow")}
                   </ContextMenuItem>
-                  <ContextMenuItem onClick={() => void copyPath(item.path)}>
+                  <ContextMenuItem onClick={() => void copyWithNotice(item.path)}>
                     <ClipboardList />
                     {t("space.copyPath")}
                   </ContextMenuItem>
@@ -335,12 +335,4 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
       </Dialog>
     </WorkspacePage>
   );
-}
-
-async function copyPath(path: string): Promise<void> {
-  try {
-    await writeText(path);
-  } catch (error) {
-    console.warn(`Unable to copy path ${path}`, error);
-  }
 }

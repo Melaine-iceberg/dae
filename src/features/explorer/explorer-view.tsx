@@ -19,19 +19,22 @@
  * What remains here is the listing pipeline, the entry actions that compose
  * the pieces above (delete/archive/undo/redo/open-with…), and the layout.
  */
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { RotateCw, RotateCcw, TriangleAlert, X } from "lucide-react";
 
 import { commands, type ArchiveFormat, type UndoRedoOutcome } from "@/bindings";
 
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/kbd";
 import { formatBinding } from "@/features/settings/shortcut-registry";
 import { hotkeysPausedAtom, useBinding } from "@/features/settings/settings-atoms";
 import {
@@ -49,8 +52,8 @@ import {
 import type { Favorite } from "@/features/sidebar/types";
 import { addItemsToSpace } from "@/features/workspace/spaces-atoms";
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
-import { shellCommandErrorAtom } from "@/features/shell-commands/shell-commands-atoms";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
+import { copyWithNotice, notify } from "@/lib/notifications";
 import { isWindowsPlatform } from "@/lib/platform";
 import { findEntryVisual, withSharedElement } from "@/lib/view-transition";
 
@@ -119,13 +122,6 @@ interface ExplorerViewProps {
   onToggleSplit?: () => void;
 }
 
-/** Floating hint after an undoable operation or an undo/redo step. */
-type UndoRedoToast = {
-  outcome: { action: string; count: number; op: string };
-  /** Follow-up action offered on the toast. */
-  action: "undo" | "redo";
-};
-
 export function ExplorerView({
   navigator,
   isActivePane = true,
@@ -139,22 +135,72 @@ export function ExplorerView({
   const toggleFavorite = useSetAtom(toggleFavoriteAtom);
   const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
   const [sidebarVisible, setSidebarVisible] = useAtom(sidebarVisibleAtom);
-  // A shell command reports back only whether the start itself succeeded; the
-  // app it launched says nothing. A failure belongs in the banner above the
-  // list rather than in the menu that has already closed.
-  const shellCommandError = useAtomValue(shellCommandErrorAtom);
-  const setShellCommandError = useSetAtom(shellCommandErrorAtom);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("name");
-  const [undoRedoToast, setUndoRedoToast] = useState<UndoRedoToast | null>(null);
   /** Bumped by Ctrl+L / Alt+D; the path bar edits on every increment. The
    *  signal is pane-local, so in a split only the active pane's bar reacts. */
   const [pathEditSignal, setPathEditSignal] = useState(0);
-  // Live bindings for the undo toast's buttons. They used to be baked into
-  // the translation strings ("收起预览面板 (Space)"), which meant a rebind left
-  // the tooltip teaching a key that no longer did anything.
+  // Live bindings for the operations a notification offers to repeat. They used
+  // to be baked into the translation strings ("收起预览面板 (Space)"), which meant
+  // a rebind left the message teaching a key that no longer did anything.
   const undoBinding = formatBinding(useBinding("explorer.undo"));
   const redoBinding = formatBinding(useBinding("explorer.redo"));
+
+  // One notification slot per channel, so a pane's messages REPLACE their own
+  // predecessors instead of stacking: two deletes in a row must not leave an
+  // offer to undo the first one standing under a message about the second, and
+  // two failures of the same operation are one complaint. `useId` keeps the two
+  // panes of a split out of each other's slots.
+  const paneNotificationId = useId();
+  const notificationIds = useMemo(
+    () => ({
+      operationError: `explorer-operation-error-${paneNotificationId}`,
+      undoRedo: `explorer-undo-redo-${paneNotificationId}`,
+    }),
+    [paneNotificationId],
+  );
+
+  // Every file-operation failure in this pane reports through one port, so a
+  // failure is surfaced the same way whichever flow raised it — the transfer
+  // pipeline, a dialog submission, an entry action. The port keeps the shape it
+  // had when it drove a banner (set a message, clear with `null`): the flows
+  // genuinely use both halves, and a cleared error is a notification the user
+  // has already moved past — a new directory, a second attempt.
+  const setOperationError = useCallback(
+    (error: string | null) => {
+      if (error === null) {
+        notify.dismiss(notificationIds.operationError);
+        return;
+      }
+
+      notify.error(error, {
+        id: notificationIds.operationError,
+        title: t("explorer:errors.operationFailedTitle"),
+      });
+    },
+    [notificationIds.operationError, t],
+  );
+
+  // The undo and redo notifications offer each other, and both self-gate on the
+  // backend's stack — which only hears about an operation once it has reported
+  // back. Capturing a handler when the message is raised would therefore freeze
+  // the stack state from that moment: a redo button that had not yet been told
+  // it could redo. The buttons read the current render's handler instead.
+  const stepHistoryRef = useRef<(direction: "undo" | "redo") => void>(() => undefined);
+
+  // A notification is mounted at the window rather than in the pane, but
+  // everything this pane offers to do acts on this pane's directory and
+  // selection. Closing the tab or collapsing the split therefore takes its
+  // notifications with it, instead of leaving an offer that would act on a
+  // folder nobody is looking at. The stack itself survives both — the toolbar
+  // and Ctrl+Z still reach it.
+  useEffect(
+    () => () => {
+      notify.dismiss(notificationIds.operationError);
+      notify.dismiss(notificationIds.undoRedo);
+    },
+    [notificationIds],
+  );
 
   const directory = state.directory;
   const listing = state.listing;
@@ -262,13 +308,10 @@ export function ExplorerView({
     ],
     { ...HOTKEY_COMMON_OPTIONS },
   );
-  const {
-    performFileOperation,
-    fileOperationProgress,
-    isOperationPending,
-    operationError,
-    setOperationError,
-  } = useFileOperations({ directoryPath, refresh });
+  const { performFileOperation, fileOperationProgress, isOperationPending } = useFileOperations({
+    directoryPath,
+    refresh,
+  });
 
   const {
     pendingTransfer,
@@ -342,9 +385,12 @@ export function ExplorerView({
   const copySelectedPaths = useCallback(() => {
     if (selectedEntries.length === 0) return;
 
-    void writeText(selectedEntries.map((entry) => entry.path).join("\n")).catch((error) => {
-      console.warn("Unable to copy paths to clipboard", error);
-    });
+    // One newline-joined string as far as the clipboard is concerned; the count
+    // is how many paths went into it, which is what the notification reports.
+    void copyWithNotice(
+      selectedEntries.map((entry) => entry.path).join("\n"),
+      selectedEntries.length,
+    );
   }, [selectedEntries]);
 
   /** Opens the system default terminal at a directory (Windows Terminal,
@@ -528,12 +574,27 @@ export function ExplorerView({
         setSelectedPaths(paths);
         return;
       }
-      setUndoRedoToast({
-        outcome: { action: "trash", count: paths.length, op: "trash" },
-        action: "undo",
-      });
+      // The offer is the point of the message: a delete that can still be taken
+      // back says so, and says which key does it.
+      notify.withAction(
+        t("explorer:undoRedo.toast_trash", { count: paths.length }),
+        {
+          hint: undoBinding,
+          label: t("explorer:actions.undo"),
+          onClick: () => stepHistoryRef.current("undo"),
+        },
+        notificationIds.undoRedo,
+      );
     });
-  }, [performFileOperation, selectedEntries, setOperationError, setSelectedPaths]);
+  }, [
+    notificationIds.undoRedo,
+    performFileOperation,
+    selectedEntries,
+    setOperationError,
+    setSelectedPaths,
+    t,
+    undoBinding,
+  ]);
 
   /** Delete moves the selection to the trash when every entry is local;
    *  network locations have no recycle bin, so they keep the permanent-delete
@@ -556,57 +617,84 @@ export function ExplorerView({
     dialogs.openDeleteDialog(selectedEntries);
   }, [dialogs.openDeleteDialog, selectedEntries]);
 
-  /** Reverts the most recent recorded operation (move, rename, copy, trash,
-   *  create, duplicate) through the backend history stack. */
-  const undoLastOperation = useCallback(() => {
-    if (!undoRedo.canUndo || isOperationPending) return;
+  /**
+   * Steps the backend's history stack in one direction and announces the result
+   * with the offer to step back the other way.
+   *
+   * The two directions are one function rather than two because of that offer:
+   * an undo announces a redo and a redo announces an undo, so two functions
+   * would have to reference each other, and every callback that names the other
+   * is recreated whenever the other is — a cycle that never settles. The
+   * direction is therefore a parameter, and the notification's button is the
+   * only place it is read from.
+   */
+  const stepHistory = useCallback(
+    (direction: "undo" | "redo") => {
+      const canStep = direction === "undo" ? undoRedo.canUndo : undoRedo.canRedo;
+      if (!canStep || isOperationPending) return;
 
-    setUndoRedoToast(null);
-    setOperationError(null);
-    let outcome: UndoRedoOutcome | null = null;
-    void performFileOperation(async (operationId) => {
-      outcome = await commands.undoOperation(operationId!);
-    }, "auto").then((result) => {
-      if (!result.ok) {
-        setOperationError(t("explorer:undoRedo.failedUndo", { detail: result.error }));
-        return;
-      }
-      if (outcome) {
-        setUndoRedoToast({ outcome, action: "redo" });
-      }
-    });
-  }, [isOperationPending, performFileOperation, setOperationError, t, undoRedo.canUndo]);
+      notify.dismiss(notificationIds.undoRedo);
+      setOperationError(null);
+      let outcome: UndoRedoOutcome | null = null;
+      void performFileOperation(async (operationId) => {
+        outcome =
+          direction === "undo"
+            ? await commands.undoOperation(operationId!)
+            : await commands.redoOperation(operationId!);
+      }, "auto").then((result) => {
+        if (!result.ok) {
+          setOperationError(
+            t(
+              direction === "undo"
+                ? "explorer:undoRedo.failedUndo"
+                : "explorer:undoRedo.failedRedo",
+              { detail: result.error },
+            ),
+          );
+          return;
+        }
+        if (!outcome) return;
 
-  /** Re-applies the most recently undone operation. */
-  const redoLastOperation = useCallback(() => {
-    if (!undoRedo.canRedo || isOperationPending) return;
-
-    setUndoRedoToast(null);
-    setOperationError(null);
-    let outcome: UndoRedoOutcome | null = null;
-    void performFileOperation(async (operationId) => {
-      outcome = await commands.redoOperation(operationId!);
-    }, "auto").then((result) => {
-      if (!result.ok) {
-        setOperationError(t("explorer:undoRedo.failedRedo", { detail: result.error }));
-        return;
-      }
-      if (outcome) {
-        setUndoRedoToast({ outcome, action: "undo" });
-      }
-    });
-  }, [isOperationPending, performFileOperation, setOperationError, t, undoRedo.canRedo]);
-
-  // The undo toast auto-dismisses after a delay; hovering pauses the timer
-  // so the pointer can reach the action button before the toast disappears.
-  const [isUndoToastHovered, setIsUndoToastHovered] = useState(false);
+        // The step just taken is the one the message reports; the step still
+        // available is its opposite, and that is what the button offers.
+        const next = direction === "undo" ? "redo" : "undo";
+        notify.withAction(
+          t(`explorer:undoRedo.toast_${outcome.action}`, {
+            count: outcome.count,
+            op: t(`explorer:undoRedo.op_${outcome.op}`),
+          }),
+          {
+            hint: next === "undo" ? undoBinding : redoBinding,
+            label: t(next === "undo" ? "explorer:actions.undo" : "explorer:actions.redo"),
+            onClick: () => stepHistoryRef.current(next),
+          },
+          notificationIds.undoRedo,
+        );
+      });
+    },
+    [
+      isOperationPending,
+      notificationIds.undoRedo,
+      performFileOperation,
+      redoBinding,
+      setOperationError,
+      t,
+      undoBinding,
+      undoRedo.canRedo,
+      undoRedo.canUndo,
+    ],
+  );
 
   useEffect(() => {
-    if (!undoRedoToast || isUndoToastHovered) return undefined;
+    stepHistoryRef.current = stepHistory;
+  }, [stepHistory]);
 
-    const timer = window.setTimeout(() => setUndoRedoToast(null), UNDO_TOAST_DISMISS_MS);
-    return () => window.clearTimeout(timer);
-  }, [isUndoToastHovered, undoRedoToast]);
+  /** Reverts the most recent recorded operation (move, rename, copy, trash,
+   *  create, duplicate) through the backend history stack. */
+  const undoLastOperation = useCallback(() => stepHistory("undo"), [stepHistory]);
+
+  /** Re-applies the most recently undone operation. */
+  const redoLastOperation = useCallback(() => stepHistory("redo"), [stepHistory]);
 
   usePendingExplorerCommand({
     isActivePane,
@@ -707,45 +795,12 @@ export function ExplorerView({
           </div>
         )}
 
-        {operationError && (
-          <div className="shrink-0 p-3 pb-0">
-            <Alert variant="destructive">
-              <TriangleAlert />
-              <AlertTitle>{t("explorer:errors.operationFailedTitle")}</AlertTitle>
-              <AlertDescription>{operationError}</AlertDescription>
-              <AlertAction>
-                <Button
-                  onClick={() => setOperationError(null)}
-                  size="xs"
-                  type="button"
-                  variant="outline"
-                >
-                  {t("explorer:actions.close")}
-                </Button>
-              </AlertAction>
-            </Alert>
-          </div>
-        )}
-
-        {shellCommandError && (
-          <div className="shrink-0 p-3 pb-0">
-            <Alert variant="destructive">
-              <TriangleAlert />
-              <AlertTitle>{t("explorer:shellCommands.launchFailedTitle")}</AlertTitle>
-              <AlertDescription>{shellCommandError}</AlertDescription>
-              <AlertAction>
-                <Button
-                  onClick={() => setShellCommandError(null)}
-                  size="xs"
-                  type="button"
-                  variant="outline"
-                >
-                  {t("explorer:actions.close")}
-                </Button>
-              </AlertAction>
-            </Alert>
-          </div>
-        )}
+        {/* File-operation failures, and the "this app would not start" report a
+            shell command gives back, are notifications now — they carry the
+            same title/detail split, outlive the menu that raised them, and are
+            dismissed by the notification host rather than by a control inside
+            the pane. The pane keeps only the failure that leaves it with
+            nothing to show: an unreadable directory, below. */}
 
         {directory ? (
           <div className="flex min-h-0 flex-1">
@@ -851,47 +906,6 @@ export function ExplorerView({
                   onRename={dialogs.requestRename}
                   selectedCount={selectedPaths.length}
                 />
-              )}
-              {undoRedoToast && (
-                <div
-                  className="absolute bottom-4 left-1/2 z-40 -translate-x-1/2"
-                  onPointerEnter={() => setIsUndoToastHovered(true)}
-                  onPointerLeave={() => setIsUndoToastHovered(false)}
-                >
-                  <div className="animate-float-in flex items-center gap-2 rounded-lg border border-border bg-popover px-4 py-2 text-body text-popover-foreground shadow-ambient-lg">
-                    {undoRedoToast.action === "redo" ? (
-                      <RotateCw className="size-4 shrink-0 text-muted-foreground" />
-                    ) : (
-                      <RotateCcw className="size-4 shrink-0 text-muted-foreground" />
-                    )}
-                    <span className="whitespace-nowrap">
-                      {t(`explorer:undoRedo.toast_${undoRedoToast.outcome.action}`, {
-                        op: t(`explorer:undoRedo.op_${undoRedoToast.outcome.op}`),
-                        count: undoRedoToast.outcome.count,
-                      })}
-                    </span>
-                    {undoRedoToast.action === "redo" ? (
-                      <Button onClick={redoLastOperation} size="xs" type="button" variant="outline">
-                        {t("explorer:actions.redo")}
-                        <Kbd className="h-4 px-1 text-nano">{redoBinding}</Kbd>
-                      </Button>
-                    ) : (
-                      <Button onClick={undoLastOperation} size="xs" type="button" variant="outline">
-                        {t("explorer:actions.undo")}
-                        <Kbd className="h-4 px-1 text-nano">{undoBinding}</Kbd>
-                      </Button>
-                    )}
-                    <Button
-                      aria-label={t("explorer:undoRedo.closeToast")}
-                      onClick={() => setUndoRedoToast(null)}
-                      size="xs"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <X />
-                    </Button>
-                  </div>
-                </div>
               )}
             </div>
             {isPreviewOpen && (

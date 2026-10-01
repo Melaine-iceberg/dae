@@ -20,8 +20,7 @@
     "op_create": "New",
     "op_duplicate": "Duplicate",
     "failedUndo": "Undo failed: {{detail}}",
-    "failedRedo": "Redo failed: {{detail}}",
-    "closeToast": "Dismiss"
+    "failedRedo": "Redo failed: {{detail}}"
   },
   "terminalOpenFailed": "Could not open a terminal: {{detail}}",
   "openWithFailed": "Could not open the Open With dialog: {{detail}}",
@@ -550,8 +549,7 @@
     "pushTitle": "Push to the remote (git push)",
     "sync": "Sync",
     "syncTitle": "Sync: pull then push (git pull + push)",
-    "operationFailed": "Git operation failed",
-    "dismissError": "Dismiss error"
+    "operationFailed": "Git operation failed"
   },
   "preview": {
     "ariaLabel": "Preview",

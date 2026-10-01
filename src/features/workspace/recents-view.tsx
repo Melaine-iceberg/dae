@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { History, ClipboardList, Folder, FolderOpen, Trash2, X } from "lucide-react";
 
 import type { RecentItem } from "@/bindings";
@@ -22,6 +21,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
 import { TypeIconTile } from "@/features/explorer/icon-tile";
+import { copyWithNotice } from "@/lib/notifications";
 
 import {
   clearRecentItems,
@@ -214,7 +214,7 @@ function RecentRow({
                 {t("recents.openContainingFolder")}
               </ContextMenuItem>
             )}
-            <ContextMenuItem onClick={() => void copyPath(item.path)}>
+            <ContextMenuItem onClick={() => void copyWithNotice(item.path)}>
               <ClipboardList />
               {t("recents.copyPath")}
             </ContextMenuItem>
@@ -272,12 +272,4 @@ function formatTime(accessedAt: number): string {
     minute: "2-digit",
     hour12: false,
   });
-}
-
-async function copyPath(path: string): Promise<void> {
-  try {
-    await writeText(path);
-  } catch (error) {
-    console.warn(`Unable to copy path ${path}`, error);
-  }
 }

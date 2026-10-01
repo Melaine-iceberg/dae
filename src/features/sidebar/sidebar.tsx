@@ -68,6 +68,7 @@ import {
   openSurfaceAtom,
 } from "@/features/workspace/workspace-atoms";
 import { i18n } from "@/i18n";
+import { copyWithNotice } from "@/lib/notifications";
 import { isWindowsPlatform } from "@/lib/platform";
 import { cn, formatBytes } from "@/lib/utils";
 
@@ -112,7 +113,7 @@ import {
   toggleTreeNodeAtom,
   treeExpandedPathsAtom,
 } from "./directory-tree";
-import { FolderContextMenu, copyEntryPath } from "./folder-context-menu";
+import { FolderContextMenu } from "./folder-context-menu";
 import { useDiskVolumes } from "./use-disk-volumes";
 import { useWslDistros } from "./use-wsl-distros";
 import { WslIcon } from "./wsl-icon";
@@ -595,7 +596,7 @@ function FavoritesEntryContextMenu({
             <FolderOpen />
             {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
-          <ContextMenuItem onClick={() => void copyEntryPath(path)}>
+          <ContextMenuItem onClick={() => void copyWithNotice(path)}>
             <ClipboardList />
             {t("contextMenu.copyFilePath")}
           </ContextMenuItem>
@@ -804,7 +805,7 @@ function CloudAccountContextMenu({
             <FolderOpen />
             {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
-          <ContextMenuItem onClick={() => void copyEntryPath(path)}>
+          <ContextMenuItem onClick={() => void copyWithNotice(path)}>
             <ClipboardList />
             {t("contextMenu.copyPath")}
           </ContextMenuItem>
@@ -919,7 +920,7 @@ function ConnectionContextMenu({
             <FolderOpen />
             {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
-          <ContextMenuItem onClick={() => void copyEntryPath(path)}>
+          <ContextMenuItem onClick={() => void copyWithNotice(path)}>
             <ClipboardList />
             {t("contextMenu.copyPath")}
           </ContextMenuItem>

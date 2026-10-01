@@ -33,13 +33,6 @@ const shellCommandsAtom = atom<ReadonlyMap<string, readonly ShellCommand[]>>(new
 /** Signatures with a request in flight, so a re-render does not ask twice. */
 const inFlight = new Set<string>();
 
-/**
- * Last failure from starting a command, surfaced by the explorer view. A
- * command that starts says nothing back, so this is the only place a wrong
- * CLSID or a vanished app can show up.
- */
-export const shellCommandErrorAtom = atom<string | null>(null);
-
 /** Stable empty result, so an unresolved selection never re-renders needlessly. */
 const NO_COMMANDS: readonly ShellCommand[] = [];
 

@@ -4,6 +4,7 @@ import { useHotkeys } from "@tanstack/react-hotkeys";
 
 import { commands, events } from "@/bindings";
 import { TextContextMenu } from "@/components/text-context-menu";
+import { Toaster } from "@/components/ui/sonner";
 import { useLocaleSync } from "@/i18n/atoms";
 import { ExplorerTabs } from "@/features/explorer/explorer-tabs";
 import { getActivePaneNavigator } from "@/features/explorer/tabs";
@@ -204,6 +205,11 @@ function App() {
     <>
       <ExplorerTabs />
       <TextContextMenu />
+      {/* Mounted above every surface and outside every lazy boundary: a
+          notification can be raised by a background operation at any moment,
+          including while no dialog is up, and it must never be the reason a
+          chunk is fetched. See `@/lib/notifications` for what raises one. */}
+      <Toaster />
       {commandBarMounted && (
         <Suspense fallback={null}>
           <CommandBar />

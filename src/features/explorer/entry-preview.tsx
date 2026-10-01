@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { ClipboardList, FolderOpen, TriangleAlert, X } from "lucide-react";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { Markdown } from "@tanstack/markdown/react";
 
@@ -9,6 +8,7 @@ import { commands, type MediaPreview, type TextPreview } from "@/bindings";
 import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { copyWithNotice } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 
 import { getPreviewLanguage, highlightCode, highlightMarkdownCode } from "./code-highlight";
@@ -429,11 +429,7 @@ export function EntryPreview({
             {t("preview.open")}
           </Button>
           <Button
-            onClick={() =>
-              void writeText(entry.path).catch((error) => {
-                console.warn("Unable to copy path to clipboard", error);
-              })
-            }
+            onClick={() => void copyWithNotice(entry.path)}
             size="sm"
             title={t("preview.copyPathTitle")}
             type="button"

@@ -23,13 +23,12 @@ import {
   Trash,
   Trash2,
 } from "lucide-react";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { commands, type ArchiveFormat } from "@/bindings";
 import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
 import { appSettingsAtom, useBinding } from "@/features/settings/settings-atoms";
 import { ShellCommandsMenu } from "@/features/shell-commands/shell-commands-menu";
-import { shellCommandErrorAtom } from "@/features/shell-commands/shell-commands-atoms";
+import { copyWithNotice } from "@/lib/notifications";
 
 import { propertiesTargetAtom } from "./properties-atoms";
 import { openInNewTabAtom, openPathInNewWindowAtom } from "./tabs";
@@ -137,7 +136,6 @@ export function EntryContextMenuContent({
   const removeFavorite = useSetAtom(removeFavoriteAtom);
   const openInNewTab = useSetAtom(openInNewTabAtom);
   const openInNewWindow = useSetAtom(openPathInNewWindowAtom);
-  const setShellCommandError = useSetAtom(shellCommandErrorAtom);
   const isFavorited = favorites.some((favorite) => favorite.path === entry.path);
 
   useEffect(() => {
@@ -239,14 +237,14 @@ export function EntryContextMenuContent({
             {t("explorer:contextMenu.openInTerminal")}
           </ContextMenuItem>
         )}
-        <ContextMenuItem onClick={() => void copyEntryPath(entry.path)}>
+        <ContextMenuItem onClick={() => void copyWithNotice(entry.path)}>
           <ClipboardList />
           {t("explorer:contextMenu.copyPath")}
         </ContextMenuItem>
       </ContextMenuGroup>
       {/* The installed apps' own right-click commands, under the one heading
           dae has always used for them. */}
-      <ShellCommandsMenu onError={setShellCommandError} paths={actionPaths} primary={entry.path} />
+      <ShellCommandsMenu paths={actionPaths} primary={entry.path} />
       <ContextMenuSeparator />
       <ContextMenuGroup>
         <ContextMenuItem disabled={isActionDisabled} onClick={onDuplicate}>
@@ -405,14 +403,6 @@ function EntryActionRow({
       ))}
     </ContextMenuGroup>
   );
-}
-
-async function copyEntryPath(path: string): Promise<void> {
-  try {
-    await writeText(path);
-  } catch (error) {
-    console.warn(`Unable to copy path ${path}`, error);
-  }
 }
 
 async function openTerminalAt(path: string): Promise<void> {

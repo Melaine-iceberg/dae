@@ -6,6 +6,12 @@
  *
  * Extracted from `explorer-view.tsx`; the view passes the current directory
  * and a refresh function and receives `performFileOperation` back.
+ *
+ * A failure is reported to the caller as a `FileOperationResult`, never held as
+ * state here: the view owns the single error channel every flow in the pane
+ * reports through (see `setOperationError` in `explorer-view.tsx`), and the
+ * flows that do not come from this runner — transfers, dialog submissions —
+ * report to the same one.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -35,17 +41,12 @@ export function useFileOperations({
   performFileOperation: PerformFileOperation;
   fileOperationProgress: FileOperationProgress | null;
   isOperationPending: boolean;
-  operationError: string | null;
-  setOperationError: (error: string | null) => void;
 } {
   const { t } = useTranslation("explorer");
   const [fileOperationProgress, setFileOperationProgress] = useState<FileOperationProgress | null>(
     null,
   );
   const [isOperationPending, setIsOperationPending] = useState(false);
-  // A failure belongs in the banner above the list rather than in the menu
-  // that has already closed.
-  const [operationError, setOperationError] = useState<string | null>(null);
   // Operation IDs started with the "auto" progress kind: the backend announces
   // the kind with its first progress event, so the ID is adopted there.
   const deferredProgressIdsRef = useRef<Set<string>>(new Set());
@@ -148,7 +149,5 @@ export function useFileOperations({
     performFileOperation,
     fileOperationProgress,
     isOperationPending,
-    operationError,
-    setOperationError,
   };
 }

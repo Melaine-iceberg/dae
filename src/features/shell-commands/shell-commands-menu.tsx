@@ -28,14 +28,13 @@ import {
   ContextMenuSubContent,
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
+import { notify } from "@/lib/notifications";
 
 interface ShellCommandsMenuProps {
   /** Paths the command runs on — the selection, or just the clicked entry. */
   paths: readonly string[];
   /** The right-clicked entry, which decides the commands that apply. */
   primary: string;
-  /** Receives a failure message, or `null` when the command ran. */
-  onError: (message: string | null) => void;
 }
 
 /**
@@ -44,7 +43,7 @@ interface ShellCommandsMenuProps {
  * renders nothing at all: no empty submenu to open, and no stray separator
  * either, so the rest of the menu keeps its layout.
  */
-export function ShellCommandsMenu({ paths, primary, onError }: ShellCommandsMenuProps) {
+export function ShellCommandsMenu({ paths, primary }: ShellCommandsMenuProps) {
   const { t } = useTranslation("explorer");
   const items = useShellCommands(paths, primary);
   if (items.length === 0) return null;
@@ -68,7 +67,7 @@ export function ShellCommandsMenu({ paths, primary, onError }: ShellCommandsMenu
           {inline.map((item, index) => (
             <Fragment key={item.id}>
               {item.separatorBefore && index > 0 && <ContextMenuSeparator />}
-              <ShellCommandItem item={item} paths={paths} onError={onError} />
+              <ShellCommandItem item={item} paths={paths} />
             </Fragment>
           ))}
           {[...grouped].map(([app, appItems]) => (
@@ -79,7 +78,7 @@ export function ShellCommandsMenu({ paths, primary, onError }: ShellCommandsMenu
               </ContextMenuSubTrigger>
               <ContextMenuSubContent>
                 {appItems.map((item) => (
-                  <ShellCommandItem key={item.id} item={item} paths={paths} onError={onError} />
+                  <ShellCommandItem key={item.id} item={item} paths={paths} />
                 ))}
               </ContextMenuSubContent>
             </ContextMenuSub>
@@ -90,21 +89,21 @@ export function ShellCommandsMenu({ paths, primary, onError }: ShellCommandsMenu
   );
 }
 
-function ShellCommandItem({
-  item,
-  paths,
-  onError,
-}: {
-  item: ShellCommand;
-  paths: readonly string[];
-  onError: (message: string | null) => void;
-}) {
+function ShellCommandItem({ item, paths }: { item: ShellCommand; paths: readonly string[] }) {
+  const { t } = useTranslation("explorer");
+
   return (
     <ContextMenuItem
       disabled={item.disabled}
       onClick={() => {
-        onError(null);
-        void invokeShellCommand(item.id, paths).then(onError);
+        void invokeShellCommand(item.id, paths).then((failure) => {
+          if (!failure) return;
+          // A command that starts successfully says nothing back — the app it
+          // launches owns the result from there. So a failure to start is the
+          // only report dae can give about an extension, and it has to outlive
+          // the menu it was chosen from, which is already closed by now.
+          notify.error(failure, { title: t("explorer:shellCommands.launchFailedTitle") });
+        });
       }}
     >
       <ShellCommandIcon item={item} />

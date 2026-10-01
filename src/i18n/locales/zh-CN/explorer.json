@@ -20,8 +20,7 @@
     "op_create": "新建",
     "op_duplicate": "创建副本",
     "failedUndo": "撤销失败：{{detail}}",
-    "failedRedo": "重做失败：{{detail}}",
-    "closeToast": "关闭提示"
+    "failedRedo": "重做失败：{{detail}}"
   },
   "terminalOpenFailed": "无法打开终端：{{detail}}",
   "openWithFailed": "无法打开“打开方式”对话框：{{detail}}",
@@ -550,8 +549,7 @@
     "pushTitle": "推送到远程 (git push)",
     "sync": "同步",
     "syncTitle": "同步：先拉取后推送 (git pull + push)",
-    "operationFailed": "Git 操作失败",
-    "dismissError": "关闭错误提示"
+    "operationFailed": "Git 操作失败"
   },
   "preview": {
     "ariaLabel": "预览",

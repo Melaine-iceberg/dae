@@ -323,6 +323,9 @@
   --width-column-view: 13.75rem; /* 220px — one Miller column */
   --width-sidebar: 15rem; /* 240px — the nav column */
   --width-preview: 26rem;
+  /* One notification. Fixed rather than content-sized so a stack of them
+     shares an edge and a two-line message wraps at a predictable column. */
+  --width-toast: 22rem; /* 352px */
 
   /* Dimming layer behind a modal. Declared per scheme rather than written as
      `bg-black/40` at the call site because the two schemes have different
@@ -1424,4 +1427,125 @@ html[data-window-material="vibrancy"] {
 .markdown-preview img {
   max-width: 100%;
   border-radius: 6px;
+}
+
+/* ---------------------------------------------------------------------------
+   NOTIFICATIONS — see src/components/ui/sonner.tsx and src/lib/notifications.ts.
+
+   Sonner owns the queue, the timers, the stacking and the swipe; this block
+   owns what a notification looks like in this shell. Two properties of it are
+   structural rather than stylistic:
+
+     * it is UNLAYERED, like the syntax-highlighting block above. Sonner injects
+       its own stylesheet into the document after the entry CSS, and unlayered
+       declarations outrank every `@layer` — a rule written inside
+       `@layer components` would lose to it no matter how specific it was.
+
+     * the `html …[data-sonner-theme]` prefix buys exactly one attribute's worth
+       of specificity over Sonner's `[data-sonner-toast][data-styled]` selectors.
+       These overrides then win by a rule instead of by whichever stylesheet the
+       engine happened to parse last.
+
+   Colour is not written here at all: the three `--normal-*` variables are
+   pointed at the popover plane, so a notification is themed by the same tokens
+   as every other floating layer and follows `.dark` with no second declaration.
+
+   The compact-scale and shape tokens read below (`--text-body`, its line
+   height, `--text-caption`, `--radius-lg`) are `@theme inline` entries, and
+   Tailwind emits such a token as a real custom property only when something
+   references it — which is why this block, like the shell's other hand-written
+   overrides, spells them as `var()` and does not restate their values. Deleting
+   the reference removes the property, so they are not interchangeable with
+   literals here.
+
+   What the rest is correcting, in order — Sonner's 400ms travel and its centred
+   16px padding belong to a web app's toast, not to a shell whose every state
+   change is 120ms and whose rows are 34px; its description grey is the literal
+   `#3f3f3f`; and its action button is an inverted filled pill, where this
+   shell's vocabulary for "one step further" is the outline button.
+   --------------------------------------------------------------------------- */
+html [data-sonner-toaster][data-sonner-theme] {
+  --border-radius: var(--radius-lg);
+  --normal-bg: var(--popover);
+  --normal-text: var(--popover-foreground);
+  --normal-border: var(--border);
+  --width: var(--width-toast);
+  font-family: var(--font-sans);
+}
+
+html [data-sonner-toaster][data-sonner-theme] [data-sonner-toast] {
+  /* Sonner's own timing, replaced by the shell's: a notification is a state
+     change, so it arrives on the fast curve and settles — it does not perform a
+     half-second slide. `transform` keeps the spring curve every entrance in the
+     app uses. */
+  transition:
+    transform var(--transition-duration-normal) var(--ease-spring-fast),
+    opacity var(--transition-duration-fast) var(--ease-standard),
+    height var(--transition-duration-normal) var(--ease-standard);
+  align-items: flex-start;
+  padding: 0.625rem 0.75rem;
+  font-size: var(--text-body);
+  line-height: var(--text-body--line-height);
+  /* The one elevation step a floating layer gets, and the only thing that
+     separates the notification from the plane under it. Under
+     `forced-colors: active` the forcing removes it and the border below carries
+     the layer on its own — the same trade every other surface makes. */
+  box-shadow: var(--shadow-ambient-lg);
+}
+
+/* Optical alignment, not layout: a 16px glyph next to a 20px line box sits a
+   pixel high on the first line's cap height, and a notification's icon has to
+   read as belonging to its sentence. */
+html [data-sonner-toaster][data-sonner-theme] [data-sonner-toast] [data-icon] {
+  margin-top: 1px;
+}
+
+html [data-sonner-toaster][data-sonner-theme] [data-sonner-toast] [data-title] {
+  font-weight: 500;
+}
+
+html [data-sonner-toaster][data-sonner-theme] [data-sonner-toast] [data-description] {
+  color: var(--muted-foreground);
+}
+
+html [data-sonner-toaster][data-sonner-theme] [data-sonner-toast] [data-button] {
+  gap: 0.25rem;
+  height: 1.25rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--foreground);
+  font-family: inherit;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  transition: background-color var(--transition-duration-instant) var(--ease-standard);
+}
+
+html [data-sonner-toaster][data-sonner-theme] [data-sonner-toast] [data-button]:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+html [data-sonner-toaster][data-sonner-theme] [data-sonner-toast] [data-button]:focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--ring) 40%, transparent);
+}
+
+/* The dismiss plate. Sonner hangs it off the corner as a filled circle in the
+   toast's own colours; here it is the quiet glyph-plate the rest of the chrome
+   uses, so the only saturated thing in a notification is its status icon. */
+html [data-sonner-toaster][data-sonner-theme] [data-sonner-toast] [data-close-button] {
+  border-color: var(--border);
+  background: var(--popover);
+  color: var(--muted-foreground);
+  transition:
+    background-color var(--transition-duration-instant) var(--ease-standard),
+    color var(--transition-duration-instant) var(--ease-standard);
+}
+
+html [data-sonner-toaster][data-sonner-theme] [data-sonner-toast] [data-close-button]:hover {
+  border-color: var(--border);
+  background: var(--accent);
+  color: var(--accent-foreground);
 }

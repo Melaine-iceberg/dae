@@ -22,6 +22,7 @@ import {
 
 import { i18n } from "@/i18n";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
+import { notify } from "@/lib/notifications";
 import { cn, formatBytes } from "@/lib/utils";
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -108,7 +109,6 @@ export function TrashView({ active = true }: { active?: boolean }) {
   const [entries, setEntries] = useState<TrashEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [operationError, setOperationError] = useState<string | null>(null);
   const [progress, setProgress] = useState<FileOperationProgress | null>(null);
   const [isOperationPending, setIsOperationPending] = useState(false);
   const [purgeRequest, setPurgeRequest] = useState<PurgeRequest | null>(null);
@@ -160,8 +160,22 @@ export function TrashView({ active = true }: { active?: boolean }) {
     };
   }, []);
 
+  /**
+   * Runs one bin operation under the progress strip, then reports how much of
+   * it actually happened.
+   *
+   * The bin's three operations all stream progress and all answer with a count
+   * of the entries they really touched — which is not always the count they were
+   * asked for, since an entry can be gone by the time the shell reaches it. The
+   * count is therefore returned rather than assumed, and the callers word their
+   * notification from it. `null` is how a failure comes back: it has already
+   * been reported, and the caller has nothing left to say.
+   */
   const runTrashOperation = useCallback(
-    async (kind: FileOperationKind, operation: (operationId: string) => Promise<unknown>) => {
+    async (
+      kind: FileOperationKind,
+      operation: (operationId: string) => Promise<number>,
+    ): Promise<number | null> => {
       const operationId = crypto.randomUUID();
       setProgress({
         operationId,
@@ -171,11 +185,10 @@ export function TrashView({ active = true }: { active?: boolean }) {
         total: null,
         currentPath: null,
       });
-      setOperationError(null);
       setIsOperationPending(true);
 
       try {
-        await operation(operationId);
+        const affected = await operation(operationId);
         await reload();
         setProgress((current) =>
           current?.operationId === operationId
@@ -186,16 +199,23 @@ export function TrashView({ active = true }: { active?: boolean }) {
           if (!mountedRef.current) return;
           setProgress((current) => (current?.operationId === operationId ? null : current));
         }, COMPLETED_OPERATION_STATUS_DURATION_MS);
+        return affected;
       } catch (error) {
         setProgress(null);
-        setOperationError(getFileOperationErrorMessage(error));
+        // A failure is a notification rather than a banner here: the list below
+        // has already been reloaded and is showing the entries that survived,
+        // so there is nothing for a banner to sit above.
+        notify.error(getFileOperationErrorMessage(error), {
+          title: t("trash.operationErrorTitle"),
+        });
         // Whatever the batch managed before failing should show up again.
         void reload();
+        return null;
       } finally {
         setIsOperationPending(false);
       }
     },
-    [reload],
+    [reload, t],
   );
 
   const restoreIds = useCallback(
@@ -204,9 +224,11 @@ export function TrashView({ active = true }: { active?: boolean }) {
       setSelectedIds([]);
       void runTrashOperation("move", (operationId) =>
         commands.restoreTrashEntries(ids, operationId),
-      );
+      ).then((restored) => {
+        reportAffected(restored, (count) => t("trash.restored", { count }));
+      });
     },
-    [isOperationPending, runTrashOperation],
+    [isOperationPending, runTrashOperation, t],
   );
 
   const requestPurge = useCallback(
@@ -228,7 +250,11 @@ export function TrashView({ active = true }: { active?: boolean }) {
       request.kind === "empty"
         ? commands.emptyTrash(operationId)
         : commands.deleteTrashEntries(request.ids, operationId),
-    );
+    ).then((purged) => {
+      reportAffected(purged, (count) =>
+        request.kind === "empty" ? t("trash.emptied", { count }) : t("trash.purged", { count }),
+      );
+    });
   };
 
   const toggleSelected = useCallback((id: string) => {
@@ -327,8 +353,11 @@ export function TrashView({ active = true }: { active?: boolean }) {
       {progress && <TrashProgress progress={progress} />}
 
       {loadError && (
-        // An error banner with no way forward is a dead end; the recycle bin
-        // read is cheap, so the retry is the whole recovery path.
+        // A banner with no way forward is a dead end; the recycle bin read is
+        // cheap, so the retry is the whole recovery path. This one stays in the
+        // page — unlike an operation failure, it is why there is nothing below
+        // it to look at, and a notification that disappeared would leave an
+        // empty bin looking like an empty bin.
         <Alert variant="destructive">
           <AlertTitle>{t("trash.loadErrorTitle")}</AlertTitle>
           <AlertDescription>{loadError}</AlertDescription>
@@ -337,13 +366,6 @@ export function TrashView({ active = true }: { active?: boolean }) {
               {t("loadError.retry")}
             </Button>
           </AlertAction>
-        </Alert>
-      )}
-
-      {operationError && (
-        <Alert variant="destructive">
-          <AlertTitle>{t("trash.operationErrorTitle")}</AlertTitle>
-          <AlertDescription>{operationError}</AlertDescription>
         </Alert>
       )}
 
@@ -880,4 +902,19 @@ function formatDeletedTime(unixSeconds: number): string {
     minute: "2-digit",
     hour12: false,
   });
+}
+
+/**
+ * Reports what a bin operation actually did, or says nothing about it.
+ *
+ * `affected` is the count the shell reported, and it is zero when the entries
+ * were already gone — emptied from another window, or restored elsewhere while
+ * this list was open. "已恢复 0 个项目" is not a sentence worth putting on screen
+ * for an action the user can see had no effect: the list behind the notification
+ * has already reloaded and says so. `null` is the failure case, which has been
+ * reported by the time it gets here.
+ */
+function reportAffected(affected: number | null, message: (count: number) => string): void {
+  if (affected === null || affected === 0) return;
+  notify.success(message(affected));
 }
