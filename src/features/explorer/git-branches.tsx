@@ -2,16 +2,16 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowDown,
-  ArrowUp,
-  RefreshCw,
-  Check,
-  CloudDownload,
-  Download,
-  GitBranch,
-  Plus,
-  Upload,
-} from "lucide-react";
+  AddIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CheckIcon,
+  CloudDownloadIcon,
+  DownloadIcon,
+  GitBranchIcon,
+  RefreshIcon,
+  UploadIcon,
+} from "@solar-icons/react/line-duotone";
 
 import { commands, events } from "@/bindings";
 import { Button } from "@/components/ui/button";
@@ -152,19 +152,19 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
           )}
           title={t("git.menuTitle", { branch })}
         >
-          <GitBranch className="size-3.5 shrink-0" />
+          <GitBranchIcon className="size-3.5 shrink-0" />
           <span className="max-w-32 truncate font-mono text-micro leading-4">{branch}</span>
           {(ahead > 0 || behind > 0) && (
             <span className="flex shrink-0 items-center gap-0.5 tabular-nums">
               {ahead > 0 && (
                 <span className="flex items-center gap-0.5 text-success">
-                  <ArrowUp className="size-3" />
+                  <ArrowUpIcon className="size-3" />
                   {ahead}
                 </span>
               )}
               {behind > 0 && (
                 <span className="flex items-center gap-0.5 text-info">
-                  <ArrowDown className="size-3" />
+                  <ArrowDownIcon className="size-3" />
                   {behind}
                 </span>
               )}
@@ -173,7 +173,7 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-64">
           <DropdownMenuLabel className="flex min-w-0 items-center gap-1.5">
-            <GitBranch className="size-3.5 shrink-0" />
+            <GitBranchIcon className="size-3.5 shrink-0" />
             <span className="truncate font-mono">{branch}</span>
             {branches?.detached ? (
               <span className="ml-auto shrink-0 text-micro font-normal">
@@ -201,10 +201,10 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
                   onClick={() => checkout(localBranch.name, false)}
                   title={t("git.switchToBranch", { branch: localBranch.name })}
                 >
-                  <GitBranch className="size-4" />
+                  <GitBranchIcon className="size-4" />
                   <span className="min-w-0 flex-1 truncate">{localBranch.name}</span>
                   {localBranch.isCurrent && (
-                    <Check className="ml-auto size-3.5 shrink-0 text-primary" />
+                    <CheckIcon className="ml-auto size-3.5 shrink-0 text-primary" />
                   )}
                 </DropdownMenuItem>
               ))}
@@ -222,7 +222,7 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
                   onClick={() => checkout(remoteBranch.name, true)}
                   title={t("git.trackRemoteBranch", { branch: remoteBranch.name })}
                 >
-                  <CloudDownload className="size-4" />
+                  <CloudDownloadIcon className="size-4" />
                   <span className="min-w-0 flex-1 truncate">{remoteBranch.name}</span>
                 </DropdownMenuItem>
               ))}
@@ -235,7 +235,7 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
             onClick={() => setIsCreateOpen(true)}
             title={t("git.newBranchTitle")}
           >
-            <Plus className="size-4" />
+            <AddIcon className="size-4" />
             {t("git.newBranch")}
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -243,7 +243,7 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
             onClick={() => networkOp(() => commands.gitFetch(root))}
             title={t("git.fetchTitle")}
           >
-            <CloudDownload className="size-4" />
+            <CloudDownloadIcon className="size-4" />
             {t("git.fetch")}
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -251,7 +251,7 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
             onClick={() => networkOp(() => commands.gitPull(root))}
             title={t("git.pullTitle")}
           >
-            <Download className="size-4" />
+            <DownloadIcon className="size-4" />
             {t("git.pull")}
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -259,7 +259,7 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
             onClick={() => networkOp(() => commands.gitPush(root))}
             title={t("git.pushTitle")}
           >
-            <Upload className="size-4" />
+            <UploadIcon className="size-4" />
             {t("git.push")}
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -267,7 +267,7 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
             onClick={() => networkOp(() => commands.gitSync(root))}
             title={t("git.syncTitle")}
           >
-            <RefreshCw className="size-4" />
+            <RefreshIcon className="size-4" />
             {t("git.sync")}
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -284,7 +284,7 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
         title={t("git.syncTitle")}
         type="button"
       >
-        <RefreshCw className={cn("size-3.5", isPending && "animate-spin")} />
+        <RefreshIcon className={cn("size-3.5", isPending && "animate-spin")} />
       </button>
 
       <CreateBranchDialog

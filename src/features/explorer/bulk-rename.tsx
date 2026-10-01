@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeftRight } from "lucide-react";
+import { TransferHorizontalIcon } from "@solar-icons/react/line-duotone";
 
 import type { RenameRequest } from "@/bindings";
 
@@ -501,7 +501,7 @@ export function BulkRenameDialog({
                 <span className="truncate text-muted-foreground" title={item.entry.name}>
                   {item.entry.name}
                 </span>
-                <ArrowLeftRight
+                <TransferHorizontalIcon
                   className={cn(
                     "size-3 shrink-0",
                     item.status === "error"

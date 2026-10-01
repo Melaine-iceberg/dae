@@ -18,16 +18,16 @@ import type { TFunction } from "i18next";
 import { type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
 import { Window as TauriWindow } from "@tauri-apps/api/window";
 import {
-  ChevronLeft,
-  ChevronRight,
-  History,
-  Home,
-  Plus,
-  LayoutGrid,
-  Star,
-  Trash2,
-  X,
-} from "lucide-react";
+  AddIcon,
+  AltArrowLeftIcon,
+  AltArrowRightIcon,
+  CloseIcon,
+  HistoryIcon,
+  HomeIcon,
+  StarIcon,
+  TrashBinTrashIcon,
+  WidgetIcon,
+} from "@solar-icons/react/line-duotone";
 
 import { WindowControls } from "@/components/window-controls";
 import { commands, events } from "@/bindings";
@@ -264,11 +264,11 @@ function snapshotTabDragPreview(tabId: string): Promise<string | null> {
 }
 
 const WORKSPACE_TAB_ICONS = {
-  overview: Home,
-  recents: History,
-  favorites: Star,
-  trash: Trash2,
-  space: LayoutGrid,
+  overview: HomeIcon,
+  recents: HistoryIcon,
+  favorites: StarIcon,
+  trash: TrashBinTrashIcon,
+  space: WidgetIcon,
 } as const;
 
 export function ExplorerTabs() {
@@ -374,7 +374,7 @@ export function ExplorerTabs() {
             title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
             type="button"
           >
-            <Plus className="size-3.5" />
+            <AddIcon className="size-3.5" />
           </button>
         </div>
         <StripScrollButton
@@ -442,7 +442,7 @@ function StripScrollButton({
   onClick: () => void;
   visible: boolean;
 }) {
-  const Icon = direction === -1 ? ChevronLeft : ChevronRight;
+  const Icon = direction === -1 ? AltArrowLeftIcon : AltArrowRightIcon;
 
   return (
     <button
@@ -726,7 +726,7 @@ function TabStripItem({
   };
 
   // Folder tabs carry the folder's type glyph; workspace surfaces keep their
-  // Lucide UI glyphs, which are app chrome rather than file types.
+  // Solar UI glyphs, which are app chrome rather than file types.
   const FolderTabIcon = getFolderPresentation().icon;
   const WorkspaceTabIcon = surface.kind === "folder" ? null : WORKSPACE_TAB_ICONS[surface.kind];
   const tabContent = (
@@ -734,7 +734,7 @@ function TabStripItem({
       {FolderTabIcon ? (
         <FolderTabIcon className="ml-2 size-4 shrink-0" />
       ) : WorkspaceTabIcon ? (
-        <WorkspaceTabIcon className="ml-2 size-4 shrink-0 text-muted-foreground" />
+        <WorkspaceTabIcon className="ml-2 size-4 shrink-0 text-foreground/72" />
       ) : null}
       <span className="w-full truncate pr-7 pl-1.5">{title}</span>
     </>
@@ -799,7 +799,7 @@ function TabStripItem({
         onPointerDown={(event) => event.stopPropagation()}
         type="button"
       >
-        <X className="size-3" />
+        <CloseIcon className="size-3" />
       </button>
       {/* No elevation on the ghost, deliberately: the ghost *is* the drag
           image. The OS composites a snapshot of this element under the pointer
@@ -809,8 +809,8 @@ function TabStripItem({
       {dragPreview && (
         <TabDragGhostPortal elementRef={ghostElementRef} geometry={dragPreview} tabId={tab.id}>
           {tabContent}
-          <span className="absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center text-muted-foreground">
-            <X className="size-3" />
+          <span className="absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center text-foreground/65">
+            <CloseIcon className="size-3" />
           </span>
         </TabDragGhostPortal>
       )}

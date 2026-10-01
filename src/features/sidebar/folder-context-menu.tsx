@@ -1,4 +1,11 @@
-import { ClipboardList, Copy, FolderOpen, PictureInPicture2, Scissors, Star } from "lucide-react";
+import {
+  ClipboardListIcon,
+  CopyIcon,
+  FolderOpenIcon,
+  Pip2Icon,
+  ScissorsIcon,
+  StarIcon,
+} from "@solar-icons/react/line-duotone";
 import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { ComponentProps, ReactNode } from "react";
@@ -49,32 +56,32 @@ export function FolderContextMenu({
       <ContextMenuContent>
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => openInNewTab(path)}>
-            <FolderOpen />
+            <FolderOpenIcon />
             {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => openInNewWindow(path)}>
-            <PictureInPicture2 />
+            <Pip2Icon />
             {t("contextMenu.openInNewWindow")}
           </ContextMenuItem>
           {!isListed && (
             <ContextMenuItem onClick={() => addFavoritePaths([path])}>
-              <Star />
+              <StarIcon />
               {t("contextMenu.addFavorite")}
             </ContextMenuItem>
           )}
           <ContextMenuItem onClick={() => void copyWithNotice(path)}>
-            <ClipboardList />
+            <ClipboardListIcon />
             {t("contextMenu.copyFilePath")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => setClipboard({ operation: "copy", sourcePaths: [path] })}>
-            <Copy />
+            <CopyIcon />
             {t("contextMenu.copy")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => setClipboard({ operation: "cut", sourcePaths: [path] })}>
-            <Scissors />
+            <ScissorsIcon />
             {t("contextMenu.cut")}
           </ContextMenuItem>
         </ContextMenuGroup>

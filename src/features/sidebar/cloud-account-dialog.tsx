@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { Check, LoaderCircle, Copy } from "lucide-react";
+import { CheckIcon, CopyIcon, LoaderIcon } from "@solar-icons/react/line-duotone";
 
 import { commands, type CloudProviderKind, type StoredCloudAccount } from "@/bindings";
 import { translateBackendMessage } from "@/i18n/errors";
@@ -162,9 +162,9 @@ export function CloudAccountDialog({
                 type="button"
               >
                 {copied ? (
-                  <Check className="size-3.5 text-primary" />
+                  <CheckIcon className="size-3.5 text-primary" />
                 ) : (
-                  <Copy className="size-3.5" />
+                  <CopyIcon className="size-3.5" />
                 )}
               </button>
             </div>
@@ -179,7 +179,7 @@ export function CloudAccountDialog({
 
           <DialogFooter>
             <Button disabled={authorizing} type="submit">
-              {authorizing && <LoaderCircle className="animate-spin" />}
+              {authorizing && <LoaderIcon className="animate-spin" />}
               {authorizing ? t("cloud.waiting") : t("cloud.authorize")}
             </Button>
           </DialogFooter>

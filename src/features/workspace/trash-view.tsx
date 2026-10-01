@@ -10,7 +10,14 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { useHotkeys } from "@tanstack/react-hotkeys";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { RotateCw, Undo2, Check, Folder, Trash2, Trash } from "lucide-react";
+import {
+  CheckIcon,
+  FolderIcon,
+  RefreshIcon,
+  TrashBinMinimalisticIcon,
+  TrashBinTrashIcon,
+  UndoLeftRoundIcon,
+} from "@solar-icons/react/line-duotone";
 
 import {
   commands,
@@ -294,7 +301,7 @@ export function TrashView({ active = true }: { active?: boolean }) {
                   size="sm"
                   type="button"
                 >
-                  <Undo2 />
+                  <UndoLeftRoundIcon />
                   {t("trash.restoreSelected", { count: selectedIds.length })}
                 </Button>
                 <Button
@@ -304,7 +311,7 @@ export function TrashView({ active = true }: { active?: boolean }) {
                   type="button"
                   variant="destructive"
                 >
-                  <Trash />
+                  <TrashBinMinimalisticIcon />
                   {t("trash.deleteSelected", { count: selectedIds.length })}
                 </Button>
               </>
@@ -317,7 +324,7 @@ export function TrashView({ active = true }: { active?: boolean }) {
                 type="button"
                 variant="outline"
               >
-                <Trash2 />
+                <TrashBinTrashIcon />
                 {t("trash.emptyTrash")}
               </Button>
             )}
@@ -329,7 +336,7 @@ export function TrashView({ active = true }: { active?: boolean }) {
               type="button"
               variant="ghost"
             >
-              <RotateCw />
+              <RefreshIcon />
             </Button>
           </>
         }
@@ -381,7 +388,7 @@ export function TrashView({ active = true }: { active?: boolean }) {
         <Empty className="min-h-64">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Trash2 />
+              <TrashBinTrashIcon />
             </EmptyMedia>
             <EmptyTitle>{t("trash.emptyTitle")}</EmptyTitle>
             <EmptyDescription>{t("trash.emptyDescription")}</EmptyDescription>
@@ -761,7 +768,7 @@ function SelectAllToggle({
       onClick={onToggle}
       type="button"
     >
-      {allSelected && <Check className="size-3 text-primary" />}
+      {allSelected && <CheckIcon className="size-3 text-primary" />}
     </button>
   );
 }
@@ -849,7 +856,7 @@ function TrashRow({
       <ContextMenuContent>
         <ContextMenuGroup>
           <ContextMenuItem onClick={onRestore}>
-            <Undo2 />
+            <UndoLeftRoundIcon />
             {t("trash.restore")}
             {/* Enter is not a rebindable action — it is what double-click does
                 — so this hint is a literal, like the explorer menu's. */}
@@ -857,7 +864,7 @@ function TrashRow({
           </ContextMenuItem>
           {hasOriginalLocation && (
             <ContextMenuItem onClick={onNavigateToOriginalLocation}>
-              <Folder />
+              <FolderIcon />
               {t("trash.openOriginalLocation")}
             </ContextMenuItem>
           )}
@@ -867,7 +874,7 @@ function TrashRow({
           {/* In the bin, delete *is* permanent, so this row carries the live
               `explorer.trash` binding — the chord the list actually answers to. */}
           <ContextMenuItem onClick={onPurge} variant="destructive">
-            <Trash />
+            <TrashBinMinimalisticIcon />
             {t("trash.deleteForever")}
             <ContextMenuShortcut>{purgeBinding}</ContextMenuShortcut>
           </ContextMenuItem>
@@ -886,7 +893,7 @@ function RowCheckbox({ isSelected }: { isSelected: boolean }) {
         isSelected ? "border-primary bg-primary text-primary-foreground" : "border-input",
       )}
     >
-      {isSelected && <Check className="size-3" />}
+      {isSelected && <CheckIcon className="size-3" />}
     </span>
   );
 }

@@ -3,7 +3,8 @@ import { Menu as MenuPrimitive } from "@base-ui/react/menu";
 
 import { cn } from "@/lib/utils";
 import { KbdShortcut } from "@/components/ui/kbd";
-import { ChevronRight, Check, type LucideIcon } from "lucide-react";
+import { AltArrowRightIcon, CheckIcon } from "@solar-icons/react/line-duotone";
+import type { Icon as SolarIcon } from "@solar-icons/react/lib/types";
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
   return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
@@ -124,7 +125,7 @@ function DropdownMenuSubTrigger({
       {...props}
     >
       {children}
-      <ChevronRight className="ml-auto" />
+      <AltArrowRightIcon className="ml-auto" />
     </MenuPrimitive.SubmenuTrigger>
   );
 }
@@ -174,7 +175,7 @@ function DropdownMenuCheckboxItem({
         data-slot="dropdown-menu-checkbox-item-indicator"
       >
         <MenuPrimitive.CheckboxItemIndicator>
-          <Check className="size-3" />
+          <CheckIcon className="size-3" />
         </MenuPrimitive.CheckboxItemIndicator>
       </span>
       {children}
@@ -192,7 +193,7 @@ function DropdownMenuRadioItem({
   icon: Icon,
   ...props
 }: MenuPrimitive.RadioItem.Props & {
-  icon?: LucideIcon;
+  icon?: SolarIcon;
 }) {
   return (
     <MenuPrimitive.RadioItem

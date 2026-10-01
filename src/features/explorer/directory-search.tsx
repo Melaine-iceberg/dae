@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
-import { LoaderCircle, Search, Type, X } from "lucide-react";
+import { CloseIcon, LoaderIcon, MagnifierIcon, TextFieldIcon } from "@solar-icons/react/line-duotone";
 
 import {
   InputGroup,
@@ -207,12 +207,19 @@ export function DirectorySearch({
               : t("directorySearch.currentNameTitle")
           }
         >
-          {isContentMode ? <Type /> : <Search />}
+          {/* The glyph is the field's primary affordance, so it carries full
+              ink: the addon's muted step is meant for a trailing keycap hint,
+              and at 12–14px it left the control looking disabled. */}
+          {isContentMode ? (
+            <TextFieldIcon className="text-foreground" />
+          ) : (
+            <MagnifierIcon className="text-foreground" />
+          )}
         </InputGroupButton>
       </InputGroupAddon>
       {(isSearching || activeQuery) && (
         <InputGroupAddon align="inline-end">
-          {isSearching && <LoaderCircle className="animate-spin" />}
+          {isSearching && <LoaderIcon className="animate-spin" />}
           {activeQuery && (
             <InputGroupButton
               aria-label={t("directorySearch.clearSearch")}
@@ -220,7 +227,7 @@ export function DirectorySearch({
               size="icon-xs"
               title={t("directorySearch.clearSearch")}
             >
-              <X />
+              <CloseIcon className="text-foreground" />
             </InputGroupButton>
           )}
         </InputGroupAddon>

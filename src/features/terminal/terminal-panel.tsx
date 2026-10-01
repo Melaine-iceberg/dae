@@ -7,7 +7,14 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { CanvasAddon } from "@xterm/addon-canvas";
-import { ClipboardPaste, Copy, Eraser, RotateCcw, TextSelect, X } from "lucide-react";
+import {
+  ClipboardPasteIcon,
+  CloseIcon,
+  CopyIcon,
+  EraserIcon,
+  RestartIcon,
+  TextSelectionIcon,
+} from "@solar-icons/react/line-duotone";
 
 import {
   ContextMenu,
@@ -453,7 +460,7 @@ export function TerminalPanel() {
             title={t("panel.restart.label")}
             type="button"
           >
-            <RotateCcw className="size-3.5" />
+            <RestartIcon className="size-3.5" />
           </button>
           <button
             aria-label={t("panel.close.label")}
@@ -462,7 +469,7 @@ export function TerminalPanel() {
             title={t("panel.close.title")}
             type="button"
           >
-            <X className="size-3.5" />
+            <CloseIcon className="size-3.5" />
           </button>
         </div>
       </header>
@@ -480,17 +487,17 @@ export function TerminalPanel() {
           <ContextMenuContent className="min-w-menu">
             <ContextMenuGroup>
               <ContextMenuItem disabled={!hasSelection} onClick={copyTerminalSelection}>
-                <Copy />
+                <CopyIcon />
                 {t("menu.copy")}
                 <ContextMenuShortcut>{shortcut("C")}</ContextMenuShortcut>
               </ContextMenuItem>
               <ContextMenuItem onClick={pasteIntoTerminal}>
-                <ClipboardPaste />
+                <ClipboardPasteIcon />
                 {t("menu.paste")}
                 <ContextMenuShortcut>{shortcut("V")}</ContextMenuShortcut>
               </ContextMenuItem>
               <ContextMenuItem onClick={selectAllInTerminal}>
-                <TextSelect />
+                <TextSelectionIcon />
                 {t("menu.selectAll")}
                 <ContextMenuShortcut>{shortcut("A")}</ContextMenuShortcut>
               </ContextMenuItem>
@@ -498,11 +505,11 @@ export function TerminalPanel() {
             <ContextMenuSeparator />
             <ContextMenuGroup>
               <ContextMenuItem onClick={clearTerminal}>
-                <Eraser />
+                <EraserIcon />
                 {t("menu.clear")}
               </ContextMenuItem>
               <ContextMenuItem onClick={restart}>
-                <RotateCcw />
+                <RestartIcon />
                 {t("menu.restart")}
               </ContextMenuItem>
             </ContextMenuGroup>
@@ -516,7 +523,7 @@ export function TerminalPanel() {
               onClick={restart}
               type="button"
             >
-              <RotateCcw className="size-3.5" />
+              <RestartIcon className="size-3.5" />
               {t("panel.restart.action")}
             </button>
           </div>

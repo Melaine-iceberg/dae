@@ -8,7 +8,7 @@ import {
 import { useAtomValue } from "jotai";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronRight, LoaderCircle, TriangleAlert } from "lucide-react";
+import { AltArrowRightIcon, DangerTriangleIcon, LoaderIcon } from "@solar-icons/react/line-duotone";
 
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
@@ -195,13 +195,13 @@ function Pane({
     >
       {isLoading && (
         <div className="flex items-center gap-2 px-2 py-1.5 text-caption text-muted-foreground">
-          <LoaderCircle className="animate-spin" size={14} />
+          <LoaderIcon className="animate-spin" size={14} />
           {t("explorer:columnView.loading")}
         </div>
       )}
       {!isLoading && isError && (
         <div className="flex items-center gap-2 px-2 py-1.5 text-caption text-destructive">
-          <TriangleAlert size={14} />
+          <DangerTriangleIcon size={14} />
           {t("explorer:columnView.readError")}
         </div>
       )}
@@ -369,7 +369,7 @@ function PaneRow({
           >
             {entry.name}
           </span>
-          {isDirectory && <ChevronRight className="size-3 shrink-0 text-muted-foreground" />}
+          {isDirectory && <AltArrowRightIcon className="size-3 shrink-0 text-foreground/65" />}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>

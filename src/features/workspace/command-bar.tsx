@@ -12,41 +12,41 @@ import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { openPath } from "@tauri-apps/plugin-opener";
 import {
-  RotateCw,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  ArrowUpDown,
-  Calendar,
-  CircleCheck,
-  LoaderCircle,
-  Clipboard,
-  ClipboardList,
-  History,
-  Columns3,
-  Copy,
-  Eye,
-  File,
-  FilePlus,
-  Folder,
-  FolderPlus,
-  ListFilter,
-  Settings,
-  Home,
-  List,
-  Search,
-  Monitor,
-  Moon,
-  Pencil,
-  Rows3,
-  Scissors,
-  LayoutGrid,
-  Star,
-  Sun,
-  SquareTerminal,
-  Type,
-  Trash2,
-} from "lucide-react";
+  AddFolderIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowUpIcon,
+  CalendarIcon,
+  CheckCircleIcon,
+  ClipboardIcon,
+  ClipboardListIcon,
+  Columns3Icon,
+  CopyIcon,
+  EyeIcon,
+  FileAddIcon,
+  FileIcon,
+  FilterIcon,
+  FolderIcon,
+  HistoryIcon,
+  HomeIcon,
+  ListIcon,
+  LoaderIcon,
+  MagnifierIcon,
+  MonitorIcon,
+  MoonIcon,
+  PenIcon,
+  ProgrammingIcon,
+  RefreshIcon,
+  Rows3Icon,
+  ScissorsIcon,
+  SettingsIcon,
+  SortVerticalIcon,
+  StarIcon,
+  SunIcon,
+  TextFieldIcon,
+  TrashBinTrashIcon,
+  WidgetIcon,
+} from "@solar-icons/react/line-duotone";
 
 import type { RecentItem, SearchEntry } from "@/bindings";
 import { commands } from "@/bindings";
@@ -274,7 +274,7 @@ export function CommandBar() {
         group: "navigation",
         label: t("commandBar.navigation.overview"),
         keywords: "overview home start",
-        icon: Home,
+        icon: HomeIcon,
         run: () => openSurface({ kind: "overview" }),
       },
       {
@@ -282,7 +282,7 @@ export function CommandBar() {
         group: "navigation",
         label: t("commandBar.navigation.recents"),
         keywords: "recent history",
-        icon: History,
+        icon: HistoryIcon,
         run: () => openSurface({ kind: "recents" }),
       },
       {
@@ -290,7 +290,7 @@ export function CommandBar() {
         group: "navigation",
         label: t("commandBar.navigation.favorites"),
         keywords: "favorites starred",
-        icon: Star,
+        icon: StarIcon,
         run: () => openSurface({ kind: "favorites" }),
       },
       {
@@ -298,7 +298,7 @@ export function CommandBar() {
         group: "navigation",
         label: t("commandBar.navigation.trash"),
         keywords: "trash recycle bin deleted restore",
-        icon: Trash2,
+        icon: TrashBinTrashIcon,
         run: () => openSurface({ kind: "trash" }),
       },
     ];
@@ -308,7 +308,7 @@ export function CommandBar() {
       group: "spaces",
       label: t("commandBar.openSpace", { name: getSpaceDisplayName(space) }),
       keywords: "space workspace open",
-      icon: LayoutGrid,
+      icon: WidgetIcon,
       run: () => openSurface({ kind: "space", spaceId: space.id }),
     }));
 
@@ -319,7 +319,7 @@ export function CommandBar() {
       hint: favorite.path,
       hintKind: "path",
       keywords: "favorite open folder",
-      icon: Folder,
+      icon: FolderIcon,
       run: () => navigateToFolder(favorite.path),
     }));
 
@@ -334,7 +334,7 @@ export function CommandBar() {
         hint: recent.path,
         hintKind: "path",
         keywords: "recent open",
-        icon: recent.kind === "directory" ? Folder : File,
+        icon: recent.kind === "directory" ? FolderIcon : FileIcon,
         run: () => openRecentItem(recent),
       }));
 
@@ -351,14 +351,14 @@ export function CommandBar() {
         id: "create-folder",
         label: t("commandBar.commands.createFolder"),
         keywords: "new create folder directory",
-        icon: FolderPlus,
+        icon: AddFolderIcon,
         command: "create-folder",
       },
       {
         id: "create-file",
         label: t("commandBar.commands.createFile"),
         keywords: "new create file",
-        icon: FilePlus,
+        icon: FileAddIcon,
         command: "create-file",
       },
       {
@@ -367,7 +367,7 @@ export function CommandBar() {
         hint: formatBinding(resolveBinding(shortcuts, "explorer.rename")),
         hintKind: "keys",
         keywords: "rename",
-        icon: Pencil,
+        icon: PenIcon,
         command: "rename",
       },
       {
@@ -376,7 +376,7 @@ export function CommandBar() {
         hint: formatBinding(resolveBinding(shortcuts, "explorer.trash")),
         hintKind: "keys",
         keywords: "delete remove trash",
-        icon: Trash2,
+        icon: TrashBinTrashIcon,
         command: "delete",
       },
       {
@@ -385,7 +385,7 @@ export function CommandBar() {
         hint: formatBinding(resolveBinding(shortcuts, "explorer.copy")),
         hintKind: "keys",
         keywords: "copy",
-        icon: Copy,
+        icon: CopyIcon,
         command: "copy",
       },
       {
@@ -394,7 +394,7 @@ export function CommandBar() {
         hint: formatBinding(resolveBinding(shortcuts, "explorer.cut")),
         hintKind: "keys",
         keywords: "cut move",
-        icon: Scissors,
+        icon: ScissorsIcon,
         command: "cut",
       },
       {
@@ -403,14 +403,14 @@ export function CommandBar() {
         hint: formatBinding(resolveBinding(shortcuts, "explorer.paste")),
         hintKind: "keys",
         keywords: "paste",
-        icon: Clipboard,
+        icon: ClipboardIcon,
         command: "paste",
       },
       {
         id: "copy-paths",
         label: t("commandBar.commands.copyPaths"),
         keywords: "copy path clipboard location",
-        icon: ClipboardList,
+        icon: ClipboardListIcon,
         command: "copy-paths",
       },
       {
@@ -419,35 +419,35 @@ export function CommandBar() {
         hint: formatBinding(resolveBinding(shortcuts, "explorer.selectAll")),
         hintKind: "keys",
         keywords: "select all",
-        icon: CircleCheck,
+        icon: CheckCircleIcon,
         command: "select-all",
       },
       {
         id: "refresh",
         label: t("commandBar.commands.refresh"),
         keywords: "refresh reload",
-        icon: RotateCw,
+        icon: RefreshIcon,
         command: "refresh",
       },
       {
         id: "go-back",
         label: t("commandBar.commands.goBack"),
         keywords: "back history navigate",
-        icon: ArrowLeft,
+        icon: ArrowLeftIcon,
         command: "go-back",
       },
       {
         id: "go-forward",
         label: t("commandBar.commands.goForward"),
         keywords: "forward history navigate",
-        icon: ArrowRight,
+        icon: ArrowRightIcon,
         command: "go-forward",
       },
       {
         id: "go-up",
         label: t("commandBar.commands.goUp"),
         keywords: "up parent navigate",
-        icon: ArrowUp,
+        icon: ArrowUpIcon,
         command: "go-up",
       },
       {
@@ -456,14 +456,14 @@ export function CommandBar() {
         hint: formatBinding(resolveBinding(shortcuts, "explorer.openSystemTerminal")),
         hintKind: "keys",
         keywords: "terminal shell console open external",
-        icon: SquareTerminal,
+        icon: ProgrammingIcon,
         command: "open-terminal",
       },
       {
         id: "toggle-favorite",
         label: t("commandBar.commands.toggleFavorite"),
         keywords: "favorite star toggle folder",
-        icon: Star,
+        icon: StarIcon,
         command: "toggle-favorite",
       },
       {
@@ -472,7 +472,7 @@ export function CommandBar() {
         hint: formatBinding(resolveBinding(shortcuts, "explorer.switchPane")),
         hintKind: "keys",
         keywords: "split dual pane panel column view",
-        icon: Columns3,
+        icon: Columns3Icon,
         command: "toggle-split",
       },
     ];
@@ -496,7 +496,7 @@ export function CommandBar() {
         group: "view",
         label: t("commandBar.view.switchToList"),
         keywords: "view list mode",
-        icon: List,
+        icon: ListIcon,
         run: () => setViewMode("list"),
       },
       {
@@ -504,7 +504,7 @@ export function CommandBar() {
         group: "view",
         label: t("commandBar.view.switchToGrid"),
         keywords: "view grid mode",
-        icon: LayoutGrid,
+        icon: WidgetIcon,
         run: () => setViewMode("grid"),
       },
       {
@@ -512,15 +512,15 @@ export function CommandBar() {
         group: "view",
         label: t("commandBar.view.switchToColumn"),
         keywords: "view column miller mode",
-        icon: Columns3,
+        icon: Columns3Icon,
         run: () => setViewMode("column"),
       },
       ...(
         [
-          { key: "name", label: t("commandBar.view.sortByName"), icon: Type },
-          { key: "modified", label: t("commandBar.view.sortByModified"), icon: Calendar },
-          { key: "type", label: t("commandBar.view.sortByType"), icon: File },
-          { key: "size", label: t("commandBar.view.sortBySize"), icon: ArrowUpDown },
+          { key: "name", label: t("commandBar.view.sortByName"), icon: TextFieldIcon },
+          { key: "modified", label: t("commandBar.view.sortByModified"), icon: CalendarIcon },
+          { key: "type", label: t("commandBar.view.sortByType"), icon: FileIcon },
+          { key: "size", label: t("commandBar.view.sortBySize"), icon: SortVerticalIcon },
         ] as ReadonlyArray<{
           icon: ComponentType<{ className?: string }>;
           key: ExplorerSortKey;
@@ -542,7 +542,7 @@ export function CommandBar() {
         group: "view",
         label: t("commandBar.view.toggleSortOrder"),
         keywords: "sort order ascending descending toggle",
-        icon: ArrowUpDown,
+        icon: SortVerticalIcon,
         run: () => setSortOrder((order) => (order === "asc" ? "desc" : "asc")),
       },
       {
@@ -550,7 +550,7 @@ export function CommandBar() {
         group: "view",
         label: t("commandBar.view.toggleFoldersFirst"),
         keywords: "sort folders first directories group top",
-        icon: Folder,
+        icon: FolderIcon,
         run: () => setFoldersFirst((enabled) => !enabled),
       },
       {
@@ -558,7 +558,7 @@ export function CommandBar() {
         group: "view",
         label: t("commandBar.view.toggleHiddenFiles"),
         keywords: "hidden files dotfiles visibility toggle",
-        icon: Eye,
+        icon: EyeIcon,
         run: () => setShowHiddenFiles((visible) => !visible),
       },
       ...(
@@ -573,7 +573,7 @@ export function CommandBar() {
         group: "view",
         label: entry.label,
         keywords: "filter kind type",
-        icon: ListFilter,
+        icon: FilterIcon,
         run: () => setEntryFilters((filters) => ({ ...filters, kind: entry.value })),
       })),
       {
@@ -581,14 +581,14 @@ export function CommandBar() {
         group: "view",
         label: t("commandBar.view.clearFilters"),
         keywords: "filter clear reset",
-        icon: ListFilter,
+        icon: FilterIcon,
         run: () => setEntryFilters(DEFAULT_ENTRY_FILTERS),
       },
       ...(
         [
-          { icon: Sun, label: t("commandBar.view.themeLight"), value: "light" },
-          { icon: Moon, label: t("commandBar.view.themeDark"), value: "dark" },
-          { icon: Monitor, label: t("commandBar.view.themeSystem"), value: "system" },
+          { icon: SunIcon, label: t("commandBar.view.themeLight"), value: "light" },
+          { icon: MoonIcon, label: t("commandBar.view.themeDark"), value: "dark" },
+          { icon: MonitorIcon, label: t("commandBar.view.themeSystem"), value: "system" },
         ] as ReadonlyArray<{
           icon: ComponentType<{ className?: string }>;
           label: string;
@@ -607,7 +607,7 @@ export function CommandBar() {
         group: "view",
         label: t("commandBar.view.densityCompact"),
         keywords: "density compact rows",
-        icon: Rows3,
+        icon: Rows3Icon,
         run: () => setDensity("compact" satisfies ExplorerDensity),
       },
       {
@@ -615,7 +615,7 @@ export function CommandBar() {
         group: "view",
         label: t("commandBar.view.densityComfortable"),
         keywords: "density comfortable rows",
-        icon: Rows3,
+        icon: Rows3Icon,
         run: () => setDensity("comfortable" satisfies ExplorerDensity),
       },
       {
@@ -623,7 +623,7 @@ export function CommandBar() {
         group: "view",
         label: t("commandBar.view.densitySpacious"),
         keywords: "density spacious rows",
-        icon: Rows3,
+        icon: Rows3Icon,
         run: () => setDensity("spacious" satisfies ExplorerDensity),
       },
       {
@@ -633,7 +633,7 @@ export function CommandBar() {
         hint: formatBinding(resolveBinding(shortcuts, "app.openSettings")),
         hintKind: "keys",
         keywords: "settings preferences shortcuts keyboard terminal default file manager options",
-        icon: Settings,
+        icon: SettingsIcon,
         run: () => setSettingsOpen(true),
       },
     ];
@@ -686,7 +686,7 @@ export function CommandBar() {
       label: t("commandBar.jumpToPath", { path: target }),
       hint: target,
       hintKind: "path",
-      icon: ArrowRight,
+      icon: ArrowRightIcon,
       run: () => {
         void (async () => {
           let resolved = target;
@@ -728,7 +728,7 @@ export function CommandBar() {
         hint: entry.relativePath,
         hintKind: "path",
         keywords: "file search",
-        icon: entry.kind === "directory" ? Folder : File,
+        icon: entry.kind === "directory" ? FolderIcon : FileIcon,
         run: () => openSearchEntry(entry),
       }));
   }, [fileResults, navigateToFolder, pathMode]);
@@ -867,7 +867,7 @@ export function CommandBar() {
       >
         <DialogTitle className="sr-only">{t("commandBar.title")}</DialogTitle>
         <div className="flex items-center gap-2.5 border-b border-border px-3.5">
-          <Search className="size-4 shrink-0 text-muted-foreground" />
+          <MagnifierIcon className="size-4 shrink-0 text-foreground/72" />
           <input
             aria-activedescendant={results.length > 0 ? `command-item-${currentIndex}` : undefined}
             aria-autocomplete="list"
@@ -956,7 +956,7 @@ export function CommandBar() {
         <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border bg-muted px-3.5 text-micro text-muted-foreground select-none">
           <span className="flex min-w-0 items-center gap-2.5">
             <span className="flex shrink-0 items-center gap-1.5">
-              {isSearchingFiles && <LoaderCircle className="size-3 shrink-0 animate-spin" />}
+              {isSearchingFiles && <LoaderIcon className="size-3 shrink-0 animate-spin" />}
               <Kbd className="h-4 px-1 text-nano">↑↓</Kbd>
               <span className="truncate">{t("commandBar.footerNavigateHint")}</span>
             </span>

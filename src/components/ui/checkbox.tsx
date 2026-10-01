@@ -1,5 +1,5 @@
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
-import { Check } from "lucide-react";
+import { CheckIcon } from "@solar-icons/react/line-duotone";
 
 import { cn } from "@/lib/utils";
 
@@ -33,7 +33,7 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
         data-slot="checkbox-indicator"
         className="flex size-full items-center justify-center text-current transition-transform duration-fast ease-standard data-[starting-style]:scale-75"
       >
-        <Check className="size-3" strokeWidth={3} />
+        <CheckIcon className="size-3" strokeWidth={3} />
       </CheckboxPrimitive.Indicator>
     </CheckboxPrimitive.Root>
   );

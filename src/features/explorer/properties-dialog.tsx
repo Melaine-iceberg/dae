@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { RefreshCw, CircleCheck, Check, LoaderCircle, Copy, CircleX } from "lucide-react";
+import { CheckCircleIcon, CheckIcon, CloseCircleIcon, CopyIcon, LoaderIcon, RefreshIcon } from "@solar-icons/react/line-duotone";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 
 import { i18n } from "@/i18n";
@@ -800,7 +800,7 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
         <div className="flex flex-col gap-2">
           <Progress className="w-full" value={percent} />
           <p className="flex items-center gap-1.5 text-caption text-muted-foreground">
-            <LoaderCircle className="size-3.5 animate-spin" />
+            <LoaderIcon className="size-3.5 animate-spin" />
             {run.totalBytes > 0
               ? `${formatSize(run.bytesRead)} / ${formatSize(run.totalBytes)} · ${percent}%`
               : t("explorer:properties.hashCalculating")}
@@ -831,9 +831,9 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
                   type="button"
                 >
                   {copied === label ? (
-                    <Check className="size-3.5" />
+                    <CheckIcon className="size-3.5" />
                   ) : (
-                    <Copy className="size-3.5" />
+                    <CopyIcon className="size-3.5" />
                   )}
                 </button>
               </div>
@@ -856,13 +856,13 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
 
           {match && (
             <p className="flex items-center gap-1.5 text-body text-success">
-              <CircleCheck className="size-4 shrink-0" fill="currentColor" />
+              <CheckCircleIcon className="size-4 shrink-0" fill="currentColor" />
               {t("explorer:properties.hashMatch", { algorithm: match.label })}
             </p>
           )}
           {mismatch && (
             <p className="flex items-center gap-1.5 text-body text-destructive">
-              <CircleX className="size-4 shrink-0" fill="currentColor" />
+              <CloseCircleIcon className="size-4 shrink-0" fill="currentColor" />
               {t("explorer:properties.hashMismatch")}
             </p>
           )}
@@ -877,7 +877,7 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
           type="button"
           variant="outline"
         >
-          <RefreshCw className="size-3.5" />
+          <RefreshIcon className="size-3.5" />
           {t("explorer:properties.hashRecalculate")}
         </Button>
       )}

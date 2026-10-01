@@ -16,24 +16,24 @@ import { commands, type ArchiveFormat } from "@/bindings";
 import { i18n } from "@/i18n";
 import { localeDateTimeFormat, localeNumber, localeNumberFormat } from "@/i18n/format";
 import {
-  AppWindow,
-  BoxSelect,
-  ChevronDown,
-  ChevronUp,
-  Clipboard,
-  Copy,
-  FilePlus,
-  Folder,
-  FolderPlus,
-  Link,
-  Redo2,
-  Scissors,
-  LayoutGrid,
-  Star,
-  SquareTerminal,
-  TriangleAlert,
-  Undo2,
-} from "lucide-react";
+  AddFolderIcon,
+  AltArrowDownIcon,
+  AltArrowUpIcon,
+  ClipboardIcon,
+  CopyIcon,
+  DangerTriangleIcon,
+  FileAddIcon,
+  FolderIcon,
+  LinkIcon,
+  ProgrammingIcon,
+  ScissorsIcon,
+  SquareDashedIcon,
+  StarIcon,
+  UndoLeftRoundIcon,
+  UndoRightRoundIcon,
+  WidgetIcon,
+  WindowFrameIcon,
+} from "@solar-icons/react/line-duotone";
 
 import {
   ContextMenu,
@@ -1078,9 +1078,9 @@ export function FileList({
             <EmptyHeader>
               <EmptyMedia variant="icon">
                 {searchState?.error ? (
-                  <TriangleAlert className="text-warning" />
+                  <DangerTriangleIcon className="text-warning" />
                 ) : (
-                  <Folder className="text-folder" fill="currentColor" />
+                  <FolderIcon className="text-folder" fill="currentColor" />
                 )}
               </EmptyMedia>
               <EmptyTitle>
@@ -1252,14 +1252,14 @@ export function FileList({
           >
             {internalDrag.target?.kind === "favorites" ? (
               <>
-                <Star />
+                <StarIcon />
                 {t("explorer:drag.addToFavorites", {
                   count: draggableDirectoryPaths(entries, internalDrag.sourcePaths).length,
                 })}
               </>
             ) : internalDrag.target?.kind === "space" ? (
               <>
-                <LayoutGrid />
+                <WidgetIcon />
                 {t("explorer:drag.addToSpace", {
                   count: draggableDirectoryPaths(entries, internalDrag.sourcePaths).length,
                 })}
@@ -1267,11 +1267,11 @@ export function FileList({
             ) : (
               <>
                 {internalDrag.operation === "copy" ? (
-                  <Copy />
+                  <CopyIcon />
                 ) : internalDrag.operation === "link" ? (
-                  <Link />
+                  <LinkIcon />
                 ) : (
-                  <Scissors />
+                  <ScissorsIcon />
                 )}
                 {internalDrag.operation === "copy"
                   ? t("explorer:drag.opCopy")
@@ -1287,11 +1287,11 @@ export function FileList({
       <ContextMenuContent>
         <ContextMenuGroup>
           <ContextMenuItem onClick={onCreateFile}>
-            <FilePlus />
+            <FileAddIcon />
             {t("explorer:contextMenu.newFile")}
           </ContextMenuItem>
           <ContextMenuItem onClick={onCreateDirectory}>
-            <FolderPlus />
+            <AddFolderIcon />
             {t("explorer:contextMenu.newFolder")}
             <ContextMenuShortcut>{formatBinding("Mod+Shift+N")}</ContextMenuShortcut>
           </ContextMenuItem>
@@ -1299,18 +1299,18 @@ export function FileList({
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={onOpenTerminal}>
-            <SquareTerminal />
+            <ProgrammingIcon />
             {t("explorer:contextMenu.openInTerminal")}
             <ContextMenuShortcut>
               {formatBinding(resolveBinding(shortcuts, "explorer.openSystemTerminal"))}
             </ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem disabled={blankMenuDisabled} onClick={onOpenWith}>
-            <AppWindow />
+            <WindowFrameIcon />
             {t("explorer:contextMenu.openWithOtherApp")}
           </ContextMenuItem>
           <ContextMenuItem onClick={onPaste}>
-            <Clipboard />
+            <ClipboardIcon />
             {t("explorer:contextMenu.paste")}
             <ContextMenuShortcut>
               {formatBinding(resolveBinding(shortcuts, "explorer.paste"))}
@@ -1323,21 +1323,21 @@ export function FileList({
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={onSelectAll}>
-            <BoxSelect />
+            <SquareDashedIcon />
             {t("explorer:contextMenu.selectAll")}
             <ContextMenuShortcut>
               {formatBinding(resolveBinding(shortcuts, "explorer.selectAll"))}
             </ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem disabled={!canUndo} onClick={onUndo}>
-            <Undo2 />
+            <UndoLeftRoundIcon />
             {t("explorer:actions.undo")}
             <ContextMenuShortcut>
               {formatBinding(resolveBinding(shortcuts, "explorer.undo"))}
             </ContextMenuShortcut>
           </ContextMenuItem>
           <ContextMenuItem disabled={!canRedo} onClick={onRedo}>
-            <Redo2 />
+            <UndoRightRoundIcon />
             {t("explorer:actions.redo")}
             <ContextMenuShortcut>
               {formatBinding(resolveBinding(shortcuts, "explorer.redo"))}
@@ -1404,9 +1404,9 @@ function SortHeaderCell({
         <span className="truncate">{label}</span>
         {active &&
           (order === "asc" ? (
-            <ChevronUp className="size-3 shrink-0" />
+            <AltArrowUpIcon className="size-3 shrink-0" />
           ) : (
-            <ChevronDown className="size-3 shrink-0" />
+            <AltArrowDownIcon className="size-3 shrink-0" />
           ))}
       </button>
     </div>

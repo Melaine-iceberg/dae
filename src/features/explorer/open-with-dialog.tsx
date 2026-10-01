@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AppWindow, Search } from "lucide-react";
+import { MagnifierIcon, WindowFrameIcon } from "@solar-icons/react/line-duotone";
 
 import { commands, type OpenWithChoices } from "@/bindings";
 
@@ -164,7 +164,7 @@ export function OpenWithDialog({
           <div className="flex flex-col gap-2">
             {needsFilter && (
               <div className="relative">
-                <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <MagnifierIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-foreground/72" />
                 <Input
                   aria-label={t("explorer:openWith.filterAriaLabel")}
                   className="pl-7"
@@ -259,7 +259,7 @@ function AppIcon({ name }: { name: string | null }) {
   }, [name]);
 
   if (!name || failed) {
-    return <AppWindow className="size-4 shrink-0 text-muted-foreground" />;
+    return <WindowFrameIcon className="size-4 shrink-0 text-muted-foreground" />;
   }
 
   return (

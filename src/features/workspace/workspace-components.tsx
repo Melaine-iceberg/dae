@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 
-import type { LucideIcon } from "lucide-react";
+import type { Icon as SolarIcon } from "@solar-icons/react/lib/types";
 
 import { i18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
-/** Workspace surface glyphs stay on Lucide — that is UI chrome, not file type. */
+/** Workspace surface glyphs stay on Solar Icons — that is UI chrome, not file type. */
 
 /**
  * Shared building blocks for the workspace surfaces (Overview, Recents,
@@ -88,7 +88,7 @@ export function LocationCard({
   title,
 }: {
   description?: string;
-  icon: LucideIcon;
+  icon: SolarIcon;
   /** Colour or weight for the glyph only; the chip plate stays neutral. */
   iconClassName?: string;
   onClick: () => void;

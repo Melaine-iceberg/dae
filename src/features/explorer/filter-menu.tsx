@@ -1,22 +1,23 @@
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
+import type { Icon } from "@solar-icons/react/lib/types";
+
 import {
-  CalendarClock,
-  CalendarDays,
-  CalendarRange,
-  ChevronsLeft,
-  ChevronsLeftRight,
-  ChevronsRight,
-  Clock,
-  File,
-  Folder,
-  Image,
-  Layers,
-  ListFilter,
-  MoveHorizontal,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+  CalendarDateIcon,
+  CalendarMarkIcon,
+  CalendarMinimalisticIcon,
+  ChevronsLeftRightIcon,
+  ClockCircleIcon,
+  CloseIcon,
+  DoubleAltArrowLeftIcon,
+  DoubleAltArrowRightIcon,
+  FileIcon,
+  FilterIcon,
+  FolderIcon,
+  GalleryIcon,
+  LayersIcon,
+  MoveHorizontalIcon,
+} from "@solar-icons/react/line-duotone";
 
 import {
   DropdownMenu,
@@ -46,27 +47,27 @@ import {
   type ExplorerSizeFilter,
 } from "./preferences";
 
-type Option<TValue> = Readonly<{ label: string; value: TValue; icon: LucideIcon }>;
+type Option<TValue> = Readonly<{ label: string; value: TValue; icon: Icon }>;
 
 const KIND_OPTIONS: ReadonlyArray<Option<ExplorerKindFilter>> = [
-  { label: "filter.kindAll", value: "all", icon: Layers },
-  { label: "filter.kindFolders", value: "folders", icon: Folder },
-  { label: "filter.kindFiles", value: "files", icon: File },
-  { label: "filter.kindImages", value: "images", icon: Image },
+  { label: "filter.kindAll", value: "all", icon: LayersIcon },
+  { label: "filter.kindFolders", value: "folders", icon: FolderIcon },
+  { label: "filter.kindFiles", value: "files", icon: FileIcon },
+  { label: "filter.kindImages", value: "images", icon: GalleryIcon },
 ];
 
 const MODIFIED_OPTIONS: ReadonlyArray<Option<ExplorerModifiedFilter>> = [
-  { label: "filter.modifiedAny", value: "any", icon: Clock },
-  { label: "filter.modifiedToday", value: "today", icon: CalendarDays },
-  { label: "filter.modifiedWeek", value: "week", icon: CalendarRange },
-  { label: "filter.modifiedMonth", value: "month", icon: CalendarClock },
+  { label: "filter.modifiedAny", value: "any", icon: ClockCircleIcon },
+  { label: "filter.modifiedToday", value: "today", icon: CalendarDateIcon },
+  { label: "filter.modifiedWeek", value: "week", icon: CalendarMinimalisticIcon },
+  { label: "filter.modifiedMonth", value: "month", icon: CalendarMarkIcon },
 ];
 
 const SIZE_OPTIONS: ReadonlyArray<Option<ExplorerSizeFilter>> = [
-  { label: "filter.sizeAny", value: "any", icon: MoveHorizontal },
-  { label: "filter.sizeSmall", value: "small", icon: ChevronsLeft },
-  { label: "filter.sizeMedium", value: "medium", icon: ChevronsLeftRight },
-  { label: "filter.sizeLarge", value: "large", icon: ChevronsRight },
+  { label: "filter.sizeAny", value: "any", icon: MoveHorizontalIcon },
+  { label: "filter.sizeSmall", value: "small", icon: DoubleAltArrowLeftIcon },
+  { label: "filter.sizeMedium", value: "medium", icon: ChevronsLeftRightIcon },
+  { label: "filter.sizeLarge", value: "large", icon: DoubleAltArrowRightIcon },
 ];
 
 /**
@@ -98,7 +99,7 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
         disabled={disabled}
         title={t("filter.ariaLabel")}
       >
-        <ListFilter className="size-4" />
+        <FilterIcon className="size-4" />
         {isActive && (
           <span
             aria-hidden="true"
@@ -166,7 +167,7 @@ export function FilterMenu({ disabled }: { disabled?: boolean }) {
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem onSelect={() => setFilters(DEFAULT_ENTRY_FILTERS)}>
-                <X />
+                <CloseIcon />
                 {t("filter.clearAll")}
               </DropdownMenuItem>
             </DropdownMenuGroup>

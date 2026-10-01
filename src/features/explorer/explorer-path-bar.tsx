@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { ClipboardList, Copy, Pencil, SquareTerminal } from "lucide-react";
+import { ClipboardListIcon, CopyIcon, PenIcon, ProgrammingIcon } from "@solar-icons/react/line-duotone";
 
 import {
   ContextMenu,
@@ -235,19 +235,19 @@ export function ExplorerPathBar({
       >
         <ContextMenuGroup>
           <ContextMenuItem onClick={copyPath}>
-            <ClipboardList />
+            <ClipboardListIcon />
             {t("contextMenu.copyPath")}
           </ContextMenuItem>
           <ContextMenuItem onClick={copyName}>
-            <Copy />
+            <CopyIcon />
             {t("contextMenu.copyName")}
           </ContextMenuItem>
           <ContextMenuItem onClick={openInTerminal}>
-            <SquareTerminal />
+            <ProgrammingIcon />
             {t("contextMenu.openInTerminal")}
           </ContextMenuItem>
           <ContextMenuItem onClick={beginEditing}>
-            <Pencil />
+            <PenIcon />
             {t("contextMenu.editPath")}
           </ContextMenuItem>
         </ContextMenuGroup>

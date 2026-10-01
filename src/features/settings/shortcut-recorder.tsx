@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { RotateCcw } from "lucide-react";
+import { RestartIcon } from "@solar-icons/react/line-duotone";
 import {
   hasNonModifierKey,
   normalizeHotkey,
@@ -189,7 +189,7 @@ export function ShortcutRecorder({ binding, id, onCommit, onReset }: ShortcutRec
             title={t("recorder.reset")}
             type="button"
           >
-            <RotateCcw className="size-3.5" />
+            <RestartIcon className="size-3.5" />
           </button>
         </>
       )}

@@ -9,15 +9,15 @@
  */
 import { useTranslation } from "react-i18next";
 import {
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  Columns3,
-  Eye,
-  PanelLeft,
-  RotateCw,
-  Star,
-} from "lucide-react";
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  ArrowUpIcon,
+  Columns3Icon,
+  EyeIcon,
+  PanelLeftIcon,
+  RefreshIcon,
+  StarIcon,
+} from "@solar-icons/react/line-duotone";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -147,7 +147,7 @@ export function ExplorerToolbar({
           type="button"
           variant="ghost"
         >
-          <PanelLeft />
+          <PanelLeftIcon />
         </Button>
         <ToolbarSeparator />
         <Button
@@ -159,7 +159,7 @@ export function ExplorerToolbar({
           type="button"
           variant="ghost"
         >
-          <ArrowLeft />
+          <ArrowLeftIcon />
         </Button>
         <Button
           aria-label={t("explorer:toolbar.forward")}
@@ -170,7 +170,7 @@ export function ExplorerToolbar({
           type="button"
           variant="ghost"
         >
-          <ArrowRight />
+          <ArrowRightIcon />
         </Button>
         <Button
           aria-label={t("explorer:toolbar.up")}
@@ -181,7 +181,7 @@ export function ExplorerToolbar({
           type="button"
           variant="ghost"
         >
-          <ArrowUp />
+          <ArrowUpIcon />
         </Button>
         <Button
           aria-label={t("explorer:toolbar.refresh")}
@@ -192,7 +192,7 @@ export function ExplorerToolbar({
           type="button"
           variant="ghost"
         >
-          <RotateCw className={cn(isLoading && "animate-spin")} />
+          <RefreshIcon className={cn(isLoading && "animate-spin")} />
         </Button>
         <ToolbarSeparator className={TOOLBAR_OVERFLOW_CLASS} />
         <Button
@@ -213,7 +213,7 @@ export function ExplorerToolbar({
           type="button"
           variant="ghost"
         >
-          <Star className={cn(isCurrentFavorited && "fill-warning/70 text-warning")} />
+          <StarIcon className={cn(isCurrentFavorited && "fill-warning/70 text-warning")} />
         </Button>
       </div>
 
@@ -262,7 +262,7 @@ export function ExplorerToolbar({
           type="button"
           variant="ghost"
         >
-          <Columns3 />
+          <Columns3Icon />
         </Button>
       )}
       <ToolbarSeparator />
@@ -283,7 +283,7 @@ export function ExplorerToolbar({
         type="button"
         variant="ghost"
       >
-        <Eye />
+        <EyeIcon />
       </Button>
       <ToolbarSeparator />
       <TerminalToggle />

@@ -3,7 +3,8 @@ import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu
 
 import { cn } from "@/lib/utils";
 import { KbdShortcut } from "@/components/ui/kbd";
-import { ChevronRight, Check, type LucideIcon } from "lucide-react";
+import { AltArrowRightIcon, CheckIcon } from "@solar-icons/react/line-duotone";
+import type { Icon as SolarIcon } from "@solar-icons/react/lib/types";
 
 function ContextMenu({ ...props }: ContextMenuPrimitive.Root.Props) {
   return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />;
@@ -132,7 +133,7 @@ function ContextMenuSubTrigger({
       {...props}
     >
       {children}
-      <ChevronRight className="ml-auto" />
+      <AltArrowRightIcon className="ml-auto" />
     </ContextMenuPrimitive.SubmenuTrigger>
   );
 }
@@ -166,7 +167,7 @@ function ContextMenuCheckboxItem({
     >
       <span className="pointer-events-none absolute left-2 flex items-center justify-center text-primary">
         <ContextMenuPrimitive.CheckboxItemIndicator>
-          <Check className="size-3" />
+          <CheckIcon className="size-3" />
         </ContextMenuPrimitive.CheckboxItemIndicator>
       </span>
       {children}
@@ -184,7 +185,7 @@ function ContextMenuRadioItem({
   icon: Icon,
   ...props
 }: ContextMenuPrimitive.RadioItem.Props & {
-  icon?: LucideIcon;
+  icon?: SolarIcon;
 }) {
   return (
     <ContextMenuPrimitive.RadioItem

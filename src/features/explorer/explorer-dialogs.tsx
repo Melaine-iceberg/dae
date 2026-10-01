@@ -8,7 +8,7 @@
  */
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { TriangleAlert } from "lucide-react";
+import { DangerTriangleIcon } from "@solar-icons/react/line-duotone";
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -203,7 +203,7 @@ export function ExplorerErrorAlert({ message, onRetry }: { message: string; onRe
 
   return (
     <Alert variant="destructive">
-      <TriangleAlert />
+      <DangerTriangleIcon />
       <AlertTitle>{t("explorer:errors.unreadableLocation")}</AlertTitle>
       <AlertDescription>{message}</AlertDescription>
       <AlertAction>

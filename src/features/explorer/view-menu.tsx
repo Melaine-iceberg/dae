@@ -1,23 +1,24 @@
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
+import type { Icon } from "@solar-icons/react/lib/types";
+
 import {
-  ArrowDownWideNarrow,
-  ArrowUpNarrowWide,
-  Calendar,
-  Columns3,
-  HardDrive,
-  LayoutGrid,
-  List,
-  Monitor,
-  Palette,
-  Rows2,
-  Rows3,
-  Rows4,
-  Shapes,
-  SlidersHorizontal,
-  Type,
-  type LucideIcon,
-} from "lucide-react";
+  CalendarIcon,
+  Columns3Icon,
+  ListIcon,
+  MonitorIcon,
+  PaletteIcon,
+  Rows2Icon,
+  Rows3Icon,
+  Rows4Icon,
+  SliderHorizontalIcon,
+  SortFromBottomToTopIcon,
+  SortFromTopToBottomIcon,
+  SsdRoundIcon,
+  ThreeSquaresIcon,
+  TextFieldIcon,
+  WidgetIcon,
+} from "@solar-icons/react/line-duotone";
 
 import {
   DropdownMenu,
@@ -46,35 +47,35 @@ import {
   type ExplorerViewMode,
 } from "./preferences";
 
-type Option<TValue> = Readonly<{ label: string; value: TValue; icon: LucideIcon }>;
+type Option<TValue> = Readonly<{ label: string; value: TValue; icon: Icon }>;
 
 const VIEW_MODE_OPTIONS: ReadonlyArray<Option<ExplorerViewMode>> = [
-  { label: "view.modeList", value: "list", icon: List },
-  { label: "view.modeColumn", value: "column", icon: Columns3 },
-  { label: "view.modeGrid", value: "grid", icon: LayoutGrid },
+  { label: "view.modeList", value: "list", icon: ListIcon },
+  { label: "view.modeColumn", value: "column", icon: Columns3Icon },
+  { label: "view.modeGrid", value: "grid", icon: WidgetIcon },
 ];
 
 const DENSITY_OPTIONS: ReadonlyArray<Option<ExplorerDensity>> = [
-  { label: "view.densityCompact", value: "compact", icon: Rows4 },
-  { label: "view.densityComfortable", value: "comfortable", icon: Rows3 },
-  { label: "view.densitySpacious", value: "spacious", icon: Rows2 },
+  { label: "view.densityCompact", value: "compact", icon: Rows4Icon },
+  { label: "view.densityComfortable", value: "comfortable", icon: Rows3Icon },
+  { label: "view.densitySpacious", value: "spacious", icon: Rows2Icon },
 ];
 
 const ICON_STYLE_OPTIONS: ReadonlyArray<Option<ExplorerIconStyle>> = [
-  { label: "view.iconSystem", value: "system", icon: Monitor },
-  { label: "view.iconThemed", value: "themed", icon: Palette },
+  { label: "view.iconSystem", value: "system", icon: MonitorIcon },
+  { label: "view.iconThemed", value: "themed", icon: PaletteIcon },
 ];
 
 const SORT_KEY_OPTIONS: ReadonlyArray<Option<ExplorerSortKey>> = [
-  { label: "sort.keyName", value: "name", icon: Type },
-  { label: "sort.keySize", value: "size", icon: HardDrive },
-  { label: "sort.keyModified", value: "modified", icon: Calendar },
-  { label: "sort.keyType", value: "type", icon: Shapes },
+  { label: "sort.keyName", value: "name", icon: TextFieldIcon },
+  { label: "sort.keySize", value: "size", icon: SsdRoundIcon },
+  { label: "sort.keyModified", value: "modified", icon: CalendarIcon },
+  { label: "sort.keyType", value: "type", icon: ThreeSquaresIcon },
 ];
 
 const SORT_ORDER_OPTIONS: ReadonlyArray<Option<ExplorerSortOrder>> = [
-  { label: "sort.orderAscending", value: "asc", icon: ArrowUpNarrowWide },
-  { label: "sort.orderDescending", value: "desc", icon: ArrowDownWideNarrow },
+  { label: "sort.orderAscending", value: "asc", icon: SortFromBottomToTopIcon },
+  { label: "sort.orderDescending", value: "desc", icon: SortFromTopToBottomIcon },
 ];
 
 /**
@@ -110,7 +111,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
         disabled={disabled}
         title={t("view.menuLabel")}
       >
-        <SlidersHorizontal className="size-4" />
+        <SliderHorizontalIcon className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-48">
         <DropdownMenuLabel inset>{t("view.modeLabel")}</DropdownMenuLabel>

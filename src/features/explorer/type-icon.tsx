@@ -1,37 +1,38 @@
 import {
-  IconAppWindow,
-  IconDisc,
-  IconFile,
-  IconFileCertificate,
-  IconFileCode,
-  IconFileDatabase,
-  IconFileMusic,
-  IconFileSettings,
-  IconFileText,
-  IconFileTypeDoc,
-  IconFileTypePdf,
-  IconFileTypeSvg,
-  IconFileZip,
-  IconFolder,
-  IconFolderOpen,
-  IconKey,
-  IconLink,
-  IconLock,
-  IconMovie,
-  IconPackage,
-  IconPhoto,
-  IconPresentation,
-  IconTable,
-  IconTerminal2,
-  IconTypography,
-  IconWorld,
-} from "@tabler/icons-react";
+  BoxIcon,
+  DatabaseIcon,
+  DocumentIcon,
+  DocumentTextIcon,
+  FileAudioIcon,
+  FileBadgeIcon,
+  FileCodeIcon,
+  FileCogIcon,
+  FileIcon,
+  FileTextIcon,
+  FileZipIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  GalleryIcon,
+  GlobeIcon,
+  KeyIcon,
+  LinkIcon,
+  LockIcon,
+  PresentationGraphIcon,
+  ProgrammingIcon,
+  RulerPenIcon,
+  TableIcon,
+  TextFormatIcon,
+  VideoFrameIcon,
+  VinylIcon,
+  WindowFrameIcon,
+} from "@solar-icons/react/line-duotone";
 import { type ComponentType } from "react";
 
 import { cn } from "@/lib/utils";
 
 /**
- * File-type glyphs, drawn from Tabler (MIT).
+ * File-type glyphs, drawn from Solar Icons (MIT for the code, CC BY 4.0 for
+ * the artwork).
  *
  * The vocabulary is *categorical on purpose*. An editor's icon theme can
  * afford a hue per extension because its tree is source code and its rows are
@@ -41,10 +42,14 @@ import { cn } from "@/lib/utils";
  * spreadsheet is a spreadsheet, not Excel — keeps a real directory legible
  * and keeps the map below small enough to read and edit.
  *
- * Because Tabler draws in `currentColor`, colour is decided here rather than
- * carried in the artwork: see TONES. That is what lets a glyph follow the
+ * Because Solar Icons draws in `currentColor`, colour is decided here rather
+ * than carried in the artwork: see TONES. That is what lets a glyph follow the
  * scheme, the system accent, `prefers-contrast` and forced-colors the way
  * every other surface in this shell does.
+ *
+ * The `line-duotone` style paints a secondary accent layer as well; its
+ * strength is the shell-wide `--solar-secondary-opacity` (see App.css), which
+ * is why a glyph has depth without any call site asking for it.
  */
 
 /** What a glyph is handed. `aria-hidden` is spelled out because every icon
@@ -57,43 +62,43 @@ interface GlyphProps {
 }
 
 /**
- * The registry is written as render functions rather than as bare Tabler
+ * The registry is written as render functions rather than as bare Solar
  * components on purpose: the value type is then this file's own, so the table
  * neither depends on how the icon package types its components nor hands JSX
  * a union of twenty-six different ones to resolve.
  */
 const GLYPHS = {
-  folder: (props: GlyphProps) => <IconFolder {...props} />,
-  folderOpen: (props: GlyphProps) => <IconFolderOpen {...props} />,
-  file: (props: GlyphProps) => <IconFile {...props} />,
-  text: (props: GlyphProps) => <IconFileText {...props} />,
-  config: (props: GlyphProps) => <IconFileSettings {...props} />,
-  code: (props: GlyphProps) => <IconFileCode {...props} />,
-  script: (props: GlyphProps) => <IconTerminal2 {...props} />,
+  folder: (props: GlyphProps) => <FolderIcon {...props} />,
+  folderOpen: (props: GlyphProps) => <FolderOpenIcon {...props} />,
+  file: (props: GlyphProps) => <FileIcon {...props} />,
+  text: (props: GlyphProps) => <FileTextIcon {...props} />,
+  config: (props: GlyphProps) => <FileCogIcon {...props} />,
+  code: (props: GlyphProps) => <FileCodeIcon {...props} />,
+  script: (props: GlyphProps) => <ProgrammingIcon {...props} />,
   // A format mark is only drawn where the mark is true. `document`, `pdf` and
-  // `vector` each name one format family, so Tabler's `file-type-*` stamps fit
-  // them. Spreadsheets and slides get a grid and a screen instead: a page
+  // `vector` each name one format family, so Solar Icons' `file-type-*` stamps
+  // fit them. Spreadsheets and slides get a grid and a screen instead: a page
   // stamped "XLS" is simply wrong on a .csv or an .ods, and four near-identical
   // stamped pages are harder to tell apart at 16px than four silhouettes.
-  document: (props: GlyphProps) => <IconFileTypeDoc {...props} />,
-  spreadsheet: (props: GlyphProps) => <IconTable {...props} />,
-  presentation: (props: GlyphProps) => <IconPresentation {...props} />,
-  pdf: (props: GlyphProps) => <IconFileTypePdf {...props} />,
-  image: (props: GlyphProps) => <IconPhoto {...props} />,
-  vector: (props: GlyphProps) => <IconFileTypeSvg {...props} />,
-  video: (props: GlyphProps) => <IconMovie {...props} />,
-  audio: (props: GlyphProps) => <IconFileMusic {...props} />,
-  archive: (props: GlyphProps) => <IconFileZip {...props} />,
-  disk: (props: GlyphProps) => <IconDisc {...props} />,
-  database: (props: GlyphProps) => <IconFileDatabase {...props} />,
-  font: (props: GlyphProps) => <IconTypography {...props} />,
-  key: (props: GlyphProps) => <IconKey {...props} />,
-  certificate: (props: GlyphProps) => <IconFileCertificate {...props} />,
-  executable: (props: GlyphProps) => <IconAppWindow {...props} />,
-  package: (props: GlyphProps) => <IconPackage {...props} />,
-  shortcut: (props: GlyphProps) => <IconWorld {...props} />,
-  link: (props: GlyphProps) => <IconLink {...props} />,
-  lock: (props: GlyphProps) => <IconLock {...props} />,
+  document: (props: GlyphProps) => <DocumentTextIcon {...props} />,
+  spreadsheet: (props: GlyphProps) => <TableIcon {...props} />,
+  presentation: (props: GlyphProps) => <PresentationGraphIcon {...props} />,
+  pdf: (props: GlyphProps) => <DocumentIcon {...props} />,
+  image: (props: GlyphProps) => <GalleryIcon {...props} />,
+  vector: (props: GlyphProps) => <RulerPenIcon {...props} />,
+  video: (props: GlyphProps) => <VideoFrameIcon {...props} />,
+  audio: (props: GlyphProps) => <FileAudioIcon {...props} />,
+  archive: (props: GlyphProps) => <FileZipIcon {...props} />,
+  disk: (props: GlyphProps) => <VinylIcon {...props} />,
+  database: (props: GlyphProps) => <DatabaseIcon {...props} />,
+  font: (props: GlyphProps) => <TextFormatIcon {...props} />,
+  key: (props: GlyphProps) => <KeyIcon {...props} />,
+  certificate: (props: GlyphProps) => <FileBadgeIcon {...props} />,
+  executable: (props: GlyphProps) => <WindowFrameIcon {...props} />,
+  package: (props: GlyphProps) => <BoxIcon {...props} />,
+  shortcut: (props: GlyphProps) => <GlobeIcon {...props} />,
+  link: (props: GlyphProps) => <LinkIcon {...props} />,
+  lock: (props: GlyphProps) => <LockIcon {...props} />,
 };
 
 export type TypeGlyph = keyof typeof GLYPHS;
@@ -104,10 +109,13 @@ export type TypeGlyph = keyof typeof GLYPHS;
  * what a type icon reports), as opposed to the accent seam, which says what is
  * selected, or the semantic trio, which says what is wrong.
  *
- * `muted-foreground` is the deliberate non-colour: plain text, configuration
- * and the unknown-file fallback stay ink, so the six hues go on meaning
- * something. The blank lines group hues only to keep the table legible —
- * nothing reads the grouping.
+ * The neutral set is `foreground`, not `muted-foreground`: a type glyph is the
+ * row's own artwork, and the muted step is a *text* fade — at row size it read
+ * as ink that had not loaded. Plain text, configuration and the unknown-file
+ * fallback therefore stay full-strength ink, and the six hues keep meaning
+ * "this one is coloured", which is the distinction that carries information.
+ * The blank lines group hues only to keep the table legible — nothing reads
+ * the grouping.
  */
 const TONES: Record<TypeGlyph, string> = {
   folder: "text-folder",
@@ -138,11 +146,11 @@ const TONES: Record<TypeGlyph, string> = {
   database: "text-tone-cyan",
   script: "text-tone-cyan",
 
-  file: "text-muted-foreground",
-  text: "text-muted-foreground",
-  config: "text-muted-foreground",
-  link: "text-muted-foreground",
-  lock: "text-muted-foreground",
+  file: "text-foreground",
+  text: "text-foreground",
+  config: "text-foreground",
+  link: "text-foreground",
+  lock: "text-foreground",
 };
 
 export interface EntryIconProps {
@@ -153,7 +161,7 @@ export interface EntryIconProps {
 export type EntryIcon = ComponentType<EntryIconProps>;
 
 /**
- * Tabler's own 16px default, which is also what the artwork these glyphs
+ * Solar Icons' own 16px default, which is also what the artwork these glyphs
  * replaced happened to measure. A caller that sizes the icon by class (`size-4`
  * in the tab strip and the tree) keeps the geometry it had; a caller that
  * passes a number keeps passing one.

@@ -53,11 +53,13 @@ function CaptionGlyph({ kind, size = 12 }: { kind: GlyphKind; size?: number }) {
           keeps the corners and drops the edges that carried no information,
           saying "this fills the frame" with less than half the ink.
 
-          The box is 1.5–10.5 with 2.5-unit arms and a 1-unit radius: lucide's
-          `maximize`, the library the rest of the app's icons come from, at
-          half scale — 9 units on the 12 grid, the 75% it gives the glyph on
-          24. Each edge lands on a half-unit, so the hairline sits on the pixel
-          instead of straddling it. */}
+          The box is 1.5–10.5 with 2.5-unit arms and a 1-unit radius: Lucide's
+          `maximize`, which this hand-drawn glyph's geometry was measured from,
+          at half scale — 9 units on the 12 grid, the 75% it gives the glyph on
+          24. (The app's icons now come from Solar Icons; this glyph is drawn
+          inline, so its geometry is unchanged.) Each edge lands on a
+          half-unit, so the hairline sits on the pixel instead of straddling
+          it. */}
       {kind === "maximize" && (
         <>
           <path d="M4 1.5H2.5a1 1 0 0 0-1 1V4" />

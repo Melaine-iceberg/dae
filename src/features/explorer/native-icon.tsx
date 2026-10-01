@@ -84,7 +84,7 @@ export function buildNamedIconUrl(name: string, size: number): string {
 }
 
 /**
- * Lazy OS-native icon: shows the Lucide fallback until the shell icon
+ * Lazy OS-native icon: shows the Solar fallback until the shell icon
  * arrives and keeps it forever on any error (missing path, dead shortcut
  * target, a platform whose shell has nothing for this file), so every slot
  * always renders something.

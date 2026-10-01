@@ -16,7 +16,7 @@
 
 import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
-import { Boxes } from "lucide-react";
+import { BlocksIcon } from "@solar-icons/react/line-duotone";
 
 import { invokeShellCommand, useShellCommands } from "./shell-commands-atoms";
 
@@ -60,7 +60,7 @@ export function ShellCommandsMenu({ paths, primary }: ShellCommandsMenuProps) {
       <ContextMenuSeparator />
       <ContextMenuSub>
         <ContextMenuSubTrigger>
-          <Boxes />
+          <BlocksIcon />
           {t("explorer:shellCommands.menu")}
         </ContextMenuSubTrigger>
         <ContextMenuSubContent>
@@ -115,6 +115,6 @@ function ShellCommandItem({ item, paths }: { item: ShellCommand; paths: readonly
 }
 
 function ShellCommandIcon({ item }: { item: ShellCommand }) {
-  if (!item.iconDataUrl) return <Boxes />;
+  if (!item.iconDataUrl) return <BlocksIcon />;
   return <img alt="" className="size-4 shrink-0" src={item.iconDataUrl} />;
 }

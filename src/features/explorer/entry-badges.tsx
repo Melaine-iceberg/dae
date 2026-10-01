@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Lock } from "lucide-react";
+import { LockIcon } from "@solar-icons/react/line-duotone";
 import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";
@@ -26,6 +26,8 @@ function ReadOnlyBadge({ className, size }: { className?: string; size: "sm" | "
   const { t } = useTranslation("explorer");
   const label = t("badges.readOnly");
 
+  // Full-strength ink on the lock: the badge is a *state* (the file cannot be
+  // written), and at 6–8px the muted step rendered it as dust on the plate.
   return (
     <span
       aria-label={label}
@@ -36,8 +38,8 @@ function ReadOnlyBadge({ className, size }: { className?: string; size: "sm" | "
       )}
       title={label}
     >
-      <Lock
-        className={cn("text-muted-foreground", size === "sm" ? "size-1.5" : "size-2")}
+      <LockIcon
+        className={cn("text-foreground", size === "sm" ? "size-1.5" : "size-2")}
         fill="currentColor"
       />
     </span>

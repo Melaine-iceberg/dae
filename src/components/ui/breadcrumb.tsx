@@ -3,7 +3,7 @@ import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 
 import { cn } from "@/lib/utils";
-import { ChevronRight, Ellipsis } from "lucide-react";
+import { AltArrowRightIcon, MenuDotsIcon } from "@solar-icons/react/line-duotone";
 
 function Breadcrumb({ className, ...props }: React.ComponentProps<"nav">) {
   return (
@@ -75,7 +75,7 @@ function BreadcrumbSeparator({ children, className, ...props }: React.ComponentP
       className={cn("[&>svg]:size-3", className)}
       {...props}
     >
-      {children ?? <ChevronRight />}
+      {children ?? <AltArrowRightIcon />}
     </li>
   );
 }
@@ -89,7 +89,7 @@ function BreadcrumbEllipsis({ className, ...props }: React.ComponentProps<"span"
       className={cn("flex size-5 items-center justify-center [&>svg]:size-4", className)}
       {...props}
     >
-      <Ellipsis />
+      <MenuDotsIcon />
       <span className="sr-only">More</span>
     </span>
   );

@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { ClipboardList, FolderOpen, TriangleAlert, X } from "lucide-react";
+import {
+  ClipboardListIcon,
+  CloseIcon,
+  DangerTriangleIcon,
+  FolderOpenIcon,
+} from "@solar-icons/react/line-duotone";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { Markdown } from "@tanstack/markdown/react";
 
@@ -277,7 +282,7 @@ export function EntryPreview({
           type="button"
           variant="ghost"
         >
-          <X />
+          <CloseIcon />
         </Button>
       </header>
 
@@ -337,13 +342,13 @@ export function EntryPreview({
               </div>
             ) : isTooLarge ? (
               <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-lg bg-muted px-3 text-center text-caption text-muted-foreground">
-                <TriangleAlert className="size-5" />
+                <DangerTriangleIcon className="size-5" />
                 <p>{t("preview.tooLarge", { size: PREVIEW_MAX_SOURCE_BYTES / 1024 / 1024 })}</p>
                 <p>{t("preview.tooLargeHint")}</p>
               </div>
             ) : textPreview?.status === "error" ? (
               <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-lg bg-muted text-caption text-muted-foreground">
-                <TriangleAlert className="size-5" />
+                <DangerTriangleIcon className="size-5" />
                 <p>{t("preview.readError")}</p>
               </div>
             ) : (
@@ -425,7 +430,7 @@ export function EntryPreview({
       {entry !== null && (
         <footer className="flex shrink-0 items-center gap-2 border-t p-2.5">
           <Button onClick={onOpen} size="sm" type="button">
-            <FolderOpen />
+            <FolderOpenIcon />
             {t("preview.open")}
           </Button>
           <Button
@@ -435,7 +440,7 @@ export function EntryPreview({
             type="button"
             variant="outline"
           >
-            <ClipboardList />
+            <ClipboardListIcon />
             {t("preview.copyPath")}
           </Button>
         </footer>

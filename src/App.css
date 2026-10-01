@@ -907,6 +907,31 @@ html[data-window-material="vibrancy"] {
   * {
     @apply border-border outline-ring/50;
   }
+
+  /* ---------------------------------------------------------------------------
+     SOLAR ICONS — the duotone accent, stated once for the whole shell.
+
+     The app draws Solar's `line-duotone` style everywhere. That style paints
+     two layers: a solid one at full opacity, and a "secondary" one at
+     `var(--solar-secondary-opacity, 0.5)` on `currentColor`. At 0.5 the accent
+     is a hair lighter than the outline it sits inside, which on a 13–16px
+     icon in a dense listing reads as ink that failed to render rather than as
+     a second tone. Here the accent drops to roughly a third — enough to
+     register as depth in the larger chrome and profile glyphs, quiet enough
+     that the solid layer stays the whole shape at row size.
+
+     It is declared on `:root` because that is where the icon reads it from
+     (the variable is inherited, so no `SolarProvider` is needed), and it is a
+     global default *by design*: a single call site may still override it with
+     `secondaryOpacity` when the icon is large enough to carry the accent.
+
+     Under `forced-colors: active` both layers are repainted `CanvasText` and
+     the depth survives as a wash; the declaration is left alone there.
+     --------------------------------------------------------------------------- */
+  :root {
+    --solar-secondary-opacity: 0.32;
+  }
+
   html {
     @apply font-sans;
   }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { ClipboardPaste, Copy, Scissors, TextSelect, Trash2 } from "lucide-react";
+import { ClipboardPasteIcon, CopyIcon, ScissorsIcon, TextSelectionIcon, TrashBinTrashIcon } from "@solar-icons/react/line-duotone";
 
 import {
   ContextMenu,
@@ -250,7 +250,7 @@ export function TextContextMenu() {
       <ContextMenuContent anchor={request?.anchor} className="min-w-menu">
         <ContextMenuGroup>
           <ContextMenuItem className={ITEM_HOVER} disabled={!hasSelection} onClick={copy}>
-            <Copy />
+            <CopyIcon />
             {t("textMenu.copy")}
             <ContextMenuShortcut>{shortcut("C")}</ContextMenuShortcut>
           </ContextMenuItem>
@@ -261,12 +261,12 @@ export function TextContextMenu() {
                 disabled={!hasSelection || !writable}
                 onClick={cut}
               >
-                <Scissors />
+                <ScissorsIcon />
                 {t("textMenu.cut")}
                 <ContextMenuShortcut>{shortcut("X")}</ContextMenuShortcut>
               </ContextMenuItem>
               <ContextMenuItem className={ITEM_HOVER} disabled={!writable} onClick={paste}>
-                <ClipboardPaste />
+                <ClipboardPasteIcon />
                 {t("textMenu.paste")}
                 <ContextMenuShortcut>{shortcut("V")}</ContextMenuShortcut>
               </ContextMenuItem>
@@ -275,7 +275,7 @@ export function TextContextMenu() {
                 disabled={!hasSelection || !writable}
                 onClick={remove}
               >
-                <Trash2 />
+                <TrashBinTrashIcon />
                 {t("textMenu.delete")}
                 <ContextMenuShortcut>Del</ContextMenuShortcut>
               </ContextMenuItem>
@@ -287,7 +287,7 @@ export function TextContextMenu() {
             <ContextMenuSeparator />
             <ContextMenuGroup>
               <ContextMenuItem className={ITEM_HOVER} onClick={selectAll}>
-                <TextSelect />
+                <TextSelectionIcon />
                 {t("textMenu.selectAll")}
                 <ContextMenuShortcut>{shortcut("A")}</ContextMenuShortcut>
               </ContextMenuItem>

@@ -1,60 +1,60 @@
 import {
-  Monitor,
-  Download,
-  FileText,
-  Home,
-  Image,
-  Music,
-  Video,
-  type LucideIcon,
-} from "lucide-react";
+  DownloadIcon,
+  FileTextIcon,
+  GalleryIcon,
+  HomeIcon,
+  MonitorIcon,
+  MusicNoteIcon,
+  VideoFrameIcon,
+} from "@solar-icons/react/line-duotone";
+import type { Icon } from "@solar-icons/react/lib/types";
 
 import type { PlaceKind } from "@/bindings";
 
 import { i18n } from "@/i18n";
 
-/** Sidebar place icons stay on Lucide — that is UI chrome, not file type. */
+/** Sidebar place icons stay on Solar — that is UI chrome, not file type. */
 
 /** Icons and labels for the well-known system places. */
-export const PLACE_PRESENTATION: Record<PlaceKind, { icon: LucideIcon; label: string }> = {
+export const PLACE_PRESENTATION: Record<PlaceKind, { icon: Icon; label: string }> = {
   home: {
-    icon: Home,
+    icon: HomeIcon,
     get label() {
       return i18n.t("sidebar:places.home");
     },
   },
   desktop: {
-    icon: Monitor,
+    icon: MonitorIcon,
     get label() {
       return i18n.t("sidebar:places.desktop");
     },
   },
   documents: {
-    icon: FileText,
+    icon: FileTextIcon,
     get label() {
       return i18n.t("sidebar:places.documents");
     },
   },
   downloads: {
-    icon: Download,
+    icon: DownloadIcon,
     get label() {
       return i18n.t("sidebar:places.downloads");
     },
   },
   pictures: {
-    icon: Image,
+    icon: GalleryIcon,
     get label() {
       return i18n.t("sidebar:places.pictures");
     },
   },
   music: {
-    icon: Music,
+    icon: MusicNoteIcon,
     get label() {
       return i18n.t("sidebar:places.music");
     },
   },
   videos: {
-    icon: Video,
+    icon: VideoFrameIcon,
     get label() {
       return i18n.t("sidebar:places.videos");
     },

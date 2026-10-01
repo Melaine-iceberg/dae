@@ -2,21 +2,21 @@ import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import {
-  PackageOpen,
-  Move,
-  ClipboardList,
-  Copy,
-  Ellipsis,
-  FileArchive,
-  Files,
-  FolderOpen,
-  LockKeyhole,
-  Pencil,
-  Scissors,
-  LayoutGrid,
-  Trash2,
-  X,
-} from "lucide-react";
+  BoxIcon,
+  ClipboardListIcon,
+  CloseIcon,
+  CopyIcon,
+  DocumentsIcon,
+  FileZipIcon,
+  FolderOpenIcon,
+  LockKeyholeIcon,
+  MenuDotsIcon,
+  MoveIcon,
+  PenIcon,
+  ScissorsIcon,
+  TrashBinTrashIcon,
+  WidgetIcon,
+} from "@solar-icons/react/line-duotone";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -109,7 +109,7 @@ export function ContextualActionBar({
           type="button"
           variant="ghost"
         >
-          <FolderOpen className="size-action-glyph" />
+          <FolderOpenIcon className="size-action-glyph" />
         </Button>
         <Button
           aria-label={t("explorer:actionBar.copyAria")}
@@ -120,7 +120,7 @@ export function ContextualActionBar({
           type="button"
           variant="ghost"
         >
-          <Copy className="size-action-glyph" />
+          <CopyIcon className="size-action-glyph" />
         </Button>
         <Button
           aria-label={t("explorer:actionBar.cutAria")}
@@ -131,7 +131,7 @@ export function ContextualActionBar({
           type="button"
           variant="ghost"
         >
-          <Scissors className="size-action-glyph" />
+          <ScissorsIcon className="size-action-glyph" />
         </Button>
         <Button
           aria-label={t("explorer:actionBar.renameAria")}
@@ -142,7 +142,7 @@ export function ContextualActionBar({
           type="button"
           variant="ghost"
         >
-          <Pencil className="size-action-glyph" />
+          <PenIcon className="size-action-glyph" />
         </Button>
         {archiveSelectionPath && (
           <Button
@@ -154,7 +154,7 @@ export function ContextualActionBar({
             type="button"
             variant="ghost"
           >
-            <PackageOpen className="size-action-glyph" />
+            <BoxIcon className="size-action-glyph" />
           </Button>
         )}
         <DropdownMenu>
@@ -164,16 +164,16 @@ export function ContextualActionBar({
             disabled={isActionDisabled}
             title={t("explorer:actionBar.moreTitle")}
           >
-            <Ellipsis className="size-action-glyph" />
+            <MenuDotsIcon className="size-action-glyph" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="center" side="top">
             <DropdownMenuItem disabled={isActionDisabled} onClick={onDuplicate}>
-              <Files />
+              <DocumentsIcon />
               {t("explorer:contextMenu.duplicate")}
             </DropdownMenuItem>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger disabled={isActionDisabled}>
-                <FileArchive />
+                <FileZipIcon />
                 {t("explorer:contextMenu.compressAs")}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
@@ -183,24 +183,24 @@ export function ContextualActionBar({
                     disabled={isActionDisabled}
                     onClick={() => onCompress(format, encrypted ?? false)}
                   >
-                    {encrypted ? <LockKeyhole /> : <FileArchive />}
+                    {encrypted ? <LockKeyholeIcon /> : <FileZipIcon />}
                     {t(`explorer:compressFormats.${labelKey}`)}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuItem disabled={isActionDisabled} onClick={onMoveTo}>
-              <Move />
+              <MoveIcon />
               {t("explorer:contextMenu.moveTo")}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onCopyPaths}>
-              <ClipboardList />
+              <ClipboardListIcon />
               {t("explorer:contextMenu.copyPath")}
             </DropdownMenuItem>
             {hasDirectorySelection &&
               spaces.slice(0, 3).map((space) => (
                 <DropdownMenuItem key={space.id} onClick={() => onAddToSpace(space.id)}>
-                  <LayoutGrid />
+                  <WidgetIcon />
                   {t("explorer:contextMenu.addToSpaceNamed", { name: space.name })}
                 </DropdownMenuItem>
               ))}
@@ -216,7 +216,7 @@ export function ContextualActionBar({
           type="button"
           variant="ghost"
         >
-          <Trash2 className="size-action-glyph" />
+          <TrashBinTrashIcon className="size-action-glyph" />
         </Button>
         <div aria-hidden="true" className="ml-0.5 h-5 w-px bg-border" />
         <Button
@@ -227,7 +227,7 @@ export function ContextualActionBar({
           type="button"
           variant="ghost"
         >
-          <X className="size-action-glyph" />
+          <CloseIcon className="size-action-glyph" />
         </Button>
       </div>
     </div>

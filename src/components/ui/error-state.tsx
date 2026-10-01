@@ -1,4 +1,4 @@
-import { RotateCw, TriangleAlert } from "lucide-react";
+import { DangerTriangleIcon, RefreshIcon } from "@solar-icons/react/line-duotone";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -48,7 +48,7 @@ export function ErrorState({
         {/* A failed read is a warning, not a crash: the app is fine, the folder
             is not. `--destructive` is reserved for things the user must undo. */}
         <EmptyMedia className="text-warning" variant="icon">
-          <TriangleAlert />
+          <DangerTriangleIcon />
         </EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
         {description && <EmptyDescription>{description}</EmptyDescription>}
@@ -58,7 +58,7 @@ export function ErrorState({
         // and a bold fact. A saturated button under them turns "this read
         // failed" into a call to action.
         <Button onClick={onRetry} type="button" variant="outline">
-          <RotateCw />
+          <RefreshIcon />
           {t("errors.retry")}
         </Button>
       )}

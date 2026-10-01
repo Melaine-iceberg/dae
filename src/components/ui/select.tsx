@@ -1,5 +1,5 @@
 import { Select as SelectPrimitive } from "@base-ui/react/select";
-import { ChevronDown } from "lucide-react";
+import { AltArrowDownIcon } from "@solar-icons/react/line-duotone";
 
 import { cn } from "@/lib/utils";
 
@@ -21,7 +21,7 @@ function SelectTrigger({ className, children, ...props }: SelectPrimitive.Trigge
     >
       {children}
       <SelectPrimitive.Icon className="flex text-muted-foreground">
-        <ChevronDown />
+        <AltArrowDownIcon />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );

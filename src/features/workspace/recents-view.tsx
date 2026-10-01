@@ -2,7 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { History, ClipboardList, Folder, FolderOpen, Trash2, X } from "lucide-react";
+import {
+  ClipboardListIcon,
+  CloseIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  HistoryIcon,
+  TrashBinTrashIcon,
+} from "@solar-icons/react/line-duotone";
 
 import type { RecentItem } from "@/bindings";
 import { i18n } from "@/i18n";
@@ -112,7 +119,7 @@ export function RecentsView() {
               type="button"
               variant="outline"
             >
-              <Trash2 />
+              <TrashBinTrashIcon />
               {t("recents.clearAll")}
             </Button>
           ))
@@ -137,7 +144,7 @@ export function RecentsView() {
         <Empty className="min-h-64">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <History />
+              <HistoryIcon />
             </EmptyMedia>
             <EmptyTitle>{t("recents.emptyTitle")}</EmptyTitle>
           </EmptyHeader>
@@ -205,24 +212,24 @@ function RecentRow({
         <ContextMenuContent>
           <ContextMenuGroup>
             <ContextMenuItem onClick={onOpen}>
-              <FolderOpen />
+              <FolderOpenIcon />
               {t("recents.open")}
             </ContextMenuItem>
             {location && (
               <ContextMenuItem onClick={onOpenContainingFolder}>
-                <Folder />
+                <FolderIcon />
                 {t("recents.openContainingFolder")}
               </ContextMenuItem>
             )}
             <ContextMenuItem onClick={() => void copyWithNotice(item.path)}>
-              <ClipboardList />
+              <ClipboardListIcon />
               {t("recents.copyPath")}
             </ContextMenuItem>
           </ContextMenuGroup>
           <ContextMenuSeparator />
           <ContextMenuGroup>
             <ContextMenuItem onClick={() => removeRecentItem(item.path)}>
-              <X />
+              <CloseIcon />
               {t("recents.remove")}
             </ContextMenuItem>
           </ContextMenuGroup>

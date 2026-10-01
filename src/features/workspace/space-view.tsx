@@ -2,17 +2,17 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import {
-  Check,
-  ClipboardList,
-  Folder,
-  FolderOpen,
-  Pencil,
-  LayoutGrid,
-  PanelsTopLeft,
-  PictureInPicture2,
-  Trash2,
-  X,
-} from "lucide-react";
+  CheckIcon,
+  ClipboardListIcon,
+  CloseIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  PanelsTopLeftIcon,
+  PenIcon,
+  Pip2Icon,
+  TrashBinTrashIcon,
+  WidgetIcon,
+} from "@solar-icons/react/line-duotone";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -132,7 +132,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
         <Empty className="min-h-64">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <LayoutGrid />
+              <WidgetIcon />
             </EmptyMedia>
             <EmptyTitle>{t("space.notFoundTitle")}</EmptyTitle>
             <EmptyDescription>{t("space.notFoundDescription")}</EmptyDescription>
@@ -170,7 +170,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
                 type="button"
                 variant="ghost"
               >
-                <Pencil />
+                <PenIcon />
               </Button>
               {!space.isPreset && (
                 <Button
@@ -182,7 +182,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
                   type="button"
                   variant="ghost"
                 >
-                  <Trash2 />
+                  <TrashBinTrashIcon />
                 </Button>
               )}
             </>
@@ -193,7 +193,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
               className="flex size-11 shrink-0 items-center justify-center rounded-md bg-secondary"
             >
               {/* Identity lives in the glyph's hue, never in a tinted plate. */}
-              <LayoutGrid className={cn("size-5.5", getSpaceAccentClass(space.id))} />
+              <WidgetIcon className={cn("size-5.5", getSpaceAccentClass(space.id))} />
             </span>
           }
           title={getSpaceDisplayName(space)}
@@ -227,7 +227,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
             type="submit"
             variant="outline"
           >
-            <Check />
+            <CheckIcon />
           </Button>
           <Button
             aria-label={t("space.cancelRename")}
@@ -237,7 +237,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
             type="button"
             variant="ghost"
           >
-            <X />
+            <CloseIcon />
           </Button>
         </form>
       )}
@@ -252,7 +252,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
         <Empty className="min-h-64">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <LayoutGrid />
+              <WidgetIcon />
             </EmptyMedia>
             <EmptyTitle>{t("space.emptyTitle")}</EmptyTitle>
             <EmptyDescription>
@@ -267,7 +267,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
               <ContextMenuTrigger>
                 <LocationCard
                   description={item.path}
-                  icon={Folder}
+                  icon={FolderIcon}
                   iconClassName="fill-current text-folder"
                   onClick={() => navigateToFolder(item.path)}
                   title={item.name}
@@ -276,26 +276,26 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
               <ContextMenuContent>
                 <ContextMenuGroup>
                   <ContextMenuItem onClick={() => navigateToFolder(item.path)}>
-                    <FolderOpen />
+                    <FolderOpenIcon />
                     {t("space.open")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => openInNewTab(item.path)}>
-                    <PanelsTopLeft />
+                    <PanelsTopLeftIcon />
                     {t("space.openInNewTab")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => openInNewWindow(item.path)}>
-                    <PictureInPicture2 />
+                    <Pip2Icon />
                     {t("space.openInNewWindow")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => void copyWithNotice(item.path)}>
-                    <ClipboardList />
+                    <ClipboardListIcon />
                     {t("space.copyPath")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
                 <ContextMenuSeparator />
                 <ContextMenuGroup>
                   <ContextMenuItem onClick={() => void removeSpaceItem(space.id, item.path)}>
-                    <X />
+                    <CloseIcon />
                     {t("space.remove")}
                   </ContextMenuItem>
                 </ContextMenuGroup>

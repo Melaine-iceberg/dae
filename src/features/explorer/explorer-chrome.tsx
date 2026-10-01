@@ -9,7 +9,7 @@
  */
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { LoaderCircle, SquareTerminal } from "lucide-react";
+import { LoaderIcon, ProgrammingIcon } from "@solar-icons/react/line-duotone";
 
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -122,7 +122,7 @@ export function TerminalToggle() {
       type="button"
       variant="ghost"
     >
-      <SquareTerminal />
+      <ProgrammingIcon />
     </Button>
   );
 }
@@ -153,7 +153,7 @@ export function FileOperationStatusBar({ progress }: { progress: FileOperationPr
       aria-live="polite"
       className="flex h-status-strip shrink-0 items-center gap-3 border-t border-border bg-card px-3"
     >
-      <LoaderCircle
+      <LoaderIcon
         className={cn(
           "size-3.5 shrink-0 text-primary",
           progress.phase !== "completed" && "animate-spin",

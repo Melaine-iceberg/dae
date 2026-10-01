@@ -11,30 +11,30 @@ import {
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import {
-  ChevronDown,
-  ClipboardList,
-  Cloud,
-  Copy,
-  EyeOff,
-  Folder,
-  FolderOpen,
-  Server,
-  Settings,
-  Globe,
-  HardDrive,
-  Home,
-  Terminal,
-  History,
-  Pencil,
-  Plus,
-  Scissors,
-  LayoutGrid,
-  Star,
-  PanelsTopLeft,
-  Trash2,
-  TriangleAlert,
-  Usb,
-} from "lucide-react";
+  AddIcon,
+  AltArrowDownIcon,
+  ClipboardListIcon,
+  CloudIcon,
+  CopyIcon,
+  DangerTriangleIcon,
+  EyeClosedIcon,
+  FolderIcon,
+  FolderOpenIcon,
+  GlobeIcon,
+  HistoryIcon,
+  HomeIcon,
+  PanelsTopLeftIcon,
+  PenIcon,
+  ProgrammingIcon,
+  ScissorsIcon,
+  ServerIcon,
+  SettingsIcon,
+  SsdRoundIcon,
+  StarIcon,
+  TrashBinTrashIcon,
+  UsbIcon,
+  WidgetIcon,
+} from "@solar-icons/react/line-duotone";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { commands, type Breadcrumb, type StoredCloudAccount } from "@/bindings";
@@ -199,19 +199,19 @@ function SidebarContent() {
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <NavItem
-          icon={Home}
+          icon={HomeIcon}
           isActive={surface.kind === "overview"}
           label={t("nav.overview")}
           onClick={() => openSurface({ kind: "overview" })}
         />
         <NavItem
-          icon={History}
+          icon={HistoryIcon}
           isActive={surface.kind === "recents"}
           label={t("nav.recents")}
           onClick={() => openSurface({ kind: "recents" })}
         />
         <NavItem
-          icon={Trash2}
+          icon={TrashBinTrashIcon}
           isActive={surface.kind === "trash"}
           label={t("nav.trash")}
           onClick={() => openSurface({ kind: "trash" })}
@@ -261,7 +261,7 @@ function SidebarContent() {
             <ContextMenu>
               <ContextMenuTrigger>
                 <NavItem
-                  icon={LayoutGrid}
+                  icon={WidgetIcon}
                   iconClassName={getSpaceAccentClass(space.id)}
                   isActive={surface.kind === "space" && surface.spaceId === space.id}
                   label={space.name}
@@ -273,13 +273,13 @@ function SidebarContent() {
                   <ContextMenuItem
                     onClick={() => openSurface({ kind: "space", spaceId: space.id })}
                   >
-                    <FolderOpen />
+                    <FolderOpenIcon />
                     {t("contextMenu.open")}
                   </ContextMenuItem>
                   <ContextMenuItem
                     onClick={() => createTabWithSurface({ kind: "space", spaceId: space.id })}
                   >
-                    <PanelsTopLeft />
+                    <PanelsTopLeftIcon />
                     {t("contextMenu.openInNewTab")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
@@ -291,7 +291,7 @@ function SidebarContent() {
                       setSpaceRenameRequest(space.id);
                     }}
                   >
-                    <Pencil />
+                    <PenIcon />
                     {t("contextMenu.renameSpace")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
@@ -305,7 +305,7 @@ function SidebarContent() {
         {/* Location groups are collapsed by default and mount their content
             (and its backend queries) only on first expand, keeping cold start
             free of disk enumeration, the `wsl.exe` probe, and store reads. */}
-        <CollapsibleSection icon={HardDrive} id="disks" label={t("sections.disks")}>
+        <CollapsibleSection icon={SsdRoundIcon} id="disks" label={t("sections.disks")}>
           <DisksContent
             currentBreadcrumbs={directory?.breadcrumbs ?? EMPTY_BREADCRUMBS}
             currentPath={currentPath}
@@ -324,7 +324,7 @@ function SidebarContent() {
             label: t("network.connectStorage"),
             onClick: () => setConnectOpen(true),
           }}
-          icon={Server}
+          icon={ServerIcon}
           id="network"
           label={t("sections.network")}
         >
@@ -336,7 +336,7 @@ function SidebarContent() {
             label: t("cloud.addAccount"),
             onClick: () => setCloudOpen(true),
           }}
-          icon={Cloud}
+          icon={CloudIcon}
           id="cloud"
           label={t("sections.cloudStorage")}
         >
@@ -352,7 +352,7 @@ function SidebarContent() {
           title={t("settings.open")}
           type="button"
         >
-          <Settings className="size-4" />
+          <SettingsIcon className="size-4" />
         </button>
       </div>
 
@@ -427,12 +427,12 @@ function CollapsibleSection({
           onClick={() => toggle(id)}
           type="button"
         >
-          <Icon className="size-4 shrink-0 text-muted-foreground transition-colors group-hover/section:text-foreground" />
+          <Icon className="size-4 shrink-0 text-foreground/72 transition-colors group-hover/section:text-foreground" />
           <span className="min-w-0 flex-1 truncate">{label}</span>
-          <ChevronDown
+          <AltArrowDownIcon
             aria-hidden="true"
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-fast ease-spring-fast",
+              "size-3.5 shrink-0 text-foreground/65 transition-transform duration-fast ease-spring-fast",
               !open && "-rotate-90",
             )}
           />
@@ -445,7 +445,7 @@ function CollapsibleSection({
             title={action.label}
             type="button"
           >
-            <Plus className="size-3.5" />
+            <AddIcon className="size-3.5" />
           </button>
         )}
       </div>
@@ -501,7 +501,7 @@ function FavoritesContent({
   if (placesError !== null || favoritesError !== null) {
     return (
       <div className="flex items-start gap-1.5 px-3.5 py-1.5">
-        <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+        <DangerTriangleIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
         <span className="min-w-0 flex-1 text-caption leading-relaxed text-muted-foreground">
           {placesError !== null ? t("loadError.places") : t("loadError.favorites")}{" "}
           <button
@@ -558,7 +558,7 @@ function FavoritesContent({
           path={favorite.path}
         >
           <NavItem
-            icon={Folder}
+            icon={FolderIcon}
             isActive={currentPath === favorite.path}
             label={favorite.name}
             onClick={() => onNavigate(favorite.path)}
@@ -593,11 +593,11 @@ function FavoritesEntryContextMenu({
       <ContextMenuContent>
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => openInNewTab(path)}>
-            <FolderOpen />
+            <FolderOpenIcon />
             {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => void copyWithNotice(path)}>
-            <ClipboardList />
+            <ClipboardListIcon />
             {t("contextMenu.copyFilePath")}
           </ContextMenuItem>
         </ContextMenuGroup>
@@ -605,12 +605,12 @@ function FavoritesEntryContextMenu({
         <ContextMenuGroup>
           {entry.kind === "place" ? (
             <ContextMenuItem onClick={() => setHiddenPlaces([...hiddenPlaces, entry.placeKind])}>
-              <EyeOff />
+              <EyeClosedIcon />
               {t("contextMenu.hideFromFavorites")}
             </ContextMenuItem>
           ) : (
             <ContextMenuItem onClick={() => removeFavorite(path)}>
-              <Star />
+              <StarIcon />
               {t("contextMenu.removeFavorite")}
             </ContextMenuItem>
           )}
@@ -680,7 +680,7 @@ function WslContent({
   return distros.map((distro) => (
     <FolderContextMenu isListed={false} key={distro.path} path={distro.path}>
       <NavItem
-        icon={Terminal}
+        icon={ProgrammingIcon}
         isActive={currentPath === distro.path}
         label={distro.name}
         onClick={() => onNavigate(distro.path)}
@@ -712,7 +712,7 @@ function NetworkContent({
       {connections.map((connection) => (
         <ConnectionContextMenu key={connection.id} connection={connection}>
           <NavItem
-            icon={Globe}
+            icon={GlobeIcon}
             isActive={
               currentPath === connection.id || currentPath?.startsWith(`${connection.id}/`) === true
             }
@@ -802,18 +802,18 @@ function CloudAccountContextMenu({
       <ContextMenuContent>
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => openInNewTab(path)}>
-            <FolderOpen />
+            <FolderOpenIcon />
             {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => void copyWithNotice(path)}>
-            <ClipboardList />
+            <ClipboardListIcon />
             {t("contextMenu.copyPath")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={remove}>
-            <Trash2 />
+            <TrashBinTrashIcon />
             {t("cloud.removeAccount")}
           </ContextMenuItem>
         </ContextMenuGroup>
@@ -842,7 +842,7 @@ function SectionLabel({
           title={addTitle}
           type="button"
         >
-          <Plus className="size-3.5" />
+          <AddIcon className="size-3.5" />
         </button>
       )}
     </div>
@@ -882,7 +882,10 @@ function NavItem({
       <Icon
         className={cn(
           "size-4 shrink-0",
-          isActive ? "text-foreground" : "text-muted-foreground",
+          // Two steps, not three: the row's *label* already carries the
+          // active/idle distinction through weight and fill, so the glyph only
+          // has to stay legible. The muted step read as a disabled row.
+          isActive ? "text-foreground" : "text-foreground/72",
           iconClassName,
         )}
       />
@@ -917,29 +920,29 @@ function ConnectionContextMenu({
       <ContextMenuContent>
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => openInNewTab(path)}>
-            <FolderOpen />
+            <FolderOpenIcon />
             {t("contextMenu.openInNewTab")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => void copyWithNotice(path)}>
-            <ClipboardList />
+            <ClipboardListIcon />
             {t("contextMenu.copyPath")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={() => setClipboard({ operation: "copy", sourcePaths: [path] })}>
-            <Copy />
+            <CopyIcon />
             {t("contextMenu.copy")}
           </ContextMenuItem>
           <ContextMenuItem onClick={() => setClipboard({ operation: "cut", sourcePaths: [path] })}>
-            <Scissors />
+            <ScissorsIcon />
             {t("contextMenu.cut")}
           </ContextMenuItem>
         </ContextMenuGroup>
         <ContextMenuSeparator />
         <ContextMenuGroup>
           <ContextMenuItem onClick={remove}>
-            <Trash2 />
+            <TrashBinTrashIcon />
             {t("contextMenu.removeConnection")}
           </ContextMenuItem>
         </ContextMenuGroup>
@@ -987,9 +990,9 @@ function DiskItem({
           type="button"
         >
           {volume.isRemovable ? (
-            <Usb className="size-4 shrink-0 text-muted-foreground" />
+            <UsbIcon className="size-4 shrink-0 text-foreground/72" />
           ) : (
-            <HardDrive className="size-4 shrink-0 text-muted-foreground" />
+            <SsdRoundIcon className="size-4 shrink-0 text-foreground/72" />
           )}
           <div className="min-w-0 flex-1">
             <div className="truncate text-body">{presentation.primary}</div>
@@ -1001,11 +1004,11 @@ function DiskItem({
         <button
           aria-expanded={treeOpen}
           aria-label={t(treeOpen ? "tree.collapse" : "tree.expand")}
-          className="shrink-0 rounded-xs p-0.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          className="shrink-0 rounded-xs p-0.5 text-foreground/65 transition-colors hover:bg-accent hover:text-foreground"
           onClick={() => toggleTreeNode(volume.mountPoint)}
           type="button"
         >
-          <ChevronDown
+          <AltArrowDownIcon
             aria-hidden="true"
             className={cn(
               "size-3.5 transition-transform duration-fast ease-spring-fast",

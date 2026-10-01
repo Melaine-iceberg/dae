@@ -1,7 +1,14 @@
 import { useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { ClipboardList, FolderOpen, PictureInPicture2, Star, PanelsTopLeft, X } from "lucide-react";
+import {
+  ClipboardListIcon,
+  CloseIcon,
+  FolderOpenIcon,
+  PanelsTopLeftIcon,
+  Pip2Icon,
+  StarIcon,
+} from "@solar-icons/react/line-duotone";
 
 import {
   ContextMenu,
@@ -71,7 +78,7 @@ export function FavoritesView() {
         <Empty className="min-h-64">
           <EmptyHeader>
             <EmptyMedia variant="icon">
-              <Star />
+              <StarIcon />
             </EmptyMedia>
             <EmptyTitle>{t("favorites.emptyTitle")}</EmptyTitle>
             <EmptyDescription>{t("favorites.emptyDescription")}</EmptyDescription>
@@ -84,7 +91,7 @@ export function FavoritesView() {
               <ContextMenuTrigger>
                 <LocationCard
                   description={favorite.path}
-                  icon={Star}
+                  icon={StarIcon}
                   iconClassName="fill-current text-primary"
                   onClick={() => navigateToFolder(favorite.path)}
                   title={favorite.name}
@@ -93,26 +100,26 @@ export function FavoritesView() {
               <ContextMenuContent>
                 <ContextMenuGroup>
                   <ContextMenuItem onClick={() => navigateToFolder(favorite.path)}>
-                    <FolderOpen />
+                    <FolderOpenIcon />
                     {t("favorites.open")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => openInNewTab(favorite.path)}>
-                    <PanelsTopLeft />
+                    <PanelsTopLeftIcon />
                     {t("favorites.openInNewTab")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => openInNewWindow(favorite.path)}>
-                    <PictureInPicture2 />
+                    <Pip2Icon />
                     {t("favorites.openInNewWindow")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => void copyWithNotice(favorite.path)}>
-                    <ClipboardList />
+                    <ClipboardListIcon />
                     {t("favorites.copyPath")}
                   </ContextMenuItem>
                 </ContextMenuGroup>
                 <ContextMenuSeparator />
                 <ContextMenuGroup>
                   <ContextMenuItem onClick={() => removeFavorite(favorite.path)}>
-                    <X />
+                    <CloseIcon />
                     {t("favorites.remove")}
                   </ContextMenuItem>
                 </ContextMenuGroup>

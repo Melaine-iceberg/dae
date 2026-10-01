@@ -3,7 +3,15 @@ import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { ArrowRight, History, EyeOff, Folder, Plus, LayoutGrid, Star } from "lucide-react";
+import {
+  AddIcon,
+  ArrowRightIcon,
+  EyeClosedIcon,
+  FolderIcon,
+  HistoryIcon,
+  StarIcon,
+  WidgetIcon,
+} from "@solar-icons/react/line-duotone";
 
 import {
   ContextMenu,
@@ -143,7 +151,7 @@ export function OverviewView() {
                   onClick={() => setHiddenPlaces([])}
                   type="button"
                 >
-                  <EyeOff className="size-3" />
+                  <EyeClosedIcon className="size-3" />
                   {t("overview.restoreHidden", { count: hiddenPlaces.length })}
                 </button>
               )}
@@ -152,7 +160,7 @@ export function OverviewView() {
                 onClick={addFavoriteFolder}
                 type="button"
               >
-                <Plus className="size-3" />
+                <AddIcon className="size-3" />
                 {t("overview.addFolder")}
               </button>
             </div>
@@ -184,7 +192,7 @@ export function OverviewView() {
           <Empty className="border-none py-6">
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <Star />
+                <StarIcon />
               </EmptyMedia>
               <EmptyTitle>{t("overview.favoritesEmptyTitle")}</EmptyTitle>
               <EmptyDescription className="text-caption">
@@ -208,11 +216,11 @@ export function OverviewView() {
                   </ContextMenuTrigger>
                   <ContextMenuContent>
                     <ContextMenuItem onClick={() => navigateToFolder(place.path)}>
-                      <Folder />
+                      <FolderIcon />
                       {t("overview.open")}
                     </ContextMenuItem>
                     <ContextMenuItem onClick={() => setHiddenPlaces([...hiddenPlaces, place.kind])}>
-                      <EyeOff />
+                      <EyeClosedIcon />
                       {t("overview.hideFromFavorites")}
                     </ContextMenuItem>
                   </ContextMenuContent>
@@ -224,7 +232,7 @@ export function OverviewView() {
                 <ContextMenuTrigger>
                   <LocationCard
                     description={favorite.path}
-                    icon={Star}
+                    icon={StarIcon}
                     iconClassName="fill-current text-primary"
                     onClick={() => navigateToFolder(favorite.path)}
                     title={favorite.name}
@@ -232,11 +240,11 @@ export function OverviewView() {
                 </ContextMenuTrigger>
                 <ContextMenuContent>
                   <ContextMenuItem onClick={() => navigateToFolder(favorite.path)}>
-                    <Folder />
+                    <FolderIcon />
                     {t("overview.open")}
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => removeFavorite(favorite.path)}>
-                    <Star />
+                    <StarIcon />
                     {t("overview.removeFromFavorites")}
                   </ContextMenuItem>
                 </ContextMenuContent>
@@ -256,7 +264,7 @@ export function OverviewView() {
                 type="button"
               >
                 {t("overview.viewAll")}
-                <ArrowRight className="size-3" />
+                <ArrowRightIcon className="size-3" />
               </button>
             )
           }
@@ -279,7 +287,7 @@ export function OverviewView() {
           <Empty className="border-none py-6">
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                <History />
+                <HistoryIcon />
               </EmptyMedia>
               <EmptyTitle>{t("overview.recentsEmptyTitle")}</EmptyTitle>
             </EmptyHeader>
@@ -347,7 +355,7 @@ export function OverviewView() {
                     ? t("spaces.itemCount", { count: space.items.length })
                     : t("spaces.emptyLabel")
                 }
-                icon={LayoutGrid}
+                icon={WidgetIcon}
                 iconClassName={getSpaceAccentClass(space.id)}
                 key={space.id}
                 onClick={() => openSurface({ kind: "space", spaceId: space.id })}

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { CircleAlert, CircleCheck, CircleX, Info, LoaderCircle } from "lucide-react";
+import { CheckCircleIcon, CloseCircleIcon, DangerCircleIcon, InfoCircleIcon, LoaderIcon } from "@solar-icons/react/line-duotone";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 
 /**
@@ -16,7 +16,7 @@ import { Toaster as Sonner, type ToasterProps } from "sonner";
  *   light on a dark desktop), so `prefers-color-scheme` is the wrong answer and
  *   the class is observed instead.
  * - the ICONS. Sonner's own set is a filled circle glyph family that belongs to
- *   no icon system in this app; the types carry the same lucide glyphs and the
+ *   no icon system in this app; the types carry the same Solar glyphs and the
  *   same semantic tokens the rest of the shell uses (`--success`, `--warning`,
  *   `--info`), so a notification's status reads identically to a Git badge's.
  *   `richColors` stays off deliberately: a toast painted end to end in its
@@ -52,11 +52,11 @@ function Toaster({ position = "bottom-right", ...props }: ToasterProps) {
       icons={{
         // 16px is the cell Sonner reserves for the glyph; the tokens are what
         // makes a "did this work" glance possible without reading the sentence.
-        success: <CircleCheck className="size-4 text-success" />,
-        error: <CircleX className="size-4 text-destructive" />,
-        warning: <CircleAlert className="size-4 text-warning" />,
-        info: <Info className="size-4 text-info" />,
-        loading: <LoaderCircle className="size-4 animate-spin text-muted-foreground" />,
+        success: <CheckCircleIcon className="size-4 text-success" />,
+        error: <CloseCircleIcon className="size-4 text-destructive" />,
+        warning: <DangerCircleIcon className="size-4 text-warning" />,
+        info: <InfoCircleIcon className="size-4 text-info" />,
+        loading: <LoaderIcon className="size-4 animate-spin text-muted-foreground" />,
       }}
       offset={16}
       position={position}

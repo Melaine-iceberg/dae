@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { useQueries } from "@tanstack/react-query";
-import { CircleCheck, GitBranch } from "lucide-react";
+import { CheckCircleIcon, GitBranchIcon } from "@solar-icons/react/line-duotone";
 
 import {
   commands,
@@ -150,7 +150,7 @@ function ProjectCard({
     >
       <span className="flex w-full items-center gap-2.5">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-sm bg-secondary">
-          <GitBranch className="size-4 text-secondary-foreground" />
+          <GitBranchIcon className="size-4 text-secondary-foreground" />
         </span>
         <span className="min-w-0 flex-1 truncate text-body font-medium">{project.name}</span>
         <span className="shrink-0 text-caption text-muted-foreground tabular-nums">
@@ -184,7 +184,7 @@ function ProjectCard({
             )
           ) : (
             <span className="flex shrink-0 items-center gap-1 text-micro text-muted-foreground">
-              <CircleCheck className="size-3.5 text-success" />
+              <CheckCircleIcon className="size-3.5 text-success" />
               {t("workspace:overview.projectClean")}
             </span>
           ))}

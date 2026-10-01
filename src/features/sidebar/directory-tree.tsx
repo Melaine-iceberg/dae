@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { atom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { ChevronDown } from "lucide-react";
+import { AltArrowDownIcon } from "@solar-icons/react/line-duotone";
 
 import { type DirectoryEntry } from "@/bindings";
 import { openDirectoryListing } from "@/features/explorer/directory-listing";
@@ -241,11 +241,11 @@ function TreeNodeRow({
             <button
               aria-expanded={expanded}
               aria-label={t(expanded ? "tree.collapse" : "tree.expand")}
-              className="flex size-5 shrink-0 items-center justify-center rounded-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="flex size-5 shrink-0 items-center justify-center rounded-xs text-foreground/70 transition-colors hover:bg-accent hover:text-foreground"
               onClick={() => toggle(entry.path)}
               type="button"
             >
-              <ChevronDown
+              <AltArrowDownIcon
                 aria-hidden="true"
                 className={cn(
                   "size-3 transition-transform duration-fast ease-spring-fast",

@@ -15,17 +15,17 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useAtom, useAtomValue } from "jotai";
 import { useTranslation } from "react-i18next";
 import {
-  CircleCheck,
-  LoaderCircle,
-  Settings,
-  Info,
-  Keyboard,
-  Minus,
-  Palette,
-  Plus,
-  ScrollText,
-  SquareTerminal,
-} from "lucide-react";
+  AddIcon,
+  CheckCircleIcon,
+  DocumentTextIcon,
+  InfoCircleIcon,
+  KeyboardIcon,
+  LoaderIcon,
+  MinusIcon,
+  PaletteIcon,
+  ProgrammingIcon,
+  SettingsIcon,
+} from "@solar-icons/react/line-duotone";
 import { getVersion } from "@tauri-apps/api/app";
 import { appLogDir } from "@tauri-apps/api/path";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -66,13 +66,13 @@ import {
 
 type Pane = "appearance" | "shortcuts" | "terminal" | "defaultFileManager" | "logs" | "about";
 
-const NAV_ITEMS: ReadonlyArray<{ icon: typeof Settings; pane: Pane }> = [
-  { icon: Palette, pane: "appearance" },
-  { icon: Keyboard, pane: "shortcuts" },
-  { icon: SquareTerminal, pane: "terminal" },
-  { icon: Settings, pane: "defaultFileManager" },
-  { icon: ScrollText, pane: "logs" },
-  { icon: Info, pane: "about" },
+const NAV_ITEMS: ReadonlyArray<{ icon: typeof SettingsIcon; pane: Pane }> = [
+  { icon: PaletteIcon, pane: "appearance" },
+  { icon: KeyboardIcon, pane: "shortcuts" },
+  { icon: ProgrammingIcon, pane: "terminal" },
+  { icon: SettingsIcon, pane: "defaultFileManager" },
+  { icon: DocumentTextIcon, pane: "logs" },
+  { icon: InfoCircleIcon, pane: "about" },
 ];
 
 const GROUP_ORDER: readonly ShortcutGroup[] = ["app", "explorer", "view"];
@@ -401,13 +401,13 @@ function TerminalPane() {
                   aria-label={t("terminal.lineHeightDecrease")}
                   onClick={() => stepLineHeight(-0.1)}
                 >
-                  <Minus />
+                  <MinusIcon />
                 </InputGroupButton>
                 <InputGroupButton
                   aria-label={t("terminal.lineHeightIncrease")}
                   onClick={() => stepLineHeight(0.1)}
                 >
-                  <Plus />
+                  <AddIcon />
                 </InputGroupButton>
               </InputGroupAddon>
             </InputGroup>
@@ -486,9 +486,9 @@ function DefaultFileManagerPane() {
         <>
           <div className="flex items-center gap-2 text-body">
             {busy ? (
-              <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
+              <LoaderIcon className="size-4 animate-spin text-muted-foreground" />
             ) : isDefault ? (
-              <CircleCheck className="size-4 text-success" />
+              <CheckCircleIcon className="size-4 text-success" />
             ) : null}
             <span>
               {isDefault
