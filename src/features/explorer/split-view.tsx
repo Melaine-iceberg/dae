@@ -29,8 +29,12 @@ const SPLIT_RATIO_MAX = 0.75;
  * (own navigator, selection and search) side by side. The focused pane owns
  * window-level keyboard shortcuts and command-bar intents; clicking either
  * pane or pressing F6 moves focus between them.
+ *
+ * `active` says whether this tab is the strip's selected one — the surfaces of
+ * unselected tabs stay mounted (see `explorer-tabs.tsx`), so every pane-local
+ * shortcut and the F6 swap below gate on it too.
  */
-export function SplitExplorerView({ tabId }: { tabId: string }) {
+export function SplitExplorerView({ active = true, tabId }: { active?: boolean; tabId: string }) {
   const { t } = useTranslation("explorer");
   const splitEnabled = useAtomValue(splitEnabledFamily(tabId));
   const activePane = useAtomValue(activePaneFamily(tabId));
@@ -55,7 +59,7 @@ export function SplitExplorerView({ tabId }: { tabId: string }) {
         },
       },
     ],
-    { ...HOTKEY_COMMON_OPTIONS, enabled: splitEnabled && !hotkeysPaused },
+    { ...HOTKEY_COMMON_OPTIONS, enabled: active && splitEnabled && !hotkeysPaused },
   );
 
   const handleDividerPointerDown = useCallback(
@@ -83,7 +87,7 @@ export function SplitExplorerView({ tabId }: { tabId: string }) {
   if (!splitEnabled) {
     return (
       <ExplorerView
-        isActivePane
+        isActivePane={active}
         navigator={getTabNavigator(tabId)}
         onToggleSplit={toggleSplit}
         splitEnabled={false}
@@ -100,7 +104,7 @@ export function SplitExplorerView({ tabId }: { tabId: string }) {
         style={{ width: `${ratio * 100}%` }}
       >
         <ExplorerView
-          isActivePane={activePane === "primary"}
+          isActivePane={active && activePane === "primary"}
           navigator={getTabNavigator(tabId)}
           onToggleSplit={toggleSplit}
           splitEnabled
@@ -122,7 +126,7 @@ export function SplitExplorerView({ tabId }: { tabId: string }) {
         onActivate={() => setActivePane("split")}
       >
         <ExplorerView
-          isActivePane={activePane === "split"}
+          isActivePane={active && activePane === "split"}
           navigator={getSplitNavigator(tabId)}
           onToggleSplit={toggleSplit}
           splitEnabled

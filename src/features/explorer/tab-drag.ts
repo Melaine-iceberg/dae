@@ -40,7 +40,9 @@ export type TabDragBand = {
   bottom: number;
 };
 
-/** Ghost geometry in viewport pixels, tracking the cursor by the grab point. */
+/** Ghost geometry in viewport pixels, tracking the cursor by the grab point.
+ *  Captured once when the ghost mounts; the frames after that position the
+ *  ghost purely through its `transform`, never through React state. */
 export type TabDragGhost = {
   x: number;
   y: number;
@@ -205,10 +207,19 @@ export type TabDragDeps = {
   grabX: number;
   grabY: number;
   moveTab: (tabId: string, insertionIndex: number) => void;
+  /** Mounts the ghost at this geometry, or unmounts it. Called once per
+   *  gesture — never per frame; the per-frame work is `moveGhost`. */
   onGhost: (ghost: TabDragGhost | null) => void;
+  /** Positions the mounted ghost for one frame. Writes the portal element's
+   *  `transform` directly so a drag that tracks the cursor at rAF rate costs
+   *  no re-render — a ghost steered through React state was redrawing the
+   *  whole tab strip once per frame. */
+  moveGhost: (x: number, y: number) => void;
   onDragging: (dragging: boolean) => void;
-  /** Rasterizes the ghost for the OS drag image. Runs while the ghost is still
-   *  in the DOM, so it starts with the drag and is awaited at the hand-off. */
+  /** Rasterizes the ghost for the OS drag image. Runs at the hand-off, where
+   *  the ghost has been in the DOM since the drag began — starting it there
+   *  instead of at the first move keeps the rasterization (a full-computed-
+   *  style clone plus a canvas round-trip) off the drag's frames entirely. */
   capturePreview: () => Promise<string | null>;
   /** Gives the gesture to the platform drag loop and reports where it landed. */
   handOffToNative: (preview: string | null) => Promise<NativeDragOutcome>;
@@ -251,7 +262,6 @@ export function beginTabDragGesture(deps: TabDragDeps): TabDragController {
   let pointerX = deps.startX;
   let pointerY = deps.startY;
   let lastReorderIndex = -1;
-  let preview: Promise<string | null> | null = null;
   let frame: number | undefined;
   let pollTimer: number | undefined;
   let released = false;
@@ -290,12 +300,10 @@ export function beginTabDragGesture(deps: TabDragDeps): TabDragController {
     frame = undefined;
     if (ended || phase === "native") return;
 
-    deps.onGhost({
-      x: pointerX - deps.grabX,
-      y: pointerY - deps.grabY,
-      width: element.offsetWidth,
-      height: element.offsetHeight,
-    });
+    // The ghost is positioned by writing its transform, not by re-rendering:
+    // a state-driven ghost meant the strip's React tree was redrawn once per
+    // frame just to move one absolutely-positioned portal.
+    deps.moveGhost(pointerX - deps.grabX, pointerY - deps.grabY);
 
     if (phase !== "inStrip" || !strip) return;
     const step = stripAutoScrollStep(strip, pointerX);
@@ -316,13 +324,15 @@ export function beginTabDragGesture(deps: TabDragDeps): TabDragController {
     pollTimer = undefined;
     if (frame !== undefined) window.cancelAnimationFrame(frame);
     frame = undefined;
-    // The OS drag image replaces the ghost, which would otherwise stay frozen
-    // and half-clipped at the WebView edge for the rest of the drag.
-    deps.onGhost(null);
-
     void (async () => {
-      const snapshot = await preview;
+      // The rasterizer reads the live ghost, so the ghost — frozen at the
+      // WebView edge since the ticks stopped — stays on screen until its
+      // pixels are captured. The OS drag image then replaces it with the very
+      // same pixels, and what would otherwise be a half-clipped leftover is
+      // instead a seamless hand-over.
+      const snapshot = await deps.capturePreview();
       if (ended) return;
+      deps.onGhost(null);
       let outcome: NativeDragOutcome;
       try {
         outcome = await deps.handOffToNative(snapshot ?? null);
@@ -371,7 +381,14 @@ export function beginTabDragGesture(deps: TabDragDeps): TabDragController {
   const begin = () => {
     phase = "inStrip";
     deps.onDragging(true);
-    preview = deps.capturePreview();
+    // One state change per gesture: the ghost mounts here, sized to the tab at
+    // the moment it was grabbed, and every position after this is `moveGhost`.
+    deps.onGhost({
+      x: pointerX - deps.grabX,
+      y: pointerY - deps.grabY,
+      width: element.offsetWidth,
+      height: element.offsetHeight,
+    });
     // Wayland answers the native query with "inside" forever — it has no global
     // pointer position to measure against — while its clamped event coordinates
     // already carry the edge, so polling there only costs an IPC per tick.

@@ -659,6 +659,7 @@ export function ExplorerView({
           contentSearch={contentSearch}
           directory={directory}
           gitStatus={gitStatus}
+          isActivePane={isActivePane}
           isCurrentFavorited={isCurrentFavorited}
           isLoading={isLoading}
           isPreviewOpen={isPreviewOpen}

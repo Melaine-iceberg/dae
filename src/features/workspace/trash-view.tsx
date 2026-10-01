@@ -97,8 +97,12 @@ type PurgeRequest = { kind: "empty" } | { kind: "selection"; ids: string[] };
  * The Trash surface: lists the system recycle bin so deleted entries can be
  * inspected, restored to their original locations, purged individually, or
  * the whole bin emptied — the fallback when the undo window was missed.
+ *
+ * `active` is whether this tab is the strip's selected one: the surface stays
+ * mounted for unselected tabs (see `explorer-tabs.tsx`), and its keyboard
+ * shortcuts must not answer while another tab is in front.
  */
-export function TrashView() {
+export function TrashView({ active = true }: { active?: boolean }) {
   const { t } = useTranslation("workspace");
   const navigateToFolder = useSetAtom(navigateToFolderAtom);
   const [entries, setEntries] = useState<TrashEntry[] | null>(null);
@@ -363,6 +367,7 @@ export function TrashView() {
         </Empty>
       ) : (
         <TrashList
+          active={active}
           allSelected={allSelected}
           entries={entries}
           isOperationPending={isOperationPending}
@@ -428,6 +433,7 @@ export function TrashView() {
  * keeps working and the chords the header advertises are really listening.
  */
 function TrashList({
+  active,
   allSelected,
   entries,
   isOperationPending,
@@ -439,6 +445,7 @@ function TrashList({
   onToggleSelected,
   selectedIds,
 }: {
+  active: boolean;
   allSelected: boolean;
   entries: TrashEntry[];
   isOperationPending: boolean;
@@ -508,17 +515,17 @@ function TrashList({
       {
         hotkey: asHotkey(resolveBinding(shortcuts, "explorer.trash")),
         callback: guardedAction(purgeCursor),
-        options: { enabled: !hotkeysPaused && !isOperationPending },
+        options: { enabled: active && !hotkeysPaused && !isOperationPending },
       },
       {
         hotkey: asHotkey(resolveBinding(shortcuts, "explorer.deletePermanent")),
         callback: guardedAction(purgeCursor),
-        options: { enabled: !hotkeysPaused && !isOperationPending },
+        options: { enabled: active && !hotkeysPaused && !isOperationPending },
       },
       {
         hotkey: asHotkey(resolveBinding(shortcuts, "explorer.selectAll")),
         callback: guardedAction(onSelectAll),
-        options: { enabled: !hotkeysPaused },
+        options: { enabled: active && !hotkeysPaused },
       },
       {
         // The list header advertises this chord while anything is selected, so
@@ -530,7 +537,7 @@ function TrashList({
         // swallowed the key and still must not.
         hotkey: asHotkey(resolveBinding(shortcuts, "explorer.clearSelection")),
         callback: guardedAction(onClearSelection, { preventDefault: false }),
-        options: { enabled: !hotkeysPaused && selectedIds.length > 0 },
+        options: { enabled: active && !hotkeysPaused && selectedIds.length > 0 },
       },
     ],
     HOTKEY_COMMON_OPTIONS,

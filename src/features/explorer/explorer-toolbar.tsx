@@ -82,6 +82,9 @@ export interface ExplorerToolbarProps {
   searchMode: ExplorerSearchMode;
   onSearchModeChange: (mode: ExplorerSearchMode) => void;
   gitStatus: ExplorerGitStatus | null;
+  /** Whether this pane is the one that owns keyboard shortcuts — passed down
+   *  to the search field so its Mod+F listener answers for this pane only. */
+  isActivePane: boolean;
   /** Incremented by the pane's Ctrl+L / Alt+D; forwarded to the path bar so
    *  its inline editor opens. */
   pathEditSignal: number;
@@ -113,6 +116,7 @@ export function ExplorerToolbar({
   searchMode,
   onSearchModeChange,
   gitStatus,
+  isActivePane,
   pathEditSignal,
   splitEnabled,
   onToggleSplit,
@@ -230,7 +234,7 @@ export function ExplorerToolbar({
       <DirectorySearch
         contentSearch={contentSearch}
         directoryName={directory?.breadcrumbs.at(-1)?.name ?? null}
-        disabled={isLoading}
+        disabled={isLoading || !isActivePane}
         mode={searchMode}
         onModeChange={onSearchModeChange}
         search={search}

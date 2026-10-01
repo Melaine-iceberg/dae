@@ -3,10 +3,13 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import { useAtomValue, useSetAtom } from "jotai";
@@ -102,8 +105,11 @@ function listenInThisWindow<T>(
   return (appWindow ? event(appWindow) : event).listen(handler);
 }
 
-/** The ghost portal mounts one React commit after the drag threshold, so the
- *  snapshot waits a bounded number of frames for it to appear. */
+/** The ghost mounts one React commit after the drag threshold, so the
+ *  snapshot — which runs at the hand-off (see tab-drag.ts) — finds the portal
+ *  mounted and resolves on its first check; the frame budget is the bound for
+ *  the unlikely case the commit is still in flight when the cursor leaves the
+ *  window almost immediately. */
 function waitForDragPreviewPortal(tabId: string, frames = 12): Promise<HTMLElement | null> {
   return new Promise((resolve) => {
     const tick = (remaining: number) => {
@@ -308,10 +314,14 @@ export function ExplorerTabs() {
     const strip = stripRef.current;
     if (!strip) return;
     const maxScrollLeft = strip.scrollWidth - strip.clientWidth;
-    setCanScroll({
-      left: strip.scrollLeft > 1,
-      right: strip.scrollLeft < maxScrollLeft - 1,
-    });
+    const left = strip.scrollLeft > 1;
+    const right = strip.scrollLeft < maxScrollLeft - 1;
+    // The strip fires `scroll` for every pixel of auto-scroll and tab-drag
+    // reordering; only an actual change of either edge is worth a render, so
+    // an unchanged answer returns the previous object and React bails out.
+    setCanScroll((previous) =>
+      previous.left === left && previous.right === right ? previous : { left, right },
+    );
   }, []);
 
   useEffect(() => {
@@ -384,8 +394,31 @@ export function ExplorerTabs() {
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-card">
-            <WorkspaceSurfaceView key={activeTabId} tabId={activeTabId} />
+          {/* Chrome-style keep-alive: every tab's surface stays mounted and
+              the surfaces are stacked; switching tabs flips visibility
+              instead of swapping the key, so nothing remounts — directory
+              listings, sort sessions and scroll positions survive the
+              switch, and switch latency stops scaling with directory size.
+              Inactive layers keep their geometry (TanStack virtual's
+              measurements stay valid) while skipping paint and hit-testing;
+              their keyboard shortcuts are gated through the `active` prop
+              chain (see workspace-surface.tsx). */}
+          <div className="relative min-h-0 flex-1 overflow-hidden bg-card">
+            {tabs.map((tab) => {
+              const isActive = tab.id === activeTabId;
+              return (
+                <div
+                  key={tab.id}
+                  aria-hidden={!isActive}
+                  className={cn(
+                    "absolute inset-0 flex min-h-0 flex-col",
+                    isActive ? "visible" : "invisible pointer-events-none",
+                  )}
+                >
+                  <WorkspaceSurfaceView active={isActive} tabId={tab.id} />
+                </div>
+              );
+            })}
           </div>
           {terminalMounted && (
             <Suspense fallback={null}>
@@ -619,6 +652,7 @@ function TabStripItem({
       : (directory?.breadcrumbs.at(-1)?.name ?? t("tabs.loading"));
   const title = surfaceTitle(surface, folderTitle, spaceName, t);
   const elementRef = useRef<HTMLDivElement>(null);
+  const ghostElementRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<TabDragController | null>(null);
   const [dragPreview, setDragPreview] = useState<TabDragGhost | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -664,6 +698,10 @@ function TabStripItem({
       grabY,
       moveTab,
       onGhost: setDragPreview,
+      moveGhost: (x, y) => {
+        const ghost = ghostElementRef.current;
+        if (ghost) ghost.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+      },
       onDragging: setDragActive,
       capturePreview: () => snapshotTabDragPreview(tabId),
       readNativeOutside: () =>
@@ -751,26 +789,58 @@ function TabStripItem({
           with nothing behind it, where a drop shadow is a smear on the desktop
           rather than a float over the shell, so the two only stay identical if
           neither carries one. */}
-      {dragPreview &&
-        createPortal(
-          <div
-            aria-hidden="true"
-            className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-sm border border-border bg-card text-body text-foreground select-none"
-            data-tab-drag-preview={tab.id}
-            style={{
-              width: dragPreview.width,
-              height: dragPreview.height,
-              transform: `translate3d(${dragPreview.x}px, ${dragPreview.y}px, 0)`,
-            }}
-          >
-            {tabContent}
-            <span className="absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center text-muted-foreground">
-              <X className="size-3" />
-            </span>
-          </div>,
-          // Escape the tab strip's overflow clipping and the source tab's opacity.
-          document.body,
-        )}
+      {dragPreview && (
+        <TabDragGhostPortal elementRef={ghostElementRef} geometry={dragPreview} tabId={tab.id}>
+          {tabContent}
+          <span className="absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center text-muted-foreground">
+            <X className="size-3" />
+          </span>
+        </TabDragGhostPortal>
+      )}
     </div>
+  );
+}
+
+/** The drag ghost: the tab's chip, floating with the cursor. It mounts once
+ *  per gesture and is positioned imperatively from then on — the drag's rAF
+ *  loop writes `transform` through `moveGhost` (see tab-drag.ts) — so
+ *  tracking the cursor at frame rate costs no re-render of the strip.
+ *
+ *  The transform is deliberately absent from the style prop: the live reorder
+ *  re-renders this subtree mid-drag, and a style-prop transform would reset
+ *  the imperative position to wherever the ghost mounted. The layout effect
+ *  below is the only transform React ever writes — it places the ghost before
+ *  its first paint, so it never flashes at the top-left of the window while
+ *  waiting for the first tracking frame. */
+function TabDragGhostPortal({
+  children,
+  elementRef,
+  geometry,
+  tabId,
+}: {
+  children: ReactNode;
+  elementRef: RefObject<HTMLDivElement | null>;
+  geometry: TabDragGhost;
+  tabId: string;
+}) {
+  useLayoutEffect(() => {
+    const ghost = elementRef.current;
+    if (ghost) {
+      ghost.style.transform = `translate3d(${geometry.x}px, ${geometry.y}px, 0)`;
+    }
+  }, [elementRef, geometry]);
+
+  return createPortal(
+    <div
+      aria-hidden="true"
+      className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-sm border border-border bg-card text-body text-foreground select-none"
+      data-tab-drag-preview={tabId}
+      ref={elementRef}
+      style={{ width: geometry.width, height: geometry.height }}
+    >
+      {children}
+    </div>,
+    // Escape the tab strip's overflow clipping and the source tab's opacity.
+    document.body,
   );
 }

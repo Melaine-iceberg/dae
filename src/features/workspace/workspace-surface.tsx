@@ -18,7 +18,7 @@ const FavoritesView = lazy(() =>
 const TrashView = lazy(() => import("./trash-view").then((m) => ({ default: m.TrashView })));
 const SpaceView = lazy(() => import("./space-view").then((m) => ({ default: m.SpaceView })));
 
-type SplitExplorerProps = { tabId: string };
+type SplitExplorerProps = { active?: boolean; tabId: string };
 
 /**
  * The explorer module, hoisted out of `lazy` and loaded ahead of the first
@@ -70,8 +70,13 @@ function SurfaceSkeleton() {
  * Renders the active surface of one tab: the workspace surfaces (Overview,
  * Recents, Favorites, Space) or the classic folder explorer, which itself
  * switches between the single and dual-pane layouts.
+ *
+ * `active` is whether this tab is the strip's selected one; every tab's
+ * surface stays mounted (Chrome-style keep-alive, see `explorer-tabs.tsx`), so
+ * the surfaces that register window-level keyboard shortcuts gate themselves
+ * on it instead of on being the only thing in the tree.
  */
-export function WorkspaceSurfaceView({ tabId }: { tabId: string }) {
+export function WorkspaceSurfaceView({ active = true, tabId }: { active?: boolean; tabId: string }) {
   const surface = useAtomValue(tabSurfaceFamily(tabId));
 
   switch (surface.kind) {
@@ -92,7 +97,7 @@ export function WorkspaceSurfaceView({ tabId }: { tabId: string }) {
     case "trash":
       return (
         <Suspense fallback={<SurfaceSkeleton />}>
-          <TrashView />
+          <TrashView active={active} />
         </Suspense>
       );
     case "space":
@@ -103,10 +108,10 @@ export function WorkspaceSurfaceView({ tabId }: { tabId: string }) {
       );
     case "folder":
       return PreloadedSplitExplorer ? (
-        <PreloadedSplitExplorer tabId={tabId} />
+        <PreloadedSplitExplorer active={active} tabId={tabId} />
       ) : (
         <Suspense fallback={<SurfaceSkeleton />}>
-          <LazySplitExplorerView tabId={tabId} />
+          <LazySplitExplorerView active={active} tabId={tabId} />
         </Suspense>
       );
   }
