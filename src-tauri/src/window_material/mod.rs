@@ -22,8 +22,8 @@
 //!     does it. Deciding that is CSS's job; this module only says which backdrop
 //!     is live.
 //!   * **Degradation is automatic and per-platform.** No Mica below Windows 11,
-//!     nothing on Linux (no compositor exposes a client-requestable backdrop —
-//!     see `linux.rs`), and an OS "show fewer effects" setting wins over the
+//!     nothing on a Linux desktop that does not blur transparent windows on its
+//!     own (see `linux.rs`), and an OS "show fewer effects" setting wins over the
 //!     effect. `Material::None` is the answer that means "paint your own canvas,
 //!     as before", and it is also what an unsupported platform gets.
 //!   * **The transparency flag is decided once, before any window exists.**
@@ -90,8 +90,9 @@ mod backend {
 }
 
 /// The backdrop currently composited behind this window, as the CSS seam names
-/// it. Serialized to `"mica"`, `"vibrancy"` or `"none"`; the frontend mirrors it
-/// onto `<html data-window-material>` and App.css decides what each one paints.
+/// it. Serialized to `"mica"`, `"vibrancy"`, `"blur"` or `"none"`; the frontend
+/// mirrors it onto `<html data-window-material>` and App.css decides what each
+/// one paints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum Material {
@@ -102,6 +103,11 @@ pub enum Material {
     /// macOS' sidebar vibrancy: a live blur of what is behind the window, using
     /// the material AppKit gives to a source list.
     Vibrancy,
+    /// A blur of what is behind the window, composited by the window manager
+    /// rather than by this process. Live where Mica is derived once from the
+    /// wallpaper, which is why `linux.rs` answers it only for compositors known
+    /// to blur transparent windows.
+    Blur,
     /// Nothing usable. The shell paints its own canvas, exactly as it did before
     /// this module existed.
     None,
@@ -115,6 +121,7 @@ impl Material {
         match self {
             Self::Mica => "mica",
             Self::Vibrancy => "vibrancy",
+            Self::Blur => "blur",
             Self::None => "none",
         }
     }
@@ -124,6 +131,7 @@ impl Material {
             Self::Mica => 0,
             Self::Vibrancy => 1,
             Self::None => 2,
+            Self::Blur => 3,
         }
     }
 
@@ -132,6 +140,7 @@ impl Material {
             0 => Some(Self::Mica),
             1 => Some(Self::Vibrancy),
             2 => Some(Self::None),
+            3 => Some(Self::Blur),
             _ => None,
         }
     }
@@ -309,6 +318,7 @@ mod tests {
     fn only_a_real_backdrop_asks_for_transparency() {
         assert!(Material::Mica.wants_transparency());
         assert!(Material::Vibrancy.wants_transparency());
+        assert!(Material::Blur.wants_transparency());
         assert!(!Material::None.wants_transparency());
     }
 
@@ -318,12 +328,18 @@ mod tests {
     fn names_are_the_lowercase_words_css_matches() {
         assert_eq!(Material::Mica.as_str(), "mica");
         assert_eq!(Material::Vibrancy.as_str(), "vibrancy");
+        assert_eq!(Material::Blur.as_str(), "blur");
         assert_eq!(Material::None.as_str(), "none");
     }
 
     #[test]
     fn round_trips_through_the_atomic_code() {
-        for material in [Material::Mica, Material::Vibrancy, Material::None] {
+        for material in [
+            Material::Mica,
+            Material::Vibrancy,
+            Material::Blur,
+            Material::None,
+        ] {
             assert_eq!(Material::from_code(material.code()), Some(material));
         }
         // `u8::MAX` is how CURRENT starts out: "nobody has answered yet", which
@@ -367,16 +383,17 @@ mod tests {
     }
 
     /// The injected script is the one place this module writes JavaScript source,
-    /// so it has to stay one line and one of three literals whatever the platform
+    /// so it has to stay one line and one of four literals whatever the platform
     /// answers — a name that drifted would break the splash silently.
     #[test]
-    fn the_boot_script_is_one_line_and_one_of_three_literals() {
+    fn the_boot_script_is_one_line_and_one_of_four_literals() {
         let script = boot_script();
         assert_eq!(script.lines().count(), 1);
         assert!(
             [
                 "window.__DAE_WINDOW_MATERIAL__ = \"mica\";",
                 "window.__DAE_WINDOW_MATERIAL__ = \"vibrancy\";",
+                "window.__DAE_WINDOW_MATERIAL__ = \"blur\";",
                 "window.__DAE_WINDOW_MATERIAL__ = \"none\";",
             ]
             .contains(&script.trim_end()),

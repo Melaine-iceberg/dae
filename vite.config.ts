@@ -44,6 +44,11 @@ function themeBootStyles() {
         const dark = block("\\.dark");
         const values: Record<string, string> = {
           __DAE_CANVAS__: token(light, "background"),
+          // `card`, not `background`: the blur material's scrim mixes the panel
+          // colour with transparency (see the material block in App.css), and a
+          // token cannot mix with itself, so the canvas role it overrides is not
+          // the colour it is built from.
+          __DAE_PANEL__: token(light, "card"),
           // `accent-default`, not `primary`: `--primary` is now derived from
           // the system-accent seam and has no literal value to extract. At
           // boot no bridge has run yet either, so the shipped default is the
@@ -51,6 +56,7 @@ function themeBootStyles() {
           __DAE_PRIMARY__: token(light, "accent-default"),
           __DAE_BORDER__: token(light, "border"),
           __DAE_CANVAS_DARK__: token(dark, "background"),
+          __DAE_PANEL_DARK__: token(dark, "card"),
           __DAE_PRIMARY_DARK__: token(dark, "accent-default"),
           __DAE_BORDER_DARK__: token(dark, "border"),
         };

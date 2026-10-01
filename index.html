@@ -48,16 +48,28 @@
           transform: rotate(360deg);
         }
       }
-      /* 系统窗口材质（Win11 Mica / macOS vibrancy）只会在“这张文档什么都没画”的
+      /* 系统窗口材质（Win11 Mica / macOS vibrancy / 合成器模糊）只会在“这张文档什么都没画”的
          地方透出来，所以首帧就要按材质决定画布是否透明：等 React 挂载再改，等于
          在整包加载期间用一块不透明画布把材质盖住。属性由下面的启动脚本写入，
          与 src/lib/window-material.ts 挂载后写的是同一个，App.css 的材质块读的
-         也是同一个。`data-window-material="none"` 不在此列，即沿用上面两行。 */
+         也是同一个。`data-window-material="none"` 不在此列，即沿用上面两行。
+
+         “blur” 是唯一实时的材质——背后可能就是别的窗口里的文字——所以它留一层薄纱而不是
+         全透明，密度与 App.css 材质块里 --background 的那一行保持一致（同样以 --card
+         为基色），其余两种交给平台自己的着色。 */
       html[data-window-material="mica"],
       html[data-window-material="vibrancy"],
       html[data-window-material="mica"] body,
       html[data-window-material="vibrancy"] body {
         background: transparent;
+      }
+      html[data-window-material="blur"],
+      html[data-window-material="blur"] body {
+        background: color-mix(in oklab, __DAE_PANEL__ 35%, transparent);
+      }
+      html.dark[data-window-material="blur"],
+      html.dark[data-window-material="blur"] body {
+        background: color-mix(in oklab, __DAE_PANEL_DARK__ 35%, transparent);
       }
     </style>
     <script>
@@ -76,7 +88,7 @@
     <script>
       var material = window.__DAE_WINDOW_MATERIAL__;
       document.documentElement.dataset.windowMaterial =
-        material === "mica" || material === "vibrancy" ? material : "none";
+        material === "mica" || material === "vibrancy" || material === "blur" ? material : "none";
     </script>
   </head>
 
