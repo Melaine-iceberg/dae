@@ -2,7 +2,7 @@
  * Curated 16-color ANSI palettes for the integrated terminal.
  *
  * xterm's built-in ANSI colors are saturated primaries designed for a pure
- * black background; on the app's surfaces (`--card` is `#27292c` dark,
+ * black background; on the app's surfaces (`--card` is `#1d1f22` dark,
  * `#ffffff` light) they are harsh and, in the light theme, several are outright
  * unreadable. These palettes are sampled from the house color tokens in
  * `App.css` and tuned per theme so `ls --color`, git diffs and friends are
@@ -28,11 +28,11 @@
 /** The 16 ANSI slots in canonical order. */
 export type AnsiPalette = readonly string[];
 
-/** Dark, tuned to `--card: #27292c` / `--foreground: #e5e6e8`. Every slot but
+/** Dark, tuned to `--card: #1d1f22` / `--foreground: #e5e6e8`. Every slot but
  *  `black` clears ≥5.5:1 on the panel, and ≥4.5:1 on the lightest tone text
  *  ever lands on there. */
 export const DARK_ANSI: AnsiPalette = Object.freeze([
-  "#1f2023", // black — the canvas tone: one step BELOW the panel, so a box drawn in ANSI black recesses instead of lighting up
+  "#131417", // black — the canvas tone: one step BELOW the panel, so a box drawn in ANSI black recesses instead of lighting up
   "#ff8288", // red — --destructive
   "#63d398", // green — --success
   "#e8a33d", // yellow — warm amber (--warning)

@@ -256,6 +256,10 @@
      controls, rows and small cards → 8px inputs, menus and panels → 10px
      floating layers.
 
+     Every step is the `--radius` base (0.625rem) minus a constant rather than
+     four independent numbers, so retuning the shell's roundness is one edit on
+     a scheme token and the steps keep their spacing at any base.
+
      That is the whole scale; a radius outside it is not legal. It used to
      run to nine steps (4/5/6/8/10/13/16/20/24) of which only the first five
      were ever used. A 4px and a 5px corner sitting side by side read as one
@@ -263,10 +267,10 @@
      end existed only to give dialogs and the command palette a roundness the
      rest of the shell does not have — which is how a floating layer ended up
      rounder than the window it belongs to. */
-  --radius-xs: 5px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
+  --radius-xs: calc(var(--radius) - 5px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
 
   /* Geometry: the cells, stand-ins and panel widths that used to be written as
      arbitrary px at each call site (`size-[22px]` six times, the card skeleton
@@ -329,10 +333,11 @@
 
   /* Dimming layer behind a modal. Declared per scheme rather than written as
      `bg-black/40` at the call site because the two schemes have different
-     room to fall: 40% black takes paper down ≈18 L*, and dark mode needs the
-     stronger 60% to reach ≈8 on a graphite canvas. (Under the old near-black
-     canvas even 60% only moved it 1.4 — the modal floated over an undimmed
-     window.) */
+     room to fall: 40% black takes paper down ≈18 L*, while dark's 60% takes a
+     panel down ≈7 — the last few points of that are the expensive ones, since
+     near black there is less left to take away. (Under the old
+     near-black canvas even 60% only moved it 1.4 — the modal floated over an
+     undimmed window.) */
   --color-scrim: var(--scrim);
 
   /* Indeterminate progress: a tight linear sweep, no waves. */
@@ -407,7 +412,7 @@
   --tone-cyan: #0d848c;
   --border: #e2e4e8; /* hairline panel edge */
   --input: #d5d8dd;
-  --radius: 10px;
+  --radius: 0.625rem;
   --scrim: rgb(0 0 0 / 0.4);
   --sidebar: #f7f8f9; /* Linear sidebar sits ON the canvas, not above it */
   --sidebar-foreground: #282a30;
@@ -417,44 +422,52 @@
 }
 
 .dark {
-  /* Linear — dark, lifted into the band the platforms actually use. Every dark
-     window this shell can appear in sits between L* 12 and L* 24 — macOS'
-     `windowBackgroundColor`, Win11's Mica over a dark desktop, Adwaita dark all
-     land there. A near-black canvas is the video-editor convention, not the
-     system-application one, and against real OS file icons it read as a hole
-     punched in the desktop.
+  /* Linear — dark, pressed back down. The canvas used to start at L* 12, the
+     band macOS' `windowBackgroundColor`, Win11's Mica and Adwaita dark land in.
+     Measured against the platform's own file manager, though, the whole window
+     read as a grey board rather than as a dark one — the desktop behind it
+     stopped registering, and every surface looked like it had a film of dust on
+     it. So the scheme drops to L* 6.
 
-     The ladder is measured rather than eyeballed: canvas → sidebar column →
-     content plane → recessed surface → floating layer → tonal secondary →
-     hover → hairline, each a clear L* jump instead of a hex or two. Columns are
-     still divided by hairlines rather than shadows; the one raised chrome
-     element, the active tab chip, adds a single 1px inset top highlight. Every
-     neutral keeps a faint cool cast so the window reads as graphite, not void.
+     What is preserved is the *ladder*, and it is preserved in contrast ratios
+     rather than in L* deltas: near black, the +0.05 term that dominates a
+     contrast ratio swamps the luminance, so an equal L* step buys a smaller
+     ratio every time it is taken. Repeating the old hex gaps would have quietly
+     weakened the hairline and the hover wash — the two rungs that carry the
+     whole dark scheme, since columns are divided by hairlines rather than
+     shadows. Each role therefore keeps its ratio to the panel, and the eight
+     runs still separate: canvas → sidebar column → content plane → recessed
+     surface → floating layer → tonal secondary → hover → hairline. The one
+     raised chrome element, the active tab chip, adds a single 1px inset top
+     highlight. Every neutral keeps a faint cool cast so the window reads as
+     graphite, not void.
 
-     Because the surfaces moved up, everything sitting on them moved with them.
-     Labels pull in from near-white — #f7f8f8 was ≈18:1 on the old panel, far
-     past what 13px text needs, and the surplus read as glare on a mid-grey —
-     and the accent and status hues brighten once more to hold ≈4.5:1 against
-     the lightest surface they appear on, the hover highlight. */
+     Two consequences of the move. The floating layers' shadow stops rise a
+     little, because a black shadow has less room to fall on a L* 6 canvas than
+     it had on a L* 12 one — at the old stops the top step lost about 1 L* of
+     lift. And everything sitting on the surfaces gained contrast rather than
+     losing it, so the labels, the accent and the status hues are left exactly
+     where they were: they were tuned against the lightest surface they appear
+     on, and that target is now cleared with more room rather than less. */
   --shadow-color: #000000;
-  --shadow-a1: 14%;
-  --shadow-a2: 22%;
-  --shadow-a3: 30%;
-  --shadow-a4: 42%;
-  --background: #1f2023; /* canvas — the L* 12 the platforms start at */
+  --shadow-a1: 16%;
+  --shadow-a2: 26%;
+  --shadow-a3: 36%;
+  --shadow-a4: 50%;
+  --background: #131417; /* canvas — L* 6, where dark starts now */
   --foreground: #e5e6e8;
-  --card: #27292c; /* panel surface */
+  --card: #1d1f22; /* panel surface */
   --card-foreground: #e5e6e8;
-  --popover: #2f3136; /* floating layer — two clear steps above the panels */
+  --popover: #26282d; /* floating layer — two clear steps above the panels */
   --popover-foreground: #e5e6e8;
-  --accent-default: #9496ff; /* shipped accent — 5.6:1 on a panel, 4.6 worst */
+  --accent-default: #9496ff; /* shipped accent — 6.3:1 on a panel, 5.2 worst */
   --accent-default-ink: #101116; /* ink label on the vivid fill — 7.2:1 */
   --on-destructive: #101116; /* the dark destructive is a light red: white on it 2.4:1 */
-  --secondary: #323439;
+  --secondary: #2a2c31;
   --secondary-foreground: #e5e6e8;
-  --muted: #2b2d31; /* inner recessed surface — tracks, header strips, thumbnails */
-  --muted-foreground: #9ba0a9; /* 5.6:1 on a panel, 4.5 on the hover highlight */
-  --accent: #35373c; /* hover highlight — a half-step above the panel */
+  --muted: #222427; /* inner recessed surface — tracks, header strips, thumbnails */
+  --muted-foreground: #9ba0a9; /* 6.3:1 on a panel, 5.2 on the hover highlight */
+  --accent: #2c2e33; /* hover highlight — a half-step above the panel */
   --accent-foreground: #e5e6e8;
   --error-container: #6a312d;
   --on-error-container: #f7cdc9;
@@ -469,15 +482,15 @@
   --tone-amber: #e8a33d;
   --tone-rose: #ff9ab2;
   --tone-cyan: #5acfd9;
-  --border: #3a3c42; /* hairline — 1.32:1 on a panel, the same step as light */
-  --input: #474a51;
-  --radius: 10px;
+  --border: #313338; /* hairline — 1.31:1 on a panel, the same step as light */
+  --input: #3f4147;
+  --radius: 0.625rem;
   --scrim: rgb(0 0 0 / 0.6);
-  --sidebar: #212226; /* Linear sidebar — a half-step above the canvas, below the panel */
+  --sidebar: #16171a; /* Linear sidebar — a half-step above the canvas, below the panel */
   --sidebar-foreground: #e5e6e8;
-  --sidebar-accent: #35373c;
+  --sidebar-accent: #2c2e33;
   --sidebar-accent-foreground: #e5e6e8;
-  --sidebar-border: #3a3c42;
+  --sidebar-border: #313338;
 }
 
 /* ---------------------------------------------------------------------------
@@ -533,9 +546,9 @@
   /* Double the light strength, for a measured reason rather than the
      near-black canvas that is no longer true of it: a selected row has to move
      the panel further than hovering it already does, and on these surfaces the
-     hover highlight is worth +6.6 L*. At 13% the accent would buy only +6.4 —
-     a selection you could not tell from a pointer — so the strength doubles to
-     land on +13.0. */
+     hover highlight is worth +7.3 L*. At half the strength the accent no longer
+     buys more than that — a selection you could not tell from a pointer — so
+     the strength doubles to land clearly above the hover rung. */
   --selection: color-mix(in oklab, var(--primary) 26%, transparent);
 }
 
@@ -1445,7 +1458,7 @@ html[data-window-material="blur"] {
 }
 .markdown-preview code {
   padding: 0.1em 0.3em;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--accent);
   font-family: var(--font-mono);
   font-size: 0.92em;
@@ -1454,7 +1467,7 @@ html[data-window-material="blur"] {
   margin: 0.5em 0;
   padding: 0.6em 0.8em;
   overflow-x: auto;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--accent);
 }
 .markdown-preview pre code {
@@ -1477,7 +1490,7 @@ html[data-window-material="blur"] {
 }
 .markdown-preview img {
   max-width: 100%;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 /* ---------------------------------------------------------------------------

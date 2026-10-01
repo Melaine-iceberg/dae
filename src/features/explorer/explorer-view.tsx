@@ -99,7 +99,6 @@ import { NO_ENTRIES, useExplorerSelection } from "./use-explorer-selection";
 import { useDirectoryRefresh, useExternalDrop } from "./use-explorer-events";
 import { usePendingExplorerCommand } from "./use-pending-explorer-command";
 
-const UNDO_TOAST_DISMISS_MS = 6000;
 /** Same deal as `NO_ENTRIES` in the selection hook: unloaded favorites need a
  *  stable identity so memoization downstream doesn't churn on every render. */
 const NO_FAVORITES: Favorite[] = [];

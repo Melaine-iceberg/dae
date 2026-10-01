@@ -43,7 +43,14 @@ function readDocumentTheme(): "light" | "dark" {
 }
 
 function Toaster({ position = "bottom-right", ...props }: ToasterProps) {
-  const theme = useSyncExternalStore(subscribeToDocumentTheme, readDocumentTheme, () => "light");
+  /* The snapshot type is pinned rather than inferred: the server snapshot below
+     returns a bare literal, and left to inference `useSyncExternalStore` widens
+     the pair to `string`, which Sonner's `theme` prop will not take. */
+  const theme = useSyncExternalStore<"light" | "dark">(
+    subscribeToDocumentTheme,
+    readDocumentTheme,
+    () => "light",
+  );
 
   return (
     <Sonner
