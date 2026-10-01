@@ -216,6 +216,13 @@ export type TabDragDeps = {
    *  whole tab strip once per frame. */
   moveGhost: (x: number, y: number) => void;
   onDragging: (dragging: boolean) => void;
+  /** Reports the press itself: held from the pointer down to the gesture's
+   *  teardown, and released by a gesture that ends however it ends. The tab's
+   *  pressed wash comes from this rather than from `:active`, because the
+   *  WebView never sees the release of a drag that left the window — that one
+   *  belongs to the platform's drag loop, and a `:active` left behind outlives
+   *  the gesture it came from. */
+  onPressed: (pressed: boolean) => void;
   /** Rasterizes the ghost for the OS drag image. Runs at the hand-off, where
    *  the ghost has been in the DOM since the drag began — starting it there
    *  instead of at the first move keeps the rasterization (a full-computed-
@@ -282,6 +289,7 @@ export function beginTabDragGesture(deps: TabDragDeps): TabDragController {
     if (captureTarget.hasPointerCapture(pointerId)) captureTarget.releasePointerCapture(pointerId);
     deps.onGhost(null);
     deps.onDragging(false);
+    deps.onPressed(false);
   };
 
   const reorderTo = (x: number) => {
@@ -473,6 +481,7 @@ export function beginTabDragGesture(deps: TabDragDeps): TabDragController {
   }
 
   void resolveFrontendBounds();
+  deps.onPressed(true);
   captureTarget.setPointerCapture(pointerId);
   window.addEventListener("pointermove", handlePointerMove, true);
   window.addEventListener("pointerup", handlePointerUp, true);

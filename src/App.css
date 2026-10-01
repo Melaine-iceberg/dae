@@ -832,6 +832,14 @@ html[data-window-material="vibrancy"] {
   .state-layer:active::after {
     opacity: 0.16;
   }
+  /* A tab chip reports its own pressed state, because a press handed to the
+     platform's drag loop never reaches the WebView's `:active` release: the
+     button is already gone by the time the gesture ends, and `:active` stays
+     lit. `data-pressed="false"` therefore outranks `:active` and clears the
+     wash whether or not the browser still thinks the chip is held down. */
+  .state-layer[data-pressed="false"]:active::after {
+    opacity: 0;
+  }
 
   /* Drop target: the one state a drag paints on a *destination*. A 10% wash
      of the accent plus an inset 2px ring in the same hue — no glow, no scale,

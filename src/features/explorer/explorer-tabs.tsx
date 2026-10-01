@@ -541,6 +541,8 @@ async function runNativeTabDrag(
   preview: string | null,
   grabX: number,
   grabY: number,
+  pressX: number,
+  pressY: number,
 ): Promise<NativeDragOutcome> {
   const outcome = await commands.startTabDrag(
     source,
@@ -550,6 +552,10 @@ async function runNativeTabDrag(
     // device pixel ratio are both part of it.
     (grabX + TAB_DRAG_PREVIEW_PAD) * window.devicePixelRatio,
     (grabY + TAB_DRAG_PREVIEW_PAD) * window.devicePixelRatio,
+    // Where the press happened in the window, which is what a Wayland drag
+    // takes without settling; see `start_tab_drag`.
+    pressX,
+    pressY,
   );
   if (!outcome.released || !outcome.outside) return { action: "keep" };
   if (!outcome.target) {
@@ -656,6 +662,7 @@ function TabStripItem({
   const dragRef = useRef<TabDragController | null>(null);
   const [dragPreview, setDragPreview] = useState<TabDragGhost | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [dragPressed, setDragPressed] = useState(false);
   const isDragging = dragActive;
 
   useEffect(() => {
@@ -685,6 +692,8 @@ function TabStripItem({
     const bounds = element.getBoundingClientRect();
     const grabX = event.clientX - bounds.left;
     const grabY = event.clientY - bounds.top;
+    const pressX = event.clientX;
+    const pressY = event.clientY;
     const appWindow = getAppWindow();
 
     dragRef.current = beginTabDragGesture({
@@ -703,12 +712,13 @@ function TabStripItem({
         if (ghost) ghost.style.transform = `translate3d(${x}px, ${y}px, 0)`;
       },
       onDragging: setDragActive,
+      onPressed: setDragPressed,
       capturePreview: () => snapshotTabDragPreview(tabId),
       readNativeOutside: () =>
         appWindow ? commands.tabDragOutside(appWindow.label) : Promise.resolve(false),
       handOffToNative: (preview) =>
         appWindow
-          ? runNativeTabDrag(appWindow.label, preview, grabX, grabY)
+          ? runNativeTabDrag(appWindow.label, preview, grabX, grabY, pressX, pressY)
           : Promise.resolve({ action: "keep" }),
       detach: (cursor) => detachTab(appWindow, tabId, grabX, grabY, cursor, closeTab),
       merge: (target, x, y) => mergeTabIntoWindow(appWindow, tabId, target, x, y, closeTab),
@@ -740,12 +750,19 @@ function TabStripItem({
         // hairline, and the sanctioned 1px inset top edge — while inactive
         // tabs stay flat text until hovered, so the strip reads as a row of
         // destinations rather than a row of buttons.
-        "group state-layer relative flex h-7 w-52 shrink-0 touch-none cursor-grab items-center rounded-sm text-body select-none transition-[background-color,color,opacity] duration-fast ease-standard active:cursor-grabbing",
+        //
+        // The press is the gesture's `data-pressed` rather than `:active`, and
+        // the grabbing cursor with it: a tab dragged past the window edge is
+        // handed to the platform's drag loop, which swallows the release that
+        // would clear both, and a chip still wearing them reads as a tab still
+        // held down after it was put back.
+        "group state-layer relative flex h-7 w-52 shrink-0 touch-none cursor-grab items-center rounded-sm text-body select-none transition-[background-color,color,opacity] duration-fast ease-standard data-[pressed=true]:cursor-grabbing",
         isActive
           ? "tab-chip-active border border-border bg-card font-medium text-foreground"
           : "text-muted-foreground hover:text-foreground",
         isDragging && "opacity-30",
       )}
+      data-pressed={dragPressed ? "true" : "false"}
       data-tauri-drag-region="false"
       onClick={() => activateTab(tab.id)}
       onKeyDown={(event) => {

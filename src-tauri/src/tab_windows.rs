@@ -384,6 +384,10 @@ pub fn tab_drag_uses_frontend_bounds() -> bool {
 /// the primary button or presses Escape, so the WebView does not need global
 /// mouse hooks.
 ///
+/// `offset_x`/`offset_y` spot the drag image under the cursor; `press_x` and
+/// `press_y` are where the gesture's `pointerdown` happened in the window's CSS
+/// pixels, which a Wayland session needs back — see [`hand_button_back_to_webview`].
+///
 /// Windows blocks in `DoDragDrop` and returns through the main-thread closure;
 /// macOS and GTK run asynchronous drag sessions, so the completion is reported
 /// from the drag callback, possibly after this command has already finished.
@@ -401,9 +405,13 @@ pub async fn start_tab_drag(
     preview: Option<String>,
     offset_x: f64,
     offset_y: f64,
+    press_x: f64,
+    press_y: f64,
 ) -> Result<TabDragOutcome, String> {
     if !matches!(std::env::consts::OS, "windows" | "macos" | "linux") {
-        let _ = (&app, &source, &preview, offset_x, offset_y);
+        let _ = (
+            &app, &source, &preview, offset_x, offset_y, press_x, press_y,
+        );
         return Err("Native tab drag is not supported on this platform".into());
     }
 
@@ -421,7 +429,8 @@ pub async fn start_tab_drag(
         spawn_drag_hover_monitor(app.clone(), source.clone(), hover_finished.clone());
     }
 
-    let outcome = run_native_tab_drag(&app, source, preview, offset_x, offset_y).await;
+    let outcome =
+        run_native_tab_drag(&app, source, preview, offset_x, offset_y, press_x, press_y).await;
 
     // Whatever happened — drop, cancel, or failure — the monitor must stop
     // and deliver its final leave event.
@@ -435,7 +444,14 @@ async fn run_native_tab_drag(
     preview: Option<String>,
     offset_x: f64,
     offset_y: f64,
+    press_x: f64,
+    press_y: f64,
 ) -> Result<TabDragOutcome, String> {
+    // The release this session owes the WebView goes back at the point the
+    // press happened, which is a position only the frontend knows.
+    #[cfg(not(target_os = "linux"))]
+    let _ = (press_x, press_y);
+
     let window = app
         .get_webview_window(&source)
         .ok_or_else(|| format!("Source window '{source}' was not found"))?;
@@ -612,6 +628,14 @@ async fn run_native_tab_drag(
             Ok(Err(_)) => return Err("The native tab drag ended without a result".into()),
             Err(error) => return Err(error.to_string()),
         };
+
+    // The drag is over, and the button that started it went out of this
+    // application's reach the moment the drag took it.
+    #[cfg(target_os = "linux")]
+    if tab_drag_uses_frontend_bounds() {
+        hand_button_back_to_webview(&window, press_x, press_y);
+    }
+
     let cursor_x = cursor.x;
     let cursor_y = cursor.y;
     let (outside, drop_target) = resolve_native_drop(app, &source, &window, released, cursor)?;
@@ -625,6 +649,93 @@ async fn run_native_tab_drag(
         target_x: drop_target.as_ref().map_or(0.0, |target| target.local_x),
         target_y: drop_target.as_ref().map_or(0.0, |target| target.local_y),
     })
+}
+
+/// Gives the WebView back the primary button the Wayland drag took from it.
+///
+/// An xdg drag is grabbed by the compositor, so the release that ends it goes
+/// into the drag session and this client never sees a `GDK_BUTTON_RELEASE` for
+/// the press that started it. WebKit is left counting a button released long
+/// ago: `:active` keeps matching, and the *next* real press pairs with the
+/// stale one instead of itself, so its release reports the common ancestor of
+/// the two rather than what the user clicked — a click the window appears to
+/// have swallowed, until another click re-pairs the stream. Handing back the
+/// release the compositor owes settles that state without disturbing the drag,
+/// whose own routing has already finished by the time this runs.
+#[cfg(target_os = "linux")]
+fn hand_button_back_to_webview(window: &tauri::WebviewWindow, press_x: f64, press_y: f64) {
+    use gtk::prelude::*;
+
+    // The press point is frontend state, so it arrives unsanitized; a wild
+    // position would only aim the release at a different widget.
+    let x = if press_x.is_finite() { press_x } else { 0.0 };
+    let y = if press_y.is_finite() { press_y } else { 0.0 };
+
+    if let Err(error) = window.with_webview(move |webview| {
+        let widget: gtk::Widget = webview.inner().upcast();
+        release_primary_button(&widget, x, y);
+    }) {
+        log::warn!("Unable to return the tab drag's button to the WebView: {error}");
+    }
+}
+
+/// Queues a primary-button release over `widget` at `x`/`y`, in its own
+/// window's CSS pixels.
+///
+/// The WebView is a no-window widget, so `widget.window()` answers with the
+/// surface WebKit paints into — the one whose origin the page's viewport
+/// shares, which is the space these coordinates are in.
+#[cfg(target_os = "linux")]
+fn release_primary_button(widget: &gtk::Widget, x: f64, y: f64) {
+    use gtk::{
+        gdk,
+        glib::{self, translate::ToGlibPtr},
+        prelude::*,
+    };
+
+    let Some(gdk_window) = widget.window() else {
+        return;
+    };
+    let display = gdk_window.display();
+    let Some(pointer) = display.default_seat().and_then(|seat| seat.pointer()) else {
+        return;
+    };
+
+    // GDK walks an event's axis map for as many entries as the device claims,
+    // and releases the array with the event, so it is allocated rather than
+    // left null. Zeroed entries read as `GDK_AXIS_IGNORE` and match no query.
+    let axis_count = pointer.n_axes().max(0) as usize;
+    let axes = if axis_count == 0 {
+        std::ptr::null_mut()
+    } else {
+        unsafe { glib::ffi::g_malloc0(axis_count * std::mem::size_of::<f64>()) as *mut f64 }
+    };
+
+    unsafe {
+        let event = gdk::ffi::gdk_event_new(gdk::ffi::GDK_BUTTON_RELEASE);
+        if event.is_null() {
+            if !axes.is_null() {
+                glib::ffi::g_free(axes as *mut _);
+            }
+            return;
+        }
+
+        // An event owns the reference it holds on its window, and
+        // `gdk_event_put` dispatches a copy of its own, so this one is the
+        // caller's to release.
+        (*event).button.window = gdk_window.to_glib_full();
+        (*event).button.axes = axes;
+        (*event).button.time = gtk::current_event_time();
+        (*event).button.x = x;
+        (*event).button.y = y;
+        let (root_x, root_y) = gdk_window.root_coords(x as i32, y as i32);
+        (*event).button.x_root = root_x as f64;
+        (*event).button.y_root = root_y as f64;
+        (*event).button.button = 1;
+        gdk::ffi::gdk_event_set_device(event, pointer.to_glib_none().0);
+        gdk::ffi::gdk_event_put(event);
+        gdk::ffi::gdk_event_free(event);
+    }
 }
 
 /// Where a finished native drag ended, as far as this platform can tell.
