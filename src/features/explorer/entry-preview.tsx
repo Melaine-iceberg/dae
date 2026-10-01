@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { ClipboardList, FolderOpen, TriangleAlert, X } from "lucide-react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 
 import { getPreviewLanguage, highlightCode, highlightMarkdownCode } from "./code-highlight";
 import { getEntryPresentation } from "./file-icons";
+import { createMarkdownUrlTransform } from "./markdown-links";
 import { NativeIconImage, useNativeIconFor } from "./native-icon";
 import { isThumbnailSupported, ThumbnailImage } from "./thumbnail";
 import type { DirectoryEntry } from "./types";
@@ -166,6 +167,11 @@ export function EntryPreview({
   const isTooLarge = (entry?.size ?? 0) > PREVIEW_MAX_SOURCE_BYTES;
   const [textPreview, setTextPreview] = useState<TextPreviewState | null>(null);
   const [mediaPreview, setMediaPreview] = useState<MediaPreviewState | null>(null);
+  // Links in a rendered document are relative to that document, not the app.
+  const markdownUrlTransform = useMemo(
+    () => (entry ? createMarkdownUrlTransform(entry.path) : undefined),
+    [entry],
+  );
 
   useEffect(() => {
     if (!entry || entry.kind !== "file" || isTooLarge || !supportsText) {
@@ -234,16 +240,12 @@ export function EntryPreview({
     const anchor = (event.target as Element).closest("a");
     if (!anchor) return;
     const href = anchor.getAttribute("href");
+    // Fragments scroll within the preview, and scheme links never reach here:
+    // the app-wide guard hands those to the system and stops propagating.
     if (!href || href.startsWith("#")) return;
-    // Scheme links never reach here — the app-wide external link guard
-    // intercepts them first and hands them to the system browser.
-    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return;
-    // A bare click would navigate the app's own webview away from the file
-    // manager; relative doc links resolve against the markdown file's folder.
-    event.preventDefault();
-    if (!entry) return;
-    const target = `${parentDirectory(entry.path)}\\${href.replace(/^\.\//, "")}`;
-    void openPath(target).catch((error) => {
+    // Every relative destination was already resolved against this document by
+    // the renderer, and the guard keeps the webview from navigating anywhere.
+    void openPath(href).catch((error) => {
       console.warn(`Unable to open link ${href}`, error);
     });
   }
@@ -302,7 +304,12 @@ export function EntryPreview({
                     onClickCapture={handleMarkdownLinkClick}
                   >
                     {/* Rendered locally from file contents via TanStack Markdown. */}
-                    <Markdown highlighter={highlightMarkdownCode}>{textPreview.content}</Markdown>
+                    <Markdown
+                      highlighter={highlightMarkdownCode}
+                      urlTransform={markdownUrlTransform}
+                    >
+                      {textPreview.content}
+                    </Markdown>
                   </div>
                 ) : textPreview.html !== null ? (
                   <div

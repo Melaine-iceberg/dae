@@ -17,10 +17,8 @@ import {
 type CLikeOptions = {
   keywords: readonly string[];
   literals?: readonly string[];
-  types?: readonly string[];
   preprocessor?: boolean;
   annotations?: boolean;
-  backtickStrings?: boolean;
   nestedBlockComments?: boolean;
   caseInsensitive?: boolean;
   /** Declaration keywords whose declared name should stay a type, not a call (Kotlin's `class Foo(...)`). */
@@ -66,14 +64,6 @@ function patterns(options: CLikeOptions): readonly TokenPattern[] {
       : []),
     functionCallPattern,
     pascalTypePattern,
-    ...(options.types
-      ? [
-          {
-            className: "type" as const,
-            regex: new RegExp(`\\b(?:${options.types.join("|")})\\b`, flags),
-          },
-        ]
-      : []),
     propertyPattern,
   ];
 }
@@ -93,13 +83,6 @@ function scanInitial(code: string, options: CLikeOptions): TokenRange[] {
     if (character === "/" && next === "*") {
       const end = scanBlockComment(code, index, options.nestedBlockComments);
       ranges.push({ start: index, end, className: "comment" });
-      index = end;
-      continue;
-    }
-    if (options.backtickStrings && character === "`") {
-      const close = code.indexOf("`", index + 1);
-      const end = close < 0 ? code.length : close + 1;
-      ranges.push({ start: index, end, className: "string" });
       index = end;
       continue;
     }
@@ -154,64 +137,9 @@ const C_KEYWORDS = [
   "_Static_assert",
 ];
 
-const CPP_EXTRA = [
-  "alignas",
-  "alignof",
-  "catch",
-  "char8_t",
-  "char16_t",
-  "char32_t",
-  "class",
-  "concept",
-  "consteval",
-  "constexpr",
-  "constinit",
-  "const_cast",
-  "co_await",
-  "co_return",
-  "co_yield",
-  "decltype",
-  "delete",
-  "dynamic_cast",
-  "explicit",
-  "export",
-  "friend",
-  "mutable",
-  "namespace",
-  "new",
-  "noexcept",
-  "operator",
-  "override",
-  "private",
-  "protected",
-  "public",
-  "reinterpret_cast",
-  "requires",
-  "static_assert",
-  "static_cast",
-  "template",
-  "this",
-  "thread_local",
-  "throw",
-  "try",
-  "typeid",
-  "typename",
-  "using",
-  "virtual",
-  "final",
-  "import",
-  "module",
-];
-
 export const c = createCLike("c", [], {
   keywords: C_KEYWORDS,
   literals: ["true", "false", "NULL"],
-  preprocessor: true,
-});
-
-export const cpp = createCLike("cpp", ["c++"], {
-  keywords: [...C_KEYWORDS, ...CPP_EXTRA],
-  literals: ["true", "false", "nullptr", "NULL"],
   preprocessor: true,
 });
 
@@ -449,59 +377,4 @@ export const kotlin = createCLike("kotlin", ["kt", "kts"], {
   annotations: true,
   nestedBlockComments: true,
   typeDeclKeywords: ["class", "object", "interface"],
-});
-
-export const go = createCLike("go", ["golang"], {
-  keywords: [
-    "break",
-    "case",
-    "chan",
-    "const",
-    "continue",
-    "default",
-    "defer",
-    "else",
-    "fallthrough",
-    "for",
-    "func",
-    "go",
-    "goto",
-    "if",
-    "import",
-    "interface",
-    "map",
-    "package",
-    "range",
-    "return",
-    "select",
-    "struct",
-    "switch",
-    "type",
-    "var",
-  ],
-  literals: ["nil", "true", "false", "iota"],
-  types: [
-    "any",
-    "bool",
-    "byte",
-    "complex64",
-    "complex128",
-    "error",
-    "float32",
-    "float64",
-    "int",
-    "int8",
-    "int16",
-    "int32",
-    "int64",
-    "rune",
-    "string",
-    "uint",
-    "uint8",
-    "uint16",
-    "uint32",
-    "uint64",
-    "uintptr",
-  ],
-  backtickStrings: true,
 });

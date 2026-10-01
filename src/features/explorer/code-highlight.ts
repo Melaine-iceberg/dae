@@ -1,12 +1,15 @@
 import { createHighlighter } from "@tanstack/highlight/core";
+import { cpp } from "@tanstack/highlight/languages/cpp";
 import { css } from "@tanstack/highlight/languages/css";
 import { dockerfile } from "@tanstack/highlight/languages/dockerfile";
 import { env } from "@tanstack/highlight/languages/env";
+import { go } from "@tanstack/highlight/languages/go";
 import { html } from "@tanstack/highlight/languages/html";
 import { js } from "@tanstack/highlight/languages/js";
 import { json } from "@tanstack/highlight/languages/json";
 import { jsx } from "@tanstack/highlight/languages/jsx";
 import { markdown } from "@tanstack/highlight/languages/markdown";
+import { php } from "@tanstack/highlight/languages/php";
 import { python } from "@tanstack/highlight/languages/python";
 import { shell } from "@tanstack/highlight/languages/shell";
 import { sql } from "@tanstack/highlight/languages/sql";
@@ -18,15 +21,16 @@ import { vue } from "@tanstack/highlight/languages/vue";
 import { yaml } from "@tanstack/highlight/languages/yaml";
 import { createTanStackMarkdownHighlighter } from "@tanstack/highlight/markdown";
 
-import { c, cpp, csharp, go, java, kotlin } from "./languages/c-like";
-import { lua, php, powershell, ruby } from "./languages/scripting";
+import { c, csharp, java, kotlin } from "./languages/c-like";
+import { lua, powershell, ruby } from "./languages/scripting";
 import { rust } from "./languages/rust";
 
 /**
  * TanStack Highlight tokenizes synchronously and ships every grammar as a
  * few KB of plain JS — no wasm engine or worker needed, so all preview
  * languages register up front in one static list. Languages the package
- * does not ship (Rust, C-family, scripting) come from local grammars.
+ * does not ship (Rust, C/C#/Java/Kotlin, Lua/PowerShell/Ruby) come from
+ * local grammars.
  */
 const LANGUAGES = [
   ts,
