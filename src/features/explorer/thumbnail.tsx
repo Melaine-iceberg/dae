@@ -8,9 +8,10 @@ import type { DirectoryEntry } from "./types";
 
 /**
  * Extensions with a thumbnail producer on at least one platform: raster
- * formats decode in the Rust `image` pipeline everywhere, SVG streams
- * through as bytes for the webview to rasterize, and PDF/video/HEIC go to
- * whatever the desktop itself offers — the shell handler on Windows, the
+ * formats decode in the Rust `image` pipeline everywhere — except past the
+ * backend's decode cap, where the desktop's own producer scales them instead —
+ * SVG streams through as bytes for the webview to rasterize, and PDF/video/HEIC
+ * go to whatever the desktop itself offers — the shell handler on Windows, the
  * `.thumbnailer` files on Linux. Where there is none (macOS, or a Linux box
  * with no video handler installed) the protocol answers 404 and the call
  * site's fallback draws the type glyph.

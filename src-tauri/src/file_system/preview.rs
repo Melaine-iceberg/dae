@@ -31,7 +31,9 @@ pub struct RenderedThumbnail {
 /// archives-as-images cannot stall the UI.
 const THUMBNAIL_MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
 /// Hard cap on decoded thumbnail pixels; larger images are downscaled in one
-/// cheap `resize` step before the final smooth pass.
+/// cheap `resize` step before the final smooth pass. An image past it is not
+/// refused — it is handed to the desktop's own producer, which scales large
+/// photos out of process instead of materialising them here.
 const THUMBNAIL_MAX_DECODED_PIXELS: u64 = 40 * 1024 * 1024;
 
 /// Whether an image of `width` × `height` is small enough to decode.
@@ -555,6 +557,12 @@ fn render_thumbnail(
     // Shell thumbnails cover formats Explorer itself thumbs (PDF pages,
     // video frames, HEIC); they are comparatively expensive, so the cache
     // matters more than for the cheap `image` crate path.
+    //
+    // They also cover the raster formats that are too large to decode in
+    // process — see [`DecodeOutcome::Oversized`]. The source cap does not move
+    // with that routing: a photo over the pixel cap is still a photo, and the
+    // byte budget that keeps browsing a folder of huge archives-as-images from
+    // stalling the UI is worth more than the rare 100 MP file it excludes.
     let is_shell_source = !is_image_extension(path_string);
     let source_cap = if is_shell_source {
         SHELL_THUMBNAIL_MAX_SOURCE_BYTES
@@ -589,10 +597,21 @@ fn render_thumbnail(
         };
         produced
     } else {
-        let Some(thumbnail) = decode_and_scale(path, size)? else {
-            return Ok(None);
-        };
-        thumbnail
+        match decode_and_scale(path, size)? {
+            DecodeOutcome::Frame(thumbnail) => thumbnail,
+            DecodeOutcome::Oversized => {
+                // Too many pixels to hold in this process, but not a file the
+                // desktop cannot make a thumbnail of: every platform's own
+                // producer scales the image as it decodes, out of process and
+                // in bounded memory. Refusing it here — which is what this used
+                // to do — meant a 75 MP photo silently got a type icon while
+                // every other viewer on the desktop showed it a picture.
+                let Some(produced) = produce_shell_thumbnail(path_string, size, &metadata)? else {
+                    return Ok(None);
+                };
+                produced
+            }
+        }
     };
 
     let thumbnail = Arc::new(thumbnail);
@@ -925,8 +944,8 @@ mod render_tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use super::{
-        InflightRenders, RenderKind, THUMBNAIL_MAX_DECODED_PIXELS, render_response,
-        within_thumbnail_pixel_cap,
+        DecodeOutcome, InflightRenders, RenderKind, THUMBNAIL_MAX_DECODED_PIXELS, decode_and_scale,
+        render_response, within_thumbnail_pixel_cap,
     };
 
     /// The deduplication itself: a second request for a resource already being
@@ -1041,6 +1060,38 @@ mod render_tests {
         assert!(!within_thumbnail_pixel_cap(u32::MAX, u32::MAX));
     }
 
+    /// A photo past the pixel cap is a routing decision, not a miss.
+    ///
+    /// It used to be a miss, which is what made a 75 MP camera JPEG render as a
+    /// type icon while every other viewer on the desktop showed a picture:
+    /// `Option` could not tell the caller "this is too big for me, ask the
+    /// desktop" apart from "there is no thumbnail of this file", so the one
+    /// case with an obvious answer was the one case the caller threw away.
+    #[test]
+    fn an_image_past_the_pixel_cap_is_oversized_rather_than_a_miss() {
+        // 10667 × 7111 — the dimensions of a real 75 MP photo, and past the
+        // 40 MP cap by nearly a factor of two.
+        let fixture = Fixture::header_only_jpeg("oversized.jpg", 10_667, 7_111);
+
+        assert!(
+            matches!(
+                decode_and_scale(fixture.path(), 128),
+                Ok(DecodeOutcome::Oversized)
+            ),
+            "an over-cap image must reach the caller's desktop-producer branch"
+        );
+
+        // The cap is about pixels, not bytes: a 75 MP JPEG is routinely only a
+        // few megabytes, so the source-size budget must not have refused it
+        // first and turned this into a 404 again.
+        assert_eq!(
+            10_667u64 * 7_111 / (1024 * 1024),
+            72,
+            "the fixture is meant to be a large but ordinary photograph"
+        );
+        assert!(within_thumbnail_pixel_cap(8_192, 4_096));
+    }
+
     /// A fixture image in a directory of its own, removed when the test ends.
     ///
     /// Per-fixture rather than per-run: the test binary runs these in parallel,
@@ -1079,6 +1130,41 @@ mod render_tests {
         fn text(name: &str, contents: &str) -> Self {
             let fixture = Self::new(name);
             std::fs::write(fixture.path(), contents).expect("write the fixture file");
+            fixture
+        }
+
+        /// A JPEG whose frame header declares the given size, with no scan data
+        /// after it — everything a decoder's dimension probe reads, and nothing
+        /// it would have to decode.
+        ///
+        /// A header is what makes the fixture cheap; the pixels are what makes
+        /// it impossible. Every assertion about the pixel cap would otherwise
+        /// have to allocate the very buffer the cap exists to avoid.
+        fn header_only_jpeg(name: &str, width: u16, height: u16) -> Self {
+            let fixture = Self::new(name);
+
+            let mut bytes = vec![0xff, 0xd8];
+            // `SOF0`: segment length, sample precision, the two dimensions, and
+            // a three-component baseline frame header.
+            bytes.extend_from_slice(&[0xff, 0xc0]);
+            bytes.extend_from_slice(&17u16.to_be_bytes());
+            bytes.push(8);
+            bytes.extend_from_slice(&height.to_be_bytes());
+            bytes.extend_from_slice(&width.to_be_bytes());
+            bytes.extend_from_slice(&[3, 1, 0x11, 0x00, 2, 0x11, 1, 3, 0x11, 1]);
+            // `SOS`, which is where a JPEG header probe stops reading. Without
+            // it the decoder reports a premature end rather than dimensions.
+            bytes.extend_from_slice(&[0xff, 0xda]);
+            bytes.extend_from_slice(&12u16.to_be_bytes());
+            bytes.push(3);
+            bytes.extend_from_slice(&[1, 0x00, 2, 0x11, 3, 0x11]);
+            bytes.extend_from_slice(&[0, 63, 0]);
+            // A single entropy-coded byte is not a valid scan, and never has to
+            // be: this fixture is only ever asked for its size.
+            bytes.push(0x00);
+            bytes.extend_from_slice(&[0xff, 0xd9]);
+
+            std::fs::write(fixture.path(), bytes).expect("write the fixture header");
             fixture
         }
 
@@ -1223,7 +1309,22 @@ fn store_cache(
     }
 }
 
-fn decode_and_scale(path: &Path, size: u16) -> Result<Option<RenderedThumbnail>, FileSystemError> {
+/// What an in-process decode produced, when it is asked to produce anything.
+///
+/// The distinction is the whole point of the type: a file over the pixel cap is
+/// not a failure, it is a file for [`produce_shell_thumbnail`], which scales
+/// large images the way the desktop does — out of process, in bounded memory.
+/// Collapsing this back into `Option` is what made those files lose their
+/// thumbnails silently.
+enum DecodeOutcome {
+    /// The scaled bitmap, ready to serve.
+    Frame(RenderedThumbnail),
+    /// More pixels than [`THUMBNAIL_MAX_DECODED_PIXELS`], refused before the
+    /// decode allocated anything.
+    Oversized,
+}
+
+fn decode_and_scale(path: &Path, size: u16) -> Result<DecodeOutcome, FileSystemError> {
     // Header-only read first, so an image over the cap is refused *before* its
     // pixels are allocated. Checking the dimensions after `decode` — which is
     // what this used to do — meant a 100 MP file allocated ~400 MB during the
@@ -1234,7 +1335,7 @@ fn decode_and_scale(path: &Path, size: u16) -> Result<Option<RenderedThumbnail>,
         .into_dimensions()
         .map_err(|error| FileSystemError::Io(error.to_string()))?;
     if !within_thumbnail_pixel_cap(header_width, header_height) {
-        return Ok(None);
+        return Ok(DecodeOutcome::Oversized);
     }
 
     // Reopening costs one `open` on a file the header read just put in the page
@@ -1261,7 +1362,7 @@ fn decode_and_scale(path: &Path, size: u16) -> Result<Option<RenderedThumbnail>,
     // above and allocate whatever it liked.
     let (width, height) = decoded.dimensions();
     if !within_thumbnail_pixel_cap(width, height) {
-        return Ok(None);
+        return Ok(DecodeOutcome::Oversized);
     }
 
     // One fast nearest-neighbor step when the image is far larger than the
@@ -1285,7 +1386,7 @@ fn decode_and_scale(path: &Path, size: u16) -> Result<Option<RenderedThumbnail>,
                 image::ImageFormat::Png,
             )
             .map_err(|error| FileSystemError::Io(error.to_string()))?;
-        Ok(Some(RenderedThumbnail {
+        Ok(DecodeOutcome::Frame(RenderedThumbnail {
             mime: "image/png",
             bytes: buffer,
         }))
@@ -1295,7 +1396,7 @@ fn decode_and_scale(path: &Path, size: u16) -> Result<Option<RenderedThumbnail>,
         DynamicImage::ImageRgb8(scaled.to_rgb8())
             .write_with_encoder(encoder)
             .map_err(|error| FileSystemError::Io(error.to_string()))?;
-        Ok(Some(RenderedThumbnail {
+        Ok(DecodeOutcome::Frame(RenderedThumbnail {
             mime: "image/jpeg",
             bytes: buffer,
         }))
