@@ -387,6 +387,20 @@
   --card-foreground: #282a30;
   --popover: #ffffff; /* menus, dialogs — lift comes from shadow, not tone */
   --popover-foreground: #282a30;
+  /* THE FLOATING-GLASS PAIR — see `.menu-frost` and THE FLOATING-GLASS SEAM
+     below it. The menu plane at its frost density, plus the pass it runs over
+     whatever is behind it.
+
+     90% is a measured floor, not a taste call. The binding ink is the menu's
+     secondary grey (group labels and shortcut keycaps, `--muted-foreground`),
+     and the binding backdrop is the worst one a file manager serves — a black
+     thumbnail under a white menu. At this density that pair lands at ≈4.6:1
+     (the menu's main ink at ≈11.4:1); a tenth lighter and the keycaps fall under
+     AA. `saturate` is what makes the surviving tenth read as glass rather than
+     as a fade: chroma comes through a tint at a density where luminance does
+     not, so a photo behind the menu tints it while text behind it disappears. */
+  --popover-frost: color-mix(in oklab, var(--popover) 90%, transparent);
+  --frost-filter: blur(1.5rem) saturate(1.6);
   --accent-default: #4649c9; /* shipped accent; see the accent seam below */
   --accent-default-ink: #ffffff;
   --on-destructive: #ffffff;
@@ -460,6 +474,15 @@
   --card-foreground: #e5e6e8;
   --popover: #26282d; /* floating layer — two clear steps above the panels */
   --popover-foreground: #e5e6e8;
+  /* The glass pair, dark. Same 90% floor, and the same measurement run the other
+     way: here the binding backdrop is a bright one — a scanned page or a
+     white-background icon under a dark menu — and dimming the backdrop through
+     `brightness` before it reaches the tint is what buys the tenth of
+     see-through at all. Without it the floor for this scheme is 93%, and a glass
+     you cannot see through is not glass. Both readings land at ≈4.5:1 for the
+     secondary grey and ≈9.5:1 for the ink. */
+  --popover-frost: color-mix(in oklab, var(--popover) 90%, transparent);
+  --frost-filter: blur(1.5rem) saturate(1.6) brightness(0.75);
   --accent-default: #9496ff; /* shipped accent — 6.3:1 on a panel, 5.2 worst */
   --accent-default-ink: #101116; /* ink label on the vivid fill — 7.2:1 */
   --on-destructive: #101116; /* the dark destructive is a light red: white on it 2.4:1 */
@@ -940,6 +963,48 @@ html[data-window-material="blur"] {
   .render-contain {
     contain: layout style paint;
   }
+
+  /* ---------------------------------------------------------------------------
+     THE FLOATING-GLASS SEAM — see src/components/ui/context-menu.tsx.
+
+     The shell frosts rather than paints on one family of layers: the pickers
+     that open under the pointer, wherever the user's content happens to be, and
+     close before they compete with it — the context menu and its submenus, the
+     dropdown menus, the select popups. Both values are the per-scheme pair above
+     (`--popover-frost`, `--frost-filter`), and the densities are measured against
+     the menu's own inks there rather than chosen by eye.
+
+     Two properties of what it actually does, because both are surprising:
+
+       * `backdrop-filter` samples the *webview*, not the desktop. Over the file
+         list and the thumbnails it is exactly the frost asked for; where the
+         window shows a platform backdrop instead (Mica, the macOS material, the
+         niri blur — see THE WINDOW-MATERIAL SEAM) the canvas under the menu is
+         transparent, so there is nothing local to blur and the tenth of
+         see-through just lets that backdrop through untinted. Either way the
+         tint is what carries the text, which is why the floor is a contrast
+         number rather than an opacity preference.
+       * the blur has to be spent, not saved. A 24px pass is what turns a row of
+         28px filenames and the detail of a thumbnail into a wash; anything
+         lighter leaves readable text behind a translucent menu, which is worse
+         than opaque at the same cost.
+
+     What stays on the opaque plane is everything that holds text for as long as
+     it is up — a dialog, the command palette — where a live backdrop is read
+     under a paragraph rather than glanced under a row. Adding a layer to the
+     glass is this class swapped in for `bg-popover` at the surface, and nothing
+     else; note that a call site which passes its own `bg-*` wins silently,
+     because utilities outrank this layer.
+
+     The prefix is not decoration: WKWebView only reads the unprefixed spelling
+     from Safari 18, and every Mac on an older system needs this line or the
+     menu is a tint over unblurred text.
+     --------------------------------------------------------------------------- */
+  .menu-frost {
+    background-color: var(--popover-frost);
+    -webkit-backdrop-filter: var(--frost-filter);
+    backdrop-filter: var(--frost-filter);
+  }
 }
 
 @layer base {
@@ -1022,6 +1087,20 @@ html[data-window-material="blur"] {
   }
   ::-webkit-scrollbar-button {
     display: none;
+  }
+}
+
+/* Reduced transparency drops the shell's one CSS-owned glass surface back to an
+   opaque plane (see `.menu-frost`). This is the guard the window-material seam
+   deliberately does not carry: Mica, the macOS material and the niri blur are
+   answered by the platform, which reports `"none"` once the user turns effects
+   off, so CSS never has to second-guess them. The frost is the opposite case —
+   this file invented it and only this file can take it away. */
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  .dark {
+    --popover-frost: var(--popover);
+    --frost-filter: none;
   }
 }
 
@@ -1114,6 +1193,14 @@ html[data-window-material="blur"] {
   .dark {
     --selection: color-mix(in oklab, var(--primary) 34%, transparent);
   }
+  /* Glass is the first thing this mode asks back: a layer whose separation from
+     the plane under it is a tenth of see-through is exactly the subtlety being
+     objected to, so the menu returns to the solid popover. */
+  :root,
+  .dark {
+    --popover-frost: var(--popover);
+    --frost-filter: none;
+  }
   /* The state washes run at roughly double: a hovered row should not be a
      hover the user has to hunt for. */
   .state-layer:hover::after {
@@ -1146,6 +1233,12 @@ html[data-window-material="blur"] {
        hides what is behind the dialog instead of dimming it. The dialog keeps
        its border and that is the whole modal signal here. */
     --scrim: transparent;
+    /* The forcing keeps a background's *specified alpha* while replacing its
+       colour with `Canvas`, so a frosted plane would survive as a partially
+       transparent plate over a blurred backdrop — the one thing this mode does
+       not offer a palette for. The glass goes solid and the filter goes with it. */
+    --popover-frost: var(--popover);
+    --frost-filter: none;
     /* Hover is a fill in this shell, and the palette's only control fill is
        `ButtonFace`. A palette that sets it to the canvas leaves hover silent,
        which is why buttons also carry the edge below — accepted over
