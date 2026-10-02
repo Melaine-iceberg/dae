@@ -9,9 +9,11 @@ import type { DirectoryEntry } from "./types";
 /**
  * Extensions with a thumbnail producer on at least one platform: raster
  * formats decode in the Rust `image` pipeline everywhere, SVG streams
- * through as bytes for the webview to rasterize, and PDF/video/HEIC rely
- * on the Windows shell thumbnail handler (404 elsewhere falls back to the
- * type icon).
+ * through as bytes for the webview to rasterize, and PDF/video/HEIC go to
+ * whatever the desktop itself offers — the shell handler on Windows, the
+ * `.thumbnailer` files on Linux. Where there is none (macOS, or a Linux box
+ * with no video handler installed) the protocol answers 404 and the call
+ * site's fallback draws the type glyph.
  */
 const THUMBNAIL_EXTENSIONS = new Set([
   "jpg",
@@ -103,17 +105,25 @@ function devicePixelSize(cssSize: number): number {
  *
  * `displaySize` is the CSS size of the box the image has to cover — the
  * component asks the protocol for the device pixels behind it.
+ *
+ * `plate` draws the inset hairline around the frame. On a 96px grid cell it is
+ * what makes a picture read as a picture rather than a patch of colour; in a
+ * list it would outline every icon in a column of 28–42px rows, where the gap
+ * to the name already does the separating, so the rows ask for the image
+ * without it.
  */
 export function ThumbnailImage({
   className,
   entry,
   fallback,
   displaySize,
+  plate = true,
 }: {
   className?: string;
   entry: DirectoryEntry;
   fallback?: ReactNode;
   displaySize: number;
+  plate?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -153,7 +163,7 @@ export function ThumbnailImage({
   return (
     // `image-plate` is the hairline frame (App.css): the corner stays the
     // call site's, from the shape scale.
-    <div className={cn("image-plate", className)} ref={containerRef}>
+    <div className={cn(plate && "image-plate", className)} ref={containerRef}>
       {isVisible && !isFailed && (
         <img
           alt=""

@@ -14,13 +14,11 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/component
 import { cn } from "@/lib/utils";
 
 import { useDirectoryEntries } from "./directory-listing";
-import { DRAG_SOURCE_CLASS, EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
+import { DRAG_SOURCE_CLASS, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { getEntryPresentation } from "./file-icons";
-import { TypeIconTile } from "./icon-tile";
 import type { MenuActions } from "./file-list";
 import { listingViewOf, type ListingView } from "./listing-view";
-import { NativeIconImage, useNativeIconFor } from "./native-icon";
 import {
   filterHiddenEntries,
   foldersFirstAtom,
@@ -28,6 +26,7 @@ import {
   sortKeyAtom,
   sortOrderAtom,
 } from "./preferences";
+import { RowEntryIcon } from "./row-icon";
 import { useSortedEntries } from "./sorted-entries";
 import type { DirectoryEntry } from "./types";
 
@@ -298,7 +297,6 @@ function PaneRow({
 }) {
   const isDirectory = entry.kind === "directory";
   const presentation = getEntryPresentation(entry);
-  const showNativeIcon = useNativeIconFor(entry);
   const isExpanded = activeChildPath === entry.path;
 
   return (
@@ -341,24 +339,12 @@ function PaneRow({
           tabIndex={0}
           title={entry.path}
         >
-          <EntryIconFrame entry={entry}>
-            {showNativeIcon ? (
-              <NativeIconImage
-                className="shrink-0"
-                entry={entry}
-                fallback={
-                  <TypeIconTile
-                    className="size-tile-list"
-                    iconSize={13}
-                    presentation={presentation}
-                  />
-                }
-                pixelSize={16}
-              />
-            ) : (
-              <TypeIconTile className="size-tile-list" iconSize={13} presentation={presentation} />
-            )}
-          </EntryIconFrame>
+          <RowEntryIcon
+            entry={entry}
+            glyphSize={13}
+            nativePixelSize={16}
+            presentation={presentation}
+          />
           <span
             className={cn(
               "min-w-0 flex-1 truncate text-body",

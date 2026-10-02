@@ -440,7 +440,8 @@
     "densitySpacious": "宽松",
     "iconStyleLabel": "图标",
     "iconSystem": "系统图标",
-    "iconThemed": "内置图标"
+    "iconThemed": "内置图标",
+    "rowThumbnails": "在列表和分栏视图显示缩略图"
   },
   "tabs": {
     "ariaLabel": "文件标签页",

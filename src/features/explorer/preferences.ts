@@ -66,6 +66,19 @@ export const foldersFirstAtom = atomWithStorage<boolean>("explorer.foldersFirst"
 export const iconStyleAtom = atomWithStorage<ExplorerIconStyle>("explorer.iconStyle", "themed");
 
 /**
+ * Whether the list and column views draw a file's first frame in the icon slot
+ * the way the grid does.
+ *
+ * Off by default, and it is a preference rather than a fix: a 22px slot is where
+ * a thumbnail stops helping. It carries no information the glyph does not (both
+ * answer "what kind of file is this"), it costs a decode per visible row on
+ * scroll rather than one per cell on a folder change, and the frames all arrive
+ * a beat after the row paints. Grid view has always opted in by being large
+ * enough to read one; this is the same question asked at 22px.
+ */
+export const rowThumbnailsAtom = atomWithStorage<boolean>("explorer.rowThumbnails", false);
+
+/**
  * Whether hidden entries are listed at all. Defaults to `true` (the app has
  * always shown them); toggled from the filter menu, Ctrl/Cmd+H, or the
  * command bar, and persisted across sessions.

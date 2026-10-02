@@ -37,6 +37,7 @@ import {
   densityAtom,
   foldersFirstAtom,
   iconStyleAtom,
+  rowThumbnailsAtom,
   sortKeyAtom,
   sortOrderAtom,
   viewModeAtom,
@@ -99,6 +100,7 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
   const [viewMode, setViewMode] = useAtom(viewModeAtom);
   const [density, setDensity] = useAtom(densityAtom);
   const [iconStyle, setIconStyle] = useAtom(iconStyleAtom);
+  const [rowThumbnails, setRowThumbnails] = useAtom(rowThumbnailsAtom);
   const [sortKey, setSortKey] = useAtom(sortKeyAtom);
   const [sortOrder, setSortOrder] = useAtom(sortOrderAtom);
   const [foldersFirst, setFoldersFirst] = useAtom(foldersFirstAtom);
@@ -151,6 +153,11 @@ export function ViewMenu({ disabled }: { disabled?: boolean }) {
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
+        <DropdownMenuGroup>
+          <DropdownMenuCheckboxItem checked={rowThumbnails} onCheckedChange={setRowThumbnails}>
+            {t("view.rowThumbnails")}
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuGroup>
 
         <DropdownMenuSeparator />
         <DropdownMenuLabel inset>{t("sort.sortBy")}</DropdownMenuLabel>

@@ -440,7 +440,8 @@
     "densitySpacious": "Spacious",
     "iconStyleLabel": "Icons",
     "iconSystem": "System icons",
-    "iconThemed": "Built-in icons"
+    "iconThemed": "Built-in icons",
+    "rowThumbnails": "Thumbnails in lists and columns"
   },
   "tabs": {
     "ariaLabel": "File tabs",

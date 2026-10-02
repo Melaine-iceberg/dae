@@ -42,7 +42,7 @@ use serde::Serialize;
 use specta::Type;
 
 #[cfg(any(target_os = "linux", test))]
-mod desktop_entry;
+pub(crate) mod desktop_entry;
 #[cfg(any(target_os = "macos", test))]
 mod plist;
 // Linux is compiled under `cfg(test)` as well as on its own platform, so the

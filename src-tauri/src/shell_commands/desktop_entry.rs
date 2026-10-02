@@ -180,7 +180,11 @@ fn localized<'a>(
 /// separator inside a value, which is why the two are checked separately.
 /// Values are otherwise kept verbatim, including the backslash escapes an
 /// `Exec` line relies on — expansion happens later, in [`expand_exec`].
-fn parse_groups(text: &str) -> HashMap<String, HashMap<String, String>> {
+///
+/// Also what [`crate::desktop_thumbnails`] reads a `.thumbnailer` file with: the
+/// two formats are the same INI dialect, so one parser is kept correct rather
+/// than two.
+pub(crate) fn parse_groups(text: &str) -> HashMap<String, HashMap<String, String>> {
     let mut groups: HashMap<String, HashMap<String, String>> = HashMap::new();
     let mut current: Option<String> = None;
 
@@ -383,7 +387,10 @@ fn expand_word(
 ///
 /// A quoted empty argument is kept, because `Exec="" --flag` genuinely passes
 /// an empty first argument.
-fn split_exec(exec: &str) -> Vec<String> {
+///
+/// Shared with [`crate::desktop_thumbnails`], which splits a `.thumbnailer`
+/// `Exec=` line — the same grammar, and the same reason no shell may see it.
+pub(crate) fn split_exec(exec: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut current = String::new();
     let mut quote: Option<char> = None;

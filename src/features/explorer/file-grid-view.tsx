@@ -319,6 +319,15 @@ function GridCell({
   const iconSize = GRID_ICON_SIZE[density];
   const showThumbnail = isThumbnailSupported(entry);
   const entryStatus: GitEntryStatusKind | undefined = getEntryGitStatus(gitStatus, entry);
+  // The cell's own artwork when nothing is drawn over it: what a failed or
+  // unavailable thumbnail leaves behind.
+  const typeTile = (
+    <TypeIconTile
+      className={GRID_TILE_CLASS[density]}
+      iconSize={GRID_TILE_ICON_SIZE[density]}
+      presentation={presentation}
+    />
+  );
 
   return (
     <ContextMenu>
@@ -360,6 +369,7 @@ function GridCell({
                   GRID_IMAGE_ZONE_CLASS[density],
                 )}
                 entry={entry}
+                fallback={typeTile}
                 displaySize={128}
               />
             </EntryIconFrame>
@@ -368,23 +378,13 @@ function GridCell({
               <NativeIconImage
                 className="shrink-0"
                 entry={entry}
-                fallback={
-                  <TypeIconTile
-                    className={GRID_TILE_CLASS[density]}
-                    iconSize={GRID_TILE_ICON_SIZE[density]}
-                    presentation={presentation}
-                  />
-                }
+                fallback={typeTile}
                 pixelSize={iconSize}
               />
             </EntryIconFrame>
           ) : (
             <EntryIconFrame badgeSize="md" entry={entry}>
-              <TypeIconTile
-                className={GRID_TILE_CLASS[density]}
-                iconSize={GRID_TILE_ICON_SIZE[density]}
-                presentation={presentation}
-              />
+              {typeTile}
             </EntryIconFrame>
           )}
           <span

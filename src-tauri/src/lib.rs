@@ -1,5 +1,11 @@
 mod deep_link;
 mod default_manager;
+// Linux's thumbnail producers are compiled under `cfg(test)` too, exactly as
+// `file_icons`' Linux backend is, so the module type-checks and its
+// host-independent tests run on a machine that cannot build a Linux app at all.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(test, allow(dead_code))]
+mod desktop_thumbnails;
 mod file_icons;
 mod file_system;
 // Answers the Wayland/NVIDIA startup crash a file manager should not ask its

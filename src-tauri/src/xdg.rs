@@ -80,6 +80,39 @@ pub(crate) fn resolve_data_roots(
     roots
 }
 
+/// `$XDG_CACHE_HOME`, defaulting to `$HOME/.cache`, or `None` when neither
+/// names a directory to write in.
+///
+/// One root rather than a list: the base directory spec defines a search path
+/// for data and config but not for the cache, which is per-user by construction.
+pub(crate) fn cache_home() -> Option<PathBuf> {
+    resolve_cache_home(
+        std::env::var_os("XDG_CACHE_HOME").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )
+}
+
+/// See [`resolve_data_roots`] for why the environment reads are split out.
+/// The same two rules apply: an unset *or empty* `XDG_CACHE_HOME` means
+/// `$HOME/.cache` — taking an empty value at face value would write thumbnails
+/// under the relative path `thumbnails/`, in whatever the working directory
+/// happens to be — and a relative value is invalid rather than resolved.
+/// With no `XDG_CACHE_HOME` and no usable `HOME` there is no cache directory,
+/// and a caller has to treat that as "generate, but do not keep".
+pub(crate) fn resolve_cache_home(
+    cache_home: Option<&OsStr>,
+    home: Option<&OsStr>,
+) -> Option<PathBuf> {
+    cache_home
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| {
+            home.map(PathBuf::from)
+                .filter(|path| path.is_absolute())
+                .map(|home| home.join(".cache"))
+        })
+}
+
 /// `$XDG_CONFIG_HOME`, defaulting to `$HOME/.config`.
 pub(crate) fn config_roots() -> Vec<PathBuf> {
     resolve_config_roots(
@@ -139,8 +172,10 @@ mod tests {
 
         // A relative element is invalid and dropped rather than resolved
         // against the working directory.
-        let relative =
-            resolve_data_roots(Some(OsStr::new("share")), Some(OsStr::new("share:/usr/share")));
+        let relative = resolve_data_roots(
+            Some(OsStr::new("share")),
+            Some(OsStr::new("share:/usr/share")),
+        );
         assert!(rooted(&relative));
         assert!(!relative.contains(&PathBuf::from("share")));
 
@@ -161,6 +196,30 @@ mod tests {
         // `$HOME` unset is not a reason to guess one. An empty list means "look
         // at the system roots only", which is what a headless run wants.
         assert!(resolve_config_roots(None, None).is_empty());
+    }
+
+    /// The cache has one root and no fallback, which is the difference between
+    /// "do not keep the thumbnail" and keeping it somewhere unexpected.
+    #[cfg(unix)]
+    #[test]
+    fn resolves_the_cache_home_to_a_single_absolute_directory() {
+        assert_eq!(
+            resolve_cache_home(Some(OsStr::new("/cache")), Some(OsStr::new("/home/u"))),
+            Some(PathBuf::from("/cache"))
+        );
+        // Empty reads as unset, which is `$HOME/.cache`; a relative value is
+        // invalid and is dropped for the same reason.
+        assert_eq!(
+            resolve_cache_home(Some(OsStr::new("")), Some(OsStr::new("/home/u"))),
+            Some(PathBuf::from("/home/u/.cache"))
+        );
+        assert_eq!(
+            resolve_cache_home(Some(OsStr::new("cache")), Some(OsStr::new("/home/u"))),
+            Some(PathBuf::from("/home/u/.cache"))
+        );
+        // Nothing to write under.
+        assert_eq!(resolve_cache_home(None, None), None);
+        assert_eq!(resolve_cache_home(Some(OsStr::new("cache")), None), None);
     }
 
     /// The path *values*, asserted where their syntax means what it says.

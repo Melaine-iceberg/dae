@@ -97,8 +97,10 @@ pub fn is_thumbnail_extension(path: &str) -> bool {
     let extension = extension_of(Path::new(path));
     is_image_extension(path)
         || extension == "svg"
-        // Windows shell handlers render PDF first pages, video first frames,
-        // and HEIC photos (with the HEIF extensions installed).
+        // Producer-dependent formats: the Windows shell handler renders these,
+        // and on Linux [`crate::desktop_thumbnails`] runs the desktop's
+        // `.thumbnailer` files for them. macOS has neither yet, so it answers 404
+        // and the frontend keeps its type glyph.
         || matches!(
             extension.as_str(),
             "pdf" | "mp4" | "m4v" | "mov" | "mkv" | "webm" | "avi" | "wmv" | "heic" | "heif"
@@ -580,15 +582,12 @@ fn render_thumbnail(
     }
 
     let thumbnail = if is_shell_source {
-        // No shell thumbnail handler on this platform (or for this file):
-        // 404 lets the frontend fall back to its type icon.
-        let Some(png) = extract_shell_thumbnail_png(path_string, u32::from(size)) else {
+        // No producer for this file on this platform: the 404 that follows lets
+        // the frontend fall back to its type icon.
+        let Some(produced) = produce_shell_thumbnail(path_string, size, &metadata)? else {
             return Ok(None);
         };
-        RenderedThumbnail {
-            mime: "image/png",
-            bytes: png,
-        }
+        produced
     } else {
         let Some(thumbnail) = decode_and_scale(path, size)? else {
             return Ok(None);
@@ -841,11 +840,60 @@ pub(crate) fn bitmap_to_png(bitmap: windows::Win32::Graphics::Gdi::HBITMAP) -> O
     }
 }
 
-// No shell thumbnail rendering on other platforms yet; the frontend falls
-// back to its type-based Phosphor icons for PDF/video/HEIC.
-#[cfg(not(windows))]
-fn extract_shell_thumbnail_png(_path: &str, _size: u32) -> Option<Vec<u8>> {
-    None
+/// The first-page / first-frame producers that are not the `image` crate, one
+/// per platform, behind the seam [`render_thumbnail`] asks its question through.
+///
+/// The answer carries its own mime rather than being labelled `image/png` here,
+/// because what it takes to make one of these is whichever producer the desktop
+/// declares: Windows' shell hands back a bitmap this file encodes, and on Linux
+/// [`crate::desktop_thumbnails`] runs the `.thumbnailer` files somebody else
+/// shipped, which are only checked for being PNG.
+///
+/// `metadata` is the caller's, already read for the size cap and the cache key:
+/// Linux needs the source's mtime to decide whether a shared-cache thumbnail is
+/// still current, and re-`stat`ing it here would be a second read of the same
+/// inode on the thread this module exists to keep free of blocking work.
+#[cfg(windows)]
+fn produce_shell_thumbnail(
+    path: &str,
+    size: u16,
+    _metadata: &fs::Metadata,
+) -> Result<Option<RenderedThumbnail>, FileSystemError> {
+    Ok(
+        extract_shell_thumbnail_png(path, u32::from(size)).map(|bytes| RenderedThumbnail {
+            mime: "image/png",
+            bytes,
+        }),
+    )
+}
+
+/// The freedesktop thumbnailers, run and cached by [`crate::desktop_thumbnails`].
+#[cfg(target_os = "linux")]
+fn produce_shell_thumbnail(
+    path: &str,
+    size: u16,
+    metadata: &fs::Metadata,
+) -> Result<Option<RenderedThumbnail>, FileSystemError> {
+    Ok(
+        crate::desktop_thumbnails::extract(path, u32::from(size), metadata.modified().ok()).map(
+            |produced| RenderedThumbnail {
+                mime: produced.mime,
+                bytes: produced.bytes,
+            },
+        ),
+    )
+}
+
+// macOS has no in-process renderer wired up yet: `NSWorkspace` would be the
+// right call, and until it is made the frontend falls back to its type glyph for
+// PDF, video and HEIC.
+#[cfg(not(any(windows, target_os = "linux")))]
+fn produce_shell_thumbnail(
+    _path: &str,
+    _size: u16,
+    _metadata: &fs::Metadata,
+) -> Result<Option<RenderedThumbnail>, FileSystemError> {
+    Ok(None)
 }
 
 #[cfg(all(test, windows))]

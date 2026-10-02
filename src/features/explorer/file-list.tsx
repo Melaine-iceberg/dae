@@ -83,13 +83,12 @@ import {
   type FileTransferOperation,
   type TransferOperation,
 } from "./drag-drop";
-import { DRAG_SOURCE_CLASS, EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
+import { DRAG_SOURCE_CLASS, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { FileColumnView } from "./file-column-view";
 import { getEntryPresentation } from "./file-icons";
 import { FileGridView } from "./file-grid-view";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
-import { TypeIconTile } from "./icon-tile";
 import {
   allPaths,
   directoryPathSet,
@@ -98,7 +97,6 @@ import {
   type ListingView,
 } from "./listing-view";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
-import { NativeIconImage, useNativeIconFor } from "./native-icon";
 import {
   DEFAULT_SORT_ORDER,
   DENSITY_ROW_HEIGHT,
@@ -109,6 +107,7 @@ import {
   viewModeAtom,
   type ExplorerSortKey,
 } from "./preferences";
+import { RowEntryIcon } from "./row-icon";
 import type { DirectoryEntry } from "./types";
 
 /** Shared stand-in for "not dragging": a fresh empty Set per render would
@@ -1480,7 +1479,6 @@ function FileListRow({
 }) {
   const { t } = useTranslation("explorer");
   const presentation = getEntryPresentation(entry);
-  const showNativeIcon = useNativeIconFor(entry);
   const isDirectory = entry.kind === "directory";
   const entryStatus = getEntryGitStatus(gitStatus, entry);
   const displaySize = isDirectory ? null : entry.size;
@@ -1522,28 +1520,12 @@ function FileListRow({
           style={{ gridTemplateColumns: listGridTemplate(columns), height: densityRowHeight }}
         >
           <div className="flex min-w-0 items-center gap-2.5 px-3">
-            <EntryIconFrame entry={entry}>
-              {showNativeIcon ? (
-                <NativeIconImage
-                  className="shrink-0"
-                  entry={entry}
-                  fallback={
-                    <TypeIconTile
-                      className="size-tile-list"
-                      iconSize={16}
-                      presentation={presentation}
-                    />
-                  }
-                  pixelSize={18}
-                />
-              ) : (
-                <TypeIconTile
-                  className="size-tile-list"
-                  iconSize={16}
-                  presentation={presentation}
-                />
-              )}
-            </EntryIconFrame>
+            <RowEntryIcon
+              entry={entry}
+              glyphSize={16}
+              nativePixelSize={18}
+              presentation={presentation}
+            />
             <span className="min-w-0 truncate text-body">{entry.name}</span>
             {entryStatus && <GitStatusBadge kind={entryStatus} />}
             {entry.relativePath && (
