@@ -33,6 +33,7 @@
 //! valid while it is at least as new as its source. The key carries no mtime, so
 //! that comparison is the only invalidation a shared thumbnail directory has.
 
+use std::borrow::Cow;
 use std::ffi::OsString;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -453,12 +454,11 @@ enum Producer {
 /// The producer for a path's MIME type, or `None` when nothing installed can
 /// render it.
 fn producer_for(path: &str) -> Option<Producer> {
-    let guessed = mime_guess::from_path(path).first()?;
-    let mime = guessed.essence_str();
+    let mime = mime_for(path)?;
 
     if let Some(thumbnailer) = thumbnailers()
         .iter()
-        .find(|entry| covers(&entry.mime_types, mime))
+        .find(|entry| covers(&entry.mime_types, &mime))
     {
         return Some(Producer::Thumbnailer {
             exec: thumbnailer.exec.clone(),
@@ -471,7 +471,7 @@ fn producer_for(path: &str) -> Option<Producer> {
     // video decoder would not help it.
     let decodable = mime.starts_with("video/")
         || matches!(
-            mime,
+            mime.as_ref(),
             "image/heic" | "image/heif" | "image/avif" | "image/jxl"
         );
     if decodable {
@@ -480,6 +480,55 @@ fn producer_for(path: &str) -> Option<Producer> {
 
     None
 }
+
+/// Types spelled out that `mime_guess` does not know, paired with the MIME name
+/// the shipped handlers declare for them.
+///
+/// This exists because `mime_guess` fails *silently* on a type it lacks: it
+/// answers `application/octet-stream`, which `producer_for` used to read as "no
+/// handler claims this file" — the exact 404 this module exists to avoid. An
+/// extension missing from this table is a file whose thumbnail quietly
+/// disappears, so this is the place a newly shipped handler's type gets added.
+///
+/// The names are the ones `glycin-thumbnailer`'s `.thumbnailer` files declare,
+/// which is what makes the match work at all: a handler is matched by MIME, and
+/// a name invented here would match nothing.
+const EXTENSION_MIMES: &[(&str, &str)] = &[
+    ("qoi", "image/qoi"),
+    ("exr", "image/x-exr"),
+    ("dds", "image/vnd-ms.dds"),
+];
+
+/// The MIME type for `path`, or `None` when the path has no extension.
+///
+/// `mime_guess` answers every extension it knows with a guessed type, and every
+/// one it does not with `application/octet-stream` — which is indistinguishable
+/// from a file that genuinely is an opaque stream. Consulting the table on that
+/// answer is what keeps a `.qoi` from reading as "nothing installed claims this
+/// file".
+fn mime_for(path: &str) -> Option<Cow<'_, str>> {
+    let extension = Path::new(path).extension()?.to_str()?.to_ascii_lowercase();
+
+    if let Some(guessed) = mime_guess::from_ext(&extension)
+        .first()
+        .map(|mime| mime.essence_str().to_owned())
+    {
+        return Some(Cow::Owned(guessed));
+    }
+
+    Some(
+        EXTENSION_MIMES
+            .iter()
+            .find(|(candidate, _)| *candidate == extension)
+            .map_or(Cow::Borrowed(OCTET_STREAM), |(_, mime)| {
+                Cow::Borrowed(*mime)
+            }),
+    )
+}
+
+/// The type `mime_guess` falls back to for an extension it does not know, and
+/// the one no `.thumbnailer` file will ever declare.
+const OCTET_STREAM: &str = "application/octet-stream";
 
 /// The full argv for one request, program first.
 ///
@@ -1016,6 +1065,58 @@ mod tests {
         // A declared type with no slash is not a bucket glob.
         assert!(!covers(&declared, "no-slash-too"));
         assert!(!covers(&[], "video/mp4"));
+    }
+
+    /// The bug this table exists to prevent, stated as the assertion that would
+    /// have caught it: a type `mime_guess` has never heard of still has to reach
+    /// the handler that declares it.
+    ///
+    /// `mime_guess` answers an unknown extension with `application/octet-stream`
+    /// rather than with nothing, so the miss was invisible — `producer_for` read
+    /// it as "no handler claims this file" and answered 404 for a `.qoi` that
+    /// `glycin-thumbnailer` renders happily. The type is matched against a
+    /// handler's `MimeType=` list, so the names below have to be the ones the
+    /// shipped `.thumbnailer` files declare, not the ones that read best.
+    #[test]
+    fn a_type_mime_guess_does_not_know_still_reaches_its_handler() {
+        for (extension, mime) in EXTENSION_MIMES {
+            let path = format!("/tmp/frame.{extension}");
+            assert_eq!(
+                mime_for(&path).as_deref(),
+                Some(*mime),
+                "{extension} must not fall through to {OCTET_STREAM}"
+            );
+
+            // The declared list glycin ships for exactly these, verbatim.
+            let shipped = vec![
+                "image/qoi".to_owned(),
+                "image/x-exr".to_owned(),
+                "image/vnd-ms.dds".to_owned(),
+            ];
+            assert!(covers(&shipped, mime), "no shipped handler declares {mime}");
+        }
+    }
+
+    /// Everything `mime_guess` does know still goes through it, so the table can
+    /// only ever be a fallback and never a second opinion.
+    #[test]
+    fn a_known_type_is_left_to_the_shared_database() {
+        for (path, expected) in [
+            ("/tmp/a.jpg", "image/jpeg"),
+            ("/tmp/a.png", "image/png"),
+            ("/tmp/a.avif", "image/avif"),
+            ("/tmp/a.jxl", "image/jxl"),
+            ("/tmp/a.mp4", "video/mp4"),
+            ("/tmp/A.JPG", "image/jpeg"),
+        ] {
+            assert_eq!(mime_for(path).as_deref(), Some(expected), "{path}");
+        }
+
+        // An extension nobody knows is still answered, so the caller gets a
+        // type to compare against rather than a hole in the lookup.
+        assert_eq!(mime_for("/tmp/frame.zzz").as_deref(), Some(OCTET_STREAM));
+        // And a path with no extension has nothing to guess from at all.
+        assert_eq!(mime_for("/tmp/frame"), None);
     }
 
     /// The shape Arch's `ffmpegthumbnailer` package ships, kept verbatim.

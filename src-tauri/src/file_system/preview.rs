@@ -84,12 +84,43 @@ fn extension_of(path: &Path) -> String {
         .to_ascii_lowercase()
 }
 
-/// Extensions the `image` crate can decode on every supported platform.
-fn is_image_extension(path: &str) -> bool {
-    matches!(
-        extension_of(Path::new(path)).as_str(),
-        "jpg" | "jpeg" | "png" | "gif" | "webp" | "bmp" | "tif" | "tiff" | "ico"
-    )
+/// Extensions the `image` crate decodes on every supported platform.
+///
+/// Everything outside this set is the desktop's to render, which is what keeps
+/// the two categories honest: a name in here means this process can draw the
+/// file, and a name absent from it means nothing here can — whatever the shell,
+/// `NSWorkspace` or a `.thumbnailer` file happens to have.
+const IN_PROCESS_IMAGE_EXTENSIONS: &[&str] = &[
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "ico",
+];
+
+/// Extensions with no in-process decoder, listed because some desktop *does*
+/// have one: documents (a PDF's first page), video (a first frame), and the
+/// image formats `image` cannot read at all — AVIF and JXL from modern phone and
+/// screenshot pipelines, TGA and the portable bitmaps from older toolchains,
+/// QOI/EXR/DDS from graphics work.
+///
+/// A `.jpg` is absent on purpose, and that absence is the performance argument:
+/// decoding one in this process costs about 1.5 ms, where spawning a
+/// `.thumbnailer` for the same file costs about 10 ms of process startup before
+/// any decoding starts. Delegating a small photo would make the common case
+/// seven times slower to save code, so the list is for the formats that would
+/// otherwise be a type icon forever, not for the formats that already work.
+///
+/// Membership is a *possibility*, not a promise: [`crate::desktop_thumbnails`]
+/// answers 404 when nothing installed claims the type, and so does macOS for
+/// everything on this list.
+const DESKTOP_RENDERED_EXTENSIONS: &[&str] = &[
+    // Documents and video: the Windows shell handler, `.thumbnailer` files, or
+    // the ffmpeg fallback, whichever the machine has.
+    "pdf", "mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv",
+    // Still images this process cannot decode.
+    "heic", "heif", "avif", "jxl", "apng", "tga", "qoi", "exr", "dds", "pbm", "pgm", "ppm",
+];
+
+fn is_in_process_image_extension(path: &str) -> bool {
+    let extension = extension_of(Path::new(path));
+    IN_PROCESS_IMAGE_EXTENSIONS.contains(&extension.as_str())
 }
 
 /// Extensions with any thumbnail strategy on some platform. The frontend
@@ -97,16 +128,12 @@ fn is_image_extension(path: &str) -> bool {
 /// handler answers 404 when the current platform lacks a producer.
 pub fn is_thumbnail_extension(path: &str) -> bool {
     let extension = extension_of(Path::new(path));
-    is_image_extension(path)
-        || extension == "svg"
-        // Producer-dependent formats: the Windows shell handler renders these,
-        // and on Linux [`crate::desktop_thumbnails`] runs the desktop's
-        // `.thumbnailer` files for them. macOS has neither yet, so it answers 404
-        // and the frontend keeps its type glyph.
-        || matches!(
-            extension.as_str(),
-            "pdf" | "mp4" | "m4v" | "mov" | "mkv" | "webm" | "avi" | "wmv" | "heic" | "heif"
-        )
+    // SVG is neither: it streams through as bytes for the webview to
+    // rasterize, so it is the one format with a producer on every platform and
+    // no in-process decoder at all.
+    extension == "svg"
+        || IN_PROCESS_IMAGE_EXTENSIONS.contains(&extension.as_str())
+        || DESKTOP_RENDERED_EXTENSIONS.contains(&extension.as_str())
 }
 
 /// A protocol response whose body is borrowed-or-owned bytes.
@@ -563,7 +590,7 @@ fn render_thumbnail(
     // with that routing: a photo over the pixel cap is still a photo, and the
     // byte budget that keeps browsing a folder of huge archives-as-images from
     // stalling the UI is worth more than the rare 100 MP file it excludes.
-    let is_shell_source = !is_image_extension(path_string);
+    let is_shell_source = !is_in_process_image_extension(path_string);
     let source_cap = if is_shell_source {
         SHELL_THUMBNAIL_MAX_SOURCE_BYTES
     } else {
@@ -945,7 +972,7 @@ mod render_tests {
 
     use super::{
         DecodeOutcome, InflightRenders, RenderKind, THUMBNAIL_MAX_DECODED_PIXELS, decode_and_scale,
-        render_response, within_thumbnail_pixel_cap,
+        is_thumbnail_extension, render_response, within_thumbnail_pixel_cap,
     };
 
     /// The deduplication itself: a second request for a resource already being
@@ -1058,6 +1085,73 @@ mod render_tests {
         // The product must not wrap: both axes at `u32::MAX` square to less than
         // `u64::MAX`, so this has to read as over the cap rather than as small.
         assert!(!within_thumbnail_pixel_cap(u32::MAX, u32::MAX));
+    }
+
+    /// Which files get an image slot at all, and — the part that was wrong —
+    /// that the two categories do not overlap.
+    ///
+    /// An extension in both lists would make [`render_thumbnail`] pay the
+    /// desktop's process spawn for a JPEG it can decode in 1.5 ms, and one in
+    /// neither leaves a file with a producer on the machine rendering as a type
+    /// icon. Both are silent, so both are asserted here rather than noticed.
+    #[test]
+    fn the_two_extension_sets_cover_the_right_files_and_never_overlap() {
+        for extension in [
+            "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "ico",
+        ] {
+            assert!(
+                super::IN_PROCESS_IMAGE_EXTENSIONS.contains(&extension),
+                "{extension} should decode in process"
+            );
+        }
+
+        // Formats `image` cannot read, which is the whole reason the delegated
+        // list grew: AVIF is what a phone camera writes by default now.
+        for extension in [
+            "pdf", "mp4", "mov", "mkv", "webm", "avi", "wmv", "heic", "heif", "avif", "jxl",
+            "apng", "tga", "qoi", "exr", "dds", "pbm", "pgm", "ppm",
+        ] {
+            assert!(
+                super::DESKTOP_RENDERED_EXTENSIONS.contains(&extension),
+                "{extension} should be the desktop's to render"
+            );
+            assert!(
+                !super::IN_PROCESS_IMAGE_EXTENSIONS.contains(&extension),
+                "{extension} cannot be in both: that would spawn a process to decode a raster"
+            );
+        }
+
+        for name in [
+            "photo.jpg",
+            "photo.JPG",
+            "anim.gif",
+            "icon.ico",
+            "vector.svg",
+            "clip.mp4",
+            "scan.avif",
+            "lossless.jxl",
+            "frame.exr",
+            "mesh.qoi",
+            "texture.dds",
+        ] {
+            assert!(
+                is_thumbnail_extension(name),
+                "{name} should have a producer"
+            );
+        }
+
+        for name in [
+            "notes.txt",
+            "archive.zip",
+            "binary.bin",
+            "Makefile",
+            "noext",
+        ] {
+            assert!(
+                !is_thumbnail_extension(name),
+                "{name} has no producer anywhere and must not claim an image slot"
+            );
+        }
     }
 
     /// A photo past the pixel cap is a routing decision, not a miss.

@@ -7,16 +7,31 @@ import { getFileExtension } from "./file-icons";
 import type { DirectoryEntry } from "./types";
 
 /**
- * Extensions with a thumbnail producer on at least one platform: raster
- * formats decode in the Rust `image` pipeline everywhere — except past the
- * backend's decode cap, where the desktop's own producer scales them instead —
- * SVG streams through as bytes for the webview to rasterize, and PDF/video/HEIC
- * go to whatever the desktop itself offers — the shell handler on Windows, the
- * `.thumbnailer` files on Linux. Where there is none (macOS, or a Linux box
- * with no video handler installed) the protocol answers 404 and the call
- * site's fallback draws the type glyph.
+ * Extensions with a thumbnail producer on at least one platform. Three groups,
+ * mirroring `IN_PROCESS_IMAGE_EXTENSIONS` / `DESKTOP_RENDERED_EXTENSIONS` in
+ * `src-tauri/src/file_system/preview.rs`. The two lists are kept in step by
+ * hand and nothing enforces it — this one decides which entries get an image
+ * slot at all, so a file it forgets keeps its type icon with no error logged
+ * anywhere.
+ *
+ * - The first block is what Rust's `image` crate decodes in process on every
+ *   platform. Past the backend's decode cap these route to the desktop's
+ *   producer instead, but they are never refused.
+ * - SVG streams through as bytes for the webview to rasterize.
+ * - The rest have no in-process decoder and are the desktop's to render: the
+ *   shell handler on Windows, the `.thumbnailer` files on Linux. Documents
+ *   (a PDF's first page), video (a first frame), and the image formats `image`
+ *   cannot read — AVIF and JXL, TGA and the portable bitmaps, QOI/EXR/DDS.
+ *
+ * A `.jpg` belongs in the first block and not the second for a measured reason:
+ * decoding one in process costs ~1.5 ms where a `.thumbnailer` spawn costs
+ * ~10 ms of startup before any decoding begins. Membership in the third block
+ * is a *possibility*, not a promise — where nothing installed claims the type
+ * (macOS today, a Linux box with no handler) the protocol answers 404 and the
+ * call site's fallback draws the type glyph.
  */
 const THUMBNAIL_EXTENSIONS = new Set([
+  // In process: `image` crate.
   "jpg",
   "jpeg",
   "png",
@@ -26,7 +41,9 @@ const THUMBNAIL_EXTENSIONS = new Set([
   "tif",
   "tiff",
   "ico",
+  // Rasterized by the webview.
   "svg",
+  // The desktop's: documents and video.
   "pdf",
   "mp4",
   "m4v",
@@ -35,12 +52,30 @@ const THUMBNAIL_EXTENSIONS = new Set([
   "webm",
   "avi",
   "wmv",
+  // The desktop's: still images this process cannot decode.
   "heic",
   "heif",
+  "avif",
+  "jxl",
+  "apng",
+  "tga",
+  "qoi",
+  "exr",
+  "dds",
+  "pbm",
+  "pgm",
+  "ppm",
 ]);
 
-/** Raster formats decoded by Rust everywhere; cheap regardless of size. */
-const RASTER_EXTENSIONS = new Set([
+/**
+ * The formats Rust decodes in process. Mirrors
+ * `IN_PROCESS_IMAGE_EXTENSIONS` in `preview.rs`.
+ *
+ * The distinction is not cosmetic: it decides which size budget applies, and
+ * these stay under the cheap one because a decode here costs milliseconds
+ * whatever the file weighs.
+ */
+const IN_PROCESS_IMAGE_EXTENSIONS = new Set([
   "jpg",
   "jpeg",
   "png",
@@ -53,8 +88,8 @@ const RASTER_EXTENSIONS = new Set([
 ]);
 
 /**
- * Shell-produced thumbnails (PDF pages, video frames, HEIC) are capped
- * higher than the raster path but still bounded so a multi-gigabyte clip
+ * Desktop-produced thumbnails (PDF pages, video frames, HEIC, AVIF) are capped
+ * higher than the in-process path but still bounded so a multi-gigabyte clip
  * never reaches the shell handler.
  */
 const SHELL_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024 * 1024;
@@ -63,7 +98,7 @@ export function isThumbnailSupported(entry: DirectoryEntry): boolean {
   if (entry.kind !== "file") return false;
   const extension = getFileExtension(entry.name);
   if (!THUMBNAIL_EXTENSIONS.has(extension)) return false;
-  if (RASTER_EXTENSIONS.has(extension) || extension === "svg") return true;
+  if (IN_PROCESS_IMAGE_EXTENSIONS.has(extension) || extension === "svg") return true;
   return (entry.size ?? 0) <= SHELL_THUMBNAIL_MAX_BYTES;
 }
 
