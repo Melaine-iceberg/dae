@@ -740,16 +740,30 @@ html[data-window-focused="false"] .tab-chip-active {
    window that is not chrome but a colour cast: at any density thin enough to read
    as a backdrop, the wallpaper's own hue arrives in every edge of the shell. So
    `"blur"` keeps the canvas filled and lets the desktop through the two roles a
-   native file manager always does: its title bar and its sidebar.
+   native file manager always does: its title bar and its sidebar. Those two are also
+   where the shell supplies the decision the compositor skipped, so what arrives is a
+   tinted wash rather than the wallpaper's own hue.
 
-   The `78%` is the least that holds up, not a taste call, and the binding case is
-   this shell's dark scheme over a bright window — the ink that sits directly on the
-   frost has to clear AA, and 78% of `--card` over a white backdrop leaves #e5e6e8 at
-   ≈5.5:1, with anything lighter failing. That ink is the nav column's labels and the
-   inactive tab's title; an active tab carries its own opaque plate. `--card` is the
-   base rather than `--background` because a token cannot mix with itself, and
-   because it is the one role both schemes define opaque, so the frost follows the
-   palette without repeating it.
+   The `8%` is that tint, read off `--primary` — the accent seam's own token, so a
+   picked accent retints the frame with it and the inactive appearance drains the
+   frame with the rest of the accent, neither needing a rule here. It is small because
+   a tint is not a fill: 8% moves the opaque plate by ≈5 L* before the desktop arrives,
+   which is enough to read as coloured and little enough that the density, not the
+   hue, still decides contrast.
+
+   The `84%` is what the hue costs, and it has to move with it. A bright accent is a
+   lift, not a wash: the same 8% held at the old 78% takes this shell's dark scheme
+   over a white desktop from 6.5:1 to 5.8:1 for the ink sitting directly on the
+   frost. At 84% every accent measured lands back above where the neutral frame was
+   — 6.5:1 for #e5e6e8 in dark, 12.2:1 for #282a30 in light — and the worst pair
+   found is a near-black accent under the light scheme's secondary grey, which
+   clears AA at 4.9:1. That ink is the nav column's labels and the inactive tab's
+   title; an active tab carries its own opaque plate. What neither knob reaches is
+   the nav column's `--muted-foreground` captions over a bright desktop: 3.1:1 before
+   this, 3.4:1 after, sub-AA either way, and a density question of their own rather
+   than a tint one. `--card` is the base rather than `--background` because a token
+   cannot mix with itself, and because it is the one role both schemes define opaque,
+   so the frost follows the palette without repeating it.
 
    Thinning the frame rather than the whole window is also the one part of this
    block that is a mechanism rather than a value. Two things paint the canvas behind
@@ -787,8 +801,10 @@ html[data-window-material="vibrancy"] {
 
 html[data-window-material="blur"] {
   /* One density for both frame roles: to the desktop the tab bar and the nav
-     column are the same surface. */
-  --chrome-frost: color-mix(in oklab, var(--card) 78%, transparent);
+     column are the same surface. The hue comes off `--primary` so it follows the
+     accent seam and the inactive drain without a rule of its own. */
+  --chrome-tint: color-mix(in oklab, var(--card) 92%, var(--primary));
+  --chrome-frost: color-mix(in oklab, var(--chrome-tint) 84%, transparent);
   --chrome: var(--chrome-frost);
   --sidebar: var(--chrome-frost);
 }
