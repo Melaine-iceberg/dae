@@ -47,9 +47,12 @@ import { cn } from "@/lib/utils";
  * scheme, the system accent, `prefers-contrast` and forced-colors the way
  * every other surface in this shell does.
  *
- * The `line-duotone` style paints a secondary accent layer as well; its
- * strength is the shell-wide `--solar-secondary-opacity` (see App.css), which
- * is why a glyph has depth without any call site asking for it.
+ * The `line-duotone` style paints a secondary layer as well, and every glyph in
+ * this file opts it back to the shell's *tonal* mix rather than the accent one
+ * (`solar-tonal`, see App.css). A category hue is the whole point of the map
+ * below, and an accent-tinted detail line inside one would read as a second,
+ * meaningless hue. The class is applied for the component as a whole because
+ * five of these glyphs are neutral and have no hue for a selector to match.
  */
 
 /** What a glyph is handed. `aria-hidden` is spelled out because every icon
@@ -178,6 +181,8 @@ const componentCache = new Map<TypeGlyph, EntryIcon>();
  * The glyph's tone and the caller's class go through `cn`, so the usual
  * Tailwind last-wins rule holds: a call site that needs a different colour
  * (a faded hidden row, the preview header) still overrides the category.
+ * `solar-tonal` rides along first and is not a Tailwind utility, so it is the
+ * category — rather than a call site's colour — that fixes the second tone.
  */
 export function typeIcon(glyph: TypeGlyph): EntryIcon {
   const cached = componentCache.get(glyph);
@@ -191,7 +196,7 @@ export function typeIcon(glyph: TypeGlyph): EntryIcon {
   const component: EntryIcon = function TypeIcon({ className, size }) {
     return render({
       "aria-hidden": true,
-      className: className ? cn(tone, className) : tone,
+      className: cn("solar-tonal", tone, className),
       size: size ?? DEFAULT_SIZE,
     });
   };

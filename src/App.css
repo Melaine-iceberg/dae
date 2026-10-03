@@ -1148,27 +1148,105 @@ html[data-window-material="blur"]:root body {
   }
 
   /* ---------------------------------------------------------------------------
-     SOLAR ICONS — the duotone accent, stated once for the whole shell.
+     SOLAR ICONS — the duotone pair, stated once for the whole shell.
 
      The app draws Solar's `line-duotone` style everywhere. That style paints
-     two layers: a solid one at full opacity, and a "secondary" one at
-     `var(--solar-secondary-opacity, 0.5)` on `currentColor`. At 0.5 the accent
-     is a hair lighter than the outline it sits inside, which on a 13–16px
-     icon in a dense listing reads as ink that failed to render rather than as
-     a second tone. Here the accent drops to roughly a third — enough to
-     register as depth in the larger chrome and profile glyphs, quiet enough
-     that the solid layer stays the whole shape at row size.
+     two layers, and each layer is a *stroke* — the secondary one is not a
+     filled second shape but a second pass along the glyph's own path, drawn at
+     `var(--solar-secondary-color, currentColor)` with
+     `var(--solar-secondary-opacity, 0.5)`.
 
-     It is declared on `:root` because that is where the icon reads it from
-     (the variable is inherited, so no `SolarProvider` is needed), and it is a
-     global default *by design*: a single call site may still override it with
-     `secondaryOpacity` when the icon is large enough to carry the accent.
+     Two properties of that second pass decide what a colour can do for it, and
+     both are readable off any glyph in the package:
 
-     Under `forced-colors: active` both layers are repainted `CanvasText` and
-     the depth survives as a wash; the declaration is left alone there.
+     * The primary pass is painted *over* the secondary one, so the second tone
+       survives only where the primary path does not reach — and that fraction
+       varies per glyph by a lot. In `CloseIcon` the two diagonals never touch,
+       so half the glyph is the second tone; in `AltArrowDownIcon` the primary
+       is a truncated copy of the secondary and all but a short tail is covered;
+       in `LoaderIcon` the secondary is the whole circle and the primary a small
+       arc, so nearly all of it shows. This is why opacity can never carry the
+       layer: the covered part is not faint, it is *absent*, and no alpha brings
+       it back. 0.32 — the previous value here — is the one direction that
+       removes the layer instead of tuning it.
+     * Because the surviving fraction varies, a second tone that is merely a
+       desaturated copy of the first reads as damage rather than as depth: a
+       neutral `CloseIcon` is one white arm and one grey one, which looks like a
+       misrender. So the layer gets a colour of its own, and the opacity returns
+       to 1.
+
+     Which colour is decided by what the icon reports, and the shell has only
+     two answers:
+
+     * CHROME — every icon that marks an affordance rather than a thing: the
+       toolbar, the sidebar, menus, dialogs, buttons. These carry no colour of
+       their own, so an uncoloured second tone leaves them reading as white line
+       art with pieces missing. Theirs is the *accent*, which already means
+       "interactive" here (`--selection`, `--ring`, the filled buttons, the
+       active-tab underline). It is derived, never written down: `--primary`
+       follows `--system-accent`, so a reader who picked an OS accent gets icons
+       tuned to it, and the inactive-window rule further down drains them along
+       with everything else the accent paints.
+     * Everything whose `color` already carries a meaning opts out — see the
+       rule below the pair. A file glyph's hue is its *category* and a warning
+       triangle's is its *warning*; an accent-tinted detail line inside either
+       would read as a second hue that means nothing. Those keep the mix this
+       block used to apply to everything, kept as its own variable so both
+       answers are stated in one place and neither is retyped at a call site.
+
+     The accent mixes toward `currentColor` rather than toward a surface, and
+     that is the load-bearing choice. `currentColor` is the tone the caller
+     already put on `color` (`text-foreground`, `text-muted-foreground`), so the
+     mix holds the second layer at the *outline's own lightness* and moves only
+     its chroma — which is what lets one declaration stay legible on every plane
+     this shell has (panel, sidebar, frost, hover highlight, selected row).
+     Toward `--card` it instead reads on a panel and fails where it matters
+     most: `--primary` 45% toward the dark `#1d1f22` is a dark, muddy indigo
+     that disappears against it.
+
+     58% is the accent's knob; 62% is the tonal one. Below ~45% the accent
+     recedes and the layer reads as a fade again; above ~70% it competes with
+     the outline for the same read. A ratio is a step rather than a fade, which
+     is also what keeps the tonal layer legible on a selected row: `--selection`
+     is a tint of `--primary`, and a `currentColor`-alpha secondary over it can
+     land on its own hue and vanish.
+
+     `--solar-secondary-color` resolves `currentColor` at the point of use,
+     where `color` is the inherited tone — the same resolution Solar's own
+     default relies on — so no `SolarProvider` and no per-tone table is needed.
+     A call site that wants a different second tone on a large glyph passes
+     `secondaryColor` / `secondaryOpacity`, or `isolated` to opt back out to
+     Solar's defaults.
+
+     Under `forced-colors: active` whichever mix applies is computed and then
+     forced to `CanvasText` like every other colour, which would leave both
+     layers identical; the override in that block restores the wash.
      --------------------------------------------------------------------------- */
   :root {
-    --solar-secondary-opacity: 0.32;
+    --solar-secondary-tonal: color-mix(in oklab, currentColor 62%, var(--card));
+    --solar-secondary-color: color-mix(in oklab, var(--primary) 58%, currentColor);
+    --solar-secondary-opacity: 1;
+  }
+
+  /* The opt-out, and the whole of it. `.solar-tonal` is set by `type-icon.tsx`
+     for that component as a whole — including its five neutral glyphs, which
+     carry no hue of their own and so cannot be recognised by one. The ten
+     utilities are the shell's complete set of colour-carrying roles: the six
+     category hues plus `--folder`, and the semantic four. Both are closed sets,
+     so this is a rule rather than a list a new call site can quietly miss. */
+  .solar-tonal,
+  .text-folder,
+  .text-tone-blue,
+  .text-tone-violet,
+  .text-tone-emerald,
+  .text-tone-amber,
+  .text-tone-rose,
+  .text-tone-cyan,
+  .text-destructive,
+  .text-success,
+  .text-warning,
+  .text-info {
+    --solar-secondary-color: var(--solar-secondary-tonal);
   }
 
   html {
@@ -1384,6 +1462,14 @@ html[data-window-material="blur"]:root body {
        focus colour goes here; the ring half of the focus treatment is one of
        the shadows the forcing removes. */
     --ring: Highlight;
+    /* Both Solar variables are `color-mix`es — one for the accent answer, one
+       for the tonal one — so the forcing computes whichever applies and then
+       repaints *both* layers `CanvasText`. That leaves the glyph flat, without
+       the second tone the pair exists for. A colour cannot be restored against
+       a palette the user chose, but a wash can: the opacity neither answer uses
+       any more is exactly what carries the layer here, and it carries it for
+       the opt-out list too. */
+    --solar-secondary-opacity: 0.35;
   }
 
   .bg-selection,
