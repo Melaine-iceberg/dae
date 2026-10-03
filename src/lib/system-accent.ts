@@ -19,7 +19,7 @@
  *
  * `applySystemAccent` is the whole write side. It writes two custom
  * properties on <html>; everything accent-coloured in App.css derives from
- * them and falls back to the shipped indigo until it has run once.
+ * them and falls back to the shipped teal until it has run once.
  * `watchSystemAccent` is the read side and is the only caller.
  *
  * Two properties, not one. The OS accent can be any lightness, and no
@@ -97,7 +97,7 @@ function resolveInk(accent: string): { contrast: number; ink: string } {
     ? { contrast: lightContrast, ink: INK_LIGHT }
     : { contrast: darkContrast, ink: INK_DARK };
 } /**
- * Retints the shell to `accent`, or hands it back to the shipped indigo when
+ * Retints the shell to `accent`, or hands it back to the shipped teal when
  * given `null`.
  *
  * Rejects anything that is not a parseable colour rather than writing it:

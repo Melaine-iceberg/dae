@@ -78,7 +78,7 @@ function readTerminalTheme(ansiOverride: AnsiPalette | null): ITheme {
     // the content plane, and the caret is the one accent in the block.
     background: token("--card", "#1d1f22"),
     foreground: token("--foreground", "#e5e6e8"),
-    cursor: token("--primary", "#9496ff"),
+    cursor: token("--primary", "#56cdd8"),
     cursorAccent: token("--card", "#1d1f22"),
     selectionBackground: token("--accent", "#2c2e33"),
     black: ansi[0],

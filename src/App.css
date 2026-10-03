@@ -403,7 +403,7 @@
      hairline edges (border/card ≈ 1.35) so boundaries stay legible without
      any shadow. Depth is a measured ladder — canvas → sidebar column →
      content plane → floating layer, where only the last one lifts. The accent
-     is Linear's indigo picked so it clears AA in BOTH of its jobs: as a fill
+     is the shipped teal picked so it clears AA in BOTH of its jobs: as a fill
      (white on it ≈ 5.4) and as text or icon on any surface in the ladder
      (≈ 5.4 at worst).
 
@@ -478,7 +478,7 @@
      so wherever the plate reaches past the hole the platform left it lands on
      a colour that is already there. */
   --frost-plate: var(--card);
-  --accent-default: #4649c9; /* shipped accent; see the accent seam below */
+  --accent-default: #0d7a86; /* shipped accent (teal); see the accent seam below */
   --accent-default-ink: #ffffff;
   --on-destructive: #ffffff;
   --secondary: #f1f2f4; /* tonal secondary surfaces */
@@ -489,7 +489,7 @@
   --accent-foreground: #282a30;
   --error-container: #fde4e2;
   --on-error-container: #6b140f;
-  --folder: #5c63d2;
+  --folder: #4a72b8;
   --destructive: #c22f2f;
   /* Status hues: one hue each, contrast-checked against the white plane. */
   --success: #17804a;
@@ -500,7 +500,7 @@
   --tone-emerald: #17804a;
   --tone-amber: #9c630f;
   --tone-rose: #bf3c60;
-  --tone-cyan: #0d848c;
+  --tone-cyan: #0a86b4;
   --border: #e2e4e8; /* hairline panel edge */
   --input: #d5d8dd;
   --radius: 0.75rem;
@@ -580,7 +580,7 @@
   --popover-frost-dense: color-mix(in oklab, var(--popover) 96%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6) brightness(0.75);
   --frost-plate: var(--card); /* see the light scheme's pair */
-  --accent-default: #9496ff; /* shipped accent — 6.3:1 on a panel, 5.2 worst */
+  --accent-default: #56cdd8; /* shipped accent (teal) — 8.7:1 on a panel, 7.3 worst */
   --accent-default-ink: #101116; /* ink label on the vivid fill — 7.2:1 */
   --on-destructive: #101116; /* the dark destructive is a light red: white on it 2.4:1 */
   --secondary: #2a2c31;
@@ -591,7 +591,7 @@
   --accent-foreground: #e5e6e8;
   --error-container: #6a312d;
   --on-error-container: #f7cdc9;
-  --folder: #9aa3e8;
+  --folder: #8fb0e0;
   --destructive: #ff8288;
   --success: #63d398;
   --warning: #e8a33d;
@@ -601,7 +601,7 @@
   --tone-emerald: #63d398;
   --tone-amber: #e8a33d;
   --tone-rose: #ff9ab2;
-  --tone-cyan: #5acfd9;
+  --tone-cyan: #4ec2ea;
   --border: #313338; /* hairline — 1.31:1 on a panel, the same step as light */
   --input: #3f4147;
   --radius: 0.75rem;
@@ -627,7 +627,7 @@
      --system-accent-ink  a label colour that clears ≈4.5:1 ON that hue
 
    They are deliberately left UNDEFINED in this file rather than given a
-   default. `var(--system-accent, …)` falls back to the shipped indigo
+   default. `var(--system-accent, …)` falls back to the shipped teal
    exactly while the bridge has said nothing, and stops falling back the
    instant it has. Declaring `--system-accent: initial` on this element would
    still *define* it and therefore defeat the fallback — the one mistake this
@@ -638,7 +638,7 @@
    the ink is chosen in `applySystemAccent()` from the hue's relative
    luminance. A bridge normally supplies only the hue.
 
-   `--accent-default*` above are the shipped indigo, per scheme. They are also
+   `--accent-default*` above are the shipped teal, per scheme. They are also
    what vite.config.ts bakes into index.html's pre-React splash, where no
    bridge has run yet — so there the default is the correct colour and not
    merely a fallback.
@@ -1368,7 +1368,7 @@ html[data-window-material="blur"]:root body {
      its chroma — which is what lets one declaration stay legible on every plane
      this shell has (panel, sidebar, frost, hover highlight, selected row).
      Toward `--card` it instead reads on a panel and fails where it matters
-     most: `--primary` 45% toward the dark `#1d1f22` is a dark, muddy indigo
+     most: `--primary` 45% toward the dark `#1d1f22` is a dark, muddy teal
      that disappears against it.
 
      58% is the accent's knob; 62% is the tonal one. Below ~45% the accent

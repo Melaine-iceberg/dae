@@ -12,10 +12,11 @@
  * means *blue* the way `--success` means *success*, so a path `ls --color`
  * painted as a symlink keeps that meaning whatever hue the user has set the
  * window to; the accent retints the shell and not the terminal's colour
- * grammar. Blue is therefore the shipped indigo copied in by hand, and the one
- * place a token change in `App.css` has to be mirrored here rather than
- * inherited. (The same reason the palette is plain hex at all: xterm is handed
- * values, not CSS, and cannot follow a variable.)
+ * grammar. The shipped accent is teal, which is NOT a blue — so the blue slot
+ * holds a real blue and the accent no longer appears in this table at all
+ * (the terminal's own cursor/selection reads `--primary` from CSS and follows
+ * the accent seam live). This table is plain hex anyway: xterm is handed
+ * values, not CSS, and cannot follow a variable.
  *
  * Slot order is the canonical ANSI indexing (0-7 normal, 8-15 bright):
  *   0 black, 1 red, 2 green, 3 yellow, 4 blue, 5 magenta, 6 cyan, 7 white,
@@ -36,17 +37,17 @@ export const DARK_ANSI: AnsiPalette = Object.freeze([
   "#ff8288", // red — --destructive
   "#63d398", // green — --success
   "#e8a33d", // yellow — warm amber (--warning)
-  "#9496ff", // blue — the shipped accent, sampled rather than read: see the header
+  "#8fb2ff", // blue — a real blue: ANSI blue means blue (see the header), not the teal accent
   "#c792ea", // magenta
-  "#5acfd9", // cyan — --tone-cyan
+  "#4ec2ea", // cyan — --tone-cyan
   "#e5e6e8", // white — --foreground
   "#9ba0a9", // brightBlack — --muted-foreground (dim text stays legible)
   "#ffa3a7", // brightRed
   "#8ce0b3", // brightGreen
   "#ffc868", // brightYellow — warm amber pastel
-  "#8fb2ff", // brightBlue
+  "#a8c7ff", // brightBlue
   "#f08fce", // brightMagenta
-  "#8ce0e6", // brightCyan
+  "#7fd2f0", // brightCyan
   "#ffffff", // brightWhite
 ]);
 
@@ -56,17 +57,17 @@ export const LIGHT_ANSI: AnsiPalette = Object.freeze([
   "#c22f2f", // red — --destructive
   "#17804a", // green — --success
   "#8a6318", // yellow — darkened amber so it reads on white
-  "#4649c9", // blue — --primary
+  "#3f68c8", // blue — a real blue (see the header); not the teal accent
   "#b8438a", // magenta
-  "#0d848c", // cyan — --tone-cyan
+  "#0a86b4", // cyan — --tone-cyan
   "#d5d8dd", // white — light gray (--input)
   "#62666e", // brightBlack — --muted-foreground (dim text)
   "#c13434", // brightRed
   "#1f9a5c", // brightGreen
   "#a97c2f", // brightYellow
-  "#3f68c8", // brightBlue
+  "#5b7fd6", // brightBlue
   "#cb5fa4", // brightMagenta
-  "#149aa6", // brightCyan
+  "#22a3c8", // brightCyan
   "#f5f6f8", // brightWhite
 ]);
 
