@@ -26,13 +26,19 @@ function themeBootStyles() {
       handler(html: string) {
         const css = readFileSync(path.resolve(import.meta.dirname, "src/App.css"), "utf8");
 
-        /** The body of the first `selector { … }` block, up to a closing brace
-         *  in column 0. Anchoring on the line start keeps `.dark {` from
-         *  matching the descendant rules (`.dark .code-preview`) further down. */
-        const block = (selector: string) => {
-          const match = new RegExp(`(?:^|\\n)${selector}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(css);
-          if (!match) throw new Error(`[dae] App.css: no ${selector} block found`);
-          return match[1];
+        /** Every `selector { … }` block body, in source order, each ending at a
+         *  closing brace in column 0. Anchoring on the line start keeps `.dark {`
+         *  from matching the descendant rules (`.dark .code-preview`) further
+         *  down. Every match rather than the first one: `:root` is the light
+         *  scheme's block and also the home of one-or-two-token seams, and
+         *  reading all of them means a NEW `:root` added above the scheme — for
+         *  a geometry token, say — no longer shadows the palette and fails
+         *  every lookup below with a message about the wrong thing. */
+        const blocks = (selector: string) => {
+          const pattern = new RegExp(`(?:^|\\n)${selector}\\s*\\{([\\s\\S]*?)\\n\\}`, "g");
+          const found = [...css.matchAll(pattern)].map((match) => match[1]);
+          if (found.length === 0) throw new Error(`[dae] App.css: no ${selector} block found`);
+          return found.join("\n");
         };
         const token = (source: string, name: string) => {
           const match = new RegExp(`--${name}:\\s*([^;]+);`).exec(source);
@@ -40,8 +46,8 @@ function themeBootStyles() {
           return match[1].trim();
         };
 
-        const light = block(":root");
-        const dark = block("\\.dark");
+        const light = blocks(":root");
+        const dark = blocks("\\.dark");
         const values: Record<string, string> = {
           __DAE_CANVAS__: token(light, "background"),
           // `accent-default`, not `primary`: `--primary` is now derived from

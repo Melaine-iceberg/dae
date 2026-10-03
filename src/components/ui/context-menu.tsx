@@ -52,12 +52,14 @@ function ContextMenuContent({
           data-slot="context-menu-content"
           className={cn(
             // Floating layer: popover plane + 1px hairline + one ambient
-            // shadow, on the shell's one glass surface — `menu-frost` frosts
-            // whatever is behind the menu (see App.css, THE FLOATING-GLASS
-            // SEAM). The hairline still carries the edge, because the frost is
-            // a tenth of the backdrop and not a separation device, and
-            // `animate-float-in` is still the only travel this layer gets.
-            "z-50 max-h-(--available-height) min-w-menu origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-md border border-border menu-frost p-1 text-body text-popover-foreground shadow-ambient outline-none data-open:animate-float-in data-closed:animate-out data-closed:fade-out-0 data-closed:duration-instant data-closed:ease-standard-accelerate data-closed:fill-mode-forwards",
+            // shadow, on the shell's one glass treatment — `floating-frost`
+            // frosts whatever is behind the layer, and gives it the app's own
+            // pixels where the window has none (see App.css, THE FLOATING-GLASS
+            // SEAM, and THE PLATE under it). The hairline still carries the
+            // edge, because the frost is a tenth of the backdrop and not a
+            // separation device, and `animate-float-in` is still the only travel
+            // this layer gets.
+            "z-50 max-h-(--available-height) min-w-menu origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-md border border-border floating-frost p-1 text-body text-popover-foreground shadow-ambient outline-none data-open:animate-float-in data-closed:animate-out data-closed:fade-out-0 data-closed:duration-instant data-closed:ease-standard-accelerate data-closed:fill-mode-forwards",
             className,
           )}
           {...props}

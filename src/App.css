@@ -309,8 +309,10 @@
   --height-trash-list: 70vh;
   /* Chrome geometry. The tab strip, the pane toolbar and the transfer strip
      each appear in more than one place (both panes of a split, every tab),
-     so their heights are named instead of hand-written per call site. */
-  --height-tab-strip: 38px;
+     so their heights are named instead of hand-written per call site. The tab
+     strip's number lives in the plain pair at the top of this file, where a
+     `background-size` can read it; the name here is an alias. */
+  --height-tab-strip: var(--tab-strip-height);
   --height-toolbar: 40px;
   --height-status-strip: 32px;
   --height-capacity-bar: 3px; /* disk capacity fill in the sidebar */
@@ -330,7 +332,7 @@
   --max-width-command-bar: 40rem; /* 640px — the palette's cap */
   --max-width-row-meta: 45%; /* trailing metadata share of an explorer row */
   --width-column-view: 13.75rem; /* 220px — one Miller column */
-  --width-sidebar: 15rem; /* 240px — the nav column */
+  --width-sidebar: var(--sidebar-width); /* 240px — the nav column */
   --width-preview: 26rem;
   /* One notification. Fixed rather than content-sized so a stack of them
      shares an edge and a two-line message wraps at a predictable column. */
@@ -392,7 +394,7 @@
   --card-foreground: #282a30;
   --popover: #ffffff; /* menus, dialogs — lift comes from shadow, not tone */
   --popover-foreground: #282a30;
-  /* THE FLOATING-GLASS PAIR — see `.menu-frost` and THE FLOATING-GLASS SEAM
+  /* THE FLOATING-GLASS PAIR — see `.floating-frost` and THE FLOATING-GLASS SEAM
      below it. The menu plane at its frost density, plus the pass it runs over
      whatever is behind it.
 
@@ -406,6 +408,13 @@
      not, so a photo behind the menu tints it while text behind it disappears. */
   --popover-frost: color-mix(in oklab, var(--popover) 90%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6);
+  /* The fill a floating layer puts under its own tint where the window has no
+     pixels to give it — see THE PLATE in the components layer. `--card` rather
+     than `--popover` or the canvas: it is the one role both schemes define
+     opaque, and it is what the plane a layer mostly floats over is painted in,
+     so wherever the plate reaches past the hole the platform left it lands on
+     a colour that is already there. */
+  --frost-plate: var(--card);
   --accent-default: #4649c9; /* shipped accent; see the accent seam below */
   --accent-default-ink: #ffffff;
   --on-destructive: #ffffff;
@@ -438,6 +447,24 @@
   --sidebar-accent: #e9ebef;
   --sidebar-accent-foreground: #282a30;
   --sidebar-border: #e2e4e8;
+
+  /* Chrome geometry. Plain custom properties rather than `@theme` entries,
+     because one consumer is not a utility: the floating-glass plate sizes two
+     `background-image` strips against them, and a token declared inside
+     `@theme inline` is inlined into the utilities instead of being emitted as
+     a variable, so no rule of this file could read it. The Tailwind names stay
+     there as aliases — `w-sidebar` and `h-tab-strip` keep their spelling, and
+     there is still one number behind each.
+
+     Declared *in this block* and never in a `:root` of its own: the
+     boot-screen plugin in vite.config.ts paints the splash from the first
+     `:root` block in this file, before React parses anything else. A separate
+     `:root` placed above this one shadows it, and the build then fails with
+     "--background is not defined where expected" — the geometry block, not
+     the theme, was what got read. Anything that has to exist as a real
+     variable belongs here. */
+  --sidebar-width: 15rem; /* 240px — the nav column */
+  --tab-strip-height: 38px; /* the window frame bar */
 }
 
 .dark {
@@ -488,6 +515,7 @@
      secondary grey and ≈9.5:1 for the ink. */
   --popover-frost: color-mix(in oklab, var(--popover) 90%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6) brightness(0.75);
+  --frost-plate: var(--card); /* see the light scheme's pair */
   --accent-default: #9496ff; /* shipped accent — 6.3:1 on a panel, 5.2 worst */
   --accent-default-ink: #101116; /* ink label on the vivid fill — 7.2:1 */
   --on-destructive: #101116; /* the dark destructive is a light red: white on it 2.4:1 */
@@ -1009,43 +1037,108 @@ html[data-window-material="blur"]:root body {
   /* ---------------------------------------------------------------------------
      THE FLOATING-GLASS SEAM — see src/components/ui/context-menu.tsx.
 
-     The shell frosts rather than paints on one family of layers: the pickers
-     that open under the pointer, wherever the user's content happens to be, and
-     close before they compete with it — the context menu and its submenus, the
-     dropdown menus, the select popups. Both values are the per-scheme pair above
-     (`--popover-frost`, `--frost-filter`), and the densities are measured against
-     the menu's own inks there rather than chosen by eye.
+     The shell frosts rather than paints on one family of layers: everything that
+     floats over it and is read while it is up. Both values are the per-scheme
+     pair above (`--popover-frost`, `--frost-filter`), and the densities are
+     measured against the family's own inks there rather than chosen by eye.
 
      Two properties of what it actually does, because both are surprising:
 
-       * `backdrop-filter` samples the *webview*, not the desktop. Over the file
-         list and the thumbnails it is exactly the frost asked for; where the
-         window shows a platform backdrop instead (Acrylic, Mica, the macOS
-         material, the niri blur — see THE WINDOW-MATERIAL SEAM) the canvas under
-         the menu is transparent, so there is nothing local to blur and the tenth
-         of see-through just lets that backdrop through untinted. Either way the
-         tint is what carries the text, which is why the floor is a contrast
-         number rather than an opacity preference.
+       * `backdrop-filter` composes the *webview*, not the desktop, so what the
+         tenth of see-through shows is whatever this shell painted behind the
+         layer — over the file list and the thumbnails, exactly the frost asked
+         for. The two chrome roles are the exception, and the plate below is
+         that exception's answer. Either way the tint is what carries the text,
+         which is why the floor is a contrast number rather than an opacity
+         preference.
        * the blur has to be spent, not saved. A 24px pass is what turns a row of
          28px filenames and the detail of a thumbnail into a wash; anything
          lighter leaves readable text behind a translucent menu, which is worse
          than opaque at the same cost.
 
-     What stays on the opaque plane is everything that holds text for as long as
-     it is up — a dialog, the command palette — where a live backdrop is read
-     under a paragraph rather than glanced under a row. Adding a layer to the
-     glass is this class swapped in for `bg-popover` at the surface, and nothing
-     else; note that a call site which passes its own `bg-*` wins silently,
-     because utilities outrank this layer.
+     The family is every layer that floats over the shell and is read while it is
+     up: the context menu and its submenus, the dropdown menus, the select
+     popups, the dialogs and the command palette. The last two used to stay on
+     the opaque plane, on the argument that a live backdrop is read under a
+     paragraph rather than glanced under a row. They take the same frost at the
+     same measured density because that measurement was never about rows: its
+     floor is the worst backdrop a file manager serves, and a dialog is read
+     against a scrim, which is a quieter backdrop than the file list is.
+
+     What is left on the opaque plane is the short-lived surface that is not
+     looked through: a toast, the drag tooltip, the contextual action bar. A
+     layer joins the glass by swapping this class in for `bg-popover` at the
+     surface and nothing else — and the `bg-popover` has to be *removed* rather
+     than left in to lose, because it sets `background-color`, a different
+     property from the fill below: it would land under the tint, hide the blur
+     and paint a flat plate.
+
+     Where the window the layer floats over is itself a hole, the layer carries
+     a plate of its own — that is THE PLATE below, and the second half of this
+     seam.
 
      The prefix is not decoration: WKWebView only reads the unprefixed spelling
      from Safari 18, and every Mac on an older system needs this line or the
      menu is a tint over unblurred text.
      --------------------------------------------------------------------------- */
-  .menu-frost {
+  .floating-frost {
+    /* The family's one treatment, and the only place a floating layer's fill is
+       decided. The tint is a background *image* rather than a `background-color`
+       because the plate below has to sit under it, and a colour is painted under
+       every image layer — the wrong side of the glass. The colour stays as the
+       answer for a mode that drops images, which is safe because every override
+       that reaches this pair in that direction (forced colours, reduced
+       transparency) has already made the tint opaque. */
     background-color: var(--popover-frost);
+    background-image: linear-gradient(var(--popover-frost), var(--popover-frost));
     -webkit-backdrop-filter: var(--frost-filter);
     backdrop-filter: var(--frost-filter);
+  }
+
+  /* -------------------------------------------------------------------------
+     THE PLATE — the one place a floating layer is given pixels the app owns
+     instead of the ones it floats over, and the other half of this seam.
+
+     `backdrop-filter` composes what is behind the element *below* its own
+     background, so a tint cannot refuse the wallpaper: its tenth of see-through
+     always includes whatever the platform put behind the window. THE
+     WINDOW-MATERIAL SEAM is where that happens — the nav column and the tab bar
+     stop painting so the desktop can arrive — so a context menu on a sidebar row
+     frosts the wallpaper with its left half while its right half frosts the file
+     list. The answer is a plate: two strips of `--frost-plate`, the shape of the
+     hole, anchored to the viewport and clipped by the layer's own box, so the
+     painted region is exactly the layer ∩ hole and the frost over the content
+     plane is untouched.
+
+     Both halves of that sentence are mechanism rather than detail. Fixed
+     attachment is what makes the strips *viewport* geometry instead of the
+     layer's own, and the layer's own box is what clips them, because nothing in
+     a fixed-position portal otherwise knows where the chrome is. And the plate
+     has to be under the tint, which is why the tint above is an image layer and
+     why the two rules are read as one.
+
+     Where an engine resolves a fixed background against a transformed ancestor
+     instead — the dialog's centring translate, the 2px float-in every layer
+     enters with — the strips anchor to the layer's own box. That degrades to the
+     layer's leading `--sidebar-width` and its top `--tab-strip-height`, which is
+     a superset of the intersection: the hole is still covered, and the excess
+     lands on the content plane, where the plate is the same `--card` that plane
+     already paints. The cost of the fallback is a strip of the frost's own
+     backdrop going flat, never a hole in it. */
+  html[data-window-material="mica"] .floating-frost,
+  html[data-window-material="acrylic"] .floating-frost,
+  html[data-window-material="vibrancy"] .floating-frost,
+  html[data-window-material="blur"] .floating-frost {
+    background-image:
+      linear-gradient(var(--popover-frost), var(--popover-frost)),
+      linear-gradient(var(--frost-plate), var(--frost-plate)),
+      linear-gradient(var(--frost-plate), var(--frost-plate));
+    background-repeat: no-repeat;
+    background-attachment: scroll, fixed, fixed;
+    background-size:
+      100% 100%,
+      var(--sidebar-width) 100%,
+      100% var(--tab-strip-height);
   }
 }
 
@@ -1133,7 +1226,7 @@ html[data-window-material="blur"]:root body {
 }
 
 /* Reduced transparency drops the shell's one CSS-owned glass surface back to an
-   opaque plane (see `.menu-frost`). This is the guard the window-material seam
+   opaque plane (see `.floating-frost`). This is the guard the window-material seam
    deliberately does not carry: Acrylic, Mica, the macOS material and the niri
    blur are answered by the platform, which reports `"none"` once the user turns
    effects off, so CSS never has to second-guess them. The frost is the opposite
