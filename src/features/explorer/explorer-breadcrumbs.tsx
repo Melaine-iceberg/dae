@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 import { getFolderPresentation } from "./file-icons";
+import { cn } from "@/lib/utils";
 import type { Breadcrumb as BreadcrumbData } from "./types";
 
 interface ExplorerBreadcrumbsProps {
@@ -141,7 +142,22 @@ export function ExplorerBreadcrumbs({ breadcrumbs, onNavigate }: ExplorerBreadcr
           const nodes: ReactNode[] = [];
           if (index > 0) nodes.push(<BreadcrumbSeparator key="sep" />);
           nodes.push(
-            <BreadcrumbItem key={breadcrumb.path} className="min-w-0">
+            <BreadcrumbItem
+              key={breadcrumb.path}
+              // The ancestors are the ones that give way: they carry `min-w-0`
+              // and are allowed to collapse to nothing when the bar is
+              // squeezed. The CURRENT crumb is the one name the user cannot
+              // afford to lose — it is where they are — so it is pinned and
+              // truncates inside its own box instead. Without this the bar
+              // distributed the squeeze across every item equally and all of
+              // them reached zero at once, which is why a narrow window showed
+              // an empty gap where the path should be. The container's
+              // `overflow-hidden` clips whatever a pinned crumb cannot fit.
+              className={cn(
+                "min-w-0",
+                breadcrumb.path === breadcrumbs.at(-1)?.path && "shrink-0",
+              )}
+            >
               <CrumbContent
                 breadcrumb={breadcrumb}
                 isCurrent={breadcrumb.path === breadcrumbs.at(-1)?.path}

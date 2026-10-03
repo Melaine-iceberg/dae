@@ -256,26 +256,41 @@
   --color-error-container: var(--error-container);
   --color-on-error-container: var(--on-error-container);
 
-  /* Shape scale: four steps plus a pill, spent in ascending order of how
+  /* Shape scale: five steps plus a pill, spent in ascending order of how
      much the thing draws attention — 5px micro chips and keycaps → 6px
      controls, rows and small cards → 8px inputs, menus and panels → 10px
-     floating layers.
+     floating layers → 14px dialogs and sheets.
 
-     Every step is the `--radius` base (0.625rem) minus a constant rather than
-     four independent numbers, so retuning the shell's roundness is one edit on
-     a scheme token and the steps keep their spacing at any base.
+     Every step is the `--radius` base (0.625rem) minus or plus a constant
+     rather than five independent numbers, so retuning the shell's roundness is
+     one edit on a scheme token and the steps keep their spacing at any base.
 
-     That is the whole scale; a radius outside it is not legal. It used to
-     run to nine steps (4/5/6/8/10/13/16/20/24) of which only the first five
-     were ever used. A 4px and a 5px corner sitting side by side read as one
-     size drawn twice rather than as two deliberate sizes, and the 13-24px
-     end existed only to give dialogs and the command palette a roundness the
-     rest of the shell does not have — which is how a floating layer ended up
-     rounder than the window it belongs to. */
+     Four of those five steps are the whole scale; a radius outside them is
+     not legal. It used to run to nine steps (4/5/6/8/10/13/16/20/24) of which
+     only the first five were ever used. A 4px and a 5px corner sitting side
+     by side read as one size drawn twice rather than as two deliberate sizes.
+
+     The end that used to follow — 16, 20 and 24px — is still gone, and with
+     it the reason it went. Giving the command palette and the dialogs a
+     roundness nothing else in the shell had is how a floating layer ended up
+     rounder than the window it belongs to.
+
+     `--radius-xl` is the exception that survives that reasoning rather than
+     the one that broke it. It is a single step, not a ladder, and it is spent
+     on exactly the surfaces that are *already* floating one above another: a
+     dialog over a scrim, a sheet over a dialog. There is nothing for it to be
+     rounder than, because every surface it touches is a layer the platform
+     has already lifted off the window. What it buys is the thing the 10px
+     step could not: a 14px corner reads as a panel that has its own
+     boundary, which is what a dialog is, while 10px on the same box reads as
+     a menu that grew. It is deliberately NOT reachable from the inline
+     elements — buttons, inputs, rows and chips stay on `sm` and `md`, so
+     tightening this step never touches them. */
   --radius-xs: calc(var(--radius) - 5px);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 
   /* Geometry: the cells, stand-ins and panel widths that used to be written as
      arbitrary px at each call site (`size-[22px]` six times, the card skeleton
@@ -382,13 +397,32 @@
      content plane → floating layer, where only the last one lifts. The accent
      is Linear's indigo picked so it clears AA in BOTH of its jobs: as a fill
      (white on it ≈ 5.4) and as text or icon on any surface in the ladder
-     (≈ 5.4 at worst). */
+     (≈ 5.4 at worst).
+
+     THE LIGHT LADDER, and why it now has three rungs and not two.
+
+     `--sidebar` used to be declared equal to `--background`, on the reading
+     that a sidebar "sits ON the canvas, not above it". The consequence was
+     that the nav column had no plane of its own at all: the only thing
+     separating it from the content on its right was the vertical hairline, so
+     a 240px column of navigation read as a grey wall with a line drawn on it.
+     Dark never had this problem — it has always run canvas → sidebar → card as
+     three distinct steps — so the two schemes disagreed about whether the
+     sidebar is a surface, and light mode is the one a reader is more likely
+     to be looking at.
+
+     So light now runs the same ladder dark does, and in the same direction:
+     the canvas is the darkest of the three, the nav column is a half-step
+     above it, and the content plane is white. The steps are small in L* —
+     that is the point, and the reason this is still a hairline system rather
+     than a shadowed one — but they are real, so the sidebar has an identity
+     of its own and the window has a front and a back. */
   --shadow-color: #232a3d; /* cool ink: shadows tint the canvas, never grey it */
   --shadow-a1: 14%;
   --shadow-a2: 23%;
   --shadow-a3: 32%;
   --shadow-a4: 42%;
-  --background: #f7f8f9; /* canvas — near-white grey behind the panels */
+  --background: #f1f3f5; /* canvas — the step the panels sit ON, see the ladder note below */
   --foreground: #282a30;
   --card: #ffffff; /* panel surface */
   --card-foreground: #282a30;
@@ -407,6 +441,27 @@
      as a fade: chroma comes through a tint at a density where luminance does
      not, so a photo behind the menu tints it while text behind it disappears. */
   --popover-frost: color-mix(in oklab, var(--popover) 90%, transparent);
+  /* The same family at a denser setting, for the one layer whose backdrop is
+     another dense TEXT grid rather than an icon or a thumbnail: the command
+     palette floating over the file list.
+
+     The 90% floor above was measured against a menu's own worst backdrop — a
+     black thumbnail under a white menu, a scanned page under a dark one — and
+     90% is right for that. A palette is a different question. It is ~640px
+     wide and 340px tall, it is almost entirely list rows, and what sits behind
+     it is another list of rows of the same type size: the names behind came
+     through at the 10% and stayed legible, so the palette read as two
+     overlapping file lists rather than as one surface over another. Legible
+     background text is the one outcome a frost is supposed to prevent — the
+     density is what makes a photo tint the glass while text behind it
+     disappears, and text behind text is the case that defeats it.
+
+     So the palette takes 96%: the blur still runs, the tint still carries a
+     trace of the accent of what is behind it, and nothing legible comes
+     through. This is a density decision for one class of layer, not a second
+     treatment — the colour, the blur and the plate are all still the ones
+     above. */
+  --popover-frost-dense: color-mix(in oklab, var(--popover) 96%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6);
   /* The fill a floating layer puts under its own tint where the window has no
      pixels to give it — see THE PLATE in the components layer. `--card` rather
@@ -442,7 +497,7 @@
   --input: #d5d8dd;
   --radius: 0.625rem;
   --scrim: rgb(0 0 0 / 0.4);
-  --sidebar: #f7f8f9; /* Linear sidebar sits ON the canvas, not above it */
+  --sidebar: #f7f8fa; /* half-step above the canvas — see the ladder note below */
   --sidebar-foreground: #282a30;
   --sidebar-accent: #e9ebef;
   --sidebar-accent-foreground: #282a30;
@@ -514,6 +569,7 @@
      you cannot see through is not glass. Both readings land at ≈4.5:1 for the
      secondary grey and ≈9.5:1 for the ink. */
   --popover-frost: color-mix(in oklab, var(--popover) 90%, transparent);
+  --popover-frost-dense: color-mix(in oklab, var(--popover) 96%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6) brightness(0.75);
   --frost-plate: var(--card); /* see the light scheme's pair */
   --accent-default: #9496ff; /* shipped accent — 6.3:1 on a panel, 5.2 worst */
@@ -1091,6 +1147,20 @@ html[data-window-material="blur"]:root body {
        transparency) has already made the tint opaque. */
     background-color: var(--popover-frost);
     background-image: linear-gradient(var(--popover-frost), var(--popover-frost));
+    -webkit-backdrop-filter: var(--frost-filter);
+    backdrop-filter: var(--frost-filter);
+  }
+
+  /* The same layer at the denser frost — see `--popover-frost-dense`. Spun out
+     as its own class rather than given a `data-` switch on the one above,
+     because the choice is per SURFACE (a palette over a file list, not a menu
+     over an icon) and every call site should have to say which one it means.
+     Applied in place of `floating-frost`, never alongside it: two fills on one
+     box is the `bg-popover` mistake the note above describes, and the later
+     declaration would simply win. */
+  .floating-frost-deep {
+    background-color: var(--popover-frost-dense);
+    background-image: linear-gradient(var(--popover-frost-dense), var(--popover-frost-dense));
     -webkit-backdrop-filter: var(--frost-filter);
     backdrop-filter: var(--frost-filter);
   }

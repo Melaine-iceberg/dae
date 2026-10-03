@@ -389,16 +389,28 @@ function GridCell({
           )}
           <span
             className={cn(
-              // `break-all` (not `break-words`): the label is a line-clamped
-              // `-webkit-box`, and Blink does not apply `overflow-wrap:
-              // break-word` inside it — with `break-words` an overlong name
-              // ("tsconfig.node.tsbuildinfo") stopped wrapping entirely and
-              // painted over its neighbours instead. `break-all` wraps at the
-              // clamp width every time; the common names that used to split
-              // ("package.jso / n") now fit on one line because the compact
-              // cell grew to 96px, so the mid-token break only fires for names
-              // that genuinely cannot fit.
-              "line-clamp-2 text-caption leading-snug font-medium break-all",
+              // `min-h-[2lh]` reserves BOTH lines whether the name uses one or
+              // two. Without it the tile is as tall as its own label — 85px for
+              // `archive`, 101px for `logo-final-v3.png` — so a single long
+              // name made its tile hang a full line below its neighbours and
+              // every row of the grid came out ragged. The clamp still decides
+              // what is *shown*; this only decides how much room it is shown
+              // in, which is what makes the grid a grid.
+
+              // `overflow-wrap: anywhere`, not `word-break: break-all`. Both
+              // wrap, but `break-all` will split a token at any character —
+              // `logo-final-v3.png` came out as `logo-final-v3.pn` / `g` — and
+              // only falls back to that once a token has nowhere better to
+              // break. `anywhere` prefers the real break opportunities first,
+              // so the same name now wraps as `logo-final-` / `v3.png`, on the
+              // hyphen it already contains.
+
+              // It is `anywhere` and not the older `break-word` for the reason
+              // the note above records: inside a line-clamped `-webkit-box`,
+              // `overflow-wrap: break-word` is not applied and an overlong name
+              // stops wrapping altogether. `anywhere` is honoured there —
+              // measured, on the same six names that broke under `break-all`.
+              "line-clamp-2 min-h-[2lh] text-caption leading-snug font-medium [overflow-wrap:anywhere]",
             )}
           >
             {entry.name}
