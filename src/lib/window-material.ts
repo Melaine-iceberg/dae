@@ -6,7 +6,8 @@
  * behind a window: Acrylic or Mica on Windows 11, the sidebar material on
  * macOS. That is the native answer to "what colour is a file manager's chrome",
  * and like the accent it is a value the platform owns rather than one this
- * theme should invent.
+ * theme should invent. Which of the two roles a given backdrop earns is
+ * App.css's call: a bare compositor blur buys the nav column only.
  *
  * Deciding whether a backdrop exists is platform work and lives on the Rust
  * side: `src-tauri/src/window_material` asks whether the window may be

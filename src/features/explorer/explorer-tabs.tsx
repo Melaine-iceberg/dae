@@ -338,11 +338,13 @@ export function ExplorerTabs() {
     <div className="flex h-full flex-col">
       <TabDropIndicator />
       {/* Window chrome: one flat 38px bar carrying the tab strip and the native
-          window controls. It sits on the canvas rung so the frame reads as the
-          window itself rather than as a third panel, and the 1px hairline
-          below it is what separates the frame from the content plane. */}
+          window controls. It sits on the canvas rung (`bg-chrome`, which is the
+          canvas until a backdrop claims it — see THE WINDOW-MATERIAL SEAM) so the
+          frame reads as the window itself rather than as a third panel, and the
+          1px hairline below it is what separates the frame from the content
+          plane. */}
       <header
-        className="flex h-tab-strip shrink-0 items-stretch border-b border-border bg-background"
+        className="flex h-tab-strip shrink-0 items-stretch border-b border-border bg-chrome"
         data-tab-bar="true"
         data-tauri-drag-region="deep"
       >
@@ -393,7 +395,12 @@ export function ExplorerTabs() {
           working. */}
       <div className="flex min-h-0 flex-1">
         <Sidebar />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* `bg-background`, not `bg-card`: this is the canvas, not a plane on it.
+            It reads as nothing while the root and `body` paint that canvas for
+            free, and is the whole fill under a compositor blur, where both stop
+            painting so the nav column alone can show the desktop (App.css, THE
+            WINDOW-MATERIAL SEAM). */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
           {/* Chrome-style keep-alive: every tab's surface stays mounted and
               the surfaces are stacked; switching tabs flips visibility
               instead of swapping the key, so nothing remounts — directory

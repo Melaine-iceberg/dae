@@ -30,9 +30,12 @@
 //! session it can name, leaving every other Linux desktop with
 //! [`Material::None`] and the opaque canvas the CSS seam falls back to — because
 //! a transparent window in front of a compositor that does not blur shows the
-//! raw desktop through the tab strip, which is the failure mode this module
-//! exists to avoid. The cost of narrowing it that far is a user whose niri has
-//! blur switched off, and there is no way to tell that from inside the app.
+//! raw desktop through the chrome, which is the failure mode this module exists
+//! to avoid. The cost of narrowing it that far is a user whose niri has blur
+//! switched off: there is no way to tell that from inside the app, and they get
+//! the desktop through the nav column unblurred rather than a blur. (The CSS
+//! seam spends this material on that column alone, so it is the only place the
+//! mistake can show — see THE WINDOW-MATERIAL SEAM in `App.css`.)
 
 use tauri::{Runtime, WebviewWindow};
 

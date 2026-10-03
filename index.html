@@ -54,10 +54,11 @@
          与 src/lib/window-material.ts 挂载后写的是同一个，App.css 的材质块读的
          也是同一个。`data-window-material="none"` 不在此列，即沿用上面两行。
 
-         Acrylic、Mica、vibrancy 由平台自己着色（也跟随窗口的明暗属性），交给它们；
-         “blur” 是合成器给的一层裸模糊，背后多亮它就多亮、可能就是别的窗口里的文字，
-         所以它留一层薄纱而不是全透明，密度与 App.css 材质块里 --background 的那一行
-         保持一致（同样以 --card 为基色）。 */
+         只有 Acrylic、Mica、vibrancy 走全透明：它们由平台自己着色（也跟随窗口的明暗
+         属性），整块画布交出去就是想要的答案，而此刻侧边栏还没挂载，没有别的区域可留。
+         “blur” 沿用上面的不透明画布 —— 合成器给的那层模糊没经任何着色，App.css 材质块
+         里说明了为什么它只该透侧边栏那一列。挂载之后 App.css 会把这两行的着色清掉（只
+         在 blur 下），所以这里不是“材质被首帧盖住”的那个坑：首帧要的就是这块实心板。 */
       html[data-window-material="mica"],
       html[data-window-material="acrylic"],
       html[data-window-material="vibrancy"],
@@ -65,14 +66,6 @@
       html[data-window-material="acrylic"] body,
       html[data-window-material="vibrancy"] body {
         background: transparent;
-      }
-      html[data-window-material="blur"],
-      html[data-window-material="blur"] body {
-        background: color-mix(in oklab, __DAE_PANEL__ 35%, transparent);
-      }
-      html.dark[data-window-material="blur"],
-      html.dark[data-window-material="blur"] body {
-        background: color-mix(in oklab, __DAE_PANEL_DARK__ 35%, transparent);
       }
     </style>
     <script>

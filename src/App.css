@@ -242,6 +242,11 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  /* The frame role — the strip of canvas that is the *window* rather than a
+     surface inside it. Identical to the canvas until a backdrop earns it, which
+     is the only thing that makes it a separate token (see THE WINDOW-MATERIAL
+     SEAM). */
+  --color-chrome: var(--chrome);
 
   /* The one tonal role left from the Material-shaped set this theme started
      life as: an alert needs a tinted band carrying its own ink, and it is the
@@ -617,14 +622,16 @@ html[data-window-focused="false"] .tab-chip-active {
 /* ---------------------------------------------------------------------------
    THE WINDOW-MATERIAL SEAM — see src/lib/window-material.ts.
 
-   Two roles here are the *window* rather than a surface inside it: the canvas
-   the panels sit on, and the nav column. Where the OS composites a backdrop
-   behind a window — Acrylic or Mica on Windows 11, the sidebar material on
-   macOS, a compositor blur on the one Linux desktop that offers it — those two
-   are exactly where Explorer and Finder let it through, so they stop painting and
-   the desktop shows instead. Nothing else does: the content plane is `--card`,
-   and a file list over a live blur is unreadable, which is as true of the
-   platforms as of this shell.
+   Three roles here are the *window* rather than a surface inside it: the canvas
+   the panels sit on, the nav column, and the tab bar. Where the OS composites a
+   backdrop behind a window — Acrylic or Mica on Windows 11, the sidebar material
+   on macOS, a compositor blur on the one Linux desktop that offers it — those are
+   exactly where Explorer and Finder let it through, so they stop painting and the
+   desktop shows instead. Nothing else does: the content plane is `--card`, and a
+   file list over a live blur is unreadable, which is as true of the platforms as
+   of this shell. The tab bar is the canvas under another name: `--chrome` derives
+   from `--background` and parts from it under a compositor blur only, for the
+   reason given below.
 
    Nothing asks for an effect and nothing offers a switch for it. <html> carries
    `data-window-material` as the Rust side answers, and the answer is `"none"`
@@ -637,33 +644,56 @@ html[data-window-focused="false"] .tab-chip-active {
    chrome, which is what a native sidebar does. Either way the platform, not this
    file, decides.
 
-   Of the four answers, `"blur"` is the only one that keeps a scrim, and what
-   decides it is what each material arrives with. Mica is the wallpaper derived
-   once per window; Acrylic is a live blur, but DWM puts its own luminosity and
-   noise into it; macOS' material is a bounded blur with AppKit's own tint
-   already in it. All three are a platform having already decided how bright the
-   chrome is, so the two roles simply stop painting. A compositor blur is a bare
-   blur of whatever is moving behind this window right now — including, often,
-   another application's text — and at full transparency the nav column inherits
-   that noise and its labels lose the contrast they have on every other desktop.
-   So `"blur"` is the one material that keeps the two roles filled with the panel
-   colour at a density that still reads as a backdrop.
+   Of the four answers, `"blur"` is the only one that spends the see-through on the
+   frame rather than on the whole window, and what decides it is what each material
+   arrives with. Mica is the wallpaper derived once per window; Acrylic is a live
+   blur, but DWM puts its own luminosity and noise into it; macOS' material is a
+   bounded blur with AppKit's own tint already in it. All three are a platform
+   having already decided how bright and how neutral the chrome is, so the canvas
+   stops painting with the frame and the window reads as that answer. A compositor
+   blur carries no such decision — it is a bare blur of whatever sits behind this
+   window, the wallpaper or another application's window — and across the whole
+   window that is not chrome but a colour cast: at any density thin enough to read
+   as a backdrop, the wallpaper's own hue arrives in every edge of the shell. So
+   `"blur"` keeps the canvas filled and lets the desktop through the two roles a
+   native file manager always does: its title bar and its sidebar.
 
-   The two percentages are the least that holds up, not a taste call. The worst
-   case is this shell's dark scheme over a bright window, where the nav column's
-   own ink has to clear AA: 78% of `--card` over a white backdrop leaves #e5e6e8
-   at ≈5.5:1, and everything lighter than that fails. The canvas carries no text
-   at all, so it drops to 35% and is where the backdrop is actually meant to be
-   seen — the split is the same one Explorer draws between its title bar and its
-   sidebar. `--card` is the base rather than `--background` because a token
-   cannot mix with itself, and because it is the one role both schemes define
-   opaque, so the scrim follows the palette without repeating it.
+   The `78%` is the least that holds up, not a taste call, and the binding case is
+   this shell's dark scheme over a bright window — the ink that sits directly on the
+   frost has to clear AA, and 78% of `--card` over a white backdrop leaves #e5e6e8 at
+   ≈5.5:1, with anything lighter failing. That ink is the nav column's labels and the
+   inactive tab's title; an active tab carries its own opaque plate. `--card` is the
+   base rather than `--background` because a token cannot mix with itself, and
+   because it is the one role both schemes define opaque, so the frost follows the
+   palette without repeating it.
 
-   The override is an `html[…]` selector rather than a second `:root` because it
-   has to outrank both scheme blocks — `:root` and `.dark` declare these two
-   tokens with the same specificity, and repeating their values per scheme to win
-   on order is how a palette change ends up half-applied.
+   Thinning the frame rather than the whole window is also the one part of this
+   block that is a mechanism rather than a value. Two things paint the canvas behind
+   the frame: `body`, through its `bg-background`, and the root element, which the
+   boot style in `index.html` paints so the pre-React splash is a solid plate rather
+   than a spinner on the desktop. Either one left filled sits *under* the frost and
+   the blur is gone — measured, the nav column came back the exact composite of the
+   frost over the canvas with no desktop in it at all. So under `"blur"` both stop
+   painting and every region paints itself: the tab bar and the nav column carry the
+   frost, and the content column beside the sidebar carries the canvas — asking for
+   `bg-background`, which is nothing while the body paints it and the whole fill
+   once it does not.
+
+   The overrides are `html[…]` selectors rather than a second `:root` because they
+   have to outrank the scheme blocks — `:root` and `.dark` declare these tokens
+   with the same specificity, and repeating their values per scheme to win on order
+   is how a palette change ends up half-applied. The two background rules then carry
+   a `:root` of their own for the same problem pointed the other way: the boot style
+   they have to beat is unlayered as well, and `html.dark` is exactly as specific as
+   `html[data-window-material]`, so these win by one more pseudo-class rather than
+   by whichever stylesheet was parsed last.
    --------------------------------------------------------------------------- */
+/* The frame role until a backdrop claims it. Declared once rather than per
+   scheme because it *is* the canvas there, and inherits the scheme through it. */
+:root {
+  --chrome: var(--background);
+}
+
 html[data-window-material="mica"],
 html[data-window-material="acrylic"],
 html[data-window-material="vibrancy"] {
@@ -672,8 +702,16 @@ html[data-window-material="vibrancy"] {
 }
 
 html[data-window-material="blur"] {
-  --background: color-mix(in oklab, var(--card) 35%, transparent);
-  --sidebar: color-mix(in oklab, var(--card) 78%, transparent);
+  /* One density for both frame roles: to the desktop the tab bar and the nav
+     column are the same surface. */
+  --chrome-frost: color-mix(in oklab, var(--card) 78%, transparent);
+  --chrome: var(--chrome-frost);
+  --sidebar: var(--chrome-frost);
+}
+/* Clears both paints of the canvas — see the paragraphs above. */
+html[data-window-material="blur"]:root,
+html[data-window-material="blur"]:root body {
+  background-color: transparent;
 }
 
 @layer components {
