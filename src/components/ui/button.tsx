@@ -15,8 +15,12 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
+        // The primary fill carries a hair of light from above — the same
+        // aurora the frame roles get — so a filled button reads as a lit key
+        // rather than as a flat swatch, and lifts on hover with a soft accent
+        // glow under it. One gradient step, no gloss, no bevel.
         default:
-          "bg-primary text-primary-foreground hover:bg-[color-mix(in_oklab,var(--primary),var(--primary-foreground)_10%)]",
+          "bg-primary text-primary-foreground shadow-[0_1px_2px_-1px_color-mix(in_oklab,var(--shadow-color)_var(--shadow-a2),transparent)] hover:bg-[color-mix(in_oklab,var(--primary),var(--primary-foreground)_10%)] hover:shadow-[0_2px_8px_-2px_color-mix(in_oklab,var(--primary)_45%,transparent)]",
         outline:
           "border-input bg-transparent text-foreground hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground",
         secondary:

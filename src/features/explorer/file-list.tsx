@@ -1138,7 +1138,7 @@ export function FileList({
               */}
               <div className="sticky top-0 z-10 h-7 shrink-0 border-b border-border bg-card">
                 <div
-                  className="grid h-full items-center justify-start text-label whitespace-nowrap text-muted-foreground"
+                  className="grid h-full items-center justify-start px-1.5 text-label whitespace-nowrap text-muted-foreground"
                   style={{ gridTemplateColumns: listTemplate, maxWidth: LIST_CONTENT_MAX_WIDTH }}
                 >
                   <SortHeaderCell
@@ -1193,7 +1193,7 @@ export function FileList({
                   return (
                     <div
                       key={entry.path}
-                      className="absolute left-0 top-0 w-full"
+                      className="absolute left-0 top-0 w-full px-1.5"
                       style={{
                         maxWidth: LIST_CONTENT_MAX_WIDTH,
                         transform: `translateY(${virtualRow.start}px)`,
@@ -1493,12 +1493,17 @@ function FileListRow({
             // Desktop row: 13px text, tonal hover, filled selection. Selection
             // never changes the text weight — a re-measuring label makes a
             // multi-select scan jumpy, and the fill already carries the state.
+            // The row is inset from the pane edges so hover and selection read
+            // as rounded plates floating on the plane rather than as full-bleed
+            // bands; the accent hairline inside the selection is what tells a
+            // selected row from a hovered one at a glance.
             // Focus is the rows' inset hairline (an outer ring would be clipped
             // by the virtual scroller); the drop target is the only state that
             // adds an accent ring.
-            "render-contain state-layer grid cursor-grab items-center justify-start rounded-sm whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+            "render-contain state-layer grid cursor-grab items-center justify-start rounded-md whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
-            isSelected && "bg-selection",
+            isSelected &&
+              "bg-selection shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--primary)_22%,transparent)]",
             isDragging && DRAG_SOURCE_CLASS,
             isDropTarget && "drop-target",
           )}

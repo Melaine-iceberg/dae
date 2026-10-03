@@ -30,7 +30,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
 import { TypeIconTile } from "@/features/explorer/icon-tile";
-import { PLACE_PRESENTATION } from "@/features/sidebar/place-presentation";
+import { PLACE_PRESENTATION, PLACE_TONE } from "@/features/sidebar/place-presentation";
 import {
   addFavoritePathsAtom,
   ensureFavoritesLoadedAtom,
@@ -185,7 +185,7 @@ export function OverviewView() {
         ) : places === null || favorites === null ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
-              <Skeleton className="h-location-card rounded-md" key={index} />
+              <Skeleton className="h-location-card rounded-lg" key={index} />
             ))}
           </div>
         ) : visiblePlaces.length === 0 && favoriteList.length === 0 ? (
@@ -210,6 +210,7 @@ export function OverviewView() {
                     <LocationCard
                       description={place.path}
                       icon={presentation.icon}
+                      iconClassName={PLACE_TONE[place.kind]}
                       onClick={() => navigateToFolder(place.path)}
                       title={presentation.label}
                     />
@@ -300,7 +301,7 @@ export function OverviewView() {
               return (
                 <li key={item.path}>
                   <button
-                    className="flex h-8.5 w-full items-center gap-2.5 rounded-sm px-2 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    className="flex h-8.5 w-full items-center gap-2.5 rounded-md px-2 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                     onClick={() =>
                       openRecent(item.path, item.kind === "directory" ? "directory" : "file")
                     }
@@ -343,7 +344,7 @@ export function OverviewView() {
         ) : spaces === null ? (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
-              <Skeleton className="h-location-card rounded-md" key={index} />
+              <Skeleton className="h-location-card rounded-lg" key={index} />
             ))}
           </div>
         ) : (

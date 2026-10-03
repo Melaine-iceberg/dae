@@ -94,8 +94,8 @@ export function ProjectsSection({ recents }: { recents: RecentItem[] | null }) {
       <section aria-label={t("workspace:overview.projectsTitle")}>
         <SectionHeader title={t("workspace:overview.projectsTitle")} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Skeleton className="h-project-card rounded-md" />
-          <Skeleton className="h-project-card rounded-md" />
+          <Skeleton className="h-project-card rounded-lg" />
+          <Skeleton className="h-project-card rounded-lg" />
         </div>
       </section>
     );
@@ -137,11 +137,12 @@ function ProjectCard({
     <button
       className={cn(
         // Same card anatomy as LocationCard: hairline box on the plane's own
-        // rung, hover brightens the hairline. Height comes from the token its
-        // skeleton uses.
-        "group state-layer flex h-project-card w-full flex-col gap-2 rounded-md border border-border bg-card p-3 text-left",
-        "transition-[background-color,border-color] duration-fast ease-standard",
-        "hover:border-input",
+        // rung that lifts on hover — hairline warms towards the accent, a soft
+        // contact shadow arrives, the icon chip warms with it. Height comes
+        // from the token its skeleton uses.
+        "group state-layer flex h-project-card w-full flex-col gap-2 rounded-lg border border-border bg-card p-3 text-left",
+        "transition-[background-color,border-color,box-shadow,transform] duration-fast ease-standard",
+        "hover:-translate-y-px hover:border-primary/30 hover:shadow-ambient-sm",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       )}
       onClick={onOpen}
@@ -149,7 +150,7 @@ function ProjectCard({
       type="button"
     >
       <span className="flex w-full items-center gap-2.5">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-sm bg-secondary">
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-secondary transition-colors duration-fast group-hover:bg-[color-mix(in_oklab,var(--primary)_12%,var(--secondary))]">
           <GitBranchIcon className="size-4 text-secondary-foreground" />
         </span>
         <span className="min-w-0 flex-1 truncate text-body font-medium">{project.name}</span>

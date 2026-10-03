@@ -257,9 +257,17 @@
   --color-on-error-container: var(--on-error-container);
 
   /* Shape scale: five steps plus a pill, spent in ascending order of how
-     much the thing draws attention — 5px micro chips and keycaps → 6px
-     controls, rows and small cards → 8px inputs, menus and panels → 10px
-     floating layers → 14px dialogs and sheets.
+     much the thing draws attention — 7px micro chips and keycaps → 8px
+     controls, rows and small cards → 10px inputs, menus and panels → 12px
+     floating layers → 16px dialogs and sheets.
+
+     THE 2026 BASE RETUNE: `--radius` moved from 10px to 12px and the five
+     steps moved with it, as one edit. The old base was tuned when the shell's
+     reference was a 32px-tall flat list; the refreshed shell spends its
+     corners on glass chips, pill search fields and lifted cards, where a
+     6px corner reads as a component-library default rather than as a shape
+     anyone chose. The step *spacing* is unchanged — the ladder is still five
+     measured steps, only drawn softer.
 
      Every step is the `--radius` base (0.625rem) minus or plus a constant
      rather than five independent numbers, so retuning the shell's roundness is
@@ -495,7 +503,7 @@
   --tone-cyan: #0d848c;
   --border: #e2e4e8; /* hairline panel edge */
   --input: #d5d8dd;
-  --radius: 0.625rem;
+  --radius: 0.75rem;
   --scrim: rgb(0 0 0 / 0.4);
   --sidebar: #f7f8fa; /* half-step above the canvas — see the ladder note below */
   --sidebar-foreground: #282a30;
@@ -596,7 +604,7 @@
   --tone-cyan: #5acfd9;
   --border: #313338; /* hairline — 1.31:1 on a panel, the same step as light */
   --input: #3f4147;
-  --radius: 0.625rem;
+  --radius: 0.75rem;
   --scrim: rgb(0 0 0 / 0.6);
   --sidebar: #16171a; /* Linear sidebar — a half-step above the canvas, below the panel */
   --sidebar-foreground: #e5e6e8;
@@ -986,15 +994,88 @@ html[data-window-material="blur"]:root body {
        controls  focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40
        rows      focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset */
 
-  /* The one sanctioned highlight in the shell: the active tab chip's 1px
-     inset top edge. It is what separates the chip from the canvas now that
-     the chip carries no shadow — panels, rows and the toolbar are all flat,
-     and the tab strip is the only place a raised element is expected to be
-     part of the frame. Mixed from the foreground token so it reads as a light
-     edge on the dark canvas and as a faint seam on the light one, which is
-     why it needs no hand-written `dark:` variant. */
+  /* ---------------------------------------------------------------------------
+     THE AURORA FRAME — the 2026 refresh's one new idea: light arrives from
+     somewhere. The shell is still the flat hairline system below, but its two
+     frame roles (the tab strip and the nav column) and its few "this is live"
+     elements carry a faint wash of the accent hue, as if the window were lit
+     from the upper-right corner it shares with the platform's own light.
+
+     Three treatments, one vocabulary, all mixed from `--primary` so the accent
+     seam and the inactive-window drain retint them with no rule of their own:
+
+       .aurora-frame        the tab strip: a wide accent bloom top-right plus a
+                            cool counter-wash top-left, both radial, both under
+                            10% — a gradient you notice as warmth, not as a
+                            gradient.
+       .aurora-frame-nav    the nav column: one quiet bloom anchored to the
+                            top-left, fading out well above the fold.
+       .glass-active        the "I am here" plate — a nav row, a chip, a segment
+                            that reports state by lighting up rather than by
+                            changing fill. Accent-tinted glass: a wash at the
+                            top of the box, a hairline ring, one soft glow.
+
+     Every one of them layers a `background-image` over the element's existing
+     `background-color`, so they compose with `bg-chrome` / `bg-sidebar` / the
+     fill the call site already chose, and they survive the window-material
+     seam: under a platform blur the wash sits on the frost rather than
+     replacing it. Under `forced-colors: active` the gradients become canvas
+     over canvas and the ring below is what survives — which is why the ring is
+     part of the treatment rather than an afterthought. */
+  .aurora-frame {
+    background-image:
+      radial-gradient(
+        120% 150% at 96% -55%,
+        color-mix(in oklab, var(--primary) 11%, transparent),
+        transparent 58%
+      ),
+      radial-gradient(
+        80% 120% at 4% -70%,
+        color-mix(in oklab, var(--info) 7%, transparent),
+        transparent 62%
+      );
+    background-repeat: no-repeat;
+  }
+
+  .aurora-frame-nav {
+    background-image: radial-gradient(
+      130% 55% at 12% -8%,
+      color-mix(in oklab, var(--primary) 8%, transparent),
+      transparent 72%
+    );
+    background-repeat: no-repeat;
+  }
+
+  .glass-active {
+    background-image: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--primary) 11%, transparent),
+      color-mix(in oklab, var(--primary) 4%, transparent) 60%,
+      transparent
+    );
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklab, var(--primary) 16%, transparent),
+      0 1px 3px -1px color-mix(in oklab, var(--primary) 22%, transparent);
+  }
+
+  /* The active tab chip: the shell's one raised element, now lit rather than
+     merely edged. A tall accent gradient fades down the chip (the aurora
+     arriving from the strip above it), the 1px inset top edge stays as the
+     seam between chip and frame, and one soft accent glow lifts it off the
+     canvas. Inactive tabs stay flat — the strip still reads as a row of
+     destinations, with the current one lit. The fill comes from the call site
+     (`bg-card`) so the chip stays opaque over a platform blur. */
   .tab-chip-active {
-    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--foreground) 8%, transparent);
+    background-image: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--primary) 12%, transparent),
+      color-mix(in oklab, var(--primary) 3%, transparent) 55%,
+      transparent 110%
+    );
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--foreground) 10%, transparent),
+      0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
+      0 3px 10px -4px color-mix(in oklab, var(--primary) 38%, transparent);
   }
 
   /* Path hints keep their filename readable: flipped text direction moves the

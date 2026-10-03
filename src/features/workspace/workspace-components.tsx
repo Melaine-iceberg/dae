@@ -97,20 +97,22 @@ export function LocationCard({
   return (
     <button
       className={cn(
-        // Linear card: a hairline box on the surface's own rung — it answers
-        // the pointer by brightening that hairline and washing the fill, never
-        // by lifting. The height is the token its skeleton already uses, so
-        // the placeholder and the real card are the same box.
-        "group state-layer flex h-location-card w-full items-center gap-3 rounded-md border border-border bg-card p-2 text-left",
-        "transition-[background-color,border-color] duration-fast ease-standard",
-        "hover:border-input",
+        // Aurora card: a hairline box on the surface's own rung that answers
+        // the pointer by *lifting* — the one place the shell lets a surface
+        // rise. The hairline warms towards the accent, a soft contact shadow
+        // arrives under it, and the icon chip warms with it; nothing scales,
+        // nothing bounces. The height is the token its skeleton already uses,
+        // so the placeholder and the real card are the same box.
+        "group state-layer flex h-location-card w-full items-center gap-3 rounded-lg border border-border bg-card p-2 text-left",
+        "transition-[background-color,border-color,box-shadow,transform] duration-fast ease-standard",
+        "hover:-translate-y-px hover:border-primary/30 hover:shadow-ambient-sm",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       )}
       onClick={onClick}
       title={description ? `${title} · ${description}` : title}
       type="button"
     >
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-sm bg-secondary text-secondary-foreground">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-secondary transition-colors duration-fast group-hover:bg-[color-mix(in_oklab,var(--primary)_12%,var(--secondary))]">
         <Icon className={cn("size-4", iconClassName)} />
       </span>
       <span className="min-w-0 flex-1">

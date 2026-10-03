@@ -1010,11 +1010,14 @@ function CommandResultRow({
     <button
       aria-selected={isActive}
       className={cn(
-        // Palette row: 32px, quiet control radius, filled selection — the
-        // palette, the sidebar and the file list all share one selection
-        // language (a fill, never a leading tick).
-        "group/command-row flex h-8 w-full items-center gap-2.5 rounded-sm px-3 text-left text-body transition-colors duration-fast ease-standard outline-none",
-        isActive ? "bg-accent text-foreground" : "hover:bg-accent",
+        // Palette row: 32px, quiet control radius, lit selection — the palette
+        // is the one surface where "which row" is being read continuously, so
+        // its active row takes the same `glass-active` plate the sidebar's
+        // current location does: accent wash, hairline ring, soft glow. A fill
+        // alone (the old treatment) read as a flat grey bar between two
+        // identical rows.
+        "group/command-row flex h-8 w-full items-center gap-2.5 rounded-md px-3 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard outline-none",
+        isActive ? "glass-active bg-accent text-foreground" : "hover:bg-accent",
       )}
       data-command-index={dataIndex}
       id={`command-item-${dataIndex}`}
@@ -1024,7 +1027,7 @@ function CommandResultRow({
       type="button"
     >
       <item.icon
-        className={cn("size-4 shrink-0", isActive ? "text-foreground" : "text-muted-foreground")}
+        className={cn("size-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground")}
       />
       <HighlightedLabel label={item.label} matchedIndices={matchedIndices} />
       {item.hint &&

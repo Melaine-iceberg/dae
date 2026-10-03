@@ -102,16 +102,16 @@ export function SettingsDialog() {
               <button
                 aria-current={pane === item}
                 className={cn(
-                  "flex h-7 items-center gap-2 rounded-sm px-2 text-body font-medium transition-colors duration-fast ease-standard outline-none",
+                  "flex h-7 items-center gap-2 rounded-md px-2 text-body font-medium transition-[background-color,color,box-shadow] duration-fast ease-standard outline-none",
                   pane === item
-                    ? "bg-accent text-foreground"
+                    ? "glass-active bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
                 key={item}
                 onClick={() => setPane(item)}
                 type="button"
               >
-                <Icon className="size-4" />
+                <Icon className={cn("size-4", pane === item && "text-primary")} />
                 {t(`nav.${item}`)}
               </button>
             ))}

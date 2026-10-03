@@ -337,11 +337,14 @@ function GridCell({
           className={cn(
             // Desktop cell: tonal hover via state-layer, and selection as the
             // filled wash on the medium radius — a cell is the largest thing a
-            // row-level radius may be spent on. No lift, no corner morph, no
-            // accent ring: the drop target is the only state that rings.
+            // row-level radius may be spent on. The selection carries the same
+            // accent hairline the list rows do, so "chosen" reads the same in
+            // every view. No lift, no corner morph: the drop target is the only
+            // state that rings.
             "render-contain state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-md px-2 py-2.5 text-center transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
-            isSelected && "bg-selection",
+            isSelected &&
+              "bg-selection shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--primary)_22%,transparent)]",
             isDragging && DRAG_SOURCE_CLASS,
             isDropTarget && "drop-target",
           )}

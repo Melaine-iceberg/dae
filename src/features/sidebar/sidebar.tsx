@@ -95,7 +95,7 @@ import {
   type LocationSectionId,
 } from "./sidebar-atoms";
 import type { DiskVolume, PlaceKind } from "./types";
-import { PLACE_PRESENTATION } from "./place-presentation";
+import { PLACE_PRESENTATION, PLACE_TONE } from "./place-presentation";
 import { CLOUD_PROVIDER_ICONS } from "./cloud-icons";
 
 // Dialogs only mount on user action; deferring their chunks keeps the
@@ -195,7 +195,7 @@ function SidebarContent() {
   return (
     <nav
       aria-label={t("nav.label")}
-      className="flex w-sidebar shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar"
+      className="aurora-frame-nav flex w-sidebar shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <NavItem
@@ -423,7 +423,7 @@ function CollapsibleSection({
       <div className="group/section flex h-7 items-center gap-0.5">
         <button
           aria-expanded={open}
-          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-sm px-2 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
+          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
           onClick={() => toggle(id)}
           type="button"
         >
@@ -543,6 +543,7 @@ function FavoritesContent({
           >
             <NavItem
               icon={presentation.icon}
+              iconClassName={PLACE_TONE[place.kind]}
               isActive={currentPath === place.path}
               label={presentation.label}
               onClick={() => onNavigate(place.path)}
@@ -559,6 +560,7 @@ function FavoritesContent({
         >
           <NavItem
             icon={FolderIcon}
+            iconClassName="text-folder"
             isActive={currentPath === favorite.path}
             label={favorite.name}
             onClick={() => onNavigate(favorite.path)}
@@ -868,12 +870,13 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        // Linear nav row: 28px tall on the 6px control radius. Hover and active
-        // both fill with the sidebar's own accent rung — the sidebar is a tonal
-        // column, and indigo is reserved for focus and content selection, so an
-        // active nav row is *filled*, not tinted.
-        "flex h-7 w-full items-center gap-2 rounded-sm px-2 text-left text-body transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent",
-        isActive && "bg-sidebar-accent font-medium text-foreground",
+        // Aurora nav row: 28px tall on the shared radius. Hover fills with the
+        // sidebar's own accent rung; the row that says where the user *is*
+        // lights up instead — `glass-active`'s accent wash, hairline ring and
+        // soft glow over the same fill — so location is a lit plate rather
+        // than a heavier rectangle.
+        "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
+        isActive && "glass-active bg-sidebar-accent font-medium text-foreground",
       )}
       onClick={onClick}
       title={title ?? label}
@@ -885,7 +888,7 @@ function NavItem({
           // Two steps, not three: the row's *label* already carries the
           // active/idle distinction through weight and fill, so the glyph only
           // has to stay legible. The muted step read as a disabled row.
-          isActive ? "text-foreground" : "text-foreground/72",
+          isActive ? "text-primary" : "text-foreground/72",
           iconClassName,
         )}
       />
@@ -978,8 +981,8 @@ function DiskItem({
   return (
     <div
       className={cn(
-        "w-full rounded-sm px-2.5 py-1.5 transition-[background-color] duration-fast ease-standard hover:bg-sidebar-accent",
-        isActive && "bg-sidebar-accent",
+        "w-full rounded-md px-2.5 py-1.5 transition-[background-color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
+        isActive && "glass-active bg-sidebar-accent",
       )}
     >
       <div className="flex items-center gap-1">
