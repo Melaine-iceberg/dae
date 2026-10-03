@@ -3,17 +3,17 @@
  *
  * The parts of this shell that are the *window* — the canvas behind the
  * panels and the nav column — are meant to show whatever the OS composites
- * behind a window: Mica on Windows 11, the sidebar material on macOS. That is
- * the native answer to "what colour is a file manager's chrome", and like the
- * accent it is a value the platform owns rather than one this theme should
- * invent.
+ * behind a window: Acrylic or Mica on Windows 11, the sidebar material on
+ * macOS. That is the native answer to "what colour is a file manager's chrome",
+ * and like the accent it is a value the platform owns rather than one this
+ * theme should invent.
  *
  * Deciding whether a backdrop exists is platform work and lives on the Rust
  * side: `src-tauri/src/window_material` asks whether the window may be
- * transparent, applies Mica or vibrancy, and follows the OS setting that turns
- * effects off. This module is the other half — what the answer means to CSS —
- * and the two halves meet at exactly two functions, named as a pair with
- * `lib/system-accent.ts`:
+ * transparent, applies Acrylic, Mica or vibrancy, and follows the OS setting
+ * that turns effects off. This module is the other half — what the answer means
+ * to CSS — and the two halves meet at exactly two functions, named as a pair
+ * with `lib/system-accent.ts`:
  *
  *   useEffect(() => watchWindowMaterial(applyWindowMaterial), []);   // App.tsx
  *
@@ -49,7 +49,7 @@ export function applyWindowMaterial(material: Material): void {
  *
  * The native command is a no-op while there is no backdrop to tint, so this is
  * safe to call on every theme change and on every window, including one that
- * will never show Mica.
+ * will never show a backdrop.
  */
 export function syncWindowMaterialTheme(): void {
   const dark = document.documentElement.classList.contains("dark");

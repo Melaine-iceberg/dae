@@ -3,9 +3,10 @@
 //!
 //! Steps one and two of this effort moved the file glyphs and the canvas
 //! luminance to what the platforms actually do; this one stops imitating them.
-//! Windows 11 composites Mica — a wallpaper-derived, *non-live* tint — behind
-//! every application window, and macOS keeps a live blurred copy of the desktop
-//! inside the window frame. Both are reachable through Tauri's own
+//! Windows 11 composites a backdrop behind every application window — Mica, a
+//! wallpaper-derived tint, or Acrylic, the same blur sampled live — and macOS
+//! keeps a live blurred copy of the desktop inside the window frame. Both are
+//! reachable through Tauri's own
 //! [`tauri::WebviewWindow::set_effects`], which already depends on
 //! `window-vibrancy` on those two platforms, so this module adds no dependency:
 //! it decides *whether* a backdrop is available, tells the window to be
@@ -21,11 +22,13 @@
 //!     opaque: a file list over a live blur is unreadable, and neither platform
 //!     does it. Deciding that is CSS's job; this module only says which backdrop
 //!     is live.
-//!   * **Degradation is automatic and per-platform.** No Mica below Windows 11,
-//!     nothing on a Linux desktop that does not blur transparent windows on its
-//!     own (see `linux.rs`), and an OS "show fewer effects" setting wins over the
-//!     effect. `Material::None` is the answer that means "paint your own canvas,
-//!     as before", and it is also what an unsupported platform gets.
+//!   * **Degradation is automatic and per-platform.** No backdrop below Windows
+//!     11 and Mica rather than Acrylic on the Windows 11 builds that predate the
+//!     attribute that draws it (see `windows.rs`), nothing on a Linux desktop
+//!     that does not blur transparent windows on its own (see `linux.rs`), and an
+//!     OS "show fewer effects" setting wins over the effect. `Material::None` is
+//!     the answer that means "paint your own canvas, as before", and it is also
+//!     what an unsupported platform gets.
 //!   * **The transparency flag is decided once, before any window exists.**
 //!     A window that was built opaque cannot be made to show a backdrop later,
 //!     and a window built transparent cannot be made opaque again, so
@@ -90,9 +93,9 @@ mod backend {
 }
 
 /// The backdrop currently composited behind this window, as the CSS seam names
-/// it. Serialized to `"mica"`, `"vibrancy"`, `"blur"` or `"none"`; the frontend
-/// mirrors it onto `<html data-window-material>` and App.css decides what each
-/// one paints.
+/// it. Serialized to `"mica"`, `"acrylic"`, `"vibrancy"`, `"blur"` or `"none"`;
+/// the frontend mirrors it onto `<html data-window-material>` and App.css
+/// decides what each one paints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum Material {
@@ -100,6 +103,12 @@ pub enum Material {
     /// window's own light/dark attribute. Derived once per window rather than
     /// tracked live, which is what makes it usable behind a file list.
     Mica,
+    /// Windows 11's Acrylic: the same heavy blur, but sampled from what is
+    /// composited behind the window *now* and carrying DWM's own luminosity and
+    /// noise. Live where [`Self::Mica`] is a snapshot of the wallpaper, and
+    /// tinted by the same light/dark attribute, which is what puts it in the
+    /// same class as macOS' material rather than the bare Linux one.
+    Acrylic,
     /// macOS' sidebar vibrancy: a live blur of what is behind the window, using
     /// the material AppKit gives to a source list.
     Vibrancy,
@@ -120,18 +129,23 @@ impl Material {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Mica => "mica",
+            Self::Acrylic => "acrylic",
             Self::Vibrancy => "vibrancy",
             Self::Blur => "blur",
             Self::None => "none",
         }
     }
 
+    /// The in-process code `CURRENT` holds. Appended per variant rather than
+    /// numbered by declaration order, so a value written by an older reading of
+    /// this enum can never decode as a different backdrop.
     const fn code(self) -> u8 {
         match self {
             Self::Mica => 0,
             Self::Vibrancy => 1,
             Self::None => 2,
             Self::Blur => 3,
+            Self::Acrylic => 4,
         }
     }
 
@@ -141,6 +155,7 @@ impl Material {
             1 => Some(Self::Vibrancy),
             2 => Some(Self::None),
             3 => Some(Self::Blur),
+            4 => Some(Self::Acrylic),
             _ => None,
         }
     }
@@ -182,11 +197,11 @@ pub fn get_window_material() -> Material {
 /// Reports which theme the shell is drawn in, so the backdrop matches it.
 ///
 /// Both platforms tint their material from the *system* appearance, and this
-/// app can be pinned to the other one — Mica then comes out light under a dark
-/// tab strip. Windows answers by setting the window's immersive-dark attribute
-/// (which is what Mica's tint follows) and macOS by setting the window's
-/// appearance (which is what `NSVisualEffectView` follows). Each of those also
-/// fixes the 1px DWM border and the native popups for free.
+/// app can be pinned to the other one — the backdrop then comes out light under
+/// a dark tab strip. Windows answers by setting the window's immersive-dark
+/// attribute (which is what both Mica's and Acrylic's tint follows) and macOS by
+/// setting the window's appearance (which is what `NSVisualEffectView` follows).
+/// Each of those also fixes the 1px DWM border and the native popups for free.
 ///
 /// Windows that have not asked keep the system tint, so a shell that never calls
 /// this is left exactly as the platform would draw any other window.
@@ -317,16 +332,18 @@ mod tests {
     #[test]
     fn only_a_real_backdrop_asks_for_transparency() {
         assert!(Material::Mica.wants_transparency());
+        assert!(Material::Acrylic.wants_transparency());
         assert!(Material::Vibrancy.wants_transparency());
         assert!(Material::Blur.wants_transparency());
         assert!(!Material::None.wants_transparency());
     }
 
-    /// The three spellings are what `App.css` and `index.html` both match on,
-    /// and `boot_script` splices one into injected JavaScript unescaped.
+    /// The spellings are what `App.css` and `index.html` both match on, and
+    /// `boot_script` splices one into injected JavaScript unescaped.
     #[test]
     fn names_are_the_lowercase_words_css_matches() {
         assert_eq!(Material::Mica.as_str(), "mica");
+        assert_eq!(Material::Acrylic.as_str(), "acrylic");
         assert_eq!(Material::Vibrancy.as_str(), "vibrancy");
         assert_eq!(Material::Blur.as_str(), "blur");
         assert_eq!(Material::None.as_str(), "none");
@@ -336,6 +353,7 @@ mod tests {
     fn round_trips_through_the_atomic_code() {
         for material in [
             Material::Mica,
+            Material::Acrylic,
             Material::Vibrancy,
             Material::Blur,
             Material::None,
@@ -383,15 +401,17 @@ mod tests {
     }
 
     /// The injected script is the one place this module writes JavaScript source,
-    /// so it has to stay one line and one of four literals whatever the platform
-    /// answers — a name that drifted would break the splash silently.
+    /// so it has to stay one line and one of the five literals `App.css` and
+    /// `index.html` know, whatever the platform answers — a name that drifted
+    /// would break the splash silently.
     #[test]
-    fn the_boot_script_is_one_line_and_one_of_four_literals() {
+    fn the_boot_script_is_one_line_and_one_of_five_literals() {
         let script = boot_script();
         assert_eq!(script.lines().count(), 1);
         assert!(
             [
                 "window.__DAE_WINDOW_MATERIAL__ = \"mica\";",
+                "window.__DAE_WINDOW_MATERIAL__ = \"acrylic\";",
                 "window.__DAE_WINDOW_MATERIAL__ = \"vibrancy\";",
                 "window.__DAE_WINDOW_MATERIAL__ = \"blur\";",
                 "window.__DAE_WINDOW_MATERIAL__ = \"none\";",
@@ -399,5 +419,27 @@ mod tests {
             .contains(&script.trim_end()),
             "unexpected boot script {script:?}"
         );
+    }
+
+    /// A material `index.html` has never heard of has to leave the splash opaque,
+    /// and the five literals above are exactly the set it whitelists. Rust adds a
+    /// variant, the page keeps painting its own canvas, and only the CSS seam
+    /// learns the new name.
+    #[test]
+    fn every_boot_script_literal_is_one_the_splash_whitelists() {
+        let whitelisted = include_str!("../../../index.html");
+        for material in [
+            Material::Mica,
+            Material::Acrylic,
+            Material::Vibrancy,
+            Material::Blur,
+            Material::None,
+        ] {
+            let spelling = format!("material === \"{}\"", material.as_str());
+            assert!(
+                whitelisted.contains(&spelling),
+                "{spelling:?} is not in the splash's whitelist"
+            );
+        }
     }
 }

@@ -619,9 +619,9 @@ html[data-window-focused="false"] .tab-chip-active {
 
    Two roles here are the *window* rather than a surface inside it: the canvas
    the panels sit on, and the nav column. Where the OS composites a backdrop
-   behind a window — Mica on Windows 11, the sidebar material on macOS, a
-   compositor blur on the one Linux desktop that offers it — those two are
-   exactly where Explorer and Finder let it through, so they stop painting and
+   behind a window — Acrylic or Mica on Windows 11, the sidebar material on
+   macOS, a compositor blur on the one Linux desktop that offers it — those two
+   are exactly where Explorer and Finder let it through, so they stop painting and
    the desktop shows instead. Nothing else does: the content plane is `--card`,
    and a file list over a live blur is unreadable, which is as true of the
    platforms as of this shell.
@@ -637,14 +637,17 @@ html[data-window-focused="false"] .tab-chip-active {
    chrome, which is what a native sidebar does. Either way the platform, not this
    file, decides.
 
-   `"blur"` is the Linux answer and the only live one of the three: Mica is the
-   wallpaper derived once per window, macOS' material is a bounded blur with
-   AppKit's own tint already in it, while a compositor blur is whatever is
-   moving behind this window right now — including, often, another application's
-   text. At full transparency the nav column inherits that noise and its labels
-   lose the contrast they have on every other desktop, so `"blur"` is the one
-   material that keeps a scrim: the same two roles, filled with the panel colour
-   at a density that still reads as a backdrop.
+   Of the four answers, `"blur"` is the only one that keeps a scrim, and what
+   decides it is what each material arrives with. Mica is the wallpaper derived
+   once per window; Acrylic is a live blur, but DWM puts its own luminosity and
+   noise into it; macOS' material is a bounded blur with AppKit's own tint
+   already in it. All three are a platform having already decided how bright the
+   chrome is, so the two roles simply stop painting. A compositor blur is a bare
+   blur of whatever is moving behind this window right now — including, often,
+   another application's text — and at full transparency the nav column inherits
+   that noise and its labels lose the contrast they have on every other desktop.
+   So `"blur"` is the one material that keeps the two roles filled with the panel
+   colour at a density that still reads as a backdrop.
 
    The two percentages are the least that holds up, not a taste call. The worst
    case is this shell's dark scheme over a bright window, where the nav column's
@@ -662,6 +665,7 @@ html[data-window-focused="false"] .tab-chip-active {
    on order is how a palette change ends up half-applied.
    --------------------------------------------------------------------------- */
 html[data-window-material="mica"],
+html[data-window-material="acrylic"],
 html[data-window-material="vibrancy"] {
   --background: transparent;
   --sidebar: transparent;
@@ -978,10 +982,10 @@ html[data-window-material="blur"] {
 
        * `backdrop-filter` samples the *webview*, not the desktop. Over the file
          list and the thumbnails it is exactly the frost asked for; where the
-         window shows a platform backdrop instead (Mica, the macOS material, the
-         niri blur — see THE WINDOW-MATERIAL SEAM) the canvas under the menu is
-         transparent, so there is nothing local to blur and the tenth of
-         see-through just lets that backdrop through untinted. Either way the
+         window shows a platform backdrop instead (Acrylic, Mica, the macOS
+         material, the niri blur — see THE WINDOW-MATERIAL SEAM) the canvas under
+         the menu is transparent, so there is nothing local to blur and the tenth
+         of see-through just lets that backdrop through untinted. Either way the
          tint is what carries the text, which is why the floor is a contrast
          number rather than an opacity preference.
        * the blur has to be spent, not saved. A 24px pass is what turns a row of
@@ -1092,10 +1096,10 @@ html[data-window-material="blur"] {
 
 /* Reduced transparency drops the shell's one CSS-owned glass surface back to an
    opaque plane (see `.menu-frost`). This is the guard the window-material seam
-   deliberately does not carry: Mica, the macOS material and the niri blur are
-   answered by the platform, which reports `"none"` once the user turns effects
-   off, so CSS never has to second-guess them. The frost is the opposite case —
-   this file invented it and only this file can take it away. */
+   deliberately does not carry: Acrylic, Mica, the macOS material and the niri
+   blur are answered by the platform, which reports `"none"` once the user turns
+   effects off, so CSS never has to second-guess them. The frost is the opposite
+   case — this file invented it and only this file can take it away. */
 @media (prefers-reduced-transparency: reduce) {
   :root,
   .dark {

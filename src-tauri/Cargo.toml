@@ -40,12 +40,12 @@ russh-sftp = "3.0.0"
 # `macos-private-api` is the feature that makes a `transparent` window
 # compile on macOS at all (`WebviewWindowBuilder::transparent` is
 # `cfg`-gated on it), and `window_material` needs transparent windows to show
-# Mica / sidebar vibrancy through the chrome. It has to sit here rather than in
-# the macOS target table below because `tauri-build` compares this one line
-# against the `macOSPrivateApi` flag in `tauri.conf.json` on every host. On
-# Windows and Linux it only forwards to wry features that gate macOS code, so
-# it costs nothing there — what it does cost is Mac App Store eligibility,
-# which is a decision to make later rather than a surprise.
+# Acrylic / Mica / sidebar vibrancy through the chrome. It has to sit here
+# rather than in the macOS target table below because `tauri-build` compares
+# this one line against the `macOSPrivateApi` flag in `tauri.conf.json` on every
+# host. On Windows and Linux it only forwards to wry features that gate macOS
+# code, so it costs nothing there — what it does cost is Mac App Store
+# eligibility, which is a decision to make later rather than a surprise.
 tauri = { version = "2", features = ["macos-private-api"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

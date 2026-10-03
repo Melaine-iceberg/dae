@@ -168,13 +168,13 @@ pub fn run() {
 
             // The config declares this window but no longer creates it, because
             // whether it must be transparent is a run-time question that has to be
-            // answered before the window exists: Mica and vibrancy are invisible
-            // through an opaque webview, and a transparent window on a platform
-            // with no backdrop shows the desktop through the tab strip. `create:
-            // false` keeps `tauri.conf.json` the single description of the window
-            // itself while `window_material` adds that one flag. Building it first
-            // also means everything below — the deep link, the reveal fallback —
-            // finds a window that already exists.
+            // answered before the window exists: Acrylic, Mica and vibrancy are
+            // invisible through an opaque webview, and a transparent window on a
+            // platform with no backdrop shows the desktop through the tab strip.
+            // `create: false` keeps `tauri.conf.json` the single description of the
+            // window itself while `window_material` adds that one flag. Building it
+            // first also means everything below — the deep link, the reveal fallback
+            // — finds a window that already exists.
             let builder = tauri::WebviewWindowBuilder::from_config(
                 app.handle(),
                 &app.config().app.windows[0],

@@ -1,28 +1,43 @@
-//! Windows' backdrop: Mica, which is Windows 11's own window background.
+//! Windows' backdrop: the live Acrylic Windows 11 composites behind a window,
+//! with Mica for the builds that cannot be handed it.
 //!
-//! Two facts decide it, and neither is readable from the effect call itself:
-//! `DwmSetWindowAttribute` reports nothing when it refuses a backdrop it does
-//! not know, and the `transparent` flag has to be chosen before the window
-//! exists. So both are read here rather than inferred from a return value —
-//! which is the difference between this module and a plain
-//! `window.set_effects(Effect::Mica)` that would leave a Windows 10 machine with
-//! a translucent tab strip over the user's desktop.
+//! Three facts decide it, and none of them is readable from the effect call
+//! itself: `DwmSetWindowAttribute` reports nothing when it refuses a backdrop it
+//! does not know, the `transparent` flag has to be chosen before the window
+//! exists, and Acrylic and Mica are drawn by *different* attributes. So all three
+//! are read here rather than inferred from a return value — which is the
+//! difference between this module and a plain
+//! `window.set_effects(Effect::Acrylic)` that would leave a Windows 10 machine
+//! with a translucent tab strip over the user's desktop.
 //!
-//! * **The build.** Mica needs Windows 11, i.e. build 22000 up. Read from
-//!   `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion!CurrentBuild` rather
-//!   than `GetVersionExW`, because the latter is compatibility-faked to 6.2 for
-//!   any process whose manifest does not claim Windows 10 — and a registry read
-//!   is not shimmed. `window-vibrancy`'s own floor is the same 22000 (it reaches
-//!   for `RtlGetVersion`), so the two probes cannot disagree about which
-//!   machines get a backdrop. Above 22523 it uses the documented
-//!   `DWMWA_SYSTEMBACKDROP_TYPE` and below that the undocumented
-//!   `DWMWA_MICA_EFFECT`; that split is left to it.
+//! * **The build, and with it which material.** Acrylic is
+//!   `DWMWA_SYSTEMBACKDROP_TYPE` set to `DWMSBT_TRANSIENTWINDOW`, an attribute
+//!   that exists from build 22523 up. Below it `window-vibrancy`'s
+//!   `apply_acrylic` falls through to `SetWindowCompositionAttribute`, which is
+//!   Windows 10 1809's blur-behind: an accent-policy tint over an unlit desktop,
+//!   not the material this shell is asking for. So builds 22000–22522 keep Mica,
+//!   which they do have through the undocumented `DWMWA_MICA_EFFECT`, and below
+//!   22000 there is nothing. The build is read from
+//!   `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion!CurrentBuild` rather than
+//!   `GetVersionExW`, because the latter is compatibility-faked to 6.2 for any
+//!   process whose manifest does not claim Windows 10 — and a registry read is
+//!   not shimmed. `window-vibrancy`'s own floors are the same numbers (it reaches
+//!   for `RtlGetVersion`), so the two probes cannot disagree about which machine
+//!   gets which backdrop.
 //! * **Whether the user wants one.** Settings › Personalisation › Colours ›
 //!   *Transparency effects* writes
 //!   `HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize!EnableTransparency`.
 //!   An accessibility setting beating an aesthetic one is the rule, not a
-//!   courtesy: with it off, the chrome falls back to the flat canvas the shell
-//!   already draws, and nothing has to be re-tuned for it.
+//!   courtesy, and it beats both materials: with it off DWM composites neither,
+//!   so the chrome falls back to the flat canvas the shell already draws and
+//!   nothing has to be re-tuned for it.
+//! * **Which appearance it is tinted in.** Mica and Acrylic both follow the
+//!   window's immersive-dark attribute. `Effect` bakes that into Mica as
+//!   `MicaDark`/`MicaLight` but has no matching pair for Acrylic — its one extra
+//!   argument is a tint colour, which the `DWMWA_SYSTEMBACKDROP_TYPE` path
+//!   ignores. So [`apply`] writes the attribute through `Window::set_theme`
+//!   alongside Acrylic, which is the same attribute tao writes for a themed
+//!   window and which colours the 1px DWM border as a side effect.
 
 use windows::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_NOTIFY, KEY_READ, REG_DWORD,
@@ -32,13 +47,20 @@ use windows::Win32::System::Registry::{
 use windows::core::PCWSTR;
 
 use tauri::window::{Effect, EffectsBuilder};
-use tauri::{Runtime, WebviewWindow};
+use tauri::{Runtime, Theme, WebviewWindow};
 
 use super::Material;
 
 /// Windows 11's first build. `window-vibrancy` refuses Mica below this, and the
-/// DWM attribute that draws it does not exist above it either.
+/// undocumented flag that draws it on the early builds does not exist either.
 const MICA_MIN_BUILD: u32 = 22000;
+
+/// The first build with `DWMWA_SYSTEMBACKDROP_TYPE`, which is the only way to
+/// ask for Acrylic that actually composites a blur. Below it `apply_acrylic`
+/// takes the `SetWindowCompositionAttribute` route — Windows 10 1809's
+/// blur-behind, a tint over an unlit desktop — so this is the line between
+/// Acrylic and Mica rather than the line between Acrylic and nothing.
+const ACRYLIC_MIN_BUILD: u32 = 22523;
 
 const WINDOWS_NT_KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion";
 /// The build number as text. Kept for compatibility by every Windows 10 and 11
@@ -165,9 +187,16 @@ fn transparency_enabled() -> bool {
 
 /// The whole decision, separated from the two registry reads so it is testable
 /// on a machine that is whatever it happens to be.
+///
+/// The accessibility gate is checked first because it answers for both materials:
+/// with transparency effects off, DWM composites neither, and the band below
+/// [`ACRYLIC_MIN_BUILD`] is a choice between two backdrops rather than a way to
+/// keep one of them.
 fn choose(build: Option<u32>, transparency_on: bool) -> Material {
     match build {
-        Some(build) if build >= MICA_MIN_BUILD && transparency_on => Material::Mica,
+        Some(_) if !transparency_on => Material::None,
+        Some(build) if build >= ACRYLIC_MIN_BUILD => Material::Acrylic,
+        Some(build) if build >= MICA_MIN_BUILD => Material::Mica,
         _ => Material::None,
     }
 }
@@ -190,12 +219,15 @@ pub(super) fn read() -> Material {
 
 /// Hands one window its backdrop.
 ///
-/// The dark variant is chosen rather than plain `Effect::Mica` whenever the
-/// shell has said which theme it is drawing in: Mica tints itself from the
-/// window's immersive-dark attribute, so asking for the system's answer would
-/// put light Mica behind a dark tab strip for anyone who pins an appearance
-/// instead of following the OS. The attribute is also what colours the 1px DWM
-/// border, which is why this holds even for a shell that never shows a backdrop.
+/// Both materials tint themselves from the window's immersive-dark attribute, so
+/// the theme the shell has named has to reach that attribute rather than the
+/// system's answer: the platform's own would put a light backdrop behind a dark
+/// tab strip for anyone who pins an appearance instead of following the OS. Mica
+/// carries it in the effect — `MicaDark`/`MicaLight` are `window-vibrancy`
+/// writing that attribute for us — while Acrylic has no matching pair, so the
+/// attribute is written here through `Window::set_theme`, which is how tao reaches
+/// the same `DwmSetWindowAttribute` and which repaints the 1px DWM border on the
+/// way.
 pub(super) fn apply<R: Runtime>(window: &WebviewWindow<R>, material: Material, dark: Option<bool>) {
     let effects = match material {
         Material::Mica => Some(match dark {
@@ -203,7 +235,20 @@ pub(super) fn apply<R: Runtime>(window: &WebviewWindow<R>, material: Material, d
             Some(false) => Effect::MicaLight,
             None => Effect::Mica,
         }),
-        Material::Vibrancy | Material::None => None,
+        Material::Acrylic => {
+            // A theme the shell has never named is left to the system, as with
+            // `Effect::Mica`: `set_theme` is the only way to ask for "follow the
+            // OS" here, and calling it with that would take the window's answer
+            // away from a shell that has not said.
+            if let Some(dark) = dark {
+                let _ = window.set_theme(Some(if dark { Theme::Dark } else { Theme::Light }));
+            }
+            Some(Effect::Acrylic)
+        }
+        // Vibrancy and Blur are the other platforms' answers, which this backend
+        // never reports; `None` is the machine with no usable backdrop, and its
+        // job is to take the effects off rather than to theme the frame.
+        Material::Vibrancy | Material::Blur | Material::None => None,
     };
 
     match effects {
@@ -259,25 +304,36 @@ pub(super) fn watch(app: &tauri::AppHandle) {
 mod tests {
     use super::*;
 
-    /// The boundary is Windows 11's first build and not one either side of it:
-    /// 21996 is the last Windows 10 insider build in that numbering, and
-    /// confusing the two is a machine whose window shows its desktop through the
-    /// tab strip.
+    /// Acrylic starts where `DWMWA_SYSTEMBACKDROP_TYPE` starts. One build earlier
+    /// is the machine that has to be handed Mica rather than whatever
+    /// `apply_acrylic` falls through to without that attribute.
     #[test]
-    fn mica_starts_at_windows_11() {
-        assert_eq!(choose(Some(21996), true), Material::None);
-        assert_eq!(choose(Some(MICA_MIN_BUILD), true), Material::Mica);
-        assert_eq!(choose(Some(26100), true), Material::Mica);
+    fn acrylic_starts_with_the_backdrop_attribute() {
+        assert_eq!(choose(Some(ACRYLIC_MIN_BUILD), true), Material::Acrylic);
+        assert_eq!(choose(Some(22621), true), Material::Acrylic);
+        assert_eq!(choose(Some(26100), true), Material::Acrylic);
     }
 
-    /// The accessibility setting beats the effect.
+    /// The Mica band is Windows 11's early builds and nothing below them: 21996
+    /// is the last Windows 10 insider build in that numbering, and confusing the
+    /// two is a machine whose window shows its desktop through the tab strip.
+    #[test]
+    fn mica_covers_the_builds_that_precede_it() {
+        assert_eq!(choose(Some(21996), true), Material::None);
+        assert_eq!(choose(Some(MICA_MIN_BUILD), true), Material::Mica);
+        assert_eq!(choose(Some(ACRYLIC_MIN_BUILD - 1), true), Material::Mica);
+    }
+
+    /// The accessibility setting beats either effect, and beats it from the first
+    /// build that could have had one.
     #[test]
     fn transparency_effects_off_wins() {
         assert_eq!(choose(Some(26100), false), Material::None);
+        assert_eq!(choose(Some(ACRYLIC_MIN_BUILD), false), Material::None);
         assert_eq!(choose(Some(MICA_MIN_BUILD), false), Material::None);
     }
 
-    /// A build that could not be read is treated as one that cannot have Mica.
+    /// A build that could not be read is treated as one that can have neither.
     /// The other way round would put a transparent window on a machine whose
     /// registry this module failed to read at all.
     #[test]
