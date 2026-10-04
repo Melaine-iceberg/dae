@@ -221,7 +221,7 @@ pub async fn invoke_shell_command(
 
 /// Primes the shell-command path before the user's first right-click.
 ///
-/// Called once from the frontend after the window is revealed. The costs worth
+/// Called once from the frontend once the UI is on screen. The costs worth
 /// moving off the first right-click are platform-specific — COM surrogate
 /// activation on Windows, the bundle scan on macOS, the service-menu scan on
 /// Linux — and each module's `warm` moves its own.

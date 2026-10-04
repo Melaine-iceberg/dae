@@ -23,7 +23,9 @@
       html.dark body {
         background: __DAE_CANVAS_DARK__;
       }
-      /* Minimal loading indicator visible only before React mounts. */
+      /* The window is on screen from the moment it is created, so this is what
+         the user looks at while the JS bundle loads: a spinner on the themed
+         canvas instead of an empty window. React replaces it on mount. */
       #splash {
         display: flex;
         align-items: center;

@@ -173,8 +173,8 @@ pub fn run() {
             // platform with no backdrop shows the desktop through the tab strip.
             // `create: false` keeps `tauri.conf.json` the single description of the
             // window itself while `window_material` adds that one flag. Building it
-            // first also means everything below — the deep link, the reveal fallback
-            // — finds a window that already exists.
+            // first also means everything below — the deep link, the tab drop
+            // target — finds a window that already exists.
             let builder = tauri::WebviewWindowBuilder::from_config(
                 app.handle(),
                 &app.config().app.windows[0],
@@ -230,23 +230,6 @@ pub fn run() {
             // Answer the startup surface's queries while the webview loads
             // so the first paint resolves them from memory.
             file_system::prefetch::warm_startup_data(app.handle());
-
-            // Safety net: the frontend shows the window after its first paint,
-            // but if JS fails to execute (e.g. a missing chunk on a corrupted
-            // install), the window would stay invisible forever. Show it
-            // unconditionally after 8 seconds so the user can at least see
-            // the empty shell and report the problem.
-            let fallback_handle = app.handle().clone();
-            std::thread::spawn(move || {
-                std::thread::sleep(std::time::Duration::from_secs(8));
-                if let Some(window) = fallback_handle.get_webview_window("main") {
-                    // Only act if the frontend never managed to show the window.
-                    if !window.is_visible().unwrap_or(true) {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                }
-            });
 
             #[cfg(not(debug_assertions))]
             updater::spawn_startup_check(app.handle());

@@ -119,7 +119,7 @@ export async function invokeShellCommand(
  * lands the section *after* the menu has settled, which is the flicker this
  * exists to remove; every one after it lands before.
  *
- * Called once at startup, after the window is revealed, so the cost is spent on
+ * Called once at startup, after the UI is on screen, so the cost is spent on
  * nothing instead of on the user's first menu. A failure is logged and
  * forgotten: the menu asks for itself when it opens and behaves exactly as it
  * did before — just with the delay back.
