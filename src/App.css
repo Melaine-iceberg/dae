@@ -5,79 +5,58 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ---------------------------------------------------------------------------
-   Typefaces — the UI borrows the platform's face, the terminal and the code
-   previews ship one of their own.
+   Typefaces — nothing is bundled; the window borrows the platform's own faces.
 
-   THE UI FACE IS NO LONGER BUNDLED. Inter Variable plus Sarasa UI SC bought a
-   window that rendered identically everywhere, and cost ~3.1MB to do it. dae
-   is a shell over the OS's own file manager and terminal, so the platform's UI
-   face — Segoe UI Variable on Windows 11, SF on macOS, Cantarell/Noto on Linux
-   — is the intent rather than a compromise. The CJK families stay named behind
-   `system-ui` so a Chinese string can never land on a face without the glyphs.
+   Inter Variable plus Sarasa UI SC bought a window that rendered identically
+   everywhere, and cost ~3.1MB to do it; the bundled mono face added 4.8MB more
+   on top, and between the two any `font-mono` surface — the sidebar's capacity
+   readout, a project badge, a branch name — pulled a multi-megabyte CJK face
+   onto the startup path. dae is a shell over the OS's own file manager and
+   terminal, so the platform's faces are the intent rather than a compromise:
+   Segoe UI Variable and Cascadia Mono on Windows 11, SF and SF Mono on macOS,
+   Cantarell/Noto and DejaVu Sans Mono on Linux. The CJK families stay named
+   behind each stack so a Chinese string can never land on a face without the
+   glyphs.
 
    The price is weight fidelity. `--text-title` (600) and `font-medium` (500)
    are real axes in Segoe UI Variable and in SF, but a platform whose UI face
    only carries Regular/SemiBold/Bold snaps them to the nearest. Accepted
-   deliberately: the alternative was bundling a third family to draw a 500.
+   deliberately: the alternative was bundling a family to draw a 500.
 
-   MONO IS BUNDLED, AND FOR THE TERMINAL'S GRID RATHER THAN FOR TASTE. xterm.js
-   measures one cell from the Latin advance and lays every glyph inside it, so
-   the face has to hold three properties at once:
-
-     * 2:1 — Latin 0.500em, CJK 1.000em. A face at 0.600em (JetBrains Mono,
-       Maple Mono, Cascadia) draws a hanzi 1.67 cells wide and shears every row
-       it appears in.
-     * 0.500em is also what makes *fallback* safe. A hanzi outside the subset
-       resolves to a system CJK face at 1.000em, which is exactly 2 cells, so
-       the grid survives a font change mid-line. At 0.600em it would not.
-     * Nerd Font glyphs, one cell wide, for the prompt. No stock OS has them,
-       and the Symbols Nerd Font fallback cannot stand in: its glyphs are all
-       1.000em, i.e. two cells, so every icon would shift its line.
-
-   Sarasa Term SC is Iosevka on Source Han Sans and is 0.500em/1.000em by
-   construction; the Nerd build adds the prompt icons without disturbing either
-   metric. `scripts/build-mono-font.py` subsets it to the codepoints this app
-   ships — GB2312's 6,763 hanzi, the symbol blocks and the icon blocks, 18,157
-   codepoints — and self-checks all three properties above. The licence chain
-   for the icon sets is in `NOTICE-Nerd-Fonts.txt`, next to the faces.
-   Weight 700 is the face xterm asks for as `bold`.
+   The terminal paid a second price, and it is worth stating plainly because
+   the bundled face existed to prevent exactly this. xterm.js measures one cell
+   from the Latin advance and lays every glyph inside it. Sarasa Term SC met
+   that by construction — 0.500em Latin, 1.000em hanzi — so a hanzi occupied
+   exactly two cells, and a glyph the subset omitted fell through to a system
+   CJK face at the same 1.000em. No stock mono face makes that promise, so a
+   CJK character in the grid is now as wide as the platform's fallback makes
+   it. Latin output — the overwhelming majority of what a shell prints — is
+   unaffected. The Nerd Font prompt glyphs went with it: no OS ships them, and
+   the Symbols Nerd Font fallback cannot stand in, since its glyphs are 1.000em
+   (two cells) and every icon would shift its line.
    --------------------------------------------------------------------------- */
-
-/* Mono, behind the terminal and every `font-mono` surface. */
-@font-face {
-  font-family: "dae Mono";
-  font-style: normal;
-  font-weight: 400;
-  /* Never hold text back waiting on a 2.3MB face. The terminal does not rely
-     on this: it waits for the face itself before measuring a cell. */
-  font-display: swap;
-  src: url("./assets/fonts/sarasa-term-sc-nerd-regular.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "dae Mono";
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("./assets/fonts/sarasa-term-sc-nerd-bold.woff2") format("woff2");
-}
 
 @theme inline {
   --font-heading: var(--font-sans);
-  /* No bundled face leads any more. The platform's UI face comes first and the
-     CJK families follow it, because that face is Latin-only everywhere: a
-     hanzi has to reach a family that actually carries it. */
+  /* The platform's UI face comes first and the CJK families follow it, because
+     that face is Latin-only everywhere: a hanzi has to reach a family that
+     actually carries it. */
   --font-sans:
     system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI",
     "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", "Noto Sans",
     sans-serif;
-  /* The CJK families are named after the mono faces rather than left to the
-     generic last resort: they only ever serve a glyph `dae Mono` lacks, and at
-     1.000em against a 0.500em cell they land on exactly two columns — which is
-     the same place the terminal's grid already put them. */
+  /* The one stack the terminal's grid and every `font-mono` surface share —
+     `terminal-panel.tsx` reads this declaration back rather than duplicating
+     it, so the two cannot drift. `ui-monospace` is the WebKit generic and
+     resolves to SF Mono on macOS; Windows 11 leads with Cascadia Mono and falls
+     back to Consolas; Linux lands on DejaVu or Liberation. The CJK families
+     are still named rather than left to the generic last resort: they only
+     ever serve a glyph the platform's mono face lacks, and on the terminal
+     they are also what decides how wide that glyph is (see the note above). */
   --font-mono:
-    "dae Mono", "Cascadia Code", "JetBrains Mono", ui-monospace, "SF Mono", Consolas, "Courier New",
-    "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", monospace;
+    ui-monospace, "SF Mono", "Cascadia Mono", "Cascadia Code", "JetBrains Mono", Consolas,
+    Menlo, Monaco, "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Microsoft YaHei UI",
+    "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", monospace;
 
   /* Compact desktop type scale — a CLOSED seven-step ramp. The ramp is the
      whole point: it is what keeps a dense window (13px rows, 12px metadata,

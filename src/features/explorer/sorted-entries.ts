@@ -5,8 +5,6 @@ import { i18n } from "@/i18n";
 import { orderSignature, type ExplorerSortKey, type ExplorerSortOrder } from "./entry-order";
 import type { SortRequest, SortResponse } from "./entry-sort-worker";
 import {
-  entriesInRange,
-  listingViewOf,
   packetBacked,
   prefixListingView,
   sharedRowCount,
@@ -14,7 +12,6 @@ import {
   type ListingView,
 } from "./listing-view";
 import { collectSortPrimitives, sortListingView } from "./preferences";
-import type { DirectoryEntry } from "./types";
 
 /**
  * Orders streamed directory listings without blocking the UI thread.
@@ -53,8 +50,6 @@ import type { DirectoryEntry } from "./types";
  * ceiling on what this module will order on the main thread at all.
  */
 const SYNC_SORT_LIMIT = 1000;
-
-const NO_ENTRIES: DirectoryEntry[] = [];
 
 /** Set once a worker fails to start, so later renders stop trying. */
 let workerUnavailable = false;
@@ -262,26 +257,4 @@ export function useSortedListingView(
 
     return sortListingView(leading, sortKey, sortOrder, foldersFirst);
   }, [canStream, foldersFirst, noWorker, sortKey, sortOrder, streamed, view]);
-}
-
-/**
- * Orders a plain array — a Miller column's children, a search result.
- *
- * The array-backed form of `useSortedListingView`: it wraps the array in a
- * view, orders that, and materialises the result. The work is the same one the
- * ordering hook does, so the two cannot drift apart; only the last step differs,
- * and an array is what this caller asked for.
- */
-export function useSortedEntries(
-  entries: readonly DirectoryEntry[],
-  sortKey: ExplorerSortKey,
-  sortOrder: ExplorerSortOrder,
-  foldersFirst: boolean,
-): DirectoryEntry[] {
-  const sorted = useSortedListingView(listingViewOf(entries), sortKey, sortOrder, foldersFirst);
-
-  return useMemo(
-    () => (sorted.count === 0 ? NO_ENTRIES : entriesInRange(sorted, 0, sorted.count)),
-    [sorted],
-  );
 }

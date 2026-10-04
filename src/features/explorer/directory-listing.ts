@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { commands, events, type DirectoryEntry, type DirectoryView } from "@/bindings";
 
 import { ListingPacket } from "./entry-codec";
-import { packetStreamView, type ListingView } from "./listing-view";
+import { listingViewOf, packetStreamView, type ListingView } from "./listing-view";
 
 /**
  * Directory listings arrive in batches: `readDirectory` answers with the first
@@ -322,26 +322,50 @@ export function openPacketDirectoryListing(
  * Completed listings by path, so re-opening a folder (drilling back out of a
  * Miller column, expanding a section again) paints immediately instead of
  * flashing an empty pane while the read runs.
+ *
+ * A finished listing is cached as the view, not as the rows behind it: a
+ * `PacketStreamView` is immutable once published — a stream grows by handing
+ * over a new packets array — so one that has stopped growing can be kept and
+ * painted from as-is, and keeping it costs the listing nothing beyond the
+ * bytes the backend has already sent.
  */
-const completedListings = new Map<string, DirectoryEntry[]>();
+const completedListings = new Map<string, ListingView>();
 /** Cap on cached listings; tabs rarely revisit more paths than this at once. */
 const MAX_CACHED_LISTINGS = 16;
 
-export interface DirectoryEntriesState {
-  /** Every entry known so far; grows while the listing streams. */
-  entries: DirectoryEntry[];
+/** What a pane reads before its listing has produced anything. */
+const EMPTY_LISTING = listingViewOf([]);
+
+export interface DirectoryListingState {
+  /** Every row known so far; grows while the listing streams. */
+  listing: ListingView;
   isError: boolean;
-  /** True while the listing is still streaming (cached entries stay visible). */
+  /** True while the listing is still streaming (cached rows stay visible). */
   isLoading: boolean;
 }
 
 /**
- * Lists `path`, folding the streamed batches in as they arrive. The previous
- * listing for the same path renders until the fresh read produces its first
- * batch.
+ * Lists `path` over the columnar channel, folding the streamed batches in as
+ * they arrive. The previous listing for the same path renders until the fresh
+ * read produces its first batch.
+ *
+ * Miller columns read directories through this rather than through
+ * `openDirectoryListing`, which is the transport the list and grid panes have
+ * always used. What separates the two is what the batches cost to receive: an
+ * event payload is evaluated as JavaScript source, so the 89 % of a 35,803
+ * entry listing that arrives after the head used to cost the webview 25 ms of
+ * parsing on its own thread (measured), where the same bytes over a channel
+ * arrive as one `ArrayBuffer` the frontend never parses — 0.56 ms to hand
+ * over, and 0.01 ms to turn the 40 rows a frame paints into objects. Drilling
+ * a level at a time through a column view pays that on every level.
+ *
+ * Handing back a `ListingView` rather than an array is the other half: the
+ * pane filters and orders the view directly, so the listing is never
+ * materialised into `DirectoryEntry` objects only to be read back one field at
+ * a time.
  */
-export function useDirectoryEntries(path: string): DirectoryEntriesState {
-  const [state, setState] = useState<DirectoryEntriesState>(() => cachedState(path));
+export function useDirectoryListing(path: string): DirectoryListingState {
+  const [state, setState] = useState<DirectoryListingState>(() => cachedState(path));
   const mountedPath = useRef(path);
 
   useEffect(() => {
@@ -352,21 +376,19 @@ export function useDirectoryEntries(path: string): DirectoryEntriesState {
       setState(cachedState(path));
     }
 
-    let latest: DirectoryEntry[] = [];
-    const listing = openDirectoryListing(path, {
-      onHead: (view) => {
-        latest = view.entries;
-        setState({ entries: view.entries, isError: false, isLoading: true });
-      },
-      onEntries: (entries) => {
-        latest = entries;
-        setState({ entries, isError: false, isLoading: true });
+    // The newest published view, so completion caches the whole listing rather
+    // than whichever batch happened to be current when the effect ran.
+    let latest = EMPTY_LISTING;
+    const listing = openPacketDirectoryListing(path, {
+      onListing: (view) => {
+        latest = view;
+        setState({ isError: false, isLoading: true, listing: view });
       },
       onDone: () => {
         rememberListing(path, latest);
         setState((current) => ({ ...current, isLoading: false }));
       },
-      onError: () => setState({ entries: [], isError: true, isLoading: false }),
+      onError: () => setState({ isError: true, isLoading: false, listing: EMPTY_LISTING }),
     });
 
     // Reported through the listener above; this only keeps the rejection from
@@ -379,9 +401,9 @@ export function useDirectoryEntries(path: string): DirectoryEntriesState {
   return state;
 }
 
-function cachedState(path: string): DirectoryEntriesState {
+function cachedState(path: string): DirectoryListingState {
   const cached = completedListings.get(path);
-  return { entries: cached ?? [], isError: false, isLoading: cached === undefined };
+  return { isError: false, isLoading: cached === undefined, listing: cached ?? EMPTY_LISTING };
 }
 
 /**
@@ -423,9 +445,9 @@ export function isSameListing(previous: ListingView, next: ListingView): boolean
   return true;
 }
 
-function rememberListing(path: string, entries: DirectoryEntry[]): void {
+function rememberListing(path: string, listing: ListingView): void {
   completedListings.delete(path);
-  completedListings.set(path, entries);
+  completedListings.set(path, listing);
 
   while (completedListings.size > MAX_CACHED_LISTINGS) {
     const oldest = completedListings.keys().next().value;

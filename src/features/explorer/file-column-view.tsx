@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
@@ -13,21 +14,21 @@ import { AltArrowRightIcon, DangerTriangleIcon, LoaderIcon } from "@solar-icons/
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 
-import { useDirectoryEntries } from "./directory-listing";
+import { useDirectoryListing } from "./directory-listing";
 import { DRAG_SOURCE_CLASS, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { getEntryPresentation } from "./file-icons";
 import type { MenuActions } from "./file-list";
-import { listingViewOf, type ListingView } from "./listing-view";
+import type { ListingView } from "./listing-view";
 import {
-  filterHiddenEntries,
+  filterHidden,
   foldersFirstAtom,
   showHiddenFilesAtom,
   sortKeyAtom,
   sortOrderAtom,
 } from "./preferences";
 import { RowEntryIcon } from "./row-icon";
-import { useSortedEntries } from "./sorted-entries";
+import { useSortedListingView } from "./sorted-entries";
 import type { DirectoryEntry } from "./types";
 
 export interface FileColumnViewProps {
@@ -117,28 +118,30 @@ interface ChildPaneProps extends SharedRowProps {
 }
 
 function ChildPane({ path, ...paneProps }: ChildPaneProps) {
-  const { entries, isError, isLoading } = useDirectoryEntries(path);
+  const { listing, isError, isLoading } = useDirectoryListing(path);
   const sortKey = useAtomValue(sortKeyAtom);
   const sortOrder = useAtomValue(sortOrderAtom);
   const foldersFirst = useAtomValue(foldersFirstAtom);
   const showHiddenFiles = useAtomValue(showHiddenFilesAtom);
   // Child panes share the parent's sort and visibility preferences (SKILL.md §18).
-  // Their listings stream in batches, so ordering goes through the streaming
-  // hook instead of re-sorting every snapshot from scratch.
-  const sortedEntries = useSortedEntries(
-    filterHiddenEntries(entries, showHiddenFiles),
-    sortKey,
-    sortOrder,
-    foldersFirst,
+  // Their listings stream in batches off the columnar channel and are never
+  // materialised into an array, so both steps run over the view: filtering
+  // keeps the source's identity when nothing is hidden, which is what lets the
+  // ordering hook fold each batch into the order it already holds instead of
+  // re-sorting every snapshot from scratch.
+  const visible = useMemo(
+    () => filterHidden(listing, showHiddenFiles),
+    [listing, showHiddenFiles],
   );
+  const sorted = useSortedListingView(visible, sortKey, sortOrder, foldersFirst);
 
   return (
     <Pane
-      entries={listingViewOf(sortedEntries)}
+      entries={sorted}
       isError={isError}
       // A cached listing keeps painting while its refresh streams, so the
       // spinner is only for a pane that has nothing to show yet.
-      isLoading={isLoading && entries.length === 0}
+      isLoading={isLoading && listing.count === 0}
       {...paneProps}
     />
   );

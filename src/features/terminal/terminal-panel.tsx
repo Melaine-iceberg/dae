@@ -39,12 +39,21 @@ import { resolveAnsiPalette, type AnsiPalette } from "./terminal-palette";
 
 import "@xterm/xterm/css/xterm.css";
 
-const FONT_STACK =
-  '"dae Mono", "Cascadia Code", Consolas, Menlo, Monaco, "DejaVu Sans Mono", "Liberation Mono", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", monospace';
+/**
+ * The terminal's stack is the app's own `--font-mono`, read back off the
+ * stylesheet rather than kept as a second copy that has to be held in step by
+ * hand: the grid and every `font-mono` surface are the same faces, so they
+ * should not be able to drift. The literal is only for the moment before the
+ * stylesheet applies — xterm needs a font stack string, and `var()` is not one.
+ */
+const FALLBACK_MONO_STACK = 'ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace';
 
-/** The bundled mono face, as declared in App.css. Named separately because
- *  `document.fonts.load` needs a family, not a stack. */
-const BUNDLED_MONO_FAMILY = '"dae Mono"';
+function terminalFontStack(): string {
+  const declared = getComputedStyle(document.documentElement)
+    .getPropertyValue("--font-mono")
+    .trim();
+  return declared || FALLBACK_MONO_STACK;
+}
 
 const DEFAULT_FONT_SIZE = 13;
 const DEFAULT_LINE_HEIGHT = 1.2;
@@ -158,11 +167,12 @@ export function TerminalPanel() {
   const sessionIdRef = useRef<number | null>(null);
   const [hasOpened, setHasOpened] = useState(false);
   /* xterm measures one cell from the Latin advance of whatever face the canvas
-     can resolve at that moment and never re-measures on its own. The bundled
-     face is 2.3MB, so when the panel is first revealed it can still be in
-     flight — and every column would then be sized for the fallback face. Hold
-     the Terminal until the face is in. The promise settles even when the face
-     is missing or undecodable, so this cannot wedge the panel. */
+     can resolve at that moment and never re-measures on its own. No face is
+     bundled any more, so there is no multi-megabyte download to lose that race
+     against — but a document still loading *any* face would still measure the
+     grid against a fallback, so the terminal waits for the font set to settle.
+     The promise settles even when a face is missing or undecodable, so this
+     cannot wedge the panel. */
   const [monoReady, setMonoReady] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
   const [restartCount, setRestartCount] = useState(0);
@@ -182,14 +192,7 @@ export function TerminalPanel() {
     const settle = () => {
       if (!cancelled) setMonoReady(true);
     };
-    /* Both weights, not just the one a cell is measured from: until the 700
-       face is in, the renderer synthesises bold from the 400 face, and the
-       synthetic advance is 7.6px inside a 6.5px cell — bold text overlaps the
-       column after it. Measured in Chromium, not assumed. */
-    void Promise.all([
-      document.fonts.load(`${DEFAULT_FONT_SIZE}px ${BUNDLED_MONO_FAMILY}`),
-      document.fonts.load(`700 ${DEFAULT_FONT_SIZE}px ${BUNDLED_MONO_FAMILY}`),
-    ]).then(settle, settle);
+    void document.fonts.ready.then(settle, settle);
     return () => {
       cancelled = true;
     };
@@ -209,7 +212,7 @@ export function TerminalPanel() {
     const fit = new FitAddon();
     const settings = readTerminalSettings();
     const terminal = new Terminal({
-      fontFamily: settings?.fontFamily ?? FONT_STACK,
+      fontFamily: settings?.fontFamily ?? terminalFontStack(),
       fontSize: settings?.fontSize ?? DEFAULT_FONT_SIZE,
       lineHeight: settings?.lineHeight ?? DEFAULT_LINE_HEIGHT,
       scrollback: 5000,
@@ -333,7 +336,7 @@ export function TerminalPanel() {
     // so refit and resync the PTY dimensions.
     const applyTerminalSettings = () => {
       const next = readTerminalSettings();
-      terminal.options.fontFamily = next?.fontFamily ?? FONT_STACK;
+      terminal.options.fontFamily = next?.fontFamily ?? terminalFontStack();
       terminal.options.fontSize = next?.fontSize ?? DEFAULT_FONT_SIZE;
       terminal.options.lineHeight = next?.lineHeight ?? DEFAULT_LINE_HEIGHT;
       terminal.options.theme = readTerminalTheme(next?.ansiColors ?? null);
