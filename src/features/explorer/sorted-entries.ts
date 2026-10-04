@@ -7,6 +7,8 @@ import type { SortRequest, SortResponse } from "./entry-sort-worker";
 import {
   entriesInRange,
   listingViewOf,
+  packetBacked,
+  prefixListingView,
   sharedRowCount,
   sortedListingView,
   type ListingView,
@@ -40,15 +42,33 @@ import type { DirectoryEntry } from "./types";
  * explorer hits on almost every navigation, and one sort of a few hundred
  * entries is under a millisecond, so spawning and feeding a worker would cost
  * more than it saves.
+ *
+ * No inline sort in this module is ever larger than that, including the one the
+ * render falls back to when the worker has not answered yet — see the comment
+ * on that branch for why an unbounded one is not an option.
  */
 
-/** Above this many entries, ordering moves to the worker. */
+/**
+ * Above this many entries, ordering moves to the worker. It doubles as the
+ * ceiling on what this module will order on the main thread at all.
+ */
 const SYNC_SORT_LIMIT = 1000;
 
 const NO_ENTRIES: DirectoryEntry[] = [];
 
 /** Set once a worker fails to start, so later renders stop trying. */
 let workerUnavailable = false;
+
+/**
+ * Whether ordering could still be handed to a worker.
+ *
+ * The render below leans on this: past `SYNC_SORT_LIMIT` it paints the leading
+ * rows of a snapshot and leaves the rest to the worker's reply, which only ever
+ * arrives if a worker can be spawned at all.
+ */
+function canOrderOffThread(): boolean {
+  return !workerUnavailable && typeof Worker !== "undefined";
+}
 
 interface OrderResult {
   /** Ordering options the result was produced for. */
@@ -69,7 +89,7 @@ interface Session {
 }
 
 function spawnWorker(): Worker | null {
-  if (workerUnavailable || typeof Worker === "undefined") {
+  if (!canOrderOffThread()) {
     return null;
   }
 
@@ -99,6 +119,11 @@ export function useSortedListingView(
   // Mirrors "a worker is alive and will answer"; state rather than a ref read
   // so the memo below stays reactive.
   const [canStream, setCanStream] = useState(false);
+  // Mirrors "a worker could not be started at all". State for the same reason
+  // `canStream` is: the render below decides how much of a snapshot to order
+  // from whether a reply is coming, and a failed spawn has to re-render to
+  // undo a decision taken on the strength of one that never happened.
+  const [noWorker, setNoWorker] = useState(() => !canOrderOffThread());
 
   useEffect(() => {
     if (view.count <= SYNC_SORT_LIMIT) {
@@ -115,6 +140,10 @@ export function useSortedListingView(
     if (!session) {
       const worker = spawnWorker();
       if (!worker) {
+        // Nothing will answer for this listing. Ordering cannot be deferred to
+        // a reply that is not coming, so the render goes back to ordering whole
+        // snapshots — which it may have already stopped doing.
+        setNoWorker(true);
         return;
       }
 
@@ -143,7 +172,10 @@ export function useSortedListingView(
         if (sessionRef.current === created) {
           sessionRef.current = null;
         }
-        // Dropping the result sends the next render down the inline path.
+        // Dropping the result sends the next render down the inline path, and
+        // that render has to order the whole snapshot again: the reply it may
+        // have been waiting for is never coming.
+        setNoWorker(true);
         setCanStream(false);
         setStreamed(null);
       };
@@ -205,9 +237,29 @@ export function useSortedListingView(
     }
 
     // First snapshot past the limit, or a directory switch while the worker is
-    // still busy. Ordered inline so the list is never painted in read order.
-    return sortListingView(view, sortKey, sortOrder, foldersFirst);
-  }, [canStream, foldersFirst, sortKey, sortOrder, streamed, view]);
+    // still busy. The batches double as the listing streams, so this snapshot
+    // is routinely the whole directory: ordering it here is `n log n` collator
+    // comparisons on the thread that paints — measured at ~50 ms for 20,000
+    // entries, which is three frames dropped on the navigation that opened the
+    // directory.
+    //
+    // So the rows the listing led with are ordered and the rest wait for the
+    // worker, whose reply covers the whole snapshot and lands within a frame or
+    // two. The list is briefly shorter than the listing — the state streaming
+    // already puts it in, since the batches before this one painted the same
+    // way — and that is what an inline sort of any size here would cost.
+    //
+    // Deferring is only safe where the reply is certain to be adopted, which
+    // `packetBacked` answers: a filtered view (`applyEntryFilters`) has no
+    // storage of its own, and a search response is a fresh array per search, so
+    // `sharedRowCount` cannot recognise either as grown and a prefix painted
+    // for one would never be replaced by the complete order. Those keep the
+    // whole-snapshot sort they have always had.
+    const leading =
+      noWorker || !packetBacked(view) ? view : prefixListingView(view, SYNC_SORT_LIMIT);
+
+    return sortListingView(leading, sortKey, sortOrder, foldersFirst);
+  }, [canStream, foldersFirst, noWorker, sortKey, sortOrder, streamed, view]);
 }
 
 /**

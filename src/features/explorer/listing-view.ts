@@ -499,6 +499,43 @@ export function filteredListingView(
 }
 
 /**
+ * Whether this view's rows come from the channel's packets rather than an array.
+ *
+ * It matters to the ordering hook, which paints the leading rows of a snapshot
+ * the worker has not answered for yet. That is only safe where the worker's
+ * reply is certain to be adopted later, and a reply is adopted only when
+ * `sharedRowCount` recognises the new snapshot as the old one grown. For a
+ * byte-backed view that always holds — same `head`, one more packet — while an
+ * array-backed view carries no such guarantee: search results arrive as a fresh
+ * array of fresh objects per response (`setResponse` in `directory-search`), so
+ * the relation is `null` and a prefix painted for one would stay on screen for
+ * good. The hook therefore defers only for these.
+ */
+export function packetBacked(view: ListingView): boolean {
+  return view instanceof PacketStreamView;
+}
+
+/**
+ * The first `count` rows of `view`, or `view` itself when it holds fewer.
+ *
+ * The ordering hook's fallthrough paints a snapshot it cannot afford to order
+ * in a frame as its leading rows; this is what bounds that. Reads delegate to
+ * `view`, so a painted row keeps its object identity and nothing is copied.
+ */
+export function prefixListingView(view: ListingView, count: number): ListingView {
+  if (count >= view.count) {
+    return view;
+  }
+
+  const indices = new Int32Array(count);
+  for (let index = 0; index < count; index += 1) {
+    indices[index] = index;
+  }
+
+  return new MappedListingView(view, indices);
+}
+
+/**
  * Every path in the listing, in order — the select-all shortcut, and the
  * available-selection set the explorer rebuilds on every listing change.
  *
