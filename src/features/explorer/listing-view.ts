@@ -283,10 +283,22 @@ class PacketStreamView implements ListingView {
  * the source rather than materialising a second copy, which is what keeps a
  * painted row's object identity intact across a re-sort or a filter change —
  * the two events that re-render a large list without changing any entry.
+ *
+ * Those two shapes age differently, and `sharedRowCount` is where it matters:
+ * an ascending map survives its source growing, because the added rows land
+ * past every index it already holds. That is what makes a filtered listing
+ * recognisable as the same listing one batch longer. A permutation has no such
+ * property.
  */
 class MappedListingView implements ListingView {
-  private readonly source: ListingView;
-  private readonly map: Int32Array;
+  /**
+   * Readable by the rest of the module rather than private: `sharedRowCount`
+   * and `packetBacked` have to reach through a derived view to the one it
+   * wraps, and this class is not exported, so nothing outside the module can
+   * name these anyway.
+   */
+  readonly source: ListingView;
+  readonly map: Int32Array;
 
   constructor(source: ListingView, map: Int32Array) {
     this.source = source;
@@ -346,6 +358,11 @@ class MappedListingView implements ListingView {
  * How many leading rows `previous` and `next` share, or `null` when they are
  * not two snapshots of the same listing.
  *
+ * Every branch either matches the whole of `previous` or answers `null`. A
+ * partial answer would be worse than useless to the callers, which read this as
+ * "the new snapshot is the old one grown" and take `previous.count` as the
+ * length of the shared run.
+ *
  * A streamed listing arrives as a sequence of growing snapshots, and the sort
  * worker's job is to fold each new tail into the order it already has rather
  * than ordering the whole thing again. That is only valid when the new snapshot
@@ -354,9 +371,22 @@ class MappedListingView implements ListingView {
  * values: the pipeline rebuilds the backing array or packet list and reuses the
  * rows, so identity is exactly the "same listing, grown" relation.
  *
- * Derived views (`sortedListingView`, `filteredListingView`) have no storage of
- * their own and answer `null`: a filter change is a different row set, and a
- * re-sort has nothing to append to.
+ * A filtered view answers through the view it wraps. `filteredListingView`
+ * scans its source in ascending order and keeps indices, so as the listing
+ * streams the map is appended to and every existing entry keeps pointing at the
+ * same row — the same relation, one level up. That is what lets a filtered
+ * listing fold batch by batch instead of re-sorting, and it is why the ordering
+ * hook is allowed to defer for one.
+ *
+ * The map comparison is what separates that from a filter *change*, which
+ * rebuilds the map rather than extending it, but it is not airtight: a new
+ * filter that keeps the old filter's rows first, and adds none before the last
+ * of them, reads as growth too. The cost of that coincidence is one batch of
+ * rows painted from the previous filter while the worker catches up, and the
+ * order it settles on is still right — the primitives accumulated for the
+ * shared prefix describe the same rows either way. `sortedListingView` composes
+ * a permutation rather than an ascending map, so it matches only while the
+ * order happens to be the identity.
  */
 export function sharedRowCount(previous: ListingView, next: ListingView): number | null {
   if (previous instanceof ArrayListingView && next instanceof ArrayListingView) {
@@ -380,6 +410,26 @@ export function sharedRowCount(previous: ListingView, next: ListingView): number
       if (previous.packets[ordinal] !== next.packets[ordinal]) return null;
     }
     return previous.count;
+  }
+
+  if (previous instanceof MappedListingView && next instanceof MappedListingView) {
+    // The source decides first: a filter change over a listing that did not
+    // grow, a re-sort, and a directory switch all have to answer `null` here
+    // whatever the maps happen to look like.
+    const source = sharedRowCount(previous.source, next.source);
+    if (source === null) return null;
+
+    const before = previous.map;
+    const after = next.map;
+    if (before.length > after.length) return null;
+
+    for (let index = 0; index < before.length; index += 1) {
+      // `>= source` is a row the two sources do not share, so a map entry that
+      // reaches into the grown tail ends the run even when both maps name it.
+      if (before[index] !== after[index] || before[index] >= source) return null;
+    }
+
+    return before.length;
   }
 
   return null;
@@ -499,20 +549,31 @@ export function filteredListingView(
 }
 
 /**
- * Whether this view's rows come from the channel's packets rather than an array.
+ * Whether this view's rows come from the channel's packets rather than an array,
+ * counting the views filtered off one.
  *
  * It matters to the ordering hook, which paints the leading rows of a snapshot
  * the worker has not answered for yet. That is only safe where the worker's
  * reply is certain to be adopted later, and a reply is adopted only when
  * `sharedRowCount` recognises the new snapshot as the old one grown. For a
- * byte-backed view that always holds — same `head`, one more packet — while an
- * array-backed view carries no such guarantee: search results arrive as a fresh
- * array of fresh objects per response (`setResponse` in `directory-search`), so
- * the relation is `null` and a prefix painted for one would stay on screen for
- * good. The hook therefore defers only for these.
+ * byte-backed view that always holds — same `head`, one more packet — and a
+ * filter preserves exactly that relation while narrowing the rows, so a chain
+ * of them still sits on a listing the worker can fold a batch into. An
+ * array-backed view carries no such guarantee at any depth: search results
+ * arrive as a fresh array of fresh objects per response (`setResponse` in
+ * `directory-search`), so the relation is `null` and a prefix painted for one
+ * would stay on screen for good. The hook therefore defers only for these.
+ *
+ * The hook hands this the view it orders — a filter chain over a listing, never
+ * an ordering. A permutation composed by `sortedListingView` is not an ascending
+ * map, so `sharedRowCount` would not recognise its source as grown and a prefix
+ * painted for one would never be replaced; nothing in the ordering path passes
+ * one here, and this deliberately makes no attempt to detect that case.
  */
 export function packetBacked(view: ListingView): boolean {
-  return view instanceof PacketStreamView;
+  if (view instanceof PacketStreamView) return true;
+
+  return view instanceof MappedListingView && packetBacked(view.source);
 }
 
 /**

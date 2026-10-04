@@ -50,3 +50,7 @@ skills/linear-redesign/references/checklist.md
 skills/linear-redesign/references/linear-design-language.md
 skills/linear-redesign/references/surfaces.md
 docs/performance-audit.md
+
+# The perf audit's local harness: kept alongside the report, run by hand with
+# `bun run scripts/perf/...`, never part of a build.
+scripts/perf/

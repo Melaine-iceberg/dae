@@ -250,11 +250,13 @@ export function useSortedListingView(
     // way — and that is what an inline sort of any size here would cost.
     //
     // Deferring is only safe where the reply is certain to be adopted, which
-    // `packetBacked` answers: a filtered view (`applyEntryFilters`) has no
-    // storage of its own, and a search response is a fresh array per search, so
-    // `sharedRowCount` cannot recognise either as grown and a prefix painted
-    // for one would never be replaced by the complete order. Those keep the
-    // whole-snapshot sort they have always had.
+    // `packetBacked` answers: the packet channel, and anything filtered off it,
+    // since a filter's rows are an ascending subset of its source's and
+    // `sharedRowCount` recognises the listing underneath as grown. A search
+    // response is a fresh array of fresh objects per search, so nothing about
+    // it can be recognised as grown and a prefix painted for one would never be
+    // replaced by the complete order. Those keep the whole-snapshot sort they
+    // have always had.
     const leading =
       noWorker || !packetBacked(view) ? view : prefixListingView(view, SYNC_SORT_LIMIT);
 
