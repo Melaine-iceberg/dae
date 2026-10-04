@@ -90,6 +90,7 @@ import { getEntryPresentation } from "./file-icons";
 import { FileGridView } from "./file-grid-view";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import {
+  allNames,
   allPaths,
   directoryPathSet,
   draggableDirectoryPaths,
@@ -442,15 +443,11 @@ export function FileList({
   }, [entries.count]);
 
   // Type-to-jump names, kept out of the key handler so one keystroke does not
-  // rebuild the array for every row.
-  const entryNames = useMemo(() => {
-    const names: string[] = [];
-    for (let index = 0; index < entries.count; index += 1) {
-      const entry = entries.entryAt(index);
-      if (entry) names.push(entry.name);
-    }
-    return names;
-  }, [entries]);
+  // rebuild the array for every row. `allNames` scans the view's scalar
+  // accessors, so a byte-backed listing is read column by column instead of
+  // materialising every entry — and the rows a frame has painted stay in the
+  // row cache (see the identity note at the top of `listing-view.ts`).
+  const entryNames = useMemo(() => allNames(entries), [entries]);
 
   // Stops the buffered type-ahead timer when the tab (and this list) unmounts.
   useEffect(
