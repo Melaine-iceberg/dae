@@ -25,8 +25,8 @@ import {
 } from "@solar-icons/react/line-duotone";
 
 import { commands, type ArchiveFormat } from "@/bindings";
-import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
-import { appSettingsAtom, useBinding } from "@/features/settings/settings-atoms";
+import { formatBinding } from "@/features/settings/shortcut-registry";
+import { useBinding } from "@/features/settings/settings-atoms";
 import { ShellCommandsMenu } from "@/features/shell-commands/shell-commands-menu";
 import { copyWithNotice } from "@/lib/notifications";
 
@@ -346,20 +346,17 @@ function EntryActionRow({
   onRename: () => void;
 }) {
   const { t } = useTranslation("explorer");
-  const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
 
   const actions = [
     {
       Icon: ScissorsIcon,
       label: t("explorer:contextMenu.cut"),
       onSelect: onCut,
-      shortcut: formatBinding(resolveBinding(shortcuts, "explorer.cut")),
     },
     {
       Icon: CopyIcon,
       label: t("explorer:contextMenu.copy"),
       onSelect: onCopy,
-      shortcut: formatBinding(resolveBinding(shortcuts, "explorer.copy")),
     },
     {
       Icon: PenIcon,
@@ -368,13 +365,11 @@ function EntryActionRow({
       // four of them and stretch the whole menu with it.
       label: t("explorer:contextMenu.rename"),
       onSelect: onRename,
-      shortcut: formatBinding(resolveBinding(shortcuts, "explorer.rename")),
     },
     {
       Icon: TrashBinTrashIcon,
       label: t("explorer:contextMenu.delete"),
       onSelect: onDelete,
-      shortcut: formatBinding(resolveBinding(shortcuts, "explorer.trash")),
     },
   ];
 
@@ -383,8 +378,13 @@ function EntryActionRow({
     // the rest by the hairline the menu draws below them, not by a tinted box:
     // a nested surface inside a popover would be a second rung the menu does
     // not have to spend.
+    //
+    // None of the four carries a shortcut hint. Cut, copy, rename and delete
+    // are already in every desktop user's fingers, and a third line of keycaps
+    // costs height on the one row that is meant to be read at a glance. The
+    // rows below keep theirs: those bindings are worth learning.
     <ContextMenuGroup className="mb-1 grid grid-cols-4 divide-x divide-border pb-1">
-      {actions.map(({ Icon, label, onSelect, shortcut }) => (
+      {actions.map(({ Icon, label, onSelect }) => (
         <ContextMenuItem
           className="h-auto flex-col justify-center gap-1 rounded-sm px-1 py-1 text-caption"
           disabled={disabled}
@@ -395,10 +395,6 @@ function EntryActionRow({
           {/* A single node: the item is a flex column with a gap, so a label
               split across nodes would get a gap between its pieces. */}
           <span className="max-w-full truncate leading-none">{label}</span>
-          {/* Nano keycaps rather than the plain shortcut text the other rows
-              use: four hints share one row, so they have to read as keys at a
-              glance. */}
-          <ContextMenuShortcut className="ml-0">{shortcut}</ContextMenuShortcut>
         </ContextMenuItem>
       ))}
     </ContextMenuGroup>
