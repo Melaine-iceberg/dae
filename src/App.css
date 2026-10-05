@@ -86,11 +86,11 @@
   --text-display: 1.5rem;
   --text-display--line-height: 1.875rem;
   --text-display--font-weight: 640;
-  --text-display--letter-spacing: -0.021em;
+  --text-display--letter-spacing: -0.012em;
   --text-title: 0.9375rem;
   --text-title--line-height: 1.375rem;
   --text-title--font-weight: 600;
-  --text-title--letter-spacing: -0.006em;
+  --text-title--letter-spacing: -0.002em;
   --text-body: 0.8125rem;
   --text-body--line-height: 1.25rem;
   --text-lead: 0.875rem;
@@ -106,31 +106,40 @@
   --text-nano: 0.625rem;
   --text-nano--line-height: 0.875rem;
 
-  /* Linear motion: fast, critically damped, no overshoot. State changes
-     should feel instantaneous, not performed.
+  /* Notion motion: a quick fade paired with a small rise, settled softly and
+     never performed. Nothing overshoots — a curve that passes its target and
+     comes back is the mechanical feel this language refuses. Arrivals glide to
+     rest on a long-tailed ease-out, state changes ride a warm plain ease, and
+     only exits are allowed to hurry.
 
      Five curves, each with one job — a curve declared twice is a name nobody
      can reason about, which is how `--ease-emphasized` came to be a byte-for-
      byte duplicate of `--ease-standard`, and how `--ease-spring-fast` came to
      sit on colour-only hovers while claiming to be a spring:
 
-       standard             state changes — hover, selection, focus
+       standard             state changes — hover, selection, focus. The
+                            familiar CSS ease, deliberately.
        standard-accelerate  exits: a surface leaving the screen
        spring-fast          transforms and entrances — chevron rotation, the
-                            tab press, a popup opening. easeOutCubic, so a
-                            120ms motion has finished settling before it is
+                            tab press, a popup opening. A soft glide, so a
+                            140ms motion has finished settling before it is
                             perceived as animated.
        spring               large surfaces arriving — dialogs, panels
        spring-slow          the heaviest arrivals
 
+     The spring trio keeps its name as a role ("things arriving") although the
+     overshoot that once named it is gone: each is the same soft ease-out, one
+     notch longer-tailed than the last, so a dialog feels heavier than a menu
+     without feeling different in kind.
+
      Only `standard` belongs on a colour-only transition. A settle curve on a
      hover fill reads as the hover lagging behind the pointer, which is why
      every `transition-[background-color…]` uses it. */
-  --ease-spring-fast: cubic-bezier(0.32, 1.18, 0.52, 1);
-  --ease-spring: cubic-bezier(0.26, 1.14, 0.44, 1);
-  --ease-spring-slow: cubic-bezier(0.18, 1.08, 0.32, 1);
-  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
-  --ease-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --ease-spring-fast: cubic-bezier(0.25, 0.9, 0.35, 1);
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring-slow: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-standard-accelerate: cubic-bezier(0.4, 0, 1, 1);
 
   /* Motion durations live under Tailwind's `--transition-duration-*`
      namespace, which is what makes a `duration-fast` class resolve to a
@@ -154,29 +163,36 @@
   --default-transition-duration: var(--transition-duration-fast);
   --default-transition-timing-function: var(--ease-standard);
 
-  /* Elevation: four measured steps, spent on floating layers only — menus,
+  /* Elevation: four soft steps, spent on floating layers only — menus,
      dialogs, the command palette, drag ghosts. The window itself is flat:
-     its columns are divided by hairlines, not by shadows. Each step pairs a
-     tight contact shadow with a wide ambient one, so a surface reads as
-     *sitting on* the plane rather than merely being outlined. Strength is
-     driven by the per-theme --shadow-a* stops below, and both schemes now run
-     nearly the same four: a black shadow used to do no work at all on a
-     near-black canvas (measured, the old 36/46/58/70 stops moved the canvas by
-     only −1.9 to −2.4 L*, so the four steps were one blur), which is why dark
-     mode once needed inflated stops. On a graphite canvas the light stops
-     resolve into a ladder. */
+     its columns are divided by hairlines, not by shadows.
+
+     The recipe is Notion's: a near contact layer, one close layer and one wide
+     and quiet, all very low-alpha and all pulled in tight around the box — a
+     shadow that says *this rests on the plane*, never one that lifts a card
+     high above it. No hard short shadow anywhere: that crisp precision is the
+     coldness this pass exists to remove. Strength is driven by the per-theme
+     --shadow-a* stops below, and both schemes now run nearly the same four: a
+     black shadow used to do no work at all on a near-black canvas (measured,
+     the old 36/46/58/70 stops moved the canvas by only −1.9 to −2.4 L*, so
+     the four steps were one blur), which is why dark mode once needed
+     inflated stops. On a graphite canvas the light stops resolve into a
+     ladder. */
   --shadow-ambient-xs:
-    0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
-    0 2px 5px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent);
+    0 1px 1px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+    0 2px 5px -2px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent);
   --shadow-ambient-sm:
-    0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
-    0 5px 14px -4px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent);
+    0 1px 1px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+    0 3px 7px -2px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+    0 9px 22px -8px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent);
   --shadow-ambient:
-    0 3px 8px -3px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
-    0 14px 34px -10px color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
+    0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+    0 4px 10px -3px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
+    0 18px 42px -12px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent);
   --shadow-ambient-lg:
-    0 6px 16px -6px color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent),
-    0 30px 64px -18px color-mix(in oklab, var(--shadow-color) var(--shadow-a4), transparent);
+    0 2px 4px -2px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+    0 8px 18px -6px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
+    0 30px 68px -20px color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
 
   --color-selection: var(--selection);
 
@@ -250,27 +266,30 @@
   --color-error-container: var(--error-container);
   --color-on-error-container: var(--on-error-container);
 
-  /* Shape scale: five steps plus a pill, spent in ascending order of how
-     much the thing draws attention — 4px inline code → 7px micro chips,
-     keycaps, the marquee and small images → 10px code blocks → 12px menus,
-     toasts and floating layers → 20px the command palette and dialogs. The
-     window's content plane takes a sixth step, `--radius-panel`, below.
+  /* Shape scale: five steps, spent in ascending order of how much the thing
+     draws attention — 3px inline code → 4px buttons, chips, keycaps, rows,
+     inputs and small images → 6px menus, toasts and cards → 8px the larger
+     toolbars and panes → 12px the command palette and dialogs. The window's
+     content plane takes a sixth step, `--radius-panel`, below.
 
-     THE 2026 BASE RETUNE: `--radius` moved from 10px to 12px and the five
-     steps moved with it, as one edit. The old base was tuned when the shell's
-     reference was a 32px-tall flat list; the refreshed shell spends its
-     corners on glass chips, pill search fields and lifted cards, where a
-     6px corner reads as a component-library default rather than as a shape
-     anyone chose. The step *spacing* is unchanged — the ladder is still five
-     measured steps, only drawn softer.
+     THE NOTION RETUNE: `--radius` moved from 12px to 8px and the five steps
+     moved with it, as one edit. The 12px base was tuned when the shell's
+     reference was the refreshed glass vocabulary — pill search fields, glass
+     chips and lifted cards, where a 6px corner read as a component-library
+     default rather than as a shape anyone chose. The Notion language is drawn
+     the other way round: its corners are small and quiet, its state is carried
+     by fill and by ink rather than by shape, and the eye is meant to land on
+     the content rather than on the container. Nothing in this scale is a pill
+     any more — a capsule is reserved for the two shapes that genuinely have no
+     corners (status dots and the capacity bar).
 
-     Every step is the `--radius` base (0.75rem) minus or plus a constant
+     Every step is the `--radius` base (0.5rem) minus or plus a constant
      rather than five independent numbers, so retuning the shell's roundness is
      one edit on a scheme token and the steps keep their spacing at any base.
 
      Four of those five steps are the whole scale; a radius outside them is
      not legal. It used to run to nine steps (4/5/6/8/10/13/16/20/24) of which
-     only the first five were ever used. A 4px and a 5px corner sitting side
+     only the first five were ever used. A 3px and a 4px corner sitting side
      by side read as one size drawn twice rather than as two deliberate sizes.
 
      The end that used to follow — 16, 20 and 24px — is still gone, and with
@@ -278,24 +297,23 @@
      roundness nothing else in the shell had is how a floating layer ended up
      rounder than the window it belongs to.
 
-     `--radius-xl` is the exception that survives that reasoning rather than
-     the one that broke it. It is a single step, not a ladder, and it is spent
-     on exactly the surfaces that are *already* floating one above another: a
-     dialog over a scrim, a sheet over a dialog. There is nothing for it to be
-     rounder than, because every surface it touches is a layer the platform
-     has already lifted off the window. What it buys is the thing the 10px
-     step could not: a 14px corner reads as a panel that has its own
-     boundary, which is what a dialog is, while 10px on the same box reads as
-     a menu that grew. It is deliberately NOT reachable from the inline
-     elements — buttons, inputs, rows and chips stay on `sm` and `md`, so
-     tightening this step never touches them. */
-  --radius-xs: calc(var(--radius) - 8px);
-  --radius-sm: calc(var(--radius) - 5px);
+     `--radius-xl` is a single step, not a ladder, and it is spent on exactly
+     the surfaces that are *already* floating one above another: a dialog over
+     a scrim, a sheet over a dialog. There is nothing for it to be rounder
+     than, because every surface it touches is a layer the platform has
+     already lifted off the window. What it buys is the thing `--radius-lg`
+     cannot: a 12px corner reads as a panel that has its own boundary, which
+     is what a dialog is, while a smaller step on the same box reads as a menu
+     that grew. It is deliberately NOT reachable from the inline elements —
+     buttons, inputs, rows and chips stay on `sm` and `md`, so tightening this
+     step never touches them. */
+  --radius-xs: calc(var(--radius) - 5px);
+  --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 8px);
+  --radius-xl: calc(var(--radius) + 4px);
   /* The window's content plane. A step below `--radius-xl`: a full-width
-     surface that rounds as hard as a 20px dialog reads as a card, and the
+     surface that rounds as hard as a 12px dialog reads as a card, and the
      point of the plane is that the *window* has a corner, not a tile. */
   --radius-panel: calc(var(--radius) + 2px);
 
@@ -372,11 +390,12 @@
   /* Indeterminate progress: a tight linear sweep, no waves. */
   --animate-m3-wave: m3-wave 1.1s linear infinite;
 
-  /* Floating layer entrance: a quick fade with a 2px settle. Every popup,
+  /* Floating layer entrance: a quick fade with a small settle. Every popup,
      menu, dialog and the command bar enters with this and nothing else —
-     Linear's overlays do not travel and do not scale. It animates `transform`
-     rather than `translate`, which is a separate property, so a centred
-     dialog keeps its own `-translate-x-1/2 -translate-y-1/2` while rising. */
+     Notion's overlays do not travel, and the one scale here is a breath
+     (0.985), not a bounce. It animates `transform` rather than `translate`,
+     which is a separate property, so a centred dialog keeps its own
+     `-translate-x-1/2 -translate-y-1/2` while rising. */
   --animate-float-in: float-in var(--transition-duration-fast) var(--ease-standard) both;
 
   /* Surface entrance for the spatial cards — the hero plate, a quick-access
@@ -395,11 +414,11 @@
   @keyframes float-in {
     from {
       opacity: 0;
-      transform: translateY(2px);
+      transform: translateY(3px) scale(0.985);
     }
     to {
       opacity: 1;
-      transform: translateY(0);
+      transform: translateY(0) scale(1);
     }
   }
 
@@ -549,7 +568,7 @@
   --tone-cyan: #0f6b7a; /* muted teal — desktop, audio, databases */
   --border: #e9e9e7; /* hairline panel edge */
   --input: #dcdcd8;
-  --radius: 0.75rem;
+  --radius: 0.5rem;
   /* The lit edge of a raised surface. A 1px inset highlight along the top of
      every lifted plane — the material cue that says "this sits above the
      canvas" without spending another tone. Light gets real light (the plane is
@@ -646,7 +665,7 @@
   --tone-cyan: #6fc3d0; /* muted teal — desktop, audio, databases */
   --border: #3a3a36; /* hairline — 1.35:1 on a panel, the same step as light */
   --input: #474743;
-  --radius: 0.75rem;
+  --radius: 0.5rem;
   /* Half the light value: on graphite the plane is already the brighter
      surface, so a full 60% highlight would frost the top edge instead of
      lighting it. */
@@ -666,8 +685,7 @@
    properties below and nothing else. A platform bridge that has read the OS
    accent writes `--system-accent` / `--system-accent-ink` on <html>, and the
    whole window retints — filled buttons, focus rings, selection, the
-   active-tab underline, the capacity bar, the sidebar's accent roles — with
-   no other change anywhere.
+   active-tab underline, the capacity bar — with no other change anywhere.
 
      --system-accent      the accent hue, any CSS <color>
      --system-accent-ink  a label colour that clears ≈4.5:1 ON that hue
@@ -1064,25 +1082,33 @@ html[data-window-material="blur"]:root body {
        rows      focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset */
 
   /* ---------------------------------------------------------------------------
-     THE AURORA FRAME — the 2026 refresh's one new idea: light arrives from
-     somewhere. The shell is still the flat hairline system below, but its two
-     frame roles (the tab strip and the nav column) and its few "this is live"
-     elements carry a faint wash of the accent hue, as if the window were lit
-     from the upper-right corner it shares with the platform's own light.
+     THE WARM FRAME — the Notion pass's one idea: light is quiet and warm, and
+     state is carried by fill and ink rather than by glow. The shell is still
+     the flat hairline system below; its two frame roles (the tab strip and the
+     nav column) and its few "this is here" elements carry the faintest wash of
+     warm neutral, as if the window were paper catching the light from the
+     upper-right corner it shares with the platform's own light.
 
-     Three treatments, one vocabulary, all mixed from `--primary` so the accent
-     seam and the inactive-window drain retint them with no rule of their own:
+     The previous pass lit these with the accent hue — a gradient you noticed
+     as colour, the "lit glass" reading of a modern tool. This language is
+     drawn the way Notion's own sidebar is: accent belongs to actions (filled
+     buttons, focus rings, selection, the capacity bar), while *place* — being
+     the current row, the current chip, the current segment — is a warm grey
+     fill under a darker ink. Nothing here lights up; things press in.
 
-       .aurora-frame        the tab strip: a wide accent bloom top-right plus a
+     Three treatments, one vocabulary:
+
+       .aurora-frame        the tab strip: a wide soft wash top-right plus a
                             counter-wash top-left, both radial, both under
-                            10% — a gradient you notice as light, not as a
+                            6% — a gradient you notice as light, not as a
                             gradient.
        .aurora-frame-nav    the nav column: one quiet bloom anchored to the
                             top-left, fading out well above the fold.
        .glass-active        the "I am here" plate — a nav row, a chip, a segment
-                            that reports state by lighting up rather than by
-                            changing fill. Accent-tinted glass: a wash at the
-                            top of the box, a hairline ring, one soft glow.
+                            that reports state by pressing deeper into its own
+                            fill: one warm wash over the call site's fill and a
+                            hairline ring. No glow, no gradient, no hue — the
+                            ink gets darker, not the surface brighter.
        .content-panel       the window's content plane: the one large surface,
                             raised off the canvas (see below).
 
@@ -1090,9 +1116,10 @@ html[data-window-material="blur"]:root body {
      roles above exist. The nav rail stays part of the frame — full-bleed, its
      hairline flush to the window edge — while the content rises off the canvas
      as a plate with air on every side it does not share with the rail. It is
-     the same amber light: the plane is lit from its top edge (a 1px inset
-     highlight, `--surface-highlight`) and floated on the ambient ladder,
-     so it reads as the nearest surface rather than as the largest rectangle.
+     paper on a desk: the plane is lit from its top edge (a 1px inset
+     highlight, `--surface-highlight`) and carries only the whisper of contact
+     shadow a sheet needs, so it reads as the nearest surface rather than as
+     the largest rectangle.
      The hairline is an `outline`, not a `border`: it paints outside the box
      model, so the interior geometry — and every virtualised row measured
      against it — is untouched by the ring. Call sites keep their own fill
@@ -1109,13 +1136,13 @@ html[data-window-material="blur"]:root body {
     background-image:
       radial-gradient(
         120% 155% at 96% -55%,
-        color-mix(in oklab, var(--primary) 14%, transparent),
-        transparent 60%
+        color-mix(in oklab, var(--muted-foreground) 5%, transparent),
+        transparent 62%
       ),
       radial-gradient(
         80% 120% at 4% -70%,
-        color-mix(in oklab, var(--muted-foreground) 7%, transparent),
-        transparent 62%
+        color-mix(in oklab, var(--muted-foreground) 3%, transparent),
+        transparent 64%
       );
     background-repeat: no-repeat;
   }
@@ -1123,8 +1150,8 @@ html[data-window-material="blur"]:root body {
   .aurora-frame-nav {
     background-image: radial-gradient(
       135% 52% at 10% -6%,
-      color-mix(in oklab, var(--primary) 10%, transparent),
-      transparent 74%
+      color-mix(in oklab, var(--muted-foreground) 4%, transparent),
+      transparent 76%
     );
     background-repeat: no-repeat;
   }
@@ -1133,41 +1160,31 @@ html[data-window-material="blur"]:root body {
     border-radius: var(--radius-panel);
     box-shadow:
       inset 0 1px 0 var(--surface-highlight),
-      var(--shadow-ambient-sm);
+      0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent);
     outline: 1px solid var(--border);
   }
 
   .glass-active {
     background-image: linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--primary) 14%, transparent),
-      color-mix(in oklab, var(--primary) 5%, transparent) 58%,
-      transparent
+      color-mix(in oklab, var(--accent-foreground) 7%, transparent),
+      color-mix(in oklab, var(--accent-foreground) 7%, transparent)
     );
-    box-shadow:
-      inset 0 1px 0 var(--surface-highlight),
-      inset 0 0 0 1px color-mix(in oklab, var(--primary) 18%, transparent),
-      0 1px 3px -1px color-mix(in oklab, var(--primary) 26%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-foreground) 9%, transparent);
   }
 
-  /* The active tab chip: the shell's one raised element, now lit rather than
-     merely edged. A tall accent gradient fades down the chip (the aurora
-     arriving from the strip above it), the 1px inset top edge stays as the
-     seam between chip and frame, and one soft accent glow lifts it off the
-     canvas. Inactive tabs stay flat — the strip still reads as a row of
-     destinations, with the current one lit. The fill comes from the call site
-     (`bg-card`) so the chip stays opaque over a platform blur. */
+  /* The active tab chip: the shell's one raised element — quiet paper, lit by
+     nothing but its own edge. It lifts off the strip by the 1px inset top
+     edge (the seam between chip and frame) and the whisper of contact shadow
+     a small plate needs; the previous pass's accent gradient and glow are
+     gone, because in this language being *here* is a fact of fill and weight,
+     not of colour. Inactive tabs stay flat — the strip still reads as a row of
+     destinations, with the current one raised. The fill comes from the call
+     site (`bg-card`) so the chip stays opaque over a platform blur. */
   .tab-chip-active {
-    background-image: linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--primary) 14%, transparent),
-      color-mix(in oklab, var(--primary) 4%, transparent) 55%,
-      transparent 115%
-    );
     box-shadow:
       inset 0 1px 0 var(--surface-highlight),
-      0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
-      0 3px 11px -4px color-mix(in oklab, var(--primary) 42%, transparent);
+      0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+      0 3px 8px -3px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent);
   }
 
   /* Path hints keep their filename readable: flipped text direction moves the

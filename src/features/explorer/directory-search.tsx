@@ -161,10 +161,12 @@ export function DirectorySearch({
     // `shrink` rather than `shrink-0`: the toolbar is one non-wrapping row, and
     // a fixed 224px field was the first thing to push the controls past the
     // pane's edge. `min-w-24` keeps the field usable down to the narrowest
-    // window instead of letting it collapse to an icon-less sliver. The pill
-    // shape is the field's one flourish: it is the toolbar's only editable
-    // thing, and a rounded-full capsule reads as "type here" without a label.
-    <InputGroup className="h-7 w-56 min-w-24 shrink rounded-full">
+    // window instead of letting it collapse to an icon-less sliver. The corner
+    // is the field's one flourish: it is the toolbar's only editable thing,
+    // and a soft 6px box reads as "type here" without a label — the capsule is
+    // saved for the things that genuinely have no corners (dots, the capacity
+    // bar), the way Notion draws its own search field.
+    <InputGroup className="h-7 w-56 min-w-24 shrink rounded-md">
       <InputGroupInput
         ref={inputRef}
         aria-invalid={Boolean(activeError)}
