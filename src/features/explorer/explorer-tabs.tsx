@@ -388,12 +388,11 @@ export function ExplorerTabs() {
         <WindowControls />
       </header>
 
-      {/* Floating shell, in progress (docs/ui-redesign-2026.md §4.3): the
-          sidebar is a floating glass block on the canvas — the column
-          hairline is gone — while the content plane stays flush until the
-          tab strip and the workspace surfaces take their own glass. The tab
-          bar stays flush with the window edge so native window controls and
-          snap layouts keep working. */}
+      {/* Flat shell: the sidebar is a tonal column divided from the content
+          plane by a single hairline, and the content plane itself is borderless
+          — elevation is spent on overlays alone. The tab bar stays flush with
+          the window edge so native window controls and snap layouts keep
+          working. */}
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         {/* `bg-background`, not `bg-card`: this is the canvas, not a plane on it.
