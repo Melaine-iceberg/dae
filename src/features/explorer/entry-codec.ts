@@ -17,15 +17,20 @@ import type { DirectoryEntry } from "./types";
  * against the same fixture file by `scripts/check-entry-codec-parity.ts`, which
  * is what keeps the duplication from drifting — a mismatch there fails loudly
  * instead of rendering wrong names.
+ *
+ * A packet names its directory once, in a base blob at the tail, and each entry
+ * stores only the part of its path that hangs off that base. `path` prepends it
+ * on read, so the rows come out spelled exactly as they were packed; a row whose
+ * path is not under the base keeps its whole spelling and says so in its flags.
  */
 
-/** Marks a buffer as a packed listing. Reads as "dae, layout 1". */
+/** Marks a buffer as a packed listing. Reads as "dae, layout 2". */
 export const MAGIC = [0x44, 0x41, 0x45, 0x31] as const;
 
 /** Rejected rather than misread, so a layout change is a coordinated one. */
-export const VERSION = 1;
+export const VERSION = 2;
 
-/** magic, version, reserved, count, names length, paths length, padding. */
+/** magic, version, reserved, count, names length, paths length, base length, padding. */
 export const HEADER_LEN = 32;
 
 /** kind, flags, modified, size, name offset, path offset. */
@@ -36,6 +41,9 @@ export const TRAILING_OFFSETS_LEN = 8;
 
 /** Where the header flags sit: a `u16` after the magic and the version. */
 export const HEADER_FLAGS_OFFSET = 6;
+
+/** Where the base blob's length sits: a `u32` after the three blob lengths. */
+export const HEADER_BASE_LEN_OFFSET = 20;
 
 /**
  * The packet closes the stream it belongs to.
@@ -53,6 +61,8 @@ const FLAG_HIDDEN = 1 << 0;
 const FLAG_READ_ONLY = 1 << 1;
 const FLAG_HAS_MODIFIED_AT = 1 << 2;
 const FLAG_HAS_SIZE = 1 << 3;
+/** The path blob holds this entry's whole spelling, not a suffix of the base. */
+const FLAG_PATH_WHOLE = 1 << 4;
 
 /**
  * The `u8` the Rust side writes, indexed by value. The order is the contract:
@@ -75,6 +85,13 @@ export class ListingPacketError extends Error {
  */
 const decoder = new TextDecoder();
 
+/**
+ * The base is prepended to every relative path in the packet, so a malformed one
+ * would misspell the whole listing rather than one row. The Rust reader rejects
+ * it, and a fatal decode is the mirror of that.
+ */
+const strictDecoder = new TextDecoder("utf-8", { fatal: true });
+
 /** Where every section of a packet starts, mirroring the Rust `Layout`. */
 interface Layout {
   kinds: number;
@@ -85,14 +102,21 @@ interface Layout {
   pathOffsets: number;
   names: number;
   paths: number;
+  base: number;
   byteLen: number;
 }
 
-function layoutFor(count: number, namesLen: number, pathsLen: number): Layout | null {
+function layoutFor(
+  count: number,
+  namesLen: number,
+  pathsLen: number,
+  baseLen: number,
+): Layout | null {
   const perEntry = FIXED_BYTES_PER_ENTRY;
   if (!Number.isSafeInteger(count) || count < 0) return null;
   if (!Number.isSafeInteger(namesLen) || namesLen < 0) return null;
   if (!Number.isSafeInteger(pathsLen) || pathsLen < 0) return null;
+  if (!Number.isSafeInteger(baseLen) || baseLen < 0) return null;
 
   const kinds = HEADER_LEN;
   const flags = kinds + count;
@@ -102,16 +126,34 @@ function layoutFor(count: number, namesLen: number, pathsLen: number): Layout | 
   const pathOffsets = nameOffsets + (count + 1) * 4;
   const names = pathOffsets + (count + 1) * 4;
   const paths = names + namesLen;
-  const byteLen = paths + pathsLen;
+  const base = paths + pathsLen;
+  const byteLen = base + baseLen;
 
   if (byteLen > Number.MAX_SAFE_INTEGER) return null;
 
   // Cross-check against the published per-entry constant: if the arithmetic
   // above and that constant ever disagree, the constant is lying.
-  const expected = HEADER_LEN + TRAILING_OFFSETS_LEN + perEntry * count + namesLen + pathsLen;
+  const expected =
+    HEADER_LEN +
+    TRAILING_OFFSETS_LEN +
+    perEntry * count +
+    namesLen +
+    pathsLen +
+    baseLen;
   if (byteLen !== expected) return null;
 
-  return { byteLen, flags, kinds, modified, nameOffsets, names, pathOffsets, paths, sizes };
+  return {
+    byteLen,
+    flags,
+    kinds,
+    modified,
+    nameOffsets,
+    names,
+    base,
+    pathOffsets,
+    paths,
+    sizes,
+  };
 }
 
 /**
@@ -125,23 +167,30 @@ export class ListingPacket {
   readonly count: number;
   /** Bytes a complete packet occupies, so a stream reader knows where the next starts. */
   readonly byteLen: number;
+  /**
+   * The directory this packet spells its relative paths against, already decoded
+   * so an accessor does not decode it per row. Empty for a packet packed without
+   * one, which stores every path whole.
+   */
+  readonly base: string;
 
   private readonly view: DataView;
   private readonly bytes: Uint8Array;
   private readonly layout: Layout;
 
-  private constructor(bytes: Uint8Array, layout: Layout, count: number) {
+  private constructor(bytes: Uint8Array, layout: Layout, count: number, base: string) {
     this.bytes = bytes;
     this.view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     this.layout = layout;
     this.count = count;
     this.byteLen = layout.byteLen;
+    this.base = base;
   }
 
   /**
-   * Validates the header, the declared lengths, and both offset tables — the
-   * same invariants the Rust reader enforces. Anything the accessors rely on is
-   * checked here, so they can stay branch-free.
+   * Validates the header, the declared lengths, both offset tables and the base
+   * blob — the same invariants the Rust reader enforces. Anything the accessors
+   * rely on is checked here, so they can stay branch-free.
    */
   static parse(source: ArrayBuffer | ArrayBufferView): ListingPacket {
     const bytes =
@@ -173,7 +222,8 @@ export class ListingPacket {
     const count = view.getUint32(8, true);
     const namesLen = view.getUint32(12, true);
     const pathsLen = view.getUint32(16, true);
-    const layout = layoutFor(count, namesLen, pathsLen);
+    const baseLen = view.getUint32(HEADER_BASE_LEN_OFFSET, true);
+    const layout = layoutFor(count, namesLen, pathsLen, baseLen);
     if (!layout) {
       throw new ListingPacketError("the listing packet lengths overflow");
     }
@@ -184,7 +234,14 @@ export class ListingPacket {
       );
     }
 
-    const packet = new ListingPacket(bytes, layout, count);
+    let base = "";
+    try {
+      base = strictDecoder.decode(bytes.subarray(layout.base, layout.byteLen));
+    } catch {
+      throw new ListingPacketError("the listing packet has a non-UTF-8 base");
+    }
+
+    const packet = new ListingPacket(bytes, layout, count, base);
     packet.validateOffsets(packet.nameOffsets(), namesLen);
     packet.validateOffsets(packet.pathOffsets(), pathsLen);
 
@@ -213,9 +270,22 @@ export class ListingPacket {
     return (this.headerFlags() & HEADER_FLAG_FINAL) !== 0;
   }
 
-  /** Decodes just this entry's path. */
+  /**
+   * This entry's whole path. Only the rows that hang off the base are spelled —
+   * a whole-path row and an empty base both read back as stored, so the
+   * concatenation never has to guess.
+   */
   path(index: number): string | undefined {
-    return this.stringAt(index, false);
+    const stored = this.stringAt(index, false);
+    if (stored === undefined) return undefined;
+    if (this.pathIsWhole(index) || this.base === "") return stored;
+    return this.base + stored;
+  }
+
+  /** Whether the path column holds this row's whole spelling rather than a suffix. */
+  private pathIsWhole(index: number): boolean {
+    const flags = this.flagsAt(index);
+    return flags !== undefined && (flags & FLAG_PATH_WHOLE) !== 0;
   }
 
   kind(index: number): EntryKind | undefined {
@@ -263,7 +333,7 @@ export class ListingPacket {
     if (!this.inRange(index)) return undefined;
 
     const name = this.stringAt(index, true);
-    const path = this.stringAt(index, false);
+    const path = this.path(index);
     const kind = this.kind(index);
     if (name === undefined || path === undefined || kind === undefined) return undefined;
 
@@ -305,8 +375,10 @@ export class ListingPacket {
     if (!this.inRange(index)) return undefined;
 
     const offsets = isName ? this.layout.nameOffsets : this.layout.pathOffsets;
+    // The base is the packet's last section, so the path blob stops where it
+    // begins rather than at the end of the buffer.
     const blobLen =
-      (isName ? this.layout.paths : this.layout.byteLen) -
+      (isName ? this.layout.paths : this.layout.base) -
       (isName ? this.layout.names : this.layout.paths);
     const start = this.view.getUint32(offsets + index * 4, true);
     const end = this.view.getUint32(offsets + (index + 1) * 4, true);
@@ -356,14 +428,27 @@ const encoder = new TextEncoder();
  * gets longer. The alternative — an array of `DirectoryEntry` — has no such
  * hook, because the head array is the identity the comparison starts from.
  *
+ * `base` is the directory the listing was read from, and is stored once per
+ * packet: a row whose path hangs off it contributes only the part that does not.
+ * The patched rows a watcher names may live elsewhere, and those keep their
+ * whole spelling — which is why the rows here carry a path and the packer strips
+ * the base from it where it can, rather than asking the caller to know.
+ *
  * The buffer goes through [`ListingPacket.parse`] before it is returned, so the
  * caller cannot be handed a packet its own accessors would misread.
  */
-export function packEntries(entries: readonly DirectoryEntry[]): ListingPacket {
-  const encoded = entries.map((entry) => ({
-    name: encoder.encode(entry.name),
-    path: encoder.encode(entry.path),
-  }));
+export function packEntries(base: string, entries: readonly DirectoryEntry[]): ListingPacket {
+  const baseBytes = encoder.encode(base);
+  const encoded = entries.map((entry) => {
+    // The mirror of `location` in `entry_codec.rs`: a path that starts with the
+    // base gives up everything the base already says.
+    const whole = !entry.path.startsWith(base);
+    return {
+      name: encoder.encode(entry.name),
+      path: encoder.encode(whole ? entry.path : entry.path.slice(base.length)),
+      whole,
+    };
+  });
 
   let namesLen = 0;
   let pathsLen = 0;
@@ -373,7 +458,7 @@ export function packEntries(entries: readonly DirectoryEntry[]): ListingPacket {
   }
 
   const count = entries.length;
-  const layout = layoutFor(count, namesLen, pathsLen);
+  const layout = layoutFor(count, namesLen, pathsLen, baseBytes.byteLength);
   if (layout === null) {
     throw new ListingPacketError("the listing packet lengths overflow");
   }
@@ -387,6 +472,7 @@ export function packEntries(entries: readonly DirectoryEntry[]): ListingPacket {
   view.setUint32(8, count, true);
   view.setUint32(12, namesLen, true);
   view.setUint32(16, pathsLen, true);
+  view.setUint32(HEADER_BASE_LEN_OFFSET, baseBytes.byteLength, true);
 
   let nameOffset = 0;
   let pathOffset = 0;
@@ -400,6 +486,7 @@ export function packEntries(entries: readonly DirectoryEntry[]): ListingPacket {
     if (entry.readOnly) flags |= FLAG_READ_ONLY;
     if (entry.modifiedAt !== null) flags |= FLAG_HAS_MODIFIED_AT;
     if (entry.size !== null) flags |= FLAG_HAS_SIZE;
+    if (encoded[index].whole) flags |= FLAG_PATH_WHOLE;
     bytes[layout.flags + index] = flags;
 
     // Absent optionals are written as zero and read back as `null` through the
@@ -426,6 +513,7 @@ export function packEntries(entries: readonly DirectoryEntry[]): ListingPacket {
     bytes.set(path, cursor);
     cursor += path.byteLength;
   }
+  bytes.set(baseBytes, layout.base);
 
   return ListingPacket.parse(bytes);
 }

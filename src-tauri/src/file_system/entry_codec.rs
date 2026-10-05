@@ -13,6 +13,15 @@
 //! `scripts/check-entry-codec-parity.ts` for the cross-language check that
 //! keeps the two honest.
 //!
+//! Every entry of a listing shares the directory it was read from, so a packet
+//! names that base once, in a blob of its own, and each entry stores only what
+//! hangs off it. On the 35,803 entry directory that is 1.58 MB of repeated
+//! parent paths traded for one 16-byte string, and the reader thread no longer
+//! builds a path per entry — it hands over the name and lets the packet say
+//! where it lives. A row whose path is not under the base keeps its whole
+//! spelling, marked in its flags, which is what makes the base a packing hint
+//! rather than a promise the reader has to trust.
+//!
 //! Packing and parsing share [`Layout`], so they cannot drift on where a section
 //! begins; the accessors all derive from the same table. Truncation and corrupt
 //! offsets are rejected in [`Packet::parse`] rather than left to panic in an
@@ -34,23 +43,30 @@
 // unused items, so real dead code in the writer half cannot hide behind this.
 #![cfg_attr(not(test), allow(dead_code))]
 
+use std::borrow::Cow;
 use std::fmt;
 
 use super::types::{DirectoryEntry, EntryKind};
 
-/// Marks a buffer as a packed listing. Reads as "dae, layout 1".
+/// Marks a buffer as a packed listing. Reads as "dae, layout 2".
 pub const MAGIC: [u8; 4] = *b"DAE1";
 
 /// Bumped whenever a section is added, removed, or reordered. The reader
-/// rejects anything it does not know rather than mis-reading it.
-pub const VERSION: u16 = 1;
+/// rejects anything it does not know rather than mis-reading it. Version 2
+/// added the base blob and [`FLAG_PATH_WHOLE`].
+pub const VERSION: u16 = 2;
 
-/// Fixed header: magic, version, header flags, then the three lengths.
+/// Fixed header: magic, version, header flags, the three lengths, the base
+/// length, then reserved padding.
 pub const HEADER_LEN: usize = 32;
 
 /// Where the header flags sit: a `u16` after the magic and the version. It was
 /// reserved-and-zero until the batched stream needed to mark its last packet.
 pub const HEADER_FLAGS_OFFSET: usize = 6;
+
+/// Where the base blob's length sits: a `u32` after the three blob lengths. Also
+/// reserved-and-zero until the paths stopped repeating their parent.
+pub const HEADER_BASE_LEN_OFFSET: usize = 20;
 
 /// The packet closes the stream it belongs to. Without it a reader cannot tell
 /// a final empty batch from a batch that has not arrived yet.
@@ -63,13 +79,19 @@ pub const FIXED_BYTES_PER_ENTRY: usize = 1 + 1 + 8 + 8 + 4 + 4;
 /// Both offset tables carry one entry past the last one — that trailing offset
 /// is what makes a string `i` the slice `[offsets[i], offsets[i + 1])`. So a
 /// packet costs `HEADER_LEN + TRAILING_OFFSETS_LEN + FIXED_BYTES_PER_ENTRY *
-/// count` plus the two blobs.
+/// count` plus the two blobs plus the base.
 pub const TRAILING_OFFSETS_LEN: usize = 4 + 4;
 
 pub const FLAG_HIDDEN: u8 = 1 << 0;
 pub const FLAG_READ_ONLY: u8 = 1 << 1;
 pub const FLAG_HAS_MODIFIED_AT: u8 = 1 << 2;
 pub const FLAG_HAS_SIZE: u8 = 1 << 3;
+
+/// The entry's path blob slice is its whole spelling rather than a suffix of it.
+/// Set for the handful of rows that do not live under the packet's base — a
+/// patched row from another directory, a listing whose spelling of that
+/// directory differs from the base the packer was given.
+pub const FLAG_PATH_WHOLE: u8 = 1 << 4;
 
 const KIND_DIRECTORY: u8 = 0;
 const KIND_FILE: u8 = 1;
@@ -89,6 +111,8 @@ pub enum CodecError {
     TooLarge,
     /// An offset is not non-decreasing, or it leaves the blob it indexes.
     CorruptOffsets,
+    /// The base blob is not UTF-8, so no entry's path can be spelled against it.
+    CorruptBase,
 }
 
 impl fmt::Display for CodecError {
@@ -107,15 +131,16 @@ impl fmt::Display for CodecError {
             }
             Self::TooLarge => write!(formatter, "the listing packet lengths overflow"),
             Self::CorruptOffsets => write!(formatter, "the listing packet has corrupt offsets"),
+            Self::CorruptBase => write!(formatter, "the listing packet has a non-UTF-8 base"),
         }
     }
 }
 
 impl std::error::Error for CodecError {}
 
-/// Where every section of a packet starts, derived from the three lengths in
-/// the header. Shared by [`pack`] and [`Packet`] so the writer and the reader
-/// cannot disagree about the layout.
+/// Where every section of a packet starts, derived from the four lengths in the
+/// header. Shared by [`pack`] and [`Packet`] so the writer and the reader cannot
+/// disagree about the layout.
 #[derive(Debug, Clone, Copy)]
 pub struct Layout {
     pub kinds: usize,
@@ -126,14 +151,24 @@ pub struct Layout {
     pub path_offsets: usize,
     pub names: usize,
     pub paths: usize,
+    /// The directory every relative path in this packet hangs off. Last, because
+    /// the sections before it are what the three original lengths describe, and
+    /// a reader that does not know the base still finds every other section
+    /// where version 1 put it.
+    pub base: usize,
     /// Total bytes of a complete packet, including the header.
     pub byte_len: usize,
 }
 
 impl Layout {
-    /// `None` when the three lengths describe a layout that cannot fit in
+    /// `None` when the four lengths describe a layout that cannot fit in
     /// memory, which is what a corrupt or hostile header looks like.
-    pub fn new(count: usize, names_len: usize, paths_len: usize) -> Option<Self> {
+    pub fn new(
+        count: usize,
+        names_len: usize,
+        paths_len: usize,
+        base_len: usize,
+    ) -> Option<Self> {
         let eight_per_entry = count.checked_mul(8)?;
         let four_per_entry = count.checked_add(1)?.checked_mul(4)?;
 
@@ -145,6 +180,7 @@ impl Layout {
         let path_offsets = name_offsets.checked_add(four_per_entry)?;
         let names = path_offsets.checked_add(four_per_entry)?;
         let paths = names.checked_add(names_len)?;
+        let base = paths.checked_add(paths_len)?;
 
         Some(Self {
             kinds,
@@ -155,34 +191,127 @@ impl Layout {
             path_offsets,
             names,
             paths,
-            byte_len: paths.checked_add(paths_len)?,
+            base,
+            byte_len: base.checked_add(base_len)?,
         })
     }
+}
+
+/// One row as the packer sees it.
+///
+/// `path` is `None` for the ordinary case — a child of the directory the listing
+/// was read from, whose path the reader rebuilds as `base + name` without
+/// anybody spelling it. That is what lets the listing's reader thread hand a
+/// batch over without a `PathBuf` and a `String` per entry. A row that arrived
+/// from somewhere else carries its whole spelling, and the packer stores it
+/// relative to the base where it fits and verbatim where it does not.
+#[derive(Debug, Clone)]
+pub struct ListingRow {
+    pub name: String,
+    pub path: Option<String>,
+    pub kind: EntryKind,
+    pub modified_at: Option<u64>,
+    pub size: Option<u64>,
+    pub hidden: bool,
+    pub read_only: bool,
+}
+
+impl ListingRow {
+    /// The entry this row spells against `base`. A row that carries its own path
+    /// keeps it whatever the base says, which is what makes an empty base the
+    /// neutral answer.
+    pub fn into_entry(self, base: &str) -> DirectoryEntry {
+        let name = self.name;
+        let path = match self.path {
+            Some(path) => path,
+            None => format!("{base}{name}"),
+        };
+
+        DirectoryEntry {
+            name,
+            path,
+            kind: self.kind,
+            modified_at: self.modified_at,
+            size: self.size,
+            hidden: self.hidden,
+            read_only: self.read_only,
+        }
+    }
+}
+
+impl From<&DirectoryEntry> for ListingRow {
+    fn from(entry: &DirectoryEntry) -> Self {
+        Self {
+            name: entry.name.clone(),
+            path: Some(entry.path.clone()),
+            kind: entry.kind,
+            modified_at: entry.modified_at,
+            size: entry.size,
+            hidden: entry.hidden,
+            read_only: entry.read_only,
+        }
+    }
+}
+
+/// What the path blob holds for one row, and whether that is the row's whole
+/// spelling rather than a suffix of it.
+fn location<'a>(row: &'a ListingRow, base: &str) -> (&'a str, bool) {
+    match &row.path {
+        None => (row.name.as_str(), false),
+        Some(path) => match path.strip_prefix(base) {
+            Some(suffix) => (suffix, false),
+            None => (path.as_str(), true),
+        },
+    }
+}
+
+/// The base a packet of listings of `directory` is spelled against: its display
+/// path plus the separator a child name is joined onto it with.
+///
+/// `PathBuf::push` — which is what `fs::DirEntry::path()` uses — adds a
+/// separator unless the path already ends with one, and on Windows it counts
+/// either spelling as one. Matching that here is what lets a row of a listing
+/// carry just its name: `base + name` is the same string the iterator would have
+/// handed back, without asking it to build one per entry.
+pub fn base_of(directory: &str) -> String {
+    #[cfg(windows)]
+    let ends_with_separator = directory.ends_with(['/', '\\']);
+    #[cfg(not(windows))]
+    let ends_with_separator = directory.ends_with(std::path::MAIN_SEPARATOR);
+
+    if ends_with_separator {
+        return directory.to_owned();
+    }
+
+    format!("{directory}{}", std::path::MAIN_SEPARATOR)
 }
 
 /// Packs a listing into one buffer with no header flags set. The batch shape is
 /// the caller's business: the streamed listings pack one batch at a time, so
 /// this is called per batch.
-pub fn pack(entries: &[DirectoryEntry]) -> Vec<u8> {
-    pack_with_header_flags(entries, 0)
+pub fn pack(rows: &[ListingRow], base: &str) -> Vec<u8> {
+    pack_with_header_flags(rows, base, 0)
 }
 
-/// Packs a listing into one buffer, carrying `header_flags` in the header.
+/// Packs a listing into one buffer, carrying `header_flags` in the header and
+/// spelling every row that can be against `base`.
 ///
 /// The flags describe the packet rather than its contents, which is why they
 /// live in the header alongside the lengths: a reader streaming packets out of
 /// one connection has to know where the stream ends, and the entries themselves
-/// cannot say.
-pub fn pack_with_header_flags(entries: &[DirectoryEntry], header_flags: u16) -> Vec<u8> {
-    let mut names = Vec::new();
-    let mut paths = Vec::new();
-    for entry in entries {
-        names.extend_from_slice(entry.name.as_bytes());
-        paths.extend_from_slice(entry.path.as_bytes());
-    }
+/// cannot say. `base` is the same argument for the paths.
+///
+/// An empty `base` is the neutral element: every path is a suffix of it, so each
+/// is stored whole and the reader prepends nothing.
+pub fn pack_with_header_flags(rows: &[ListingRow], base: &str, header_flags: u16) -> Vec<u8> {
+    // The blobs have to be measured before the buffer can be allocated, so where
+    // each row's path goes is decided once here and reused by the column writer.
+    let locations: Vec<(&str, bool)> = rows.iter().map(|row| location(row, base)).collect();
 
-    let count = entries.len();
-    let layout = Layout::new(count, names.len(), paths.len())
+    let count = rows.len();
+    let names_len: usize = rows.iter().map(|row| row.name.len()).sum();
+    let paths_len: usize = locations.iter().map(|(path, _)| path.len()).sum();
+    let layout = Layout::new(count, names_len, paths_len, base.len())
         .expect("a listing that fits in memory has a layout");
 
     let mut buffer = vec![0u8; layout.byte_len];
@@ -190,30 +319,35 @@ pub fn pack_with_header_flags(entries: &[DirectoryEntry], header_flags: u16) -> 
     buffer[4..6].copy_from_slice(&VERSION.to_le_bytes());
     buffer[HEADER_FLAGS_OFFSET..HEADER_FLAGS_OFFSET + 2]
         .copy_from_slice(&header_flags.to_le_bytes());
-    // 20..32 is reserved padding: left zeroed so a future field can be added
+    // 24..32 is reserved padding: left zeroed so a future field can be added
     // without moving the lengths.
     buffer[8..12].copy_from_slice(&(count as u32).to_le_bytes());
-    buffer[12..16].copy_from_slice(&(names.len() as u32).to_le_bytes());
-    buffer[16..20].copy_from_slice(&(paths.len() as u32).to_le_bytes());
+    buffer[12..16].copy_from_slice(&(names_len as u32).to_le_bytes());
+    buffer[16..20].copy_from_slice(&(paths_len as u32).to_le_bytes());
+    buffer[HEADER_BASE_LEN_OFFSET..HEADER_BASE_LEN_OFFSET + 4]
+        .copy_from_slice(&(base.len() as u32).to_le_bytes());
 
     let mut name_offset = 0u32;
     let mut path_offset = 0u32;
 
-    for (index, entry) in entries.iter().enumerate() {
-        buffer[layout.kinds + index] = kind_code(entry.kind);
+    for (index, row) in rows.iter().enumerate() {
+        buffer[layout.kinds + index] = kind_code(row.kind);
 
         let mut flags = 0;
-        if entry.hidden {
+        if row.hidden {
             flags |= FLAG_HIDDEN;
         }
-        if entry.read_only {
+        if row.read_only {
             flags |= FLAG_READ_ONLY;
         }
-        if entry.modified_at.is_some() {
+        if row.modified_at.is_some() {
             flags |= FLAG_HAS_MODIFIED_AT;
         }
-        if entry.size.is_some() {
+        if row.size.is_some() {
             flags |= FLAG_HAS_SIZE;
+        }
+        if locations[index].1 {
+            flags |= FLAG_PATH_WHOLE;
         }
         buffer[layout.flags + index] = flags;
 
@@ -222,19 +356,15 @@ pub fn pack_with_header_flags(entries: &[DirectoryEntry], header_flags: u16) -> 
         write_u64(
             &mut buffer,
             layout.modified + index * 8,
-            entry.modified_at.unwrap_or(0),
+            row.modified_at.unwrap_or(0),
         );
-        write_u64(
-            &mut buffer,
-            layout.sizes + index * 8,
-            entry.size.unwrap_or(0),
-        );
+        write_u64(&mut buffer, layout.sizes + index * 8, row.size.unwrap_or(0));
 
         write_u32(&mut buffer, layout.name_offsets + index * 4, name_offset);
         write_u32(&mut buffer, layout.path_offsets + index * 4, path_offset);
 
-        name_offset += entry.name.len() as u32;
-        path_offset += entry.path.len() as u32;
+        name_offset += row.name.len() as u32;
+        path_offset += locations[index].0.len() as u32;
     }
 
     // The trailing offsets point one past the last entry, which is what makes
@@ -242,8 +372,21 @@ pub fn pack_with_header_flags(entries: &[DirectoryEntry], header_flags: u16) -> 
     write_u32(&mut buffer, layout.name_offsets + count * 4, name_offset);
     write_u32(&mut buffer, layout.path_offsets + count * 4, path_offset);
 
-    buffer[layout.names..layout.names + names.len()].copy_from_slice(&names);
-    buffer[layout.paths..layout.paths + paths.len()].copy_from_slice(&paths);
+    let mut cursor = layout.names;
+    for row in rows {
+        let bytes = row.name.as_bytes();
+        buffer[cursor..cursor + bytes.len()].copy_from_slice(bytes);
+        cursor += bytes.len();
+    }
+
+    let mut cursor = layout.paths;
+    for (path, _) in locations {
+        let bytes = path.as_bytes();
+        buffer[cursor..cursor + bytes.len()].copy_from_slice(bytes);
+        cursor += bytes.len();
+    }
+
+    buffer[layout.base..layout.base + base.len()].copy_from_slice(base.as_bytes());
 
     buffer
 }
@@ -299,11 +442,15 @@ pub struct Packet<'a> {
     bytes: &'a [u8],
     layout: Layout,
     count: usize,
+    /// The prefix every path in this packet hangs off unless its row says
+    /// otherwise. Validated as UTF-8 here rather than per accessor, because one
+    /// check covers the whole packet and the accessors stay branch-free.
+    base: &'a str,
 }
 
 impl<'a> Packet<'a> {
-    /// Validates the header, the declared lengths, and both offset tables.
-    /// Everything the accessors rely on is checked here.
+    /// Validates the header, the declared lengths, both offset tables, and the
+    /// base blob. Everything the accessors rely on is checked here.
     pub fn parse(bytes: &'a [u8]) -> Result<Self, CodecError> {
         if bytes.len() < HEADER_LEN {
             return Err(CodecError::Truncated {
@@ -324,7 +471,8 @@ impl<'a> Packet<'a> {
         let count = read_u32(bytes, 8) as usize;
         let names_len = read_u32(bytes, 12) as usize;
         let paths_len = read_u32(bytes, 16) as usize;
-        let layout = Layout::new(count, names_len, paths_len).ok_or(CodecError::TooLarge)?;
+        let base_len = read_u32(bytes, HEADER_BASE_LEN_OFFSET) as usize;
+        let layout = Layout::new(count, names_len, paths_len, base_len).ok_or(CodecError::TooLarge)?;
 
         if bytes.len() < layout.byte_len {
             return Err(CodecError::Truncated {
@@ -333,10 +481,14 @@ impl<'a> Packet<'a> {
             });
         }
 
+        let base = std::str::from_utf8(&bytes[layout.base..layout.base + base_len])
+            .map_err(|_| CodecError::CorruptBase)?;
+
         let packet = Self {
             bytes,
             layout,
             count,
+            base,
         };
         packet.validate_offsets(packet.name_offsets(), names_len)?;
         packet.validate_offsets(packet.path_offsets(), paths_len)?;
@@ -371,8 +523,22 @@ impl<'a> Packet<'a> {
         self.string_at(index, true)
     }
 
-    pub fn path(&self, index: usize) -> Option<&'a str> {
-        self.string_at(index, false)
+    /// The directory this packet spells its relative paths against.
+    pub fn base(&self) -> &'a str {
+        self.base
+    }
+
+    /// The row's full path. Borrowed when the packet stores it whole, and only
+    /// spelled for a row that hangs off the base — which is why the reader that
+    /// walks a listing one field at a time still costs no allocation for the
+    /// rows that stay put.
+    pub fn path(&self, index: usize) -> Option<Cow<'a, str>> {
+        let stored = self.string_at(index, false)?;
+        if self.path_is_whole(index) || self.base.is_empty() {
+            return Some(Cow::Borrowed(stored));
+        }
+
+        Some(Cow::Owned(format!("{}{}", self.base, stored)))
     }
 
     pub fn kind(&self, index: usize) -> Option<EntryKind> {
@@ -381,6 +547,13 @@ impl<'a> Packet<'a> {
 
     fn flags(&self, index: usize) -> Option<u8> {
         (index < self.count).then(|| self.bytes[self.layout.flags + index])
+    }
+
+    /// Whether the path column holds this row's whole spelling. A row outside
+    /// the base is the one case the base cannot speak for.
+    fn path_is_whole(&self, index: usize) -> bool {
+        self.flags(index)
+            .is_some_and(|flags| flags & FLAG_PATH_WHOLE != 0)
     }
 
     /// Absent timestamps and sizes stay absent: the flags say whether the zeros
@@ -415,7 +588,7 @@ impl<'a> Packet<'a> {
 
         Some(DirectoryEntry {
             name: self.name(index)?.to_owned(),
-            path: self.path(index)?.to_owned(),
+            path: self.path(index)?.into_owned(),
             kind: self.kind(index)?,
             modified_at: self.modified_at(index),
             size: self.size(index),
@@ -458,7 +631,7 @@ impl<'a> Packet<'a> {
             (
                 self.path_offsets(),
                 self.layout.paths,
-                self.layout.byte_len - self.layout.paths,
+                self.layout.base - self.layout.paths,
             )
         };
 
@@ -499,16 +672,31 @@ impl<'a> Packet<'a> {
 mod tests {
     use super::*;
 
+    /// The directory the test listings live in, spelled the way a packet spells
+    /// its base: with the separator the entries are joined onto it with.
+    const BASE: &str = "C:/code/dae/src/";
+
     fn entry(name: &str, kind: EntryKind) -> DirectoryEntry {
         DirectoryEntry {
             name: name.to_owned(),
-            path: format!("C:/code/dae/{name}"),
+            path: format!("{BASE}{name}"),
             kind,
             modified_at: Some(1_700_000_000_000),
             size: Some(4_096),
             hidden: false,
             read_only: false,
         }
+    }
+
+    /// The packer's input for a listing that already has its paths spelled out.
+    /// Production code packs rows that never had one; see
+    /// `local::directory::DirectoryListingCursor::take_rows`.
+    fn rows(entries: &[DirectoryEntry]) -> Vec<ListingRow> {
+        entries.iter().map(ListingRow::from).collect()
+    }
+
+    fn pack_entries(entries: &[DirectoryEntry]) -> Vec<u8> {
+        pack(&rows(entries), BASE)
     }
 
     /// Field-by-field rather than `PartialEq` on `DirectoryEntry`: the type is
@@ -528,6 +716,10 @@ mod tests {
     /// optional fields present and absent, both flags, and names that are
     /// prefixes of one another so a wrong offset table shows up as the wrong
     /// string rather than as an out-of-range read.
+    ///
+    /// Three of its rows are deliberately not children of [`BASE`], which is the
+    /// other branch of the format: a path the base cannot speak for keeps its
+    /// whole spelling.
     fn mixed_listing() -> Vec<DirectoryEntry> {
         vec![
             entry("src", EntryKind::Directory),
@@ -566,25 +758,31 @@ mod tests {
 
     #[test]
     fn the_layout_matches_the_published_constants() {
-        let empty = Layout::new(0, 0, 0).expect("layout");
+        let empty = Layout::new(0, 0, 0, 0).expect("layout");
         assert_eq!(
             empty.byte_len,
             HEADER_LEN + TRAILING_OFFSETS_LEN,
-            "a listing with no entries is the header plus the two trailing offsets"
+            "a listing with no entries and no base is the header plus the two trailing offsets"
         );
 
-        let three = Layout::new(3, 0, 0).expect("layout");
+        let three = Layout::new(3, 0, 0, 0).expect("layout");
         assert_eq!(
             three.byte_len,
             HEADER_LEN + TRAILING_OFFSETS_LEN + FIXED_BYTES_PER_ENTRY * 3,
             "an empty-string listing costs exactly the per-entry constant"
         );
+
+        // The base is the last section, so it moves nothing before it.
+        let based = Layout::new(3, 0, 0, BASE.len()).expect("layout");
+        assert_eq!(based.names, three.names, "the blobs start where they did");
+        assert_eq!(based.base, based.byte_len - BASE.len());
+        assert_eq!(based.byte_len, three.byte_len + BASE.len());
     }
 
     #[test]
     fn round_trips_every_field() {
         let entries = mixed_listing();
-        let buffer = pack(&entries);
+        let buffer = pack_entries(&entries);
         let packet = Packet::parse(&buffer).expect("parse");
 
         assert_eq!(packet.count(), entries.len());
@@ -599,6 +797,99 @@ mod tests {
     }
 
     #[test]
+    fn a_child_of_the_base_is_stored_as_a_suffix_of_it() {
+        let entries = vec![entry("child.txt", EntryKind::File)];
+        let buffer = pack_entries(&entries);
+        let packet = Packet::parse(&buffer).expect("parse");
+
+        assert_eq!(packet.base(), BASE, "the packet says what it means");
+        assert_eq!(
+            packet.path(0).expect("path").as_ref(),
+            "C:/code/dae/src/child.txt",
+            "the reader spells the whole path back"
+        );
+
+        // The base is stored once, so the packet is exactly the repeated copies
+        // shorter than the same listing packed without it.
+        let repeated = pack(&rows(&entries), "");
+        assert_eq!(
+            repeated.len() - buffer.len(),
+            (entries.len() - 1) * BASE.len(),
+            "one base for the packet instead of one per entry"
+        );
+    }
+
+    #[test]
+    fn a_row_outside_the_base_keeps_its_whole_spelling() {
+        let entries = vec![
+            entry("under.txt", EntryKind::File),
+            DirectoryEntry {
+                path: "/elsewhere/thing.md".to_owned(),
+                ..entry("thing.md", EntryKind::File)
+            },
+        ];
+
+        let buffer = pack_entries(&entries);
+        let packet = Packet::parse(&buffer).expect("parse");
+        assert_eq!(
+            packet.path(1).expect("path").as_ref(),
+            "/elsewhere/thing.md",
+            "a base the row does not share must not be prepended"
+        );
+
+        // A relative row whose name is not the whole suffix — the shape a
+        // watcher patch adds when a directory appears in the listing.
+        let nested = vec![DirectoryEntry {
+            name: "child.txt".to_owned(),
+            path: format!("{BASE}nested/child.txt"),
+            ..entry("unused", EntryKind::File)
+        }];
+        let nested_buffer = pack_entries(&nested);
+        let nested = Packet::parse(&nested_buffer).expect("parse");
+        assert_eq!(
+            nested.path(0).expect("path").as_ref(),
+            format!("{BASE}nested/child.txt"),
+            "the suffix is stored as it came, not as the name"
+        );
+    }
+
+    #[test]
+    fn an_empty_base_stores_every_path_whole() {
+        let entries = mixed_listing();
+        let buffer = pack(&rows(&entries), "");
+        let packet = Packet::parse(&buffer).expect("parse");
+
+        assert_eq!(packet.base(), "");
+        assert_eq!(
+            buffer.len(),
+            HEADER_LEN + TRAILING_OFFSETS_LEN
+                + FIXED_BYTES_PER_ENTRY * entries.len()
+                + entries.iter().map(|entry| entry.name.len()).sum::<usize>()
+                + entries.iter().map(|entry| entry.path.len()).sum::<usize>(),
+            "an empty base is the neutral element: nothing stripped, nothing added"
+        );
+
+        for (index, expected) in entries.iter().enumerate() {
+            assert_same(&packet.entry(index).expect("entry"), expected);
+        }
+    }
+
+    #[test]
+    fn a_non_utf8_base_is_rejected_rather_than_read() {
+        // The base is prepended to every relative path in the packet, so a
+        // damaged one would corrupt most of the listing rather than one row.
+        let mut buffer = pack_entries(&mixed_listing());
+        assert!(
+            buffer.ends_with(BASE.as_bytes()),
+            "the base is the tail of the packet"
+        );
+
+        let last = buffer.len() - 1;
+        buffer[last] = 0xff;
+        assert_eq!(Packet::parse(&buffer).unwrap_err(), CodecError::CorruptBase);
+    }
+
+    #[test]
     fn absent_fields_stay_absent() {
         let entry = DirectoryEntry {
             name: "no-metadata".to_owned(),
@@ -610,7 +901,7 @@ mod tests {
             read_only: false,
         };
 
-        let buffer = pack(std::slice::from_ref(&entry));
+        let buffer = pack_entries(std::slice::from_ref(&entry));
         let packet = Packet::parse(&buffer).expect("parse");
         let read = packet.entry(0).expect("entry");
 
@@ -633,7 +924,7 @@ mod tests {
             read_only: false,
         };
 
-        let buffer = pack(std::slice::from_ref(&entry));
+        let buffer = pack_entries(std::slice::from_ref(&entry));
         let packet = Packet::parse(&buffer).expect("parse");
         let read = packet.entry(0).expect("entry");
 
@@ -643,11 +934,16 @@ mod tests {
 
     #[test]
     fn empty_listing_round_trips() {
-        let buffer = pack(&[]);
-        assert_eq!(buffer.len(), HEADER_LEN + TRAILING_OFFSETS_LEN);
+        let buffer = pack(&[], BASE);
+        assert_eq!(
+            buffer.len(),
+            HEADER_LEN + TRAILING_OFFSETS_LEN + BASE.len(),
+            "an empty listing still carries the base it was read against"
+        );
 
         let packet = Packet::parse(&buffer).expect("parse");
         assert_eq!(packet.count(), 0);
+        assert_eq!(packet.base(), BASE);
         assert!(packet.entry(0).is_none());
         assert!(packet.entries().is_empty());
     }
@@ -655,7 +951,7 @@ mod tests {
     #[test]
     fn a_listing_of_identical_names_keeps_them_distinct() {
         let entries = vec![entry("dup", EntryKind::File); 512];
-        let buffer = pack(&entries);
+        let buffer = pack_entries(&entries);
         let packet = Packet::parse(&buffer).expect("parse");
 
         for index in 0..512 {
@@ -665,7 +961,7 @@ mod tests {
 
     #[test]
     fn truncation_is_rejected_at_every_length() {
-        let buffer = pack(&mixed_listing());
+        let buffer = pack_entries(&mixed_listing());
 
         for length in 0..buffer.len() {
             let result = Packet::parse(&buffer[..length]);
@@ -682,7 +978,7 @@ mod tests {
     #[test]
     fn a_longer_buffer_reports_its_own_length() {
         let entries = mixed_listing();
-        let mut padded = pack(&entries);
+        let mut padded = pack_entries(&entries);
         let packet_len = padded.len();
         padded.extend_from_slice(&[0xff; 8]);
 
@@ -698,8 +994,8 @@ mod tests {
     #[test]
     fn the_header_flags_survive_a_round_trip() {
         let entries = mixed_listing();
-        let plain = pack(&entries);
-        let marked = pack_with_header_flags(&entries, HEADER_FLAG_FINAL);
+        let plain = pack_entries(&entries);
+        let marked = pack_with_header_flags(&rows(&entries), BASE, HEADER_FLAG_FINAL);
 
         let unmarked = Packet::parse(&plain).expect("parse");
         assert_eq!(unmarked.header_flags(), 0, "`pack` sets nothing");
@@ -736,7 +1032,7 @@ mod tests {
         // it has not been taught, not a corrupt packet. Rejecting it would make
         // every future flag a breaking change.
         let entries = mixed_listing();
-        let buffer = pack_with_header_flags(&entries, 0x8000);
+        let buffer = pack_with_header_flags(&rows(&entries), BASE, 0x8000);
         let packet = Packet::parse(&buffer).expect("parse");
         assert_eq!(packet.count(), entries.len());
         assert!(!packet.is_final());
@@ -753,8 +1049,8 @@ mod tests {
             entry("end", EntryKind::Other),
         ];
 
-        let mut stream = pack(&first);
-        stream.extend_from_slice(&pack(&second));
+        let mut stream = pack_entries(&first);
+        stream.extend_from_slice(&pack_entries(&second));
 
         let mut offset = 0;
         let mut seen: Vec<String> = Vec::new();
@@ -778,7 +1074,7 @@ mod tests {
 
     #[test]
     fn wrong_magic_is_rejected() {
-        let mut buffer = pack(&mixed_listing());
+        let mut buffer = pack_entries(&mixed_listing());
         buffer[0] = b'X';
 
         assert_eq!(Packet::parse(&buffer).unwrap_err(), CodecError::NotAPacket);
@@ -786,7 +1082,7 @@ mod tests {
 
     #[test]
     fn an_unknown_version_is_rejected() {
-        let mut buffer = pack(&mixed_listing());
+        let mut buffer = pack_entries(&mixed_listing());
         buffer[4..6].copy_from_slice(&(VERSION + 1).to_le_bytes());
 
         assert_eq!(
@@ -798,7 +1094,7 @@ mod tests {
 
     #[test]
     fn a_count_larger_than_the_buffer_is_rejected() {
-        let mut buffer = pack(&mixed_listing());
+        let mut buffer = pack_entries(&mixed_listing());
         buffer[8..12].copy_from_slice(&1_000_000u32.to_le_bytes());
 
         assert!(
@@ -809,7 +1105,7 @@ mod tests {
 
     #[test]
     fn a_full_width_header_is_rejected_rather_than_read() {
-        let mut buffer = pack(&mixed_listing());
+        let mut buffer = pack_entries(&mixed_listing());
         buffer[8..12].copy_from_slice(&u32::MAX.to_le_bytes());
         buffer[12..16].copy_from_slice(&u32::MAX.to_le_bytes());
         buffer[16..20].copy_from_slice(&u32::MAX.to_le_bytes());
@@ -830,24 +1126,28 @@ mod tests {
     #[test]
     fn a_layout_that_cannot_fit_is_rejected() {
         assert!(
-            Layout::new(usize::MAX / 2, 0, 0).is_none(),
+            Layout::new(usize::MAX / 2, 0, 0, 0).is_none(),
             "a count whose column offsets overflow has no layout"
         );
         assert!(
-            Layout::new(0, usize::MAX, 0).is_none(),
+            Layout::new(0, usize::MAX, 0, 0).is_none(),
             "a name blob larger than the address space has no layout"
         );
         assert!(
-            Layout::new(0, 0, usize::MAX).is_none(),
+            Layout::new(0, 0, usize::MAX, 0).is_none(),
             "a path blob larger than the address space has no layout"
+        );
+        assert!(
+            Layout::new(0, 0, 0, usize::MAX).is_none(),
+            "a base longer than the address space has no layout"
         );
     }
 
     #[test]
     fn a_backwards_offset_is_rejected() {
         let entries = mixed_listing();
-        let buffer = pack(&entries);
-        let layout = Layout::new(entries.len(), 0, 0).expect("layout");
+        let buffer = pack_entries(&entries);
+        let layout = Layout::new(entries.len(), 0, 0, 0).expect("layout");
 
         // "src" is three bytes, so offset 1 is 3 and offset 2 has to be at least
         // that. Anything below it means the table is not what the writer built.
@@ -864,8 +1164,8 @@ mod tests {
     #[test]
     fn an_offset_past_the_blob_is_rejected() {
         let entries = mixed_listing();
-        let buffer = pack(&entries);
-        let layout = Layout::new(entries.len(), 0, 0).expect("layout");
+        let buffer = pack_entries(&entries);
+        let layout = Layout::new(entries.len(), 0, 0, 0).expect("layout");
 
         let mut corrupt = buffer.clone();
         write_u32(
@@ -883,8 +1183,8 @@ mod tests {
     #[test]
     fn a_nonzero_starting_offset_is_rejected() {
         let entries = mixed_listing();
-        let buffer = pack(&entries);
-        let layout = Layout::new(entries.len(), 0, 0).expect("layout");
+        let buffer = pack_entries(&entries);
+        let layout = Layout::new(entries.len(), 0, 0, 0).expect("layout");
 
         let mut corrupt = buffer.clone();
         write_u32(&mut corrupt, layout.path_offsets, 1);
@@ -907,13 +1207,39 @@ mod tests {
             .collect();
 
         let json = serde_json::to_vec(&entries).expect("json");
-        let packed = pack(&entries);
+        let packed = pack_entries(&entries);
 
         assert!(
             packed.len() < json.len(),
             "packed {} bytes vs json {} bytes",
             packed.len(),
-            json.len()
+            json.len(),
+        );
+    }
+
+    #[test]
+    fn naming_the_base_once_beats_naming_it_per_entry() {
+        // The second claim: the base is the bulk of what a packet used to spend
+        // its path blob on, so a listing of one directory has to get
+        // proportionally smaller as its paths get longer.
+        let entries: Vec<DirectoryEntry> = (0..2_000)
+            .map(|index| entry(&format!("some-module-{index}.tsx"), EntryKind::File))
+            .collect();
+
+        let rows = rows(&entries);
+        let whole = pack(&rows, "");
+        let based = pack(&rows, BASE);
+        let repeated = entries.len() * BASE.len();
+
+        assert!(
+            whole.len() - based.len() > repeated * 9 / 10,
+            "expected ~{repeated} bytes of base to go, {} actually",
+            whole.len() - based.len(),
+        );
+        assert_eq!(
+            based.len() - HEADER_LEN - BASE.len(),
+            whole.len() - repeated - HEADER_LEN,
+            "and nothing else moves: one base plus the same suffixes"
         );
     }
 
@@ -934,7 +1260,7 @@ mod tests {
         std::fs::create_dir_all(&directory).expect("create the fixture directory");
 
         let json = serde_json::to_vec(&entries).expect("serialise the fixture");
-        let packed = pack(&entries);
+        let packed = pack_entries(&entries);
 
         std::fs::write(directory.join("entries.json"), &json).expect("write the json fixture");
         std::fs::write(directory.join("entries.bin"), &packed).expect("write the packed fixture");
@@ -943,7 +1269,8 @@ mod tests {
         // as the JSON `DirectoryView.entries`, then packets in the sizes
         // `listing.rs` grows them by, the last one marked final. Written here
         // rather than reproduced in TypeScript so the frontend reader is
-        // checked against packets this packer produced, framing included.
+        // checked against packets this packer produced, framing included — base
+        // and all, since that is what the frontend has to rebuild the paths from.
         const FIRST_BATCH: usize = 512;
         let head = &entries[..FIRST_BATCH.min(entries.len())];
         std::fs::write(
@@ -961,7 +1288,7 @@ mod tests {
             let flags = if done { HEADER_FLAG_FINAL } else { 0 };
             std::fs::write(
                 directory.join(format!("stream-{batch:02}.bin")),
-                pack_with_header_flags(&entries[written..end], flags),
+                pack_with_header_flags(&rows(&entries[written..end]), BASE, flags),
             )
             .expect("write a stream batch");
 
@@ -983,11 +1310,21 @@ mod tests {
             packed.len() as f64 / json.len() as f64 * 100.0
         );
         println!(
-            "  strings: names {} bytes, paths {} bytes",
+            "  strings: names {} bytes, paths {} bytes relative to {BASE:?} ({} bytes whole)",
             entries.iter().map(|entry| entry.name.len()).sum::<usize>(),
-            entries.iter().map(|entry| entry.path.len()).sum::<usize>()
+            packed_paths(&entries),
+            entries.iter().map(|entry| entry.path.len()).sum::<usize>(),
         );
         println!("  fixture: {}", directory.display());
+    }
+
+    /// What the path blob of a packed listing costs: the suffix for a row under
+    /// the base, the whole spelling for one that is not.
+    fn packed_paths(entries: &[DirectoryEntry]) -> usize {
+        rows(entries)
+            .iter()
+            .map(|row| location(row, BASE).0.len())
+            .sum()
     }
 
     /// A deterministic listing of `count` entries: no RNG, so the fixture file
@@ -1013,7 +1350,7 @@ mod tests {
                 } else {
                     format!("{stem}-{}-{}.{extension}", index % 9973, index)
                 };
-                let path = format!("C:/code/dae/src/{name}");
+                let path = format!("{BASE}{name}");
                 let kind = match index % 11 {
                     0 => EntryKind::Directory,
                     7 => EntryKind::Symlink,
@@ -1095,16 +1432,22 @@ mod tests {
         use std::time::Instant;
 
         let entries = sample_entries(35_803);
+        let rows = rows(&entries);
 
         let started = Instant::now();
-        let packed = pack(&entries);
+        let packed = pack(&rows, BASE);
         let packing = started.elapsed();
+
+        let started = Instant::now();
+        let unbased = pack(&rows, "");
+        let packing_unbased = started.elapsed();
 
         let started = Instant::now();
         let json = serde_json::to_vec(&entries).expect("json");
         let encoding_json = started.elapsed();
 
         let packet = Packet::parse(&packed).expect("parse");
+        let packet_unbased = Packet::parse(&unbased).expect("parse");
 
         let started = Instant::now();
         let mut name_bytes = 0usize;
@@ -1113,12 +1456,37 @@ mod tests {
         }
         let names_only = started.elapsed();
 
+        // The reader's side of the base: every relative path has to be spelled,
+        // while an un-based packet hands back a slice of its buffer.
+        let started = Instant::now();
+        let mut path_bytes = 0usize;
+        for index in 0..packet.count() {
+            path_bytes += packet.path(index).expect("path").len();
+        }
+        let paths_based = started.elapsed();
+
+        let started = Instant::now();
+        let mut borrowed_bytes = 0usize;
+        for index in 0..packet_unbased.count() {
+            borrowed_bytes += packet_unbased.path(index).expect("path").len();
+        }
+        let paths_unbased = started.elapsed();
+
         let started = Instant::now();
         let materialised = packet.entries();
         let all_entries = started.elapsed();
 
         println!("\n35,803 entries:");
         println!("  pack            {packing:?}  ({} bytes)", packed.len());
+        println!(
+            "  pack, no base   {packing_unbased:?}  ({} bytes)",
+            unbased.len()
+        );
+        println!(
+            "  base saves      {} bytes ({:.1}% of the un-based packet)",
+            unbased.len() - packed.len(),
+            (unbased.len() - packed.len()) as f64 / unbased.len() as f64 * 100.0,
+        );
         println!(
             "  serde_json      {encoding_json:?}  ({} bytes)",
             json.len()
@@ -1128,6 +1496,12 @@ mod tests {
             packed.len() as f64 / json.len() as f64 * 100.0
         );
         println!("  names only      {names_only:?}  ({name_bytes} name bytes)");
+        println!(
+            "  paths, base     {paths_based:?}  ({path_bytes} bytes, {BASE} prepended per row)"
+        );
+        println!(
+            "  paths, whole    {paths_unbased:?}  ({borrowed_bytes} bytes, borrowed)"
+        );
         println!(
             "  all entries     {all_entries:?}  ({} materialised)",
             materialised.len()

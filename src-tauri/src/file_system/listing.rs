@@ -11,7 +11,7 @@
 //! owns nothing but the OS directory iterator, so JSON serialization of batch
 //! *n* overlaps with the disk walk for batch *n + 1* instead of delaying it.
 
-use super::entry_codec::{self, HEADER_FLAG_FINAL};
+use super::entry_codec::{self, HEADER_FLAG_FINAL, ListingRow};
 use super::error::FileSystemError;
 use super::local::{self, DirectoryListing, DirectoryListingCursor};
 use super::types::{DirectoryEntry, DirectoryView, canonical_path};
@@ -76,29 +76,41 @@ impl BatchSink {
     /// `done` travels differently per transport and that is deliberate: an event
     /// says so in a field, a packet says so in its header flags, because the
     /// entries cannot express "there are no more of me".
+    ///
+    /// The rows carry names rather than paths, which is the shape the packet
+    /// wants: the events channel spells each path against the directory before
+    /// it emits, and the raw channel never has to spell one.
     fn send(
         &self,
         app: &tauri::AppHandle,
         stream_id: &str,
         path: &str,
-        entries: Vec<DirectoryEntry>,
+        rows: Vec<ListingRow>,
         done: bool,
     ) -> bool {
         match self {
-            Self::Events => DirectoryEntriesBatch {
-                stream_id: stream_id.to_owned(),
-                path: path.to_owned(),
-                entries,
-                done,
+            Self::Events => {
+                let base = entry_codec::base_of(path);
+                DirectoryEntriesBatch {
+                    stream_id: stream_id.to_owned(),
+                    path: path.to_owned(),
+                    entries: rows
+                        .into_iter()
+                        .map(|row| row.into_entry(&base))
+                        .collect(),
+                    done,
+                }
+                .emit(app)
+                .is_ok()
             }
-            .emit(app)
-            .is_ok(),
             Self::Channel(channel) => {
                 let flags = if done { HEADER_FLAG_FINAL } else { 0 };
                 channel
-                    .send(InvokeResponseBody::Raw(
-                        entry_codec::pack_with_header_flags(&entries, flags),
-                    ))
+                    .send(InvokeResponseBody::Raw(entry_codec::pack_with_header_flags(
+                        &rows,
+                        &entry_codec::base_of(path),
+                        flags,
+                    )))
                     .is_ok()
             }
         }
@@ -227,7 +239,7 @@ fn spawn_listing_reader(
     cancelled: Arc<AtomicBool>,
     sink: BatchSink,
 ) {
-    let (batch_tx, batch_rx) = sync_channel::<(Vec<DirectoryEntry>, bool)>(PIPELINE_DEPTH);
+    let (batch_tx, batch_rx) = sync_channel::<(Vec<ListingRow>, bool)>(PIPELINE_DEPTH);
 
     // The serialization half: one thread that does nothing but turn batches
     // into events, so the reader never waits on the IPC while it could be
@@ -257,10 +269,10 @@ fn spawn_batch_emitter(
     path: String,
     cancelled: Arc<AtomicBool>,
     sink: BatchSink,
-    batches: Receiver<(Vec<DirectoryEntry>, bool)>,
+    batches: Receiver<(Vec<ListingRow>, bool)>,
 ) {
     thread::spawn(move || {
-        while let Ok((entries, done)) = batches.recv() {
+        while let Ok((rows, done)) = batches.recv() {
             // A cancelled listing is one nobody is displaying any more: its
             // remaining batches are dropped instead of serialized.
             if cancelled.load(AtomicOrdering::Acquire) {
@@ -269,7 +281,7 @@ fn spawn_batch_emitter(
 
             // A delivery that fails ends the stream: the reader thread would
             // otherwise keep packing batches into a channel nobody holds.
-            if !sink.send(&app, &stream_id, &path, entries, done) {
+            if !sink.send(&app, &stream_id, &path, rows, done) {
                 return;
             }
 
@@ -284,7 +296,7 @@ fn spawn_batch_emitter(
 /// always sent, even when empty, so the frontend learns the listing ended.
 fn read_remaining_batches(
     mut cursor: DirectoryListingCursor,
-    batches: SyncSender<(Vec<DirectoryEntry>, bool)>,
+    batches: SyncSender<(Vec<ListingRow>, bool)>,
     cancelled: &AtomicBool,
 ) {
     let mut batch_size = FIRST_BATCH_SIZE;
@@ -294,11 +306,11 @@ fn read_remaining_batches(
             return;
         }
 
-        let (entries, exhausted) = cursor.take(batch_size);
+        let (rows, exhausted) = cursor.take_rows(batch_size);
 
         // A failed send means the emitter is gone (the app is shutting down);
         // an exhausted directory means the listing is complete.
-        if batches.send((entries, exhausted)).is_err() || exhausted {
+        if batches.send((rows, exhausted)).is_err() || exhausted {
             return;
         }
 

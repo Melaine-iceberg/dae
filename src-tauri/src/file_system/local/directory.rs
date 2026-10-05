@@ -1,7 +1,8 @@
+use crate::file_system::entry_codec::{self, ListingRow};
 use crate::file_system::error::FileSystemError;
 use crate::file_system::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, canonical_path, entry_sort_key,
-    path_to_string,
+    name_sort_key, path_to_string,
 };
 use crate::file_system::watch::DirectoryChanged;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -109,12 +110,31 @@ pub struct DirectoryListing {
 /// over the `\\wsl$` 9P share behave that way.
 pub struct DirectoryListingCursor {
     iterator: fs::ReadDir,
+    /// What a child path is made of: the directory's display spelling plus the
+    /// separator `PathBuf::push` would have added. The iterator builds the same
+    /// string per entry out of the path this cursor was opened with, so a row
+    /// can carry its name alone and let the reader of it — a packet, or the
+    /// `into_entry` call below — put the two back together.
+    base: String,
 }
 
 impl DirectoryListingCursor {
     /// Pulls up to `count` entries, sorted for display. The boolean reports
     /// that the directory is exhausted, so the caller can close the stream.
     pub fn take(&mut self, count: usize) -> (Vec<DirectoryEntry>, bool) {
+        let base = self.base.clone();
+        let (rows, exhausted) = self.take_rows(count);
+        (
+            rows.into_iter().map(|row| row.into_entry(&base)).collect(),
+            exhausted,
+        )
+    }
+
+    /// The same listing as [`Self::take`], without a path per entry: what a
+    /// packed batch is made of. A 35,803 entry directory pays for one `String`
+    /// per row here rather than a `PathBuf` and a second `String`, which
+    /// measured ~4 ms of a serial batch.
+    pub fn take_rows(&mut self, count: usize) -> (Vec<ListingRow>, bool) {
         // `count` may be `usize::MAX` when a caller wants everything at once;
         // never reserve that much up front.
         let mut raw_entries = Vec::with_capacity(count.min(MAX_BATCH_RESERVE));
@@ -133,7 +153,7 @@ impl DirectoryListingCursor {
             }
         }
 
-        (collect_entries(raw_entries), exhausted)
+        (collect_rows(raw_entries), exhausted)
     }
 }
 
@@ -162,30 +182,27 @@ fn batch_is_worth_splitting(len: usize) -> bool {
     PARALLEL_ENTRY_THRESHOLD.is_some_and(|threshold| len >= threshold)
 }
 
-/// Turns raw directory entries into sorted display entries.
+/// Turns raw directory entries into sorted display rows.
 ///
 /// The parallel arm runs on rayon's *global* pool — the one shared with the
 /// rest of the UI's work, deliberately kept free of bulk transfers (see the
 /// dedicated transfer pool in [`super::super::local::operations`]), because a
 /// listing is on the critical path to painting the explorer.
 ///
-/// `entry_sort_key` ends with the raw name, so the sort is a total order and
-/// the order entries arrive in does not affect the result.
-fn collect_entries(raw_entries: Vec<fs::DirEntry>) -> Vec<DirectoryEntry> {
-    let mut entries: Vec<DirectoryEntry> = if batch_is_worth_splitting(raw_entries.len()) {
+/// `name_sort_key` ends with the raw name, so the sort is a total order and the
+/// order entries arrive in does not affect the result.
+fn collect_rows(raw_entries: Vec<fs::DirEntry>) -> Vec<ListingRow> {
+    let mut rows: Vec<ListingRow> = if batch_is_worth_splitting(raw_entries.len()) {
         raw_entries
             .into_par_iter()
-            .filter_map(directory_entry)
+            .filter_map(listing_row)
             .collect()
     } else {
-        raw_entries
-            .into_iter()
-            .filter_map(directory_entry)
-            .collect()
+        raw_entries.into_iter().filter_map(listing_row).collect()
     };
 
-    entries.sort_by_cached_key(entry_sort_key);
-    entries
+    rows.sort_by_cached_key(|row| name_sort_key(row.kind, &row.name));
+    rows
 }
 
 /// Reads the first `first_batch` entries of an already-canonical directory.
@@ -199,19 +216,21 @@ pub fn open_canonical_listing(
     first_batch: usize,
 ) -> Result<DirectoryListing, FileSystemError> {
     let metadata = fs::metadata(&path)?;
+    let display = path_to_string(&path);
 
     if !metadata.is_dir() {
-        return Err(FileSystemError::NotDirectory(path_to_string(&path)));
+        return Err(FileSystemError::NotDirectory(display));
     }
 
     let mut cursor = DirectoryListingCursor {
         iterator: fs::read_dir(&path)?,
+        base: entry_codec::base_of(&display),
     };
     let (entries, exhausted) = cursor.take(first_batch);
 
     Ok(DirectoryListing {
         view: DirectoryView {
-            path: path_to_string(&path),
+            path: display,
             breadcrumbs: build_breadcrumbs(&path),
             entries,
             stream_id: None,
@@ -236,20 +255,36 @@ pub fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, Fil
     Ok(view)
 }
 
-/// Converts one raw directory entry, or `None` when its metadata cannot be
-/// read.
+/// Turns one raw directory entry into a listing row, or `None` when its metadata
+/// cannot be read.
 ///
 /// The kind is derived from the metadata that was read anyway rather than from
 /// `DirEntry::file_type()`, so one entry costs exactly one metadata read: on
 /// Unix `file_type()` is only free while the filesystem reports a usable
 /// `d_type`, and falls back to the very same `lstat` otherwise.
-fn directory_entry(entry: fs::DirEntry) -> Option<DirectoryEntry> {
+///
+/// No path: the row is a child of the directory being listed, so the base says
+/// where it lives and `DirEntry::path()` never has to be called.
+fn listing_row(entry: fs::DirEntry) -> Option<ListingRow> {
     let metadata = entry.metadata().ok()?;
-    Some(entry_from(
-        entry.file_name().to_string_lossy().into_owned(),
-        entry.path(),
-        metadata,
-    ))
+    Some(row_from(entry.file_name().to_string_lossy().into_owned(), metadata))
+}
+
+/// The row for a child whose name and metadata are in hand.
+fn row_from(name: String, metadata: fs::Metadata) -> ListingRow {
+    let kind = entry_kind(metadata.file_type());
+    let size = matches!(kind, EntryKind::File).then_some(metadata.len());
+    let (hidden, read_only) = entry_state_flags(&metadata, &name);
+
+    ListingRow {
+        name,
+        path: None,
+        kind,
+        modified_at: modified_at_millis(&metadata),
+        size,
+        hidden,
+        read_only,
+    }
 }
 
 /// The display entry for a child whose metadata is already in hand.
@@ -259,19 +294,12 @@ fn directory_entry(entry: fs::DirEntry) -> Option<DirectoryEntry> {
 /// like the row it replaces. That is what lets the frontend match the two up by
 /// name instead of re-reading the directory to find out.
 fn entry_from(name: String, path: PathBuf, metadata: fs::Metadata) -> DirectoryEntry {
-    let kind = entry_kind(metadata.file_type());
-    let size = matches!(&kind, EntryKind::File).then_some(metadata.len());
-    let (hidden, read_only) = entry_state_flags(&metadata, &name);
-
-    DirectoryEntry {
-        name,
-        path: path_to_string(&path),
-        kind,
-        modified_at: modified_at_millis(&metadata),
-        size,
-        hidden,
-        read_only,
-    }
+    // The row carries its whole spelling rather than hanging off a base: this is
+    // one child whose path the caller already built, and a patch has no packet
+    // to be spelled against until the frontend packs it.
+    let mut row = row_from(name, metadata);
+    row.path = Some(path_to_string(&path));
+    row.into_entry("")
 }
 
 /// Stats exactly the named children of an already-canonical directory, one

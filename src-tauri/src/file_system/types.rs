@@ -303,12 +303,15 @@ pub fn entry_kind_rank(kind: &EntryKind) -> u8 {
     }
 }
 
+/// The display order of one entry: kind first, then the name case-insensitively,
+/// then the name itself so two names that fold to the same key still have one
+/// order regardless of the order the directory was read in.
+pub fn name_sort_key(kind: EntryKind, name: &str) -> (u8, String, String) {
+    (entry_kind_rank(&kind), name.to_lowercase(), name.to_owned())
+}
+
 pub fn entry_sort_key(entry: &DirectoryEntry) -> (u8, String, String) {
-    (
-        entry_kind_rank(&entry.kind),
-        entry.name.to_lowercase(),
-        entry.name.clone(),
-    )
+    name_sort_key(entry.kind, &entry.name)
 }
 
 pub fn path_to_string(path: &Path) -> String {

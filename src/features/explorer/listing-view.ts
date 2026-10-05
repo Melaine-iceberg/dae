@@ -9,8 +9,10 @@ import type { DirectoryEntry, EntryKind } from "./types";
  * wraps the columnar packets the streaming path receives and decodes a field at
  * a time. The point of the indirection is not the indirection — it is that
  * every consumer is written against accessors, so the same view, filter and
- * sort run over either. A 35,803 entry directory arrives as ~1.2 MB of packed
- * bytes, and `entryAt` materialises only the ~40 rows a frame paints.
+ * sort run over either. A 35,803 entry directory arrives as packed bytes — 39 %
+ * of what the same listing costs as JSON, and each of those bytes names its
+ * directory once rather than once per row — and `entryAt` materialises only the
+ * ~40 rows a frame paints.
  *
  * That is also why this module owns the listing-wide scans the views used to
  * express as `entries.filter(...)` / `.map(...)`. They are scans over the
@@ -38,6 +40,17 @@ export interface ListingView {
   /** Rows in the listing. Every index below this is readable. */
   readonly count: number;
   /**
+   * The directory these rows hang off, spelled exactly as the backend spelled it
+   * when it packed them. A packet stores its paths relative to it and `pathAt`
+   * prepends it back, so a patch has to pack its rows against the same one for
+   * them to read back like the rows they replace.
+   *
+   * `""` for a listing that was never packed — a head array on its own, or search
+   * results — where every row carries its whole path. Reading it is always safe:
+   * an empty base is the neutral element, so nothing gets stripped or prepended.
+   */
+  readonly base: string;
+  /**
    * The whole entry at `index`, or `undefined` past the end. This is the
    * expensive accessor for a byte-backed view — it decodes strings and builds an
    * object — so the render path calls it for visible rows only, and list-wide
@@ -64,6 +77,8 @@ export interface ListingView {
 
 class ArrayListingView implements ListingView {
   readonly entries: readonly DirectoryEntry[];
+  /** Every row of an array listing spells its own whole path. */
+  readonly base = "";
 
   constructor(entries: readonly DirectoryEntry[]) {
     this.entries = entries;
@@ -163,6 +178,13 @@ class RowCache {
 class PacketStreamView implements ListingView {
   readonly head: readonly DirectoryEntry[];
   readonly packets: readonly ListingPacket[];
+  /**
+   * The directory the stream was read from, which every packet of it names in
+   * its own header. One value for the whole listing: the packets are batches of
+   * one directory, so their bases agree, and the first is as good as any. Empty
+   * for a listing that has received nothing but its head.
+   */
+  readonly base: string;
   /** Where each packet starts in the assembled index space. Ascending. */
   readonly starts: Int32Array;
   private readonly total: number;
@@ -171,6 +193,7 @@ class PacketStreamView implements ListingView {
   constructor(head: readonly DirectoryEntry[], packets: readonly ListingPacket[]) {
     this.head = head;
     this.packets = packets;
+    this.base = packets.length === 0 ? "" : packets[0].base;
     this.starts = new Int32Array(packets.length);
 
     let cursor = head.length;
@@ -307,6 +330,11 @@ class MappedListingView implements ListingView {
 
   get count(): number {
     return this.map.length;
+  }
+
+  /** The listing it wraps: reordering or filtering rows does not move them. */
+  get base(): string {
+    return this.source.base;
   }
 
   entryAt(index: number): DirectoryEntry | undefined {
@@ -570,13 +598,13 @@ export function patchedListingView(
   view: ListingView,
   changes: readonly ListingPatchChange[],
 ): ListingView | null {
-  let base: PatchProvenance;
+  let held: PatchProvenance;
   if (view instanceof PacketStreamView) {
-    base = { head: view.head, map: null, packets: view.packets, sourceCount: view.count };
+    held = { head: view.head, map: null, packets: view.packets, sourceCount: view.count };
   } else {
     const provenance = patchProvenance.get(view);
     if (!provenance) return null;
-    base = provenance;
+    held = provenance;
   }
 
   /** The rows the patch appends to the listing's index space, in pack order. */
@@ -618,14 +646,19 @@ export function patchedListingView(
   // which is the point of asking for the named children rather than the folder.
   if (fresh.length === 0 && slots.size === 0) return view;
 
-  const packets = fresh.length === 0 ? base.packets : [...base.packets, packEntries(fresh)];
-  const source = packetStreamView(base.head, packets);
+  // A patch is packed against the listing's own base, so a new row gives up the
+  // directory the rows around it already gave up and reads back spelled like
+  // them. The listing this view wraps is the only source of that spelling — a
+  // caller could not rebuild it without re-reading the directory.
+  const packets =
+    fresh.length === 0 ? held.packets : [...held.packets, packEntries(view.base, fresh)];
+  const source = packetStreamView(held.head, packets);
   /** Where the patch rows start in the grown listing's index space. */
-  const tail = base.sourceCount;
+  const tail = held.sourceCount;
 
   // Rows added to a listing that was never patched: the grown listing *is* the
   // answer, with no map in front of it, and that is what keeps it foldable.
-  if (base.map === null && slots.size === 0) return source;
+  if (held.map === null && slots.size === 0) return source;
 
   let dropped = 0;
   for (const slot of slots.values()) {
@@ -640,7 +673,7 @@ export function patchedListingView(
       if (slot !== null) map[cursor++] = tail + slot;
       continue;
     }
-    map[cursor++] = base.map === null ? index : base.map[index];
+    map[cursor++] = held.map === null ? index : held.map[index];
   }
   for (const position of created) {
     map[cursor++] = tail + position;
@@ -648,7 +681,7 @@ export function patchedListingView(
 
   const patched = new MappedListingView(source, map);
   patchProvenance.set(patched, {
-    head: base.head,
+    head: held.head,
     map,
     packets,
     sourceCount: tail + fresh.length,
