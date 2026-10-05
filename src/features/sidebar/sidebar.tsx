@@ -195,7 +195,12 @@ function SidebarContent() {
   return (
     <nav
       aria-label={t("nav.label")}
-      className="aurora-frame-nav flex w-sidebar shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar"
+      // Floating glass block (docs/ui-redesign-2026.md §4.3): 10px of window
+      // margin on all four sides, the shared large radius, and the nav-glass
+      // material — the measured fill, hairline, specular top edge and the
+      // blur budget's second region. The flush column's edge hairline and
+      // aurora bloom are gone: the glass edge is the light source now.
+      className="nav-glass m-2.5 flex w-sidebar shrink-0 flex-col overflow-hidden rounded-lg"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <NavItem
@@ -870,13 +875,13 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        // Aurora nav row: 28px tall on the shared radius. Hover fills with the
-        // sidebar's own accent rung; the row that says where the user *is*
-        // lights up instead — `glass-active`'s accent wash, hairline ring and
-        // soft glow over the same fill — so location is a lit plate rather
-        // than a heavier rectangle.
+        // Nav row inside the glass: 28px tall on the shared radius. Hover
+        // fills with the sidebar's own accent rung; the row that says where
+        // the user *is* takes `--accent-glass`, the measured accent fill for
+        // persistent glass — and per that token's rule the row's ink stays
+        // primary (label and glyph), never the secondary grey.
         "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
-        isActive && "glass-active bg-sidebar-accent font-medium text-foreground",
+        isActive && "bg-accent-glass font-medium text-foreground",
       )}
       onClick={onClick}
       title={title ?? label}
@@ -982,7 +987,7 @@ function DiskItem({
     <div
       className={cn(
         "w-full rounded-md px-2.5 py-1.5 transition-[background-color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
-        isActive && "glass-active bg-sidebar-accent",
+        isActive && "bg-accent-glass",
       )}
     >
       <div className="flex items-center gap-1">
@@ -999,7 +1004,15 @@ function DiskItem({
           )}
           <div className="min-w-0 flex-1">
             <div className="truncate text-body">{presentation.primary}</div>
-            <div className="truncate text-caption text-muted-foreground">
+            {/* On `--accent-glass` the secondary grey is not AA (see the
+                token's note), so the caption of a selected row steps up to
+                the primary ink at 72% — still secondary, still measured. */}
+            <div
+              className={cn(
+                "truncate text-caption",
+                isActive ? "text-foreground/72" : "text-muted-foreground",
+              )}
+            >
               {presentation.secondary}
             </div>
           </div>

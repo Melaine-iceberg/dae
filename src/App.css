@@ -1327,6 +1327,59 @@ html[data-window-material="blur"]:root body {
     backdrop-filter: var(--frost-filter);
   }
 
+  /* ---------------------------------------------------------------------------
+     THE NAV GLASS — see docs/ui-redesign-2026.md §4.3.
+
+     The navigation layer's one persistent material, spent on the sidebar
+     first and on the tab strip and toolbar when their turn comes. Where
+     `.floating-frost` is the ephemeral glass (menus, dialogs — up for
+     seconds), this is chrome that is always there, and the two families
+     never mix (see THE NAV-GLASS TOKENS in `:root`). A block is this class
+     plus its own radius and margins at the call site; the material itself is
+     decided here and nowhere else: the measured fill, the hairline measured
+     against what the block rings, the specular top edge, and the blur that
+     turns the content scrolling underneath into a wash.
+
+     The class owns the border on purpose: `--glass-border` is measured
+     against the glass composite rather than against an opaque plane, so the
+     hairline is part of the material and no call site pairs the fill with a
+     different edge. The specular is an inset shadow rather than a second
+     background layer, so it follows the block's radius for free.
+
+     Modes repaint the block through the tokens alone — reduced transparency,
+     increased contrast and forced colours all rewrite `--glass-*` to the
+     opaque nav plane, and this rule never hears about it. */
+  .nav-glass {
+    background-color: var(--glass-fill);
+    border: 1px solid var(--glass-border);
+    box-shadow: inset 0 1px 0 var(--glass-edge);
+    -webkit-backdrop-filter: var(--glass-filter);
+    backdrop-filter: var(--glass-filter);
+  }
+
+  /* The blur budget, §4.4: where the platform already composites a backdrop
+     behind the window, the block's own blur is a second spend on the same
+     pixels. Under mica/acrylic/vibrancy the fill goes away entirely — the
+     platform's material IS the glass — and under a bare compositor blur
+     (`"blur"`) the block takes the seam's measured chrome frost instead (THE
+     WINDOW-MATERIAL SEAM), which is the density its ink was measured against
+     there. Either way the block's own filter is off: the webview paints
+     nothing behind the block for it to blur. The hairline and the specular
+     stay — they are what the block's shape is made of in every mode. */
+  html[data-window-material="mica"] .nav-glass,
+  html[data-window-material="acrylic"] .nav-glass,
+  html[data-window-material="vibrancy"] .nav-glass {
+    background-color: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  html[data-window-material="blur"] .nav-glass {
+    background-color: var(--chrome-frost);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
   /* -------------------------------------------------------------------------
      THE PLATE — the one place a floating layer is given pixels the app owns
      instead of the ones it floats over, and the other half of this seam.

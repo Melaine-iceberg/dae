@@ -260,7 +260,10 @@ function TreeNodeRow({
             aria-current={isActive ? "page" : undefined}
             className={cn(
               "flex min-w-0 flex-1 items-center gap-1.5 rounded-sm py-[3px] pr-1.5 text-left text-body transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent",
-              isActive && "bg-sidebar-accent font-medium text-foreground",
+              // Selected row inside the nav glass: `--accent-glass`, with the
+              // row's ink staying primary — the same rule the sidebar's own
+              // rows follow (see THE NAV-GLASS TOKENS in App.css).
+              isActive && "bg-accent-glass font-medium text-foreground",
               entry.hidden && "opacity-60",
             )}
             onClick={() => {
