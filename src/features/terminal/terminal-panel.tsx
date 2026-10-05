@@ -81,15 +81,21 @@ function readTerminalTheme(ansiOverride: AnsiPalette | null): ITheme {
   const token = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
   const dark = document.documentElement.classList.contains("dark");
   const ansi = resolveAnsiPalette(ansiOverride, dark);
+  // Last-resort values, per scheme. The tokens above are always present, so
+  // these only fire if the stylesheet never loaded — but they are kept in step
+  // with the palette so that failure does not also paint the old cool scheme.
+  const fallback = dark
+    ? { card: "#252522", foreground: "#e9e9e7", primary: "#5b9fe8", accent: "#2b2b2b" }
+    : { card: "#ffffff", foreground: "#37352f", primary: "#1868b3", accent: "#f1f1ef" };
   return {
     // The panel is the one surface whose *content* may deviate from the
     // neutral ladder; its chrome above may not. background/foreground follow
     // the content plane, and the caret is the one accent in the block.
-    background: token("--card", "#1d1f22"),
-    foreground: token("--foreground", "#e5e6e8"),
-    cursor: token("--primary", "#56cdd8"),
-    cursorAccent: token("--card", "#1d1f22"),
-    selectionBackground: token("--accent", "#2c2e33"),
+    background: token("--card", fallback.card),
+    foreground: token("--foreground", fallback.foreground),
+    cursor: token("--primary", fallback.primary),
+    cursorAccent: token("--card", fallback.card),
+    selectionBackground: token("--accent", fallback.accent),
     black: ansi[0],
     red: ansi[1],
     green: ansi[2],

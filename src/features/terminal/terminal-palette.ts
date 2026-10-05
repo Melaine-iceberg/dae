@@ -2,7 +2,7 @@
  * Curated 16-color ANSI palettes for the integrated terminal.
  *
  * xterm's built-in ANSI colors are saturated primaries designed for a pure
- * black background; on the app's surfaces (`--card` is `#1d1f22` dark,
+ * black background; on the app's surfaces (`--card` is `#252522` dark,
  * `#ffffff` light) they are harsh and, in the light theme, several are outright
  * unreadable. These palettes are sampled from the house color tokens in
  * `App.css` and tuned per theme so `ls --color`, git diffs and friends are
@@ -12,11 +12,12 @@
  * means *blue* the way `--success` means *success*, so a path `ls --color`
  * painted as a symlink keeps that meaning whatever hue the user has set the
  * window to; the accent retints the shell and not the terminal's colour
- * grammar. The shipped accent is teal, which is NOT a blue — so the blue slot
- * holds a real blue and the accent no longer appears in this table at all
- * (the terminal's own cursor/selection reads `--primary` from CSS and follows
- * the accent seam live). This table is plain hex anyway: xterm is handed
- * values, not CSS, and cannot follow a variable.
+ * grammar. The default accent happens to be a blue as well, which is a
+ * coincidence and not a relationship: the test is that setting a red or a
+ * green system accent leaves this table untouched. Only the terminal's own
+ * cursor/selection reads `--primary` from CSS and follows the accent seam live.
+ * This table is plain hex anyway: xterm is handed values, not CSS, and cannot
+ * follow a variable.
  *
  * Slot order is the canonical ANSI indexing (0-7 normal, 8-15 bright):
  *   0 black, 1 red, 2 green, 3 yellow, 4 blue, 5 magenta, 6 cyan, 7 white,
@@ -29,19 +30,22 @@
 /** The 16 ANSI slots in canonical order. */
 export type AnsiPalette = readonly string[];
 
-/** Dark, tuned to `--card: #1d1f22` / `--foreground: #e5e6e8`. Every slot but
+/** Dark, tuned to `--card: #252522` / `--foreground: #e9e9e7`. Every slot but
  *  `black` clears ≥5.5:1 on the panel, and ≥4.5:1 on the lightest tone text
- *  ever lands on there. */
+ *  ever lands on there. The three neutral slots are verbatim copies of
+ *  `--background`, `--foreground` and `--muted-foreground`, so retuning the
+ *  palette means bringing them along by hand — nothing here can read a
+ *  variable, and they will not fail loudly if left behind. */
 export const DARK_ANSI: AnsiPalette = Object.freeze([
-  "#131417", // black — the canvas tone: one step BELOW the panel, so a box drawn in ANSI black recesses instead of lighting up
+  "#1a1a18", // black — --background: one step BELOW the panel, so a box drawn in ANSI black recesses instead of lighting up
   "#ff8288", // red — --destructive
   "#63d398", // green — --success
   "#e8a33d", // yellow — warm amber (--warning)
-  "#8fb2ff", // blue — a real blue: ANSI blue means blue (see the header), not the teal accent
+  "#8fb2ff", // blue — a real blue: ANSI blue means blue (see the header), never a retint of the accent
   "#c792ea", // magenta
   "#4ec2ea", // cyan — --tone-cyan
-  "#e5e6e8", // white — --foreground
-  "#9ba0a9", // brightBlack — --muted-foreground (dim text stays legible)
+  "#e9e9e7", // white — --foreground
+  "#9b9b9b", // brightBlack — --muted-foreground (dim text stays legible)
   "#ffa3a7", // brightRed
   "#8ce0b3", // brightGreen
   "#ffc868", // brightYellow — warm amber pastel
@@ -51,17 +55,18 @@ export const DARK_ANSI: AnsiPalette = Object.freeze([
   "#ffffff", // brightWhite
 ]);
 
-/** Light, tuned to `--card: #ffffff` / `--foreground: #282a30`. */
+/** Light, tuned to `--card: #ffffff` / `--foreground: #37352f`. The three
+ *  neutral slots copy the same three tokens as the dark table above. */
 export const LIGHT_ANSI: AnsiPalette = Object.freeze([
-  "#282a30", // black — soft near-black (--foreground), not pure #000
+  "#37352f", // black — soft near-black (--foreground), not pure #000
   "#c22f2f", // red — --destructive
   "#17804a", // green — --success
   "#8a6318", // yellow — darkened amber so it reads on white
-  "#3f68c8", // blue — a real blue (see the header); not the teal accent
+  "#3f68c8", // blue — a real blue (see the header); never a retint of the accent
   "#b8438a", // magenta
   "#0a86b4", // cyan — --tone-cyan
-  "#d5d8dd", // white — light gray (--input)
-  "#62666e", // brightBlack — --muted-foreground (dim text)
+  "#dcdcd8", // white — light gray (--input)
+  "#6f6e69", // brightBlack — --muted-foreground (dim text)
   "#c13434", // brightRed
   "#1f9a5c", // brightGreen
   "#a97c2f", // brightYellow
