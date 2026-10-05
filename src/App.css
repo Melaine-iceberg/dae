@@ -404,44 +404,37 @@
 }
 
 :root {
-  /* WARM SPATIAL — light. A warm paper canvas carries cream content planes, and
-     boundaries stay legible without any shadow: every edge is a hairline
-     (border/card ≈ 1.35). Depth is a measured ladder — canvas → sidebar column
-     → content plane → floating layer, where only the last one lifts. Shadows
-     are warm and shallow (5→24%), because on a warm canvas a neutral shadow
-     reads as dirt rather than as distance. The accent is a terracotta picked so
-     it clears AA in BOTH of its jobs: as a fill (white on it ≈ 4.9) and as text
-     or icon on any surface in the ladder (≈ 4.9 at worst).
+  /* NEUTRAL DESK — light. The canvas is a near-white grey and the content
+     plane is pure white, so depth comes from the plane's own edge and a shallow
+     shadow rather than from tint. Boundaries stay legible without any shadow at
+     all: every edge is a hairline (border/card ≈ 1.22). The accent clears AA in
+     BOTH of its jobs: as a fill (white on it ≈ 5.7) and as text or icon on any
+     surface in the ladder (≈ 5.0 at worst).
 
-     THE LIGHT LADDER, and why it now has three rungs and not two.
+     THE LIGHT LADDER: two rungs, on purpose.
 
-     `--sidebar` used to be declared equal to `--background`, on the reading
-     that a sidebar "sits ON the canvas, not above it". The consequence was
-     that the nav column had no plane of its own at all: the only thing
-     separating it from the content on its right was the vertical hairline, so
-     a 240px column of navigation read as a grey wall with a line drawn on it.
-     Dark never had this problem — it has always run canvas → sidebar → card as
-     three distinct steps — so the two schemes disagreed about whether the
-     sidebar is a surface, and light mode is the one a reader is more likely
-     to be looking at.
+     `--sidebar` is declared equal to `--background`: the nav column sits ON the
+     canvas rather than above it, and the content plane is the only raised
+     surface in the window. Three near-equal greys (canvas / rail / panel) read
+     as a flat wall with two lines drawn on it — the planes stop meaning
+     anything, because the eye cannot rank them. Two rungs plus one white plane
+     gives the window a clear front and back, and the rail's own grouping is
+     carried by its section labels and its selection, not by a tone of its own.
 
-     So light now runs the same ladder dark does, and in the same direction:
-     the canvas is the darkest of the three, the nav column is a half-step
-     above it, and the content plane is cream. The steps are small in L* —
-     that is the point, and the reason this is still a hairline system rather
-     than a shadowed one — but they are real, so the sidebar has an identity
-     of its own and the window has a front and a back. */
-  --shadow-color: #38291a; /* warm ink: shadows tint the paper, never grey it */
+     The consequence to keep in mind: the rail and the canvas are the SAME
+     value, so nothing may rely on a step between them. The vertical hairline is
+     what separates them, and it is load-bearing, not decoration. */
+  --shadow-color: #37352f; /* keyed to the ink: shadows darken the paper, never tint it */
   --shadow-a1: 5%;
   --shadow-a2: 9%;
   --shadow-a3: 14%;
   --shadow-a4: 24%;
-  --background: #f5f1ea; /* canvas — the step the panels sit ON, see the ladder note below */
-  --foreground: #2b2723;
-  --card: #fffefa; /* panel surface */
-  --card-foreground: #2b2723;
-  --popover: #fffdf8; /* menus, dialogs — lift comes from shadow, not tone */
-  --popover-foreground: #2b2723;
+  --background: #f7f7f5; /* canvas — the step the panels sit ON, see the ladder note below */
+  --foreground: #37352f;
+  --card: #ffffff; /* panel surface */
+  --card-foreground: #37352f;
+  --popover: #ffffff; /* menus, dialogs — lift comes from shadow, not tone */
+  --popover-foreground: #37352f;
   /* THE FLOATING-GLASS PAIR — see `.floating-frost` and THE FLOATING-GLASS SEAM
      below it. The menu plane at its frost density, plus the pass it runs over
      whatever is behind it.
@@ -484,60 +477,58 @@
      so wherever the plate reaches past the hole the platform left it lands on
      a colour that is already there. */
   --frost-plate: var(--card);
-  /* ---- The warm scheme ----------------------------------------------------
+  /* ---- The neutral scheme --------------------------------------------------
 
-     The window is a warm paper desk rather than a cool glass board. Every
-     neutral carries a yellow-orange cast — hue ≈ 35–40°, chroma enough to read
-     as *chosen* and never as a tint — so the app sits next to paper, wood and
-     desktop wallpaper instead of fighting them. Nothing here is pure grey and
-     nothing is white: the brightest surface in the file is #fffdf8.
+     The window is a quiet grey desk, not a tinted one. The neutrals sit within
+     a few points of pure grey — enough of a warm lean in the ink that text on
+     white does not read as a blue-black, never enough to read as a colour
+     choice. A cast strong enough to notice is a cast strong enough to fight
+     every file icon rendered on top of it, and this app is mostly file icons.
 
-     The ladder, lightest to darkest, and it is a real ordering — every rung
-     is a step the eye can take:
+     The ladder, lightest to darkest — a real ordering the eye can take, but a
+     short one, because the plane is delimited by its hairline and its shadow
+     rather than by tone:
 
-       popover #fffefa  →  card #fffdf8  →  sidebar #faf6ef
-       →  canvas #f4f0e8  →  muted/secondary #f0e9dd  →  accent #ece4d6
-       →  border #e6ddcd
+       popover #ffffff  →  card #ffffff  →  sidebar = canvas #f7f7f5
+       →  muted/secondary/accent #f1f1ef  →  border #e9e9e7
 
-     The sidebar is *above* the canvas here (the inverse of the dark scheme,
-     and the inverse of the old cool theme). That is the spatial reading: the
-     canvas is a recessed desk, and the nav column is a raised rail beside the
-     content rather than a second sunken column. It is also what makes the
-     sidebar's own hover wash work — a hover has to move a surface, and on the
-     lightest rung it only ever moves down.
+     Card and popover are both #ffffff on purpose: the floating layers buy their
+     separation from the frost and the shadow, and a menu is never asked to
+     outrank a panel by value. The rail shares the canvas value — see THE LIGHT
+     LADDER above for why that is two rungs and not three.
 
-     Contrast was measured, not eyeballed: ink 13:1 on the canvas and 14.6:1 on
-     a card, the secondary grey ≥4.7:1 on every surface it can land on
-     including the hover wash, the accent 4.9:1 under white ink and 4.8:1 as
-     text on a card. The one role tuned darker than it looks is `--folder`: a
-     warm gold is the natural folder colour and the natural folder colour is
-     also the one that fails contrast, so it is held at 3.3:1 against a card —
-     the 3:1 bar for a graphical object — and no lighter. */
-  --accent-default: #b4571f; /* shipped accent (terracotta) — 4.9:1 under white ink */
+     Contrast was measured, not eyeballed: ink 12.3:1 on a card, the secondary
+     grey 5.1:1 on a card and 4.5:1 on the hover wash, the accent 5.7:1 under
+     white ink and 5.0:1 as text on a card. The one role tuned darker than it
+     looks is `--folder`: a gold is the natural folder colour and the natural
+     folder colour is also the one that fails contrast, so it is held at 6.1:1
+     against a card — well past the 3:1 bar for a graphical object, because at
+     this size an icon is closer to text than to a mark. */
+  --accent-default: #1868b3; /* shipped accent — 5.7:1 under white ink, and legible as text */
   --accent-default-ink: #ffffff;
   --on-destructive: #ffffff;
-  --secondary: #f0e9dd; /* tonal secondary surfaces */
-  --secondary-foreground: #2b2723;
-  --muted: #f0e9dd;
-  --muted-foreground: #6b6357; /* 5.8:1 on a card — secondary text never fades out */
-  --accent: #ece4d6; /* hover highlight */
-  --accent-foreground: #2b2723;
+  --secondary: #f1f1ef; /* tonal secondary surfaces */
+  --secondary-foreground: #37352f;
+  --muted: #f1f1ef;
+  --muted-foreground: #6f6e69; /* 5.1:1 on a card — secondary text never fades out */
+  --accent: #f1f1ef; /* hover highlight */
+  --accent-foreground: #37352f;
   --error-container: #fbe3dc;
   --on-error-container: #6e1f12;
-  --folder: #b8823a;
-  --destructive: #c2372f;
+  --folder: #8a5709;
+  --destructive: #c4372f;
   /* Status hues: one hue each, contrast-checked against the card plane. */
-  --success: #2e7d46;
-  --warning: #9c630f;
-  --info: #3a5fcb;
+  --success: #367453;
+  --warning: #8f6210;
+  --info: #1f6f96;
   --tone-blue: #4a57a8; /* muted indigo — documents, code, shortcuts */
   --tone-violet: #7b4877; /* muted plum — images, video, fonts */
   --tone-emerald: #4a6b3a; /* moss — spreadsheets, certificates */
-  --tone-amber: #8a5709; /* the signature warm hue — media, archives */
+  --tone-amber: #8a5709; /* media, archives — the one tone the accent cannot cover */
   --tone-rose: #a83a5b; /* muted rose — pdf, keys, executables */
   --tone-cyan: #0f6b7a; /* muted teal — desktop, audio, databases */
-  --border: #e6ddcd; /* hairline panel edge */
-  --input: #dcd1bd;
+  --border: #e9e9e7; /* hairline panel edge */
+  --input: #dcdcd8;
   --radius: 0.875rem;
   /* The lit edge of a raised surface. A 1px inset highlight along the top of
      every lifted plane — the material cue that says "this sits above the
@@ -546,12 +537,12 @@
      dark gets a whisper, because at 4% on graphite it is already at the noise
      floor of a shadowed edge. */
   --surface-highlight: rgb(255 255 255 / 0.6);
-  --scrim: rgb(43 39 35 / 0.38); /* a warm scrim, so the dimmed plane keeps its cast */
+  --scrim: rgb(55 53 47 / 0.36); /* keyed to the ink, so the dimmed plane keeps its cast */
   --sidebar: var(--background); /* the rail IS the canvas — the panel is the only raised plane */
-  --sidebar-foreground: #2b2723;
-  --sidebar-accent: #ece4d6;
-  --sidebar-accent-foreground: #2b2723;
-  --sidebar-border: #e6ddcd;
+  --sidebar-foreground: #37352f;
+  --sidebar-accent: #f1f1ef;
+  --sidebar-accent-foreground: #37352f;
+  --sidebar-border: #e9e9e7;
 
   /* Chrome geometry. Plain custom properties rather than `@theme` entries,
      because one consumer is not a utility: the floating-glass plate sizes two
@@ -573,29 +564,31 @@
 }
 
 .dark {
-  /* WARM SPATIAL — dark. The canvas is a warm near-black, a shade warmer and a
-     touch lighter than the old graphite so the terracotta accent has somewhere
-     to sit; the panel raises on the same ladder as light (canvas → sidebar →
-     card → floating), and the rungs are tuned in contrast ratios rather than in
-     L* deltas, because near black the +0.05 term that dominates a contrast
-     ratio swamps the luminance and an equal L* step would quietly weaken every
-     hairline and hover wash.
+  /* NEUTRAL DESK — dark. The canvas is a near-black and the panel sits two clear
+     steps up, so the plane reads as a sheet laid on the desk; the rungs are
+     tuned in contrast ratios rather than in L* deltas, because near black the
+     +0.05 term that dominates a contrast ratio swamps the luminance and an
+     equal L* step would quietly weaken every hairline and hover wash.
 
-     Every neutral carries a warm cast, including the shadows: on a warm black a
-     neutral-grey shadow reads as dust, so `--shadow-color` is a warm brown and
-     the stops run deeper than light's to keep the floating layer lifted. */
-  --shadow-color: #1c0d02; /* warm ink: a neutral shadow reads as dust on warm black */
+     `--sidebar` is declared equal to `--background` here too: same two-rung
+     ladder as light, same load-bearing hairline (see the light scheme above).
+
+     The neutrals stay neutral and so do the shadows. Both schemes were briefly
+     pushed warm — a cream paper desk with brown ink shadows — and the result was
+     sepia rather than warmth: a cast strong enough to read as a colour choice is
+     a cast strong enough to fight every icon rendered on top of it. Depth now
+     comes from value alone. */
+  --shadow-color: #000000; /* neutral black: a tinted shadow reads as dust on grey */
   --shadow-a1: 22%;
   --shadow-a2: 34%;
   --shadow-a3: 46%;
   --shadow-a4: 60%;
-  --background: #171613; /* canvas — a warm-leaning graphite, low chroma so it
-     reads neutral rather than sepia */
-  --foreground: #f0ebe2;
-  --card: #201f1b; /* panel surface */
-  --card-foreground: #ede7dc;
-  --popover: #2a251d; /* floating layer — two clear steps above the panels */
-  --popover-foreground: #ede7dc;
+  --background: #1a1a18; /* canvas — low chroma, so it reads neutral rather than sepia */
+  --foreground: #e9e9e7;
+  --card: #252522; /* panel surface */
+  --card-foreground: #e9e9e7;
+  --popover: #2e2e2b; /* floating layer — two clear steps above the panels */
+  --popover-foreground: #e9e9e7;
   /* The glass pair, dark. Same 90% floor, and the same measurement run the other
      way: here the binding backdrop is a bright one — a scanned page or a
      white-background icon under a dark menu — and dimming the backdrop through
@@ -607,41 +600,41 @@
   --popover-frost-dense: color-mix(in oklab, var(--popover) 96%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6) brightness(0.75);
   --frost-plate: var(--card); /* see the light scheme's pair */
-  --accent-default: #e8a256; /* shipped accent (amber terracotta) — 7.7:1 on a panel */
-  --accent-default-ink: #211a12; /* ink label on the amber fill — 8.6:1 */
-  --on-destructive: #211a12; /* the dark destructive is a light red: white on it 2.4:1 */
-  --secondary: #322b21;
-  --secondary-foreground: #ede7dc;
-  --muted: #29241d; /* inner recessed surface — tracks, header strips, thumbnails */
-  --muted-foreground: #a79c8b; /* 6.4:1 on a panel, 5.4 on the hover highlight */
-  --accent: #332c22; /* hover highlight — a half-step above the panel */
-  --accent-foreground: #ede7dc;
+  --accent-default: #5b9fe8; /* 5.5:1 as text on a panel, 6.8:1 under the dark ink */
+  --accent-default-ink: #101116; /* ink label on the blue fill — 6.8:1 */
+  --on-destructive: #101116; /* the dark destructive is a light red: white on it 2.4:1 */
+  --secondary: #32322f;
+  --secondary-foreground: #e9e9e7;
+  --muted: #2c2c29; /* inner recessed surface — tracks, header strips, thumbnails */
+  --muted-foreground: #9b9b9b; /* 5.5:1 on a panel, 4.6 on the hover highlight */
+  --accent: #32322f; /* hover highlight — a half-step above the panel */
+  --accent-foreground: #e9e9e7;
   --error-container: #5f2a22;
   --on-error-container: #ffd9cf;
-  --folder: #e0b15c;
-  --destructive: #ff8a80;
-  --success: #6fd39a;
-  --warning: #e9a94a;
-  --info: #93a6ff;
+  --folder: #d9a94e;
+  --destructive: #ec8d86;
+  --success: #6dbd94;
+  --warning: #dfa63f;
+  --info: #7fb0f0;
   --tone-blue: #a6b2f2; /* muted indigo — documents, code, shortcuts */
   --tone-violet: #cfa2cb; /* muted plum — images, video, fonts */
   --tone-emerald: #a8ce8a; /* moss — spreadsheets, certificates */
-  --tone-amber: #e0a94e; /* the signature warm hue — media, archives */
+  --tone-amber: #e0a94e; /* media, archives — the one tone the accent cannot cover */
   --tone-rose: #f09cb1; /* muted rose — pdf, keys, executables */
   --tone-cyan: #6fc3d0; /* muted teal — desktop, audio, databases */
-  --border: #35332c; /* hairline — 1.31:1 on a panel, the same step as light */
-  --input: #473f34;
+  --border: #3a3a36; /* hairline — 1.35:1 on a panel, the same step as light */
+  --input: #474743;
   --radius: 0.75rem;
   /* Half the light value: on graphite the plane is already the brighter
      surface, so a full 60% highlight would frost the top edge instead of
      lighting it. */
   --surface-highlight: rgb(255 255 255 / 0.055);
-  --scrim: rgb(12 9 5 / 0.62); /* a warm scrim, so the dimmed plane keeps its cast */
+  --scrim: rgb(10 10 9 / 0.6); /* keyed to the ink, so the dimmed plane keeps its cast */
   --sidebar: var(--background); /* the rail IS the canvas — the panel is the only raised plane */
-  --sidebar-foreground: #ede7dc;
-  --sidebar-accent: #332c22;
-  --sidebar-accent-foreground: #ede7dc;
-  --sidebar-border: #38312a;
+  --sidebar-foreground: #e9e9e7;
+  --sidebar-accent: #32322f;
+  --sidebar-accent-foreground: #e9e9e7;
+  --sidebar-border: #3a3a36;
 }
 
 /* ---------------------------------------------------------------------------
@@ -840,9 +833,13 @@ html[data-window-material="vibrancy"] {
 
 html[data-window-material="blur"] {
   /* One density for both frame roles: to the desktop the tab bar and the nav
-     column are the same surface. The hue comes off `--primary` so it follows the
-     accent seam and the inactive drain without a rule of its own. */
-  --chrome-tint: color-mix(in oklab, var(--card) 92%, var(--primary));
+     column are the same surface. The mix partner is `--background`, not an
+     accent: chrome should be a neutral half-step down from the panel, and
+     mixing the accent in here would tint every chrome surface with the
+     selection colour. `--background` also reads as *darker* in both themes
+     (the canvas is below the panel either way), so one rule holds for light
+     and dark alike. */
+  --chrome-tint: color-mix(in oklab, var(--card) 60%, var(--background));
   --chrome-frost: color-mix(in oklab, var(--chrome-tint) 84%, transparent);
   --chrome: var(--chrome-frost);
   --sidebar: var(--chrome-frost);
@@ -1037,7 +1034,7 @@ html[data-window-material="blur"]:root body {
 
        .aurora-frame        the tab strip: a wide accent bloom top-right plus a
                             counter-wash top-left, both radial, both under
-                            10% — a gradient you notice as warmth, not as a
+                            10% — a gradient you notice as light, not as a
                             gradient.
        .aurora-frame-nav    the nav column: one quiet bloom anchored to the
                             top-left, fading out well above the fold.
@@ -1053,7 +1050,7 @@ html[data-window-material="blur"]:root body {
      hairline flush to the window edge — while the content rises off the canvas
      as a plate with air on every side it does not share with the rail. It is
      the same amber light: the plane is lit from its top edge (a 1px inset
-     highlight, `--surface-highlight`) and floated on the warm ambient ladder,
+     highlight, `--surface-highlight`) and floated on the ambient ladder,
      so it reads as the nearest surface rather than as the largest rectangle.
      The hairline is an `outline`, not a `border`: it paints outside the box
      model, so the interior geometry — and every virtualised row measured
@@ -1076,7 +1073,7 @@ html[data-window-material="blur"]:root body {
       ),
       radial-gradient(
         80% 120% at 4% -70%,
-        color-mix(in oklab, var(--tone-cyan) 6%, transparent),
+        color-mix(in oklab, var(--muted-foreground) 7%, transparent),
         transparent 62%
       );
     background-repeat: no-repeat;
