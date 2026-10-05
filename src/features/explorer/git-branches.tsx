@@ -38,22 +38,31 @@ import { getFileOperationErrorMessage, translateBackendMessage } from "@/i18n/er
 import { notify } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 
-import { GIT_STATUS_QUERY_KEY } from "./git-status";
+import { GIT_REFRESH_DELAY_MS, GIT_STATUS_QUERY_KEY } from "./git-status";
 
 const GIT_BRANCHES_QUERY_KEY = "git-branches";
 
 /**
- * 仓库分支信息。与 `useGitStatus` 一样按路径缓存，目录变更事件与
- * 窗口聚焦会触发重新拉取；所有 Git 操作完成后也会显式失效。
+ * 仓库分支信息。与 `useGitStatus` 一样按路径缓存，目录变更事件（按
+ * `GIT_REFRESH_DELAY_MS` 合并）与窗口聚焦会触发重新拉取；所有 Git
+ * 操作完成后也会显式失效。
  */
 function useGitBranches(root: string | null) {
   const queryClient = useQueryClient();
 
   useEffect(() => {
+    let refreshTimeout: number | undefined;
+
     const unlistenPromise = events.explorerDirectoryChanged.listen(() => {
-      void queryClient.invalidateQueries({ queryKey: [GIT_BRANCHES_QUERY_KEY] });
+      window.clearTimeout(refreshTimeout);
+      refreshTimeout = window.setTimeout(() => {
+        refreshTimeout = undefined;
+        void queryClient.invalidateQueries({ queryKey: [GIT_BRANCHES_QUERY_KEY] });
+      }, GIT_REFRESH_DELAY_MS);
     });
+
     return () => {
+      window.clearTimeout(refreshTimeout);
       void unlistenPromise.then((unlisten) => unlisten());
     };
   }, [queryClient]);

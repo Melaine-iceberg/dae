@@ -46,22 +46,28 @@ async function bootstrap() {
   const explorerPreload = preloadExplorerSurface();
 
   await i18nReady;
-  // The explorer chunk started loading above, in parallel with the locale. It is
-  // in memory before React mounts, so the first folder open renders it
-  // synchronously instead of suspending on a `lazy()` payload.
-  await explorerPreload;
 
+  let bootsOnFolder = false;
   const appWindow = getAppWindow();
   if (appWindow) {
     try {
       const handoff = await commands.takeTabHandoff(appWindow.label);
-      if (handoff) restoreInitialTabHandoff(handoff);
+      if (handoff) bootsOnFolder = restoreInitialTabHandoff(handoff).kind === "folder";
     } catch (error) {
       // A malformed or unavailable handoff must not abort startup; the window
       // can still open normally on the Overview surface.
       console.error("Failed to restore detached tab", error);
     }
   }
+
+  // Only a window that opens onto a folder waits for the explorer chunk. It is
+  // the chunk's one guaranteed first-frame consumer; every other window mounts
+  // on the locale and leaves the preload in flight, so the 352 KB of listing,
+  // dialog and Git machinery that a folder surface needs never sits between the
+  // splash and the Overview. It is still in memory before a click can reach a
+  // folder, and `WorkspaceSurfaceView` keeps its own Suspense fallback for the
+  // window that somehow beats it there.
+  if (bootsOnFolder) await explorerPreload;
 
   ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <QueryClientProvider client={queryClient}>

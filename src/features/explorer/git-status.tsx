@@ -24,8 +24,11 @@ export const GIT_STATUS_QUERY_KEY = "git-status";
  * 磁盘。与 explorer 自身的刷新（`DIRECTORY_REFRESH_DELAY_MS`）同样的做法，只是
  * 这里的单次代价高得多，所以窗口也宽得多。`placeholderData` 会在等待期间继续
  * 显示上一次的徽标，所以合并不会让徽标闪烁。
+ *
+ * 分支查询共用这个窗口（`git-branches.tsx`）：事件源完全相同，单次代价也是同量级的
+ * git2 全仓库遍历（打开仓库、列所有引用、再算 ahead/behind 的提交图）。
  */
-const GIT_STATUS_REFRESH_DELAY_MS = 400;
+export const GIT_REFRESH_DELAY_MS = 400;
 
 /**
  * 当前目录的 Git 装饰信息。状态由 git2 在后端阻塞线程计算；目录变更事件与
@@ -42,7 +45,7 @@ export function useGitStatus(directoryPath: string | null): ExplorerGitStatus | 
       refreshTimeout = window.setTimeout(() => {
         refreshTimeout = undefined;
         void queryClient.invalidateQueries({ queryKey: [GIT_STATUS_QUERY_KEY] });
-      }, GIT_STATUS_REFRESH_DELAY_MS);
+      }, GIT_REFRESH_DELAY_MS);
     });
 
     return () => {

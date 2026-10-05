@@ -158,8 +158,10 @@ function createFolderHandoff(path: string): string {
 }
 
 /** Applies a serialized tab handoff to a tab, overwriting its navigation
- * state and layout. Throws on malformed payloads. */
-function applyTabHandoff(tabId: string, payload: string): void {
+ *  state and layout. Throws on malformed payloads. Returns the surface the
+ *  tab lands on, so a booting window can tell whether it needs the explorer
+ *  chunk before its first frame. */
+function applyTabHandoff(tabId: string, payload: string): WorkspaceSurface {
   const handoff = parseTabHandoff(payload);
   const store = getDefaultStore();
 
@@ -169,11 +171,13 @@ function applyTabHandoff(tabId: string, payload: string): void {
   store.set(splitEnabledFamily(tabId), handoff.splitEnabled);
   store.set(activePaneFamily(tabId), handoff.activePane);
   store.set(splitRatioFamily(tabId), handoff.splitRatio);
+
+  return handoff.surface;
 }
 
 /** Applies a detached tab to the one initial tab created by this webview. */
-export function restoreInitialTabHandoff(payload: string): void {
-  applyTabHandoff(initialTab.id, payload);
+export function restoreInitialTabHandoff(payload: string): WorkspaceSurface {
+  return applyTabHandoff(initialTab.id, payload);
 }
 
 /** Inserts a tab dropped from another window at `index` and activates it.

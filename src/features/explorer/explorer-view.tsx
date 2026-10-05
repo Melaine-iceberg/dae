@@ -20,6 +20,8 @@
  * the pieces above (delete/archive/undo/redo/open-with…), and the layout.
  */
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -27,12 +29,14 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ComponentType,
 } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 
+import { Skeleton } from "@/components/ui/skeleton";
 import { commands, type ArchiveFormat, type UndoRedoOutcome } from "@/bindings";
 
 import { formatBinding } from "@/features/settings/shortcut-registry";
@@ -63,7 +67,7 @@ import { ArchivePasswordDialog } from "./archive-password-dialog";
 import { BulkRenameDialog } from "./bulk-rename";
 import { useDirectorySearch, type ExplorerSearchMode } from "./directory-search";
 import { isLocalExplorerPath } from "./drag-drop";
-import { EntryPreview } from "./entry-preview";
+import type { EntryPreviewProps } from "./entry-preview";
 import { isArchiveFile } from "./entry-context-menu";
 import { displayNameOfPath, isWrongPasswordError } from "./explorer-errors";
 import {
@@ -105,6 +109,51 @@ const NO_FAVORITES: Favorite[] = [];
 /** The name list the bulk-rename dialog reads, which is only worth collecting
  *  while that dialog is open. */
 const NO_NAMES: string[] = [];
+
+/**
+ * The preview panel is the only thing that reaches TanStack Markdown and the
+ * highlight grammars: keeping it out of this chunk took the explorer from
+ * 306 KB to 242 KB, with the preview chain left as a 66 KB chunk of its own.
+ * It sits behind the toolbar toggle, so nothing on the first frame needs it.
+ *
+ * `PreloadedEntryPreview` mirrors `preloadExplorerSurface` in
+ * `workspace-surface.tsx`, for the same reason: `lazy()` resumes its boundary
+ * as scheduled concurrent work, which would put the first Quick Look a frame or
+ * two behind the click that started it — and the shared-element transition from
+ * the listing row to the preview's hero plate wants the plate present on that
+ * click's own frame.
+ */
+const LazyEntryPreview = lazy(() =>
+  import("./entry-preview").then((m) => ({ default: m.EntryPreview })),
+);
+let PreloadedEntryPreview: ComponentType<EntryPreviewProps> | null = null;
+
+/** Warms the preview chunk. Safe to call repeatedly; never rejects. */
+function preloadEntryPreview(): void {
+  if (PreloadedEntryPreview) return;
+
+  void import("./entry-preview").then(
+    (module) => {
+      PreloadedEntryPreview = module.EntryPreview;
+    },
+    () => {
+      // A failed warm is not fatal: the lazy boundary below retries it, and the
+      // panel then arrives a frame after the toggle instead of with it.
+    },
+  );
+}
+
+/** The preview column's shape while its chunk loads, so the listing beside it
+ *  doesn't reflow when the panel lands. */
+function EntryPreviewSkeleton() {
+  return (
+    <aside className="flex h-full w-preview shrink-0 flex-col gap-3 overflow-hidden border-l border-border bg-card p-3">
+      <Skeleton className="h-5 w-2/3" />
+      <Skeleton className="min-h-48 flex-1 rounded-lg" />
+      <Skeleton className="h-16 shrink-0 rounded-lg" />
+    </aside>
+  );
+}
 
 interface ExplorerViewProps {
   navigator: ExplorerNavigator;
@@ -354,6 +403,15 @@ export function ExplorerView({
       void navigator.initialize();
     }
   }, [navigator]);
+
+  // The preview's own chunk is warmed a frame into the explorer's life: the
+  // listing's first read has the disk to itself first, and the panel is a
+  // toggle away at the earliest. Deferred so long as the user never opens it,
+  // a window sitting on the Overview never asks for it at all.
+  useEffect(() => {
+    const frame = requestAnimationFrame(preloadEntryPreview);
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   // A new directory/query also resets the view-local surfaces that neither
   // the dialog hook nor the selection hook owns: the error banner and the
@@ -907,13 +965,22 @@ export function ExplorerView({
                 />
               )}
             </div>
-            {isPreviewOpen && (
-              <EntryPreview
-                entry={selectedEntries[0] ?? null}
-                onClose={() => setIsPreviewOpen(false)}
-                onOpen={() => openSelectedEntries()}
-              />
-            )}
+            {isPreviewOpen &&
+              (PreloadedEntryPreview ? (
+                <PreloadedEntryPreview
+                  entry={selectedEntries[0] ?? null}
+                  onClose={() => setIsPreviewOpen(false)}
+                  onOpen={() => openSelectedEntries()}
+                />
+              ) : (
+                <Suspense fallback={<EntryPreviewSkeleton />}>
+                  <LazyEntryPreview
+                    entry={selectedEntries[0] ?? null}
+                    onClose={() => setIsPreviewOpen(false)}
+                    onOpen={() => openSelectedEntries()}
+                  />
+                </Suspense>
+              ))}
           </div>
         ) : state.error ? (
           <div className="p-4">

@@ -1,3 +1,4 @@
+import type { Highlighter } from "@tanstack/highlight/core";
 import { createHighlighter } from "@tanstack/highlight/core";
 import { cpp } from "@tanstack/highlight/languages/cpp";
 import { css } from "@tanstack/highlight/languages/css";
@@ -19,6 +20,10 @@ import { ts } from "@tanstack/highlight/languages/ts";
 import { tsx } from "@tanstack/highlight/languages/tsx";
 import { vue } from "@tanstack/highlight/languages/vue";
 import { yaml } from "@tanstack/highlight/languages/yaml";
+import type {
+  TanStackMarkdownHighlighter,
+  TanStackMarkdownHighlighterOptions,
+} from "@tanstack/highlight/markdown";
 import { createTanStackMarkdownHighlighter } from "@tanstack/highlight/markdown";
 
 import { c, csharp, java, kotlin } from "./languages/c-like";
@@ -65,7 +70,17 @@ const LANGUAGES = [
 
 export type CodeLanguage = (typeof LANGUAGES)[number]["name"];
 
-const highlighter = createHighlighter({ languages: LANGUAGES });
+let highlighter: Highlighter | null = null;
+
+/**
+ * Built on first use rather than at import: a window that never opens the
+ * preview should not pay for registering 28 grammars, and `getPreviewLanguage`
+ * — the only part the panel needs before it has content to show — resolves from
+ * the extension table alone.
+ */
+function getHighlighter(): Highlighter {
+  return (highlighter ??= createHighlighter({ languages: LANGUAGES }));
+}
 
 /**
  * Markdown code fences highlight through the same registered grammars; the
@@ -73,7 +88,16 @@ const highlighter = createHighlighter({ languages: LANGUAGES });
  * `<pre><code>` containers. Unregistered fence languages degrade to
  * escaped plain text.
  */
-export const highlightMarkdownCode = createTanStackMarkdownHighlighter(highlighter);
+let markdownHighlighter: TanStackMarkdownHighlighter | null = null;
+
+export function highlightMarkdownCode(
+  code: string,
+  lang?: string,
+  options?: TanStackMarkdownHighlighterOptions,
+): string {
+  markdownHighlighter ??= createTanStackMarkdownHighlighter(getHighlighter());
+  return markdownHighlighter(code, lang, options);
+}
 
 /**
  * File extension → grammar id for the preview panel. Dialects without a
@@ -148,5 +172,5 @@ export function getPreviewLanguage(fileName: string): CodeLanguage | null {
  * classes onto the GitHub light/dark palettes through CSS variables.
  */
 export function highlightCode(code: string, language: CodeLanguage): string {
-  return highlighter.highlight(code, { lang: language }).html;
+  return getHighlighter().highlight(code, { lang: language }).html;
 }

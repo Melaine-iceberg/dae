@@ -142,20 +142,19 @@ type MediaPreviewState =
   | { status: "error" }
   | { status: "ready"; data: MediaPreview };
 
+/** The preview panel's props, imported by the lazy boundary in `explorer-view`. */
+export interface EntryPreviewProps {
+  entry: DirectoryEntry | null;
+  onClose: () => void;
+  onOpen: () => void;
+}
+
 /**
  * Docked yazi-style preview panel for the current selection (SKILL.md §21):
  * shows content (thumbnail / highlighted code / text peek) plus metadata and
  * follow-up actions. Large files skip content preview for performance.
  */
-export function EntryPreview({
-  entry,
-  onClose,
-  onOpen,
-}: {
-  entry: DirectoryEntry | null;
-  onClose: () => void;
-  onOpen: () => void;
-}) {
+export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
   const { t } = useTranslation("explorer");
   const visualExtension = entry?.kind === "file" ? getEntryVisualExtension(entry.name) : "";
   // Markdown gets rendered styling instead of a code grammar.
