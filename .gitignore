@@ -25,6 +25,10 @@ devcert.pfx
 .vscode/*
 .idea
 .DS_Store
+
+# MAGI writes this at the repo root: it mirrors the agent rules that are
+# already built into the extension, so it is generated, not source.
+/MAGI.md
 *.suo
 *.ntvs*
 *.njsproj
