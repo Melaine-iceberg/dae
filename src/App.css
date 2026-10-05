@@ -143,6 +143,17 @@
   --transition-duration-normal: 190ms;
   --transition-duration-slow: 280ms;
 
+  /* Tailwind resolves `transition-*` utilities — which is what every shadcn
+     control reaches for — against these two, and its stock values are 150ms
+     and Material's cubic-bezier(0.4, 0, 0.2, 1). Left alone, a shadcn Button
+     hovered on a different curve and a different clock than the rows and tabs
+     beside it, which are hand-written against these tokens. Each was fine in
+     isolation; together they made one screen move in two languages. Pointing
+     the defaults at the tokens makes every utility agree by construction
+     rather than by remembering to pass the right class. */
+  --default-transition-duration: var(--transition-duration-fast);
+  --default-transition-timing-function: var(--ease-standard);
+
   /* Elevation: four measured steps, spent on floating layers only — menus,
      dialogs, the command palette, drag ghosts. The window itself is flat:
      its columns are divided by hairlines, not by shadows. Each step pairs a
