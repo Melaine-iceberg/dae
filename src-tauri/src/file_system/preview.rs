@@ -1,9 +1,10 @@
 use super::error::FileSystemError;
+use crate::file_icons::FileIcon;
 use image::{DynamicImage, GenericImageView};
 use serde::Serialize;
 use specta::Type;
 use std::borrow::Cow;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -68,14 +69,19 @@ static THUMBNAIL_CACHE: Mutex<Option<RenderedCache>> = Mutex::new(None);
 static ICON_CACHE: Mutex<Option<RenderedCache>> = Mutex::new(None);
 const ICON_CACHE_MAX_ENTRIES: usize = 512;
 
-/// Extensions whose shell icon belongs to the individual file rather than its
-/// type — executable/DLL icon resources, a shortcut's target, a `.url`'s site
-/// icon. These stay path-keyed in `ICON_CACHE`. Every other extension resolves
-/// to its registered handler's icon, identical across all files sharing it, so
-/// one `(extension, size)` entry serves a whole folder and skips a COM/shell
-/// roundtrip per file. Keep in sync with `NATIVE_ICON_EXTENSIONS` in
-/// `src/features/explorer/native-icon.tsx`.
-const FILE_SPECIFIC_ICON_EXTENSIONS: &[&str] = &["exe", "msi", "lnk", "url", "dll", "scr", "cpl"];
+/// Icon keys already answered with a miss.
+///
+/// The counterpart of `ICON_CACHE`, and the reason an unknown extension is
+/// cheap: a type the theme has nothing for is the ordinary case in a folder of
+/// unfamiliar files, and without a remembered miss every request for it repeats
+/// the whole freedesktop search — each theme in the chain, each data root, each
+/// directory those themes declare, once per `.svg` and once per `.png`.
+///
+/// Cleared wholesale when it fills rather than evicting one key at a time:
+/// recomputing a miss costs one more search, which is cheap, while evicting
+/// rendered icons to make room for keys nobody asks about twice is not.
+static ICON_MISS_KEYS: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+const ICON_MISS_MAX_KEYS: usize = 1024;
 
 fn extension_of(path: &Path) -> String {
     path.extension()
@@ -162,11 +168,26 @@ enum RenderKind {
 
 /// What a render request points at.
 enum RenderSubject {
-    /// A file on disk, drawn with whatever icon or thumbnail the OS has for it.
-    Path(String),
+    /// One entry on disk, file or folder, drawn with whatever the OS has for
+    /// *it*. `is_dir` and `version` travel in the URL because the listing that
+    /// made the row already read both off the disk — see [`render_file_icon`].
+    Entry {
+        path: String,
+        is_dir: bool,
+        version: String,
+    },
+    /// A *type* rather than an entry: the icon every file sharing `extension` is
+    /// registered to draw. One URL serves them all — see [`render_type_icon`].
+    Type { extension: String },
     /// A freedesktop icon-theme name (or an absolute icon path, which the same
     /// search answers). Only `FileIcon` can render this.
     IconName(String),
+}
+
+/// One request the pool was handed: what to draw, and at what size.
+struct RenderRequest {
+    subject: RenderSubject,
+    size: u16,
 }
 
 /// Everyone waiting on one resource, and the lock that lets them arrive while
@@ -178,12 +199,14 @@ struct InflightRender<T> {
 /// Renders in flight, keyed by the request's query string.
 ///
 /// The query is the request's identity: the frontend embeds mtime and size in
-/// the URL's version tag, so two requests carrying the same query are asking for
-/// the same bytes. Deduplicating those is worth it because the duplicate arrives
-/// exactly when serving it is most expensive — a fast scroll remounting a row
-/// while its first fetch is still decoding. Keying on the raw query rather than
-/// on the backend's mtime/size cache key is deliberate: that key needs a `stat`,
-/// and this is the thread the whole module exists to keep free of blocking work.
+/// the URL's version tag, and a shared per-type URL leaves the entry out of it
+/// altogether, so two requests carrying the same query are asking for the same
+/// bytes. Deduplicating those is worth it because the duplicate arrives exactly
+/// when serving it is most expensive — a fast scroll remounting a row while its
+/// first fetch is still decoding. Keying on the raw query rather than on the
+/// backend's own cache key is deliberate: reaching that key means parsing the
+/// request and, for a thumbnail, reading the file's metadata — work this map
+/// exists so nobody does twice.
 ///
 /// The two halves of the protocol live on the type rather than on a free function
 /// so they can be tested without a webview: the only thing a test cannot supply
@@ -280,13 +303,16 @@ pub fn handle_thumbnail_protocol(
     dispatch_render(RenderKind::Thumbnail, request, responder);
 }
 
-/// Serves `fileicon://localhost/?path=...&size=...` with the operating
+/// Serves `fileicon://localhost/?path=...&dir=...&v=...&size=...` with the operating
 /// system's icon for the file or folder, on every platform — the extraction
-/// itself is in [`crate::file_icons`].
+/// itself is in [`crate::file_icons`]. `dir` and `v` are the entry's kind and its
+/// listing-reported `mtime-size`, so nothing here re-reads the disk to name a
+/// cache key.
 ///
-/// `?name=...&size=...` instead answers with the icon theme's own icon for a
-/// freedesktop icon name, which is what a row describing an application rather
-/// than a document needs.
+/// `?ext=...&size=...` answers with the icon for a whole *type*, which every file
+/// sharing the extension draws identically, and `?name=...&size=...` with the icon
+/// theme's own icon for a freedesktop icon name — what a row describing an
+/// application rather than a document needs.
 ///
 /// Asynchronous for the same reason as [`handle_thumbnail_protocol`]: a shell
 /// icon is a COM round-trip, and it used to happen on the UI thread.
@@ -460,28 +486,41 @@ fn render_loop(receiver: &Mutex<Receiver<RenderJob>>) {
 
 /// Produces the response for one request. Runs on a render worker.
 fn render_response(kind: RenderKind, query: &str) -> ProtocolResponse {
-    let rendered = render_request_params(query).and_then(|(subject, size)| match (kind, subject) {
-        (RenderKind::Thumbnail, RenderSubject::Path(path)) => Some(render_thumbnail(&path, size)),
-        (RenderKind::FileIcon, RenderSubject::Path(path)) => Some(render_file_icon(&path, size)),
-        (RenderKind::FileIcon, RenderSubject::IconName(name)) => {
-            Some(render_named_icon(&name, size))
+    let Some(request) = render_request_params(query) else {
+        return empty_response(400);
+    };
+
+    let rendered = match (kind, request.subject) {
+        (RenderKind::Thumbnail, RenderSubject::Entry { path, .. }) => {
+            render_thumbnail(&path, request.size)
         }
-        // Nothing has a thumbnail for a theme name, so the request is malformed.
-        (RenderKind::Thumbnail, RenderSubject::IconName(_)) => None,
-    });
+        (RenderKind::FileIcon, RenderSubject::Entry { path, is_dir, version }) => {
+            Ok(render_file_icon(&path, is_dir, &version, request.size))
+        }
+        (RenderKind::FileIcon, RenderSubject::Type { extension }) => {
+            Ok(render_type_icon(&extension, request.size))
+        }
+        (RenderKind::FileIcon, RenderSubject::IconName(name)) => {
+            Ok(render_named_icon(&name, request.size))
+        }
+        // A thumbnail is made from a file's bytes, so a type or a theme name is
+        // no resource for it at all.
+        (RenderKind::Thumbnail, _) => return empty_response(400),
+    };
 
     match rendered {
-        Some(Ok(Some(rendered))) => tauri::http::Response::builder()
+        Ok(Some(rendered)) => tauri::http::Response::builder()
             .header("Content-Type", rendered.mime)
-            // The URL embeds mtime + size, so a given URL is immutable.
+            // Every URL is versioned by what it is an icon *of* — an entry's
+            // mtime and size, or a type and a size — so a given URL never
+            // changes. See [`render_file_icon`] and [`render_type_icon`].
             .header("Cache-Control", "public, max-age=86400, immutable")
             .body(Cow::Owned(rendered.bytes.clone()))
             .unwrap_or_else(|_| empty_response(500)),
         // Unsupported files yield 404 so the frontend can fall back to the
         // file icon; genuinely broken reads surface as 500.
-        Some(Ok(None)) => empty_response(404),
-        Some(Err(_)) => empty_response(500),
-        None => empty_response(400),
+        Ok(None) => empty_response(404),
+        Err(_) => empty_response(500),
     }
 }
 
@@ -494,26 +533,78 @@ fn empty_response(status: u16) -> ProtocolResponse {
 
 /// Extracts what a render request names and the size it wants.
 ///
-/// A request names either a file — the listing and the preview pane — or a
-/// freedesktop icon-theme name, which is how a row that describes an
+/// A request names one of three things: an entry on disk (the listing and the
+/// preview pane), a *type* whose icon every entry of that type shares, or a
+/// freedesktop icon-theme name — which is how a row that describes an
 /// application rather than a document (the "Open With" picker) gets the icon the
 /// desktop would draw for it.
-fn render_request_params(query: &str) -> Option<(RenderSubject, u16)> {
-    let mut subject: Option<RenderSubject> = None;
+///
+/// An entry's request also carries what the listing already knew about it: `dir`
+/// is the entry's kind, `v` its mtime and size. A thumbnail still reads its own
+/// metadata, because it has to know the file's length before it knows what to
+/// decode; an icon only needed the two values to name its cache key, and the
+/// frontend has them.
+fn render_request_params(query: &str) -> Option<RenderRequest> {
+    let mut path: Option<String> = None;
+    let mut extension: Option<String> = None;
+    let mut name: Option<String> = None;
+    let mut version = String::new();
+    let mut is_dir = false;
     let mut size: Option<u16> = None;
 
     for pair in query.split('&') {
         let (key, value) = pair.split_once('=')?;
         match key {
-            "path" => subject = Some(RenderSubject::Path(percent_decode(value))),
-            "name" => subject = Some(RenderSubject::IconName(percent_decode(value))),
+            "path" => path = Some(percent_decode(value)),
+            "ext" => extension = icon_extension(value),
+            "name" => name = Some(percent_decode(value)),
+            "dir" => is_dir = value == "1",
             "size" => size = value.parse().ok(),
-            // `v` is a cache-busting version tag the backend can ignore.
+            "v" => version = value.to_owned(),
             _ => {}
         }
     }
 
-    subject.map(|subject| (subject, size.unwrap_or(256)))
+    // Most specific first: an entry outranks a type, and a type outranks a theme
+    // name. Nothing sends two at once, and the order is here so a hand-built URL
+    // cannot ask for both.
+    let subject = match (path, extension, name) {
+        (Some(path), _, _) => RenderSubject::Entry {
+            path,
+            is_dir,
+            version,
+        },
+        (None, Some(extension), _) => RenderSubject::Type { extension },
+        (None, None, Some(name)) => RenderSubject::IconName(name),
+        (None, None, None) => return None,
+    };
+
+    Some(RenderRequest {
+        subject,
+        size: size.unwrap_or(256),
+    })
+}
+
+/// Longest extension the shared-icon route accepts. Real ones run to a handful
+/// of characters; a longer "extension" is a name, not a type.
+const MAX_ICON_EXTENSION_LEN: usize = 24;
+
+/// The extension a shared-icon request names, normalised for a cache key.
+///
+/// The value arrives through a URL and reaches the desktop as a *type* rather
+/// than as a file, so anything that could read as a path — a separator, a dot, a
+/// drive letter — is refused here rather than trusted by three platform backends
+/// downstream. A refused extension makes the request a 400, and the row keeps the
+/// glyph the frontend draws.
+fn icon_extension(query_value: &str) -> Option<String> {
+    let extension = percent_decode(query_value).to_ascii_lowercase();
+    let names_a_type = !extension.is_empty()
+        && extension.len() <= MAX_ICON_EXTENSION_LEN
+        && extension
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-');
+
+    names_a_type.then_some(extension)
 }
 
 /// Percent-decoder for `encodeURIComponent`-encoded query values.
@@ -651,55 +742,70 @@ fn render_thumbnail(
     Ok(Some(thumbnail))
 }
 
-/// Renders the OS icon for `path_string`; `None` means the frontend keeps its
-/// own type artwork.
+/// The OS icon for one entry, file or folder; `None` means the frontend keeps
+/// its own type artwork.
+///
+/// `is_dir` and `version` arrive with the request instead of being read from the
+/// disk. The listing that made this row stat'd the file to report its kind, its
+/// mtime and its size, and those three are everything this function used to go
+/// and fetch again: a `stat` per icon request, on the one pool whose entire reason
+/// for existing is to keep blocking reads off the UI thread, for a value the
+/// caller already held. `version` is the listing's `mtime-size`, so a replaced
+/// file lands on a new cache key exactly as it lands on a new URL.
 fn render_file_icon(
     path_string: &str,
+    is_dir: bool,
+    version: &str,
     size: u16,
-) -> Result<Option<Arc<RenderedThumbnail>>, FileSystemError> {
+) -> Option<Arc<RenderedThumbnail>> {
     let size = size.clamp(16, 256);
-    let path = Path::new(path_string);
+    let cache_key = format!("icon|{path_string}|{version}|{size}");
 
-    let metadata = fs::metadata(path).map_err(FileSystemError::from)?;
-    // Folders are the case a user sees first and the one this function used to
-    // reject outright: `!metadata.is_file()` answered `None` for every
-    // directory, so the folder column never reached an OS icon on any platform.
-    let is_dir = metadata.is_dir();
-    if !is_dir && !metadata.is_file() {
-        return Ok(None);
-    }
+    cached_icon(cache_key, || {
+        crate::file_icons::extract(path_string, u32::from(size), is_dir)
+    })
+}
 
-    let modified_at = metadata
-        .modified()
-        .ok()
-        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_millis() as u64);
-    let extension = extension_of(path);
-    // What may be keyed by extension is whatever resolves by *type*, because
-    // every file sharing a type gets the same icon. A directory does not: it
-    // carries a per-folder icon wherever the user has dropped one, and macOS
-    // badges the volume icons it draws for things like `/Applications`. So do
-    // the app-like types, and so does a file with no extension to key on.
-    let by_type = !is_dir
-        && !extension.is_empty()
-        && !FILE_SPECIFIC_ICON_EXTENSIONS.contains(&extension.as_str());
-    let cache_key = if by_type {
-        format!("icon-ext|{extension}|{size}")
-    } else {
-        format!(
-            "icon|{}|{}|{}|{size}",
-            path_string,
-            modified_at.unwrap_or(0),
-            metadata.len()
-        )
-    };
+/// The icon the desktop draws for a whole *type*, which every file sharing
+/// `extension` gets identically.
+///
+/// Keyed and fetched by extension rather than by path, and that is the whole
+/// performance argument: a column of 800 `.rs` files asks for one URL, the
+/// webview's own cache answers 799 of them, and the shell is asked once. Going
+/// through a *sample* file of the type would have meant naming one — and then
+/// resolving it, which is the per-request work this route exists to remove.
+fn render_type_icon(extension: &str, size: u16) -> Option<Arc<RenderedThumbnail>> {
+    let size = size.clamp(16, 256);
+    let cache_key = format!("icon-ext|{extension}|{size}");
 
+    cached_icon(cache_key, || {
+        crate::file_icons::extract_type(extension, u32::from(size))
+    })
+}
+
+/// The cached icon for `cache_key`, drawing it through `produce` on a miss.
+///
+/// Both answers are remembered, and the miss is the one that matters for the
+/// shared keys: an extension no theme or shell class claims is the ordinary case
+/// in a folder of unfamiliar files, and an unremembered miss repeats the entire
+/// search behind it — every theme in the inheritance chain, every XDG data root,
+/// every directory each of those declares, for `.svg` and `.png` alike — for each
+/// request that arrives. A per-entry key carries the listing's mtime and size, so
+/// an entry that changes gets a new key and asks again.
+fn cached_icon(
+    cache_key: String,
+    produce: impl FnOnce() -> Option<FileIcon>,
+) -> Option<Arc<RenderedThumbnail>> {
     if let Some(cached) = lookup_cache(&ICON_CACHE, &cache_key) {
-        return Ok(Some(cached));
+        return Some(cached);
+    }
+    if is_remembered_icon_miss(&cache_key) {
+        return None;
     }
 
-    let Some(icon) = crate::file_icons::extract(path_string, u32::from(size), is_dir) else {
-        return Ok(None);
+    let Some(icon) = produce() else {
+        remember_icon_miss(cache_key);
+        return None;
     };
 
     let rendered = Arc::new(RenderedThumbnail {
@@ -712,7 +818,24 @@ fn render_file_icon(
         cache_key,
         Arc::clone(&rendered),
     );
-    Ok(Some(rendered))
+    Some(rendered)
+}
+
+fn is_remembered_icon_miss(cache_key: &str) -> bool {
+    ICON_MISS_KEYS
+        .lock()
+        .ok()
+        .is_some_and(|misses| misses.as_ref().is_some_and(|misses| misses.contains(cache_key)))
+}
+
+fn remember_icon_miss(cache_key: String) {
+    if let Ok(mut guard) = ICON_MISS_KEYS.lock() {
+        let misses = guard.get_or_insert_with(HashSet::new);
+        if misses.len() >= ICON_MISS_MAX_KEYS {
+            misses.clear();
+        }
+        misses.insert(cache_key);
+    }
 }
 
 /// The theme's icon for an application name, for a row that describes a program
@@ -722,32 +845,13 @@ fn render_file_icon(
 /// not a path, and the theme that answers it is fixed for the life of the
 /// process — so a name that resolves once keeps resolving the same way, which is
 /// what the immutable cache header on the response promises.
-fn render_named_icon(
-    name: &str,
-    size: u16,
-) -> Result<Option<Arc<RenderedThumbnail>>, FileSystemError> {
+fn render_named_icon(name: &str, size: u16) -> Option<Arc<RenderedThumbnail>> {
     let size = size.clamp(16, 256);
     let cache_key = format!("icon-name|{name}|{size}");
 
-    if let Some(cached) = lookup_cache(&ICON_CACHE, &cache_key) {
-        return Ok(Some(cached));
-    }
-
-    let Some(icon) = crate::file_icons::named(name, u32::from(size)) else {
-        return Ok(None);
-    };
-
-    let rendered = Arc::new(RenderedThumbnail {
-        mime: icon.mime,
-        bytes: icon.bytes,
-    });
-    store_cache(
-        &ICON_CACHE,
-        ICON_CACHE_MAX_ENTRIES,
-        cache_key,
-        Arc::clone(&rendered),
-    );
-    Ok(Some(rendered))
+    cached_icon(cache_key, || {
+        crate::file_icons::named(name, u32::from(size))
+    })
 }
 
 /// Windows shell icon extraction: `IShellItemImageFactory` resolves whatever
@@ -971,8 +1075,10 @@ mod render_tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use super::{
-        DecodeOutcome, InflightRenders, RenderKind, THUMBNAIL_MAX_DECODED_PIXELS, decode_and_scale,
-        is_thumbnail_extension, render_response, within_thumbnail_pixel_cap,
+        DecodeOutcome, FileIcon, ICON_CACHE, InflightRenders, MAX_ICON_EXTENSION_LEN, RenderKind,
+        RenderSubject, THUMBNAIL_MAX_DECODED_PIXELS, cached_icon, decode_and_scale, icon_extension,
+        is_remembered_icon_miss, is_thumbnail_extension, lookup_cache, render_request_params,
+        render_response, within_thumbnail_pixel_cap,
     };
 
     /// The deduplication itself: a second request for a resource already being
@@ -1358,6 +1464,142 @@ mod render_tests {
         assert_eq!(
             render_response(RenderKind::Thumbnail, "name=dae-no-such-icon-zzz&size=32").status(),
             400
+        );
+        assert!(
+            is_remembered_icon_miss("icon-name|dae-no-such-icon-zzz|32"),
+            "and the theme search behind a miss is not run again for that name"
+        );
+    }
+
+    /// The two ways a row asks for an icon, told apart by the URL alone.
+    ///
+    /// A type is asked for by type — which is what makes every `.rs` in a column
+    /// one request — and an entry that cannot share its answer is asked for by
+    /// path, bringing its kind and its version with it so the icon route never has
+    /// to read the file's metadata to name its cache key.
+    #[test]
+    fn a_type_asks_for_itself_and_an_entry_asks_for_its_path() {
+        let Some(request) = render_request_params("ext=RS&size=44") else {
+            panic!("a type request is a well-formed request");
+        };
+        let RenderSubject::Type { extension } = request.subject else {
+            panic!("an `ext` request must reach the type route");
+        };
+        assert_eq!(extension, "rs", "one key per type, whatever it is spelled");
+        assert_eq!(request.size, 44);
+
+        let Some(request) = render_request_params("path=/tmp/report.pdf&dir=1&size=44&v=1700-2048")
+        else {
+            panic!("an entry request is a well-formed request");
+        };
+        let RenderSubject::Entry {
+            path,
+            is_dir,
+            version,
+        } = request.subject
+        else {
+            panic!("a `path` request must reach the entry route");
+        };
+        assert_eq!(path, "/tmp/report.pdf");
+        assert!(is_dir, "`dir=1` is how the listing's kind arrives");
+        assert_eq!(version, "1700-2048");
+
+        // An entry outranks a type: a URL naming both is asking about a file.
+        let Some(request) = render_request_params("path=/tmp/a.rs&ext=rs&size=32") else {
+            panic!("a path and a type is still a path");
+        };
+        assert!(
+            matches!(request.subject, RenderSubject::Entry { .. }),
+            "the entry route answers it"
+        );
+    }
+
+    /// What the filter is for: the value reaches the desktop's *type* registry as
+    /// a name, and a name that could read as a path would stop being a type
+    /// question. Refusing it is what makes a stray URL a 400 rather than a lookup
+    /// of something the request had no business naming.
+    #[test]
+    fn a_shared_icon_request_accepts_a_type_and_refuses_a_path() {
+        assert_eq!(icon_extension("rs").as_deref(), Some("rs"));
+        assert_eq!(icon_extension("msiexec").as_deref(), Some("msiexec"));
+        assert_eq!(icon_extension("PDF").as_deref(), Some("pdf"));
+        assert_eq!(icon_extension("tar.gz"), None, "a dot means a name");
+        assert_eq!(icon_extension(".."), None);
+        assert_eq!(icon_extension("%2Fetc%2Fpasswd"), None, "an encoded separator");
+        assert_eq!(icon_extension("x%20y"), None, "and an encoded space");
+        assert_eq!(icon_extension(""), None);
+        assert_eq!(
+            icon_extension(&"x".repeat(MAX_ICON_EXTENSION_LEN + 1)),
+            None,
+            "a long enough 'extension' is not one"
+        );
+    }
+
+    /// The half of the sharing that the webview's cache cannot do: an answer that
+    /// does not exist is not cacheable, so the second request for a type still
+    /// arrives here. It must not search again.
+    #[test]
+    fn a_remembered_miss_never_reaches_the_producer() {
+        let key = "icon-ext|dae-miss-test-zzz|32".to_owned();
+        let mut searches = 0;
+
+        assert!(
+            cached_icon(key.clone(), || {
+                searches += 1;
+                None
+            })
+            .is_none()
+        );
+        assert!(
+            cached_icon(key, || {
+                searches += 1;
+                None
+            })
+            .is_none()
+        );
+
+        assert_eq!(searches, 1, "only the first request ran the search");
+    }
+
+    /// The mirrored case, and the one a scrolling column lives on: the type's icon
+    /// is rendered once however many rows ask for it.
+    #[test]
+    fn a_cached_icon_is_drawn_once_for_every_row_of_its_type() {
+        let key = "icon-ext|dae-hit-test-zzz|32".to_owned();
+        let mut draws = 0;
+
+        for row in 0..3u8 {
+            let drawn = cached_icon(key.clone(), || {
+                draws += 1;
+                Some(FileIcon {
+                    mime: "image/png",
+                    bytes: vec![row],
+                })
+            });
+            assert!(drawn.is_some(), "row {row} gets an icon");
+        }
+
+        assert_eq!(draws, 1, "the second and third rows take the cache");
+        assert_eq!(
+            lookup_cache(&ICON_CACHE, &key).expect("the type is cached").bytes,
+            vec![0],
+            "and what they take is the one rendering"
+        );
+    }
+
+    /// An entry whose file went away between the listing and the icon request is
+    /// not a failed read: the icon route never opened the file, so there is no
+    /// read to fail, and the answer is the one its type carries.
+    #[test]
+    fn an_icon_for_a_missing_entry_is_not_an_error() {
+        let gone = Fixture::text("gone.rs", "removed below");
+        let query = format!("{}&v=1700-2", gone.query(32));
+        std::fs::remove_file(gone.path()).expect("remove the fixture file");
+
+        let status = render_response(RenderKind::FileIcon, &query).status();
+        assert_ne!(
+            status, 500,
+            "a missing file is a miss the row falls back from, not a broken read"
         );
     }
 }

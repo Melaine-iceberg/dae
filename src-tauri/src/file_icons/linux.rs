@@ -65,6 +65,19 @@ pub(super) fn extract(path: &str, size: u32, is_dir: bool) -> Option<FileIcon> {
     lookup(&names, contexts, size)
 }
 
+/// The icon the theme draws for a whole file type, named by its extension.
+///
+/// The path-shaped half of [`extract`] is what this drops: the mimetype names
+/// come from `mime_guess`, which reads an extension off a string and never the
+/// file behind it. That is what lets one answer serve every `.rs` in a column of
+/// 800, and it is why no request for a type icon touches the disk.
+pub(super) fn extract_type(extension: &str, size: u32) -> Option<FileIcon> {
+    let names = type_icon_names(extension, false);
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+
+    lookup(&names, &["mimetypes", "places"], size)
+}
+
 /// Themed icon names (a `.desktop`'s `Icon=`, which is where the context menu
 /// and the "Open With" picker get their glyphs) resolved at `size` pixels.
 ///
@@ -123,9 +136,9 @@ pub(crate) fn named_icon_data_url(name: &str, size: u32) -> Option<String> {
 
 /// The icon names to try for one path, best first.
 ///
-/// This loop's order is the whole policy: `lookup` takes the first name that
-/// resolves anywhere, so a name meaning something specific must precede one
-/// meaning something generic.
+/// The type half of the answer comes from [`type_icon_names`]; what a path adds
+/// is the directory case, and the executable bit of a name with no extension to
+/// key on.
 fn icon_names_for(path: &Path, is_dir: bool) -> Vec<String> {
     // A symlinked folder is listed as its own kind but drawn with the plain
     // folder icon, so it belongs on the directory side of this branch.
@@ -135,13 +148,23 @@ fn icon_names_for(path: &Path, is_dir: bool) -> Vec<String> {
             .to_vec();
     }
 
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let mime = mime_guess::from_path(path).first();
+    let extension = extension_of(path);
+    // An extension-less name is where a shell script and a compiled binary live
+    // on Unix, and telling them apart takes a permissions read — the one piece of
+    // information a type lookup can have from a path but not from an extension.
+    let is_executable = extension.is_empty() && is_executable(path);
 
+    type_icon_names(&extension, is_executable)
+}
+
+/// The theme names for one file type, most specific first.
+///
+/// This order is the whole policy, and both routes here ask the same question —
+/// one has the extension, the other reads it off a path — because `lookup` takes
+/// the first name that resolves anywhere, and a generic name ahead of a specific
+/// one draws every PDF with a sheet.
+fn type_icon_names(extension: &str, is_executable: bool) -> Vec<String> {
+    let mime = mime_guess::from_ext(extension).first();
     let mut names: Vec<String> = Vec::new();
 
     // `application/pdf` -> `application-pdf`, the escaped form the spec defines
@@ -153,14 +176,14 @@ fn icon_names_for(path: &Path, is_dir: bool) -> Vec<String> {
     // Archives are the one family whose theme icons are named after the concept
     // rather than the MIME type: `package-x-generic` is what both Adwaita and
     // Breeze draw for `application/zip`.
-    if is_archive_extension(&extension) {
+    if is_archive_extension(extension) {
         names.push("package-x-generic".to_owned());
     }
 
     // An extension-less executable is what a shell script and a compiled binary
     // look like in a file manager, and drawing either as a generic sheet is
     // visibly wrong next to the one Explorer and Finder both give it.
-    if extension.is_empty() && is_executable(path) {
+    if is_executable {
         names.push("application-x-executable".to_owned());
     }
 
@@ -172,6 +195,14 @@ fn icon_names_for(path: &Path, is_dir: bool) -> Vec<String> {
 
     names.push("unknown".to_owned());
     names
+}
+
+/// The lowercase extension a name is filed under, empty when it has none.
+fn extension_of(path: &Path) -> String {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase()
 }
 
 /// The generic icon name for a MIME top-level type.
@@ -724,6 +755,47 @@ Type=Fixed
         assert!(
             names.contains(&"audio-x-generic".to_owned()),
             "got {names:?}"
+        );
+    }
+
+    /// The type route has to ask the same question the path route asks, or the
+    /// same `.pdf` draws one icon in a list and another in a grid — and the type
+    /// route is the one a whole column of rows shares an answer through, so a
+    /// drift between them is a visible inconsistency rather than a rare one.
+    #[test]
+    fn a_type_resolves_to_the_names_the_same_path_would() {
+        for extension in ["pdf", "zip", "mp3", "rs", "txt", "bin"] {
+            let path = format!("/x/file.{extension}");
+            assert_eq!(
+                type_icon_names(extension, false),
+                icon_names_for(Path::new(&path), false),
+                "{extension} must be asked the same way either route"
+            );
+        }
+    }
+
+    #[test]
+    fn a_type_with_no_mime_still_has_its_last_resort() {
+        assert_eq!(
+            type_icon_names("dae-no-such-extension-zzz", false),
+            ["unknown"],
+            "an unknown type is an unknown icon, not no icon"
+        );
+        // The executable bit is the one thing an extension cannot report, which is
+        // why it is an argument here rather than something read off a path.
+        assert!(type_icon_names("", true).contains(&"application-x-executable".to_owned()));
+    }
+
+    /// A type answer is not allowed to read the file it names — there is no file
+    /// to read — so the two routes have to land on one bitmap.
+    #[test]
+    fn the_type_route_and_the_path_route_draw_the_same_icon() {
+        let rendered = |icon: Option<FileIcon>| icon.map(|icon| (icon.mime, icon.bytes));
+
+        assert_eq!(
+            rendered(extract_type("pdf", 32)),
+            rendered(extract("/x/report.pdf", 32, false)),
+            "one type, one answer, whichever way it was asked"
         );
     }
 

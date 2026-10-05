@@ -39,7 +39,26 @@ const UPSCALE_PENALTY: i64 = 8;
 /// a file, which is one of the things that makes this the easy backend.
 pub(super) fn extract(path: &str, size: u32, _is_dir: bool) -> Option<FileIcon> {
     let icon = NSWorkspace::sharedWorkspace().iconForFile(&NSString::from_str(path));
-    let bitmap = best_representation(&icon, i64::from(size))?;
+    render(&icon, size)
+}
+
+/// The icon Finder would show for a whole file type, named by its extension.
+///
+/// `iconForFileType:` asks LaunchServices the question `iconForFile:` answers
+/// *after* resolving the file, and it is deprecated in favour of
+/// `iconForContentType:` — which takes a `UTType` built from the same extension,
+/// for the same bitmap. The old call is kept because it needs no second object
+/// to construct and no feature the crate does not already enable.
+#[allow(deprecated)]
+pub(super) fn extract_type(extension: &str, size: u32) -> Option<FileIcon> {
+    let icon = NSWorkspace::sharedWorkspace().iconForFileType(&NSString::from_str(extension));
+    render(&icon, size)
+}
+
+/// The best-fitting representation of an `NSWorkspace` icon, as bytes a webview
+/// can draw.
+fn render(icon: &NSImage, size: u32) -> Option<FileIcon> {
+    let bitmap = best_representation(icon, i64::from(size))?;
     let tiff = bitmap.TIFFRepresentation()?;
 
     let mut rendered = DynamicImage::from(image::load_from_memory(&tiff.to_vec()).ok()?.to_rgba8());

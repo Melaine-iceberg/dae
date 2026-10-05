@@ -1,5 +1,5 @@
 import { useAtomValue } from "jotai";
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
 import { isWindowsPlatform } from "@/lib/platform";
 import { cn } from "@/lib/utils";
@@ -8,13 +8,12 @@ import { getFileExtension, hasKnownFileExtension } from "./file-icons";
 import { iconStyleAtom } from "./preferences";
 import type { DirectoryEntry } from "./types";
 
-/** Application-like types whose shell icon is always more informative than
- *  a generic glyph (shortcut targets, embedded executable icons, ...).
- *  Keep in sync with `FILE_SPECIFIC_ICON_EXTENSIONS` in
- *  `src-tauri/src/file_system/preview.rs` — those extensions carry a per-file
- *  icon and are cached by path there; every other extension is cached once per
- *  (extension, size) because its handler icon is shared across all such files. */
-const NATIVE_ICON_EXTENSIONS = new Set(["exe", "msi", "lnk", "url", "dll", "scr", "cpl"]);
+/** Extensions whose shell icon belongs to the individual file rather than to its
+ *  type — an embedded icon resource, a shortcut's target, a `.url`'s site
+ *  favicon. Windows is the only desktop that draws two files of the same
+ *  extension differently, so it is the only one that has to ask for these by
+ *  path; everywhere else an extension's icon is shared by every file with it. */
+const FILE_SPECIFIC_ICON_EXTENSIONS = new Set(["exe", "msi", "lnk", "url", "dll", "scr", "cpl"]);
 
 /** Windows exposes Tauri custom schemes as `http://<scheme>.localhost`. */
 const FILE_ICON_URL_ORIGIN = isWindowsPlatform
@@ -60,22 +59,57 @@ function usesShellIconWhereNoGlyphExists(entry: DirectoryEntry): boolean {
     return false;
   }
 
-  return NATIVE_ICON_EXTENSIONS.has(extension) || !hasKnownFileExtension(extension);
+  return FILE_SPECIFIC_ICON_EXTENSIONS.has(extension) || !hasKnownFileExtension(extension);
 }
 
 /**
- * Versioned URL for the `fileicon://` protocol handler. Same immutable-cache
- * trick as thumbnails: mtime + size in the URL lets the webview cache the
- * response and refresh automatically when the file is replaced.
+ * The URL the webview fetches this row's icon from.
+ *
+ * The sharing rule is the whole reason the listing scrolls smoothly. An entry
+ * whose icon is a property of its *type* asks for the type — `?ext=rs`, with no
+ * path and no version in it — so a column of 800 `.rs` files is one URL, the
+ * webview's own immutable cache answers 799 of the 800 without leaving the
+ * process, and the shell is asked once. Everything that cannot share its answer
+ * asks by path and versions the URL with the mtime and size the listing already
+ * reported, so a replaced entry reads as a new URL and fetches again.
+ *
+ * The version travels in the URL rather than being read off the disk here for the
+ * same reason: the row exists because something already stat'd this file.
  */
 export function buildFileIconUrl(entry: DirectoryEntry, size: number): string {
+  const extension = sharedIconExtension(entry);
+  if (extension) {
+    return `${FILE_ICON_URL_ORIGIN}/?ext=${encodeURIComponent(extension)}&size=${size}`;
+  }
+
   const version = `${entry.modifiedAt ?? 0}-${entry.size ?? 0}`;
-  return `${FILE_ICON_URL_ORIGIN}/?path=${encodeURIComponent(entry.path)}&size=${size}&v=${version}`;
+  const directory = entry.kind === "directory" ? "&dir=1" : "";
+  return `${FILE_ICON_URL_ORIGIN}/?path=${encodeURIComponent(entry.path)}${directory}&size=${size}&v=${version}`;
+}
+
+/** The extension every row of this entry's type shares an icon with, or `""` when
+ *  the icon is this entry's own and only a path can name it. */
+function sharedIconExtension(entry: DirectoryEntry): string {
+  if (entry.kind !== "file") {
+    // A directory carries a per-folder icon wherever the desktop can hold one —
+    // a dropped `.icon` on macOS, a `desktop.ini` on Windows — so even where the
+    // answer happens to be the same glyph for every folder, only the path knows.
+    return "";
+  }
+
+  const extension = getFileExtension(entry.name);
+  // An extension-less Unix binary is named by its permissions rather than by a
+  // type, and the backend reads the executable bit off the file itself.
+  if (!extension) {
+    return "";
+  }
+
+  return isWindowsPlatform && FILE_SPECIFIC_ICON_EXTENSIONS.has(extension) ? "" : extension;
 }
 
 /**
- * URL for the icon theme's own icon for a name — a `.desktop`'s `Icon=`, which
- * may equally be an absolute path — rather than for a file. Same handler and
+ * URL for the icon theme's own icon for a name — a `.desktop`'s `Icon=`, which may
+ * equally be an absolute path — rather than for a file or a type. Same handler and
  * same render pool as {@link buildFileIconUrl}; on a platform whose shell keys
  * icons on a file the request 404s, so a caller needs the same fallback.
  */
@@ -84,10 +118,15 @@ export function buildNamedIconUrl(name: string, size: number): string {
 }
 
 /**
- * Lazy OS-native icon: shows the Solar fallback until the shell icon
- * arrives and keeps it forever on any error (missing path, dead shortcut
- * target, a platform whose shell has nothing for this file), so every slot
- * always renders something.
+ * The OS-native icon for one entry: the Solar fallback draws until the shell icon
+ * arrives, and stays for good on any error (a missing path, a dead shortcut
+ * target, a platform whose shell has nothing for this file), so every slot always
+ * renders something.
+ *
+ * Nothing waits for visibility here. Every view that draws a row of these is
+ * virtualized, so the mounted rows already are the ones at or near the viewport,
+ * and an `IntersectionObserver` per row was a second filter over a handful of
+ * overscan cells — the same question the list had already answered, 800 times.
  */
 export function NativeIconImage({
   className,
@@ -100,8 +139,6 @@ export function NativeIconImage({
   fallback: ReactNode;
   pixelSize: number;
 }) {
-  const containerRef = useRef<HTMLSpanElement>(null);
-  const [isVisible, setIsVisible] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isFailed, setIsFailed] = useState(false);
   // Ask for 2x so HiDPI displays get a crisp bitmap; the shell caps larger
@@ -113,30 +150,6 @@ export function NativeIconImage({
     setIsLoaded(false);
     setIsFailed(false);
   }, [iconUrl]);
-
-  useEffect(() => {
-    const element = containerRef.current;
-    if (!element) return;
-
-    if (typeof IntersectionObserver === "undefined") {
-      setIsVisible(true);
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (observed) => {
-        for (const item of observed) {
-          if (item.isIntersecting) {
-            setIsVisible(true);
-            observer.disconnect();
-          }
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
 
   if (isLoaded && !isFailed) {
     return (
@@ -154,11 +167,10 @@ export function NativeIconImage({
   return (
     <span
       className={cn("inline-flex shrink-0 items-center justify-center", className)}
-      ref={containerRef}
       style={dimension}
     >
       {fallback}
-      {isVisible && !isFailed && (
+      {!isFailed && (
         <img
           alt=""
           className="hidden"

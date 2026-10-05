@@ -14,9 +14,10 @@
 //! data roots — and two of the three need a resolver of their own that is
 //! worth testing apart from the render path that calls it.
 //!
-//! The three backends answer one question, `extract`, and a `None` answer is a
-//! normal outcome rather than a failure: it means this file has no icon the OS
-//! can name, and the frontend keeps its own artwork.
+//! The three backends answer two questions, `extract` for one entry and
+//! `extract_type` for a whole type, and a `None` answer is a normal outcome
+//! rather than a failure: it means this file has no icon the OS can name, and the
+//! frontend keeps its own artwork.
 
 /// One rendered icon. `mime` travels with the bytes because Linux answers with
 /// SVG wherever the installed theme ships one, and a webview will only render
@@ -58,18 +59,40 @@ mod backend {
     pub(super) fn extract(_path: &str, _size: u32, _is_dir: bool) -> Option<super::FileIcon> {
         None
     }
+
+    pub(super) fn extract_type(_extension: &str, _size: u32) -> Option<super::FileIcon> {
+        None
+    }
 }
 
 /// The icon the OS would show for `path` at `size` CSS pixels, or `None` when
 /// it has none.
 ///
 /// `is_dir` is a parameter rather than something read off the disk because the
-/// caller (`render_file_icon`) has already paid for that `metadata` call, and
-/// because on Linux a directory resolves through a different icon context
-/// (`places`) than a file does (`mimetypes`) — the two are not interchangeable
-/// and guessing from the path would be wrong for a symlink to either.
+/// caller has it already — the listing that made the row reported the entry's
+/// kind, and a `stat` per icon request is the blocking read this whole pipeline
+/// was moved off the UI thread to avoid. It matters on Linux, where a directory
+/// resolves through a different icon context (`places`) than a file does
+/// (`mimetypes`) — the two are not interchangeable and guessing from the path
+/// would be wrong for a symlink to either. It matters on Windows and macOS for
+/// the opposite reason: nothing is guessed there, because a folder's own icon is
+/// whatever the user dropped on it, and only the path can name it.
 pub(crate) fn extract(path: &str, size: u32, is_dir: bool) -> Option<FileIcon> {
     backend::extract(path, size, is_dir)
+}
+
+/// The icon the OS would show for a whole *type* at `size`, which is the same
+/// answer for every file sharing `extension`.
+///
+/// No path reaches this function, and that is the point: a request that names a
+/// type is asking to share an answer with every other row of that type, so the
+/// URL carries the extension alone, the webview caches one response for the whole
+/// column, and the desktop is asked once. Each backend resolves the type through
+/// whatever mechanism it can drive from a name — the theme's mimetype context,
+/// the registered class icon, LaunchServices — none of which needs the file to
+/// exist.
+pub(crate) fn extract_type(extension: &str, size: u32) -> Option<FileIcon> {
+    backend::extract_type(extension, size)
 }
 
 /// The theme's own icon for a name — a `.desktop`'s `Icon=` value — at `size`.
