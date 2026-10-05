@@ -344,7 +344,7 @@ function GridCell({
             "render-contain state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-md px-2 py-2.5 text-center transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             isSelected &&
-              "bg-selection shadow-[inset_0_0_0_1px_color-mix(in_oklab,var(--primary)_22%,transparent)]",
+              "bg-selection shadow-[inset_0_0_0_1px_var(--selection-edge)]",
             isDragging && DRAG_SOURCE_CLASS,
             isDropTarget && "drop-target",
           )}

@@ -683,8 +683,23 @@
   --sidebar-ring: var(--primary);
   /* Selection is the accent at low strength rather than a second colour, so a
      row reads as *chosen* in whatever hue the user picked. Transparent by
-     construction, so it tints the plane underneath instead of replacing it. */
-  --selection: color-mix(in oklab, var(--primary) 13%, transparent);
+     construction, so it tints the plane underneath instead of replacing it.
+
+     Strength is set by the rule the dark block below spells out: a selection
+     has to sit clearly above the hover rung, or it is just a pointer. On a
+     white panel the hover highlight (`--muted`) is worth 4.9 L*, so 13% — the
+     value this carried before the palette went neutral — bought only 6.8 and
+     left the ratio at 1.4x, against dark's 2.4x. 20% buys 10.5 L* for a ratio
+     of 2.2x, which is the same signal in both schemes. Ink is unaffected:
+     `--foreground` on this fill is 9.2:1, and 7.9:1 at the `prefers-contrast`
+     value below. */
+  --selection: color-mix(in oklab, var(--primary) 20%, transparent);
+  /* The hairline inside a selected row. It has to out-read the fill it sits
+     in, because it is what separates *selected* from *hovered* at a glance —
+     at the 22% this was hardcoded to, it landed 2.4 L* off the fill, i.e.
+     invisible. 45% puts it 26 L* clear. Shared by the list and the grid, so
+     the two cannot drift apart. */
+  --selection-edge: color-mix(in oklab, var(--primary) 45%, transparent);
 }
 .dark {
   /* Double the light strength, for a measured reason rather than the
@@ -694,6 +709,10 @@
      buys more than that — a selection you could not tell from a pointer — so
      the strength doubles to land clearly above the hover rung. */
   --selection: color-mix(in oklab, var(--primary) 26%, transparent);
+  /* Further than the light value in percentage terms, and it has to be:
+     mixing toward a light blue from a dark panel raises L* slowly, so 45%
+     here would buy only 5 L* of separation. 85% buys 19. */
+  --selection-edge: color-mix(in oklab, var(--primary) 85%, transparent);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1619,7 +1638,7 @@ html[data-window-material="blur"]:root body {
     --sidebar-border: color-mix(in oklab, var(--foreground) 34%, transparent);
     /* Secondary text keeps its role in the type ramp and loses its fade. */
     --muted-foreground: color-mix(in oklab, var(--foreground) 82%, transparent);
-    --selection: color-mix(in oklab, var(--primary) 22%, transparent);
+    --selection: color-mix(in oklab, var(--primary) 30%, transparent);
   }
   .dark {
     --selection: color-mix(in oklab, var(--primary) 34%, transparent);
