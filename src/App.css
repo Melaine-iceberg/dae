@@ -240,9 +240,10 @@
   --color-on-error-container: var(--on-error-container);
 
   /* Shape scale: five steps plus a pill, spent in ascending order of how
-     much the thing draws attention — 7px micro chips and keycaps → 8px
-     controls, rows and small cards → 10px inputs, menus and panels → 12px
-     floating layers → 16px dialogs and sheets.
+     much the thing draws attention — 4px inline code → 7px micro chips,
+     keycaps, the marquee and small images → 10px code blocks → 12px menus,
+     toasts and floating layers → 20px the command palette and dialogs. The
+     window's content plane takes a sixth step, `--radius-panel`, below.
 
      THE 2026 BASE RETUNE: `--radius` moved from 10px to 12px and the five
      steps moved with it, as one edit. The old base was tuned when the shell's
@@ -252,7 +253,7 @@
      anyone chose. The step *spacing* is unchanged — the ladder is still five
      measured steps, only drawn softer.
 
-     Every step is the `--radius` base (0.625rem) minus or plus a constant
+     Every step is the `--radius` base (0.75rem) minus or plus a constant
      rather than five independent numbers, so retuning the shell's roundness is
      one edit on a scheme token and the steps keep their spacing at any base.
 
@@ -537,7 +538,7 @@
   --tone-cyan: #0f6b7a; /* muted teal — desktop, audio, databases */
   --border: #e9e9e7; /* hairline panel edge */
   --input: #dcdcd8;
-  --radius: 0.875rem;
+  --radius: 0.75rem;
   /* The lit edge of a raised surface. A 1px inset highlight along the top of
      every lifted plane — the material cue that says "this sits above the
      canvas" without spending another tone. Light gets real light (the plane is
