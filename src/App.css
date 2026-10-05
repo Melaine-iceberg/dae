@@ -227,6 +227,17 @@
      SEAM). */
   --color-chrome: var(--chrome);
 
+  /* The nav-glass colours — aliases into the per-scheme declarations below,
+     where the navigation layer's glass is measured (see THE NAV-GLASS TOKENS
+     in `:root`). The family's fifth token, `--glass-filter`, has no alias: a
+     composite blur+saturate does not fit Tailwind's `--blur-*` namespace, so
+     it stays a plain property beside `--frost-filter`, which is kept out of
+     `@theme` for the same reason. */
+  --color-glass-fill: var(--glass-fill);
+  --color-glass-border: var(--glass-border);
+  --color-glass-edge: var(--glass-edge);
+  --color-accent-glass: var(--accent-glass);
+
   /* The one tonal role left from the Material-shaped set this theme started
      life as: an alert needs a tinted band carrying its own ink, and it is the
      only surface in the shell that is coloured end to end. The rest of that
@@ -457,6 +468,54 @@
      so wherever the plate reaches past the hole the platform left it lands on
      a colour that is already there. */
   --frost-plate: var(--card);
+
+  /* THE NAV-GLASS TOKENS — see docs/ui-redesign-2026.md §4.
+
+     The navigation layer (sidebar, tab strip, toolbar) stops being a plane
+     glued to the window's edge and floats over the shell as PERSISTENT glass.
+     `.floating-frost` is the other family — EPHEMERAL glass (menus, dialogs,
+     the palette): up for seconds, read while it is up, gone. Same three
+     elements (translucent fill, specular edge, backdrop blur), two jobs, and
+     the tokens are not interchangeable: nothing persistent reads
+     `--popover-frost*`, nothing floating reads `--glass-*`.
+
+     The fill's density is measured the frost way (§3.2 of the plan): the
+     worst backdrop a file manager serves under navigation chrome is a black
+     thumbnail scrolled under the strip, and the binding ink is the secondary
+     grey (`--muted-foreground`). At 90% white over black the composite is
+     #e6e6e6 and the grey lands at 4.6:1 (the primary ink at 11.5:1); at 89%
+     it fails (4.49). So the floor is the frost's floor — persistent glass
+     owes the same legibility as a menu over the same worst backdrop — and
+     what separates the families is not density but the blur radius (1.25rem
+     against frost's 1.5rem: persistent chrome spends less of the blur
+     budget, §4.4), the hairline, and the specular edge. The plan's 55% draft
+     measured 1.7:1 against this backdrop and is recorded here only as a
+     rejected starting point. */
+  --glass-fill: rgb(255 255 255 / 0.9);
+  /* The block's hairline: 1.38:1 against the canvas it rings — the same step
+     the panel hairline takes (1.35). The plan's 8% draft measured 1.19:1,
+     below the system's own floor. */
+  --glass-border: rgb(0 0 0 / 0.14);
+  /* Specular highlight, spent on the block's top edge only. Decorative, so
+     no AA target — recorded instead: 1.2:1 over the worst composite, 1.0
+     over the canvas, where it reads as sheen rather than as a line. */
+  --glass-edge: rgb(255 255 255 / 0.9);
+  /* Same family as `--frost-filter` at a smaller radius — see the fill note
+     above for what the 1.25rem buys. The light scheme needs no `brightness`
+     term here for the same reason the light frost does not: its worst
+     backdrop is dark, and the fill is what carries the legibility. */
+  --glass-filter: blur(1.25rem) saturate(1.6);
+  /* The selected state inside the glass: the accent at 22%, where the
+     plane's `--selection` runs 13%. Stronger because the glass's composite
+     moves with whatever scrolls under it, so the state needs more pigment to
+     stay legible. PRIMARY ink only on this fill: at the worst backdrop it
+     holds 8.7:1 while the secondary grey falls to 3.5:1, and no tint
+     strength can fix that — the glass fill has already spent the luminance
+     budget. Rows sitting on `--accent-glass` set their text in the primary
+     ink. As with `--selection`, a user-picked accent is any hue and the
+     seam's answer to it applies unchanged. */
+  --accent-glass: color-mix(in oklab, var(--primary) 22%, transparent);
+
   --accent-default: #0d7a86; /* shipped accent (teal); see the accent seam below */
   --accent-default-ink: #ffffff;
   --on-destructive: #ffffff;
@@ -559,6 +618,33 @@
   --popover-frost-dense: color-mix(in oklab, var(--popover) 96%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6) brightness(0.75);
   --frost-plate: var(--card); /* see the light scheme's pair */
+
+  /* The nav glass, dark — same family as the light block above, measured the
+     other way around. The binding backdrop is a bright one (a white page
+     under the strip), and `brightness(0.75)` in the filter is what dims it
+     before the tint arrives, exactly as it does for `--frost-filter` above.
+
+     The plan's draft (white at 5.5%) fails this measurement at 1.5:1, and no
+     filter setting can save it: a near-clear white tint can only lighten the
+     composite, never darken it toward AA. So the density moves into a dark
+     base — 84% of `--sidebar` over the dimmed page lands the secondary grey
+     at 4.9:1 and the primary ink at 10.3:1 — and the sheen the draft was
+     after moves to `--glass-edge`, which is where dark glass carries its
+     lift anyway. Over the scheme's own canvas the fill reads as the canvas
+     itself (6.9:1 for the grey) and the block separates through the border
+     and the edge; §4.5's canvas press is what will give that separation
+     more room. */
+  --glass-fill: color-mix(in oklab, var(--sidebar) 84%, transparent);
+  --glass-border: rgb(255 255 255 / 0.14); /* 1.4:1 against the dimmed canvas */
+  /* 2.5:1 over the fill — the one clearly visible specular in this scheme. */
+  --glass-edge: rgb(255 255 255 / 0.28);
+  --glass-filter: blur(1.25rem) saturate(1.6) brightness(0.75);
+  /* The selected state at 28%, where the plane runs 26% — the same bump as
+     the light block and for the same reason. Primary ink holds 5.7:1 at the
+     worst backdrop; the primary-ink-only rule from the light block applies
+     unchanged. */
+  --accent-glass: color-mix(in oklab, var(--primary) 28%, transparent);
+
   --accent-default: #56cdd8; /* shipped accent (teal) — 8.7:1 on a panel, 7.3 worst */
   --accent-default-ink: #101116; /* ink label on the vivid fill — 7.2:1 */
   --on-destructive: #101116; /* the dark destructive is a light red: white on it 2.4:1 */
@@ -1460,6 +1546,14 @@ html[data-window-material="blur"]:root body {
   .dark {
     --popover-frost: var(--popover);
     --frost-filter: none;
+    /* The nav glass goes solid with the same rule: the opaque nav plane, the
+       plane's own hairline, no specular, and the plane's measured selection
+       in place of the glass's stronger one. */
+    --glass-fill: var(--sidebar);
+    --glass-border: var(--sidebar-border);
+    --glass-edge: transparent;
+    --glass-filter: none;
+    --accent-glass: var(--selection);
   }
 }
 
@@ -1553,12 +1647,20 @@ html[data-window-material="blur"]:root body {
     --selection: color-mix(in oklab, var(--primary) 34%, transparent);
   }
   /* Glass is the first thing this mode asks back: a layer whose separation from
-     the plane under it is a tenth of see-through is exactly the subtlety being
-     objected to, so the menu returns to the solid popover. */
+    the plane under it is a tenth of see-through is exactly the subtlety being
+    objected to, so the menu returns to the solid popover. The navigation glass
+    follows it: persistent chrome whose edge is a specular sheen is the same
+    objection with a longer lifetime, so it takes the opaque nav plane and the
+    plane's hairline. */
   :root,
   .dark {
     --popover-frost: var(--popover);
     --frost-filter: none;
+    --glass-fill: var(--sidebar);
+    --glass-border: var(--sidebar-border);
+    --glass-edge: transparent;
+    --glass-filter: none;
+    --accent-glass: var(--selection);
   }
   /* The state washes run at roughly double: a hovered row should not be a
      hover the user has to hunt for. */
@@ -1598,6 +1700,15 @@ html[data-window-material="blur"]:root body {
        not offer a palette for. The glass goes solid and the filter goes with it. */
     --popover-frost: var(--popover);
     --frost-filter: none;
+    /* The navigation glass, same treatment — a `color-mix` fill would be
+       computed and then forced like any other colour, so the tokens take the
+       palette-surviving fallbacks instead. `--selection` is `Highlight` in
+       this block, which is what `--accent-glass` inherits here. */
+    --glass-fill: var(--sidebar);
+    --glass-border: var(--sidebar-border);
+    --glass-edge: transparent;
+    --glass-filter: none;
+    --accent-glass: var(--selection);
     /* Hover is a fill in this shell, and the palette's only control fill is
        `ButtonFace`. A palette that sets it to the canvas leaves hover silent,
        which is why buttons also carry the edge below — accepted over
