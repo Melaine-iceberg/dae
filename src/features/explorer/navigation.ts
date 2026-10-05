@@ -2,12 +2,20 @@ import { commands } from "@/bindings";
 import { recordRecentItem } from "@/features/workspace/recents-atoms";
 
 import {
+  invalidateCachedListing,
   isSameListing,
   openPacketDirectoryListing,
   type DirectoryListing,
 } from "./directory-listing";
-import { listingViewOf, type ListingView } from "./listing-view";
-import type { Breadcrumb, DirectoryView, FileSystemError } from "./types";
+import {
+  indicesOfNames,
+  listingRowMatches,
+  listingViewOf,
+  patchedListingView,
+  type ListingPatchChange,
+  type ListingView,
+} from "./listing-view";
+import type { Breadcrumb, DirectoryEntry, DirectoryView, FileSystemError } from "./types";
 
 export type ExplorerStatus = "idle" | "loading" | "ready" | "error";
 
@@ -82,6 +90,19 @@ export class ExplorerNavigator {
   private readonly watcherId = crypto.randomUUID();
   /** Listing whose remaining batches are still streaming into the state. */
   private listing: DirectoryListing | null = null;
+  /**
+   * Whether the listing on screen has every batch.
+   *
+   * Only a complete one can be patched: a patch appends rows to the end of an
+   * index space that is still growing, and a batch that lands afterwards would
+   * describe a directory as of *before* the patch.
+   */
+  private listingComplete = false;
+  /**
+   * The tail of the patch chain; see `patch`. Resolved rather than `null` so the
+   * first patch needs no special case.
+   */
+  private pendingPatch: Promise<void> = Promise.resolve();
   /** Releases a settling read that is still waiting on its listing. */
   private cancelSettle: (() => void) | null = null;
   private readonly scrollOffsets = new Map<string, number>();
@@ -238,6 +259,9 @@ export class ExplorerNavigator {
         pendingPath: null,
         error: null,
       });
+      // The directory is known to differ from the listing another pane may still
+      // be painting from the cache.
+      invalidateCachedListing(path);
 
       return read.directory;
     } catch (error) {
@@ -252,6 +276,107 @@ export class ExplorerNavigator {
 
       return undefined;
     }
+  }
+
+  /**
+   * Repairs the displayed listing from the children the watcher named, instead of
+   * reading the directory again.
+   *
+   * A change to one file in a 35,803 entry folder is not a reason to enumerate
+   * the folder: this asks the backend to stat the names that changed and rewrites
+   * those rows in the listing already on screen. The re-read it replaces measured
+   * ~12.3 ms of enumeration, 5.76 MB of packed bytes across IPC, a full
+   * `isSameListing` scan, and a sort the worker starts over because a fresh head
+   * array is not the one it ordered; the patch is one `stat` per name, a scan of
+   * the listing's names to locate those rows, and — for a change that only adds
+   * rows — a sort that folds the new rows into the order it holds.
+   *
+   * `refresh` is the answer whenever the patch cannot be trusted: the change is
+   * not attributable to a row, the listing is still streaming, the stats failed,
+   * the listing on screen is not one this class could patch, or the pane moved
+   * while the stats were in flight. It is also what a patch *falls back to*, so a
+   * caller can hand every notification here and let the guards decide.
+   *
+   * Patches run one at a time. A burst can name the same child twice across two
+   * windows, and the second has to be computed against the listing the first
+   * published — otherwise it addresses rows by the index the first patch
+   * replaced, and its only safe outcome is to be thrown away.
+   */
+  patch(path: string, names: readonly string[]): Promise<DirectoryView | undefined> {
+    const run = this.pendingPatch.then(() => this.applyPatch(path, names));
+    // The chain keeps going whatever this one did.
+    this.pendingPatch = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  private async applyPatch(
+    path: string,
+    names: readonly string[],
+  ): Promise<DirectoryView | undefined> {
+    const listing = this.state.listing;
+
+    if (
+      listing === null ||
+      !this.listingComplete ||
+      this.state.status !== "ready" ||
+      this.state.directory?.path !== path ||
+      names.length === 0
+    ) {
+      return this.refresh(path);
+    }
+
+    // Not bumped: a patch does not invalidate a read, it only refuses to race
+    // one. Whatever version this captures is the one whose listing is on screen.
+    const requestVersion = this.requestVersion;
+
+    let resolved: (DirectoryEntry | null)[];
+    try {
+      resolved = await this.api.readDirectoryChanges(path, [...names]);
+    } catch {
+      // A stat that failed says nothing about which rows changed, and the
+      // re-read reports the error itself if the directory stays unreadable.
+      return this.refresh(path);
+    }
+
+    // The listing this patch was computed against is no longer the one on screen.
+    if (requestVersion !== this.requestVersion || this.state.listing !== listing) {
+      return undefined;
+    }
+
+    // One resolution per name: a burst reports the same child repeatedly, and a
+    // row cannot be both rewritten and removed by the same patch.
+    const wanted = new Map<string, DirectoryEntry | null>();
+    for (let ordinal = 0; ordinal < names.length; ordinal += 1) {
+      wanted.set(names[ordinal], resolved[ordinal]);
+    }
+
+    const at = indicesOfNames(listing, new Set(wanted.keys()));
+    const changes: ListingPatchChange[] = [];
+    for (const [name, entry] of wanted) {
+      const index = at.get(name) ?? -1;
+      // A name that is not on disk and was never on screen needs no row, and a
+      // row that already says what the disk says needs no rewrite. Both are the
+      // watcher reporting something a listing does not show.
+      if (entry === null && index < 0) continue;
+      if (entry !== null && index >= 0 && listingRowMatches(listing, index, entry)) continue;
+      changes.push({ entry, index });
+    }
+
+    if (changes.length === 0) return this.state.directory ?? undefined;
+
+    const patched = patchedListingView(listing, changes);
+    if (patched === null) return this.refresh(path);
+    if (patched === listing) return this.state.directory ?? undefined;
+
+    // `directory` keeps its identity: only its listing changed, and a row that
+    // appeared or disappeared is not a reason to re-key the pane's filters.
+    this.setState({ ...this.state, listing: patched });
+    invalidateCachedListing(path);
+
+    return this.state.directory ?? undefined;
   }
 
   private async load(path: string, mode: NavigationMode): Promise<DirectoryView | undefined> {
@@ -321,6 +446,7 @@ export class ExplorerNavigator {
     options: { settle: boolean },
   ): Promise<ReadListing | null> {
     this.cancelListing();
+    this.listingComplete = false;
 
     // The head is kept here rather than read back from the state: a batch can
     // beat `load`/`refresh` to the state update, and it still has to render
@@ -348,7 +474,14 @@ export class ExplorerNavigator {
           if (options.settle || requestVersion !== this.requestVersion || !head) return;
           this.setState({ ...this.state, directory: head, listing: latest });
         },
-        onDone: () => resolveSettled?.(),
+        onDone: () => {
+          // A read that a newer one superseded was disposed before it could get
+          // here, so this is normally the read that owns the state — the version
+          // check is for a navigation that started while the last batch was in
+          // flight, whose head-only listing is not complete.
+          if (requestVersion === this.requestVersion) this.listingComplete = true;
+          resolveSettled?.();
+        },
       },
       this.api,
       this.watcherId,

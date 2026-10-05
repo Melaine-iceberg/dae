@@ -11,6 +11,7 @@ mod search;
 pub use content_search::{ContentSearchParams, search_file_contents_sync};
 pub use directory::{
     DirectoryListing, DirectoryListingCursor, create_directory_watcher, open_canonical_listing,
+    stat_named_children,
 };
 pub use operations::{
     copy_entries_with_progress, delete_entries_with_progress, move_entries_with_progress,

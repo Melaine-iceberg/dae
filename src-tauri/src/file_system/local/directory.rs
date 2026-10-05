@@ -18,24 +18,33 @@ use windows::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_
 /// `path` must already be canonical (see [`canonical_path`]): the watcher
 /// names the directory it watches in every event it emits, and the caller
 /// reports the listing under that same spelling, so the frontend can match an
-/// event against the directory on screen.
+/// event against the directory on screen — and match the event's *children*
+/// against the rows it holds.
 pub fn create_directory_watcher(
     path: PathBuf,
     app: tauri::AppHandle,
 ) -> Result<RecommendedWatcher, FileSystemError> {
     let event_path = path_to_string(&path);
+    let watched = path.clone();
     let mut watcher =
         notify::recommended_watcher(move |result: Result<notify::Event, notify::Error>| {
-            // Watcher errors (e.g. ReadDirectoryChangesW buffer overflow on network
-            // shares) mean changes were dropped, so treat them as "possibly dirty".
-            let should_refresh = match &result {
-                Ok(event) => !matches!(event.kind, EventKind::Access(_)),
-                Err(_) => true,
+            let names = match result {
+                // An access event is a read bumping an atime; nothing a listing
+                // shows has changed.
+                Ok(event) if matches!(event.kind, EventKind::Access(_)) => return,
+                // A watcher error (e.g. ReadDirectoryChangesW buffer overflow on
+                // network shares) means changes were dropped, so what is left is
+                // "possibly dirty" — re-read, because a patch built from a
+                // partial report would silently keep a stale row.
+                Err(_) => Vec::new(),
+                Ok(event) => changed_children(&watched, &event),
             };
 
-            if should_refresh {
-                let _ = DirectoryChanged(event_path.clone()).emit(&app);
+            let _ = DirectoryChanged {
+                path: event_path.clone(),
+                names,
             }
+            .emit(&app);
         })
         .map_err(|error| FileSystemError::Io(error.to_string()))?;
 
@@ -44,6 +53,38 @@ pub fn create_directory_watcher(
         .map_err(|error| FileSystemError::Io(error.to_string()))?;
 
     Ok(watcher)
+}
+
+/// The children `event` accounts for, or an empty list when it accounts for
+/// nothing that maps to a single row.
+///
+/// The empty list is the re-read signal, and every branch that returns it is the
+/// safe way to be wrong: a listing gets re-read when a change could not be
+/// pinned to a row. `Any` and `Other` make no promise about what changed, and an
+/// event naming the watched directory itself — a delete of it, a rename reported
+/// against it — has no child to name.
+fn changed_children(directory: &Path, event: &notify::Event) -> Vec<String> {
+    if matches!(event.kind, EventKind::Any | EventKind::Other) {
+        return Vec::new();
+    }
+
+    let mut names = Vec::with_capacity(event.paths.len());
+
+    for path in &event.paths {
+        // Non-recursive watching should report children only, but "should" is
+        // not something to patch a listing against.
+        if path.parent() != Some(directory) {
+            return Vec::new();
+        }
+
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            return Vec::new();
+        };
+
+        names.push(name.to_owned());
+    }
+
+    names
 }
 
 /// The beginning of a directory listing: the entries that were read, plus a
@@ -204,20 +245,76 @@ pub fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, Fil
 /// `d_type`, and falls back to the very same `lstat` otherwise.
 fn directory_entry(entry: fs::DirEntry) -> Option<DirectoryEntry> {
     let metadata = entry.metadata().ok()?;
+    Some(entry_from(
+        entry.file_name().to_string_lossy().into_owned(),
+        entry.path(),
+        metadata,
+    ))
+}
+
+/// The display entry for a child whose metadata is already in hand.
+///
+/// Both read paths build entries through here — the listing from a `DirEntry`, a
+/// patch from the name a watcher reported — so a patched row is spelled exactly
+/// like the row it replaces. That is what lets the frontend match the two up by
+/// name instead of re-reading the directory to find out.
+fn entry_from(name: String, path: PathBuf, metadata: fs::Metadata) -> DirectoryEntry {
     let kind = entry_kind(metadata.file_type());
     let size = matches!(&kind, EntryKind::File).then_some(metadata.len());
-    let name = entry.file_name().to_string_lossy().into_owned();
     let (hidden, read_only) = entry_state_flags(&metadata, &name);
 
-    Some(DirectoryEntry {
+    DirectoryEntry {
         name,
-        path: path_to_string(&entry.path()),
+        path: path_to_string(&path),
         kind,
         modified_at: modified_at_millis(&metadata),
         size,
         hidden,
         read_only,
-    })
+    }
+}
+
+/// Stats exactly the named children of an already-canonical directory, one
+/// answer per requested name, in the order requested.
+///
+/// A watcher reports a handful of names out of a listing of tens of thousands,
+/// and re-reading the whole directory for them is the cost this exists to avoid.
+/// `Ok(None)` is a name that no longer exists, which is the one answer that tells
+/// the caller to drop its row. Any other failure fails the whole call: a listing
+/// patched from a report the backend is unsure of would be wrong in a way nobody
+/// would ever notice, so the caller re-reads instead.
+pub fn stat_named_children(
+    directory: &Path,
+    names: Vec<String>,
+) -> Result<Vec<Option<DirectoryEntry>>, FileSystemError> {
+    let stat_one = |name: &str| -> Result<Option<DirectoryEntry>, FileSystemError> {
+        let path = directory.join(name);
+
+        // `symlink_metadata`, not `metadata`: the listing this patches was read
+        // through `DirEntry::metadata()`, which does not follow the link either,
+        // so a symlink has to keep reporting as one.
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(FileSystemError::Io(error.to_string())),
+        };
+
+        Ok(Some(entry_from(name.to_owned(), path, metadata)))
+    };
+
+    // The same split the listing uses: a burst that touches thousands of names
+    // is exactly the batch worth spreading over threads.
+    let results: Vec<Result<Option<DirectoryEntry>, FileSystemError>> =
+        if batch_is_worth_splitting(names.len()) {
+            names
+                .into_par_iter()
+                .map(|name| stat_one(&name))
+                .collect()
+        } else {
+            names.iter().map(|name| stat_one(name)).collect()
+        };
+
+    results.into_iter().collect()
 }
 
 pub fn modified_at_millis(metadata: &fs::Metadata) -> Option<u64> {
@@ -437,6 +534,141 @@ mod tests {
                 .iter()
                 .all(|entry| entry.size == Some(7) && entry.modified_at.is_some()),
             "every entry carries the metadata its batch read"
+        );
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    /// The event a watcher hands over, with the fields the attribution reads.
+    fn event(kind: EventKind, paths: Vec<PathBuf>) -> notify::Event {
+        notify::Event {
+            kind,
+            paths,
+            attrs: Default::default(),
+        }
+    }
+
+    #[test]
+    fn attributes_a_change_to_the_children_it_names() {
+        let directory = Path::new("/watched/dir");
+
+        let created = event(
+            EventKind::Create(notify::event::CreateKind::File),
+            vec![directory.join("new.txt")],
+        );
+        assert_eq!(
+            changed_children(directory, &created),
+            vec!["new.txt".to_owned()],
+            "a new child is one row the listing can add"
+        );
+
+        // A rename arrives as both halves: the name that went away and the name
+        // that appeared. Patching both is what keeps a move from leaving a row
+        // that points at nothing.
+        let moved = event(
+            EventKind::Modify(notify::event::ModifyKind::Name(
+                notify::event::RenameMode::From,
+            )),
+            vec![directory.join("old.txt"), directory.join("new.txt")],
+        );
+        assert_eq!(
+            changed_children(directory, &moved),
+            vec!["old.txt".to_owned(), "new.txt".to_owned()]
+        );
+    }
+
+    /// Every branch that answers nothing is a branch the listing is re-read on,
+    /// so the test is that none of them *pretends* to know a child.
+    #[test]
+    fn refuses_to_attribute_what_is_not_plainly_a_child() {
+        let directory = Path::new("/watched/dir");
+
+        let self_deleted = event(
+            EventKind::Remove(notify::event::RemoveKind::Folder),
+            vec![directory.to_path_buf()],
+        );
+        assert!(
+            changed_children(directory, &self_deleted).is_empty(),
+            "the watched directory itself is not a row in it"
+        );
+
+        let nested = event(
+            EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            vec![directory.join("sub").join("deep.txt")],
+        );
+        assert!(
+            changed_children(directory, &nested).is_empty(),
+            "a grandchild is not attributable to one row"
+        );
+
+        for kind in [EventKind::Any, EventKind::Other] {
+            let vague = event(kind.clone(), vec![directory.join("a.txt")]);
+            assert!(
+                changed_children(directory, &vague).is_empty(),
+                "{kind:?} says nothing about what changed"
+            );
+        }
+
+        let nameless = event(
+            EventKind::Create(notify::event::CreateKind::File),
+            Vec::new(),
+        );
+        assert!(
+            changed_children(directory, &nameless).is_empty(),
+            "an event with no path cannot name a row to keep"
+        );
+    }
+
+    /// A patched row replaces the row it matches, so the two must be spelled
+    /// identically — the paths are what the frontend compares, and a difference
+    /// of prefix or separator would show the same file twice.
+    #[test]
+    fn a_patched_entry_is_spelled_exactly_like_the_listed_one() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-entry-patch-test-{}", std::process::id()));
+        let nested = directory.join("folder");
+        fs::create_dir_all(&nested).expect("create nested directory");
+        fs::write(directory.join("plain.txt"), "plain").expect("create file");
+        fs::write(directory.join("改名的.txt"), "unicode name").expect("create unicode file");
+
+        let canonical = canonical_path(&directory).expect("canonicalize the test directory");
+        let listed = read_directory_sync(canonical.clone())
+            .expect("read the directory")
+            .entries;
+
+        let names: Vec<String> = listed.iter().map(|entry| entry.name.clone()).collect();
+        let patched = stat_named_children(&canonical, names.clone()).expect("stat the children");
+
+        assert_eq!(patched.len(), names.len(), "one answer per name asked for");
+
+        for (position, name) in names.iter().enumerate() {
+            let entry = patched[position].as_ref().unwrap_or_else(|| {
+                panic!("{name} exists in the listing, so it must exist in the patch")
+            });
+            let original = listed
+                .iter()
+                .find(|entry| &entry.name == name)
+                .expect("listed entry");
+
+            assert_eq!(&entry.path, &original.path, "path spelling is the match key");
+            assert_eq!(&entry.kind, &original.kind, "a directory stays a directory");
+            assert_eq!(&entry.name, &original.name);
+            assert_eq!(entry.size, original.size);
+            assert_eq!(entry.modified_at, original.modified_at);
+            assert_eq!(entry.hidden, original.hidden);
+            assert_eq!(entry.read_only, original.read_only);
+        }
+
+        // The name that is gone answers `None`, which is the one answer that
+        // tells the caller to drop its row rather than to wait for a re-read.
+        let mut with_gone = names;
+        with_gone.push("no-such-file.txt".to_owned());
+        let patched = stat_named_children(&canonical, with_gone).expect("stat with a missing name");
+        assert!(
+            patched.last().expect("an answer for the missing name").is_none(),
+            "a name that is not on disk is reported as gone"
         );
 
         fs::remove_dir_all(directory).expect("remove test directory");

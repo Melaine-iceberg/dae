@@ -34,7 +34,26 @@ const POLL_INTERVAL_MAX: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
 #[tauri_specta(event_name = "explorer-directory-changed")]
-pub struct DirectoryChanged(pub String);
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryChanged {
+    /// The directory that changed, in the spelling its listing reports.
+    pub path: String,
+    /// The children that changed, by name.
+    ///
+    /// Empty means the change is *not attributable to a row* — the watcher hit
+    /// an error (whose payload may have been dropped), reported the watched
+    /// directory itself, or came from a backend that only knows "something
+    /// differs". A caller then has to re-read; a non-empty list is everything it
+    /// needs to repair a listing it already holds.
+    pub names: Vec<String>,
+}
+
+impl DirectoryChanged {
+    /// A change that can only be answered by re-reading the directory.
+    pub fn resync(path: String) -> Self {
+        Self { path, names: Vec::new() }
+    }
+}
 
 /// The active observation. Dropping a `Notify` handle stops its OS watcher;
 /// a `Poll` handle owns a stop flag that its poller thread checks each tick.
@@ -254,7 +273,9 @@ pub fn spawn_polling_watcher(
 
                     snapshot = current;
                     // Something is happening, so go back to watching closely.
-                    let _ = DirectoryChanged(view.path.clone()).emit(&app);
+                    // A poll only learns *that* the directory differs, never
+                    // which rows, so this stays the re-read form.
+                    let _ = DirectoryChanged::resync(view.path.clone()).emit(&app);
                 }
                 // A transient read error skips a tick instead of killing the
                 // poller, so a briefly unreachable server does not blind the

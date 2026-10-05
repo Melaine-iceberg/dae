@@ -455,3 +455,17 @@ function rememberListing(path: string, listing: ListingView): void {
     completedListings.delete(oldest);
   }
 }
+
+/**
+ * Drops a directory's cached listing, so the next pane that opens it reads the
+ * directory again instead of painting rows that are known to be wrong.
+ *
+ * The cache exists to make a re-open instant, which is only true while the
+ * folder has not changed. A pane that gets a change notification and repairs its
+ * own listing has just proved the cached one stale — the Miller columns read a
+ * directory through `useDirectoryListing` and cache it there, while the list is
+ * the navigator's own, so the two need this handoff.
+ */
+export function invalidateCachedListing(path: string): void {
+  completedListings.delete(path);
+}

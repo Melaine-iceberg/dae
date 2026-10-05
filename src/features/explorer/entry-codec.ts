@@ -3,7 +3,7 @@ import type { DirectoryEntry } from "./types";
 
 /**
  * Reader for the columnar listing packets `src-tauri/src/file_system/entry_codec.rs`
- * packs.
+ * packs, plus the one place TypeScript writes them (see [`packEntries`]).
  *
  * The point of the format is that the frontend never has to materialise the
  * whole listing. A 35,803 entry directory arrives as one flat buffer, and the
@@ -339,4 +339,93 @@ export class ListingPacket {
       previous = offset;
     }
   }
+}
+
+/** The mirror of the module-level decoder. */
+const encoder = new TextEncoder();
+
+/**
+ * Packs entries into one listing packet — the Rust packer's mirror, for the rows
+ * a watcher patch adds to a listing the frontend already holds.
+ *
+ * The backend packs every listing it streams; this is the only place TypeScript
+ * writes the format, and it exists so a patch can be expressed as *one more
+ * packet* rather than as a rebuilt array of rows. That is what lets a patched
+ * listing still read as the same listing grown (see `sharedRowCount`): the head
+ * array and the packets before it keep their identity, and only the packet list
+ * gets longer. The alternative — an array of `DirectoryEntry` — has no such
+ * hook, because the head array is the identity the comparison starts from.
+ *
+ * The buffer goes through [`ListingPacket.parse`] before it is returned, so the
+ * caller cannot be handed a packet its own accessors would misread.
+ */
+export function packEntries(entries: readonly DirectoryEntry[]): ListingPacket {
+  const encoded = entries.map((entry) => ({
+    name: encoder.encode(entry.name),
+    path: encoder.encode(entry.path),
+  }));
+
+  let namesLen = 0;
+  let pathsLen = 0;
+  for (const { name, path } of encoded) {
+    namesLen += name.byteLength;
+    pathsLen += path.byteLength;
+  }
+
+  const count = entries.length;
+  const layout = layoutFor(count, namesLen, pathsLen);
+  if (layout === null) {
+    throw new ListingPacketError("the listing packet lengths overflow");
+  }
+
+  const bytes = new Uint8Array(layout.byteLen);
+  const view = new DataView(bytes.buffer);
+  bytes.set(MAGIC, 0);
+  view.setUint16(4, VERSION, true);
+  // No header flags: a patch is a listing of its own, not the tail of a stream.
+  view.setUint16(HEADER_FLAGS_OFFSET, 0, true);
+  view.setUint32(8, count, true);
+  view.setUint32(12, namesLen, true);
+  view.setUint32(16, pathsLen, true);
+
+  let nameOffset = 0;
+  let pathOffset = 0;
+  for (let index = 0; index < count; index++) {
+    const entry = entries[index];
+
+    bytes[layout.kinds + index] = KINDS.indexOf(entry.kind);
+
+    let flags = 0;
+    if (entry.hidden) flags |= FLAG_HIDDEN;
+    if (entry.readOnly) flags |= FLAG_READ_ONLY;
+    if (entry.modifiedAt !== null) flags |= FLAG_HAS_MODIFIED_AT;
+    if (entry.size !== null) flags |= FLAG_HAS_SIZE;
+    bytes[layout.flags + index] = flags;
+
+    // Absent optionals are written as zero and read back as `null` through the
+    // flags, exactly as the Rust packer spells them.
+    view.setBigUint64(layout.modified + index * 8, BigInt(entry.modifiedAt ?? 0), true);
+    view.setBigUint64(layout.sizes + index * 8, BigInt(entry.size ?? 0), true);
+
+    view.setUint32(layout.nameOffsets + index * 4, nameOffset, true);
+    view.setUint32(layout.pathOffsets + index * 4, pathOffset, true);
+    nameOffset += encoded[index].name.byteLength;
+    pathOffset += encoded[index].path.byteLength;
+  }
+
+  view.setUint32(layout.nameOffsets + count * 4, nameOffset, true);
+  view.setUint32(layout.pathOffsets + count * 4, pathOffset, true);
+
+  let cursor = layout.names;
+  for (const { name } of encoded) {
+    bytes.set(name, cursor);
+    cursor += name.byteLength;
+  }
+  cursor = layout.paths;
+  for (const { path } of encoded) {
+    bytes.set(path, cursor);
+    cursor += path.byteLength;
+  }
+
+  return ListingPacket.parse(bytes);
 }

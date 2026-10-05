@@ -363,6 +363,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .commands(tauri_specta::collect_commands![
             file_system::commands::get_home_directory,
             file_system::commands::read_directory,
+            file_system::commands::read_directory_changes,
             file_system::watch::unwatch_directory,
             file_system::listing::cancel_directory_listing,
             file_system::directory_size::start_directory_size_calculation,

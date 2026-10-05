@@ -7,7 +7,7 @@ use super::progress::{
 };
 use super::transfer::{self, TransferSource};
 use super::types::{
-    ConflictAction, DirectoryView, FileProperties, NewEntryKind, PropertyChanges,
+    ConflictAction, DirectoryEntry, DirectoryView, FileProperties, NewEntryKind, PropertyChanges,
     RecursivePropertyUpdateOutcome, RenameRequest, TransferConflict, TransferItem, TransferPair,
     path_to_string,
 };
@@ -63,6 +63,41 @@ pub async fn read_directory(
         listing::BatchSink::Events,
     )
     .await
+}
+
+/// Reads exactly the children a change event named, so a listing that is already
+/// on screen can be repaired instead of re-walked.
+///
+/// The alternative is the expensive one: one new file in a 35,803 entry directory
+/// used to cost a full re-read — ~12 ms of metadata reads on the backend, ~5.8 MB
+/// of listing over IPC, and a comparison of every row to find the one that
+/// differed. This answers one entry per name asked for.
+///
+/// `directory` is the spelling the listing reports (canonical for a local
+/// directory), and the paths this returns are built from it, which is what makes
+/// a patched row match the row it replaces. `names` come from
+/// [`super::DirectoryChanged`]; a name no longer on disk answers `null`, and any
+/// other stat failure errors the whole call so the caller re-reads rather than
+/// patching from a half-truth.
+#[tauri::command]
+#[specta::specta]
+pub async fn read_directory_changes(
+    directory: String,
+    names: Vec<String>,
+) -> Result<Vec<Option<DirectoryEntry>>, FileSystemError> {
+    // Remote backends have no cheap per-entry read and their watcher reports
+    // "something differs" rather than which, so a patch request for one is a bug
+    // rather than a slow path. Re-read is what the caller does with an error.
+    if !vfs::is_local_path(&directory) {
+        return Err(FileSystemError::Internal(format!(
+            "{directory} is not a local directory"
+        )));
+    }
+
+    let path = PathBuf::from(&directory);
+    tauri::async_runtime::spawn_blocking(move || local::stat_named_children(&path, names))
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// The same read as [`read_directory`], but the batches that follow the head

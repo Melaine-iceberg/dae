@@ -42,6 +42,13 @@ const appWindow = getAppWindow();
  * the window regains focus — with a short debounce, because watcher events
  * arrive in bursts around a write.
  *
+ * A burst is repaired rather than re-read wherever it can be. The backend names
+ * the children that changed, so the debounce accumulates those names and hands
+ * them to `navigator.patch`, which stats just them and rewrites just those rows.
+ * An event that cannot name its rows — a watcher error, a remote backend whose
+ * poll only says "something differs" — clears the accumulated names, because
+ * from that point the listing has to be read again to be trusted.
+ *
  * The pane also refreshes once on mount. A pane that mounts is a pane that was
  * hidden (its tab was switched away from) or is being restored: its watch was
  * released when it went away, so a change landing meanwhile reached neither an
@@ -53,24 +60,50 @@ export function useDirectoryRefresh(navigator: ExplorerNavigator): void {
   useEffect(() => {
     let disposed = false;
     let refreshTimeout: number | undefined;
+    /** The change the debounce window is still collecting. */
+    let pendingPath: string | null = null;
+    /** The children named so far, or `null` once one of them could not be named. */
+    let pendingNames: Set<string> | null = null;
 
-    const scheduleRefresh = (path: string) => {
+    /** An empty `names` means the change is not attributable to a row. */
+    const schedule = (path: string, names: readonly string[] | null) => {
       if (disposed || navigator.getSnapshot().directory?.path !== path) return;
+
+      pendingPath = path;
+      if (names === null || names.length === 0) {
+        pendingNames = null;
+      } else {
+        // Added to in place: an extraction can name one child per event, and
+        // rebuilding the set per event would copy what it already holds.
+        const accumulated = pendingNames ?? new Set<string>();
+        for (const name of names) accumulated.add(name);
+        pendingNames = accumulated;
+      }
 
       window.clearTimeout(refreshTimeout);
       refreshTimeout = window.setTimeout(() => {
         refreshTimeout = undefined;
-        void navigator.refresh(path);
+        const target = pendingPath;
+        const changed = pendingNames;
+        pendingPath = null;
+        pendingNames = null;
+        if (!target) return;
+
+        void (changed === null
+          ? navigator.refresh(target)
+          : navigator.patch(target, [...changed]));
       }, DIRECTORY_REFRESH_DELAY_MS);
     };
 
     const unlistenChangesPromise = events.explorerDirectoryChanged.listen(({ payload }) => {
-      scheduleRefresh(payload);
+      schedule(payload.path, payload.names);
     });
     const unlistenFocusPromise = appWindow
       ? appWindow.onFocusChanged(({ payload: focused }) => {
           const currentPath = navigator.getSnapshot().directory?.path;
-          if (focused && currentPath) scheduleRefresh(currentPath);
+          // Focus is a catch-up, not a report: nothing is known about what
+          // changed, so the whole directory is re-read.
+          if (focused && currentPath) schedule(currentPath, null);
         })
       : Promise.resolve(() => {});
 

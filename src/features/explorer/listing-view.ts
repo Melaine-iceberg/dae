@@ -1,4 +1,4 @@
-import { ListingPacket } from "./entry-codec";
+import { ListingPacket, packEntries } from "./entry-codec";
 import type { DirectoryEntry, EntryKind } from "./types";
 
 /**
@@ -499,6 +499,214 @@ export function listingViewOfPacket(packet: ListingPacket): ListingView {
  * depend on.
  */
 const singlePacketViews = new WeakMap<ListingPacket, ListingView>();
+
+/**
+ * One row a watcher patch resolved, against the listing it patches.
+ *
+ * `index` is an index into the *displayed* listing rather than into the packets
+ * behind it, so a patch composes onto a listing that was patched before: the
+ * previous patch's map is rewritten, not decoded. `entry` is the row's current
+ * content, or `null` when the name no longer resolves to anything.
+ */
+export interface ListingPatchChange {
+  index: number;
+  entry: DirectoryEntry | null;
+}
+
+/** What a patched view was built from, so the next patch can grow it again. */
+interface PatchProvenance {
+  /** The head array of the listing the patch rows are appended to. Kept by
+   *  identity, which is what `sharedRowCount` compares first. */
+  head: readonly DirectoryEntry[];
+  packets: readonly ListingPacket[];
+  /** Rows in that listing — where the next batch of patch rows starts. */
+  sourceCount: number;
+  /** The displayed rows as source indices. */
+  map: Int32Array | null;
+}
+
+/**
+ * A patched view by its provenance.
+ *
+ * The mapping cannot be recovered from the published view's shape: a patch that
+ * removes a row and a filter that hides one are both a `MappedListingView` with
+ * holes, and patching through a filter would rewrite hidden rows while keeping
+ * the rows the user filtered out. Keying on the view this module handed back is
+ * exact — and the navigator's own listing is the only thing ever patched.
+ */
+const patchProvenance = new WeakMap<ListingView, PatchProvenance>();
+
+/**
+ * Returns `view` with `changes` applied in place, or `null` when `view` is not a
+ * listing this module can patch.
+ *
+ * This is what a directory change costs when the explorer already holds the
+ * listing: one `stat` per named child over IPC, one scan of the listing's names
+ * to locate the rows (see `indicesOfNames`), and a map of the rows it already
+ * has. The alternative — re-read the directory — is a full enumeration, the
+ * packed bytes for every row in the folder, a full `isSameListing` scan, and a
+ * sort the worker has to start over because a fresh head array is not the one it
+ * ordered. `ExplorerNavigator.patch` holds the measured comparison.
+ *
+ * The three outcomes are not equally cheap, and that is inherent rather than
+ * incidental:
+ *
+ * - Rows *added*: the listing grows by one packet and keeps its head and the
+ *   packets before it, so `sharedRowCount` reads it as the same listing grown and
+ *   the worker folds the new rows into the order it holds. Nothing is
+ *   re-ordered — and that survives a listing that was patched before, because
+ *   the previous patch's map is a prefix of the new one.
+ * - Rows *rewritten*: the row's own sort primitives may have changed, so the
+ *   order cannot be trusted and the worker starts over. The map keeps the
+ *   listing's length and replaces the slot.
+ * - Rows *removed*: same as a rewrite — a hole ends the run `sharedRowCount`
+ *   recognises. The map drops the slot.
+ *
+ * A rewrite or a removal also has to be visible to the worker as a different
+ * listing, and it is: `sharedRowCount` compares storage by identity, so a map
+ * that points a row somewhere else does not match the map it replaced.
+ */
+export function patchedListingView(
+  view: ListingView,
+  changes: readonly ListingPatchChange[],
+): ListingView | null {
+  let base: PatchProvenance;
+  if (view instanceof PacketStreamView) {
+    base = { head: view.head, map: null, packets: view.packets, sourceCount: view.count };
+  } else {
+    const provenance = patchProvenance.get(view);
+    if (!provenance) return null;
+    base = provenance;
+  }
+
+  /** The rows the patch appends to the listing's index space, in pack order. */
+  const fresh: DirectoryEntry[] = [];
+  /** Positions in `fresh` of rows the listing did not already hold. */
+  const created: number[] = [];
+  /**
+   * What happens to a displayed row: the position in `fresh` that replaces it,
+   * or `null` when it goes away. One map rather than a set of each, so a row
+   * cannot be counted as both replaced and removed.
+   */
+  const slots = new Map<number, number | null>();
+
+  for (const { entry, index } of changes) {
+    if (index < 0) {
+      if (entry !== null) {
+        created.push(fresh.length);
+        fresh.push(entry);
+      }
+      continue;
+    }
+
+    // A caller scans the listing it patches, so an out-of-range index means the
+    // listing changed underneath it. Refuse rather than rewrite a row that is
+    // now somebody else's.
+    if (index >= view.count) return null;
+
+    if (entry === null) {
+      slots.set(index, null);
+      continue;
+    }
+
+    slots.set(index, fresh.length);
+    fresh.push(entry);
+  }
+
+  // Nothing to add and nothing to remove: the rows on screen already say what
+  // the filesystem does. Returning the same view costs the caller no re-render,
+  // which is the point of asking for the named children rather than the folder.
+  if (fresh.length === 0 && slots.size === 0) return view;
+
+  const packets = fresh.length === 0 ? base.packets : [...base.packets, packEntries(fresh)];
+  const source = packetStreamView(base.head, packets);
+  /** Where the patch rows start in the grown listing's index space. */
+  const tail = base.sourceCount;
+
+  // Rows added to a listing that was never patched: the grown listing *is* the
+  // answer, with no map in front of it, and that is what keeps it foldable.
+  if (base.map === null && slots.size === 0) return source;
+
+  let dropped = 0;
+  for (const slot of slots.values()) {
+    if (slot === null) dropped += 1;
+  }
+
+  const map = new Int32Array(view.count - dropped + created.length);
+  let cursor = 0;
+  for (let index = 0; index < view.count; index += 1) {
+    const slot = slots.get(index);
+    if (slot !== undefined) {
+      if (slot !== null) map[cursor++] = tail + slot;
+      continue;
+    }
+    map[cursor++] = base.map === null ? index : base.map[index];
+  }
+  for (const position of created) {
+    map[cursor++] = tail + position;
+  }
+
+  const patched = new MappedListingView(source, map);
+  patchProvenance.set(patched, {
+    head: base.head,
+    map,
+    packets,
+    sourceCount: tail + fresh.length,
+  });
+  return patched;
+}
+
+/**
+ * The display index of each name in `names`, for a patch to address its rows.
+ *
+ * One scan for the whole set: a patch's names are a handful and a listing is
+ * routinely tens of thousands of rows, so a pass per name would be a pass per
+ * name. The scan reads `nameAt`, which decodes each row's name from the packet
+ * blob — measured alongside `isSameListing`, a whole 35k scan of that shape is
+ * a couple of milliseconds against the ~123 ms re-sort it replaces.
+ */
+export function indicesOfNames(
+  view: ListingView,
+  names: ReadonlySet<string>,
+): Map<string, number> {
+  const found = new Map<string, number>();
+  if (names.size === 0) return found;
+
+  for (let index = 0; index < view.count; index += 1) {
+    const name = view.nameAt(index);
+    if (name === undefined || !names.has(name) || found.has(name)) continue;
+
+    found.set(name, index);
+    if (found.size === names.size) break;
+  }
+
+  return found;
+}
+
+/**
+ * Whether the row at `index` already says exactly what `entry` says.
+ *
+ * The patch asks this before it rewrites a row, because a watcher fires for
+ * changes a listing does not show (a rename onto itself, a write that left the
+ * size and time alone) and rewriting such a row would reorder the whole
+ * directory to paint what the user can already see. It is the cheap stand-in for
+ * `isSameListing`, which can only answer after a full re-read.
+ */
+export function listingRowMatches(
+  view: ListingView,
+  index: number,
+  entry: DirectoryEntry,
+): boolean {
+  return (
+    view.nameAt(index) === entry.name &&
+    view.pathAt(index) === entry.path &&
+    view.kindAt(index) === entry.kind &&
+    view.sizeAt(index) === (entry.size ?? undefined) &&
+    view.modifiedAt(index) === (entry.modifiedAt ?? undefined) &&
+    view.hiddenAt(index) === entry.hidden &&
+    view.readOnlyAt(index) === entry.readOnly
+  );
+}
 
 /**
  * Orders a view by `order`, an `Int32Array` where `order[displayIndex]` is the
