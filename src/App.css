@@ -515,7 +515,15 @@
   --accent-foreground: #37352f;
   --error-container: #fbe3dc;
   --on-error-container: #6e1f12;
-  --folder: #8a5709;
+  /* Folder glyphs repeat once per directory — 38 of them in a full listing —
+     so they are the highest-volume colour in the app, and a 93%-saturated gold
+     at that volume reads as noise rather than as a signal. Pulled back to a
+     richer-but-quieter bronze at 68%. The glyph is a thin outline rather than
+     a fill, so it needs more chroma than its luminance alone suggests or it
+     goes anemic next to the filename; this keeps the folder convention (the
+     one glyph that should not be monochrome) while leaving the accent as the
+     only thing that shouts. 4.92:1 on the pane, so AA holds. */
+  --folder: #8f6a2e;
   --destructive: #c4372f;
   /* Status hues: one hue each, contrast-checked against the card plane. */
   --success: #367453;
@@ -611,7 +619,9 @@
   --accent-foreground: #e9e9e7;
   --error-container: #5f2a22;
   --on-error-container: #ffd9cf;
-  --folder: #d9a94e;
+  /* Same reasoning as the light scheme: a lower-chroma sand at 44% rather than
+     the 64% it was, and 6.98:1 on the pane. */
+  --folder: #cbaa72;
   --destructive: #ec8d86;
   --success: #6dbd94;
   --warning: #dfa63f;
