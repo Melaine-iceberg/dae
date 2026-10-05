@@ -50,7 +50,7 @@ function themeBootStyles() {
         const dark = blocks("\\.dark");
         const values: Record<string, string> = {
           __DAE_CANVAS__: token(light, "background"),
-          // `accent-default`, not `primary`: `--primary` is now derived from
+          // `accent-default`, not `primary`: `--primary` is now derived fromcd
           // the system-accent seam and has no literal value to extract. At
           // boot no bridge has run yet either, so the shipped default is the
           // correct spinner colour and not merely a fallback.
