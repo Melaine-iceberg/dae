@@ -83,6 +83,10 @@
      the Latin it occasionally sets. Only `title` and `lead` carry a weight
      and tracking of their own — body and below inherit, so a call site can
      go bold without re-declaring size. */
+  --text-display: 1.5rem;
+  --text-display--line-height: 1.875rem;
+  --text-display--font-weight: 640;
+  --text-display--letter-spacing: -0.021em;
   --text-title: 0.9375rem;
   --text-title--line-height: 1.375rem;
   --text-title--font-weight: 600;
@@ -122,9 +126,9 @@
      Only `standard` belongs on a colour-only transition. A settle curve on a
      hover fill reads as the hover lagging behind the pointer, which is why
      every `transition-[background-color…]` uses it. */
-  --ease-spring-fast: cubic-bezier(0.215, 0.61, 0.355, 1);
-  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-spring-slow: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring-fast: cubic-bezier(0.32, 1.18, 0.52, 1);
+  --ease-spring: cubic-bezier(0.26, 1.14, 0.44, 1);
+  --ease-spring-slow: cubic-bezier(0.18, 1.08, 0.32, 1);
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
 
@@ -134,10 +138,10 @@
      Tailwind does not read: the variables were still emitted, so the
      hand-written CSS below honoured them, but every `duration-*` class in the
      app silently generated nothing and fell back to Tailwind's stock 150ms. */
-  --transition-duration-instant: 80ms;
-  --transition-duration-fast: 120ms;
-  --transition-duration-normal: 160ms;
-  --transition-duration-slow: 240ms;
+  --transition-duration-instant: 90ms;
+  --transition-duration-fast: 140ms;
+  --transition-duration-normal: 190ms;
+  --transition-duration-slow: 280ms;
 
   /* Elevation: four measured steps, spent on floating layers only — menus,
      dialogs, the command palette, drag ghosts. The window itself is flat:
@@ -152,16 +156,16 @@
      resolve into a ladder. */
   --shadow-ambient-xs:
     0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
-    0 1px 3px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent);
+    0 2px 5px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent);
   --shadow-ambient-sm:
     0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
-    0 4px 10px -3px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent);
+    0 5px 14px -4px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent);
   --shadow-ambient:
-    0 2px 4px -2px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
-    0 10px 26px -8px color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
+    0 3px 8px -3px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
+    0 14px 34px -10px color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
   --shadow-ambient-lg:
-    0 4px 10px -4px color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent),
-    0 20px 48px -12px color-mix(in oklab, var(--shadow-color) var(--shadow-a4), transparent);
+    0 6px 16px -6px color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent),
+    0 30px 64px -18px color-mix(in oklab, var(--shadow-color) var(--shadow-a4), transparent);
 
   --color-selection: var(--selection);
 
@@ -273,11 +277,15 @@
      a menu that grew. It is deliberately NOT reachable from the inline
      elements — buttons, inputs, rows and chips stay on `sm` and `md`, so
      tightening this step never touches them. */
-  --radius-xs: calc(var(--radius) - 5px);
-  --radius-sm: calc(var(--radius) - 4px);
+  --radius-xs: calc(var(--radius) - 8px);
+  --radius-sm: calc(var(--radius) - 5px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 8px);
+  /* The window's content plane. A step below `--radius-xl`: a full-width
+     surface that rounds as hard as a 20px dialog reads as a card, and the
+     point of the plane is that the *window* has a corner, not a tile. */
+  --radius-panel: calc(var(--radius) + 2px);
 
   /* Geometry: the cells, stand-ins and panel widths that used to be written as
      arbitrary px at each call site (`size-[22px]` six times, the card skeleton
@@ -359,6 +367,13 @@
      dialog keeps its own `-translate-x-1/2 -translate-y-1/2` while rising. */
   --animate-float-in: float-in var(--transition-duration-fast) var(--ease-standard) both;
 
+  /* Surface entrance for the spatial cards — the hero plate, a quick-access
+     tile, a grid cell. It travels and scales where `float-in` only settles:
+     these are *objects on the canvas* rather than menus hung off a control,
+     so they are allowed to arrive. The travel is one step of the shell's
+     2px rhythm and never a slide from off-screen. */
+  --animate-rise-in: rise-in var(--transition-duration-slow) var(--ease-spring) both;
+
   @keyframes m3-wave {
     to {
       transform: translateX(-16px);
@@ -375,16 +390,28 @@
       transform: translateY(0);
     }
   }
+
+  @keyframes rise-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
 }
 
 :root {
-  /* Linear — light. A quiet paper canvas carries white content planes with
-     hairline edges (border/card ≈ 1.35) so boundaries stay legible without
-     any shadow. Depth is a measured ladder — canvas → sidebar column →
-     content plane → floating layer, where only the last one lifts. The accent
-     is the shipped teal picked so it clears AA in BOTH of its jobs: as a fill
-     (white on it ≈ 5.4) and as text or icon on any surface in the ladder
-     (≈ 5.4 at worst).
+  /* WARM SPATIAL — light. A warm paper canvas carries cream content planes, and
+     boundaries stay legible without any shadow: every edge is a hairline
+     (border/card ≈ 1.35). Depth is a measured ladder — canvas → sidebar column
+     → content plane → floating layer, where only the last one lifts. Shadows
+     are warm and shallow (5→24%), because on a warm canvas a neutral shadow
+     reads as dirt rather than as distance. The accent is a terracotta picked so
+     it clears AA in BOTH of its jobs: as a fill (white on it ≈ 4.9) and as text
+     or icon on any surface in the ladder (≈ 4.9 at worst).
 
      THE LIGHT LADDER, and why it now has three rungs and not two.
 
@@ -400,21 +427,21 @@
 
      So light now runs the same ladder dark does, and in the same direction:
      the canvas is the darkest of the three, the nav column is a half-step
-     above it, and the content plane is white. The steps are small in L* —
+     above it, and the content plane is cream. The steps are small in L* —
      that is the point, and the reason this is still a hairline system rather
      than a shadowed one — but they are real, so the sidebar has an identity
      of its own and the window has a front and a back. */
-  --shadow-color: #232a3d; /* cool ink: shadows tint the canvas, never grey it */
-  --shadow-a1: 14%;
-  --shadow-a2: 23%;
-  --shadow-a3: 32%;
-  --shadow-a4: 42%;
-  --background: #f1f3f5; /* canvas — the step the panels sit ON, see the ladder note below */
-  --foreground: #282a30;
-  --card: #ffffff; /* panel surface */
-  --card-foreground: #282a30;
-  --popover: #ffffff; /* menus, dialogs — lift comes from shadow, not tone */
-  --popover-foreground: #282a30;
+  --shadow-color: #38291a; /* warm ink: shadows tint the paper, never grey it */
+  --shadow-a1: 5%;
+  --shadow-a2: 9%;
+  --shadow-a3: 14%;
+  --shadow-a4: 24%;
+  --background: #f5f1ea; /* canvas — the step the panels sit ON, see the ladder note below */
+  --foreground: #2b2723;
+  --card: #fffefa; /* panel surface */
+  --card-foreground: #2b2723;
+  --popover: #fffdf8; /* menus, dialogs — lift comes from shadow, not tone */
+  --popover-foreground: #2b2723;
   /* THE FLOATING-GLASS PAIR — see `.floating-frost` and THE FLOATING-GLASS SEAM
      below it. The menu plane at its frost density, plus the pass it runs over
      whatever is behind it.
@@ -457,38 +484,74 @@
      so wherever the plate reaches past the hole the platform left it lands on
      a colour that is already there. */
   --frost-plate: var(--card);
-  --accent-default: #0d7a86; /* shipped accent (teal); see the accent seam below */
+  /* ---- The warm scheme ----------------------------------------------------
+
+     The window is a warm paper desk rather than a cool glass board. Every
+     neutral carries a yellow-orange cast — hue ≈ 35–40°, chroma enough to read
+     as *chosen* and never as a tint — so the app sits next to paper, wood and
+     desktop wallpaper instead of fighting them. Nothing here is pure grey and
+     nothing is white: the brightest surface in the file is #fffdf8.
+
+     The ladder, lightest to darkest, and it is a real ordering — every rung
+     is a step the eye can take:
+
+       popover #fffefa  →  card #fffdf8  →  sidebar #faf6ef
+       →  canvas #f4f0e8  →  muted/secondary #f0e9dd  →  accent #ece4d6
+       →  border #e6ddcd
+
+     The sidebar is *above* the canvas here (the inverse of the dark scheme,
+     and the inverse of the old cool theme). That is the spatial reading: the
+     canvas is a recessed desk, and the nav column is a raised rail beside the
+     content rather than a second sunken column. It is also what makes the
+     sidebar's own hover wash work — a hover has to move a surface, and on the
+     lightest rung it only ever moves down.
+
+     Contrast was measured, not eyeballed: ink 13:1 on the canvas and 14.6:1 on
+     a card, the secondary grey ≥4.7:1 on every surface it can land on
+     including the hover wash, the accent 4.9:1 under white ink and 4.8:1 as
+     text on a card. The one role tuned darker than it looks is `--folder`: a
+     warm gold is the natural folder colour and the natural folder colour is
+     also the one that fails contrast, so it is held at 3.3:1 against a card —
+     the 3:1 bar for a graphical object — and no lighter. */
+  --accent-default: #b4571f; /* shipped accent (terracotta) — 4.9:1 under white ink */
   --accent-default-ink: #ffffff;
   --on-destructive: #ffffff;
-  --secondary: #f1f2f4; /* tonal secondary surfaces */
-  --secondary-foreground: #282a30;
-  --muted: #eef0f2;
-  --muted-foreground: #62666e; /* ≈5.6:1 on the canvas — secondary text never fades out */
-  --accent: #e9ebef; /* hover highlight */
-  --accent-foreground: #282a30;
-  --error-container: #fde4e2;
-  --on-error-container: #6b140f;
-  --folder: #4a72b8;
-  --destructive: #c22f2f;
-  /* Status hues: one hue each, contrast-checked against the white plane. */
-  --success: #17804a;
+  --secondary: #f0e9dd; /* tonal secondary surfaces */
+  --secondary-foreground: #2b2723;
+  --muted: #f0e9dd;
+  --muted-foreground: #6b6357; /* 5.8:1 on a card — secondary text never fades out */
+  --accent: #ece4d6; /* hover highlight */
+  --accent-foreground: #2b2723;
+  --error-container: #fbe3dc;
+  --on-error-container: #6e1f12;
+  --folder: #b8823a;
+  --destructive: #c2372f;
+  /* Status hues: one hue each, contrast-checked against the card plane. */
+  --success: #2e7d46;
   --warning: #9c630f;
-  --info: #2b5fd9;
-  --tone-blue: #2b5fd9;
-  --tone-violet: #7443c0;
-  --tone-emerald: #17804a;
-  --tone-amber: #9c630f;
-  --tone-rose: #bf3c60;
-  --tone-cyan: #0a86b4;
-  --border: #e2e4e8; /* hairline panel edge */
-  --input: #d5d8dd;
-  --radius: 0.75rem;
-  --scrim: rgb(0 0 0 / 0.4);
-  --sidebar: #f7f8fa; /* half-step above the canvas — see the ladder note below */
-  --sidebar-foreground: #282a30;
-  --sidebar-accent: #e9ebef;
-  --sidebar-accent-foreground: #282a30;
-  --sidebar-border: #e2e4e8;
+  --info: #3a5fcb;
+  --tone-blue: #4a57a8; /* muted indigo — documents, code, shortcuts */
+  --tone-violet: #7b4877; /* muted plum — images, video, fonts */
+  --tone-emerald: #4a6b3a; /* moss — spreadsheets, certificates */
+  --tone-amber: #8a5709; /* the signature warm hue — media, archives */
+  --tone-rose: #a83a5b; /* muted rose — pdf, keys, executables */
+  --tone-cyan: #0f6b7a; /* muted teal — desktop, audio, databases */
+  --border: #e6ddcd; /* hairline panel edge */
+  --input: #dcd1bd;
+  --radius: 0.875rem;
+  /* The lit edge of a raised surface. A 1px inset highlight along the top of
+     every lifted plane — the material cue that says "this sits above the
+     canvas" without spending another tone. Light gets real light (the plane is
+     cream, and the highlight is what makes it read as lit rather than pale);
+     dark gets a whisper, because at 4% on graphite it is already at the noise
+     floor of a shadowed edge. */
+  --surface-highlight: rgb(255 255 255 / 0.6);
+  --scrim: rgb(43 39 35 / 0.38); /* a warm scrim, so the dimmed plane keeps its cast */
+  --sidebar: var(--background); /* the rail IS the canvas — the panel is the only raised plane */
+  --sidebar-foreground: #2b2723;
+  --sidebar-accent: #ece4d6;
+  --sidebar-accent-foreground: #2b2723;
+  --sidebar-border: #e6ddcd;
 
   /* Chrome geometry. Plain custom properties rather than `@theme` entries,
      because one consumer is not a utility: the floating-glass plate sizes two
@@ -510,86 +573,75 @@
 }
 
 .dark {
-  /* Linear — dark, pressed back down. The canvas used to start at L* 12, the
-     band macOS' `windowBackgroundColor`, Win11's Mica and Adwaita dark land in.
-     Measured against the platform's own file manager, though, the whole window
-     read as a grey board rather than as a dark one — the desktop behind it
-     stopped registering, and every surface looked like it had a film of dust on
-     it. So the scheme drops to L* 6.
+  /* WARM SPATIAL — dark. The canvas is a warm near-black, a shade warmer and a
+     touch lighter than the old graphite so the terracotta accent has somewhere
+     to sit; the panel raises on the same ladder as light (canvas → sidebar →
+     card → floating), and the rungs are tuned in contrast ratios rather than in
+     L* deltas, because near black the +0.05 term that dominates a contrast
+     ratio swamps the luminance and an equal L* step would quietly weaken every
+     hairline and hover wash.
 
-     What is preserved is the *ladder*, and it is preserved in contrast ratios
-     rather than in L* deltas: near black, the +0.05 term that dominates a
-     contrast ratio swamps the luminance, so an equal L* step buys a smaller
-     ratio every time it is taken. Repeating the old hex gaps would have quietly
-     weakened the hairline and the hover wash — the two rungs that carry the
-     whole dark scheme, since columns are divided by hairlines rather than
-     shadows. Each role therefore keeps its ratio to the panel, and the eight
-     runs still separate: canvas → sidebar column → content plane → recessed
-     surface → floating layer → tonal secondary → hover → hairline. The one
-     raised chrome element, the active tab chip, adds a single 1px inset top
-     highlight. Every neutral keeps a faint cool cast so the window reads as
-     graphite, not void.
-
-     Two consequences of the move. The floating layers' shadow stops rise a
-     little, because a black shadow has less room to fall on a L* 6 canvas than
-     it had on a L* 12 one — at the old stops the top step lost about 1 L* of
-     lift. And everything sitting on the surfaces gained contrast rather than
-     losing it, so the labels, the accent and the status hues are left exactly
-     where they were: they were tuned against the lightest surface they appear
-     on, and that target is now cleared with more room rather than less. */
-  --shadow-color: #000000;
-  --shadow-a1: 16%;
-  --shadow-a2: 26%;
-  --shadow-a3: 36%;
-  --shadow-a4: 50%;
-  --background: #131417; /* canvas — L* 6, where dark starts now */
-  --foreground: #e5e6e8;
-  --card: #1d1f22; /* panel surface */
-  --card-foreground: #e5e6e8;
-  --popover: #26282d; /* floating layer — two clear steps above the panels */
-  --popover-foreground: #e5e6e8;
+     Every neutral carries a warm cast, including the shadows: on a warm black a
+     neutral-grey shadow reads as dust, so `--shadow-color` is a warm brown and
+     the stops run deeper than light's to keep the floating layer lifted. */
+  --shadow-color: #1c0d02; /* warm ink: a neutral shadow reads as dust on warm black */
+  --shadow-a1: 22%;
+  --shadow-a2: 34%;
+  --shadow-a3: 46%;
+  --shadow-a4: 60%;
+  --background: #171613; /* canvas — a warm-leaning graphite, low chroma so it
+     reads neutral rather than sepia */
+  --foreground: #f0ebe2;
+  --card: #201f1b; /* panel surface */
+  --card-foreground: #ede7dc;
+  --popover: #2a251d; /* floating layer — two clear steps above the panels */
+  --popover-foreground: #ede7dc;
   /* The glass pair, dark. Same 90% floor, and the same measurement run the other
      way: here the binding backdrop is a bright one — a scanned page or a
      white-background icon under a dark menu — and dimming the backdrop through
      `brightness` before it reaches the tint is what buys the tenth of
      see-through at all. Without it the floor for this scheme is 93%, and a glass
-     you cannot see through is not glass. Both readings land at ≈4.5:1 for the
-     secondary grey and ≈9.5:1 for the ink. */
+     you cannot see through is not glass. Both readings land at ≈6.4:1 for the
+     secondary grey and ≈14:1 for the ink on the panel beneath. */
   --popover-frost: color-mix(in oklab, var(--popover) 90%, transparent);
   --popover-frost-dense: color-mix(in oklab, var(--popover) 96%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6) brightness(0.75);
   --frost-plate: var(--card); /* see the light scheme's pair */
-  --accent-default: #56cdd8; /* shipped accent (teal) — 8.7:1 on a panel, 7.3 worst */
-  --accent-default-ink: #101116; /* ink label on the vivid fill — 7.2:1 */
-  --on-destructive: #101116; /* the dark destructive is a light red: white on it 2.4:1 */
-  --secondary: #2a2c31;
-  --secondary-foreground: #e5e6e8;
-  --muted: #222427; /* inner recessed surface — tracks, header strips, thumbnails */
-  --muted-foreground: #9ba0a9; /* 6.3:1 on a panel, 5.2 on the hover highlight */
-  --accent: #2c2e33; /* hover highlight — a half-step above the panel */
-  --accent-foreground: #e5e6e8;
-  --error-container: #6a312d;
-  --on-error-container: #f7cdc9;
-  --folder: #8fb0e0;
-  --destructive: #ff8288;
-  --success: #63d398;
-  --warning: #e8a33d;
-  --info: #8fa2ff;
-  --tone-blue: #8fa2ff;
-  --tone-violet: #c6a2ff;
-  --tone-emerald: #63d398;
-  --tone-amber: #e8a33d;
-  --tone-rose: #ff9ab2;
-  --tone-cyan: #4ec2ea;
-  --border: #313338; /* hairline — 1.31:1 on a panel, the same step as light */
-  --input: #3f4147;
+  --accent-default: #e8a256; /* shipped accent (amber terracotta) — 7.7:1 on a panel */
+  --accent-default-ink: #211a12; /* ink label on the amber fill — 8.6:1 */
+  --on-destructive: #211a12; /* the dark destructive is a light red: white on it 2.4:1 */
+  --secondary: #322b21;
+  --secondary-foreground: #ede7dc;
+  --muted: #29241d; /* inner recessed surface — tracks, header strips, thumbnails */
+  --muted-foreground: #a79c8b; /* 6.4:1 on a panel, 5.4 on the hover highlight */
+  --accent: #332c22; /* hover highlight — a half-step above the panel */
+  --accent-foreground: #ede7dc;
+  --error-container: #5f2a22;
+  --on-error-container: #ffd9cf;
+  --folder: #e0b15c;
+  --destructive: #ff8a80;
+  --success: #6fd39a;
+  --warning: #e9a94a;
+  --info: #93a6ff;
+  --tone-blue: #a6b2f2; /* muted indigo — documents, code, shortcuts */
+  --tone-violet: #cfa2cb; /* muted plum — images, video, fonts */
+  --tone-emerald: #a8ce8a; /* moss — spreadsheets, certificates */
+  --tone-amber: #e0a94e; /* the signature warm hue — media, archives */
+  --tone-rose: #f09cb1; /* muted rose — pdf, keys, executables */
+  --tone-cyan: #6fc3d0; /* muted teal — desktop, audio, databases */
+  --border: #35332c; /* hairline — 1.31:1 on a panel, the same step as light */
+  --input: #473f34;
   --radius: 0.75rem;
-  --scrim: rgb(0 0 0 / 0.6);
-  --sidebar: #16171a; /* Linear sidebar — a half-step above the canvas, below the panel */
-  --sidebar-foreground: #e5e6e8;
-  --sidebar-accent: #2c2e33;
-  --sidebar-accent-foreground: #e5e6e8;
-  --sidebar-border: #313338;
+  /* Half the light value: on graphite the plane is already the brighter
+     surface, so a full 60% highlight would frost the top edge instead of
+     lighting it. */
+  --surface-highlight: rgb(255 255 255 / 0.055);
+  --scrim: rgb(12 9 5 / 0.62); /* a warm scrim, so the dimmed plane keeps its cast */
+  --sidebar: var(--background); /* the rail IS the canvas — the panel is the only raised plane */
+  --sidebar-foreground: #ede7dc;
+  --sidebar-accent: #332c22;
+  --sidebar-accent-foreground: #ede7dc;
+  --sidebar-border: #38312a;
 }
 
 /* ---------------------------------------------------------------------------
@@ -984,7 +1036,7 @@ html[data-window-material="blur"]:root body {
      seam and the inactive-window drain retint them with no rule of their own:
 
        .aurora-frame        the tab strip: a wide accent bloom top-right plus a
-                            cool counter-wash top-left, both radial, both under
+                            counter-wash top-left, both radial, both under
                             10% — a gradient you notice as warmth, not as a
                             gradient.
        .aurora-frame-nav    the nav column: one quiet bloom anchored to the
@@ -993,6 +1045,20 @@ html[data-window-material="blur"]:root body {
                             that reports state by lighting up rather than by
                             changing fill. Accent-tinted glass: a wash at the
                             top of the box, a hairline ring, one soft glow.
+       .content-panel       the window's content plane: the one large surface,
+                            raised off the canvas (see below).
+
+     THE CONTENT PLANE. The shell's spatial idea, and the reason the two frame
+     roles above exist. The nav rail stays part of the frame — full-bleed, its
+     hairline flush to the window edge — while the content rises off the canvas
+     as a plate with air on every side it does not share with the rail. It is
+     the same amber light: the plane is lit from its top edge (a 1px inset
+     highlight, `--surface-highlight`) and floated on the warm ambient ladder,
+     so it reads as the nearest surface rather than as the largest rectangle.
+     The hairline is an `outline`, not a `border`: it paints outside the box
+     model, so the interior geometry — and every virtualised row measured
+     against it — is untouched by the ring. Call sites keep their own fill
+     (`bg-card`), because a plane has to stay opaque over a platform blur.
 
      Every one of them layers a `background-image` over the element's existing
      `background-color`, so they compose with `bg-chrome` / `bg-sidebar` / the
@@ -1004,13 +1070,13 @@ html[data-window-material="blur"]:root body {
   .aurora-frame {
     background-image:
       radial-gradient(
-        120% 150% at 96% -55%,
-        color-mix(in oklab, var(--primary) 11%, transparent),
-        transparent 58%
+        120% 155% at 96% -55%,
+        color-mix(in oklab, var(--primary) 14%, transparent),
+        transparent 60%
       ),
       radial-gradient(
         80% 120% at 4% -70%,
-        color-mix(in oklab, var(--info) 7%, transparent),
+        color-mix(in oklab, var(--tone-cyan) 6%, transparent),
         transparent 62%
       );
     background-repeat: no-repeat;
@@ -1018,23 +1084,32 @@ html[data-window-material="blur"]:root body {
 
   .aurora-frame-nav {
     background-image: radial-gradient(
-      130% 55% at 12% -8%,
-      color-mix(in oklab, var(--primary) 8%, transparent),
-      transparent 72%
+      135% 52% at 10% -6%,
+      color-mix(in oklab, var(--primary) 10%, transparent),
+      transparent 74%
     );
     background-repeat: no-repeat;
+  }
+
+  .content-panel {
+    border-radius: var(--radius-panel);
+    box-shadow:
+      inset 0 1px 0 var(--surface-highlight),
+      var(--shadow-ambient-sm);
+    outline: 1px solid var(--border);
   }
 
   .glass-active {
     background-image: linear-gradient(
       180deg,
-      color-mix(in oklab, var(--primary) 11%, transparent),
-      color-mix(in oklab, var(--primary) 4%, transparent) 60%,
+      color-mix(in oklab, var(--primary) 14%, transparent),
+      color-mix(in oklab, var(--primary) 5%, transparent) 58%,
       transparent
     );
     box-shadow:
-      inset 0 0 0 1px color-mix(in oklab, var(--primary) 16%, transparent),
-      0 1px 3px -1px color-mix(in oklab, var(--primary) 22%, transparent);
+      inset 0 1px 0 var(--surface-highlight),
+      inset 0 0 0 1px color-mix(in oklab, var(--primary) 18%, transparent),
+      0 1px 3px -1px color-mix(in oklab, var(--primary) 26%, transparent);
   }
 
   /* The active tab chip: the shell's one raised element, now lit rather than
@@ -1047,14 +1122,14 @@ html[data-window-material="blur"]:root body {
   .tab-chip-active {
     background-image: linear-gradient(
       180deg,
-      color-mix(in oklab, var(--primary) 12%, transparent),
-      color-mix(in oklab, var(--primary) 3%, transparent) 55%,
-      transparent 110%
+      color-mix(in oklab, var(--primary) 14%, transparent),
+      color-mix(in oklab, var(--primary) 4%, transparent) 55%,
+      transparent 115%
     );
     box-shadow:
-      inset 0 1px 0 color-mix(in oklab, var(--foreground) 10%, transparent),
+      inset 0 1px 0 var(--surface-highlight),
       0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
-      0 3px 10px -4px color-mix(in oklab, var(--primary) 38%, transparent);
+      0 3px 11px -4px color-mix(in oklab, var(--primary) 42%, transparent);
   }
 
   /* Path hints keep their filename readable: flipped text direction moves the
@@ -1347,7 +1422,7 @@ html[data-window-material="blur"]:root body {
      its chroma — which is what lets one declaration stay legible on every plane
      this shell has (panel, sidebar, frost, hover highlight, selected row).
      Toward `--card` it instead reads on a panel and fails where it matters
-     most: `--primary` 45% toward the dark `#1d1f22` is a dark, muddy teal
+     most: `--primary` 45% toward the dark `#201c16` is a dark, muddy rust
      that disappears against it.
 
      58% is the accent's knob; 62% is the tonal one. Below ~45% the accent

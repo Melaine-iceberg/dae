@@ -399,8 +399,15 @@ export function ExplorerTabs() {
             It reads as nothing while the root and `body` paint that canvas for
             free, and is the whole fill under a compositor blur, where both stop
             painting so the nav column alone can show the desktop (App.css, THE
-            WINDOW-MATERIAL SEAM). */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+            WINDOW-MATERIAL SEAM).
+
+            The padding is the plane's air (`p-2`), and it belongs here rather
+            than on the row above for exactly that blur reason: the gutter has to
+            stay a painted, opaque canvas — a gap owned by the row would show the
+            desktop through the seam. The rail keeps its hairline flush to the
+            window and the content lifts off the canvas; that pairing is the
+            shell's whole spatial story (App.css, THE CONTENT PLANE). */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background p-2">
           {/* Chrome-style keep-alive: every tab's surface stays mounted and
               the surfaces are stacked; switching tabs flips visibility
               instead of swapping the key, so nothing remounts — directory
@@ -410,7 +417,7 @@ export function ExplorerTabs() {
               measurements stay valid) while skipping paint and hit-testing;
               their keyboard shortcuts are gated through the `active` prop
               chain (see workspace-surface.tsx). */}
-          <div className="relative min-h-0 flex-1 overflow-hidden bg-card">
+          <div className="content-panel relative min-h-0 flex-1 overflow-hidden bg-card">
             {tabs.map((tab) => {
               const isActive = tab.id === activeTabId;
               return (
