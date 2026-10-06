@@ -346,7 +346,7 @@
   /* The window's content plane. A step below `--radius-xl`: a full-width
      surface that rounds as hard as a 12px dialog reads as a card, and the
      point of the plane is that the *window* has a corner, not a tile. */
-  --radius-panel: calc(var(--radius) + 2px);
+  --radius-panel: calc(var(--radius) + 4px); /* GLASS RETUNE: the island corner, read off the reference shot (≈16px) */
 
   /* Geometry: the cells, stand-ins and panel widths that used to be written as
      arbitrary px at each call site (`size-[22px]` six times, the card skeleton
@@ -496,6 +496,18 @@
   /* THE CANVAS WASH — rose at the top of the window, cream at its foot. This
      is what `body` paints and what every canvas lens sits over. */
   --canvas-image: linear-gradient(180deg, #f4c7d3 0%, #f7d8d3 32%, #fae7d7 64%, #fbf3e4 100%);
+  /* GLASS RETUNE — the island's rim: a 1px gradient edge that catches light at
+     the top and settles into a warm hairline at the bottom, the way the edge of
+     a pane of glass does. Drawn as the border-box layer of the two-layer
+     background stack on `.content-panel` — a flat `border-color` is one colour
+     and cannot hold a light edge. */
+  --island-rim: linear-gradient(
+    180deg,
+    color-mix(in oklab, #ffffff 80%, transparent) 0%,
+    color-mix(in oklab, #ffffff 30%, transparent) 28%,
+    color-mix(in oklab, var(--foreground) 10%, transparent) 62%,
+    color-mix(in oklab, var(--foreground) 16%, transparent) 100%
+  );
   --background: #faf2e6; /* canvas fallback colour — the wash's foot, and the base the lenses tint */
   --foreground: #3f3830; /* warm ink — 10.4:1 on the card */
   --card: #fdfaf4; /* warm ivory panel surface */
@@ -674,6 +686,16 @@
      warm graphite at its foot. The neutrals below stay neutral; only the field
      behind them carries the picture's gradient language. */
   --canvas-image: linear-gradient(180deg, #3d2b36 0%, #2d232a 34%, #221f1e 70%, #191918 100%);
+  /* The rim's dark counterpart — the same glass edge with the light catch
+     dimmed to the one a dark pane throws, and the hairline drawn from the
+     light foreground so it reads as glass rather than as a cut. */
+  --island-rim: linear-gradient(
+    180deg,
+    color-mix(in oklab, #ffffff 30%, transparent) 0%,
+    color-mix(in oklab, #ffffff 12%, transparent) 30%,
+    color-mix(in oklab, var(--foreground) 14%, transparent) 65%,
+    color-mix(in oklab, var(--foreground) 20%, transparent) 100%
+  );
   --background: #191918; /* canvas — low chroma, so it reads neutral rather than sepia */
   --foreground: #e9e9e9;
   --card: #252525; /* panel surface */
@@ -937,6 +959,26 @@ html[data-window-focused="false"] .tab-chip-active {
      rose-to-cream field instead of as a band pasted over it. Under a material
      seam the blocks below replace this with frost or with nothing. */
   --chrome: color-mix(in oklab, var(--background) 55%, transparent);
+
+  /* GLASS RETUNE — the frosted half of the retune, and it belongs to the
+     *background* only. The cards stay solid (`--card` at full density, a file
+     list over a live blur is unreadable and neither platform ships one); what
+     goes glassy is the field they float on.
+
+     `--canvas-frost` is the frost itself: a milky veil laid over the pastel
+     wash `--canvas-image` describes, one layer up in the same `background`
+     stack (see THE PASTEL CANVAS WASH). Over the shell's own wash it reads as
+     sandblasted glass — the rose ramp blurred behind milk. Under a material
+     seam the blocks below retune it rather than remove it: there the platform
+     supplies the blur and this layer keeps only the shell's pastel identity
+     over it, which is the same division of labour as the `"blur"` block's 8%
+     chrome tint: hue from the shell, glass from the platform. */
+  --canvas-frost:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--background) 46%, transparent),
+      color-mix(in oklab, var(--background) 30%, transparent)
+    );
 }
 
 html[data-window-material="mica"],
@@ -946,6 +988,15 @@ html[data-window-material="vibrancy"] {
   --sidebar: transparent;
   /* The platform colours the whole window here, wash included. */
   --canvas-image: none;
+  /* …but the retune's frosted field still wants the shell's own hue: the
+     frost keeps a scheme-aware veil at a third of a card, translucent enough
+     that the material's blur is still what makes it glass. */
+  --canvas-frost:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--card) 34%, transparent),
+      color-mix(in oklab, var(--card) 22%, transparent)
+    );
 }
 
 html[data-window-material="blur"] {
@@ -978,9 +1029,13 @@ html[data-window-material="blur"] {
    step above that rule and keeps it. */
 html body,
 .bg-background {
-  background-image: var(--canvas-image);
-  background-size: cover;
-  background-attachment: fixed;
+  /* Frost over wash, in one stack: `--canvas-frost` is the semi-transparent
+     frosted pane, `--canvas-image` the colour arriving through it. Either
+     layer may answer `none` (see the material blocks) and the stack still
+     composes. */
+  background-image: var(--canvas-frost), var(--canvas-image);
+  background-size: cover, cover;
+  background-attachment: fixed, fixed;
 }
 
 /* Clears every paint of the canvas — colour and wash — see the paragraphs above. */
@@ -1212,6 +1267,10 @@ html[data-window-material="blur"]:root body {
      over canvas and the ring below is what survives — which is why the ring is
      part of the treatment rather than an afterthought. */
   .aurora-frame {
+    /* GLASS RETUNE: the frame is the frosted pane of the same glass field the
+       canvas became — its lens tint now blurs the wash beneath it. `none` under
+       reduced transparency, like every other frost in this file. */
+    backdrop-filter: var(--frost-filter);
     background-image:
       radial-gradient(
         120% 155% at 96% -55%,
@@ -1227,6 +1286,7 @@ html[data-window-material="blur"]:root body {
   }
 
   .aurora-frame-nav {
+    backdrop-filter: var(--frost-filter);
     background-image: radial-gradient(
       135% 52% at 10% -6%,
       color-mix(in oklab, var(--muted-foreground) 4%, transparent),
@@ -1237,6 +1297,23 @@ html[data-window-material="blur"]:root body {
 
   .content-panel {
     border-radius: var(--radius-panel);
+    /* GLASS RETUNE — the floating island. The card stays SOLID — a file list
+       over a live blur is unreadable, and the retune's glass is spent on the
+       outline instead: a 1px gradient rim that catches light along the top
+       edge, the reference shot's glass contour.
+
+       The rim is the second layer of a two-background stack — a flat `--card`
+       fill clipped to the padding box laid over the `--island-rim` gradient
+       clipped to the border box, so the gradient shows only through the 1px
+       transparent border. Same two-layer trick `.floating-frost` documents,
+       with the plate layer replaced by a solid one. The `bg-card` at the call
+       site is now redundant but harmless: it paints beneath the fill layer. */
+    border: 1px solid transparent;
+    background-image:
+      linear-gradient(var(--card), var(--card)),
+      var(--island-rim);
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
     /* The full ambient stack rather than its first rung: in this design language
        the plate is a cream card floating on a coloured wash, and a shadow that
        only says "rests on the plane" reads as no shadow at all against the ramp. */

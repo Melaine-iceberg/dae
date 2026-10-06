@@ -443,7 +443,12 @@ export function TerminalPanel() {
     <section
       aria-label={t("panel.label")}
       className={cn(
-        "flex shrink-0 flex-col overflow-hidden border-t border-border bg-card",
+        /* GLASS RETUNE: the terminal is the second floating island — it shares
+           `.content-panel`'s rim, corner and shadow rather than fusing to the
+           plane above it, so the canvas runs between the two cards the way the
+           reference shot spaces its islands. `bg-card` stays: the island's fill
+           layer paints over it (see the stylesheet). */
+        "content-panel flex shrink-0 flex-col overflow-hidden bg-card",
         !visible && "hidden",
       )}
       style={{ height }}

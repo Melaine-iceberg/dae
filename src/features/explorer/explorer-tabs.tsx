@@ -389,26 +389,23 @@ export function ExplorerTabs() {
         <WindowControls />
       </header>
 
-      {/* Flat shell: the sidebar is a tonal column divided from the content
-          plane by a single hairline, and the content plane itself is borderless
-          — elevation is spent on overlays alone. The tab bar stays flush with
+      {/* Flat shell, glass retune: the sidebar and the two content cards are
+          floating islands over one frosted field. The tab bar stays flush with
           the window edge so native window controls and snap layouts keep
           working. */}
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 gap-2 bg-background p-2">
         <Sidebar />
-        {/* `bg-background`, not `bg-card`: this is the canvas, not a plane on it.
-            It reads as nothing while the root and `body` paint that canvas for
-            free, and is the whole fill under a compositor blur, where both stop
-            painting so the nav column alone can show the desktop (App.css, THE
-            WINDOW-MATERIAL SEAM).
+        {/* `bg-background`, not `bg-card`: this is the canvas the islands float
+            on, not a plane in its own right. It reads as nothing while the root
+            and `body` paint that canvas for free, and is backed by the row's own
+            canvas paint under a compositor blur, where both stop painting
+            (App.css, THE WINDOW-MATERIAL SEAM).
 
-            The padding is the plane's air (`p-2`), and it belongs here rather
-            than on the row above for exactly that blur reason: the gutter has to
-            stay a painted, opaque canvas — a gap owned by the row would show the
-            desktop through the seam. The rail keeps its hairline flush to the
-            window and the content lifts off the canvas; that pairing is the
-            shell's whole spatial story (App.css, THE CONTENT PLANE). */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background p-2">
+            The air (`p-2 gap-2`) lives on the row now that the nav is an island
+            like the rest: the row's painted canvas backs every gutter, so the
+            seam still finds an opaque canvas under the gaps (App.css, THE
+            CONTENT PLANE). */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
           {/* Chrome-style keep-alive: every tab's surface stays mounted and
               the surfaces are stacked; switching tabs flips visibility
               instead of swapping the key, so nothing remounts — directory
