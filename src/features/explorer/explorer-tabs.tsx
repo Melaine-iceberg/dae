@@ -494,14 +494,14 @@ export function ExplorerTabs() {
         <Sidebar />
         {/* `bg-background`, not `bg-card`: this is the canvas the islands float
             on, not a plane in its own right. It reads as nothing while the root
-            and `body` paint that canvas for free, and is backed by the row's own
-            canvas paint under a compositor blur, where both stop painting
-            (App.css, THE WINDOW-MATERIAL SEAM).
+            and `body` paint that canvas for free — and under a compositor blur
+            it carries the frame's own frost instead, so this row and the tab
+            bar above it are one pane (App.css, THE WINDOW-MATERIAL SEAM).
 
             The air (`p-2 gap-2`) lives on the row now that the nav is an island
             like the rest: the row's painted canvas backs every gutter, so the
-            seam still finds an opaque canvas under the gaps (App.css, THE
-            CONTENT PLANE). */}
+            seam still finds a canvas under the gaps (App.css, THE CONTENT
+            PLANE). */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
           {/* Chrome-style keep-alive: every tab's surface stays mounted and
               the surfaces are stacked; switching tabs flips visibility

@@ -591,8 +591,9 @@
 
      Under a window material the backdrop stops being our own soft gradient and
      becomes whatever the user has on the desktop, so the blocks further down
-     take this to near-opaque — the same argument `--popover-frost` documents,
-     one plane over. */
+     take this to near-opaque — and `"blur"`, whose field is live all the way
+     down, past it to a solid sheet — the same argument `--popover-frost`
+     documents, one plane over. */
   --panel-frost: color-mix(in oklab, var(--card) 70%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6);
   /* The fill a floating layer puts under its own tint where the window has no
@@ -969,11 +970,14 @@ html[data-window-focused="false"] .tab-pill {
    blur carries no such decision — it is a bare blur of whatever sits behind this
    window, the wallpaper or another application's window — and across the whole
    window that is not chrome but a colour cast: at any density thin enough to read
-   as a backdrop, the wallpaper's own hue arrives in every edge of the shell. So
-   `"blur"` keeps the canvas filled and lets the desktop through the two roles a
-   native file manager always does: its title bar and its sidebar. Those two are also
-   where the shell supplies the decision the compositor skipped, so what arrives is a
-   tinted wash rather than the wallpaper's own hue.
+   as a backdrop, the wallpaper's own hue arrives in every edge of the shell. Spent
+   on the frame alone it is the same problem seen from the other side — a frosted
+   bar laid on a painted board, the blur in one 46px band and nowhere else. So
+   `"blur"` supplies the decision the compositor skipped, and supplies it once for
+   the whole window: the field the islands float on takes the frame's own frost at
+   the frame's own density (see the block below), so what arrives through the pane
+   is one tinted wash rather than the wallpaper's own hue, kept off the edges of
+   the shell by the density rather than by the canvas.
 
    The `8%` is that tint, read off `--primary` — the accent seam's own token, so a
    picked accent retints the frame with it and the inactive appearance drains the
@@ -1003,10 +1007,11 @@ html[data-window-focused="false"] .tab-pill {
    than a spinner on the desktop. Either one left filled sits *under* the frost and
    the blur is gone — measured, the nav column came back the exact composite of the
    frost over the canvas with no desktop in it at all. So under `"blur"` both stop
-   painting and every region paints itself: the tab bar and the nav column carry the
-   frost, and the content column beside the sidebar carries the canvas — asking for
-   `bg-background`, which is nothing while the body paints it and the whole fill
-   once it does not.
+   painting and every region paints itself: the tab bar and the row of cards carry
+   the frame's one frost — one pane, seam to seam — and every panel above it is
+   solid. The row asks for `bg-background`, which is nothing while the body paints
+   it; once the body stops, the same call-site is where the frost lands, with its
+   Tailwind `background-color` cleared alongside (the block below).
 
    The overrides are `html[…]` selectors rather than a second `:root` because they
    have to outrank the scheme blocks — `:root` and `.dark` declare these tokens
@@ -1033,10 +1038,10 @@ html[data-window-focused="false"] .tab-pill {
      sandblasted glass: the pink-to-yellow ramp diffused behind milk. It is the
      *background* half of the glass; the panels are the other half and take
      `--panel-frost`. Under a material seam the blocks below retune it rather
-     than remove it: there the platform supplies the blur and this layer keeps
-     only the shell's pastel identity over it, which is the same division of
-     labour as the `"blur"` block's 8% chrome tint: hue from the shell, glass
-     from the platform. */
+     than remove it: there the platform supplies the blur and this layer carries
+     only the shell's own hue over it — the material blocks' veil, and under
+     `"blur"` the frame's own frost, which is the whole window's glass — hue from
+     the shell, glass from the platform. */
   --canvas-frost:
     linear-gradient(
       180deg,
@@ -1083,6 +1088,49 @@ html[data-window-material="blur"] {
   --chrome-frost: color-mix(in oklab, var(--chrome-tint) 84%, transparent);
   --chrome: var(--chrome-frost);
   --sidebar: var(--chrome-frost);
+
+  /* THE FIELD TAKES THE FRAME'S FROST. The see-through used to stop at the
+     frame — the tab bar frosted the desktop while the row of cards under it
+     kept the opaque canvas — so the window read as a frosted bar laid on a
+     painted board. The field now wears the frame's own frost at the frame's
+     own density: `--canvas-image` stops painting (it is the opaque ramp) and
+     `--canvas-frost` flattens to one `--chrome-frost` layer, so above and
+     below the tab bar are the same surface and the islands float on one pane.
+     The ramp is not missed: what a compositor blur returns is the desktop's
+     own colour, so the shell's hue has to arrive as tint, which is what
+     `--chrome-tint` already is — hue from the shell, glass from the platform.
+
+     The cards stay SOLID on that pane, which is the other half of the change.
+     The backdrop under them is live content now — the wallpaper, whatever
+     crosses it — and a file list over a live blur is unreadable; the material
+     blocks settle the same argument at 96%. Here the sheet is opaque outright:
+     the glass runs around the cards, never through them. */
+  --canvas-image: none;
+  --canvas-frost: linear-gradient(var(--chrome-frost), var(--chrome-frost));
+  --panel-frost: var(--card);
+}
+
+/* Two companions of the block above, both about what must NOT paint once the
+   field is see-through.
+
+   `bg-background` arrives from Tailwind as a `background-color` mixed from
+   `--background`, opaque in both schemes, and it would sit under the frost
+   layer the stack below paints — the blur gone again, at the one place it is
+   spent. The material blocks answer this with `--background: transparent`;
+   `"blur"` cannot, because `--chrome-tint` mixes with that token and needs it
+   as a colour. So the call-site role is cleared outright.
+
+   `.content-panel`'s glass pass is the mirror case: its fill is opaque here
+   (see `--panel-frost` above), so the filter would blur a backdrop nothing can
+   see. `--frost-filter` is left alone — the floating layers still spend it,
+   and they still frost what is behind them. */
+html[data-window-material="blur"] .bg-background {
+  background-color: transparent;
+}
+
+html[data-window-material="blur"] .content-panel {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 /* THE PASTEL CANVAS WASH — one continuous field behind the whole window.
 
