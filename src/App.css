@@ -467,21 +467,22 @@
 
 :root {
   /* PASTEL DESK — light. The window is one continuous pastel field: a
-     rose-to-cream wash as the canvas (`--canvas-image`, painted by `body`,
-     see THE PASTEL CANVAS WASH below), white paper for the panels, warm
-     brown ink on top, and a deep teal as the one cool note. The colour of the
-     picture lives in the FIELD; the plates are the neutral that reads it.
+     lilac-to-sand diagonal wash as the canvas (`--canvas-image`, painted by
+     `body`, see THE PASTEL CANVAS WASH below), white paper for the panels, cool
+     slate ink on top, and a deep teal as the one saturated note. The colour of
+     the picture lives in the FIELD; the plates are the neutral that reads it,
+     and that neutral carries no hue of its own — see THE COOL NEUTRAL SCHEME.
 
      THE LADDER: two rungs, as before. The wash is the canvas; the frame roles
      over it (tab strip, nav rail) are LENSES rather than fills — see the
      `--chrome` / `--sidebar` values — so the ramp reads as one field under the
      whole shell, and `--card` is the one raised plane: white paper separated by
-     a soft warm shadow rather than by a hairline. The rail's own grouping is
+     a soft cool shadow rather than by a hairline. The rail's own grouping is
      carried by its section labels and its selection, not by a tone of its own.
 
      The accent clears AA in BOTH of its jobs: as a fill (white ink on it
      ≈ 5.1) and as text or icon on the card (≈ 4.9). */
-  --shadow-color: #4a3527; /* warm brown, keyed to the ink: a shadow here tints the field, on purpose */
+  --shadow-color: #2b3038; /* cool slate, keyed to the ink: a shadow here tints the field, on purpose */
   /* Per-layer shadow alpha. One notch above Notion's tatami alphas (1.2–3.9%
      black): the picture's language floats white cards over a coloured wash,
      so the shadow has to actually read against the ramp instead of sitting on
@@ -492,39 +493,52 @@
   --shadow-a2: 4.5%;
   --shadow-a3: 8%;
   --shadow-a4: 24%;
-  /* THE CANVAS WASH — sampled off the reference rather than guessed at: orchid
-     `#f6e2f4` along its head, a near-neutral `#f4f4f4` through the middle of
-     the window, warm `#e2d8af` at its foot. The two radials are the corner
-     blooms that make the head read as light from above rather than as a stripe;
-     the linear carries the fall. All the colour in the window lives HERE: the
-     solid surfaces are white, and the ramp belongs to the field alone. It used
-     to reach the panels as a trace painted into the paper, which made a card one
-     colour at the top of the window and another at the bottom — see
-     `--panel-wash`.
+  /* THE CANVAS WASH — one diagonal field rather than a vertical fall: cool at
+     the window's top-left corner, warm at its bottom-right, and a
+     near-neutral middle where the two meet. All the colour in the window lives
+     HERE: the solid surfaces are white, and the ramp belongs to the field
+     alone. It used to reach the panels as a trace painted into the paper, which
+     made a card one colour at the top of the window and another at the bottom —
+     see `--panel-wash`.
 
-     Six stops behind one name each because the pane reads all of them at
-     `--pane-alpha` and a retune then moves the whole picture from one place. Two
-     stops are held off the reference on purpose — the head a step MORE saturated
-     and the foot a step paler. The
-     pink is what has to survive both the tenth of desktop the glass lets in and
-     the ink sitting on the paper above it, so "rose at its head" is carried by
-     saturation rather than by area; and the yellow, which was reading as one
-     long cast down the whole window, is diluted until it says "warm foot"
-     instead of "cream everywhere". */
-  --wash-orchid: #f0bffb; /* the head bloom, left */
-  --wash-rose: #f6bce5; /* the head bloom, right */
-  --wash-head: #eecaf0; /* the fall's first step */
-  --wash-mid: #f2eff1; /* the near-neutral middle */
-  --wash-low: #f0ede2; /* the turn toward the foot */
-  --wash-foot: #eae4c3; /* the warm foot, paled */
+     Three layers, and the split between them is the whole design. The two
+     radials are the CORNER BLOOMS — they carry the hue, anchored hard on `0% 0%`
+     and `100% 100%` so each colour is strongest exactly where the user asked for
+     it. The linear underneath carries only a whisper of drift, cool-neutral to
+     warm-neutral at 135deg, and its job is to stop the two blooms reading as
+     separate lamps on an otherwise flat field.
+
+     The middle has to stay neutral because that is where the file list sits. A
+     bare `linear-gradient(135deg, cool, warm)` would interpolate straight
+     between the two corners and land the densest part of the UI on the muddy
+     grey-pink that lilac and sand make between them; letting the blooms fade to
+     transparent instead puts near-neutral there, and the colour only arrives
+     toward the corners.
+
+     The cool bloom is the larger and stronger of the two — 74%/62% against
+     56%/48% — because a pair of equal blooms reads as two light sources, and
+     one bright corner and one dim one reads as a single light coming in from the
+     top-left.
+
+     Five stops behind one name each because the pane reads all of them at
+     `--pane-alpha` and a retune then moves the whole picture from one place.
+     Both corners are held well off a pure hue: they have to survive the tenth of
+     desktop the glass lets in and still not fight the ink sitting on the paper
+     above them, so "lilac and sand" is carried by the corners' relationship
+     rather than by either one's saturation. */
+  --wash-cool: #e8d9fb; /* the top-left bloom */
+  --wash-warm: #f6e3bd; /* the bottom-right bloom */
+  --wash-head: #f1ecf8; /* the diagonal's cool end */
+  --wash-mid: #f6f4f2; /* the near-neutral middle */
+  --wash-foot: #f5efe4; /* the diagonal's warm end */
   /* THE PANE, as `body` paints it — the wash at `--pane-alpha` (declared with
      the other canvas roles at THE WINDOW-MATERIAL SEAM, because a live backdrop
      thins it). Over an opaque base that reads flat; the moment the seam clears
      the base it is the share of the desktop that comes through. */
   --canvas-image:
-    radial-gradient(58% 40% at 3% -6%, color-mix(in oklab, var(--wash-orchid) var(--pane-alpha), transparent) 0%, transparent 56%),
-    radial-gradient(58% 40% at 97% -6%, color-mix(in oklab, var(--wash-rose) var(--pane-alpha), transparent) 0%, transparent 56%),
-    linear-gradient(180deg, color-mix(in oklab, var(--wash-head) var(--pane-alpha), transparent) 0%, color-mix(in oklab, var(--wash-mid) var(--pane-alpha), transparent) 44%, color-mix(in oklab, var(--wash-low) var(--pane-alpha), transparent) 74%, color-mix(in oklab, var(--wash-foot) var(--pane-alpha), transparent) 100%);
+    radial-gradient(74% 62% at 0% 0%, color-mix(in oklab, var(--wash-cool) var(--pane-alpha), transparent) 0%, transparent 64%),
+    radial-gradient(56% 48% at 100% 100%, color-mix(in oklab, var(--wash-warm) var(--pane-alpha), transparent) 0%, transparent 58%),
+    linear-gradient(135deg, color-mix(in oklab, var(--wash-head) var(--pane-alpha), transparent) 0%, color-mix(in oklab, var(--wash-mid) var(--pane-alpha), transparent) 50%, color-mix(in oklab, var(--wash-foot) var(--pane-alpha), transparent) 100%);
   /* THE PAPER THE PANELS ARE CUT FROM — one flat value, the card. It is NOT cut
      from the field's ramp any more: the sheet used to pick the wash up at its own
      height in the window (`background-attachment: fixed`), which put the ramp's
@@ -551,7 +565,7 @@
     color-mix(in oklab, #ffffff 52%, transparent) 92%,
     color-mix(in oklab, #ffffff 30%, transparent) 100%
   );
-  --background: #faf2e6; /* canvas fallback colour — the wash's foot, and the base the lenses tint */
+  --background: #f6f7f9; /* canvas fallback colour — the wash's neutral middle, and the base the lenses tint */
   /* THE GLASS LIGHT LEVELS — how much light a pane's own edges throw, per
      scheme. These are three of the four things a `--island-rim` gradient cannot
      express: the specular is an inset shadow (it has to sit INSIDE the rim) and
@@ -567,11 +581,11 @@
   --glass-specular: color-mix(in oklab, #ffffff 72%, transparent);
   --glass-caustic: color-mix(in oklab, #ffffff 55%, transparent);
   --glass-bloom: color-mix(in oklab, #ffffff 45%, transparent);
-  --foreground: #3f3830; /* warm ink — 10.4:1 on the card */
+  --foreground: #31353b; /* cool slate ink — 11.0:1 on the card */
   --card: #ffffff; /* the panel paper — white, so a plate reads off the field rather than in its cast */
-  --card-foreground: #3f3830;
+  --card-foreground: #31353b;
   --popover: #ffffff; /* menus, dialogs — the same sheet; the floating layers separate by frost and shadow, not by value */
-  --popover-foreground: #3f3830;
+  --popover-foreground: #31353b;
   /* THE FLOATING-GLASS PAIR — see `.floating-frost` and THE FLOATING-GLASS SEAM
      below it. The menu plane at its frost density, plus the pass it runs over
      whatever is behind it.
@@ -627,22 +641,30 @@
      so wherever the plate reaches past the hole the platform left it lands on
      a colour that is already there. */
   --frost-plate: var(--card);
-  /* ---- The warm scheme -----------------------------------------------------
+  /* ---- The cool neutral scheme ---------------------------------------------
 
-     The paper is white; every wash ON it is the cream family — the sand a row
-     takes, a warm hairline — and the ink is a warm brown-grey. The cast is
-     confined to the shell on purpose: the category hues and the folder
-     gold below stay exactly as they were, so what a thing *is* keeps its own
-     voice and the warmth only says where it sits.
+     The paper is white; every wash ON it is the slate family — the cool grey a
+     row takes, a cool hairline — and the ink is a cool slate. The neutrals
+     carry NO hue, and that is the point rather than an absence: this window
+     already speaks in six category hues, a folder gold and a deep teal accent,
+     and a neutral family with a hue of its own is a fourth voice repeating on
+     every hover, every hairline and every line of secondary text. What a thing
+     *is* keeps its own voice; the shell only says where it sits.
+
+     It also means both schemes now share one neutral family. The dark scheme
+     made this argument about its shadows — a cast strong enough to read as a
+     colour choice is a cast strong enough to fight every icon rendered on top
+     of it — and the same holds for the light scheme's washes. The colour at
+     window scale lives in the FIELD (the diagonal wash), never in the plates.
 
      The ladder, lightest to darkest — a short one, because the plane is
      delimited by tone and by its shadow rather than by a line drawn around it:
 
        popover / card #ffffff
-       →  muted / secondary / accent #f2eadd    (the wash a row takes ON the paper)
-       →  sidebar lens over the wash            (the rail has no tone of its own)
-       →  sidebar-accent #eee2d0                (the wash a row takes ON the rail)
-       →  border #ebdfcd
+       →  muted / secondary / accent #eef0f3   (the wash a row takes ON the paper)
+       →  sidebar lens over the wash           (the rail has no tone of its own)
+       →  sidebar-accent #e8ebef               (the wash a row takes ON the rail)
+       →  border #e1e4e9
 
      The two washes are separate tokens because they sit on separate planes. A
      hover fill has to be a step DOWN from whatever carries it, and the rail and
@@ -652,23 +674,23 @@
      separation from the frost and the shadow, and a menu is never asked to
      outrank a panel by value.
 
-     Contrast was measured, not eyeballed: ink 10.4:1 on a card and 7.6:1 on the
-     rose part of the wash, the secondary brown 6.4:1 on a card, 5.2:1 on the
-     rail hover and ≈4.6:1 on the selected plate — that last pairing is what
-     sets the secondary's lightness, since a selected row carries its state by
-     fill alone and the caption inside the disk row sits directly on it. The
-     accent is 5.1:1 under white ink and 4.9:1 as text on a card. `--folder` is
-     the one role held to the *graphical* bar instead of the text one — see its
-     note below. */
+     Contrast was measured, not eyeballed (WCAG, on the plane named): ink
+     ≈12.3:1 on a card and ≈9.2:1 on the wash's cool corner, the secondary grey
+     ≈6.2:1 on a card, ≈5.4:1 on a paper hover and ≈5.1:1 on the selected plate —
+     that last pairing is what sets the secondary's lightness, since a selected
+     row carries its state by fill alone and the caption inside the disk row
+     sits directly on it. The accent is 5.1:1 under white ink and 4.9:1 as text
+     on a card. `--folder` is the one role held to the *graphical* bar instead
+     of the text one — see its note below. */
   --accent-default: #1f7a72; /* deep teal, the picture's cool note — 5.1:1 under white ink, 4.9:1 as text */
   --accent-default-ink: #ffffff;
   --on-destructive: #ffffff;
-  --secondary: #f2eadd; /* warm sand — tonal secondary surfaces */
-  --secondary-foreground: #3f3830;
-  --muted: #f2eadd;
-  --muted-foreground: #635b50; /* warm grey-brown — 6.4:1 on a card; secondary text never fades out */
-  --accent: #f2eadd; /* hover highlight */
-  --accent-foreground: #3f3830;
+  --secondary: #eef0f3; /* cool slate — tonal secondary surfaces */
+  --secondary-foreground: #31353b;
+  --muted: #eef0f3;
+  --muted-foreground: #5c626b; /* cool grey — 6.2:1 on a card; secondary text never fades out */
+  --accent: #eef0f3; /* hover highlight */
+  --accent-foreground: #31353b;
   --error-container: #fbe3dc;
   --on-error-container: #6e1f12;
   /* Folder glyphs repeat once per directory — 38 of them in a full listing —
@@ -702,17 +724,17 @@
   --tone-amber: #dd5b00; /* media, archives — the one tone the accent cannot cover */
   --tone-rose: #d13f9d; /* pdf, keys, executables */
   --tone-cyan: #0a7b77; /* desktop, audio, databases */
-  --border: #ebdfcd; /* warm hairline panel edge */
-  --input: #e0d3bf;
+  --border: #e1e4e9; /* cool hairline panel edge */
+  --input: #d3d8df;
   /* Shape language: the picture's corners. 12px base buys 8/9/10/12/16 on the
      inline ladder and 14 on the content plate — cards that read as cards. */
   --radius: 0.75rem;
-  --scrim: rgb(63 56 48 / 0.36); /* keyed to the ink, so the dimmed plane keeps its cast */
+  --scrim: rgb(49 53 59 / 0.36); /* keyed to the ink, so the dimmed plane keeps its cast */
   --sidebar: color-mix(in oklab, var(--background) 35%, transparent); /* the rail is a lens over the wash, not a fill */
-  --sidebar-foreground: #3f3830;
-  --sidebar-accent: #eee2d0;
-  --sidebar-accent-foreground: #3f3830;
-  --sidebar-border: #ebdfcd;
+  --sidebar-foreground: #31353b;
+  --sidebar-accent: #e8ebef;
+  --sidebar-accent-foreground: #31353b;
+  --sidebar-border: #e1e4e9;
 
   /* Chrome geometry. Plain custom properties rather than `@theme` entries,
      because one consumer is not a utility: the floating-glass plate sizes two
@@ -757,23 +779,42 @@
   --shadow-a2: 34%;
   --shadow-a3: 46%;
   --shadow-a4: 60%;
-  /* THE CANVAS WASH, dark: the same three-layer field at night. The ramp's
-     SHAPE is what carries the design — orchid at the head, neutral through the
-     middle, warm at the foot — so it is kept and the chroma is turned down until
-     it reads as a dim room rather than as a colour choice. The head keeps the
-     light scheme's instruction (a step up in saturation, the pink is the one
-     thing the glass has to carry) while the foot drops its yellow. The neutrals
-     below stay neutral; only the field behind them carries the gradient. */
-  --wash-orchid: #423057; /* the head bloom, left */
-  --wash-rose: #53304c; /* the head bloom, right */
-  --wash-head: #372c3d; /* the fall's first step */
-  --wash-mid: #242224; /* the near-neutral middle */
-  --wash-low: #222020; /* the turn toward the foot */
-  --wash-foot: #27231f; /* the warm foot, its yellow dropped */
+  /* THE CANVAS WASH, dark: the same diagonal field at night, and the same two
+     corners — cool at the top-left, warm at the bottom-right, near-neutral
+     through the middle where the file list sits. The SHAPE is what carries the
+     design, so it is kept. What is not kept is the relationship between the two
+     corners, and the three ways it differs are each a thing dark mode does to a
+     colour rather than a thing this picture does:
+
+     Cool keeps its chroma, warm loses most of it. A cool dark field reads as
+     depth and shadow; a warm one reads as dirt. This scheme already learned that
+     the hard way on its shadows — both schemes were briefly pushed warm and the
+     result was sepia rather than warmth — so `--wash-warm` sits close to a
+     neutral grey-brown and lets the cool corner carry the identity on its own.
+
+     Both corners drop chroma against the light scheme, not just lightness. The
+     old head blooms were anchored at `3% -6%`, mostly off the top edge, so only a
+     sliver of them was ever on screen and they could afford `#423057`. Anchored
+     at `0% 0%` and `100% 100%` the whole bloom is in the window, and the same
+     chroma over the same area reads as a purple cast on the glass rather than as
+     a corner.
+
+     The two blooms come closer to equal strength. "Light from the top-left" is
+     legible in the light scheme because a bloom there is BRIGHTER than the field;
+     at night there is no such reading, and a distinctly brighter corner reads as
+     a leak. The asymmetry that remains is a size one, not a brightness one.
+
+     The neutrals below stay neutral; only the field behind them carries the
+     gradient. */
+  --wash-cool: #3a2f55; /* the top-left bloom */
+  --wash-warm: #2e2a24; /* the bottom-right bloom, pulled almost to neutral */
+  --wash-head: #2e2a38; /* the diagonal's cool end */
+  --wash-mid: #1c1b1d; /* the near-neutral middle */
+  --wash-foot: #262320; /* the diagonal's warm end */
   --canvas-image:
-    radial-gradient(58% 40% at 3% -6%, color-mix(in oklab, var(--wash-orchid) var(--pane-alpha), transparent) 0%, transparent 56%),
-    radial-gradient(58% 40% at 97% -6%, color-mix(in oklab, var(--wash-rose) var(--pane-alpha), transparent) 0%, transparent 56%),
-    linear-gradient(180deg, color-mix(in oklab, var(--wash-head) var(--pane-alpha), transparent) 0%, color-mix(in oklab, var(--wash-mid) var(--pane-alpha), transparent) 44%, color-mix(in oklab, var(--wash-low) var(--pane-alpha), transparent) 74%, color-mix(in oklab, var(--wash-foot) var(--pane-alpha), transparent) 100%);
+    radial-gradient(66% 56% at 0% 0%, color-mix(in oklab, var(--wash-cool) var(--pane-alpha), transparent) 0%, transparent 62%),
+    radial-gradient(58% 50% at 100% 100%, color-mix(in oklab, var(--wash-warm) var(--pane-alpha), transparent) 0%, transparent 56%),
+    linear-gradient(135deg, color-mix(in oklab, var(--wash-head) var(--pane-alpha), transparent) 0%, color-mix(in oklab, var(--wash-mid) var(--pane-alpha), transparent) 50%, color-mix(in oklab, var(--wash-foot) var(--pane-alpha), transparent) 100%);
   --panel-wash: linear-gradient(var(--panel-frost), var(--panel-frost));
   /* The rim's dark counterpart — the same ground-glass edge with the specular
      catch dimmed to the one a dark pane throws, the hairline drawn from the
@@ -1045,24 +1086,32 @@ html[data-window-focused="false"] .tab-pill {
   /* THE FROSTED FIELD — `--canvas-frost` is the veil over the wash
      `--canvas-image` describes, one layer up in the same `background` stack
      (see THE PASTEL CANVAS WASH). Over the shell's own wash it reads as
-     sandblasted glass: the pink-to-yellow ramp diffused behind milk. It is the
-     *background* half of the glass; the panels are the other half and take
+     sandblasted glass: the lilac-to-sand diagonal diffused behind milk. It is
+     the *background* half of the glass; the panels are the other half and take
      `--panel-frost`. Under a material seam the block below removes it instead:
      there the wash's own density IS the pane, and this veil over it would only
      run the glass denser than the seam answers with — hue from the shell,
-     glass from the platform. */
+     glass from the platform.
+
+     On the wash's own 135deg axis, because a veil left at 180deg would thicken
+     toward the bottom-centre and pull the whole field off the diagonal the two
+     blooms are anchored to. Its densest stop sits at the MIDDLE of the diagonal
+     and it thins toward both corners — the inverse of the wash, and deliberately
+     so: the corners are where the colour lives and the middle is where the file
+     list sits, so the milk goes over the reading and the corners stay vivid. */
   --canvas-frost:
     linear-gradient(
-      180deg,
-      color-mix(in oklab, var(--background) 30%, transparent) 0%,
-      color-mix(in oklab, var(--background) 14%, transparent) 56%,
+      135deg,
+      color-mix(in oklab, var(--background) 8%, transparent) 0%,
+      color-mix(in oklab, var(--background) 22%, transparent) 50%,
       color-mix(in oklab, #fffaf0 10%, transparent) 100%
     );
 
-  /* HOW DENSE THE PANE IS — the one number behind `--canvas-image`'s four stops,
+  /* HOW DENSE THE PANE IS — the one number behind `--canvas-image`'s stops,
      and the whole difference between a canvas that merely looks frosted and one
      that is. Over the opaque `--background` base a platform leaves it at, the
-     figure is invisible (a wash at 90% over cream reads as cream at 90%);
+     figure is invisible (a wash at 90% over the canvas base reads as the base
+     at 90%);
      once THE WINDOW-MATERIAL SEAM clears that base, the complement is exactly
      the share of the desktop the compositor shows through. It drops there, not
      here — see the material block below. */
@@ -1123,8 +1172,9 @@ html[data-window-material="vibrancy"] .bg-background {
 
 /* THE PASTEL CANVAS WASH — one continuous field behind the whole window.
 
-   `body` paints the ramp `--canvas-image` describes (rose-to-cream in light,
-   dusk in dark), and every canvas role that paints over it — the tab strip and
+   `body` paints the field `--canvas-image` describes (lilac at the top-left
+   corner to sand at the bottom-right in light, the same diagonal at dusk in
+   dark), and every canvas role that paints over it — the tab strip and
    the nav rail through their lens tints, the frame around the content plate
    through this same wash — lets the ramp read as one field under the whole
    shell. `background-attachment: fixed` pins each carrier to the window-sized
@@ -1320,9 +1370,9 @@ html body,
        rows      focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset */
 
   /* ---------------------------------------------------------------------------
-     THE GLASS FIELD. The window is one frosted pane — pink light at its head
-     falling to warm yellow at its foot — and everything in it is either that
-     field or a sheet of paper lying on it.
+     THE GLASS FIELD. The window is one frosted pane — lilac light at its
+     top-left corner falling to sand at its bottom-right — and everything in it
+     is either that field or a sheet of paper lying on it.
 
      Four treatments, one vocabulary:
 
@@ -1337,9 +1387,9 @@ html body,
                             the trough between tabs.
        .glass-active        the "I am here" plate — a nav row, a chip, a segment
                             that reports state by pressing deeper into its own
-                            fill: one warm wash over the call site's fill. No
-                            glow, no gradient, no hue — the ink gets darker, not
-                            the surface brighter.
+                            fill: one wash of the ink over the call site's fill.
+                            No glow, no gradient, no hue — the ink gets darker,
+                            not the surface brighter.
 
      WHY THE FRAME CARRIES NONE OF THIS. The tab strip used to be a surface — a
      lens tint plus two radial washes over the canvas, which drew a band across
