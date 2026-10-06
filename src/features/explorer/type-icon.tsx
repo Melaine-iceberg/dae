@@ -10,8 +10,6 @@ import {
   FileIcon,
   FileTextIcon,
   FileZipIcon,
-  FolderIcon,
-  FolderOpenIcon,
   GalleryIcon,
   GlobeIcon,
   KeyIcon,
@@ -26,6 +24,13 @@ import {
   VinylIcon,
   WindowFrameIcon,
 } from "@solar-icons/react/line-duotone";
+/* Folders are the shell's one filled glyph (`.folder-duotone` in App.css), so
+   they come from Solar's bold-duotone style while everything else stays on
+   line-duotone. */
+import {
+  FolderIcon as FolderMarkIcon,
+  FolderOpenIcon as FolderOpenMarkIcon,
+} from "@solar-icons/react/bold-duotone";
 import { type ComponentType } from "react";
 
 import { cn } from "@/lib/utils";
@@ -71,8 +76,8 @@ interface GlyphProps {
  * a union of twenty-six different ones to resolve.
  */
 const GLYPHS = {
-  folder: (props: GlyphProps) => <FolderIcon {...props} />,
-  folderOpen: (props: GlyphProps) => <FolderOpenIcon {...props} />,
+  folder: (props: GlyphProps) => <FolderMarkIcon {...props} />,
+  folderOpen: (props: GlyphProps) => <FolderOpenMarkIcon {...props} />,
   file: (props: GlyphProps) => <FileIcon {...props} />,
   text: (props: GlyphProps) => <FileTextIcon {...props} />,
   config: (props: GlyphProps) => <FileCogIcon {...props} />,
@@ -121,8 +126,8 @@ export type TypeGlyph = keyof typeof GLYPHS;
  * the grouping.
  */
 const TONES: Record<TypeGlyph, string> = {
-  folder: "text-folder",
-  folderOpen: "text-folder",
+  folder: "folder-duotone",
+  folderOpen: "folder-duotone",
 
   document: "text-tone-blue",
   code: "text-tone-blue",

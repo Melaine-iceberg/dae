@@ -18,7 +18,6 @@ import {
   CopyIcon,
   DangerTriangleIcon,
   EyeClosedIcon,
-  FolderIcon,
   FolderOpenIcon,
   GlobeIcon,
   HistoryIcon,
@@ -35,6 +34,9 @@ import {
   UsbIcon,
   WidgetIcon,
 } from "@solar-icons/react/line-duotone";
+/* Folders are the shell's one filled glyph — see `.folder-duotone` in
+   App.css — drawn from Solar's bold-duotone style. */
+import { FolderIcon as FolderMarkIcon } from "@solar-icons/react/bold-duotone";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { commands, type Breadcrumb, type StoredCloudAccount } from "@/bindings";
@@ -195,7 +197,7 @@ function SidebarContent() {
   return (
     <nav
       aria-label={t("nav.label")}
-      className="aurora-frame-nav flex w-sidebar shrink-0 flex-col overflow-hidden border-r border-border bg-sidebar"
+      className="aurora-frame-nav flex w-sidebar shrink-0 flex-col overflow-hidden bg-sidebar"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <NavItem
@@ -423,7 +425,7 @@ function CollapsibleSection({
       <div className="group/section flex h-7 items-center gap-0.5">
         <button
           aria-expanded={open}
-          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
+          className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
           onClick={() => toggle(id)}
           type="button"
         >
@@ -559,8 +561,8 @@ function FavoritesContent({
           path={favorite.path}
         >
           <NavItem
-            icon={FolderIcon}
-            iconClassName="text-folder"
+            icon={FolderMarkIcon}
+            iconClassName="folder-duotone"
             isActive={currentPath === favorite.path}
             label={favorite.name}
             onClick={() => onNavigate(favorite.path)}
@@ -875,7 +877,7 @@ function NavItem({
         // lights up instead — `glass-active`'s accent wash, hairline ring and
         // soft glow over the same fill — so location is a lit plate rather
         // than a heavier rectangle.
-        "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
+        "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
         isActive && "glass-active bg-sidebar-accent font-medium text-foreground",
       )}
       onClick={onClick}

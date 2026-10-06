@@ -29,8 +29,6 @@ export type PaletteRow<TGroup extends string, TItem> =
       kind: "header";
       key: string;
       group: TGroup;
-      /** The section before it needs a hairline to read as a new block. */
-      separator: boolean;
     }
   | {
       kind: "item";
@@ -94,12 +92,11 @@ export function buildPaletteRows<TGroup extends string, TItem>(
   const rows: PaletteRow<TGroup, TItem>[] = [];
   let resultIndex = 0;
 
-  sections.forEach((section, sectionIndex) => {
+  sections.forEach((section) => {
     rows.push({
       group: section.group,
       key: `header:${section.group}`,
       kind: "header",
-      separator: sectionIndex > 0,
     });
 
     for (const entry of section.entries) {

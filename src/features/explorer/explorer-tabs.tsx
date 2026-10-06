@@ -340,11 +340,12 @@ export function ExplorerTabs() {
       {/* Window chrome: one flat 38px bar carrying the tab strip and the native
           window controls. It sits on the canvas rung (`bg-chrome`, which is the
           canvas until a backdrop claims it — see THE WINDOW-MATERIAL SEAM) so the
-          frame reads as the window itself rather than as a third panel, and the
-          1px hairline below it is what separates the frame from the content
-          plane. */}
+          frame reads as the window itself rather than as a third panel. It carries
+          no hairline below it: the frame and the nav column are the same surface,
+          so a line between them drew a boundary where there is no boundary. What
+          separates frame from content is the plane's own edge against the canvas. */}
       <header
-        className="aurora-frame flex h-tab-strip shrink-0 items-stretch border-b border-border bg-chrome"
+        className="aurora-frame flex h-tab-strip shrink-0 items-stretch bg-chrome"
         data-tab-bar="true"
         data-tauri-drag-region="deep"
       >
@@ -770,9 +771,9 @@ function TabStripItem({
         // handed to the platform's drag loop, which swallows the release that
         // would clear both, and a chip still wearing them reads as a tab still
         // held down after it was put back.
-        "group state-layer relative flex h-7 w-52 shrink-0 touch-none cursor-grab items-center rounded-md text-body select-none transition-[background-color,color,opacity] duration-fast ease-standard data-[pressed=true]:cursor-grabbing",
+        "group state-layer relative flex h-8 w-52 shrink-0 touch-none cursor-grab items-center rounded-md text-body select-none transition-[background-color,color,opacity] duration-fast ease-standard data-[pressed=true]:cursor-grabbing",
         isActive
-          ? "tab-chip-active border border-border bg-card font-medium text-foreground"
+          ? "tab-chip-active bg-card font-medium text-foreground"
           : "text-muted-foreground hover:bg-card/50 hover:text-foreground",
         isDragging && "opacity-30",
       )}

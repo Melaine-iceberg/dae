@@ -23,7 +23,6 @@ import {
   CopyIcon,
   DangerTriangleIcon,
   FileAddIcon,
-  FolderIcon,
   LinkIcon,
   ProgrammingIcon,
   ScissorsIcon,
@@ -34,6 +33,9 @@ import {
   WidgetIcon,
   WindowFrameIcon,
 } from "@solar-icons/react/line-duotone";
+/* Folders are the shell's one filled glyph — see `.folder-duotone` in
+   App.css — drawn from Solar's bold-duotone style. */
+import { FolderIcon as FolderMarkIcon } from "@solar-icons/react/bold-duotone";
 
 import {
   ContextMenu,
@@ -1076,7 +1078,7 @@ export function FileList({
                 {searchState?.error ? (
                   <DangerTriangleIcon className="text-warning" />
                 ) : (
-                  <FolderIcon className="text-folder" fill="currentColor" />
+                  <FolderMarkIcon className="folder-duotone" />
                 )}
               </EmptyMedia>
               <EmptyTitle>

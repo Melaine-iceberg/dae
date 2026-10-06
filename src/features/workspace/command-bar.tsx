@@ -51,7 +51,7 @@ import {
 import type { RecentItem, SearchEntry } from "@/bindings";
 import { commands } from "@/bindings";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Kbd, KbdShortcut } from "@/components/ui/kbd";
+
 import {
   DEFAULT_ENTRY_FILTERS,
   DEFAULT_SORT_ORDER,
@@ -102,8 +102,8 @@ const MIN_FILE_QUERY_LENGTH = 2;
 
 /** Row metrics of the palette list, in px. Both heights are fixed, which is
  *  what lets the virtualizer position rows without measuring them. */
-const RESULT_ROW_HEIGHT_PX = 32;
-const SECTION_HEADER_HEIGHT_PX = 30;
+const RESULT_ROW_HEIGHT_PX = 36;
+const SECTION_HEADER_HEIGHT_PX = 34;
 
 /** Absolute-path shapes: drive letter, home alias, UNC share, POSIX root. */
 const PATH_LIKE_PATTERN = /^([a-zA-Z]:[\\/]|~(?=$|[\\/])|\\\\|\/)/;
@@ -126,8 +126,8 @@ interface CommandItem {
   label: string;
   hint?: string;
   /** How the right-hand hint reads: a filesystem path (head-ellipsized, so the
-   *  filename stays visible) or a key binding (drawn as Kbd chips). The two
-   *  cannot be told apart from the string alone. */
+   *  filename stays visible) or a key binding (never ellipsized, so the whole
+   *  chord shows). The two cannot be told apart from the string alone. */
   hintKind?: "path" | "keys";
   keywords?: string;
   icon: ComponentType<{ className?: string }>;
@@ -862,11 +862,14 @@ export function CommandBar() {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogContent
-        className="floating-frost-deep top-[15%] w-[calc(100%-2rem)] max-w-command-bar translate-y-0 gap-0 overflow-hidden rounded-xl border border-border p-0 shadow-ambient-lg"
+        className="floating-frost-deep top-[15%] w-[calc(100%-2rem)] max-w-command-bar translate-y-0 gap-0 overflow-hidden rounded-xl p-0 shadow-ambient-lg"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{t("commandBar.title")}</DialogTitle>
-        <div className="flex items-center gap-2.5 border-b border-border px-3.5">
+        {/* No rule under the field: the input and the results are one surface,
+            and a line across it drew a boundary inside a single plate. The gap
+            does the separating. */}
+        <div className="flex items-center gap-2.5 px-3.5 py-1">
           <MagnifierIcon className="size-4 shrink-0 text-foreground/72" />
           <input
             aria-activedescendant={results.length > 0 ? `command-item-${currentIndex}` : undefined}
@@ -886,11 +889,17 @@ export function CommandBar() {
             type="text"
             value={query}
           />
-          <KbdShortcut
-            keys={formatBinding(
+          {/* The binding as plain text, not as keycap chips. A chip is a
+              picture of a physical key, and inside a surface that is otherwise
+              paper and grey wash it is the one thing that insists this is a
+              developer tool. The hint stays — it is the only place the
+              sibling palette's binding is discoverable — it just stops being
+              drawn. */}
+          <span className="shrink-0 text-micro text-muted-foreground tabular-nums select-none">
+            {formatBinding(
               resolveBinding(shortcuts, pathMode ? "app.pathJump" : "app.commandBar"),
             )}
-          />
+          </span>
         </div>
         <div
           aria-label={t("commandBar.resultsAriaLabel")}
@@ -931,10 +940,7 @@ export function CommandBar() {
                     {row.kind === "header" ? (
                       <p
                         aria-hidden="true"
-                        className={cn(
-                          "flex h-full items-end px-2 pb-1 text-label text-muted-foreground select-none",
-                          row.separator && "border-t border-border",
-                        )}
+                        className="flex h-full items-end px-2 pb-1 text-label text-muted-foreground select-none"
                       >
                         {groupLabels[row.group]}
                       </p>
@@ -953,11 +959,19 @@ export function CommandBar() {
             </div>
           )}
         </div>
-        <footer className="flex h-8 shrink-0 items-center justify-between gap-3 border-t border-border bg-muted px-3.5 text-micro text-muted-foreground select-none">
-          <span className="flex min-w-0 items-center gap-2.5">
+        {/* A quiet line of hints on the plate itself: no rule above it and no
+            tinted band under it. Both marked the footer off as a status strip,
+            which is the chrome of a terminal rather than of a document — here
+            the text is simply the smallest and greyest thing on the surface,
+            which is enough to read as a hint without becoming a second pane.
+            The bindings lost their keycap chips for the same reason the input's
+            did; the arrow and return glyphs stay as plain characters, so the
+            chord still reads without being drawn as a picture of a key. */}
+        <footer className="flex h-9 shrink-0 items-center justify-between gap-3 px-3.5 pb-1 text-micro text-muted-foreground select-none">
+          <span className="flex min-w-0 items-center gap-3">
             <span className="flex shrink-0 items-center gap-1.5">
               {isSearchingFiles && <LoaderIcon className="size-3 shrink-0 animate-spin" />}
-              <Kbd className="h-4 px-1 text-nano">↑↓</Kbd>
+              <span aria-hidden="true">↑↓</span>
               <span className="truncate">{t("commandBar.footerNavigateHint")}</span>
             </span>
             {/* The sibling palette's entry point, shown only while a palette is
@@ -967,11 +981,11 @@ export function CommandBar() {
                 is visible exactly when the user is looking at the surface it
                 switches to. */}
             <span className="hidden shrink-0 items-center gap-1.5 sm:flex">
-              <Kbd className="h-4 px-1 text-nano">
+              <span aria-hidden="true">
                 {formatBinding(
                   resolveBinding(shortcuts, pathMode ? "app.commandBar" : "app.pathJump"),
                 )}
-              </Kbd>
+              </span>
               <span className="truncate">
                 {pathMode ? t("commandBar.title") : t("commandBar.pathTitle")}
               </span>
@@ -979,11 +993,11 @@ export function CommandBar() {
           </span>
           <span className="flex shrink-0 items-center gap-3">
             <span className="flex items-center gap-1.5">
-              <Kbd className="h-4 px-1 text-nano">↵</Kbd>
+              <span aria-hidden="true">↵</span>
               <span>{t("commandBar.footerExecuteHint")}</span>
             </span>
             <span className="flex items-center gap-1.5">
-              <Kbd className="h-4 px-1 text-nano">Esc</Kbd>
+              <span aria-hidden="true">Esc</span>
               <span>{t("commandBar.footerCloseHint")}</span>
             </span>
           </span>
@@ -1010,13 +1024,14 @@ function CommandResultRow({
     <button
       aria-selected={isActive}
       className={cn(
-        // Palette row: 32px, quiet control radius, lit selection — the palette
-        // is the one surface where "which row" is being read continuously, so
-        // its active row takes the same `glass-active` plate the sidebar's
-        // current location does: accent wash, hairline ring, soft glow. A fill
-        // alone (the old treatment) read as a flat grey bar between two
-        // identical rows.
-        "group/command-row flex h-8 w-full items-center gap-2.5 rounded-md px-3 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard outline-none",
+        // Palette row: 36px, quiet control radius, flat selection. The active
+        // row takes the same `glass-active` plate the sidebar's current location
+        // does — one wash over the fill, nothing else. It used to add a hairline
+        // ring and a glow on the theory that a fill alone reads as a flat bar
+        // between identical rows, but the ring is what made the row look like a
+        // focused control rather than a place; the row is not the only surface
+        // that has to say "this one" without a line around it.
+        "group/command-row flex h-9 w-full items-center gap-2.5 rounded-md px-3 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard outline-none",
         isActive ? "glass-active bg-accent text-foreground" : "hover:bg-accent",
       )}
       data-command-index={dataIndex}
@@ -1032,7 +1047,9 @@ function CommandResultRow({
       <HighlightedLabel label={item.label} matchedIndices={matchedIndices} />
       {item.hint &&
         (item.hintKind === "keys" ? (
-          <KbdShortcut className="ml-auto" keys={item.hint} />
+          <span className="ml-auto shrink-0 text-caption text-muted-foreground tabular-nums">
+            {item.hint}
+          </span>
         ) : (
           <span
             className={cn(

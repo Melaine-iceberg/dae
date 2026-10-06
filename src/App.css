@@ -58,23 +58,34 @@
     Menlo, Monaco, "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Microsoft YaHei UI",
     "PingFang SC", "Noto Sans CJK SC", "Source Han Sans SC", monospace;
 
-  /* Compact desktop type scale — a CLOSED seven-step ramp. The ramp is the
-     whole point: it is what keeps a dense window (13px rows, 12px metadata,
-     10px keycaps) from drifting into a dozen near-identical sizes. Anything
-     outside these seven steps is not legal, so a reviewer can see an
-     off-ramp size at a glance instead of having to compare two pixel values.
+  /* Desktop type scale — a CLOSED six-step ramp. The ramp is the whole point:
+     it is what keeps a dense window (14px rows, 13px metadata, 11px keycaps)
+     from drifting into a dozen near-identical sizes. Anything outside these six
+     steps is not legal, so a reviewer can see an off-ramp size at a glance
+     instead of having to compare two pixel values.
 
-       title    15px  page, dialog and section titles
-       lead     14px  the one hero input — the palette search field
-       body     13px  the workhorse — rows, controls, form text
-       caption  12px  secondary metadata, descriptions, group headers
-       micro    11px  dense chrome (status bar, capacity, badges)
-       label    11px  dense group captions (table and menu headings)
-       nano     10px  keycap chips and badge letters
+       title    18px  page, dialog and section titles
+       lead     15px  the one hero input — the palette search field
+       body     14px  the workhorse — rows, controls, form text
+       caption  13px  secondary metadata, descriptions, group headers
+       micro    12px  dense chrome (status bar, capacity, badges)
+       label    12px  dense group captions (table and menu headings)
+       nano     11px  keycap chips and badge letters
 
-     There is no display step: 18px/650 was only ever spent on one page
-     heading, and a file manager's home surface is a list of places, not a
-     landing page. `title` is the largest thing in the window.
+     THE NOTION RETUNE: every rung came up one step. The ramp used to top out at
+     a 15px title over 13px body, and that one pixel of separation between a
+     heading and the text under it is what made a page read as a *panel* — a
+     tool reporting its state — rather than as a document with a name. Notion's
+     own surfaces set running text at 14px and let a page title sit well above
+     it; the gap between the two, not either of them, is what carries the calm.
+     The same reasoning moved `caption` and `micro`: metadata at 11px beside
+     body at 13px is a contrast of size alone, and a contrast of size alone reads
+     as clinical once the window is quiet enough for it to be the only signal
+     left.
+
+     There is still no display step, and `title` remains the largest thing in the
+     window: a file manager's home surface is a list of places, not a landing
+     page.
 
      `label` and `micro` deliberately share a size but not a role: label is a
      group caption, micro is sentence-case metadata. `label` is NOT tracked
@@ -83,28 +94,24 @@
      the Latin it occasionally sets. Only `title` and `lead` carry a weight
      and tracking of their own — body and below inherit, so a call site can
      go bold without re-declaring size. */
-  --text-display: 1.5rem;
-  --text-display--line-height: 1.875rem;
-  --text-display--font-weight: 640;
-  --text-display--letter-spacing: -0.012em;
-  --text-title: 0.9375rem;
-  --text-title--line-height: 1.375rem;
+  --text-title: 1.125rem;
+  --text-title--line-height: 1.625rem;
   --text-title--font-weight: 600;
-  --text-title--letter-spacing: -0.002em;
-  --text-body: 0.8125rem;
-  --text-body--line-height: 1.25rem;
-  --text-lead: 0.875rem;
-  --text-lead--line-height: 1.25rem;
+  --text-title--letter-spacing: -0.011em;
+  --text-lead: 0.9375rem;
+  --text-lead--line-height: 1.375rem;
   --text-lead--letter-spacing: -0.006em;
-  --text-caption: 0.75rem;
-  --text-caption--line-height: 1rem;
-  --text-micro: 0.6875rem;
-  --text-micro--line-height: 0.875rem;
-  --text-label: 0.6875rem;
-  --text-label--line-height: 1rem;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.375rem;
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.125rem;
+  --text-micro: 0.75rem;
+  --text-micro--line-height: 1rem;
+  --text-label: 0.75rem;
+  --text-label--line-height: 1.125rem;
   --text-label--font-weight: 500;
-  --text-nano: 0.625rem;
-  --text-nano--line-height: 0.875rem;
+  --text-nano: 0.6875rem;
+  --text-nano--line-height: 1rem;
 
   /* Notion motion: a quick fade paired with a small rise, settled softly and
      never performed. Nothing overshoots — a curve that passes its target and
@@ -122,35 +129,42 @@
        standard-accelerate  exits: a surface leaving the screen
        spring-fast          transforms and entrances — chevron rotation, the
                             tab press, a popup opening. A soft glide, so a
-                            140ms motion has finished settling before it is
+                            150ms motion has finished settling before it is
                             perceived as animated.
        spring               large surfaces arriving — dialogs, panels
        spring-slow          the heaviest arrivals
 
-     The spring trio keeps its name as a role ("things arriving") although the
-     overshoot that once named it is gone: each is the same soft ease-out, one
-     notch longer-tailed than the last, so a dialog feels heavier than a menu
-     without feeling different in kind.
+     CALIBRATED TO NOTION'S OWN CURVES: every value below is a
+     `--tatami-motion-timing-function-*` token read off their shipped CSS, not
+     a curve invented to evoke them. The spring trio keeps its name as a role
+     ("things arriving") although the overshoot that once named it is gone:
+     spring-fast is their plain ease-out, and the heavier the arrival the more
+     symmetric its curve, so a dialog settles differently from a menu without
+     feeling different in kind.
 
      Only `standard` belongs on a colour-only transition. A settle curve on a
      hover fill reads as the hover lagging behind the pointer, which is why
      every `transition-[background-color…]` uses it. */
-  --ease-spring-fast: cubic-bezier(0.25, 0.9, 0.35, 1);
-  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-spring-slow: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-standard: cubic-bezier(0.25, 0.1, 0.25, 1);
-  --ease-standard-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring-fast: cubic-bezier(0, 0, 0.58, 1); /* tatami ease-out */
+  --ease-spring: cubic-bezier(0.645, 0.045, 0.355, 1); /* tatami ease-in-out-cubic */
+  --ease-spring-slow: cubic-bezier(0.76, 0, 0.24, 1); /* tatami ease-in-out-quart */
+  --ease-standard: cubic-bezier(0.45, 0, 0.55, 1); /* tatami ease-in-out-quad */
+  --ease-standard-accelerate: cubic-bezier(0.42, 0, 1, 1); /* tatami ease-in */
 
   /* Motion durations live under Tailwind's `--transition-duration-*`
      namespace, which is what makes a `duration-fast` class resolve to a
      utility at all. They previously sat under a `--duration-*` namespace that
      Tailwind does not read: the variables were still emitted, so the
      hand-written CSS below honoured them, but every `duration-*` class in the
-     app silently generated nothing and fell back to Tailwind's stock 150ms. */
-  --transition-duration-instant: 90ms;
-  --transition-duration-fast: 140ms;
-  --transition-duration-normal: 190ms;
-  --transition-duration-slow: 280ms;
+     app silently generated nothing and fell back to Tailwind's stock 150ms.
+
+     The four values are Notion's own `--tatami-motion-duration-*` steps
+     (100/150/200/250/300ms), taken at 100/150/200/300 — the 250ms rung is
+     simply unused here, and nothing may sit between the rungs. */
+  --transition-duration-instant: 100ms;
+  --transition-duration-fast: 150ms;
+  --transition-duration-normal: 200ms;
+  --transition-duration-slow: 300ms;
 
   /* Tailwind resolves `transition-*` utilities — which is what every shadcn
      control reaches for — against these two, and its stock values are 150ms
@@ -167,32 +181,39 @@
      dialogs, the command palette, drag ghosts. The window itself is flat:
      its columns are divided by hairlines, not by shadows.
 
-     The recipe is Notion's: a near contact layer, one close layer and one wide
-     and quiet, all very low-alpha and all pulled in tight around the box — a
-     shadow that says *this rests on the plane*, never one that lifts a card
-     high above it. No hard short shadow anywhere: that crisp precision is the
-     coldness this pass exists to remove. Strength is driven by the per-theme
-     --shadow-a* stops below, and both schemes now run nearly the same four: a
-     black shadow used to do no work at all on a near-black canvas (measured,
-     the old 36/46/58/70 stops moved the canvas by only −1.9 to −2.4 L*, so
-     the four steps were one blur), which is why dark mode once needed
-     inflated stops. On a graphite canvas the light stops resolve into a
-     ladder. */
+     CALIBRATED TO NOTION'S OWN SHADOWS. The layer geometry below is their
+     `--tatami-shadow-100/200/300` recipes verbatim, read off their shipped
+     CSS, with our four names laid over their three tiers: xs is their 100,
+     sm is their 200, ambient is their 200 with one wide layer bridging toward
+     300, lg is their 300. Their shadows are almost pure haze — up to six
+     stacked layers of black at 1.2–3.9% alpha, very wide blurs, no offset
+     drama — a shadow that says *this rests on the plane* rather than one that
+     lifts a card high above it. In light, the --shadow-a* stops below are set
+     to reproduce that alpha range; the geometry, not the alpha, carries the
+     ladder. Dark mode keeps its higher stops, because a black shadow at 4% is
+     invisible on graphite (measured: the old 36/46/58/70 stops moved the
+     canvas by only −1.9 to −2.4 L*, so the four steps were one blur). */
   --shadow-ambient-xs:
-    0 1px 1px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
-    0 2px 5px -2px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent);
+    0 0.7px 1.462px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+    0 3px 9px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent);
   --shadow-ambient-sm:
-    0 1px 1px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
-    0 3px 7px -2px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
-    0 9px 22px -8px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent);
+    0 0.175px 1.041px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+    0 0.8px 2.925px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+    0 2.025px 7.847px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
+    0 4px 18px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent);
   --shadow-ambient:
-    0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
-    0 4px 10px -3px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
-    0 18px 42px -12px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent);
+    0 0.175px 1.041px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+    0 0.8px 2.925px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+    0 2.025px 7.847px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
+    0 4px 18px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
+    0 14px 36px -4px color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
   --shadow-ambient-lg:
-    0 2px 4px -2px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
-    0 8px 18px -6px color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
-    0 30px 68px -20px color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
+    0 0.667px 3.502px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+    0 2.933px 7.252px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
+    0 7.2px 14.462px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
+    0 13.867px 28.348px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
+    0 23.333px 52.123px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent),
+    0 36px 89px 0 color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
 
   --color-selection: var(--selection);
 
@@ -267,10 +288,17 @@
   --color-on-error-container: var(--on-error-container);
 
   /* Shape scale: five steps, spent in ascending order of how much the thing
-     draws attention — 3px inline code → 4px buttons, chips, keycaps, rows,
+     draws attention — 4px inline code → 5px buttons, chips, keycaps, rows,
      inputs and small images → 6px menus, toasts and cards → 8px the larger
      toolbars and panes → 12px the command palette and dialogs. The window's
      content plane takes a sixth step, `--radius-panel`, below.
+
+     CALIBRATED TO NOTION'S OWN RADIUS SCALE: these are five rungs of their
+     `--tatami-border-radius-*` token scale (4/5/6/8/10/12/14/16px + pill),
+     read off their shipped CSS — radius-200/300/400/500/700 for the five
+     steps, radius-600 for the plane. The ladder was 3/4/6/8/12 before, which
+     put its smallest step off their scale entirely; 3px exists nowhere in
+     Notion.
 
      THE NOTION RETUNE: `--radius` moved from 12px to 8px and the five steps
      moved with it, as one edit. The 12px base was tuned when the shell's
@@ -289,8 +317,11 @@
 
      Four of those five steps are the whole scale; a radius outside them is
      not legal. It used to run to nine steps (4/5/6/8/10/13/16/20/24) of which
-     only the first five were ever used. A 3px and a 4px corner sitting side
-     by side read as one size drawn twice rather than as two deliberate sizes.
+     only the first five were ever used. A 4px and a 5px corner sitting side
+     by side read as one size drawn twice rather than as two deliberate sizes
+     — which is why these rungs are taken whole from Notion's scale rather
+     than interpolated: two adjacent sizes are either both theirs or one of
+     them is a mistake.
 
      The end that used to follow — 16, 20 and 24px — is still gone, and with
      it the reason it went. Giving the command palette and the dialogs a
@@ -307,8 +338,8 @@
      that grew. It is deliberately NOT reachable from the inline elements —
      buttons, inputs, rows and chips stay on `sm` and `md`, so tightening this
      step never touches them. */
-  --radius-xs: calc(var(--radius) - 5px);
-  --radius-sm: calc(var(--radius) - 4px);
+  --radius-xs: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 3px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
@@ -328,7 +359,7 @@
      then falls back to `--spacing-*`. A token declared under the wrong prefix
      still emits its variable and still generates no utility — which is exactly
      how the `--duration-*` mistake above stayed invisible for a release. */
-  --size-tile-list: 22px; /* entry icon cell in a 28/34/42px row */
+  --size-tile-list: 24px; /* entry icon cell in a 32/40/48px row */
   --size-tile-detail: 40px; /* dialog header tile */
   --size-tile-grid-compact: 32px;
   --size-tile-grid-comfortable: 42px;
@@ -340,8 +371,8 @@
   --height-image-zone-compact: 30px;
   --height-image-zone-comfortable: 42px;
   --height-image-zone-spacious: 50px;
-  --height-location-card: 54px; /* LocationCard — its skeleton must match */
-  --height-project-card: 84px;
+  --height-location-card: 60px; /* LocationCard — its skeleton must match */
+  --height-project-card: 90px;
   --height-settings-body: 30rem; /* settings dialog body at a comfortable window */
   /* The bin's list scrolls inside its own surface rather than pushing the page
      header off the top: the header, the progress bar and the summary stay put
@@ -353,7 +384,7 @@
      strip's number lives in the plain pair at the top of this file, where a
      `background-size` can read it; the name here is an alias. */
   --height-tab-strip: var(--tab-strip-height);
-  --height-toolbar: 40px;
+  --height-toolbar: 44px;
   --height-status-strip: 32px;
   --height-capacity-bar: 3px; /* disk capacity fill in the sidebar */
   /* Window-control geometry, two numbers because the target and the plate are
@@ -435,12 +466,11 @@
 }
 
 :root {
-  /* NEUTRAL DESK — light. The canvas is a near-white grey and the content
-     plane is pure white, so depth comes from the plane's own edge and a shallow
-     shadow rather than from tint. Boundaries stay legible without any shadow at
-     all: every edge is a hairline (border/card ≈ 1.22). The accent clears AA in
-     BOTH of its jobs: as a fill (white on it ≈ 5.7) and as text or icon on any
-     surface in the ladder (≈ 5.0 at worst).
+  /* NEUTRAL DESK — light. The canvas is a soft grey and the content plane is
+     pure white, so the window's depth is one tone step plus a shallow shadow —
+     no hairline is asked to carry a boundary between the frame and the paper.
+     The accent clears AA in BOTH of its jobs: as a fill (white on it ≈ 5.7) and
+     as text or icon on any surface in the ladder (≈ 5.0 at worst).
 
      THE LIGHT LADDER: two rungs, on purpose.
 
@@ -452,20 +482,28 @@
      gives the window a clear front and back, and the rail's own grouping is
      carried by its section labels and its selection, not by a tone of its own.
 
-     The consequence to keep in mind: the rail and the canvas are the SAME
-     value, so nothing may rely on a step between them. The vertical hairline is
-     what separates them, and it is load-bearing, not decoration. */
-  --shadow-color: #37352f; /* keyed to the ink: shadows darken the paper, never tint it */
-  --shadow-a1: 5%;
-  --shadow-a2: 9%;
-  --shadow-a3: 14%;
+     The consequence to keep in mind: the rail and the canvas are the SAME value,
+     so nothing may rely on a step between them — which is why neither the rail's
+     inner edge nor the frame's lower edge carries a hairline any more. A line
+     between two identical values draws a boundary where there is no boundary.
+     The rail's own hover and selection run on `--sidebar-accent`, which is held
+     a clear step below the canvas so a selected row still reads with no ring
+     around it. */
+  --shadow-color: #191918; /* keyed to the ink: shadows darken the paper, never tint it */
+  /* Per-layer shadow alpha. Light reproduces Notion's tatami shadow alphas
+     (1.2–3.9% black, layered); the ladder is carried by the geometry above.
+     a4 is not a shadow stop in practice — the outline-glow halo feeds on it,
+     and a focus ring at 4% would be gone, so it stays high. */
+  --shadow-a1: 1.5%;
+  --shadow-a2: 2.5%;
+  --shadow-a3: 4%;
   --shadow-a4: 24%;
-  --background: #f7f7f5; /* canvas — the step the panels sit ON, see the ladder note below */
-  --foreground: #37352f;
+  --background: #f4f3f1; /* canvas — the step the panels sit ON, see the ladder note below */
+  --foreground: #191918;
   --card: #ffffff; /* panel surface */
-  --card-foreground: #37352f;
+  --card-foreground: #191918;
   --popover: #ffffff; /* menus, dialogs — lift comes from shadow, not tone */
-  --popover-foreground: #37352f;
+  --popover-foreground: #191918;
   /* THE FLOATING-GLASS PAIR — see `.floating-frost` and THE FLOATING-GLASS SEAM
      below it. The menu plane at its frost density, plus the pass it runs over
      whatever is behind it.
@@ -510,78 +548,94 @@
   --frost-plate: var(--card);
   /* ---- The neutral scheme --------------------------------------------------
 
-     The window is a quiet grey desk, not a tinted one. The neutrals sit within
-     a few points of pure grey — enough of a warm lean in the ink that text on
-     white does not read as a blue-black, never enough to read as a colour
-     choice. A cast strong enough to notice is a cast strong enough to fight
-     every file icon rendered on top of it, and this app is mostly file icons.
+     The window is a quiet grey desk, and the neutrals are Notion's own: the
+     `tatami` grey ramp their UI is drawn in — #f9f9f8 through #191918 with
+     alpha-black hairlines — read off their shipped tokens rather than
+     remembered. Neutrals are neutral, full stop; the only chroma in the shell
+     is the category hues below, the way Notion spends it. A cast strong enough
+     to notice is a cast strong enough to fight every file icon rendered on top
+     of it, and this app is mostly file icons.
 
      The ladder, lightest to darkest — a real ordering the eye can take, but a
-     short one, because the plane is delimited by its hairline and its shadow
-     rather than by tone:
+     short one, because the plane is delimited by tone and by its shadow rather
+     than by a line drawn around it:
 
-       popover #ffffff  →  card #ffffff  →  sidebar = canvas #f7f7f5
-       →  muted/secondary/accent #f1f1ef  →  border #e9e9e7
+       popover / card #ffffff
+       →  muted / secondary / accent #f6f5f4   (the wash a row takes ON the paper)
+       →  sidebar = canvas #f4f3f1
+       →  sidebar-accent #ebe9e6               (the wash a row takes ON the rail)
+       →  border #e9e9e9
+
+     The two washes are separate tokens because they sit on separate planes. A
+     hover fill has to be a step DOWN from whatever carries it, and the rail and
+     the paper are two rungs apart, so one value cannot serve both: the old
+     single #f6f5f4 read clearly on white and vanished on the rail, which is what
+     the `glass-active` ring used to be there to make up for.
 
      Card and popover are both #ffffff on purpose: the floating layers buy their
      separation from the frost and the shadow, and a menu is never asked to
      outrank a panel by value. The rail shares the canvas value — see THE LIGHT
      LADDER above for why that is two rungs and not three.
 
-     Contrast was measured, not eyeballed: ink 12.3:1 on a card, the secondary
-     grey 5.1:1 on a card and 4.5:1 on the hover wash, the accent 5.7:1 under
-     white ink and 5.0:1 as text on a card. The one role tuned darker than it
-     looks is `--folder`: a gold is the natural folder colour and the natural
-     folder colour is also the one that fails contrast, so it is held at 6.1:1
-     against a card — well past the 3:1 bar for a graphical object, because at
-     this size an icon is closer to text than to a mark. */
-  --accent-default: #1868b3; /* shipped accent — 5.7:1 under white ink, and legible as text */
+     Contrast was measured, not eyeballed: ink 17.6:1 on a card and 12.6:1 on the
+     selected rail plate, the secondary grey 6.5:1 on a card, 5.4:1 on the rail
+     hover and 4.7:1 on the selected plate — that last pairing is what sets the
+     grey's lightness, since a selected row carries its state by fill alone now
+     and the caption inside the disk row sits directly on it. The accent is 4.6:1
+     under white ink and the same 4.6:1 as text on a card. `--folder` is the one
+     role held to the *graphical* bar instead of the text one — see its note
+     below. */
+  --accent-default: #0075de; /* tatami blue-600, Notion's action blue — 4.6:1 under white ink and as text */
   --accent-default-ink: #ffffff;
   --on-destructive: #ffffff;
-  --secondary: #f1f1ef; /* tonal secondary surfaces */
-  --secondary-foreground: #37352f;
-  --muted: #f1f1ef;
-  --muted-foreground: #6f6e69; /* 5.1:1 on a card — secondary text never fades out */
-  --accent: #f1f1ef; /* hover highlight */
-  --accent-foreground: #37352f;
+  --secondary: #f6f5f4; /* tonal secondary surfaces */
+  --secondary-foreground: #191918;
+  --muted: #f6f5f4;
+  --muted-foreground: #615d59; /* tatami gray-600 — 6.5:1 on a card; secondary text never fades out */
+  --accent: #f6f5f4; /* hover highlight */
+  --accent-foreground: #191918;
   --error-container: #fbe3dc;
   --on-error-container: #6e1f12;
   /* Folder glyphs repeat once per directory — 38 of them in a full listing —
-     so they are the highest-volume colour in the app, and a 93%-saturated gold
-     at that volume reads as noise rather than as a signal. Pulled back to a
-     richer-but-quieter bronze at 68%. The glyph is a thin outline rather than
-     a fill, so it needs more chroma than its luminance alone suggests or it
-     goes anemic next to the filename; this keeps the folder convention (the
-     one glyph that should not be monochrome) while leaving the accent as the
-     only thing that shouts. 4.92:1 on the pane, so AA holds. */
-  --folder: #8f6a2e;
+     so they are the highest-volume colour in the app, and they are the one
+     glyph drawn as a solid object rather than as a line (`.folder-duotone`,
+     see below): a folder reads by silhouette the way Notion's folder icon
+     does, not by stroke contrast. That is what frees the body (`--folder-body`)
+     to be the bright yellow everyone recognises — tatami yellow-500 #ffb110 —
+     instead of a gold darkened to reach text contrast, which is how both
+     earlier attempts ended up brown (first at 68% chroma, then as yellow-700
+     held to 3.07:1). `--folder` keeps the deep gold (yellow-700 #c78600): it
+     is the fill's fold line, and it is the folder *hue* wherever a folder-hued
+     thing is still a line — the Home place, favourites. */
+  --folder: #c78600; /* fold line, and the folder hue for line glyphs */
+  --folder-body: #ffb110; /* the body of the filled folder */
   --destructive: #c4372f;
   /* Status hues: one hue each, contrast-checked against the card plane. */
   --success: #367453;
-  --warning: #8f6210;
+  --warning: #ab4a00;
   --info: #1f6f96;
-  --tone-blue: #4a57a8; /* muted indigo — documents, code, shortcuts */
-  --tone-violet: #7b4877; /* muted plum — images, video, fonts */
-  --tone-emerald: #4a6b3a; /* moss — spreadsheets, certificates */
-  --tone-amber: #8a5709; /* media, archives — the one tone the accent cannot cover */
-  --tone-rose: #a83a5b; /* muted rose — pdf, keys, executables */
-  --tone-cyan: #0f6b7a; /* muted teal — desktop, audio, databases */
-  --border: #e9e9e7; /* hairline panel edge */
-  --input: #dcdcd8;
+  /* The six category hues, one per kind of thing: Notion's own category
+     colours, the tatami 600 rung of each hue (blue kept one step deeper at 700,
+     so the accent still shouts), measured on a card — blue 6.8, violet 7.3,
+     green 4.9, orange 3.8, rose 4.3, teal 5.1. The graphical-object bar is
+     3:1 and every hue clears it. They were a muted paintbox before — indigo,
+     plum, moss, brown-gold, rose, teal — and six low-chroma hues beside a
+     bronze folder is exactly what gave a listing its sepia. */
+  --tone-blue: #005bab; /* documents, code, shortcuts */
+  --tone-violet: #7237ae; /* images, video, fonts */
+  --tone-emerald: #14832b; /* spreadsheets, certificates */
+  --tone-amber: #dd5b00; /* media, archives — the one tone the accent cannot cover */
+  --tone-rose: #d13f9d; /* pdf, keys, executables */
+  --tone-cyan: #0a7b77; /* desktop, audio, databases */
+  --border: #e9e9e9; /* hairline panel edge */
+  --input: #dfdcd9;
   --radius: 0.5rem;
-  /* The lit edge of a raised surface. A 1px inset highlight along the top of
-     every lifted plane — the material cue that says "this sits above the
-     canvas" without spending another tone. Light gets real light (the plane is
-     cream, and the highlight is what makes it read as lit rather than pale);
-     dark gets a whisper, because at 4% on graphite it is already at the noise
-     floor of a shadowed edge. */
-  --surface-highlight: rgb(255 255 255 / 0.6);
-  --scrim: rgb(55 53 47 / 0.36); /* keyed to the ink, so the dimmed plane keeps its cast */
+  --scrim: rgb(25 25 24 / 0.36); /* keyed to the ink, so the dimmed plane keeps its cast */
   --sidebar: var(--background); /* the rail IS the canvas — the panel is the only raised plane */
-  --sidebar-foreground: #37352f;
-  --sidebar-accent: #f1f1ef;
-  --sidebar-accent-foreground: #37352f;
-  --sidebar-border: #e9e9e7;
+  --sidebar-foreground: #191918;
+  --sidebar-accent: #ebe9e6;
+  --sidebar-accent-foreground: #191918;
+  --sidebar-border: #e9e9e9;
 
   /* Chrome geometry. Plain custom properties rather than `@theme` entries,
      because one consumer is not a utility: the floating-glass plate sizes two
@@ -599,7 +653,7 @@
      the theme, was what got read. Anything that has to exist as a real
      variable belongs here. */
   --sidebar-width: 15rem; /* 240px — the nav column */
-  --tab-strip-height: 38px; /* the window frame bar */
+  --tab-strip-height: 42px; /* the window frame bar */
 }
 
 .dark {
@@ -622,12 +676,12 @@
   --shadow-a2: 34%;
   --shadow-a3: 46%;
   --shadow-a4: 60%;
-  --background: #1a1a18; /* canvas — low chroma, so it reads neutral rather than sepia */
-  --foreground: #e9e9e7;
-  --card: #252522; /* panel surface */
-  --card-foreground: #e9e9e7;
-  --popover: #2e2e2b; /* floating layer — two clear steps above the panels */
-  --popover-foreground: #e9e9e7;
+  --background: #191918; /* canvas — low chroma, so it reads neutral rather than sepia */
+  --foreground: #e9e9e9;
+  --card: #252525; /* panel surface */
+  --card-foreground: #e9e9e9;
+  --popover: #2e2e2e; /* floating layer — two clear steps above the panels */
+  --popover-foreground: #e9e9e9;
   /* The glass pair, dark. Same 90% floor, and the same measurement run the other
      way: here the binding backdrop is a bright one — a scanned page or a
      white-background icon under a dark menu — and dimming the backdrop through
@@ -639,43 +693,43 @@
   --popover-frost-dense: color-mix(in oklab, var(--popover) 96%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6) brightness(0.75);
   --frost-plate: var(--card); /* see the light scheme's pair */
-  --accent-default: #5b9fe8; /* 5.5:1 as text on a panel, 6.8:1 under the dark ink */
-  --accent-default-ink: #101116; /* ink label on the blue fill — 6.8:1 */
+  --accent-default: #62aef0; /* tatami blue-400 — 6.5:1 as text on a panel, 7.9:1 under the dark ink */
+  --accent-default-ink: #101116; /* ink label on the blue fill — 7.9:1 */
   --on-destructive: #101116; /* the dark destructive is a light red: white on it 2.4:1 */
-  --secondary: #32322f;
-  --secondary-foreground: #e9e9e7;
-  --muted: #2c2c29; /* inner recessed surface — tracks, header strips, thumbnails */
-  --muted-foreground: #9b9b9b; /* 5.5:1 on a panel, 4.6 on the hover highlight */
-  --accent: #32322f; /* hover highlight — a half-step above the panel */
-  --accent-foreground: #e9e9e7;
+  --secondary: #323232;
+  --secondary-foreground: #e9e9e9;
+  --muted: #2c2c2c; /* inner recessed surface — tracks, header strips, thumbnails */
+  --muted-foreground: #adadad; /* 6.8:1 on a panel, 5.7 on the rail hover, 4.7 on the selected plate */
+  --accent: #323232; /* hover highlight — a half-step above the panel */
+  --accent-foreground: #e9e9e9;
   --error-container: #5f2a22;
   --on-error-container: #ffd9cf;
-  /* Same reasoning as the light scheme: a lower-chroma sand at 44% rather than
-     the 64% it was, and 6.98:1 on the pane. */
-  --folder: #cbaa72;
+  /* The same filled-folder pair as the light scheme, on purpose: a folder is
+     a fill now, so it needs no luminance help from the scheme and a folder
+     stays the same yellow in both. */
+  --folder: #c78600;
+  --folder-body: #ffb110;
   --destructive: #ec8d86;
   --success: #6dbd94;
   --warning: #dfa63f;
   --info: #7fb0f0;
-  --tone-blue: #a6b2f2; /* muted indigo — documents, code, shortcuts */
-  --tone-violet: #cfa2cb; /* muted plum — images, video, fonts */
-  --tone-emerald: #a8ce8a; /* moss — spreadsheets, certificates */
-  --tone-amber: #e0a94e; /* media, archives — the one tone the accent cannot cover */
-  --tone-rose: #f09cb1; /* muted rose — pdf, keys, executables */
-  --tone-cyan: #6fc3d0; /* muted teal — desktop, audio, databases */
-  --border: #3a3a36; /* hairline — 1.35:1 on a panel, the same step as light */
-  --input: #474743;
+  /* Same mapping as the light scheme — tatami 300 tints of the same six hues
+     (see THE CATEGORY HUES note above), on the pane at 6.8–10.5:1. */
+  --tone-blue: #73b1f4; /* documents, code, shortcuts */
+  --tone-violet: #d6b6f6; /* images, video, fonts */
+  --tone-emerald: #abe5b8; /* spreadsheets, certificates */
+  --tone-amber: #ffad71; /* media, archives — the one tone the accent cannot cover */
+  --tone-rose: #ffb5eb; /* pdf, keys, executables */
+  --tone-cyan: #83cbc9; /* desktop, audio, databases */
+  --border: #3a3a3a; /* hairline — 1.35:1 on a panel, the same step as light */
+  --input: #474747;
   --radius: 0.5rem;
-  /* Half the light value: on graphite the plane is already the brighter
-     surface, so a full 60% highlight would frost the top edge instead of
-     lighting it. */
-  --surface-highlight: rgb(255 255 255 / 0.055);
-  --scrim: rgb(10 10 9 / 0.6); /* keyed to the ink, so the dimmed plane keeps its cast */
+  --scrim: rgb(10 10 10 / 0.6); /* keyed to the ink, so the dimmed plane keeps its cast */
   --sidebar: var(--background); /* the rail IS the canvas — the panel is the only raised plane */
-  --sidebar-foreground: #e9e9e7;
-  --sidebar-accent: #32322f;
-  --sidebar-accent-foreground: #e9e9e7;
-  --sidebar-border: #3a3a36;
+  --sidebar-foreground: #e9e9e9;
+  --sidebar-accent: #323232;
+  --sidebar-accent-foreground: #e9e9e9;
+  --sidebar-border: #3a3a3a;
 }
 
 /* ---------------------------------------------------------------------------
@@ -846,7 +900,7 @@ html[data-window-focused="false"] .tab-chip-active {
    lift, not a wash: the same 8% held at the old 78% takes this shell's dark scheme
    over a white desktop from 6.5:1 to 5.8:1 for the ink sitting directly on the
    frost. At 84% every accent measured lands back above where the neutral frame was
-   — 8.3:1 for #e9e9e7 in dark, 12.2:1 for #37352f in light — and the worst pair
+   — 8.3:1 for #e9e9e9 in dark, 12.2:1 for #191918 in light — and the worst pair
    found is a near-black accent under the light scheme's secondary grey, which
    clears AA at 4.9:1. That ink is the nav column's labels and the inactive tab's
    title; an active tab carries its own opaque plate. What neither knob reaches is
@@ -1113,17 +1167,15 @@ html[data-window-material="blur"]:root body {
                             raised off the canvas (see below).
 
      THE CONTENT PLANE. The shell's spatial idea, and the reason the two frame
-     roles above exist. The nav rail stays part of the frame — full-bleed, its
-     hairline flush to the window edge — while the content rises off the canvas
-     as a plate with air on every side it does not share with the rail. It is
-     paper on a desk: the plane is lit from its top edge (a 1px inset
-     highlight, `--surface-highlight`) and carries only the whisper of contact
-     shadow a sheet needs, so it reads as the nearest surface rather than as
+     roles above exist. The nav rail stays part of the frame — full-bleed, flush
+     to the window edge — while the content rises off the canvas as a plate with
+     air on every side it does not share with the rail. It is paper on a desk, and
+     like paper it has no edge drawn around it: the canvas sits a step below the
+     plane's own value, so the boundary is a change in tone plus the whisper of
+     contact shadow a sheet needs. It reads as the nearest surface rather than as
      the largest rectangle.
-     The hairline is an `outline`, not a `border`: it paints outside the box
-     model, so the interior geometry — and every virtualised row measured
-     against it — is untouched by the ring. Call sites keep their own fill
-     (`bg-card`), because a plane has to stay opaque over a platform blur.
+     Call sites keep their own fill (`bg-card`), because a plane has to stay
+     opaque over a platform blur.
 
      Every one of them layers a `background-image` over the element's existing
      `background-color`, so they compose with `bg-chrome` / `bg-sidebar` / the
@@ -1158,18 +1210,23 @@ html[data-window-material="blur"]:root body {
 
   .content-panel {
     border-radius: var(--radius-panel);
-    box-shadow:
-      inset 0 1px 0 var(--surface-highlight),
-      0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent);
-    outline: 1px solid var(--border);
+    box-shadow: var(--shadow-ambient-xs);
   }
 
+  /* The "I am here" plate: one flat wash over the call site's fill, and
+     nothing else. No ring, no gradient, no glow, no lit edge.
+
+     The hairline inset ring that used to sit here is what made a selected row
+     read as a *control* — an outlined box you could click — rather than as a
+     place you are. Notion's current nav item is a plain darker grey, and the
+     wash alone still carries the step that matters: the rail's hover fill is
+     `--sidebar-accent`, and this sits seven points of ink on top of it, so
+     hover and selection stay two distinct tones with no line between them. */
   .glass-active {
     background-image: linear-gradient(
       color-mix(in oklab, var(--accent-foreground) 7%, transparent),
       color-mix(in oklab, var(--accent-foreground) 7%, transparent)
     );
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent-foreground) 9%, transparent);
   }
 
   /* The active tab chip: the shell's one raised element — quiet paper, lit by
@@ -1179,12 +1236,11 @@ html[data-window-material="blur"]:root body {
      gone, because in this language being *here* is a fact of fill and weight,
      not of colour. Inactive tabs stay flat — the strip still reads as a row of
      destinations, with the current one raised. The fill comes from the call
-     site (`bg-card`) so the chip stays opaque over a platform blur. */
+     site (`bg-card`) so the chip stays opaque over a platform blur, and its
+     separation now comes from the canvas sitting a step below the paper rather
+     than from a hairline drawn around it. */
   .tab-chip-active {
-    box-shadow:
-      inset 0 1px 0 var(--surface-highlight),
-      0 1px 2px -1px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent),
-      0 3px 8px -3px color-mix(in oklab, var(--shadow-color) var(--shadow-a1), transparent);
+    box-shadow: var(--shadow-ambient-xs);
   }
 
   /* Path hints keep their filename readable: flipped text direction moves the
@@ -1525,6 +1581,20 @@ html[data-window-material="blur"]:root body {
     --solar-secondary-color: var(--solar-secondary-tonal);
   }
 
+  /* A folder is an object, not a page — the one glyph in the shell that is
+     filled rather than outlined. Solar's bold-duotone folder paints the body
+     as the *secondary* layer and the fold line as the primary, so the two
+     tones are deliberately wired here: the body takes `--folder-body`, the
+     bright yellow everyone reads as "folder", and the fold line takes
+     `--folder`, the deep gold that carries the shape where an edge has to be
+     read. It sits outside the tonal list above on purpose — a folder's second
+     tone is its own pair, not a wash of its first. */
+  .folder-duotone {
+    color: var(--folder);
+    --solar-secondary-color: var(--folder-body);
+    --solar-secondary-opacity: 1;
+  }
+
   html {
     @apply font-sans;
   }
@@ -1744,7 +1814,11 @@ html[data-window-material="blur"]:root body {
        the second tone the pair exists for. A colour cannot be restored against
        a palette the user chose, but a wash can: the opacity neither answer uses
        any more is exactly what carries the layer here, and it carries it for
-       the opt-out list too. */
+       the opt-out list and for `.folder-duotone`'s inverted pair too. */
+    --solar-secondary-opacity: 0.35;
+  }
+
+  .folder-duotone {
     --solar-secondary-opacity: 0.35;
   }
 

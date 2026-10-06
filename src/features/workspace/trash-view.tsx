@@ -88,7 +88,7 @@ const TYPE_AHEAD_TIMEOUT_MS = 800;
  * from the scroller's position, which is the classic fixed-height-virtualization
  * bug and is invisible in code review.
  */
-const TRASH_ROW_HEIGHT = 34;
+const TRASH_ROW_HEIGHT = 40;
 
 /** Rows kept mounted beyond the viewport. Wide enough that the `last:` border
  *  rule on a row is never applied to a row the reader can see. */

@@ -151,7 +151,7 @@ export function FileOperationStatusBar({ progress }: { progress: FileOperationPr
   return (
     <footer
       aria-live="polite"
-      className="flex h-status-strip shrink-0 items-center gap-3 border-t border-border bg-card px-3"
+      className="flex h-status-strip shrink-0 items-center gap-3 bg-card px-3"
     >
       <LoaderIcon
         className={cn(

@@ -2,7 +2,7 @@
  * Curated 16-color ANSI palettes for the integrated terminal.
  *
  * xterm's built-in ANSI colors are saturated primaries designed for a pure
- * black background; on the app's surfaces (`--card` is `#252522` dark,
+ * black background; on the app's surfaces (`--card` is `#252525` dark,
  * `#ffffff` light) they are harsh and, in the light theme, several are outright
  * unreadable. These palettes are sampled from the house color tokens in
  * `App.css` and tuned per theme so `ls --color`, git diffs and friends are
@@ -30,21 +30,21 @@
 /** The 16 ANSI slots in canonical order. */
 export type AnsiPalette = readonly string[];
 
-/** Dark, tuned to `--card: #252522` / `--foreground: #e9e9e7`. Every slot but
+/** Dark, tuned to `--card: #252525` / `--foreground: #e9e9e9`. Every slot but
  *  `black` clears ≥5.5:1 on the panel, and ≥4.5:1 on the lightest tone text
  *  ever lands on there. The three neutral slots are verbatim copies of
  *  `--background`, `--foreground` and `--muted-foreground`, so retuning the
  *  palette means bringing them along by hand — nothing here can read a
  *  variable, and they will not fail loudly if left behind. */
 export const DARK_ANSI: AnsiPalette = Object.freeze([
-  "#1a1a18", // black — --background: one step BELOW the panel, so a box drawn in ANSI black recesses instead of lighting up
+  "#191918", // black — --background: one step BELOW the panel, so a box drawn in ANSI black recesses instead of lighting up
   "#ff8288", // red — --destructive
   "#63d398", // green — --success
   "#e8a33d", // yellow — warm amber (--warning)
   "#8fb2ff", // blue — a real blue: ANSI blue means blue (see the header), never a retint of the accent
   "#c792ea", // magenta
   "#4ec2ea", // cyan — --tone-cyan
-  "#e9e9e7", // white — --foreground
+  "#e9e9e9", // white — --foreground
   "#9b9b9b", // brightBlack — --muted-foreground (dim text stays legible)
   "#ffa3a7", // brightRed
   "#8ce0b3", // brightGreen
@@ -55,21 +55,21 @@ export const DARK_ANSI: AnsiPalette = Object.freeze([
   "#ffffff", // brightWhite
 ]);
 
-/** Light, tuned to `--card: #ffffff` / `--foreground: #37352f`. The three
+/** Light, tuned to `--card: #ffffff` / `--foreground: #191918`. The three
  *  neutral slots copy the same three tokens as the dark table above. */
 export const LIGHT_ANSI: AnsiPalette = Object.freeze([
-  "#37352f", // black — soft near-black (--foreground), not pure #000
+  "#191918", // black — soft near-black (--foreground), not pure #000
   "#c22f2f", // red — --destructive
   "#17804a", // green — --success
-  "#8a6318", // yellow — darkened amber so it reads on white
+  "#c78600", // yellow — the folder gold, kept at the dark rung so it reads on white
   "#3f68c8", // blue — a real blue (see the header); never a retint of the accent
   "#b8438a", // magenta
   "#0a86b4", // cyan — --tone-cyan
-  "#dcdcd8", // white — light gray (--input)
-  "#6f6e69", // brightBlack — --muted-foreground (dim text)
+  "#dfdcd9", // white — light gray (--input)
+  "#615d59", // brightBlack — --muted-foreground (dim text)
   "#c13434", // brightRed
   "#1f9a5c", // brightGreen
-  "#a97c2f", // brightYellow
+  "#e89d01", // brightYellow
   "#5b7fd6", // brightBlue
   "#cb5fa4", // brightMagenta
   "#22a3c8", // brightCyan
