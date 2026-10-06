@@ -493,22 +493,48 @@
   --shadow-a2: 4.5%;
   --shadow-a3: 8%;
   --shadow-a4: 24%;
-  /* THE CANVAS WASH — rose at the top of the window, cream at its foot. This
-     is what `body` paints and what every canvas lens sits over. */
-  --canvas-image: linear-gradient(180deg, #f4c7d3 0%, #f7d8d3 32%, #fae7d7 64%, #fbf3e4 100%);
-  /* GLASS RETUNE — the island's rim: a 1px gradient edge that catches light at
-     the top and settles into a warm hairline at the bottom, the way the edge of
-     a pane of glass does. Drawn as the border-box layer of the two-layer
-     background stack on `.content-panel` — a flat `border-color` is one colour
-     and cannot hold a light edge. */
+  /* THE CANVAS WASH — sampled off the reference rather than guessed at: orchid
+     `#f6e2f4` along its top edge, a near-neutral `#f4f4f4` through the middle of
+     the window, warm `#e2d8af` at its foot. The two radials are the corner
+     blooms that make the head read as light from above rather than as a stripe;
+     the linear carries the fall. All the colour in the window lives HERE, and
+     the panels are neutral glass laid over it — which is why they pick the ramp
+     up at their edges instead of carrying a tint of their own. */
+  --canvas-image:
+    radial-gradient(58% 40% at 3% -6%, #f6e0fb 0%, transparent 56%),
+    radial-gradient(58% 40% at 97% -6%, #f9dcf0 0%, transparent 56%),
+    linear-gradient(180deg, #f5e3f3 0%, #f4f1f3 44%, #f2eedd 74%, #e3d9ae 100%);
+  /* THE LIQUID-GLASS RIM — a 1px edge that behaves like the ground edge of a
+     pane: a bright specular catch along the top, a quick fall to a bare
+     hairline through the sides, and a second, weaker light picked up along the
+     bottom from the field the pane rests on (the caustic). Drawn as the
+     border-box layer of the two-layer background stack on `.content-panel` — a
+     flat `border-color` is one colour and cannot hold any of that. */
   --island-rim: linear-gradient(
-    180deg,
-    color-mix(in oklab, #ffffff 80%, transparent) 0%,
-    color-mix(in oklab, #ffffff 30%, transparent) 28%,
-    color-mix(in oklab, var(--foreground) 10%, transparent) 62%,
-    color-mix(in oklab, var(--foreground) 16%, transparent) 100%
+    175deg,
+    color-mix(in oklab, #ffffff 100%, transparent) 0%,
+    color-mix(in oklab, #ffffff 72%, transparent) 12%,
+    color-mix(in oklab, #ffffff 22%, transparent) 42%,
+    color-mix(in oklab, var(--foreground) 12%, transparent) 68%,
+    color-mix(in oklab, #fff3d0 52%, transparent) 92%,
+    color-mix(in oklab, #ffffff 30%, transparent) 100%
   );
   --background: #faf2e6; /* canvas fallback colour — the wash's foot, and the base the lenses tint */
+  /* THE GLASS LIGHT LEVELS — how much light a pane's own edges throw, per
+     scheme. These are three of the four things a `--island-rim` gradient cannot
+     express: the specular is an inset shadow (it has to sit INSIDE the rim) and
+     the bloom is an outer one (it has to reach past the box).
+
+     Light mode spends them freely: a cream card on an orchid field can afford a
+     white halo, because the halo is what separates a near-white plate from a
+     near-white field. Dark mode cannot — a 45% white bloom around a graphite
+     card is a sticker, not glass, and the reference's own dark counterparts take
+     maybe a tenth of the light off the same edges. So the trio drops hard here
+     while the RIM keeps its shape: the geometry of a glass edge is the same in
+     both schemes, only its brightness is not. */
+  --glass-specular: color-mix(in oklab, #ffffff 72%, transparent);
+  --glass-caustic: color-mix(in oklab, #fff0c9 40%, transparent);
+  --glass-bloom: color-mix(in oklab, #ffffff 45%, transparent);
   --foreground: #3f3830; /* warm ink — 10.4:1 on the card */
   --card: #fdfaf4; /* warm ivory panel surface */
   --card-foreground: #3f3830;
@@ -548,6 +574,19 @@
      treatment — the colour, the blur and the plate are all still the ones
      above. */
   --popover-frost-dense: color-mix(in oklab, var(--popover) 96%, transparent);
+  /* THE PLANE GLASS — the density of a content panel, which is a different
+     question from a menu's. A menu is short-lived and read while it is up; a
+     panel carries a file list all day, so the frost has to be light enough to
+     see the field through at its edges and heavy enough that a row of 14px text
+     never sits on a live blur. At 88% the wash tints the plate's rim and foot
+     without ever reaching the type; the blur runs underneath, which is what
+     makes it glass rather than a fade.
+
+     Under a window material the backdrop stops being our own soft gradient and
+     becomes whatever the user has on the desktop, so the blocks further down
+     take this to near-opaque — the same argument `--popover-frost` documents,
+     one plane over. */
+  --panel-frost: color-mix(in oklab, var(--card) 82%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6);
   /* The fill a floating layer puts under its own tint where the window has no
      pixels to give it — see THE PLATE in the components layer. `--card` rather
@@ -659,7 +698,11 @@
      the theme, was what got read. Anything that has to exist as a real
      variable belongs here. */
   --sidebar-width: 15rem; /* 240px — the nav column */
-  --tab-strip-height: 42px; /* the window frame bar */
+  /* The window frame bar. Tall enough to carry a recessed trough with a chip
+     floating in it: 46px buys the 38px groove the tabs need plus 4px of field
+     above and below, so the channel reads as cut into the frame rather than as
+     a strip glued to the top of the window. */
+  --tab-strip-height: 46px;
 }
 
 .dark {
@@ -682,21 +725,36 @@
   --shadow-a2: 34%;
   --shadow-a3: 46%;
   --shadow-a4: 60%;
-  /* THE CANVAS WASH, dark: a dusk ramp — plum-rose at the top of the window,
-     warm graphite at its foot. The neutrals below stay neutral; only the field
-     behind them carries the picture's gradient language. */
-  --canvas-image: linear-gradient(180deg, #3d2b36 0%, #2d232a 34%, #221f1e 70%, #191918 100%);
-  /* The rim's dark counterpart — the same glass edge with the light catch
-     dimmed to the one a dark pane throws, and the hairline drawn from the
-     light foreground so it reads as glass rather than as a cut. */
+  /* THE CANVAS WASH, dark: the same three-layer field at night. The ramp's
+     SHAPE is what carries the design — orchid at the head, neutral through the
+     middle, warm at the foot — so it is kept and the chroma is turned down until
+     it reads as a dim room rather than as a colour choice. The neutrals below
+     stay neutral; only the field behind them carries the gradient. */
+  --canvas-image:
+    radial-gradient(58% 40% at 3% -6%, #3a2b48 0%, transparent 56%),
+    radial-gradient(58% 40% at 97% -6%, #4a2a40 0%, transparent 56%),
+    linear-gradient(180deg, #322b33 0%, #242224 44%, #221f1c 74%, #2a2418 100%);
+  /* The rim's dark counterpart — the same ground-glass edge with the specular
+     catch dimmed to the one a dark pane throws, the hairline drawn from the
+     light foreground so it reads as glass rather than as a cut, and the bottom
+     caustic kept as a warm lift rather than a shadow. */
   --island-rim: linear-gradient(
-    180deg,
-    color-mix(in oklab, #ffffff 30%, transparent) 0%,
-    color-mix(in oklab, #ffffff 12%, transparent) 30%,
-    color-mix(in oklab, var(--foreground) 14%, transparent) 65%,
-    color-mix(in oklab, var(--foreground) 20%, transparent) 100%
+    175deg,
+    color-mix(in oklab, #ffffff 42%, transparent) 0%,
+    color-mix(in oklab, #ffffff 20%, transparent) 16%,
+    color-mix(in oklab, #ffffff 6%, transparent) 44%,
+    color-mix(in oklab, var(--foreground) 14%, transparent) 68%,
+    color-mix(in oklab, #ffd9a0 16%, transparent) 92%,
+    color-mix(in oklab, #ffffff 10%, transparent) 100%
   );
   --background: #191918; /* canvas — low chroma, so it reads neutral rather than sepia */
+  /* The glass light levels, dark — see the light scheme's trio. A dark pane
+     catches a fraction of the ambient its pale counterpart does, and a white
+     bloom around a graphite card on a dusk field reads as a sticker rather than
+     as an edge, so all three come way down while the rim keeps its geometry. */
+  --glass-specular: color-mix(in oklab, #ffffff 20%, transparent);
+  --glass-caustic: color-mix(in oklab, #ffd9a0 9%, transparent);
+  --glass-bloom: color-mix(in oklab, #ffffff 7%, transparent);
   --foreground: #e9e9e9;
   --card: #252525; /* panel surface */
   --card-foreground: #e9e9e9;
@@ -711,6 +769,7 @@
      secondary grey and ≈14:1 for the ink on the panel beneath. */
   --popover-frost: color-mix(in oklab, var(--popover) 90%, transparent);
   --popover-frost-dense: color-mix(in oklab, var(--popover) 96%, transparent);
+  --panel-frost: color-mix(in oklab, var(--card) 90%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6) brightness(0.75);
   --frost-plate: var(--card); /* see the light scheme's pair */
   --accent-default: #6bbcb6; /* the light teal's dark rung — 6.8:1 as text on a panel, 8:1 under the dark ink */
@@ -850,11 +909,11 @@
    `--info`) stays put — a failed copy is just as failed in a background
    window, and greying it out is how a status gets missed.
 
-   The one thing outside the seam is the active tab chip's raised edge
-   (`.tab-chip-active`): it is the shell's only "this element is part of the
-   frame" highlight and it has nothing to do while the frame is inactive. The
-   chip keeps its fill, its border and its weight — the active tab is still
-   the active tab, and a chip that changed size on a focus change would jitter.
+   The one thing outside the seam is the active tab's plate (`.tab-pill`): it is
+   the shell's only "this element is part of the frame" highlight and it has
+   nothing to do while the frame is inactive. The plate keeps its fill, its rim
+   and the tab's own weight — the active tab is still the active tab, and a
+   plate that changed size on a focus change would jitter.
    The stoplights have their own AppKit behaviour in `window-controls.tsx`.
    --------------------------------------------------------------------------- */
 html[data-window-focused="false"] {
@@ -864,7 +923,7 @@ html[data-window-focused="false"] {
     var(--muted-foreground)
   );
 }
-html[data-window-focused="false"] .tab-chip-active {
+html[data-window-focused="false"] .tab-pill {
   box-shadow: none;
 }
 
@@ -954,30 +1013,29 @@ html[data-window-focused="false"] .tab-chip-active {
 /* The frame role until a backdrop claims it. Declared once rather than per
    scheme because it *is* the canvas there, and inherits the scheme through it. */
 :root {
-  /* The frame role as a lens rather than a fill: 55% of the canvas colour laid
-     over the wash `body` paints, so the tab strip reads as the top of the same
-     rose-to-cream field instead of as a band pasted over it. Under a material
-     seam the blocks below replace this with frost or with nothing. */
-  --chrome: color-mix(in oklab, var(--background) 55%, transparent);
+  /* The frame role. The tab strip is the *canvas*, not a band pasted over it:
+     it carries no fill of its own so the wash `body` paints runs through the
+     frame and the content row as one field, which is what lets the trough the
+     tabs sit in be the only thing reading as a channel. A backdrop still claims
+     this role when the platform supplies one — see THE WINDOW-MATERIAL SEAM. */
+  --chrome: transparent;
 
-  /* GLASS RETUNE — the frosted half of the retune, and it belongs to the
-     *background* only. The cards stay solid (`--card` at full density, a file
-     list over a live blur is unreadable and neither platform ships one); what
-     goes glassy is the field they float on.
-
-     `--canvas-frost` is the frost itself: a milky veil laid over the pastel
-     wash `--canvas-image` describes, one layer up in the same `background`
-     stack (see THE PASTEL CANVAS WASH). Over the shell's own wash it reads as
-     sandblasted glass — the rose ramp blurred behind milk. Under a material
-     seam the blocks below retune it rather than remove it: there the platform
-     supplies the blur and this layer keeps only the shell's pastel identity
-     over it, which is the same division of labour as the `"blur"` block's 8%
-     chrome tint: hue from the shell, glass from the platform. */
+  /* THE FROSTED FIELD — `--canvas-frost` is the veil over the wash
+     `--canvas-image` describes, one layer up in the same `background` stack
+     (see THE PASTEL CANVAS WASH). Over the shell's own wash it reads as
+     sandblasted glass: the pink-to-yellow ramp diffused behind milk. It is the
+     *background* half of the glass; the panels are the other half and take
+     `--panel-frost`. Under a material seam the blocks below retune it rather
+     than remove it: there the platform supplies the blur and this layer keeps
+     only the shell's pastel identity over it, which is the same division of
+     labour as the `"blur"` block's 8% chrome tint: hue from the shell, glass
+     from the platform. */
   --canvas-frost:
     linear-gradient(
       180deg,
-      color-mix(in oklab, var(--background) 46%, transparent),
-      color-mix(in oklab, var(--background) 30%, transparent)
+      color-mix(in oklab, var(--background) 30%, transparent) 0%,
+      color-mix(in oklab, var(--background) 14%, transparent) 56%,
+      color-mix(in oklab, #fffaf0 10%, transparent) 100%
     );
 }
 
@@ -997,6 +1055,13 @@ html[data-window-material="vibrancy"] {
       color-mix(in oklab, var(--card) 34%, transparent),
       color-mix(in oklab, var(--card) 22%, transparent)
     );
+  /* The panels stop floating over our own soft gradient and start floating over
+     whatever the user has on the desktop. `--panel-frost`'s 88% was measured
+     against a wash, not against a photograph: at that density a file list sits
+     on live content. The glass stays — the platform's blur is what runs it now
+     — but the sheet goes nearly opaque, which is the same call `--popover-frost`
+     documents for a menu over a black thumbnail. */
+  --panel-frost: color-mix(in oklab, var(--card) 96%, transparent);
 }
 
 html[data-window-material="blur"] {
@@ -1218,106 +1283,76 @@ html[data-window-material="blur"]:root body {
        rows      focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset */
 
   /* ---------------------------------------------------------------------------
-     THE WARM FRAME — the Notion pass's one idea: light is quiet and warm, and
-     state is carried by fill and ink rather than by glow. The shell is still
-     the flat hairline system below; its two frame roles (the tab strip and the
-     nav column) and its few "this is here" elements carry the faintest wash of
-     warm neutral, as if the window were paper catching the light from the
-     upper-right corner it shares with the platform's own light.
+     THE GLASS FIELD. The window is one frosted pane — pink light at its head
+     falling to warm yellow at its foot — and everything in it is either that
+     field or a piece of glass lying on it.
 
-     The previous pass lit these with the accent hue — a gradient you noticed
-     as colour, the "lit glass" reading of a modern tool. This language is
-     drawn the way Notion's own sidebar is: accent belongs to actions (filled
-     buttons, focus rings, selection, the capacity bar), while *place* — being
-     the current row, the current chip, the current segment — is a warm grey
-     fill under a darker ink. Nothing here lights up; things press in.
+     Four treatments, one vocabulary:
 
-     Three treatments, one vocabulary:
-
-       .aurora-frame        the tab strip: a wide soft wash top-right plus a
-                            counter-wash top-left, both radial, both under
-                            6% — a gradient you notice as light, not as a
-                            gradient.
-       .aurora-frame-nav    the nav column: one quiet bloom anchored to the
-                            top-left, fading out well above the fold.
+       .content-panel       a sheet of glass on the field: translucent, blurred
+                            through, with the ground-glass rim and the speculars.
+                            The nav rail, the explorer plane and the terminal all
+                            take it, so "card" is one shape language in the
+                            window rather than three.
+       .tab-trough          the channel the tab strip sits in — the field pressed
+                            *down*, the only recessed surface in the shell.
+       .tab-pill            the plate under the current tab, which slides along
+                            the trough between tabs.
        .glass-active        the "I am here" plate — a nav row, a chip, a segment
                             that reports state by pressing deeper into its own
-                            fill: one warm wash over the call site's fill and a
-                            hairline ring. No glow, no gradient, no hue — the
-                            ink gets darker, not the surface brighter.
-       .content-panel       the window's content plane: the one large surface,
-                            raised off the canvas (see below).
+                            fill: one warm wash over the call site's fill. No
+                            glow, no gradient, no hue — the ink gets darker, not
+                            the surface brighter.
 
-     THE CONTENT PLANE. The shell's spatial idea, and the reason the two frame
-     roles above exist. The nav rail stays part of the frame — full-bleed, flush
-     to the window edge — while the content rises off the canvas as a plate with
-     air on every side it does not share with the rail. It is paper on a desk, and
-     like paper it has no edge drawn around it: the canvas sits a step below the
-     plane's own value, so the boundary is a change in tone plus the whisper of
-     contact shadow a sheet needs. It reads as the nearest surface rather than as
-     the largest rectangle.
-     Call sites keep their own fill (`bg-card`), because a plane has to stay
-     opaque over a platform blur.
+     WHY THE FRAME CARRIES NONE OF THIS. The tab strip used to be a surface — a
+     lens tint plus two radial washes over the canvas, which drew a band across
+     the top of the window and made the field below it a second place. It now
+     paints nothing (`--chrome` is transparent), so the wash `body` puts down runs
+     through the frame and the content row as one pane, and the only thing that
+     reads as a channel is the trough the chips actually sit in.
 
-     Every one of them layers a `background-image` over the element's existing
-     `background-color`, so they compose with `bg-chrome` / `bg-sidebar` / the
-     fill the call site already chose, and they survive the window-material
-     seam: under a platform blur the wash sits on the frost rather than
-     replacing it. Under `forced-colors: active` the gradients become canvas
-     over canvas and the ring below is what survives — which is why the ring is
-     part of the treatment rather than an afterthought. */
-  .aurora-frame {
-    /* GLASS RETUNE: the frame is the frosted pane of the same glass field the
-       canvas became — its lens tint now blurs the wash beneath it. `none` under
-       reduced transparency, like every other frost in this file. */
-    backdrop-filter: var(--frost-filter);
-    background-image:
-      radial-gradient(
-        120% 155% at 96% -55%,
-        color-mix(in oklab, var(--muted-foreground) 5%, transparent),
-        transparent 62%
-      ),
-      radial-gradient(
-        80% 120% at 4% -70%,
-        color-mix(in oklab, var(--muted-foreground) 3%, transparent),
-        transparent 64%
-      );
-    background-repeat: no-repeat;
-  }
-
-  .aurora-frame-nav {
-    backdrop-filter: var(--frost-filter);
-    background-image: radial-gradient(
-      135% 52% at 10% -6%,
-      color-mix(in oklab, var(--muted-foreground) 4%, transparent),
-      transparent 76%
-    );
-    background-repeat: no-repeat;
-  }
-
+     THE CONTENT PLANE. The shell's spatial idea. The content rises off the canvas
+     as a plate with air on every side: glass on glass, separated by the rim that
+     catches the light and by the contact shadow a sheet needs. Call sites still
+     carry `bg-card` as their `background-color`; `.content-panel` overpaints it
+     with the frost layer, and the colour is what survives a mode that drops
+     images (forced colours) — see the block at the foot of this file. */
   .content-panel {
     border-radius: var(--radius-panel);
-    /* GLASS RETUNE — the floating island. The card stays SOLID — a file list
-       over a live blur is unreadable, and the retune's glass is spent on the
-       outline instead: a 1px gradient rim that catches light along the top
-       edge, the reference shot's glass contour.
+    /* The plate is GLASS, not paper. Its fill is a translucent sheet laid over
+       the field, and the `backdrop-filter` is what makes it frosted rather than
+       merely see-through: the wash behind it blurs as it passes through, so the
+       pink at the head of the window tints the top edge of a tall panel and the
+       yellow tints its foot. `--panel-frost` carries the density, and that is
+       where the readability argument is settled — see its note in the scheme.
 
-       The rim is the second layer of a two-background stack — a flat `--card`
-       fill clipped to the padding box laid over the `--island-rim` gradient
-       clipped to the border box, so the gradient shows only through the 1px
-       transparent border. Same two-layer trick `.floating-frost` documents,
-       with the plate layer replaced by a solid one. The `bg-card` at the call
-       site is now redundant but harmless: it paints beneath the fill layer. */
+       The fill is a background *image* rather than a `background-color` for the
+       same reason `.floating-frost` gives: the rim below has to sit under it and
+       a colour is painted under every image layer, the wrong side of the glass.
+       The rim is the border-box layer of the stack, so `--island-rim` shows only
+       through the 1px transparent border — a flat `border-color` is one colour
+       and cannot hold a specular edge. */
     border: 1px solid transparent;
     background-image:
-      linear-gradient(var(--card), var(--card)),
+      linear-gradient(var(--panel-frost), var(--panel-frost)),
       var(--island-rim);
     background-origin: border-box;
     background-clip: padding-box, border-box;
-    /* The full ambient stack rather than its first rung: in this design language
-       the plate is a cream card floating on a coloured wash, and a shadow that
-       only says "rests on the plane" reads as no shadow at all against the ramp. */
-    box-shadow: var(--shadow-ambient);
+    -webkit-backdrop-filter: var(--frost-filter);
+    backdrop-filter: var(--frost-filter);
+    /* Four layers. The two insets are the inner faces of the glass edge: light
+       from above catches the top lip hard and the field the plate rests on lifts
+       its foot warm. Then the bloom — the reference's card edge is not a line at
+       all but a white halo that feathers outward from the top, so the ambient
+       shadow is answered by an ambient LIGHT, offset up so it gathers along the
+       head of the plate rather than ringing it. Last the full ambient stack: a
+       shadow that only says "rests on the plane" reads as no shadow at all
+       against the ramp. */
+    box-shadow:
+      inset 0 1px 0 var(--glass-specular),
+      inset 0 -1px 0 var(--glass-caustic),
+      0 -3px 14px var(--glass-bloom),
+      var(--shadow-ambient);
   }
 
   /* The "I am here" plate: one flat wash over the call site's fill, and
@@ -1336,18 +1371,84 @@ html[data-window-material="blur"]:root body {
     );
   }
 
-  /* The active tab chip: the shell's one raised element — quiet paper, lit by
-     nothing but its own edge. It lifts off the strip by the 1px inset top
-     edge (the seam between chip and frame) and the whisper of contact shadow
-     a small plate needs; the previous pass's accent gradient and glow are
-     gone, because in this language being *here* is a fact of fill and weight,
-     not of colour. Inactive tabs stay flat — the strip still reads as a row of
-     destinations, with the current one raised. The fill comes from the call
-     site (`bg-card`) so the chip stays opaque over a platform blur, and its
-     separation now comes from the canvas sitting a step below the paper rather
-     than from a hairline drawn around it. */
-  .tab-chip-active {
-    box-shadow: var(--shadow-ambient-xs);
+  /* THE TROUGH — the channel the tab chips sit in, and the only recessed
+     surface in the shell. Everything else here rises off the field, so a groove
+     has to be the one thing that goes the other way: it is what makes a row of
+     tabs read as *held* rather than as scattered. Three shadows do the work. A
+     recess throws its shadow at the NEAR edge, so the dark line is inset at the
+     top and the light catch at the bottom lip — the reverse of a raised plate,
+     which is exactly the cue that says "down" without a colour change. */
+  .tab-trough {
+    border-radius: var(--radius-lg);
+    background-image: linear-gradient(
+      color-mix(in oklab, var(--foreground) 7%, transparent),
+      color-mix(in oklab, var(--foreground) 3%, transparent)
+    );
+    box-shadow:
+      inset 0 1px 2px color-mix(in oklab, var(--foreground) 13%, transparent),
+      inset 0 0 0 1px color-mix(in oklab, var(--foreground) 5%, transparent),
+      inset 0 -1px 0 var(--glass-specular);
+  }
+
+  /* THE PILL — the plate under whichever tab is current.
+
+     It is a node of its own rather than a class on the selected tab, and that
+     distinction is the whole feature: the tab carrying `aria-selected` changes
+     IDENTITY between renders, so a class swap can only fade one chip out and
+     another in. This node persists, so its position can TRAVEL — one plate
+     sliding along the trough from the tab you were on to the tab you chose.
+     `useTabPill` in explorer-tabs.tsx writes its `transform`/`width` from the
+     active tab's measured box; the transition below is the animation.
+
+     No `backdrop-filter` here on purpose. A moving blur is the single most
+     expensive thing a compositor can be asked to animate, and it would be
+     spending itself on a 32px plate whose entire backdrop is the trough's own
+     flat wash — the glass is carried by the rim and the shadow instead.
+
+     The fill is `--card` at full density rather than `--panel-frost`, which is
+     the one place a plate does NOT take the plane's glass: it sits in a
+     *recessed* channel, so a tenth of see-through lets the trough's own shadow
+     come up through the file name it is supposed to be highlighting.
+
+     The tab's own text paints above it (both are positioned, and the pill comes
+     first in DOM order), so the chip stays clickable through it and the pill
+     never has to answer for a pointer. */
+  .tab-pill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    background-image:
+      linear-gradient(var(--card), var(--card)),
+      var(--island-rim);
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    box-shadow:
+      inset 0 1px 0 var(--glass-specular),
+      var(--shadow-ambient-sm);
+    opacity: 0;
+    pointer-events: none;
+    /* Width and transform, not `left`/`right`: the slide stays on the
+       compositor's fast path, and the width transition is what lets a pill reach
+       for a tab that is a different length rather than snapping to it. */
+    transition:
+      transform var(--transition-duration-normal) var(--ease-spring-fast),
+      width var(--transition-duration-normal) var(--ease-spring-fast),
+      opacity var(--transition-duration-fast) var(--ease-standard);
+  }
+  /* The first measurement lands in the same frame the strip mounts. Until it
+     has run the pill is invisible (`opacity: 0` above) and untransitioned, so a
+     cold window opens with the plate already under the current tab instead of
+     sliding in from the strip's origin. */
+  .tab-pill[data-ready="true"] {
+    opacity: 1;
+  }
+  /* A tab being dragged is reordered live, and the pill chasing it through the
+     strip at 200ms per hop reads as lag rather than as motion. The same hold
+     covers the strip scrolling under an auto-scroll during a drag-out. */
+  .tab-pill[data-hold="true"] {
+    transition: none;
   }
 
   /* Path hints keep their filename readable: flipped text direction moves the
@@ -1766,6 +1867,7 @@ html[data-window-material="blur"]:root body {
   :root,
   .dark {
     --popover-frost: var(--popover);
+    --panel-frost: var(--card);
     --frost-filter: none;
   }
 }
@@ -1861,10 +1963,12 @@ html[data-window-material="blur"]:root body {
   }
   /* Glass is the first thing this mode asks back: a layer whose separation from
      the plane under it is a tenth of see-through is exactly the subtlety being
-     objected to, so the menu returns to the solid popover. */
+     objected to, so the menu returns to the solid popover and the panels with
+     it. */
   :root,
   .dark {
     --popover-frost: var(--popover);
+    --panel-frost: var(--card);
     --frost-filter: none;
   }
   /* The state washes run at roughly double: a hovered row should not be a
@@ -1904,6 +2008,7 @@ html[data-window-material="blur"]:root body {
        transparent plate over a blurred backdrop — the one thing this mode does
        not offer a palette for. The glass goes solid and the filter goes with it. */
     --popover-frost: var(--popover);
+    --panel-frost: var(--card);
     --frost-filter: none;
     /* Hover is a fill in this shell, and the palette's only control fill is
        `ButtonFace`. A palette that sets it to the canvas leaves hover silent,
@@ -2009,6 +2114,20 @@ html[data-window-material="blur"]:root body {
   .window-control[data-action="close"]:active .window-control-plate {
     background-color: Highlight;
     color: HighlightText;
+  }
+
+  /* The trough and the pill are drawn with the two things the forcing removes:
+     `background-image` and `box-shadow`. The channel keeps its edge as a line,
+     because "these tabs are one group in a groove" is structure the palette has
+     no colour for. The plate does not survive: "which tab am I on" is already
+     answered by the `Highlight` fill on `[aria-selected]` above, so leaving the
+     pill up would paint a stray 1px rectangle that follows the wrong thing. */
+  .tab-trough {
+    outline: 1px solid CanvasText;
+    outline-offset: -1px;
+  }
+  .tab-pill {
+    display: none;
   }
 
   /* The drop target's wash and ring are both gone; the ring's replacement is

@@ -271,6 +271,95 @@ const WORKSPACE_TAB_ICONS = {
   space: WidgetIcon,
 } as const;
 
+/** The plate that tracks the current tab, and the reason a tab switch is a
+ *  TRAVEL rather than a swap.
+ *
+ *  The pill is positioned from the active chip's own box rather than derived
+ *  from its index. The strip reorders live under a drag, scrolls, and gains and
+ *  loses tabs; every one of those would need re-deriving to place the plate by
+ *  arithmetic, and none of them needs a thought when you measure the element
+ *  that is actually on screen. One `getBoundingClientRect` per change.
+ *
+ *  Written straight to the node instead of through state for the same reason
+ *  the drag ghost is: a re-render of the strip on every measurement would
+ *  re-render every chip's title, icon and close button to move one decoration.
+ *
+ *  `animate` is the difference between the plate sliding to a tab and
+ *  teleporting. A cold strip and a resize want the second — an entrance that
+ *  sweeps in from the strip's origin reads as a bug the user has to watch once
+ *  per window — so those paths flush the new geometry with the transition held
+ *  off, and the flush (`void pill.offsetWidth`) is what makes the hold land
+ *  before the transition goes back on. Only a real change of active tab is
+ *  worth animating. */
+function useTabPill({
+  activeTabId,
+  pillRef,
+  stripRef,
+  tabs,
+}: {
+  activeTabId: string;
+  pillRef: RefObject<HTMLSpanElement | null>;
+  stripRef: RefObject<HTMLDivElement | null>;
+  tabs: ExplorerTab[];
+}) {
+  const measuredRef = useRef(false);
+
+  const measure = useCallback(
+    (animate: boolean) => {
+      const strip = stripRef.current;
+      const pill = pillRef.current;
+      if (!strip || !pill) return;
+
+      const active = strip.querySelector<HTMLElement>("[data-tab-active='true']");
+      if (!active) {
+        // Every tab closed: the plate has nothing to sit under.
+        pill.dataset.ready = "false";
+        return;
+      }
+
+      if (!animate) pill.dataset.hold = "true";
+      const tabBox = active.getBoundingClientRect();
+      const stripBox = strip.getBoundingClientRect();
+      // `left: 0` on an absolutely positioned child of a scroller resolves
+      // against the scroller's PADDING box, and the child scrolls with the
+      // content — so the offset is taken from that same edge (`clientLeft` and
+      // `clientTop` skip the border) and put back by however far the strip
+      // currently is scrolled. The result is scroll-invariant, which is why
+      // scrolling the strip needs no remeasure.
+      pill.style.width = `${tabBox.width}px`;
+      pill.style.height = `${tabBox.height}px`;
+      pill.style.transform = `translate3d(${
+        tabBox.left - stripBox.left - strip.clientLeft + strip.scrollLeft
+      }px, ${tabBox.top - stripBox.top - strip.clientTop + strip.scrollTop}px, 0)`;
+      pill.dataset.ready = "true";
+      if (!animate) {
+        void pill.offsetWidth;
+        pill.dataset.hold = "false";
+      }
+    },
+    [pillRef, stripRef],
+  );
+
+  useLayoutEffect(() => {
+    const strip = stripRef.current;
+    if (!strip) return;
+
+    const first = !measuredRef.current;
+    measuredRef.current = true;
+    measure(!first);
+
+    // A ResizeObserver rather than a window listener: what moves the plate is
+    // the strip changing size — a scroll button appearing, the window
+    // resizing — and the observer is rebuilt here, so it always watches the
+    // chip that is current now rather than the one that was on mount.
+    const observer = new ResizeObserver(() => measure(false));
+    observer.observe(strip);
+    const active = strip.querySelector<HTMLElement>("[data-tab-active='true']");
+    if (active) observer.observe(active);
+    return () => observer.disconnect();
+  }, [measure, stripRef, tabs, activeTabId]);
+}
+
 export function ExplorerTabs() {
   const { t } = useTranslation("explorer");
   const tabs = useAtomValue(tabsAtom);
@@ -279,6 +368,7 @@ export function ExplorerTabs() {
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const terminalVisible = useAtomValue(terminalVisibleAtom);
   const stripRef = useRef<HTMLDivElement>(null);
+  const pillRef = useRef<HTMLSpanElement>(null);
   const [canScroll, setCanScroll] = useState({ left: false, right: false });
   // Keep the terminal mounted after its first reveal so the PTY session
   // survives being hidden; before that there is nothing to keep alive.
@@ -330,6 +420,8 @@ export function ExplorerTabs() {
     return () => window.removeEventListener("resize", syncScrollButtons);
   }, [syncScrollButtons, tabs.length]);
 
+  useTabPill({ activeTabId, pillRef, stripRef, tabs });
+
   const scrollStrip = (direction: 1 | -1) => {
     stripRef.current?.scrollBy({ left: direction * TAB_STRIP_SCROLL_AMOUNT, behavior: "smooth" });
   };
@@ -337,15 +429,15 @@ export function ExplorerTabs() {
   return (
     <div className="flex h-full flex-col">
       <TabDropIndicator />
-      {/* Window chrome: one flat 38px bar carrying the tab strip and the native
-          window controls. It sits on the canvas rung (`bg-chrome`, which is the
-          canvas until a backdrop claims it — see THE WINDOW-MATERIAL SEAM) so the
-          frame reads as the window itself rather than as a third panel. It carries
-          no hairline below it: the frame and the nav column are the same surface,
-          so a line between them drew a boundary where there is no boundary. What
-          separates frame from content is the plane's own edge against the canvas. */}
+      {/* Window chrome: one 46px bar carrying the tab trough and the native
+          window controls. It paints nothing of its own — `bg-chrome` is the
+          canvas until a backdrop claims it (see THE WINDOW-MATERIAL SEAM), and
+          the base scheme declares it transparent — so the frosted field `body`
+          puts down runs through the frame and the content row as one pane. The
+          only thing in the bar that reads as a surface is the trough the chips
+          sit in. */}
       <header
-        className="aurora-frame flex h-tab-strip shrink-0 items-stretch bg-chrome"
+        className="flex h-tab-strip shrink-0 items-stretch bg-chrome"
         data-tab-bar="true"
         data-tauri-drag-region="deep"
       >
@@ -358,7 +450,7 @@ export function ExplorerTabs() {
         <div
           ref={stripRef}
           aria-label={t("tabs.ariaLabel")}
-          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto px-1.5 scrollbar-none [&::-webkit-scrollbar]:hidden"
+          className="tab-trough relative my-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
           // A tab drag pins its pointer capture here (see `tab-drag.ts`), and the
           // header above is a `deep` drag region, so the strip has to opt out
           // explicitly or the captured events read as a request to move the
@@ -367,6 +459,11 @@ export function ExplorerTabs() {
           onScroll={syncScrollButtons}
           role="tablist"
         >
+          {/* The plate under the current tab, and the node that makes the switch
+              a TRAVEL rather than a swap — see `useTabPill`. It is the strip's
+              first child so the chips paint over it; `pointer-events: none`
+              keeps it out of the gesture. */}
+          <span aria-hidden="true" className="tab-pill" data-hold="true" ref={pillRef} />
           {tabs.map((tab, index) => (
             <TabStripItem key={tab.id} index={index} isActive={tab.id === activeTabId} tab={tab} />
           ))}
@@ -757,11 +854,13 @@ function TabStripItem({
       aria-grabbed={isDragging}
       aria-selected={isActive}
       className={cn(
-        // Linear tab: a compact 28px chip inside the 38px strip. The active
-        // tab is the only raised surface in the shell — `bg-card` fill, one
-        // hairline, and the sanctioned 1px inset top edge — while inactive
-        // tabs stay flat text until hovered, so the strip reads as a row of
-        // destinations rather than a row of buttons.
+        // Linear tab: a compact 32px chip floating in the trough. The chip
+        // carries no plate of its own — the persistent `.tab-pill` behind it is
+        // what says "you are here", and it slides along the channel rather than
+        // swapping one chip's fill for another's. So the active tab's only job
+        // here is ink and weight; the inactive ones keep a whisper of fill,
+        // which is what makes a strip of several read as a row of plates in a
+        // groove instead of a row of bare labels.
         //
         // The press is the gesture's `data-pressed` rather than `:active`, and
         // the grabbing cursor with it: a tab dragged past the window edge is
@@ -770,11 +869,14 @@ function TabStripItem({
         // held down after it was put back.
         "group state-layer relative flex h-8 w-52 shrink-0 touch-none cursor-grab items-center rounded-md text-body select-none transition-[background-color,color,opacity] duration-fast ease-standard data-[pressed=true]:cursor-grabbing",
         isActive
-          ? "tab-chip-active bg-card font-medium text-foreground"
-          : "text-muted-foreground hover:bg-card/50 hover:text-foreground",
+          ? "font-medium text-foreground"
+          : "bg-card/35 text-muted-foreground hover:bg-card/60 hover:text-foreground",
         isDragging && "opacity-30",
       )}
       data-pressed={dragPressed ? "true" : "false"}
+      // The plate's anchor: `useTabPill` finds the chip to measure by this
+      // attribute, so it never has to know which tab is current a second time.
+      data-tab-active={isActive ? "true" : "false"}
       data-tauri-drag-region="false"
       onClick={() => activateTab(tab.id)}
       onKeyDown={(event) => {
