@@ -468,23 +468,22 @@
 :root {
   /* PASTEL DESK — light. The window is one continuous pastel field: a
      rose-to-cream wash as the canvas (`--canvas-image`, painted by `body`,
-     see THE PASTEL CANVAS WASH below), warm ivory paper for the panels, warm
-     brown ink on top, and a deep teal as the one cool note. The warmth is
-     one step only — enough to read as paper in daylight, never enough to
-     fight the file icons that cover it.
+     see THE PASTEL CANVAS WASH below), white paper for the panels, warm
+     brown ink on top, and a deep teal as the one cool note. The colour of the
+     picture lives in the FIELD; the plates are the neutral that reads it.
 
      THE LADDER: two rungs, as before. The wash is the canvas; the frame roles
      over it (tab strip, nav rail) are LENSES rather than fills — see the
      `--chrome` / `--sidebar` values — so the ramp reads as one field under the
-     whole shell, and `--card` is the one raised plane: warm ivory separated by
+     whole shell, and `--card` is the one raised plane: white paper separated by
      a soft warm shadow rather than by a hairline. The rail's own grouping is
      carried by its section labels and its selection, not by a tone of its own.
 
      The accent clears AA in BOTH of its jobs: as a fill (white ink on it
      ≈ 5.1) and as text or icon on the card (≈ 4.9). */
-  --shadow-color: #4a3527; /* warm brown, keyed to the ink: a shadow here tints the cream, on purpose */
+  --shadow-color: #4a3527; /* warm brown, keyed to the ink: a shadow here tints the field, on purpose */
   /* Per-layer shadow alpha. One notch above Notion's tatami alphas (1.2–3.9%
-     black): the picture's language floats cream cards over a coloured wash,
+     black): the picture's language floats white cards over a coloured wash,
      so the shadow has to actually read against the ramp instead of sitting on
      flat grey. The ladder is still carried by the geometry above. a4 is not a
      shadow stop in practice — the outline-glow halo feeds on it, and a focus
@@ -497,15 +496,16 @@
      `#f6e2f4` along its head, a near-neutral `#f4f4f4` through the middle of
      the window, warm `#e2d8af` at its foot. The two radials are the corner
      blooms that make the head read as light from above rather than as a stripe;
-     the linear carries the fall. All the colour in the window lives HERE, and
-     every solid surface is cut from the same ramp (see `--panel-wash`), which
-     is why a panel takes the rose at its head and the yellow at its foot
-     instead of carrying a tint of its own.
+     the linear carries the fall. All the colour in the window lives HERE: the
+     solid surfaces are white, and the ramp belongs to the field alone. It used
+     to reach the panels as a trace painted into the paper, which made a card one
+     colour at the top of the window and another at the bottom — see
+     `--panel-wash`.
 
-     Six stops behind one name each, because three surfaces read them: the pane
-     at 90%, the paper at a third into the card, and any retune then moves the
-     whole picture from one place. Two stops are held off the reference on
-     purpose — the head a step MORE saturated and the foot a step paler. The
+     Six stops behind one name each because the pane reads all of them at
+     `--pane-alpha` and a retune then moves the whole picture from one place. Two
+     stops are held off the reference on purpose — the head a step MORE saturated
+     and the foot a step paler. The
      pink is what has to survive both the tenth of desktop the glass lets in and
      the ink sitting on the paper above it, so "rose at its head" is carried by
      saturation rather than by area; and the yellow, which was reading as one
@@ -517,24 +517,25 @@
   --wash-mid: #f2eff1; /* the near-neutral middle */
   --wash-low: #f0ede2; /* the turn toward the foot */
   --wash-foot: #eae4c3; /* the warm foot, paled */
-  /* THE PANE, as `body` paints it — the wash at 90%. That tenth is the glass:
-     THE WINDOW-MATERIAL SEAM lets the platform's blur arrive through it, and
-     under `"none"` the opaque `--background` base fills it in and the wash
-     simply reads flat. */
+  /* THE PANE, as `body` paints it — the wash at `--pane-alpha` (declared with
+     the other canvas roles at THE WINDOW-MATERIAL SEAM, because a live backdrop
+     thins it). Over an opaque base that reads flat; the moment the seam clears
+     the base it is the share of the desktop that comes through. */
   --canvas-image:
-    radial-gradient(58% 40% at 3% -6%, color-mix(in oklab, var(--wash-orchid) 90%, transparent) 0%, transparent 56%),
-    radial-gradient(58% 40% at 97% -6%, color-mix(in oklab, var(--wash-rose) 90%, transparent) 0%, transparent 56%),
-    linear-gradient(180deg, color-mix(in oklab, var(--wash-head) 90%, transparent) 0%, color-mix(in oklab, var(--wash-mid) 90%, transparent) 44%, color-mix(in oklab, var(--wash-low) 90%, transparent) 74%, color-mix(in oklab, var(--wash-foot) 90%, transparent) 100%);
-  /* THE PAPER THE PANELS ARE CUT FROM — the same ramp, baked opaque into
-     `--panel-frost` at the strength the glass used to read it through (a third,
-     where the old `saturate(1.6)` pass spent its chroma). The sheet is solid
-     and still picks the ramp up at its height in the window, because the wash
-     below the paper is glass now (THE WINDOW-MATERIAL SEAM) and a file list
-     over a live blur is unreadable: the tint is painted, never seen through. */
-  --panel-wash:
-    radial-gradient(58% 40% at 3% -6%, color-mix(in oklab, var(--wash-orchid) 34%, var(--panel-frost)) 0%, transparent 56%),
-    radial-gradient(58% 40% at 97% -6%, color-mix(in oklab, var(--wash-rose) 34%, var(--panel-frost)) 0%, transparent 56%),
-    linear-gradient(180deg, color-mix(in oklab, var(--wash-head) 34%, var(--panel-frost)) 0%, color-mix(in oklab, var(--wash-mid) 34%, var(--panel-frost)) 44%, color-mix(in oklab, var(--wash-low) 34%, var(--panel-frost)) 74%, color-mix(in oklab, var(--wash-foot) 34%, var(--panel-frost)) 100%);
+    radial-gradient(58% 40% at 3% -6%, color-mix(in oklab, var(--wash-orchid) var(--pane-alpha), transparent) 0%, transparent 56%),
+    radial-gradient(58% 40% at 97% -6%, color-mix(in oklab, var(--wash-rose) var(--pane-alpha), transparent) 0%, transparent 56%),
+    linear-gradient(180deg, color-mix(in oklab, var(--wash-head) var(--pane-alpha), transparent) 0%, color-mix(in oklab, var(--wash-mid) var(--pane-alpha), transparent) 44%, color-mix(in oklab, var(--wash-low) var(--pane-alpha), transparent) 74%, color-mix(in oklab, var(--wash-foot) var(--pane-alpha), transparent) 100%);
+  /* THE PAPER THE PANELS ARE CUT FROM — one flat value, the card. It is NOT cut
+     from the field's ramp any more: the sheet used to pick the wash up at its own
+     height in the window (`background-attachment: fixed`), which put the ramp's
+     pink at a tall panel's head and its yellow at its foot, so a card was one
+     colour at the top of the window and another at the bottom. A surface you read
+     as often as a file list is a fixed colour; the field is where the picture
+     lives.
+     Still a background *image* rather than a `background-color`, for the reason
+     `.floating-frost` gives: the rim has to sit under it, and a colour is painted
+     under every image layer of the box — the wrong side of the sheet. */
+  --panel-wash: linear-gradient(var(--panel-frost), var(--panel-frost));
   /* THE LIQUID-GLASS RIM — a 1px edge that behaves like the ground edge of a
      pane: a bright specular catch along the top, a quick fall to a bare
      hairline through the sides, and a second, weaker light picked up along the
@@ -547,7 +548,7 @@
     color-mix(in oklab, #ffffff 72%, transparent) 12%,
     color-mix(in oklab, #ffffff 22%, transparent) 42%,
     color-mix(in oklab, var(--foreground) 12%, transparent) 68%,
-    color-mix(in oklab, #fff3d0 52%, transparent) 92%,
+    color-mix(in oklab, #ffffff 52%, transparent) 92%,
     color-mix(in oklab, #ffffff 30%, transparent) 100%
   );
   --background: #faf2e6; /* canvas fallback colour — the wash's foot, and the base the lenses tint */
@@ -556,7 +557,7 @@
      express: the specular is an inset shadow (it has to sit INSIDE the rim) and
      the bloom is an outer one (it has to reach past the box).
 
-     Light mode spends them freely: a cream card on an orchid field can afford a
+     Light mode spends them freely: a white card on an orchid field can afford a
      white halo, because the halo is what separates a near-white plate from a
      near-white field. Dark mode cannot — a 45% white bloom around a graphite
      card is a sticker, not glass, and the reference's own dark counterparts take
@@ -564,12 +565,12 @@
      while the RIM keeps its shape: the geometry of a glass edge is the same in
      both schemes, only its brightness is not. */
   --glass-specular: color-mix(in oklab, #ffffff 72%, transparent);
-  --glass-caustic: color-mix(in oklab, #fff0c9 40%, transparent);
+  --glass-caustic: color-mix(in oklab, #ffffff 55%, transparent);
   --glass-bloom: color-mix(in oklab, #ffffff 45%, transparent);
   --foreground: #3f3830; /* warm ink — 10.4:1 on the card */
-  --card: #fdfaf4; /* warm ivory panel surface */
+  --card: #ffffff; /* the panel paper — white, so a plate reads off the field rather than in its cast */
   --card-foreground: #3f3830;
-  --popover: #fffcf6; /* menus, dialogs — one notch brighter than the card, the same paper held to the light */
+  --popover: #ffffff; /* menus, dialogs — the same sheet; the floating layers separate by frost and shadow, not by value */
   --popover-foreground: #3f3830;
   /* THE FLOATING-GLASS PAIR — see `.floating-frost` and THE FLOATING-GLASS SEAM
      below it. The menu plane at its frost density, plus the pass it runs over
@@ -605,16 +606,18 @@
      treatment — the colour, the blur and the plate are all still the ones
      above. */
   --popover-frost-dense: color-mix(in oklab, var(--popover) 96%, transparent);
-  /* THE PANEL PAPER — the sheet every content panel is cut from, opaque. It was
-     glass over the wash (70%, blurred through) and the wash arrived on it as
-     tint: the rose at a tall panel's head, the yellow at its foot. The tint is
-     now painted in (`--panel-wash`) rather than seen through, because the field
+  /* THE PANEL PAPER — the sheet every content panel is cut from, opaque and one
+     colour everywhere. It was glass over the wash (70%, blurred through) and the
+     wash arrived on it as tint: the rose at a tall panel's head, the yellow at
+     its foot. The sheet stopped taking it — painted over with a flat colour
+     (`--panel-wash`) instead of letting the field through — because the field
      the panels float on is itself glass under a window material
      (THE WINDOW-MATERIAL SEAM) and a file list over a live blur is unreadable —
      the same argument `--popover-frost` documents one plane up, spent the same
-     way: the glass runs around the sheet, never through it. What the sheet
-     gives up in translucency it keeps in colour — it is still cut from the
-     ramp — and the token keeps its name for what the frost became: constant. */
+     way: the glass runs around the sheet, never through it. What the sheet gives
+     up in translucency it gets back as constancy: this is the one colour in the
+     window that does not depend on where you are looking at it, and the token
+     keeps its name for what the frost became. */
   --panel-frost: var(--card);
   --frost-filter: blur(1.5rem) saturate(1.6);
   /* The fill a floating layer puts under its own tint where the window has no
@@ -626,16 +629,16 @@
   --frost-plate: var(--card);
   /* ---- The warm scheme -----------------------------------------------------
 
-     Every neutral here is the cream family — ivory paper, a warm sand wash a
-     row takes on it, a warm hairline — and the ink is a warm brown-grey. The
-     cast is confined to the shell on purpose: the category hues and the folder
+     The paper is white; every wash ON it is the cream family — the sand a row
+     takes, a warm hairline — and the ink is a warm brown-grey. The cast is
+     confined to the shell on purpose: the category hues and the folder
      gold below stay exactly as they were, so what a thing *is* keeps its own
      voice and the warmth only says where it sits.
 
      The ladder, lightest to darkest — a short one, because the plane is
      delimited by tone and by its shadow rather than by a line drawn around it:
 
-       popover #fffcf6 / card #fdfaf4
+       popover / card #ffffff
        →  muted / secondary / accent #f2eadd    (the wash a row takes ON the paper)
        →  sidebar lens over the wash            (the rail has no tone of its own)
        →  sidebar-accent #eee2d0                (the wash a row takes ON the rail)
@@ -645,7 +648,7 @@
      hover fill has to be a step DOWN from whatever carries it, and the rail and
      the paper are two rungs apart, so one value cannot serve both.
 
-     Card and popover are both ivory on purpose: the floating layers buy their
+     Card and popover are both white on purpose: the floating layers buy their
      separation from the frost and the shadow, and a menu is never asked to
      outrank a panel by value.
 
@@ -768,13 +771,10 @@
   --wash-low: #222020; /* the turn toward the foot */
   --wash-foot: #27231f; /* the warm foot, its yellow dropped */
   --canvas-image:
-    radial-gradient(58% 40% at 3% -6%, color-mix(in oklab, var(--wash-orchid) 90%, transparent) 0%, transparent 56%),
-    radial-gradient(58% 40% at 97% -6%, color-mix(in oklab, var(--wash-rose) 90%, transparent) 0%, transparent 56%),
-    linear-gradient(180deg, color-mix(in oklab, var(--wash-head) 90%, transparent) 0%, color-mix(in oklab, var(--wash-mid) 90%, transparent) 44%, color-mix(in oklab, var(--wash-low) 90%, transparent) 74%, color-mix(in oklab, var(--wash-foot) 90%, transparent) 100%);
-  --panel-wash:
-    radial-gradient(58% 40% at 3% -6%, color-mix(in oklab, var(--wash-orchid) 34%, var(--panel-frost)) 0%, transparent 56%),
-    radial-gradient(58% 40% at 97% -6%, color-mix(in oklab, var(--wash-rose) 34%, var(--panel-frost)) 0%, transparent 56%),
-    linear-gradient(180deg, color-mix(in oklab, var(--wash-head) 34%, var(--panel-frost)) 0%, color-mix(in oklab, var(--wash-mid) 34%, var(--panel-frost)) 44%, color-mix(in oklab, var(--wash-low) 34%, var(--panel-frost)) 74%, color-mix(in oklab, var(--wash-foot) 34%, var(--panel-frost)) 100%);
+    radial-gradient(58% 40% at 3% -6%, color-mix(in oklab, var(--wash-orchid) var(--pane-alpha), transparent) 0%, transparent 56%),
+    radial-gradient(58% 40% at 97% -6%, color-mix(in oklab, var(--wash-rose) var(--pane-alpha), transparent) 0%, transparent 56%),
+    linear-gradient(180deg, color-mix(in oklab, var(--wash-head) var(--pane-alpha), transparent) 0%, color-mix(in oklab, var(--wash-mid) var(--pane-alpha), transparent) 44%, color-mix(in oklab, var(--wash-low) var(--pane-alpha), transparent) 74%, color-mix(in oklab, var(--wash-foot) var(--pane-alpha), transparent) 100%);
+  --panel-wash: linear-gradient(var(--panel-frost), var(--panel-frost));
   /* The rim's dark counterpart — the same ground-glass edge with the specular
      catch dimmed to the one a dark pane throws, the hairline drawn from the
      light foreground so it reads as glass rather than as a cut, and the bottom
@@ -1000,15 +1000,17 @@ html[data-window-focused="false"] .tab-pill {
    but DWM puts its own luminosity and noise into it; macOS' material is a
    bounded blur with AppKit's own tint already in it; a compositor blur is bare —
    whatever sits behind this window, the wallpaper or another application's
-   window. The four differ only in what that tenth arrives as; none of them
+   window. The four differ only in what that share arrives as; none of them
    decides how bright the shell reads. A bare blur would otherwise decide it
    twice over: at any density thin enough to read as a backdrop the wallpaper's
    own hue arrives in every edge of the shell, and spent on the frame alone it is
    the same problem seen from the other side — a frosted bar laid on a painted
-   board, the blur in one 46px band and nowhere else. Nine tenths of the shell's
-   own wash answers both — the hue is the shell's, the glass is the platform's,
-   and the desktop is a whisper at the rim — and the panels above the pane stay
-   solid paper (`--panel-wash`), so nothing readable ever sits on the live blur.
+   board, the blur in one 46px band and nowhere else. `--pane-alpha` is where
+   that is settled: the hue stays the shell's, the glass the platform's, and the
+   desktop is held to a share rather than a whisper because the pane is meant to
+   be seen. What keeps it from deciding the picture is that the panels above the
+   pane stay solid paper (`--panel-wash`), so the blur is the field the islands
+   float on and never the surface a file list sits on.
 
    THE MECHANISM is the part that is a rule rather than a value. Two things paint
    the canvas behind the frame: `body`, through its `bg-background`, and the root
@@ -1019,7 +1021,7 @@ html[data-window-focused="false"] .tab-pill {
    all. So under a material both stop painting their FILL and nothing else: the
    wash stays on `body`, because it is the pane itself, and the row of islands
    above it stops painting altogether — it would stack the wash a second time and
-   run the frame denser than the 90% the pane answers with.
+   run the frame denser than `--pane-alpha` answers with on its own.
 
    The overrides are `html[…]` selectors rather than a second `:root` because they
    have to outrank the scheme blocks — `:root` and `.dark` declare these tokens
@@ -1046,8 +1048,8 @@ html[data-window-focused="false"] .tab-pill {
      sandblasted glass: the pink-to-yellow ramp diffused behind milk. It is the
      *background* half of the glass; the panels are the other half and take
      `--panel-frost`. Under a material seam the block below removes it instead:
-     there the wash's own 90% IS the pane, and this veil over it would only run
-     the glass denser than the 90% the seam answers with — hue from the shell,
+     there the wash's own density IS the pane, and this veil over it would only
+     run the glass denser than the seam answers with — hue from the shell,
      glass from the platform. */
   --canvas-frost:
     linear-gradient(
@@ -1056,18 +1058,34 @@ html[data-window-focused="false"] .tab-pill {
       color-mix(in oklab, var(--background) 14%, transparent) 56%,
       color-mix(in oklab, #fffaf0 10%, transparent) 100%
     );
+
+  /* HOW DENSE THE PANE IS — the one number behind `--canvas-image`'s four stops,
+     and the whole difference between a canvas that merely looks frosted and one
+     that is. Over the opaque `--background` base a platform leaves it at, the
+     figure is invisible (a wash at 90% over cream reads as cream at 90%);
+     once THE WINDOW-MATERIAL SEAM clears that base, the complement is exactly
+     the share of the desktop the compositor shows through. It drops there, not
+     here — see the material block below. */
+  --pane-alpha: 90%;
 }
 
-/* One answer for all four materials — see the seam note above. The veil steps
-   aside (the wash carries the hue at 90%, and that 90% IS the pane) and nothing
-   else is retuned: the paper the panels are cut from, the menus over them and
-   the trough in the frame all measure against the same pane everywhere, and
-   only the tenth of desktop behind it differs between the four. */
+/* One answer for all four materials — see the seam note above. Two things move:
+   the veil steps aside (the wash carries the hue on its own, and that wash IS
+   the pane), and the pane thins from nine tenths to a little under three
+   quarters, so the backdrop reads as the light behind a tinted window rather
+   than as the picture itself.
+   Nothing else is retuned: the paper the panels are cut from, the menus over
+   them and the trough in the frame all measure against the same pane everywhere,
+   and only the desktop behind it differs between the four. The panels stay solid
+   on purpose — a file list over a live blur is unreadable — so the blur arrives
+   in the frame band and the air around the islands, which is where a window
+   material belongs. */
 html[data-window-material="mica"],
 html[data-window-material="acrylic"],
 html[data-window-material="blur"],
 html[data-window-material="vibrancy"] {
   --canvas-frost: none;
+  --pane-alpha: 72%;
 }
 
 /* What must NOT paint once the field is glass — the mechanism in the seam note.
@@ -1079,7 +1097,7 @@ html[data-window-material="vibrancy"] {
    from `--background` and would do the same from underneath, so the call-site
    role is cleared outright; its image goes with it, since the row would
    otherwise paint the wash a second time over the pane and the two stacked
-   alphas run the frame denser than the 90% above.
+   alphas run the frame denser than `--pane-alpha` alone.
 
    The selectors carry `:root` of their own for the reason the seam note gives:
    the boot style is unlayered and `html.dark` is exactly as specific. */
@@ -1304,15 +1322,15 @@ html body,
   /* ---------------------------------------------------------------------------
      THE GLASS FIELD. The window is one frosted pane — pink light at its head
      falling to warm yellow at its foot — and everything in it is either that
-     field or a piece of glass lying on it.
+     field or a sheet of paper lying on it.
 
      Four treatments, one vocabulary:
 
-       .content-panel       a sheet of glass on the field: translucent, blurred
-                            through, with the ground-glass rim and the speculars.
-                            The nav rail, the explorer plane and the terminal all
-                            take it, so "card" is one shape language in the
-                            window rather than three.
+       .content-panel       a sheet of white paper lying on the field, edged with
+                            the ground-glass rim and the speculars a pane's ground
+                            edge throws. The nav rail, the explorer plane and the
+                            terminal all take it, so "card" is one shape language
+                            in the window rather than three.
        .tab-trough          the channel the tab strip sits in — the field pressed
                             *down*, the only recessed surface in the shell.
        .tab-pill            the plate under the current tab, which slides along
@@ -1331,30 +1349,30 @@ html body,
      reads as a channel is the trough the chips actually sit in.
 
      THE CONTENT PLANE. The shell's spatial idea. The content rises off the canvas
-     as a plate with air on every side: glass on glass, separated by the rim that
+     as a plate with air on every side: paper on glass, separated by the rim that
      catches the light and by the contact shadow a sheet needs.
 
      ONE FILL, THE SHEET. The panel's fill is declared here and nowhere else —
      a `background-color` anywhere in the stack (the `bg-card` these call sites
      used to carry, or the same class on the toolbar and status strip nested
      inside them) is painted beneath every image layer of a box, which is the
-     wrong side of the sheet even now that the sheet is solid paper: the ramp
-     would sit under the paper instead of in it. Forced colours, which drops
-     `background-image`, gives the plate its own colour
-     back in the block at the foot of this file. */
+     wrong side of the sheet: the rim would land on paper instead of on the
+     field. Forced colours, which drops `background-image`, gives the plate its
+     own colour back in the block at the foot of this file. */
   .content-panel {
     border-radius: var(--radius-panel);
-    /* The plate is PAPER cut from the field's ramp — solid, and tinted at its
-       height in the window. It was glass: a translucent sheet with the wash
-       blurring through it, so the pink at the head of the window tinted the top
-       edge of a tall panel and the yellow tinted its foot. That reading is the
-       design and stays; only the means changed. The ramp is painted INTO the
-       sheet (`--panel-wash`) rather than seen through it, because the field the
-       panels float on is itself glass under a window material
-       (THE WINDOW-MATERIAL SEAM) and a file list over a live blur is
-       unreadable — the frost now runs around the sheet, never through it. No
-       `backdrop-filter` is left: an opaque sheet would filter a backdrop nothing
-       can see.
+    /* The plate is WHITE PAPER lying on the field — one flat colour, the card,
+       at every height in the window. It was glass: a translucent sheet with the
+       wash blurring through it, so the pink at the head of the window tinted the
+       top edge of a tall panel and the yellow tinted its foot. Then the wash was
+       painted into the sheet instead of seen through it, which kept the same
+       fault in a new medium — the sheet rode the ramp with
+       `background-attachment: fixed` and was a different colour at its top than
+       at its bottom. The field the panels float on is glass under a window
+       material (THE WINDOW-MATERIAL SEAM) and a file list over a live blur is
+       unreadable, so the frost runs around the sheet, never through it, and the
+       sheet holds one value. No `backdrop-filter` is left: an opaque sheet would
+       filter a backdrop nothing can see.
 
        The fill is a background *image* rather than a `background-color` for the
        same reason `.floating-frost` gives: the rim below has to sit under it and
@@ -1370,14 +1388,9 @@ html body,
       var(--panel-wash),
       var(--island-rim);
     background-origin: border-box;
-    /* The wash is THREE gradient layers and the rim is one, so the per-layer
-       lists below are written out four deep rather than two: a comma list
-       cycles against the expanded layer count, not against the two var()s. */
-    background-clip: padding-box, padding-box, padding-box, border-box;
-    /* The ramp travels with the window (`fixed`), so a panel picks the wash up
-       at ITS height — the rose at a tall one's head, the yellow at its foot —
-       and restarts nowhere; the rim stays the panel's own edge. */
-    background-attachment: fixed, fixed, fixed, scroll;
+    /* Two layers, two clips: the sheet stops at the padding edge and the rim
+       keeps the border box, which is the only place it can be seen. */
+    background-clip: padding-box, border-box;
     /* Four layers. The two insets are the inner faces of the glass edge: light
        from above catches the top lip hard and the field the plate rests on lifts
        its foot warm. Then the bloom — the reference's card edge is not a line at

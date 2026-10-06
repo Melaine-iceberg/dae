@@ -17,11 +17,16 @@
       body {
         margin: 0;
         height: 100%;
-        background: __DAE_CANVAS__;
+        /* `background-color`, never the `background` shorthand: the shorthand
+           also resets background-image, and App.css paints the canvas wash as an
+           image on `html body`. Light mode survived that by one specificity
+           step; `html.dark body` below carries a class, so it outranked the wash
+           and dark mode painted no canvas at all. */
+        background-color: __DAE_CANVAS__;
       }
       html.dark,
       html.dark body {
-        background: __DAE_CANVAS_DARK__;
+        background-color: __DAE_CANVAS_DARK__;
       }
       /* The window is on screen from the moment it is created, so this is what
          the user looks at while the JS bundle loads: a spinner on the themed
@@ -68,7 +73,10 @@
       html[data-window-material="mica"] body,
       html[data-window-material="acrylic"] body,
       html[data-window-material="vibrancy"] body {
-        background: transparent;
+        /* Also longhand: these selectors carry an attribute, so as a shorthand
+           they would out-rank App.css's `html body` canvas rule and clear the
+           wash for the whole session, not just the splash. */
+        background-color: transparent;
       }
     </style>
     <script>
