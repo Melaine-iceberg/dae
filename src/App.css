@@ -466,44 +466,42 @@
 }
 
 :root {
-  /* NEUTRAL DESK — light. The canvas is a soft grey and the content plane is
-     pure white, so the window's depth is one tone step plus a shallow shadow —
-     no hairline is asked to carry a boundary between the frame and the paper.
-     The accent clears AA in BOTH of its jobs: as a fill (white on it ≈ 5.7) and
-     as text or icon on any surface in the ladder (≈ 5.0 at worst).
+  /* PASTEL DESK — light. The window is one continuous pastel field: a
+     rose-to-cream wash as the canvas (`--canvas-image`, painted by `body`,
+     see THE PASTEL CANVAS WASH below), warm ivory paper for the panels, warm
+     brown ink on top, and a deep teal as the one cool note. The warmth is
+     one step only — enough to read as paper in daylight, never enough to
+     fight the file icons that cover it.
 
-     THE LIGHT LADDER: two rungs, on purpose.
-
-     `--sidebar` is declared equal to `--background`: the nav column sits ON the
-     canvas rather than above it, and the content plane is the only raised
-     surface in the window. Three near-equal greys (canvas / rail / panel) read
-     as a flat wall with two lines drawn on it — the planes stop meaning
-     anything, because the eye cannot rank them. Two rungs plus one white plane
-     gives the window a clear front and back, and the rail's own grouping is
+     THE LADDER: two rungs, as before. The wash is the canvas; the frame roles
+     over it (tab strip, nav rail) are LENSES rather than fills — see the
+     `--chrome` / `--sidebar` values — so the ramp reads as one field under the
+     whole shell, and `--card` is the one raised plane: warm ivory separated by
+     a soft warm shadow rather than by a hairline. The rail's own grouping is
      carried by its section labels and its selection, not by a tone of its own.
 
-     The consequence to keep in mind: the rail and the canvas are the SAME value,
-     so nothing may rely on a step between them — which is why neither the rail's
-     inner edge nor the frame's lower edge carries a hairline any more. A line
-     between two identical values draws a boundary where there is no boundary.
-     The rail's own hover and selection run on `--sidebar-accent`, which is held
-     a clear step below the canvas so a selected row still reads with no ring
-     around it. */
-  --shadow-color: #191918; /* keyed to the ink: shadows darken the paper, never tint it */
-  /* Per-layer shadow alpha. Light reproduces Notion's tatami shadow alphas
-     (1.2–3.9% black, layered); the ladder is carried by the geometry above.
-     a4 is not a shadow stop in practice — the outline-glow halo feeds on it,
-     and a focus ring at 4% would be gone, so it stays high. */
-  --shadow-a1: 1.5%;
-  --shadow-a2: 2.5%;
-  --shadow-a3: 4%;
+     The accent clears AA in BOTH of its jobs: as a fill (white ink on it
+     ≈ 5.1) and as text or icon on the card (≈ 4.9). */
+  --shadow-color: #4a3527; /* warm brown, keyed to the ink: a shadow here tints the cream, on purpose */
+  /* Per-layer shadow alpha. One notch above Notion's tatami alphas (1.2–3.9%
+     black): the picture's language floats cream cards over a coloured wash,
+     so the shadow has to actually read against the ramp instead of sitting on
+     flat grey. The ladder is still carried by the geometry above. a4 is not a
+     shadow stop in practice — the outline-glow halo feeds on it, and a focus
+     ring at 4% would be gone, so it stays high. */
+  --shadow-a1: 2.5%;
+  --shadow-a2: 4.5%;
+  --shadow-a3: 8%;
   --shadow-a4: 24%;
-  --background: #f4f3f1; /* canvas — the step the panels sit ON, see the ladder note below */
-  --foreground: #191918;
-  --card: #ffffff; /* panel surface */
-  --card-foreground: #191918;
-  --popover: #ffffff; /* menus, dialogs — lift comes from shadow, not tone */
-  --popover-foreground: #191918;
+  /* THE CANVAS WASH — rose at the top of the window, cream at its foot. This
+     is what `body` paints and what every canvas lens sits over. */
+  --canvas-image: linear-gradient(180deg, #f4c7d3 0%, #f7d8d3 32%, #fae7d7 64%, #fbf3e4 100%);
+  --background: #faf2e6; /* canvas fallback colour — the wash's foot, and the base the lenses tint */
+  --foreground: #3f3830; /* warm ink — 10.4:1 on the card */
+  --card: #fdfaf4; /* warm ivory panel surface */
+  --card-foreground: #3f3830;
+  --popover: #fffcf6; /* menus, dialogs — one notch brighter than the card, the same paper held to the light */
+  --popover-foreground: #3f3830;
   /* THE FLOATING-GLASS PAIR — see `.floating-frost` and THE FLOATING-GLASS SEAM
      below it. The menu plane at its frost density, plus the pass it runs over
      whatever is behind it.
@@ -546,54 +544,48 @@
      so wherever the plate reaches past the hole the platform left it lands on
      a colour that is already there. */
   --frost-plate: var(--card);
-  /* ---- The neutral scheme --------------------------------------------------
+  /* ---- The warm scheme -----------------------------------------------------
 
-     The window is a quiet grey desk, and the neutrals are Notion's own: the
-     `tatami` grey ramp their UI is drawn in — #f9f9f8 through #191918 with
-     alpha-black hairlines — read off their shipped tokens rather than
-     remembered. Neutrals are neutral, full stop; the only chroma in the shell
-     is the category hues below, the way Notion spends it. A cast strong enough
-     to notice is a cast strong enough to fight every file icon rendered on top
-     of it, and this app is mostly file icons.
+     Every neutral here is the cream family — ivory paper, a warm sand wash a
+     row takes on it, a warm hairline — and the ink is a warm brown-grey. The
+     cast is confined to the shell on purpose: the category hues and the folder
+     gold below stay exactly as they were, so what a thing *is* keeps its own
+     voice and the warmth only says where it sits.
 
-     The ladder, lightest to darkest — a real ordering the eye can take, but a
-     short one, because the plane is delimited by tone and by its shadow rather
-     than by a line drawn around it:
+     The ladder, lightest to darkest — a short one, because the plane is
+     delimited by tone and by its shadow rather than by a line drawn around it:
 
-       popover / card #ffffff
-       →  muted / secondary / accent #f6f5f4   (the wash a row takes ON the paper)
-       →  sidebar = canvas #f4f3f1
-       →  sidebar-accent #ebe9e6               (the wash a row takes ON the rail)
-       →  border #e9e9e9
+       popover #fffcf6 / card #fdfaf4
+       →  muted / secondary / accent #f2eadd    (the wash a row takes ON the paper)
+       →  sidebar lens over the wash            (the rail has no tone of its own)
+       →  sidebar-accent #eee2d0                (the wash a row takes ON the rail)
+       →  border #ebdfcd
 
      The two washes are separate tokens because they sit on separate planes. A
      hover fill has to be a step DOWN from whatever carries it, and the rail and
-     the paper are two rungs apart, so one value cannot serve both: the old
-     single #f6f5f4 read clearly on white and vanished on the rail, which is what
-     the `glass-active` ring used to be there to make up for.
+     the paper are two rungs apart, so one value cannot serve both.
 
-     Card and popover are both #ffffff on purpose: the floating layers buy their
+     Card and popover are both ivory on purpose: the floating layers buy their
      separation from the frost and the shadow, and a menu is never asked to
-     outrank a panel by value. The rail shares the canvas value — see THE LIGHT
-     LADDER above for why that is two rungs and not three.
+     outrank a panel by value.
 
-     Contrast was measured, not eyeballed: ink 17.6:1 on a card and 12.6:1 on the
-     selected rail plate, the secondary grey 6.5:1 on a card, 5.4:1 on the rail
-     hover and 4.7:1 on the selected plate — that last pairing is what sets the
-     grey's lightness, since a selected row carries its state by fill alone now
-     and the caption inside the disk row sits directly on it. The accent is 4.6:1
-     under white ink and the same 4.6:1 as text on a card. `--folder` is the one
-     role held to the *graphical* bar instead of the text one — see its note
-     below. */
-  --accent-default: #0075de; /* tatami blue-600, Notion's action blue — 4.6:1 under white ink and as text */
+     Contrast was measured, not eyeballed: ink 10.4:1 on a card and 7.6:1 on the
+     rose part of the wash, the secondary brown 6.4:1 on a card, 5.2:1 on the
+     rail hover and ≈4.6:1 on the selected plate — that last pairing is what
+     sets the secondary's lightness, since a selected row carries its state by
+     fill alone and the caption inside the disk row sits directly on it. The
+     accent is 5.1:1 under white ink and 4.9:1 as text on a card. `--folder` is
+     the one role held to the *graphical* bar instead of the text one — see its
+     note below. */
+  --accent-default: #1f7a72; /* deep teal, the picture's cool note — 5.1:1 under white ink, 4.9:1 as text */
   --accent-default-ink: #ffffff;
   --on-destructive: #ffffff;
-  --secondary: #f6f5f4; /* tonal secondary surfaces */
-  --secondary-foreground: #191918;
-  --muted: #f6f5f4;
-  --muted-foreground: #615d59; /* tatami gray-600 — 6.5:1 on a card; secondary text never fades out */
-  --accent: #f6f5f4; /* hover highlight */
-  --accent-foreground: #191918;
+  --secondary: #f2eadd; /* warm sand — tonal secondary surfaces */
+  --secondary-foreground: #3f3830;
+  --muted: #f2eadd;
+  --muted-foreground: #635b50; /* warm grey-brown — 6.4:1 on a card; secondary text never fades out */
+  --accent: #f2eadd; /* hover highlight */
+  --accent-foreground: #3f3830;
   --error-container: #fbe3dc;
   --on-error-container: #6e1f12;
   /* Folder glyphs repeat once per directory — 38 of them in a full listing —
@@ -627,15 +619,17 @@
   --tone-amber: #dd5b00; /* media, archives — the one tone the accent cannot cover */
   --tone-rose: #d13f9d; /* pdf, keys, executables */
   --tone-cyan: #0a7b77; /* desktop, audio, databases */
-  --border: #e9e9e9; /* hairline panel edge */
-  --input: #dfdcd9;
-  --radius: 0.5rem;
-  --scrim: rgb(25 25 24 / 0.36); /* keyed to the ink, so the dimmed plane keeps its cast */
-  --sidebar: var(--background); /* the rail IS the canvas — the panel is the only raised plane */
-  --sidebar-foreground: #191918;
-  --sidebar-accent: #ebe9e6;
-  --sidebar-accent-foreground: #191918;
-  --sidebar-border: #e9e9e9;
+  --border: #ebdfcd; /* warm hairline panel edge */
+  --input: #e0d3bf;
+  /* Shape language: the picture's corners. 12px base buys 8/9/10/12/16 on the
+     inline ladder and 14 on the content plate — cards that read as cards. */
+  --radius: 0.75rem;
+  --scrim: rgb(63 56 48 / 0.36); /* keyed to the ink, so the dimmed plane keeps its cast */
+  --sidebar: color-mix(in oklab, var(--background) 35%, transparent); /* the rail is a lens over the wash, not a fill */
+  --sidebar-foreground: #3f3830;
+  --sidebar-accent: #eee2d0;
+  --sidebar-accent-foreground: #3f3830;
+  --sidebar-border: #ebdfcd;
 
   /* Chrome geometry. Plain custom properties rather than `@theme` entries,
      because one consumer is not a utility: the floating-glass plate sizes two
@@ -676,6 +670,10 @@
   --shadow-a2: 34%;
   --shadow-a3: 46%;
   --shadow-a4: 60%;
+  /* THE CANVAS WASH, dark: a dusk ramp — plum-rose at the top of the window,
+     warm graphite at its foot. The neutrals below stay neutral; only the field
+     behind them carries the picture's gradient language. */
+  --canvas-image: linear-gradient(180deg, #3d2b36 0%, #2d232a 34%, #221f1e 70%, #191918 100%);
   --background: #191918; /* canvas — low chroma, so it reads neutral rather than sepia */
   --foreground: #e9e9e9;
   --card: #252525; /* panel surface */
@@ -693,8 +691,8 @@
   --popover-frost-dense: color-mix(in oklab, var(--popover) 96%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6) brightness(0.75);
   --frost-plate: var(--card); /* see the light scheme's pair */
-  --accent-default: #62aef0; /* tatami blue-400 — 6.5:1 as text on a panel, 7.9:1 under the dark ink */
-  --accent-default-ink: #101116; /* ink label on the blue fill — 7.9:1 */
+  --accent-default: #6bbcb6; /* the light teal's dark rung — 6.8:1 as text on a panel, 8:1 under the dark ink */
+  --accent-default-ink: #101116; /* ink label on the teal fill — 8:1 */
   --on-destructive: #101116; /* the dark destructive is a light red: white on it 2.4:1 */
   --secondary: #323232;
   --secondary-foreground: #e9e9e9;
@@ -723,9 +721,9 @@
   --tone-cyan: #83cbc9; /* desktop, audio, databases */
   --border: #3a3a3a; /* hairline — 1.35:1 on a panel, the same step as light */
   --input: #474747;
-  --radius: 0.5rem;
+  --radius: 0.75rem; /* the same shape language as light */
   --scrim: rgb(10 10 10 / 0.6); /* keyed to the ink, so the dimmed plane keeps its cast */
-  --sidebar: var(--background); /* the rail IS the canvas — the panel is the only raised plane */
+  --sidebar: color-mix(in oklab, var(--background) 35%, transparent); /* the rail is a lens over the wash, not a fill */
   --sidebar-foreground: #e9e9e9;
   --sidebar-accent: #323232;
   --sidebar-accent-foreground: #e9e9e9;
@@ -934,7 +932,11 @@ html[data-window-focused="false"] .tab-chip-active {
 /* The frame role until a backdrop claims it. Declared once rather than per
    scheme because it *is* the canvas there, and inherits the scheme through it. */
 :root {
-  --chrome: var(--background);
+  /* The frame role as a lens rather than a fill: 55% of the canvas colour laid
+     over the wash `body` paints, so the tab strip reads as the top of the same
+     rose-to-cream field instead of as a band pasted over it. Under a material
+     seam the blocks below replace this with frost or with nothing. */
+  --chrome: color-mix(in oklab, var(--background) 55%, transparent);
 }
 
 html[data-window-material="mica"],
@@ -942,6 +944,8 @@ html[data-window-material="acrylic"],
 html[data-window-material="vibrancy"] {
   --background: transparent;
   --sidebar: transparent;
+  /* The platform colours the whole window here, wash included. */
+  --canvas-image: none;
 }
 
 html[data-window-material="blur"] {
@@ -957,10 +961,33 @@ html[data-window-material="blur"] {
   --chrome: var(--chrome-frost);
   --sidebar: var(--chrome-frost);
 }
-/* Clears both paints of the canvas — see the paragraphs above. */
+/* THE PASTEL CANVAS WASH — one continuous field behind the whole window.
+
+   `body` paints the ramp `--canvas-image` describes (rose-to-cream in light,
+   dusk in dark), and every canvas role that paints over it — the tab strip and
+   the nav rail through their lens tints, the frame around the content plate
+   through this same wash — lets the ramp read as one field under the whole
+   shell. `background-attachment: fixed` pins each carrier to the window-sized
+   box, so the ramp never restarts at an element's edge.
+
+   `.bg-background` is the call-site spelling of the canvas role on the frame
+   around the content plate (see explorer-tabs.tsx — "this is the canvas, not
+   a plane on it"). The boot style in index.html paints `body` from
+   `--background` through the `background` shorthand, which would clear this
+   image however the two stylesheets order: `html body` sits one specificity
+   step above that rule and keeps it. */
+html body,
+.bg-background {
+  background-image: var(--canvas-image);
+  background-size: cover;
+  background-attachment: fixed;
+}
+
+/* Clears every paint of the canvas — colour and wash — see the paragraphs above. */
 html[data-window-material="blur"]:root,
 html[data-window-material="blur"]:root body {
   background-color: transparent;
+  background-image: none;
 }
 
 @layer components {
@@ -1210,7 +1237,10 @@ html[data-window-material="blur"]:root body {
 
   .content-panel {
     border-radius: var(--radius-panel);
-    box-shadow: var(--shadow-ambient-xs);
+    /* The full ambient stack rather than its first rung: in this design language
+       the plate is a cream card floating on a coloured wash, and a shadow that
+       only says "rests on the plane" reads as no shadow at all against the ramp. */
+    box-shadow: var(--shadow-ambient);
   }
 
   /* The "I am here" plate: one flat wash over the call site's fill, and
