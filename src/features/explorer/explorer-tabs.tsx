@@ -512,7 +512,7 @@ export function ExplorerTabs() {
               measurements stay valid) while skipping paint and hit-testing;
               their keyboard shortcuts are gated through the `active` prop
               chain (see workspace-surface.tsx). */}
-          <div className="content-panel relative min-h-0 flex-1 overflow-hidden bg-card">
+          <div className="content-panel relative min-h-0 flex-1 overflow-hidden">
             {tabs.map((tab) => {
               const isActive = tab.id === activeTabId;
               return (

@@ -446,9 +446,12 @@ export function TerminalPanel() {
         /* GLASS RETUNE: the terminal is the second floating island — it shares
            `.content-panel`'s rim, corner and shadow rather than fusing to the
            plane above it, so the canvas runs between the two cards the way the
-           reference shot spaces its islands. `bg-card` stays: the island's fill
-           layer paints over it (see the stylesheet). */
-        "content-panel flex shrink-0 flex-col overflow-hidden bg-card",
+           reference shot spaces its islands. No fill of its own: the plate's
+           frost is its colour, and an opaque `bg-card` under that frost is what
+           made the island read as paper over the field. The xterm viewport still
+           paints `--card`, which is the one surface in here that has to be
+           solid — a terminal reads its own colours, not the wallpaper. */
+        "content-panel flex shrink-0 flex-col overflow-hidden",
         !visible && "hidden",
       )}
       style={{ height }}

@@ -131,7 +131,7 @@ export function ExplorerToolbar({
 
   return (
     <header
-      className="flex h-toolbar shrink-0 items-center gap-0.5 bg-card px-1.5"
+      className="flex h-toolbar shrink-0 items-center gap-0.5 px-1.5"
       data-tauri-drag-region="deep"
     >
       <div className="flex shrink-0 items-center gap-0.5">

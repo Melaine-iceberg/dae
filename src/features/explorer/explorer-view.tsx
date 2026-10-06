@@ -147,7 +147,7 @@ function preloadEntryPreview(): void {
  *  doesn't reflow when the panel lands. */
 function EntryPreviewSkeleton() {
   return (
-    <aside className="flex h-full w-preview shrink-0 flex-col gap-3 overflow-hidden border-l border-border bg-card p-3">
+    <aside className="flex h-full w-preview shrink-0 flex-col gap-3 overflow-hidden border-l border-border p-3">
       <Skeleton className="h-5 w-2/3" />
       <Skeleton className="min-h-48 flex-1 rounded-lg" />
       <Skeleton className="h-16 shrink-0 rounded-lg" />
@@ -795,7 +795,7 @@ export function ExplorerView({
     : (search.response?.truncated ?? false);
 
   return (
-    <main className="h-full bg-card" data-explorer-container="true">
+    <main className="h-full" data-explorer-container="true">
       <section className="flex h-full w-full flex-col overflow-hidden">
         <ExplorerToolbar
           canGoBack={canGoBack}

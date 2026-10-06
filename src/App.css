@@ -577,16 +577,23 @@
   /* THE PLANE GLASS — the density of a content panel, which is a different
      question from a menu's. A menu is short-lived and read while it is up; a
      panel carries a file list all day, so the frost has to be light enough to
-     see the field through at its edges and heavy enough that a row of 14px text
-     never sits on a live blur. At 88% the wash tints the plate's rim and foot
-     without ever reaching the type; the blur runs underneath, which is what
-     makes it glass rather than a fade.
+     see the field through and heavy enough that a row of 14px text never sits
+     on a live blur.
+
+     82% was the number from when the panels were plates over a cream canvas.
+     They are now glass on a FIELD — the ramp is the thing behind them — and at
+     that density the wash never arrived: the plates read as opaque paper, which
+     is the one complaint the retune exists to answer. 70% is where both halves
+     hold. The binding case is the wash's most saturated stop, its foot at
+     `#e3d9ae`: under 70% ivory the blend lands near `#f5efdd`, where the warm
+     body ink is still at 9.3:1 and the secondary grey above 5. The blur runs
+     underneath, which is what makes it glass rather than a fade.
 
      Under a window material the backdrop stops being our own soft gradient and
      becomes whatever the user has on the desktop, so the blocks further down
      take this to near-opaque — the same argument `--popover-frost` documents,
      one plane over. */
-  --panel-frost: color-mix(in oklab, var(--card) 82%, transparent);
+  --panel-frost: color-mix(in oklab, var(--card) 70%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6);
   /* The fill a floating layer puts under its own tint where the window has no
      pixels to give it — see THE PLATE in the components layer. `--card` rather
@@ -769,7 +776,7 @@
      secondary grey and ≈14:1 for the ink on the panel beneath. */
   --popover-frost: color-mix(in oklab, var(--popover) 90%, transparent);
   --popover-frost-dense: color-mix(in oklab, var(--popover) 96%, transparent);
-  --panel-frost: color-mix(in oklab, var(--card) 90%, transparent);
+  --panel-frost: color-mix(in oklab, var(--card) 78%, transparent);
   --frost-filter: blur(1.5rem) saturate(1.6) brightness(0.75);
   --frost-plate: var(--card); /* see the light scheme's pair */
   --accent-default: #6bbcb6; /* the light teal's dark rung — 6.8:1 as text on a panel, 8:1 under the dark ink */
@@ -1313,10 +1320,16 @@ html[data-window-material="blur"]:root body {
 
      THE CONTENT PLANE. The shell's spatial idea. The content rises off the canvas
      as a plate with air on every side: glass on glass, separated by the rim that
-     catches the light and by the contact shadow a sheet needs. Call sites still
-     carry `bg-card` as their `background-color`; `.content-panel` overpaints it
-     with the frost layer, and the colour is what survives a mode that drops
-     images (forced colours) — see the block at the foot of this file. */
+     catches the light and by the contact shadow a sheet needs.
+
+     NOTHING BELONGS UNDER THE GLASS. A `background-color` is painted beneath every
+     image layer of a box, so one opaque fill anywhere in the stack — the `bg-card`
+     these call sites used to carry, or the same class on the toolbar and status
+     strip nested inside them — backs the translucent frost with a solid plate, and
+     the sheet stops being glass in exactly the way the field below the tab bar did.
+     The frost is therefore the panel's only fill, declared here and nowhere else;
+     forced colours, which drops `background-image`, gives the plate its own colour
+     back in the block at the foot of this file. */
   .content-panel {
     border-radius: var(--radius-panel);
     /* The plate is GLASS, not paper. Its fill is a translucent sheet laid over
@@ -1331,7 +1344,11 @@ html[data-window-material="blur"]:root body {
        a colour is painted under every image layer, the wrong side of the glass.
        The rim is the border-box layer of the stack, so `--island-rim` shows only
        through the 1px transparent border — a flat `border-color` is one colour
-       and cannot hold a specular edge. */
+       and cannot hold a specular edge.
+
+       (`.floating-frost` does declare the tint as a colour as well, and a menu
+       can afford it: nothing has to show through a menu's own backing. A panel is
+       the layer the field is read THROUGH, so here the colour is the bug.) */
     border: 1px solid transparent;
     background-image:
       linear-gradient(var(--panel-frost), var(--panel-frost)),
@@ -2128,6 +2145,14 @@ html[data-window-material="blur"]:root body {
   }
   .tab-pill {
     display: none;
+  }
+
+  /* The panels lose their whole fill here, because the frost is an image layer and
+     the `bg-card` that used to back it is gone — see THE CONTENT PLANE. The
+     palette's canvas puts the sheet back; `--panel-frost` going opaque above is
+     what the *colour* half of the pair does in the modes that keep images. */
+  .content-panel {
+    background-color: Canvas;
   }
 
   /* The drop target's wash and ring are both gone; the ring's replacement is

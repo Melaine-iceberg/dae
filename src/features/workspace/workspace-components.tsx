@@ -22,7 +22,7 @@ export function WorkspacePage({
   children: ReactNode;
 }) {
   return (
-    <main aria-label={ariaLabel} className="min-h-0 flex-1 overflow-y-auto bg-card">
+    <main aria-label={ariaLabel} className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-7 px-7 pt-7 pb-10">{children}</div>
     </main>
   );
