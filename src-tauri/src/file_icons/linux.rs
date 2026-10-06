@@ -25,10 +25,14 @@
 //!     mimetypes icons live under `48x48/`. Parsing the index is the difference
 //!     between "works on the machine it was written on" and works on a user's.
 //!
-//! SVG answers travel as bytes labelled `image/svg+xml` rather than being
-//! rasterized here. WebKitGTK renders that in an `<img>` on its own, at the
-//! device's real pixel density, which beats anything a fixed-size raster could
-//! do — and it keeps the crate free of a vector renderer.
+//! SVG answers are rasterized here, at the size the row asked for, and travel
+//! as PNG. Handing the vector to the webview does not work: WebKitGTK
+//! rasterizes an SVG in an `<img>` at the CSS box rather than at the device
+//! pixels and then upscales that bitmap, so a 16 CSS-px row on a 1.5-scale
+//! display drew a 16-px render blown up to 24 — a smear where the same vector
+//! rendered at 24 by `rsvg-convert` is crisp. gdk-pixbuf is the same librsvg
+//! the desktop's own icon loaders drive, and `gtk` is already a dependency, so
+//! the crisp render costs no new crate.
 
 use super::FileIcon;
 use crate::xdg::{config_roots, data_roots, home_dir};
@@ -259,7 +263,7 @@ fn lookup(names: &[&str], contexts: &[&str], size: u32) -> Option<FileIcon> {
         // An absolute `Icon=` value is a path, not a themed name, and no theme
         // search can answer it. Checked once per name rather than per theme.
         if name.starts_with('/') {
-            if let Some(icon) = read_icon_file(Path::new(name)) {
+            if let Some(icon) = read_icon_file(Path::new(name), size) {
                 return Some(icon);
             }
             continue;
@@ -273,7 +277,7 @@ fn lookup(names: &[&str], contexts: &[&str], size: u32) -> Option<FileIcon> {
                         let candidate = base
                             .join(directory)
                             .join(format!("{name}.{extension}"));
-                        if let Some(icon) = read_icon_file(&candidate) {
+                        if let Some(icon) = read_icon_file(&candidate, size) {
                             return Some(icon);
                         }
                     }
@@ -286,7 +290,7 @@ fn lookup(names: &[&str], contexts: &[&str], size: u32) -> Option<FileIcon> {
         // `/usr/share/pixmaps`.
         for extension in ["svg", "png"] {
             let candidate = Path::new("/usr/share/pixmaps").join(format!("{name}.{extension}"));
-            if let Some(icon) = read_icon_file(&candidate) {
+            if let Some(icon) = read_icon_file(&candidate, size) {
                 return Some(icon);
             }
         }
@@ -593,13 +597,48 @@ fn mime_for_extension(extension: &str) -> Option<&'static str> {
 /// Reads an icon file off disk and labels it. A zero-byte or unreadable file is
 /// a miss, not an error — themes are dropped and half-installed often enough
 /// that one broken file must not blank a whole directory.
-fn read_icon_file(path: &Path) -> Option<FileIcon> {
+///
+/// An SVG is rendered to a PNG of `size` pixels on the way out — see the module
+/// docs for why the vector must not reach the webview. A host with no SVG
+/// pixbuf loader keeps the old answer rather than losing the icon to it.
+fn read_icon_file(path: &Path, size: u32) -> Option<FileIcon> {
     let mime = mime_for_extension(path.extension()?.to_str()?)?;
+    if mime == "image/svg+xml"
+        && let Some(bytes) = rasterize_svg(path, size)
+    {
+        return Some(FileIcon {
+            mime: "image/png",
+            bytes,
+        });
+    }
     let bytes = std::fs::read(path).ok()?;
     if bytes.is_empty() {
         return None;
     }
     Some(FileIcon { mime, bytes })
+}
+
+/// The vector at `size` pixels, as PNG bytes.
+///
+/// `from_file_at_size` fits the viewBox into the box preserving aspect ratio,
+/// which for the square artwork every theme ships is exactly `size`×`size`.
+/// Runs on the render pool, so it has to need no display and no main thread —
+/// gdk-pixbuf's loaders need neither, which is the same reason the resolver
+/// here reads theme files instead of driving `GtkIconTheme`.
+#[cfg(target_os = "linux")]
+fn rasterize_svg(path: &Path, size: u32) -> Option<Vec<u8>> {
+    use gtk::gdk_pixbuf::Pixbuf;
+
+    let edge = i32::try_from(size).ok()?;
+    let pixbuf = Pixbuf::from_file_at_size(path, edge, edge).ok()?;
+    pixbuf.save_to_bufferv("png", &[]).ok()
+}
+
+/// The Windows host this module is test-compiled on has no gdk-pixbuf behind
+/// it, and a theme lookup there is a miss anyway.
+#[cfg(not(target_os = "linux"))]
+fn rasterize_svg(_path: &Path, _size: u32) -> Option<Vec<u8>> {
+    None
 }
 
 #[cfg(test)]
@@ -835,9 +874,9 @@ Type=Fixed
 
     #[test]
     fn an_unreadable_icon_file_is_a_miss() {
-        assert!(read_icon_file(Path::new("/nonexistent/folder.svg")).is_none());
+        assert!(read_icon_file(Path::new("/nonexistent/folder.svg"), 32).is_none());
         // A `.xpm` that exists is still not something to hand to a webview.
-        assert!(read_icon_file(Path::new("/usr/share/pixmaps")).is_none());
+        assert!(read_icon_file(Path::new("/usr/share/pixmaps"), 32).is_none());
     }
 
     #[test]

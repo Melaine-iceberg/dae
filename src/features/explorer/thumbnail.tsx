@@ -4,6 +4,7 @@ import { isWindowsPlatform } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import { getFileExtension } from "./file-icons";
+import { devicePixelSize } from "./native-icon";
 import type { DirectoryEntry } from "./types";
 
 /**
@@ -102,7 +103,10 @@ export function isThumbnailSupported(entry: DirectoryEntry): boolean {
   return (entry.size ?? 0) <= SHELL_THUMBNAIL_MAX_BYTES;
 }
 
-/** Windows exposes Tauri custom schemes as `http://<scheme>.localhost`. */
+/** Windows exposes Tauri custom schemes as `http://<scheme>.localhost`.
+ *
+ *  Cross-origin to the page either way, which is why the `<img>` below carries
+ *  `crossOrigin="anonymous"` — see `FILE_ICON_URL_ORIGIN` in `native-icon.tsx`. */
 const THUMBNAIL_URL_ORIGIN = isWindowsPlatform
   ? "http://thumbnail.localhost"
   : "thumbnail://localhost";
@@ -115,21 +119,6 @@ const THUMBNAIL_URL_ORIGIN = isWindowsPlatform
 export function buildThumbnailUrl(entry: DirectoryEntry, size: number): string {
   const version = `${entry.modifiedAt ?? 0}-${entry.size ?? 0}`;
   return `${THUMBNAIL_URL_ORIGIN}/?path=${encodeURIComponent(entry.path)}&size=${size}&v=${version}`;
-}
-
-/**
- * The device-pixel size to request for a box of `cssSize` CSS pixels.
- *
- * The protocol hands back a bitmap of exactly the requested size, so a
- * request made in CSS pixels is the one thing that makes a thumbnail look
- * soft on a HiDPI screen: the webview then has to invent the missing rows.
- * Doubling closes that, and the cap at 2x is where a thumbnail read at a
- * glance stops earning its bytes — the cache key includes the size, so the
- * extra pixels cost a decode once per file, not per scroll.
- */
-function devicePixelSize(cssSize: number): number {
-  const ratio = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
-  return Math.round(cssSize * ratio);
 }
 
 /**
@@ -204,6 +193,7 @@ export function ThumbnailImage({
         <img
           alt=""
           className="h-full w-full object-contain"
+          crossOrigin="anonymous"
           draggable={false}
           decoding="async"
           onError={() => setIsFailed(true)}

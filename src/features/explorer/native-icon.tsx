@@ -15,7 +15,14 @@ import type { DirectoryEntry } from "./types";
  *  path; everywhere else an extension's icon is shared by every file with it. */
 const FILE_SPECIFIC_ICON_EXTENSIONS = new Set(["exe", "msi", "lnk", "url", "dll", "scr", "cpl"]);
 
-/** Windows exposes Tauri custom schemes as `http://<scheme>.localhost`. */
+/** Windows exposes Tauri custom schemes as `http://<scheme>.localhost`.
+ *
+ *  Cross-origin to the page either way, which is why every `<img>` below carries
+ *  `crossOrigin="anonymous"`: WebKitGTK refuses a *no-cors* subresource load of a
+ *  custom scheme outright — the request is never sent, so the row takes its
+ *  `onError` fallback and nothing is left in any log to explain the empty icon. A
+ *  CORS-mode load is sent, and the backend answers it with
+ *  `Access-Control-Allow-Origin`. */
 const FILE_ICON_URL_ORIGIN = isWindowsPlatform
   ? "http://fileicon.localhost"
   : "fileicon://localhost";
@@ -118,6 +125,19 @@ export function buildNamedIconUrl(name: string, size: number): string {
 }
 
 /**
+ * The device pixels a box of `cssSize` CSS pixels actually paints.
+ *
+ * Asking in CSS pixels is the one thing that makes a served bitmap look soft:
+ * on a fractional scale (1.5) a 16-px row is 24 device pixels, and a raster
+ * sized for one of those two has to be resampled to the other. The cap at 2 is
+ * where a third pixel per CSS pixel stops being visible in an icon.
+ */
+export function devicePixelSize(cssSize: number): number {
+  const ratio = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
+  return Math.round(cssSize * ratio);
+}
+
+/**
  * The OS-native icon for one entry: the Solar fallback draws until the shell icon
  * arrives, and stays for good on any error (a missing path, a dead shortcut
  * target, a platform whose shell has nothing for this file), so every slot always
@@ -141,9 +161,9 @@ export function NativeIconImage({
 }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [isFailed, setIsFailed] = useState(false);
-  // Ask for 2x so HiDPI displays get a crisp bitmap; the shell caps larger
-  // requests at its biggest stock size anyway.
-  const iconUrl = buildFileIconUrl(entry, Math.min(pixelSize * 2, 256));
+  // Ask for the device pixels the slot paints, not a fixed multiple of them:
+  // the shell caps larger requests at its biggest stock size anyway.
+  const iconUrl = buildFileIconUrl(entry, Math.min(devicePixelSize(pixelSize), 256));
   const dimension: CSSProperties = { width: pixelSize, height: pixelSize };
 
   useEffect(() => {
@@ -156,6 +176,7 @@ export function NativeIconImage({
       <img
         alt=""
         className={className}
+        crossOrigin="anonymous"
         decoding="async"
         draggable={false}
         src={iconUrl}
@@ -174,6 +195,7 @@ export function NativeIconImage({
         <img
           alt=""
           className="hidden"
+          crossOrigin="anonymous"
           decoding="async"
           draggable={false}
           onError={() => setIsFailed(true)}

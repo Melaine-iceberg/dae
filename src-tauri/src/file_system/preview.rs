@@ -511,6 +511,7 @@ fn render_response(kind: RenderKind, query: &str) -> ProtocolResponse {
     match rendered {
         Ok(Some(rendered)) => tauri::http::Response::builder()
             .header("Content-Type", rendered.mime)
+            .header("Access-Control-Allow-Origin", ALLOW_ORIGIN)
             // Every URL is versioned by what it is an icon *of* — an entry's
             // mtime and size, or a type and a size — so a given URL never
             // changes. See [`render_file_icon`] and [`render_type_icon`].
@@ -524,9 +525,22 @@ fn render_response(kind: RenderKind, query: &str) -> ProtocolResponse {
     }
 }
 
+/// Who may read these bytes: any origin.
+///
+/// The schemes are cross-origin to the page, and wry registers a custom scheme
+/// as *secure* only — never CORS-enabled — so WebKitGTK refuses a plain `<img>`
+/// load of one without dispatching it at all: the request never reaches this
+/// handler and every icon silently falls back to its drawn glyph. A CORS-mode
+/// load (`crossOrigin="anonymous"` on the element) *is* dispatched, and this
+/// header is what it then has to pass. `*` rather than the window's own origin
+/// because these responses carry no credentials and `UriSchemeContext` exposes
+/// no origin to name one by.
+const ALLOW_ORIGIN: &str = "*";
+
 fn empty_response(status: u16) -> ProtocolResponse {
     tauri::http::Response::builder()
         .status(status)
+        .header("Access-Control-Allow-Origin", ALLOW_ORIGIN)
         .body(Cow::Owned(Vec::new()))
         .expect("static protocol response is always valid")
 }

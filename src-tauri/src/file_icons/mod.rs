@@ -19,9 +19,10 @@
 //! rather than a failure: it means this file has no icon the OS can name, and the
 //! frontend keeps its own artwork.
 
-/// One rendered icon. `mime` travels with the bytes because Linux answers with
-/// SVG wherever the installed theme ships one, and a webview will only render
-/// that as a vector if it is told it is one.
+/// One rendered icon. `mime` travels with the bytes because the producers
+/// disagree about format: Linux rasterizes a themed SVG to PNG at the requested
+/// size (see `file_icons::linux` for why the vector must not reach the webview),
+/// while the other two platforms hand back whatever their shell extracted.
 pub(crate) struct FileIcon {
     pub mime: &'static str,
     pub bytes: Vec<u8>,

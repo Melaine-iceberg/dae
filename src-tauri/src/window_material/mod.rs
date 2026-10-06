@@ -422,9 +422,12 @@ mod tests {
     }
 
     /// A material `index.html` has never heard of has to leave the splash opaque,
-    /// and the five literals above are exactly the set it whitelists. Rust adds a
-    /// variant, the page keeps painting its own canvas, and only the CSS seam
-    /// learns the new name.
+    /// so every name `boot_script` can emit has to be one the page recognises. It
+    /// recognises the four named materials as compared literals and lets
+    /// everything else fall through to `"none"` — which is therefore the fallback
+    /// value rather than a fifth comparison, and is what the page writes for an
+    /// explicit `"none"` too. Rust adds a variant, the page keeps painting its own
+    /// canvas, and only the CSS seam learns the new name.
     #[test]
     fn every_boot_script_literal_is_one_the_splash_whitelists() {
         let whitelisted = include_str!("../../../index.html");
@@ -435,7 +438,10 @@ mod tests {
             Material::Blur,
             Material::None,
         ] {
-            let spelling = format!("material === \"{}\"", material.as_str());
+            let spelling = match material {
+                Material::None => ": \"none\"".to_owned(),
+                named => format!("material === \"{}\"", named.as_str()),
+            };
             assert!(
                 whitelisted.contains(&spelling),
                 "{spelling:?} is not in the splash's whitelist"

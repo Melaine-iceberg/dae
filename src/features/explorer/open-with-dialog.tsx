@@ -20,7 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
 import { cn } from "@/lib/utils";
 
-import { buildNamedIconUrl } from "./native-icon";
+import { buildNamedIconUrl, devicePixelSize } from "./native-icon";
 
 const LOADING_ROW_COUNT = 6;
 
@@ -266,12 +266,13 @@ function AppIcon({ name }: { name: string | null }) {
     <img
       alt=""
       className="size-4 shrink-0"
+      crossOrigin="anonymous"
       decoding="async"
       draggable={false}
       onError={() => setFailed(true)}
-      // Asked for at 2x the 16px the row renders at, so a scaled display gets
-      // real pixels rather than an upscale.
-      src={buildNamedIconUrl(name, 32)}
+      // The row paints 16 CSS px; asking for the device pixels behind them is
+      // what lets the served bitmap land 1:1 instead of resampled.
+      src={buildNamedIconUrl(name, devicePixelSize(16))}
     />
   );
 }
