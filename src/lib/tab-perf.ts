@@ -87,12 +87,17 @@ export function tabPerfAdoptProbe(): void {
   tabPerfMark("adopt");
 
   let done = false;
+  // Whether the root actually changed. A merge that paints nothing would
+  // otherwise reach the fallback below, and the fallback's own delay would be
+  // reported as the adoption having taken that long.
+  let committed = false;
   const root = document.getElementById("root");
   const finish = () => {
     if (done) return;
     done = true;
     observer?.disconnect();
     requestAnimationFrame(() => {
+      if (!committed) tabPerfMark("adopt-no-commit");
       tabPerfMark("adopt-painted");
       // Zeroes on the split, so this block reads as what the adoption cost
       // rather than as the time this window happened to have been alive.
@@ -101,7 +106,10 @@ export function tabPerfAdoptProbe(): void {
   };
   const observer =
     root && typeof MutationObserver !== "undefined"
-      ? new MutationObserver(finish)
+      ? new MutationObserver(() => {
+          committed = true;
+          finish();
+        })
       : undefined;
 
   if (observer && root) {
