@@ -57,3 +57,42 @@ export function tabPerfReport(): void {
     data: JSON.stringify({ label, anchor, marks }),
   }).catch(() => {});
 }
+
+/**
+ * Measures a tab being merged into this window, which is the work a warm pool
+ * would have to do to adopt it: re-point an already-booted React tree at
+ * different content.
+ *
+ * The soak path already carries a tab across windows, so the number can come
+ * from the real interaction instead of from a pool built to measure it. The
+ * paint is taken from a mutation of the root rather than from the call, for the
+ * reason given in `main.tsx`: a frame requested before React commits paints the
+ * old content and reports a number that is too small.
+ */
+export function tabPerfAdoptProbe(): void {
+  if (!tabPerfEnabled()) return;
+  tabPerfMark("adopt");
+
+  let done = false;
+  const root = document.getElementById("root");
+  const finish = () => {
+    if (done) return;
+    done = true;
+    observer?.disconnect();
+    requestAnimationFrame(() => {
+      tabPerfMark("adopt-painted");
+      tabPerfReport();
+    });
+  };
+  const observer =
+    root && typeof MutationObserver !== "undefined"
+      ? new MutationObserver(finish)
+      : undefined;
+
+  if (observer && root) {
+    observer.observe(root, { childList: true, subtree: true, characterData: true });
+  }
+  // A merge that changes nothing visible would otherwise never report, and a
+  // probe that stays silent reads as a probe that was never switched on.
+  setTimeout(finish, 2000);
+}

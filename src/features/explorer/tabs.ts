@@ -3,6 +3,7 @@ import { atomFamily } from "jotai-family";
 
 import { commands } from "@/bindings";
 import { getAppWindow } from "@/lib/app-window";
+import { tabPerfAdoptProbe } from "@/lib/tab-perf";
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import type { WorkspaceSurface } from "@/features/workspace/types";
 
@@ -184,6 +185,8 @@ export function restoreInitialTabHandoff(payload: string): WorkspaceSurface {
  * Mirrors `restoreInitialTabHandoff` but for a window that is already
  * running, so the merged tab lands beside the existing tabs. */
 export function mergeTabFromHandoff(payload: string, index: number): void {
+  // Times the merge itself, which is the same re-point a warm pool would do.
+  tabPerfAdoptProbe();
   const tab = createTabEntry();
   applyTabHandoff(tab.id, payload);
 
