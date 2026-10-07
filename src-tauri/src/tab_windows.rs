@@ -1134,6 +1134,32 @@ pub fn tear_off_tab(
         log::warn!("Unable to register the tab drop target: {error}");
     }
 
+    // Probe for the warm-pool question (NOTES.md): with `DAE_TAB_PERF_HIDE_MS`
+    // set, the show is deferred, so this window's own timeline says whether it
+    // reached `first-frame` without ever having been shown. That is the
+    // difference between a pool that banks the cold start and one that only
+    // defers it to the moment the window appears.
+    let defer_ms = std::env::var("DAE_TAB_PERF_HIDE_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    if defer_ms > 0 {
+        crate::tab_perf::mark("SHOW_DEFERRED");
+        let deferred = window.clone();
+        let deferred_label = label.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(defer_ms)).await;
+            crate::tab_perf::mark_for(&deferred_label, "SHOWING");
+            if let Err(error) = deferred.show() {
+                log::warn!("Unable to show a deferred probe window: {error}");
+            }
+            let _ = deferred.set_focus();
+            crate::tab_perf::mark_for(&deferred_label, "SHOWN");
+        });
+        return Ok(label);
+    }
+
     if let Err(error) = window.show() {
         let _ = window.close();
         let _ = state.take(&label);

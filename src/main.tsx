@@ -99,6 +99,11 @@ async function bootstrap() {
     // first one after the commit, so it is measured from here.
     requestAnimationFrame(() => {
       tabPerfMark("first-frame");
+      // The warm-pool question, in one row. If this says `hidden`, a window
+      // nobody has looked at still reached a frame, so a pool could bank the
+      // work. If it only ever says `visible`, WebKit held the work back until
+      // the window was shown and a pool would have banked nothing at all.
+      tabPerfMark(`gfx:${document.visibilityState}`);
       setTimeout(report, 0);
     });
   });
