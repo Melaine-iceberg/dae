@@ -364,12 +364,13 @@ PoC 代码位置：
   `docs/decisions/`，作为决策记录与实测证据留存。
   **正文基本保持当时原文**；仅在 2026-10-07 归档时改了两处：① 顶部加了否决决定与附注；
   ② §1 「现状」按 `main` 实际代码核实重写（原文对现有拖动机制的描述不准）。
-- PoC 代码不在 `main` 上，仍在本地分支 `try/webview-reparent`（无 upstream）：
+- PoC 代码**已随本文档一起进 `main` 存档**：`docs/decisions/poc/webview-reparent/`
+  （`reparent_poc.rs` / `reparent-poc.html` / `webview-memory.py` + 接回说明 README）。
+  这些文件在 `main` 上**不参与构建**（不在任何 crate 模块里），无需 `unstable` feature。
+- 原始分支 `try/webview-reparent`（本地，无 upstream）仍保留，历史 commit：
   `648127f` spike → `56bcbe4` 真 `WebviewWindow`/往返/关闭 → `ba501b8` 本文档 →
-  `dc3d865` 真 app bundle → `39277bd` 内存代价。含 `src-tauri/src/reparent_poc.rs`、
-  `public/reparent-poc.html`、`scripts/dev/webview-memory.py`，以及 `Cargo.toml` 里
-  仅 PoC 需要的 `tauri` `unstable` feature。
-  **`main` 停在 `92c9bb3`，从未包含任何 PoC 代码或 `unstable` feature —— 无需回退。**
+  `dc3d865` 真 app bundle → `39277bd` 内存代价。
+  **`main` 的源码停在 `92c9bb3`，从未包含任何 PoC 代码或 `unstable` feature —— 无需回退。**
 - 原始实测日志（`/tmp/dae-reparent-poc.jsonl` 的摘录）在 `NOTES.md`，该文件被 gitignore，
   只存在于当时那台机器上；复现命令见 §7。
 - 与标签页方案解耦、仍然有效的遗留项：**§4.7**（已拍定：先记账，不排期）。
