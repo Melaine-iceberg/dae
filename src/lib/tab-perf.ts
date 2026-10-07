@@ -77,6 +77,9 @@ export function tabPerfReport(anchorAt?: number): void {
  */
 export function tabPerfAdoptProbe(): void {
   if (!tabPerfEnabled()) return;
+  // Boot happened minutes ago and was reported then; only what follows belongs
+  // to this block, or every row above it reads as a negative offset.
+  marks.length = 0;
   tabPerfMark("adopt");
 
   let done = false;
