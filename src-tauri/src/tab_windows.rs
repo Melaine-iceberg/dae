@@ -1184,6 +1184,22 @@ fn finite_i32(value: f64) -> i32 {
 /// thread. A non-`async` command runs inline on the thread that received the
 /// invoke, which on every platform this app builds windows on is the one that
 /// owns the event loop, so the eval completes where it is issued.
+/// The two things every window that can hold a tab owes, whether it was built
+/// for the tear-off or adopted from the pool.
+///
+/// Kept together because forgetting the second is invisible until a drag is
+/// refused: GTK dispatches motion and delivers a drop at all only for a window
+/// that claims to accept it, so a window missing this quietly turns the merge
+/// the user meant into a tear-off. Must run on the main thread, which is the
+/// only thread GTK may be touched from.
+fn finish_tab_window(window: &tauri::WebviewWindow) {
+    crate::window_material::attach(window);
+    #[cfg(target_os = "linux")]
+    if let Err(error) = attach_tab_drop_target(window) {
+        log::warn!("Unable to register the tab drop target: {error}");
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
@@ -1234,7 +1250,7 @@ pub fn tear_off_tab(
             crate::tab_perf::mark("ADOPTED");
             let _ = window.set_size(tauri::LogicalSize::new(width, height));
             let _ = window.set_position(PhysicalPosition::new(physical_x, physical_y));
-            crate::window_material::attach(&window);
+            finish_tab_window(&window);
             emit_to_window(&app, pooled.clone(), TabAdoptedIntoWindow { payload });
             if let Err(error) = window.show() {
                 log::warn!("Unable to show a pooled window: {error}");
@@ -1322,16 +1338,7 @@ pub fn tear_off_tab(
     // physical desktop coordinates so mixed-DPI monitor layouts stay aligned.
     let _ = window.set_position(PhysicalPosition::new(physical_x, physical_y));
 
-    crate::window_material::attach(&window);
-
-    // A window that does not declare itself a tab drop destination is one GTK
-    // refuses the drag for outright, so a window able to receive a torn-off tab
-    // has to say so before the next drag starts. This command runs on the main
-    // thread, which is the only thread GTK may be touched from.
-    #[cfg(target_os = "linux")]
-    if let Err(error) = attach_tab_drop_target(&window) {
-        log::warn!("Unable to register the tab drop target: {error}");
-    }
+    finish_tab_window(&window);
 
     // Probe for the warm-pool question (NOTES.md): with `DAE_TAB_PERF_HIDE_MS`
     // set, the show is deferred, so this window's own timeline says whether it
@@ -1370,8 +1377,6 @@ pub fn tear_off_tab(
     Ok(label)
 }
 
-/// Pulls the snapshot parked for a newly created window and clears it. The new
-/// frontend calls this once before its first render.
 /// Primes the warm pool, for the startup path which has no other reason to
 /// touch it. Delayed by the caller so the app's own launch does not compete
 /// with a window nobody has asked for yet.
@@ -1381,6 +1386,8 @@ pub fn prime_pool_at_startup(app: &tauri::AppHandle) {
     }
 }
 
+/// Pulls the snapshot parked for a newly created window and clears it. The new
+/// frontend calls this once before its first render.
 #[tauri::command]
 #[specta::specta]
 pub fn take_tab_handoff(
