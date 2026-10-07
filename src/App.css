@@ -1382,7 +1382,8 @@ html body,
                             terminal all take it, so "card" is one shape language
                             in the window rather than three.
        .tab-trough          the channel the tab strip sits in — the field pressed
-                            *down*, the only recessed surface in the shell.
+                            *down*, the recess the glass pill floats in; idle
+                            tabs are bare labels in it, divided by hairlines.
        .tab-pill            the plate under the current tab, which slides along
                             the trough between tabs.
        .glass-active        the "I am here" plate — a nav row, a chip, a segment
@@ -1475,10 +1476,11 @@ html body,
   /* THE TROUGH — the channel the tab chips sit in, and the only recessed
      surface in the shell. Everything else here rises off the field, so a groove
      has to be the one thing that goes the other way: it is what makes a row of
-     tabs read as *held* rather than as scattered. Three shadows do the work. A
-     recess throws its shadow at the NEAR edge, so the dark line is inset at the
-     top and the light catch at the bottom lip — the reverse of a raised plate,
-     which is exactly the cue that says "down" without a colour change. */
+     tabs read as *held* rather than as scattered, and it is the shadow the
+     glass pills float over. Three shadows do the work. A recess throws its
+     shadow at the NEAR edge, so the dark line is inset at the top and the light
+     catch at the bottom lip — the reverse of a raised plate, which is exactly
+     the cue that says "down" without a colour change. */
   .tab-trough {
     border-radius: var(--radius-lg);
     background-image: linear-gradient(
@@ -1504,29 +1506,38 @@ html body,
      No `backdrop-filter` here on purpose. A moving blur is the single most
      expensive thing a compositor can be asked to animate, and it would be
      spending itself on a 32px plate whose entire backdrop is the trough's own
-     flat wash — the glass is carried by the rim and the shadow instead.
+     flat wash — the liquid glass is carried by a soft top sheen, a low-alpha
+     hairline and the bloom halo instead of by refraction. Every catch here is
+     blurred on purpose: a sharp specular lip on a 32px plate reads as
+     polished metal, not glass.
 
-     The fill is `--card` at full density rather than `--panel-frost`, which is
-     the one place a plate does NOT take the plane's glass: it sits in a
-     *recessed* channel, so a tenth of see-through lets the trough's own shadow
-     come up through the file name it is supposed to be highlighting.
+     The fill is `--card` at four fifths rather than full density: the missing
+     fifth is what makes the capsule glass instead of plastic — the window's
+     own wash tints it from behind, the way the reference's active pill picks
+     up the pink of its bar. Eighty percent is as far as a plate sitting in a
+     *recessed* channel can go: any more see-through and the trough's own
+     shadow reads up through the file name it is supposed to be highlighting.
 
      The tab's own text paints above it (both are positioned, and the pill comes
      first in DOM order), so the chip stays clickable through it and the pill
      never has to answer for a pointer. */
   .tab-pill {
+    --tab-pill-fill: color-mix(in oklab, var(--card) 80%, transparent);
     position: absolute;
     top: 0;
     left: 0;
     border-radius: var(--radius-md);
-    border: 1px solid transparent;
     background-image:
-      linear-gradient(var(--card), var(--card)),
-      var(--island-rim);
-    background-origin: border-box;
-    background-clip: padding-box, border-box;
+      linear-gradient(
+        color-mix(in oklab, var(--glass-specular) 65%, transparent),
+        transparent 55%
+      ),
+      linear-gradient(var(--tab-pill-fill), var(--tab-pill-fill));
     box-shadow:
-      inset 0 1px 0 var(--glass-specular),
+      inset 0 0 0 1px color-mix(in oklab, var(--glass-specular) 55%, transparent),
+      inset 0 1px 2px -1px var(--glass-specular),
+      inset 0 -1px 2px -1px var(--glass-caustic),
+      0 -2px 10px var(--glass-bloom),
       var(--shadow-ambient-sm);
     opacity: 0;
     pointer-events: none;
@@ -1550,6 +1561,25 @@ html body,
      covers the strip scrolling under an auto-scroll during a drag-out. */
   .tab-pill[data-hold="true"] {
     transition: none;
+  }
+
+  /* THE DIVIDER — idle tabs are bare labels now, so what holds the row together
+     is a hairline standing in the gap between neighbours, the way the
+     reference separates its undivided tabs: a 1px foreground wash, centred in
+     the gap and short of both chips' full height so it reads as a separator,
+     not a border. Only BETWEEN chips (the `+`), never ahead of the first. The
+     travelling pill crosses none of them: the capsule is the only "you are
+     here", and the lines are what keep the bare labels from scattering. */
+  .tab-trough [role="tab"] + [role="tab"]::before {
+    content: "";
+    position: absolute;
+    left: -4px;
+    top: 50%;
+    width: 1px;
+    height: 16px;
+    transform: translateY(-50%);
+    background-color: color-mix(in oklab, var(--foreground) 14%, transparent);
+    pointer-events: none;
   }
 
   /* Path hints keep their filename readable: flipped text direction moves the

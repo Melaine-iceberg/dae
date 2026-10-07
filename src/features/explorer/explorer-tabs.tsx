@@ -434,8 +434,8 @@ export function ExplorerTabs() {
           canvas until a backdrop claims it (see THE WINDOW-MATERIAL SEAM), and
           the base scheme declares it transparent — so the frosted field `body`
           puts down runs through the frame and the content row as one pane. The
-          only thing in the bar that reads as a surface is the trough the chips
-          sit in. */}
+          idle chips are bare labels divided by hairlines; the travelling glass
+          pill under the current tab is the only surface in the bar. */}
       <header
         className="flex h-tab-strip shrink-0 items-stretch bg-chrome"
         data-tab-bar="true"
@@ -450,7 +450,7 @@ export function ExplorerTabs() {
         <div
           ref={stripRef}
           aria-label={t("tabs.ariaLabel")}
-          className="tab-trough relative my-1 flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
+          className="tab-trough relative my-1 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
           // A tab drag pins its pointer capture here (see `tab-drag.ts`), and the
           // header above is a `deep` drag region, so the strip has to opt out
           // explicitly or the captured events read as a request to move the
@@ -467,15 +467,6 @@ export function ExplorerTabs() {
           {tabs.map((tab, index) => (
             <TabStripItem key={tab.id} index={index} isActive={tab.id === activeTabId} tab={tab} />
           ))}
-          <button
-            aria-label={t("tabs.newTab")}
-            className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
-            onClick={createTab}
-            title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
-            type="button"
-          >
-            <AddIcon className="size-3.5" />
-          </button>
         </div>
         <StripScrollButton
           aria-label={t("tabs.scrollRight")}
@@ -483,6 +474,21 @@ export function ExplorerTabs() {
           onClick={() => scrollStrip(1)}
           visible={canScroll.right}
         />
+        {/* Bar-level, not strip-level: the plus stays put at the trailing edge
+            while the chips scroll under it, the way the reference bar keeps
+            its new-tab button out of the tab row. On macOS the traffic lights
+            order themselves first, so this lands at the window's far right.
+            `self-center` because the bar stretches its children: a fixed-height
+            button under `items-stretch` otherwise pins to the top edge. */}
+        <button
+          aria-label={t("tabs.newTab")}
+          className="mx-1 flex size-6 shrink-0 items-center justify-center self-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+          onClick={createTab}
+          title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
+          type="button"
+        >
+          <AddIcon className="size-3.5" />
+        </button>
         <WindowControls />
       </header>
 
@@ -854,13 +860,13 @@ function TabStripItem({
       aria-grabbed={isDragging}
       aria-selected={isActive}
       className={cn(
-        // Linear tab: a compact 32px chip floating in the trough. The chip
-        // carries no plate of its own — the persistent `.tab-pill` behind it is
-        // what says "you are here", and it slides along the channel rather than
-        // swapping one chip's fill for another's. So the active tab's only job
-        // here is ink and weight; the inactive ones keep a whisper of fill,
-        // which is what makes a strip of several read as a row of plates in a
-        // groove instead of a row of bare labels.
+        // Linear tab: a compact 32px bare label floating in the trough. Idle
+        // tabs carry no shell of their own — a hairline between neighbours
+        // (App.css, THE DIVIDER) is all that separates them, and the persistent
+        // `.tab-pill` behind the current one is the single glass capsule in
+        // the row, sliding to whichever tab you click. So the active tab's
+        // only job here is ink and weight; the state layer's wash is the
+        // idle tab's whole hover.
         //
         // The press is the gesture's `data-pressed` rather than `:active`, and
         // the grabbing cursor with it: a tab dragged past the window edge is
@@ -870,7 +876,7 @@ function TabStripItem({
         "group state-layer relative flex h-8 w-52 shrink-0 touch-none cursor-grab items-center rounded-md text-body select-none transition-[background-color,color,opacity] duration-fast ease-standard data-[pressed=true]:cursor-grabbing",
         isActive
           ? "font-medium text-foreground"
-          : "bg-card/35 text-muted-foreground hover:bg-card/60 hover:text-foreground",
+          : "text-muted-foreground hover:text-foreground",
         isDragging && "opacity-30",
       )}
       data-pressed={dragPressed ? "true" : "false"}
