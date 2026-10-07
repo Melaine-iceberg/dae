@@ -75,7 +75,24 @@ async function bootstrap() {
   if (bootsOnFolder) await explorerPreload;
   tabPerfMark("chunk");
 
-  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  const root = document.getElementById("root") as HTMLElement;
+
+  // `render -> first-frame` used to be one number, so it could not say whether
+  // the main thread was busy or idle. These split it into the three things it
+  // can be: React producing DOM, the event loop coming back, and a frame being
+  // painted. Creating the observer is free; only observing costs anything, and
+  // that happens only when the probe is on.
+  const observer = new MutationObserver(() => {
+    tabPerfMark("commit");
+    observer.disconnect();
+  });
+
+  if (tabPerfEnabled()) {
+    tabPerfMark("render");
+    observer.observe(root, { childList: true, subtree: true });
+  }
+
+  ReactDOM.createRoot(root).render(
     <QueryClientProvider client={queryClient}>
       <React.StrictMode>
         <App />
@@ -84,12 +101,18 @@ async function bootstrap() {
   );
 
   // The last mark is the frame that replaces the splash with real content, and
-  // it is the one the user is really waiting on.
+  // it is the one the user is really waiting on. `tick` is queued before the
+  // frame request so FIFO runs it first: a late tick means the main thread was
+  // busy, an early one means React deferred its own work and the window was
+  // waiting rather than working.
   if (tabPerfEnabled()) {
-    tabPerfMark("render");
+    setTimeout(() => tabPerfMark("tick"), 0);
     requestAnimationFrame(() => {
       tabPerfMark("first-frame");
-      tabPerfReport();
+      // Reports only after `tick` has had its turn, for the same FIFO reason.
+      // Deliberately not marked: `first-frame` should stay the last row so that
+      // TOTAL keeps meaning "time until the user can see content".
+      setTimeout(tabPerfReport, 0);
     });
   }
 
