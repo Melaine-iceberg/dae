@@ -2,6 +2,7 @@ import { lazy, Suspense, type ComponentType } from "react";
 import { useAtomValue } from "jotai";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { tabPerfMark } from "@/lib/tab-perf";
 
 import { OverviewView } from "./overview-view";
 import { tabSurfaceFamily } from "./tab-surface";
@@ -9,14 +10,35 @@ import { tabSurfaceFamily } from "./tab-surface";
 // Only the Overview surface is rendered on the first frame; every other
 // surface loads its chunk on demand so the initial JS parse stays lean.
 const LazySplitExplorerView = lazy(() =>
-  import("@/features/explorer/split-view").then((m) => ({ default: m.SplitExplorerView })),
+  import("@/features/explorer/split-view").then((m) => {
+    tabPerfMark("chunk:split-view");
+    return { default: m.SplitExplorerView };
+  }),
 );
-const RecentsView = lazy(() => import("./recents-view").then((m) => ({ default: m.RecentsView })));
+const RecentsView = lazy(() =>
+  import("./recents-view").then((m) => {
+    tabPerfMark("chunk:recents");
+    return { default: m.RecentsView };
+  }),
+);
 const FavoritesView = lazy(() =>
-  import("./favorites-view").then((m) => ({ default: m.FavoritesView })),
+  import("./favorites-view").then((m) => {
+    tabPerfMark("chunk:favorites");
+    return { default: m.FavoritesView };
+  }),
 );
-const TrashView = lazy(() => import("./trash-view").then((m) => ({ default: m.TrashView })));
-const SpaceView = lazy(() => import("./space-view").then((m) => ({ default: m.SpaceView })));
+const TrashView = lazy(() =>
+  import("./trash-view").then((m) => {
+    tabPerfMark("chunk:trash");
+    return { default: m.TrashView };
+  }),
+);
+const SpaceView = lazy(() =>
+  import("./space-view").then((m) => {
+    tabPerfMark("chunk:space");
+    return { default: m.SpaceView };
+  }),
+);
 
 type SplitExplorerProps = { active?: boolean; tabId: string };
 

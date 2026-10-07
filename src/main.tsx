@@ -105,6 +105,18 @@ async function bootstrap() {
 
   if (tabPerfEnabled()) {
     tabPerfMark("render");
+    // Data arrival. OverviewView is imported eagerly, so whatever the first
+    // frame waits for cannot be that surface's chunk; the cache is what tells a
+    // fetch apart from a chunk load, and when the fetch settled.
+    queryClient.getQueryCache().subscribe((event) => {
+      const query = (event as { query?: { queryKey?: unknown; state?: { status?: string } } })
+        .query;
+      const status = query?.state?.status;
+      if (status !== "success" && status !== "error") return;
+      const key = query?.queryKey;
+      const label = Array.isArray(key) ? String(key[0]) : String(key);
+      tabPerfMark(`query[${label}]:${status}`);
+    });
     observer.observe(root, { childList: true, subtree: true });
     // How quickly the event loop came back. Within a millisecond or two means
     // React was not starving it, and any later commit delay is React's own work.
