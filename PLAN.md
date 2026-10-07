@@ -1,8 +1,14 @@
 # 迁移计划：标签页拖动改为 webview reparent（浏览器语义）
 
-> 状态：**计划已定，尚未开始改造应用代码**。可行性 PoC 已完成并提交。
+> 状态：**计划已定，尚未开始改造应用代码**。可行性 PoC 已完成并提交，2026-10-07 复测通过
+> （PSS 复核 + 场景 4：**跑真 app bundle 的 webview 被 reparent，JS 上下文存活**，见 §2.5）。
 > 分支：`try/webview-reparent`（2 个 commit：`648127f`、`56bcbe4`）。`main` 未受影响。
 > 本文档自包含，可在新对话里直接接手。原始实测日志见 `NOTES.md`（被 .gitignore 忽略，仅本地）。
+>
+> **复测新增的坑**：关掉窗口的 `WebKitWebProcess` 不退出（§4.7，现有架构已存在，根因定位到 wry
+> 的 GObject 引用环，6 行 patch 本地验证有效，怎么带待拍板 §6.5）；`WebviewWindow::webviews()`
+> 计数不按窗口过滤（§2.2）；新父窗口标题不跟随 `document.title`（§4.8）；
+> 同一窗口的多个 webview 是**上下平分而不是叠加**，布局必须显式设 bounds（§4.3、§2.5）。
 
 ---
 
@@ -16,32 +22,83 @@
 
 ## 2. 已实测结论（Linux / WebKitGTK 2.54.1 / Wayland / niri）
 
-PoC：`src-tauri/src/reparent_poc.rs` + `public/reparent-poc.html`，由 `DAE_POC_REPARENT=1` 门控，
-日志写 `/tmp/dae-reparent-poc.jsonl`。
+PoC：`src-tauri/src/reparent_poc.rs` + `public/reparent-poc.html`。
+`DAE_POC_REPARENT=1` 跑静态探针页的三个场景（场景 1–3）；
+`DAE_POC_REALTAB=1` 单独跑**场景 4：真 app bundle 的 webview**（两个 `window_material` 窗口载 `index.html`）。
+日志都写 `/tmp/dae-reparent-poc.jsonl`。
 
 | 场景 | 结果 |
 |---|---|
 | `Window` + `add_child` 的 webview reparent | ok |
 | **真 `WebviewWindow`** 的 webview → 另一个 `WebviewWindow` | ok |
 | 拖回来（往返） | ok |
-| 关掉被搬空的源窗口 | ok（`dst_still_registered=false`，不炸） |
+| 关掉**被搬空的源窗口** | ok（`dst_still_registered=false`，不炸）；但见 §4.7 —— 场景 3 那个窗口当时其实**没被搬空**，关掉后它的 web 进程没退出 |
+| reparent 后目标窗口是否真的出图 | ok（grim 截图：页面在新父窗口里正常绘制，非空白；被搬空的源窗口是纯黑） |
+| reparent 后新父窗口标题跟随 `document.title` | **不跟随**（见 §4.8） |
+| **场景 4：跑真 app 的 webview 被 reparent**（React 树 / IPC / 445 个 DOM 节点） | **ok**，见 §2.5 |
+| 场景 4：一个窗口同时承载 2 个真 app webview | 能渲染，但**不是叠加而是上下平分**（841×910 → 各 841×455），见 §4.3 |
 
 跨 reparent 全程：`boot` id 不变、`ticks` 22→59→101→149 连续、`scrollY` 保留、
 `__TAURI_INTERNALS__.invoke` 存活、JS 堆探针对象存活。→ **同一 JS 上下文，未重载**。
+复测再次得到同样结论：场景 1 `boot=d1579b5h` ticks 24→59；场景 2 `boot=bxjct7v6` ticks 23→59→102→150。
 
 关键结论：
 
 1. `Webview::reparent` 里 `CannotReparentWebviewWindow` 的检查是 `#[cfg(not(feature = "unstable"))]`。
    **开 `unstable` 即整段跳过** → 不需要把窗口改造成 `Window`+`add_child`，真 `WebviewWindow` 也能搬。
    目标窗口用 `app.get_window(label)` 拿 `&Window`。
-2. Tauri 记账自动正确：`Window::webviews()` 按 `window_label()` 过滤，移动后计数自动跟上。
+2. Tauri 记账自动正确 —— 但**只有 `Window::webviews()` 正确**：它按 `window_label()` 过滤，移动后计数自动跟上。
+   `WebviewWindow::webviews()` 返回的是**全 app 的 webview 数**（复测 `ww-built` 事件里 src/dst 都是 4，
+   当时全 app 正好 4 个）。→ 判「这个窗口还剩几个 tab」只能用 `app.get_window(label).webviews()`，见 §4.7。
 3. **JS 侧 `currentWindow.label` 在 reparent 后过期**（init script 只在页面加载时注入一次），
    而 `currentWebview.label` 稳定且正确。→ 迁移后**一律按 webview label 索引**。
-4. 内存代价（实测 RSS 求和，`/tmp/tree_rss.py`）：
-   - 基线（1 窗口 1 webview）：**838 MB**（dae 350 + WebKitWebProcess 409 + 网络进程 79）
-   - PoC（3 个存活 webview）：**1520 MB**，4 个 `WebKitWebProcess`：399/235/231/214 MB
-   - → 每多一个 webview ≈ **+200~340 MB RSS**。RSS 重复计共享页，真实私有增量更低，
-     **待用 PSS 复核**（脚本 `scripts/dev/webview-memory.py` 已支持）。
+4. 内存代价（复测已补 PSS。PSS 按比例分摊共享页，是「这个 webview 消失能还回多少」的诚实数字）：
+   - 基线（1 窗口 1 webview，两次独立运行）：tree RSS **718~738 MB** / tree PSS **447~483 MB**
+     （dae 188~198 + 主 app webview 205~245 + 网络进程 36~40，PSS 口径）
+   - PoC（3 个存活 webview + 1 个未回收）：tree RSS **1478 MB** / tree PSS **735 MB**
+   - → **空页面**每多一个 webview ≈ +250 MB RSS / **+90 MB PSS**（RSS 口径高估约 2.7 倍）
+   - → 场景 4 直接量「真 app bundle 当 content webview」：主 app webview + 2 个 tab webview
+     （3 个注册 webview / 3 个 web 进程，三次独立运行）tree RSS **1483~1570 MB** /
+     tree PSS **804~877 MB**；逐进程看三个 app webview 各自 **186~196 MB PSS**
+     （dae 本体 209.9 + 网络进程 36.2 + 3×webview）→ **每 tab 边际 ≈ 190 MB PSS**。
+     参照主 app webview 自身的 205~245 MB PSS → **按每 tab ≈ 200 MB PSS 规划**，
+     8 个 tab ≈ 1.8 GB PSS（还没算 §4.7 的泄漏）。
+     （早先想用 dev-invoke 调 `tear_off_tab` 量真实标签窗口的那次尝试作废——那条路径会在 worker
+     线程碰 GTK 直接 panic，见 §7。场景 4 用真窗口真 bundle 重做，取代了它。）
+
+### 2.5 场景 4：真 app bundle 的 webview 被 reparent（`DAE_POC_REALTAB=1`）
+
+补的是 P0 里「PoC 搬的是静态探针页，不是真 bundle」那条缺口。两个 `window_material::configure`
+的 `WebviewWindow`（`decorations(false)`，载 `index.html`），把源窗口里跑着完整 React app 的那个
+webview `reparent` 到目标窗口，再搬回、再搬出，最后关掉**已被搬空**的源窗口。三次独立运行一致
+（`boot` 分别 `dtid3iyt` / `jiusrv5f` / `tl3yd2mx`，`ticks` 序列 0→67→125→173→221 完全重合；
+下表的 `viewport` / `screen` 从第二次起才采集）：
+
+| 观测 | before | after reparent | back（搬回源窗口） | out-again（再搬出） | after-close |
+|---|---|---|---|---|---|
+| `boot`（页面加载时生成的随机 id） | `jiusrv5f` | 同左 | 同左 | 同左 | 同左 |
+| `ticks`（`setInterval` 计数，重载即归零） | 0 | 67 | 125 | 173 | 221 |
+| DOM 节点数 | 445 | 445 | 445 | 445 | 445 |
+| `viewport` | `[841, 910]` | **`[841, 455]`** | `[841, 910]` | **`[841, 455]`** | `[841, 455]` |
+| `screenX/screenY` | `[0, 0]` | `[0, 0]` | `[0, 0]` | `[0, 0]` | `[0, 0]` |
+| `currentWindow.label` | `poc-rt-src` | **仍是 `poc-rt-src`** | — | — | — |
+| `currentWebview.label` | `poc-rt-src` | `poc-rt-src`（父窗口变 `poc-rt-dst`） | — | — | — |
+| 源窗口 `webviews()` | 1 | 0 | 未采 | 0（故能安全关） | 窗口已注销 |
+| 目标窗口 `webviews()` | 1 | 2 | 未采 | 2 | 2 |
+
+- **真 app 的 JS 上下文完整存活**：`boot` 不变、`ticks` 单调连续、445 个 DOM 节点没有重建、
+  reparent 之后 `__TAURI_INTERNALS__.invoke('poc_report')` 仍能把日志打回 Rust。
+  → 迁移方案的核心前提在真实 bundle 上成立，不只是静态页。
+- **§2.3 的 label 过期在真 app 上重演**：搬完后 `currentWindow.label` 仍是 `poc-rt-src`，
+  `currentWebview.label` 才跟着父窗口走 → 「一律按 webview label 索引」不是洁癖，是必须。
+- **记账跟着走**，`rt-close-empty-shell` ok、`src_still_registered=false`、不 panic
+  → **搬空之后关源窗口是安全的**，这正是「拖出成独立窗口」和「拖入合并」两条路径收尾要做的动作。
+  且此场景**没触发 §4.7 的泄漏**（全 app 注册 3 个 webview / `WebKitWebProcess` 3 个）
+  —— 因为被关的那个窗口当时确实没有 webview。泄漏只发生在「关一个还带着活 webview 的窗口」时。
+- **但 webview 不会自动占满新父窗口**：进去后目标窗口把面积**上下平分**给它的两个 webview（§4.3）。
+  React 树在 455 px 高的视口里正常重排、没崩 → 只是布局问题，但 reparent 后**必须显式 `set_bounds`**。
+- `screenX/screenY` 在 Wayland 下恒为 `[0,0]`（§6.3）；`hasFocus` 恒为 false。
+  本机没有注入键鼠的工具，**focus 是否跨 reparent 存活仍未验证**。
 
 ---
 
@@ -50,12 +107,15 @@ PoC：`src-tauri/src/reparent_poc.rs` + `public/reparent-poc.html`，由 `DAE_PO
 ```
 窗口 (transparent, window_material 不变)
 ├── shell webview     全窗口、透明。tab bar / sidebar / 状态栏 / 命令面板 / 对话框 / 快捷键
-└── content webview   每 tab 一个，内嵌在内容区，auto_resize(true)，叠在 shell 之上
+└── content webview   每 tab 一个，占内容区，叠在 shell 之上（**需显式 set_bounds，见 §4.3**）
 ```
 
 - **tab id == content webview label**（稳定，跨 reparent 不变）。
 - shell 的 webview label == 窗口 label（沿用现有 `main` 等）。
 - 一个窗口可以有 N 个 content webview + 1 个 shell（PoC 已验证单窗口可承载多个 webview）。
+- ⚠️ 但 GTK 的容器**不会自动叠加**：场景 4 实测一个窗口有 2 个 webview 时是**上下平分**
+  （841×910 → 各 841×455），不是 overlay → 「shell 全窗口 + content 盖在上面」这套布局
+  必须由 Rust 显式管 bounds，不能指望 `auto_resize`，见 §4.3。
 
 **状态归属**
 
@@ -80,7 +140,7 @@ PoC：`src-tauri/src/reparent_poc.rs` + `public/reparent-poc.html`，由 `DAE_PO
 
 ---
 
-## 4. 六个硬问题与对策
+## 4. 八个硬问题与对策
 
 1. **跨 webview 的 HTML5 DnD 失效**（最大隐性成本）。
    现在依赖同 webview 内的 DnD：`src/features/explorer/file-list.tsx`(onDragStart/onDrop)、
@@ -95,9 +155,41 @@ PoC：`src-tauri/src/reparent_poc.rs` + `public/reparent-poc.html`，由 `DAE_PO
    拆开后事件落在 shell。必须按指针位置路由到对应 content webview 再 hit-test。
 3. **透明窗口 + 透明 shell webview 叠加**（`window_material`，`src-tauri/src/window_material/`）。
    需验证：shell 透明处能透出 window_material、content 不透明且盖在上层、z-order 正确。
+   **场景 4 已排除「自动叠加」这个乐观假设**：目标窗口有 2 个 webview 时，GTK 容器把可用面积
+   **上下平分**（841×910 → 各 841×455），谁都不是覆盖谁。→ 布局得由 Rust 显式算：
+   窗口 resize / tab 数变化 / reparent 之后都要重新 `set_bounds`，shell 走全窗口、
+   content 走内容区矩形。透明与 z-order 本身仍未测（本机 `window_material` 在 Wayland 上另有条件）。
 4. **键盘焦点 / 快捷键跨 webview**：焦点在哪个 webview、快捷键由谁处理（建议 shell 统一分发）。
-5. **内存随 tab 数线性上涨**（见 §2.4）。需定上限策略（见 §6）。
+5. **内存随 tab 数线性上涨**（见 §2.4，PSS 口径每 tab ≈ 200 MB）。需定上限策略（见 §6）。
 6. **窗口 label 过期**（见 §2.3）→ 全量改用 webview label，否则会操作到旧窗口。
+7. **关掉窗口不回收 web 进程**（复测新发现，**迁移的前置阻塞项**）。
+   干净证据来自 PoC 场景 3（应用内 `window.close()`，不经任何外部通道）：关闭后 Tauri 注册表只剩
+   3 个 webview（`main`、`poc-webview`、`poc-ww-src`），但 `WebKitWebProcess` **4 个**，
+   6 分钟后仍在（RSS 各 231~245 MB）。被关的 `poc-ww-dst` 确实从 niri 窗口列表里消失了，
+   即窗口真销毁、进程没走。新建 webview 时**没有复用**残留进程
+   → 不是 WebKit 预热池，是有引用没放掉。
+   现有架构同样中招（tear-off 已经是每窗一个 webview），per-tab webview 会把「关一个 tab 泄漏一份」变成主路径。
+
+   **根因已定位，修法已在本地验证 —— 是 wry 0.57.0 的 GObject 引用环：**
+   `wry-0.57.0/src/webkitgtk/mod.rs:315` 把 `webview.clone()`（强引用）交给 `attach_ipc_handler`，
+   `:730` 又把它塞进 `manager.connect_script_message_received` 的 `'static` 闭包，
+   而那个 `UserContentManager` 归 webview 自己持有（`:726`）
+   → `WebView → UCM → 闭包 → WebView` 引用计数永不为零；
+   `InnerWebView::drop`（`:100-103`）只调 `gtk_widget_destroy`、不做 finalize，
+   于是 WebKit 永不释放 web 进程。Tauri 侧是干净的：
+   `WebviewWrapper::drop`（`tauri-runtime-wry-2.12.1/src/lib.rs:2392`）正常放掉 `Rc<WebView>`，
+   Linux 上刻意保留 `WebContext` 只是为了复用网络进程（tauri#14626）。
+   **验证**：把那一处捕获改成 `downgrade()` / `upgrade()`（6 行 diff，
+   存于 `/home/melaine/vendor/wry-ipcweak.patch`，patch 后的副本在
+   `/home/melaine/vendor/wry-0.57.0-ipcweak`），PoC 立刻从「注册 3 / 进程 4」变成 **3 / 3**，
+   三个 reparent 场景与 IPC 全部照旧，tree PSS 735 → 669 MB。
+   上游 `wry` 的 `dev` 分支目前**仍是老代码**（`mod.rs:316/738/743`），没有「升级即修」这条路 →
+   怎么带这个 fix 见 §6.5。
+   另：判「窗口是否已被搬空」只能用 `app.get_window(label).webviews()`（见 §2.2），
+   用 `WebviewWindow::webviews()` 会得到全 app 的数目，空壳判定永远不成立。
+8. **新父窗口标题不跟随页面**。reparent 后页面反复改 `document.title`，
+   `titles-later` 里 src/dst 的标题仍是 Rust 设的 `"PoC source"` / `"PoC target"`。
+   → tab 标题必须由 content 经 Rust 中继上报给 shell，不能指望窗口 title。
 
 ---
 
@@ -105,26 +197,46 @@ PoC：`src-tauri/src/reparent_poc.rs` + `public/reparent-poc.html`，由 `DAE_PO
 
 | 阶段 | 内容 | 验收标准 |
 |---|---|---|
-| **P0 骨架** | 新 entry（shell / content 两种角色，可由 URL query 或 label 区分）+ Rust 侧 content webview 注册表 + 单 tab + 拖动 reparent | 两窗口间拖动一个 tab，`boot` id 不变、`ticks` 连续 |
-| **P1 布局** | shell 全窗口透明 + content 内嵌内容区 + `auto_resize(true)` + 多 tab | resize 后 content 跟随；透明处 window_material 正常；z-order 正确 |
+| **P-1 进程回收** | §4.7 根因已定位（wry 的 GObject 环），本地 6 行 patch 已验证有效；待拍板怎么带（§6.5） | PoC 侧已达成：注册 webview 数 == `WebKitWebProcess` 数（3/3）。还需在**真实标签窗口**上复验（关掉后进程数与 tree PSS 都回落） |
+| **P0 骨架** | 新 entry（shell / content 两种角色，可由 URL query 或 label 区分）+ Rust 侧 content webview 注册表 + 单 tab + 拖动 reparent | 两窗口间拖动一个 tab，`boot` id 不变、`ticks` 连续。**跑真实 app bundle 的 webview 已被 PoC 场景 4 验证（§2.5），P0 只剩「把 PoC 的程序化 reparent 接进真 UI 拖动」** |
+| **P1 布局** | shell 全窗口透明 + content 占内容区 + 多 tab | resize / tab 增减 / reparent 之后由 Rust 重新 `set_bounds`，content 尺寸正确；透明处 window_material 正常；z-order 正确。**注意 §2.5：不显式设 bounds 时 GTK 会把窗口上下平分给多个 webview，不是叠加** |
 | **P2 表面迁移** | 6 种 `WorkspaceSurface` 在 content 里渲染 | 每种 surface 在 content webview 中可用 |
 | **P3 通信协议** | 路径栏 / 选中 / 命令 / 右键菜单 / 快捷键的 shell↔content 协议 | 现有交互不回退（逐项对照） |
 | **P4 拖拽重建** | 跨 webview DnD + OS 拖入路由（§4.1、§4.2） | 文件拖到侧栏/标签栏/另一窗口都可用 |
 | **P5 生命周期与内存** | tab 创建/关闭时的 webview spawn/回收、内存策略、启动时序 | 内存可测、Ctrl+T 无不可接受延迟 |
 | **P6 跨平台与打磨** | Windows / macOS 行为、DPI、焦点、拖拽视觉 | 三平台一致 |
 
-工作量级（粗估）：P0 半天、P1 1 天、P2 1–2 天、P3 1–2 天、P4 2–3 天、P5 1 天、P6 待定。
-**P4 是体验回退风险最高的部分**，建议单独排期并优先做技术验证。
+工作量级（粗估）：P-1 0.5 天（根因已定位，只剩「怎么带 fix」＋真窗口复验）、P0 半天、P1 1 天、P2 1–2 天、P3 1–2 天、P4 2–3 天、P5 1 天、P6 待定。
+**P4 是体验回退风险最高的部分**，建议单独排期并优先做技术验证。**P-1 是内存策略的前提**，先做。
 
 ---
 
 ## 6. 待拍板问题（执行前需要用户确认）
 
 1. **内存策略**：接受随 tab 数线性上涨，还是设上限（超出回退内联渲染 → 但那部分 tab 拖出会重载）？
+   量级参考（PSS 口径）：**每 tab ≈ 200 MB**（场景 4 用真 bundle 实测边际 170~205 MB，见 §2.4），
+   4 tab ≈ 0.8 GB、8 tab ≈ 1.8 GB。
 2. **新建 tab 是否立即 spawn webview**？立即 spawn 则 Ctrl+T 有 ~200MB 进程创建延迟；延迟 spawn 则首次拖动要等。
+   复测后新增一条：§4.7 的 fix 让「关 tab 就真回收进程」成立，所以**池化/复用 webview**
+   不再是唯一能同时解决泄漏和 Ctrl+T 延迟的办法了 —— 这个取舍要重新拍。
 3. **拖动期间的指针定位**用「shell 轮询 `cursor_position()`」还是「content 上报坐标」？（影响 P4 实现与流畅度）
+   场景 4 已把第二个选项**排除**：Wayland 下 `window.screenX/screenY` 恒为 `[0,0]`（客户端拿不到自己在
+   合成器里的绝对位置），content webview 自报坐标等于自报一个常数 → **只能走 Rust 侧**
+   `Window::outer_position()` + `Window::cursor_position()` 自己算，shell 轮询那条也依赖同一个 Rust 事实。
+   **场景 4 已经否掉了「content 上报」这条路**：Wayland 下页面里的 `window.screenX/screenY` 恒为
+   `[0,0]`（两次运行 5 次采样全 0），content webview 无从报告自己在屏幕上的绝对位置。
+   → 只能用 Rust 的 `Window::outer_position()` + `Window::cursor_position()` 自己算命中区域，
+   content 至多上报「指针在我自己视口内的相对坐标」，再由 Rust 加上窗口原点。
 4. **Windows / macOS 如何验证**？目前只有 Linux / niri / WebKitGTK 2.54.1 一台机器，
    Windows（`SetParent`）与 macOS（`addSubview`）行为**完全未测**。
+5. **怎么带 §4.7 的 wry fix**？上游未修，三条路：
+   a) 像 `vendor/drag` 那样把 wry 拷进 `vendor/wry`（1.1 MB，每次升 wry 要重新对 diff）；
+   b) 把这 6 行提到上游 wry，期间用 `[patch.crates-io] wry = { git = ... }` 顶着；
+   c) 先不带 fix，改用「关 tab 只隐藏、webview 池化复用」绕开 —— 但那等于把泄漏转成常驻，
+      且 §6.1 的上限策略要跟着重写。
+   注：这个引用环在 `wry/src/webkitgtk/` 里，**只影响 GTK 系（Linux/BSD）**；
+   Windows 的 WebView2、macOS 的 WKWebView 是另一套析构，所以 §6.4 的跨平台验证里
+   「关 tab 到底还不还内存」三平台各要单独量。
 
 ---
 
@@ -137,24 +249,65 @@ git checkout try/webview-reparent
 DAE_POC_REPARENT=1 bun tauri dev
 python3 -c "import json;[print(json.loads(l)) for l in open('/tmp/dae-reparent-poc.jsonl')]"
 
+# 跑场景 4：两个真 app 窗口 + 程序化 reparent（同样会弹窗口，等 6s 让 React 起来）
+DAE_POC_REALTAB=1 bun tauri dev
+# 探针事件名以 rt- 开头（rt-before / rt-post / rt-after / rt-close-empty-shell …）
+
 # 量内存（进程树 RSS + PSS）
 python3 scripts/dev/webview-memory.py $(pgrep -f '[t]arget/debug/dae' | head -1)
 
+# 不用鼠标也能驱动 app：dev 构建起了 tauri-plugin-dev-invoke，直接 HTTP 调命令
+# （Origin 必须是 http://localhost:1420；参数用 camelCase，如 grabX/cursorX）
+curl -s -X POST http://127.0.0.1:3030/invoke/<command> \
+  -H 'content-type: application/json' -H 'Origin: http://localhost:1420' -d '{...}'
+# **但别用它调碰 GTK 的命令**：`tear_off_tab` 经 dev-invoke 会在 worker 线程上执行，
+# `attach_tab_drop_target`（tab_windows.rs:165）里的 `gtk::TargetEntry::new` 直接 panic
+# `GTK may only be used from the main thread.`，窗口建到一半、从未 show，进程还留着一堆半成品。
+# → 想量「真实标签窗口」只能靠真人拖标签，或在 setup 里另起一个不碰裸 GTK 的场景
+#   （已做：`DAE_POC_REALTAB=1`，全程走 `tauri::async_runtime` + builder/`reparent`，
+#   由 runtime 自己派发回主线程，所以不复现这个 panic。见 §2.5）。
+# 顺带：`tear_off_tab` 注释里「非 async 命令跑在主线程」这个前提，对 dev-invoke 这条入口不成立。
+
+# 视觉确认 reparent 后是否真的出图（niri 是平铺的，PoC 窗口会被排到屏幕外，先聚焦再截图）
+niri msg --json windows | python3 -c "import sys,json;[print(w['id'],w['app_id'],w['title']) for w in json.load(sys.stdin) if w['app_id']=='dae']"
+niri msg action focus-window --id <窗口id> && sleep 1 && grim /tmp/shot.png
+
+# 复现 §4.7 的根因验证（patch 后的 wry 副本在店外，不进仓库）
+ls /home/melaine/vendor/wry-0.57.0-ipcweak /home/melaine/vendor/wry-ipcweak.patch
+# 挂上：src-tauri/Cargo.toml 的 [patch.crates-io] 加一行
+#   wry = { path = "/home/melaine/vendor/wry-0.57.0-ipcweak" }
+# 然后 cargo build --manifest-path src-tauri/Cargo.toml（约 50s），再跑一遍 PoC：
+#   注册 webview 数 == WebKitWebProcess 数 即为修复（改前 3/4，改后 3/3）
+# 验证完记得 git checkout -- src-tauri/Cargo.toml src-tauri/Cargo.lock
+
 # 注意：pkill -f "bun tauri dev" 会匹配到自己的 shell（命令行里含该字符串），
 # 要用 pkill -f "[t]arget/debug/dae" 这种方括号写法，且不要在同一个命令里同时写启动命令。
+# vite 那个子进程的 comm 是 "MainThread"，按名字杀不到；收尾要按端口取 pid：
+#   kill $(ss -ltnp | grep 1420 | grep -oP 'pid=\K[0-9]+')
 ```
 
 PoC 代码位置：
-- `src-tauri/src/reparent_poc.rs` —— 三个场景（`Window`+`add_child`、真 `WebviewWindow`、往返+关空壳）
+- `src-tauri/src/reparent_poc.rs` —— 场景 1–3（`Window`+`add_child`、真 `WebviewWindow`、往返+关空壳），
+  以及场景 4 `run_real_tab`（两个真 app 窗口 + 往返 + 关掉搬空的壳，`DAE_POC_REALTAB=1`）
 - `public/reparent-poc.html` —— JS 探针（boot id / ticks / scrollY / `currentWindow.label` / `currentWebview.label` / 堆探针）
-- `src-tauri/src/lib.rs` —— `DAE_POC_REPARENT=1` 时在 setup 里跑，否则零影响
+- 场景 4 不走静态页，探针由 `probe()` 注入真 bundle（`index.html`），字段与上面同源
+- `src-tauri/src/lib.rs` —— `DAE_POC_REPARENT=1` / `DAE_POC_REALTAB=1` 时在 setup 里跑，两个都不设则零影响
 - `src-tauri/Cargo.toml` —— `tauri = { features = ["macos-private-api", "unstable"] }`（`unstable` 仅 PoC 需要）
 
 ---
 
 ## 8. 回退与隔离
 
-- `unstable` feature 只存在于本分支；PoC 全部由 `DAE_POC_REPARENT` 门控，不设则完全不影响运行。
+- `unstable` feature 只存在于本分支；PoC 全部由 `DAE_POC_REPARENT` / `DAE_POC_REALTAB` 门控，
+  两个都不设则完全不影响运行。
+  复测确认：不设该变量时 app 正常起窗、内存与 `main` 口径一致，PoC 零影响。
 - 现有 handoff 路径（`tab_windows.rs` + `main.tsx`）**保持可用**，迁移期间可并行对照，随时可回退到 `main`。
-- 已知未验证项（不要当成已解决）：Windows/macOS 行为、透明窗口下的 reparent、
-  多 tab 时的输入焦点、PSS 真实私有内存增量、DPI 缩放变化下的 `auto_resize`。
+- PoC 场景 3 的名字有误导（`reparent_poc.rs:253` 注释写「关掉被搬空的源窗口」）：关闭时那个窗口
+  **还带着自己的 webview**（`ww-back-post` 里 `dst_webviews=1`），并没有被搬空。
+  它证明的是「关邻窗不影响被搬走的 webview」（ticks 到 150），顺带暴露了 §4.7 的进程不回收。
+  **真正把源窗口搬空再关的是场景 4**（`rt-before-close-shell` 里 `src_webviews=0`）。
+- 已知未验证项（不要当成已解决）：Windows/macOS 行为、透明窗口（`window_material`）下的 reparent
+  与 z-order/叠加、鼠标真实拖动标签（P0 未实现，PoC 是 Rust 侧程序化 reparent）、
+  多 tab 时的键盘焦点/输入可达（场景 4 里 `document.hasFocus()` 恒为 false；本机 niri 无 `send-keys`，
+  也没装 ydotool/wtype，注入不了）、DPI 缩放变化下的 content bounds。
+  ~~跑真实 app 的 webview 被 reparent~~ —— **已验证，见 §2.5**。
