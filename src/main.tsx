@@ -114,13 +114,15 @@ async function bootstrap() {
     // frame waits for cannot be that surface's chunk; the cache is what tells a
     // fetch apart from a chunk load, and when the fetch settled.
     queryClient.getQueryCache().subscribe((event) => {
-      const query = (event as { query?: { queryKey?: unknown; state?: { status?: string } } })
-        .query;
-      const status = query?.state?.status;
-      if (status !== "success" && status !== "error") return;
+      // Only fresh data landing counts. Every observer attaching, and every
+      // result it re-reads, also fires this callback while the query's status is
+      // already "success" - so filtering on status alone reported a mark for
+      // each of those and made one fetch look like twenty.
+      if (event.type !== "updated" || event.action?.type !== "success") return;
+      const query = event.query as { queryKey?: unknown } | undefined;
       const key = query?.queryKey;
       const label = Array.isArray(key) ? String(key[0]) : String(key);
-      tabPerfMark(`query[${label}]:${status}`);
+      tabPerfMark(`query[${label}]:success`);
     });
     observer.observe(root, { childList: true, subtree: true });
     // Was the main thread busy during the gaps? A long task inside one means work
@@ -154,7 +156,11 @@ async function bootstrap() {
     // told apart from the probe being switched off, so say which one it is.
     setTimeout(() => {
       if (reported) return;
-      tabPerfMark("commit-missing");
+      // A hidden window gets no frames, so silence is what it is supposed to do
+      // until something shows it. The fallback is for a window that is on
+      // screen and still has not painted, which is a failure worth naming.
+      if (document.visibilityState === "hidden") return;
+      tabPerfMark("report-fallback");
       report();
     }, 5_000);
   }

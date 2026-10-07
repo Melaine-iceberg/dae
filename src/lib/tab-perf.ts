@@ -77,6 +77,10 @@ export function tabPerfReport(anchorAt?: number): void {
  */
 export function tabPerfAdoptProbe(): void {
   if (!tabPerfEnabled()) return;
+  // The split, taken before anything else runs, so the report can zero here.
+  // Anchoring on the report instead put the paint at zero and every cause of it
+  // at a negative offset.
+  const split = performance.timeOrigin + performance.now();
   // Boot happened minutes ago and was reported then; only what follows belongs
   // to this block, or every row above it reads as a negative offset.
   marks.length = 0;
@@ -92,7 +96,7 @@ export function tabPerfAdoptProbe(): void {
       tabPerfMark("adopt-painted");
       // Zeroes on the split, so this block reads as what the adoption cost
       // rather than as the time this window happened to have been alive.
-      tabPerfReport(performance.timeOrigin + performance.now());
+      tabPerfReport(split);
     });
   };
   const observer =
