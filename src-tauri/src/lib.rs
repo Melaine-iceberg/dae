@@ -18,6 +18,9 @@ mod file_system;
 #[cfg(any(target_os = "linux", test))]
 #[cfg_attr(test, allow(dead_code))]
 mod linux_graphics;
+// PoC-only: probes whether a live webview can be re-parented between windows.
+// Remove together with the `unstable` feature in Cargo.toml.
+mod reparent_poc;
 mod settings;
 mod shell_commands;
 mod system_accent;
@@ -140,6 +143,8 @@ pub fn run() {
                 terminal::handle_invoke(invoke)
             } else if command == "read_directory_packets" {
                 file_system::commands::handle_raw_invoke(invoke)
+            } else if command == "poc_report" {
+                reparent_poc::handle_invoke(invoke)
             } else {
                 specta_handler(invoke)
             }
@@ -203,6 +208,10 @@ pub fn run() {
             // answer can only ever go down, because a window built opaque cannot be
             // made to show a backdrop — see `window_material::clamp`.
             window_material::init(app.handle());
+
+            if reparent_poc::enabled() {
+                reparent_poc::spawn(app.handle().clone());
+            }
 
             // Device and mount changes (a USB stick plugged in, a phone, a
             // share unmounted) are pushed to the sidebar the moment the OS

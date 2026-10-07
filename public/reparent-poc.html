@@ -1,0 +1,79 @@
+<!doctype html>
+<!-- Probe page for src-tauri/src/reparent_poc.rs. Served from public/ so it
+     does not boot the real app; all it does is hold observable state (a timer,
+     a random boot id, a scroll position) and report it over IPC on demand. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>reparent-poc</title>
+  </head>
+  <body>
+    <h3>reparent poc</h3>
+    <pre id="log"></pre>
+    <script>
+      (function () {
+        const state = {
+          boot: Math.random().toString(36).slice(2, 10),
+          ticks: 0,
+          heapProbe: { tag: "allocated-before-load-report" },
+        };
+        // Timer + heap identity: both survive only if the JS context does.
+        setInterval(() => state.ticks++, 50);
+        document.body.style.height = "3000px";
+
+        function log(text) {
+          document.getElementById("log").textContent += text + "\n";
+        }
+
+        function send(event, extra) {
+          const internals = window.__TAURI_INTERNALS__ || {};
+          const metadata = internals.metadata || {};
+          const current = metadata.currentWindow || {};
+          const currentWebview = metadata.currentWebview || {};
+          state.heapProbe.reportFrom = event;
+
+          const payload = {
+            event: event,
+            boot: state.boot,
+            ticks: state.ticks,
+            scrollY: Math.round(window.scrollY),
+            heapProbe: state.heapProbe,
+            label: current.label,
+            webviewLabel: currentWebview.label,
+            labelType: typeof current.label,
+            metadataKeys: Object.keys(metadata),
+            href: location.href,
+            hasInternals: !!internals.invoke,
+            at: Math.round(performance.now()),
+            extra: extra || null,
+          };
+          document.title = "poc:" + event + ":" + state.boot + ":" + state.ticks;
+
+          if (!internals.invoke) {
+            log(event + " no IPC");
+            return;
+          }
+          internals
+            .invoke("poc_report", { data: JSON.stringify(payload) })
+            .then(() => log(event + " reported"))
+            .catch((error) => {
+              log(event + " IPC failed: " + error);
+              document.title = "poc:" + event + ":IPC-FAIL";
+            });
+        }
+
+        // Called from Rust via `Webview::eval`.
+        window.__poc_mark = function (event) {
+          window.scrollTo(0, event === "before" ? 500 : 1200);
+          send(event);
+        };
+
+        // A second load (i.e. a reload caused by the move) shows up as a new
+        // `boot` id in the log.
+        window.addEventListener("load", function () {
+          send("load");
+        });
+      })();
+    </script>
+  </body>
+</html>

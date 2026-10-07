@@ -46,7 +46,10 @@ russh-sftp = "3.0.0"
 # host. On Windows and Linux it only forwards to wry features that gate macOS
 # code, so it costs nothing there — what it does cost is Mac App Store
 # eligibility, which is a decision to make later rather than a surprise.
-tauri = { version = "2", features = ["macos-private-api"] }
+# `unstable` is required by `Window::add_child` and `Webview::reparent`, which
+# `reparent_poc` uses to test whether a live webview can move between windows
+# with its JS context intact. PoC-only: drop it (and the module) before merging.
+tauri = { version = "2", features = ["macos-private-api", "unstable"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Serializes the user settings panel (shortcuts, terminal, default file
