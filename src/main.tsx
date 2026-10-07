@@ -118,6 +118,22 @@ async function bootstrap() {
       tabPerfMark(`query[${label}]:${status}`);
     });
     observer.observe(root, { childList: true, subtree: true });
+    // Was the main thread busy during the gaps? A long task inside one means work
+    // that can be moved or removed; silence means the wait belonged to the
+    // scheduler or the compositor, which are fixed in different places. Recording
+    // which of "observed" and "unsupported" happened matters, because an engine
+    // that cannot report long tasks would otherwise look exactly like an idle
+    // one, and the two call for opposite conclusions.
+    try {
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          tabPerfMark(`longtask:${Math.round(entry.duration)}ms`);
+        }
+      }).observe({ entryTypes: ["longtask"] });
+      tabPerfMark("longtask:observed");
+    } catch {
+      tabPerfMark("longtask:unsupported");
+    }
     // How quickly the event loop came back. Within a millisecond or two means
     // React was not starving it, and any later commit delay is React's own work.
     setTimeout(() => tabPerfMark("tick"), 0);
