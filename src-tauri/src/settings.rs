@@ -43,6 +43,10 @@ pub struct AppSettings {
     pub shortcuts: HashMap<String, String>,
     pub terminal: TerminalSettings,
     pub default_file_manager: DefaultFileManagerState,
+    /// Keeps one window booted and hidden so a tab torn off has somewhere to
+    /// land without waiting for a webview to start. Costs the resident memory
+    /// of one extra window; see `docs/decisions/tab-tear-off-warm-pool.md`.
+    pub warm_tab_pool: bool,
 }
 
 /// Integrated-terminal appearance. `None` fields fall back to the frontend's
@@ -75,6 +79,7 @@ impl Default for AppSettings {
             shortcuts: default_shortcuts(),
             terminal: TerminalSettings::default(),
             default_file_manager: DefaultFileManagerState::default(),
+            warm_tab_pool: true,
         }
     }
 }
@@ -178,6 +183,18 @@ pub fn save_settings(settings: AppSettings) -> Result<AppSettings, FileSystemErr
     registry.settings = normalized.clone();
     persist_locked(&mut registry)?;
     Ok(normalized)
+}
+
+/// Reads the warm-pool setting for the Rust side, which cannot call the command.
+///
+/// Before [`init`] has run this reads the default, which is what a fresh install
+/// resolves to, so the two cannot disagree about a window that is about to be
+/// built.
+pub(crate) fn tab_pool_enabled() -> bool {
+    REGISTRY
+        .lock()
+        .map(|registry| registry.settings.warm_tab_pool)
+        .unwrap_or(true)
 }
 
 /// Updates only the cached default-file-manager flag (used by
@@ -373,6 +390,25 @@ mod tests {
         assert_eq!(loaded.terminal.font_size, 15);
         assert_eq!(loaded.terminal.line_height, 1.2);
         assert_eq!(loaded.terminal.font_family, None);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The pool ships on, so a config file written before the setting existed
+    /// has to read as on: an absent value is what every install already has.
+    /// An explicit off is the user's decision and has to survive as one.
+    #[test]
+    fn an_absent_pool_setting_reads_as_on() {
+        let _guard = lock();
+        let dir = temp_config_dir();
+
+        fs::write(settings_path(&dir), "[terminal]\nfontSize = 12\n").expect("write partial");
+        use_config_dir_for_tests(dir.clone()).expect("init");
+        assert!(load_settings().expect("load").warm_tab_pool);
+
+        fs::write(settings_path(&dir), "warmTabPool = false\n").expect("write off");
+        use_config_dir_for_tests(dir.clone()).expect("init");
+        assert!(!load_settings().expect("load").warm_tab_pool);
 
         fs::remove_dir_all(&dir).ok();
     }

@@ -7,6 +7,7 @@
     "appearance": "外观",
     "shortcuts": "快捷键",
     "terminal": "终端",
+    "tabs": "标签页",
     "defaultFileManager": "默认文件管理器",
     "logs": "日志",
     "about": "关于"
@@ -75,6 +76,13 @@
     "lineHeightHint": "取值 0.8 到 3.0 之间的倍数，默认为 1.2。",
     "lineHeightDecrease": "减小行高",
     "lineHeightIncrease": "增大行高"
+  },
+  "tabs": {
+    "description": "标签页从窗口拖出时的行为。",
+    "warmPool": {
+      "label": "保持一个窗口待用",
+      "description": "常驻一个隐藏窗口，使拖出的标签立即出现，而不必从头新建。应用运行期间约多占 200MB 内存。"
+    }
   },
   "defaultFileManager": {
     "description": "将 dae 注册为操作系统打开文件夹的程序。",

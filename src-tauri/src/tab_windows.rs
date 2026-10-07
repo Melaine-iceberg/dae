@@ -373,6 +373,17 @@ impl PoolSlot {
             self.ready = None;
         }
     }
+    /// Empties the slot, returning every window it was holding so the caller can
+    /// close them. Every one, not just the adoptable one: a booting window is a
+    /// real window holding real memory, and the point of switching the pool off
+    /// is to stop paying for it.
+    fn take_all(&mut self) -> Vec<String> {
+        self.building = false;
+        [self.ready.take(), self.booting.take()]
+            .into_iter()
+            .flatten()
+            .collect()
+    }
 }
 
 impl TabWindowState {
@@ -404,11 +415,14 @@ impl TabWindowState {
 
     /// Whether a tear-off may adopt a primed window instead of building one.
     ///
-    /// Off unless asked for. The pool is an optimisation that has to be
-    /// measured against the path it replaces, so its presence must not change
-    /// the shipping path on its own.
+    /// This is the user's setting, less an escape hatch: `DAE_TAB_POOL=0` forces
+    /// it off, which is what comparing the two paths by hand needs - a run that
+    /// does not have to edit settings and restart.
     fn pool_enabled() -> bool {
-        std::env::var("DAE_TAB_POOL").is_ok_and(|value| value == "1")
+        if std::env::var("DAE_TAB_POOL").is_ok_and(|value| value == "0") {
+            return false;
+        }
+        crate::settings::tab_pool_enabled()
     }
 
     /// Starts one hidden window booting, if the pool is empty.
@@ -478,12 +492,30 @@ impl TabWindowState {
     /// Claims the ready window, if any. Returns `None` when the pool is empty
     /// or disabled, which sends the caller down the cold path.
     fn take_pooled(&self) -> Option<String> {
+        // The setting wins over a window that already exists: switching the pool
+        // off has to stop hand-offs, and `sync_tab_pool` closes what is left.
+        if !Self::pool_enabled() {
+            return None;
+        }
         self.pool.lock().ok().and_then(|mut slot| slot.take())
     }
 
     fn forget_pooled(&self, label: &str) {
         if let Ok(mut slot) = self.pool.lock() {
             slot.forget(label);
+        }
+    }
+
+    /// Closes whatever the pool holds, for the setting being turned off.
+    fn dispose_pool(&self, app: &tauri::AppHandle) {
+        let labels = match self.pool.lock() {
+            Ok(mut slot) => slot.take_all(),
+            Err(_) => return,
+        };
+        for label in labels {
+            if let Some(window) = app.get_webview_window(&label) {
+                let _ = window.close();
+            }
         }
     }
 }
@@ -1383,6 +1415,23 @@ pub fn tear_off_tab(
 pub fn prime_pool_at_startup(app: &tauri::AppHandle) {
     if let Some(state) = app.try_state::<TabWindowState>() {
         state.prime_pool(app);
+    }
+}
+
+/// Brings the pool in line with the setting, which the frontend calls after
+/// saving one.
+///
+/// Both directions need this. Switched on, a pool that was never primed would
+/// stay empty until a tear-off happened to refill it, so the first tear-off
+/// after the change would still be cold. Switched off, the hidden window keeps
+/// its memory for nothing.
+#[tauri::command]
+#[specta::specta]
+pub fn sync_tab_pool(app: tauri::AppHandle, state: tauri::State<'_, TabWindowState>) {
+    if TabWindowState::pool_enabled() {
+        state.prime_pool(&app);
+    } else {
+        state.dispose_pool(&app);
     }
 }
 

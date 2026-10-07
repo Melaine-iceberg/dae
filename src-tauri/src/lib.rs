@@ -466,6 +466,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             tab_windows::tear_off_tab,
             tab_windows::take_tab_handoff,
             tab_windows::pool_window_ready,
+            tab_windows::sync_tab_pool,
             tab_windows::merge_tab_into_window,
             system_accent::get_system_accent,
             window_material::get_window_material,

@@ -20,6 +20,7 @@ import {
   DocumentTextIcon,
   InfoCircleIcon,
   KeyboardIcon,
+  LayersIcon,
   LoaderIcon,
   MinusIcon,
   PaletteIcon,
@@ -37,6 +38,7 @@ import { localeAtom } from "@/i18n/atoms";
 import { cn } from "@/lib/utils";
 import { getStoredThemePreference, setThemePreference, type ThemePreference } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
@@ -64,12 +66,20 @@ import {
   type ShortcutId,
 } from "./shortcut-registry";
 
-type Pane = "appearance" | "shortcuts" | "terminal" | "defaultFileManager" | "logs" | "about";
+type Pane =
+  | "appearance"
+  | "shortcuts"
+  | "terminal"
+  | "tabs"
+  | "defaultFileManager"
+  | "logs"
+  | "about";
 
 const NAV_ITEMS: ReadonlyArray<{ icon: typeof SettingsIcon; pane: Pane }> = [
   { icon: PaletteIcon, pane: "appearance" },
   { icon: KeyboardIcon, pane: "shortcuts" },
   { icon: ProgrammingIcon, pane: "terminal" },
+  { icon: LayersIcon, pane: "tabs" },
   { icon: SettingsIcon, pane: "defaultFileManager" },
   { icon: DocumentTextIcon, pane: "logs" },
   { icon: InfoCircleIcon, pane: "about" },
@@ -120,6 +130,7 @@ export function SettingsDialog() {
             {pane === "appearance" && <AppearancePane />}
             {pane === "shortcuts" && <ShortcutsPane />}
             {pane === "terminal" && <TerminalPane />}
+            {pane === "tabs" && <TabsPane />}
             {pane === "defaultFileManager" && <DefaultFileManagerPane />}
             {pane === "logs" && <LogsPane />}
             {pane === "about" && <AboutPane />}
@@ -642,5 +653,30 @@ function AboutPane() {
         />
       </SettingRows>
     </div>
+  );
+}
+
+function TabsPane() {
+  const { t } = useTranslation("settings");
+  const [settings, patch] = useSettings();
+
+  return (
+    <>
+      <PaneHeader description={t("tabs.description")} title={t("nav.tabs")} />
+      <SettingRows>
+        <SettingRow
+          control={
+            <Checkbox
+              checked={settings.warmTabPool}
+              id="warm-tab-pool"
+              onCheckedChange={(checked) => patch({ warmTabPool: checked === true })}
+            />
+          }
+          description={t("tabs.warmPool.description")}
+          htmlFor="warm-tab-pool"
+          label={t("tabs.warmPool.label")}
+        />
+      </SettingRows>
+    </>
   );
 }

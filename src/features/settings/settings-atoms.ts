@@ -37,12 +37,15 @@ export const CLIENT_DEFAULT_SETTINGS: AppSettings = {
   shortcuts: { ...DEFAULT_BINDINGS },
   terminal: { fontSize: 13, lineHeight: 1.2, fontFamily: null, ansiColors: null },
   defaultFileManager: { isDefault: false },
+  warmTabPool: true,
 };
 
 /**
  * Shallow-merges a patch into the base settings. `shortcuts` is treated as a
  * delta (id -> binding) so callers can update one action without resending the
- * whole map; `terminal` and `defaultFileManager` merge field-by-field.
+ * whole map; `terminal` and `defaultFileManager` merge field-by-field. Scalars
+ * have to be listed by hand - the patch is not spread wholesale, so a field
+ * missing from here is silently dropped.
  */
 function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): AppSettings {
   return {
@@ -52,6 +55,7 @@ function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): AppSetti
     ...(patch.defaultFileManager
       ? { defaultFileManager: { ...base.defaultFileManager, ...patch.defaultFileManager } }
       : null),
+    ...(patch.warmTabPool === undefined ? null : { warmTabPool: patch.warmTabPool }),
   };
 }
 
@@ -69,7 +73,14 @@ export function useSettings(): readonly [AppSettings, (patch: Partial<AppSetting
       setStored(next);
       void commands
         .saveSettings(next)
-        .then((normalized) => setStored(normalized))
+        .then((normalized) => {
+          setStored(normalized);
+          // The pool reads this setting in Rust, which saving does not reach, so
+          // bring it in line here instead of leaving it to a restart. Harmless
+          // on unrelated saves: priming returns early when a window is already
+          // waiting, and disposing is a no-op when nothing is pooled.
+          void commands.syncTabPool();
+        })
         .catch((error) => {
           console.error("Failed to save settings:", getFileOperationErrorMessage(error));
         });

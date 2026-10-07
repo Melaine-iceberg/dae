@@ -7,6 +7,7 @@
     "appearance": "Appearance",
     "shortcuts": "Shortcuts",
     "terminal": "Terminal",
+    "tabs": "Tabs",
     "defaultFileManager": "Default file manager",
     "logs": "Logs",
     "about": "About"
@@ -75,6 +76,13 @@
     "lineHeightHint": "A multiplier from 0.8 to 3.0; 1.2 is the default.",
     "lineHeightDecrease": "Decrease line height",
     "lineHeightIncrease": "Increase line height"
+  },
+  "tabs": {
+    "description": "How tabs behave when you tear one out of its window.",
+    "warmPool": {
+      "label": "Keep a window ready",
+      "description": "Holds one hidden window so a tab torn out of a window appears at once instead of building one from scratch. Costs roughly 200MB of memory while the app is running."
+    }
   },
   "defaultFileManager": {
     "description": "Register dae to open folders from the operating system.",
