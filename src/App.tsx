@@ -28,6 +28,7 @@ import {
   watchWindowMaterial,
 } from "@/lib/window-material";
 import { applyWindowFocus, watchWindowFocus } from "@/lib/window-focus";
+import { useGitRefreshOnDirectoryChange } from "@/features/explorer/git-refresh";
 import { TabPerfProfiler } from "@/lib/tab-perf-profiler";
 
 // Overlays that only appear on user action; their chunks load on demand so
@@ -81,6 +82,8 @@ function App() {
 
   useLocaleSync();
   useHydrateSettings();
+  // Window-level, not per surface: the keys it invalidates are global already.
+  useGitRefreshOnDirectoryChange();
 
   useEffect(() => watchSystemTheme(applySystemTheme), []);
   // System accent (see src/lib/system-accent.ts). `watchSystemAccent` is the

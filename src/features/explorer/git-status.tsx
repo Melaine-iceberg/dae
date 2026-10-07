@@ -1,8 +1,8 @@
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
-import { commands, events, type GitEntryStatusKind } from "@/bindings";
+import { commands, type GitEntryStatusKind } from "@/bindings";
 import { cn } from "@/lib/utils";
 
 import type { DirectoryEntry } from "./types";
@@ -31,35 +31,30 @@ export const GIT_STATUS_QUERY_KEY = "git-status";
 export const GIT_REFRESH_DELAY_MS = 400;
 
 /**
- * 当前目录的 Git 装饰信息。状态由 git2 在后端阻塞线程计算；目录变更事件与
- * 窗口聚焦会触发重新拉取（合并后），保证徽标始终新鲜且不阻塞 UI。
+ * 新鲜到这个时长为止。
+ *
+ * 目录变更事件用 `invalidateQueries` 强制重取，**不受这个值约束**，所以真实的
+ * 变化依然立刻可见；这个值只挡下「因为窗口重新获得焦点」而重跑一次 git2 全仓
+ * 遍历的情况 —— 实测中新窗口显示后会为同一份数据再走一次，而它刚刚取过。
+ *
+ * 5 秒覆盖了预热窗口从启动到被显示的距离（预热延时 3 秒），所以池里的窗口带着
+ * 自己已经取好的数据出现，不会一露面就重算。
+ */
+export const GIT_STALE_TIME_MS = 5_000;
+
+/**
+ * 当前目录的 Git 装饰信息。状态由 git2 在后端阻塞线程计算；目录变更事件会触发
+ * 重新拉取（合并后，见 `useGitRefreshOnDirectoryChange`），窗口聚焦也会，但只限于
+ * 数据已经不新鲜时（`GIT_STALE_TIME_MS`），保证徽标新鲜且不阻塞 UI。
  */
 export function useGitStatus(directoryPath: string | null): ExplorerGitStatus | null {
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    let refreshTimeout: number | undefined;
-
-    const unlistenPromise = events.explorerDirectoryChanged.listen(() => {
-      window.clearTimeout(refreshTimeout);
-      refreshTimeout = window.setTimeout(() => {
-        refreshTimeout = undefined;
-        void queryClient.invalidateQueries({ queryKey: [GIT_STATUS_QUERY_KEY] });
-      }, GIT_REFRESH_DELAY_MS);
-    });
-
-    return () => {
-      window.clearTimeout(refreshTimeout);
-      void unlistenPromise.then((unlisten) => unlisten());
-    };
-  }, [queryClient]);
-
   const { data } = useQuery({
     enabled: directoryPath !== null,
     placeholderData: (previous) => previous,
     queryFn: () => commands.getGitStatus(directoryPath!),
     queryKey: [GIT_STATUS_QUERY_KEY, directoryPath],
     retry: false,
+    staleTime: GIT_STALE_TIME_MS,
   });
 
   return useMemo(() => {

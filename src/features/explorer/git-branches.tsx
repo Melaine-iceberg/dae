@@ -13,7 +13,7 @@ import {
   UploadIcon,
 } from "@solar-icons/react/line-duotone";
 
-import { commands, events } from "@/bindings";
+import { commands } from "@/bindings";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -38,41 +38,23 @@ import { getFileOperationErrorMessage, translateBackendMessage } from "@/i18n/er
 import { notify } from "@/lib/notifications";
 import { cn } from "@/lib/utils";
 
-import { GIT_REFRESH_DELAY_MS, GIT_STATUS_QUERY_KEY } from "./git-status";
+import { GIT_STALE_TIME_MS, GIT_STATUS_QUERY_KEY } from "./git-status";
 
-const GIT_BRANCHES_QUERY_KEY = "git-branches";
+export const GIT_BRANCHES_QUERY_KEY = "git-branches";
 
 /**
- * 仓库分支信息。与 `useGitStatus` 一样按路径缓存，目录变更事件（按
- * `GIT_REFRESH_DELAY_MS` 合并）与窗口聚焦会触发重新拉取；所有 Git
- * 操作完成后也会显式失效。
+ * 仓库分支信息。与 `useGitStatus` 一样按路径缓存；目录变更事件（按
+ * `GIT_REFRESH_DELAY_MS` 合并）与窗口聚焦会触发重新拉取，但聚焦仅限于
+ * 数据已不新鲜时；所有 Git 操作完成后也会显式失效。
  */
 function useGitBranches(root: string | null) {
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    let refreshTimeout: number | undefined;
-
-    const unlistenPromise = events.explorerDirectoryChanged.listen(() => {
-      window.clearTimeout(refreshTimeout);
-      refreshTimeout = window.setTimeout(() => {
-        refreshTimeout = undefined;
-        void queryClient.invalidateQueries({ queryKey: [GIT_BRANCHES_QUERY_KEY] });
-      }, GIT_REFRESH_DELAY_MS);
-    });
-
-    return () => {
-      window.clearTimeout(refreshTimeout);
-      void unlistenPromise.then((unlisten) => unlisten());
-    };
-  }, [queryClient]);
-
   const { data } = useQuery({
     enabled: root !== null,
     placeholderData: (previous) => previous,
     queryFn: () => commands.listGitBranches(root!),
     queryKey: [GIT_BRANCHES_QUERY_KEY, root],
     retry: false,
+    staleTime: GIT_STALE_TIME_MS,
   });
 
   return data ?? null;
