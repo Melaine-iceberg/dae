@@ -71,6 +71,30 @@ pub fn mark_release() -> f64 {
     now
 }
 
+/// Sets the release stamp for a tear-off that has just been resolved.
+///
+/// Unlike [`mark_release`] this always writes: the caller holds the drag's own
+/// end instant, and a stamp left behind by an earlier drag must not win over it.
+/// It is not gated on [`enabled`] either - one atomic store per drag is not
+/// worth a branch, and an untestable function is worth less than that.
+pub fn stamp_release(at: f64) {
+    LAST_RELEASE_MS.store(at as u64, Ordering::SeqCst);
+}
+
+/// Forgets the release stamp, for a drag that ended as anything but a tear-off.
+pub fn clear_release() {
+    LAST_RELEASE_MS.store(0, Ordering::SeqCst);
+}
+
+/// Whether a resolved drag ends in a tear-off, and so starts a timeline.
+///
+/// Mirrors the frontend's three-way split in `explorer-tabs.tsx`: a drag not
+/// released outside is a reorder, one with a drop target is a soak, and only
+/// the remainder detaches a tab into a window of its own.
+pub fn starts_tear_off(released: bool, outside: bool, has_target: bool) -> bool {
+    released && outside && !has_target
+}
+
 /// The release stamp, if a tear-off is in flight. Used to anchor the new window.
 pub fn release_ms() -> Option<f64> {
     match LAST_RELEASE_MS.load(Ordering::SeqCst) {
@@ -231,7 +255,7 @@ fn offset_rows(
 
 #[cfg(test)]
 mod tests {
-    use super::offset_rows;
+    use super::{clear_release, offset_rows, release_ms, stamp_release, starts_tear_off};
 
     fn marks(pairs: &[(&str, f64)]) -> Vec<(String, f64)> {
         pairs
@@ -276,5 +300,37 @@ mod tests {
 
         assert_eq!(rows.first().map(|(stage, _)| stage.as_str()), Some("EARLY"));
         assert_eq!(rows.last().map(|(stage, _)| stage.as_str()), Some("LATE"));
+    }
+
+    #[test]
+    fn only_a_tear_off_starts_a_timeline() {
+        // Released inside the source window: a reorder.
+        assert!(!starts_tear_off(false, false, false));
+        // Released outside, over another window's strip: a soak.
+        assert!(!starts_tear_off(true, true, true));
+        // Released outside, over nothing: the tab detaches.
+        assert!(starts_tear_off(true, true, false));
+        // A drag the platform never reported as released stays a reorder no
+        // matter how far it travelled.
+        assert!(!starts_tear_off(false, true, false));
+    }
+
+    #[test]
+    fn a_soak_between_two_tear_offs_does_not_anchor_the_second() {
+        // The reported bug: a reorder or soak near a tear-off used to leave its
+        // release in the slot, so the next timeline started at the soak and
+        // counted the user's dragging time as latency.
+        let soak = 1_000.0;
+        let tear_off = 1_356.0;
+
+        stamp_release(soak);
+        assert_eq!(release_ms(), Some(soak));
+        clear_release();
+        assert_eq!(release_ms(), None);
+
+        stamp_release(tear_off);
+        assert_eq!(release_ms(), Some(tear_off));
+
+        clear_release();
     }
 }

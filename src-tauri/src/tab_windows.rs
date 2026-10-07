@@ -629,9 +629,11 @@ async fn run_native_tab_drag(
             Err(error) => return Err(error.to_string()),
         };
 
-    // Zero point for the tear-off timeline: this line runs the instant the
-    // native drag hands control back, before any window work starts.
-    crate::tab_perf::mark_release();
+    // The instant the native drag handed control back, before any window work
+    // starts. It becomes a timeline's zero point only if this drag turns out
+    // to be a tear-off, which the drop resolution below decides, so it is held
+    // here rather than stamped.
+    let drag_ended = crate::tab_perf::now_ms();
 
     // The drag is over, and the button that started it went out of this
     // application's reach the moment the drag took it.
@@ -643,6 +645,16 @@ async fn run_native_tab_drag(
     let cursor_x = cursor.x;
     let cursor_y = cursor.y;
     let (outside, drop_target) = resolve_native_drop(app, &source, &window, released, cursor)?;
+
+    // Only a tear-off gets a timeline; every other drag clears the slot.
+    // Stamping each drag instead left a soak's release behind, and the next
+    // tear-off then counted the user's own dragging time as latency - 1356ms of
+    // it, for a drag that took that long to perform.
+    if crate::tab_perf::starts_tear_off(released, outside, drop_target.is_some()) {
+        crate::tab_perf::stamp_release(drag_ended);
+    } else {
+        crate::tab_perf::clear_release();
+    }
 
     Ok(TabDragOutcome {
         released,
