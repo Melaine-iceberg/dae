@@ -124,13 +124,21 @@ async function bootstrap() {
     // which of "observed" and "unsupported" happened matters, because an engine
     // that cannot report long tasks would otherwise look exactly like an idle
     // one, and the two call for opposite conclusions.
+    // Registering is not the same as being able to report: an engine without
+    // long-task support accepts the observer and then says nothing, which reads
+    // exactly like an idle main thread - and those two call for opposite
+    // conclusions. `supportedEntryTypes` separates them, so its answer is
+    // recorded before any entry could be.
     try {
-      new PerformanceObserver((list) => {
-        for (const entry of list.getEntries()) {
-          tabPerfMark(`longtask:${Math.round(entry.duration)}ms`);
-        }
-      }).observe({ entryTypes: ["longtask"] });
-      tabPerfMark("longtask:observed");
+      const longTasks = PerformanceObserver.supportedEntryTypes?.includes("longtask") ?? false;
+      tabPerfMark(longTasks ? "longtask:supported" : "longtask:unsupported");
+      if (longTasks) {
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            tabPerfMark(`longtask:${Math.round(entry.duration)}ms`);
+          }
+        }).observe({ entryTypes: ["longtask"] });
+      }
     } catch {
       tabPerfMark("longtask:unsupported");
     }
