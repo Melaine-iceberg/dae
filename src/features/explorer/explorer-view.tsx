@@ -37,6 +37,8 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { tabPerfMark } from "@/lib/tab-perf";
+
 import { commands, type ArchiveFormat, type UndoRedoOutcome } from "@/bindings";
 
 import { formatBinding } from "@/features/settings/shortcut-registry";
@@ -254,6 +256,13 @@ export function ExplorerView({
   const listing = state.listing;
   const directoryPath = directory?.path;
   const isLoading = state.status === "loading";
+  // The listing is what gates the first paint; git status arrives on its own and
+  // the list only reads it for a badge. Marking the moment the navigator stops
+  // loading is what tells the two apart in an adoption, where both are IPC calls
+  // that settle within a few milliseconds of each other.
+  useEffect(() => {
+    if (!isLoading) tabPerfMark("listing");
+  }, [isLoading]);
   const canGoBack = !isLoading && state.historyIndex > 0;
   const canGoForward = !isLoading && state.historyIndex < state.history.length - 1;
   const canGoUp = !isLoading && (directory?.breadcrumbs.length ?? 0) > 1;
