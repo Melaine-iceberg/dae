@@ -12,6 +12,7 @@
     "lint:type-aware:fix": "vp lint --type-aware --fix src vite.config.ts",
     "preview": "vp preview",
     "tauri": "tauri",
+    "tauri:build:release": "bun tauri build --config src-tauri/tauri.release.conf.json",
     "tauri:dev:withidentity": "bun run bindings:export && bun run build && cargo build --manifest-path src-tauri/Cargo.toml && (if not exist dist mkdir dist) && copy /Y src-tauri\\target\\debug\\dae.exe dist\\ >nul && winapp run .\\dist",
     "pack:msix": "node scripts/sync-msix-version.mjs && bun tauri build --no-bundle && (if not exist dist mkdir dist) && copy /Y src-tauri\\target\\release\\dae.exe dist\\ >nul && winapp pack .\\dist --cert .\\devcert.pfx",
     "icons:icon": "bun scripts/render-icon.mjs && bun tauri icon src-tauri/icons/source/goose-master.png",
