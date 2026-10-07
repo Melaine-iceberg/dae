@@ -38,6 +38,12 @@ const DST_LABEL: &str = "poc-dst";
 /// Label of the webview itself; deliberately different from both windows so a
 /// label mix-up cannot be mistaken for correct behaviour.
 const WEBVIEW_LABEL: &str = "poc-webview";
+/// Scenario 2: a window built with `WebviewWindowBuilder`, i.e. the shape
+/// `tab_windows.rs` uses, whose webview is created by the builder rather than
+/// by `add_child`.
+const WW_SRC: &str = "poc-ww-src";
+/// Scenario 2 target, also a `WebviewWindow`.
+const WW_DST: &str = "poc-ww-dst";
 /// Served from `public/`, so the probe page never boots the real app.
 const PAGE: &str = "reparent-poc.html";
 /// Survives the shell that started the app, so a failed run is still readable.
@@ -59,6 +65,9 @@ pub fn spawn(app: tauri::AppHandle) {
         note(&serde_json::json!({ "event": "poc-start" }));
         if let Err(error) = run(&app).await {
             note(&serde_json::json!({ "event": "poc-failed", "error": error }));
+        }
+        if let Err(error) = run_webview_windows(&app).await {
+            note(&serde_json::json!({ "event": "ww-failed", "error": error }));
         }
         note(&serde_json::json!({ "event": "poc-done" }));
     });
@@ -143,12 +152,143 @@ async fn run(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Scenario 2: the shape the app actually uses. Both windows are built the way
+/// `tab_windows.rs` builds its tear-off windows — `WebviewWindowBuilder`, not
+/// `Window` + `add_child` — and the handles come from the manager, because
+/// `WebviewWindow` exposes no `&Window` accessor and `reparent` wants one.
+///
+/// With `unstable` on, `reparent` skips its `is_webview_window()` guard
+/// entirely, so this asks whether the cheap migration is viable: keep every
+/// `WebviewWindow` (and with it `window_material` and the GTK drop target),
+/// and move only the webview.
+async fn run_webview_windows(app: &tauri::AppHandle) -> Result<(), String> {
+    let src = tauri::WebviewWindowBuilder::new(app, WW_SRC, WebviewUrl::App(PAGE.into()))
+        .title("WW source")
+        .inner_size(WIDTH, HEIGHT)
+        .position(60.0, 560.0)
+        .decorations(false)
+        .build()
+        .map_err(|error| format!("build {WW_SRC}: {error}"))?;
+
+    let dst = tauri::WebviewWindowBuilder::new(app, WW_DST, WebviewUrl::App(PAGE.into()))
+        .title("WW target")
+        .inner_size(WIDTH + 120.0, HEIGHT + 80.0)
+        .position(660.0, 560.0)
+        .decorations(false)
+        .build()
+        .map_err(|error| format!("build {WW_DST}: {error}"))?;
+
+    sleep_ms(1500).await;
+
+    // The two handles the migration would actually hold.
+    let webview = app
+        .get_webview(WW_SRC)
+        .ok_or_else(|| format!("no webview registered as {WW_SRC}"))?;
+    let target = app
+        .get_window(WW_DST)
+        .ok_or_else(|| format!("no window registered as {WW_DST}"))?;
+
+    note(&serde_json::json!({
+        "event": "ww-built",
+        "src_webviews": src.webviews().len(),
+        "dst_webviews": dst.webviews().len(),
+        "src_has_window": app.get_window(WW_SRC).is_some(),
+        "src_has_webview": app.get_webview(WW_SRC).is_some(),
+    }));
+
+    eval(&webview, "window.__poc_mark('ww-before')");
+    sleep_ms(700).await;
+
+    let result = webview.reparent(&target);
+    note(&serde_json::json!({
+        "event": "ww-reparent",
+        "result": match &result {
+            Ok(()) => "ok".to_string(),
+            Err(error) => error.to_string(),
+        },
+    }));
+    result.map_err(|error| format!("ww reparent: {error}"))?;
+
+    sleep_ms(1200).await;
+    note(&serde_json::json!({
+        "event": "ww-post",
+        "webview_window": webview.window().label(),
+        "src_webviews": app.get_window(WW_SRC).map(|w| w.webviews().len()),
+        "dst_webviews": app.get_window(WW_DST).map(|w| w.webviews().len()),
+        "all_webviews": app
+            .webviews()
+            .into_iter()
+            .map(|(label, w)| format!("{label}@{}", w.window().label()))
+            .collect::<Vec<_>>(),
+    }));
+
+    // The page must still be the same one, on the same JS context.
+    eval(&webview, "window.__poc_mark('ww-after')");
+    sleep_ms(1200).await;
+
+    // Round trip: drag it back. A tear-off that cannot come home is not usable.
+    let src_window = app
+        .get_window(WW_SRC)
+        .ok_or_else(|| format!("no window registered as {WW_SRC}"))?;
+    let back = webview.reparent(&src_window);
+    note(&serde_json::json!({
+        "event": "ww-reparent-back",
+        "result": match &back {
+            Ok(()) => "ok".to_string(),
+            Err(error) => error.to_string(),
+        },
+    }));
+    back.map_err(|error| format!("ww reparent back: {error}"))?;
+
+    sleep_ms(1000).await;
+    eval(&webview, "window.__poc_mark('ww-back')");
+    sleep_ms(1000).await;
+    note(&serde_json::json!({
+        "event": "ww-back-post",
+        "webview_window": webview.window().label(),
+        "src_webviews": app.get_window(WW_SRC).map(|w| w.webviews().len()),
+        "dst_webviews": app.get_window(WW_DST).map(|w| w.webviews().len()),
+    }));
+
+    // Now the emptied shell: the tab that was dragged out has come home, so the
+    // window it left behind holds no webview. Closing it must not take the live
+    // webview down with it — the failure mode that would make this unusable.
+    let closed = match app.get_window(WW_DST) {
+        Some(window) => window.close().map_err(|error| error.to_string()),
+        None => Err("already gone".to_string()),
+    };
+    note(&serde_json::json!({
+        "event": "ww-close-emptied",
+        "result": match &closed {
+            Ok(()) => "ok".to_string(),
+            Err(error) => error.clone(),
+        },
+    }));
+
+    sleep_ms(1500).await;
+    note(&serde_json::json!({
+        "event": "ww-after-close",
+        "dst_still_registered": app.get_window(WW_DST).is_some(),
+        "webview_window": webview.window().label(),
+        "src_webviews": app.get_window(WW_SRC).map(|w| w.webviews().len()),
+        "all_webviews": app
+            .webviews()
+            .into_iter()
+            .map(|(label, w)| format!("{label}@{}", w.window().label()))
+            .collect::<Vec<_>>(),
+    }));
+    // Still reachable after the sibling window is gone?
+    eval(&webview, "window.__poc_mark('ww-after-close')");
+    sleep_ms(1200).await;
+
+    Ok(())
+}
+
 fn eval(webview: &tauri::Webview, script: &str) {
     if let Err(error) = webview.eval(script) {
         note(&serde_json::json!({ "event": "eval-failed", "script": script, "error": error.to_string() }));
     }
 }
-
 async fn sleep_ms(millis: u64) {
     tokio::time::sleep(Duration::from_millis(millis)).await;
 }
