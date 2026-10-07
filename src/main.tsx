@@ -79,17 +79,42 @@ async function bootstrap() {
 
   // `render -> first-frame` used to be one number, so it could not say whether
   // the main thread was busy or idle. These split it into the three things it
-  // can be: React producing DOM, the event loop coming back, and a frame being
-  // painted. Creating the observer is free; only observing costs anything, and
-  // that happens only when the probe is on.
+  // can be: React producing DOM, the event loop coming back, and the first frame
+  // that can actually show the result. Creating the observer is free; only
+  // observing costs anything, and that happens only when the probe is on.
+  let reported = false;
+  const report = () => {
+    if (reported) return;
+    reported = true;
+    tabPerfReport();
+  };
+
   const observer = new MutationObserver(() => {
     tabPerfMark("commit");
     observer.disconnect();
+    // A frame requested back at `render` can land before this commit and paint
+    // the splash, which is how `first-frame` once read 269ms for a window that
+    // did not commit until 410ms. The frame that can show React's DOM is the
+    // first one after the commit, so it is measured from here.
+    requestAnimationFrame(() => {
+      tabPerfMark("first-frame");
+      setTimeout(report, 0);
+    });
   });
 
   if (tabPerfEnabled()) {
     tabPerfMark("render");
     observer.observe(root, { childList: true, subtree: true });
+    // How quickly the event loop came back. Within a millisecond or two means
+    // React was not starving it, and any later commit delay is React's own work.
+    setTimeout(() => tabPerfMark("tick"), 0);
+    // Nothing should stop the commit, but a report that never arrives cannot be
+    // told apart from the probe being switched off, so say which one it is.
+    setTimeout(() => {
+      if (reported) return;
+      tabPerfMark("commit-missing");
+      report();
+    }, 5_000);
   }
 
   ReactDOM.createRoot(root).render(
@@ -99,22 +124,6 @@ async function bootstrap() {
       </React.StrictMode>
     </QueryClientProvider>,
   );
-
-  // The last mark is the frame that replaces the splash with real content, and
-  // it is the one the user is really waiting on. `tick` is queued before the
-  // frame request so FIFO runs it first: a late tick means the main thread was
-  // busy, an early one means React deferred its own work and the window was
-  // waiting rather than working.
-  if (tabPerfEnabled()) {
-    setTimeout(() => tabPerfMark("tick"), 0);
-    requestAnimationFrame(() => {
-      tabPerfMark("first-frame");
-      // Reports only after `tick` has had its turn, for the same FIFO reason.
-      // Deliberately not marked: `first-frame` should stay the last row so that
-      // TOTAL keeps meaning "time until the user can see content".
-      setTimeout(tabPerfReport, 0);
-    });
-  }
 
   // The window is visible from creation (tauri.conf visible:true), so nothing
   // waits on React here: what covers the bundle load is the `#splash` in
