@@ -26,6 +26,10 @@
 //!
 //! Both [`Window::add_child`] and [`Webview::reparent`] are `unstable`-gated
 //! (see `Cargo.toml`).
+//!
+//! Scenario 4 is gated separately by `DAE_POC_REALTAB=1` and moves a webview
+//! that runs the real app bundle inside `window_material` windows, since the
+//! three scenarios above only ever move a static page. See `run_real_tab`.
 
 use std::time::Duration;
 
@@ -280,6 +284,192 @@ async fn run_webview_windows(app: &tauri::AppHandle) -> Result<(), String> {
     // Still reachable after the sibling window is gone?
     eval(&webview, "window.__poc_mark('ww-after-close')");
     sleep_ms(1200).await;
+
+    Ok(())
+}
+
+/// Scenario 4: the bet the migration actually makes. The three scenarios above
+/// move a static probe page, but a real tab is a webview running the app bundle
+/// (React tree, jotai store, mounted listeners) inside a `window_material`
+/// window. Here both windows are built the way `tear_off_tab` builds one, and
+/// the state probe is injected with `eval` instead of living in the page, so a
+/// reload would reset `boot` and restart `ticks` just the same.
+///
+/// `DAE_POC_REALTAB=1` gates it separately, so the static-page results stay
+/// reproducible on their own.
+const RT_SRC: &str = "poc-rt-src";
+/// The window that ends up hosting both webviews, i.e. the shape the target
+/// architecture needs: one window, a shell webview plus a moved-in content webview.
+const RT_DST: &str = "poc-rt-dst";
+
+pub fn real_tab_enabled() -> bool {
+    std::env::var("DAE_POC_REALTAB").is_ok_and(|value| value == "1" || value == "true")
+}
+
+pub fn spawn_real_tab(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        std::thread::sleep(Duration::from_secs(2));
+        note(&serde_json::json!({ "event": "rt-start" }));
+        if let Err(error) = run_real_tab(&app).await {
+            note(&serde_json::json!({ "event": "rt-failed", "error": error }));
+        }
+        note(&serde_json::json!({ "event": "rt-done" }));
+    });
+}
+
+/// Asks the real page to report the state kept on `window.__rt`, plus the
+/// geometry and label the page believes it has.
+fn probe(webview: &tauri::Webview, stage: &str) {
+    let script = format!(
+        "(function (stage) {{
+          var internals = window.__TAURI_INTERNALS__ || {{}};
+          if (!window.__rt) {{
+            window.__rt = {{ boot: Math.random().toString(36).slice(2, 10), ticks: 0 }};
+            setInterval(function () {{ window.__rt.ticks += 1; }}, 50);
+          }}
+          var meta = internals.metadata || {{}};
+          internals.invoke('poc_report', {{ data: JSON.stringify({{
+            event: 'rt-' + stage,
+            boot: window.__rt.boot,
+            ticks: window.__rt.ticks,
+            nodes: document.getElementsByTagName('*').length,
+            viewport: [window.innerWidth, window.innerHeight],
+            screen: [window.screenX, window.screenY],
+            dpr: window.devicePixelRatio,
+            scrollY: Math.round(window.scrollY),
+            title: document.title,
+            hasFocus: document.hasFocus(),
+            label: (meta.currentWindow || {{}}).label,
+            webviewLabel: (meta.currentWebview || {{}}).label,
+            href: location.href,
+            hasInternals: !!internals.invoke,
+          }}) }});
+        }})({stage:?})"
+    );
+    eval(webview, &script);
+}
+
+fn window_webviews(app: &tauri::AppHandle, label: &str) -> Option<usize> {
+    app.get_window(label).map(|window| window.webviews().len())
+}
+
+async fn run_real_tab(app: &tauri::AppHandle) -> Result<(), String> {
+    let build = |label: &str, title: &str, x: f64, width: f64| {
+        crate::window_material::configure(
+            tauri::WebviewWindowBuilder::new(app, label, WebviewUrl::App("index.html".into()))
+                .title(title)
+                .inner_size(width, 620.0)
+                .position(x, 120.0)
+                .decorations(false),
+        )
+        .build()
+        .map(|window| window.label().to_owned())
+        .map_err(|error| format!("build {label}: {error}"))
+    };
+    build(RT_SRC, "RT source", 80.0, 780.0)?;
+    build(RT_DST, "RT target", 920.0, 900.0)?;
+
+    // The bundle has to finish booting React before any of this means anything.
+    sleep_ms(6000).await;
+
+    let webview = app
+        .get_webview(RT_SRC)
+        .ok_or_else(|| format!("no webview registered as {RT_SRC}"))?;
+    let target = app
+        .get_window(RT_DST)
+        .ok_or_else(|| format!("no window registered as {RT_DST}"))?;
+
+    note(&serde_json::json!({
+        "event": "rt-built",
+        "src_webviews": window_webviews(app, RT_SRC),
+        "dst_webviews": window_webviews(app, RT_DST),
+    }));
+
+    probe(&webview, "before");
+    sleep_ms(1500).await;
+
+    let moved = webview.reparent(&target);
+    note(&serde_json::json!({
+        "event": "rt-reparent",
+        "result": match &moved {
+            Ok(()) => "ok".to_string(),
+            Err(error) => error.to_string(),
+        },
+    }));
+    moved.map_err(|error| format!("rt reparent: {error}"))?;
+
+    sleep_ms(2000).await;
+    note(&serde_json::json!({
+        "event": "rt-post",
+        "webview_window": webview.window().label(),
+        "src_webviews": window_webviews(app, RT_SRC),
+        "dst_webviews": window_webviews(app, RT_DST),
+        "all_webviews": app
+            .webviews()
+            .into_iter()
+            .map(|(label, w)| format!("{label}@{}", w.window().label()))
+            .collect::<Vec<_>>(),
+    }));
+    probe(&webview, "after");
+    sleep_ms(1500).await;
+
+    // Drag it home, then out again, so the shell can be closed while genuinely
+    // empty — the case scenario 3 never actually reached.
+    let source = app
+        .get_window(RT_SRC)
+        .ok_or_else(|| format!("no window registered as {RT_SRC}"))?;
+    let back = webview.reparent(&source);
+    note(&serde_json::json!({
+        "event": "rt-reparent-back",
+        "result": match &back {
+            Ok(()) => "ok".to_string(),
+            Err(error) => error.to_string(),
+        },
+    }));
+    back.map_err(|error| format!("rt reparent back: {error}"))?;
+    sleep_ms(1500).await;
+    probe(&webview, "back");
+    sleep_ms(1000).await;
+
+    let target = app
+        .get_window(RT_DST)
+        .ok_or_else(|| format!("no window registered as {RT_DST}"))?;
+    webview
+        .reparent(&target)
+        .map_err(|error| format!("rt reparent out again: {error}"))?;
+    sleep_ms(1500).await;
+    probe(&webview, "out-again");
+
+    note(&serde_json::json!({
+        "event": "rt-before-close-shell",
+        "src_webviews": window_webviews(app, RT_SRC),
+    }));
+    let closed = match app.get_window(RT_SRC) {
+        Some(window) => window.close().map_err(|error| error.to_string()),
+        None => Err("already gone".to_string()),
+    };
+    note(&serde_json::json!({
+        "event": "rt-close-empty-shell",
+        "result": match &closed {
+            Ok(()) => "ok".to_string(),
+            Err(error) => error.clone(),
+        },
+    }));
+
+    sleep_ms(2500).await;
+    note(&serde_json::json!({
+        "event": "rt-after-close",
+        "src_still_registered": app.get_window(RT_SRC).is_some(),
+        "webview_window": webview.window().label(),
+        "dst_webviews": window_webviews(app, RT_DST),
+        "all_webviews": app
+            .webviews()
+            .into_iter()
+            .map(|(label, w)| format!("{label}@{}", w.window().label()))
+            .collect::<Vec<_>>(),
+    }));
+    probe(&webview, "after-close");
+    sleep_ms(1500).await;
 
     Ok(())
 }

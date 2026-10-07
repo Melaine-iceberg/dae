@@ -110,7 +110,8 @@ def main() -> int:
         total_rss += rss
         if pss is not None:
             total_pss += pss
-        if "WebKitWebProcess" in comm:
+        # /proc/<pid>/comm truncates to 15 chars: "WebKitWebProces".
+        if comm.startswith("WebKitWebProces"):
             webviews += 1
         pss_text = f"{pss / 1024:.1f}" if pss is not None else "-"
         print(f"{rss / 1024:9.1f} {pss_text:>9}  {pid:<8} {comm}")

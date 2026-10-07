@@ -213,6 +213,10 @@ pub fn run() {
                 reparent_poc::spawn(app.handle().clone());
             }
 
+            if reparent_poc::real_tab_enabled() {
+                reparent_poc::spawn_real_tab(app.handle().clone());
+            }
+
             // Device and mount changes (a USB stick plugged in, a phone, a
             // share unmounted) are pushed to the sidebar the moment the OS
             // reports them; without this it only re-lists on its poll, up to a
