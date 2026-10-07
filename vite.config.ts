@@ -101,6 +101,20 @@ export default defineConfig(async ({ command }) => ({
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "./src"),
+      // React compiles the `<Profiler>` callback out of production bundles unless
+      // the build is made with profiling enabled, so the tear-off timeline's
+      // per-subtree rows only appear in a profiling build. Opt-in rather than
+      // default: the profiling build is the slower one and must never ship.
+      //
+      //   DAE_PROFILE_REACT=1 bun run tauri:build:release --no-bundle
+      ...(process.env.DAE_PROFILE_REACT === "1"
+        ? {
+            "react-dom/client": path.resolve(
+              import.meta.dirname,
+              "./node_modules/react-dom/profiling",
+            ),
+          }
+        : {}),
     },
   },
 
