@@ -33,10 +33,15 @@ export function tabPerfEnabled(): boolean {
 /**
  * Records one stage of this window's start-up, in epoch milliseconds so it can
  * be compared against the Rust-side marks directly.
+ *
+ * `at` is for callers that already hold a timeline timestamp — React's Profiler
+ * reports `commitTime` relative to `timeOrigin` — so a subtree's row lands at
+ * the instant its work finished rather than when this function was called.
+ * It must be **epoch milliseconds**, the unit the rest of the timeline uses.
  */
-export function tabPerfMark(stage: string): void {
+export function tabPerfMark(stage: string, at?: number): void {
   if (!tabPerfEnabled()) return;
-  marks.push([stage, performance.timeOrigin + performance.now()]);
+  marks.push([stage, at ?? performance.timeOrigin + performance.now()]);
 }
 
 /**

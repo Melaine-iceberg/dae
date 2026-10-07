@@ -28,6 +28,7 @@ import {
   watchWindowMaterial,
 } from "@/lib/window-material";
 import { applyWindowFocus, watchWindowFocus } from "@/lib/window-focus";
+import { TabPerfProfiler } from "@/lib/tab-perf-profiler";
 
 // Overlays that only appear on user action; their chunks load on demand so
 // the first frame stays lean.
@@ -203,7 +204,9 @@ function App() {
 
   return (
     <>
-      <ExplorerTabs />
+      <TabPerfProfiler id="ExplorerTabs">
+        <ExplorerTabs />
+      </TabPerfProfiler>
       <TextContextMenu />
       {/* Mounted above every surface and outside every lazy boundary: a
           notification can be raised by a background operation at any moment,

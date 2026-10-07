@@ -36,6 +36,7 @@ import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
 import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import { WorkspaceSurfaceView } from "@/features/workspace/workspace-surface";
+import { TabPerfProfiler } from "@/lib/tab-perf-profiler";
 import type { WorkspaceSurface } from "@/features/workspace/types";
 import { MOD_KEY } from "@/lib/platform";
 import { getAppWindow } from "@/lib/app-window";
@@ -530,7 +531,9 @@ export function ExplorerTabs() {
                     isActive ? "visible" : "invisible pointer-events-none",
                   )}
                 >
-                  <WorkspaceSurfaceView active={isActive} tabId={tab.id} />
+                  <TabPerfProfiler id="Surface">
+                    <WorkspaceSurfaceView active={isActive} tabId={tab.id} />
+                  </TabPerfProfiler>
                 </div>
               );
             })}

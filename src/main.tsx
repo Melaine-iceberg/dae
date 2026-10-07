@@ -18,6 +18,7 @@ import { setupExternalLinkGuard } from "@/lib/external-links";
 import { forwardConsoleToLogFile } from "@/lib/logging";
 import { setupNativeContextMenuGuard } from "@/lib/native-context-menu";
 import { tabPerfEnabled, tabPerfMark, tabPerfReport } from "@/lib/tab-perf";
+import { TabPerfProfiler } from "@/lib/tab-perf-profiler";
 
 // First, so that anything failing during the rest of startup is recorded: the
 // release build's webview has no console anyone will read, and this is what
@@ -120,7 +121,9 @@ async function bootstrap() {
   ReactDOM.createRoot(root).render(
     <QueryClientProvider client={queryClient}>
       <React.StrictMode>
-        <App />
+        <TabPerfProfiler id="app">
+          <App />
+        </TabPerfProfiler>
       </React.StrictMode>
     </QueryClientProvider>,
   );
