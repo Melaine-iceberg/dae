@@ -162,6 +162,21 @@ function createFolderHandoff(path: string): string {
  *  state and layout. Throws on malformed payloads. Returns the surface the
  *  tab lands on, so a booting window can tell whether it needs the explorer
  *  chunk before its first frame. */
+/** Adopts a tab into a pooled window that has never been shown.
+ *
+ * The same re-point [`restoreInitialTabHandoff`] does at boot, with one
+ * difference: this window has been running with its own default tab for a
+ * while, and a tear-off replaces that tab rather than joining it. Merging
+ * would leave the pool's own tab sitting beside the adopted one.
+ */
+export function adoptTabFromHandoff(payload: string): void {
+  tabPerfAdoptProbe();
+  const store = getDefaultStore();
+  store.set(tabsAtom, [initialTab]);
+  applyTabHandoff(initialTab.id, payload);
+  store.set(activeTabIdAtom, initialTab.id);
+}
+
 function applyTabHandoff(tabId: string, payload: string): WorkspaceSurface {
   const handoff = parseTabHandoff(payload);
   const store = getDefaultStore();

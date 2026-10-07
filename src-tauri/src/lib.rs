@@ -210,6 +210,14 @@ pub fn run() {
             // answer can only ever go down, because a window built opaque cannot be
             // made to show a backdrop — see `window_material::clamp`.
             window_material::init(app.handle());
+            // A few seconds in, off the startup path: the pool exists to move
+            // work away from the moments the user is waiting, and launch is one
+            // of them.
+            let pool_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                tab_windows::prime_pool_at_startup(&pool_app);
+            });
 
             // Device and mount changes (a USB stick plugged in, a phone, a
             // share unmounted) are pushed to the sidebar the moment the OS
@@ -457,6 +465,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             tab_windows::start_tab_drag,
             tab_windows::tear_off_tab,
             tab_windows::take_tab_handoff,
+            tab_windows::pool_window_ready,
             tab_windows::merge_tab_into_window,
             system_accent::get_system_accent,
             window_material::get_window_material,
@@ -475,6 +484,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             tab_windows::TabDragHover,
             tab_windows::TabDragLeave,
             tab_windows::TabMergedIntoWindow,
+            tab_windows::TabAdoptedIntoWindow,
             system_accent::SystemAccentChanged,
             window_material::WindowMaterialChanged
         ])

@@ -235,6 +235,18 @@ pub struct TabMergedIntoWindow {
     pub y: f64,
 }
 
+/// Hands a pooled window the tab it is to become.
+///
+/// Separate from [`TabMergedIntoWindow`] because it means the opposite thing:
+/// a merge adds a tab beside the ones already there, while this *replaces*
+/// them. A pooled window booted onto a default surface nobody has seen, so
+/// there is nothing of its own worth keeping.
+#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
+#[tauri_specta(event_name = "tab-adopted-into-window")]
+pub struct TabAdoptedIntoWindow {
+    pub payload: String,
+}
+
 /// Delivers an event from the platform's main thread.
 ///
 /// Emitting from any other thread can freeze the whole application on Linux:
@@ -294,6 +306,73 @@ pub struct TabDragOutcome {
 pub struct TabWindowState {
     handoffs: Mutex<HashMap<String, String>>,
     next_window_id: AtomicU64,
+    pool: Mutex<PoolSlot>,
+}
+
+/// The warm pool's single slot: the window still booting, and the window that
+/// has finished booting and may be adopted.
+///
+/// Both are tracked because a window is not adoptable the moment it exists. Its
+/// frontend installs the listener that receives the tab, and a hand-off sent
+/// before that is simply lost.
+#[derive(Default)]
+struct PoolSlot {
+    /// A window exists and is still loading. Holds its label.
+    booting: Option<String>,
+    /// A build was authorised but the window does not exist yet, so there is no
+    /// label to record. Without this a second prime could slip in between the
+    /// check and the build and the pool would cost twice what it was budgeted.
+    building: bool,
+    ready: Option<String>,
+}
+
+impl PoolSlot {
+    /// Claims the right to build, or refuses because one is already primed or
+    /// on its way.
+    fn reserve(&mut self) -> bool {
+        if self.building || self.booting.is_some() || self.ready.is_some() {
+            return false;
+        }
+        self.building = true;
+        true
+    }
+
+    /// Records the window a reservation produced.
+    fn built(&mut self, label: &str) {
+        self.building = false;
+        self.booting = Some(label.to_string());
+    }
+
+    /// Gives up a reservation whose build failed, so the pool can try again.
+    fn abandoned(&mut self) {
+        self.building = false;
+    }
+
+    /// Promotes a booting window to adoptable. Returns whether the label was
+    /// the pool's own, so a stray report cannot vouch for a window the pool
+    /// never built.
+    fn became_ready(&mut self, label: &str) -> bool {
+        if self.booting.as_deref() != Some(label) {
+            return false;
+        }
+        self.booting = None;
+        self.ready = Some(label.to_string());
+        true
+    }
+
+    fn take(&mut self) -> Option<String> {
+        self.ready.take()
+    }
+
+    /// Forgets a window that went away, at whichever end of its life it was.
+    fn forget(&mut self, label: &str) {
+        if self.booting.as_deref() == Some(label) {
+            self.booting = None;
+        }
+        if self.ready.as_deref() == Some(label) {
+            self.ready = None;
+        }
+    }
 }
 
 impl TabWindowState {
@@ -320,6 +399,91 @@ impl TabWindowState {
             if app.get_webview_window(&label).is_none() {
                 return label;
             }
+        }
+    }
+
+    /// Whether a tear-off may adopt a primed window instead of building one.
+    ///
+    /// Off unless asked for. The pool is an optimisation that has to be
+    /// measured against the path it replaces, so its presence must not change
+    /// the shipping path on its own.
+    fn pool_enabled() -> bool {
+        std::env::var("DAE_TAB_POOL").is_ok_and(|value| value == "1")
+    }
+
+    /// Starts one hidden window booting, if the pool is empty.
+    ///
+    /// It is given no hand-off, so it opens on the Overview surface the way any
+    /// window without one does. Everything it does from here - module load,
+    /// mount, its own queries - is what a tear-off would otherwise have to wait
+    /// for, and it happens while the user is doing something else.
+    fn prime_pool(&self, app: &tauri::AppHandle) {
+        if !Self::pool_enabled() {
+            return;
+        }
+        // `PoolSlot::reserve` cannot run in a match guard: a guard's bindings
+        // are immutable until it passes.
+        match self.pool.lock() {
+            Ok(mut slot) => {
+                if !slot.reserve() {
+                    return;
+                }
+            }
+            Err(_) => return,
+        }
+
+        let label = self.next_label(app);
+        let build = crate::window_material::configure(
+            WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
+                .title("dae")
+                .inner_size(DEFAULT_WIDTH, DEFAULT_HEIGHT)
+                .decorations(false)
+                .visible(false)
+                // Tells the page it is the pool, so only the pool reports back.
+                .initialization_script("window.__DAE_POOL_WINDOW = 1;"),
+        )
+        .build();
+
+        match build {
+            Ok(window) => {
+                let cleanup_app = app.clone();
+                let cleanup_label = label.clone();
+                window.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::Destroyed)
+                        && let Some(state) = cleanup_app.try_state::<TabWindowState>()
+                    {
+                        state.forget_pooled(&cleanup_label);
+                    }
+                });
+                if let Ok(mut slot) = self.pool.lock() {
+                    slot.built(&label);
+                }
+            }
+            Err(error) => {
+                if let Ok(mut slot) = self.pool.lock() {
+                    slot.abandoned();
+                }
+                log::warn!("Unable to prime a pooled window: {error}");
+            }
+        }
+    }
+
+    /// Promotes a booting window to adoptable once its frontend reports in.
+    fn mark_pool_ready(&self, label: &str) {
+        if let Ok(mut slot) = self.pool.lock() {
+            slot.became_ready(label);
+        }
+    }
+
+    /// Claims the ready window, if any. Returns `None` when the pool is empty
+    /// or disabled, which sends the caller down the cold path.
+    fn take_pooled(&self) -> Option<String> {
+        self.pool.lock().ok().and_then(|mut slot| slot.take())
+    }
+
+    fn forget_pooled(&self, label: &str) {
+        if let Ok(mut slot) = self.pool.lock() {
+            slot.forget(label);
         }
     }
 }
@@ -1057,6 +1221,41 @@ pub fn tear_off_tab(
     let physical_y = (cursor.y - grab_y * scale).round() as i32;
     let logical_x = f64::from(physical_x) / scale;
     let logical_y = f64::from(physical_y) / scale;
+    // Adopt the primed window when there is one. It has already paid the boot
+    // cost this function is otherwise about to pay again, so all that is left
+    // is to place it, say what it has become, and show it. Everything between
+    // here and `SHOWN` is the whole of what a pooled tear-off costs.
+    if let Some(pooled) = state.take_pooled() {
+        if let Some(window) = app.get_webview_window(&pooled) {
+            // Keeps the drag's own stamp, so the timeline still starts at the
+            // instant the user let go rather than at this call.
+            let _ = crate::tab_perf::mark_release();
+            crate::tab_perf::set_current_label(&pooled);
+            crate::tab_perf::mark("ADOPTED");
+            let _ = window.set_size(tauri::LogicalSize::new(width, height));
+            let _ = window.set_position(PhysicalPosition::new(physical_x, physical_y));
+            crate::window_material::attach(&window);
+            emit_to_window(&app, pooled.clone(), TabAdoptedIntoWindow { payload });
+            if let Err(error) = window.show() {
+                log::warn!("Unable to show a pooled window: {error}");
+            }
+            let _ = window.set_focus();
+            crate::tab_perf::mark("SHOWN");
+            // Replaces the slot once this tear-off is over, so priming does not
+            // compete with the window the user is now looking at.
+            let replenish_app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                if let Some(state) = replenish_app.try_state::<TabWindowState>() {
+                    state.prime_pool(&replenish_app);
+                }
+            });
+            return Ok(pooled);
+        }
+        // It went away between the claim and here. The cold path below is
+        // always allowed to be the answer, so nothing is lost but the prime.
+    }
+
     let label = state.next_label(&app);
 
     state.insert(label.clone(), payload)?;
@@ -1173,6 +1372,15 @@ pub fn tear_off_tab(
 
 /// Pulls the snapshot parked for a newly created window and clears it. The new
 /// frontend calls this once before its first render.
+/// Primes the warm pool, for the startup path which has no other reason to
+/// touch it. Delayed by the caller so the app's own launch does not compete
+/// with a window nobody has asked for yet.
+pub fn prime_pool_at_startup(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<TabWindowState>() {
+        state.prime_pool(app);
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn take_tab_handoff(
@@ -1180,6 +1388,18 @@ pub fn take_tab_handoff(
     label: String,
 ) -> Result<Option<String>, String> {
     state.take(&label)
+}
+
+/// Called by a pooled window once its listener is installed.
+///
+/// Until this arrives the pool will not hand it a tab. A hand-off delivered to
+/// a page that is not listening is simply lost, and the pool would then hold a
+/// window it believed was primed while the tear-off that adopted it showed
+/// nothing.
+#[tauri::command]
+#[specta::specta]
+pub fn pool_window_ready(state: tauri::State<'_, TabWindowState>, label: String) {
+    state.mark_pool_ready(&label);
 }
 
 fn point_is_outside(
@@ -1224,5 +1444,84 @@ mod tests {
             Some("snapshot")
         );
         assert_eq!(state.take("tab-window-test").unwrap(), None);
+    }
+
+    mod pool {
+        use super::super::PoolSlot;
+
+        #[test]
+        fn a_second_prime_is_refused_while_one_is_in_flight() {
+            let mut slot = PoolSlot::default();
+            assert!(slot.reserve());
+            assert!(
+                !slot.reserve(),
+                "a racing prime would build a second window"
+            );
+            slot.built("pool-1");
+            assert!(!slot.reserve(), "priming again would hold two windows");
+        }
+
+        #[test]
+        fn a_second_prime_is_refused_once_one_is_waiting() {
+            let mut slot = PoolSlot::default();
+            assert!(slot.reserve());
+            slot.built("pool-1");
+            assert!(slot.became_ready("pool-1"));
+            assert!(!slot.reserve());
+        }
+
+        #[test]
+        fn a_failed_build_lets_the_pool_try_again() {
+            let mut slot = PoolSlot::default();
+            assert!(slot.reserve());
+            slot.abandoned();
+            assert!(
+                slot.reserve(),
+                "a build that failed must not wedge the pool"
+            );
+        }
+
+        #[test]
+        fn only_the_pools_own_window_can_report_ready() {
+            let mut slot = PoolSlot::default();
+            assert!(slot.reserve());
+            slot.built("pool-1");
+            assert!(!slot.became_ready("someone-else"));
+            assert_eq!(slot.take(), None, "a stray report must not be adoptable");
+            assert!(slot.became_ready("pool-1"));
+            assert_eq!(slot.take().as_deref(), Some("pool-1"));
+        }
+
+        #[test]
+        fn taking_empties_the_slot_so_the_next_tear_off_primes_again() {
+            let mut slot = PoolSlot::default();
+            slot.built("pool-1");
+            slot.became_ready("pool-1");
+            assert_eq!(slot.take().as_deref(), Some("pool-1"));
+            assert_eq!(slot.take(), None, "claimed twice");
+        }
+
+        #[test]
+        fn a_window_that_died_is_forgotten_from_either_end() {
+            let mut booting = PoolSlot::default();
+            booting.built("pool-1");
+            booting.forget("pool-1");
+            assert!(!booting.became_ready("pool-1"), "it is gone");
+
+            let mut ready = PoolSlot::default();
+            ready.built("pool-2");
+            ready.became_ready("pool-2");
+            ready.forget("pool-2");
+            assert_eq!(ready.take(), None, "a destroyed window is not handed over");
+        }
+
+        #[test]
+        fn forgetting_another_window_leaves_the_pool_alone() {
+            let mut slot = PoolSlot::default();
+            slot.built("pool-1");
+            slot.became_ready("pool-1");
+            slot.forget("tab-window-9");
+            assert_eq!(slot.take().as_deref(), Some("pool-1"));
+        }
     }
 }

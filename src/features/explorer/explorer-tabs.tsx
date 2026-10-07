@@ -58,6 +58,7 @@ import {
   getSplitNavigator,
   getTabNavigator,
   mergeTabFromHandoff,
+  adoptTabFromHandoff,
   moveTab,
   serializeTabHandoff,
   splitEnabledFamily,
@@ -399,6 +400,38 @@ export function ExplorerTabs() {
       }
     });
     return () => void unlisten.then((unlisten) => unlisten());
+  }, []);
+
+  // A pooled window adopts the torn-off tab instead of merging it: it has been
+  // running with its own default tab, which the tear-off replaces rather than
+  // joins. Skips the insertion-index work below, which only positions a tab
+  // among others.
+  useEffect(() => {
+    let cancelled = false;
+    const unlisten = listenInThisWindow(events.tabAdoptedIntoWindow, (event) => {
+      try {
+        adoptTabFromHandoff(event.payload.payload);
+        void getAppWindow()?.setFocus();
+      } catch (error) {
+        console.error("Failed to adopt a tab into a pooled window", error);
+      }
+    });
+    // Readiness is reported only once the listener above exists, because Rust
+    // will not hand a tab over before this call and an adoption emitted at a
+    // page that is not listening is simply lost. Passive effects run after the
+    // first paint, so this deliberately does not live in the bootstrap frame.
+    void unlisten.then(() => {
+      if (cancelled) return;
+      const isPool = (globalThis as typeof globalThis & { __DAE_POOL_WINDOW?: number })
+        .__DAE_POOL_WINDOW;
+      if (isPool === 1) {
+        void commands.poolWindowReady(getAppWindow()?.label ?? "");
+      }
+    });
+    return () => {
+      cancelled = true;
+      void unlisten.then((unlisten) => unlisten());
+    };
   }, []);
 
   const syncScrollButtons = useCallback(() => {
