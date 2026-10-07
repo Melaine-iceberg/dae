@@ -454,7 +454,10 @@ impl TabWindowState {
                 .decorations(false)
                 .visible(false)
                 // Tells the page it is the pool, so only the pool reports back.
-                .initialization_script("window.__DAE_POOL_WINDOW = 1;"),
+                .initialization_script("window.__DAE_POOL_WINDOW = 1;")
+                // And switches its probe on. The anchor is left for later,
+                // because this window is built before anyone drags anything.
+                .initialization_script(crate::tab_perf::enable_script()),
         )
         .build();
 

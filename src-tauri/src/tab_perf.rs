@@ -115,6 +115,21 @@ pub fn anchor_script() -> String {
     }
 }
 
+/// The enabling half of [`anchor_script`], for a window whose release is not
+/// known when it is built.
+///
+/// A pooled window is built before anyone has dragged anything, so there is no
+/// instant to anchor on and `anchor_script` returns empty - which switches the
+/// whole frontend probe off, including the timeline it would report later.
+/// The anchor can wait; the switch cannot.
+pub fn enable_script() -> String {
+    if enabled() {
+        "window.__DAE_TAB_PERF=1;".to_string()
+    } else {
+        String::new()
+    }
+}
+
 /// Files this window's label so [`mark`] knows where to record.
 pub fn set_current_label(label: &str) {
     if !enabled() {

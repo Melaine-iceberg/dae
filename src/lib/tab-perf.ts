@@ -48,11 +48,17 @@ export function tabPerfMark(stage: string, at?: number): void {
  * Hands the collected marks back for the Rust side to fold into one timeline
  * and print. Failure is swallowed: a probe must never take down the window it
  * is measuring.
+ *
+ * `anchorAt` overrides the injected anchor for one report. A pooled window is
+ * built before anyone drags anything, so its injected anchor is zero and its
+ * marks carry times from its own boot; the adopt report passes the instant the
+ * split happened instead, so its block measures the split rather than the wait
+ * for one.
  */
-export function tabPerfReport(): void {
+export function tabPerfReport(anchorAt?: number): void {
   if (!tabPerfEnabled() || marks.length === 0) return;
   const label = getAppWindow()?.label ?? "";
-  const anchor = globals.__DAE_TAB_PERF_ANCHOR ?? 0;
+  const anchor = anchorAt ?? globals.__DAE_TAB_PERF_ANCHOR ?? 0;
   void invoke("tab_perf_report", {
     data: JSON.stringify({ label, anchor, marks }),
   }).catch(() => {});
@@ -81,7 +87,9 @@ export function tabPerfAdoptProbe(): void {
     observer?.disconnect();
     requestAnimationFrame(() => {
       tabPerfMark("adopt-painted");
-      tabPerfReport();
+      // Zeroes on the split, so this block reads as what the adoption cost
+      // rather than as the time this window happened to have been alive.
+      tabPerfReport(performance.timeOrigin + performance.now());
     });
   };
   const observer =
