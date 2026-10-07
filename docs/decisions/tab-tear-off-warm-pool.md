@@ -97,6 +97,23 @@
   而不是新造一条
 - **注入锚点**：`initialization_script` 已在用（材质与埋点），池窗口建窗时可直接沿用
 - **`linux_graphics` / `window_material` 的 `configure`**：建窗时的既有装饰路径
+- **⭐ 收养本身**：`merge_tab_into_window(target, payload, x, y)`
+  （`tab_windows.rs:267`）已经存在，它只做一件事 —— 向目标窗口 emit 一个事件，
+  由接收方前端的 `mergeTabFromHandoff`（`tabs.ts:186`）把标签加进去。
+  **「把标签移进一个已存在的窗口」就是收养**，吸回（soak）走的就是这条路。
+  ⇒ 池化缺的**不是收养机制**，而是：① 池窗口的生命周期；② 抑制 refetch（§3.2）；
+  ③ 定位与 show。
+
+  **由此带来的好处**：收养成本**不再需要先造池子才能测** —— 它可以在真实的吸回上量。
+  埋点 `adopt` / `adopt-painted` 已加（`tabPerfAdoptProbe`）。
+
+  ```bash
+  # 开两个窗口，把一个标签从 A 拖进 B（吸回），看 B 的输出：
+  DAE_PROFILE_REACT=1 bun run tauri:build:release --no-bundle
+  DAE_TAB_PERF=1 ./src-tauri/target/release/dae
+  #   adopt           t+…
+  #   adopt-painted   t+…   ← 两者之差即收养成本，与 §5.1 的 93ms 预算对比
+  ```
 
 ## 3. 硬问题
 
