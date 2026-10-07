@@ -14,7 +14,7 @@
     "tauri": "tauri",
     "tauri:build:release": "bun tauri build --config src-tauri/tauri.release.conf.json",
     "tauri:dev:withidentity": "bun run bindings:export && bun run build && cargo build --manifest-path src-tauri/Cargo.toml && (if not exist dist mkdir dist) && copy /Y src-tauri\\target\\debug\\dae.exe dist\\ >nul && winapp run .\\dist",
-    "pack:msix": "node scripts/sync-msix-version.mjs && bun tauri build --no-bundle && (if not exist dist mkdir dist) && copy /Y src-tauri\\target\\release\\dae.exe dist\\ >nul && winapp pack .\\dist --cert .\\devcert.pfx",
+    "pack:msix": "node scripts/sync-msix-version.mjs && bun run tauri:build:release --no-bundle && (if not exist dist mkdir dist) && copy /Y src-tauri\\target\\release\\dae.exe dist\\ >nul && winapp cert generate --if-exists skip && winapp pack .\\dist --cert .\\devcert.pfx",
     "icons:icon": "bun scripts/render-icon.mjs && bun tauri icon src-tauri/icons/source/goose-master.png",
     "test:rust": "src-tauri\\target\\bin\\cargo-nextest.exe nextest run --manifest-path src-tauri/Cargo.toml",
     "test:rust:setup": "cargo binstall -y cargo-nextest --install-path src-tauri/target/bin",
