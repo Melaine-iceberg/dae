@@ -21,6 +21,9 @@ mod linux_graphics;
 mod settings;
 mod shell_commands;
 mod system_accent;
+// Drag-release-to-visible instrumentation for torn-off tabs. Inert unless
+// `DAE_TAB_PERF=1`; see the module docs.
+mod tab_perf;
 mod tab_windows;
 mod terminal;
 // XDG base-directory resolution, shared by `file_icons` and `shell_commands`.
@@ -140,6 +143,10 @@ pub fn run() {
                 terminal::handle_invoke(invoke)
             } else if command == "read_directory_packets" {
                 file_system::commands::handle_raw_invoke(invoke)
+            } else if command == "tab_perf_report" {
+                // Off-bindings probe: the command is matched here so `invoke`
+                // moves in a branch body, the way the branches above do it.
+                crate::tab_perf::handle_invoke(invoke)
             } else {
                 specta_handler(invoke)
             }

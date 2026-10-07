@@ -629,6 +629,10 @@ async fn run_native_tab_drag(
             Err(error) => return Err(error.to_string()),
         };
 
+    // Zero point for the tear-off timeline: this line runs the instant the
+    // native drag hands control back, before any window work starts.
+    crate::tab_perf::mark_release();
+
     // The drag is over, and the button that started it went out of this
     // application's reach the moment the drag took it.
     #[cfg(target_os = "linux")]
@@ -1045,6 +1049,17 @@ pub fn tear_off_tab(
 
     state.insert(label.clone(), payload)?;
 
+    // The drag path already stamped the release and this keeps that first
+    // stamp, so the anchor is the instant the user let go rather than the
+    // instant this function happened to run. A tear-off that did not come from
+    // a drag has nothing stamped yet and gets one here.
+    let _ = crate::tab_perf::mark_release();
+    crate::tab_perf::set_current_label(&label);
+    // The window's own first mark. Its distance from the release is the JS round
+    // trip plus this command's IPC — the cost a hand-off done through
+    // `initialization_script` would remove.
+    crate::tab_perf::mark("TEAR_OFF_ENTER");
+
     let build_result = crate::window_material::configure(
         WebviewWindowBuilder::new(&app, &label, WebviewUrl::App("index.html".into()))
             .title("dae")
@@ -1063,7 +1078,10 @@ pub fn tear_off_tab(
             .position(logical_x, logical_y)
             .decorations(false)
             .visible(false)
-            .focused(true),
+            .focused(true)
+            // Hands the new window its anchor before any page script runs, and
+            // nothing at all when profiling is off.
+            .initialization_script(crate::tab_perf::anchor_script()),
     )
     .build();
 
@@ -1074,6 +1092,9 @@ pub fn tear_off_tab(
             return Err(error.to_string());
         }
     };
+
+    // First paint of the placeholder the user actually sees as "the window".
+    crate::tab_perf::mark("BUILT");
 
     let cleanup_app = app.clone();
     let cleanup_label = label.clone();
@@ -1107,6 +1128,7 @@ pub fn tear_off_tab(
         return Err(error.to_string());
     }
     let _ = window.set_focus();
+    crate::tab_perf::mark("SHOWN");
 
     Ok(label)
 }
