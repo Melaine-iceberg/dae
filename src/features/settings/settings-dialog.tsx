@@ -114,7 +114,7 @@ export function SettingsDialog() {
                 className={cn(
                   "flex h-7 items-center gap-2 rounded-md px-2 text-body font-medium transition-[background-color,color,box-shadow] duration-fast ease-standard outline-none",
                   pane === item
-                    ? "glass-active bg-accent text-foreground"
+                    ? "row-active bg-accent text-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
                 key={item}

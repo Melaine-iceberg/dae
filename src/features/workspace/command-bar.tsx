@@ -862,7 +862,7 @@ export function CommandBar() {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogContent
-        className="floating-frost-deep top-[15%] w-[calc(100%-2rem)] max-w-command-bar translate-y-0 gap-0 overflow-hidden rounded-xl p-0 shadow-ambient-lg"
+        className="top-[15%] w-[calc(100%-2rem)] max-w-command-bar translate-y-0 gap-0 overflow-hidden rounded-xl p-0 shadow-ambient-lg"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{t("commandBar.title")}</DialogTitle>
@@ -896,9 +896,7 @@ export function CommandBar() {
               sibling palette's binding is discoverable — it just stops being
               drawn. */}
           <span className="shrink-0 text-micro text-muted-foreground tabular-nums select-none">
-            {formatBinding(
-              resolveBinding(shortcuts, pathMode ? "app.pathJump" : "app.commandBar"),
-            )}
+            {formatBinding(resolveBinding(shortcuts, pathMode ? "app.pathJump" : "app.commandBar"))}
           </span>
         </div>
         <div
@@ -1025,14 +1023,14 @@ function CommandResultRow({
       aria-selected={isActive}
       className={cn(
         // Palette row: 36px, quiet control radius, flat selection. The active
-        // row takes the same `glass-active` plate the sidebar's current location
+        // row takes the same `row-active` plate the sidebar's current location
         // does — one wash over the fill, nothing else. It used to add a hairline
         // ring and a glow on the theory that a fill alone reads as a flat bar
         // between identical rows, but the ring is what made the row look like a
         // focused control rather than a place; the row is not the only surface
         // that has to say "this one" without a line around it.
         "group/command-row flex h-9 w-full items-center gap-2.5 rounded-md px-3 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard outline-none",
-        isActive ? "glass-active bg-accent text-foreground" : "hover:bg-accent",
+        isActive ? "row-active bg-accent text-foreground" : "hover:bg-accent",
       )}
       data-command-index={dataIndex}
       id={`command-item-${dataIndex}`}

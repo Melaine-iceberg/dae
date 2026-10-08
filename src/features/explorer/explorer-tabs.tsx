@@ -464,12 +464,12 @@ export function ExplorerTabs() {
     <div className="flex h-full flex-col">
       <TabDropIndicator />
       {/* Window chrome: one 46px bar carrying the tab trough and the native
-          window controls. It paints nothing of its own — `bg-chrome` is the
-          canvas until a backdrop claims it (see THE WINDOW-MATERIAL SEAM), and
-          the base scheme declares it transparent — so the frosted field `body`
-          puts down runs through the frame and the content row as one pane. The
-          idle chips are bare labels divided by hairlines; the travelling glass
-          pill under the current tab is the only surface in the bar. */}
+          window controls. It paints nothing of its own — `bg-chrome` is
+          transparent, so the canvas `body` puts down runs through the frame
+          and the content row as one field (see THE WINDOW-MATERIAL SEAM for
+          the one case where that canvas is translucent). The idle chips are
+          bare labels divided by hairlines; the travelling pill under the
+          current tab is the only surface in the bar. */}
       <header
         className="flex h-tab-strip shrink-0 items-stretch bg-chrome"
         data-tab-bar="true"
@@ -526,22 +526,20 @@ export function ExplorerTabs() {
         <WindowControls />
       </header>
 
-      {/* Flat shell, glass retune: the sidebar and the two content cards are
-          floating islands over one frosted field. The tab bar stays flush with
-          the window edge so native window controls and snap layouts keep
+      {/* Flat shell: the sidebar and the two content cards are panels on one
+          canvas, each edged by a hairline. The tab bar stays flush with the
+          window edge so native window controls and snap layouts keep
           working. */}
       <div className="flex min-h-0 flex-1 gap-2 bg-background p-2">
         <Sidebar />
-        {/* `bg-background`, not `bg-card`: this is the canvas the islands float
-            on, not a plane in its own right. It reads as nothing while the root
-            and `body` paint that canvas for free — and under a compositor blur
-            it carries the frame's own frost instead, so this row and the tab
-            bar above it are one pane (App.css, THE WINDOW-MATERIAL SEAM).
+        {/* `bg-background`, not `bg-card`: this is the canvas the panels sit
+            on, not a plane in its own right. It reads as nothing while the
+            root and `body` paint that canvas for free — and under a window
+            material it stops painting, so this row and the tab bar above it
+            stay one field (App.css, THE WINDOW-MATERIAL SEAM).
 
-            The air (`p-2 gap-2`) lives on the row now that the nav is an island
-            like the rest: the row's painted canvas backs every gutter, so the
-            seam still finds a canvas under the gaps (App.css, THE CONTENT
-            PLANE). */}
+            The air (`p-2 gap-2`) lives on the row now that the nav is a panel
+            like the rest: the row's canvas backs every gutter. */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
           {/* Chrome-style keep-alive: every tab's surface stays mounted and
               the surfaces are stacked; switching tabs flips visibility
@@ -899,7 +897,7 @@ function TabStripItem({
         // Linear tab: a compact 32px bare label floating in the trough. Idle
         // tabs carry no shell of their own — a hairline between neighbours
         // (App.css, THE DIVIDER) is all that separates them, and the persistent
-        // `.tab-pill` behind the current one is the single glass capsule in
+        // `.tab-pill` behind the current one is the single raised plate in
         // the row, sliding to whichever tab you click. So the active tab's
         // only job here is ink and weight; the state layer's wash is the
         // idle tab's whole hover.
@@ -910,9 +908,7 @@ function TabStripItem({
         // would clear both, and a chip still wearing them reads as a tab still
         // held down after it was put back.
         "group state-layer relative flex h-8 w-52 shrink-0 touch-none cursor-grab items-center rounded-md text-body select-none transition-[background-color,color,opacity] duration-fast ease-standard data-[pressed=true]:cursor-grabbing",
-        isActive
-          ? "font-medium text-foreground"
-          : "text-muted-foreground hover:text-foreground",
+        isActive ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
         isDragging && "opacity-30",
       )}
       data-pressed={dragPressed ? "true" : "false"}

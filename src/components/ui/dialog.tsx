@@ -63,17 +63,14 @@ function DialogContent({
           // motion this language does not have, and it would also fight the
           // centring translate below.
           //
-          // Fill: `floating-frost`, not `bg-popover`. A dialog is a floating
-          // layer like a menu (App.css, THE FLOATING-GLASS SEAM), so it takes
-          // the same measured frost — and where the window itself is a hole it
-          // carries the app's own plate under that tint, which is what keeps
-          // the desktop out of a layer this wide.
+          // Fill: the solid popover plane, like a menu — a dialog is read
+          // against a scrim, and nothing behind it should show through.
           //
           // `rounded-xl`, the one step above the menu's `rounded-md`. A dialog
           // is already floating over a scrim, so it has no window to be
           // rounder than, and at the menu's corner it read as a menu that had
           // grown into a dialog. See the radius scale in App.css.
-          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl border border-border floating-frost p-5 text-body text-popover-foreground shadow-ambient-lg outline-none sm:max-w-sm data-open:animate-float-in data-closed:animate-out data-closed:fade-out-0 data-closed:duration-instant data-closed:ease-standard-accelerate data-closed:fill-mode-forwards",
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl border border-border bg-popover p-5 text-body text-popover-foreground shadow-ambient-lg outline-none sm:max-w-sm data-open:animate-float-in data-closed:animate-out data-closed:fade-out-0 data-closed:duration-instant data-closed:ease-standard-accelerate data-closed:fill-mode-forwards",
           className,
         )}
         {...props}

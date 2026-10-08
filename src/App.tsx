@@ -95,7 +95,7 @@ function App() {
   useEffect(() => watchSystemAccent(applySystemAccent), []);
   // Window backdrop (see src/lib/window-material.ts): `<html>` carries whatever
   // the platform can actually composite, and App.css's material block lets the
-  // canvas and the nav column show it.
+  // canvas (the frame and the gaps between panels) show a trace of it.
   useEffect(() => watchWindowMaterial(applyWindowMaterial), []);
   // Window focus (see src/lib/window-focus.ts): a window that is not the
   // user's current one stops asserting itself — `<html data-window-focused>`

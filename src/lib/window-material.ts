@@ -2,12 +2,13 @@
  * The window-material seam.
  *
  * The parts of this shell that are the *window* — the canvas behind the
- * panels and the nav column — are meant to show whatever the OS composites
- * behind a window: Acrylic or Mica on Windows 11, the sidebar material on
- * macOS. That is the native answer to "what colour is a file manager's chrome",
- * and like the accent it is a value the platform owns rather than one this
- * theme should invent. Which of the two roles a given backdrop earns is
- * App.css's call: a bare compositor blur buys the nav column only.
+ * panels, which is also the tab bar — may show a trace of whatever the OS
+ * composites behind a window: Acrylic or Mica on Windows 11, the sidebar
+ * material on macOS. That is the native answer to "what colour is a file
+ * manager's chrome", and like the accent it is a value the platform owns rather
+ * than one this theme should invent. It is garnish, not structure: panels,
+ * menus and dialogs are solid whatever the answer, and how much of the
+ * backdrop arrives is App.css's call (`--pane-alpha`, per material).
  *
  * Deciding whether a backdrop exists is platform work and lives on the Rust
  * side: `src-tauri/src/window_material` asks whether the window may be

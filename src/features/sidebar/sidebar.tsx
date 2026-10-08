@@ -872,13 +872,12 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        // Aurora nav row: 28px tall on the shared radius. Hover fills with the
+        // Nav row: 32px tall on the shared radius. Hover fills with the
         // sidebar's own accent rung; the row that says where the user *is*
-        // lights up instead — `glass-active`'s accent wash, hairline ring and
-        // soft glow over the same fill — so location is a lit plate rather
-        // than a heavier rectangle.
+        // presses deeper into it instead — `row-active`'s one wash of ink over
+        // the same fill — so location is a heavier tone, not a ringed box.
         "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
-        isActive && "glass-active bg-sidebar-accent font-medium text-foreground",
+        isActive && "row-active bg-sidebar-accent font-medium text-foreground",
       )}
       onClick={onClick}
       title={title ?? label}
@@ -984,7 +983,7 @@ function DiskItem({
     <div
       className={cn(
         "w-full rounded-md px-2.5 py-1.5 transition-[background-color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
-        isActive && "glass-active bg-sidebar-accent",
+        isActive && "row-active bg-sidebar-accent",
       )}
     >
       <div className="flex items-center gap-1">

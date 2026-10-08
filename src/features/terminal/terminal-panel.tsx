@@ -443,14 +443,12 @@ export function TerminalPanel() {
     <section
       aria-label={t("panel.label")}
       className={cn(
-        /* GLASS RETUNE: the terminal is the second floating island — it shares
-           `.content-panel`'s rim, corner and shadow rather than fusing to the
-           plane above it, so the canvas runs between the two cards the way the
-           reference shot spaces its islands. No fill of its own: the plate's
-           frost is its colour, and an opaque `bg-card` under that frost is what
-           made the island read as paper over the field. The xterm viewport still
-           paints `--card`, which is the one surface in here that has to be
-           solid — a terminal reads its own colours, not the wallpaper. */
+        /* The terminal is the second island — it shares `.content-panel`'s
+           hairline, corner and fill rather than fusing to the plane above it,
+           so the canvas runs between the two cards. The fill comes from the
+           class, so no `bg-card` here. The xterm viewport paints `--card` too,
+           the one surface in here that has to be solid: a terminal reads its
+           own colours. */
         "content-panel flex shrink-0 flex-col overflow-hidden",
         !visible && "hidden",
       )}

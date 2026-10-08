@@ -18,10 +18,9 @@
         margin: 0;
         height: 100%;
         /* `background-color`, never the `background` shorthand: the shorthand
-           also resets background-image, and App.css paints the canvas wash as an
-           image on `html body`. Light mode survived that by one specificity
-           step; `html.dark body` below carries a class, so it outranked the wash
-           and dark mode painted no canvas at all. */
+           also resets background-image, and a rule in App.css or a component
+           may paint an image on `html body`. `html.dark body` below carries a
+           class, so a shorthand there would outrank it and wipe that image. */
         background-color: __DAE_CANVAS__;
       }
       html.dark,
@@ -74,8 +73,8 @@
       html[data-window-material="acrylic"] body,
       html[data-window-material="vibrancy"] body {
         /* Also longhand: these selectors carry an attribute, so as a shorthand
-           they would out-rank App.css's `html body` canvas rule and clear the
-           wash for the whole session, not just the splash. */
+           they would out-rank App.css's `html body` rules and clear any image
+           painted there for the whole session, not just the splash. */
         background-color: transparent;
       }
     </style>
@@ -84,7 +83,8 @@
         var stored = localStorage.getItem("app.theme");
         var dark =
           stored === "dark" ||
-          (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+          (stored !== "light" &&
+            matchMedia("(prefers-color-scheme: dark)").matches);
         if (dark) document.documentElement.classList.add("dark");
         document.documentElement.style.colorScheme = dark ? "dark" : "light";
       } catch (e) {}
