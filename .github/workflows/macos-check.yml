@@ -1,0 +1,61 @@
+# Compiles the macOS-only code on every push to main.
+#
+# Why this exists: `#[cfg(target_os = "macos")]` modules are invisible to the
+# Linux dev machine and to the Windows/Linux legs of the release workflow, so a
+# break in them is silent until a tag is pushed — which is exactly what happened
+# for v0.4.0, where `open_with::macos::list_apps` still returned the pre-refactor
+# `Vec<OpenWithApp>` and type-checking stopped the release build at the last
+# step, after Linux and Windows had already uploaded their installers.
+#
+# `cargo check` is deliberate rather than a full `tauri build`: it needs no
+# Apple signing identity, links nothing, and still surfaces every type and
+# borrow error in the darwin code. Bundling, signing and notarisation stay the
+# release workflow's job.
+name: macOS check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The tauri build script reads the frontend manifest, and the bindings
+      # binary is built against the same feature set the release uses.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type-check the dae crate for macOS
+        run: |
+          cargo check \
+            --manifest-path src-tauri/Cargo.toml \
+            --features export-bindings \
+            --all-targets \
+            --target aarch64-apple-darwin
