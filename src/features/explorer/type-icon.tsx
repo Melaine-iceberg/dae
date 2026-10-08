@@ -23,17 +23,12 @@ import {
   VideoFrameIcon,
   VinylIcon,
   WindowFrameIcon,
-} from "@solar-icons/react/line-duotone";
-/* Folders are the shell's one filled glyph (`.folder-duotone` in App.css), so
-   they come from Solar's bold-duotone style while everything else stays on
-   line-duotone. */
-import {
-  FolderIcon as FolderMarkIcon,
-  FolderOpenIcon as FolderOpenMarkIcon,
 } from "@solar-icons/react/bold-duotone";
 import { type ComponentType } from "react";
 
 import { cn } from "@/lib/utils";
+
+import { FolderGlyph, FolderOpenGlyph } from "./folder-glyph";
 
 /**
  * File-type glyphs, drawn from Solar Icons (MIT for the code, CC BY 4.0 for
@@ -52,12 +47,18 @@ import { cn } from "@/lib/utils";
  * scheme, the system accent, `prefers-contrast` and forced-colors the way
  * every other surface in this shell does.
  *
- * The `line-duotone` style paints a secondary layer as well, and every glyph in
- * this file opts it back to the shell's *tonal* mix rather than the accent one
- * (`solar-tonal`, see App.css). A category hue is the whole point of the map
- * below, and an accent-tinted detail line inside one would read as a second,
- * meaningless hue. The class is applied for the component as a whole because
- * five of these glyphs are neutral and have no hue for a selector to match.
+ * The glyphs are Solar's `bold-duotone` style, which paints two layers: the
+ * details, and the page they sit on. `type-glyph` (see App.css) wires the page
+ * to a light tint of the same hue, so every glyph is the category colour on a
+ * paler version of itself. The tint is never the accent: a category hue is the
+ * whole point of the map below, and an accent-tinted page would read as a
+ * second, meaningless hue. The class is applied for the component as a whole
+ * because five of these glyphs are neutral and have no hue for a selector to
+ * match.
+ *
+ * Folders are the exception to both: they are drawn here as stacked sheets of
+ * flat colour (`folder-glyph.tsx`) and take their fills from the folder tokens
+ * rather than from `currentColor`.
  */
 
 /** What a glyph is handed. `aria-hidden` is spelled out because every icon
@@ -76,8 +77,8 @@ interface GlyphProps {
  * a union of twenty-six different ones to resolve.
  */
 const GLYPHS = {
-  folder: (props: GlyphProps) => <FolderMarkIcon {...props} />,
-  folderOpen: (props: GlyphProps) => <FolderOpenMarkIcon {...props} />,
+  folder: (props: GlyphProps) => <FolderGlyph {...props} />,
+  folderOpen: (props: GlyphProps) => <FolderOpenGlyph {...props} />,
   file: (props: GlyphProps) => <FileIcon {...props} />,
   text: (props: GlyphProps) => <FileTextIcon {...props} />,
   config: (props: GlyphProps) => <FileCogIcon {...props} />,
@@ -126,8 +127,8 @@ export type TypeGlyph = keyof typeof GLYPHS;
  * the grouping.
  */
 const TONES: Record<TypeGlyph, string> = {
-  folder: "folder-duotone",
-  folderOpen: "folder-duotone",
+  folder: "",
+  folderOpen: "",
 
   document: "text-tone-blue",
   code: "text-tone-blue",
@@ -186,8 +187,8 @@ const componentCache = new Map<TypeGlyph, EntryIcon>();
  * The glyph's tone and the caller's class go through `cn`, so the usual
  * Tailwind last-wins rule holds: a call site that needs a different colour
  * (a faded hidden row, the preview header) still overrides the category.
- * `solar-tonal` rides along first and is not a Tailwind utility, so it is the
- * category — rather than a call site's colour — that fixes the second tone.
+ * `type-glyph` rides along first and is not a Tailwind utility, so it is the
+ * category — rather than a call site's colour — that fixes the page tone.
  */
 export function typeIcon(glyph: TypeGlyph): EntryIcon {
   const cached = componentCache.get(glyph);
@@ -201,7 +202,7 @@ export function typeIcon(glyph: TypeGlyph): EntryIcon {
   const component: EntryIcon = function TypeIcon({ className, size }) {
     return render({
       "aria-hidden": true,
-      className: cn("solar-tonal", tone, className),
+      className: cn("type-glyph", tone, className),
       size: size ?? DEFAULT_SIZE,
     });
   };

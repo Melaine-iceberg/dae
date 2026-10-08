@@ -32,9 +32,9 @@ export type ExplorerModifiedFilter = "any" | "today" | "week" | "month";
 export type ExplorerSizeFilter = "any" | "small" | "medium" | "large";
 
 export const DENSITY_ROW_HEIGHT: Record<ExplorerDensity, number> = {
-  compact: 32,
-  comfortable: 40,
-  spacious: 48,
+  compact: 28,
+  comfortable: 32,
+  spacious: 40,
 };
 
 /** Sensible initial direction when switching to a sort key (SKILL.md §18). */

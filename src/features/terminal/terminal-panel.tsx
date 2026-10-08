@@ -85,8 +85,8 @@ function readTerminalTheme(ansiOverride: AnsiPalette | null): ITheme {
   // these only fire if the stylesheet never loaded — but they are kept in step
   // with the palette so that failure does not also paint the old cool scheme.
   const fallback = dark
-    ? { card: "#252525", foreground: "#e9e9e9", primary: "#62aef0", accent: "#2b2b2b" }
-    : { card: "#ffffff", foreground: "#191918", primary: "#0075de", accent: "#f6f5f4" };
+    ? { card: "#252421", foreground: "#ebe8e2", primary: "#6bbcb6", accent: "#33312d" }
+    : { card: "#ffffff", foreground: "#37352f", primary: "#1f7a72", accent: "#f0eeea" };
   return {
     // The panel is the one surface whose *content* may deviate from the
     // neutral ladder; its chrome above may not. background/foreground follow

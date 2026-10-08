@@ -1022,14 +1022,14 @@ function CommandResultRow({
     <button
       aria-selected={isActive}
       className={cn(
-        // Palette row: 36px, quiet control radius, flat selection. The active
+        // Palette row: 32px, quiet control radius, flat selection. The active
         // row takes the same `row-active` plate the sidebar's current location
         // does — one wash over the fill, nothing else. It used to add a hairline
         // ring and a glow on the theory that a fill alone reads as a flat bar
         // between identical rows, but the ring is what made the row look like a
         // focused control rather than a place; the row is not the only surface
         // that has to say "this one" without a line around it.
-        "group/command-row flex h-9 w-full items-center gap-2.5 rounded-md px-3 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard outline-none",
+        "group/command-row flex h-8 w-full items-center gap-2.5 rounded-md px-3 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard outline-none",
         isActive ? "row-active bg-accent text-foreground" : "hover:bg-accent",
       )}
       data-command-index={dataIndex}

@@ -12,9 +12,7 @@ import {
   TrashBinTrashIcon,
   WidgetIcon,
 } from "@solar-icons/react/line-duotone";
-/* Folders are the shell's one filled glyph — see `.folder-duotone` in
-   App.css — drawn from Solar's bold-duotone style. */
-import { FolderIcon as FolderMarkIcon } from "@solar-icons/react/bold-duotone";
+import { FolderGlyph } from "@/features/explorer/folder-glyph";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -269,8 +267,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
               <ContextMenuTrigger>
                 <LocationCard
                   description={item.path}
-                  icon={FolderMarkIcon}
-                  iconClassName="folder-duotone"
+                  icon={FolderGlyph}
                   onClick={() => navigateToFolder(item.path)}
                   title={item.name}
                 />

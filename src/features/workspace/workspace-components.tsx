@@ -1,6 +1,4 @@
-import type { ReactNode } from "react";
-
-import type { Icon as SolarIcon } from "@solar-icons/react/lib/types";
+import type { ComponentType, ReactNode } from "react";
 
 import { i18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -88,7 +86,7 @@ export function LocationCard({
   title,
 }: {
   description?: string;
-  icon: SolarIcon;
+  icon: ComponentType<{ className?: string }>;
   /** Colour or weight for the glyph only; the chip plate stays neutral. */
   iconClassName?: string;
   onClick: () => void;

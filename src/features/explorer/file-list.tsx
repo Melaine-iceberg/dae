@@ -33,9 +33,6 @@ import {
   WidgetIcon,
   WindowFrameIcon,
 } from "@solar-icons/react/line-duotone";
-/* Folders are the shell's one filled glyph — see `.folder-duotone` in
-   App.css — drawn from Solar's bold-duotone style. */
-import { FolderIcon as FolderMarkIcon } from "@solar-icons/react/bold-duotone";
 
 import {
   ContextMenu,
@@ -90,6 +87,7 @@ import { EntryContextMenuContent } from "./entry-context-menu";
 import { FileColumnView } from "./file-column-view";
 import { getEntryPresentation } from "./file-icons";
 import { FileGridView } from "./file-grid-view";
+import { FolderGlyph } from "./folder-glyph";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import {
   allNames,
@@ -1078,7 +1076,7 @@ export function FileList({
                 {searchState?.error ? (
                   <DangerTriangleIcon className="text-warning" />
                 ) : (
-                  <FolderMarkIcon className="folder-duotone" />
+                  <FolderGlyph />
                 )}
               </EmptyMedia>
               <EmptyTitle>
@@ -1501,8 +1499,7 @@ function FileListRow({
             // adds an accent ring.
             "render-contain state-layer grid cursor-grab items-center justify-start rounded-md whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
-            isSelected &&
-              "bg-selection shadow-[inset_0_0_0_1px_var(--selection-edge)]",
+            isSelected && "bg-selection shadow-[inset_0_0_0_1px_var(--selection-edge)]",
             isDragging && DRAG_SOURCE_CLASS,
             isDropTarget && "drop-target",
           )}

@@ -34,9 +34,7 @@ import {
   UsbIcon,
   WidgetIcon,
 } from "@solar-icons/react/line-duotone";
-/* Folders are the shell's one filled glyph — see `.folder-duotone` in
-   App.css — drawn from Solar's bold-duotone style. */
-import { FolderIcon as FolderMarkIcon } from "@solar-icons/react/bold-duotone";
+
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { commands, type Breadcrumb, type StoredCloudAccount } from "@/bindings";
@@ -50,6 +48,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
+import { FolderGlyph } from "@/features/explorer/folder-glyph";
 import {
   activePaneNavigatorAtom,
   createTabWithSurfaceAtom,
@@ -425,7 +424,7 @@ function CollapsibleSection({
       <div className="group/section flex h-7 items-center gap-0.5">
         <button
           aria-expanded={open}
-          className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
+          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
           onClick={() => toggle(id)}
           type="button"
         >
@@ -561,8 +560,7 @@ function FavoritesContent({
           path={favorite.path}
         >
           <NavItem
-            icon={FolderMarkIcon}
-            iconClassName="folder-duotone"
+            icon={FolderGlyph}
             isActive={currentPath === favorite.path}
             label={favorite.name}
             onClick={() => onNavigate(favorite.path)}
@@ -872,11 +870,11 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        // Nav row: 32px tall on the shared radius. Hover fills with the
+        // Nav row: 28px tall on the shared radius. Hover fills with the
         // sidebar's own accent rung; the row that says where the user *is*
         // presses deeper into it instead — `row-active`'s one wash of ink over
         // the same fill — so location is a heavier tone, not a ringed box.
-        "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
+        "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
         isActive && "row-active bg-sidebar-accent font-medium text-foreground",
       )}
       onClick={onClick}
