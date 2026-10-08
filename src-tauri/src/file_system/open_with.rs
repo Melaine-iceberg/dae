@@ -170,7 +170,7 @@ mod macos {
         fn CFArrayGetValueAtIndex(the_array: CFArrayRef, idx: isize) -> *const std::ffi::c_void;
     }
 
-    pub fn list_apps(path: &Path) -> Result<Vec<OpenWithApp>, FileSystemError> {
+    pub fn list_apps(path: &Path) -> Result<OpenWithChoices, FileSystemError> {
         let url = CFURL::from_path(path.to_path_buf(), path.is_dir())
             .ok_or_else(|| FileSystemError::Internal("fs.open_with_list_failed".into()))?;
 
