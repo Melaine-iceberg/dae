@@ -20,7 +20,6 @@ import {
 } from "@/features/settings/settings-atoms";
 import { resolveBinding } from "@/features/settings/shortcut-registry";
 import { HOTKEY_COMMON_OPTIONS, asHotkey } from "@/features/settings/hotkeys";
-import { applySystemTheme, watchSystemTheme } from "@/lib/theme";
 import { applySystemAccent, watchSystemAccent } from "@/lib/system-accent";
 import {
   applyWindowMaterial,
@@ -85,7 +84,6 @@ function App() {
   // Window-level, not per surface: the keys it invalidates are global already.
   useGitRefreshOnDirectoryChange();
 
-  useEffect(() => watchSystemTheme(applySystemTheme), []);
   // System accent (see src/lib/system-accent.ts). `watchSystemAccent` is the
   // seam's only unimplemented half: it reads the OS accent and hands each
   // reading straight to `applySystemAccent`, which is already the complete

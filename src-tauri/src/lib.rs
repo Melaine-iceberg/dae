@@ -21,6 +21,7 @@ mod linux_graphics;
 mod settings;
 mod shell_commands;
 mod system_accent;
+mod system_theme;
 // Drag-release-to-visible instrumentation for torn-off tabs. Inert unless
 // `DAE_TAB_PERF=1`; see the module docs.
 mod tab_perf;
@@ -204,6 +205,12 @@ pub fn run() {
             // frontend also pulls `get_system_accent` once — the pair is the
             // same read-late-or-early race the deep link buffer closes.
             system_accent::init(app.handle());
+            // Spawns the platform light/dark watcher. On Linux this is the
+            // source of truth for "follow system": WebKitGTK (GTK 3) infers
+            // `prefers-color-scheme` from the GTK theme, which can disagree
+            // with the desktop's own toggle. Same read-late-or-early race as
+            // the accent watcher, closed the same way by the frontend's pull.
+            system_theme::init(app.handle());
             // Same shape as the accent watcher: an OS setting that can move while
             // the app runs (the transparency toggle in Settings › Personalisation)
             // is re-read rather than polled by the frontend. Unlike the accent, its
@@ -469,6 +476,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             tab_windows::sync_tab_pool,
             tab_windows::merge_tab_into_window,
             system_accent::get_system_accent,
+            system_theme::get_system_theme,
             window_material::get_window_material,
             window_material::set_window_material_appearance,
             get_package_family_name
@@ -487,6 +495,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             tab_windows::TabMergedIntoWindow,
             tab_windows::TabAdoptedIntoWindow,
             system_accent::SystemAccentChanged,
+            system_theme::SystemThemeChanged,
             window_material::WindowMaterialChanged
         ])
 }

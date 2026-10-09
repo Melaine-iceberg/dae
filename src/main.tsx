@@ -12,7 +12,7 @@ import { warmShellCommands } from "@/features/shell-commands/shell-commands-atom
 import { preloadExplorerSurface } from "@/features/workspace/workspace-surface";
 import { i18nReady } from "@/i18n";
 import { getAppWindow } from "@/lib/app-window";
-import { applySystemTheme } from "@/lib/theme";
+import { applySystemTheme, watchSystemTheme } from "@/lib/theme";
 import { setupNativeClipboardBridge } from "@/lib/clipboard-bridge";
 import { setupExternalLinkGuard } from "@/lib/external-links";
 import { forwardConsoleToLogFile } from "@/lib/logging";
@@ -36,6 +36,14 @@ setupExternalLinkGuard();
 setupNativeContextMenuGuard();
 
 applySystemTheme();
+
+// Subscribe to the OS appearance here rather than in an `App` effect: the
+// reading that matters on Linux comes back over IPC, and `App` does not mount
+// until the locale resources have loaded. Starting the read now lets it land
+// during that wait, so the shell does not paint the GTK theme's colour and then
+// snap to the desktop's when React mounts. The disposer is dropped on purpose —
+// this lives for the life of the window, exactly like `applySystemTheme` above.
+watchSystemTheme(applySystemTheme);
 
 const queryClient = new QueryClient();
 
