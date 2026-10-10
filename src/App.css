@@ -1110,23 +1110,21 @@ html[data-window-material="vibrancy"] .bg-background {
   /* ---------------------------------------------------------------------------
      THE SURFACES. Solid tonal planes divided by hairlines — nothing in the
      window depends on what is behind it, so it draws the same on every
-     platform. Four treatments, one vocabulary:
+     platform. Three treatments, one vocabulary:
 
        .content-panel   paper on the canvas: the nav rail, the explorer plane
                         and the terminal all take it, so "card" is one shape
                         language in the window rather than three.
-       .tab-trough      the channel the tab strip sits in — a faint recess, with
-                        the idle tabs as bare labels divided by hairlines.
-       .tab-pill        the plate under the current tab, which slides along the
-                        trough between tabs.
+       .tab-pill        the plate under the current tab, which slides between
+                        tabs.
        .row-active      the "I am here" plate — a nav row, a chip, a segment
                         that reports state by pressing deeper into its own
                         fill: one wash of the ink over the call site's fill.
 
      THE FRAME CARRIES NONE OF THIS. The tab strip paints nothing (`--chrome` is
-     transparent), so the canvas runs through the frame and the content row as
-     one field, and the only thing that reads as a channel is the trough the
-     tabs sit in.
+     transparent) and neither does the row of chips inside it: the canvas runs
+     through the frame, the tab row and the content row as one field, so the
+     only surface up there is the plate under the current tab.
 
      ONE EDGE, THE HAIRLINE. A panel is separated from the canvas by a 1px
      `--border` and by tone; `--panel-shadow` adds a single contact shadow in
@@ -1155,25 +1153,22 @@ html[data-window-material="vibrancy"] .bg-background {
     );
   }
 
-  /* THE TROUGH — the channel the tab chips sit in, and the only surface that
-     goes darker than the canvas. A 6% wash of the ink is all the recess needs:
-     it is what makes a row of tabs read as *held* rather than as scattered, and
-     it is the field the plate below is raised from. No inset shadow — a
-     recess drawn with light and dark edges is a skeuomorph, and the tone is
-     enough. */
-  .tab-trough {
-    border-radius: var(--radius-lg);
-    background-color: color-mix(in oklab, var(--foreground) 6%, transparent);
-  }
+  /* THE TROUGH paints nothing. `.tab-trough` survives as the name of the region
+     the chips sit in — it is what the dividers below hang off — but the 6% wash
+     of ink that used to make it a recess is gone, so the tab row reads as part
+     of the canvas and the plate under the current tab is the one surface in it.
+     The dividers between chips carry the "one row" reading on their own; the
+     wash was one dark plane too many under a frame that paints nothing itself. */
 
-  /* THE PILL — the plate under whichever tab is current: paper on the recess,
-     a hairline and a contact shadow.
+  /* THE PILL — the plate under whichever tab is current: paper on the canvas, a
+     hairline and a contact shadow. It is the only surface in the tab row, and
+     with nothing painted behind it that is what makes it read as raised.
 
      It is a node of its own rather than a class on the selected tab, and that
      distinction is the whole feature: the tab carrying `aria-selected` changes
      IDENTITY between renders, so a class swap can only fade one chip out and
      another in. This node persists, so its position can TRAVEL — one plate
-     sliding along the trough from the tab you were on to the tab you chose.
+     sliding along the strip from the tab you were on to the tab you chose.
      `useTabPill` in explorer-tabs.tsx writes its `transform`/`width` from the
      active tab's measured box; the transition below is the animation.
 
@@ -1767,16 +1762,11 @@ html[data-window-material="vibrancy"] .bg-background {
     color: HighlightText;
   }
 
-  /* The trough and the pill are drawn with the two things the forcing removes:
-     `background-image` and `box-shadow`. The channel keeps its edge as a line,
-     because "these tabs are one group in a groove" is structure the palette has
-     no colour for. The plate does not survive: "which tab am I on" is already
-     answered by the `Highlight` fill on `[aria-selected]` above, so leaving the
-     pill up would paint a stray 1px rectangle that follows the wrong thing. */
-  .tab-trough {
-    outline: 1px solid CanvasText;
-    outline-offset: -1px;
-  }
+  /* The plate is drawn with the two things the forcing removes:
+     `background-image` and `box-shadow`, so it does not survive: "which tab am
+     I on" is already answered by the `Highlight` fill on `[aria-selected]`
+     above, and leaving the pill up would paint a stray 1px rectangle that
+     follows the wrong thing. */
   .tab-pill {
     display: none;
   }
