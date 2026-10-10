@@ -5,6 +5,25 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { CloseIcon } from "@solar-icons/react/line-duotone";
 
+/**
+ * Entrance/exit motion for a dialog and its scrim. `float` is the house
+ * behaviour: the popup fades in with a 2px rise, the scrim fades in under it.
+ * `none` puts both on screen and off screen inside a single frame.
+ *
+ * `none` exists for dialogs where the fade reads as the *window* flickering
+ * rather than as the dialog arriving. That is what an animated fade does when
+ * a window material is active: the canvas is translucent, so anything animating
+ * at this level spends the duration below `--pane-alpha` and the desktop shows
+ * through. The Open With picker is the dialog that asked for it.
+ */
+type DialogMotion = "float" | "none";
+
+const SCRIM_MOTION =
+  "duration-fast data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 data-closed:fill-mode-forwards";
+
+const POPUP_MOTION =
+  "data-open:animate-float-in data-closed:animate-out data-closed:fade-out-0 data-closed:duration-instant data-closed:ease-standard-accelerate data-closed:fill-mode-forwards";
+
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
@@ -21,14 +40,19 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
-function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) {
+function DialogOverlay({
+  className,
+  motion = "float",
+  ...props
+}: DialogPrimitive.Backdrop.Props & { motion?: DialogMotion }) {
   return (
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
         // Per-scheme scrim, no blur: the dark canvas needs a stronger scrim
         // than the light one, and the backdrop's job is to dim, not to frost.
-        "fixed inset-0 isolate z-50 bg-scrim duration-fast data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 data-closed:fill-mode-forwards",
+        "fixed inset-0 isolate z-50 bg-scrim",
+        motion === "float" && SCRIM_MOTION,
         className,
       )}
       {...props}
@@ -40,13 +64,15 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  motion = "float",
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean;
+  motion?: DialogMotion;
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay motion={motion} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
@@ -58,10 +84,11 @@ function DialogContent({
           // manage their own height (settings) are unaffected: their body
           // already caps below this, so this scrollport never engages.
           //
-          // Entrance is float-in only — fade plus a 2px rise on the house
-          // standard curve. A dialog that scales up from the centre is the one
-          // motion this language does not have, and it would also fight the
-          // centring translate below.
+          // Entrance is `POPUP_MOTION` — fade plus a 2px rise on the house
+          // standard curve, or nothing at all under `motion="none"`. A dialog
+          // that scales up from the centre is the one motion this language
+          // does not have, and it would also fight the centring translate
+          // below.
           //
           // Fill: the solid popover plane, like a menu — a dialog is read
           // against a scrim, and nothing behind it should show through.
@@ -70,7 +97,8 @@ function DialogContent({
           // is already floating over a scrim, so it has no window to be
           // rounder than, and at the menu's corner it read as a menu that had
           // grown into a dialog. See the radius scale in App.css.
-          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl border border-border bg-popover p-5 text-body text-popover-foreground shadow-ambient-lg outline-none sm:max-w-sm data-open:animate-float-in data-closed:animate-out data-closed:fade-out-0 data-closed:duration-instant data-closed:ease-standard-accelerate data-closed:fill-mode-forwards",
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl border border-border bg-popover p-5 text-body text-popover-foreground shadow-ambient-lg outline-none sm:max-w-sm",
+          motion === "float" && POPUP_MOTION,
           className,
         )}
         {...props}
