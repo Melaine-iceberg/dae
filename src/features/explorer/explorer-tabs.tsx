@@ -505,6 +505,22 @@ export function ExplorerTabs() {
           {tabs.map((tab, index) => (
             <TabStripItem key={tab.id} index={index} isActive={tab.id === activeTabId} tab={tab} />
           ))}
+          {/* Inside the scroller, hard after the last chip: the plus belongs to
+              the tab row, so it travels with it and sits one tab-gap away from
+              the tab it would extend. The trade-off is that a tablist now owns
+              a button; the alternative — a `role="tablist"` wrapper inside the
+              scroller — would move the role off the element `tab-drag.ts`
+              measures and scrolls. */}
+          <button
+            aria-label={t("tabs.newTab")}
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+            data-tauri-drag-region="false"
+            onClick={createTab}
+            title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
+            type="button"
+          >
+            <AddIcon className="size-3.5" />
+          </button>
         </div>
         <StripScrollButton
           aria-label={t("tabs.scrollRight")}
@@ -512,28 +528,13 @@ export function ExplorerTabs() {
           onClick={() => scrollStrip(1)}
           visible={canScroll.right}
         />
-        {/* Bar-level, not strip-level: the plus stays put at the trailing edge
-            while the chips scroll under it, the way the reference bar keeps
-            its new-tab button out of the tab row. On macOS the traffic lights
-            order themselves first, so this lands at the window's far right.
-            `self-center` because the bar stretches its children: a fixed-height
-            button under `items-stretch` otherwise pins to the top edge. */}
-        <button
-          aria-label={t("tabs.newTab")}
-          className="mx-1 flex size-6 shrink-0 items-center justify-center self-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
-          onClick={createTab}
-          title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
-          type="button"
-        >
-          <AddIcon className="size-3.5" />
-        </button>
         <WindowControls />
       </header>
 
       {/* Flat shell: the sidebar and the two content cards are panels on one
-          canvas, each edged by a hairline. The tab bar stays flush with the
-          window edge so native window controls and snap layouts keep
-          working. */}
+          canvas, each edged by a hairline. The tab bar's contents are inset,
+          but the header itself still spans the full width and stays a drag
+          region, so native window controls and snap layouts keep working. */}
       <div className="flex min-h-0 flex-1 gap-2 bg-background p-2">
         <Sidebar />
         {/* `bg-background`, not `bg-card`: this is the canvas the panels sit
