@@ -643,10 +643,11 @@
      the theme, was what got read. Anything that has to exist as a real
      variable belongs here. */
   --sidebar-width: 15rem; /* 240px — the nav column */
-  /* The window frame bar. Tall enough to carry a recessed trough with a chip
-     floating in it: 46px buys the 38px groove the tabs need plus 4px of field
-     above and below, so the channel reads as cut into the frame rather than as
-     a strip glued to the top of the window. */
+  /* The window frame bar. Tall enough to carry the row of tab chips and the
+     plate that floats in it: 46px buys the 38px that row takes plus 8px of
+     field above, matching the content row's own gutter below — the strip
+     carries no bottom margin, because that row's `p-2` already supplies the
+     space under it, so the bar is 8px from the top edge and 8px from the card. */
   --tab-strip-height: 46px;
 }
 

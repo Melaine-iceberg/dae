@@ -484,7 +484,11 @@ export function ExplorerTabs() {
         <div
           ref={stripRef}
           aria-label={t("tabs.ariaLabel")}
-          className="tab-trough relative my-1 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
+          // `mt-2` and no bottom margin, so the tab row sits 8px below the
+          // window edge and 8px above the content row: that row's own `p-2`
+          // gutter supplies the space underneath, and the two sides have to
+          // measure the same or the row reads as pinned to the top.
+          className="tab-trough relative mt-2 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
           // A tab drag pins its pointer capture here (see `tab-drag.ts`), and the
           // header above is a `deep` drag region, so the strip has to opt out
           // explicitly or the captured events read as a request to move the
