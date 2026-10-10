@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { CloseIcon } from "@solar-icons/react/line-duotone";
 
 /**
- * Entrance/exit motion for a dialog and its scrim. `float` is the house
- * behaviour: the popup fades in with a 2px rise, the scrim fades in under it.
- * `none` puts both on screen and off screen inside a single frame.
+ * Entrance/exit motion for a dialog. `float` is the house behaviour: the popup
+ * fades in with a 2px rise. `none` puts it on screen and off screen inside a
+ * single frame.
  *
  * `none` exists for dialogs where the fade reads as the *window* flickering
  * rather than as the dialog arriving. That is what an animated fade does when
@@ -18,7 +18,7 @@ import { CloseIcon } from "@solar-icons/react/line-duotone";
  */
 type DialogMotion = "float" | "none";
 
-const SCRIM_MOTION =
+const BACKDROP_MOTION =
   "duration-fast data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 data-closed:fill-mode-forwards";
 
 const POPUP_MOTION =
@@ -49,10 +49,13 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        // Per-scheme scrim, no blur: the dark canvas needs a stronger scrim
-        // than the light one, and the backdrop's job is to dim, not to frost.
-        "fixed inset-0 isolate z-50 bg-scrim",
-        motion === "float" && SCRIM_MOTION,
+        // Deliberately unfilled: nothing dims behind a dialog in this shell.
+        // The backdrop still exists to catch the click that dismisses the
+        // dialog, and to keep the pointer off the listing behind it — it just
+        // does not paint. The dialog's own border and shadow are the whole
+        // figure/ground signal.
+        "fixed inset-0 isolate z-50",
+        motion === "float" && BACKDROP_MOTION,
         className,
       )}
       {...props}
@@ -90,13 +93,15 @@ function DialogContent({
           // does not have, and it would also fight the centring translate
           // below.
           //
-          // Fill: the solid popover plane, like a menu — a dialog is read
-          // against a scrim, and nothing behind it should show through.
+          // Fill: the solid popover plane, like a menu — a dialog is not a
+          // glass surface, so nothing behind it may show through the panel
+          // itself. With the backdrop unpainted this fill is what separates
+          // the dialog from the listing under it.
           //
           // `rounded-xl`, the one step above the menu's `rounded-md`. A dialog
-          // is already floating over a scrim, so it has no window to be
-          // rounder than, and at the menu's corner it read as a menu that had
-          // grown into a dialog. See the radius scale in App.css.
+          // is a lifted layer rather than a window, so there is no frame for it
+          // to be rounder than, and at the menu's corner it read as a menu that
+          // had grown into a dialog. See the radius scale in App.css.
           "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl border border-border bg-popover p-5 text-body text-popover-foreground shadow-ambient-lg outline-none sm:max-w-sm",
           motion === "float" && POPUP_MOTION,
           className,

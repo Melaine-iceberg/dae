@@ -358,7 +358,7 @@
 
      `--radius-xl` is a single step, not a ladder, and it is spent on exactly
      the surfaces that are *already* floating one above another: a dialog over
-     a scrim, a sheet over a dialog. There is nothing for it to be rounder
+     the window, a sheet over a dialog. There is nothing for it to be rounder
      than, because every surface it touches is a layer the platform has
      already lifted off the window. What it buys is the thing `--radius-lg`
      cannot: a 12px corner reads as a panel that has its own boundary, which
@@ -437,15 +437,6 @@
   /* One notification. Fixed rather than content-sized so a stack of them
      shares an edge and a two-line message wraps at a predictable column. */
   --width-toast: 22rem; /* 352px */
-
-  /* Dimming layer behind a modal. Declared per scheme rather than written as
-     `bg-black/40` at the call site because the two schemes have different
-     room to fall: 40% black takes paper down ≈18 L*, while dark's 60% takes a
-     panel down ≈7 — the last few points of that are the expensive ones, since
-     near black there is less left to take away. (Under the old
-     near-black canvas even 60% only moved it 1.4 — the modal floated over an
-     undimmed window.) */
-  --color-scrim: var(--scrim);
 
   /* Indeterminate progress: a tight linear sweep, no waves. */
   --animate-m3-wave: m3-wave 1.1s linear infinite;
@@ -632,9 +623,6 @@
      ladder and 10 on the content plate — corners that are small and steady, so
      the eye lands on the content rather than on the container. */
   --radius: 0.5rem;
-  --scrim: rgb(
-    55 53 47 / 0.36
-  ); /* keyed to the ink, so the dimmed plane keeps its cast */
   --sidebar: var(--card); /* the rail is a panel like the others */
   --sidebar-foreground: #37352f;
   --sidebar-accent: #f0eeea; /* the paper's own hover — the rail is a panel */
@@ -730,9 +718,6 @@
   --border: #383838; /* hairline — 1.35:1 on a panel, the same step as light */
   --input: #464544;
   --radius: 0.5rem; /* the same shape language as light */
-  --scrim: rgb(
-    10 10 10 / 0.6
-  ); /* keyed to the ink, so the dimmed plane keeps its cast */
   --sidebar: var(--card); /* the rail is a panel like the others */
   --sidebar-foreground: #ebe8e2;
   --sidebar-accent: #303030;
@@ -1598,8 +1583,7 @@ html[data-window-material="vibrancy"] .bg-background {
 
      * every `background-color` becomes `Canvas` at the specified alpha, so a
        tint becomes a wash of the canvas over the canvas: the selection fill,
-       the modal scrim, the drop-target wash and the state layer all render as
-       nothing;
+       the drop-target wash and the state layer all render as nothing;
      * every text and border colour becomes `CanvasText`, which is why the
        hairlines survive at full strength and why the palette's text would sit
        on whatever the selection fill became;
@@ -1664,10 +1648,6 @@ html[data-window-material="vibrancy"] .bg-background {
      say where the user *is*. */
   :root {
     --selection: Highlight;
-    /* The scrim's fill is gone to the canvas colour, which in a light palette
-       hides what is behind the dialog instead of dimming it. The dialog keeps
-       its border and that is the whole modal signal here. */
-    --scrim: transparent;
     /* Hover is a fill in this shell, and the palette's only control fill is
        `ButtonFace`. A palette that sets it to the canvas leaves hover silent,
        which is why buttons also carry the edge below — accepted over

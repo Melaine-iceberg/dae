@@ -134,7 +134,7 @@ export function OpenWithDialog({
   return (
     <Dialog onOpenChange={onOpenChange} open={target !== null}>
       {/* `motion="none"`: this picker opens over a translucent canvas, where
-          the scrim fade reads as the window itself flickering. */}
+          the dialog's own fade reads as the window itself flickering. */}
       <DialogContent motion="none" showCloseButton={!isPending}>
         <DialogHeader>
           <DialogTitle>{t("explorer:openWith.dialogTitle")}</DialogTitle>
