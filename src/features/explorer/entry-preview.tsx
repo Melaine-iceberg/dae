@@ -14,7 +14,6 @@ import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { copyWithNotice } from "@/lib/notifications";
-import { cn } from "@/lib/utils";
 
 import { getPreviewLanguage, highlightCode, highlightMarkdownCode } from "./code-highlight";
 import { getEntryPresentation } from "./file-icons";
@@ -257,13 +256,11 @@ export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
   return (
     <aside
       aria-label={t("preview.ariaLabel")}
-      className="animate-in flex h-full w-preview shrink-0 flex-col overflow-hidden border-l border-border duration-fast fade-in"
+      className="flex h-full w-preview shrink-0 flex-col overflow-hidden border-l border-border"
     >
       <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
         {visual && VisualIcon ? (
-          // The header icon is the transition's target when the entry has no
-          // thumbnail plate to grow into — one hero per preview, never two.
-          <span className={cn("flex shrink-0", !supportsThumbnail && "entry-preview-hero")}>
+          <span className="flex shrink-0">
             <VisualIcon className="size-4 shrink-0" />
           </span>
         ) : null}
@@ -295,7 +292,7 @@ export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
           <>
             {supportsThumbnail ? (
               <ThumbnailImage
-                className="entry-preview-hero flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted"
+                className="flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted"
                 entry={entry}
                 fallback={VisualIcon ? <VisualIcon className="size-12" /> : null}
                 displaySize={384}

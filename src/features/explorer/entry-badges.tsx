@@ -65,10 +65,7 @@ export function EntryIconFrame({
   entry: DirectoryEntry;
 }) {
   return (
-    // `data-entry-visual` is the hook a shared-element transition starts from
-    // (src/lib/view-transition.ts): one frame around every icon variant, one
-    // attribute to find it by.
-    <span className={cn("relative inline-flex shrink-0", className)} data-entry-visual={entry.path}>
+    <span className={cn("relative inline-flex shrink-0", className)}>
       {children}
       {entry.kind === "file" && entry.readOnly && (
         <ReadOnlyBadge className="absolute -bottom-0.5 -left-0.5" size={badgeSize} />

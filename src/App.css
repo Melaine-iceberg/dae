@@ -1569,9 +1569,7 @@ html[data-window-material="vibrancy"] .bg-background {
 }
 
 /* Respect the OS reduced-motion preference: motion stays functional but
-   collapses to near-instant state changes. The view-transition pseudos are
-   not matched by the `*` above — they are tree-abiding pseudo-elements of the
-   document, not of any element — so they are listed here too. */
+   collapses to near-instant state changes. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1581,29 +1579,6 @@ html[data-window-material="vibrancy"] .bg-background {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-  }
-}
-
-/* ---------------------------------------------------------------------------
-   THE SHARED-ELEMENT TRANSITION — see src/lib/view-transition.ts.
-
-   One morph in the shell, spent on the Quick Look gesture: the entry's visual
-   grows into the preview's hero when a preview opens. The name below is the
-   target half of the pair (the source half is written on the entry's icon
-   frame for the length of one transition), and it lives here rather than
-   inline so there is one place that says which element is the hero.
-
-   It is a name, not an animation: the motion is the API's default morph, and
-   everything the name does not cover falls to the root crossfade, which is
-   the same fade the panel already entered with.
-   --------------------------------------------------------------------------- */
-.entry-preview-hero {
-  view-transition-name: entry-preview-hero;
 }
 
 /* ---------------------------------------------------------------------------

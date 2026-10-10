@@ -61,7 +61,6 @@ import { recordRecentItem } from "@/features/workspace/recents-atoms";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
 import { copyWithNotice, notify } from "@/lib/notifications";
 import { isWindowsPlatform } from "@/lib/platform";
-import { findEntryVisual, withSharedElement } from "@/lib/view-transition";
 
 import { ContentSearchResults, ContentSearchToolbar, useContentSearch } from "./content-search";
 import { ContextualActionBar } from "./contextual-action-bar";
@@ -511,19 +510,14 @@ export function ExplorerView({
   }, [isOperationPending, navigator, selectedEntries]);
 
   /** Space toggles the preview surface for the first selected entry. */
+  // No open animation on purpose. The shared-element morph this used to run
+  // (and, before it, the panel's own entrance fade) read as a window-wide
+  // flicker rather than as motion: when a material is active the window canvas
+  // is translucent, so anything that animates compositing at the root level
+  // spends the duration below `--pane-alpha` and the desktop shows through.
   const togglePreview = useCallback(() => {
-    if (isPreviewOpen) {
-      setIsPreviewOpen(false);
-      return;
-    }
-    // Quick Look (src/lib/view-transition.ts): the entry's visual grows into
-    // the preview's hero. `findEntryVisual` hands back null when the
-    // virtualized listing has scrolled that entry out of the DOM — then this
-    // is the plain open it was before, under the panel's own fade.
-    withSharedElement(findEntryVisual(selectedEntries[0]?.path ?? null), () => {
-      setIsPreviewOpen(true);
-    });
-  }, [isPreviewOpen, selectedEntries]);
+    setIsPreviewOpen((open) => !open);
+  }, []);
 
   /** Duplicates the selection in place; the backend picks unique "副本" names. */
   const duplicateSelection = useCallback(() => {
