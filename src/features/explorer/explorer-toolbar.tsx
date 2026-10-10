@@ -130,163 +130,175 @@ export function ExplorerToolbar({
   const previewBinding = formatBinding(useBinding("explorer.preview"));
 
   return (
-    <header
-      className="flex h-toolbar shrink-0 items-center gap-0.5 px-1.5"
-      data-tauri-drag-region="deep"
-    >
-      <div className="flex shrink-0 items-center gap-0.5">
-        <Button
-          aria-label={
-            sidebarVisible ? t("explorer:toolbar.hideSidebar") : t("explorer:toolbar.showSidebar")
-          }
-          onClick={onToggleSidebar}
-          size="icon"
-          title={
-            sidebarVisible ? t("explorer:toolbar.hideSidebar") : t("explorer:toolbar.showSidebar")
-          }
-          type="button"
-          variant="ghost"
-        >
-          <PanelLeftIcon />
-        </Button>
+    // Two rows: the breadcrumb strip gets the full pane width on top — it was
+    // the first thing to be squeezed when everything shared one row — with the
+    // search field on its trailing edge. The controls keep the row below.
+    // Both rows are drag regions, the way the single row used to be.
+    <header className="flex shrink-0 flex-col" data-tauri-drag-region="deep">
+      {/* Row 1 is the path bar's own 32px plus a top inset only: it needs air
+          between itself and the pane's top edge, while any padding *below* it
+          reads as a gap between the two rows. The wrapper carries no extra
+          padding either — the crumbs start on the same 6px the row below
+          starts on, so the two rows share a left edge. */}
+      <div className="flex items-center gap-0.5 px-1.5 pt-1.5" data-tauri-drag-region="deep">
+        <div className="min-w-0 flex-1">
+          {directory ? (
+            <ExplorerPathBar
+              directory={directory}
+              editSignal={pathEditSignal}
+              onNavigate={onNavigateBreadcrumb}
+              onNavigatePath={onNavigatePath}
+              trailing={<ListingStats {...stats} />}
+            />
+          ) : (
+            <Skeleton className="h-6 w-56 max-w-full" />
+          )}
+        </div>
+
+        <DirectorySearch
+          contentSearch={contentSearch}
+          directoryName={directory?.breadcrumbs.at(-1)?.name ?? null}
+          disabled={isLoading || !isActivePane}
+          mode={searchMode}
+          onModeChange={onSearchModeChange}
+          search={search}
+        />
+      </div>
+
+      <div className="flex h-toolbar items-center gap-0.5 px-1.5" data-tauri-drag-region="deep">
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button
+            aria-label={
+              sidebarVisible ? t("explorer:toolbar.hideSidebar") : t("explorer:toolbar.showSidebar")
+            }
+            onClick={onToggleSidebar}
+            size="icon"
+            title={
+              sidebarVisible ? t("explorer:toolbar.hideSidebar") : t("explorer:toolbar.showSidebar")
+            }
+            type="button"
+            variant="ghost"
+          >
+            <PanelLeftIcon />
+          </Button>
+          <ToolbarSeparator />
+          <Button
+            aria-label={t("explorer:toolbar.back")}
+            disabled={!canGoBack}
+            onClick={onGoBack}
+            size="icon"
+            title={t("explorer:toolbar.back")}
+            type="button"
+            variant="ghost"
+          >
+            <ArrowLeftIcon />
+          </Button>
+          <Button
+            aria-label={t("explorer:toolbar.forward")}
+            disabled={!canGoForward}
+            onClick={onGoForward}
+            size="icon"
+            title={t("explorer:toolbar.forward")}
+            type="button"
+            variant="ghost"
+          >
+            <ArrowRightIcon />
+          </Button>
+          <Button
+            aria-label={t("explorer:toolbar.up")}
+            disabled={!canGoUp}
+            onClick={onGoUp}
+            size="icon"
+            title={t("explorer:toolbar.up")}
+            type="button"
+            variant="ghost"
+          >
+            <ArrowUpIcon />
+          </Button>
+          <Button
+            aria-label={t("explorer:toolbar.refresh")}
+            disabled={isLoading || !directory}
+            onClick={onRefresh}
+            size="icon"
+            title={t("explorer:toolbar.refresh")}
+            type="button"
+            variant="ghost"
+          >
+            <RefreshIcon className={cn(isLoading && "animate-spin")} />
+          </Button>
+          <ToolbarSeparator className={TOOLBAR_OVERFLOW_CLASS} />
+          <Button
+            aria-label={
+              isCurrentFavorited
+                ? t("explorer:toolbar.removeFavorite")
+                : t("explorer:toolbar.addFavorite")
+            }
+            className={TOOLBAR_OVERFLOW_CLASS}
+            disabled={!directory}
+            onClick={onToggleFavorite}
+            size="icon"
+            title={
+              isCurrentFavorited
+                ? t("explorer:toolbar.removeFavorite")
+                : t("explorer:toolbar.addFavorite")
+            }
+            type="button"
+            variant="ghost"
+          >
+            <StarIcon className={cn(isCurrentFavorited && "fill-warning/70 text-warning")} />
+          </Button>
+        </div>
+
+        <ToolbarSeparator />
+        <ViewMenu disabled={!directory} />
+        <FilterMenu disabled={!directory} />
+        {gitStatus && (
+          <>
+            <ToolbarSeparator />
+            <GitBranchControl branch={gitStatus.branch} root={gitStatus.root} />
+          </>
+        )}
+        {onToggleSplit && (
+          <Button
+            aria-label={
+              splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
+            }
+            aria-pressed={splitEnabled}
+            className={TOOLBAR_OVERFLOW_CLASS}
+            onClick={onToggleSplit}
+            size="icon"
+            title={
+              splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
+            }
+            type="button"
+            variant="ghost"
+          >
+            <Columns3Icon />
+          </Button>
+        )}
         <ToolbarSeparator />
         <Button
-          aria-label={t("explorer:toolbar.back")}
-          disabled={!canGoBack}
-          onClick={onGoBack}
-          size="icon"
-          title={t("explorer:toolbar.back")}
-          type="button"
-          variant="ghost"
-        >
-          <ArrowLeftIcon />
-        </Button>
-        <Button
-          aria-label={t("explorer:toolbar.forward")}
-          disabled={!canGoForward}
-          onClick={onGoForward}
-          size="icon"
-          title={t("explorer:toolbar.forward")}
-          type="button"
-          variant="ghost"
-        >
-          <ArrowRightIcon />
-        </Button>
-        <Button
-          aria-label={t("explorer:toolbar.up")}
-          disabled={!canGoUp}
-          onClick={onGoUp}
-          size="icon"
-          title={t("explorer:toolbar.up")}
-          type="button"
-          variant="ghost"
-        >
-          <ArrowUpIcon />
-        </Button>
-        <Button
-          aria-label={t("explorer:toolbar.refresh")}
-          disabled={isLoading || !directory}
-          onClick={onRefresh}
-          size="icon"
-          title={t("explorer:toolbar.refresh")}
-          type="button"
-          variant="ghost"
-        >
-          <RefreshIcon className={cn(isLoading && "animate-spin")} />
-        </Button>
-        <ToolbarSeparator className={TOOLBAR_OVERFLOW_CLASS} />
-        <Button
           aria-label={
-            isCurrentFavorited
-              ? t("explorer:toolbar.removeFavorite")
-              : t("explorer:toolbar.addFavorite")
+            isPreviewOpen
+              ? t("explorer:toolbar.collapsePreview")
+              : t("explorer:toolbar.expandPreview")
           }
-          className={TOOLBAR_OVERFLOW_CLASS}
-          disabled={!directory}
-          onClick={onToggleFavorite}
+          aria-pressed={isPreviewOpen}
+          onClick={onTogglePreview}
           size="icon"
           title={
-            isCurrentFavorited
-              ? t("explorer:toolbar.removeFavorite")
-              : t("explorer:toolbar.addFavorite")
+            isPreviewOpen
+              ? t("explorer:toolbar.collapsePreviewShortcut", { shortcut: previewBinding })
+              : t("explorer:toolbar.expandPreviewShortcut", { shortcut: previewBinding })
           }
           type="button"
           variant="ghost"
         >
-          <StarIcon className={cn(isCurrentFavorited && "fill-warning/70 text-warning")} />
+          <EyeIcon />
         </Button>
+        <ToolbarSeparator />
+        <TerminalToggle />
       </div>
-
-      <div className="min-w-0 flex-1 px-1">
-        {directory ? (
-          <ExplorerPathBar
-            directory={directory}
-            editSignal={pathEditSignal}
-            onNavigate={onNavigateBreadcrumb}
-            onNavigatePath={onNavigatePath}
-            trailing={<ListingStats {...stats} />}
-          />
-        ) : (
-          <Skeleton className="h-6 w-56 max-w-full" />
-        )}
-      </div>
-
-      <DirectorySearch
-        contentSearch={contentSearch}
-        directoryName={directory?.breadcrumbs.at(-1)?.name ?? null}
-        disabled={isLoading || !isActivePane}
-        mode={searchMode}
-        onModeChange={onSearchModeChange}
-        search={search}
-      />
-      <ViewMenu disabled={!directory} />
-      <FilterMenu disabled={!directory} />
-      {gitStatus && (
-        <>
-          <ToolbarSeparator />
-          <GitBranchControl branch={gitStatus.branch} root={gitStatus.root} />
-        </>
-      )}
-      {onToggleSplit && (
-        <Button
-          aria-label={
-            splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
-          }
-          aria-pressed={splitEnabled}
-          className={TOOLBAR_OVERFLOW_CLASS}
-          onClick={onToggleSplit}
-          size="icon"
-          title={
-            splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
-          }
-          type="button"
-          variant="ghost"
-        >
-          <Columns3Icon />
-        </Button>
-      )}
-      <ToolbarSeparator />
-      <Button
-        aria-label={
-          isPreviewOpen
-            ? t("explorer:toolbar.collapsePreview")
-            : t("explorer:toolbar.expandPreview")
-        }
-        aria-pressed={isPreviewOpen}
-        onClick={onTogglePreview}
-        size="icon"
-        title={
-          isPreviewOpen
-            ? t("explorer:toolbar.collapsePreviewShortcut", { shortcut: previewBinding })
-            : t("explorer:toolbar.expandPreviewShortcut", { shortcut: previewBinding })
-        }
-        type="button"
-        variant="ghost"
-      >
-        <EyeIcon />
-      </Button>
-      <ToolbarSeparator />
-      <TerminalToggle />
     </header>
   );
 }

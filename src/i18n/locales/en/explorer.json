@@ -425,7 +425,6 @@
     "matchCount_one": "{{display}} match",
     "matchCount_other": "{{display}} matches",
     "truncatedSuffix": " (truncated)",
-    "selectedCount": "{{display}} selected",
     "clearSelectionHint": "clear"
   },
   "view": {

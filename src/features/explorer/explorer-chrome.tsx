@@ -33,7 +33,8 @@ export function ToolbarSeparator({ className }: { className?: string }) {
 
 /**
  * Inline listing status for the path bar's trailing edge: how many rows the
- * folder holds, what is selected, and what a search is doing.
+ * folder holds, and what a search is doing. It deliberately does not repeat the
+ * selection count — that belongs to the action bar, which exists for it.
  *
  * This replaced a dedicated 24px status bar. It belongs beside the breadcrumbs
  * because it describes the folder they name — and because that strip existed
@@ -76,25 +77,16 @@ export function ListingStats({
       className="ml-auto flex shrink-0 items-center gap-1.5 pl-3 text-micro text-muted-foreground tabular-nums"
     >
       {selectedCount > 0 ? (
-        // While a selection exists it is the salient fact, and the bar is
-        // narrow enough that chip + hint + item count together squeezed the
-        // breadcrumbs into a sub-10px box whose text then painted across the
-        // chip. Dropping the (still visible in the empty selection state, and
-        // moot across a navigation that clears the selection) total reclaims
-        // the room the crumbs need.
-        <>
-          <span className="rounded-xs bg-selection px-1.5 text-foreground">
-            {t("explorer:listing.selectedCount", { display: localeNumber(selectedCount) })}
-          </span>
-          {/* A selection is the one state where "how do I get out of this"
-              is a real question, so the way out is spelled out here instead of
-              being left to the keyboard. Hidden on narrow panes, where the
-              path bar has no room to spare for it. */}
-          <span className="hidden shrink-0 items-center gap-1 min-[840px]:flex">
-            <Kbd className="h-4 px-1 text-nano">{clearSelectionBinding}</Kbd>
-            {t("explorer:listing.clearSelectionHint")}
-          </span>
-        </>
+        // The selected count is already shown where it matters most — the
+        // action bar at the foot of the listing — so repeating it here only
+        // spent the breadcrumbs' width on a number they can see elsewhere.
+        // What stays is the one thing a selection raises and the action bar
+        // does not answer: how to get out of it. Hidden on narrow panes, where
+        // the path bar has no room to spare for it.
+        <span className="hidden shrink-0 items-center gap-1 min-[840px]:flex">
+          <Kbd className="h-4 px-1 text-nano">{clearSelectionBinding}</Kbd>
+          {t("explorer:listing.clearSelectionHint")}
+        </span>
       ) : (
         <span className="truncate">{status}</span>
       )}

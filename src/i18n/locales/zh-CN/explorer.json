@@ -425,7 +425,6 @@
     "matchCount_one": "{{display}} 个匹配项",
     "matchCount_other": "{{display}} 个匹配项",
     "truncatedSuffix": "（已截断）",
-    "selectedCount": "已选 {{display}} 项",
     "clearSelectionHint": "取消选择"
   },
   "view": {
