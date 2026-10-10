@@ -29,7 +29,6 @@ import {
   WidgetIcon,
 } from "@solar-icons/react/line-duotone";
 
-import { Button } from "@/components/ui/button";
 import { WindowControls } from "@/components/window-controls";
 import { commands, events } from "@/bindings";
 import { Sidebar } from "@/features/sidebar/sidebar";
@@ -512,22 +511,16 @@ export function ExplorerTabs() {
               a button; the alternative — a `role="tablist"` wrapper inside the
               scroller — would move the role off the element `tab-drag.ts`
               measures and scrolls. */}
-          {/* The one accent fill in the row. Everything else up here is a
-              tonal surface — canvas, paper, hairline — so a small solid square
-              is what says "this adds something" without a label. It is the
-              house `default` button: flat accent, contact shadow, hover
-              brightening 10% toward its own ink, no shape change on press. */}
-          <Button
+          <button
             aria-label={t("tabs.newTab")}
-            className="rounded-md"
+            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
             data-tauri-drag-region="false"
             onClick={createTab}
-            size="icon-sm"
             title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
             type="button"
           >
             <AddIcon className="size-3.5" />
-          </Button>
+          </button>
         </div>
         <StripScrollButton
           aria-label={t("tabs.scrollRight")}
