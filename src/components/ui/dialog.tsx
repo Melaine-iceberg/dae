@@ -6,15 +6,14 @@ import { Button } from "@/components/ui/button";
 import { CloseIcon } from "@solar-icons/react/line-duotone";
 
 /**
- * Entrance/exit motion for a dialog. `float` is the house behaviour: the popup
- * fades in with a 2px rise. `none` puts it on screen and off screen inside a
- * single frame.
+ * Entrance/exit motion for a dialog. `none` is the house behaviour: the dialog
+ * and its backdrop appear and disappear inside a single frame. `float` adds the
+ * older entrance, a fade with a 2px rise.
  *
- * `none` exists for dialogs where the fade reads as the *window* flickering
- * rather than as the dialog arriving. That is what an animated fade does when
- * a window material is active: the canvas is translucent, so anything animating
- * at this level spends the duration below `--pane-alpha` and the desktop shows
- * through. The Open With picker is the dialog that asked for it.
+ * The fade is not the default because a window material makes it read as the
+ * *window* flickering rather than as the dialog arriving: the canvas is
+ * translucent, so anything animating at this level spends the duration below
+ * `--pane-alpha` and the desktop shows through.
  */
 type DialogMotion = "float" | "none";
 
@@ -42,7 +41,7 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
 
 function DialogOverlay({
   className,
-  motion = "float",
+  motion = "none",
   ...props
 }: DialogPrimitive.Backdrop.Props & { motion?: DialogMotion }) {
   return (
@@ -67,7 +66,7 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
-  motion = "float",
+  motion = "none",
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean;
@@ -88,7 +87,7 @@ function DialogContent({
           // already caps below this, so this scrollport never engages.
           //
           // Entrance is `POPUP_MOTION` — fade plus a 2px rise on the house
-          // standard curve, or nothing at all under `motion="none"`. A dialog
+          // standard curve — and is off by default (`motion="none"`). A dialog
           // that scales up from the centre is the one motion this language
           // does not have, and it would also fight the centring translate
           // below.

@@ -378,7 +378,7 @@ export function PropertiesDialog() {
 
   return (
     <Dialog onOpenChange={(open) => !open && close()} open={target !== null}>
-      <DialogContent className="sm:max-w-md" motion="none">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t("explorer:properties.title")}</DialogTitle>
           <DialogDescription>
