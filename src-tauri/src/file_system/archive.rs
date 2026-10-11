@@ -720,7 +720,8 @@ fn measure_uncompressed_size(
                 } else {
                     archive.by_index(index).map_err(zip_error)?
                 };
-                validated_components(entry.name())?;
+                let name = entry.name().map_err(zip_error)?;
+                validated_components(&name)?;
                 if !entry.is_dir() {
                     total += entry.size();
                 }
@@ -809,7 +810,8 @@ fn extract_zip(
             continue;
         }
 
-        let destination = sanitized_entry_path(root, entry.name())?;
+        let name = entry.name().map_err(zip_error)?;
+        let destination = sanitized_entry_path(root, &name)?;
 
         if entry.is_dir() {
             std::fs::create_dir_all(&destination)?;
@@ -821,7 +823,7 @@ fn extract_zip(
         }
 
         let output = std::fs::File::create(&destination)?;
-        let mut writer = CountingWriter::new(output, progress, entry.name());
+        let mut writer = CountingWriter::new(output, progress, &name);
         copy_chunked(&mut entry, &mut writer)?;
     }
 

@@ -119,7 +119,7 @@ image = { version = "0.25", default-features = false, features = [
 ] }
 base64 = "0.23.1"
 # aes-crypto enables decrypting WinZip-AES zips; ZipCrypto decryption is built in.
-zip = { version = "8", default-features = false, features = ["deflate", "aes-crypto"] }
+zip = { version = "9", default-features = false, features = ["deflate", "aes-crypto"] }
 tar = "0.4"
 flate2 = "1"
 sevenz-rust2 = "0.23.0"
