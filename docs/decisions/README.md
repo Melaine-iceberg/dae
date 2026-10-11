@@ -7,6 +7,10 @@
 |---|---|---|
 | [`tab-drag-webview-reparent.md`](tab-drag-webview-reparent.md) | **已否决** | 标签拖动改成浏览器式 webview reparent —— 机制可行，但代价不值 |
 | [`tab-tear-off-warm-pool.md`](tab-tear-off-warm-pool.md) | **草案，未实施** | 预热窗口池让撕出看起来即时 —— 能存下 ~78% 的等待，代价 +200MB |
+| [`gtk-stack-pinned-by-upstream.md`](gtk-stack-pinned-by-upstream.md) | **已定案，等上游** | gtk/gio 被上游锁在 0.18 —— gtk 0.19 连依赖解析都过不去，实测证据在案 |
+
+第三份（`gtk-stack-pinned-by-upstream.md`）与上面两份**无关**：它记录的是**依赖升级遇到的上游阻断**，
+不是标签撕出的方案取舍 —— 下面各节只涉及前两份。
 
 ## 两份文档的关系
 
