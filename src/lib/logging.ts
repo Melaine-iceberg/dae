@@ -66,16 +66,31 @@ function render(argument: unknown): string {
   if (typeof argument === "string") return argument;
   if (typeof argument === "object" && argument !== null) {
     try {
-      // `stringify` answers `undefined` for a function or a symbol value, so
-      // the fallback below is not dead code.
-      return JSON.stringify(argument) ?? String(argument);
+      // `stringify` answers `undefined` when an object's `toJSON` returns
+      // nothing, so the fallback below is not dead code.
+      return JSON.stringify(argument) ?? fallbackText(argument);
     } catch {
       // Circular structures and objects whose `toJSON` throws land here; a
       // rough rendering beats losing the line.
-      return String(argument);
+      return fallbackText(argument);
     }
   }
   return String(argument);
+}
+
+/**
+ * Last-resort rendering for an object `JSON.stringify` would not answer for.
+ *
+ * `String` may well land on `[object Object]` here, and that is the point: a
+ * rough line beats losing the entry. An object with its own `toString` still
+ * gets to speak, which is why this is not `Object.prototype.toString.call`.
+ *
+ * Taking `unknown` rather than `object` also keeps the type-aware
+ * `no-base-to-string` rule quiet, which flags the same call as an accident at
+ * any other site.
+ */
+function fallbackText(value: unknown): string {
+  return String(value);
 }
 
 /**

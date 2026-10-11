@@ -102,7 +102,7 @@ export const toggleTreeNodeAtom = atom(null, (get, set, path: string) => {
 
   expanded.add(path);
   set(treeExpandedPathsAtom, expanded);
-  void set(loadTreeChildrenAtom, path);
+  set(loadTreeChildrenAtom, path);
 });
 
 /** Auto-expand (following the active pane's folder): only loads when the node
@@ -115,7 +115,7 @@ export const ensureTreeNodeExpandedAtom = atom(null, (get, set, path: string) =>
 
   const state = get(treeChildrenAtom).get(path);
   if (!state || state.status === "error") {
-    void set(loadTreeChildrenAtom, path);
+    set(loadTreeChildrenAtom, path);
   }
 });
 
