@@ -25,7 +25,7 @@ import { formatBinding } from "@/features/settings/shortcut-registry";
 import { useBinding } from "@/features/settings/settings-atoms";
 import { cn } from "@/lib/utils";
 
-import { ListingStats, TerminalToggle, ToolbarSeparator } from "./explorer-chrome";
+import { ListingStats, TerminalToggle, TOGGLE_PRESSED_CLASS } from "./explorer-chrome";
 import { type ContentSearchController } from "./content-search";
 import {
   DirectorySearch,
@@ -165,7 +165,19 @@ export function ExplorerToolbar({
         />
       </div>
 
-      <div className="flex h-toolbar items-center gap-0.5 px-1.5" data-tauri-drag-region="deep">
+      {/* Row 2 groups the controls by what they act on — app chrome, going
+          somewhere, how the listing looks, which panels are open — and the
+          groups are told apart by whitespace alone. It used to run a hairline
+          between every neighbour, which turned a dozen evenly-weighted icons
+          into a picket fence: the separators were the only structure in the
+          row, and there were more of them than sentences. Now each cluster
+          keeps `gap-0.5` inside and `gap-2.5` between, navigation hugs the
+          leading edge under the crumbs, and the panel cluster takes the
+          trailing one (`ml-auto`) so the empty middle is what shapes the row.
+          The panel toggles fill their chip while on (`aria-pressed`), so an
+          open panel is legible at a glance instead of being a guess. */}
+      <div className="flex h-toolbar items-center gap-2.5 px-1.5" data-tauri-drag-region="deep">
+        {/* App chrome: the sidebar toggle, alone at the leading edge. */}
         <div className="flex shrink-0 items-center gap-0.5">
           <Button
             aria-label={
@@ -181,7 +193,11 @@ export function ExplorerToolbar({
           >
             <PanelLeftIcon />
           </Button>
-          <ToolbarSeparator />
+        </div>
+
+        {/* Going somewhere: where the crumbs point, plus the two things you do
+            to the folder you are in — reload it, keep it. */}
+        <div className="flex shrink-0 items-center gap-0.5">
           <Button
             aria-label={t("explorer:toolbar.back")}
             disabled={!canGoBack}
@@ -226,7 +242,6 @@ export function ExplorerToolbar({
           >
             <RefreshIcon className={cn(isLoading && "animate-spin")} />
           </Button>
-          <ToolbarSeparator className={TOOLBAR_OVERFLOW_CLASS} />
           <Button
             aria-label={
               isCurrentFavorited
@@ -249,55 +264,64 @@ export function ExplorerToolbar({
           </Button>
         </div>
 
-        <ToolbarSeparator />
-        <ViewMenu disabled={!directory} />
-        <FilterMenu disabled={!directory} />
+        {/* How the listing looks. The menu triggers are visually heavier than
+            a lone icon — that weight is the group's boundary, and it is why
+            this cluster needs no rule of its own. */}
+        <div className="flex shrink-0 items-center gap-0.5">
+          <ViewMenu disabled={!directory} />
+          <FilterMenu disabled={!directory} />
+        </div>
+
+        {/* Repository context — only where the folder is inside one. */}
         {gitStatus && (
-          <>
-            <ToolbarSeparator />
+          <div className="flex shrink-0 items-center gap-0.5">
             <GitBranchControl branch={gitStatus.branch} root={gitStatus.root} />
-          </>
+          </div>
         )}
-        {onToggleSplit && (
+
+        {/* Which panels are open. Trailing edge, so it stays put as the middle
+            grows and shrinks. */}
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {onToggleSplit && (
+            <Button
+              aria-label={
+                splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
+              }
+              aria-pressed={splitEnabled}
+              className={cn(TOOLBAR_OVERFLOW_CLASS, TOGGLE_PRESSED_CLASS)}
+              onClick={onToggleSplit}
+              size="icon"
+              title={
+                splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
+              }
+              type="button"
+              variant="ghost"
+            >
+              <Columns3Icon />
+            </Button>
+          )}
           <Button
             aria-label={
-              splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
+              isPreviewOpen
+                ? t("explorer:toolbar.collapsePreview")
+                : t("explorer:toolbar.expandPreview")
             }
-            aria-pressed={splitEnabled}
-            className={TOOLBAR_OVERFLOW_CLASS}
-            onClick={onToggleSplit}
+            aria-pressed={isPreviewOpen}
+            className={TOGGLE_PRESSED_CLASS}
+            onClick={onTogglePreview}
             size="icon"
             title={
-              splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
+              isPreviewOpen
+                ? t("explorer:toolbar.collapsePreviewShortcut", { shortcut: previewBinding })
+                : t("explorer:toolbar.expandPreviewShortcut", { shortcut: previewBinding })
             }
             type="button"
             variant="ghost"
           >
-            <Columns3Icon />
+            <EyeIcon />
           </Button>
-        )}
-        <ToolbarSeparator />
-        <Button
-          aria-label={
-            isPreviewOpen
-              ? t("explorer:toolbar.collapsePreview")
-              : t("explorer:toolbar.expandPreview")
-          }
-          aria-pressed={isPreviewOpen}
-          onClick={onTogglePreview}
-          size="icon"
-          title={
-            isPreviewOpen
-              ? t("explorer:toolbar.collapsePreviewShortcut", { shortcut: previewBinding })
-              : t("explorer:toolbar.expandPreviewShortcut", { shortcut: previewBinding })
-          }
-          type="button"
-          variant="ghost"
-        >
-          <EyeIcon />
-        </Button>
-        <ToolbarSeparator />
-        <TerminalToggle />
+          <TerminalToggle />
+        </div>
       </div>
     </header>
   );

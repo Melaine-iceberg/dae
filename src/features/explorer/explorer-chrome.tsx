@@ -1,7 +1,6 @@
 /**
- * Small presentational pieces of the explorer's chrome: the toolbar's
- * separators, the listing stats in the path bar, the terminal toggle, and the
- * file-operation progress strip.
+ * Small presentational pieces of the explorer's chrome: the listing stats in
+ * the path bar, the terminal toggle, and the file-operation progress strip.
  *
  * All of these are self-contained leaf components — each owns only the
  * translation/shortcut lookups it needs — so they were lifted out of
@@ -23,13 +22,11 @@ import { cn } from "@/lib/utils";
 import type { FileOperationKind, FileOperationProgress } from "./types";
 
 /**
- * Hairline between toolbar groups. `className` exists so a group can take its
- * separator down with it on narrow windows — a lone divider with nothing on
- * one side reads as a rendering bug.
+ * How a toolbar toggle shows that it is on: the chip fills, the icon stays the
+ * same. The state already lives on the control as `aria-pressed`, so the
+ * styling keys off that attribute and no caller has to remember to paint it.
  */
-export function ToolbarSeparator({ className }: { className?: string }) {
-  return <div aria-hidden="true" className={cn("mx-0.5 h-4 w-px bg-border", className)} />;
-}
+export const TOGGLE_PRESSED_CLASS = "aria-pressed:bg-accent aria-pressed:text-foreground";
 
 /**
  * Inline listing status for the path bar's trailing edge: how many rows the
@@ -107,7 +104,7 @@ export function TerminalToggle() {
     <Button
       aria-label={t("explorer:toolbar.toggleTerminal")}
       aria-pressed={visible}
-      className={cn(visible && "bg-accent text-foreground")}
+      className={TOGGLE_PRESSED_CLASS}
       onClick={() => setVisible((open) => !open)}
       size="icon"
       title={t("explorer:toolbar.terminalTitle", { shortcut: toggleBinding })}
