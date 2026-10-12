@@ -124,7 +124,7 @@
     "title": "Trash",
     "summary": "{{count}} items · {{size}}",
     "emptyTitle": "Trash is empty",
-    "emptyDescription": "Deleted files are not removed permanently until you restore or empty the trash.",
+    "emptyDescription": "Deleted files and folders are moved here first, so you can restore them or delete them for good.",
     "loadErrorTitle": "Unable to read the trash",
     "operationErrorTitle": "Operation incomplete",
     "restored_one": "Restored 1 item",

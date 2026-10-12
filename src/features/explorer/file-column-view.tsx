@@ -191,7 +191,11 @@ function Pane({
 
   return (
     <div
-      className="flex w-column-view shrink-0 flex-col overflow-y-auto border-r border-border px-1.5 py-2"
+      // `pb-14` keeps the last row clear of the floating contextual action
+      // bar (`bottom-4 h-9`) while anything is selected.
+      className={`flex w-column-view shrink-0 flex-col overflow-y-auto border-r border-border px-1.5 py-2 ${
+        selectedCount > 0 ? "pb-14" : ""
+      }`}
       ref={scrollRef}
     >
       {isLoading && (

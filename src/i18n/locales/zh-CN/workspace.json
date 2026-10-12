@@ -124,7 +124,7 @@
     "title": "回收站",
     "summary": "{{count}} 个项目，共 {{size}}",
     "emptyTitle": "回收站是空的",
-    "emptyDescription": "在恢复或清空回收站之前，删除的文件不会被永久移除。",
+    "emptyDescription": "删除的文件和文件夹会先移到这里，可以随时恢复或彻底删除。",
     "loadErrorTitle": "无法读取回收站",
     "operationErrorTitle": "操作未完成",
     "restored_one": "已恢复 1 个项目",

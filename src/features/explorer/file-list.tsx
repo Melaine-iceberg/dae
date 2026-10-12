@@ -207,8 +207,10 @@ const TYPE_AHEAD_TIMEOUT_MS = 800;
 
 const MODIFIED_DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   year: "numeric",
-  month: "numeric",
-  day: "numeric",
+  // 2-digit month/day keeps the column flush: "2026/10/01" vs "2026/9/26"
+  // leaves the slash runs ragged under a tabular-num column.
+  month: "2-digit",
+  day: "2-digit",
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
@@ -1106,7 +1108,10 @@ export function FileList({
         ) : (
           <div
             ref={scrollRef}
-            className="min-h-0 flex-1 overflow-auto"
+            // Bottom clearance for the floating contextual action bar
+            // (`bottom-4 h-9`): without it the last rows park under the bar
+            // and can never be scrolled clear.
+            className={`min-h-0 flex-1 overflow-auto ${selectedCount > 0 ? "pb-14" : ""}`}
             onKeyDown={(event) =>
               handleNavKeyDown(event, {
                 container: event.currentTarget,

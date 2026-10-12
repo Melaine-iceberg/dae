@@ -72,6 +72,16 @@ const GRID_IMAGE_ZONE_CLASS: Record<ExplorerDensity, string> = {
 const GRID_GAP_PX = 6;
 const GRID_PADDING_PX = 12;
 
+/**
+ * How far a cell may shrink below the density's preferred width to keep two
+ * columns alive in a narrow listing pane (preview panel docked beside it).
+ * Past this floor two cramped columns read worse than one honest one. Safe
+ * because names are `line-clamp-2` + `overflow-wrap: anywhere` — see the note
+ * by the name span — so a squeezed name wraps at real break opportunities and
+ * clamps instead of overflowing the fixed cell height.
+ */
+const GRID_SQUEEZE_SLACK_PX = 12;
+
 export interface FileGridViewProps {
   actionsDisabled: boolean;
   /** The keyboard cursor's entry index — the grid's roving tab stop. */
@@ -139,10 +149,28 @@ export function FileGridView({
     return () => observer.disconnect();
   }, []);
 
-  const columnCount = Math.max(
+  const availableWidth = Math.max(0, viewportWidth - GRID_PADDING_PX * 2);
+  const regularColumnCount = Math.max(
     1,
-    Math.floor((viewportWidth - GRID_PADDING_PX * 2 + GRID_GAP_PX) / (cellMinWidth + GRID_GAP_PX)),
+    Math.floor((availableWidth + GRID_GAP_PX) / (cellMinWidth + GRID_GAP_PX)),
   );
+  // A lone column stretches every cell to the full pane width — one giant tile
+  // per row. Prefer squeezing cells to the floor and taking a second column.
+  const squeezeMinWidth = cellMinWidth - GRID_SQUEEZE_SLACK_PX;
+  const squeezedColumnCount = Math.floor(
+    (availableWidth + GRID_GAP_PX) / (squeezeMinWidth + GRID_GAP_PX),
+  );
+  const columnCount =
+    regularColumnCount === 1
+      ? Math.min(Math.max(1, squeezedColumnCount), 2)
+      : regularColumnCount;
+  const naturalCellWidth =
+    (availableWidth - GRID_GAP_PX * (columnCount - 1)) / columnCount;
+  // When even two squeezed columns don't fit, keep the single cell at normal
+  // tile width and let the row end short — Explorer's fixed-tile grid — rather
+  // than stretching one tile across the pane. `hitTest` uses the same width.
+  const cellWidth =
+    columnCount === 1 ? Math.min(naturalCellWidth, cellMinWidth + GRID_GAP_PX) : naturalCellWidth;
   const rowCount = Math.ceil(entries.count / columnCount);
   const virtualizer = useVirtualizer({
     count: rowCount,
@@ -157,8 +185,6 @@ export function FileGridView({
     if (!container || viewportWidth === 0) return [];
 
     const bounds = container.getBoundingClientRect();
-    const cellWidth =
-      (viewportWidth - GRID_PADDING_PX * 2 - GRID_GAP_PX * (columnCount - 1)) / columnCount;
     const cellStrideX = cellWidth + GRID_GAP_PX;
     const topContent = rect.top - bounds.top + container.scrollTop - GRID_PADDING_PX;
     const bottomContent = rect.bottom - bounds.top + container.scrollTop - GRID_PADDING_PX;
@@ -193,7 +219,9 @@ export function FileGridView({
     <div className="relative min-h-0 flex-1">
       <div
         aria-multiselectable="true"
-        className="h-full overflow-auto"
+        // `pb-14` keeps the last row clear of the floating contextual action
+        // bar (`bottom-4 h-9`) while anything is selected.
+        className={`h-full overflow-auto ${selectedCount > 0 ? "pb-14" : ""}`}
         onKeyDown={(event) =>
           onNavKeyDown(event, {
             container: event.currentTarget,
@@ -228,7 +256,7 @@ export function FileGridView({
               role="presentation"
               style={{
                 gap: GRID_GAP_PX,
-                gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
+                gridTemplateColumns: `repeat(${columnCount}, minmax(0, ${cellWidth}px))`,
                 height: cellHeight,
                 transform: `translateY(${GRID_PADDING_PX + virtualRow.start}px)`,
               }}
