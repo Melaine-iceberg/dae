@@ -153,6 +153,10 @@ function SidebarContent() {
   const reloadCloudAccounts = useSetAtom(reloadCloudAccountsAtom);
   const expandLocationSection = useSetAtom(expandLocationSectionAtom);
   const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
+  // Whether a section is empty decides if its add button stops hiding behind
+  // the section's hover state.
+  const connections = useAtomValue(connectionsAtom);
+  const cloudAccounts = useAtomValue(cloudAccountsAtom);
   const [creatingSpace, setCreatingSpace] = useState(false);
   const [spaceName, setSpaceName] = useState("");
   const [connectOpen, setConnectOpen] = useState(false);
@@ -232,6 +236,7 @@ function SidebarContent() {
           label={t("sections.spaces")}
           onAdd={() => setCreatingSpace(true)}
           addTitle={t("spaces.create")}
+          empty={spaces.length === 0}
         />
         {creatingSpace && (
           <form className="px-0.5 pb-1" onSubmit={submitCreateSpace}>
@@ -325,6 +330,7 @@ function SidebarContent() {
             label: t("network.connectStorage"),
             onClick: () => setConnectOpen(true),
           }}
+          empty={connections?.length === 0}
           icon={ServerIcon}
           id="network"
           label={t("sections.network")}
@@ -337,6 +343,7 @@ function SidebarContent() {
             label: t("cloud.addAccount"),
             onClick: () => setCloudOpen(true),
           }}
+          empty={cloudAccounts?.length === 0}
           icon={CloudIcon}
           id="cloud"
           label={t("sections.cloudStorage")}
@@ -385,20 +392,23 @@ function SidebarContent() {
 }
 
 /**
- * A collapsible location group: a compact header row with a leading icon and
- * a rotating chevron; the body expands with a grid-rows transition. Children
+ * A collapsible location group: a compact header row whose leading chevron
+ * opens the group; the body expands with a grid-rows transition. Children
  * stay unmounted while collapsed (and are only mounted once expanded), so
  * collapsed groups cost zero IPC and zero render work.
  */
 function CollapsibleSection({
   action,
   children,
+  empty,
   icon: Icon,
   id,
   label,
 }: {
   action?: { label: string; onClick: () => void };
   children: ReactNode;
+  /** The group has no entries yet, so its action button stays revealed. */
+  empty?: boolean;
   icon: ComponentType<{ className?: string }>;
   id: LocationSectionId;
   label: string;
@@ -424,24 +434,34 @@ function CollapsibleSection({
       <div className="group/section flex h-7 items-center gap-0.5">
         <button
           aria-expanded={open}
-          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
+          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
           onClick={() => toggle(id)}
           type="button"
         >
+          {/* The disclosure chevron leads, in the same size-5 slot the folder
+              tree uses. Every expand toggle in the sidebar then sits in one
+              left-hand column, and the trailing side belongs to actions: the
+              add buttons live there and can never move the column. */}
+          <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center">
+            <AltArrowDownIcon
+              className={cn(
+                "size-3 text-foreground/65 transition-transform duration-fast ease-spring-fast",
+                !open && "-rotate-90",
+              )}
+            />
+          </span>
           <Icon className="size-4 shrink-0 text-foreground/72 transition-colors group-hover/section:text-foreground" />
           <span className="min-w-0 flex-1 truncate">{label}</span>
-          <AltArrowDownIcon
-            aria-hidden="true"
-            className={cn(
-              "size-3.5 shrink-0 text-foreground/65 transition-transform duration-fast ease-spring-fast",
-              !open && "-rotate-90",
-            )}
-          />
         </button>
         {action && (
           <button
             aria-label={action.label}
-            className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast group-hover/section:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+            className={cn(
+              "flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast group-hover/section:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
+              // An empty group has nothing below the header to look at, so its
+              // action stops hiding until hover — it is the content.
+              empty && "opacity-100",
+            )}
             onClick={action.onClick}
             title={action.label}
             type="button"
@@ -826,10 +846,13 @@ function CloudAccountContextMenu({
 
 function SectionLabel({
   addTitle,
+  empty,
   label,
   onAdd,
 }: {
   addTitle?: string;
+  /** The group has no entries yet, so its add button stays revealed. */
+  empty?: boolean;
   label: string;
   onAdd?: () => void;
 }) {
@@ -839,7 +862,12 @@ function SectionLabel({
       {onAdd && (
         <button
           aria-label={addTitle}
-          className="flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast group-hover/section:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
+          className={cn(
+            "flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast group-hover/section:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
+            // An empty group has nothing below the label to look at, so its add
+            // button stops hiding until hover — it is the content.
+            empty && "opacity-100",
+          )}
           onClick={onAdd}
           title={addTitle}
           type="button"
@@ -984,7 +1012,25 @@ function DiskItem({
         isActive && "row-active bg-sidebar-accent",
       )}
     >
-      <div className="flex items-center gap-1">
+      <div className="flex items-center">
+        {/* The tree toggle leads, in the same size-5 slot the folder tree rows
+            use; with the card's px-2.5 both share one column with the section
+            headers above. */}
+        <button
+          aria-expanded={treeOpen}
+          aria-label={t(treeOpen ? "tree.collapse" : "tree.expand")}
+          className="flex size-5 shrink-0 items-center justify-center rounded-xs text-foreground/65 transition-colors hover:bg-accent hover:text-foreground"
+          onClick={() => toggleTreeNode(volume.mountPoint)}
+          type="button"
+        >
+          <AltArrowDownIcon
+            aria-hidden="true"
+            className={cn(
+              "size-3 transition-transform duration-fast ease-spring-fast",
+              !treeOpen && "-rotate-90",
+            )}
+          />
+        </button>
         <button
           className="flex min-w-0 flex-1 items-center gap-2 text-left"
           onClick={() => onNavigate(volume.mountPoint)}
@@ -1002,21 +1048,6 @@ function DiskItem({
               {presentation.secondary}
             </div>
           </div>
-        </button>
-        <button
-          aria-expanded={treeOpen}
-          aria-label={t(treeOpen ? "tree.collapse" : "tree.expand")}
-          className="shrink-0 rounded-xs p-0.5 text-foreground/65 transition-colors hover:bg-accent hover:text-foreground"
-          onClick={() => toggleTreeNode(volume.mountPoint)}
-          type="button"
-        >
-          <AltArrowDownIcon
-            aria-hidden="true"
-            className={cn(
-              "size-3.5 transition-transform duration-fast ease-spring-fast",
-              !treeOpen && "-rotate-90",
-            )}
-          />
         </button>
       </div>
       {/* Secondary click target so the capacity block still navigates; the
