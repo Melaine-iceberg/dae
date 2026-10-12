@@ -59,3 +59,6 @@ docs/performance-audit.md
 # `bun run scripts/perf/...`, never part of a build.
 scripts/perf/
 NOTES.md
+
+# MAGI's local task-state file: working notes, not source.
+/PLAN.md
