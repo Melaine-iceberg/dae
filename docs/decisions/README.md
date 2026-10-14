@@ -6,7 +6,7 @@
 | 文档 | 状态 | 一句话 |
 |---|---|---|
 | [`tab-drag-webview-reparent.md`](tab-drag-webview-reparent.md) | **已否决** | 标签拖动改成浏览器式 webview reparent —— 机制可行，但代价不值 |
-| [`tab-tear-off-warm-pool.md`](tab-tear-off-warm-pool.md) | **草案，未实施** | 预热窗口池让撕出看起来即时 —— 能存下 ~78% 的等待，代价 +200MB |
+| [`tab-tear-off-warm-pool.md`](tab-tear-off-warm-pool.md) | **已实施，默认开启** | 预热窗口池让撕出看起来即时 —— 撕出中位从 ~530ms 降到 **~65ms**，代价 +200MB |
 | [`gtk-stack-pinned-by-upstream.md`](gtk-stack-pinned-by-upstream.md) | **已定案，等上游** | gtk/gio 被上游锁在 0.18 —— gtk 0.19 连依赖解析都过不去，实测证据在案 |
 
 第三份（`gtk-stack-pinned-by-upstream.md`）与上面两份**无关**：它记录的是**依赖升级遇到的上游阻断**，
@@ -19,7 +19,8 @@
 - **reparent** 想从根上避免重建 UI —— 被否决，因为 wry 的 reparent 是 `unstable` 特性、
   每个标签一个 webview 内存过高，而现有原生拖动已是 OS 级拖动，交互上几乎没有收益。
 - **预热池** 接受「要重建 UI」，改为**把重建的成本提前付掉** —— 实测证明除绘制外
-  都能在窗口可见之前完成。
+  都能在窗口可见之前完成。该路线已实施：`tab_windows.rs` 的池与收养分支 + 设置里的
+  `warm_tab_pool`（默认开），收养成本实测中位 ~65ms。冷路径保留为回退。
 
 所以 reparent 的否决**加强**了预热池这条路的理由，而不是削弱它。
 
@@ -31,10 +32,12 @@ wry 的 GObject 引用环，6 行 patch 曾在本地验证）是**当前架构�
 
 预热池与它有相互作用：池化会**减少**窗口的创建/销毁次数（对泄漏中性偏好），
 但如果收养后反复关闭池窗口，泄漏会累积 —— 两者应当一起评估。
+池化落地后这条相互作用仍然成立，上限是「池常驻 1 个 = +200MB」。
 
 ## 归档的 PoC
 
 `poc/webview-reparent/` 存放 reparent 路线的实测代码与脚本，**不参与构建**
 （`lib.rs` 里没有 `mod reparent_poc`，`Cargo.toml` 里没有 `unstable` feature）。
 其中包括 `webview-memory.py`（进程树 RSS + PSS 测量），
-预热池的内存预算应当用它重新测，而不是沿用文档里的旧数字。
+预热池那条 **+200MB** 的内存数字（`tab-tear-off-warm-pool.md` §3.5）应当用它重新测，
+而不是沿用文档里的旧机器数字；延迟数字已是生产构建实测，不受此影响。

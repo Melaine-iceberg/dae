@@ -85,11 +85,11 @@ function App() {
   useGitRefreshOnDirectoryChange();
 
   // System accent (see src/lib/system-accent.ts). `watchSystemAccent` is the
-  // seam's only unimplemented half: it reads the OS accent and hands each
-  // reading straight to `applySystemAccent`, which is already the complete
-  // write side. Until a platform reader lands it returns a no-op disposer and
-  // the shell keeps its shipped indigo via the CSS fallbacks — no call site
-  // here changes when it starts working.
+  // read side: it pulls once and then follows `system-accent-changed` from
+  // whichever platform reader is compiled in (windows / macos / linux), and
+  // hands each reading straight to `applySystemAccent`, the complete write
+  // side. Until the first reading lands — or where a reader reports nothing —
+  // the shell keeps its shipped teal through the CSS fallbacks.
   useEffect(() => watchSystemAccent(applySystemAccent), []);
   // Window backdrop (see src/lib/window-material.ts): `<html>` carries whatever
   // the platform can actually composite, and App.css's material block lets the

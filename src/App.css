@@ -739,7 +739,7 @@
      --system-accent-ink  a label colour that clears ≈4.5:1 ON that hue
 
    They are deliberately left UNDEFINED in this file rather than given a
-   default. `var(--system-accent, …)` falls back to the shipped blue
+   default. `var(--system-accent, …)` falls back to the shipped teal
    exactly while the bridge has said nothing, and stops falling back the
    instant it has. Declaring `--system-accent: initial` on this element would
    still *define* it and therefore defeat the fallback — the one mistake this
@@ -750,7 +750,7 @@
    the ink is chosen in `applySystemAccent()` from the hue's relative
    luminance. A bridge normally supplies only the hue.
 
-   `--accent-default*` above are the shipped blue, per scheme. They are also
+   `--accent-default*` above are the shipped teal, per scheme. They are also
    what vite.config.ts bakes into index.html's pre-React splash, where no
    bridge has run yet — so there the default is the correct colour and not
    merely a fallback.
