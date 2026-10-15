@@ -1,0 +1,7 @@
+variant	allocations	bytes	entries	allocs_per_entry
+std walk + rows	72595	49723395	35803	2.03
+win32 walk (large fetch) + rows	72507	31268005	35803	2.03
+std walk + rows + app sort key	144209	53170469	35803	4.03
+std walk + rows + comparator	72595	49723395	35803	2.03
+win32 walk (large fetch) + rows + app sort key	144121	34715079	35803	4.03
+win32 walk (large fetch) + rows + comparator	72507	31268005	35803	2.03

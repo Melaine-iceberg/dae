@@ -1,0 +1,24 @@
+[package]
+name = "listing-pipeline"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone on purpose: this crate is not a member of the Tauri package (which
+# lives in `src-tauri/`) and nothing in the app's build touches it. It exists to
+# answer one question — where the time of a large local listing goes, and what a
+# cheaper ordering key is worth — without dragging a webview, an IPC layer or a
+# React bundle into the measurement.
+#
+# The pipeline it measures lives in `src/pipeline.rs` as a verbatim mirror of
+# `src-tauri/src/file_system/local/directory.rs` and
+# `src-tauri/src/file_system/types.rs`. See `README.md` for exactly which
+# functions were copied and how they are kept honest.
+[dependencies]
+# The allocator the app installs (`src-tauri/src/main.rs`). A listing allocates
+# per entry, so measuring the pipeline under a different heap would mix two
+# changes together.
+mimalloc = { version = "0.1", default-features = false }
+
+[profile.release]
+debug = false

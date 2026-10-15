@@ -1,0 +1,97 @@
+# listing-pipeline: host=windows entries=35803 batches=512,..,8192
+# serial arm (what Windows takes for every batch): true
+# rows: 35803
+# parity  std+key        vs std+key: identical
+# parity  std+cmp        vs std+key: identical
+# parity  win32+key      vs std+key: identical
+# parity  win32+cmp      vs std+key: identical
+variant	pass	walk_ms	rows_ms	sort_ms	total_ms	entries	entries_per_s
+std walk	1	13.846	0.000	0.000	13.846	35803	2585764
+std walk + rows	1	13.867	3.130	0.000	16.996	35803	2106530
+std walk + rows + app sort key	1	14.718	3.281	1.211	19.210	35803	1863720
+std walk + rows + comparator	1	14.017	3.134	0.687	17.838	35803	2007063
+win32 walk (large fetch)	1	9.855	0.000	0.000	9.855	35803	3633089
+win32 walk (no large fetch)	1	12.846	0.000	0.000	12.846	35803	2787180
+win32 walk (large fetch) + rows	1	9.430	2.250	0.000	11.681	35803	3065168
+win32 walk (large fetch) + rows + app sort key	1	9.604	2.166	1.170	12.940	35803	2766783
+win32 walk (large fetch) + rows + comparator	1	10.007	2.309	0.720	13.036	35803	2746492
+std walk	2	15.606	0.000	0.000	15.606	35803	2294226
+std walk + rows	2	14.035	2.937	0.000	16.972	35803	2109484
+std walk + rows + app sort key	2	13.880	2.740	1.237	17.857	35803	2004962
+std walk + rows + comparator	2	13.822	2.817	0.707	17.347	35803	2063978
+win32 walk (large fetch)	2	9.612	0.000	0.000	9.612	35803	3724746
+win32 walk (no large fetch)	2	13.042	0.000	0.000	13.042	35803	2745208
+win32 walk (large fetch) + rows	2	9.898	2.450	0.000	12.349	35803	2899310
+win32 walk (large fetch) + rows + app sort key	2	10.069	2.344	1.196	13.610	35803	2630659
+win32 walk (large fetch) + rows + comparator	2	9.709	2.134	0.690	12.533	35803	2856698
+std walk	3	13.819	0.000	0.000	13.819	35803	2590816
+std walk + rows	3	13.723	2.799	0.000	16.522	35803	2167016
+std walk + rows + app sort key	3	13.913	2.726	1.180	17.819	35803	2009271
+std walk + rows + comparator	3	14.198	2.908	0.764	17.870	35803	2003559
+win32 walk (large fetch)	3	10.248	0.000	0.000	10.248	35803	3493623
+win32 walk (no large fetch)	3	13.001	0.000	0.000	13.001	35803	2753780
+win32 walk (large fetch) + rows	3	9.471	2.243	0.000	11.714	35803	3056376
+win32 walk (large fetch) + rows + app sort key	3	9.548	2.205	1.174	12.927	35803	2769629
+win32 walk (large fetch) + rows + comparator	3	9.686	2.110	0.687	12.483	35803	2868210
+std walk	4	13.564	0.000	0.000	13.564	35803	2639600
+std walk + rows	4	13.834	2.757	0.000	16.591	35803	2157912
+std walk + rows + app sort key	4	14.018	2.708	1.172	17.897	35803	2000503
+std walk + rows + comparator	4	13.882	2.717	0.713	17.312	35803	2068103
+win32 walk (large fetch)	4	9.342	0.000	0.000	9.342	35803	3832395
+win32 walk (no large fetch)	4	12.536	0.000	0.000	12.536	35803	2856015
+win32 walk (large fetch) + rows	4	9.363	2.188	0.000	11.551	35803	3099612
+win32 walk (large fetch) + rows + app sort key	4	9.316	2.069	1.150	12.535	35803	2856265
+win32 walk (large fetch) + rows + comparator	4	9.775	2.261	0.692	12.728	35803	2812888
+std walk	5	13.919	0.000	0.000	13.919	35803	2572276
+std walk + rows	5	13.701	2.760	0.000	16.461	35803	2175059
+std walk + rows + app sort key	5	13.557	2.610	1.165	17.331	35803	2065836
+std walk + rows + comparator	5	13.422	2.597	0.684	16.704	35803	2143417
+win32 walk (large fetch)	5	10.724	0.000	0.000	10.724	35803	3338586
+win32 walk (no large fetch)	5	12.654	0.000	0.000	12.654	35803	2829360
+win32 walk (large fetch) + rows	5	9.726	2.252	0.000	11.979	35803	2988914
+win32 walk (large fetch) + rows + app sort key	5	9.750	2.236	1.180	13.166	35803	2719270
+win32 walk (large fetch) + rows + comparator	5	9.457	2.130	0.687	12.274	35803	2916931
+std walk	6	14.653	0.000	0.000	14.653	35803	2443357
+std walk + rows	6	13.843	2.662	0.000	16.506	35803	2169129
+std walk + rows + app sort key	6	13.699	2.573	1.209	17.481	35803	2048074
+std walk + rows + comparator	6	13.987	2.835	0.705	17.528	35803	2042664
+win32 walk (large fetch)	6	9.995	0.000	0.000	9.995	35803	3582127
+win32 walk (no large fetch)	6	12.791	0.000	0.000	12.791	35803	2798968
+win32 walk (large fetch) + rows	6	9.351	2.204	0.000	11.555	35803	3098593
+win32 walk (large fetch) + rows + app sort key	6	9.375	2.113	1.238	12.726	35803	2813485
+win32 walk (large fetch) + rows + comparator	6	9.239	2.077	0.702	12.018	35803	2979164
+std walk	7	13.385	0.000	0.000	13.385	35803	2674800
+std walk + rows	7	13.820	2.732	0.000	16.552	35803	2163062
+std walk + rows + app sort key	7	14.954	3.068	1.321	19.344	35803	1850877
+std walk + rows + comparator	7	13.704	2.684	0.693	17.081	35803	2096108
+win32 walk (large fetch)	7	9.382	0.000	0.000	9.382	35803	3816178
+win32 walk (no large fetch)	7	12.412	0.000	0.000	12.412	35803	2884594
+win32 walk (large fetch) + rows	7	9.149	2.292	0.000	11.441	35803	3129250
+win32 walk (large fetch) + rows + app sort key	7	9.266	2.092	1.166	12.524	35803	2858683
+win32 walk (large fetch) + rows + comparator	7	10.100	2.356	0.686	13.142	35803	2724319
+
+median of 7 passes
+variant	walk_ms	rows_ms	sort_ms	total_ms	entries_per_s
+std walk	13.846	0.000	0.000	13.846	2585764
+std walk + rows	13.834	2.760	0.000	16.552	2163062
+std walk + rows + app sort key	13.913	2.726	1.209	17.857	2004962
+std walk + rows + comparator	13.882	2.817	0.705	17.347	2063978
+win32 walk (large fetch)	9.855	0.000	0.000	9.855	3633089
+win32 walk (no large fetch)	12.791	0.000	0.000	12.791	2798968
+win32 walk (large fetch) + rows	9.430	2.250	0.000	11.681	3065168
+win32 walk (large fetch) + rows + app sort key	9.548	2.166	1.174	12.927	2769629
+win32 walk (large fetch) + rows + comparator	9.709	2.134	0.690	12.533	2856698
+
+app pipeline (std walk, app sort key)          17.857 ms
+std walk                                     13.846 ms  (-22.5%, +4.011 ms vs app)
+std walk + rows                              16.552 ms  (-7.3%, +1.305 ms vs app)
+std walk + rows + comparator                 17.347 ms  (-2.9%, +0.511 ms vs app)
+win32 walk (large fetch)                     9.855 ms  (-44.8%, +8.002 ms vs app)
+win32 walk (no large fetch)                  12.791 ms  (-28.4%, +5.066 ms vs app)
+win32 walk (large fetch) + rows              11.681 ms  (-34.6%, +6.177 ms vs app)
+win32 walk (large fetch) + rows + app sort key 12.927 ms  (-27.6%, +4.930 ms vs app)
+win32 walk (large fetch) + rows + comparator 12.533 ms  (-29.8%, +5.324 ms vs app)
+
+std walk's share of the app pipeline         16.552 ms of 17.857 ms (93%)
+app ordering (key)                           1.305 ms (7%)
+app ordering (comparator)                    0.795 ms (4%)  -> -0.511 ms

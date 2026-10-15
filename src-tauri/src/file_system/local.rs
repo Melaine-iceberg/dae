@@ -9,6 +9,9 @@ mod operations;
 mod properties;
 mod search;
 
+#[cfg(windows)]
+mod windows_directory;
+
 pub use content_search::{ContentSearchParams, search_file_contents_sync};
 pub use directory::{
     DirectoryListing, DirectoryListingCursor, create_directory_watcher, open_canonical_listing,

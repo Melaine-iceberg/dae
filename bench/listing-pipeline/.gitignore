@@ -1,0 +1,2 @@
+# The build directory, exactly as the sibling harness ignores it.
+target/

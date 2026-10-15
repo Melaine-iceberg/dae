@@ -2,7 +2,7 @@ use crate::file_system::entry_codec::{self, ListingRow};
 use crate::file_system::error::FileSystemError;
 use crate::file_system::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, canonical_path, entry_sort_key,
-    name_sort_key, path_to_string,
+    name_order, path_to_string,
 };
 use crate::file_system::watch::DirectoryChanged;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
@@ -112,13 +112,20 @@ pub struct DirectoryListing {
     pub cursor: Option<DirectoryListingCursor>,
 }
 
-/// The unread remainder of a directory listing: the live `read_dir` iterator.
+/// The unread remainder of a directory listing: the live OS iterator.
 ///
-/// `std::fs::ReadDir` is `Send`, so the reader thread that streams the
-/// remaining batches can own it. Entries whose metadata cannot be read are
-/// skipped rather than failing the whole listing — WSL's `/proc` and `/run`
-/// over the `\\wsl$` 9P share behave that way.
+/// Windows reads through [`windows_directory::WindowsDirectoryEntries`] rather
+/// than `std::fs::ReadDir`, which is the same enumeration with
+/// `FIND_FIRST_EX_LARGE_FETCH` set and the row built from the find data instead
+/// of through a `DirEntry` — see that module for the measurements. Both are
+/// `Send`, because the reader thread that streams the remaining batches owns the
+/// iterator. Entries whose metadata cannot be read are skipped rather than
+/// failing the whole listing — WSL's `/proc` and `/run` over the `\\wsl$` 9P
+/// share behave that way.
 pub struct DirectoryListingCursor {
+    #[cfg(windows)]
+    iterator: super::windows_directory::WindowsDirectoryEntries,
+    #[cfg(not(windows))]
     iterator: fs::ReadDir,
     /// What a child path is made of: the directory's display spelling plus the
     /// separator `PathBuf::push` would have added. The iterator builds the same
@@ -145,6 +152,22 @@ impl DirectoryListingCursor {
     /// per row here rather than a `PathBuf` and a second `String`, which
     /// measured ~4 ms of a serial batch.
     pub fn take_rows(&mut self, count: usize) -> (Vec<ListingRow>, bool) {
+        let (mut rows, exhausted) = self.take_rows_unsorted(count);
+        sort_rows(&mut rows);
+        (rows, exhausted)
+    }
+
+    /// [`Self::take_rows`] without the ordering, which is where the two platforms
+    /// differ: the `std` walk hands back `DirEntry`s that `collect_rows` turns
+    /// into rows, while the Windows walk already has the rows and skips that step
+    /// entirely.
+    #[cfg(windows)]
+    fn take_rows_unsorted(&mut self, count: usize) -> (Vec<ListingRow>, bool) {
+        self.iterator.take_rows(count)
+    }
+
+    #[cfg(not(windows))]
+    fn take_rows_unsorted(&mut self, count: usize) -> (Vec<ListingRow>, bool) {
         // `count` may be `usize::MAX` when a caller wants everything at once;
         // never reserve that much up front.
         let mut raw_entries = Vec::with_capacity(count.min(MAX_BATCH_RESERVE));
@@ -169,6 +192,7 @@ impl DirectoryListingCursor {
 
 /// Ceiling for the pre-allocation above, so a huge `count` cannot ask the
 /// allocator for gigabytes before a single entry has been read.
+#[cfg(not(windows))]
 const MAX_BATCH_RESERVE: usize = 8192;
 
 /// Batches at least this large get their metadata reads split across threads.
@@ -192,27 +216,36 @@ fn batch_is_worth_splitting(len: usize) -> bool {
     PARALLEL_ENTRY_THRESHOLD.is_some_and(|threshold| len >= threshold)
 }
 
-/// Turns raw directory entries into sorted display rows.
+/// Orders rows for display. Both walks funnel through here, so a listing comes
+/// back in the same order whichever one produced it.
+fn sort_rows(rows: &mut [ListingRow]) {
+    rows.sort_unstable_by(|left, right| name_order(left.kind, &left.name, right.kind, &right.name));
+}
+
+/// Turns raw directory entries into display rows.
 ///
 /// The parallel arm runs on rayon's *global* pool — the one shared with the
 /// rest of the UI's work, deliberately kept free of bulk transfers (see the
 /// dedicated transfer pool in [`super::super::local::operations`]), because a
 /// listing is on the critical path to painting the explorer.
 ///
-/// `name_sort_key` ends with the raw name, so the sort is a total order and the
-/// order entries arrive in does not affect the result.
+/// The order entries arrive in does not affect the result: the caller sorts them
+/// by a total order (see [`sort_rows`]).
+///
+/// On Windows this is the definition of the rows rather than the producer of
+/// them — `windows_directory` builds the same rows from the find data, and only
+/// `the_two_walks_build_the_same_rows` below reaches this one — which is exactly
+/// why it is kept here rather than compiled away.
+#[cfg_attr(windows, allow(dead_code))]
 fn collect_rows(raw_entries: Vec<fs::DirEntry>) -> Vec<ListingRow> {
-    let mut rows: Vec<ListingRow> = if batch_is_worth_splitting(raw_entries.len()) {
+    if batch_is_worth_splitting(raw_entries.len()) {
         raw_entries
             .into_par_iter()
             .filter_map(listing_row)
             .collect()
     } else {
         raw_entries.into_iter().filter_map(listing_row).collect()
-    };
-
-    rows.sort_by_cached_key(|row| name_sort_key(row.kind, &row.name));
-    rows
+    }
 }
 
 /// Reads the first `first_batch` entries of an already-canonical directory.
@@ -233,6 +266,11 @@ pub fn open_canonical_listing(
     }
 
     let mut cursor = DirectoryListingCursor {
+        #[cfg(windows)]
+        iterator: crate::file_system::local::windows_directory::WindowsDirectoryEntries::open(
+            &path,
+        )?,
+        #[cfg(not(windows))]
         iterator: fs::read_dir(&path)?,
         base: entry_codec::base_of(&display),
     };
@@ -275,6 +313,10 @@ pub fn read_directory_sync(requested_path: PathBuf) -> Result<DirectoryView, Fil
 ///
 /// No path: the row is a child of the directory being listed, so the base says
 /// where it lives and `DirEntry::path()` never has to be called.
+///
+/// On Windows this is reached only by the parity test: the walk there builds
+/// rows from the find data itself, without materialising a `DirEntry`.
+#[cfg_attr(windows, allow(dead_code))]
 fn listing_row(entry: fs::DirEntry) -> Option<ListingRow> {
     let metadata = entry.metadata().ok()?;
     Some(row_from(entry.file_name().to_string_lossy().into_owned(), metadata))
@@ -712,6 +754,177 @@ mod tests {
         fs::remove_dir_all(directory).expect("remove test directory");
     }
 
+    /// Prints what a large local listing costs, and what the enumeration under it
+    /// costs on its own.
+    ///
+    /// ```bash
+    /// cd src-tauri
+    /// DAE_LISTING_BENCH=K:/dae-listing-bench/big \
+    ///   cargo test --lib --release -- --ignored --nocapture reports_where_a_large_listing_spends_its_time
+    /// ```
+    ///
+    /// The dataset is whatever directory the variable names;
+    /// `bench/listing-pipeline prepare` writes one (35,803 entries and 120,000 are
+    /// the sizes the notes here and in
+    /// `docs/decisions/windows-directory-enumeration.md` are written against).
+    ///
+    /// Four rows. `std walk` and `std rows` are the reference the metadata
+    /// question is answered with: `fs::read_dir` with nothing built, then with each
+    /// entry's row built from it (its metadata, its name, the row). On Windows a
+    /// metadata read there is **not** a system call per entry —
+    /// `DirEntry::metadata()` is served from the `WIN32_FIND_DATA` the enumeration
+    /// already returned — which is why that row is a small share of the walk and
+    /// why [`PARALLEL_ENTRY_THRESHOLD`] is `None` on Windows (`Some(128)` on Unix,
+    /// where the same row is where a per-entry `lstat` lands, and where the app
+    /// spreads such a batch over rayon — so this serial `rows` row overstates that
+    /// arm). `streamed` is the pipeline the explorer actually calls on Windows:
+    /// the `windows_directory` walk, one `FIRST_BATCH_SIZE` head and then batches
+    /// doubling to `MAX_BATCH_SIZE` (`open_streamed_listing` plus
+    /// `read_remaining_batches`). `listing` is `read_directory_sync`, the same walk
+    /// read in one shot — it answers with `DirectoryEntry`s rather than packed
+    /// rows, so it also carries a path per row and is the heavier of the two by
+    /// design.
+    ///
+    /// Numbers from here and numbers from `bench/listing-pipeline` are not
+    /// directly comparable: a `cargo test --lib` binary has no `main.rs`, so it
+    /// runs on the system heap, while the harness (and the shipped binary)
+    /// installs mimalloc, which this crate's notes measure at ~31% on a large
+    /// listing. That inflates every row that allocates — `std rows` and
+    /// `listing`'s paths — so the mirror harness is where the walk and ordering
+    /// shapes are compared, and the `std walk`/`std rows` split is what this test
+    /// is for. Compare each row against itself, before and after a change; the
+    /// absolute milliseconds follow the volume's state.
+    #[test]
+    #[ignore = "prints measurements for the directory in DAE_LISTING_BENCH"]
+    fn reports_where_a_large_listing_spends_its_time() {
+        use crate::file_system::listing::{FIRST_BATCH_SIZE, MAX_BATCH_SIZE};
+        use std::time::Instant;
+
+        let Some(directory) = std::env::var_os("DAE_LISTING_BENCH") else {
+            panic!("set DAE_LISTING_BENCH to a directory to measure");
+        };
+        let path = canonical_path(Path::new(&directory)).expect("canonicalize the dataset");
+        let entries = fs::read_dir(&path).expect("read the dataset").count() as u64;
+
+        let walk = || {
+            for entry in fs::read_dir(&path).expect("read the dataset") {
+                std::hint::black_box(entry.expect("entry"));
+            }
+        };
+        let rows = || {
+            let mut built: Vec<ListingRow> = Vec::new();
+            for entry in fs::read_dir(&path).expect("read the dataset") {
+                if let Some(row) = listing_row(entry.expect("entry")) {
+                    built.push(row);
+                }
+            }
+            std::hint::black_box(built);
+        };
+        let listing = || {
+            std::hint::black_box(read_directory_sync(path.clone()).expect("list the dataset"));
+        };
+        // One listing, walked the way `open_streamed_listing` plus
+        // `read_remaining_batches` walk it.
+        let drain = || -> usize {
+            let listing =
+                open_canonical_listing(path.clone(), FIRST_BATCH_SIZE).expect("open the listing");
+            let mut rows = listing.view.entries.len();
+
+            let Some(mut cursor) = listing.cursor else {
+                return rows;
+            };
+            let mut batch_size = FIRST_BATCH_SIZE;
+            loop {
+                let (batch, exhausted) = cursor.take_rows(batch_size);
+                rows += batch.len();
+                if exhausted {
+                    return rows;
+                }
+                batch_size = (batch_size * 2).min(MAX_BATCH_SIZE);
+            }
+        };
+
+        // Two warm passes, and every timed pass checked: a listing that dropped
+        // rows would time faster for the wrong reason.
+        for _ in 0..2 {
+            assert_eq!(drain(), entries as usize);
+        }
+
+        let median_ns = |body: &dyn Fn()| -> u128 {
+            let mut samples: Vec<u128> = Vec::new();
+            for _ in 0..7 {
+                let started = Instant::now();
+                body();
+                samples.push(started.elapsed().as_nanos());
+            }
+            samples.sort_unstable();
+            samples[samples.len() / 2]
+        };
+
+        let walk_ns = median_ns(&walk);
+        let rows_ns = median_ns(&rows);
+        let listing_ns = median_ns(&listing);
+        let streamed_ns = median_ns(&|| {
+            assert_eq!(drain(), entries as usize);
+        });
+
+        // Signed, because an ordering that costs nothing (the comparator, which
+        // allocates nothing) can leave the one-shot listing under the rows it was
+        // built from — the two runs are separate medians.
+        let ms = |nanos: u128| nanos as f64 / 1e6;
+        let walk_ms = ms(walk_ns);
+        let rows_ms = ms(rows_ns);
+        let listing_ms = ms(listing_ns);
+        let streamed_ms = ms(streamed_ns);
+
+        println!();
+        println!("{entries} entries in {}", path.display());
+        println!("  std walk        {walk_ms:>8.2} ms (fs::read_dir only: no rows built)");
+        println!(
+            "  std rows        {rows_ms:>8.2} ms (+{:.2} ms: metadata + name + row through std, {:.3} us/entry)",
+            rows_ms - walk_ms,
+            (rows_ms - walk_ms) * 1_000.0 / entries as f64
+        );
+        println!(
+            "  streamed        {streamed_ms:>8.2} ms ({:.0} entries/s: the shipped shape, {FIRST_BATCH_SIZE} head then doubling batches)",
+            entries as f64 / (streamed_ms / 1e3)
+        );
+        println!(
+            "  listing         {listing_ms:>8.2} ms (read_directory_sync: the same walk one-shot, a path per row)"
+        );
+    }
+
+    /// An empty directory is the one case where `FindFirstFileExW` fails and the
+    /// listing is still correct: the pattern matches nothing, so the walk opens
+    /// with no handle and reports exhaustion on its first call. Both entry points
+    /// are checked, because the streaming head asks for 512 entries and the
+    /// one-shot read asks for everything, and only the second would be reached by
+    /// `read_directory_sync` alone.
+    #[test]
+    fn lists_an_empty_directory_without_a_stream() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-empty-listing-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).expect("create an empty directory");
+
+        let view = read_directory_sync(directory.clone()).expect("list an empty directory");
+        assert!(view.entries.is_empty());
+        assert!(view.stream_id.is_none());
+
+        let listing = open_canonical_listing(
+            canonical_path(&directory).expect("canonicalize the empty directory"),
+            crate::file_system::listing::FIRST_BATCH_SIZE,
+        )
+        .expect("open an empty listing");
+        assert!(listing.view.entries.is_empty());
+        assert!(
+            listing.cursor.is_none(),
+            "an empty directory has nothing left to stream"
+        );
+
+        fs::remove_dir_all(directory).expect("remove the empty directory");
+    }
+
     #[test]
     fn returns_not_directory_for_a_file_path() {
         let file =
@@ -725,96 +938,165 @@ mod tests {
         assert!(matches!(error, FileSystemError::NotDirectory(_)));
     }
 
-    /// Prints where a large local listing's time goes, in the app's own path.
-    ///
-    /// ```bash
-    /// cd src-tauri
-    /// DAE_LISTING_BENCH=K:/dae-listing-bench/big \
-    ///   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_listing_a_large_directory
-    /// ```
-    ///
-    /// Three rows over one directory: `walk` enumerates it and builds nothing,
-    /// `rows` adds what each entry's row costs (its metadata, its name, the row
-    /// itself), and `listing` is `read_directory_sync` — the two of them plus the
-    /// ordering. The split is what prices a claim about the walk: on Windows a
-    /// metadata read is **not** a system call per entry, because
-    /// `DirEntry::metadata()` is served from the `WIN32_FIND_DATA` the
-    /// enumeration already returned — which is exactly why
-    /// [`PARALLEL_ENTRY_THRESHOLD`] is `None` there (the `rows` row is a small
-    /// share of the walk, and a parallel arm would buy nothing). On Unix the same
-    /// row is where a per-entry `lstat` lands, and the threshold is `Some(128)`
-    /// for that reason — but note that the app spreads a batch of 128 or more
-    /// over rayon there, so this serial `rows` row overstates that arm.
-    ///
-    /// Compare this test against itself, before and after a change. Absolute
-    /// milliseconds follow the volume's state (`docs/performance-opportunities.md`
-    /// §0 records how far they move); the ratios are what reproduce.
-    ///
-    /// One caveat about the binary this runs in: `cargo test --lib` does not link
-    /// `main.rs`'s `mimalloc` global allocator, so the two arms that allocate — a
-    /// name `String` per row, and the ordering key's two more — are inflated here
-    /// relative to the shipped binary (the discarded batch in
-    /// `docs/performance-opportunities.md` §0 measured the same 35,803-entry
-    /// ordering at ~1.2 ms on mimalloc, not the tens of milliseconds this binary
-    /// reports). The `walk` row is allocation-free and the per-entry metadata
-    /// cost is a small share of it, which is what this harness is for.
+    /// The Windows walk builds its rows from the find data instead of from a
+    /// `DirEntry`, so this is the only thing that would notice the two spellings
+    /// drifting apart: same kind (symlinks included, which is the part with the
+    /// most rules), same size, same timestamp, same two attribute flags, same
+    /// name.
+    #[cfg(windows)]
     #[test]
-    #[ignore = "prints measurements for the directory in DAE_LISTING_BENCH"]
-    fn reports_the_cost_of_listing_a_large_directory() {
-        let Some(root) = std::env::var_os("DAE_LISTING_BENCH") else {
-            panic!("set DAE_LISTING_BENCH to a directory to list");
-        };
-        let root = PathBuf::from(root);
-        let entries = fs::read_dir(&root).expect("read the directory").count() as u64;
+    #[allow(clippy::permissions_set_readonly_false)] // temp fixture, deleted right after
+    fn the_two_walks_build_the_same_rows() {
+        use std::os::windows::fs::{symlink_dir, symlink_file};
 
-        let walk = || {
-            for entry in fs::read_dir(&root).expect("read the directory") {
-                std::hint::black_box(entry.expect("entry"));
-            }
-        };
-        let rows = || {
-            let mut built: Vec<ListingRow> = Vec::new();
-            for entry in fs::read_dir(&root).expect("read the directory") {
-                if let Some(row) = listing_row(entry.expect("entry")) {
-                    built.push(row);
-                }
-            }
-            std::hint::black_box(built);
-        };
-        let listing = || {
-            std::hint::black_box(read_directory_sync(root.clone()).expect("list the directory"));
-        };
+        let directory =
+            std::env::temp_dir().join(format!("dae-walk-parity-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(directory.join("folder")).expect("create a nested folder");
+        fs::write(directory.join("plain.txt"), "content").expect("write a file");
+        fs::write(directory.join("报告 2024.txt"), "内容").expect("write a non-ASCII file");
+        fs::write(directory.join("empty"), "").expect("write an empty file");
+        symlink_file(directory.join("plain.txt"), directory.join("link-to-file"))
+            .expect("link to a file");
+        symlink_dir(directory.join("folder"), directory.join("link-to-folder"))
+            .expect("link to a folder");
 
-        let median_ms = |body: &dyn Fn()| -> f64 {
-            let mut samples = Vec::new();
-            for _ in 0..7 {
-                let started = std::time::Instant::now();
-                body();
-                samples.push(started.elapsed().as_nanos());
-            }
-            samples.sort_unstable();
-            samples[samples.len() / 2] as f64 / 1_000_000.0
-        };
+        let read_only = directory.join("locked.txt");
+        fs::write(&read_only, "locked").expect("write a read-only file");
+        let mut permissions = fs::metadata(&read_only)
+            .expect("read file metadata")
+            .permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&read_only, permissions).expect("mark the file read-only");
 
-        let walk_ms = median_ms(&walk);
-        let rows_ms = median_ms(&rows);
-        let listing_ms = median_ms(&listing);
+        // Bulk, so the comparison covers ordering as well as fields: mixed case,
+        // digits and a repeated prefix, which is what makes the two orderings
+        // comparable over more than one pair.
+        for index in 0..300 {
+            let name = match index % 4 {
+                0 => format!("entry-{index:03}.txt"),
+                1 => format!("Entry-{index:03}.TXT"),
+                2 => format!("ENTRY_{index:03}.log"),
+                _ => format!("entry.{index:03}.json"),
+            };
+            fs::write(directory.join(name), "").expect("write a bulk file");
+        }
 
-        println!("root      {}", root.display());
-        println!("entries   {entries}");
-        println!("walk      {walk_ms:>8.2} ms  (enumerate only)");
-        println!(
-            "rows      {rows_ms:>8.2} ms  (+{:.2} ms: metadata + name + row, {:.3} us/entry)",
-            rows_ms - walk_ms,
-            (rows_ms - walk_ms) * 1_000.0 / entries as f64
+        let canonical = canonical_path(&directory).expect("canonicalize the fixture");
+
+        let mut std_rows = collect_rows(
+            fs::read_dir(&canonical)
+                .expect("read the fixture")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("collect the fixture entries"),
         );
-        println!(
-            "listing   {listing_ms:>8.2} ms  (+{:.2} ms over rows: the ordering)",
-            listing_ms - rows_ms
+        sort_rows(&mut std_rows);
+
+        let mut windows_rows =
+            super::super::windows_directory::WindowsDirectoryEntries::open(&canonical)
+                .expect("open the fixture")
+                .take_rows(usize::MAX)
+                .0;
+        sort_rows(&mut windows_rows);
+
+        let describe = |rows: &[ListingRow]| {
+            rows.iter()
+                .map(|row| {
+                    (
+                        row.name.clone(),
+                        row.kind,
+                        row.size,
+                        row.modified_at,
+                        row.hidden,
+                        row.read_only,
+                        row.path.clone(),
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let std_rows = describe(&std_rows);
+        let windows_rows = describe(&windows_rows);
+        assert_eq!(std_rows, windows_rows);
+        // A fixture where both walks agree because both found nothing would pass
+        // the comparison above for the wrong reason.
+        assert_eq!(std_rows.len(), 307, "the fixture holds 307 entries");
+        assert!(
+            std_rows.iter().any(|row| row.1 == EntryKind::Symlink),
+            "the fixture keeps a symlink for the kind rule to disagree about"
         );
-        println!(
-            "share     walk is {:.0}% of the listing in this binary (heap: see above)",
-            walk_ms / listing_ms * 100.0
+        assert!(std_rows.iter().any(|row| row.5), "and a read-only flag");
+
+        // Restore writability so cleanup succeeds.
+        let mut permissions = fs::metadata(&read_only)
+            .expect("read file metadata")
+            .permissions();
+        permissions.set_readonly(false);
+        fs::set_permissions(&read_only, permissions).expect("restore the file's permissions");
+        fs::remove_dir_all(&directory).expect("remove the fixture");
+    }
+
+    /// The window the verbatim spelling in `windows_directory::search_pattern`
+    /// exists for: a path long enough that `std` converts it to `\\?\...` before
+    /// calling `FindFirstFileExW`, but not long enough that
+    /// `types::canonical_path` keeps the prefix — so the walk is handed a legacy
+    /// spelling the OS refuses past `MAX_PATH`.
+    #[cfg(windows)]
+    #[test]
+    fn lists_a_directory_whose_path_is_at_the_max_path_boundary() {
+        use std::os::windows::ffi::OsStrExt;
+
+        let root = std::env::temp_dir().join(format!("dae-max-path-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+
+        // Deep enough that the path lands in `248..=260` UTF-16 units, which is
+        // the window where `dunce::simplified` still strips the verbatim prefix
+        // and `std::fs::read_dir` would put it back on its own. The length is
+        // built rather than hardcoded because the temp root and the process id
+        // are not fixed.
+        let mut deep = root.clone();
+        while deep.as_os_str().encode_wide().count() < 230 {
+            let step = deep.iter().count();
+            deep.push(format!("segment-{step:04}"));
+        }
+        let have = deep.as_os_str().encode_wide().count();
+        let last = deep
+            .file_name()
+            .expect("the loop pushed a segment")
+            .to_string_lossy()
+            .into_owned();
+        let parent = deep.parent().expect("a nested path has a parent");
+        deep = parent.join(format!("{last}{}", "p".repeat(250 - have)));
+
+        let verbatim = PathBuf::from(format!(r"\\?\{}", deep.display()));
+        // Creating it needs the verbatim spelling for the same reason reading it
+        // does; the assertion below is about the reading.
+        fs::create_dir_all(&verbatim).expect("create the deep directory");
+        fs::write(verbatim.join("found.txt"), "content").expect("write a file in it");
+
+        let canonical = canonical_path(&verbatim).expect("canonicalize the deep directory");
+        let units: Vec<u16> = canonical.as_os_str().encode_wide().collect();
+        assert!(
+            !canonical.to_string_lossy().starts_with(r"\\?\"),
+            "the fixture no longer exercises the boundary: {} units, still verbatim",
+            units.len()
         );
+        assert!(
+            (248..=260).contains(&units.len()),
+            "the fixture is {} units long, outside the boundary this test is about",
+            units.len()
+        );
+
+        let view = read_directory_sync(canonical).expect("list the deep directory");
+        assert_eq!(
+            view.entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["found.txt"]
+        );
+
+        fs::remove_dir_all(&verbatim).expect("remove the deep directory");
+        let _ = fs::remove_dir_all(&root);
     }
 }
