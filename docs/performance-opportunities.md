@@ -1,9 +1,9 @@
 # 性能机会清单
 
 > **状态：清单**。第 1 条（名称搜索的忽略规则）、第 2 条（Git 徽标的全工作区扫描）、
-> 第 3 条（前端每 publish 的全量重扫）与第 4 条（内容搜索的每文件 `Searcher`）
-> **已实施**，数字见各自那一节；第 5 条（零散）仍待办，其中预览响应复制字节那条
-> 是一行的事。
+> 第 3 条（前端每 publish 的全量重扫）、第 4 条（内容搜索的每文件 `Searcher`）
+> 与第 5 条（零散）**都已处理**，数字见各自那一节。第 5 条里原写着「预览响应复制字节
+> 是一行的事」——**这句是错的**，5.1 记下了原因和真正能省的那一次。
 >
 > 这份文档记录的是「主干已经打磨过之后，还剩哪些量级够大的浪费」——
 > 不是猜测清单，每条的「证据」都指向可复现的 harness 或代码里的事实。
@@ -357,12 +357,71 @@ DAE_CONTENT_SEARCH_BENCH=K:/dae-listing-bench/big \
 
 ---
 
-## 5. 零散（都是小钱，记着就行）
+## 5. 零散（都是小钱，记着就行）—— 已处理
 
-- `file_system/preview.rs`（响应构造处）`body(Cow::Owned(rendered.bytes.clone()))`：
-  每个响应克隆整张图/图标字节，可以不克隆。
-- `file-list.tsx` 的拖拽在 `pointermove` 上走 `resolveDragTarget` → `directoryPathSet`，
-  而该缓存的键是 view，view 每个批次都换——流式期间拖拽可能每帧全扫一次目录。
+### 5.1 预览/缩略图响应里的字节拷贝 —— 不是一行，但其中一次可以省
+
+**位置**：`src-tauri/src/file_system/preview.rs:536`（`render_response` 里
+`body(Cow::Owned(rendered.bytes.clone()))`）和 `render_loop` 的等待者扇出
+（同文件 `:489`）。
+
+**原判断**（以及为什么它是错的）**：这里原先写着「每个响应克隆整张图/图标字节，
+可以不克隆」。字节不是本地 `Vec`，而是 `Arc<RenderedThumbnail>`——缩略图/图标缓存共享的
+就是这一份；而 tauri 的 `UriSchemeResponder::respond` 只收
+`http::Response<Cow<'static, [u8]>>`。`Cow` 要 `'static`，借不到 `Arc` 里的字节，
+只能给出 `Owned(Vec)`。所以把 `.clone()` 删掉是**编译不过**的：
+
+```
+error[E0507]: cannot move out of an `Arc`
+   --> src\file_system\preview.rs:536:30
+    |
+536 |             .body(Cow::Owned(rendered.bytes))
+    |                              ^^^^^^^^^^^^^^ move occurs because value has type `Vec<u8>`, which does not implement the `Copy` trait
+```
+
+`Arc` 是缓存的既成事实（`lookup_cache` / `store_cache` 各持一个 handle，引用计数不会
+降到 1），所以「每个响应一份自有字节」是 `Cow` + 缓存的**结构下限**，不是这次的浪费。
+
+**真正能省的那一次**：`render_loop` 把构造好的响应 `clone()` 给**每一个**等待者，
+包括最后那一个——于是每个请求付 1 次构造拷贝 + N 次扇出拷贝。改成最后一个等待者
+直接拿走响应本体，就成了 N 次，正好是下限（常见情形是同一 URL 没有并发重复请求，
+即 N = 1，于是 2 次拷贝 → 1 次）。
+
+**实测**：这里没有数字，因为它不是可观测的对比：省下的是一次 memcpy + 一次分配，
+一张 256 px 缩略图几十 KB、一个图标几 KB，远在 `bench/frontend-scans/` 那类 harness 的
+噪声之下。它买的是「减半」，不是「变快」。
+
+**验证**：`cargo check --lib` 通过（对比：去掉 `.clone()` 会 E0507）；
+`cargo test --lib render_tests` 18 个全过，含等待者去重与「每个等待者恰好被回应一次」。
+
+### 5.2 拖拽的目录集 —— 已经不用改
+
+**位置**：`src/features/explorer/file-list.tsx:610`（`pointermove` → `resolveDragTarget`
+→ `draggableDirectoryPaths`）与 `src/features/explorer/listing-view.ts::directoryPathSet`。
+
+**结论**：`directoryPathSet` 本来就是**按视图缓存**的
+（`directoryPathCache: WeakMap<ListingView, Set<string>>`，注释里写明了它就是为
+`pointermove` 准备的），所以一次拖拽里的反复移动只扫一次；`pointerup` 那两处
+（加入收藏 / 加入空间）吃的是同一个缓存。原先这一条想修的就是缓存本身，而它已经在。
+
+剩下的是缓存躲不掉的那一种：**流式期间每个批次都是一个新视图**（一个快照 = 一帧），
+于是拖拽会每帧扫一次。实测（`bench/frontend-scans/`，同一台机器；35,803 行、
+每 8 行一个目录 ⇒ 4,476 个目录）：
+
+| 测量 | 结果 |
+|---|---|
+| 冷扫一个快照（35,803 行） | 1.00–1.09 ms |
+| 同一视图再问（缓存命中） | **0.000 ms** |
+| 一次流式列举的累计（8 个 publish） | **3.05 ms** |
+| 120,000 行（同样每 8 行一个目录） | 冷 2.98 ms / 累计 4.71 ms |
+
+也就是说：**只有拖拽和流式重叠时**才付每帧 ~1 ms、整段 ~3 ms。按本节的口径这仍是
+小钱，所以留在这里不改。真要抹掉，做法是在 `pointerdown` 时把这个手势的目录集冻结
+（`sourcePaths` 本来就是整个手势固定的），代价是拖拽期间流进来的新目录不参与
+「能不能放到收藏/空间」的判断——那点新鲜度就是它换来的东西，和 §2 的五秒窗口同一笔账。
+
+**复现**：`bun bench/frontend-scans/scan-cost.ts`（harness 调的是**出货的**
+`directoryPathSet`，warm 那行同时确认缓存命中）。
 
 ---
 
@@ -389,9 +448,12 @@ DAE_CONTENT_SEARCH_BENCH=K:/code/dae/node_modules DAE_CONTENT_SEARCH_BENCH_QUERY
 DAE_LISTING_BENCH=K:/dae-listing-bench/big \
   cargo test --lib --release -- --ignored --nocapture reports_where_a_large_listing_spends_its_time
 
-# 前端全量扫描（§3）
+# 前端全量扫描（§3、§5.2 的拖拽目录集）
 bun bench/frontend-scans/scan-cost.ts
 bun bench/frontend-scans/scan-cost.ts --entries 120000
+
+# 预览响应：编译期就证「构造处那次拷贝挪不掉」（§5.1）
+cd src-tauri && cargo check --lib && cargo test --lib render_tests
 ```
 
 ## 7. 什么条件下重新评估
@@ -410,6 +472,10 @@ bun bench/frontend-scans/scan-cost.ts --entries 120000
   常驻 worker 本来就会持有一个 searcher）。另外，如果以后有人换了更快的磁盘或关掉实时
   防护，`big` 那种单层空文件树的数字会变，但 `build  N x build_searcher` 那一行只跟树的
   大小有关，可以当基准继续用。
+- **第 5 条**：5.1 里那次「每响应一份拷贝」只有在 tauri 的 responder 收得下可共享的
+  body（即不用 `Cow<'static, [u8]>`，而是一个能共享所有权的 `'static` 体）时才会彻底消失，
+  在那之前 N 次就是下限。5.2 只有在「拖拽与流式重叠」真的出现在 profile 里、
+  开始和指针移动的可感知延迟抢帧时才值得改（冻结手势的目录集），否则就保持现状。
 - **§0 的例外（Windows 枚举）已实施**（`windows_directory.rs` + `bench/listing-pipeline/`），
   重开条件写在 `docs/decisions/windows-directory-enumeration.md` §8：`std` 自己传上这个 flag、
   Windows 之外出现真正的批量读接口、或者列举不再在关键路径上。复测按那份文档 §7 的两条
