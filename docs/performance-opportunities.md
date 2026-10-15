@@ -2,7 +2,8 @@
 
 > **状态：清单**。第 1 条（名称搜索的忽略规则）、第 2 条（Git 徽标的全工作区扫描）、
 > 第 3 条（前端每 publish 的全量重扫）、第 4 条（内容搜索的每文件 `Searcher`）
-> 与第 5 条（零散）**都已处理**，数字见各自那一节。第 5 条里原写着「预览响应复制字节
+> 与第 5 条（零散）**都已处理**，数字见各自那一节。第 2 条里「与徽标共用 400 ms 窗口」的
+> 分支查询本次也量了（并且修掉了量出来的 13 倍），第 5 条里原写着「预览响应复制字节
 > 是一行的事」——**这句是错的**，5.1 记下了原因和真正能省的那一次。
 >
 > 这份文档记录的是「主干已经打磨过之后，还剩哪些量级够大的浪费」——
@@ -192,6 +193,7 @@ pathspec 那条路（方向 2）实测：受限扫描 11.7–14.9 ms vs 33.6–4
      ——工作区概览那 8 个并发探针就是这个形状。
 3. 前端一行没动：query key、`staleTime`、400 ms debounce 都保持原样，因为每次请求
    现在只花 ~1 ms。
+4. 顺带量了与它共用窗口的分支查询（下面那节），并修掉量出来的一处 13 倍浪费。
 
 **改动后实测**（同一台机器、同一条导航序列）：
 
@@ -219,8 +221,35 @@ ignored harness 全部通过——行为测试走的是无缓存的参考路径�
   得让前端把 worktree root 一起传过来，或者按目录路径缓存「目录 → worktree」。
 - `directory_untracked` 契约保持不变，pathspec 那条路仍然关着，理由就是上面那行实测。
 - 分支查询（`list_git_branches`，列引用 + ahead/behind）不在这次缓存里。
-  它和徽标共用那个 400 ms 窗口，但代价量级不同（列引用，不是 stat 整棵树），
-  这次没有量过，所以没动。
+  **本次量过了**，并且修掉了量出来的那个大头：见下。
+
+**分支查询（本次量过，并修掉了一处 13 倍的浪费）**：它和徽标共用同一个 400 ms 窗口
+（`git-refresh.ts` 一次事件同时失效两个 key），也就是说每个窗口它至少跑一次。
+
+1. **每个本地分支一次 `git_branch.is_head()` 是错的**：libgit2 里它就是
+   `git_repository_head()`，也就是每个分支重新读一遍 `.git/HEAD`、再查一次引用
+   （`libgit2/src/libgit2/branch.c` 的 `git_branch_is_head`）。合成的 1,000 本地分支
+   仓里，单这一句就让整个调用花 **83.1–83.6 ms**，而同一个仓里其它部分加起来 ~4 ms。
+   改成「HEAD 的符号目标只读一次，分支的完整引用名等于它就是当前分支」——
+   分离 HEAD 没有符号目标，于是没有分支算当前分支（新增
+   `a_detached_head_leaves_no_branch_current` 钉住这一条）——之后是 **5.6–6.2 ms**。
+
+2. 剩下的账（`reports_the_cost_of_a_branch_listing`，同一台机器）：
+
+   | 形状 | 调用总时间 | open | 列引用 | ahead/behind | 同仓的徽标扫描 |
+   |---|---|---|---|---|---|
+   | `K:/code/dae`（478 tracked，2 本地 / 15 远程） | 2.47–2.58 ms | 0.84–0.89 | 0.84–0.89 | 0.26 | 4.91–5.34 ms |
+   | 合成 20,000 tracked（1 个本地分支） | 2.09–2.30 ms | 1.43–1.56 | 0.28–0.34 | 0.18–0.21 | 32.4–32.7 ms |
+   | 合成 1,000 分支 + 4,000 tag（全在 packed-refs） | 5.6–6.2 ms（改前 **83.1–83.6**） | 1.44–1.48 | 2.51–2.54 | 0.19–0.24 | 2.24–2.39 ms |
+   | 合成 10,000 分支 + 40,000 tag | 57.57 ms | 1.44 | 37.53 | 0.20 | 2.22 ms |
+
+   结论分两句：分支查询**不随 worktree 大小走**（20k tracked 仍是 2.1 ms），
+   但**随 ref 总数走**——libgit2 的分支迭代器要先遍历**所有** refs 再按前缀过滤，
+   而 `branches()` 建了两个迭代器（本地一个、远程一个），也就是整个 refdb 走两遍：
+   每遍 ~0.37 µs/ref，两遍合计 ~0.75 µs/ref。所以它不需要徽标那种缓存：常见仓
+   2–3 ms，比已经缓存过的徽标读取（~1.7 ms）略贵一点，远低于徽标扫描本身；只有
+   分支/tag 上万的仓才会到几十毫秒。那是下一刀（两次遍历合成一次、按前缀分类），
+   本次没做。`git-status.tsx` 里那句「单次代价也是同量级的 git2 全仓库遍历」已按实测改写。
 
 **复现**：
 
@@ -232,6 +261,13 @@ DAE_GIT_BENCH=K:/code/dae \
 # 合成大仓（首次会在临时目录里建一次，之后复用）
 DAE_GIT_BENCH_FILES=20000 \
   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_git_status_scan
+# 分支查询：同一台机器上的三种形状（真实仓 / 合成 tracked / 合成 ref-heavy）
+DAE_GIT_BENCH=K:/code/dae \
+  cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_branch_listing
+DAE_GIT_BENCH_FILES=20000 \
+  cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_branch_listing
+DAE_GIT_BENCH_REFS=1000 \
+  cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_branch_listing
 ```
 
 ---
@@ -439,6 +475,14 @@ DAE_GIT_BENCH=K:/code/dae \
 DAE_GIT_BENCH_FILES=20000 \
   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_git_status_scan
 
+# 分支查询（§2）：真实仓 / 合成 tracked / 合成 ref-heavy（分支 + tag，packed）
+DAE_GIT_BENCH=K:/code/dae \
+  cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_branch_listing
+DAE_GIT_BENCH_FILES=20000 \
+  cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_branch_listing
+DAE_GIT_BENCH_REFS=1000 \
+  cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_branch_listing
+
 # 内容搜索：整棵树的中位 ms + 每文件固定成本（§4）
 DAE_CONTENT_SEARCH_BENCH=K:/code/dae/node_modules DAE_CONTENT_SEARCH_BENCH_QUERY=zzqqxx_no_such_token \
   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_content_search
@@ -463,7 +507,9 @@ cd src-tauri && cargo check --lib && cargo test --lib render_tests
 - **第 2 条**：如果 `directory_untracked` 契约被简化（例如徽标改成按 status 的
   `WT_NEW` 折叠语义重写），pathspec 那条路就重新打开。另外，如果「首次进入某目录
   必须看到刚刚在别处发生、而没有任何 watcher 看到的改动」变成硬要求，那 5 秒复用
-  窗口要重新谈——它现在就是拿这点新鲜度换来的。
+  窗口要重新谈——它现在就是拿这点新鲜度换来的。分支查询那第二条（整个 refdb 走两遍）
+  只在真的遇到 ref 上万的仓时才值得再动：那时把它合成一次遍历（按前缀分类）就能
+  减半，`DAE_GIT_BENCH_REFS` 那两行是复测的数据点。
 - **第 3 条**：如果 type-ahead 被换成「跳转列表 / 命令面板」这类一次性扫描，
   「按视图缓存」这件事要重新设计（一次性扫描本来也不该缓存）。selection prune 的最差情况
   （选中的行靠后，或已被删）只有在视图能便宜地回答「行集没变」时才会消失——

@@ -25,8 +25,15 @@ export const GIT_STATUS_QUERY_KEY = "git-status";
  * 这里的单次代价高得多，所以窗口也宽得多。`placeholderData` 会在等待期间继续
  * 显示上一次的徽标，所以合并不会让徽标闪烁。
  *
- * 分支查询共用这个窗口（`git-branches.tsx`）：事件源完全相同，单次代价也是同量级的
- * git2 全仓库遍历（打开仓库、列所有引用、再算 ahead/behind 的提交图）。
+ * 分支查询共用这个窗口（`git-branches.tsx`）：事件源完全相同——`.git` 不在 watcher 的
+ * 视线里，所以「别处发生了 git 操作」（终端里的 `checkout`、`branch`、`fetch`）能靠的
+ * 信号就只有目录变更事件，它也在这时重取。但代价量级不同（实测
+ * `reports_the_cost_of_a_branch_listing`，同一台机器）：
+ * 2.1–2.6 ms，其中打开仓库 0.8–1.5、列引用 0.3–0.8、ahead/behind 0.25，
+ * 而且**不随 worktree 大小走**——20,000 tracked 的仓里徽标扫描要 32.6 ms，
+ * 它仍然是 2.1 ms。所以窗口取的是贵的那一个（徽标），分支查询只是搭车，
+ * 它不需要自己那份缓存。它随 ref 总数走（libgit2 的分支迭代器要先遍历所有
+ * refs 再按前缀过滤），分支/tag 上万的仓里才到几十毫秒。
  */
 export const GIT_REFRESH_DELAY_MS = 400;
 
