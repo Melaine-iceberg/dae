@@ -18,7 +18,7 @@ import {
   type SetStateAction,
 } from "react";
 
-import { allPaths, entriesWhere, type ListingView } from "./listing-view";
+import { allPaths, entriesWhere, presentPaths, type ListingView } from "./listing-view";
 import type { DirectoryEntry } from "./types";
 
 /** Shared stand-in for "no listing yet": a fresh `[]` per render would defeat
@@ -72,19 +72,24 @@ export function useExplorerSelection({
   }, [directoryPath, searchQuery]);
 
   useEffect(() => {
-    // With nothing selected there is nothing to prune, and building the
-    // available-path set would walk the whole listing to filter an empty array.
-    // This runs on every streamed batch, so on a large directory it's the
-    // difference between a scan per batch and none.
-    if (selectedPathsRef.current.length === 0) {
+    const selection = selectedPathsRef.current;
+    // With nothing selected there is nothing to prune.
+    if (selection.length === 0) {
       return;
     }
 
-    const availablePaths = new Set(allPaths(displayedListing));
-    setSelectedPaths((paths) => {
-      const availableSelection = paths.filter((path) => availablePaths.has(path));
-      return availableSelection.length === paths.length ? paths : availableSelection;
-    });
+    // `presentPaths` stops at the last path it is looking for, so a listing the
+    // user is looking at costs a handful of rows rather than a scan of all of
+    // them. It reads every row only when a selected path is gone, which is the
+    // case the prune exists for.
+    const present = presentPaths(displayedListing, selection);
+    // Every selected path is still there: hand back the same array, so nothing
+    // re-renders for a listing that did not change the selection.
+    if (present.size === selection.length) {
+      return;
+    }
+
+    setSelectedPaths((paths) => paths.filter((path) => present.has(path)));
   }, [displayedListing]);
 
   // Materialised for the selection only: the scan runs over paths, so rows

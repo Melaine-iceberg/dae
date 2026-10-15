@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -443,13 +442,6 @@ export function FileList({
       return current < entries.count ? current : entries.count - 1;
     });
   }, [entries.count]);
-
-  // Type-to-jump names, kept out of the key handler so one keystroke does not
-  // rebuild the array for every row. `allNames` scans the view's scalar
-  // accessors, so a byte-backed listing is read column by column instead of
-  // materialising every entry — and the rows a frame has painted stay in the
-  // row cache (see the identity note at the top of `listing-view.ts`).
-  const entryNames = useMemo(() => allNames(entries), [entries]);
 
   // Stops the buffered type-ahead timer when the tab (and this list) unmounts.
   useEffect(
@@ -921,7 +913,13 @@ export function FileList({
           typeAheadRef.current = { buffer: "", timer: null };
         }, TYPE_AHEAD_TIMEOUT_MS),
       };
-      const match = typeAheadIndex(entryNames, buffer, current);
+      // The type-ahead table is built here, on the keystroke that needs it,
+      // rather than for the render: it is a full pass over the listing — one
+      // decoded name per row — and a streamed listing publishes a snapshot per
+      // animation frame, so an eager one cost several milliseconds per frame
+      // whether or not the user ever typed a letter. `allNames` caches it on
+      // the view, so every later keystroke against the same snapshot is free.
+      const match = typeAheadIndex(allNames(entries), buffer, current);
       if (match >= 0) commit(match);
     }
   };
