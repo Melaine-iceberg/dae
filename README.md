@@ -97,6 +97,13 @@ scales, and the tell list of treatments that make an application read as
 AI-made. The token source of truth is `src/App.css`; the document explains
 why the tokens are shaped the way they are.
 
+Performance work is judged against
+[`docs/performance-opportunities.md`](docs/performance-opportunities.md): what is
+already measured and done, and the remaining opportunities with the harness and
+the numbers behind each one. Measure before changing anything — `docs/decisions/`
+holds the experiments that were run and declined, and the conditions that would
+reopen them.
+
 ## System accent
 
 The shell's accent is the OS accent — the colour the user already picked in
