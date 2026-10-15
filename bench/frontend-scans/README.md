@@ -17,7 +17,8 @@ bun bench/frontend-scans/scan-cost.ts --entries 120000
 
 ## What it measures
 
-One packed listing is built in memory (`packEntries`), then:
+One packed listing is built in memory (`packEntries`) — a second one, with the
+directories a real folder has, for the drag scan — then:
 
 | measurement | what it mirrors |
 |---|---|
@@ -26,13 +27,14 @@ One packed listing is built in memory (`packEntries`), then:
 | `cumulative …` | the same scan repeated over every published snapshot of one streamed listing (512 head, then batches doubling to 8,192 — `read_remaining_batches`) |
 | `selection prune` | `presentPaths(view, selected)` from the shipped `listing-view.ts`, against the baseline it replaced (`new Set(allPaths(view))`) and by where the selected row sits |
 | `type-ahead table` | `allNames` cold (a view it has never seen) against warm (the same view again) — the table is cached per view now |
+| `drag: directory set` | `directoryPathSet(view)` — what `file-list.tsx` asks for on every `pointermove`, on a listing where one row in eight is a directory; cold against warm, and summed over the same published-snapshot sequence |
 
 Every scan keeps its array, so nothing here can be optimised away by the JIT;
 each row is a median (seven passes after two warmups, unless the point is the
-first call). The selection and type-ahead sections call the **shipped**
+first call). The selection, type-ahead and drag sections call the **shipped**
 functions, so they measure the code that runs rather than a copy of it — the
 frontend has no test runner, which is why this harness is also the behavioural
-check for those two paths.
+check for those paths.
 
 ## Reading the numbers
 
@@ -43,6 +45,11 @@ check for those two paths.
   listing's size: first row is free, the last row (or a deleted one) reads
   everything. The baseline line above the four cases is what the whole thing cost
   before.
+- The drag scan is not per `pointermove`: the set is cached on the view, so every
+  move within one published snapshot reads it for free. Only a new snapshot — a
+  new batch, which while a listing streams is one per animation frame —
+  re-scans, and that is what the `cumulative` line prices: a drag in flight for
+  the whole stream, at ~1 ms per snapshot and ~3 ms over the listing.
 - Compare this harness against itself, before and after a change. Absolute
   milliseconds are per-machine, and a busy machine moves every row at once.
 

@@ -30,7 +30,9 @@ import { packEntries } from "../../src/features/explorer/entry-codec.ts";
 import {
   allNames,
   allPaths,
+  directoryPathSet,
   packetStreamView,
+  prefixListingView,
   presentPaths,
   type ListingView,
 } from "../../src/features/explorer/listing-view.ts";
@@ -42,6 +44,13 @@ const DEFAULT_ENTRIES = 35_803;
 const HEAD_SIZE = 512;
 const BATCH_SIZES = [1024, 2048, 4096, 8192, 8192, 8192, 8192];
 
+/**
+ * One row in this many is a directory, for the scans that need rows to collect.
+ * A real folder of 35,803 entries is not all files, and `directoryPathSet` only
+ * reads a row's path when its kind says directory.
+ */
+const DIRECTORY_EVERY = 8;
+
 function entryCount(): number {
   const index = process.argv.indexOf("--entries");
   if (index < 0) return DEFAULT_ENTRIES;
@@ -50,11 +59,19 @@ function entryCount(): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_ENTRIES;
 }
 
-function dataset(count: number) {
+/**
+ * The rows of one listing. `directoryEvery` 0 means every row is a file, which
+ * is what the type-ahead and selection scans want; the drag scan needs the
+ * directories a real listing has among them.
+ */
+function dataset(count: number, directoryEvery = 0) {
   const base = "K:\\dae-listing-bench\\big";
   const rows = Array.from({ length: count }, (_, index) => ({
     hidden: false,
-    kind: "file" as const,
+    kind:
+      directoryEvery > 0 && index % directoryEvery === 0
+        ? ("directory" as const)
+        : ("file" as const),
     modifiedAt: 1_700_000_000_000 + index,
     name: `entry-${index}.txt`,
     path: `${base}\\entry-${index}.txt`,
@@ -108,6 +125,13 @@ function scanPaths(packet: ListingPacket, rows: number): number {
  */
 function scanForSelection(view: ListingView, selected: string[]): number {
   return presentPaths(view, selected).size;
+}
+
+/** The drag path: which of the dragged paths this listing still sees as a
+ *  directory. One `kindAt` per row, plus a `pathAt` for the rows that turn out
+ *  to be directories — the shipped `directoryPathSet`, cached on the view. */
+function scanDirectories(view: ListingView): number {
+  return directoryPathSet(view).size;
 }
 
 /** One streamed listing, as the frontend receives it: the JSON head, then the
@@ -197,6 +221,38 @@ function main(): void {
   console.log("type-ahead table (what a keystroke pays)");
   console.log(`  cold (builds the table)   ${cold.toFixed(2)} ms`);
   console.log(`  warm (cached on the view) ${warm.toFixed(3)} ms`);
+  console.log("");
+
+  // The drag path. `file-list.tsx` asks for this from `pointermove`, and the
+  // answer is cached on the view — so a drag pays one scan per *published
+  // snapshot* rather than one per move event. A snapshot is one animation frame
+  // while a listing streams, and a new batch is a new view, which is the case
+  // the cache cannot cover by itself: it is the one a drag in flight over a
+  // still-streaming directory hits.
+  //
+  // The cold samples wrap a fresh packets array, so `packetStreamView` hands
+  // back a view this cache has never seen; the cumulative ones run over
+  // `prefixListingView`, which is the mapped shape the displayed (sorted or
+  // filtered) listing has — one extra indirection per row, which the raw view
+  // above does not pay.
+  const drag = dataset(count, DIRECTORY_EVERY);
+  const dragPacket = packEntries(drag.base, drag.rows);
+  const dragView = packetStreamView([], [dragPacket]);
+  const dragCold = median(() => scanDirectories(packetStreamView([], [dragPacket])), 9, 0);
+  const dragWarm = median(() => scanDirectories(dragView));
+
+  let cumulativeDrag = 0;
+  for (const rowsSoFar of prefixes) {
+    cumulativeDrag += median(() => scanDirectories(prefixListingView(dragView, rowsSoFar)), 3);
+  }
+
+  console.log(`drag: directory set (one row in ${DIRECTORY_EVERY} a directory)`);
+  console.log(`  rows / directories        ${count} / ${directoryPathSet(dragView).size}`);
+  console.log(`  cold (one snapshot)       ${dragCold.toFixed(3)} ms`);
+  console.log(`  warm (cached on the view) ${dragWarm.toFixed(3)} ms`);
+  console.log(
+    `  cumulative over a stream  ${cumulativeDrag.toFixed(3)} ms  (${prefixes.length} publishes)`,
+  );
 }
 
 main();
