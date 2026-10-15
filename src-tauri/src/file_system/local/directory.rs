@@ -724,4 +724,97 @@ mod tests {
 
         assert!(matches!(error, FileSystemError::NotDirectory(_)));
     }
+
+    /// Prints where a large local listing's time goes, in the app's own path.
+    ///
+    /// ```bash
+    /// cd src-tauri
+    /// DAE_LISTING_BENCH=K:/dae-listing-bench/big \
+    ///   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_listing_a_large_directory
+    /// ```
+    ///
+    /// Three rows over one directory: `walk` enumerates it and builds nothing,
+    /// `rows` adds what each entry's row costs (its metadata, its name, the row
+    /// itself), and `listing` is `read_directory_sync` — the two of them plus the
+    /// ordering. The split is what prices a claim about the walk: on Windows a
+    /// metadata read is **not** a system call per entry, because
+    /// `DirEntry::metadata()` is served from the `WIN32_FIND_DATA` the
+    /// enumeration already returned — which is exactly why
+    /// [`PARALLEL_ENTRY_THRESHOLD`] is `None` there (the `rows` row is a small
+    /// share of the walk, and a parallel arm would buy nothing). On Unix the same
+    /// row is where a per-entry `lstat` lands, and the threshold is `Some(128)`
+    /// for that reason — but note that the app spreads a batch of 128 or more
+    /// over rayon there, so this serial `rows` row overstates that arm.
+    ///
+    /// Compare this test against itself, before and after a change. Absolute
+    /// milliseconds follow the volume's state (`docs/performance-opportunities.md`
+    /// §0 records how far they move); the ratios are what reproduce.
+    ///
+    /// One caveat about the binary this runs in: `cargo test --lib` does not link
+    /// `main.rs`'s `mimalloc` global allocator, so the two arms that allocate — a
+    /// name `String` per row, and the ordering key's two more — are inflated here
+    /// relative to the shipped binary (the discarded batch in
+    /// `docs/performance-opportunities.md` §0 measured the same 35,803-entry
+    /// ordering at ~1.2 ms on mimalloc, not the tens of milliseconds this binary
+    /// reports). The `walk` row is allocation-free and the per-entry metadata
+    /// cost is a small share of it, which is what this harness is for.
+    #[test]
+    #[ignore = "prints measurements for the directory in DAE_LISTING_BENCH"]
+    fn reports_the_cost_of_listing_a_large_directory() {
+        let Some(root) = std::env::var_os("DAE_LISTING_BENCH") else {
+            panic!("set DAE_LISTING_BENCH to a directory to list");
+        };
+        let root = PathBuf::from(root);
+        let entries = fs::read_dir(&root).expect("read the directory").count() as u64;
+
+        let walk = || {
+            for entry in fs::read_dir(&root).expect("read the directory") {
+                std::hint::black_box(entry.expect("entry"));
+            }
+        };
+        let rows = || {
+            let mut built: Vec<ListingRow> = Vec::new();
+            for entry in fs::read_dir(&root).expect("read the directory") {
+                if let Some(row) = listing_row(entry.expect("entry")) {
+                    built.push(row);
+                }
+            }
+            std::hint::black_box(built);
+        };
+        let listing = || {
+            std::hint::black_box(read_directory_sync(root.clone()).expect("list the directory"));
+        };
+
+        let median_ms = |body: &dyn Fn()| -> f64 {
+            let mut samples = Vec::new();
+            for _ in 0..7 {
+                let started = std::time::Instant::now();
+                body();
+                samples.push(started.elapsed().as_nanos());
+            }
+            samples.sort_unstable();
+            samples[samples.len() / 2] as f64 / 1_000_000.0
+        };
+
+        let walk_ms = median_ms(&walk);
+        let rows_ms = median_ms(&rows);
+        let listing_ms = median_ms(&listing);
+
+        println!("root      {}", root.display());
+        println!("entries   {entries}");
+        println!("walk      {walk_ms:>8.2} ms  (enumerate only)");
+        println!(
+            "rows      {rows_ms:>8.2} ms  (+{:.2} ms: metadata + name + row, {:.3} us/entry)",
+            rows_ms - walk_ms,
+            (rows_ms - walk_ms) * 1_000.0 / entries as f64
+        );
+        println!(
+            "listing   {listing_ms:>8.2} ms  (+{:.2} ms over rows: the ordering)",
+            listing_ms - rows_ms
+        );
+        println!(
+            "share     walk is {:.0}% of the listing in this binary (heap: see above)",
+            walk_ms / listing_ms * 100.0
+        );
+    }
 }

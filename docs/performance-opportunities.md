@@ -23,10 +23,32 @@
 这一层的结论是：**列举、排序、IPC、变更通知基本到顶了**。下面几条的共性不是「算法不够好」，
 而是「某条路径还没人对它做过判断」——要么还在全量遍历不该遍历的东西，要么每帧都在重算同一份东西。
 
-> 一处例外：Windows 枚举的「`FindFirstFileExW` + `FIND_FIRST_EX_LARGE_FETCH`」
-> 曾经实测过（35,803 条 24.2 ms → 13.7 ms，−43%），但那批改动已从工作区回退，
-> 当前代码是 `std::fs::read_dir` + 逐条 `metadata()`。所以「列举到顶了」不适用于 Windows，
-> 那一块重新开工时应当从这次测量接着走。
+> 一处例外：Windows 枚举。**不是「没量过」，而是量过、做过、然后整批从工作区回退了**：
+> `std::fs::read_dir` 在 Windows 上已经用 `FindFirstFileExW`，只是**故意不传**
+> `FIND_FIRST_EX_LARGE_FETCH`（`library/std/src/sys/fs/windows.rs` 的注释明说「保守」）。
+> 那批实测（备份在 `K:/dae-discarded-work-20261015-162141/`：`bench/listing-pipeline/`、
+> `docs/decisions/windows-directory-enumeration.md`、`tracked.patch`）：
+>
+> | | 35,803 条 | 120,000 条 |
+> |---|---|---|
+> | walk（只枚举） | 14.15 → **9.76 ms（−31%）** | 55.78 → **40.32 ms（−28%）** |
+> | 整条流水线（`std+key` → `win32+cmp`） | 17.99 → **12.64 ms（−30%）** | 69.65 → **50.71 ms（−27%）** |
+> | 首批 512 条 | 0.135 → 0.106 ms（**只省 29 µs**） | — |
+>
+> 也就是说它买的是「列表读完」，不是「第一屏」；那批还顺手把排序从 `name_sort_key`
+> （每行 2 次分配）换成 `name_order` 比较，再省 2 个点。重开时从那批接着走，不必重做。
+> 今天在同一台机器上重跑那批的 `bench/listing-pipeline measure` 复现了同样的形状
+> （walk 22.47 → 16.39 ms、整条流水线 31.61 → 23.61 ms），绝对值整体比上表高 ~1.5×
+> ——那张卷当时更热，所以比值可以引，绝对数要连着当时状态一起读。
+>
+> **旧文那句是错的，已改**：原文说「当前代码是 `std::fs::read_dir` + 逐条 `metadata()`」，
+> 暗示每条一个系统调用。Windows 上并非如此：`DirEntry::metadata()` 直接取枚举已经带回来的
+> `WIN32_FIND_DATA`，本树里 `reports_the_cost_of_listing_a_large_directory` 量到
+> **0.17 µs/条**（两次运行 0.165 / 0.172 µs；35,803 条：walk ~14 ms、加构造行 ~+6 ms、
+> 整条流水线 ~36 ms 含排序；120,000 条 0.177 µs/条）——两个数量级低于一次系统调用，也正是
+> `PARALLEL_ENTRY_THRESHOLD` 在 Windows 上是 `None` 的原因（Unix 上同一行就是 `lstat`，
+> 阈值 `Some(128)` 就是为它设的）。所以「列举到顶了」在 Windows 上还差一块：不是元数据，
+> 而是枚举本身的系统调用次数。
 
 ---
 
@@ -364,6 +386,11 @@ DAE_GIT_BENCH_FILES=20000 \
 DAE_CONTENT_SEARCH_BENCH=K:/code/dae/node_modules DAE_CONTENT_SEARCH_BENCH_QUERY=zzqqxx_no_such_token \
   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_content_search
 
+# 列举：walk（枚举）/ rows（元数据+名字+行）/ 排序三段（§0 的例外）
+# 注意这是 cargo test 二进制，没有 mimalloc：两个会分配的段比出货二进制偏大
+DAE_LISTING_BENCH=K:/dae-listing-bench/big \
+  cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_listing_a_large_directory
+
 # 前端全量扫描（§3）
 bun bench/frontend-scans/scan-cost.ts
 bun bench/frontend-scans/scan-cost.ts --entries 120000
@@ -385,3 +412,8 @@ bun bench/frontend-scans/scan-cost.ts --entries 120000
   常驻 worker 本来就会持有一个 searcher）。另外，如果以后有人换了更快的磁盘或关掉实时
   防护，`big` 那种单层空文件树的数字会变，但 `build  N x build_searcher` 那一行只跟树的
   大小有关，可以当基准继续用。
+- **§0 的例外（Windows 枚举）**：重开等于把回退的那一批拿回来（备份路径见 §0）。两件
+  要注意的：① 应用侧的复测要么用**出货二进制**（装了 mimalloc），要么清楚
+  `cargo test --lib` 没有它——那条流水线里有两段是分配密集的，按系统堆读会得到另一个形状；
+  ② 首批 512 条只省 29 µs，所以这条改动不能当「打开文件夹更快」的证据，它缩短的是
+  「列表读完」。
