@@ -1,0 +1,47 @@
+# scenario=smallfiles unit=MiB/s root=K:/dae-io-bench passes=3 warmup=1
+scenario	backend	threads	pass	wall_ms	unit_per_s	ops_per_s	cpu_ms	cpu_pct
+smallfiles	tokio	1	warm	-	-	-	-	-
+smallfiles	tokio	1	1	891.77	175.2	22427.4	890.6	99.9
+smallfiles	tokio	1	2	843.14	185.3	23720.9	859.4	101.9
+smallfiles	tokio	1	3	854.99	182.8	23392.1	875.0	102.3
+smallfiles	tokio	1	median	854.99	182.8	23392.1	875.0	102.3
+smallfiles	tokio	16	warm	-	-	-	-	-
+smallfiles	tokio	16	1	170.47	916.6	117323.2	-	-
+smallfiles	tokio	16	2	164.85	947.8	121320.9	-	-
+smallfiles	tokio	16	3	157.10	994.6	127310.0	-	-
+smallfiles	tokio	16	median	164.85	947.8	121320.9	-	-
+smallfiles	tokio-chunked	1	warm	-	-	-	-	-
+smallfiles	tokio-chunked	1	1	348.64	448.2	57365.8	343.8	98.6
+smallfiles	tokio-chunked	1	2	371.10	421.0	53893.9	375.0	101.1
+smallfiles	tokio-chunked	1	3	374.19	417.6	53448.4	375.0	100.2
+smallfiles	tokio-chunked	1	median	371.10	421.0	53893.9	375.0	101.1
+smallfiles	tokio-chunked	16	warm	-	-	-	-	-
+smallfiles	tokio-chunked	16	1	43.15	3621.1	463505.9	-	-
+smallfiles	tokio-chunked	16	2	43.38	3601.5	460990.9	-	-
+smallfiles	tokio-chunked	16	3	43.64	3580.6	458322.4	-	-
+smallfiles	tokio-chunked	16	median	43.38	3601.5	460990.9	-	-
+smallfiles	rayon	1	warm	-	-	-	-	-
+smallfiles	rayon	1	1	359.13	435.1	55690.6	343.8	95.7
+smallfiles	rayon	1	2	380.16	411.0	52609.4	375.0	98.6
+smallfiles	rayon	1	3	348.54	448.3	57381.6	343.8	98.6
+smallfiles	rayon	1	median	359.13	435.1	55690.6	343.8	95.7
+smallfiles	rayon	16	warm	-	-	-	-	-
+smallfiles	rayon	16	1	43.15	3620.7	463453.2	-	-
+smallfiles	rayon	16	2	43.23	3614.2	462623.5	-	-
+smallfiles	rayon	16	3	43.91	3558.5	455486.4	-	-
+smallfiles	rayon	16	median	43.23	3614.2	462623.5	-	-
+smallfiles	compio	1	warm	-	-	-	-	-
+smallfiles	compio	1	1	1252.04	124.8	15973.9	1250.0	99.8
+smallfiles	compio	1	2	1249.23	125.1	16009.9	1218.8	97.6
+smallfiles	compio	1	3	1248.84	125.1	16014.9	1234.4	98.8
+smallfiles	compio	1	median	1249.23	125.1	16009.9	1218.8	97.6
+smallfiles	compio	16	warm	-	-	-	-	-
+smallfiles	compio	16	1	547.14	285.6	36553.5	-	-
+smallfiles	compio	16	2	547.30	285.5	36543.3	-	-
+smallfiles	compio	16	3	531.26	294.1	37646.5	-	-
+smallfiles	compio	16	median	547.14	285.6	36553.5	-	-
+
+# medians (MiB/s; ratio = tokio / compio, so > 1 means the thread pool was faster)
+scenario	threads	tokio	tokio_cpu_ms	tokio-chunked	tokio-chunked_cpu_ms	rayon	rayon_cpu_ms	compio	compio_cpu_ms	tokio/compio
+smallfiles	1	175.2	891	448.2	344	435.1	344	124.8	1250	1.40
+smallfiles	16	916.6	-	3621.1	-	3620.7	-	285.6	-	3.21

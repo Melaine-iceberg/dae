@@ -1,0 +1,47 @@
+# scenario=perop unit=kops/s root=K:/dae-io-bench passes=3 warmup=1
+scenario	backend	threads	pass	wall_ms	unit_per_s	ops_per_s	cpu_ms	cpu_pct
+perop	tokio	1	warm	-	-	-	-	-
+perop	tokio	1	1	153.30	130.5	130464.0	296.9	193.7
+perop	tokio	1	2	157.17	127.3	127251.1	187.5	119.3
+perop	tokio	1	3	157.41	127.1	127059.6	234.4	148.9
+perop	tokio	1	median	157.17	127.3	127251.1	187.5	119.3
+perop	tokio	16	warm	-	-	-	-	-
+perop	tokio	16	1	101.49	197.1	197059.5	-	-
+perop	tokio	16	2	96.10	208.1	208123.9	-	-
+perop	tokio	16	3	102.35	195.4	195415.7	-	-
+perop	tokio	16	median	101.49	197.1	197059.5	-	-
+perop	tokio-chunked	1	warm	-	-	-	-	-
+perop	tokio-chunked	1	1	13.38	1495.0	1495014.1	-	-
+perop	tokio-chunked	1	2	13.71	1458.3	1458342.4	-	-
+perop	tokio-chunked	1	3	13.41	1491.1	1491124.1	-	-
+perop	tokio-chunked	1	median	13.41	1491.1	1491124.1	-	-
+perop	tokio-chunked	16	warm	-	-	-	-	-
+perop	tokio-chunked	16	1	26.65	750.6	750601.4	-	-
+perop	tokio-chunked	16	2	26.84	745.2	745223.1	-	-
+perop	tokio-chunked	16	3	27.21	735.0	734996.9	-	-
+perop	tokio-chunked	16	median	26.84	745.2	745223.1	-	-
+perop	rayon	1	warm	-	-	-	-	-
+perop	rayon	1	1	13.29	1504.8	1504834.3	-	-
+perop	rayon	1	2	13.46	1486.0	1486005.5	-	-
+perop	rayon	1	3	13.88	1440.8	1440849.5	-	-
+perop	rayon	1	median	13.46	1486.0	1486005.5	-	-
+perop	rayon	16	warm	-	-	-	-	-
+perop	rayon	16	1	27.19	735.7	735678.2	-	-
+perop	rayon	16	2	27.52	726.8	726770.6	-	-
+perop	rayon	16	3	27.15	736.7	736716.1	-	-
+perop	rayon	16	median	27.19	735.7	735678.2	-	-
+perop	compio	1	warm	-	-	-	-	-
+perop	compio	1	1	44.98	444.7	444685.6	-	-
+perop	compio	1	2	44.54	449.1	449084.0	-	-
+perop	compio	1	3	44.28	451.6	451627.3	-	-
+perop	compio	1	median	44.54	449.1	449084.0	-	-
+perop	compio	16	warm	-	-	-	-	-
+perop	compio	16	1	30.54	654.8	654797.4	-	-
+perop	compio	16	2	30.77	649.9	649888.7	-	-
+perop	compio	16	3	32.74	610.9	610923.9	-	-
+perop	compio	16	median	30.77	649.9	649888.7	-	-
+
+# medians (kops/s; ratio = tokio / compio, so > 1 means the thread pool was faster)
+scenario	threads	tokio	tokio_cpu_ms	tokio-chunked	tokio-chunked_cpu_ms	rayon	rayon_cpu_ms	compio	compio_cpu_ms	tokio/compio
+perop	1	130.5	297	1495.0	-	1504.8	-	444.7	-	0.29
+perop	16	197.1	-	750.6	-	735.7	-	654.8	-	0.30

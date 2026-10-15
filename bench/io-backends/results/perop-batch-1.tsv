@@ -1,0 +1,11 @@
+# scenario=perop unit=kops/s root=K:/dae-io-bench passes=3 warmup=1 batch=1
+scenario	backend	threads	pass	wall_ms	unit_per_s	ops_per_s	cpu_ms	cpu_pct
+perop	tokio	16	warm	-	-	-	-	-
+perop	tokio	16	1	307.37	65.1	65068.2	-	-
+perop	tokio	16	2	345.57	57.9	57875.5	-	-
+perop	tokio	16	3	325.91	61.4	61366.7	-	-
+perop	tokio	16	median	325.91	61.4	61366.7	-	-
+
+# medians (kops/s; ratio = tokio / compio, so > 1 means the thread pool was faster)
+scenario	threads	tokio	tokio_cpu_ms	tokio/compio
+perop	16	65.1	-	-

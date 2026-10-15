@@ -1,0 +1,40 @@
+[package]
+name = "io-backends"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Standalone on purpose: this crate is not a member of the Tauri package (which
+# lives in `src-tauri/`) and nothing in the app's build touches it. It exists to
+# answer one question — what a file manager's I/O costs on a blocking thread
+# pool versus a completion-based runtime (IOCP on Windows, io_uring on Linux) —
+# without dragging a webview, an IPC layer or a React bundle into the
+# measurement.
+[dependencies]
+# The wrapper the app already uses: `tauri::async_runtime::spawn_blocking` is
+# Tokio's blocking pool, and every `spawn_blocking` call in `file_system` lands
+# on it.
+tokio = { version = "1", features = ["rt-multi-thread"] }
+# The app's *other* I/O pool: bulk local transfers run on a dedicated rayon
+# pool (`file_system::local::operations::transfer_pool`).
+rayon = "1"
+# Completion-based runtime. On Windows its driver is a real IOCP handle with
+# `OVERLAPPED` file I/O; on Linux it is io_uring (with a `polling` fallback for
+# kernels that refuse it). `fs`: file I/O, `fs-dir`: directory iteration,
+# `macros`: `#[compio::main]`.
+compio = { version = "0.19", features = ["fs", "fs-dir", "macros"] }
+# The allocator the app installs. Listing a large directory allocates per entry,
+# so measuring the I/O mechanism under a different heap would conflate the two.
+mimalloc = { version = "0.1", default-features = false }
+
+[target.'cfg(windows)'.dependencies]
+# `GetProcessTimes`, so each run can report CPU time next to wall time: a
+# backend that is merely burning more core time to arrive at the same wall time
+# has not won anything.
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Threading",
+] }
+
+[profile.release]
+debug = false

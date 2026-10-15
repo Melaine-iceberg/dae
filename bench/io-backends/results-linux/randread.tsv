@@ -1,0 +1,69 @@
+# compio driver: IoUring
+# scenario=randread unit=MiB/s root=/home/melaine/dae-io-bench passes=3 warmup=1
+scenario	backend	threads	pass	wall_ms	unit_per_s	ops_per_s	cpu_ms	cpu_pct
+randread	tokio	1	warm	-	-	-	-	-
+randread	tokio	1	1	4544.25	56.3	14421.8	-	-
+randread	tokio	1	2	4461.54	57.4	14689.1	-	-
+randread	tokio	1	3	4699.68	54.5	13944.8	-	-
+randread	tokio	1	median	4544.25	56.3	14421.8	-	-
+randread	tokio	16	warm	-	-	-	-	-
+randread	tokio	16	1	1993.71	128.4	32871.4	-	-
+randread	tokio	16	2	1948.64	131.4	33631.7	-	-
+randread	tokio	16	3	1780.12	143.8	36815.6	-	-
+randread	tokio	16	median	1948.64	131.4	33631.7	-	-
+randread	tokio	64	warm	-	-	-	-	-
+randread	tokio	64	1	1590.88	160.9	41194.7	-	-
+randread	tokio	64	2	1713.58	149.4	38245.2	-	-
+randread	tokio	64	3	1359.50	188.3	48206.0	-	-
+randread	tokio	64	median	1590.88	160.9	41194.7	-	-
+randread	tokio-chunked	1	warm	-	-	-	-	-
+randread	tokio-chunked	1	1	61.90	4135.7	1058729.8	-	-
+randread	tokio-chunked	1	2	63.49	4032.0	1032193.0	-	-
+randread	tokio-chunked	1	3	59.91	4272.9	1093868.9	-	-
+randread	tokio-chunked	1	median	61.90	4135.7	1058729.8	-	-
+randread	tokio-chunked	16	warm	-	-	-	-	-
+randread	tokio-chunked	16	1	8.58	29822.9	7634652.3	-	-
+randread	tokio-chunked	16	2	10.18	25150.2	6438460.4	-	-
+randread	tokio-chunked	16	3	8.59	29794.1	7627294.2	-	-
+randread	tokio-chunked	16	median	8.59	29794.1	7627294.2	-	-
+randread	tokio-chunked	64	warm	-	-	-	-	-
+randread	tokio-chunked	64	1	8.16	31370.1	8030736.8	-	-
+randread	tokio-chunked	64	2	8.01	31964.6	8182948.6	-	-
+randread	tokio-chunked	64	3	8.32	30779.0	7879423.3	-	-
+randread	tokio-chunked	64	median	8.16	31370.1	8030736.8	-	-
+randread	rayon	1	warm	-	-	-	-	-
+randread	rayon	1	1	64.82	3949.5	1011065.2	-	-
+randread	rayon	1	2	64.84	3948.4	1010781.9	-	-
+randread	rayon	1	3	64.79	3951.1	1011480.5	-	-
+randread	rayon	1	median	64.82	3949.5	1011065.2	-	-
+randread	rayon	16	warm	-	-	-	-	-
+randread	rayon	16	1	7.91	32358.0	8283635.6	-	-
+randread	rayon	16	2	8.53	30012.8	7683281.3	-	-
+randread	rayon	16	3	6.99	36641.5	9380228.8	-	-
+randread	rayon	16	median	7.91	32358.0	8283635.6	-	-
+randread	rayon	64	warm	-	-	-	-	-
+randread	rayon	64	1	9.64	26548.3	6796354.9	-	-
+randread	rayon	64	2	9.29	27558.4	7054955.5	-	-
+randread	rayon	64	3	9.36	27347.5	7000957.7	-	-
+randread	rayon	64	median	9.36	27347.5	7000957.7	-	-
+randread	compio	1	warm	-	-	-	-	-
+randread	compio	1	1	126.64	2021.6	517517.1	-	-
+randread	compio	1	2	129.74	1973.1	505125.5	-	-
+randread	compio	1	3	126.96	2016.5	516212.1	-	-
+randread	compio	1	median	126.96	2016.5	516212.1	-	-
+randread	compio	16	warm	-	-	-	-	-
+randread	compio	16	1	83.11	3080.3	788552.2	-	-
+randread	compio	16	2	76.99	3325.1	851213.8	-	-
+randread	compio	16	3	77.95	3284.2	840748.4	-	-
+randread	compio	16	median	77.95	3284.2	840748.4	-	-
+randread	compio	64	warm	-	-	-	-	-
+randread	compio	64	1	80.22	3191.3	816961.0	-	-
+randread	compio	64	2	80.58	3177.0	813312.8	-	-
+randread	compio	64	3	80.18	3193.0	817406.8	-	-
+randread	compio	64	median	80.22	3191.3	816961.0	-	-
+
+# medians (MiB/s; ratio = tokio / compio, so > 1 means the thread pool was faster)
+scenario	threads	tokio	tokio_cpu_ms	tokio-chunked	tokio-chunked_cpu_ms	rayon	rayon_cpu_ms	compio	compio_cpu_ms	tokio/compio
+randread	1	56.3	-	4135.7	-	3949.5	-	2021.6	-	0.03
+randread	16	128.4	-	29822.9	-	32358.0	-	3080.3	-	0.04
+randread	64	160.9	-	31370.1	-	26548.3	-	3191.3	-	0.05

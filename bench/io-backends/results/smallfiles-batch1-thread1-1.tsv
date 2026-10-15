@@ -1,0 +1,11 @@
+# scenario=smallfiles unit=MiB/s root=K:/dae-io-bench passes=3 warmup=1 batch=1
+scenario	backend	threads	pass	wall_ms	unit_per_s	ops_per_s	cpu_ms	cpu_pct
+smallfiles	tokio	1	warm	-	-	-	-	-
+smallfiles	tokio	1	1	1081.17	144.5	18498.4	1109.4	102.6
+smallfiles	tokio	1	2	1082.59	144.3	18474.2	1171.9	108.2
+smallfiles	tokio	1	3	1080.96	144.5	18502.2	1109.4	102.6
+smallfiles	tokio	1	median	1081.17	144.5	18498.4	1109.4	102.6
+
+# medians (MiB/s; ratio = tokio / compio, so > 1 means the thread pool was faster)
+scenario	threads	tokio	tokio_cpu_ms	tokio/compio
+smallfiles	1	144.5	1109	-

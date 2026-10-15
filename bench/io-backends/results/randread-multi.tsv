@@ -1,0 +1,68 @@
+# scenario=randread-multi unit=MiB/s root=K:/dae-io-bench passes=3 warmup=1
+scenario	backend	threads	pass	wall_ms	unit_per_s	ops_per_s	cpu_ms	cpu_pct
+randread-multi	tokio	1	warm	-	-	-	-	-
+randread-multi	tokio	1	1	730.32	350.5	89735.4	1015.6	139.1
+randread-multi	tokio	1	2	727.48	351.9	90086.7	968.8	133.2
+randread-multi	tokio	1	3	724.29	353.4	90483.0	984.4	135.9
+randread-multi	tokio	1	median	727.48	351.9	90086.7	968.8	133.2
+randread-multi	tokio	16	warm	-	-	-	-	-
+randread-multi	tokio	16	1	373.31	685.8	175554.9	-	-
+randread-multi	tokio	16	2	382.18	669.8	171479.8	-	-
+randread-multi	tokio	16	3	384.98	665.0	170233.8	-	-
+randread-multi	tokio	16	median	382.18	669.8	171479.8	-	-
+randread-multi	tokio	64	warm	-	-	-	-	-
+randread-multi	tokio	64	1	310.44	824.6	211109.1	-	-
+randread-multi	tokio	64	2	307.02	833.8	213460.0	-	-
+randread-multi	tokio	64	3	309.08	828.3	212036.6	-	-
+randread-multi	tokio	64	median	309.08	828.3	212036.6	-	-
+randread-multi	tokio-chunked	1	warm	-	-	-	-	-
+randread-multi	tokio-chunked	1	1	207.25	1235.2	316222.8	203.1	98.0
+randread-multi	tokio-chunked	1	2	209.43	1222.4	312932.4	218.8	104.5
+randread-multi	tokio-chunked	1	3	207.47	1233.9	315888.4	203.1	97.9
+randread-multi	tokio-chunked	1	median	207.47	1233.9	315888.4	203.1	97.9
+randread-multi	tokio-chunked	16	warm	-	-	-	-	-
+randread-multi	tokio-chunked	16	1	172.63	1482.9	379629.0	-	-
+randread-multi	tokio-chunked	16	2	176.46	1450.8	371394.6	-	-
+randread-multi	tokio-chunked	16	3	174.38	1468.1	375825.7	-	-
+randread-multi	tokio-chunked	16	median	174.38	1468.1	375825.7	-	-
+randread-multi	tokio-chunked	64	warm	-	-	-	-	-
+randread-multi	tokio-chunked	64	1	182.61	1401.9	358884.5	-	-
+randread-multi	tokio-chunked	64	2	179.12	1429.2	365884.8	-	-
+randread-multi	tokio-chunked	64	3	170.61	1500.5	384118.5	-	-
+randread-multi	tokio-chunked	64	median	179.12	1429.2	365884.8	-	-
+randread-multi	rayon	1	warm	-	-	-	-	-
+randread-multi	rayon	1	1	215.80	1186.3	303691.6	218.8	101.4
+randread-multi	rayon	1	2	213.38	1199.7	307126.3	218.8	102.5
+randread-multi	rayon	1	3	206.27	1241.1	317724.3	203.1	98.5
+randread-multi	rayon	1	median	213.38	1199.7	307126.3	218.8	102.5
+randread-multi	rayon	16	warm	-	-	-	-	-
+randread-multi	rayon	16	1	177.20	1444.7	369841.2	-	-
+randread-multi	rayon	16	2	178.35	1435.4	367451.5	-	-
+randread-multi	rayon	16	3	172.85	1481.0	379144.7	-	-
+randread-multi	rayon	16	median	177.20	1444.7	369841.2	-	-
+randread-multi	rayon	64	warm	-	-	-	-	-
+randread-multi	rayon	64	1	167.47	1528.6	391329.1	-	-
+randread-multi	rayon	64	2	172.26	1486.1	380445.1	-	-
+randread-multi	rayon	64	3	169.46	1510.7	386740.7	-	-
+randread-multi	rayon	64	median	169.46	1510.7	386740.7	-	-
+randread-multi	compio	1	warm	-	-	-	-	-
+randread-multi	compio	1	1	328.67	778.9	199395.1	328.1	99.8
+randread-multi	compio	1	2	318.42	804.0	205816.8	328.1	103.0
+randread-multi	compio	1	3	322.58	793.6	203160.4	312.5	96.9
+randread-multi	compio	1	median	322.58	793.6	203160.4	312.5	96.9
+randread-multi	compio	16	warm	-	-	-	-	-
+randread-multi	compio	16	1	274.64	932.1	238627.1	-	-
+randread-multi	compio	16	2	267.43	957.2	245054.1	-	-
+randread-multi	compio	16	3	273.37	936.5	239732.6	-	-
+randread-multi	compio	16	median	273.37	936.5	239732.6	-	-
+randread-multi	compio	64	warm	-	-	-	-	-
+randread-multi	compio	64	1	267.03	958.7	245425.5	-	-
+randread-multi	compio	64	2	269.29	950.6	243363.0	-	-
+randread-multi	compio	64	3	268.67	952.8	243925.9	-	-
+randread-multi	compio	64	median	268.67	952.8	243925.9	-	-
+
+# medians (MiB/s; ratio = tokio / compio, so > 1 means the thread pool was faster)
+scenario	threads	tokio	tokio_cpu_ms	tokio-chunked	tokio-chunked_cpu_ms	rayon	rayon_cpu_ms	compio	compio_cpu_ms	tokio/compio
+randread-multi	1	350.5	1016	1235.2	203	1186.3	219	778.9	328	0.45
+randread-multi	16	685.8	-	1482.9	-	1444.7	-	932.1	-	0.74
+randread-multi	64	824.6	-	1401.9	-	1528.6	-	958.7	-	0.86

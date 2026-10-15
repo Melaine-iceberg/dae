@@ -1,0 +1,48 @@
+# compio driver: IoUring
+# scenario=seqread unit=MiB/s root=/home/melaine/dae-io-bench passes=3 warmup=1
+scenario	backend	threads	pass	wall_ms	unit_per_s	ops_per_s	cpu_ms	cpu_pct
+seqread	tokio	1	warm	-	-	-	-	-
+seqread	tokio	1	1	328.74	12459.7	3114.9	-	-
+seqread	tokio	1	2	331.92	12340.3	3085.1	-	-
+seqread	tokio	1	3	331.79	12345.2	3086.3	-	-
+seqread	tokio	1	median	331.79	12345.2	3086.3	-	-
+seqread	tokio	16	warm	-	-	-	-	-
+seqread	tokio	16	1	503.94	8128.0	2032.0	-	-
+seqread	tokio	16	2	508.91	8048.6	2012.1	-	-
+seqread	tokio	16	3	508.19	8060.0	2015.0	-	-
+seqread	tokio	16	median	508.19	8060.0	2015.0	-	-
+seqread	tokio-chunked	1	warm	-	-	-	-	-
+seqread	tokio-chunked	1	1	224.61	18236.3	4559.1	-	-
+seqread	tokio-chunked	1	2	225.62	18154.6	4538.7	-	-
+seqread	tokio-chunked	1	3	229.91	17815.9	4454.0	-	-
+seqread	tokio-chunked	1	median	225.62	18154.6	4538.7	-	-
+seqread	tokio-chunked	16	warm	-	-	-	-	-
+seqread	tokio-chunked	16	1	514.21	7965.6	1991.4	-	-
+seqread	tokio-chunked	16	2	509.85	8033.7	2008.4	-	-
+seqread	tokio-chunked	16	3	515.11	7951.7	1987.9	-	-
+seqread	tokio-chunked	16	median	514.21	7965.6	1991.4	-	-
+seqread	rayon	1	warm	-	-	-	-	-
+seqread	rayon	1	1	226.53	18081.3	4520.3	-	-
+seqread	rayon	1	2	226.15	18112.1	4528.0	-	-
+seqread	rayon	1	3	225.77	18142.3	4535.6	-	-
+seqread	rayon	1	median	226.15	18112.1	4528.0	-	-
+seqread	rayon	16	warm	-	-	-	-	-
+seqread	rayon	16	1	521.67	7851.7	1962.9	-	-
+seqread	rayon	16	2	520.56	7868.5	1967.1	-	-
+seqread	rayon	16	3	522.58	7838.1	1959.5	-	-
+seqread	rayon	16	median	521.67	7851.7	1962.9	-	-
+seqread	compio	1	warm	-	-	-	-	-
+seqread	compio	1	1	228.95	17890.1	4472.5	-	-
+seqread	compio	1	2	229.01	17886.0	4471.5	-	-
+seqread	compio	1	3	236.62	17310.7	4327.7	-	-
+seqread	compio	1	median	229.01	17886.0	4471.5	-	-
+seqread	compio	16	warm	-	-	-	-	-
+seqread	compio	16	1	515.67	7943.1	1985.8	-	-
+seqread	compio	16	2	513.23	7980.9	1995.2	-	-
+seqread	compio	16	3	513.46	7977.2	1994.3	-	-
+seqread	compio	16	median	513.46	7977.2	1994.3	-	-
+
+# medians (MiB/s; ratio = tokio / compio, so > 1 means the thread pool was faster)
+scenario	threads	tokio	tokio_cpu_ms	tokio-chunked	tokio-chunked_cpu_ms	rayon	rayon_cpu_ms	compio	compio_cpu_ms	tokio/compio
+seqread	1	12459.7	-	18236.3	-	18081.3	-	17890.1	-	0.70
+seqread	16	8128.0	-	7965.6	-	7851.7	-	7943.1	-	1.02

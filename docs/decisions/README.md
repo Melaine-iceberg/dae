@@ -8,9 +8,11 @@
 | [`tab-drag-webview-reparent.md`](tab-drag-webview-reparent.md) | **已否决** | 标签拖动改成浏览器式 webview reparent —— 机制可行，但代价不值 |
 | [`tab-tear-off-warm-pool.md`](tab-tear-off-warm-pool.md) | **已实施，默认开启** | 预热窗口池让撕出看起来即时 —— 撕出中位从 ~530ms 降到 **~65ms**，代价 +200MB |
 | [`gtk-stack-pinned-by-upstream.md`](gtk-stack-pinned-by-upstream.md) | **已定案，等上游** | gtk/gio 被上游锁在 0.18 —— gtk 0.19 连依赖解析都过不去，实测证据在案 |
+| [`completion-io.md`](completion-io.md) | **已实测否决，不改** | 文件 IO 换成 IOCP/io_uring —— 枚举无异步形态、小文件慢 12.6 倍、拷贝输给 `CopyFileExW`；harness 与原始数据在 `bench/io-backends/` |
 
 第三份（`gtk-stack-pinned-by-upstream.md`）与上面两份**无关**：它记录的是**依赖升级遇到的上游阻断**，
 不是标签撕出的方案取舍 —— 下面各节只涉及前两份。
+`completion-io.md` 与上面三份都无关：它是一次**被实测否决的 IO 机制迁移**，结论、方法与原始数据都自洽。
 
 ## 两份文档的关系
 

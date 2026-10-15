@@ -1,0 +1,2 @@
+# Built in place; the crate is a benchmark harness, not a shipped artifact.
+target/

@@ -1,0 +1,47 @@
+# scenario=copy unit=MiB/s root=K:/dae-io-bench passes=3 warmup=1
+scenario	backend	threads	pass	wall_ms	unit_per_s	ops_per_s	cpu_ms	cpu_pct
+copy	tokio	1	warm	-	-	-	-	-
+copy	tokio	1	1	834.50	1198.3	4793.3	812.5	97.4
+copy	tokio	1	2	841.09	1188.9	4755.7	812.5	96.6
+copy	tokio	1	3	969.62	1031.3	4125.3	968.8	99.9
+copy	tokio	1	median	841.09	1188.9	4755.7	812.5	96.6
+copy	tokio	16	warm	-	-	-	-	-
+copy	tokio	16	1	501.22	1995.1	7980.5	-	-
+copy	tokio	16	2	503.69	1985.4	7941.5	-	-
+copy	tokio	16	3	527.18	1896.9	7587.5	-	-
+copy	tokio	16	median	503.69	1985.4	7941.5	-	-
+copy	tokio-chunked	1	warm	-	-	-	-	-
+copy	tokio-chunked	1	1	717.23	1394.3	5577.0	718.8	100.2
+copy	tokio-chunked	1	2	713.26	1402.0	5608.1	703.1	98.6
+copy	tokio-chunked	1	3	730.23	1369.4	5477.7	734.4	100.6
+copy	tokio-chunked	1	median	717.23	1394.3	5577.0	718.8	100.2
+copy	tokio-chunked	16	warm	-	-	-	-	-
+copy	tokio-chunked	16	1	234.39	4266.3	17065.4	-	-
+copy	tokio-chunked	16	2	234.10	4271.7	17086.7	-	-
+copy	tokio-chunked	16	3	238.45	4193.7	16774.9	-	-
+copy	tokio-chunked	16	median	234.39	4266.3	17065.4	-	-
+copy	rayon	1	warm	-	-	-	-	-
+copy	rayon	1	1	740.86	1349.8	5399.1	734.4	99.1
+copy	rayon	1	2	725.05	1379.2	5516.8	734.4	101.3
+copy	rayon	1	3	788.13	1268.8	5075.3	796.9	101.1
+copy	rayon	1	median	740.86	1349.8	5399.1	734.4	99.1
+copy	rayon	16	warm	-	-	-	-	-
+copy	rayon	16	1	235.03	4254.7	17019.0	-	-
+copy	rayon	16	2	245.78	4068.7	16274.8	-	-
+copy	rayon	16	3	226.39	4417.1	17668.4	-	-
+copy	rayon	16	median	235.03	4254.7	17019.0	-	-
+copy	compio	1	warm	-	-	-	-	-
+copy	compio	1	1	1002.43	997.6	3990.3	984.4	98.2
+copy	compio	1	2	951.76	1050.7	4202.7	953.1	100.1
+copy	compio	1	3	960.81	1040.8	4163.2	921.9	95.9
+copy	compio	1	median	960.81	1040.8	4163.2	921.9	95.9
+copy	compio	16	warm	-	-	-	-	-
+copy	compio	16	1	509.90	1961.2	7844.6	-	-
+copy	compio	16	2	504.08	1983.8	7935.2	-	-
+copy	compio	16	3	500.98	1996.1	7984.3	-	-
+copy	compio	16	median	504.08	1983.8	7935.2	-	-
+
+# medians (MiB/s; ratio = tokio / compio, so > 1 means the thread pool was faster)
+scenario	threads	tokio	tokio_cpu_ms	tokio-chunked	tokio-chunked_cpu_ms	rayon	rayon_cpu_ms	compio	compio_cpu_ms	tokio/compio
+copy	1	1198.3	812	1394.3	719	1349.8	734	997.6	984	1.20
+copy	16	1995.1	-	4266.3	-	4254.7	-	1961.2	-	1.02

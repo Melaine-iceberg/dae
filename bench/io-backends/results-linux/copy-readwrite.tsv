@@ -1,0 +1,48 @@
+# compio driver: IoUring
+# scenario=copy unit=MiB/s root=/home/melaine/dae-io-bench passes=3 warmup=1
+scenario	backend	threads	pass	wall_ms	unit_per_s	ops_per_s	cpu_ms	cpu_pct
+copy	tokio	1	warm	-	-	-	-	-
+copy	tokio	1	1	761.39	1313.4	5253.5	-	-
+copy	tokio	1	2	722.03	1385.0	5539.9	-	-
+copy	tokio	1	3	1120.46	892.5	3570.0	-	-
+copy	tokio	1	median	761.39	1313.4	5253.5	-	-
+copy	tokio	16	warm	-	-	-	-	-
+copy	tokio	16	1	174.88	5718.3	22873.4	-	-
+copy	tokio	16	2	168.35	5939.8	23759.3	-	-
+copy	tokio	16	3	170.08	5879.5	23517.9	-	-
+copy	tokio	16	median	170.08	5879.5	23517.9	-	-
+copy	tokio-chunked	1	warm	-	-	-	-	-
+copy	tokio-chunked	1	1	356.98	2801.2	11205.0	-	-
+copy	tokio-chunked	1	2	354.92	2817.5	11270.0	-	-
+copy	tokio-chunked	1	3	354.08	2824.2	11297.0	-	-
+copy	tokio-chunked	1	median	354.92	2817.5	11270.0	-	-
+copy	tokio-chunked	16	warm	-	-	-	-	-
+copy	tokio-chunked	16	1	95.72	10446.7	41786.8	-	-
+copy	tokio-chunked	16	2	92.98	10754.7	43019.0	-	-
+copy	tokio-chunked	16	3	94.10	10627.1	42508.4	-	-
+copy	tokio-chunked	16	median	94.10	10627.1	42508.4	-	-
+copy	rayon	1	warm	-	-	-	-	-
+copy	rayon	1	1	352.36	2838.0	11352.1	-	-
+copy	rayon	1	2	446.09	2241.7	8966.9	-	-
+copy	rayon	1	3	355.89	2809.8	11239.3	-	-
+copy	rayon	1	median	355.89	2809.8	11239.3	-	-
+copy	rayon	16	warm	-	-	-	-	-
+copy	rayon	16	1	93.80	10660.8	42643.4	-	-
+copy	rayon	16	2	93.38	10709.0	42836.0	-	-
+copy	rayon	16	3	205.34	4869.9	19479.5	-	-
+copy	rayon	16	median	93.80	10660.8	42643.4	-	-
+copy	compio	1	warm	-	-	-	-	-
+copy	compio	1	1	1579.03	633.3	2533.2	-	-
+copy	compio	1	2	1372.05	728.8	2915.3	-	-
+copy	compio	1	3	1319.64	757.8	3031.1	-	-
+copy	compio	1	median	1372.05	728.8	2915.3	-	-
+copy	compio	16	warm	-	-	-	-	-
+copy	compio	16	1	479.08	2087.3	8349.3	-	-
+copy	compio	16	2	470.14	2127.0	8508.1	-	-
+copy	compio	16	3	442.67	2259.0	9036.1	-	-
+copy	compio	16	median	470.14	2127.0	8508.1	-	-
+
+# medians (MiB/s; ratio = tokio / compio, so > 1 means the thread pool was faster)
+scenario	threads	tokio	tokio_cpu_ms	tokio-chunked	tokio-chunked_cpu_ms	rayon	rayon_cpu_ms	compio	compio_cpu_ms	tokio/compio
+copy	1	1313.4	-	2801.2	-	2838.0	-	633.3	-	2.07
+copy	16	5718.3	-	10446.7	-	10660.8	-	2087.3	-	2.74
