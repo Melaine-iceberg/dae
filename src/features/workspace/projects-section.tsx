@@ -35,7 +35,9 @@ interface Project {
  * Developer-oriented landing section: the Git repositories the user worked in
  * most recently, with their branch and dirty state. Detection reuses the
  * explorer's `get_git_status` command — it runs on the backend's blocking
- * thread pool and is cached per path, so the first frame never waits on it.
+ * thread pool, and the worktree scan behind it is cached per worktree, so
+ * probing every recent directory of one monorepo costs a single scan and the
+ * first frame never waits on it.
  *
  * Two query phases, both keyed `["git-status", path]` so a recent directory
  * that IS a repo root costs a single scan:

@@ -9,6 +9,7 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rayon::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
+use tauri::Manager;
 use tauri_specta::Event;
 
 #[cfg(windows)]
@@ -40,6 +41,15 @@ pub fn create_directory_watcher(
                 Err(_) => Vec::new(),
                 Ok(event) => changed_children(&watched, &event),
             };
+
+            // A change on disk can move a Git badge, and the watcher's report is
+            // the only freshness signal a badge has: a new file touches nothing
+            // in the index, so the cached worktree scan has to be dropped here
+            // or it would keep answering with the badges from before
+            // (`git::GitStatusCache`). Sent before the event, so the refresh the
+            // event triggers finds the cache already invalidated.
+            app.state::<crate::file_system::git::GitStatusCache>()
+                .note_change();
 
             let _ = DirectoryChanged {
                 path: event_path.clone(),

@@ -1,11 +1,16 @@
 use super::error::FileSystemError;
 use super::types::path_to_string;
 use git2::build::CheckoutBuilder;
-use git2::{BranchType, ErrorCode, Reference, Repository, Status, StatusOptions};
+use git2::{BranchType, ErrorCode, Oid, Reference, Repository, Status, StatusOptions};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
+use std::fs;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime};
+use tauri::Manager;
 
 /// Git 工作区徽标类型，对应文件管理器中的 M/A/U 状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -40,16 +45,152 @@ pub struct GitDirectoryStatus {
 
 /// 读取一个目录的 Git 装饰信息：当前分支与直接子项的 M/A/U 徽标。
 /// 目录不在 Git 工作区内时返回 `None`。git2 的状态扫描在阻塞线程池
-/// 执行，不会阻塞异步运行时或 UI。
+/// 执行，不会阻塞异步运行时或 UI；扫描结果按工作区根缓存（见
+/// [`GitStatusCache`]），所以同一个工作区里的相邻目录只付一次扫描。
 #[tauri::command]
 #[specta::specta]
-pub async fn get_git_status(path: String) -> Result<Option<GitDirectoryStatus>, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || git_status(&path))
-        .await
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+pub async fn get_git_status(
+    path: String,
+    app: tauri::AppHandle,
+) -> Result<Option<GitDirectoryStatus>, FileSystemError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let cache = app.state::<GitStatusCache>();
+        git_status_cached(&path, &cache)
+    })
+    .await
+    .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-fn git_status(dir: &str) -> Result<Option<GitDirectoryStatus>, FileSystemError> {
+/// How long one worktree-wide scan may keep answering directory reads.
+///
+/// The same five seconds the frontend already declares as its own staleness
+/// budget for these badges (`GIT_STALE_TIME_MS` in
+/// `src/features/explorer/git-status.tsx`): within it, navigating around one
+/// work tree answers from a single scan; past it a directory read scans again
+/// rather than showing badges older than the window the UI already tolerates.
+const SCAN_MAX_AGE: Duration = Duration::from_secs(5);
+
+/// Worktrees whose scans are kept at once. Only reached by reading several
+/// repositories inside one reuse window — the workspace overview probes the
+/// recent directories — and the map is emptied by every reported change anyway.
+const MAX_CACHED_WORKTREES: usize = 8;
+
+/// One classified record of a worktree-wide scan: a path relative to the
+/// worktree root, `/`-separated as git2 spells it, and the badge it classifies
+/// to. Deletions and ignored paths are not records — they have no badge.
+type StatusRecords = Arc<[(String, GitEntryStatusKind)]>;
+
+/// The worktree-wide status scan behind every per-directory badge, kept per
+/// worktree root.
+///
+/// libgit2 answers a status query by looking at every tracked file, while a
+/// directory listing only ever consumes the badges of its own direct children.
+/// A work tree of 20,000 tracked files therefore spends ~36 ms of a blocking
+/// thread and of the disk on a directory whose answer is two badges, and a
+/// monorepo pays it again for every step of a navigation
+/// (`docs/performance-opportunities.md` §2). One scan can answer every directory
+/// of the worktree, so it is computed once and filtered per directory instead.
+#[derive(Default)]
+pub struct GitStatusCache {
+    /// Counts the filesystem changes the directory watchers reported. Their
+    /// events are what refresh the badges mid-session, and they are also what
+    /// invalidates this cache: a change a watcher saw cannot be answered from a
+    /// scan taken before it.
+    changes: AtomicU64,
+    /// One slot per worktree root, holding that root's most recent scan. A
+    /// slot's own lock is held across a scan, so two views in one worktree pay
+    /// for one.
+    worktrees: Mutex<HashMap<String, Arc<Mutex<Option<CachedScan>>>>>,
+}
+
+/// A scan, plus the keys that would make it wrong: a change a watcher reported,
+/// an index rewritten behind our back (staging, checkout, a commit made in the
+/// integrated terminal), or HEAD moved onto another tree.
+struct CachedScan {
+    epoch: u64,
+    index: Option<(SystemTime, u64)>,
+    head: Option<Oid>,
+    scanned_at: Instant,
+    records: StatusRecords,
+}
+
+impl GitStatusCache {
+    /// Records that a watcher saw the filesystem change. Called from the local
+    /// directory watcher, beside the event that refreshes the listing.
+    pub fn note_change(&self) {
+        self.changes.fetch_add(1, AtomicOrdering::AcqRel);
+        // A change anywhere can affect any worktree's badges, and a scan is
+        // large: keeping them would only postpone the rescan.
+        self.worktrees
+            .lock()
+            .expect("git status cache lock poisoned")
+            .clear();
+    }
+
+    /// The worktree-wide records for `repo`, reusing the last scan when nothing
+    /// has invalidated it. `max_age` is a parameter so a test can expire a scan
+    /// without waiting out the window the app uses.
+    fn records(
+        &self,
+        repo: &Repository,
+        root: &str,
+        max_age: Duration,
+    ) -> Result<StatusRecords, FileSystemError> {
+        let epoch = self.changes.load(AtomicOrdering::Acquire);
+        let index = index_key(repo);
+        let head = repo.head().ok().and_then(|head| head.target());
+
+        let slot = {
+            let mut worktrees = self
+                .worktrees
+                .lock()
+                .expect("git status cache lock poisoned");
+            if worktrees.len() >= MAX_CACHED_WORKTREES {
+                worktrees.clear();
+            }
+            Arc::clone(worktrees.entry(root.to_owned()).or_default())
+        };
+
+        // Held across the scan: a second view of this worktree waits here and
+        // then finds the scan rather than paying for its own.
+        let mut slot = slot.lock().expect("git status scan lock poisoned");
+        if let Some(cached) = slot.as_ref()
+            && cached.epoch == epoch
+            && cached.index == index
+            && cached.head == head
+            && cached.scanned_at.elapsed() < max_age
+        {
+            return Ok(Arc::clone(&cached.records));
+        }
+
+        // The keys were read before the scan, so a change landing while it runs
+        // leaves an entry the next request refuses — never one that passes for
+        // newer than it is.
+        let records: StatusRecords = scan_worktree_status(repo)?.into();
+        *slot = Some(CachedScan {
+            epoch,
+            index,
+            head,
+            scanned_at: Instant::now(),
+            records: Arc::clone(&records),
+        });
+        Ok(records)
+    }
+}
+
+/// The index as (modified, length). Rewritten by anything that stages, checks
+/// out or commits — including the same operations run in the integrated
+/// terminal, which no watcher reports.
+fn index_key(repo: &Repository) -> Option<(SystemTime, u64)> {
+    let metadata = fs::metadata(repo.path().join("index")).ok()?;
+    Some((metadata.modified().ok()?, metadata.len()))
+}
+
+/// 读取一个目录的 Git 装饰信息，扫描结果按工作区根从 `cache` 复用。
+fn git_status_cached(
+    dir: &str,
+    cache: &GitStatusCache,
+) -> Result<Option<GitDirectoryStatus>, FileSystemError> {
     let Some(repo) = discover_worktree(dir)? else {
         return Ok(None);
     };
@@ -61,38 +202,95 @@ fn git_status(dir: &str) -> Result<Option<GitDirectoryStatus>, FileSystemError> 
     let Some(relative_segments) = relative_segments(&workdir, dir) else {
         return Ok(None);
     };
-    let depth = relative_segments.len();
 
     let branch = branch_name(&repo);
+    let records = cache.records(&repo, &workdir, SCAN_MAX_AGE)?;
 
+    Ok(Some(derive_directory_status(
+        &workdir,
+        &relative_segments,
+        branch,
+        &records,
+    )))
+}
+
+/// The reference read, with no cache in the way: discover, scan the whole
+/// worktree, filter. `get_git_status` goes through [`GitStatusCache`] instead;
+/// this stays as the behavioural reference the cache's tests compare against,
+/// and as the scan the measurement harness prices.
+#[cfg(test)]
+fn git_status(dir: &str) -> Result<Option<GitDirectoryStatus>, FileSystemError> {
+    let Some(repo) = discover_worktree(dir)? else {
+        return Ok(None);
+    };
+    let workdir = path_to_string(repo.workdir().expect("workdir verified above"));
+    let Some(relative_segments) = relative_segments(&workdir, dir) else {
+        return Ok(None);
+    };
+
+    let branch = branch_name(&repo);
+    let records = scan_worktree_status(&repo)?;
+
+    Ok(Some(derive_directory_status(
+        &workdir,
+        &relative_segments,
+        branch,
+        &records,
+    )))
+}
+
+/// The scan that costs O(worktree): every status record libgit2 reports,
+/// classified. The per-directory filter afterwards costs O(records).
+fn scan_worktree_status(
+    repo: &Repository,
+) -> Result<Vec<(String, GitEntryStatusKind)>, FileSystemError> {
     let mut options = StatusOptions::new();
     options
         .include_untracked(true)
         .recurse_untracked_dirs(false)
         .include_ignored(false);
 
-    // 注意：这里**不能**用 `options.pathspec(..)` 把扫描限制到当前目录。
+    // 注意：这里**不能**用 `options.pathspec(..)` 把扫描限制到某个目录。
     // 试过，被现有的 `untracked_subdirectory_aggregates_on_parent_and_resolves_inside`
     // 当场拦下：pathspec 会让 libgit2 从该目录内部起步，未跟踪目录不再被折叠成
     // 一条记录而是展开成子项，`directory_untracked` 因此变 false，前端「整个目录
     // 未跟踪则所有子项标 U」的契约就破了。要拿这个收益得先决定那个契约怎么改。
     // （另：真要用 pathspec，字面路径要用 `disable_pathspec_match(true)` 选项，见
     // git2 `StatusOptions::pathspec` 的文档，而不是 `:(literal)` 字符串前缀。）
+    // 现在这条路由缓存替代：整棵树只扫一次，`derive_directory_status` 从这一份
+    // 结果里按目录过滤，得到的答案与逐目录扫描逐字相同。
     let statuses = repo
         .statuses(Some(&mut options))
         .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+
+    Ok(statuses
+        .iter()
+        .filter_map(|entry| {
+            let path = entry.path().ok()?;
+            let kind = classify(entry.status())?;
+            Some((path.to_owned(), kind))
+        })
+        .collect())
+}
+
+/// Filters one worktree-wide scan down to `relative_segments`: the direct
+/// children of that directory, each aggregating its descendants (M > A > U),
+/// and whether the directory itself is one git folded into a single untracked
+/// record.
+fn derive_directory_status(
+    workdir: &str,
+    relative_segments: &[String],
+    branch: String,
+    records: &[(String, GitEntryStatusKind)],
+) -> GitDirectoryStatus {
+    let depth = relative_segments.len();
 
     // 聚合当前目录直接子项的状态：文件取自身状态，目录取后代状态中
     // 优先级最高者（M > A > U）。
     let mut directory_untracked = false;
     let mut badges: HashMap<String, GitEntryStatusKind> = HashMap::new();
-    for entry in statuses.iter() {
-        let Ok(status_path) = entry.path() else {
-            continue;
-        };
-        let Some(kind) = classify(entry.status()) else {
-            continue;
-        };
+    for (status_path, kind) in records {
+        let kind = *kind;
 
         // git2 返回以 `/` 分隔、相对工作区根的路径；未跟踪目录带尾部 `/`。
         let parts: Vec<&str> = status_path
@@ -106,7 +304,7 @@ fn git_status(dir: &str) -> Result<Option<GitDirectoryStatus>, FileSystemError> 
             && kind == GitEntryStatusKind::Untracked
             && parts
                 .iter()
-                .zip(&relative_segments)
+                .zip(relative_segments)
                 .all(|(segment, expected)| segment.eq_ignore_ascii_case(expected))
         {
             directory_untracked = true;
@@ -119,7 +317,7 @@ fn git_status(dir: &str) -> Result<Option<GitDirectoryStatus>, FileSystemError> 
         // Windows 路径大小写不敏感，逐段忽略大小写比较。
         if parts[..depth]
             .iter()
-            .zip(&relative_segments)
+            .zip(relative_segments)
             .any(|(segment, expected)| !segment.eq_ignore_ascii_case(expected))
         {
             continue;
@@ -138,12 +336,12 @@ fn git_status(dir: &str) -> Result<Option<GitDirectoryStatus>, FileSystemError> 
         .collect();
     entries.sort_by(|left, right| left.name.cmp(&right.name));
 
-    Ok(Some(GitDirectoryStatus {
-        root: workdir,
+    GitDirectoryStatus {
+        root: workdir.to_owned(),
         branch,
         entries,
         directory_untracked,
-    }))
+    }
 }
 
 /// 分支条目：`name` 为完整简名（本地 "main"，远程 "origin/main"），
@@ -693,7 +891,7 @@ mod tests {
     use super::*;
     use git2::IndexAddOption;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     struct TempRepo {
         path: PathBuf,
@@ -871,6 +1069,218 @@ mod tests {
             .find(|entry| entry.name == "sub")
             .expect("sub badge");
         assert_eq!(sub_entry.kind, GitEntryStatusKind::Modified);
+    }
+
+    /// The cache's contract: one scan answers every directory of a worktree.
+    #[test]
+    fn the_cache_answers_a_second_directory_from_the_scan_it_already_has() {
+        let temp = TempRepo::create("cache-reuse");
+        let sub = temp.path.join("sub");
+        fs::create_dir_all(&sub).expect("create sub");
+        fs::write(sub.join("b.txt"), "hello").expect("write file");
+
+        let cache = GitStatusCache::default();
+        let root_status = git_status_cached(&temp.path_string(), &cache)
+            .expect("status call")
+            .expect("inside repo");
+        assert_eq!(root_status.entries.len(), 1);
+        assert_eq!(root_status.entries[0].name, "sub");
+
+        // The directory filter works from the worktree's spelling, so both
+        // discoveries have to agree on it — otherwise every directory would key
+        // its own slot and no scan would ever be shared.
+        let from_root = discover_worktree(&temp.path_string())
+            .expect("discover")
+            .expect("worktree");
+        let from_sub = discover_worktree(&path_to_string(&sub))
+            .expect("discover")
+            .expect("worktree");
+        let workdir = path_to_string(from_root.workdir().expect("workdir"));
+        assert_eq!(
+            workdir,
+            path_to_string(from_sub.workdir().expect("workdir"))
+        );
+
+        // The same records come back, so the second directory was answered by
+        // the first directory's scan rather than by a new one.
+        let first = cache
+            .records(&from_root, &workdir, SCAN_MAX_AGE)
+            .expect("records");
+        let second = cache
+            .records(&from_sub, &workdir, SCAN_MAX_AGE)
+            .expect("records");
+        assert!(Arc::ptr_eq(&first, &second));
+
+        // And the badges it derives are the ones the uncached read derives.
+        let cached = git_status_cached(&path_to_string(&sub), &cache)
+            .expect("status call")
+            .expect("inside repo");
+        let reference = git_status(&path_to_string(&sub))
+            .expect("status call")
+            .expect("inside repo");
+        assert_eq!(cached.branch, reference.branch);
+        assert_eq!(cached.root, reference.root);
+        assert_eq!(cached.directory_untracked, reference.directory_untracked);
+        assert_eq!(cached.entries.len(), reference.entries.len());
+    }
+
+    /// A change the watcher reported has to invalidate the scan, because a new
+    /// file leaves nothing in the index for the other keys to notice.
+    #[test]
+    fn a_reported_change_invalidates_the_scan() {
+        let temp = TempRepo::create("cache-change");
+        let cache = GitStatusCache::default();
+        let dir = temp.path_string();
+
+        let before = git_status_cached(&dir, &cache)
+            .expect("status call")
+            .expect("inside repo");
+        assert!(before.entries.is_empty());
+
+        fs::write(temp.path.join("new.txt"), "new").expect("write file");
+        let unreported = git_status_cached(&dir, &cache)
+            .expect("status call")
+            .expect("inside repo");
+        assert!(
+            unreported.entries.is_empty(),
+            "only a reported change can catch an untracked file"
+        );
+
+        cache.note_change();
+        let reported = git_status_cached(&dir, &cache)
+            .expect("status call")
+            .expect("inside repo");
+        assert_eq!(reported.entries.len(), 1);
+        assert_eq!(reported.entries[0].name, "new.txt");
+        assert_eq!(reported.entries[0].kind, GitEntryStatusKind::Untracked);
+    }
+
+    /// Operations git performs outside a watcher's view — staging, committing,
+    /// checking out, including in the integrated terminal — are caught by the
+    /// index and HEAD keys instead.
+    #[test]
+    fn git_operations_no_watcher_reported_invalidate_the_scan() {
+        let temp = TempRepo::create("cache-index");
+        let cache = GitStatusCache::default();
+        let dir = temp.path_string();
+        fs::write(temp.path.join("a.txt"), "hello").expect("write file");
+
+        let untracked = git_status_cached(&dir, &cache)
+            .expect("status call")
+            .expect("inside repo");
+        assert_eq!(untracked.entries[0].kind, GitEntryStatusKind::Untracked);
+
+        let repo = temp.repo();
+        let mut index = repo.index().expect("index");
+        index
+            .add_path(std::path::Path::new("a.txt"))
+            .expect("stage");
+        index.write().expect("write index");
+
+        let staged = git_status_cached(&dir, &cache)
+            .expect("status call")
+            .expect("inside repo");
+        assert_eq!(staged.entries[0].kind, GitEntryStatusKind::Added);
+
+        // A commit moves HEAD onto another tree, and the badge goes away.
+        commit_all(&temp.repo(), "initial");
+        let committed = git_status_cached(&dir, &cache)
+            .expect("status call")
+            .expect("inside repo");
+        assert!(committed.entries.is_empty());
+    }
+
+    /// A scan past the reuse window is replaced rather than reused, so a
+    /// directory read never shows badges older than the window.
+    #[test]
+    fn a_scan_older_than_the_window_is_not_reused() {
+        let temp = TempRepo::create("cache-expiry");
+        let cache = GitStatusCache::default();
+        let repo = temp.repo();
+        let workdir = path_to_string(repo.workdir().expect("workdir"));
+
+        // A zero window stands in for an elapsed one: the window the app allows
+        // is five seconds, which a test cannot wait out.
+        let first = cache
+            .records(&repo, &workdir, Duration::ZERO)
+            .expect("records");
+        let second = cache
+            .records(&repo, &workdir, Duration::ZERO)
+            .expect("records");
+        assert!(!Arc::ptr_eq(&first, &second), "an expired scan is replaced");
+
+        let third = cache
+            .records(&repo, &workdir, SCAN_MAX_AGE)
+            .expect("records");
+        let fourth = cache
+            .records(&repo, &workdir, SCAN_MAX_AGE)
+            .expect("records");
+        assert!(Arc::ptr_eq(&third, &fourth), "a fresh scan is reused");
+    }
+
+    /// Two readers of one worktree pay for one scan: the worktree's lock is held
+    /// across the scan, so the second reader waits and then finds it — which is
+    /// the shape of the workspace overview probing several recent directories.
+    #[test]
+    fn two_readers_of_one_worktree_share_a_scan() {
+        let temp = TempRepo::create("cache-concurrent");
+        fs::write(temp.path.join("a.txt"), "hello").expect("write file");
+
+        let cache = GitStatusCache::default();
+        let dir = temp.path_string();
+        let records: Vec<StatusRecords> = std::thread::scope(|scope| {
+            let readers: Vec<_> = (0..4)
+                .map(|_| {
+                    scope.spawn(|| {
+                        let repo = discover_worktree(&dir)
+                            .expect("discover")
+                            .expect("worktree");
+                        let workdir = path_to_string(repo.workdir().expect("workdir"));
+                        cache
+                            .records(&repo, &workdir, SCAN_MAX_AGE)
+                            .expect("records")
+                    })
+                })
+                .collect();
+            readers
+                .into_iter()
+                .map(|reader| reader.join().expect("reader"))
+                .collect()
+        });
+
+        // Every reader received the same records object, so one scan served
+        // them rather than each producing its own.
+        for other in &records[1..] {
+            assert!(Arc::ptr_eq(&records[0], other));
+        }
+    }
+
+    /// The contract that rejected the pathspec road
+    /// (`docs/performance-opportunities.md` §2): a directory git folded into one
+    /// untracked record has to keep resolving to `directory_untracked` when it
+    /// is the directory being listed — including when the scan answering it was
+    /// taken for another directory.
+    #[test]
+    fn the_cached_scan_keeps_the_untracked_directory_contract() {
+        let temp = TempRepo::create("cache-untracked-directory");
+        let sub = temp.path.join("sub");
+        fs::create_dir_all(&sub).expect("create sub");
+        fs::write(sub.join("b.txt"), "hello").expect("write file");
+
+        let cache = GitStatusCache::default();
+        let root_status = git_status_cached(&temp.path_string(), &cache)
+            .expect("status call")
+            .expect("inside repo");
+        assert!(!root_status.directory_untracked);
+        assert_eq!(root_status.entries.len(), 1);
+        assert_eq!(root_status.entries[0].name, "sub");
+        assert_eq!(root_status.entries[0].kind, GitEntryStatusKind::Untracked);
+
+        let sub_status = git_status_cached(&path_to_string(&sub), &cache)
+            .expect("status call")
+            .expect("inside repo");
+        assert!(sub_status.directory_untracked);
+        assert!(sub_status.entries.is_empty());
     }
 
     /// 提交两个版本：第一个提交（旧）与 HEAD（新）都修改 a.txt。
@@ -1099,6 +1509,330 @@ mod tests {
         assert!(branches.has_upstream);
         assert_eq!(branches.ahead, 1);
         assert_eq!(branches.behind, 0);
+    }
+
+    /// The median of `samples`, in milliseconds, after sorting them.
+    fn median_ms(samples: &mut [u128]) -> f64 {
+        samples.sort_unstable();
+        samples[samples.len() / 2] as f64 / 1_000_000.0
+    }
+
+    /// Times `body` `runs` times and returns the samples in nanoseconds.
+    fn time_runs(runs: usize, mut body: impl FnMut()) -> Vec<u128> {
+        let mut samples = Vec::with_capacity(runs);
+        for _ in 0..runs {
+            let started = std::time::Instant::now();
+            body();
+            samples.push(started.elapsed().as_nanos());
+        }
+        samples
+    }
+
+    /// The directories a navigation would visit: the worktree root, then up to
+    /// four directories drawn from the index, shallowest first so the list
+    /// reads like a descent rather than a hash order.
+    fn sample_directories(repo: &Repository, root: &Path) -> Vec<PathBuf> {
+        use std::collections::BTreeSet;
+
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        if let Ok(index) = repo.index() {
+            for entry in index.iter() {
+                let path = String::from_utf8_lossy(&entry.path).replace('\\', "/");
+                let mut parts: Vec<&str> =
+                    path.split('/').filter(|part| !part.is_empty()).collect();
+                parts.pop(); // the file itself
+                for depth in 1..=parts.len().min(3) {
+                    seen.insert(parts[..depth].join("/"));
+                }
+            }
+        }
+
+        let mut relative: Vec<String> = seen.into_iter().collect();
+        relative.sort_by(|left, right| {
+            left.matches('/')
+                .count()
+                .cmp(&right.matches('/').count())
+                .then_with(|| left.cmp(right))
+        });
+        relative.truncate(4);
+
+        let mut directories = vec![root.to_path_buf()];
+        directories.extend(relative.iter().map(|relative| root.join(relative)));
+        directories.retain(|directory| directory.is_dir());
+        directories
+    }
+
+    /// One raw scan at `dir`: how many status records it produced, and whether
+    /// it folded `dir` itself into a single untracked record. `pathspec`
+    /// restricts the scan to a literal path, which is the alternative §2 of
+    /// `docs/performance-opportunities.md` declined.
+    fn scan_records(dir: &Path, pathspec: Option<&Path>) -> (usize, bool) {
+        let repo = Repository::discover(dir).expect("discover");
+        let mut options = StatusOptions::new();
+        options
+            .include_untracked(true)
+            .recurse_untracked_dirs(false)
+            .include_ignored(false);
+        if let Some(pathspec) = pathspec {
+            options.disable_pathspec_match(true).pathspec(pathspec);
+        }
+
+        let statuses = repo.statuses(Some(&mut options)).expect("statuses");
+        let records = statuses.len();
+
+        let workdir = path_to_string(repo.workdir().expect("workdir"));
+        let expected =
+            relative_segments(&workdir, &path_to_string(dir)).expect("probe is in the worktree");
+        let depth = expected.len();
+        let self_is_untracked = depth > 0
+            && statuses.iter().any(|entry| {
+                entry.status().contains(Status::WT_NEW)
+                    && entry.path().is_ok_and(|path| {
+                        let parts: Vec<&str> =
+                            path.split('/').filter(|part| !part.is_empty()).collect();
+                        parts.len() == depth
+                            && parts
+                                .iter()
+                                .zip(&expected)
+                                .all(|(part, expected)| part.eq_ignore_ascii_case(expected))
+                    })
+            });
+
+        (records, self_is_untracked)
+    }
+
+    /// Path of the synthetic worktree, built on the first run and reused
+    /// afterwards: creating 20,000 files costs ~40 s, which is not something to
+    /// pay on every run of a measurement. It lives in the temp directory under a
+    /// name that records its size, and is left there to be reused (or deleted)
+    /// by hand.
+    fn synthetic_worktree(files: usize) -> PathBuf {
+        const DIRECTORIES: usize = 200;
+
+        let path = std::env::temp_dir().join(format!("dae-git-bench-{files}"));
+        let per_directory = files.div_ceil(DIRECTORIES);
+        let marker = path
+            .join("d003")
+            .join("nested")
+            .join(format!("n{:04}.txt", 9));
+        if marker.is_file() {
+            println!("reused the worktree at {}", path.display());
+            return path;
+        }
+
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).expect("create temp dir");
+        let repo = Repository::init_opts(
+            &path,
+            git2::RepositoryInitOptions::new().initial_head("main"),
+        )
+        .expect("init repo");
+        repo.config()
+            .expect("repo config")
+            .set_str("user.name", "Test")
+            .expect("set user.name");
+        repo.config()
+            .expect("repo config")
+            .set_str("user.email", "test@example.com")
+            .expect("set user.email");
+
+        for directory in 0..DIRECTORIES {
+            let directory_path = path.join(format!("d{directory:03}"));
+            fs::create_dir_all(&directory_path).expect("create directory");
+            for index in 0..per_directory {
+                fs::write(directory_path.join(format!("f{index:04}.txt")), "x")
+                    .expect("write file");
+            }
+        }
+        commit_all(&repo, "bench");
+
+        let nested = path.join("d003").join("nested");
+        fs::create_dir_all(&nested).expect("create untracked directory");
+        for index in 0..10 {
+            fs::write(path.join("d000").join(format!("f{index:04}.txt")), "edited")
+                .expect("edit tracked file");
+            fs::write(path.join("d001").join(format!("new{index:04}.txt")), "new")
+                .expect("write untracked file");
+            fs::write(nested.join(format!("n{index:04}.txt")), "new").expect("write file");
+        }
+
+        path
+    }
+
+    /// Prints what one directory's Git decoration costs: `scan` is the
+    /// whole-worktree status behind it (the shape `get_git_status` had before
+    /// the per-worktree cache), and `cached` is the same directory read through
+    /// [`GitStatusCache`] in navigation order — the first read of a worktree
+    /// pays the scan, every later one only the filter.
+    ///
+    /// ```bash
+    /// cd src-tauri
+    /// # A real repository: the worktree root plus four directories from it.
+    /// DAE_GIT_BENCH=K:/code/dae \
+    ///   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_git_status_scan
+    /// # Or a synthetic worktree of `DAE_GIT_BENCH_FILES` tracked files
+    /// # (20,000 by default), built once in the temp directory and reused.
+    /// DAE_GIT_BENCH_FILES=20000 \
+    ///   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_git_status_scan
+    /// ```
+    ///
+    /// `tracked` is how many files a scan has to look at and `records` is how
+    /// many of them have something to report: the cost follows the first number
+    /// while the answer only uses the second. `porcelain` is
+    /// `git status --porcelain` in a child process — the magnitude's floor,
+    /// with git's untracked cache and index short-circuits available to it and
+    /// not to libgit2. `pathspec` is the same scan limited to one directory, the
+    /// road §2 declined: kept measured so the price of the contract standing in
+    /// its way stays visible. Compare this test against itself, before and after
+    /// a change; absolute milliseconds are per-machine.
+    #[test]
+    #[ignore = "prints measurements for DAE_GIT_BENCH (a repository) or DAE_GIT_BENCH_FILES"]
+    fn reports_the_cost_of_a_git_status_scan() {
+        let explicit = std::env::var_os("DAE_GIT_BENCH");
+        let root = match &explicit {
+            Some(dir) => PathBuf::from(dir),
+            None => {
+                let files = std::env::var("DAE_GIT_BENCH_FILES")
+                    .ok()
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(20_000);
+                let started = std::time::Instant::now();
+                let path = synthetic_worktree(files);
+                println!(
+                    "synthetic {files} tracked files, ready in {:.1} s",
+                    started.elapsed().as_secs_f64()
+                );
+                path
+            }
+        };
+
+        let repo = Repository::discover(&root).expect("discover a worktree");
+        let workdir = path_to_string(repo.workdir().expect("workdir"));
+        let tracked = repo.index().expect("index").len();
+        let (records, _) = scan_records(&root, None);
+
+        println!("worktree  {}", workdir.trim_end_matches(['/', '\\']));
+        println!("tracked   {tracked}");
+        println!("records   {records}");
+
+        // `get_git_status` per directory: what one navigation pays today.
+        let directories = sample_directories(&repo, repo.workdir().expect("workdir"));
+        for directory in &directories {
+            let dir = path_to_string(directory);
+            let entries = git_status(&dir)
+                .expect("status")
+                .map_or(0, |status| status.entries.len());
+            let mut samples = time_runs(5, || {
+                git_status(&dir).expect("status");
+            });
+            let relative = dir
+                .trim_start_matches(&workdir)
+                .trim_start_matches(['/', '\\'])
+                .replace('\\', "/");
+            println!(
+                "scan      {:>8.2} ms  entries={entries}  {}",
+                median_ms(&mut samples),
+                if relative.is_empty() {
+                    "(root)"
+                } else {
+                    &relative
+                }
+            );
+        }
+
+        // The same five directories through the cache `get_git_status` uses, in
+        // the order a navigation takes them: the first read of a worktree pays
+        // for the scan, every later one only for the filter. One run for the
+        // scan (the scan is the whole sample) and five for the hits.
+        let cache = GitStatusCache::default();
+        for (position, directory) in directories.iter().enumerate() {
+            let dir = path_to_string(directory);
+            let mut samples = time_runs(if position == 0 { 1 } else { 5 }, || {
+                git_status_cached(&dir, &cache).expect("status");
+            });
+            let entries = git_status_cached(&dir, &cache)
+                .expect("status")
+                .map_or(0, |status| status.entries.len());
+            let relative = dir
+                .trim_start_matches(&workdir)
+                .trim_start_matches(['/', '\\'])
+                .replace('\\', "/");
+            println!(
+                "cached    {:>8.2} ms  entries={entries}  {}{}",
+                median_ms(&mut samples),
+                if relative.is_empty() {
+                    "(root)"
+                } else {
+                    &relative
+                },
+                if position == 0 {
+                    "  (the scan)"
+                } else {
+                    "  (reused)"
+                }
+            );
+        }
+
+        // What the reused reads above still pay for: discovering and opening the
+        // repository, the branch, and the keys compared against the cache. The
+        // scan is the only part the cache removes.
+        let mut samples = time_runs(5, || {
+            let repo = discover_worktree(&path_to_string(&directories[0]))
+                .expect("discover")
+                .expect("worktree");
+            branch_name(&repo);
+            index_key(&repo);
+            repo.head().ok().and_then(|head| head.target());
+        });
+        println!(
+            "open      {:>8.2} ms  (worktree + branch + keys, no scan)",
+            median_ms(&mut samples)
+        );
+
+        // The magnitude's floor: git's own status, in a child process.
+        let mut samples = time_runs(5, || {
+            Command::new("git")
+                .arg("-C")
+                .arg(workdir.trim_end_matches(['/', '\\']))
+                .args(["status", "--porcelain"])
+                .output()
+                .expect("git status --porcelain");
+        });
+        println!(
+            "porcelain {:>8.2} ms  (git status --porcelain, the floor)",
+            median_ms(&mut samples)
+        );
+
+        // The declined alternative, measured: a pathspec-limited scan, and what
+        // it does to the answer at a directory whose own untracked records are
+        // the ones a listing depends on.
+        let mut probes: Vec<PathBuf> = directories.iter().skip(1).cloned().collect();
+        if let Some(nested) = directories.last().map(|dir| dir.join("nested"))
+            && nested.is_dir()
+        {
+            probes.push(nested);
+        }
+
+        for probe in &probes {
+            let relative = path_to_string(probe)
+                .trim_start_matches(&workdir)
+                .trim_start_matches(['/', '\\'])
+                .replace('\\', "/");
+            let mut limited = time_runs(5, || {
+                scan_records(probe, Some(Path::new(&relative)));
+            });
+            let mut full = time_runs(5, || {
+                scan_records(probe, None);
+            });
+            let (full_records, full_untracked) = scan_records(probe, None);
+            let (limited_records, limited_untracked) =
+                scan_records(probe, Some(Path::new(&relative)));
+            println!(
+                "pathspec  {:>8.2} ms  vs {:>8.2} ms full  records {limited_records} vs {full_records}  directory_untracked {limited_untracked} vs {full_untracked}  {relative}",
+                median_ms(&mut limited),
+                median_ms(&mut full),
+            );
+        }
     }
 
     #[test]

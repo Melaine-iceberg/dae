@@ -266,6 +266,7 @@ pub fn run() {
         .manage(file_system::UndoRedoState::default())
         .manage(file_system::directory_size::DirectorySizeState::default())
         .manage(file_system::hashing::FileHashState::default())
+        .manage(file_system::git::GitStatusCache::default())
         .manage(deep_link::PendingDeepLink::default())
         .manage(tab_windows::TabWindowState::default())
         .manage(terminal::TerminalState::default())
