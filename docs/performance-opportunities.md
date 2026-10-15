@@ -1,8 +1,9 @@
 # 性能机会清单
 
-> **状态：清单**。第 1 条（名称搜索的忽略规则）、第 2 条（Git 徽标的全工作区扫描）
-> 与第 3 条（前端每 publish 的全量重扫）**已实施**，数字见各自那一节；
-> 第 4、5 条**待办**，都还没有动过。
+> **状态：清单**。第 1 条（名称搜索的忽略规则）、第 2 条（Git 徽标的全工作区扫描）、
+> 第 3 条（前端每 publish 的全量重扫）与第 4 条（内容搜索的每文件 `Searcher`）
+> **已实施**，数字见各自那一节；第 5 条（零散）仍待办，其中预览响应复制字节那条
+> 是一行的事。
 >
 > 这份文档记录的是「主干已经打磨过之后，还剩哪些量级够大的浪费」——
 > 不是猜测清单，每条的「证据」都指向可复现的 harness 或代码里的事实。
@@ -271,16 +272,68 @@ bun bench/frontend-scans/scan-cost.ts --entries 120000
 
 ---
 
-## 4. 内容搜索：每个文件都新建一个 `Searcher`
+## 4. 内容搜索：每个文件都新建一个 `Searcher` —— 已实施
 
-**位置**：`src-tauri/src/file_system/local/content_search.rs:115`。
+**位置（改前）**：`src-tauri/src/file_system/local/content_search.rs:115`。
 
 `builder.build_parallel().run(closure_factory)` 的 factory 是**每线程**调用一次，
 但 `SearcherBuilder::new()...build()` 写在了返回的闭包**内部**，于是每个被扫到的文件都
-重新分配一套 searcher（含内部 buffer）。把 searcher 提到 factory 里、按线程 `&mut` 复用即可，
-行为完全一致（`grep_searcher::Searcher` 本来就是设计成复用的）。
+重新分配一套 searcher。而 `Searcher` 持有的全是 buffer（读 buffer、行 buffer、转码
+scratch），每个文件的状态要么由每次搜索新建（装行号的 `Core`），要么在入口被 reset
+（`LineBufferReader::new` → `LineBuffer::clear`，二进制偏移一并清），所以复用本来就是
+这个类型的设计意图。
 
-**状态**：**未实测**，估计是「几千文件量级几十 ms」，改动很小。
+**改动**（本次）：searcher 提到 factory 里，按线程 `&mut` 复用（`search_path` 要
+`&mut self`，闭包是 `FnMut`，其余一行不动）。配置提到 `build_searcher()` 一处定义，
+为的是让 harness 量的是**出货的那份配置**而不是复刻。前端无涉。
+
+**实测**（`reports_the_cost_of_a_content_search`；改动前后各重建一次二进制，
+所以机器自己的漂移也在数字里，每格是 3 次运行的区间）：
+
+| 树 | 文件数（搜索真正访问的） | 改动前 | 改动后 |
+|---|---|---|---|
+| 本仓库 `node_modules/`（嵌套、真实内容、K:） | 13,008 | 67.9–73.7 ms | **53.3–53.5 ms（−24%）** |
+| `%TEMP%/dae-git-bench-20000`（200 层目录、1 字节文件、C:） | 20,020 | 614–693 ms | **543–569 ms（−15%）** |
+| `K:/dae-listing-bench/big`（单层目录、空文件、K:） | 35,803 | 391–707 ms（单次最低 154） | **123–147 ms（单次最低 119）** |
+| `K:/dae-listing-bench/huge`（单层、空文件、K:） | 120,000 | 4.44–4.61 s | 4.34–4.38 s（无差别） |
+
+**被删掉的那一笔可以直接量**：harness 里的一行 `build  N x build_searcher`（无任何 I/O，
+只构建并丢弃 searcher）是 **0.65 µs/文件**，线性得很准：13,008 → 9 ms，
+20,020 → 13 ms，35,803 → 22 ms，120,000 → 78 ms。
+
+几处值得写清楚的：
+
+- `node_modules` 那棵树是唯一真实的（嵌套目录 + 有内容的文件），也是改动后的运行都
+  **紧到 ±2 ms** 的：去掉每文件一次分配后，总耗时也不再抖。它测到的 24% 略大于纯
+  `build` 的 13%，多出来的部分是新分配出来的 buffer 在读取时还要付「第一次碰到」
+  （缺页 / 缓存冷）再释放——复用的那份是热的。
+- 120,000 那个单层目录里**测不到差别**（两种写法都是 ~4.4 s）。那不是这个改动的错，
+  而是那棵树每文件 ~36 µs 的成本几乎全在 walker/OS 上（同一棵树 35.8k 时只有 ~11 µs/文件，
+  3.35 倍的文件量付了 30 倍时间；两种写法都一样）。也就是说：**这个改动值多少，取决于
+  那棵树每文件的固定成本里有多少真是 searcher**。
+- 这个 harness 的收数比 §1/§2 的噪（Windows 上打开一个文件的成本逐次被拉伸），
+  所以上面每一格都给了区间，结论按「形状」读：0.65 µs/文件的分配消失了，在打开文件
+  便宜、文件又多的树上（`big`、`node_modules`）看得见，在 walker/OS 主导的树上看不见。
+- `files` 那一列是搜索真正访问的文件数，不是目录里有几个：`node_modules` 在 §1 里数到
+  的 72,106 个文件里只有 13,008 个进搜索——ripgrep 的 standard filters 会跳过隐藏项与
+  被忽略项，这是内容搜索一贯的行为。
+
+**测试**：新增 2 个。一个把**同一份 searcher** 依次用到两个文件上（长的在前，正是线
+程会走的顺序）并断言行号各自从 1 起、且回头再搜第一个文件仍然对——行号是复用最先
+会露出来的那处状态；另一个走出货入口（`search_file_contents_sync`）一次扫两个都命中
+的文件，钉住整条 walk 下的同一件事。原有 4 个内容搜索测试不变。
+
+**复现**：
+
+```bash
+cd src-tauri
+# 真实内容：本仓库的依赖树（查询用一个不会命中的词，否则 100 个命中就够截断）
+DAE_CONTENT_SEARCH_BENCH=K:/code/dae/node_modules DAE_CONTENT_SEARCH_BENCH_QUERY=zzqqxx_no_such_token \
+  cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_content_search
+# 或者任意一棵大树（空文件的最能放大每文件固定成本）
+DAE_CONTENT_SEARCH_BENCH=K:/dae-listing-bench/big \
+  cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_content_search
+```
 
 ---
 
@@ -307,6 +360,10 @@ DAE_GIT_BENCH=K:/code/dae \
 DAE_GIT_BENCH_FILES=20000 \
   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_git_status_scan
 
+# 内容搜索：整棵树的中位 ms + 每文件固定成本（§4）
+DAE_CONTENT_SEARCH_BENCH=K:/code/dae/node_modules DAE_CONTENT_SEARCH_BENCH_QUERY=zzqqxx_no_such_token \
+  cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_content_search
+
 # 前端全量扫描（§3）
 bun bench/frontend-scans/scan-cost.ts
 bun bench/frontend-scans/scan-cost.ts --entries 120000
@@ -324,4 +381,7 @@ bun bench/frontend-scans/scan-cost.ts --entries 120000
   「按视图缓存」这件事要重新设计（一次性扫描本来也不该缓存）。selection prune 的最差情况
   （选中的行靠后，或已被删）只有在视图能便宜地回答「行集没变」时才会消失——
   现在不能，因为排序是置换，`sharedRowCount` 只认前缀增长。
-- **第 4 条**：如果内容搜索改成常驻的索引/常驻 worker，这个分配问题自然消失。
+- **第 4 条**：如果内容搜索改成常驻的索引/常驻 worker，这个分配问题自然消失（那份
+  常驻 worker 本来就会持有一个 searcher）。另外，如果以后有人换了更快的磁盘或关掉实时
+  防护，`big` 那种单层空文件树的数字会变，但 `build  N x build_searcher` 那一行只跟树的
+  大小有关，可以当基准继续用。
