@@ -144,8 +144,12 @@ pub fn is_thumbnail_extension(path: &str) -> bool {
 
 /// A protocol response whose body is borrowed-or-owned bytes.
 ///
-/// The `Cow` is what lets one rendered resource answer several waiters: the
-/// first owns the bytes, a duplicate copies them.
+/// The `Cow` is what lets one rendered resource answer several waiters: one
+/// response owns the bytes, a duplicate copies them. Owning rather than
+/// borrowing is forced, not chosen — the responder takes `Cow<'static, [u8]>`,
+/// and the bytes a render produced live behind the `Arc` the caches share,
+/// which no `'static` borrow can reach. `render_loop` is where the copies are
+/// counted.
 type ProtocolResponse = tauri::http::Response<Cow<'static, [u8]>>;
 
 /// Renders allowed to run at once.
@@ -474,8 +478,22 @@ fn render_loop(receiver: &Mutex<Receiver<RenderJob>>) {
         }))
         .unwrap_or_else(|_| empty_response(500));
 
-        for waiter in INFLIGHT.drain(&job.query) {
+        // One copy of the bytes per response is the floor, not a choice: a
+        // render produces them behind the `Arc` the caches share (see
+        // [`ProtocolResponse`]), and the responder's `Cow<'static, [u8]>` body
+        // only reaches `'static` by owning. What is not the floor is paying
+        // that copy for the *last* waiter as well — so the last one takes the
+        // response itself, and only the waiters before it clone. A query with
+        // no duplicate — the common case, since [`InflightRenders::join`] only
+        // merges requests that overlap a render already under way — goes from
+        // two copies of the image to one.
+        let mut waiters = INFLIGHT.drain(&job.query);
+        let last = waiters.pop();
+        for waiter in waiters {
             waiter.respond(response.clone());
+        }
+        if let Some(last) = last {
+            last.respond(response);
         }
 
         // Between jobs is the only place a provider's callback into our
