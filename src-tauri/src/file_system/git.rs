@@ -455,6 +455,19 @@ fn branches(dir: &str) -> Result<Option<GitBranches>, FileSystemError> {
 
     let detached = repo.head_detached().unwrap_or(false);
     let branch = branch_name(&repo);
+    // HEAD 的符号目标，只读一次。
+    //
+    // 这里原来是每个本地分支调 `git_branch.is_head()`，而它内部每次都会
+    // `git_repository_head()` —— 也就是每个分支都重新读一遍 `.git/HEAD`、再查一次引用。
+    // 1000 个本地分支的仓库里，这一句让整个调用花 83 ms（实测，见
+    // `reports_the_cost_of_a_branch_listing`），而它每 400 ms 的目录变更窗口就重跑一次。
+    //
+    // 等价且只读一次的做法：当前分支就是“完整引用名等于 HEAD 符号目标”的那一个；
+    // 分离 HEAD 没有符号目标，于是没有任何本地分支算当前分支。
+    let head_target: Option<String> = repo
+        .find_reference("HEAD")
+        .ok()
+        .and_then(|head| head.symbolic_target().ok().flatten().map(str::to_string));
 
     let remotes: Vec<String> = safe_remotes(&repo);
 
@@ -468,7 +481,7 @@ fn branches(dir: &str) -> Result<Option<GitBranches>, FileSystemError> {
             let Some(name) = git_branch.name().ok().flatten() else {
                 continue;
             };
-            let is_current = git_branch.is_head();
+            let is_current = git_branch.get().name().ok() == head_target.as_deref();
             if is_current && let Ok(upstream) = git_branch.upstream() {
                 has_upstream = true;
                 if let (Some(local_oid), Some(upstream_oid)) =
@@ -1341,6 +1354,37 @@ mod tests {
     }
 
     #[test]
+    fn a_detached_head_leaves_no_branch_current() {
+        let temp = TempRepo::create("branches-detached");
+        let head_commit = commit_two_versions(&temp);
+
+        let repo = temp.repo();
+        repo.branch(
+            "dev",
+            &repo.find_commit(head_commit).expect("commit"),
+            false,
+        )
+        .expect("create branch");
+        repo.set_head_detached(head_commit).expect("detach");
+
+        let branches = branches(&temp.path_string())
+            .expect("branches call")
+            .expect("inside repo");
+        assert!(branches.detached);
+        // 分离 HEAD 下没有「当前分支」：这一条盯的是那个「HEAD 的符号目标 ==
+        // 分支引用名」的判定，它不能靠比较 HEAD 的短名来顶替。
+        assert!(
+            branches.local.iter().all(|branch| !branch.is_current),
+            "a detached HEAD leaves every branch unmarked: {:?}",
+            branches
+                .local
+                .iter()
+                .map(|branch| (branch.name.as_str(), branch.is_current))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn create_branch_with_and_without_checkout() {
         let temp = TempRepo::create("create-branch");
         commit_two_versions(&temp);
@@ -1833,6 +1877,225 @@ mod tests {
                 median_ms(&mut full),
             );
         }
+    }
+
+    /// Lists the refs alone, in the shape `branches` does it — the local and
+    /// remote iterations plus the `name()` decode — so the parts of the call
+    /// can be priced apart. Returns how many of each it found.
+    fn list_refs(repo: &Repository) -> (usize, usize) {
+        let mut local = 0;
+        let mut remote = 0;
+
+        if let Ok(iter) = repo.branches(Some(BranchType::Local)) {
+            for entry in iter.flatten() {
+                let (branch, _) = entry;
+                if branch.name().ok().flatten().is_some() {
+                    local += 1;
+                }
+            }
+        }
+        if let Ok(iter) = repo.branches(Some(BranchType::Remote)) {
+            for entry in iter.flatten() {
+                let (branch, _) = entry;
+                if branch.name().ok().flatten().is_some() {
+                    remote += 1;
+                }
+            }
+        }
+
+        (local, remote)
+    }
+
+    /// The ahead/behind walk for the current branch's upstream: the one part of
+    /// `branches` that follows the commit graph rather than the refs, so the one
+    /// part whose cost grows with history instead of with the ref list.
+    /// `None` when the branch has no upstream, which is the whole call for a
+    /// repository that has none.
+    fn ahead_behind(repo: &Repository) -> Option<(usize, usize)> {
+        let head = repo.head().ok()?;
+        let name = head.shorthand().ok()?.to_string();
+        let local = repo.find_branch(&name, BranchType::Local).ok()?;
+        let upstream = local.upstream().ok()?;
+        let (ahead, behind) = repo
+            .graph_ahead_behind(local.get().target()?, upstream.get().target()?)
+            .ok()?;
+        Some((ahead, behind))
+    }
+
+    /// Path of the synthetic ref-heavy worktree, built on the first run and reused
+    /// afterwards: one empty commit, `branches` local branches and four times as
+    /// many tags, all packed into `.git/packed-refs` — the steady state of a
+    /// repository people fetch into. The ref count is in the directory name, so
+    /// different sizes can coexist (and be deleted) by hand.
+    fn synthetic_ref_worktree(branches: usize) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("dae-git-bench-refs-{branches}"));
+        if path.join(".git").join("packed-refs").is_file() {
+            println!("reused the worktree at {}", path.display());
+            return path;
+        }
+
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).expect("create temp dir");
+        let repo = Repository::init_opts(
+            &path,
+            git2::RepositoryInitOptions::new().initial_head("main"),
+        )
+        .expect("init repo");
+        repo.config()
+            .expect("repo config")
+            .set_str("user.name", "Test")
+            .expect("set user.name");
+        repo.config()
+            .expect("repo config")
+            .set_str("user.email", "test@example.com")
+            .expect("set user.email");
+        commit_all(&repo, "bench");
+
+        let target = repo.head().expect("head").target().expect("target");
+        let mut packed = String::from("# pack-refs with: peeled fully-peeled sorted \n");
+        for index in 0..branches * 4 {
+            packed.push_str(&format!("{target} refs/tags/t{index:05}\n"));
+        }
+        for index in 0..branches {
+            packed.push_str(&format!("{target} refs/heads/b{index:05}\n"));
+        }
+        fs::write(path.join(".git").join("packed-refs"), packed).expect("write packed-refs");
+
+        path
+    }
+
+    /// Prints what the branch query costs: `branches` is what
+    /// `list_git_branches` runs, and the frontend re-runs it out of the *same*
+    /// 400 ms directory-change window as the badges (`git-status.tsx`), so what
+    /// matters is what one event costs — not what one directory costs.
+    ///
+    /// ```bash
+    /// cd src-tauri
+    /// DAE_GIT_BENCH=K:/code/dae \
+    ///   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_branch_listing
+    /// # Or the synthetic worktree of `DAE_GIT_BENCH_FILES` tracked files
+    /// DAE_GIT_BENCH_FILES=20000 \
+    ///   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_branch_listing
+    /// # Or the synthetic ref-heavy repository of `DAE_GIT_BENCH_REFS` branches
+    /// # (plus four times as many tags, packed) — the shape where "listing the
+    /// # refs" is not free.
+    /// DAE_GIT_BENCH_REFS=1000 \
+    ///   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_branch_listing
+    /// ```
+    ///
+    /// The three parts are printed beside the whole call — opening the
+    /// repository, listing the refs, and the ahead/behind walk — because they
+    /// scale with different things, and one whole status scan for the same
+    /// repository is printed with them: `git-status.tsx` claimed the two were
+    /// "同量级" when it put them in one window, and this is where that either
+    /// holds or does not. The ref-heavy shape is the one worth re-running after
+    /// touching the local-branch loop: the shipped `is_head()` there cost 83 ms
+    /// at 1,000 branches before the HEAD target was read once instead.
+    ///
+    /// Compare this test against itself, before and after a change; absolute
+    /// milliseconds are per-machine.
+    #[test]
+    #[ignore = "prints measurements for DAE_GIT_BENCH (a repository), DAE_GIT_BENCH_FILES or DAE_GIT_BENCH_REFS"]
+    fn reports_the_cost_of_a_branch_listing() {
+        let explicit = std::env::var_os("DAE_GIT_BENCH");
+        let root = match &explicit {
+            Some(dir) => PathBuf::from(dir),
+            None => {
+                let refs = std::env::var("DAE_GIT_BENCH_REFS")
+                    .ok()
+                    .and_then(|value| value.parse::<usize>().ok());
+                if let Some(branches) = refs {
+                    let started = std::time::Instant::now();
+                    let path = synthetic_ref_worktree(branches);
+                    println!(
+                        "synthetic {branches} branches + {} tags, ready in {:.1} s",
+                        branches * 4,
+                        started.elapsed().as_secs_f64()
+                    );
+                    path
+                } else {
+                    let files = std::env::var("DAE_GIT_BENCH_FILES")
+                        .ok()
+                        .and_then(|value| value.parse().ok())
+                        .unwrap_or(20_000);
+                    let started = std::time::Instant::now();
+                    let path = synthetic_worktree(files);
+                    println!(
+                        "synthetic {files} tracked files, ready in {:.1} s",
+                        started.elapsed().as_secs_f64()
+                    );
+                    path
+                }
+            }
+        };
+
+        let dir = path_to_string(&root);
+        let repo = Repository::discover(&root).expect("discover a worktree");
+        let workdir = path_to_string(repo.workdir().expect("workdir"));
+        let (local, remote) = list_refs(&repo);
+
+        println!("worktree  {}", workdir.trim_end_matches(['/', '\\']));
+        println!("tracked   {}", repo.index().expect("index").len());
+        println!("refs      {local} local / {remote} remote");
+        match ahead_behind(&repo) {
+            Some((ahead, behind)) => println!("upstream  ahead {ahead} / behind {behind}"),
+            None => println!("upstream  none"),
+        }
+
+        let mut samples = time_runs(5, || {
+            branches(&dir).expect("branches");
+        });
+        println!(
+            "listing   {:>8.2} ms  (branches, the whole call)",
+            median_ms(&mut samples)
+        );
+
+        let mut samples = time_runs(5, || {
+            let repo = discover_worktree(&dir)
+                .expect("discover")
+                .expect("worktree");
+            branch_name(&repo);
+        });
+        println!(
+            "  open    {:>8.2} ms  (discover + branch name)",
+            median_ms(&mut samples)
+        );
+
+        let repo = discover_worktree(&dir)
+            .expect("discover")
+            .expect("worktree");
+        let mut samples = time_runs(5, || {
+            list_refs(&repo);
+        });
+        println!(
+            "  refs    {:>8.2} ms  ({local} local + {remote} remote, names decoded)",
+            median_ms(&mut samples)
+        );
+
+        let upstream = ahead_behind(&repo).is_some();
+        let mut samples = time_runs(5, || {
+            ahead_behind(&repo);
+        });
+        println!(
+            "  walk    {:>8.2} ms  (graph_ahead_behind{})",
+            median_ms(&mut samples),
+            if upstream {
+                ""
+            } else {
+                ", no upstream to walk"
+            }
+        );
+
+        // One whole-worktree scan, which is what the badge beside the branch
+        // menu pays per directory (through `GitStatusCache`, so once per 5 s
+        // window per worktree).
+        let mut samples = time_runs(5, || {
+            git_status(&dir).expect("status");
+        });
+        println!(
+            "status    {:>8.2} ms  (one whole-worktree scan, the badge)",
+            median_ms(&mut samples)
+        );
     }
 
     #[test]
