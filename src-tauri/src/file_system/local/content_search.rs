@@ -1,3 +1,4 @@
+use super::ignores;
 use crate::file_system::error::FileSystemError;
 use crate::file_system::types::{
     ContentSearchFile, ContentSearchMatch, ContentSearchResponse, canonical_path, path_to_string,
@@ -5,7 +6,6 @@ use crate::file_system::types::{
 use grep_matcher::Matcher as _;
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::{BinaryDetection, SearcherBuilder};
-use ignore::overrides::OverrideBuilder;
 use ignore::types::TypesBuilder;
 use ignore::{WalkBuilder, WalkState};
 use std::fs;
@@ -21,10 +21,6 @@ const MAX_MATCHED_FILES: usize = 100;
 const MAX_MATCHES_PER_FILE: usize = 50;
 const MAX_RANGES_PER_LINE: usize = 20;
 const MAX_LINE_CHARS: usize = 320;
-
-/// Always-skipped directories, mirroring ripgrep's practical defaults for a
-/// GUI audience even when the project has no `.gitignore` entries for them.
-const ALWAYS_IGNORED: [&str; 4] = ["!.git", "!**/.git", "!**/node_modules", "!**/target"];
 
 pub struct ContentSearchParams<'a> {
     pub query: &'a str,
@@ -76,17 +72,7 @@ pub fn search_file_contents_sync(
 
     let mut builder = WalkBuilder::new(&root);
     builder.standard_filters(true).follow_links(false);
-
-    let mut overrides = OverrideBuilder::new(&root);
-    for pattern in ALWAYS_IGNORED {
-        overrides.add(pattern).map_err(|error| {
-            FileSystemError::Internal(format!("fs.ignore_rule_register_failed: {error}"))
-        })?;
-    }
-    builder.overrides(overrides.build().map_err(|error| {
-        FileSystemError::Internal(format!("fs.ignore_rule_build_failed: {error}"))
-    })?);
-
+    builder.overrides(ignores::default_overrides(&root)?);
     if let Some(types) = build_file_types(params.file_filter)? {
         builder.types(types);
     }
