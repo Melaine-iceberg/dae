@@ -430,7 +430,7 @@ mod tests {
     /// canvas, and only the CSS seam learns the new name.
     #[test]
     fn every_boot_script_literal_is_one_the_splash_whitelists() {
-        let whitelisted = include_str!("../../../index.html");
+        let whitelisted = include_str!("../../index.html");
         for material in [
             Material::Mica,
             Material::Acrylic,
