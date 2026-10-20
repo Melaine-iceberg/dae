@@ -378,7 +378,7 @@ export function PropertiesDialog() {
 
   return (
     <Dialog onOpenChange={(open) => !open && close()} open={target !== null}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("explorer:properties.title")}</DialogTitle>
           <DialogDescription>
@@ -417,26 +417,24 @@ export function PropertiesDialog() {
 
         {target && properties && draft && (
           <div className="flex flex-col gap-3" hidden={!showGeneral}>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-body">
-              <dt className="text-muted-foreground">{t("explorer:properties.location")}</dt>
-              <dd className="truncate" title={parentPath(properties.path)}>
-                {parentPath(properties.path)}
-              </dd>
-              <dt className="text-muted-foreground">{t("explorer:properties.size")}</dt>
-              <dd>{sizeValue}</dd>
-              <dt className="text-muted-foreground">{t("explorer:properties.modified")}</dt>
-              <dd>{formatTimestamp(properties.modifiedAt)}</dd>
-              <dt className="text-muted-foreground">{t("explorer:properties.created")}</dt>
-              <dd>{formatTimestamp(properties.createdAt)}</dd>
-              <dt className="text-muted-foreground">{t("explorer:properties.accessed")}</dt>
-              <dd>{formatTimestamp(properties.accessedAt)}</dd>
+            <dl>
+              <PropertyLine label={t("explorer:properties.location")}>
+                <span title={parentPath(properties.path)}>{parentPath(properties.path)}</span>
+              </PropertyLine>
+              <PropertyLine label={t("explorer:properties.size")}>{sizeValue}</PropertyLine>
+              <PropertyLine label={t("explorer:properties.modified")}>
+                {formatTimestamp(properties.modifiedAt)}
+              </PropertyLine>
+              <PropertyLine label={t("explorer:properties.created")}>
+                {formatTimestamp(properties.createdAt)}
+              </PropertyLine>
+              <PropertyLine label={t("explorer:properties.accessed")}>
+                {formatTimestamp(properties.accessedAt)}
+              </PropertyLine>
               {properties.target && (
-                <>
-                  <dt className="text-muted-foreground">{t("explorer:properties.target")}</dt>
-                  <dd className="truncate" title={properties.target}>
-                    {properties.target}
-                  </dd>
-                </>
+                <PropertyLine label={t("explorer:properties.target")}>
+                  <span title={properties.target}>{properties.target}</span>
+                </PropertyLine>
               )}
             </dl>
 
@@ -504,6 +502,20 @@ export function PropertiesDialog() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** The reference `.sheet .row-line`: a label on the left in the muted ink, the
+ *  value right-aligned beside it, 9px of air above and below, and a
+ *  half-strength hairline between rows. The list used to be a tight two-column
+ *  grid at body size with no rules at all, which read as a paragraph of
+ *  label/value pairs rather than as five separate facts. */
+function PropertyLine({ children, label }: { children: React.ReactNode; label: string }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-border-soft py-[9px] text-[0.78125rem]">
+      <dt className="shrink-0 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 truncate text-right text-foreground/85">{children}</dd>
+    </div>
   );
 }
 
@@ -694,7 +706,7 @@ function PropertiesTabButton({
     <button
       aria-selected={active}
       className={cn(
-        "relative -mb-px rounded-sm px-3 py-1.5 text-body transition-colors duration-fast ease-standard focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
+        "relative -mb-px rounded-sm px-3 py-1.5 text-body transition-colors duration-fast ease-standard focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none",
         active
           ? "font-medium text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary"
           : "text-muted-foreground hover:text-foreground",

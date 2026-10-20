@@ -1,148 +1,154 @@
-# dae — Aura
+# dae — 示例语言（Raycast 对齐版）
 
-> **⚠️ 方向待改写（2026-10-20）.** 当前代码已按
-> [`redesign/reference-raycast.html`](redesign/reference-raycast.html) 对齐，
-> 与本文的几处数字**相反**（外壳拍平、44/54/34/232、13px 行文字、8px 圆角基数）。
-> 差异清单见 [`redesign/handoff.md`](redesign/handoff.md) §3。
-> 本文暂作历史保留，等示例对齐收尾后整篇重写。
+> 上一版：`design-v2.md`（Atlas）与 `design-v3.md`（Aura）都是历史。当前窗口按
+> [`redesign/reference-raycast.html`](redesign/reference-raycast.html) 的 token 与
+> 组件规则对齐；本文记录**代码里现在是什么**，示例是仲裁者，本文只是它的说明书。
+> 每轮对齐的进度与偏差见 [`redesign/handoff.md`](redesign/handoff.md)。
 
-The visual and interaction language the shell ships today. It replaces the
-Atlas language described in [`design-v2.md`](design-v2.md); that document is
-kept only as history.
+一句话：**窗口是一块仪表面板，不是一叠纸。** 外壳与内容同平面，靠极细的线、四档
+墨色和一条强调色分层级；行、卡片、菜单都是同一种"平平的、几乎看不见底"的东西。
 
-Aura has one idea behind every decision: **a file manager is a quiet room for
-content**. Chrome recedes, the listing carries the colour, and every state is
-legible without an outline.
+## 一、平面与线
 
-## The two planes
+只有两层，而且第二层不投大影子：
 
-The window is drawn as **canvas** and **sheet**, not as three nested rungs.
-
-| role | token | what it is |
+| 名字 | token | 是什么 |
 | --- | --- | --- |
-| canvas | `--background` / `--chrome` | the window itself: the tab strip, the navigation rail, the gutters |
-| sheet | `--card` | the one floating plane the content lives on (`.content-panel`) |
-| float | `--popover` | menus, the command palette, dialogs, the action island |
+| canvas | `--background` | 窗口本身：标签条、侧栏、列表所在的平面 |
+| card | `--card` | 菜单、对话框、命令面板、检查器的"纸" |
 
-The rail is **not** a second panel. It sits directly on the canvas and is
-separated from the sheet by 10px of canvas plus one soft shadow — no hairline,
-no second fill. That single decision is what makes the window read as an app
-rather than as a grid of boxes.
+- **外壳拍平**：铁轨（rail）与主列同平面，没有 `.content-panel` 底板、没有 10px
+  沟槽、没有 20px 投影。标签条与工具栏直接贴在窗口上。
+- **线只有两档**：`--border`（6% 前景）用于容器，`--border-soft`（4%）用于同一容器
+  内的行分隔。任何"卡片描边 + 行描边"同强度的做法都会把列表变成表格。
+- **墨色四档**：`--foreground` / body / `--muted-foreground` / `--meta`。第四档
+  （`text-meta`，暗色 `#6a6b6c`）专门给占位符、键帽、行尾计数、检查器里的字段名。
+- **强调色是一个接缝**：`--primary` 由系统强调色驱动（`src/lib/system-accent.ts`），
+  选中态、焦点环、主按钮随之整窗变色。文件夹黄是窗口里唯一的暖色物体，语义色
+  （success / warning / info / destructive）永远是语义色，不跟随强调色。
 
-Depth is a 20px shadow under the sheet at 12% and a 1px light bevel along its
-top edge. Nothing else floats; a menu lifts with one wider shadow.
+## 二、字阶
 
-## Type
+`App.css` 的 `@theme inline` 是唯一来源，六个台阶 + 两个不进阶梯的尺寸：
 
-Six steps, and nothing outside them:
-
-| step | size | job |
+| step | size | 用在哪 |
 | --- | --- | --- |
-| `title` | 22px / 620 | dialog and section titles |
-| `lead` | 17px | the palette input |
-| `body` | 14.5px | rows, controls, the workhorse |
-| `caption` | 13px | secondary metadata, descriptions |
-| `micro` | 12px | dense chrome, timestamps, counts |
-| `nano` | 11px | keycaps and badge letters |
+| `title` | 22 / 620 | 对象页的页面标题、对话框标题（对话框实走 18px，见下） |
+| `lead` | 17 | 命令面板输入框 |
+| `body` | 14.5 | 控件、按钮、正文 |
+| `caption` | 13 | **列表行文字**、菜单项、说明 |
+| `micro` | 12 | 密集 chrome、时间戳、计数 |
+| `label` | 12 / 520 | 表单标签 |
+| `nano` | 11 | 键帽、徽章字母、大写分组标题 |
+| `--` | 10.5 | 检查器里的 mono 副行（`pv-sub`） |
+| `--` | 12.5 | 空状态段落、对话框说明、菜单项（示例 `.ctx button`） |
 
-Body moved up from 13px. A listing is read at arm's length, and the previous
-ramp made every row look like metadata. Hierarchy is carried by weight and
-tracking rather than by a second size: only `title` and the page heading (28px,
-set at the call site) carry their own weight and negative tracking.
+规则：
+- **行文字 13px**（`text-caption`），比 body 低一档——列表是扫描对象，不是正文。
+- **分组标题**是 11px、600、大写、+0.08em（列头 +0.07em），不是小写靠字重。
+- **对话框标题 18px / 600**（示例 `.sheet h2`），页面标题才是 22px 及以上。
+- 数字（大小、时间、计数）一律 mono + `tabular-nums`。
 
-Page headings on the workspace surfaces are 28px/600 at `-0.03em`; they are the
-one place a display step is spent, because those surfaces are documents with a
-name rather than a tool reporting state.
+## 三、形状
 
-## Shape
-
-A 12px base radius, four derived steps, and one plane step:
+8px 基数，六级台阶，一个平面步：
 
 ```
-8   inline code, keycaps
-9   buttons and icon plates
-12  inputs, list rows, chips
-16  menus, quick-access tiles, dialogs, the command palette
-18  the content sheet
+4   keycap
+6   menu row / list row（--radius-md）
+8   inputs / chips / buttons 附近的控件（--radius-lg）
+12  menus / palette / preview well（--radius-xl）
+16  dialogs / content panel（--radius-panel）
+999 capsule：状态点、磁盘余量条
 ```
 
-A capsule is reserved for two shapes that genuinely have no corners: status
-dots and the disk capacity bar.
+胶囊是例外，只给"真的没有角"的两三个东西；其余一律方角。
 
-## Space
+## 四、尺度
 
-- Tab strip 50px, toolbar 56px.
-- List rows 38px (30 / 38 / 48 across the three densities).
-- Navigation rows and menu items 32–36px.
-- 10px gutter between the rail and the sheet; 10px of canvas around the sheet.
+| 项 | 值 |
+| --- | --- |
+| 标签条 | 44px |
+| 工具栏 | 54px |
+| 状态条 | 26px |
+| 侧栏 | 232px（行 30px） |
+| 检查器 | 300px |
+| 列表行 | 28 / **34** / 44（紧凑 / 舒适 / 宽敞） |
+| 列表表头 | 30px |
+| 菜单行 | 30px，菜单最小宽 220px，内边距 5px |
+| 命令面板 | 660px，`top: 12vh` |
+| 对话框 | 440px，内边距 20px |
+| 终端抽屉 | 默认 188px（可拖拽，下限 140px） |
+| Miller 列 | 240px |
 
-## State vocabulary
+## 五、状态词汇
 
-Selection is the accent, never a grey:
+- **选中**：暗色 15% 填充 + 45% 描边的强调色（`--selection` / `--selection-edge`）。
+  不看描边也认得出"被选中"，看描边能一眼和 hover 区分。
+- **hover**：一层中性墨（`.state-layer`，7%）或 6% 前景 wash；只改底色，不改字重。
+- **当前所在**：`.row-active`，强调色 11–13% 的底板 + 强调色字。
+- **焦点**：两档，只有两档。
+  - 控件（输入、按钮、卡片）：`focus-visible:ring-[3px] ring-ring/35`（示例
+    `--focus-ring: 0 0 0 3px hsla(202 100% 67% / .35)`）。
+  - 行（列表行、网格卡、列项）：`ring-1 ring-ring ring-inset`——虚拟滚动会裁掉外环。
+- **拖放目标**：9% 强调色 wash + 2px 内描边（`.drop-target`）。
+- **禁用**：50% 不透明度，不换色。
 
-- **Selection** — `--selection`, the accent at 15% light / 26% dark, plus a
-  1px accent edge (`--selection-edge`). It reads as *chosen* rather than as
-  hovered, and it follows the OS accent because the accent is a seam
-  (`--system-accent`), not a constant.
-- **Hover** — one neutral step (`--accent`), 5% current-colour wash, 150ms.
-- **Current place** — `.row-active`: an 11% accent plate with accent ink. Used
-  by the rail's active row, the palette's active result and the settings nav.
-- **Focus** — a 2px ring at 40% on controls, a 1px inset hairline on rows
-  (an outer ring would be clipped by the virtual scroller).
-- **Drop target** — a 9% accent wash with a 2px inset accent ring.
+没有任何东西在 hover 时缩放；按下只改填充（按钮另有一个 0.98 的压缩，仅此一处）。
 
-Nothing scales on hover. Buttons compress to 0.98 on press; a plate that
-bounces is a component-library demo, not desktop chrome.
+## 六、动效
 
-## Motion
+两条曲线、三个时钟，没有一个弹性回弹：
 
-Two curves and three clocks:
+- `--ease-standard`（in-out）——颜色、填充、墨色。
+- `--ease-spring-fast`（out）——"落到位置"的东西：标签底板、箭头、按下的键。
+- 100 / 150 / 200ms；退出用 `--ease-standard-accelerate`。
+- 浮层入场统一 `animate-float-in`（透明 + 3px 上浮 + 0.985 缩放，150ms）。
+- 骨架屏保留 pulse；示例里的 `.skel` 是静止的，但静止灰块在慢盘上读起来像渲染失败。
 
-- `--ease-standard` (in-out quad) for state changes: colour, fill, ink.
-- `--ease-spring-fast` (out) for things that settle into place: the tab plate,
-  a chevron, a pressed key.
-- 100 / 150 / 200 ms. Exits use `--ease-standard-accelerate`.
+## 七、各处表面
 
-The tab plate travels between tabs in 200ms on the settle curve. Floating
-layers fade in 150ms with a 3px rise; nothing slides from off-screen.
+- **标签条** —— 裸标签贴在 canvas 上，当前标签坐在 `.tab-pill` 上（card 填充 + 顶部
+  8% 内高光 + 8% 外环，无接触阴影），底板在标签之间滑动。
+- **侧栏** —— 232px / 行 30px / 圆角 6px / 13px 字；分组标题 11px 600 大写 +0.08em；
+  磁盘卡带 3px 余量条；行尾有 git 点与计数时用 `--meta`。
+- **工具栏** —— 一行：铁轨开关、导航簇（无底板）、路径胶囊（`h-8` + 1px 内线，
+  hover 0.10 线 / 聚焦 35% 环）、搜索胶囊、收藏/分屏/git、视图簇（`.seg` 凹槽）、
+  面板开关。窄窗让位顺序：收藏 1080 → 分屏 900 → git 1180。
+- **搜索胶囊** —— 空闲 176px，聚焦 256px，`<1360px` 折成放大器图标。
+- **列表** —— 30px 表头（11px 大写 +0.07em，hover 只变字色），行 34px、6px 圆角、
+  13px 字、mono 12px 的修改/大小列、`row-separator` 行线（选中行去掉）。
+- **网格** —— 卡片 12px 圆角、`bg-card/45` + 1px 内线。
+- **空状态 / 骨架屏** —— 空状态：52×52 的凹槽（12px 圆角、前景 5%）、15px/600 标题、
+  12.5px / 1.6 / 34ch 段落，**一个**动作按钮（空目录＝新建文件夹，无结果＝清除筛选）。
+  骨架屏：4% 前景 wash、6px 圆角；列表镜像真实列轨道，网格/分栏用 26px 横条。
+- **检查器** —— 300px，`padding 16/16/48`，`信息` 大写小标 + 关闭键；`.pv-head`
+  （26px 字形 + 14px/600 名字 + mono 10.5px 副行）；预览井 12px 圆角 + 内线 + canvas 底；
+  元数据行 74px 标签列 + 11.5px 值 + `--border-soft` 行线；动作纵向 `gap 6px` 全宽。
+- **菜单** —— 最小 220px、内边距 5px、行 30px、12.5px、图标 gap 10px、分隔线
+  `5px 6px`、危险项 16% 红底。底色是 card，不是 popover。
+- **对话框** —— 440px、`padding 20px`、`h2` 18px、行线 9px 上下 + `--border-soft`、
+  底部按钮右对齐且**没有**分隔线；遮罩 `--scrim` + 3px 模糊。
+- **动作岛** —— 胶囊 + 毛玻璃（`bg-background/62`、blur 18、saturate 150、内高光、大投影）。
+- **终端抽屉** —— 顶部 30px 头（22px 会话 chip）+ 终端主体；`.term-body` mono 12px /
+  1.75、内边距 10/16；xterm 背景是 canvas 70% + card 30% 的混合，比卡片低一档。
+- **键帽** —— `.kbd-cap`：19px 高 / 4px 圆角 / mono 11px 500，两层边缘（顶部 9% 内高光、
+  下方 1.5px 接触影、1px 7% 外环），面是 card→canvas 的浅渐变。
+- **状态条** —— 26px：模式点（已就绪/加载中/搜索中）、项目数、已选数、磁盘余量。
 
-## Surfaces at a glance
+## 八、这套语言拒绝的东西
 
-- **Tab strip** — bare labels on the canvas; the current tab sits on a raised
-  plate (`.tab-pill`) that slides. No dividers between tabs.
-- **Rail** — 264px, 36px rows, 11px section captions, platform-toned place
-  icons, one accent-tinted row for where you are.
-- **Toolbar** — one row: rail toggle, travel cluster, path field (the spine),
-  search capsule, folder actions, view/filter cluster, panel toggles. Fields
-  are full-strength `--secondary` capsules; focus turns them into paper with a
-  ring.
-- **Listing** — 38px rows on a 10px radius, 18px file-type glyphs, full-width
-  columns with a sticky 36px header. Selected rows take the accent wash and a
-  hairline edge; hover is a neutral wash.
-- **Empty states** — one glyph on a recessed plate, one title, one line, one
-  affordance.
-- **Action island** — the selection's contextual bar floats 20px above the
-  bottom edge as a blurred, shadowed capsule.
-- **Object pages** — Overview, Recents, Favorites, Trash and Spaces share one
-  page shell: a 28px heading with a one-line subtitle, a search affordance
-  bound to Mod+K, then sections of quick-access tiles and rows at 1152px.
+- 卡片 + 沟槽式的"窗口中套窗口"。上一版（Aura）的 sheet 已经删掉。
+- 用边框表达选中。填充就是状态，描边只是让它在多选里可分辨。
+- 两种以上强度的焦点环（历史上曾有 /25、/40、/50 三档，最该看清的输入框反而最淡）。
+- 内容上的玻璃效果：只有动作岛是半透明的，因为它浮在列表上。
+- 第二个强调色。文件夹黄是唯一的暖色物体。
+- 缩放式反馈（除按钮 0.98）。
 
-## What this language refuses
+## 九、Token 在哪里
 
-- Hairlines as the primary separator. Tones and space separate; a line is used
-  only where a scroll region needs an edge.
-- A second accent. Folder yellow is the only warm object on screen; semantic
-  hues (success, warning, info, destructive) stay semantic and never follow
-  the OS accent.
-- Borders on selection. The fill is the state; an outline on top makes a row
-  look like a focused control.
-- Glass on content. Only the action island is translucent, and only because it
-  floats over the listing rather than holding it.
+`src/App.css`：`@theme inline` 存字阶/形状/动效，`:root` 与 `.dark` 存调色板，文件
+末尾的组件层存结构性处理（`.tab-pill` / `.row-active` / `.row-separator` /
+`.drop-target` / `.kbd-cap` / `.inspector` / `.preview-body` / `.note`）。
 
-## Tokens
-
-`src/App.css` is the source of truth: the `:root` and `.dark` blocks carry the
-palette (and are read back by the boot-splash plugin in `vite.config.ts`), the
-`@theme inline` block carries the type, shape and motion scales, and the Aura
-layer at the end of the file restates the three structural treatments
-(`.content-panel`, `.tab-pill`, `.row-active`).
+示例里存在、代码里还没有的：`.tag`（标签）与 `.switch`（开关）；两者都还没有对应功能。

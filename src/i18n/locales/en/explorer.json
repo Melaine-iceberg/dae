@@ -171,10 +171,12 @@
   "list": {
     "ariaLabel": "File list",
     "loadingAriaLabel": "Loading file list",
-    "emptyFolder": "This folder is empty.",
-    "emptyHint": "Run a command or jump to another location",
+    "emptyFolder": "This folder is empty",
+    "emptyHint": "Drop files here, or create a folder with the button below",
     "searchError": "Search did not finish: {{error}}",
     "searchEmpty": "No items found with a name containing “{{query}}”",
+    "searchEmptyHint": "Try another keyword, or press Esc to clear the filter",
+    "clearFilter": "Clear filter",
     "currentFolder": "Current folder",
     "bytesTitle": "{{size}} bytes"
   },
@@ -559,6 +561,7 @@
     "operationFailed": "Git operation failed"
   },
   "preview": {
+    "infoCaption": "Info",
     "ariaLabel": "Preview",
     "collapsePanel": "Collapse preview panel",
     "collapsePanelShortcut": "Collapse preview panel (Space)",
@@ -566,12 +569,14 @@
     "selectHint": "Select a file in the list to preview it",
     "multiSelection": "{{number}} items selected",
     "totalSize": "Files total",
+    "totalLine": "{{size}} total",
     "foldersExcluded": "Folder contents are not included",
     "folderCount_one": "{{count}} folder",
     "folderCount_other": "{{count}} folders",
     "fileCount_one": "{{count}} file",
     "fileCount_other": "{{count}} files",
     "latestModified": "Last modified",
+    "contents": "Contents",
     "multipleLocations": "Multiple locations",
     "truncatedHint": "Content is long; showing only the first {{size}} KB",
     "tooLarge": "File is larger than {{size}} MB",

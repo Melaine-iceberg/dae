@@ -268,7 +268,7 @@ export function BulkRenameDialog({
               <button
                 aria-selected={options.mode === mode}
                 className={cn(
-                  "relative -mb-px rounded-sm px-3 py-1.5 text-body transition-colors duration-fast ease-standard focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
+                  "relative -mb-px rounded-sm px-3 py-1.5 text-body transition-colors duration-fast ease-standard focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50",
                   options.mode === mode
                     ? "font-medium text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary"
                     : "text-muted-foreground hover:text-foreground",

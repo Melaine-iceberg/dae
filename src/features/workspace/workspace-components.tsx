@@ -101,7 +101,7 @@ export function LocationCard({
         "group relative flex h-[4.75rem] w-full items-center gap-3.5 overflow-hidden rounded-2xl border border-border/60 bg-secondary/70 px-3.5 text-left",
         "transition-[background-color,border-color,box-shadow] duration-normal ease-standard",
         "hover:border-primary/30 hover:bg-secondary hover:shadow-ambient-xs",
-        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        "focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none",
       )}
       onClick={onClick}
       title={description ? `${title} · ${description}` : title}

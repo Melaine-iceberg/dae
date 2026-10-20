@@ -4,16 +4,22 @@ import { cn } from "@/lib/utils";
 
 /**
  * Keycap chip: a small, quiet key hint used in the command bar, menus and
- * footers. Sits inline with 13px UI text; the hairline face on a recessed
- * fill reads as a key rather than as body text — hence `text-nano` on the
- * micro 4px radius rather than a control radius. Sans, not mono: at 10px a
- * monospaced face reads heavier than the label beside it.
+ * footers.
+ *
+ * The cap is the reference's `.kbd` — 19px on a 4px corner, mono 11px at
+ * medium weight, a two-tone face (a light step over a dark one) and a double
+ * edge: an inset hairline of the text's own ink along the top, a 1.5px contact
+ * shadow below, and a 1px ring for the key's outline. Three cues, all of them
+ * at 7–9%: a keycap on a matte panel is a 1px-tall object, and anything
+ * heavier turns a shortcut hint into a button. `.kbd-cap` in App.css carries
+ * the values (both schemes), so a call site that needs a smaller key overrides
+ * height and type and keeps the treatment.
  */
 function Kbd({ className, ...props }: ComponentProps<"kbd">) {
   return (
     <kbd
       className={cn(
-        "inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-xs border border-border bg-muted px-1 font-sans text-nano font-medium text-muted-foreground tabular-nums select-none",
+        "kbd-cap inline-flex shrink-0 items-center justify-center select-none",
         className,
       )}
       {...props}

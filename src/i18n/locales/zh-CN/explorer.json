@@ -171,10 +171,12 @@
   "list": {
     "ariaLabel": "文件列表",
     "loadingAriaLabel": "正在加载文件列表",
-    "emptyFolder": "此文件夹为空。",
-    "emptyHint": "运行命令或跳转到其它位置",
+    "emptyFolder": "此文件夹为空",
+    "emptyHint": "拖入文件，或用下方按钮新建一个文件夹",
     "searchError": "搜索未完成：{{error}}",
     "searchEmpty": "未找到名称包含“{{query}}”的项目",
+    "searchEmptyHint": "换个关键词，或按 Esc 清除筛选",
+    "clearFilter": "清除筛选",
     "currentFolder": "当前目录",
     "bytesTitle": "{{size}} 字节"
   },
@@ -559,6 +561,7 @@
     "operationFailed": "Git 操作失败"
   },
   "preview": {
+    "infoCaption": "信息",
     "ariaLabel": "预览",
     "collapsePanel": "收起预览面板",
     "collapsePanelShortcut": "收起预览面板 (Space)",
@@ -566,12 +569,14 @@
     "selectHint": "在列表中选择一个文件以预览",
     "multiSelection": "已选 {{number}} 项",
     "totalSize": "文件合计",
+    "totalLine": "合计 {{size}}",
     "foldersExcluded": "文件夹大小未计入",
     "folderCount_one": "{{count}} 个文件夹",
     "folderCount_other": "{{count}} 个文件夹",
     "fileCount_one": "{{count}} 个文件",
     "fileCount_other": "{{count}} 个文件",
     "latestModified": "最近修改",
+    "contents": "内容",
     "multipleLocations": "多个位置",
     "truncatedHint": "内容较长，仅显示前 {{size}} KB",
     "tooLarge": "文件超过 {{size}} MB",

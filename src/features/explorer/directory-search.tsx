@@ -170,9 +170,13 @@ export function DirectorySearch({
       // caret is in. Below 1360px it folds to its magnifier — a search box
       // nobody is using must never be the reason the path is unreadable — and
       // unfolds again on focus, which is exactly when it is being used.
-      className="h-10 w-44 min-w-0 shrink rounded-xl transition-[width] duration-normal ease-standard hover:w-56 focus-within:w-64 max-[1360px]:w-10 max-[1360px]:hover:w-10 max-[1360px]:focus-within:w-60"
+      className="h-8 w-44 min-w-0 shrink rounded-md shadow-[inset_0_0_0_1px_var(--border)] transition-[width] duration-normal ease-standard hover:w-56 focus-within:w-64 max-[1360px]:w-8 max-[1360px]:hover:w-8 max-[1360px]:focus-within:w-60"
     >
       <InputGroupInput
+        // 13px on the reference's `.searchmini`, whose field is caption-sized
+        // beside a 30px capsule; at the shell's 14.5px body step the query and
+        // the folder name beside it argued about which was the label.
+        className="text-caption"
         ref={inputRef}
         aria-invalid={Boolean(activeError)}
         aria-label={

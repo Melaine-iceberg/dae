@@ -190,7 +190,7 @@ function RecentRow({
         <ContextMenuTrigger>
           <button
             aria-label={`${presentation.label} ${item.name}`}
-            className="flex h-14 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="flex h-14 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
             onClick={onOpen}
             title={item.path}
             type="button"

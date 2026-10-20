@@ -891,6 +891,7 @@ export function ExplorerView({
                   canUndo={undoRedo.canUndo}
                   onAddToFavorites={addFavoritePaths}
                   onAddToSpace={addToSpace}
+                  onClearSearch={() => search.setQuery("")}
                   onCompress={compressSelection}
                   onCopy={copySelection}
                   onCreateDirectory={() => dialogs.requestCreate("directory")}

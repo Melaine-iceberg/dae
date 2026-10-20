@@ -150,7 +150,7 @@ export function OverviewView() {
           <p className="mt-1.5 text-caption text-muted-foreground">{t("overview.subtitle")}</p>
         </div>
         <button
-          className="group flex h-10 w-full max-w-sm items-center gap-2.5 rounded-xl border border-border/70 bg-secondary/40 px-3.5 text-left text-body text-muted-foreground transition-[background-color,border-color,color,box-shadow] duration-normal ease-standard hover:border-primary/35 hover:bg-secondary/80 hover:text-foreground hover:shadow-ambient-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="group flex h-10 w-full max-w-sm items-center gap-2.5 rounded-xl border border-border/70 bg-secondary/40 px-3.5 text-left text-body text-muted-foreground transition-[background-color,border-color,color,box-shadow] duration-normal ease-standard hover:border-primary/35 hover:bg-secondary/80 hover:text-foreground hover:shadow-ambient-xs focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
           onClick={() => setCommandBarOpen(true)}
           type="button"
         >
@@ -324,7 +324,7 @@ export function OverviewView() {
               return (
                 <li key={item.path}>
                   <button
-                    className="group flex h-12 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    className="group flex h-12 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
                     onClick={() =>
                       openRecent(item.path, item.kind === "directory" ? "directory" : "file")
                     }

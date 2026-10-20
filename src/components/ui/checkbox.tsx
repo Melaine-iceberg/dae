@@ -22,7 +22,7 @@ function Checkbox({ className, ...props }: CheckboxPrimitive.Root.Props) {
         // 2px halo on focus. The 5px "micro" radius reads as a rounded square
         // at 16px — the control radius would leave a circle.
         "inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-xs border border-input bg-transparent text-primary-foreground transition-[background-color,border-color,box-shadow] duration-fast ease-standard outline-none select-none",
-        "hover:border-ring/60 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40",
+        "hover:border-ring/60 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/35",
         "data-checked:border-primary data-checked:bg-primary data-indeterminate:border-primary data-indeterminate:bg-primary",
         "data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-disabled:opacity-50",
         className,

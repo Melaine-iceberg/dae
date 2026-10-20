@@ -1,12 +1,15 @@
 # Raycast 示例对齐 —— 交接文档
 
-状态：**第 1、2 轮已提交**（令牌层 / 外壳 / 列表 / 侧栏 / 网格 / 复选框面板 / 命令面板 / 动作岛 / 终端抽屉 / 图标线性化）。
+状态：**第 1–3 轮已提交**。第 1、2 轮：令牌层 / 外壳 / 列表 / 侧栏 / 网格 / 复选框面板 /
+命令面板 / 动作岛 / 终端抽屉 / 图标线性化。第 3 轮（§2 全部清空）：空状态与骨架屏、Miller 列视图、
+检查器、终端配色、菜单与对话框、键帽与焦点环、搜索胶囊、窄窗复核、文档收尾。
 本文给下一个会话用：环境怎么跑、已经改了什么、还剩什么、每项的验收标准。
 
 参考文件（已入库）：[`reference-raycast.html`](reference-raycast.html) —— 原文件在
 `C:\Users\Mt342\Desktop\dae-explorer.html`，本文所有"示例"数值都指它 `<style>` 里的 token 与组件规则。
 
-**方向已定：示例优先。** `docs/design-v3.md`（Aura）与本方向冲突的数字见 §3，收尾后整篇重写。
+**方向已定：示例优先。** `docs/design-v3.md` 已在第 3 轮按本方向整篇重写（"代码现在是什么"的
+说明书）；§3 的冲突表现在只剩历史价值。
 
 ---
 
@@ -87,68 +90,118 @@ cd /k/code/dae && bun run dev
 
 ---
 
-## 2. 待办（按收益排序）
+## 2. 第 3 轮：§2 全部清空
 
-每一项都写清：改哪里、示例的规则、怎么验收。
+每项写清：改了什么、验收怎么过、有没有偏离示例。
 
-### 2.1 空状态 + 骨架屏
+### 2.1 空状态 + 骨架屏 ✅
 
-- 文件：`src/components/ui/empty.tsx`、`skeleton.tsx`、`file-list.tsx`（`FileListSkeleton`）、`file-grid-view.tsx`、`explorer-errors.ts`
-- 示例：`.empty` 居中、`.plate` 52×52 / 12px 圆角 / `fg 5%` 填充、`h2` 15px/600、`p` 12.5px / 34ch / 1.6；`.skel i` 26px 行高 + 6px 圆角 + `fg 4%`
-- 验收：截空目录、搜索无结果、加载中三态
+- `empty.tsx` 换成示例 `.empty`：容器 `64px 24px` 居中、`.plate` 52×52 / 12px 圆角 /
+  前景 5% 填充、标题 15px/600、段落 12.5px / 1.6 / **34ch**、`mb-4` 的节奏。
+- 空目录给**一个**动作按钮「新建文件夹」（`onCreateDirectory`），搜索无结果给「清除筛选」
+  （新增 `FileList.onClearSearch` → `search.setQuery("")`）。新增 i18n：
+  `list.searchEmptyHint` / `list.clearFilter`；`list.emptyFolder` 去掉句号、`list.emptyHint`
+  改成示例的语气。
+- `skeleton.tsx` 换成 4% 前景 wash + `--radius-md`。`FileListSkeleton`：表头 30px 且
+  与真表头同款（nano 大写 +0.07em、`bg-background/88`、`px-2` 轨道）、行用品格的密度高度、
+  单元格 `mx-2`（原来是 `mx-3`，每次导航横向抖 4px）；网格/分栏分支用示例的 26px 横条。
+- 验收截图：空目录、搜索无结果、列表骨架、网格骨架（临时把目录分支短路成骨架屏后截图，已还原）。
+- 偏差：**保留 `animate-pulse`**（示例 `.skel` 是静止的）。静止灰块在慢盘上读起来像渲染失败。
 
-### 2.2 Miller 列视图
+### 2.2 Miller 列视图 ✅
 
-- 文件：`file-column-view.tsx`（`--width-column-view: 15rem` 已存在）
-- 示例没画列视图 → 复用 `lhead` / `row` 同一套行文法；列间 hairline 用 `--border`
-- 验收：截图 + 键盘左右切换
+- 行改用列表的行文法：`rounded-md`、`text-caption`（13px）、`row-separator` 行线、
+  选中只换填充不换字重；列间 hairline 用 `--border`；`PANE_VERTICAL_PADDING_PX` 10 → 8（配 `py-2`）。
+- 新增键盘文法（示例没有列视图，按 Finder 惯例补）：
+  `↑/↓` 在列内移动（虚拟化行未挂载时按行高滚动并重试）、`→` 钻进焦点行并把手焦交给子列、
+  `←` 收回子列并把焦点放回打开它的那一行。跨列焦点用 `PaneFocusRequest`（带 token 的 state，
+  不是 ref——已挂载的父列也必须重渲染才能认领）。
+- 验收：`→` 进 `geek` 后焦点落在 `geek.exe`，`←` 回来落在 `geek`；空子列时焦点落到列容器本身，
+  否则 `←` 会变成死键。
 
-### 2.3 检查器 / 预览面板
+### 2.3 检查器 / 预览面板 ✅
 
-- 文件：`entry-preview.tsx`（`w-preview` 已是 300px）
-- 示例 `.insp`：`padding 16px`、`insp-cap` 11px 大写 `--meta`、`.pv-body` 12px 圆角 + inset hairline、`.pv-code` mono 11px / 1.7 / 行号列宽 20px、`.meta-row` = 74px 标签 + 11.5px 值 + `border-soft` 分隔、`.tag` 22px 高、`.insp-actions` 纵向 `gap 6px`（当前是两个并排半宽按钮）
-- 验收：选中图片 / 代码 / 文本 / 多选 四种情况
+- `entry-preview.tsx` 按 `.insp` 重排：54px 标题栏删除，改成 `信息` 大写小标 + 关闭键；
+  `.pv-head`（26px 字形 / 14px 600 名字 / mono 10.5px 副行）；预览井 `.preview-body`
+  （canvas 底 + 12px 圆角 + 内线，代码区 mono 11 / 1.7 / `10px 12px` / 最大 220px）；
+  元数据改成 74px 标签列 + 11.5px 值 + `--border-soft` 行线（含媒体标签、时长、分辨率、码率）；
+  动作改成纵向 `gap 6px` 全宽。多选摘要同样换行文法（内容 / 最近修改 / 位置）。
+- 新增 `App.css`：`.inspector`（`72% canvas + 28% card` + 左侧 hairline）、`.preview-body`、`.note`。
+- 顺手修了一个旧 bug：Solar 图标用内联 `style="width:16px"`，`className="size-12"` 压不过它，
+  所以预览里的回退字形一直是 16px——改成 `size={48}` / `size={26}`。
+- 偏差：**没有行号列**（示例 `.pv-code .ln`）。高亮 HTML 里跨行的 token（多行注释、模板字符串）
+  一旦按 `
+` 切开就会破标签；素材没有稳定的"每行一个 span"约定。
+- 偏差：主按钮仍是强调色填充（示例 `.btn-primary` 是近白胶囊 + pill 圆角）。这是整窗的主按钮，
+  不在本轮范围。
 
-### 2.4 终端配色
+### 2.4 终端配色 ✅
 
-- 文件：`terminal-palette.ts`、`terminal-panel.tsx`
-- 示例 `.term-body`：mono 12px / 1.75；prompt `--blue`、成功绿、路径 dim、警告黄；`.caret` 7×13 闪烁；drawer 高度 188px（当前 `height` 由用户拖拽，确认默认值）
-- 验收：开终端跑 `ls` / `git status` 截图
+- 默认 12px / 1.75（Rust `default_font_size`/`default_line_height`、`CLIENT_DEFAULT_SETTINGS`、
+  设置面板回退值、`terminal-panel` 常量，五处同步；Rust 测试断言一起改）。
+- 抽屉默认高 188px（原 288）。
+- 头部标题换成 `.term-tab` 的 22px 会话 chip；正文内边距 10/16（放在 wrapper 上，
+  FitAddon 量的是网格本身）。
+- xterm 背景改成示例 `.term` 的 `70% canvas + 30% card`。**注意**：Chromium 把 `color-mix()`
+  计算成 `oklab(...)` / `color(srgb ...)`，xterm 解析不了会直接画黑；所以 `blendTokens()`
+  把两个 token 取成 `rgb()` 再自己混。
+- 偏差：终端默认前景仍是 `--foreground`（示例 `.term-body` 是 fg-2）。ANSI 表一个字没动——
+  它是按对比度算过的（见 `terminal-palette.ts` 的注释）。
 
-### 2.5 右键菜单 / 对话框逐像素
+### 2.5 右键菜单 / 对话框逐像素 ✅
 
-- 文件：`src/components/ui/context-menu.tsx`、`dropdown-menu.tsx`、`dialog.tsx`、`select.tsx`、`explorer-dialogs.tsx`、`properties-dialog.tsx`
-- 示例 `.ctx`：`min-width 220px`、`padding 5px`、行 30px / 12.5px、图标 gap 10px、`hr` `5px 6px`、危险项红色 16% 底
-- 示例 `.sheet`：440px 宽、`padding 20px`、h2 18px、`.row-line` 9px 上下 + `border-soft`
-- 验收：菜单、删除确认、属性、设置四处
+- `--min-width-menu` 180 → **220px**（示例 `.ctx`）；context / dropdown / select 三处的面板
+  `p-1.5` → `p-[5px]`、底色 `bg-popover` → `bg-card`、`text-body` → 12.5px。
+- 行：`h-8 rounded-lg px-2.5` → `min-h-[30px] rounded-md px-[9px]`（`min-h` 而不是 `h`：
+  有描述的第二行会换行，固定 30px 会裁字）；图标 gap 保持 10px；危险项 hover 10% → **16%**。
+- 分隔线 `-mx-1 my-1` → `mx-1.5 my-[5px]`（示例 `hr` 的 `5px 6px`）。
+- 对话框：`max-w-sm`(384) → **440px**、`rounded-xl` → `rounded-panel`(16px)、`bg-popover` → `bg-card`、
+  标题 `text-title`(22) → **18px/600**、说明 12.5px/1.6、底部按钮去分隔线（示例 `.foot` 只有 16px
+  上边距）、遮罩加 `backdrop-blur-[3px]`。
+- 属性对话框的 `dl` 换成 `.sheet .row-line`（9px 上下 + `--border-soft` + 值右对齐）。
 
-### 2.6 键帽与焦点环统一
+### 2.6 键帽与焦点环统一 ✅
 
-- 文件：`src/components/ui/kbd.tsx` + 各处 `focus-visible:*`
-- 示例 `.kbd`：19px 高 / 4px 圆角 / 双层阴影（`rgba(255,255,255,.09) 0 1px 0 inset`, `rgba(0,0,0,.5) 0 1px 1.5px`, `0 0 0 1px rgba(255,255,255,.07)`）
-- 焦点：示例 `--focus-ring: 0 0 0 3px hsla(202,100%,67%,.35)`；当前控件是 `ring-2 ring-ring/40`、行是 1px inset。**统一成 3px/35% + 行内 1px**，两档写进 App.css 注释
+- `Kbd` 换成 `.kbd-cap`：19px / 4px 圆角 / mono 11px 500 / 双层边缘（9% 内高光、1.5px 接触影、
+  1px 7% 外环）/ card→canvas 的浅浅渐变。值写在 `App.css`（组件层），调用方要更小的键只需覆盖
+  高度和字号。
+- 焦点两档落地：控件 `ring-[3px] ring-ring/35`（13 个文件里的 `ring-2 … /40` 全部替换，
+  含 select 的 `data-popup-open` 与 input-group 的 `has-[…]`）；行保持 `ring-1 … ring-inset`。
+  `App.css` 的焦点注释块同步成这两行。
 
-### 2.7 搜索胶囊
+### 2.7 搜索胶囊 ✅
 
-- 文件：`directory-search.tsx`
-- 示例 `.searchmini`：空闲 176px / 聚焦 256px / `<1360px` 折成放大镜
-- 验收：1440、1180、900 三个宽度截图
+- 高度 `h-10` → `h-8`、`rounded-xl` → `rounded-md` + 1px 内线、输入 13px（`text-caption`）。
+- 宽度行为本来就是对的（176 / 256 / `<1360px` 折成放大器），保留；实测 1440=176、1181=32、1081=32。
 
-### 2.8 窄窗让位顺序复核
+### 2.8 窄窗让位顺序复核 ✅
 
-- `TOOLBAR_OVERFLOW_*_CLASS`：收藏 1080 → 分屏 900 → git 1180
-- 验收：1180 / 1080 / 900 三张截图，确认没有控件被裁到够不着
+- 1440 / 1181 / 1081 / 901 四张截图。**发现并修掉一个真 bug**：900px 时面包屑互相重叠
+  （"Mt3Documents"）。原因是非当前项的 `span.truncate` 是 flex 子项但没有 `min-w-0`，
+  `max-w-40` 挡不住压缩，文字溢出到邻居身上；给 `.truncate` 的 span 和它所在的 flex 容器补
+  `min-w-0` 后，900px 正确折叠成 `C:\ › … › Mt342 › Documents`。
 
-### 2.9 文档收尾
+### 2.9 文档收尾 ✅
 
-- 重写 `docs/design-v3.md`（见 §3 的差异表），或者把它合并进 `design-v2.md` 后删掉
-- `docs/design-principles.md`（v1）里 §"图标：line-duotone + 58% 强调色" 已经失效，标注或删除
+- `docs/design-v3.md` 整篇重写：从 Aura 说明改成"示例语言"的现状说明书（平面/字阶/形状/尺度/
+  状态/动效/各处表面 + 这套语言拒绝什么 + token 在哪）。
+- `docs/design-principles.md`：头部状态行说明已被 v3 取代；图标段（`line-duotone` + 58% 强调色）
+  就地标注作废并改成 `linear` + 墨色；选中 20/26% 改成 15%。
 
----
+### 2.10 仍未做的
 
-## 3. 与 `design-v3.md`（Aura）的冲突清单
+- **亮色模式只看了改动面**：概览、列表 + 检查器（代码预览）、右键菜单、空状态、键帽。
+  `.inspector` / `.kbd-cap` / `.preview-body` / `.note` 全部走 token 混合，亮色下都成立；
+  但没有逐个表单/对话框复查。
+- **终端抽屉的亮色没截**（xterm 的背景 `blendTokens` 每主题重算，逻辑上跟随，
+  但没在亮色下跑过一次 shell）。
+- `bun run lint` 仍未跑绿（与第 1 轮相同）。
+- `docs/design-v2.md` 仍在，作为 Atlas 历史保留。
 
-代码目前按**示例**走；下表每行都需要在新一轮里改写文档（或回退代码，若届时改主意）。
+## 3. 与旧 `design-v3.md`（Aura）的冲突清单 —— 已归档
+
+第 3 轮已把 `design-v3.md` 重写成"现状说明书"，下表与代码一致，只作为"第 1 轮为什么这么选"
+的记录保留。
 
 | 项 | 示例 / 现状 | `design-v3.md` |
 |---|---|---|
@@ -180,8 +233,12 @@ cd /k/code/dae && bun run dev
 
 ## 5. 每轮收尾清单
 
-1. `bun run build` 绿（tsc + 打包）
-2. 截图：列表 / 网格 / 选中 / 动作岛 / 检查器 / 命令面板 / 右键菜单 / 空目录
-3. 宽度：1440 / 1180 / 900
-4. 亮色过一遍：`document.documentElement.classList.toggle('dark')`
+1. `bun run build` 绿（tsc + 打包）—— 第 3 轮已绿
+2. 截图：列表 / 网格 / 选中 / 动作岛 / 检查器 / 命令面板 / 右键菜单 / 空目录 —— 已过
+3. 宽度：1440 / 1180 / 1080 / 900 —— 已过
+4. 亮色过一遍：`document.documentElement.classList.toggle('dark')` —— 改动面已过（见 §2.10）
 5. 关掉 `dae.exe` 与 dev server
+
+> 截图环境备注：dev server 可能已经在 1420 上跑着（`Get-NetTCPConnection -LocalPort 1420`），
+> 别急着再起一个；`dae.exe` 必须单独起，否则页面全是 `[dev-invoke] could not reach`。
+> 浏览器预览窗口宽度会被上一次 `resize_page` 记住，测宽度前先确认 `innerWidth`。

@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
@@ -68,6 +69,15 @@ interface SharedRowProps {
 export function FileColumnView({ rootEntries, viewId, ...shared }: FileColumnViewProps) {
   const [drillChain, setDrillChain] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** A pane that should take keyboard focus once its rows exist. Drilling and
+   *  popping both end with focus on a row *in another pane*, and that pane may
+   *  still be streaming its listing, so the request is handed down and each
+   *  pane claims the one addressed to its depth. State rather than a ref,
+   *  because the claim has to re-render an already-mounted pane: a request that
+   *  only touched a ref would be seen by the pane that mounts and missed by the
+   *  one that is already there — which is exactly the pop case. */
+  const [focusRequest, setFocusRequest] = useState<PaneFocusRequest | null>(null);
+  const focusTokenRef = useRef(0);
 
   useEffect(() => {
     setDrillChain([]);
@@ -84,6 +94,19 @@ export function FileColumnView({ rootEntries, viewId, ...shared }: FileColumnVie
     setDrillChain((chain) => [...chain.slice(0, depth), path]);
   };
 
+  const focusPane = (depth: number, path: string | null) => {
+    focusTokenRef.current += 1;
+    setFocusRequest({ depth, path, token: focusTokenRef.current });
+  };
+
+  /** ArrowLeft out of a child pane: drop everything deeper than its parent and
+   *  put focus back on the row that opened it. */
+  const popTo = (depth: number) => {
+    const openerPath = drillChain[depth - 1] ?? null;
+    setDrillChain((chain) => chain.slice(0, depth - 1));
+    focusPane(depth - 1, openerPath);
+  };
+
   return (
     <div
       aria-multiselectable="true"
@@ -96,6 +119,9 @@ export function FileColumnView({ rootEntries, viewId, ...shared }: FileColumnVie
         depth={0}
         entries={rootEntries}
         onDrill={drillTo}
+        focusRequest={focusRequest}
+        onFocusPane={focusPane}
+        onPop={popTo}
         {...shared}
       />
       {drillChain.map((path, index) => (
@@ -104,6 +130,9 @@ export function FileColumnView({ rootEntries, viewId, ...shared }: FileColumnVie
           depth={index + 1}
           key={path}
           onDrill={drillTo}
+          onFocusPane={focusPane}
+          focusRequest={focusRequest}
+          onPop={popTo}
           path={path}
           {...shared}
         />
@@ -115,8 +144,20 @@ export function FileColumnView({ rootEntries, viewId, ...shared }: FileColumnVie
 interface ChildPaneProps extends SharedRowProps {
   activeChildPath: string | null;
   depth: number;
+  focusRequest: PaneFocusRequest | null;
   onDrill: (path: string, depth: number) => void;
+  onFocusPane: (depth: number, path: string | null) => void;
+  onPop: (depth: number) => void;
   path: string;
+}
+
+/** "Put focus on this row (or on the first row) of the column at `depth`."
+ *  `token` makes two requests for the same target distinguishable, so a pane
+ *  claims each one exactly once. */
+interface PaneFocusRequest {
+  depth: number;
+  path: string | null;
+  token: number;
 }
 
 function ChildPane({ path, ...paneProps }: ChildPaneProps) {
@@ -153,12 +194,62 @@ interface PaneProps extends SharedRowProps {
   isError?: boolean;
   isLoading?: boolean;
   onDrill: (path: string, depth: number) => void;
+  focusRequest: PaneFocusRequest | null;
+  onFocusPane: (depth: number, path: string | null) => void;
+  onPop: (depth: number) => void;
 }
 
-/** Top and bottom breathing room inside a column. The row height is not a
- *  constant here any more — it is the density preference's, the same one the
- *  detail list and the grid already honour (see `DENSITY_ROW_HEIGHT`). */
-const PANE_VERTICAL_PADDING_PX = 10;
+/** Top and bottom breathing room inside a column, matching the `py-2` the pane
+ *  paints. The row height is not a constant here any more — it is the density
+ *  preference's, the same one the detail list and the grid already honour (see
+ *  `DENSITY_ROW_HEIGHT`). */
+const PANE_VERTICAL_PADDING_PX = 8;
+
+/** How many frames a cross-pane focus request may wait for its row to mount and
+ *  for the child listing to arrive. A second is the budget, as in the detail
+ *  list: a streamed listing can take several frames and a focus that gives up
+ *  early strands the keyboard in a pane the user has already left. */
+const FOCUS_RETRY_FRAMES = 60;
+
+/** The path, as a value an attribute selector can carry. `CSS.escape` is the
+ *  right tool but escapes for selectors, not for quoted attribute values, so
+ *  the backslash and the double quote are escaped by hand. */
+function cssAttributeValue(value: string): string {
+  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+}
+
+/** Linear scan for a path in a listing — used only when a focus request has to
+ *  scroll its row into range, never on the render path. */
+function indexOfPath(entries: ListingView, path: string): number {
+  for (let index = 0; index < entries.count; index += 1) {
+    if (entries.pathAt(index) === path) return index;
+  }
+  return -1;
+}
+
+/** Move focus one row up or down inside the same pane.
+ *
+ *  Rows are virtualized, so the neighbour may not be mounted yet: the pane is
+ *  nudged by one row height and the lookup retries on the next frame until the
+ *  virtualizer paints it. Focus is restored by hand rather than left to the
+ *  browser's tab order, which is the only way a column view keeps the arrow
+ *  keys behaving like the detail list. */
+function moveRowFocus(from: HTMLElement, delta: number, attempt = 0) {
+  const pane = from.closest<HTMLElement>("[data-column-depth]");
+  if (!pane || !from.isConnected) return;
+
+  const rows = [...pane.querySelectorAll<HTMLElement>('[role="option"]')];
+  const next = rows[rows.indexOf(from) + delta];
+  if (next) {
+    next.focus({ preventScroll: true });
+    next.scrollIntoView({ block: "nearest" });
+    return;
+  }
+
+  if (attempt >= FOCUS_RETRY_FRAMES) return;
+  pane.scrollTop += delta * Math.max(from.offsetHeight, 1);
+  requestAnimationFrame(() => moveRowFocus(from, delta, attempt + 1));
+}
 
 /** Each Miller-column pane windowizes its own rows (SKILL.md §48). */
 function Pane({
@@ -170,13 +261,16 @@ function Pane({
   entries,
   isError = false,
   isLoading = false,
+  focusRequest,
   menuActions,
   onAddToFavorites,
   onAddToSpace,
   onContextMenuEntry,
   onDrill,
+  onFocusPane,
   onOpenEntry,
   onPointerDownEntry,
+  onPop,
   onSelectEntry,
   selectedCount,
   selectedPathSet,
@@ -197,14 +291,110 @@ function Pane({
     scrollMargin: PANE_VERTICAL_PADDING_PX,
   });
 
+  // Claim the focus request addressed to this depth. The row may not exist yet
+  // — a freshly drilled pane is still streaming its listing, and the row we are
+  // coming back to may be scrolled out of the virtual window — so the lookup
+  // retries for a bounded number of frames, scrolling the target's index into
+  // range first. Each token is claimed once: a later render of the same pane
+  // must not pull focus back out of wherever the user has since put it.
+  const claimedTokenRef = useRef<number | null>(null);
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+
+  useEffect(() => {
+    if (!focusRequest || focusRequest.depth !== depth) return;
+    if (claimedTokenRef.current === focusRequest.token) return;
+    claimedTokenRef.current = focusRequest.token;
+
+    const { path } = focusRequest;
+    let frame = 0;
+    const settle = () => {
+      const container = scrollRef.current;
+      if (!container) return;
+
+      const target = path
+        ? container.querySelector<HTMLElement>(
+            `[role="option"][data-entry-path="${cssAttributeValue(path)}"]`,
+          )
+        : container.querySelector<HTMLElement>('[role="option"]');
+
+      if (target) {
+        target.focus({ preventScroll: true });
+        return;
+      }
+
+      if (frame++ >= FOCUS_RETRY_FRAMES) {
+        // An empty or unreadable column has no row to land on, and leaving
+        // focus in the pane we just left makes ArrowLeft a dead key there (the
+        // parent row sees a depth-0 event). The column itself takes focus so
+        // the horizontal arrows keep working from here.
+        container.focus({ preventScroll: true });
+        return;
+      }
+
+      if (path) {
+        const index = indexOfPath(entriesRef.current, path);
+        if (index >= 0) virtualizer.scrollToIndex(index, { align: "auto" });
+      }
+      requestAnimationFrame(settle);
+    };
+
+    requestAnimationFrame(settle);
+  }, [depth, focusRequest, virtualizer]);
+
+  /**
+   * Miller-columns keyboard grammar: up/down walk the column, right drills into
+   * the focused row (or hands focus to the child column), left climbs back out.
+   * The detail list already owns single-column navigation; a column view is the
+   * one place where the horizontal arrows mean something, and without them the
+   * drill-down chain can only be driven by the mouse.
+   */
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowLeft") {
+      if (depth === 0) return;
+      event.preventDefault();
+      onPop(depth);
+      return;
+    }
+
+    const rowElement = (event.target as HTMLElement | null)?.closest<HTMLElement>(
+      '[role="option"]',
+    );
+    if (!rowElement) return;
+
+    if (event.key === "ArrowRight") {
+      const path = rowElement.dataset.entryPath;
+      const kind = rowElement.dataset.entryKind;
+      if (!path) return;
+      event.preventDefault();
+      if (kind === "directory") {
+        onDrill(path, depth);
+        onFocusPane(depth + 1, null);
+      } else if (depth > 0) {
+        // A file row has no column of its own; the only thing to the right is
+        // the pane that is already there.
+        return;
+      }
+      return;
+    }
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      moveRowFocus(rowElement, event.key === "ArrowDown" ? 1 : -1);
+    }
+  };
+
   return (
     <div
       // `pb-14` keeps the last row clear of the floating contextual action
       // bar (`bottom-4 h-9`) while anything is selected.
-      className={`flex w-column-view shrink-0 flex-col overflow-y-auto border-r border-border/60 px-2 py-2.5 last:border-r-0 ${
+      className={`flex w-column-view shrink-0 flex-col overflow-y-auto border-r border-border px-2 py-2 last:border-r-0 ${
         selectedCount > 0 ? "pb-14" : ""
       }`}
+      data-column-depth={depth}
+      onKeyDown={handleKeyDown}
       ref={scrollRef}
+      tabIndex={-1}
     >
       {isLoading && (
         <div className="flex items-center gap-2 px-2 py-1.5 text-caption text-muted-foreground">
@@ -323,9 +513,12 @@ function PaneRow({
         <div
           aria-selected={isSelected}
           className={cn(
-            // Desktop row: tonal hover via state-layer, flat selection fill,
-            // no pill morph so rows keep a constant corner radius.
-            "render-contain state-layer absolute inset-x-0 top-0 flex cursor-grab items-center gap-2.5 rounded-lg px-2.5 select-none transition-[background-color,box-shadow,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+            // The detail list's row grammar, one column wide: a 13px label, a
+            // muted glyph, an optional chevron. 6px corners (`--radius-md`) and
+            // a half-strength hairline between rows, so the same folder reads the
+            // same in the list and in a column instead of stepping down a type
+            // size and up a corner radius when the view changes.
+            "render-contain state-layer absolute inset-x-0 top-0 flex cursor-grab items-center gap-2.5 rounded-md px-2 select-none transition-[background-color,box-shadow,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             // The column holding the selection ancestor keeps the softer fill
             // (60%) so the path stays readable; the chosen row itself takes the
@@ -334,9 +527,12 @@ function PaneRow({
             // same in all three views. Only the drop target gets the 2px ring.
             isSelected && "bg-selection shadow-[inset_0_0_0_1px_var(--selection-edge)]",
             !isSelected && isExpanded && "bg-selection/60",
+            !isSelected && "row-separator",
             isDragging && DRAG_SOURCE_CLASS,
             dropTargetPath === entry.path && "drop-target",
           )}
+          data-entry-kind={entry.kind}
+          data-entry-path={entry.path}
           data-explorer-directory-drop-target={isDirectory ? entry.path : undefined}
           onClick={(event) => {
             onSelectEntry(entry, index, event);
@@ -368,12 +564,10 @@ function PaneRow({
             presentation={presentation}
           />
           <span
-            className={cn(
-              "min-w-0 flex-1 truncate text-body",
-              // Expressive type scale: the name carries the row's weight and
-              // steps up to semibold while selected or expanded.
-              isSelected || isExpanded ? "font-medium" : "",
-            )}
+            // 13px like a list row, and selection changes the fill, never the
+            // ink or the weight: a re-measuring label makes a column jump as the
+            // cursor walks it.
+            className="min-w-0 flex-1 truncate text-caption"
           >
             {entry.name}
           </span>

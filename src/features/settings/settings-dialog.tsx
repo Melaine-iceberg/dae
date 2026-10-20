@@ -396,7 +396,7 @@ function TerminalPane() {
   };
 
   const stepLineHeight = (delta: number) => {
-    const current = terminal?.lineHeight ?? 1.2;
+    const current = terminal?.lineHeight ?? 1.75;
     const next = Math.min(3, Math.max(0.8, Math.round((current + delta) * 10) / 10));
     patch({ terminal: { lineHeight: next } });
   };
@@ -430,7 +430,7 @@ function TerminalPane() {
             <Select
               items={Object.fromEntries(FONT_SIZE_OPTIONS.map((size) => [size, `${size} px`]))}
               onValueChange={(value) => patch({ terminal: { fontSize: Number(value) } })}
-              value={terminal?.fontSize ?? 13}
+              value={terminal?.fontSize ?? 12}
             >
               <SelectTrigger className="w-40" id="settings-terminal-font-size">
                 <SelectValue />
@@ -460,7 +460,7 @@ function TerminalPane() {
                 }}
                 step={0.1}
                 type="number"
-                value={terminal?.lineHeight ?? 1.2}
+                value={terminal?.lineHeight ?? 1.75}
               />
               <InputGroupAddon align="inline-end">
                 <InputGroupButton

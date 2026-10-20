@@ -96,11 +96,11 @@ impl Default for TerminalSettings {
 }
 
 fn default_font_size() -> u8 {
-    13
+    12
 }
 
 fn default_line_height() -> f32 {
-    1.2
+    1.75
 }
 
 /// The single source of truth for default key bindings.
@@ -388,7 +388,7 @@ mod tests {
         assert_eq!(loaded.shortcuts["app.commandBar"], "Mod+K");
         // Partial terminal section fills the rest from defaults.
         assert_eq!(loaded.terminal.font_size, 15);
-        assert_eq!(loaded.terminal.line_height, 1.2);
+        assert_eq!(loaded.terminal.line_height, 1.75);
         assert_eq!(loaded.terminal.font_family, None);
 
         fs::remove_dir_all(&dir).ok();

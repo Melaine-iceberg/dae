@@ -521,7 +521,7 @@ export function ExplorerTabs() {
               measures and scrolls. */}
           <button
             aria-label={t("tabs.newTab")}
-            className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+            className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
             data-tauri-drag-region="false"
             onClick={createTab}
             title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}

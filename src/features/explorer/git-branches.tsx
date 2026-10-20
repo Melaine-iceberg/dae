@@ -139,7 +139,7 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
         <DropdownMenuTrigger
           className={cn(
             "flex min-w-0 items-center gap-1 rounded-sm px-1.5 py-0.5 transition-colors",
-            "hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+            "hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none",
           )}
           title={t("git.menuTitle", { branch })}
         >

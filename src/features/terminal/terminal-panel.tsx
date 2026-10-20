@@ -12,6 +12,7 @@ import {
   CloseIcon,
   CopyIcon,
   EraserIcon,
+  ProgrammingIcon,
   RestartIcon,
   TextSelectionIcon,
 } from "@solar-icons/react/linear";
@@ -55,8 +56,8 @@ function terminalFontStack(): string {
   return declared || FALLBACK_MONO_STACK;
 }
 
-const DEFAULT_FONT_SIZE = 13;
-const DEFAULT_LINE_HEIGHT = 1.2;
+const DEFAULT_FONT_SIZE = 12;
+const DEFAULT_LINE_HEIGHT = 1.75;
 
 const MIN_PANEL_HEIGHT = 140;
 
@@ -75,6 +76,52 @@ function currentWorkingDirectory(): string | undefined {
   }
 }
 
+/**
+ * Two colours, blended, as the `rgb(…)` string xterm needs.
+ *
+ * xterm paints its own canvas and is handed values, not CSS: it cannot read a
+ * variable and it cannot evaluate `color-mix()`. Chromium's computed value for
+ * a `color-mix()` is not an `rgb(…)` either — it serialises as `oklab(…)` or
+ * `color(srgb …)`, neither of which xterm parses, so a mix handed straight to
+ * the theme paints black. The blend is therefore done here, over the two
+ * tokens, which resolve to plain `rgb(…)` through a throwaway element rather
+ * than being parsed out of the stylesheet by hand.
+ *
+ * `weightOfBase` is the share of the first colour (0.7 = the reference's
+ * `70% --bg / 30% --surface`). A blend of two near-neutral greys does not care
+ * about the interpolation space, and sRGB keeps this a four-line function.
+ */
+function blendTokens(
+  baseToken: string,
+  towardToken: string,
+  weightOfBase: number,
+  fallback: string,
+): string {
+  const rgb = (token: string) => {
+    const probe = document.createElement("div");
+    probe.style.backgroundColor = `var(${token})`;
+    probe.style.display = "none";
+    document.body.appendChild(probe);
+    const value = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    const match = value.match(/rgba?\(([^)]+)\)/);
+    if (!match) return null;
+    const parts = match[1]
+      .split(/[,\s/]+/)
+      .filter(Boolean)
+      .map(Number);
+    return parts.length >= 3 ? parts.slice(0, 3) : null;
+  };
+
+  const from = rgb(baseToken);
+  const to = rgb(towardToken);
+  if (!from || !to) return fallback;
+  const channels = from.map((channel, index) =>
+    Math.round(channel * weightOfBase + to[index] * (1 - weightOfBase)),
+  );
+  return `rgb(${channels[0]}, ${channels[1]}, ${channels[2]})`;
+}
+
 /** Maps the app's semantic color tokens onto the xterm color scheme. */
 function readTerminalTheme(ansiOverride: AnsiPalette | null): ITheme {
   const style = getComputedStyle(document.documentElement);
@@ -89,10 +136,10 @@ function readTerminalTheme(ansiOverride: AnsiPalette | null): ITheme {
     ? { card: "#101111", foreground: "#f9f9f9", primary: "#57c1ff", accent: "#1b1c1e" }
     : { card: "#ffffff", foreground: "#101216", primary: "#1f63cc", accent: "#e8eaee" };
   return {
-    // The panel is the one surface whose *content* may deviate from the
-    // neutral ladder; its chrome above may not. background/foreground follow
-    // the content plane, and the caret is the one accent in the block.
-    background: token("--card", fallback.card),
+    // The drawer's plane, not the card's: the reference's `.term` is a mix of
+    // the canvas and the surface, so the grid sits one step below the chrome
+    // above it. The caret is the one accent in the block.
+    background: blendTokens("--background", "--card", 0.7, fallback.card),
     foreground: token("--foreground", fallback.foreground),
     cursor: token("--primary", fallback.primary),
     cursorAccent: token("--card", fallback.card),
@@ -188,7 +235,7 @@ export function TerminalPanel() {
   const menuCloseReasonRef = useRef<string | null>(null);
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [height, setHeight] = useState(288);
+  const [height, setHeight] = useState(188);
 
   useEffect(() => {
     if (visible) setHasOpened(true);
@@ -459,7 +506,12 @@ export function TerminalPanel() {
         onPointerDown={startResizeDrag}
       />
       <header className="flex h-[30px] shrink-0 items-center gap-2 border-b border-border-soft px-3">
-        <span className="text-micro font-medium text-muted-foreground select-none">
+        {/* `.term-tab`: a 22px chip carrying the session's name on a 7% ink
+            wash, not a bare caption. The drawer is a stack of sessions in every
+            terminal that has one, and the chip is the shape that says so — even
+            while there is only ever one of them. */}
+        <span className="flex h-[22px] items-center gap-1.5 rounded-[4px] bg-foreground/7 px-2 text-[12px] text-foreground/85 select-none">
+          <ProgrammingIcon size={12} />
           {t("panel.title")}
         </span>
         {/* The panel's own toggle, shown where the panel is: the key that
@@ -487,7 +539,9 @@ export function TerminalPanel() {
           </button>
         </div>
       </header>
-      <div className="relative min-h-0 flex-1 px-1 pb-1">
+      {/* `.term-body`'s 10px / 16px inset, on the wrapper so the grid is what
+          the fit addon measures and the padding never eats a column. */}
+      <div className="relative min-h-0 flex-1 px-4 py-2.5">
         <ContextMenu
           onOpenChange={(_open, details) => {
             menuCloseReasonRef.current = details.reason;

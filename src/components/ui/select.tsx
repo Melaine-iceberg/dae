@@ -14,7 +14,7 @@ function SelectTrigger({ className, children, ...props }: SelectPrimitive.Trigge
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       className={cn(
-        "flex h-8 w-full min-w-0 items-center justify-between gap-2 rounded-sm border border-input bg-transparent px-2.5 py-1 text-left text-body text-foreground transition-[background-color,border-color,box-shadow] duration-fast ease-standard outline-none hover:border-ring/60 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 data-popup-open:border-ring data-popup-open:ring-2 data-popup-open:ring-ring/40 data-popup-open:[&_svg]:rotate-180 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:text-muted-foreground [&_svg]:transition-transform [&_svg]:duration-fast [&_svg]:ease-standard",
+        "flex h-8 w-full min-w-0 items-center justify-between gap-2 rounded-sm border border-input bg-transparent px-2.5 py-1 text-left text-body text-foreground transition-[background-color,border-color,box-shadow] duration-fast ease-standard outline-none hover:border-ring/60 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/35 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 data-popup-open:border-ring data-popup-open:ring-[3px] data-popup-open:ring-ring/35 data-popup-open:[&_svg]:rotate-180 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:text-muted-foreground [&_svg]:transition-transform [&_svg]:duration-fast [&_svg]:ease-standard",
         className,
       )}
       {...props}
@@ -61,7 +61,7 @@ function SelectContent({
             // A select popup is a menu: same solid plane, same
             // hairline, same entrance. It keeps the anchor's width so the open
             // list lines up with the field it came from.
-            "z-50 max-h-(--available-height) w-(--anchor-width) min-w-(--anchor-width) origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-md border border-border bg-popover p-1 text-body text-popover-foreground shadow-ambient outline-none data-open:animate-float-in data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:duration-instant data-closed:ease-standard-accelerate data-closed:fill-mode-forwards",
+            "z-50 max-h-(--available-height) w-(--anchor-width) min-w-(--anchor-width) origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border border-border bg-card p-[5px] text-[0.78125rem] text-popover-foreground shadow-ambient outline-none data-open:animate-float-in data-closed:animate-out data-closed:overflow-hidden data-closed:fade-out-0 data-closed:duration-instant data-closed:ease-standard-accelerate data-closed:fill-mode-forwards",
             className,
           )}
           {...props}
@@ -76,7 +76,7 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex h-7 cursor-default items-center gap-2 rounded-sm pr-2 pl-7 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
+        "relative flex min-h-[30px] cursor-default items-center gap-2 rounded-md pr-[9px] pl-7 text-[0.78125rem] outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
         className,
       )}
       {...props}

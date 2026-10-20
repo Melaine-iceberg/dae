@@ -52,7 +52,7 @@ function DialogOverlay({
         // legible as context while clearly not taking input. The dialog's own
         // border and shadow still carry most of the figure/ground work — the
         // veil only says which plane the pointer belongs to.
-        "fixed inset-0 isolate z-50 bg-[var(--scrim)]",
+        "fixed inset-0 isolate z-50 bg-[var(--scrim)] backdrop-blur-[3px]",
         motion === "float" && BACKDROP_MOTION,
         className,
       )}
@@ -100,7 +100,7 @@ function DialogContent({
           // is a lifted layer rather than a window, so there is no frame for it
           // to be rounder than, and at the menu's corner it read as a menu that
           // had grown into a dialog. See the radius scale in App.css.
-          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl border border-border bg-popover p-5 text-body text-popover-foreground shadow-ambient-lg outline-none sm:max-w-sm",
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-panel border border-border bg-card p-5 text-body text-popover-foreground shadow-ambient-lg outline-none sm:max-w-[27.5rem]",
           motion === "float" && POPUP_MOTION,
           className,
         )}
@@ -147,7 +147,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-5 -mb-5 flex flex-col-reverse gap-2 rounded-b-xl border-t border-border px-5 py-4 sm:flex-row sm:justify-end",
+        "flex flex-col-reverse gap-2 sm:flex-row sm:justify-end",
         className,
       )}
       {...props}
@@ -164,7 +164,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("font-heading text-title leading-tight", className)}
+      className={cn("text-[1.125rem] leading-tight font-semibold tracking-[-0.01em]", className)}
       {...props}
     />
   );
@@ -175,7 +175,7 @@ function DialogDescription({ className, ...props }: DialogPrimitive.Description.
     <DialogPrimitive.Description
       data-slot="dialog-description"
       className={cn(
-        "text-caption text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
+        "text-[0.78125rem] leading-[1.6] text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
         className,
       )}
       {...props}

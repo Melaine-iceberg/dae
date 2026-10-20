@@ -277,23 +277,23 @@ function CrumbContent({
 
   if (plain) {
     return (
-      <span className={`flex items-center gap-1 ${isCurrent ? "max-w-64" : "max-w-40"}`}>
+      <span className={`flex min-w-0 items-center gap-1 ${isCurrent ? "max-w-64" : "max-w-40"}`}>
         {icon}
-        <span className="block truncate">{breadcrumb.name}</span>
+        <span className="block min-w-0 truncate">{breadcrumb.name}</span>
       </span>
     );
   }
   if (isCurrent) {
     return (
-      <BreadcrumbPage className="flex max-w-64 items-center gap-1">
+      <BreadcrumbPage className="flex min-w-0 max-w-64 items-center gap-1">
         {icon}
-        <span className="truncate">{breadcrumb.name}</span>
+        <span className="min-w-0 truncate">{breadcrumb.name}</span>
       </BreadcrumbPage>
     );
   }
   return (
     <BreadcrumbLink
-      className="flex max-w-40 items-center gap-1"
+      className="flex min-w-0 max-w-40 items-center gap-1"
       render={
         <button
           type="button"
@@ -305,7 +305,7 @@ function CrumbContent({
       }
     >
       {icon}
-      <span className="truncate">{breadcrumb.name}</span>
+      <span className="min-w-0 truncate">{breadcrumb.name}</span>
     </BreadcrumbLink>
   );
 }

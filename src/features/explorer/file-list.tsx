@@ -19,10 +19,12 @@ import {
   AltArrowDownIcon,
   AltArrowUpIcon,
   ClipboardIcon,
+  CloseCircleIcon,
   CopyIcon,
   DangerTriangleIcon,
   FileAddIcon,
   LinkIcon,
+  MagnifierIcon,
   ProgrammingIcon,
   ScissorsIcon,
   SquareDashedIcon,
@@ -42,8 +44,8 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Kbd } from "@/components/ui/kbd";
 import {
   Empty,
   EmptyDescription,
@@ -125,6 +127,10 @@ interface FileListProps {
   isOperationPending: boolean;
   onAddToFavorites: (paths: string[]) => void;
   onAddToSpace: (spaceId: string, paths: string[]) => void;
+  /** Drops the active name filter, returning the pane to the folder listing.
+   *  Only the empty-search block needs it, and it is the one action that can
+   *  change that block's outcome. */
+  onClearSearch: () => void;
   onCompress: (format: ArchiveFormat, encrypted: boolean) => void;
   onCopy: () => void;
   onCreateDirectory: () => void;
@@ -347,6 +353,7 @@ export function FileList({
   isOperationPending,
   onAddToFavorites,
   onAddToSpace,
+  onClearSearch,
   onCompress,
   onCopy,
   onCreateDirectory,
@@ -447,10 +454,6 @@ export function FileList({
 
   const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
   const hotkeysPaused = useAtomValue(hotkeysPausedAtom);
-  // Empty folders teach the palette shortcut (Raycast convention): the one
-  // moment there is nothing to click is the moment worth spending on a
-  // keyboard affordance.
-  const commandBarBinding = formatBinding(resolveBinding(shortcuts, "app.commandBar"));
 
   // Explorer keyboard shortcuts, migrated to user-configurable TanStack
   // Hotkeys. Every action is gated on this pane being the focused one (the
@@ -1059,14 +1062,20 @@ export function FileList({
       >
         {entries.count === 0 && !listIsLoading ? (
           // The empty-state anatomy, shared with every other surface: one icon
-          // on a recessed tile, a title, one line of description, and the
-          // single action that can change the outcome. An empty folder and a
-          // failed search differ only in the glyph's hue.
+          // on a recessed plate, a title, one line of description, and the
+          // single action that can change the outcome — the reference's
+          // `.empty`, where an empty folder offers "new folder" and a failed
+          // search offers "clear filter". A block with no action is a dead
+          // end; the glyph's hue is what tells the two apart.
           <Empty className="min-h-0 flex-1 select-none">
             <EmptyHeader>
               <EmptyMedia variant="icon">
-                {searchState?.error ? (
-                  <DangerTriangleIcon className="text-warning" />
+                {searchState ? (
+                  searchState.error ? (
+                    <DangerTriangleIcon className="text-warning" />
+                  ) : (
+                    <MagnifierIcon />
+                  )
                 ) : (
                   <FolderGlyph />
                 )}
@@ -1078,13 +1087,29 @@ export function FileList({
                     : t("explorer:list.searchEmpty", { query: searchState.query })
                   : t("explorer:list.emptyFolder")}
               </EmptyTitle>
-              {!searchState && (
-                <EmptyDescription className="flex items-center gap-1.5">
-                  <Kbd>{commandBarBinding}</Kbd>
-                  <span>{t("explorer:list.emptyHint")}</span>
-                </EmptyDescription>
-              )}
+              <EmptyDescription>
+                {searchState
+                  ? t("explorer:list.searchEmptyHint")
+                  : t("explorer:list.emptyHint")}
+              </EmptyDescription>
             </EmptyHeader>
+            {searchState ? (
+              <Button onClick={onClearSearch} size="default" type="button" variant="outline">
+                <CloseCircleIcon />
+                {t("explorer:list.clearFilter")}
+              </Button>
+            ) : (
+              <Button
+                disabled={actionsDisabled}
+                onClick={onCreateDirectory}
+                size="default"
+                type="button"
+                variant="outline"
+              >
+                <AddFolderIcon />
+                {t("explorer:contextMenu.newFolder")}
+              </Button>
+            )}
           </Empty>
         ) : activeViewMode === "grid" ? (
           <FileGridView
@@ -1625,78 +1650,102 @@ function formatRelativeLocation(relativePath: string): string {
 
 /** Loading state of the detail listing.
  *
- *  It is drawn from the geometry the loaded list uses — the 36px header band,
- *  `listGridTemplate`'s tracks, the density row height, the same 12px inset —
- *  so the swap from skeleton to rows changes what is on the surface and never
- *  where it sits.
+ *  It is drawn from the geometry the loaded list uses — the 30px header band
+ *  and its type treatment, `listGridTemplate`'s tracks, the density row
+ *  height, the same `px-2` wrapper — so the swap from skeleton to rows changes
+ *  what is on the surface and never where it sits.
  *
  *  What this replaced was still the pre-virtualization shadcn `<Table>`: a
  *  fixed 58rem grid behind a `min-w-160` floor (so a narrow pane got a
  *  horizontal scrollbar the real list never has), a 28px header against the
- *  real 36px one, and 32px rows whatever the density setting said. Every
- *  navigation painted a different layout first and then jumped to the real
- *  one. It also measures its own container, so a pane that will drop the type
- *  and size columns drops them here instead of promising columns that vanish.
+ *  real 30px one, and 32px rows whatever the density setting said. A later
+ *  round got the header height but left it `bg-card/95` with a `px-3` inset
+ *  and `mx-3` cells, so every navigation twitched 4px sideways. It also
+ *  measures its own container, so a pane that will drop the type and size
+ *  columns drops them here instead of promising columns that vanish.
+ *
+ *  The grid and column modes do not have a header, a track or a row height to
+ *  honour, so they get the reference's neutral `.skel` instead: a 12px inset,
+ *  6px gaps, 26px bars on 6px corners. A column-shaped skeleton under a wall
+ *  of cards promises a list that is never coming.
  */
 const SKELETON_ROW_COUNT = 10;
+const SKELETON_BAR_COUNT = 9;
 
 export function FileListSkeleton() {
   const { t } = useTranslation("explorer");
   const density = useAtomValue(densityAtom);
+  const viewMode = useAtomValue(viewModeAtom);
   const rowHeight = DENSITY_ROW_HEIGHT[density];
   const listRef = useRef<HTMLDivElement>(null);
   const columns = listColumnsForWidth(useMeasuredWidth(listRef));
   const template = listGridTemplate(columns);
+
+  if (viewMode !== "list") {
+    return (
+      <section
+        aria-label={t("explorer:list.loadingAriaLabel")}
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
+        <div aria-hidden="true" className="grid gap-1.5 p-3">
+          {Array.from({ length: SKELETON_BAR_COUNT }, (_, index) => (
+            <Skeleton className="h-[26px]" key={index} />
+          ))}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section
       aria-label={t("explorer:list.loadingAriaLabel")}
       className="flex min-h-0 flex-1 flex-col"
     >
-      <div className="h-9 shrink-0 border-b border-border/70 bg-card/95">
+      <div className="h-[30px] shrink-0 border-b border-border bg-background/88 backdrop-blur-md">
         <div
           aria-hidden="true"
-          className="grid h-full items-center px-3 text-label whitespace-nowrap text-muted-foreground"
+          className="grid h-full items-center px-2 text-nano font-semibold tracking-[0.07em] whitespace-nowrap text-muted-foreground uppercase"
           style={{ gridTemplateColumns: template }}
         >
-          <span className="px-3">{t("explorer:columns.name")}</span>
+          <span className="px-2">{t("explorer:columns.name")}</span>
           {columns.modified && (
-            <span className="px-3">{t("explorer:columns.modified")}</span>
+            <span className="px-2">{t("explorer:columns.modified")}</span>
           )}
-          {columns.type && <span className="px-3">{t("explorer:columns.type")}</span>}
+          {columns.type && <span className="px-2">{t("explorer:columns.type")}</span>}
           {columns.size && (
-            <span className="px-3 text-right">{t("explorer:columns.size")}</span>
+            <span className="px-2 text-right">{t("explorer:columns.size")}</span>
           )}
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden" ref={listRef}>
         {/* Rows are placed in a fixed-height track exactly as the virtualizer
             places them, rather than flowing from the top of the container. */}
-        <div className="px-3">
-          <div className="relative" style={{ height: SKELETON_ROW_COUNT * rowHeight }}>
-            {Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => (
+        <div className="relative" style={{ height: SKELETON_ROW_COUNT * rowHeight }}>
+          {Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => (
+            <div
+              aria-hidden="true"
+              className="absolute top-0 left-0 w-full px-2"
+              key={index}
+              style={{ height: rowHeight, transform: `translateY(${index * rowHeight}px)` }}
+            >
               <div
-                aria-hidden="true"
-                className="absolute top-0 left-0 grid w-full items-center rounded-lg"
-                key={index}
-                style={{
-                  gridTemplateColumns: template,
-                  height: rowHeight,
-                  transform: `translateY(${index * rowHeight}px)`,
-                }}
+                className="grid h-full items-center rounded-md"
+                style={{ gridTemplateColumns: template }}
               >
                 <div className="flex min-w-0 items-center gap-2.5 px-2">
-                  <Skeleton className="size-[18px] shrink-0 rounded" />
-                  <Skeleton className={index % 3 === 0 ? "h-3 w-44" : "h-3 w-32"} />
+                  <Skeleton className="size-[18px] shrink-0 rounded-[5px]" />
+                  <Skeleton
+                    className={index % 3 === 0 ? "h-[9px] w-44" : "h-[9px] w-32"}
+                  />
                 </div>
-                {columns.modified && <Skeleton className="mx-3 h-2.5 w-24" />}
-                {columns.type && <Skeleton className="mx-3 h-2.5 w-10" />}
+                {columns.modified && <Skeleton className="mx-2 h-[9px] w-24" />}
+                {columns.type && <Skeleton className="mx-2 h-[9px] w-10" />}
                 {columns.size && (
-                  <Skeleton className="mx-3 h-2.5 w-12 justify-self-end" />
+                  <Skeleton className="mx-2 h-[9px] w-12 justify-self-end" />
                 )}
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </div>
     </section>

@@ -458,7 +458,7 @@
      gaps. Named rather than left to a `w-*` at the call site because it is
      the leading inset of the whole tab strip, not just of the buttons. */
   --width-traffic-lights: 3.75rem;
-  --min-width-menu: 11.25rem; /* 180px — the floor for any popup menu */
+  --min-width-menu: 13.75rem; /* 220px — the floor for any popup menu (the reference `.ctx`) */
   --max-width-command-bar: 40rem; /* 640px — the palette's cap */
   --max-width-row-meta: 45%; /* trailing metadata share of an explorer row */
   --width-column-view: 15rem; /* 240px — one Miller column */
@@ -1154,14 +1154,20 @@ html[data-window-material="vibrancy"] .bg-chrome {
 
   /* Focus ring: two families, one value each. They exist because a full-bleed
      row cannot carry an outer ring (it would be clipped by the virtualized
-     scroller), so rows use an inset hairline instead of the controls' 2px
-     halo. What is NOT allowed is a third opacity — the three control values
-     this replaced (/25 on inputs, /40 on buttons, /50 on the tab strip) meant
-     the most important focus target, the text input, had the faintest ring in
-     the app.
+     scroller), so rows use an inset hairline instead of the controls' halo.
+     What is NOT allowed is a third opacity — the three control values this
+     replaced (/25 on inputs, /40 on buttons, /50 on the tab strip) meant the
+     most important focus target, the text input, had the faintest ring in the
+     app.
 
-       controls  focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40
-       rows      focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset */
+       controls  focus-visible:ring-[3px] focus-visible:ring-ring/35
+       rows      focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset
+
+     The 3px halo at 35% is the reference's `--focus-ring`
+     (`0 0 0 3px hsla(202 100% 67% / .35)`); the 1px inset line is what a
+     full-bleed row wears instead of it. Two tiers, and a call site picks one
+     by what it is: anything that floats or has a border is a control, anything
+     that is a row of a list is a row. */
 
   /* ---------------------------------------------------------------------------
      THE SURFACES. Solid tonal planes divided by hairlines — nothing in the
@@ -1398,6 +1404,36 @@ html[data-window-material="vibrancy"] .bg-chrome {
     box-shadow: inset 0 0 0 2px var(--primary);
   }
 
+  /* THE KEYCAP — the reference's `.kbd`, and the one place the shell draws a
+     *physical* object at 1px scale.
+
+     A two-tone face (the card lit from above toward the canvas) plus a double
+     edge: an inset line of the text's own ink along the top edge, a 1.5px
+     contact shadow under it, and a 1px ring for the outline. All three cues
+     are 7–9% — a shortcut hint that reads as a button is worse than no hint.
+     The values live here rather than in `kbd.tsx` so a smaller key at a call
+     site only has to override height and type. */
+  .kbd-cap {
+    height: 19px;
+    min-width: 19px;
+    padding: 0 4px;
+    border-radius: 4px;
+    background-image: linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--card) 88%, var(--foreground)),
+      color-mix(in oklab, var(--background) 82%, var(--card))
+    );
+    color: color-mix(in oklab, var(--foreground) 85%, transparent);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in oklab, var(--foreground) 9%, transparent),
+      0 1px 1.5px color-mix(in oklab, var(--shadow-color) 50%, transparent),
+      0 0 0 1px color-mix(in oklab, var(--foreground) 7%, transparent);
+  }
+
   /* Row separator — the hairline between two rows *inside* one list, at half
      the containment strength (`--border-soft`). A list separated at card
      strength turns into a grid; a list with no line at all leaves a sparse
@@ -1448,6 +1484,42 @@ html[data-window-material="vibrancy"] .bg-chrome {
   }
   .capacity-fill--warn {
     background: var(--warning);
+  }
+
+  /* THE INSPECTOR — the reference's `.insp`.
+
+     A plate to the right of the listing, one hairline off it, on a tone that is
+     72% of the canvas and 28% of the card: the panel is neither the void nor a
+     raised sheet, it is the same plane as the list, edged. It used to be
+     `bg-card` with a 54px title bar of its own, which made it a second window
+     inside the window. */
+  .inspector {
+    border-left: 1px solid var(--border);
+    background-color: color-mix(in oklab, var(--background) 72%, var(--card));
+  }
+
+  /* The inspector's preview well — `.pv-body`: 12px corners, the canvas inside
+     it (not a `--muted` grey), and an inset hairline. A preview sits *in* the
+     panel the way a photograph sits in a mat, so the well is the darker plane
+     and the panel around it is the lighter one. */
+  .preview-body {
+    overflow: hidden;
+    border-radius: var(--radius-xl);
+    background-color: var(--background);
+    box-shadow: inset 0 0 0 1px var(--border);
+  }
+
+  /* `.pv-note` — what the well says when there is nothing to put in it (no
+     selection, no inline preview, an unreadable file). 11.5px at 1.6 in the
+     fourth ink on a 22px padding, centred: quieter than a row of metadata,
+     because it is an aside and not a fact. */
+  .note {
+    display: block;
+    padding: 22px 14px;
+    color: var(--meta);
+    font-size: 11.5px;
+    line-height: 1.6;
+    text-align: center;
   }
 
   /* Rendering isolation for virtualized rows/cells: each item becomes its own

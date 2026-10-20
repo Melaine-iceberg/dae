@@ -35,7 +35,7 @@ export const appSettingsAtom = atom<AppSettings | null>(null);
 /** TS mirror of the Rust `AppSettings::default()` for first paint. */
 export const CLIENT_DEFAULT_SETTINGS: AppSettings = {
   shortcuts: { ...DEFAULT_BINDINGS },
-  terminal: { fontSize: 13, lineHeight: 1.2, fontFamily: null, ansiColors: null },
+  terminal: { fontSize: 12, lineHeight: 1.75, fontFamily: null, ansiColors: null },
   defaultFileManager: { isDefault: false },
   warmTabPool: true,
 };

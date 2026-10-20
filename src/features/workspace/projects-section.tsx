@@ -145,7 +145,7 @@ function ProjectCard({
         "group state-layer flex h-project-card w-full flex-col gap-2 rounded-lg border border-border bg-card p-3 text-left",
         "transition-[background-color,border-color,box-shadow,transform] duration-fast ease-standard",
         "hover:-translate-y-px hover:border-primary/30 hover:shadow-ambient-sm",
-        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+        "focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none",
       )}
       onClick={onOpen}
       title={project.root}
