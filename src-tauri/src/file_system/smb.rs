@@ -1042,12 +1042,23 @@ impl Write for SmbWriteAdapter {
 
 fn map_connect_error(error: smb2::Error) -> FileSystemError {
     match error.kind() {
-        SmbErrorKind::AuthRequired | SmbErrorKind::SigningRequired => {
-            FileSystemError::PermissionDenied(format!(
-                "The server rejected the connection: {error}. \
-                 Add an account and password in the connect dialog and try again."
-            ))
-        }
+        // `GuestSessionRefused` used to arrive as `AuthRequired`, so it belongs
+        // in this arm: the server answered a named login by offering a guest or
+        // anonymous session, and the same advice applies — name an account, or
+        // connect without one on purpose.
+        SmbErrorKind::AuthRequired
+        | SmbErrorKind::SigningRequired
+        | SmbErrorKind::GuestSessionRefused => FileSystemError::PermissionDenied(format!(
+            "The server rejected the connection: {error}. \
+             Add an account and password in the connect dialog and try again."
+        )),
+        // Also split out of `AuthRequired`. This one is not a credential
+        // problem — the response failed signature verification — so it gets its
+        // own wording instead of advice that would send the user to retype a
+        // password that was never the issue.
+        SmbErrorKind::SignatureInvalid => FileSystemError::PermissionDenied(format!(
+            "The server's response could not be verified: {error}"
+        )),
         SmbErrorKind::AccessDenied => FileSystemError::PermissionDenied(error.to_string()),
         SmbErrorKind::TimedOut | SmbErrorKind::ConnectionLost => {
             FileSystemError::Io(format!("Could not reach the SMB server: {error}"))
@@ -1064,6 +1075,12 @@ fn map_smb_error(error: smb2::Error) -> FileSystemError {
         SmbErrorKind::AuthRequired | SmbErrorKind::SigningRequired => {
             FileSystemError::PermissionDenied(format!("The server requires an account: {error}"))
         }
+        // Reachable outside the handshake: any refused command whose response
+        // failed signature verification lands here, and reporting it as an I/O
+        // failure would blame the wrong thing.
+        SmbErrorKind::SignatureInvalid => FileSystemError::PermissionDenied(format!(
+            "The server's response could not be verified: {error}"
+        )),
         SmbErrorKind::NotADirectory => FileSystemError::NotDirectory(error.to_string()),
         SmbErrorKind::IsADirectory => FileSystemError::InvalidInput(error.to_string()),
         _ => FileSystemError::Io(error.to_string()),
