@@ -37,7 +37,7 @@ const emptyMediaVariants = cva(
         // poster. A sidebar-sized block overrides the tile through
         // `className` rather than getting a second variant, so the anatomy
         // stays one shape.
-        icon: "flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground [&_svg:not([class*='size-'])]:size-5",
+        icon: "flex size-11 shrink-0 items-center justify-center rounded-xl bg-secondary text-muted-foreground [&_svg:not([class*='size-'])]:size-5",
       },
     },
     defaultVariants: {

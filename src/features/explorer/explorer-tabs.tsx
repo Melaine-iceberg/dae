@@ -463,13 +463,14 @@ export function ExplorerTabs() {
   return (
     <div className="flex h-full flex-col">
       <TabDropIndicator />
-      {/* Window chrome: one 46px bar carrying the tab trough and the native
-          window controls. It paints nothing of its own — `bg-chrome` is
-          transparent, so the canvas `body` puts down runs through the frame
-          and the content row as one field (see THE WINDOW-MATERIAL SEAM for
-          the one case where that canvas is translucent). The idle chips are
-          bare labels divided by hairlines; the travelling pill under the
-          current tab is the only surface in the bar. */}
+      {/* Window chrome: one 44px bar carrying the tab trough and the native
+          window controls, painted in the frame tone (`bg-chrome`, the rail's
+          own rung). The bar is the top of the L of chrome the window is drawn
+          as, so the idle chips are bare labels on it — no dividers, no fills —
+          and the travelling pill under the current tab is the only surface up
+          here. Under a window material the frame stops painting and the
+          platform's backdrop shows through it (App.css, THE WINDOW-MATERIAL
+          SEAM). */}
       <header
         className="flex h-tab-strip shrink-0 items-stretch bg-chrome"
         data-tab-bar="true"
@@ -488,7 +489,7 @@ export function ExplorerTabs() {
           // window edge and 8px above the content row: that row's own `p-2`
           // gutter supplies the space underneath, and the two sides have to
           // measure the same or the row reads as pinned to the top.
-          className="tab-trough relative mt-2 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
+          className="tab-trough relative my-1.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
           // A tab drag pins its pointer capture here (see `tab-drag.ts`), and the
           // header above is a `deep` drag region, so the strip has to opt out
           // explicitly or the captured events read as a request to move the
@@ -531,20 +532,17 @@ export function ExplorerTabs() {
         <WindowControls />
       </header>
 
-      {/* Flat shell: the sidebar and the two content cards are panels on one
-          canvas, each edged by a hairline. The tab bar's contents are inset,
-          but the header itself still spans the full width and stays a drag
-          region, so native window controls and snap layouts keep working. */}
-      <div className="flex min-h-0 flex-1 gap-2 bg-background p-2">
+      {/* The L of chrome: the rail and the gutters are `--chrome`, the same
+          tone as the tab bar above, and the panels are sheets of paper laid on
+          it. The row's padding is the gutter, so a panel is always 8px from the
+          frame and 8px from its neighbour. */}
+      <div className="flex min-h-0 flex-1 gap-2 bg-chrome p-2">
         <Sidebar />
-        {/* `bg-background`, not `bg-card`: this is the canvas the panels sit
-            on, not a plane in its own right. It reads as nothing while the
-            root and `body` paint that canvas for free — and under a window
-            material it stops painting, so this row and the tab bar above it
-            stay one field (App.css, THE WINDOW-MATERIAL SEAM).
-
-            The air (`p-2 gap-2`) lives on the row now that the nav is a panel
-            like the rest: the row's canvas backs every gutter. */}
+        {/* The side of the L. `bg-chrome` is the frame tone, shared with the
+            tab bar and the rail, so the gutters between panels read as window
+            rather than as canvas — and under a window material this row stops
+            painting, so the backdrop reaches the whole frame and only the paper
+            stays opaque. */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
           {/* Chrome-style keep-alive: every tab's surface stays mounted and
               the surfaces are stacked; switching tabs flips visibility

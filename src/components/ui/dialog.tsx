@@ -48,12 +48,11 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        // Deliberately unfilled: nothing dims behind a dialog in this shell.
-        // The backdrop still exists to catch the click that dismisses the
-        // dialog, and to keep the pointer off the listing behind it — it just
-        // does not paint. The dialog's own border and shadow are the whole
-        // figure/ground signal.
-        "fixed inset-0 isolate z-50",
+        // A light veil, not a blackout: the listing behind the dialog stays
+        // legible as context while clearly not taking input. The dialog's own
+        // border and shadow still carry most of the figure/ground work — the
+        // veil only says which plane the pointer belongs to.
+        "fixed inset-0 isolate z-50 bg-[var(--scrim)]",
         motion === "float" && BACKDROP_MOTION,
         className,
       )}

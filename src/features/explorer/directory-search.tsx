@@ -161,12 +161,17 @@ export function DirectorySearch({
     // `shrink` rather than `shrink-0`: the toolbar is one non-wrapping row, and
     // a fixed 224px field was the first thing to push the controls past the
     // pane's edge. `min-w-24` keeps the field usable down to the narrowest
-    // window instead of letting it collapse to an icon-less sliver. The corner
-    // is the field's one flourish: it is the toolbar's only editable thing,
-    // and a soft 6px box reads as "type here" without a label — the capsule is
-    // saved for the things that genuinely have no corners (dots, the capacity
-    // bar), the way Notion draws its own search field.
-    <InputGroup className="h-7 w-56 min-w-24 shrink rounded-md">
+    // window instead of letting it collapse to an icon-less sliver. It is the
+    // same 36px capsule as the path field beside it — two fields in one row
+    // that disagree about their height read as two different toolbars.
+    <InputGroup
+      // The field gives width back to the path bar while it is idle and takes
+      // it when the user is actually typing: 176px at rest, 256px once the
+      // caret is in. Below 1360px it folds to its magnifier — a search box
+      // nobody is using must never be the reason the path is unreadable — and
+      // unfolds again on focus, which is exactly when it is being used.
+      className="h-9 w-44 min-w-0 shrink rounded-lg transition-[width] duration-normal ease-standard hover:w-56 focus-within:w-64 max-[1360px]:w-9 max-[1360px]:hover:w-9 max-[1360px]:focus-within:w-60"
+    >
       <InputGroupInput
         ref={inputRef}
         aria-invalid={Boolean(activeError)}
@@ -241,7 +246,10 @@ export function DirectorySearch({
           soon as the caret is in the box — at that point the key has done its
           job and the chip would only crowd the placeholder. */}
       {!isFocused && !isSearching && !activeQuery && (
-        <InputGroupAddon align="inline-end">
+        // Dropped where the field folds to its magnifier: outside a 176px box
+        // the keycap is the widest thing in it, and a chip hanging out of a
+        // 36px control reads as a rendering bug.
+        <InputGroupAddon align="inline-end" className="max-[1360px]:hidden">
           <Kbd className="h-4 px-1 text-nano">{focusBinding}</Kbd>
         </InputGroupAddon>
       )}

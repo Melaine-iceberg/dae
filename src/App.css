@@ -65,7 +65,7 @@
      steps is not legal, so a reviewer can see an off-ramp size at a glance
      instead of having to compare two pixel values.
 
-       title    18px  page, dialog and section titles
+       title    19px  page, dialog and section titles
        lead     15px  the one hero input — the palette search field
        body     14px  the workhorse — rows, controls, form text
        caption  13px  secondary metadata, descriptions, group headers
@@ -95,10 +95,10 @@
      the Latin it occasionally sets. Only `title` and `lead` carry a weight
      and tracking of their own — body and below inherit, so a call site can
      go bold without re-declaring size. */
-  --text-title: 1.125rem;
-  --text-title--line-height: 1.625rem;
-  --text-title--font-weight: 600;
-  --text-title--letter-spacing: -0.011em;
+  --text-title: 1.1875rem;
+  --text-title--line-height: 1.75rem;
+  --text-title--font-weight: 640;
+  --text-title--letter-spacing: -0.016em;
   --text-lead: 0.9375rem;
   --text-lead--line-height: 1.375rem;
   --text-lead--letter-spacing: -0.006em;
@@ -413,7 +413,7 @@
      strip's number lives in the plain pair at the top of this file, where a
      `background-size` can read it; the name here is an alias. */
   --height-tab-strip: var(--tab-strip-height);
-  --height-toolbar: 44px;
+  --height-toolbar: 48px;
   --height-status-strip: 32px;
   --height-capacity-bar: 3px; /* disk capacity fill in the sidebar */
   /* Window-control geometry, two numbers because the target and the plate are
@@ -488,242 +488,180 @@
 }
 
 :root {
-  /* QUIET DESK — light. Solid, tonal surfaces and one hairline: the canvas is a
-     cool grey, the panels are white paper on it, the ink is a cool slate, and a
-     deep teal is the one saturated note. Nothing here depends on what sits
-     behind the window, so it draws the same on Windows, macOS and Linux — which
-     is the whole point of it. The platform's own material (THE WINDOW-MATERIAL
-     SEAM) is garnish on the canvas alone; take it away and this is still the
-     finished picture.
+  /* ATLAS — light. One cool ground, one paper plane, one accent.
 
-     THE LADDER: two rungs and a line. The canvas is the window, `--card` is the
-     one raised plane, and the edge between them is `--border` — a hairline, not
-     a shadow. The values are set out under THE COOL NEUTRAL SCHEME below.
+     The window is drawn as three rungs instead of two: the frame — the tab
+     strip and the row of gutters the panels sit in — is `--sidebar`, the
+     panels on it are `--card`, and the canvas below both is `--background`.
+     The frame and the navigation rail are deliberately the same tone, so the
+     shell reads as one L of chrome wrapped around a sheet of paper rather than
+     as a set of separate cards floating on a grey field.
 
-     The accent clears AA in BOTH of its jobs: as a fill (white ink on it
-     ≈ 5.1) and as text or icon on the card (≈ 4.9). */
-  --shadow-color: #37352f; /* the ink itself: a shadow here is the paper's own dark, not a second colour */
-  /* Per-layer shadow alpha. One notch above Notion's tatami alphas (1.2–3.9%
-     black): a menu or a dialog has to leave a white panel by shadow as well as
-     by hairline, so the shadow has to actually read instead of sitting on flat
-     grey. The ladder is still carried by the geometry above. a4 is not a
-     shadow stop in practice — the outline-glow halo feeds on it, and a focus
-     ring at 4% would be gone, so it stays high. */
-  --shadow-a1: 2.5%;
-  --shadow-a2: 4.5%;
-  --shadow-a3: 8%;
+     The neutrals are cool and low-chroma (OKLCH ≈0.006) on purpose. They carry
+     no colour of their own, which leaves every hue in the window to content —
+     folder yellow, the file-type tones, thumbnails — and to the accent the
+     user picked in their OS. A neutral that leans is a neutral that fights
+     both.
+
+     Contrast, measured on the plane named: ink ≈17:1 on a panel and ≈15.5:1 on
+     the frame; secondary ink ≈6.0:1 on a panel, ≈5.6:1 on the frame, ≈5.1:1 on
+     a selected plate. The accent clears AA in both of its jobs — 5.0:1 under
+     white ink and 5.0:1 as text on a panel. */
+  --shadow-color: #0d1526;
+  --shadow-a1: 3%;
+  --shadow-a2: 6%;
+  --shadow-a3: 11%;
   --shadow-a4: 24%;
-  /* The canvas — the window behind the panels. A cool grey one step darker than
-     the paper, so a white panel reads off it by tone and a hairline rather than
-     by a shadow. It is also what the boot splash paints, so the first frame is
-     already the right colour. */
-  --background: #f6f5f1;
-  /* The one contact shadow a panel gets. Light only — see the dark scheme. */
-  --panel-shadow: 0 1px 2px
-    color-mix(in oklab, var(--shadow-color) 6%, transparent);
-  /* The plate under the current tab: paper on the trough's recess. */
+  /* The canvas. Only visible where a panel does not cover it: the window's
+     gutters, dialog backdrops and the boot splash. */
+  --background: #edf0f6;
+  /* A panel is a sheet of paper: one contact shadow and one light bevel along
+     its top edge. The bevel is what stops a white panel on a near-white frame
+     from reading as a hole. */
+  --panel-shadow:
+    0 1px 2px
+      color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
+    0 14px 34px -24px
+      color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
+  --panel-bevel: inset 0 1px 0 #ffffff;
+  /* The plate under the current tab: paper on the frame. */
   --tab-pill-fill: var(--card);
-  --foreground: #37352f; /* warm ink — 12.3:1 on the card */
-  --card: #ffffff; /* the panel paper — white, so a plate reads off the canvas rather than in its cast */
-  --card-foreground: #37352f;
-  --popover: #ffffff; /* menus, dialogs — the same sheet as the panels; the floating layers separate by hairline and shadow, not by value */
-  --popover-foreground: #37352f;
-  /* ---- The warm neutral scheme ---------------------------------------------
-
-     The paper is white; the canvas, every wash ON it, the hairlines and the ink
-     all lean the same way — a few degrees toward yellow, the way a printed page
-     does. It is a lean and not a tint, and the difference is the whole design.
-     A previous pass pushed both schemes warm (cream canvas, sand washes, a brown
-     shadow) and read as sepia rather than as warmth: a cast strong enough to be
-     a colour choice is strong enough to fight every icon drawn on it. So the
-     warmth is held to a number rather than to a feeling — OKLCH chroma at or
-     below 0.013 for every neutral in this file (the canvas is 0.005, the ink
-     0.011), against 0.018 for the sepia canvas and 0.027 for its hairline, and
-     against 0.003–0.016 for the cool slate this replaced. Hue sits at 85–95°.
-     The colour at window scale is left to the content — folder yellow,
-     file-type hues, thumbnails — rather than spent on the chrome.
-
-     The ladder, lightest to darkest — a short one, because a plane is
-     delimited by tone and a hairline rather than by a shadow:
-
-       card / popover #ffffff                    (the paper)
-       →  background #f6f5f1                     (the canvas the panels sit on)
-       →  muted / secondary / accent #f0eeea     (the wash a row takes ON the paper)
-       →  border #e6e3dc
-
-     The rail is a panel like the others, so its hover and its hairline are the
-     paper's own (`--sidebar-accent` and `--sidebar-border` repeat the values
-     above rather than naming a rung of their own). Card and popover are both
-     white on purpose: a menu is separated by its border and its shadow, and is
-     never asked to outrank a panel by value.
-
-     Contrast was measured, not eyeballed (WCAG, on the plane named): ink
-     ≈12.3:1 on a card and ≈11.2:1 on the canvas, the secondary grey ≈6.7:1 on a
-     card, ≈6.1:1 on the canvas, ≈5.8:1 on a paper hover and ≈5.1:1 on the
-     selected plate — that last pairing is what sets the secondary's lightness,
-     since a selected row carries its state by fill alone and the caption inside
-     the disk row sits directly on it. The accent is 5.1:1 under white ink and
-     5.1:1 as text on a card. `--folder` is the one role held to the *graphical*
-     bar instead of the text one — see its note below. */
-  --accent-default: #1f7a72; /* deep teal, the picture's cool note — 5.1:1 under white ink, 4.9:1 as text */
+  /* The veil under a modal layer. A dialog is separated by its border and its
+     shadow; the veil says the window behind it is not taking input, without
+     turning the listing into a grey slab. */
+  --scrim: rgb(13 21 38 / 0.16);
+  --foreground: #0f1319; /* 17:1 on the panel */
+  --card: #ffffff;
+  --card-foreground: #0f1319;
+  --popover: #ffffff;
+  --popover-foreground: #0f1319;
+  /* The one saturated note, and the fallback for the OS accent (see THE ACCENT
+     SEAM). Indigo rather than the teal this shell shipped with: at 20% it makes
+     a selection that reads as *chosen* without tinting the whole window green,
+     and it leaves the folder yellow as the only warm object on screen. */
+  --accent-default: #4f5df0;
   --accent-default-ink: #ffffff;
   --on-destructive: #ffffff;
-  --secondary: #f0eeea; /* warm grey — tonal secondary surfaces */
-  --secondary-foreground: #37352f;
-  --muted: #f0eeea;
-  --muted-foreground: #5f5c55; /* warm grey — 6.7:1 on a card, 5.1 on the selected plate; secondary text never fades out */
-  --accent: #f0eeea; /* hover highlight */
-  --accent-foreground: #37352f;
-  --error-container: #fbe3dc;
-  --on-error-container: #6e1f12;
-  /* Folder glyphs repeat once per directory — 38 of them in a full listing —
-     so they are the highest-volume colour in the app, and they are the one
-     glyph drawn as a solid object rather than as a line (`.folder-glyph`, see
-     below): a folder reads by silhouette the way Notion's folder icon does, not
-     by stroke contrast. That is what frees the front wall (`--folder-body`) to
-     be the bright yellow everyone recognises — tatami yellow-500 #ffb110 —
-     instead of a gold darkened to reach text contrast, which is how both
-     earlier attempts ended up brown (first at 68% chroma, then as yellow-700
-     held to 3.07:1). `--folder` keeps the deep gold (yellow-700 #c78600): it
-     is the rear wall, and it is the folder *hue* wherever a folder-hued thing
-     is still a line — the Home place, favourites.
-
-     The folder is three flat sheets of colour: the rear wall in `--folder`, the
-     front wall in `--folder-body`, and a light line (`--folder-edge`) along the
-     front wall's top that is what makes it stand in front of the rear one. An
-     open folder adds `--folder-paper` between them. */
-  --folder: #c78600; /* the rear wall, and the folder hue for line glyphs */
-  --folder-body: #ffb110; /* the front wall */
-  --folder-edge: #ffe08a; /* the light line along the front wall's top */
-  --folder-paper: #fff8e6; /* the sheet in an open folder */
-  /* How much of a file-type glyph's category hue goes into its body — the page
-     the details are drawn on. See `.type-glyph`. */
-  --glyph-body-mix: 32%;
-  --destructive: #c4372f;
-  /* Status hues: one hue each, contrast-checked against the card plane. */
-  --success: #367453;
-  --warning: #ab4a00;
-  --info: #1f6f96;
-  /* The six category hues, one per kind of thing: Notion's own category
-     colours, the tatami 600 rung of each hue (blue kept one step deeper at 700,
-     so the accent still shouts), measured on a card — blue 6.8, violet 7.3,
-     green 4.9, orange 3.8, rose 4.3, teal 5.1. The graphical-object bar is
-     3:1 and every hue clears it. They were a muted paintbox before — indigo,
-     plum, moss, brown-gold, rose, teal — and six low-chroma hues beside a
-     bronze folder is exactly what gave a listing its sepia. */
-  --tone-blue: #005bab; /* documents, code, shortcuts */
-  --tone-violet: #7237ae; /* images, video, fonts */
-  --tone-emerald: #14832b; /* spreadsheets, certificates */
-  --tone-amber: #dd5b00; /* media, archives — the one tone the accent cannot cover */
-  --tone-rose: #d13f9d; /* pdf, keys, executables */
-  --tone-cyan: #0a7b77; /* desktop, audio, databases */
-  --border: #e6e3dc; /* warm hairline panel edge */
-  --input: #d8d4cb;
-  /* Shape language: the quiet scale. An 8px base buys 4/5/6/8/12 on the inline
-     ladder and 10 on the content plate — corners that are small and steady, so
-     the eye lands on the content rather than on the container. */
-  --radius: 0.5rem;
-  --sidebar: var(--card); /* the rail is a panel like the others */
-  --sidebar-foreground: #37352f;
-  --sidebar-accent: #f0eeea; /* the paper's own hover — the rail is a panel */
-  --sidebar-accent-foreground: #37352f;
-  --sidebar-border: #e6e3dc;
-
-  /* Chrome geometry. Plain custom properties rather than `@theme` entries: a
-     token declared inside `@theme inline` is inlined into the utilities instead
-     of being emitted as a variable, so no rule of this file could read it. The
-     Tailwind names stay there as aliases — `w-sidebar` and `h-tab-strip` keep
-     their spelling, and there is still one number behind each.
-
-     Declared *in this block* and never in a `:root` of its own: the
-     boot-screen plugin in vite.config.ts paints the splash from the first
-     `:root` block in this file, before React parses anything else. A separate
-     `:root` placed above this one shadows it, and the build then fails with
-     "--background is not defined where expected" — the geometry block, not
-     the theme, was what got read. Anything that has to exist as a real
-     variable belongs here. */
-  --sidebar-width: 15rem; /* 240px — the nav column */
-  /* The window frame bar. Tall enough to carry the row of tab chips and the
-     plate that floats in it: 46px buys the 38px that row takes plus 8px of
-     field above, matching the content row's own gutter below — the strip
-     carries no bottom margin, because that row's `p-2` already supplies the
-     space under it, so the bar is 8px from the top edge and 8px from the card. */
-  --tab-strip-height: 46px;
-}
-
-.dark {
-  /* QUIET DESK — dark. The canvas is a near-black and the panel sits two clear
-     steps up, so the plane reads as a sheet laid on the desk; the rungs are
-     tuned in contrast ratios rather than in L* deltas, because near black the
-     +0.05 term that dominates a contrast ratio swamps the luminance and an
-     equal L* step would quietly weaken every hairline and hover wash.
-
-     The neutrals are near-neutral (OKLCH chroma ≈0.003) — just enough to avoid
-     a sterile blue cast, not enough to read as tinted. A brown shadow was part
-     of an earlier pass that read as sepia, and on a near-black canvas a tinted
-     shadow reads as dust on grey. Depth comes from value alone, which is also
-     why `--panel-shadow` is `none` here. The secondary ink at #bab9b8 measures
-     7.5:1 on a panel, 4.5 on the selected plate. */
-  --shadow-color: #000000; /* neutral black: a tinted shadow reads as dust on grey */
-  --shadow-a1: 22%;
-  --shadow-a2: 34%;
-  --shadow-a3: 46%;
-  --shadow-a4: 60%;
-  --background: #191919; /* canvas — near-neutral; OKLCH chroma ≈0.003, just enough to avoid a blue cast */
-  /* A black shadow on a near-black canvas is invisible, so a panel takes none
-     here: the tonal step up from the canvas and the hairline carry the edge. */
-  --panel-shadow: none;
-  /* The plate under the current tab. One step above the card rather than the
-     card itself: the trough is the canvas lifted by a wash of ink, which lands
-     at about the card's own value, so a card-coloured plate would vanish into
-     it instead of reading as a raised key. */
-  --tab-pill-fill: var(--secondary);
-  --foreground: #ebe8e2;
-  --card: #232323; /* panel surface */
-  --card-foreground: #ebe8e2;
-  --popover: #2d2d2d; /* floating layer — two clear steps above the panels */
-  --popover-foreground: #ebe8e2;
-  --accent-default: #6bbcb6; /* the light teal's dark rung — 6.8:1 as text on a panel, 8:1 under the dark ink */
-  --accent-default-ink: #101116; /* ink label on the teal fill — 8:1 */
-  --on-destructive: #101116; /* the dark destructive is a light red: white on it 2.4:1 */
-  --secondary: #303030;
-  --secondary-foreground: #ebe8e2;
-  --muted: #2a2a2a; /* inner recessed surface — tracks, header strips, thumbnails */
-  --muted-foreground: #bab9b8; /* 7.5:1 on a panel, 6.3 on the rail hover, 4.5 on the selected plate */
-  --accent: #303030; /* hover highlight — a half-step above the panel */
-  --accent-foreground: #ebe8e2;
-  --error-container: #5f2a22;
-  --on-error-container: #ffd9cf;
-  /* The same filled-folder pair as the light scheme, on purpose: a folder is
-     a fill now, so it needs no luminance help from the scheme and a folder
-     stays the same yellow in both. */
+  --secondary: #f1f4f9;
+  --secondary-foreground: #0f1319;
+  --muted: #f2f5f9; /* recessed inner surface — tracks, headers, thumbnails */
+  --muted-foreground: #5b6675; /* ≈6.0:1 on a panel; secondary text never fades out */
+  --accent: #edf1f8; /* hover wash on paper */
+  --accent-foreground: #0f1319;
+  --error-container: #fdeceb;
+  --on-error-container: #7a1c12;
+  /* The folder is the highest-volume colour in the app and the only glyph
+     drawn as a solid object, so it is allowed to be the bright yellow everyone
+     recognises; the rear wall takes the deeper gold. */
   --folder: #c78600;
   --folder-body: #ffb110;
   --folder-edge: #ffe08a;
   --folder-paper: #fff8e6;
-  /* The category hues are light tints in this scheme, and a light hue over a
-     dark card needs more of itself to read as a page at all. */
-  --glyph-body-mix: 38%;
-  --destructive: #ec8d86;
-  --success: #6dbd94;
-  --warning: #dfa63f;
-  --info: #7fb0f0;
-  /* Same mapping as the light scheme — tatami 300 tints of the same six hues
-     (see THE CATEGORY HUES note above), on the pane at 6.8–10.5:1. */
-  --tone-blue: #73b1f4; /* documents, code, shortcuts */
-  --tone-violet: #d6b6f6; /* images, video, fonts */
-  --tone-emerald: #abe5b8; /* spreadsheets, certificates */
-  --tone-amber: #ffad71; /* media, archives — the one tone the accent cannot cover */
-  --tone-rose: #ffb5eb; /* pdf, keys, executables */
-  --tone-cyan: #83cbc9; /* desktop, audio, databases */
-  --border: #383838; /* hairline — 1.35:1 on a panel, the same step as light */
-  --input: #464544;
-  --radius: 0.5rem; /* the same shape language as light */
-  --sidebar: var(--card); /* the rail is a panel like the others */
-  --sidebar-foreground: #ebe8e2;
-  --sidebar-accent: #303030;
-  --sidebar-accent-foreground: #ebe8e2;
-  --sidebar-border: #383838;
+  --glyph-body-mix: 30%;
+  --destructive: #d92d20;
+  /* Status hues: one hue each, checked against the panel plane. */
+  --success: #067647;
+  --warning: #b54708;
+  --info: #1570ef;
+  /* The six category hues, one per kind of thing: each sits at the 600 rung of
+     its hue, so a listing of mixed files reads as a palette rather than as a
+     paintbox, and every one clears the 3:1 graphical bar on paper. */
+  --tone-blue: #1d4ed8;
+  --tone-violet: #6d28d9;
+  --tone-emerald: #047857;
+  --tone-amber: #c2410c;
+  --tone-rose: #be185d;
+  --tone-cyan: #0e7490;
+  --border: #e2e7f0; /* hairline: the edge of a panel, and its whole boundary */
+  --input: #d5dce8;
+  /* Shape: a 10px base. Panels take the plane step (12), floating layers the
+     dialog step (14), inline controls the 7-8px steps. */
+  --radius: 0.625rem;
+  /* The frame tone, shared by the rail and the tab strip: one step below the
+     paper, so the sheet still reads as raised while the chrome reads as
+     chrome. */
+  --sidebar: #f5f8fc;
+  --sidebar-foreground: #0f1319;
+  --sidebar-accent: #e6ecf6; /* hover on the rail — a step deeper than the frame */
+  --sidebar-accent-foreground: #0f1319;
+  --sidebar-border: #e2e7f0;
+
+  /* Chrome geometry — plain custom properties, because a token inside
+     `@theme inline` is inlined into utilities instead of being emitted as a
+     variable, and the boot-screen plugin in vite.config.ts reads this block. */
+  --sidebar-width: 15.5rem;
+  /* The tab strip: 44px carries a 32px chip with 6px above and below, which is
+     the same 6px gutter the content row uses. */
+  --tab-strip-height: 44px;
+}
+
+.dark {
+  /* ATLAS — dark. The same three rungs, inverted in intent: the frame is the
+     darkest plane, the panels step up off it, and floating layers step up
+     again. Depth is carried by value and by a light bevel along each panel's
+     top edge — not by shadow, which is invisible on a near-black ground.
+
+     The neutrals keep a trace of blue (OKLCH chroma ≈0.012) so the window
+     reads as graphite rather than as a grey void, and the accent is the same
+     indigo lifted until it clears AA as text on a panel. */
+  --shadow-color: #000000;
+  --shadow-a1: 34%;
+  --shadow-a2: 48%;
+  --shadow-a3: 62%;
+  --shadow-a4: 74%;
+  --background: #0a0d13;
+  --panel-shadow:
+    0 1px 2px
+      color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
+    0 18px 44px -26px
+      color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
+  --panel-bevel: inset 0 1px 0 rgb(255 255 255 / 0.045);
+  /* The trough is a step *below* the frame, so the plate under the current tab
+     has to be a step above it to read at all. */
+  --tab-pill-fill: #1e2533;
+  --scrim: rgb(0 0 0 / 0.5);
+  --foreground: #e8ecf4; /* 15.4:1 on a panel */
+  --card: #161c26;
+  --card-foreground: #e8ecf4;
+  --popover: #1f2632;
+  --popover-foreground: #e8ecf4;
+  --accent-default: #93a0ff; /* 7.4:1 as text on a panel, 7.6:1 under the dark ink */
+  --accent-default-ink: #0a0d13;
+  --on-destructive: #1a0a08; /* the dark destructive is a light red */
+  --secondary: #202836;
+  --secondary-foreground: #e8ecf4;
+  --muted: #11161f; /* recessed inner surface */
+  --muted-foreground: #9aa4b5; /* ≈7.3:1 on a panel, ≈4.7:1 on a selected plate */
+  --accent: #232b3a; /* hover — a clear half-step above the panel */
+  --accent-foreground: #e8ecf4;
+  --error-container: #4a1f19;
+  --on-error-container: #ffd9d2;
+  /* A folder is a fill, not a line, so it needs no luminance help from the
+     scheme: the same yellow in both. */
+  --folder: #c78600;
+  --folder-body: #ffb110;
+  --folder-edge: #ffe08a;
+  --folder-paper: #fff8e6;
+  --glyph-body-mix: 34%;
+  --destructive: #ff9b93;
+  --success: #5fd39a;
+  --warning: #ffc06a;
+  --info: #8ab4ff;
+  /* The same six hues as light, at the 300 rung: 5.9–9.5:1 on a panel. */
+  --tone-blue: #7aa7ff;
+  --tone-violet: #c4a6ff;
+  --tone-emerald: #5fd39a;
+  --tone-amber: #ffb26b;
+  --tone-rose: #ff92c2;
+  --tone-cyan: #67d4e0;
+  --border: #262e3d; /* hairline — 1.6:1 on a panel, a clear step without a wire */
+  --input: #2e3746;
+  --radius: 0.625rem; /* the same shape language as light */
+  --sidebar: #0f141c; /* the frame: one step below the panels */
+  --sidebar-foreground: #e8ecf4;
+  --sidebar-accent: #1a2130;
+  --sidebar-accent-foreground: #e8ecf4;
+  --sidebar-border: #222a37;
 }
 
 /* ---------------------------------------------------------------------------
@@ -770,37 +708,28 @@
   --sidebar-primary-foreground: var(--primary-foreground);
   --sidebar-ring: var(--primary);
   /* Selection is the accent at low strength rather than a second colour, so a
-     row reads as *chosen* in whatever hue the user picked. Transparent by
-     construction, so it tints the plane underneath instead of replacing it.
+     row reads as *chosen* in whatever hue the user picked. Transparent, so it
+     tints the plane underneath instead of replacing it.
 
-     Strength is set by the rule the dark block below spells out: a selection
-     has to sit clearly above the hover rung, or it is just a pointer. On a
-     white panel the hover highlight (`--muted`) is worth 4.9 L*, so 13% — the
-     value this carried before the palette went neutral — bought only 6.8 and
-     left the ratio at 1.4x, against dark's 2.4x. 20% buys 10.5 L* for a ratio
-     of 2.2x, which is the same signal in both schemes. Ink is unaffected:
-     `--foreground` on this fill is 9.2:1, and 7.9:1 at the `prefers-contrast`
-     value below. */
-  --selection: color-mix(in oklab, var(--primary) 20%, transparent);
-  /* The hairline inside a selected row. It has to out-read the fill it sits
-     in, because it is what separates *selected* from *hovered* at a glance —
-     at the 22% this was hardcoded to, it landed 2.4 L* off the fill, i.e.
-     invisible. 45% puts it 26 L* clear. Shared by the list and the grid, so
-     the two cannot drift apart. */
-  --selection-edge: color-mix(in oklab, var(--primary) 45%, transparent);
+     Two rules set the strength, and both are about the hover rung beside it:
+     a selection has to land clearly above a hover, or it is a pointer rather
+     than a state; and the ink inside it has to stay above AA. On white, 14%
+     moves the plate ≈8 L* and leaves the label at ≈13:1 — comfortably above
+     the 2-3 L* a hover wash buys. */
+  --selection: color-mix(in oklab, var(--primary) 14%, transparent);
+  /* The hairline inside a selected row. It is what separates *selected* from
+     *hovered* at a glance — the fill alone is close to the accent at this
+     strength — so it runs at three times the fill's own percentage. Shared by
+     the list and the grid, so the two cannot drift apart. */
+  --selection-edge: color-mix(in oklab, var(--primary) 42%, transparent);
 }
 .dark {
-  /* Double the light strength, for a measured reason rather than the
-     near-black canvas that is no longer true of it: a selected row has to move
-     the panel further than hovering it already does, and on these surfaces the
-     hover highlight is worth +7.3 L*. At half the strength the accent no longer
-     buys more than that — a selection you could not tell from a pointer — so
-     the strength doubles to land clearly above the hover rung. */
-  --selection: color-mix(in oklab, var(--primary) 26%, transparent);
-  /* Further than the light value in percentage terms, and it has to be:
-     mixing toward a light blue from a dark panel raises L* slowly, so 45%
-     here would buy only 5 L* of separation. 85% buys 19. */
-  --selection-edge: color-mix(in oklab, var(--primary) 85%, transparent);
+  /* The same signal, doubled: on a near-black panel a light accent raised by
+     14% is worth only a few L*, and the hover wash beside it is worth more. */
+  --selection: color-mix(in oklab, var(--primary) 30%, transparent);
+  /* Mixing toward a light indigo from a dark panel raises L* slowly, so the
+     edge runs further out than in light to stay a visible line. */
+  --selection-edge: color-mix(in oklab, var(--primary) 80%, transparent);
 }
 
 /* ---------------------------------------------------------------------------
@@ -884,10 +813,12 @@ html[data-window-focused="false"] .tab-pill {
    and `html.dark` is exactly as specific as `html[data-window-material]`.
    --------------------------------------------------------------------------- */
 :root {
-  /* The frame role. The tab strip is the canvas, not a band pasted over it: it
-     carries no fill of its own, so the canvas runs through the frame and the
-     content row as one field. */
-  --chrome: transparent;
+  /* The frame role: the tone the window itself is painted in — the tab strip
+     and the gutters the panels sit in. It is the rail's tone by definition, so
+     the chrome is one continuous L around the paper rather than a band above
+     it. Under a material it drops out (see the overrides below) and the
+     platform's own backdrop shows through the frame only. */
+  --chrome: var(--sidebar);
 
   /* How much of the canvas colour is kept. At 100% the canvas is the opaque
      plate every platform shares; under a material it drops, and the complement
@@ -930,7 +861,11 @@ html[data-window-material="vibrancy"]:root body {
 html[data-window-material="mica"] .bg-background,
 html[data-window-material="acrylic"] .bg-background,
 html[data-window-material="blur"] .bg-background,
-html[data-window-material="vibrancy"] .bg-background {
+html[data-window-material="vibrancy"] .bg-background,
+html[data-window-material="mica"] .bg-chrome,
+html[data-window-material="acrylic"] .bg-chrome,
+html[data-window-material="blur"] .bg-chrome,
+html[data-window-material="vibrancy"] .bg-chrome {
   background-color: transparent;
 }
 
@@ -1118,51 +1053,50 @@ html[data-window-material="vibrancy"] .bg-background {
        .tab-pill        the plate under the current tab, which slides between
                         tabs.
        .row-active      the "I am here" plate — a nav row, a chip, a segment
-                        that reports state by pressing deeper into its own
-                        fill: one wash of the ink over the call site's fill.
+                        that reports state by taking the accent into its own
+                        fill.
 
-     THE FRAME CARRIES NONE OF THIS. The tab strip paints nothing (`--chrome` is
-     transparent) and neither does the row of chips inside it: the canvas runs
-     through the frame, the tab row and the content row as one field, so the
-     only surface up there is the plate under the current tab.
+     THE FRAME IS A PLANE, THE PANELS ARE THE PAPER. The tab strip and the row of
+     gutters paint `--chrome` — the rail's own tone — so the window has one
+     continuous frame wrapped around one continuous sheet. A panel is that
+     sheet: `--card`, a hairline, a bevel of light along its top edge and one
+     soft contact shadow. Nothing else in the window floats.
 
-     ONE EDGE, THE HAIRLINE. A panel is separated from the canvas by a 1px
-     `--border` and by tone; `--panel-shadow` adds a single contact shadow in
-     light and nothing in dark. Both are real borders and colours, so forced
-     colours keeps them and this block needs no override there. */
+     ONE EDGE, THE HAIRLINE. A panel is separated from the frame by 1px of
+     `--border` and by a full tone step; the shadow only says the sheet is
+     lying on the frame rather than part of it. Both are real borders and
+     colours, so forced colours keeps them and this block needs no override
+     there. */
   .content-panel {
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
     background-color: var(--card);
-    box-shadow: var(--panel-shadow);
+    box-shadow: var(--panel-shadow), var(--panel-bevel);
   }
 
-  /* The "I am here" plate: one flat wash over the call site's fill, and
-     nothing else. No ring, no gradient, no glow, no lit edge.
+  /* The "I am here" plate: the accent taken into the call site's own fill, and
+     nothing else. No ring, no glow, no gradient.
 
-     A hairline inset ring is what makes a selected row read as a *control* —
-     an outlined box you could click — rather than as a place you are. Notion's
-     nav item is a plain darker grey, and the wash alone carries the step that
-     matters: the rail's hover fill is `--sidebar-accent`, and this sits seven
-     points of ink on top of it, so hover and selection stay two distinct tones
-     with no line between them. */
+     A hairline is what makes a selected row read as a *control* — an outlined
+     box you could click — rather than as a place you are. The accent wash alone
+     carries the step that matters: the rail's hover fill is one neutral step
+     deeper than the frame, and this sits a tinted step on top of it, so hover
+     and location stay two different *kinds* of state rather than two greys. */
   .row-active {
     background-image: linear-gradient(
-      color-mix(in oklab, var(--accent-foreground) 7%, transparent),
-      color-mix(in oklab, var(--accent-foreground) 7%, transparent)
+      color-mix(in oklab, var(--primary) 13%, transparent),
+      color-mix(in oklab, var(--primary) 13%, transparent)
     );
   }
 
   /* THE TROUGH paints nothing. `.tab-trough` survives as the name of the region
-     the chips sit in — it is what the dividers below hang off — but the 6% wash
-     of ink that used to make it a recess is gone, so the tab row reads as part
-     of the canvas and the plate under the current tab is the one surface in it.
-     The dividers between chips carry the "one row" reading on their own; the
-     wash was one dark plane too many under a frame that paints nothing itself. */
+     the chips sit in, but the frame behind it is the chrome tone, so the chips
+     are bare labels on that plane and the plate under the current tab is the
+     one surface in the row. */
 
-  /* THE PILL — the plate under whichever tab is current: paper on the canvas, a
-     hairline and a contact shadow. It is the only surface in the tab row, and
-     with nothing painted behind it that is what makes it read as raised.
+  /* THE PILL — the plate under whichever tab is current: paper on the frame,
+     a hairline, a light bevel and a contact shadow. It is the only surface in
+     the tab row, which is what makes it read as raised.
 
      It is a node of its own rather than a class on the selected tab, and that
      distinction is the whole feature: the tab carrying `aria-selected` changes
@@ -1183,8 +1117,11 @@ html[data-window-material="vibrancy"] .bg-background {
     background-color: var(--tab-pill-fill);
     box-shadow:
       inset 0 0 0 1px var(--border),
+      var(--panel-bevel),
       0 1px 2px
-        color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent);
+        color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
+      0 8px 18px -12px
+        color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
     opacity: 0;
     pointer-events: none;
     /* Width and transform, not `left`/`right`: the slide stays on the
@@ -1209,24 +1146,11 @@ html[data-window-material="vibrancy"] .bg-background {
     transition: none;
   }
 
-  /* THE DIVIDER — idle tabs are bare labels, so what holds the row together is
-     a hairline standing in the gap between neighbours: a 1px foreground wash,
-     centred in the gap and short of both chips' full height so it reads as a
-     separator, not a border. Only BETWEEN chips (the `+`), never ahead of the
-     first. The travelling pill crosses none of them: the plate is the only
-     "you are here", and the lines are what keep the bare labels from
-     scattering. */
-  .tab-trough [role="tab"] + [role="tab"]::before {
-    content: "";
-    position: absolute;
-    left: -4px;
-    top: 50%;
-    width: 1px;
-    height: 16px;
-    transform: translateY(-50%);
-    background-color: color-mix(in oklab, var(--foreground) 14%, transparent);
-    pointer-events: none;
-  }
+  /* There is no divider between tabs. On a plain canvas the hairlines were
+     what kept a row of bare labels from scattering; on the tinted frame the
+     chips have a ground of their own, and a line between two labels one gap
+     apart is the busiest thing the row could draw. The pill is the only
+     structure up there. */
 
   /* Path hints keep their filename readable: flipped text direction moves the
      overflow — and therefore the ellipsis — to the head, while `plaintext`

@@ -2,10 +2,29 @@
  * The explorer's toolbar: navigation, favorites, path bar, search, view
  * menus, Git branch, split toggle, preview toggle and the terminal toggle.
  *
- * The markup was lifted out of `explorer-view.tsx` verbatim; everything it
- * reads arrives as props, so the view computes state and this component only
- * lays it out. That split also keeps the toolbar's narrow-window overflow
- * behaviour (`TOOLBAR_OVERFLOW_CLASS`) documented in one place.
+ * ONE ROW, PATH FIRST. The toolbar used to be two stacked rows — a path strip
+ * over a row of controls — because the breadcrumbs were the first thing to be
+ * squeezed when everything shared a line. That solved the squeeze by spending
+ * a whole band of window height on chrome, which is the more expensive half of
+ * the trade: a file manager's most valuable pixels are the ones in the listing.
+ *
+ * So the row is laid out by what a control actually does, left to right:
+ *
+ *   chrome   the sidebar toggle, alone at the leading edge
+ *   travel   back / forward / up, in one recessed cluster
+ *   place    the path field — the row's spine, `flex-1`
+ *   find     the name/content search capsule
+ *   act      reload, favorite
+ *   view     view menu, filter menu, the folder's git branch
+ *   panels   split, preview, terminal — pinned to the trailing edge
+ *
+ * The path field is a filled capsule rather than bare crumbs: it is the one
+ * control in the row that holds a *value*, and a field that looks like a field
+ * is what makes "click to edit the path" discoverable without a tooltip.
+ *
+ * Controls that give up on a narrow window are listed in
+ * `TOOLBAR_OVERFLOW_CLASS` and friends: the pane is `overflow-hidden`, so a
+ * control that does not fit is not merely cramped, it is unreachable.
  */
 import { useTranslation } from "react-i18next";
 import {
@@ -40,18 +59,21 @@ import { ViewMenu } from "./view-menu";
 import { FilterMenu } from "./filter-menu";
 
 /**
- * Controls the toolbar gives up on a narrow window.
+ * Controls the toolbar gives up on a narrow window, in the order it gives them
+ * up. Each is reachable some other way:
  *
- * The toolbar is a single non-wrapping row of `shrink-0` controls, and the
- * pane it lives in has `overflow-hidden` — so below a certain width the
- * trailing controls were not merely cramped, they were clipped and
- * unreachable. The path bar is `flex-1` and the search field shrinks, which
- * covers most of the range; what is left over is paid for by the two controls
- * that are reachable some other way: the favorite toggle (the folder's context
- * menu) and the split-view toggle (a per-tab layout choice, not a per-folder
- * one). Both come back as the window widens.
+ *   favorite  the folder's own context menu
+ *   split     a per-tab layout choice, not a per-folder one
+ *   git       the branch is context, not a control
  */
 const TOOLBAR_OVERFLOW_CLASS = "max-[880px]:hidden";
+const TOOLBAR_OVERFLOW_GIT_CLASS = "max-[1000px]:hidden";
+
+/** A cluster of controls that reads as one object: a recessed plate holding
+ *  evenly weighted keys. Groups are told apart by that plate and by
+ *  whitespace — never by a hairline between neighbours, which turns a row of
+ *  icons into a picket fence. */
+const CLUSTER_CLASS = "flex shrink-0 items-center gap-0.5 rounded-lg bg-muted/70 p-0.5";
 
 export interface ExplorerToolbarProps {
   sidebarVisible: boolean;
@@ -130,198 +152,190 @@ export function ExplorerToolbar({
   const previewBinding = formatBinding(useBinding("explorer.preview"));
 
   return (
-    // Two rows: the breadcrumb strip gets the full pane width on top — it was
-    // the first thing to be squeezed when everything shared one row — with the
-    // search field on its trailing edge. The controls keep the row below.
-    // Both rows are drag regions, the way the single row used to be.
-    <header className="flex shrink-0 flex-col" data-tauri-drag-region="deep">
-      {/* Row 1 is the path bar's own 32px plus a top inset only: it needs air
-          between itself and the pane's top edge, while any padding *below* it
-          reads as a gap between the two rows. The wrapper carries no extra
-          padding either — the crumbs start on the same 6px the row below
-          starts on, so the two rows share a left edge. */}
-      <div className="flex items-center gap-0.5 px-1.5 pt-1.5" data-tauri-drag-region="deep">
-        <div className="min-w-0 flex-1">
-          {directory ? (
-            <ExplorerPathBar
-              directory={directory}
-              editSignal={pathEditSignal}
-              onNavigate={onNavigateBreadcrumb}
-              onNavigatePath={onNavigatePath}
-              trailing={<ListingStats {...stats} />}
-            />
-          ) : (
-            <Skeleton className="h-6 w-56 max-w-full" />
-          )}
-        </div>
+    <header
+      className="flex h-toolbar shrink-0 items-center gap-1.5 px-2"
+      data-tauri-drag-region="deep"
+    >
+      {/* App chrome: the sidebar toggle, alone at the leading edge. */}
+      <Button
+        aria-label={
+          sidebarVisible ? t("explorer:toolbar.hideSidebar") : t("explorer:toolbar.showSidebar")
+        }
+        onClick={onToggleSidebar}
+        size="icon"
+        title={
+          sidebarVisible ? t("explorer:toolbar.hideSidebar") : t("explorer:toolbar.showSidebar")
+        }
+        type="button"
+        variant="ghost"
+      >
+        <PanelLeftIcon />
+      </Button>
 
-        <DirectorySearch
-          contentSearch={contentSearch}
-          directoryName={directory?.breadcrumbs.at(-1)?.name ?? null}
-          disabled={isLoading || !isActivePane}
-          mode={searchMode}
-          onModeChange={onSearchModeChange}
-          search={search}
-        />
+      {/* Travel: where you have been and where "up" is. One plate, so the three
+          keys read as one instrument rather than as three loose icons. */}
+      <div className={CLUSTER_CLASS}>
+        <Button
+          aria-label={t("explorer:toolbar.back")}
+          disabled={!canGoBack}
+          onClick={onGoBack}
+          size="icon"
+          title={t("explorer:toolbar.back")}
+          type="button"
+          variant="ghost"
+        >
+          <ArrowLeftIcon />
+        </Button>
+        <Button
+          aria-label={t("explorer:toolbar.forward")}
+          disabled={!canGoForward}
+          onClick={onGoForward}
+          size="icon"
+          title={t("explorer:toolbar.forward")}
+          type="button"
+          variant="ghost"
+        >
+          <ArrowRightIcon />
+        </Button>
+        <Button
+          aria-label={t("explorer:toolbar.up")}
+          disabled={!canGoUp}
+          onClick={onGoUp}
+          size="icon"
+          title={t("explorer:toolbar.up")}
+          type="button"
+          variant="ghost"
+        >
+          <ArrowUpIcon />
+        </Button>
       </div>
 
-      {/* Row 2 groups the controls by what they act on — app chrome, going
-          somewhere, how the listing looks, which panels are open — and the
-          groups are told apart by whitespace alone. It used to run a hairline
-          between every neighbour, which turned a dozen evenly-weighted icons
-          into a picket fence: the separators were the only structure in the
-          row, and there were more of them than sentences. Now each cluster
-          keeps `gap-0.5` inside and `gap-2.5` between, navigation hugs the
-          leading edge under the crumbs, and the panel cluster takes the
-          trailing one (`ml-auto`) so the empty middle is what shapes the row.
-          The panel toggles fill their chip while on (`aria-pressed`), so an
-          open panel is legible at a glance instead of being a guess. */}
-      <div className="flex h-toolbar items-center gap-2.5 px-1.5" data-tauri-drag-region="deep">
-        {/* App chrome: the sidebar toggle, alone at the leading edge. */}
-        <div className="flex shrink-0 items-center gap-0.5">
-          <Button
-            aria-label={
-              sidebarVisible ? t("explorer:toolbar.hideSidebar") : t("explorer:toolbar.showSidebar")
-            }
-            onClick={onToggleSidebar}
-            size="icon"
-            title={
-              sidebarVisible ? t("explorer:toolbar.hideSidebar") : t("explorer:toolbar.showSidebar")
-            }
-            type="button"
-            variant="ghost"
-          >
-            <PanelLeftIcon />
-          </Button>
-        </div>
-
-        {/* Going somewhere: where the crumbs point, plus the two things you do
-            to the folder you are in — reload it, keep it. */}
-        <div className="flex shrink-0 items-center gap-0.5">
-          <Button
-            aria-label={t("explorer:toolbar.back")}
-            disabled={!canGoBack}
-            onClick={onGoBack}
-            size="icon"
-            title={t("explorer:toolbar.back")}
-            type="button"
-            variant="ghost"
-          >
-            <ArrowLeftIcon />
-          </Button>
-          <Button
-            aria-label={t("explorer:toolbar.forward")}
-            disabled={!canGoForward}
-            onClick={onGoForward}
-            size="icon"
-            title={t("explorer:toolbar.forward")}
-            type="button"
-            variant="ghost"
-          >
-            <ArrowRightIcon />
-          </Button>
-          <Button
-            aria-label={t("explorer:toolbar.up")}
-            disabled={!canGoUp}
-            onClick={onGoUp}
-            size="icon"
-            title={t("explorer:toolbar.up")}
-            type="button"
-            variant="ghost"
-          >
-            <ArrowUpIcon />
-          </Button>
-          <Button
-            aria-label={t("explorer:toolbar.refresh")}
-            disabled={isLoading || !directory}
-            onClick={onRefresh}
-            size="icon"
-            title={t("explorer:toolbar.refresh")}
-            type="button"
-            variant="ghost"
-          >
-            <RefreshIcon className={cn(isLoading && "animate-spin")} />
-          </Button>
-          <Button
-            aria-label={
-              isCurrentFavorited
-                ? t("explorer:toolbar.removeFavorite")
-                : t("explorer:toolbar.addFavorite")
-            }
-            className={TOOLBAR_OVERFLOW_CLASS}
-            disabled={!directory}
-            onClick={onToggleFavorite}
-            size="icon"
-            title={
-              isCurrentFavorited
-                ? t("explorer:toolbar.removeFavorite")
-                : t("explorer:toolbar.addFavorite")
-            }
-            type="button"
-            variant="ghost"
-          >
-            <StarIcon className={cn(isCurrentFavorited && "fill-warning/70 text-warning")} />
-          </Button>
-        </div>
-
-        {/* How the listing looks. The menu triggers are visually heavier than
-            a lone icon — that weight is the group's boundary, and it is why
-            this cluster needs no rule of its own. */}
-        <div className="flex shrink-0 items-center gap-0.5">
-          <ViewMenu disabled={!directory} />
-          <FilterMenu disabled={!directory} />
-        </div>
-
-        {/* Repository context — only where the folder is inside one. */}
-        {gitStatus && (
-          <div className="flex shrink-0 items-center gap-0.5">
-            <GitBranchControl branch={gitStatus.branch} root={gitStatus.root} />
-          </div>
+      {/* Place: the path field. It is the row's spine — the one control that
+          takes every pixel the others do not — and it holds the listing stats
+          on its trailing edge, because those facts describe the folder the
+          crumbs name. */}
+      <div
+        className={cn(
+          "flex h-9 min-w-40 flex-1 items-center rounded-lg bg-muted px-0.5",
+          // The field answers the pointer by taking the paper tone, so the row
+          // says "this is editable" without a border.
+          "transition-colors duration-fast ease-standard hover:bg-accent focus-within:bg-card focus-within:ring-1 focus-within:ring-ring/40",
         )}
+      >
+        {directory ? (
+          <ExplorerPathBar
+            directory={directory}
+            editSignal={pathEditSignal}
+            onNavigate={onNavigateBreadcrumb}
+            onNavigatePath={onNavigatePath}
+            trailing={<ListingStats {...stats} />}
+          />
+        ) : (
+          <Skeleton className="mx-3 h-4 w-40" />
+        )}
+      </div>
 
-        {/* Which panels are open. Trailing edge, so it stays put as the middle
-            grows and shrinks. */}
-        <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {onToggleSplit && (
-            <Button
-              aria-label={
-                splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
-              }
-              aria-pressed={splitEnabled}
-              className={cn(TOOLBAR_OVERFLOW_CLASS, TOGGLE_PRESSED_CLASS)}
-              onClick={onToggleSplit}
-              size="icon"
-              title={
-                splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
-              }
-              type="button"
-              variant="ghost"
-            >
-              <Columns3Icon />
-            </Button>
-          )}
+      {/* Find: the search capsule, same height and corner as the path field. */}
+      <DirectorySearch
+        contentSearch={contentSearch}
+        directoryName={directory?.breadcrumbs.at(-1)?.name ?? null}
+        disabled={isLoading || !isActivePane}
+        mode={searchMode}
+        onModeChange={onSearchModeChange}
+        search={search}
+      />
+
+      {/* Act: the two things you do to the folder you are in — reload it,
+          keep it. */}
+      <div className="flex shrink-0 items-center gap-0.5">
+        <Button
+          aria-label={t("explorer:toolbar.refresh")}
+          disabled={isLoading || !directory}
+          onClick={onRefresh}
+          size="icon"
+          title={t("explorer:toolbar.refresh")}
+          type="button"
+          variant="ghost"
+        >
+          <RefreshIcon className={cn(isLoading && "animate-spin")} />
+        </Button>
+        <Button
+          aria-label={
+            isCurrentFavorited
+              ? t("explorer:toolbar.removeFavorite")
+              : t("explorer:toolbar.addFavorite")
+          }
+          className={TOOLBAR_OVERFLOW_CLASS}
+          disabled={!directory}
+          onClick={onToggleFavorite}
+          size="icon"
+          title={
+            isCurrentFavorited
+              ? t("explorer:toolbar.removeFavorite")
+              : t("explorer:toolbar.addFavorite")
+          }
+          type="button"
+          variant="ghost"
+        >
+          <StarIcon className={cn(isCurrentFavorited && "fill-warning/70 text-warning")} />
+        </Button>
+      </div>
+
+      {/* View: how the listing looks, plus the repository it sits in. */}
+      <div className={CLUSTER_CLASS}>
+        <ViewMenu disabled={!directory} />
+        <FilterMenu disabled={!directory} />
+      </div>
+
+      {gitStatus && (
+        <div className={cn("shrink-0", TOOLBAR_OVERFLOW_GIT_CLASS)}>
+          <GitBranchControl branch={gitStatus.branch} root={gitStatus.root} />
+        </div>
+      )}
+
+      {/* Panels: trailing edge, so the set stays put as the middle grows and
+          shrinks. A toggle fills its chip while on (`aria-pressed`), so an
+          open panel is legible at a glance instead of being a guess. */}
+      <div className="ml-0.5 flex shrink-0 items-center gap-0.5">
+        {onToggleSplit && (
           <Button
             aria-label={
-              isPreviewOpen
-                ? t("explorer:toolbar.collapsePreview")
-                : t("explorer:toolbar.expandPreview")
+              splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
             }
-            aria-pressed={isPreviewOpen}
-            className={TOGGLE_PRESSED_CLASS}
-            onClick={onTogglePreview}
+            aria-pressed={splitEnabled}
+            className={cn(TOOLBAR_OVERFLOW_CLASS, TOGGLE_PRESSED_CLASS)}
+            onClick={onToggleSplit}
             size="icon"
             title={
-              isPreviewOpen
-                ? t("explorer:toolbar.collapsePreviewShortcut", { shortcut: previewBinding })
-                : t("explorer:toolbar.expandPreviewShortcut", { shortcut: previewBinding })
+              splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
             }
             type="button"
             variant="ghost"
           >
-            <EyeIcon />
+            <Columns3Icon />
           </Button>
-          <TerminalToggle />
-        </div>
+        )}
+        <Button
+          aria-label={
+            isPreviewOpen
+              ? t("explorer:toolbar.collapsePreview")
+              : t("explorer:toolbar.expandPreview")
+          }
+          aria-pressed={isPreviewOpen}
+          className={TOGGLE_PRESSED_CLASS}
+          onClick={onTogglePreview}
+          size="icon"
+          title={
+            isPreviewOpen
+              ? t("explorer:toolbar.collapsePreviewShortcut", { shortcut: previewBinding })
+              : t("explorer:toolbar.expandPreviewShortcut", { shortcut: previewBinding })
+          }
+          type="button"
+          variant="ghost"
+        >
+          <EyeIcon />
+        </Button>
+        <TerminalToggle />
       </div>
     </header>
   );

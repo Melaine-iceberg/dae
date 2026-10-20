@@ -31,10 +31,17 @@ export type ExplorerKindFilter = "all" | "folders" | "files" | "images";
 export type ExplorerModifiedFilter = "any" | "today" | "week" | "month";
 export type ExplorerSizeFilter = "any" | "small" | "medium" | "large";
 
+/**
+ * Row heights, one step roomier than the Material-shaped set this started
+ * from: a 14px label in a 34px row has real air above and below it, which is
+ * what makes a directory of 40 files readable at a glance rather than merely
+ * legible. `compact` stays at 28 for people who run a maximized window; the
+ * default trades two rows of visible content for the calm.
+ */
 export const DENSITY_ROW_HEIGHT: Record<ExplorerDensity, number> = {
   compact: 28,
-  comfortable: 32,
-  spacious: 40,
+  comfortable: 34,
+  spacious: 44,
 };
 
 /** Sensible initial direction when switching to a sort key (SKILL.md §18). */

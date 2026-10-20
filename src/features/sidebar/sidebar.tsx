@@ -200,7 +200,7 @@ function SidebarContent() {
   return (
     <nav
       aria-label={t("nav.label")}
-      className="content-panel flex w-sidebar shrink-0 flex-col overflow-hidden"
+      className="flex w-sidebar shrink-0 flex-col overflow-hidden"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <NavItem
@@ -434,7 +434,7 @@ function CollapsibleSection({
       <div className="group/section flex h-7 items-center gap-0.5">
         <button
           aria-expanded={open}
-          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
+          className="flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
           onClick={() => toggle(id)}
           type="button"
         >
@@ -898,11 +898,13 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        // Nav row: 28px tall on the shared radius. Hover fills with the
-        // sidebar's own accent rung; the row that says where the user *is*
-        // presses deeper into it instead — `row-active`'s one wash of ink over
-        // the same fill — so location is a heavier tone, not a ringed box.
-        "flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
+        // Nav row: 30px tall on the shared radius, one step roomier than the
+        // dense rows it sits beside — this is the rail, and a rail is read at a
+        // glance rather than scanned. Hover fills with the rail's own accent
+        // rung; the row that says where the user *is* takes the accent into
+        // that fill (`row-active`) and lifts its glyph to the accent tone, so
+        // location is a hue, not a ringed box.
+        "flex h-[30px] w-full items-center gap-2 rounded-lg px-2 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
         isActive && "row-active bg-sidebar-accent font-medium text-foreground",
       )}
       onClick={onClick}

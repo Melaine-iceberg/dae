@@ -91,11 +91,13 @@ is invisible on the other platforms.
 ## Design
 
 Visual and interaction changes are judged against
-[`docs/design-principles.md`](docs/design-principles.md): what the shell
-borrows from macOS, Windows 11 and GNOME, the closed type/radius/motion
-scales, and the tell list of treatments that make an application read as
-AI-made. The token source of truth is `src/App.css`; the document explains
-why the tokens are shaped the way they are.
+[`docs/design-v2.md`](docs/design-v2.md) (the "Atlas" language): the three
+rungs the window is drawn as — frame, paper, canvas — the single-row
+command bar and what it gives up first on a narrow window, and the state
+vocabulary for hover, selection and focus. The token source of truth is
+`src/App.css`; the document explains why the tokens are shaped the way they
+are. [`docs/design-principles.md`](docs/design-principles.md) is kept as
+the historical record of the Quiet Desk direction it replaced.
 
 Performance work is judged against
 [`docs/performance-opportunities.md`](docs/performance-opportunities.md): what is

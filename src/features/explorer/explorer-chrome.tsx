@@ -80,7 +80,7 @@ export function ListingStats({
         // What stays is the one thing a selection raises and the action bar
         // does not answer: how to get out of it. Hidden on narrow panes, where
         // the path bar has no room to spare for it.
-        <span className="hidden shrink-0 items-center gap-1 min-[840px]:flex">
+        <span className="hidden shrink-0 items-center gap-1 min-[1280px]:flex">
           <Kbd className="h-4 px-1 text-nano">{clearSelectionBinding}</Kbd>
           {t("explorer:listing.clearSelectionHint")}
         </span>

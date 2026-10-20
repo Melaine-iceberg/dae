@@ -269,8 +269,11 @@ function CrumbContent({
   onNavigate?: (breadcrumb: BreadcrumbData) => void;
 }) {
   // Every crumb draws the same folder glyph — drive roots and folders alike.
+  // Only the current one is painted at full strength: a path of five bright
+  // yellow folders is the loudest thing in the toolbar, and the ancestors are
+  // context rather than a destination anyone is looking at.
   const CrumbIcon = getFolderPresentation().icon;
-  const icon = <CrumbIcon className="size-3.5 shrink-0" />;
+  const icon = <CrumbIcon className={cn("size-3.5 shrink-0", !isCurrent && "opacity-55")} />;
 
   if (plain) {
     return (
