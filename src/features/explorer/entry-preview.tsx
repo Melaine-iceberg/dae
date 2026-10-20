@@ -5,12 +5,13 @@ import {
   CloseIcon,
   DangerTriangleIcon,
   FolderOpenIcon,
-} from "@solar-icons/react/line-duotone";
+  SquareDashedIcon,
+} from "@solar-icons/react/linear";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { Markdown } from "@tanstack/markdown/react";
 
 import { commands, type MediaPreview, type TextPreview } from "@/bindings";
-import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";
+import { localeDateTimeFormat, localeNumber, localeNumberFormat } from "@/i18n/format";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { copyWithNotice } from "@/lib/notifications";
@@ -104,6 +105,14 @@ function formatFileSize(size: number | null): string {
   return `${formatter.format(size / 1024 ** unitIndex)} ${FILE_SIZE_UNITS[unitIndex]}`;
 }
 
+/** `formatFileSize` split at its unit, so a total can set the number at the
+ *  panel's title step and the unit at caption step on the same baseline. */
+function splitFileSize(size: number): { amount: string; unit: string } {
+  const formatted = formatFileSize(size);
+  const separator = formatted.lastIndexOf(" ");
+  return { amount: formatted.slice(0, separator), unit: formatted.slice(separator + 1) };
+}
+
 function parentDirectory(path: string): string {
   const separatorIndex = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
   if (separatorIndex <= 0) return path;
@@ -143,18 +152,27 @@ type MediaPreviewState =
 
 /** The preview panel's props, imported by the lazy boundary in `explorer-view`. */
 export interface EntryPreviewProps {
-  entry: DirectoryEntry | null;
+  /** The selection, in listing order. One entry previews its contents; several
+   *  are summarized instead of the first one standing in for the rest. */
+  entries: DirectoryEntry[];
   onClose: () => void;
   onOpen: () => void;
 }
 
 /**
  * Docked yazi-style preview panel for the current selection (SKILL.md §21):
- * shows content (thumbnail / highlighted code / text peek) plus metadata and
- * follow-up actions. Large files skip content preview for performance.
+ * one selection shows content (thumbnail / highlighted code / text peek) plus
+ * metadata and follow-up actions, while a larger one shows what it adds up to
+ * — the panel used to describe only its first entry even though its own open
+ * button acted on every selected one. Large files skip content preview.
  */
-export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
+export function EntryPreview({ entries, onClose, onOpen }: EntryPreviewProps) {
   const { t } = useTranslation("explorer");
+  const isMultiSelection = entries.length > 1;
+  // Everything below is written for exactly one entry: the multi-selection
+  // summary takes the panel over before any of the preview pipeline runs, and
+  // a null entry is what keeps it from fetching on top of the summary.
+  const entry = entries.length === 1 ? entries[0] : null;
   const visualExtension = entry?.kind === "file" ? getEntryVisualExtension(entry.name) : "";
   // Markdown gets rendered styling instead of a code grammar.
   const supportsMarkdown = MARKDOWN_EXTENSIONS.has(visualExtension);
@@ -256,19 +274,21 @@ export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
   return (
     <aside
       aria-label={t("preview.ariaLabel")}
-      className="flex h-full w-preview shrink-0 flex-col overflow-hidden border-l border-border"
+      className="flex h-full w-preview shrink-0 flex-col overflow-hidden border-l border-border bg-card"
     >
-      <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
+      <header className="flex h-toolbar shrink-0 items-center gap-2.5 border-b border-border px-4">
         {visual && VisualIcon ? (
           <span className="flex shrink-0">
-            <VisualIcon className="size-4 shrink-0" />
+            <VisualIcon className="size-[17px] shrink-0 text-muted-foreground" />
           </span>
         ) : null}
         <p
           className="min-w-0 flex-1 truncate text-body font-medium"
           title={entry?.name ?? undefined}
         >
-          {entry?.name ?? t("preview.noFileSelected")}
+          {isMultiSelection
+            ? t("preview.multiSelection", { number: localeNumber(entries.length) })
+            : (entry?.name ?? t("preview.noFileSelected"))}
         </p>
         <Button
           aria-label={t("preview.collapsePanel")}
@@ -282,23 +302,25 @@ export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
         </Button>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3">
-        {entry === null ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-caption text-muted-foreground">
-            <VisualPlaceholder name="preview" />
+      <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto p-4">
+        {isMultiSelection ? (
+          <SelectionSummary entries={entries} />
+        ) : entry === null ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2.5 px-4 text-center text-caption text-muted-foreground">
+            <SquareDashedIcon className="size-8 shrink-0 text-muted-foreground" />
             <p>{t("preview.selectHint")}</p>
           </div>
         ) : (
           <>
             {supportsThumbnail ? (
               <ThumbnailImage
-                className="flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted"
+                className="flex h-64 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted ring-1 ring-border/60"
                 entry={entry}
                 fallback={VisualIcon ? <VisualIcon className="size-12" /> : null}
                 displaySize={384}
               />
             ) : textPreview?.status === "ready" ? (
-              <div className="flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-lg bg-muted">
+              <div className="flex min-h-48 min-w-0 flex-1 flex-col overflow-hidden rounded-xl bg-muted">
                 {supportsMarkdown ? (
                   <div
                     className="markdown-preview min-h-0 flex-1 overflow-auto p-2.5 text-caption leading-relaxed"
@@ -320,7 +342,7 @@ export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
                     dangerouslySetInnerHTML={{ __html: textPreview.html }}
                   />
                 ) : (
-                  <pre className="min-h-0 flex-1 overflow-auto p-2.5 text-caption leading-relaxed whitespace-pre-wrap break-all">
+                  <pre className="min-h-0 flex-1 overflow-auto p-2.5 text-caption leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
                     {textPreview.content}
                   </pre>
                 )}
@@ -331,24 +353,24 @@ export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
                 )}
               </div>
             ) : textPreview?.status === "loading" ? (
-              <div className="flex shrink-0 flex-col gap-2 rounded-lg bg-muted p-2.5">
+              <div className="flex shrink-0 flex-col gap-2 rounded-xl bg-muted p-3">
                 <Skeleton className="h-3 w-3/4" />
                 <Skeleton className="h-3 w-1/2" />
                 <Skeleton className="h-3 w-2/3" />
               </div>
             ) : isTooLarge ? (
-              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-lg bg-muted px-3 text-center text-caption text-muted-foreground">
+              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted px-3 text-center text-caption text-muted-foreground">
                 <DangerTriangleIcon className="size-5" />
                 <p>{t("preview.tooLarge", { size: PREVIEW_MAX_SOURCE_BYTES / 1024 / 1024 })}</p>
                 <p>{t("preview.tooLargeHint")}</p>
               </div>
             ) : textPreview?.status === "error" ? (
-              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-lg bg-muted text-caption text-muted-foreground">
+              <div className="flex h-32 shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl bg-muted text-caption text-muted-foreground">
                 <DangerTriangleIcon className="size-5" />
                 <p>{t("preview.readError")}</p>
               </div>
             ) : (
-              <div className="flex h-32 shrink-0 items-center justify-center rounded-lg bg-muted">
+              <div className="flex h-32 shrink-0 items-center justify-center rounded-xl bg-muted">
                 {showNativeIcon ? (
                   <NativeIconImage
                     className="size-12"
@@ -367,12 +389,12 @@ export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
                 mediaPreview.data.durationMs !== null ||
                 mediaPreview.data.width !== null ||
                 mediaPreview.data.bitrateBps !== null) && (
-                <div className="shrink-0 rounded-lg bg-muted p-2.5">
+                <div className="shrink-0 rounded-xl bg-muted p-3">
                   <dl className="grid grid-cols-[5rem_1fr] gap-x-3 gap-y-1.5 text-caption">
                     {mediaPreview.data.tags.map(([label, value]) => (
                       <div key={label} className="contents">
                         <dt className="text-muted-foreground">{label}</dt>
-                        <dd className="min-w-0 break-all">{value}</dd>
+                        <dd className="min-w-0 [overflow-wrap:anywhere]">{value}</dd>
                       </div>
                     ))}
                     {mediaPreview.data.durationMs !== null && (
@@ -405,7 +427,7 @@ export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
 
             <dl className="grid shrink-0 grid-cols-[5rem_1fr] gap-x-3 gap-y-2 text-caption">
               <dt className="text-muted-foreground">{t("preview.type")}</dt>
-              <dd className="min-w-0 break-all">{visual?.label ?? "—"}</dd>
+              <dd className="min-w-0 [overflow-wrap:anywhere]">{visual?.label ?? "—"}</dd>
               <dt className="text-muted-foreground">{t("preview.size")}</dt>
               <dd className="tabular-nums">{formatFileSize(entry.size)}</dd>
               <dt className="text-muted-foreground">{t("preview.modified")}</dt>
@@ -415,7 +437,7 @@ export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
                   : localeDateTimeFormat(MODIFIED_DATE_FORMAT_OPTIONS).format(entry.modifiedAt)}
               </dd>
               <dt className="text-muted-foreground">{t("preview.location")}</dt>
-              <dd className="min-w-0 break-all" title={parentDirectory(entry.path)}>
+              <dd className="min-w-0 [overflow-wrap:anywhere]" title={parentDirectory(entry.path)}>
                 {parentDirectory(entry.path)}
               </dd>
             </dl>
@@ -423,14 +445,22 @@ export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
         )}
       </div>
 
-      {entry !== null && (
+      {entries.length > 0 && (
         <footer className="flex shrink-0 items-center gap-2 border-t p-2.5">
           <Button onClick={onOpen} size="sm" type="button">
             <FolderOpenIcon />
             {t("preview.open")}
           </Button>
           <Button
-            onClick={() => void copyWithNotice(entry.path)}
+            onClick={() =>
+              // One newline-joined string for the clipboard, the selection size
+              // for the notification — the same convention the action bar's
+              // "copy paths" uses, so the two read identically.
+              void copyWithNotice(
+                entries.map((item) => item.path).join("\n"),
+                entries.length,
+              )
+            }
             size="sm"
             title={t("preview.copyPathTitle")}
             type="button"
@@ -445,23 +475,107 @@ export function EntryPreview({ entry, onClose, onOpen }: EntryPreviewProps) {
   );
 }
 
-function VisualPlaceholder({ name }: { name: string }) {
+type SelectionStats = {
+  /** Bytes of the selected files only: a directory entry carries no size. */
+  totalBytes: number;
+  fileCount: number;
+  /** Files that reported a size at all — a symlink does not. */
+  sizedFileCount: number;
+  folderCount: number;
+  /** Newest modification in the selection, in epoch ms. */
+  latestModified: number | null;
+  /** The directory every entry shares, or null when they came from different
+   *  places (a content-search result can span the whole tree). */
+  sharedParent: string | null;
+};
+
+function summarizeSelection(entries: DirectoryEntry[]): SelectionStats {
+  let totalBytes = 0;
+  let fileCount = 0;
+  let sizedFileCount = 0;
+  let folderCount = 0;
+  let latestModified: number | null = null;
+  let sharedParent = entries.length > 0 ? parentDirectory(entries[0].path) : null;
+
+  for (const item of entries) {
+    if (item.kind === "directory") {
+      folderCount += 1;
+    } else {
+      fileCount += 1;
+      if (item.size !== null) {
+        sizedFileCount += 1;
+        totalBytes += item.size;
+      }
+    }
+
+    if (item.modifiedAt !== null && (latestModified === null || item.modifiedAt > latestModified)) {
+      latestModified = item.modifiedAt;
+    }
+
+    if (sharedParent !== null && parentDirectory(item.path) !== sharedParent) {
+      sharedParent = null;
+    }
+  }
+
+  return { totalBytes, fileCount, sizedFileCount, folderCount, latestModified, sharedParent };
+}
+
+/**
+ * What a multi-selection adds up to: count by kind, the size of the files, the
+ * newest change and the common location.
+ *
+ * The total is files only, and it says so. The listing carries no directory
+ * size, and measuring one means walking it — a disk scan behind every click on
+ * a folder. The alternative would be a number that silently means something
+ * else depending on what happened to be selected, which in a file manager is
+ * worse than a total with a stated boundary.
+ */
+function SelectionSummary({ entries }: { entries: DirectoryEntry[] }) {
+  const { t } = useTranslation("explorer");
+  const stats = useMemo(() => summarizeSelection(entries), [entries]);
+  // A selection of folders only has nothing to total: the panel says so with a
+  // dash rather than claiming 0 B.
+  const totalSize = stats.sizedFileCount === 0 ? null : splitFileSize(stats.totalBytes);
+  const composition = [
+    stats.folderCount > 0 ? t("preview.folderCount", { count: stats.folderCount }) : null,
+    stats.fileCount > 0 ? t("preview.fileCount", { count: stats.fileCount }) : null,
+  ].filter((part): part is string => part !== null);
+
   return (
-    <svg
-      aria-hidden="true"
-      className="size-12 text-muted-foreground/40"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.5}
-      viewBox="0 0 24 24"
-    >
-      <path
-        d="M3 5.5A1.5 1.5 0 0 1 4.5 4h4l2 2.5h7A1.5 1.5 0 0 1 19 8v10a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 3 18V5.5Z"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <title>{name}</title>
-    </svg>
+    <>
+      <div className="shrink-0 rounded-xl bg-muted p-3.5">
+        <p className="text-micro text-muted-foreground">{t("preview.totalSize")}</p>
+        {totalSize === null ? (
+          <p className="mt-1 text-title tabular-nums">—</p>
+        ) : (
+          // Value and unit are separate runs on one baseline: a 22px "GB"
+          // shouts as loudly as the number it qualifies.
+          <p className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-title tabular-nums">{totalSize.amount}</span>
+            <span className="text-caption text-muted-foreground">{totalSize.unit}</span>
+          </p>
+        )}
+        <p className="mt-1 text-caption text-muted-foreground">{composition.join(" · ")}</p>
+        {stats.folderCount > 0 && (
+          <p className="mt-1.5 text-micro text-muted-foreground">
+            {t("preview.foldersExcluded")}
+          </p>
+        )}
+      </div>
+
+      <dl className="grid shrink-0 grid-cols-[5rem_1fr] gap-x-3 gap-y-2 text-caption">
+        <dt className="text-muted-foreground">{t("preview.latestModified")}</dt>
+        <dd className="tabular-nums">
+          {stats.latestModified === null
+            ? "—"
+            : localeDateTimeFormat(MODIFIED_DATE_FORMAT_OPTIONS).format(stats.latestModified)}
+        </dd>
+        <dt className="text-muted-foreground">{t("preview.location")}</dt>
+        <dd className="min-w-0 [overflow-wrap:anywhere]" title={stats.sharedParent ?? undefined}>
+          {stats.sharedParent ?? t("preview.multipleLocations")}
+        </dd>
+      </dl>
+    </>
   );
 }
 

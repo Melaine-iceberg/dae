@@ -22,7 +22,7 @@ import {
   TrashBinTrashIcon,
   WidgetIcon,
   WindowFrameIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import { commands, type ArchiveFormat } from "@/bindings";
 import { formatBinding } from "@/features/settings/shortcut-registry";

@@ -18,7 +18,7 @@ import {
   ThreeSquaresIcon,
   TextFieldIcon,
   WidgetIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import {
   DropdownMenu,

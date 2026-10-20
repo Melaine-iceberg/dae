@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { ClipboardListIcon, CopyIcon, PenIcon, ProgrammingIcon } from "@solar-icons/react/line-duotone";
+import { ClipboardListIcon, CopyIcon, PenIcon, ProgrammingIcon } from "@solar-icons/react/linear";
 
 import {
   ContextMenu,

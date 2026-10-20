@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { useQueries } from "@tanstack/react-query";
-import { CheckCircleIcon, GitBranchIcon } from "@solar-icons/react/line-duotone";
+import { CheckCircleIcon, GitBranchIcon } from "@solar-icons/react/linear";
 
 import {
   commands,

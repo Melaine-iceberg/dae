@@ -13,6 +13,7 @@ import { preloadExplorerSurface } from "@/features/workspace/workspace-surface";
 import { i18nReady } from "@/i18n";
 import { getAppWindow } from "@/lib/app-window";
 import { applySystemTheme, watchSystemTheme } from "@/lib/theme";
+import { watchAccentSeam } from "@/lib/system-accent";
 import { setupNativeClipboardBridge } from "@/lib/clipboard-bridge";
 import { setupExternalLinkGuard } from "@/lib/external-links";
 import { forwardConsoleToLogFile } from "@/lib/logging";
@@ -44,6 +45,14 @@ applySystemTheme();
 // snap to the desktop's when React mounts. The disposer is dropped on purpose —
 // this lives for the life of the window, exactly like `applySystemTheme` above.
 watchSystemTheme(applySystemTheme);
+
+// The accent for the same reason, and with one extra: its reading arrives over
+// IPC on Windows and macOS, and the seam only paints while the Appearance
+// preference says `system` — so a window that asked for its desktop accent
+// would otherwise spend the locale wait painted blue and then snap. Starting
+// the read here lets the answer land first; on the default (`brand`) the seam
+// writes nothing at all and the shipped blue is simply the colour.
+watchAccentSeam();
 
 const queryClient = new QueryClient();
 

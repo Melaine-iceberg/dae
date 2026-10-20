@@ -13,11 +13,17 @@
     "about": "About"
   },
   "appearance": {
-    "description": "Theme and display language. Changes apply immediately.",
+    "description": "Theme, accent and display language. Changes apply immediately.",
     "theme": "Theme",
     "themeOptions": {
       "light": "Light",
       "dark": "Dark",
+      "system": "Follow system"
+    },
+    "accent": "Accent",
+    "accentHint": "Brand blue by default. Following the system repaints buttons, selection and focus with your desktop accent.",
+    "accentOptions": {
+      "brand": "Brand blue",
       "system": "Follow system"
     },
     "language": "Language"

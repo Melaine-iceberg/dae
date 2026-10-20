@@ -17,7 +17,7 @@ import {
   TrashBinMinimalisticIcon,
   TrashBinTrashIcon,
   UndoLeftRoundIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import {
   commands,

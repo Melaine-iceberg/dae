@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { RestartIcon } from "@solar-icons/react/line-duotone";
+import { RestartIcon } from "@solar-icons/react/linear";
 import {
   hasNonModifierKey,
   normalizeHotkey,

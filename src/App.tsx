@@ -20,7 +20,6 @@ import {
 } from "@/features/settings/settings-atoms";
 import { resolveBinding } from "@/features/settings/shortcut-registry";
 import { HOTKEY_COMMON_OPTIONS, asHotkey } from "@/features/settings/hotkeys";
-import { applySystemAccent, watchSystemAccent } from "@/lib/system-accent";
 import {
   applyWindowMaterial,
   syncWindowMaterialTheme,
@@ -84,13 +83,6 @@ function App() {
   // Window-level, not per surface: the keys it invalidates are global already.
   useGitRefreshOnDirectoryChange();
 
-  // System accent (see src/lib/system-accent.ts). `watchSystemAccent` is the
-  // read side: it pulls once and then follows `system-accent-changed` from
-  // whichever platform reader is compiled in (windows / macos / linux), and
-  // hands each reading straight to `applySystemAccent`, the complete write
-  // side. Until the first reading lands — or where a reader reports nothing —
-  // the shell keeps its shipped teal through the CSS fallbacks.
-  useEffect(() => watchSystemAccent(applySystemAccent), []);
   // Window backdrop (see src/lib/window-material.ts): `<html>` carries whatever
   // the platform can actually composite, and App.css's material block lets the
   // canvas (the frame and the gaps between panels) show a trace of it.

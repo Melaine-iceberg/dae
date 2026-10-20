@@ -23,7 +23,7 @@ import {
   VideoFrameIcon,
   VinylIcon,
   WindowFrameIcon,
-} from "@solar-icons/react/bold-duotone";
+} from "@solar-icons/react/linear";
 import { type ComponentType } from "react";
 
 import { cn } from "@/lib/utils";
@@ -47,14 +47,12 @@ import { FolderGlyph, FolderOpenGlyph } from "./folder-glyph";
  * scheme, the system accent, `prefers-contrast` and forced-colors the way
  * every other surface in this shell does.
  *
- * The glyphs are Solar's `bold-duotone` style, which paints two layers: the
- * details, and the page they sit on. `type-glyph` (see App.css) wires the page
- * to a light tint of the same hue, so every glyph is the category colour on a
- * paler version of itself. The tint is never the accent: a category hue is the
- * whole point of the map below, and an accent-tinted page would read as a
- * second, meaningless hue. The class is applied for the component as a whole
- * because five of these glyphs are neutral and have no hue for a selector to
- * match.
+ * The glyphs are Solar's `linear` style — one 1.5px stroke, one tone — the same
+ * style the rest of the shell draws, so a file's glyph and the toolbar's icon
+ * that opens it are the same kind of mark. The category hue is therefore the
+ * glyph's whole colour, with no paler page behind it: a two-tone page reads as
+ * a second, meaningless hue at 18px, and the hue itself already carries the
+ * "what kind of thing is this" that the map below is for.
  *
  * Folders are the exception to both: they are drawn here as stacked sheets of
  * flat colour (`folder-glyph.tsx`) and take their fills from the folder tokens
@@ -187,8 +185,9 @@ const componentCache = new Map<TypeGlyph, EntryIcon>();
  * The glyph's tone and the caller's class go through `cn`, so the usual
  * Tailwind last-wins rule holds: a call site that needs a different colour
  * (a faded hidden row, the preview header) still overrides the category.
- * `type-glyph` rides along first and is not a Tailwind utility, so it is the
- * category — rather than a call site's colour — that fixes the page tone.
+ * `type-glyph` rides along as the listing's glyph hook; it declares no colour
+ * of its own, so the category — or the call site that overrode it — is what the
+ * stroke finally paints.
  */
 export function typeIcon(glyph: TypeGlyph): EntryIcon {
   const cached = componentCache.get(glyph);

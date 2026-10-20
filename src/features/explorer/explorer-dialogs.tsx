@@ -8,7 +8,7 @@
  */
 import type { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { DangerTriangleIcon } from "@solar-icons/react/line-duotone";
+import { DangerTriangleIcon } from "@solar-icons/react/linear";
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";

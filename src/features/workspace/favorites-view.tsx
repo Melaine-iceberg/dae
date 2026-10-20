@@ -8,7 +8,7 @@ import {
   PanelsTopLeftIcon,
   Pip2Icon,
   StarIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import {
   ContextMenu,

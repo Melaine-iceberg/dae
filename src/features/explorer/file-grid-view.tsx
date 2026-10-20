@@ -31,9 +31,9 @@ const GRID_CELL_MIN_WIDTH: Record<ExplorerDensity, number> = {
   // padding, and 80px at 12px font-medium is what common names like
   // "package.json" need for one line. At 88 they wrapped mid-token —
   // "package.jso / n" — which reads as a rendering bug, not as a long name.
-  compact: 96,
-  comfortable: 104,
-  spacious: 120,
+  compact: 104,
+  comfortable: 112,
+  spacious: 128,
 };
 
 /** Native shell icons stay bare; sized a step under the type tiles. */
@@ -58,9 +58,9 @@ const GRID_TILE_ICON_SIZE: Record<ExplorerDensity, number> = {
 
 /** Fixed per-density cell height keeps virtualization math uniform. */
 const GRID_CELL_HEIGHT: Record<ExplorerDensity, number> = {
-  compact: 90,
-  comfortable: 102,
-  spacious: 110,
+  compact: 96,
+  comfortable: 112,
+  spacious: 124,
 };
 /** Static height classes matching the tile scale so thumbnails keep geometry. */
 const GRID_IMAGE_ZONE_CLASS: Record<ExplorerDensity, string> = {
@@ -69,7 +69,16 @@ const GRID_IMAGE_ZONE_CLASS: Record<ExplorerDensity, string> = {
   spacious: "h-image-zone-spacious",
 };
 
-const GRID_GAP_PX = 6;
+const GRID_GAP_PX = 8;
+/**
+ * The grid's inset on all four sides — and it has to be the same number the
+ * markup below paints, because it is subtracted twice in the geometry: once by
+ * `availableWidth` (which decides how many columns fit) and once by the
+ * marquee's hit test (which turns a pointer rectangle back into cell indices).
+ * The painted inset is `px-3` / `inset-x-3` / `pb-3` = 0.75rem = 12px, and
+ * `GRID_PADDING_PX` said 14: every marquee that swept the first column missed
+ * it by 2px, and the cells were laid out 4px narrower than the pane.
+ */
 const GRID_PADDING_PX = 12;
 
 /**
@@ -363,13 +372,12 @@ function GridCell({
         <div
           aria-selected={isSelected}
           className={cn(
-            // Desktop cell: tonal hover via state-layer, and selection as the
-            // filled wash on the medium radius — a cell is the largest thing a
-            // row-level radius may be spent on. The selection carries the same
-            // accent hairline the list rows do, so "chosen" reads the same in
-            // every view. No lift, no corner morph: the drop target is the only
-            // state that rings.
-            "render-contain state-layer relative flex cursor-grab flex-col items-center gap-1.5 rounded-md px-2 py-2.5 text-center transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+            // Desktop cell: a plate at rest, not only under the pointer — the
+            // reference draws a grid as a field of cards, so the fill and the
+            // hairline are the resting state and the hover is a wash of the
+            // cell's own ink on top of them. Selection keeps the accent fill and
+            // the accent edge, and drops the neutral ring it replaces.
+            "render-contain state-layer relative flex cursor-grab flex-col items-center gap-2 rounded-xl bg-card/45 px-3 py-3.5 text-center shadow-[inset_0_0_0_1px_var(--border)] transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             isSelected &&
               "bg-selection shadow-[inset_0_0_0_1px_var(--selection-edge)]",

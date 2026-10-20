@@ -91,13 +91,14 @@ is invisible on the other platforms.
 ## Design
 
 Visual and interaction changes are judged against
-[`docs/design-v2.md`](docs/design-v2.md) (the "Atlas" language): the three
-rungs the window is drawn as — frame, paper, canvas — the single-row
-command bar and what it gives up first on a narrow window, and the state
-vocabulary for hover, selection and focus. The token source of truth is
-`src/App.css`; the document explains why the tokens are shaped the way they
-are. [`docs/design-principles.md`](docs/design-principles.md) is kept as
-the historical record of the Quiet Desk direction it replaced.
+[`docs/design-v3.md`](docs/design-v3.md) (the "Aura" language): the two
+planes the window is drawn as — canvas and the one floating sheet — the type
+ramp, the state vocabulary for hover, selection and focus, and the motion
+curves. The token source of truth is `src/App.css`; the document explains why
+the tokens are shaped the way they are.
+[`docs/design-v2.md`](docs/design-v2.md) (Atlas) and
+[`docs/design-principles.md`](docs/design-principles.md) (Quiet Desk) are kept
+as the historical record of the directions Aura replaced.
 
 Performance work is judged against
 [`docs/performance-opportunities.md`](docs/performance-opportunities.md): what is

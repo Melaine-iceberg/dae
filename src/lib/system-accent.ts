@@ -1,26 +1,28 @@
 /**
  * The system-accent seam.
  *
- * The shell's accent is meant to be the OS accent — the one colour Windows,
- * macOS and every Linux desktop already lets the user pick — because that is
- * what makes a single cross-platform app read as native on all three without
- * imitating any of them. It is also the only place this design system allows
- * a saturated colour that is not carrying meaning.
+ * By default the shell paints its own accent — the shipped blue — because that
+ * hue is what says "this is dae": a filled button, a selected row and a focus
+ * ring all mean the same thing, and a desktop accent repainting them turns the
+ * brand into a wallpaper setting. The OS accent is still read, and can still be
+ * adopted, but only when the user asks for it: the Appearance pane's accent
+ * preference is `brand` (the default) or `system`, and `watchAccentSeam` below
+ * is the only thing that makes the two properties exist at all.
  *
  * Reading that colour is platform work and lives on the Rust side: the
  * `system_accent` module takes it from the DWM registry key on Windows, from
  * `NSColor.controlAccentColor` on macOS and from the freedesktop settings
  * portal on Linux, and reports every change as it happens.
  *
- * This module is the other half — what the answer means to CSS — and the two
- * halves meet at exactly two functions, named as a pair with `lib/theme.ts`:
+ * This module is the other half — what the answer means to CSS — and the whole
+ * seam is entered through one call, deliberately shaped like the theme's:
  *
- *   useEffect(() => watchSystemAccent(applySystemAccent), []);   // App.tsx
+ *   watchAccentSeam();   // main.tsx, beside watchSystemTheme()
  *
  * `applySystemAccent` is the whole write side. It writes two custom
  * properties on <html>; everything accent-coloured in App.css derives from
- * them and falls back to the shipped teal until it has run once.
- * `watchSystemAccent` is the read side and is the only caller.
+ * them and falls back to the shipped blue while they are absent.
+ * `watchSystemAccent` is the read side, and `watchAccentSeam` its only caller.
  *
  * Two properties, not one. The OS accent can be any lightness, and no
  * CSS-only contrast test is portable enough to derive a label colour from it
@@ -96,8 +98,10 @@ function resolveInk(accent: string): { contrast: number; ink: string } {
   return lightContrast >= darkContrast
     ? { contrast: lightContrast, ink: INK_LIGHT }
     : { contrast: darkContrast, ink: INK_DARK };
-} /**
- * Retints the shell to `accent`, or hands it back to the shipped teal when
+}
+
+/**
+ * Retints the shell to `accent`, or hands it back to the shipped blue when
  * given `null`.
  *
  * Rejects anything that is not a parseable colour rather than writing it:
@@ -138,6 +142,44 @@ export function applySystemAccent(accent: string | null, ink?: string): void {
   root.style.setProperty(SYSTEM_ACCENT_INK_PROPERTY, ink ?? resolved.ink);
   window.dispatchEvent(new CustomEvent("app-system-accent-change"));
 }
+
+/* ─── The preference ─────────────────────────────────────────────────────── */
+
+/** Which hue the shell paints its primary controls with. */
+export type AccentPreference = "brand" | "system";
+
+/** Persisted beside `app.theme`, and for the same reasons: it decides how the
+ *  window is drawn, it has to be readable on the very first frame — before the
+ *  backend has been asked anything — and it belongs to the webview rather than
+ *  to the file manager.
+ *
+ *  Not in settings.toml on purpose. Adding it there would mean a new key the
+ *  Rust `AppSettings` has to carry and a `saveSettings` round trip on every
+ *  flip, for a value nothing outside this window reads. */
+const ACCENT_PREFERENCE_KEY = "app.accent";
+
+/** Fired after {@link setAccentPreference}; the running seam re-applies. */
+const ACCENT_PREFERENCE_EVENT = "app-accent-preference-change";
+
+/**
+ * Reads the persisted preference. Anything other than a stored `system` — a
+ * first launch, a cleared store, a value from some later version — is the
+ * brand default, because the brand is the thing that must not drift.
+ */
+export function getStoredAccentPreference(): AccentPreference {
+  return localStorage.getItem(ACCENT_PREFERENCE_KEY) === "system" ? "system" : "brand";
+}
+
+/**
+ * Persists the preference. The seam listens for the event this dispatches, so
+ * the window retints — or returns to blue — on the same tick the choice is
+ * made, with no restart and no second copy of the OS reading kept here.
+ */
+export function setAccentPreference(preference: AccentPreference): void {
+  localStorage.setItem(ACCENT_PREFERENCE_KEY, preference);
+  window.dispatchEvent(new CustomEvent(ACCENT_PREFERENCE_EVENT));
+}
+
 /** The accent currently in force, or `null` while the shell is on its shipped
  *  default. For surfaces that need to know which way they went — the terminal
  *  palette hands xterm plain hex values, so it cannot follow a CSS variable
@@ -190,5 +232,61 @@ export function watchSystemAccent(onChange: (accent: string | null) => void): ()
     disposed = true;
     unlisten?.();
     unlisten = null;
+  };
+}
+
+/**
+ * Runs the seam: reads the OS accent, and paints it only while the preference
+ * asks for it.
+ *
+ * This is what `main.tsx` mounts, beside the theme watcher. `watchSystemAccent`
+ * stays the raw read side and `applySystemAccent` the raw write side; what this
+ * adds is the gate between them, so neither has to know that the shell has an
+ * opinion about whether the OS accent is welcome.
+ *
+ * The gate is applied to the *reading*, not to the subscription. The platform
+ * keeps reporting, so flipping the preference to `system` adopts the accent in
+ * force right now instead of waiting for the user to change it in the OS and
+ * come back. Flipping back to `brand` removes both properties immediately, even
+ * if the platform never says another word — that is the whole point of the fix
+ * this gate exists for.
+ *
+ * `undefined` and `null` are different here: `undefined` means no reading has
+ * landed yet and is left alone (the shell is already on its shipped blue),
+ * while `null` means the platform published nothing, which is still a reading
+ * and is passed through so a stale tint can be dropped.
+ */
+export function watchAccentSeam(): () => void {
+  let reading: string | null | undefined;
+
+  const sync = () => {
+    if (reading === undefined) return;
+    const next = getStoredAccentPreference() === "system" ? reading : null;
+    // Nothing painted and nothing to paint: stay inert rather than dispatch a
+    // change to every listener each time the OS accent moves unnoticed.
+    if (next === null && !document.documentElement.style.getPropertyValue(SYSTEM_ACCENT_PROPERTY)) {
+      return;
+    }
+    applySystemAccent(next);
+  };
+
+  const stopReading = watchSystemAccent((accent) => {
+    reading = accent;
+    sync();
+  });
+
+  const onPreferenceChange = () => {
+    if (getStoredAccentPreference() === "brand") {
+      applySystemAccent(null);
+      return;
+    }
+    sync();
+  };
+
+  window.addEventListener(ACCENT_PREFERENCE_EVENT, onPreferenceChange);
+
+  return () => {
+    window.removeEventListener(ACCENT_PREFERENCE_EVENT, onPreferenceChange);
+    stopReading();
   };
 }

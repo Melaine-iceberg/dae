@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { LockIcon } from "@solar-icons/react/line-duotone";
+import { LockIcon } from "@solar-icons/react/linear";
 import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/utils";

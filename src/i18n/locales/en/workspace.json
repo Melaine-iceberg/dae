@@ -92,6 +92,7 @@
     }
   },
   "overview": {
+    "subtitle": "Pick up where you left off, or start from a favourite.",
     "title": "Overview",
     "projectsTitle": "Projects",
     "projectClean": "Clean",

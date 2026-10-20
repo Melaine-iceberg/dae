@@ -9,9 +9,10 @@ import {
   EyeClosedIcon,
   FolderIcon,
   HistoryIcon,
+  MagnifierIcon,
   StarIcon,
   WidgetIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import {
   ContextMenu,
@@ -26,7 +27,11 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatBinding } from "@/features/settings/shortcut-registry";
+import { useBinding } from "@/features/settings/settings-atoms";
+import { commandBarOpenAtom } from "@/features/workspace/command-bar-atoms";
 import { ErrorState } from "@/components/ui/error-state";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
 import { TypeIconTile } from "@/features/explorer/icon-tile";
@@ -57,7 +62,6 @@ import {
   LocationCard,
   SectionHeader,
   WorkspacePage,
-  WorkspacePageHeader,
   formatRecentTime,
   parentPathOf,
 } from "./workspace-components";
@@ -96,6 +100,8 @@ export function OverviewView() {
   const ensureSystemPlacesLoaded = useSetAtom(ensureSystemPlacesLoadedAtom);
   const navigateToFolder = useSetAtom(navigateToFolderAtom);
   const openSurface = useSetAtom(openSurfaceAtom);
+  const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
+  const commandBarBinding = formatBinding(useBinding("app.commandBar"));
 
   useEffect(() => {
     void ensureSystemPlacesLoaded();
@@ -133,9 +139,26 @@ export function OverviewView() {
 
   return (
     <WorkspacePage aria-label={t("overview.title")}>
-      {/* No subtitle under the title: "your projects, places and recent work
-          at a glance" describes the section the user is already reading. */}
-      <WorkspacePageHeader title={t("overview.title")} />
+      {/* The landing surface opens on a search field rather than on a slogan.
+          It is the same surface Mod+K raises, so the shell's most useful
+          gesture is discoverable from the very first screen. */}
+      <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
+        <div className="min-w-0">
+          <h1 className="text-[1.75rem] leading-9 font-semibold tracking-[-0.03em]">
+            {t("overview.title")}
+          </h1>
+          <p className="mt-1.5 text-caption text-muted-foreground">{t("overview.subtitle")}</p>
+        </div>
+        <button
+          className="group flex h-10 w-full max-w-sm items-center gap-2.5 rounded-xl border border-border/70 bg-secondary/40 px-3.5 text-left text-body text-muted-foreground transition-[background-color,border-color,color,box-shadow] duration-normal ease-standard hover:border-primary/35 hover:bg-secondary/80 hover:text-foreground hover:shadow-ambient-xs focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          onClick={() => setCommandBarOpen(true)}
+          type="button"
+        >
+          <MagnifierIcon className="size-4 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{t("commandBar.placeholder")}</span>
+          <Kbd className="shrink-0">{commandBarBinding}</Kbd>
+        </button>
+      </header>
 
       <Suspense fallback={null}>
         <ProjectsSection recents={recents} />
@@ -183,7 +206,7 @@ export function OverviewView() {
             }
           />
         ) : places === null || favorites === null ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
               <Skeleton className="h-location-card rounded-lg" key={index} />
             ))}
@@ -201,7 +224,7 @@ export function OverviewView() {
             </EmptyHeader>
           </Empty>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-4">
             {visiblePlaces.map((place) => {
               const presentation = PLACE_PRESENTATION[place.kind];
               return (
@@ -301,7 +324,7 @@ export function OverviewView() {
               return (
                 <li key={item.path}>
                   <button
-                    className="flex h-8.5 w-full items-center gap-2.5 rounded-md px-2 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    className="group flex h-12 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                     onClick={() =>
                       openRecent(item.path, item.kind === "directory" ? "directory" : "file")
                     }
@@ -309,11 +332,13 @@ export function OverviewView() {
                     type="button"
                   >
                     <TypeIconTile
-                      className="size-tile-list"
-                      iconSize={16}
+                      className="size-[30px] shrink-0"
+                      iconSize={18}
                       presentation={presentation}
                     />
-                    <span className="shrink-0 text-body font-medium">{item.name}</span>
+                    <span className="max-w-[45%] shrink-0 truncate text-body font-medium">
+                      {item.name}
+                    </span>
                     {/* The parent path fills the row between the name and the
                         timestamp: without it a 1400px-wide row reads as a name
                         with a stray time on the far side, and the path is the
@@ -321,7 +346,7 @@ export function OverviewView() {
                     <span className="path-ellipsis min-w-0 flex-1 truncate text-caption text-muted-foreground">
                       {parentPathOf(item.path)}
                     </span>
-                    <span className="shrink-0 text-caption text-muted-foreground tabular-nums">
+                    <span className="shrink-0 text-micro text-muted-foreground tabular-nums">
                       {formatRecentTime(item.accessedAt, t("recents.groups.yesterday"))}
                     </span>
                   </button>
@@ -342,13 +367,13 @@ export function OverviewView() {
             title={t("loadError.spacesTitle")}
           />
         ) : spaces === null ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
             {Array.from({ length: 4 }, (_, index) => (
               <Skeleton className="h-location-card rounded-lg" key={index} />
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
             {spaces.map((space) => (
               <LocationCard
                 description={

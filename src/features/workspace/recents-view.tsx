@@ -9,7 +9,7 @@ import {
   FolderOpenIcon,
   HistoryIcon,
   TrashBinTrashIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import type { RecentItem } from "@/bindings";
 import { i18n } from "@/i18n";
@@ -137,7 +137,7 @@ export function RecentsView() {
       ) : recents === null ? (
         <div className="flex flex-col gap-1">
           {Array.from({ length: 6 }, (_, index) => (
-            <Skeleton className="h-8.5 rounded-sm" key={index} />
+            <Skeleton className="h-14 rounded-xl" key={index} />
           ))}
         </div>
       ) : groups.length === 0 ? (
@@ -152,7 +152,7 @@ export function RecentsView() {
       ) : (
         groups.map((group) => (
           <section aria-label={group.label} key={group.label}>
-            <h2 className="mb-1 text-label text-muted-foreground">{group.label}</h2>
+            <h2 className="mt-1 mb-2 px-2.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground/85">{group.label}</h2>
             <ul className="flex flex-col">
               {group.items.map((item) => (
                 <RecentRow
@@ -190,21 +190,21 @@ function RecentRow({
         <ContextMenuTrigger>
           <button
             aria-label={`${presentation.label} ${item.name}`}
-            className="flex h-8.5 w-full items-center gap-2.5 rounded-sm px-2 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="flex h-14 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             onClick={onOpen}
             title={item.path}
             type="button"
           >
-            <TypeIconTile className="size-tile-list" iconSize={16} presentation={presentation} />
+            <TypeIconTile className="size-[30px] shrink-0" iconSize={18} presentation={presentation} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-body">{item.name}</span>
+              <span className="block truncate text-body font-medium">{item.name}</span>
               {location && (
-                <span className="block truncate text-caption text-muted-foreground">
+                <span className="block truncate text-micro text-muted-foreground">
                   {location}
                 </span>
               )}
             </span>
-            <span className="shrink-0 text-caption text-muted-foreground tabular-nums">
+            <span className="shrink-0 text-micro text-muted-foreground tabular-nums">
               {formatTime(item.accessedAt)}
             </span>
           </button>

@@ -3,7 +3,7 @@ import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu
 
 import { cn } from "@/lib/utils";
 import { KbdShortcut } from "@/components/ui/kbd";
-import { AltArrowRightIcon, CheckIcon } from "@solar-icons/react/line-duotone";
+import { AltArrowRightIcon, CheckIcon } from "@solar-icons/react/linear";
 import type { Icon as SolarIcon } from "@solar-icons/react/lib/types";
 
 function ContextMenu({ ...props }: ContextMenuPrimitive.Root.Props) {
@@ -55,7 +55,7 @@ function ContextMenuContent({
             // shadow. Nothing about it depends on what is behind it, so it draws
             // the same on every platform, and `animate-float-in` is the only
             // travel this layer gets.
-            "z-50 max-h-(--available-height) min-w-menu origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-md border border-border bg-popover p-1 text-body text-popover-foreground shadow-ambient outline-none data-open:animate-float-in data-closed:animate-out data-closed:fade-out-0 data-closed:duration-instant data-closed:ease-standard-accelerate data-closed:fill-mode-forwards",
+            "z-50 max-h-(--available-height) min-w-menu origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-xl border border-border/80 bg-popover p-1.5 text-body text-popover-foreground shadow-ambient-lg outline-none data-open:animate-float-in data-closed:animate-out data-closed:fade-out-0 data-closed:duration-instant data-closed:ease-standard-accelerate data-closed:fill-mode-forwards",
             className,
           )}
           {...props}
@@ -101,7 +101,7 @@ function ContextMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "group/context-menu-item relative flex h-7 cursor-default items-center gap-2 rounded-sm px-2 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:text-muted-foreground focus:*:[svg]:text-accent-foreground data-[variant=destructive]:*:[svg]:text-destructive",
+        "group/context-menu-item relative flex h-8 cursor-default items-center gap-2.5 rounded-lg px-2.5 text-body outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5 [&_svg]:text-muted-foreground focus:*:[svg]:text-accent-foreground data-[variant=destructive]:*:[svg]:text-destructive",
         className,
       )}
       {...props}

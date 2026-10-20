@@ -1,5 +1,5 @@
 import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
-import { CheckIcon } from "@solar-icons/react/line-duotone";
+import { CheckIcon } from "@solar-icons/react/linear";
 
 import { cn } from "@/lib/utils";
 

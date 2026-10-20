@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { atom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { AltArrowDownIcon } from "@solar-icons/react/line-duotone";
+import { AltArrowDownIcon } from "@solar-icons/react/linear";
 
 import { type DirectoryEntry } from "@/bindings";
 import { openDirectoryListing } from "@/features/explorer/directory-listing";

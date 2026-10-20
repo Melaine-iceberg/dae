@@ -13,11 +13,17 @@
     "about": "关于"
   },
   "appearance": {
-    "description": "主题与界面语言。更改会立即生效。",
+    "description": "主题、强调色与界面语言。更改会立即生效。",
     "theme": "主题",
     "themeOptions": {
       "light": "浅色",
       "dark": "深色",
+      "system": "跟随系统"
+    },
+    "accent": "强调色",
+    "accentHint": "默认使用品牌蓝。跟随系统会用桌面强调色替换按钮、选中与焦点色。",
+    "accentOptions": {
+      "brand": "品牌蓝",
       "system": "跟随系统"
     },
     "language": "语言"

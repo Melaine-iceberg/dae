@@ -6,7 +6,7 @@ import {
   MonitorIcon,
   MusicNoteIcon,
   VideoFrameIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 import type { Icon } from "@solar-icons/react/lib/types";
 
 import type { PlaceKind } from "@/bindings";
@@ -18,9 +18,8 @@ import { i18n } from "@/i18n";
 /**
  * Soft identity hues for the well-known places — the same category-colour
  * vocabulary the type glyphs use (`--folder` + the six `--tone-*`), so a place
- * reads as *this kind of thing* without borrowing the accent seam. The
- * duotone second layer follows automatically: every class below is in the
- * `.solar-tonal` opt-out list App.css keeps for colour-carrying glyphs.
+ * reads as *this kind of thing* without borrowing the accent seam. The glyph
+ * is a single-tone line (App.css, ICONS), so the hue is all there is to set.
  *
  * home and the user's own favourites are folders and take the folder hue;
  * the rest take the hue of the file family they collect.

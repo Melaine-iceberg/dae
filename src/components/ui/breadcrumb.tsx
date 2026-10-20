@@ -3,7 +3,7 @@ import { mergeProps } from "@base-ui/react/merge-props";
 import { useRender } from "@base-ui/react/use-render";
 
 import { cn } from "@/lib/utils";
-import { AltArrowRightIcon, MenuDotsIcon } from "@solar-icons/react/line-duotone";
+import { AltArrowRightIcon, MenuDotsIcon } from "@solar-icons/react/linear";
 
 function Breadcrumb({ className, ...props }: React.ComponentProps<"nav">) {
   return (

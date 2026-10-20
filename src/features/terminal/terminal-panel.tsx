@@ -14,7 +14,7 @@ import {
   EraserIcon,
   RestartIcon,
   TextSelectionIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import {
   ContextMenu,
@@ -82,11 +82,12 @@ function readTerminalTheme(ansiOverride: AnsiPalette | null): ITheme {
   const dark = document.documentElement.classList.contains("dark");
   const ansi = resolveAnsiPalette(ansiOverride, dark);
   // Last-resort values, per scheme. The tokens above are always present, so
-  // these only fire if the stylesheet never loaded — but they are kept in step
-  // with the palette so that failure does not also paint the old cool scheme.
+  // these only fire if the stylesheet never loaded — but they are copied from
+  // the same scheme tokens the ANSI tables are sampled from, so that failure
+  // does not also paint a window two retunes out of date.
   const fallback = dark
-    ? { card: "#252421", foreground: "#ebe8e2", primary: "#6bbcb6", accent: "#33312d" }
-    : { card: "#ffffff", foreground: "#37352f", primary: "#1f7a72", accent: "#f0eeea" };
+    ? { card: "#101111", foreground: "#f9f9f9", primary: "#57c1ff", accent: "#1b1c1e" }
+    : { card: "#ffffff", foreground: "#101216", primary: "#1f63cc", accent: "#e8eaee" };
   return {
     // The panel is the one surface whose *content* may deviate from the
     // neutral ladder; its chrome above may not. background/foreground follow
@@ -443,13 +444,11 @@ export function TerminalPanel() {
     <section
       aria-label={t("panel.label")}
       className={cn(
-        /* The terminal is the second island — it shares `.content-panel`'s
-           hairline, corner and fill rather than fusing to the plane above it,
-           so the canvas runs between the two cards. The fill comes from the
-           class, so no `bg-card` here. The xterm viewport paints `--card` too,
-           the one surface in here that has to be solid: a terminal reads its
-           own colours. */
-        "content-panel flex shrink-0 flex-col overflow-hidden",
+        /* The terminal is a drawer, not a second card: a hairline across the
+           bottom of the listing and the void one step toward the paper. The
+           reference has no floating panel here at all — the drawer is part of
+           the column, and closing it returns the row to the listing. */
+        "flex shrink-0 flex-col overflow-hidden border-t border-border bg-muted/60",
         !visible && "hidden",
       )}
       style={{ height }}
@@ -459,7 +458,7 @@ export function TerminalPanel() {
         className="group h-1 w-full shrink-0 cursor-row-resize"
         onPointerDown={startResizeDrag}
       />
-      <header className="flex h-8 shrink-0 items-center gap-1 border-b border-border px-2">
+      <header className="flex h-[30px] shrink-0 items-center gap-2 border-b border-border-soft px-3">
         <span className="text-micro font-medium text-muted-foreground select-none">
           {t("panel.title")}
         </span>

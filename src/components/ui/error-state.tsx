@@ -1,4 +1,4 @@
-import { DangerTriangleIcon, RefreshIcon } from "@solar-icons/react/line-duotone";
+import { DangerTriangleIcon, RefreshIcon } from "@solar-icons/react/linear";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";

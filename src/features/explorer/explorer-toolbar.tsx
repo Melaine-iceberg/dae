@@ -36,7 +36,7 @@ import {
   PanelLeftIcon,
   RefreshIcon,
   StarIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -66,14 +66,27 @@ import { FilterMenu } from "./filter-menu";
  *   split     a per-tab layout choice, not a per-folder one
  *   git       the branch is context, not a control
  */
-const TOOLBAR_OVERFLOW_CLASS = "max-[880px]:hidden";
-const TOOLBAR_OVERFLOW_GIT_CLASS = "max-[1000px]:hidden";
+const TOOLBAR_OVERFLOW_CLASS = "max-[900px]:hidden";
+const TOOLBAR_OVERFLOW_FAVORITE_CLASS = "max-[1080px]:hidden";
+const TOOLBAR_OVERFLOW_GIT_CLASS = "max-[1180px]:hidden";
 
 /** A cluster of controls that reads as one object: a recessed plate holding
  *  evenly weighted keys. Groups are told apart by that plate and by
  *  whitespace — never by a hairline between neighbours, which turns a row of
- *  icons into a picket fence. */
-const CLUSTER_CLASS = "flex shrink-0 items-center gap-0.5 rounded-lg bg-muted/70 p-0.5";
+ *  icons into a picket fence.
+ *
+ *  The plate is Raycast's `.seg`: the void mixed one step toward the paper, plus
+ *  a single inset hairline. It is *darker* than the toolbar it sits on, so a
+ *  cluster reads as a slot milled into the frame rather than as a card lying on
+ *  it — which is what a segmented control is. */
+const CLUSTER_CLASS =
+  "flex shrink-0 items-center gap-0.5 rounded-md bg-background/60 p-0.5 shadow-[inset_0_0_0_1px_var(--border)]";
+
+/** Travel is the one group with no plate of its own: three bare glyphs at the
+ *  leading edge, the way the reference draws back / forward / up. The row
+ *  already spends its "one object" budget on the path field; a second plate
+ *  beside it made the leading edge twice as heavy as the trailing one. */
+const NAV_CLUSTER_CLASS = "flex shrink-0 items-center gap-0.5";
 
 export interface ExplorerToolbarProps {
   sidebarVisible: boolean;
@@ -153,7 +166,7 @@ export function ExplorerToolbar({
 
   return (
     <header
-      className="flex h-toolbar shrink-0 items-center gap-1.5 px-2"
+      className="flex h-toolbar shrink-0 items-center gap-2 px-3"
       data-tauri-drag-region="deep"
     >
       {/* App chrome: the sidebar toggle, alone at the leading edge. */}
@@ -172,9 +185,9 @@ export function ExplorerToolbar({
         <PanelLeftIcon />
       </Button>
 
-      {/* Travel: where you have been and where "up" is. One plate, so the three
-          keys read as one instrument rather than as three loose icons. */}
-      <div className={CLUSTER_CLASS}>
+      {/* Travel: where you have been and where "up" is. Three bare glyphs —
+          the plate this group used to carry is gone, see NAV_CLUSTER_CLASS. */}
+      <div className={NAV_CLUSTER_CLASS}>
         <Button
           aria-label={t("explorer:toolbar.back")}
           disabled={!canGoBack}
@@ -216,10 +229,13 @@ export function ExplorerToolbar({
           crumbs name. */}
       <div
         className={cn(
-          "flex h-9 min-w-40 flex-1 items-center rounded-lg bg-muted px-0.5",
-          // The field answers the pointer by taking the paper tone, so the row
-          // says "this is editable" without a border.
-          "transition-colors duration-fast ease-standard hover:bg-accent focus-within:bg-card focus-within:ring-1 focus-within:ring-ring/40",
+          "flex h-8 min-w-40 flex-1 items-center rounded-md bg-background/60 px-1",
+          // The field is a slot, not a card: one inset hairline at rest, a
+          // brighter one under the pointer, and the focus ring only while it is
+          // actually being typed into. `background-color` never changes — the
+          // field holds a *value*, and a value does not change plane on hover.
+          "shadow-[inset_0_0_0_1px_var(--border)] transition-[box-shadow] duration-fast ease-standard",
+          "hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] focus-within:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16),0_0_0_3px_color-mix(in_oklab,var(--ring)_35%,transparent)]",
         )}
       >
         {directory ? (
@@ -265,7 +281,7 @@ export function ExplorerToolbar({
               ? t("explorer:toolbar.removeFavorite")
               : t("explorer:toolbar.addFavorite")
           }
-          className={TOOLBAR_OVERFLOW_CLASS}
+          className={TOOLBAR_OVERFLOW_FAVORITE_CLASS}
           disabled={!directory}
           onClick={onToggleFavorite}
           size="icon"

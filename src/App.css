@@ -95,24 +95,42 @@
      the Latin it occasionally sets. Only `title` and `lead` carry a weight
      and tracking of their own — body and below inherit, so a call site can
      go bold without re-declaring size. */
-  --text-title: 1.1875rem;
-  --text-title--line-height: 1.75rem;
-  --text-title--font-weight: 640;
-  --text-title--letter-spacing: -0.016em;
-  --text-lead: 0.9375rem;
-  --text-lead--line-height: 1.375rem;
-  --text-lead--letter-spacing: -0.006em;
-  --text-body: 0.875rem;
-  --text-body--line-height: 1.375rem;
+  /* Type scale — six steps, tuned for a 1440px desktop window. Body sits at
+     14.5px rather than 13: a file listing is read at arm's length, and the old
+     ramp made every label look like metadata. Weight and tracking do the
+     hierarchy: only `title` and `lead` carry their own. */
+  /* RAYCAST RETUNE — the six steps keep their sizes; what changed is the
+     tracking. Raycast runs POSITIVE tracking on a dark canvas (+0.2px on
+     body, never negative), because a light-on-dark glyph reads tighter than
+     the same glyph in light: the counters fill in optically. The ramp
+     therefore gets a small positive letter-spacing per rung instead of the
+     negative display tracking the light-first language used — and a title at
+     -0.01em rather than -0.024em, since a CJK title cannot be persuaded to
+     hold a tight Latin rhythm and only looks cramped when it is tried. */
+  --text-title: 1.375rem;
+  --text-title--line-height: 1.85rem;
+  --text-title--font-weight: 600;
+  --text-title--letter-spacing: -0.01em;
+  --text-lead: 1.0625rem;
+  --text-lead--line-height: 1.5rem;
+  --text-lead--letter-spacing: 0em;
+  --text-body: 0.90625rem;
+  --text-body--line-height: 1.3125rem;
+  --text-body--letter-spacing: 0.008em;
   --text-caption: 0.8125rem;
-  --text-caption--line-height: 1.125rem;
+  --text-caption--line-height: 1.1875rem;
+  --text-caption--letter-spacing: 0.01em;
   --text-micro: 0.75rem;
-  --text-micro--line-height: 1rem;
+  --text-micro--line-height: 1.0625rem;
+  --text-micro--letter-spacing: 0.01em;
   --text-label: 0.75rem;
   --text-label--line-height: 1.125rem;
-  --text-label--font-weight: 500;
+  --text-label--font-weight: 520;
+  --text-label--letter-spacing: 0.012em;
   --text-nano: 0.6875rem;
   --text-nano--line-height: 1rem;
+  --text-nano--letter-spacing: 0.02em;
+
 
   /* Notion motion: a quick fade paired with a small rise, settled softly and
      never performed. Nothing overshoots — a curve that passes its target and
@@ -159,7 +177,12 @@
     0.24,
     1
   ); /* tatami ease-in-out-quart */
-  --ease-standard: cubic-bezier(0.45, 0, 0.55, 1); /* tatami ease-in-out-quad */
+  /* Raycast's state-change curve: an immediate departure that settles, not a
+     symmetrical ramp. A hover or a selection lands on the same frame the
+     pointer does, which is what makes a launcher feel like an instrument
+     rather than a page. Colour-only transitions stay on it too — the curve
+     ends in rest, so a fill still arrives rather than lags. */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-standard-accelerate: cubic-bezier(0.42, 0, 1, 1); /* tatami ease-in */
 
   /* Motion durations live under Tailwind's `--transition-duration-*`
@@ -244,6 +267,16 @@
       color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
 
   --color-selection: var(--selection);
+
+  /* Raycast's two hairlines: `--border` contains a card, `--border-soft`
+     separates two rows inside one. The second is deliberately half the first —
+     a row separator at containment strength turns a list into a grid. */
+  --color-border-soft: var(--border-soft);
+  /* The fourth ink rung. The palette in the reference has four (`fg`, `fg-2`,
+     `muted`, `meta`); this shell had three, so placeholders, keycaps, row
+     counts and disabled glyphs all shared `muted-foreground` with real
+     secondary text and neither could be tuned. */
+  --color-meta: var(--meta);
 
   /* Semantic status roles. The theme shipped --destructive but no positive
      counterparts, so "fine / attention / new" status was spelled out in raw
@@ -371,11 +404,8 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
-  /* The window's content plane. Two px above the base, so it sits between the
-     8px panes and the 12px dialogs: a full-width surface that rounds as hard as
-     a dialog reads as a card, and the point of the plane is that the *window*
-     has a corner, not a tile. Concentric with the 5-6px rows inside it. */
-  --radius-panel: calc(var(--radius) + 2px);
+  --radius-panel: calc(var(--radius) + 8px);
+
 
   /* Geometry: the cells, stand-ins and panel widths that used to be written as
      arbitrary px at each call site (`size-[22px]` six times, the card skeleton
@@ -388,11 +418,11 @@
      then falls back to `--spacing-*`. A token declared under the wrong prefix
      still emits its variable and still generates no utility — which is exactly
      how the `--duration-*` mistake above stayed invisible for a release. */
-  --size-tile-list: 24px; /* entry icon cell in a 28/32/40px row */
-  --size-tile-detail: 40px; /* dialog header tile */
-  --size-tile-grid-compact: 32px;
-  --size-tile-grid-comfortable: 42px;
-  --size-tile-grid-spacious: 50px;
+  --size-tile-list: 26px; /* entry icon cell in a 28/32/40px row */
+  --size-tile-detail: 44px; /* dialog header tile */
+  --size-tile-grid-compact: 34px;
+  --size-tile-grid-comfortable: 46px;
+  --size-tile-grid-spacious: 54px;
   --size-action-glyph: 18px; /* entry-menu quick-action glyph */
   /* The bare thumbnail above a grid cell is a step narrower than the tinted
      tile at the compact density, so a full-bleed image does not read heavier
@@ -400,7 +430,7 @@
   --height-image-zone-compact: 30px;
   --height-image-zone-comfortable: 42px;
   --height-image-zone-spacious: 50px;
-  --height-location-card: 60px; /* LocationCard — its skeleton must match */
+  --height-location-card: 4.75rem; /* LocationCard — its skeleton must match */
   --height-project-card: 90px;
   --height-settings-body: 30rem; /* settings dialog body at a comfortable window */
   /* The bin's list scrolls inside its own surface rather than pushing the page
@@ -413,8 +443,8 @@
      strip's number lives in the plain pair at the top of this file, where a
      `background-size` can read it; the name here is an alias. */
   --height-tab-strip: var(--tab-strip-height);
-  --height-toolbar: 48px;
-  --height-status-strip: 32px;
+  --height-toolbar: 54px;
+  --height-status-strip: 26px;
   --height-capacity-bar: 3px; /* disk capacity fill in the sidebar */
   /* Window-control geometry, two numbers because the target and the plate are
      two things: `--size-window-control` is the painted square, and
@@ -431,9 +461,9 @@
   --min-width-menu: 11.25rem; /* 180px — the floor for any popup menu */
   --max-width-command-bar: 40rem; /* 640px — the palette's cap */
   --max-width-row-meta: 45%; /* trailing metadata share of an explorer row */
-  --width-column-view: 13.75rem; /* 220px — one Miller column */
-  --width-sidebar: var(--sidebar-width); /* 240px — the nav column */
-  --width-preview: 26rem;
+  --width-column-view: 15rem; /* 240px — one Miller column */
+  --width-sidebar: var(--sidebar-width); /* 232px — the nav column */
+  --width-preview: 18.75rem; /* 300px — the inspector's plate */
   /* One notification. Fixed rather than content-sized so a stack of them
      shares an edge and a two-line message wraps at a predictable column. */
   --width-toast: 22rem; /* 352px */
@@ -488,181 +518,229 @@
 }
 
 :root {
-  /* ATLAS — light. One cool ground, one paper plane, one accent.
+  /* RAYCAST — light.
 
-     The window is drawn as three rungs instead of two: the frame — the tab
-     strip and the row of gutters the panels sit in — is `--sidebar`, the
-     panels on it are `--card`, and the canvas below both is `--background`.
-     The frame and the navigation rail are deliberately the same tone, so the
-     shell reads as one L of chrome wrapped around a sheet of paper rather than
-     as a set of separate cards floating on a grey field.
+     The design system ships one scheme, and it is dark. This is its honest
+     daylight counterpart rather than a second identity: the same two planes
+     (canvas + one raised sheet), the same single interactive hue, the same
+     hairline instead of an outline. What light loses is the void that makes
+     the dark scheme read as an instrument, so the canvas is a cool gray
+     (#eef0f3) rather than white paper — the card has to be the lighter plane
+     or the whole hierarchy inverts.
 
-     The neutrals are cool and low-chroma (OKLCH ≈0.006) on purpose. They carry
-     no colour of their own, which leaves every hue in the window to content —
-     folder yellow, the file-type tones, thumbnails — and to the accent the
-     user picked in their OS. A neutral that leans is a neutral that fights
-     both.
-
-     Contrast, measured on the plane named: ink ≈17:1 on a panel and ≈15.5:1 on
-     the frame; secondary ink ≈6.0:1 on a panel, ≈5.6:1 on the frame, ≈5.1:1 on
-     a selected plate. The accent clears AA in both of its jobs — 5.0:1 under
-     white ink and 5.0:1 as text on a panel. */
-  --shadow-color: #0d1526;
+     Neutrals are cool and almost chromeless. Every hue on screen therefore
+     belongs to content — folder yellow, file-type tones, thumbnails — or to
+     the accent the user picked in the OS. */
+  --shadow-color: #0b1220;
   --shadow-a1: 3%;
   --shadow-a2: 6%;
-  --shadow-a3: 11%;
+  --shadow-a3: 12%;
   --shadow-a4: 24%;
-  /* The canvas. Only visible where a panel does not cover it: the window's
-     gutters, dialog backdrops and the boot splash. */
-  --background: #edf0f6;
-  /* A panel is a sheet of paper: one contact shadow and one light bevel along
-     its top edge. The bevel is what stops a white panel on a near-white frame
-     from reading as a hole. */
+  --background: #eef0f3;
   --panel-shadow:
     0 1px 2px
       color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
-    0 14px 34px -24px
+    0 20px 44px -30px
       color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
-  --panel-bevel: inset 0 1px 0 #ffffff;
-  /* The plate under the current tab: paper on the frame. */
+
+  /* THE BEVEL SCALE — light, and the half of it that had to be rebuilt.
+
+     What lifts a plate is a rim of light along its top edge, and in daylight
+     that rim cannot exist: this scheme's paper is #ffffff, and there is
+     nothing above white to paint. `inset 0 1px 0 rgb(255 255 255 / 0.9)` on a
+     #fff panel is white on white — which is what this token did on every panel
+     in this scheme, and why a light window sat flat beside a dark one: the one
+     cue the scale spent its money on was the one cue this scheme cannot buy.
+
+     The other cue is available here and is not available there. A shadow is
+     ink, so it darkens whatever it falls on: 6% of ink moves the light canvas
+     (L* 94.7) by ≈6 L*, and moves the void (L* 0) by nothing at all. That
+     asymmetry is the whole reason the two schemes buy opposite treatments —
+     dark spends its edge budget on a lit rim because its shadows cannot
+     describe an edge, light spends it on the shadow and the plate's thickness
+     because its rim cannot be lit.
+
+     So the raised rung here is the plate's THICKNESS: a pixel of shade inside
+     the bottom edge, where the plate meets the thing it lies on. It reads for
+     exactly the reason the shadow does — the paper is the brightest thing on
+     screen, so anything drawn on it is darker than it.
+
+       raised  large paper plates — the content panel, a dialog, the plane the
+               explorer sits on. 7% ink: L* 94.3 against the paper's 100.
+       key     small plates on the frame — the tab pill, and only it. 9% ink:
+               L* 92.7, because a 36px plate has a thirty-sixth of the area a
+               panel has to say "I am raised" with, and it is the one surface
+               in the strip that carries "this tab is current" at a glance.
+
+     Both stops land between the paper (L* 100) and the hairline (L* 89.4), so
+     an edge reads as the plate thickening into its own outline rather than as
+     a second border drawn beside it.
+
+     A surface BELOW its parent has no rung, in either scheme: a recessed plane
+     — an input, the terminal, the palette's field — is described by its own
+     rim (`--input`: a darker line in light, a lit one in dark), and a bevel
+     inside that rim would be a second line saying what one already says. That
+     is why the scale has two stops.
+
+     The rung above these — a menu over a dialog, a toast over a menu — is not
+     a bevel at all: it is the `--shadow-*` set above, because a 1px line says
+     *edge* and only a shadow says *distance*.
+
+     `--panel-bevel` stays the name the surfaces read, so the rung can be
+     turned around here without a call site in the window being touched. */
+  --bevel-raised: inset 0 -1px 0
+    color-mix(in oklab, var(--foreground) 7%, transparent);
+  --bevel-key: inset 0 -1px 0
+    color-mix(in oklab, var(--foreground) 9%, transparent);
+  --panel-bevel: var(--bevel-raised);
   --tab-pill-fill: var(--card);
-  /* The veil under a modal layer. A dialog is separated by its border and its
-     shadow; the veil says the window behind it is not taking input, without
-     turning the listing into a grey slab. */
-  --scrim: rgb(13 21 38 / 0.16);
-  --foreground: #0f1319; /* 17:1 on the panel */
+  --scrim: rgb(7 8 10 / 0.3);
+  --foreground: #101216;
   --card: #ffffff;
-  --card-foreground: #0f1319;
+  --card-foreground: #101216;
   --popover: #ffffff;
-  --popover-foreground: #0f1319;
+  --popover-foreground: #101216;
   /* The one saturated note, and the fallback for the OS accent (see THE ACCENT
-     SEAM). Indigo rather than the teal this shell shipped with: at 20% it makes
-     a selection that reads as *chosen* without tinting the whole window green,
-     and it leaves the folder yellow as the only warm object on screen. */
-  --accent-default: #4f5df0;
+     SEAM). Raycast Blue at a lightness that clears 4.5:1 under white ink, so
+     a filled button can keep white text in daylight the way it keeps near-
+     black text in the dark scheme. */
+  --accent-default: #1f63cc;
   --accent-default-ink: #ffffff;
   --on-destructive: #ffffff;
-  --secondary: #f1f4f9;
-  --secondary-foreground: #0f1319;
-  --muted: #f2f5f9; /* recessed inner surface — tracks, headers, thumbnails */
-  --muted-foreground: #5b6675; /* ≈6.0:1 on a panel; secondary text never fades out */
-  --accent: #edf1f8; /* hover wash on paper */
-  --accent-foreground: #0f1319;
-  --error-container: #fdeceb;
-  --on-error-container: #7a1c12;
-  /* The folder is the highest-volume colour in the app and the only glyph
-     drawn as a solid object, so it is allowed to be the bright yellow everyone
-     recognises; the rear wall takes the deeper gold. */
+  --secondary: #f4f6f8;
+  --secondary-foreground: #101216;
+  --muted: #f4f6f8;
+  --muted-foreground: #5b6169;
+  --accent: #e8eaee;
+  --accent-foreground: #101216;
+  --error-container: #fdebe8;
+  --on-error-container: #7a1d14;
   --folder: #c78600;
   --folder-body: #ffb110;
   --folder-edge: #ffe08a;
   --folder-paper: #fff8e6;
-  --glyph-body-mix: 30%;
   --destructive: #d92d20;
-  /* Status hues: one hue each, checked against the panel plane. */
   --success: #067647;
   --warning: #b54708;
-  --info: #1570ef;
-  /* The six category hues, one per kind of thing: each sits at the 600 rung of
-     its hue, so a listing of mixed files reads as a palette rather than as a
-     paintbox, and every one clears the 3:1 graphical bar on paper. */
+  --info: #1f63cc;
   --tone-blue: #1d4ed8;
   --tone-violet: #6d28d9;
   --tone-emerald: #047857;
   --tone-amber: #c2410c;
   --tone-rose: #be185d;
   --tone-cyan: #0e7490;
-  --border: #e2e7f0; /* hairline: the edge of a panel, and its whole boundary */
-  --input: #d5dce8;
-  /* Shape: a 10px base. Panels take the plane step (12), floating layers the
-     dialog step (14), inline controls the 7-8px steps. */
-  --radius: 0.625rem;
-  /* The frame tone, shared by the rail and the tab strip: one step below the
-     paper, so the sheet still reads as raised while the chrome reads as
-     chrome. */
-  --sidebar: #f5f8fc;
-  --sidebar-foreground: #0f1319;
-  --sidebar-accent: #e6ecf6; /* hover on the rail — a step deeper than the frame */
-  --sidebar-accent-foreground: #0f1319;
-  --sidebar-border: #e2e7f0;
+  --border: #dee1e6;
+  --border-soft: #e8ebef;
+  --meta: #8b929b;
+  --input: #d2d7de;
+  /* Raycast's shape scale: 6px is the workhorse (buttons, badges, rows),
+     12px the standard card, 16px the large container — expressed here as the
+     base the five steps are derived from (4 / 5 / 6 / 8 / 12 / panel 14). */
+  --radius: 0.5rem;
+  --sidebar: #eef0f3;
+  --sidebar-foreground: #101216;
+  --sidebar-accent: #e2e6eb;
+  --sidebar-accent-foreground: #101216;
+  --sidebar-border: #dee1e6;
 
-  /* Chrome geometry — plain custom properties, because a token inside
-     `@theme inline` is inlined into utilities instead of being emitted as a
-     variable, and the boot-screen plugin in vite.config.ts reads this block. */
-  --sidebar-width: 15.5rem;
-  /* The tab strip: 44px carries a 32px chip with 6px above and below, which is
-     the same 6px gutter the content row uses. */
+  /* Chrome geometry — plain custom properties (the boot-screen plugin in
+     vite.config.ts reads this block).
+
+     Tightened for a file manager rather than a marketing window: every pixel
+     the frame takes is a pixel the listing does not get. The strip is 44px
+     because that is exactly the tab row's own 36px plus its 4px gutter above
+     and below — the trough fills the bar instead of floating in 3px of slack
+     top and bottom, so the boundary between frame and content row is the only
+     line the eye has to find. The rail is 240px: wide enough for a disk card's
+     capacity pair, 24px narrower than it was. */
+  --sidebar-width: 14.5rem;
   --tab-strip-height: 44px;
 }
 
 .dark {
-  /* ATLAS — dark. The same three rungs, inverted in intent: the frame is the
-     darkest plane, the panels step up off it, and floating layers step up
-     again. Depth is carried by value and by a light bevel along each panel's
-     top edge — not by shadow, which is invisible on a near-black ground.
-
-     The neutrals keep a trace of blue (OKLCH chroma ≈0.012) so the window
-     reads as graphite rather than as a grey void, and the accent is the same
-     indigo lifted until it clears AA as text on a panel. */
+  /* RAYCAST — dark, and the scheme this design system was drawn in. The
+     canvas recedes to the void, the sheet steps up off it by one value, and
+     floating layers step up again. Depth is value plus the light bevel along
+     a surface's top edge: on a near-black ground a shadow is nearly
+     invisible, so the bevel — not the shadow — is what lifts a plane. */
   --shadow-color: #000000;
-  --shadow-a1: 34%;
-  --shadow-a2: 48%;
-  --shadow-a3: 62%;
+  --shadow-a1: 30%;
+  --shadow-a2: 44%;
+  --shadow-a3: 60%;
   --shadow-a4: 74%;
-  --background: #0a0d13;
+  /* THE VOID — #07080a, not black. The blue-cold tint is what separates an
+     instrument from a generic dark theme, and it is the one value in the
+     whole palette that must never drift: every other surface in this scheme
+     is read relative to it. */
+  --background: #07080a;
   --panel-shadow:
     0 1px 2px
       color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
-    0 18px 44px -26px
+    0 24px 56px -34px
       color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
-  --panel-bevel: inset 0 1px 0 rgb(255 255 255 / 0.045);
-  /* The trough is a step *below* the frame, so the plate under the current tab
-     has to be a step above it to read at all. */
-  --tab-pill-fill: #1e2533;
-  --scrim: rgb(0 0 0 / 0.5);
-  --foreground: #e8ecf4; /* 15.4:1 on a panel */
-  --card: #161c26;
-  --card-foreground: #e8ecf4;
-  --popover: #1f2632;
-  --popover-foreground: #e8ecf4;
-  --accent-default: #93a0ff; /* 7.4:1 as text on a panel, 7.6:1 under the dark ink */
-  --accent-default-ink: #0a0d13;
-  --on-destructive: #1a0a08; /* the dark destructive is a light red */
-  --secondary: #202836;
-  --secondary-foreground: #e8ecf4;
-  --muted: #11161f; /* recessed inner surface */
-  --muted-foreground: #9aa4b5; /* ≈7.3:1 on a panel, ≈4.7:1 on a selected plate */
-  --accent: #232b3a; /* hover — a clear half-step above the panel */
-  --accent-foreground: #e8ecf4;
-  --error-container: #4a1f19;
-  --on-error-container: #ffd9d2;
-  /* A folder is a fill, not a line, so it needs no luminance help from the
-     scheme: the same yellow in both. */
+  /* THE BEVEL SCALE — dark. The reasoning is in full in the light block above;
+     what matters here is the direction. Against the void a plate is lifted by
+     light on its top edge, and the underside line the light scheme spends its
+     money on would be invisible on near-black, so this scheme does not paint
+     one. Two stops rather than one, because area is what a top line has to
+     work with: 5% across a panel's width, 8% on the 36px tab pill, which used
+     to borrow the panel's value and so read as a faint seam rather than as a
+     raised key. */
+  --bevel-raised: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  --bevel-key: inset 0 1px 0 rgb(255 255 255 / 0.08);
+  --panel-bevel: var(--bevel-raised);
+  --tab-pill-fill: #1b1c1e;
+  --scrim: rgb(0 0 0 / 0.66);
+  --foreground: #f9f9f9;
+  --card: #101111;
+  --card-foreground: #f9f9f9;
+  --popover: #1a1b1d;
+  --popover-foreground: #f9f9f9;
+  /* Raycast Blue carries interaction (focus, selection, links); Raycast Red
+     is punctuation and danger. Painting the accent red would spend the brand
+     on every hover in the window, so the interactive hue is the blue and the
+     red is promoted where it belongs — see --destructive below. */
+  --accent-default: hsl(202, 100%, 67%);
+  --accent-default-ink: #07080a;
+  --on-destructive: #1a0a08;
+  --secondary: #17181a;
+  --secondary-foreground: #f9f9f9;
+  --muted: #0c0d0f;
+  --muted-foreground: #9c9c9d;
+  --accent: #1b1c1e;
+  --accent-foreground: #f9f9f9;
+  --error-container: #3a1b17;
+  --on-error-container: #ffd9d4;
   --folder: #c78600;
   --folder-body: #ffb110;
   --folder-edge: #ffe08a;
   --folder-paper: #fff8e6;
-  --glyph-body-mix: 34%;
-  --destructive: #ff9b93;
-  --success: #5fd39a;
-  --warning: #ffc06a;
-  --info: #8ab4ff;
-  /* The same six hues as light, at the 300 rung: 5.9–9.5:1 on a panel. */
+  --destructive: #ff6363;
+  --success: hsl(151, 59%, 59%);
+  --warning: hsl(43, 100%, 60%);
+  --info: hsl(202, 100%, 67%);
   --tone-blue: #7aa7ff;
   --tone-violet: #c4a6ff;
   --tone-emerald: #5fd39a;
   --tone-amber: #ffb26b;
   --tone-rose: #ff92c2;
   --tone-cyan: #67d4e0;
-  --border: #262e3d; /* hairline — 1.6:1 on a panel, a clear step without a wire */
-  --input: #2e3746;
-  --radius: 0.625rem; /* the same shape language as light */
-  --sidebar: #0f141c; /* the frame: one step below the panels */
-  --sidebar-foreground: #e8ecf4;
-  --sidebar-accent: #1a2130;
-  --sidebar-accent-foreground: #e8ecf4;
-  --sidebar-border: #222a37;
+  /* THE HAIRLINE — rgba white, not a grey. Raycast's containment line is the
+     surface's own light at 6–8%, so it reads as a bevel on every plane
+     instead of as a drawn border, and it disappears cleanly on the void. */
+  --border: rgba(255, 255, 255, 0.06);
+  --border-soft: rgba(255, 255, 255, 0.04);
+  --meta: #6a6b6c;
+  --input: rgba(255, 255, 255, 0.14);
+  --radius: 0.5rem;
+  --sidebar: #07080a;
+  --sidebar-foreground: #f9f9f9;
+  --sidebar-accent: #1b1c1e;
+  --sidebar-accent-foreground: #f9f9f9;
+  --sidebar-border: rgba(255, 255, 255, 0.06);
 }
+
+
 
 /* ---------------------------------------------------------------------------
    THE ACCENT SEAM — see src/lib/system-accent.ts.
@@ -673,11 +751,22 @@
    whole window retints — filled buttons, focus rings, selection, the
    active-tab underline, the capacity bar — with no other change anywhere.
 
+   Writing them is OPT-IN. `watchAccentSeam` in `lib/system-accent.ts` is the
+   only writer, it runs on every launch, and it stays silent while the
+   Appearance pane's accent preference is `brand` — which is the default. So on
+   a fresh install these two properties are never set and the shipped blue
+   below is the accent in force: the interactive hue is part of what this shell
+   looks like, and a desktop accent that repainted it would make every install
+   look like a different product. Writing them on launch, before the
+   preference has been consulted, is the mistake this paragraph exists to
+   prevent: it reads as native integration and is in fact a brand override
+   nobody asked for.
+
      --system-accent      the accent hue, any CSS <color>
      --system-accent-ink  a label colour that clears ≈4.5:1 ON that hue
 
    They are deliberately left UNDEFINED in this file rather than given a
-   default. `var(--system-accent, …)` falls back to the shipped teal
+   default. `var(--system-accent, …)` falls back to the shipped blue
    exactly while the bridge has said nothing, and stops falling back the
    instant it has. Declaring `--system-accent: initial` on this element would
    still *define* it and therefore defeat the fallback — the one mistake this
@@ -688,9 +777,9 @@
    the ink is chosen in `applySystemAccent()` from the hue's relative
    luminance. A bridge normally supplies only the hue.
 
-   `--accent-default*` above are the shipped teal, per scheme. They are also
-   what vite.config.ts bakes into index.html's pre-React splash, where no
-   bridge has run yet — so there the default is the correct colour and not
+   `--accent-default*` above are the shipped Raycast blue, per scheme. They
+   are also what vite.config.ts bakes into index.html's pre-React splash, where
+   no bridge has run yet — so there the default is the correct colour and not
    merely a fallback.
 
    NOT part of the seam, on purpose: `--folder` and the six `--tone-*` are
@@ -716,7 +805,7 @@
      than a state; and the ink inside it has to stay above AA. On white, 14%
      moves the plate ≈8 L* and leaves the label at ≈13:1 — comfortably above
      the 2-3 L* a hover wash buys. */
-  --selection: color-mix(in oklab, var(--primary) 14%, transparent);
+  --selection: color-mix(in oklab, var(--primary) 15%, transparent);
   /* The hairline inside a selected row. It is what separates *selected* from
      *hovered* at a glance — the fill alone is close to the accent at this
      strength — so it runs at three times the fill's own percentage. Shared by
@@ -726,10 +815,12 @@
 .dark {
   /* The same signal, doubled: on a near-black panel a light accent raised by
      14% is worth only a few L*, and the hover wash beside it is worth more. */
-  --selection: color-mix(in oklab, var(--primary) 30%, transparent);
+  --selection: color-mix(in oklab, var(--primary) 15%, transparent);
   /* Mixing toward a light indigo from a dark panel raises L* slowly, so the
-     edge runs further out than in light to stay a visible line. */
-  --selection-edge: color-mix(in oklab, var(--primary) 80%, transparent);
+     edge runs further out than in light to stay a visible line. 45% is the
+     reference's own ratio (15% fill / 45% edge), kept as a 3× rule: the fill
+     says *chosen*, the line says *and not merely hovered*. */
+  --selection-edge: color-mix(in oklab, var(--primary) 45%, transparent);
 }
 
 /* ---------------------------------------------------------------------------
@@ -755,9 +846,17 @@
 
    The one thing outside the seam is the active tab's plate (`.tab-pill`): it is
    the shell's only "this element is part of the frame" highlight and it has
-   nothing to do while the frame is inactive. The plate loses its shadow but keeps
-   its fill, its hairline and the tab's own weight — the active tab is still the active tab, and a
-   plate that changed size on a focus change would jitter.
+   nothing to do while the frame is inactive. It loses the contact shadow but keeps
+   its fill, its hairline, its bevel and the tab's own weight — the active tab is
+   still the active tab, and a plate that changed size or thickness on a focus
+   change would jitter.
+
+   That override does NOT live here, and the fact that it used to is the reason
+   this paragraph exists. An unlayered rule outranks every `@layer` in this file,
+   so a `box-shadow` written at this point in the cascade does not *adjust* the
+   plate in the components layer — it replaces the whole declaration, silently,
+   and a later edit to the resting shadow can never reach the inactive window.
+   It is written once, in the components layer, directly under `.tab-pill`.
    The stoplights have their own AppKit behaviour in `window-controls.tsx`.
    --------------------------------------------------------------------------- */
 html[data-window-focused="false"] {
@@ -766,9 +865,6 @@ html[data-window-focused="false"] {
     var(--system-accent, var(--accent-default)) 25%,
     var(--muted-foreground)
   );
-}
-html[data-window-focused="false"] .tab-pill {
-  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 /* ---------------------------------------------------------------------------
@@ -820,6 +916,13 @@ html[data-window-focused="false"] .tab-pill {
      platform's own backdrop shows through the frame only. */
   --chrome: var(--sidebar);
 
+  /* THE BRAND MARK. Raycast Red, and the one place in the shell where it
+     appears outside a destructive action. Deliberately NOT wired to the accent
+     seam: the interactive hue is the OS's to retint (see THE ACCENT SEAM), and
+     a mark that changed colour with a desktop setting would stop being a mark.
+     It is the only decorative value in this file. */
+  --brand-stripe: #ff6363;
+
   /* How much of the canvas colour is kept. At 100% the canvas is the opaque
      plate every platform shares; under a material it drops, and the complement
      is exactly the share of the desktop the compositor shows through. */
@@ -870,6 +973,24 @@ html[data-window-material="vibrancy"] .bg-chrome {
 }
 
 @layer components {
+  /* The brand mark — three diagonal stripes in the drag region, left of the
+     first tab. Raycast's hero motif, spent once: at 14×16px it reads as the
+     window's own signature rather than as decoration, and it is drawn at the
+     same 2px stroke as the hairline system so the two feel cut from one sheet.
+     A `repeating-linear-gradient` rather than three elements, because there is
+     nothing to interact with and nothing to select. */
+  .brand-stripe {
+    width: 0.875rem;
+    height: 1rem;
+    flex-shrink: 0;
+    border-radius: 1px;
+    background-image: repeating-linear-gradient(
+      45deg,
+      var(--brand-stripe) 0 2px,
+      transparent 2px 5px
+    );
+  }
+
   /* macOS window chrome. The three stoplights are one control: their glyphs
      stay invisible until the pointer enters the group, and the set drains to
      grey while the window is inactive. Both are AppKit's own behaviour and
@@ -1005,7 +1126,7 @@ html[data-window-material="vibrancy"] .bg-chrome {
   }
 
   /* Close tints while the pointer is over it and only fills when it is pressed.
-     The shell's wash vocabulary — a 10% accent drop target, a 7% state layer —
+     The shell's wash vocabulary — a 9% accent drop target, a 7% state layer —
      says a hue at low strength is enough to name what a thing does; the solid
      fill is spent on the moment the intent is committed rather than the moment
      it is approached. Hover and press are then a real hierarchy: move over it
@@ -1059,34 +1180,75 @@ html[data-window-material="vibrancy"] .bg-chrome {
      THE FRAME IS A PLANE, THE PANELS ARE THE PAPER. The tab strip and the row of
      gutters paint `--chrome` — the rail's own tone — so the window has one
      continuous frame wrapped around one continuous sheet. A panel is that
-     sheet: `--card`, a hairline, a bevel of light along its top edge and one
-     soft contact shadow. Nothing else in the window floats.
+     sheet: `--card`, a hairline, the bevel scale's raised rung along whichever
+     edge its scheme can paint, and one soft contact shadow. Nothing else in
+     the window floats.
 
      ONE EDGE, THE HAIRLINE. A panel is separated from the frame by 1px of
      `--border` and by a full tone step; the shadow only says the sheet is
      lying on the frame rather than part of it. Both are real borders and
      colours, so forced colours keeps them and this block needs no override
      there. */
+  /* THE THREE HABITS of this layer, stated once, because every rule below is an
+     instance of one of them:
+
+       containment is a ring   a hairline plus the bevel scale's raised rung, and
+                               a contact shadow that only says *this lies on the
+                               plane*. Nothing floats, nothing glows.
+       one step of tone        void (#07080a) → card (#101111) → popover
+                               (#1a1b1d). Depth is value, which is why the shell
+                               reads the same on any platform and wallpaper.
+       feedback is a wash      a lift of the element's own ink, never the accent:
+                               the accent is spent on selection, on focus and on
+                               the one primary action in a view.
+
+     EACH SELECTOR BELOW IS WRITTEN ONCE, and that is now a rule rather than a
+     coincidence. This file used to carry a second `@layer components` block at
+     its end restating six of these selectors with different numbers, and an
+     unlayered `html[data-window-focused="false"] .tab-pill` as well — and since
+     an unlayered rule beats every layer, that third copy of one rule was the
+     only one of the three that painted. The cascade resolved it without an
+     error, so the file described two different surfaces and drew a third, and
+     the one it drew was the one neither comment argued for.
+
+     The values kept here are the ones that were actually rendering, with two
+     deliberate exceptions, both noted where they are applied: the panel takes
+     the shape scale's plane step (14px, `--radius-panel`) rather than the card
+     step one duplicate had quietly lowered it to, and the inactive tab plate
+     keeps its bevel instead of losing it with its shadow. */
   .content-panel {
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
     background-color: var(--card);
-    box-shadow: var(--panel-shadow), var(--panel-bevel);
+    /* Raycast's containment recipe, kept whole: a ring of the surface tone one
+       step out and an inset ring of the void one step in. Together they read as
+       the sheet's own thickness — the top edge catching light, the underside in
+       shade — which is what a shadow is too expensive to say on a near-black
+       canvas. */
+    box-shadow:
+      rgb(27, 28, 30) 0 0 0 1px,
+      rgb(7, 8, 10) 0 0 0 1px inset;
   }
 
-  /* The "I am here" plate: the accent taken into the call site's own fill, and
-     nothing else. No ring, no glow, no gradient.
+  /* The "I am here" plate: the accent taken into the call site's own fill at a
+     strength that reads as *chosen* on the frame, and nothing else — no ring, no
+     glow, no gradient.
 
-     A hairline is what makes a selected row read as a *control* — an outlined
-     box you could click — rather than as a place you are. The accent wash alone
-     carries the step that matters: the rail's hover fill is one neutral step
-     deeper than the frame, and this sits a tinted step on top of it, so hover
-     and location stay two different *kinds* of state rather than two greys. */
+     Two things about it are load-bearing. The accent wash alone carries the step
+     that matters: a hover is one neutral rung of the element's own ink, and this
+     sits a tinted step on top of it, so hover and location stay two different
+     *kinds* of state rather than two greys. And the ink inside it stays
+     `--foreground`: tinting the label with the accent as well made a selected
+     row look like a link, which is the one thing it is not.
+
+     Declared as a `background-color`, not as a one-stop gradient painted over
+     itself. The gradient was a workaround for a shadcn background utility the
+     call sites no longer apply, and it left the fill invisible to anything that
+     reads `background-color` — including the forced-colors block above, which
+     has to repaint it with the palette's `Highlight`. */
   .row-active {
-    background-image: linear-gradient(
-      color-mix(in oklab, var(--primary) 13%, transparent),
-      color-mix(in oklab, var(--primary) 13%, transparent)
-    );
+    background-color: color-mix(in oklab, var(--primary) 13%, transparent);
+    color: var(--foreground);
   }
 
   /* THE TROUGH paints nothing. `.tab-trough` survives as the name of the region
@@ -1095,8 +1257,8 @@ html[data-window-material="vibrancy"] .bg-chrome {
      one surface in the row. */
 
   /* THE PILL — the plate under whichever tab is current: paper on the frame,
-     a hairline, a light bevel and a contact shadow. It is the only surface in
-     the tab row, which is what makes it read as raised.
+     a hairline, the bevel scale's key rung and a contact shadow. It is the
+     only surface in the tab row, which is what makes it read as raised.
 
      It is a node of its own rather than a class on the selected tab, and that
      distinction is the whole feature: the tab carrying `aria-selected` changes
@@ -1114,14 +1276,15 @@ html[data-window-material="vibrancy"] .bg-chrome {
     top: 0;
     left: 0;
     border-radius: var(--radius-md);
-    background-color: var(--tab-pill-fill);
+    background-color: var(--card);
+    /* Raycast's tab plate is a *paper* on the frame, not a floating key: one
+       hairline of its own light along the top edge, one ring around it, and no
+       contact shadow at all. The shadow the shell used to carry here put a
+       30px chip above a 44px strip it was already flush with, which read as a
+       card hovering over the toolbar rather than as the tab you are in. */
     box-shadow:
-      inset 0 0 0 1px var(--border),
-      var(--panel-bevel),
-      0 1px 2px
-        color-mix(in oklab, var(--shadow-color) var(--shadow-a2), transparent),
-      0 8px 18px -12px
-        color-mix(in oklab, var(--shadow-color) var(--shadow-a3), transparent);
+      inset 0 1px 0 0 color-mix(in oklab, var(--foreground) 8%, transparent),
+      0 0 0 1px color-mix(in oklab, var(--foreground) 8%, transparent);
     opacity: 0;
     pointer-events: none;
     /* Width and transform, not `left`/`right`: the slide stays on the
@@ -1131,6 +1294,23 @@ html[data-window-material="vibrancy"] .bg-chrome {
       transform var(--transition-duration-normal) var(--ease-spring-fast),
       width var(--transition-duration-normal) var(--ease-spring-fast),
       opacity var(--transition-duration-fast) var(--ease-standard);
+  }
+  /* The inactive window: the plate stops claiming to be lifted, and keeps every
+     other thing it is. The contact shadow is the only part that says *this is
+     above the frame* and it has nothing to do while the window is behind another
+     one; the ring and the bevel are what say *this is a plate at all*, and a
+     plate that thinned out and then thickened again on a focus change would read
+     as a jitter rather than as a window going quiet.
+
+     Written as the full shadow rather than as a subset, because a `box-shadow`
+     cannot be edited in place: whatever is declared here replaces the resting
+     value entirely. That is also why it lives in this layer, under the rule it
+     overrides — the unlayered copy that used to sit with the window-focus block
+     above outranked the layer and so silently dropped the bevel too. */
+  html[data-window-focused="false"] .tab-pill {
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in oklab, var(--foreground) 5%, transparent),
+      0 0 0 1px color-mix(in oklab, var(--foreground) 6%, transparent);
   }
   /* The first measurement lands in the same frame the strip mounts. Until it
      has run the pill is invisible (`opacity: 0` above) and untransitioned, so a
@@ -1170,8 +1350,11 @@ html[data-window-material="vibrancy"] .bg-chrome {
     margin: 0;
   }
 
-  /* State layer: hover/focus tint mixed from the foreground token of the
-     element it sits on (8% / 12% opacities). */
+  /* State layer: a wash of the element's own ink — 7% under the pointer, 10% on
+     keyboard focus, 14% while pressed. Three even steps, and the accent is not
+     one of them: a hovered row has to read as *pointed at* while a selected one
+     reads as *chosen*, which stays true only as long as the two states are
+     different kinds of signal rather than two strengths of the same hue. */
   .state-layer {
     position: relative;
   }
@@ -1189,10 +1372,10 @@ html[data-window-material="vibrancy"] .bg-chrome {
     opacity: 0.07;
   }
   .state-layer:focus-visible::after {
-    opacity: 0.12;
+    opacity: 0.1;
   }
   .state-layer:active::after {
-    opacity: 0.16;
+    opacity: 0.14;
   }
   /* A tab chip reports its own pressed state, because a press handed to the
      platform's drag loop never reaches the WebView's `:active` release: the
@@ -1203,7 +1386,7 @@ html[data-window-material="vibrancy"] .bg-chrome {
     opacity: 0;
   }
 
-  /* Drop target: the one state a drag paints on a *destination*. A 10% wash
+  /* Drop target: the one state a drag paints on a *destination*. A 9% wash
      of the accent plus an inset 2px ring in the same hue — no glow, no scale,
      no dash: the row it lands on is the only thing that changes, and it
      changes the same way in every view. Named rather than left as the
@@ -1211,8 +1394,17 @@ html[data-window-material="vibrancy"] .bg-chrome {
      used to copy, so a fourth view cannot draw a fourth drop treatment, and
      so the forced-colors block has one thing to re-express. */
   .drop-target {
-    background: color-mix(in oklab, var(--primary) 10%, transparent);
+    background: color-mix(in oklab, var(--primary) 9%, transparent);
     box-shadow: inset 0 0 0 2px var(--primary);
+  }
+
+  /* Row separator — the hairline between two rows *inside* one list, at half
+     the containment strength (`--border-soft`). A list separated at card
+     strength turns into a grid; a list with no line at all leaves a sparse
+     folder looking unfinished. The row drops it the moment it is selected,
+     because a selected row's accent hairline is the only line it may wear. */
+  .row-separator {
+    box-shadow: inset 0 -1px 0 0 var(--border-soft);
   }
 
   /* Marquee: the rubber band drawn while a drag-selection is being pulled
@@ -1249,6 +1441,10 @@ html[data-window-material="vibrancy"] .bg-chrome {
      it has to survive being the single thing that changes. */
   .capacity-fill {
     background: var(--primary);
+    /* A fill, not a bar with a frame: the 3px track behind it is the only
+       container it needs, so the corner is the one shape in the shell that is
+       a true capsule. */
+    border-radius: 999px;
   }
   .capacity-fill--warn {
     background: var(--warning);
@@ -1269,134 +1465,24 @@ html[data-window-material="vibrancy"] .bg-chrome {
   }
 
   /* ---------------------------------------------------------------------------
-     SOLAR ICONS — the duotone pair, stated once for the whole shell.
+     ICONS — one stroke, one tone.
 
-     The app draws Solar's `line-duotone` style everywhere. That style paints
-     two layers, and each layer is a *stroke* — the secondary one is not a
-     filled second shape but a second pass along the glyph's own path, drawn at
-     `var(--solar-secondary-color, currentColor)` with
-     `var(--solar-secondary-opacity, 0.5)`.
+     The shell draws Solar's `linear` style everywhere: a single 1.5px stroke
+     (the set's own default for `--solar-stroke-width`, never overridden) in
+     `currentColor`, on the 24px grid. It replaced `line-duotone` for the same
+     reason the reference draws line icons: a duotone glyph paints a second
+     pass in a *different* hue, and at 16–18px that second hue reads as a second
+     meaning nobody asked for. Colour here carries exactly one thing at a time —
+     `text-muted-foreground` for chrome, a category hue for a file type, a
+     semantic hue for a status — and a single tone is what lets one glyph serve
+     all three without a per-tone table.
 
-     Two properties of that second pass decide what a colour can do for it, and
-     both are readable off any glyph in the package:
-
-     * The primary pass is painted *over* the secondary one, so the second tone
-       survives only where the primary path does not reach — and that fraction
-       varies per glyph by a lot. In `CloseIcon` the two diagonals never touch,
-       so half the glyph is the second tone; in `AltArrowDownIcon` the primary
-       is a truncated copy of the secondary and all but a short tail is covered;
-       in `LoaderIcon` the secondary is the whole circle and the primary a small
-       arc, so nearly all of it shows. This is why opacity can never carry the
-       layer: the covered part is not faint, it is *absent*, and no alpha brings
-       it back. 0.32 — the previous value here — is the one direction that
-       removes the layer instead of tuning it.
-     * Because the surviving fraction varies, a second tone that is merely a
-       desaturated copy of the first reads as damage rather than as depth: a
-       neutral `CloseIcon` is one white arm and one grey one, which looks like a
-       misrender. So the layer gets a colour of its own, and the opacity returns
-       to 1.
-
-     Which colour is decided by what the icon reports, and the shell has only
-     two answers:
-
-     * CHROME — every icon that marks an affordance rather than a thing: the
-       toolbar, the sidebar, menus, dialogs, buttons. These carry no colour of
-       their own, so an uncoloured second tone leaves them reading as white line
-       art with pieces missing. Theirs is the *accent*, which already means
-       "interactive" here (`--selection`, `--ring`, the filled buttons, the
-       active-tab underline). It is derived, never written down: `--primary`
-       follows `--system-accent`, so a reader who picked an OS accent gets icons
-       tuned to it, and the inactive-window rule further down drains them along
-       with everything else the accent paints.
-     * Everything whose `color` already carries a meaning opts out — see the
-       rule below the pair. A file glyph's hue is its *category* and a warning
-       triangle's is its *warning*; an accent-tinted detail line inside either
-       would read as a second hue that means nothing. Those keep the mix this
-       block used to apply to everything, kept as its own variable so both
-       answers are stated in one place and neither is retyped at a call site.
-
-     The accent mixes toward `currentColor` rather than toward a surface, and
-     that is the load-bearing choice. `currentColor` is the tone the caller
-     already put on `color` (`text-foreground`, `text-muted-foreground`), so the
-     mix holds the second layer at the *outline's own lightness* and moves only
-     its chroma — which is what lets one declaration stay legible on every plane
-     this shell has (panel, sidebar, menu, hover highlight, selected row).
-     Toward `--card` it instead reads on a panel and fails where it matters
-     most: `--primary` 45% toward the dark `#201c16` is a dark, muddy rust
-     that disappears against it.
-
-     58% is the accent's knob; 62% is the tonal one. Below ~45% the accent
-     recedes and the layer reads as a fade again; above ~70% it competes with
-     the outline for the same read. A ratio is a step rather than a fade, which
-     is also what keeps the tonal layer legible on a selected row: `--selection`
-     is a tint of `--primary`, and a `currentColor`-alpha secondary over it can
-     land on its own hue and vanish.
-
-     `--solar-secondary-color` resolves `currentColor` at the point of use,
-     where `color` is the inherited tone — the same resolution Solar's own
-     default relies on — so no `SolarProvider` and no per-tone table is needed.
-     A call site that wants a different second tone on a large glyph passes
-     `secondaryColor` / `secondaryOpacity`, or `isolated` to opt back out to
-     Solar's defaults.
-
-     Under `forced-colors: active` whichever mix applies is computed and then
-     forced to `CanvasText` like every other colour, which would leave both
-     layers identical; the override in that block restores the wash.
+     Colour still comes from the call site (`currentColor`), so an icon follows
+     the scheme, the accent, `prefers-contrast` and forced colors exactly as
+     before. The `--solar-secondary-*` pair and the `.type-glyph` page tint the
+     duotone style needed went with it; `.type-glyph` survives as a hook for the
+     listing's own glyph slots and no longer declares anything.
      --------------------------------------------------------------------------- */
-  :root {
-    --solar-secondary-tonal: color-mix(in oklab, currentColor 62%, var(--card));
-    --solar-secondary-color: color-mix(
-      in oklab,
-      var(--primary) 58%,
-      currentColor
-    );
-    --solar-secondary-opacity: 1;
-  }
-
-  /* The opt-out, and the whole of it. `.solar-tonal` is set by `type-icon.tsx`
-     for that component as a whole — including its five neutral glyphs, which
-     carry no hue of their own and so cannot be recognised by one. The ten
-     utilities are the shell's complete set of colour-carrying roles: the six
-     category hues plus `--folder`, and the semantic four. Both are closed sets,
-     so this is a rule rather than a list a new call site can quietly miss. */
-  .solar-tonal,
-  .text-folder,
-  .text-tone-blue,
-  .text-tone-violet,
-  .text-tone-emerald,
-  .text-tone-amber,
-  .text-tone-rose,
-  .text-tone-cyan,
-  .text-destructive,
-  .text-success,
-  .text-warning,
-  .text-info {
-    --solar-secondary-color: var(--solar-secondary-tonal);
-  }
-
-  /* A file-type glyph is a page with something on it, so it takes two tones of
-     one hue: the details at the category colour, the page they are drawn on at
-     a light tint of it. Solar's bold-duotone style paints exactly those two
-     layers — the body as the *secondary* one, the details as the primary — so
-     the second tone is all that has to be wired, and the hue still comes from
-     `currentColor` the way every other glyph's does.
-
-     Declared after the opt-out list above and in the same layer, so it wins
-     over it on an element that carries both a tone class and this one: the
-     tonal mix is a *stroke* tone (62% of the hue, for a line drawn over the
-     panel), where this is a *fill* tone (a light tint, for a page).
-
-     `--solar-secondary-opacity` is deliberately not set here. It is 1 until
-     forced colours turns it into the wash that carries the layer there, and
-     setting it on the element would pin the page at full strength under a
-     palette that has no second tone to give it. */
-  .type-glyph {
-    --solar-secondary-color: color-mix(
-      in oklab,
-      currentColor var(--glyph-body-mix),
-      var(--card)
-    );
-  }
 
   /* A folder is an object, not a page — the one glyph in the shell drawn as
      stacked sheets of flat colour rather than as a Solar glyph (see
@@ -1440,10 +1526,24 @@ html[data-window-material="vibrancy"] .bg-chrome {
 
   /* Overlay scrollbars: a 4px pill inside a 12px lane, so the thumb stays
      visually quiet while the grab target stays comfortable. The thumb only
-     shifts colour on hover — the lane itself never draws. */
+     shifts colour on hover — the lane itself never draws.
+
+     ONE LADDER, TWO ENGINES. The thumb steps 22% → 34% → 46% of the ink, an even
+     +12 rung per state, and `scrollbar-color` below carries the resting strength
+     for the standard property. Keeping the two in step is not tidiness:
+     Chromium stops honouring `::-webkit-scrollbar` on an element that sets
+     `scrollbar-width` or `scrollbar-color`, so the standard pair is what WebView2
+     paints and the pseudo-elements are what the other engines paint. A bar tuned
+     in only one of them is a bar that looks different on the platforms this
+     shell ships on.
+
+     This ladder used to exist twice in this file: the second block at the end
+     restated the resting and hover stops while the press stop stayed behind at
+     the older strength, so the press was a 22-point jump from a hover that had
+     been quietly lowered. One declaration, three stops. */
   * {
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--foreground) 26%, transparent)
+    scrollbar-color: color-mix(in oklab, var(--foreground) 22%, transparent)
       transparent;
   }
   ::-webkit-scrollbar {
@@ -1455,18 +1555,21 @@ html[data-window-material="vibrancy"] .bg-chrome {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
+    /* The transparent 4px border inside a 12px lane is what makes the thumb a
+       pill: `background-clip: padding-box` keeps the fill out of the border, so
+       the painted shape is 4px wide inside a 12px target. */
     background-clip: padding-box;
-    background-color: color-mix(in oklab, var(--foreground) 26%, transparent);
+    background-color: color-mix(in oklab, var(--foreground) 22%, transparent);
     border: 4px solid transparent;
     border-radius: 9999px;
     transition: background-color var(--transition-duration-fast)
       var(--ease-standard);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(in oklab, var(--foreground) 44%, transparent);
+    background-color: color-mix(in oklab, var(--foreground) 34%, transparent);
   }
   ::-webkit-scrollbar-thumb:active {
-    background-color: color-mix(in oklab, var(--foreground) 56%, transparent);
+    background-color: color-mix(in oklab, var(--foreground) 46%, transparent);
   }
   ::-webkit-scrollbar-button {
     display: none;
@@ -1535,7 +1638,7 @@ html[data-window-material="vibrancy"] .bg-chrome {
     --sidebar-border: color-mix(in oklab, var(--foreground) 55%, transparent);
     /* Secondary text keeps its role in the type ramp and loses its fade. */
     --muted-foreground: color-mix(in oklab, var(--foreground) 82%, transparent);
-    --selection: color-mix(in oklab, var(--primary) 30%, transparent);
+    --selection: color-mix(in oklab, var(--primary) 26%, transparent);
   }
   .dark {
     --selection: color-mix(in oklab, var(--primary) 34%, transparent);
@@ -1578,15 +1681,6 @@ html[data-window-material="vibrancy"] .bg-chrome {
        focus colour goes here; the ring half of the focus treatment is one of
        the shadows the forcing removes. */
     --ring: Highlight;
-    /* Both Solar variables are `color-mix`es — one for the accent answer, one
-       for the tonal one — so the forcing computes whichever applies and then
-       repaints *both* layers `CanvasText`. That leaves the glyph flat, without
-       the second tone the pair exists for. A colour cannot be restored against
-       a palette the user chose, but a wash can: the opacity neither answer uses
-       any more is exactly what carries the layer here, and it carries it for
-       the opt-out list and for `.type-glyph`'s page too; the folder's own
-       sheets are handled below. */
-    --solar-secondary-opacity: 0.35;
   }
 
   /* The forcing paints every SVG fill `CanvasText`, which would turn the
@@ -2087,3 +2181,6 @@ html
   background: var(--accent);
   color: var(--accent-foreground);
 }
+
+
+

@@ -5,7 +5,7 @@ import {
   Pip2Icon,
   ScissorsIcon,
   StarIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 import { useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { ComponentProps, ReactNode } from "react";

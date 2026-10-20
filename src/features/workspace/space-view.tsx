@@ -11,7 +11,7 @@ import {
   Pip2Icon,
   TrashBinTrashIcon,
   WidgetIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 import { FolderGlyph } from "@/features/explorer/folder-glyph";
 
 import { Button } from "@/components/ui/button";

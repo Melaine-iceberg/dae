@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
-import { CloseIcon, LoaderIcon, MagnifierIcon, TextFieldIcon } from "@solar-icons/react/line-duotone";
+import { CloseIcon, LoaderIcon, MagnifierIcon, TextFieldIcon } from "@solar-icons/react/linear";
 
 import {
   InputGroup,
@@ -170,7 +170,7 @@ export function DirectorySearch({
       // caret is in. Below 1360px it folds to its magnifier — a search box
       // nobody is using must never be the reason the path is unreadable — and
       // unfolds again on focus, which is exactly when it is being used.
-      className="h-9 w-44 min-w-0 shrink rounded-lg transition-[width] duration-normal ease-standard hover:w-56 focus-within:w-64 max-[1360px]:w-9 max-[1360px]:hover:w-9 max-[1360px]:focus-within:w-60"
+      className="h-10 w-44 min-w-0 shrink rounded-xl transition-[width] duration-normal ease-standard hover:w-56 focus-within:w-64 max-[1360px]:w-10 max-[1360px]:hover:w-10 max-[1360px]:focus-within:w-60"
     >
       <InputGroupInput
         ref={inputRef}

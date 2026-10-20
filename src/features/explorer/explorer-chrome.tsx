@@ -8,7 +8,7 @@
  */
 import { useAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { LoaderIcon, ProgrammingIcon } from "@solar-icons/react/line-duotone";
+import { LoaderIcon, ProgrammingIcon } from "@solar-icons/react/linear";
 
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
@@ -16,8 +16,10 @@ import { Progress } from "@/components/ui/progress";
 import { formatBinding } from "@/features/settings/shortcut-registry";
 import { useBinding } from "@/features/settings/settings-atoms";
 import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
+import { useDiskVolumes } from "@/features/sidebar/use-disk-volumes";
+import type { DiskVolume } from "@/features/sidebar/types";
 import { localeNumber } from "@/i18n/format";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 
 import type { FileOperationKind, FileOperationProgress } from "./types";
 
@@ -57,6 +59,14 @@ export function ListingStats({
 }) {
   const { t } = useTranslation("explorer");
   const clearSelectionBinding = formatBinding(useBinding("explorer.clearSelection"));
+  // At rest this reports nothing: the status strip owns the folder's row count
+  // and its loading state, and a count printed twice (once in the toolbar, once
+  // at the foot of the window) is the kind of quiet duplication that makes a
+  // dense window feel busy. What stays here is only what the strip cannot say —
+  // whether a *search* is what you are looking at, and how to leave a selection.
+  const isTransient = Boolean(searchQuery) || Boolean(searchError) || selectedCount > 0;
+  if (!isTransient) return null;
+
   const status = isLoading
     ? searchQuery
       ? t("explorer:listing.searching")
@@ -166,6 +176,133 @@ export function FileOperationStatusBar({ progress }: { progress: FileOperationPr
         </div>
         <Progress className="mt-1.5 w-full" size="sm" value={percentage} />
       </div>
+    </footer>
+  );
+}
+
+/** The volume a path lives on: the longest mount point that prefixes it.
+ *  Windows mounts are `C:\`, POSIX ones `/`, `/home`, or a network share, so
+ *  the longest match is the only one that puts `/home/u` on its own volume
+ *  instead of on `/`. */
+function pickVolumeFor(volumes: DiskVolume[] | null, path: string | null): DiskVolume | null {
+  if (!volumes || !path) return null;
+  let best: DiskVolume | null = null;
+  for (const volume of volumes) {
+    if (!volume.mountPoint) continue;
+    const mount = volume.mountPoint.replace(/[\\/]+$/, "");
+    if (!mount) continue; // the root volume matches everything below
+    const normalized = path.toLowerCase();
+    const prefix = mount.toLowerCase();
+    if (normalized === prefix || normalized.startsWith(`${prefix}\\`) || normalized.startsWith(`${prefix}/`)) {
+      if (!best || mount.length > best.mountPoint.length) best = volume;
+    }
+  }
+  return best;
+}
+
+/**
+ * The window's status strip: 26px of always-true facts along the bottom of the
+ * pane, the way the reference draws it.
+ *
+ * This shell used to carry one and then dropped it, on the argument that the
+ * few facts it held — how many rows, whether a search is running — read better
+ * beside the breadcrumbs that name the folder. That argument still holds for
+ * the *count*, which is why the count stays in the path field and is not
+ * repeated here. What the strip holds instead is the layer the path field
+ * cannot: the state of the *system* the folder sits on — whether the listing is
+ * live or still reading, and how much room is left on the volume it lives on.
+ * Neither is a fact about this folder, which is exactly why it belongs at the
+ * edge of the window and not in the spine of the toolbar.
+ *
+ * The volume probe is the same hook the rail's disk section uses. Two instances
+ * cost one extra `listDisks` a minute and one on focus; the strip is always
+ * mounted while the rail's section is collapsed by default, so in practice this
+ * is the only reader.
+ */
+export function ExplorerStatusBar({
+  isLoading,
+  isSearching,
+  itemCount,
+  path,
+  selectedCount,
+}: {
+  isLoading: boolean;
+  isSearching: boolean;
+  itemCount: number;
+  path: string | null;
+  selectedCount: number;
+}) {
+  const { t } = useTranslation("explorer");
+  const volumes = useDiskVolumes(path);
+  const volume = pickVolumeFor(volumes, path);
+  const freePercent =
+    volume && volume.totalBytes > 0
+      ? Math.round((volume.availableBytes / volume.totalBytes) * 100)
+      : null;
+  const mode = isLoading ? "loading" : isSearching ? "searching" : "ready";
+
+  return (
+    <footer
+      aria-live="polite"
+      className="flex h-status-strip shrink-0 items-center gap-3 border-t border-border-soft px-3 text-nano text-muted-foreground select-none"
+    >
+      {/* The mode pill: the strip's one assertion about the machine rather
+          than about the folder. Amber while reading, green once settled — the
+          dot carries it, and the label says what the dot means. */}
+      <span
+        className={cn(
+          "inline-flex h-[19px] shrink-0 items-center gap-1.5 rounded-full px-2 text-nano",
+          mode === "ready"
+            ? "bg-success/12 text-success"
+            : "bg-foreground/6 text-muted-foreground",
+        )}
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            "size-1.5 rounded-full",
+            mode === "ready" ? "bg-success" : "bg-meta",
+          )}
+        />
+        {t(`explorer:listing.mode.${mode}`)}
+      </span>
+
+      <span className="truncate tabular-nums">
+        {t("explorer:listing.itemCount", {
+          count: itemCount,
+          display: localeNumber(itemCount),
+        })}
+      </span>
+
+      {selectedCount > 0 && (
+        <span className="shrink-0 tabular-nums text-foreground/80">
+          {t("explorer:listing.selectedCount", { display: localeNumber(selectedCount) })}
+        </span>
+      )}
+
+      <span aria-hidden="true" className="h-3 w-px shrink-0 bg-border" />
+
+      {volume && freePercent !== null && (
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          <span className="font-mono tabular-nums">
+            {t("explorer:listing.freeSpace", { size: formatBytes(volume.availableBytes) })}
+          </span>
+          {/* A 3px capsule, not a progress bar: at this size the fill is read
+              as a proportion, never as a quantity. */}
+          <span
+            aria-hidden="true"
+            className="block h-[3px] w-16 overflow-hidden rounded-full bg-foreground/10"
+          >
+            <span
+              className={cn(
+                "block h-full rounded-full",
+                freePercent <= 10 ? "bg-warning" : "bg-foreground/42",
+              )}
+              style={{ width: `${Math.max(freePercent, 2)}%` }}
+            />
+          </span>
+        </span>
+      )}
     </footer>
   );
 }

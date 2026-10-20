@@ -1,18 +1,24 @@
 {
   "mcpServers": {
     "chrome-devtools": {
-      "command": "npx",
+      "command": "C:\\Users\\Mt342\\AppData\\Local\\vite-plus\\bin\\bun.exe",
       "args": [
-        "-y",
-        "chrome-devtools-mcp@1.9.0"
-      ]
+        "x",
+        "chrome-devtools-mcp@1.9.0",
+        "--executablePath",
+        "C:\\Users\\Mt342\\scoop\\apps\\googlechrome-canary\\current\\chrome.exe"
+      ],
+      "timeout": 180,
+      "description": "Chrome DevTools MCP: control a Chrome page (navigate, snapshot, network, console)"
     },
     "solar-icons": {
-      "command": "npx",
+      "command": "C:\\Users\\Mt342\\AppData\\Local\\vite-plus\\bin\\bun.exe",
       "args": [
-        "-y",
+        "x",
         "@solar-icons/mcp"
-      ]
+      ],
+      "timeout": 180,
+      "description": "Solar icon set search and SVG lookup"
     }
   }
 }

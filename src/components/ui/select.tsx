@@ -1,5 +1,5 @@
 import { Select as SelectPrimitive } from "@base-ui/react/select";
-import { AltArrowDownIcon } from "@solar-icons/react/line-duotone";
+import { AltArrowDownIcon } from "@solar-icons/react/linear";
 
 import { cn } from "@/lib/utils";
 

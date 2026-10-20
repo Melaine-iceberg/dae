@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { ClipboardPasteIcon, CopyIcon, ScissorsIcon, TextSelectionIcon, TrashBinTrashIcon } from "@solar-icons/react/line-duotone";
+import { ClipboardPasteIcon, CopyIcon, ScissorsIcon, TextSelectionIcon, TrashBinTrashIcon } from "@solar-icons/react/linear";
 
 import {
   ContextMenu,

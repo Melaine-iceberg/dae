@@ -26,7 +26,7 @@ import {
   PaletteIcon,
   ProgrammingIcon,
   SettingsIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 import { getVersion } from "@tauri-apps/api/app";
 import { appLogDir } from "@tauri-apps/api/path";
 import { openPath } from "@tauri-apps/plugin-opener";
@@ -37,6 +37,11 @@ import { SUPPORTED_LOCALES, type AppLocale } from "@/i18n";
 import { localeAtom } from "@/i18n/atoms";
 import { cn } from "@/lib/utils";
 import { getStoredThemePreference, setThemePreference, type ThemePreference } from "@/lib/theme";
+import {
+  getStoredAccentPreference,
+  setAccentPreference,
+  type AccentPreference,
+} from "@/lib/system-accent";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -91,6 +96,9 @@ const FONT_SIZE_OPTIONS = [11, 12, 13, 14, 15, 16, 18, 20, 24];
 
 const THEME_OPTIONS: readonly ThemePreference[] = ["light", "dark", "system"];
 
+/** `brand` first: it is the default and the one the shell is drawn in. */
+const ACCENT_OPTIONS: readonly AccentPreference[] = ["brand", "system"];
+
 export function SettingsDialog() {
   const { t } = useTranslation("settings");
   const [open, setOpen] = useAtom(settingsOpenAtom);
@@ -98,7 +106,7 @@ export function SettingsDialog() {
 
   return (
     <Dialog onOpenChange={setOpen} open={open}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-3xl">
+      <DialogContent className="gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[52rem]">
         <DialogTitle className="sr-only">{t("dialog.title")}</DialogTitle>
         {/* The body caps below the dialog's own max-height, so a short window
             shrinks the two panes instead of scrolling the whole dialog out
@@ -106,27 +114,27 @@ export function SettingsDialog() {
         <div className="flex h-settings-body max-h-[calc(100dvh-4rem)]">
           <nav
             aria-label={t("dialog.navAria")}
-            className="flex w-48 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border bg-muted p-2"
+            className="flex w-52 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border/70 bg-secondary/40 p-2.5"
           >
             {NAV_ITEMS.map(({ icon: Icon, pane: item }) => (
               <button
                 aria-current={pane === item}
                 className={cn(
-                  "flex h-7 items-center gap-2 rounded-md px-2 text-body font-medium transition-[background-color,color,box-shadow] duration-fast ease-standard outline-none",
+                  "flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-body font-medium transition-[background-color,color] duration-fast ease-standard outline-none",
                   pane === item
-                    ? "row-active bg-accent text-foreground"
+                    ? "row-active"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
                 )}
                 key={item}
                 onClick={() => setPane(item)}
                 type="button"
               >
-                <Icon className={cn("size-4", pane === item && "text-primary")} />
+                <Icon className={cn("size-[17px]", pane === item ? "text-primary" : "text-muted-foreground")} />
                 {t(`nav.${item}`)}
               </button>
             ))}
           </nav>
-          <div className="min-w-0 flex-1 overflow-y-auto px-6 py-5">
+          <div className="min-w-0 flex-1 overflow-y-auto px-7 py-6">
             {pane === "appearance" && <AppearancePane />}
             {pane === "shortcuts" && <ShortcutsPane />}
             {pane === "terminal" && <TerminalPane />}
@@ -147,9 +155,9 @@ export function SettingsDialog() {
  */
 function PaneHeader({ description, title }: { description: string; title: string }) {
   return (
-    <header className="mb-5">
-      <h2 className="text-title">{title}</h2>
-      <p className="mt-0.5 text-caption text-muted-foreground">{description}</p>
+    <header className="mb-6">
+      <h2 className="text-[1.25rem] leading-7 font-semibold tracking-[-0.02em]">{title}</h2>
+      <p className="mt-1 text-caption text-muted-foreground">{description}</p>
     </header>
   );
 }
@@ -180,7 +188,7 @@ function SettingRow({
   label: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-6 border-b border-border py-3 last:border-b-0">
+    <div className="flex items-center justify-between gap-6 border-b border-border/60 py-3.5 last:border-b-0">
       <div className="min-w-0">
         <Label className="text-body font-medium" htmlFor={htmlFor}>
           {label}
@@ -195,6 +203,7 @@ function SettingRow({
 function AppearancePane() {
   const { t } = useTranslation("settings");
   const [theme, setTheme] = useState<ThemePreference>(() => getStoredThemePreference());
+  const [accent, setAccent] = useState<AccentPreference>(() => getStoredAccentPreference());
   const [locale, setLocale] = useAtom(localeAtom);
 
   // Keep in sync when the theme changes elsewhere (e.g. an OS scheme flip
@@ -204,6 +213,22 @@ function AppearancePane() {
     window.addEventListener("app-theme-change", sync);
     return () => window.removeEventListener("app-theme-change", sync);
   }, []);
+
+  // Same shape for the accent, which is also a localStorage preference read at
+  // module level rather than through an atom. This pane is its only writer
+  // today, but the seam re-reads it on every OS report, so the control has to
+  // follow the store rather than assume it is the source of truth.
+  useEffect(() => {
+    const sync = () => setAccent(getStoredAccentPreference());
+    window.addEventListener("app-accent-preference-change", sync);
+    return () => window.removeEventListener("app-accent-preference-change", sync);
+  }, []);
+
+  const chooseAccent = (value: AccentPreference | null) => {
+    const next = value === "system" ? "system" : "brand";
+    setAccentPreference(next);
+    setAccent(next);
+  };
 
   return (
     <div className="flex flex-col">
@@ -233,6 +258,36 @@ function AppearancePane() {
           }
           htmlFor="settings-appearance-theme"
           label={t("appearance.theme")}
+        />
+        {/* Sits directly under the theme because it is the same kind of
+            decision — how the window is painted — and because the two
+            interact: a light/dark flip re-reads `--accent-default` per
+            scheme, while this row decides whether the OS accent outranks it
+            at all. */}
+        <SettingRow
+          control={
+            <Select
+              items={Object.fromEntries(
+                ACCENT_OPTIONS.map((option) => [option, t(`appearance.accentOptions.${option}`)]),
+              )}
+              onValueChange={chooseAccent}
+              value={accent}
+            >
+              <SelectTrigger className="w-40" id="settings-appearance-accent">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ACCENT_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {t(`appearance.accentOptions.${option}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
+          description={t("appearance.accentHint")}
+          htmlFor="settings-appearance-accent"
+          label={t("appearance.accent")}
         />
         <SettingRow
           control={

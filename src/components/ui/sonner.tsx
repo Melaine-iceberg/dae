@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { CheckCircleIcon, CloseCircleIcon, DangerCircleIcon, InfoCircleIcon, LoaderIcon } from "@solar-icons/react/line-duotone";
+import { CheckCircleIcon, CloseCircleIcon, DangerCircleIcon, InfoCircleIcon, LoaderIcon } from "@solar-icons/react/linear";
 import { Toaster as Sonner, type ToasterProps } from "sonner";
 
 /**

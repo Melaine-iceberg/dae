@@ -46,7 +46,7 @@ import {
   TextFieldIcon,
   TrashBinTrashIcon,
   WidgetIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import type { RecentItem, SearchEntry } from "@/bindings";
 import { commands } from "@/bindings";
@@ -101,8 +101,12 @@ const FILE_SEARCH_DEBOUNCE_MS = 220;
 const MIN_FILE_QUERY_LENGTH = 2;
 
 /** Row metrics of the palette list, in px. Both heights are fixed, which is
- *  what lets the virtualizer position rows without measuring them. */
-const RESULT_ROW_HEIGHT_PX = 36;
+ *  what lets the virtualizer position rows without measuring them — which in
+ *  turn makes the numbers load-bearing: they have to equal what the row
+ *  actually renders, or the absolutely positioned rows overlap by the
+ *  difference. The row is `h-10`, so the old 36 laid every row 4px into the
+ *  next one, and each row's plate cut a 4px bite out of the plate above it. */
+const RESULT_ROW_HEIGHT_PX = 40;
 const SECTION_HEADER_HEIGHT_PX = 34;
 
 /** Absolute-path shapes: drive letter, home alias, UNC share, POSIX root. */
@@ -862,15 +866,15 @@ export function CommandBar() {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogContent
-        className="top-[15%] w-[calc(100%-2rem)] max-w-command-bar translate-y-0 gap-0 overflow-hidden rounded-xl p-0 shadow-ambient-lg"
+        className="top-[12vh] w-[calc(100%-2.5rem)] max-w-[41.25rem] translate-y-0 gap-0 overflow-hidden rounded-2xl border-border bg-card p-0 shadow-ambient-lg sm:max-w-[41.25rem]"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{t("commandBar.title")}</DialogTitle>
         {/* No rule under the field: the input and the results are one surface,
             and a line across it drew a boundary inside a single plate. The gap
             does the separating. */}
-        <div className="flex items-center gap-2.5 px-3.5 py-1">
-          <MagnifierIcon className="size-4 shrink-0 text-foreground/72" />
+        <div className="flex items-center gap-2.5 px-4 py-3.5">
+          <MagnifierIcon className="size-4 shrink-0 text-muted-foreground" />
           <input
             aria-activedescendant={results.length > 0 ? `command-item-${currentIndex}` : undefined}
             aria-autocomplete="list"
@@ -878,7 +882,7 @@ export function CommandBar() {
             aria-expanded="true"
             aria-label={t("commandBar.inputAriaLabel")}
             autoComplete="off"
-            className="h-12 min-w-0 flex-1 bg-transparent text-lead outline-none placeholder:text-muted-foreground"
+            className="h-9 min-w-0 flex-1 bg-transparent text-lg outline-none placeholder:text-meta"
             id="command-bar-input"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleInputKeyDown}
@@ -901,7 +905,7 @@ export function CommandBar() {
         </div>
         <div
           aria-label={t("commandBar.resultsAriaLabel")}
-          className="max-h-[21rem] overflow-y-auto overscroll-contain p-1"
+          className="max-h-[min(52vh,26.25rem)] overflow-y-auto overscroll-contain p-1.5"
           id="command-bar-results"
           ref={listRef}
           role="listbox"
@@ -938,7 +942,7 @@ export function CommandBar() {
                     {row.kind === "header" ? (
                       <p
                         aria-hidden="true"
-                        className="flex h-full items-end px-2 pb-1 text-label text-muted-foreground select-none"
+                        className="flex h-full items-end px-2.5 pb-1 text-nano font-semibold tracking-[0.08em] text-muted-foreground uppercase select-none"
                       >
                         {groupLabels[row.group]}
                       </p>
@@ -965,7 +969,7 @@ export function CommandBar() {
             The bindings lost their keycap chips for the same reason the input's
             did; the arrow and return glyphs stay as plain characters, so the
             chord still reads without being drawn as a picture of a key. */}
-        <footer className="flex h-9 shrink-0 items-center justify-between gap-3 px-3.5 pb-1 text-micro text-muted-foreground select-none">
+        <footer className="flex h-9 shrink-0 items-center justify-between gap-3 border-t border-border px-3.5 text-nano text-muted-foreground select-none">
           <span className="flex min-w-0 items-center gap-3">
             <span className="flex shrink-0 items-center gap-1.5">
               {isSearchingFiles && <LoaderIcon className="size-3 shrink-0 animate-spin" />}
@@ -1022,15 +1026,15 @@ function CommandResultRow({
     <button
       aria-selected={isActive}
       className={cn(
-        // Palette row: 32px, quiet control radius, flat selection. The active
-        // row takes the same `row-active` plate the sidebar's current location
-        // does — one wash over the fill, nothing else. It used to add a hairline
-        // ring and a glow on the theory that a fill alone reads as a flat bar
-        // between identical rows, but the ring is what made the row look like a
-        // focused control rather than a place; the row is not the only surface
-        // that has to say "this one" without a line around it.
-        "group/command-row flex h-8 w-full items-center gap-2.5 rounded-md px-3 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard outline-none",
-        isActive ? "row-active bg-accent text-foreground" : "hover:bg-accent",
+        // Palette row: 38px, control radius, and the reference's selection:
+        // a neutral 8% lift plus a 2px accent bar flush to the leading edge.
+        // The bar is what the row is *for* — the pointer and the keyboard both
+        // land on one line, and a line is cheaper to see than a filled plate
+        // between rows that are already identical.
+        "group/command-row flex h-[38px] w-full items-center gap-2.5 rounded-md px-2.5 text-left text-caption transition-[background-color,color,box-shadow] duration-fast ease-standard outline-none",
+        isActive
+          ? "bg-accent text-foreground shadow-[inset_2px_0_0_0_var(--primary)]"
+          : "hover:bg-foreground/6",
       )}
       data-command-index={dataIndex}
       id={`command-item-${dataIndex}`}
@@ -1040,7 +1044,7 @@ function CommandResultRow({
       type="button"
     >
       <item.icon
-        className={cn("size-4 shrink-0", isActive ? "text-primary" : "text-muted-foreground")}
+        className={cn("size-4 shrink-0", isActive ? "text-foreground" : "text-muted-foreground")}
       />
       <HighlightedLabel label={item.label} matchedIndices={matchedIndices} />
       {item.hint &&

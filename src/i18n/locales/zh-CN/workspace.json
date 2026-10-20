@@ -92,6 +92,7 @@
     }
   },
   "overview": {
+    "subtitle": "继续上次的工作，或从收藏与常用位置开始。",
     "title": "概览",
     "projectsTitle": "项目",
     "projectClean": "干净",

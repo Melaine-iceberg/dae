@@ -425,7 +425,14 @@
     "matchCount_one": "{{display}} 个匹配项",
     "matchCount_other": "{{display}} 个匹配项",
     "truncatedSuffix": "（已截断）",
-    "clearSelectionHint": "取消选择"
+    "clearSelectionHint": "取消选择",
+    "mode": {
+      "ready": "已就绪",
+      "loading": "读取中",
+      "searching": "搜索中"
+    },
+    "selectedCount": "已选 {{display}}",
+    "freeSpace": "剩 {{size}}"
   },
   "view": {
     "menuLabel": "视图选项",
@@ -557,6 +564,15 @@
     "collapsePanelShortcut": "收起预览面板 (Space)",
     "noFileSelected": "未选择文件",
     "selectHint": "在列表中选择一个文件以预览",
+    "multiSelection": "已选 {{number}} 项",
+    "totalSize": "文件合计",
+    "foldersExcluded": "文件夹大小未计入",
+    "folderCount_one": "{{count}} 个文件夹",
+    "folderCount_other": "{{count}} 个文件夹",
+    "fileCount_one": "{{count}} 个文件",
+    "fileCount_other": "{{count}} 个文件",
+    "latestModified": "最近修改",
+    "multipleLocations": "多个位置",
     "truncatedHint": "内容较长，仅显示前 {{size}} KB",
     "tooLarge": "文件超过 {{size}} MB",
     "tooLargeHint": "为保障性能，不预览内容",

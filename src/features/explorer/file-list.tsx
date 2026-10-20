@@ -31,7 +31,7 @@ import {
   UndoRightRoundIcon,
   WidgetIcon,
   WindowFrameIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import {
   ContextMenu,
@@ -51,14 +51,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { isEditableElement } from "@/lib/dom";
 import { jumpListIndex, stepListIndex, typeAheadIndex } from "@/lib/list-navigation";
@@ -250,7 +242,7 @@ const LIST_COLUMN_MIN_WIDTH_PX = { modified: 340, size: 480, type: 640 } as cons
  * headings out from under the values they label. Cap one without the other
  * and the columns drift by exactly `pane width - 58rem`.
  */
-const LIST_CONTENT_MAX_WIDTH = "58rem";
+const LIST_CONTENT_MAX_WIDTH = "100%";
 
 interface ListColumns {
   modified: boolean;
@@ -273,14 +265,14 @@ function listColumnsForWidth(width: number): ListColumns {
 function listGridTemplate(columns: ListColumns): string {
   return [
     "minmax(0,1fr)",
-    columns.modified ? "minmax(0,9.5rem)" : null,
-    columns.type ? "minmax(0,6.5rem)" : null,
-    columns.size ? "minmax(0,5.5rem)" : null,
+    columns.modified ? "minmax(0,10.5rem)" : null,
+    columns.type ? "minmax(0,7.5rem)" : null,
+    columns.size ? "minmax(0,6rem)" : null,
   ]
     .filter((track): track is string => track !== null)
     .join(" ");
 }
-const LIST_HEADER_HEIGHT_PX = 28;
+const LIST_HEADER_HEIGHT_PX = 30;
 
 type InternalDragTarget =
   | { kind: "directory"; path: string }
@@ -1136,14 +1128,18 @@ export function FileList({
                 still cover the rows scrolling underneath; only the column
                 track is capped, to the same edge the rows stop at.
               */}
-              <div className="sticky top-0 z-10 h-7 shrink-0 border-b border-border bg-card">
+              <div className="sticky top-0 z-10 h-[30px] shrink-0 border-b border-border bg-background/88 backdrop-blur-md">                {/* `items-stretch`, not `items-center`: the heading buttons are
+                    full-cell targets, and a grid that centres its children
+                    leaves each one only as tall as its own text. `px-3` is the
+                    row wrapper's own inset — at `px-3.5` every heading sat 2px
+                    right of the values it labels, which is exactly the column
+                    drift this file spends a comment warning about. */}
                 <div
-                  className="grid h-full items-center justify-start px-1.5 text-label whitespace-nowrap text-muted-foreground"
+                  className="grid h-full items-stretch justify-start px-2 text-nano font-semibold tracking-[0.07em] whitespace-nowrap text-muted-foreground uppercase"
                   style={{ gridTemplateColumns: listTemplate, maxWidth: LIST_CONTENT_MAX_WIDTH }}
                 >
                   <SortHeaderCell
                     active={sortKey === "name"}
-                    inset="name"
                     label={t("explorer:columns.name")}
                     onSort={() => applySort("name")}
                     order={sortOrder}
@@ -1193,7 +1189,7 @@ export function FileList({
                   return (
                     <div
                       key={entry.path}
-                      className="absolute left-0 top-0 w-full px-1.5"
+                      className="absolute left-0 top-0 w-full px-2"
                       style={{
                         maxWidth: LIST_CONTENT_MAX_WIDTH,
                         transform: `translateY(${virtualRow.start}px)`,
@@ -1351,15 +1347,12 @@ export function FileList({
 function SortHeaderCell({
   active,
   align = "left",
-  inset = "meta",
   label,
   onSort,
   order,
 }: {
   active: boolean;
   align?: "left" | "right";
-  /** Which row cell this heading labels — the two insets in `FileListRow`. */
-  inset?: "meta" | "name";
   label: string;
   onSort: () => void;
   order: "asc" | "desc";
@@ -1374,19 +1367,16 @@ function SortHeaderCell({
     >
       <button
         className={cn(
-          // The horizontal inset is the row cell's, so a heading sits on the
-          // same text edge as the values under it — `px-3` over the name
-          // column (where the icon starts), `px-2.5` over the metadata ones.
-          "flex min-w-0 items-center gap-1 rounded-sm text-left transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
-          inset === "name" ? "px-3" : "px-2.5",
+          // The whole column strip is the target, not just the word: a desktop
+          // file manager is sorted by clicking a heading, and a label that only
+          // reacts where its glyphs are leaves most of the cell feeling dead.
+          // `h-full` reaches the header band's 36px (the wrapper stretches to
+          // it), `w-full` the track's edge — which is also the box a
+          // right-aligned heading needs before `flex-row-reverse` has anything
+          // to push the label against.
+          "flex h-full w-full min-w-0 items-center gap-1 rounded-[4px] px-2 text-left transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
           active && "text-foreground",
-          // `w-full` is load bearing, not cosmetic: a `<button>` shrink-wraps
-          // its content even when it is a flex container, so a right-aligned
-          // heading needs the box to reach the cell's right edge before
-          // `flex-row-reverse` has anything to push the label against. Without
-          // it the size heading sits at the column's left edge while every
-          // value under it is flush right.
-          align === "right" && "w-full flex-row-reverse",
+          align === "right" && "flex-row-reverse",
         )}
         onClick={onSort}
         title={
@@ -1502,6 +1492,7 @@ function FileListRow({
             // adds an accent ring.
             "render-contain state-layer grid cursor-grab items-center justify-start rounded-md whitespace-nowrap transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
+            !isSelected && "row-separator",
             isSelected && "bg-selection shadow-[inset_0_0_0_1px_var(--selection-edge)]",
             isDragging && DRAG_SOURCE_CLASS,
             isDropTarget && "drop-target",
@@ -1523,14 +1514,14 @@ function FileListRow({
           title={entry.path}
           style={{ gridTemplateColumns: listGridTemplate(columns), height: densityRowHeight }}
         >
-          <div className="flex min-w-0 items-center gap-2.5 px-3">
+          <div className="flex min-w-0 items-center gap-2.5 px-2">
             <RowEntryIcon
               entry={entry}
-              glyphSize={16}
-              nativePixelSize={18}
+              glyphSize={18}
+              nativePixelSize={20}
               presentation={presentation}
             />
-            <span className="min-w-0 truncate text-body">{entry.name}</span>
+            <span className="min-w-0 truncate text-caption">{entry.name}</span>
             {entryStatus && <GitStatusBadge kind={entryStatus} />}
             {entry.relativePath && (
               <span
@@ -1542,16 +1533,16 @@ function FileListRow({
             )}
           </div>
           {columns.modified && (
-            <div className="px-2.5 text-caption text-muted-foreground tabular-nums">
+            <div className="px-2 font-mono text-micro text-muted-foreground tabular-nums">
               {formatModifiedAt(entry.modifiedAt)}
             </div>
           )}
           {columns.type && (
-            <div className="px-2.5 text-caption text-muted-foreground">{presentation.label}</div>
+            <div className="px-2 truncate text-micro text-muted-foreground">{presentation.label}</div>
           )}
           {columns.size && (
             <div
-              className="px-2.5 text-right text-caption text-muted-foreground tabular-nums"
+              className="px-2 text-right font-mono text-micro text-muted-foreground tabular-nums"
               title={
                 displaySize === null
                   ? undefined
@@ -1632,49 +1623,82 @@ function formatRelativeLocation(relativePath: string): string {
   return relativePath.slice(0, separatorIndex).replaceAll(/[\\/]/g, " › ");
 }
 
+/** Loading state of the detail listing.
+ *
+ *  It is drawn from the geometry the loaded list uses — the 36px header band,
+ *  `listGridTemplate`'s tracks, the density row height, the same 12px inset —
+ *  so the swap from skeleton to rows changes what is on the surface and never
+ *  where it sits.
+ *
+ *  What this replaced was still the pre-virtualization shadcn `<Table>`: a
+ *  fixed 58rem grid behind a `min-w-160` floor (so a narrow pane got a
+ *  horizontal scrollbar the real list never has), a 28px header against the
+ *  real 36px one, and 32px rows whatever the density setting said. Every
+ *  navigation painted a different layout first and then jumped to the real
+ *  one. It also measures its own container, so a pane that will drop the type
+ *  and size columns drops them here instead of promising columns that vanish.
+ */
+const SKELETON_ROW_COUNT = 10;
+
 export function FileListSkeleton() {
   const { t } = useTranslation("explorer");
+  const density = useAtomValue(densityAtom);
+  const rowHeight = DENSITY_ROW_HEIGHT[density];
+  const listRef = useRef<HTMLDivElement>(null);
+  const columns = listColumnsForWidth(useMeasuredWidth(listRef));
+  const template = listGridTemplate(columns);
 
   return (
     <section
       aria-label={t("explorer:list.loadingAriaLabel")}
       className="flex min-h-0 flex-1 flex-col"
     >
-      <div className="flex h-7 shrink-0 items-center justify-between border-b px-3">
-        <Skeleton className="h-3.5 w-12" />
-        <Skeleton className="h-3 w-16" />
+      <div className="h-9 shrink-0 border-b border-border/70 bg-card/95">
+        <div
+          aria-hidden="true"
+          className="grid h-full items-center px-3 text-label whitespace-nowrap text-muted-foreground"
+          style={{ gridTemplateColumns: template }}
+        >
+          <span className="px-3">{t("explorer:columns.name")}</span>
+          {columns.modified && (
+            <span className="px-3">{t("explorer:columns.modified")}</span>
+          )}
+          {columns.type && <span className="px-3">{t("explorer:columns.type")}</span>}
+          {columns.size && (
+            <span className="px-3 text-right">{t("explorer:columns.size")}</span>
+          )}
+        </div>
       </div>
-      <Table className="min-w-160 table-fixed">
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t("explorer:columns.name")}</TableHead>
-            <TableHead className="w-44">{t("explorer:columns.modified")}</TableHead>
-            <TableHead className="w-28">{t("explorer:columns.type")}</TableHead>
-            <TableHead className="w-24 text-right">{t("explorer:columns.size")}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {Array.from({ length: 8 }, (_, index) => (
-            <TableRow key={index}>
-              <TableCell>
-                <div className="flex h-8 items-center gap-2 px-2">
-                  <Skeleton className="size-4" />
-                  <Skeleton className={index % 3 === 0 ? "h-4 w-48" : "h-4 w-32"} />
+      <div className="min-h-0 flex-1 overflow-hidden" ref={listRef}>
+        {/* Rows are placed in a fixed-height track exactly as the virtualizer
+            places them, rather than flowing from the top of the container. */}
+        <div className="px-3">
+          <div className="relative" style={{ height: SKELETON_ROW_COUNT * rowHeight }}>
+            {Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => (
+              <div
+                aria-hidden="true"
+                className="absolute top-0 left-0 grid w-full items-center rounded-lg"
+                key={index}
+                style={{
+                  gridTemplateColumns: template,
+                  height: rowHeight,
+                  transform: `translateY(${index * rowHeight}px)`,
+                }}
+              >
+                <div className="flex min-w-0 items-center gap-2.5 px-2">
+                  <Skeleton className="size-[18px] shrink-0 rounded" />
+                  <Skeleton className={index % 3 === 0 ? "h-3 w-44" : "h-3 w-32"} />
                 </div>
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-4 w-30" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-4 w-14" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="ml-auto h-4 w-12" />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+                {columns.modified && <Skeleton className="mx-3 h-2.5 w-24" />}
+                {columns.type && <Skeleton className="mx-3 h-2.5 w-10" />}
+                {columns.size && (
+                  <Skeleton className="mx-3 h-2.5 w-12 justify-self-end" />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </section>
   );
 }

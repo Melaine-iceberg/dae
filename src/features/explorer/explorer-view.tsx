@@ -77,7 +77,7 @@ import {
   RenameDialog,
   CreateEntryDialog,
 } from "./explorer-dialogs";
-import { FileOperationStatusBar } from "./explorer-chrome";
+import { ExplorerStatusBar, FileOperationStatusBar } from "./explorer-chrome";
 import { ExplorerToolbar } from "./explorer-toolbar";
 import { FileList, FileListSkeleton } from "./file-list";
 import { useGitStatus } from "./git-status";
@@ -509,7 +509,7 @@ export function ExplorerView({
     }
   }, [isOperationPending, navigator, selectedEntries]);
 
-  /** Space toggles the preview surface for the first selected entry. */
+  /** Space toggles the preview surface for the current selection. */
   // No open animation on purpose. The shared-element morph this used to run
   // (and, before it, the panel's own entrance fade) read as a window-wide
   // flicker rather than as motion: when a material is active the window canvas
@@ -971,14 +971,14 @@ export function ExplorerView({
             {isPreviewOpen &&
               (PreloadedEntryPreview ? (
                 <PreloadedEntryPreview
-                  entry={selectedEntries[0] ?? null}
+                  entries={selectedEntries}
                   onClose={() => setIsPreviewOpen(false)}
                   onOpen={() => openSelectedEntries()}
                 />
               ) : (
                 <Suspense fallback={<EntryPreviewSkeleton />}>
                   <LazyEntryPreview
-                    entry={selectedEntries[0] ?? null}
+                    entries={selectedEntries}
                     onClose={() => setIsPreviewOpen(false)}
                     onOpen={() => openSelectedEntries()}
                   />
@@ -992,7 +992,17 @@ export function ExplorerView({
         ) : (
           <FileListSkeleton />
         )}
-        {fileOperationProgress && <FileOperationStatusBar progress={fileOperationProgress} />}
+        {fileOperationProgress ? (
+          <FileOperationStatusBar progress={fileOperationProgress} />
+        ) : (
+          <ExplorerStatusBar
+            isLoading={isLoading}
+            isSearching={search.isSearching || contentSearch.isSearching}
+            itemCount={listingCount}
+            path={directory?.path ?? null}
+            selectedCount={selectedPaths.length}
+          />
+        )}
       </section>
 
       <RenameDialog

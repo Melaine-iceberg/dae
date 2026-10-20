@@ -16,7 +16,7 @@
 
 import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
-import { BlocksIcon } from "@solar-icons/react/line-duotone";
+import { BlocksIcon } from "@solar-icons/react/linear";
 
 import { invokeShellCommand, useShellCommands } from "./shell-commands-atoms";
 

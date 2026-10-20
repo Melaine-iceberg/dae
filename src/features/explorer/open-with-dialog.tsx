@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MagnifierIcon, WindowFrameIcon } from "@solar-icons/react/line-duotone";
+import { MagnifierIcon, WindowFrameIcon } from "@solar-icons/react/linear";
 
 import { commands, type OpenWithChoices } from "@/bindings";
 

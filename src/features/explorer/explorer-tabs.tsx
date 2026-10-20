@@ -27,7 +27,7 @@ import {
   StarIcon,
   TrashBinTrashIcon,
   WidgetIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import { WindowControls } from "@/components/window-controls";
 import { commands, events } from "@/bindings";
@@ -476,6 +476,13 @@ export function ExplorerTabs() {
         data-tab-bar="true"
         data-tauri-drag-region="deep"
       >
+        {/* The window's own mark, in the drag region before the first tab. It
+            is outside the tablist on purpose: the strip measures its chips by
+            `[data-tab-active]` and routes drags by hit-testing them, so a
+            decoration that joined the row would have to be excluded from both.
+            `deep` on the header already makes it part of the window's drag
+            surface, which is the only interaction a mark should have. */}
+        <span aria-hidden="true" className="brand-stripe mr-1 ml-3.5 self-center" />
         <StripScrollButton
           aria-label={t("tabs.scrollLeft")}
           direction={-1}
@@ -489,7 +496,7 @@ export function ExplorerTabs() {
           // window edge and 8px above the content row: that row's own `p-2`
           // gutter supplies the space underneath, and the two sides have to
           // measure the same or the row reads as pinned to the top.
-          className="tab-trough relative my-1.5 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
+          className="tab-trough relative my-1 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
           // A tab drag pins its pointer capture here (see `tab-drag.ts`), and the
           // header above is a `deep` drag region, so the strip has to opt out
           // explicitly or the captured events read as a request to move the
@@ -514,7 +521,7 @@ export function ExplorerTabs() {
               measures and scrolls. */}
           <button
             aria-label={t("tabs.newTab")}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+            className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
             data-tauri-drag-region="false"
             onClick={createTab}
             title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
@@ -532,18 +539,14 @@ export function ExplorerTabs() {
         <WindowControls />
       </header>
 
-      {/* The L of chrome: the rail and the gutters are `--chrome`, the same
-          tone as the tab bar above, and the panels are sheets of paper laid on
-          it. The row's padding is the gutter, so a panel is always 8px from the
-          frame and 8px from its neighbour. */}
-      <div className="flex min-h-0 flex-1 gap-2 bg-chrome p-2">
+      {/* FLAT WINDOW: the reference draws no paper on this row at all — the rail
+          and the listing sit on the window's own void, divided by whitespace and
+          by the toolbar's hairline. The paper plate (`content-panel`) and the
+          10px gutters it needed are gone with it, which returns 20px of width
+          and 20px of height to the listing. */}
+      <div className="flex min-h-0 flex-1 bg-chrome">
         <Sidebar />
-        {/* The side of the L. `bg-chrome` is the frame tone, shared with the
-            tab bar and the rail, so the gutters between panels read as window
-            rather than as canvas — and under a window material this row stops
-            painting, so the backdrop reaches the whole frame and only the paper
-            stays opaque. */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {/* Chrome-style keep-alive: every tab's surface stays mounted and
               the surfaces are stacked; switching tabs flips visibility
               instead of swapping the key, so nothing remounts — directory
@@ -553,7 +556,7 @@ export function ExplorerTabs() {
               measurements stay valid) while skipping paint and hit-testing;
               their keyboard shortcuts are gated through the `active` prop
               chain (see workspace-surface.tsx). */}
-          <div className="content-panel relative min-h-0 flex-1 overflow-hidden">
+          <div className="relative min-h-0 flex-1 overflow-hidden">
             {tabs.map((tab) => {
               const isActive = tab.id === activeTabId;
               return (
@@ -884,11 +887,11 @@ function TabStripItem({
   const tabContent = (
     <>
       {FolderTabIcon ? (
-        <FolderTabIcon className="ml-2 size-4 shrink-0" />
+        <FolderTabIcon className="ml-2 size-[15px] shrink-0" />
       ) : WorkspaceTabIcon ? (
-        <WorkspaceTabIcon className="ml-2 size-4 shrink-0 text-foreground/72" />
+        <WorkspaceTabIcon className="ml-2 size-[15px] shrink-0 text-muted-foreground" />
       ) : null}
-      <span className="w-full truncate pr-7 pl-1.5">{title}</span>
+      <span className="w-full truncate pr-6 pl-1.5">{title}</span>
     </>
   );
 
@@ -910,7 +913,7 @@ function TabStripItem({
         // handed to the platform's drag loop, which swallows the release that
         // would clear both, and a chip still wearing them reads as a tab still
         // held down after it was put back.
-        "group state-layer relative flex h-8 w-52 shrink-0 touch-none cursor-grab items-center rounded-md text-body select-none transition-[background-color,color,opacity] duration-fast ease-standard data-[pressed=true]:cursor-grabbing",
+        "group state-layer relative flex h-[30px] w-[230px] shrink-0 touch-none cursor-grab items-center rounded-md text-caption select-none transition-[background-color,color,opacity] duration-fast ease-standard data-[pressed=true]:cursor-grabbing",
         isActive ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
         isDragging && "opacity-30",
       )}
@@ -919,6 +922,15 @@ function TabStripItem({
       // attribute, so it never has to know which tab is current a second time.
       data-tab-active={isActive ? "true" : "false"}
       data-tauri-drag-region="false"
+      // The middle button is every browser's and every file manager's "close
+      // this tab", and it costs nothing here: the left button's gesture owns
+      // the pointerdown (which ignores other buttons), so this is the only
+      // handler a middle click reaches.
+      onAuxClick={(event) => {
+        if (event.button !== 1) return;
+        event.preventDefault();
+        closeTab(tab.id);
+      }}
       onClick={() => activateTab(tab.id)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -942,7 +954,7 @@ function TabStripItem({
       <button
         aria-label={t("tabs.closeTab", { title })}
         className={cn(
-          "absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-sm transition-colors hover:bg-accent",
+          "absolute top-1/2 right-1 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-[4px] transition-colors hover:bg-accent",
           isActive
             ? "text-muted-foreground hover:text-foreground"
             : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
@@ -954,7 +966,7 @@ function TabStripItem({
         onPointerDown={(event) => event.stopPropagation()}
         type="button"
       >
-        <CloseIcon className="size-3" />
+        <CloseIcon className="size-[11px]" />
       </button>
       {/* No elevation on the ghost, deliberately: the ghost *is* the drag
           image. The OS composites a snapshot of this element under the pointer

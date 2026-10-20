@@ -16,7 +16,7 @@ import {
   ScissorsIcon,
   TrashBinTrashIcon,
   WidgetIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -90,16 +90,16 @@ export function ContextualActionBar({
   }, [ensureSpacesLoaded]);
 
   return (
-    <div className="absolute bottom-4 left-1/2 z-30 -translate-x-1/2">
+    <div className="absolute bottom-5 left-1/2 z-30 -translate-x-1/2">
       <div
         aria-label={t("explorer:actionBar.ariaLabel")}
-        className="animate-float-in flex h-9 items-center gap-0.5 rounded-lg border border-border bg-popover p-1 shadow-ambient"
+        className="animate-float-in flex h-[42px] items-center gap-1 rounded-full bg-background/62 p-1.5 shadow-[rgba(255,255,255,0.08)_0_1px_0_0_inset,rgba(0,0,0,0.5)_0_8px_28px,0_0_0_1px_rgba(255,255,255,0.09)] backdrop-blur-[18px] backdrop-saturate-150"
         role="toolbar"
       >
-        <span className="shrink-0 px-2.5 text-body text-muted-foreground select-none tabular-nums">
+        <span className="shrink-0 px-3 text-caption font-medium text-foreground select-none tabular-nums">
           {t("explorer:actionBar.selectedCount", { number: localeNumber(selectedCount) })}
         </span>
-        <div aria-hidden="true" className="mr-0.5 h-5 w-px bg-border" />
+        <div aria-hidden="true" className="mx-0.5 h-[18px] w-px bg-border" />
         <Button
           aria-label={t("explorer:actionBar.openAria")}
           disabled={isActionDisabled}
@@ -160,7 +160,7 @@ export function ContextualActionBar({
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label={t("explorer:actionBar.moreAria")}
-            className="flex size-7 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+            className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
             disabled={isActionDisabled}
             title={t("explorer:actionBar.moreTitle")}
           >
@@ -218,7 +218,7 @@ export function ContextualActionBar({
         >
           <TrashBinTrashIcon className="size-action-glyph" />
         </Button>
-        <div aria-hidden="true" className="ml-0.5 h-5 w-px bg-border" />
+        <div aria-hidden="true" className="ml-0.5 h-[18px] w-px bg-border" />
         <Button
           aria-label={t("explorer:actionBar.clearAria")}
           onClick={onClearSelection}

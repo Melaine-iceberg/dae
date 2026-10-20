@@ -33,7 +33,7 @@ import {
   TrashBinTrashIcon,
   UsbIcon,
   WidgetIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
@@ -202,7 +202,7 @@ function SidebarContent() {
       aria-label={t("nav.label")}
       className="flex w-sidebar shrink-0 flex-col overflow-hidden"
     >
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pt-3 pb-2">
         <NavItem
           icon={HomeIcon}
           isActive={surface.kind === "overview"}
@@ -352,10 +352,10 @@ function SidebarContent() {
         </CollapsibleSection>
       </div>
 
-      <div className="flex shrink-0 items-center justify-end gap-1 border-t border-sidebar-border px-2 py-1.5">
+      <div className="flex shrink-0 items-center justify-end gap-1 px-2.5 pt-2 pb-1">
         <button
           aria-label={t("settings.open")}
-          className="mr-auto flex size-7 items-center justify-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-foreground"
+          className="mr-auto flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-foreground"
           onClick={() => setSettingsOpen(true)}
           title={t("settings.open")}
           type="button"
@@ -431,10 +431,10 @@ function CollapsibleSection({
 
   return (
     <div className="mt-1">
-      <div className="group/section flex h-7 items-center gap-0.5">
+      <div className="group/section flex h-8 items-center gap-0.5">
         <button
           aria-expanded={open}
-          className="flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-lg px-2 text-left text-body font-medium transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
+          className="flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-caption transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent"
           onClick={() => toggle(id)}
           type="button"
         >
@@ -857,8 +857,13 @@ function SectionLabel({
   onAdd?: () => void;
 }) {
   return (
-    <div className="group/section mt-4 flex h-5 items-center justify-between px-2">
-      <span className="text-caption font-medium text-muted-foreground select-none">{label}</span>
+    <div className="group/section mt-6 flex h-[26px] items-center justify-between px-2">
+      {/* The group caption is the reference's own treatment: 11px, semibold,
+          tracked +0.08em, uppercased, on the dim rung. It used to be a 12px
+          sentence-case label on the strength that tracking pulls hanzi apart —
+          true, but the caption is a *signpost*, and a signpost that reads like
+          metadata under a list of names was the thing being fixed. */}
+      <span className="text-nano font-semibold tracking-[0.08em] text-muted-foreground uppercase select-none">{label}</span>
       {onAdd && (
         <button
           aria-label={addTitle}
@@ -898,14 +903,12 @@ function NavItem({
     <button
       aria-current={isActive ? "page" : undefined}
       className={cn(
-        // Nav row: 30px tall on the shared radius, one step roomier than the
-        // dense rows it sits beside — this is the rail, and a rail is read at a
-        // glance rather than scanned. Hover fills with the rail's own accent
-        // rung; the row that says where the user *is* takes the accent into
-        // that fill (`row-active`) and lifts its glyph to the accent tone, so
-        // location is a hue, not a ringed box.
-        "flex h-[30px] w-full items-center gap-2 rounded-lg px-2 text-left text-body transition-[background-color,color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
-        isActive && "row-active bg-sidebar-accent font-medium text-foreground",
+        // Nav row: a 30px pill on the rail. Hover is the rail's own step;
+        // the row that says where the user *is* takes the accent into its
+        // fill and its ink (`row-active`), so location is a hue rather than a
+        // ringed box.
+        "flex h-[30px] w-full items-center gap-2 rounded-md px-2 text-left text-caption transition-[background-color,color] duration-fast ease-standard",
+        isActive ? "row-active font-medium" : "hover:bg-sidebar-accent",
       )}
       onClick={onClick}
       title={title ?? label}
@@ -913,11 +916,10 @@ function NavItem({
     >
       <Icon
         className={cn(
-          "size-4 shrink-0",
-          // Two steps, not three: the row's *label* already carries the
-          // active/idle distinction through weight and fill, so the glyph only
-          // has to stay legible. The muted step read as a disabled row.
-          isActive ? "text-primary" : "text-foreground/72",
+          "size-[17px] shrink-0 transition-colors duration-fast",
+          // Idle glyphs stay neutral so the rail reads as one calm column;
+          // only the row you are in carries the accent.
+          isActive ? "text-primary" : "text-muted-foreground",
           iconClassName,
         )}
       />
@@ -1010,8 +1012,8 @@ function DiskItem({
   return (
     <div
       className={cn(
-        "w-full rounded-md px-2.5 py-1.5 transition-[background-color,box-shadow] duration-fast ease-standard hover:bg-sidebar-accent",
-        isActive && "row-active bg-sidebar-accent",
+        "w-full rounded-md px-2 py-2 transition-[background-color,box-shadow] duration-fast ease-standard",
+        isActive ? "row-active" : "hover:bg-sidebar-accent",
       )}
     >
       <div className="flex items-center">
@@ -1040,13 +1042,13 @@ function DiskItem({
           type="button"
         >
           {volume.isRemovable ? (
-            <UsbIcon className="size-4 shrink-0 text-foreground/72" />
+            <UsbIcon className="size-[17px] shrink-0 text-muted-foreground" />
           ) : (
-            <SsdRoundIcon className="size-4 shrink-0 text-foreground/72" />
+            <SsdRoundIcon className="size-[17px] shrink-0 text-muted-foreground" />
           )}
           <div className="min-w-0 flex-1">
-            <div className="truncate text-body">{presentation.primary}</div>
-            <div className="truncate text-caption text-muted-foreground">
+            <div className="truncate text-caption">{presentation.primary}</div>
+            <div className="truncate text-micro text-muted-foreground">
               {presentation.secondary}
             </div>
           </div>

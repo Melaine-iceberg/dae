@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { TransferHorizontalIcon } from "@solar-icons/react/line-duotone";
+import { TransferHorizontalIcon } from "@solar-icons/react/linear";
 
 import type { RenameRequest } from "@/bindings";
 

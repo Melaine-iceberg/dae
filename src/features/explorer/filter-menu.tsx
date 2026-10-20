@@ -17,7 +17,7 @@ import {
   GalleryIcon,
   LayersIcon,
   MoveHorizontalIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import {
   DropdownMenu,

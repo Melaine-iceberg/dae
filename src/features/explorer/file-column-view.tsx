@@ -9,7 +9,7 @@ import {
 import { useAtomValue } from "jotai";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AltArrowRightIcon, DangerTriangleIcon, LoaderIcon } from "@solar-icons/react/line-duotone";
+import { AltArrowRightIcon, DangerTriangleIcon, LoaderIcon } from "@solar-icons/react/linear";
 
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,8 @@ import { getEntryPresentation } from "./file-icons";
 import type { MenuActions } from "./file-list";
 import type { ListingView } from "./listing-view";
 import {
+  DENSITY_ROW_HEIGHT,
+  densityAtom,
   filterHidden,
   foldersFirstAtom,
   showHiddenFilesAtom,
@@ -153,10 +155,10 @@ interface PaneProps extends SharedRowProps {
   onDrill: (path: string, depth: number) => void;
 }
 
-/** Matches `DENSITY_ROW_HEIGHT.comfortable` and the `h-8` on `PaneRow` below —
- *  the virtualizer's estimate and the painted row have to be the same number. */
-const PANE_ROW_HEIGHT = 32;
-const PANE_VERTICAL_PADDING_PX = 8;
+/** Top and bottom breathing room inside a column. The row height is not a
+ *  constant here any more — it is the density preference's, the same one the
+ *  detail list and the grid already honour (see `DENSITY_ROW_HEIGHT`). */
+const PANE_VERTICAL_PADDING_PX = 10;
 
 /** Each Miller-column pane windowizes its own rows (SKILL.md §48). */
 function Pane({
@@ -180,10 +182,16 @@ function Pane({
   selectedPathSet,
 }: PaneProps) {
   const { t } = useTranslation("explorer");
+  // Columns used to be pinned at 38px while the list and the grid followed the
+  // density preference, so one folder was up to three different row heights
+  // depending on the view it was read in. The estimate and the painted row are
+  // this one number, read once from the atom.
+  const density = useAtomValue(densityAtom);
+  const rowHeight = DENSITY_ROW_HEIGHT[density];
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
     count: entries.count,
-    estimateSize: () => PANE_ROW_HEIGHT,
+    estimateSize: () => rowHeight,
     getScrollElement: () => scrollRef.current,
     overscan: 8,
     scrollMargin: PANE_VERTICAL_PADDING_PX,
@@ -193,7 +201,7 @@ function Pane({
     <div
       // `pb-14` keeps the last row clear of the floating contextual action
       // bar (`bottom-4 h-9`) while anything is selected.
-      className={`flex w-column-view shrink-0 flex-col overflow-y-auto border-r border-border px-1.5 py-2 ${
+      className={`flex w-column-view shrink-0 flex-col overflow-y-auto border-r border-border/60 px-2 py-2.5 last:border-r-0 ${
         selectedCount > 0 ? "pb-14" : ""
       }`}
       ref={scrollRef}
@@ -245,6 +253,7 @@ function Pane({
                 onSelectEntry={onSelectEntry}
                 selectedCount={selectedCount}
                 selectedPathSet={selectedPathSet}
+                rowHeight={rowHeight}
                 virtualStart={virtualRow.start}
               />
             );
@@ -279,6 +288,7 @@ function PaneRow({
   onSelectEntry,
   selectedCount,
   selectedPathSet,
+  rowHeight,
   virtualStart,
 }: {
   activeChildPath: string | null;
@@ -299,6 +309,8 @@ function PaneRow({
   onSelectEntry: (entry: DirectoryEntry, index: number, event: ReactMouseEvent) => void;
   selectedCount: number;
   selectedPathSet: Set<string>;
+  /** The density-derived row height, shared with the pane's virtualizer. */
+  rowHeight: number;
   virtualStart: number;
 }) {
   const isDirectory = entry.kind === "directory";
@@ -313,13 +325,14 @@ function PaneRow({
           className={cn(
             // Desktop row: tonal hover via state-layer, flat selection fill,
             // no pill morph so rows keep a constant corner radius.
-            "render-contain state-layer absolute inset-x-0 top-0 flex h-8 cursor-grab items-center gap-2 rounded-sm px-2.5 select-none transition-[background-color,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+            "render-contain state-layer absolute inset-x-0 top-0 flex cursor-grab items-center gap-2.5 rounded-lg px-2.5 select-none transition-[background-color,box-shadow,opacity] duration-fast ease-standard focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             // The column holding the selection ancestor keeps the softer fill
             // (60%) so the path stays readable; the chosen row itself takes the
-            // full-strength tint. Neither adds an accent ring — rows get the
-            // fill, the drop target gets the ring.
-            isSelected && "bg-selection",
+            // full-strength tint AND the 1px `--selection-edge` hairline the
+            // list row and the grid cell already carry, so "chosen" reads the
+            // same in all three views. Only the drop target gets the 2px ring.
+            isSelected && "bg-selection shadow-[inset_0_0_0_1px_var(--selection-edge)]",
             !isSelected && isExpanded && "bg-selection/60",
             isDragging && DRAG_SOURCE_CLASS,
             dropTargetPath === entry.path && "drop-target",
@@ -341,14 +354,17 @@ function PaneRow({
           }}
           onPointerDown={(event) => onPointerDownEntry(entry, event)}
           role="option"
-          style={{ transform: `translateY(${PANE_VERTICAL_PADDING_PX + virtualStart}px)` }}
+          style={{
+            height: rowHeight,
+            transform: `translateY(${PANE_VERTICAL_PADDING_PX + virtualStart}px)`,
+          }}
           tabIndex={0}
           title={entry.path}
         >
           <RowEntryIcon
             entry={entry}
-            glyphSize={13}
-            nativePixelSize={16}
+            glyphSize={16}
+            nativePixelSize={18}
             presentation={presentation}
           />
           <span
@@ -356,12 +372,12 @@ function PaneRow({
               "min-w-0 flex-1 truncate text-body",
               // Expressive type scale: the name carries the row's weight and
               // steps up to semibold while selected or expanded.
-              isSelected || isExpanded ? "font-semibold" : "font-medium",
+              isSelected || isExpanded ? "font-medium" : "",
             )}
           >
             {entry.name}
           </span>
-          {isDirectory && <AltArrowRightIcon className="size-3 shrink-0 text-foreground/65" />}
+          {isDirectory && <AltArrowRightIcon className="size-3 shrink-0 text-muted-foreground" />}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>

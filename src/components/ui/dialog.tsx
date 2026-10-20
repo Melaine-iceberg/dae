@@ -3,7 +3,7 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { CloseIcon } from "@solar-icons/react/line-duotone";
+import { CloseIcon } from "@solar-icons/react/linear";
 
 /**
  * Entrance/exit motion for a dialog. `none` is the house behaviour: the dialog

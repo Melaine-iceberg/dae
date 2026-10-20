@@ -425,7 +425,14 @@
     "matchCount_one": "{{display}} match",
     "matchCount_other": "{{display}} matches",
     "truncatedSuffix": " (truncated)",
-    "clearSelectionHint": "clear"
+    "clearSelectionHint": "clear",
+    "mode": {
+      "ready": "Ready",
+      "loading": "Reading",
+      "searching": "Searching"
+    },
+    "selectedCount": "{{display}} selected",
+    "freeSpace": "{{size}} free"
   },
   "view": {
     "menuLabel": "View options",
@@ -557,6 +564,15 @@
     "collapsePanelShortcut": "Collapse preview panel (Space)",
     "noFileSelected": "No file selected",
     "selectHint": "Select a file in the list to preview it",
+    "multiSelection": "{{number}} items selected",
+    "totalSize": "Files total",
+    "foldersExcluded": "Folder contents are not included",
+    "folderCount_one": "{{count}} folder",
+    "folderCount_other": "{{count}} folders",
+    "fileCount_one": "{{count}} file",
+    "fileCount_other": "{{count}} files",
+    "latestModified": "Last modified",
+    "multipleLocations": "Multiple locations",
     "truncatedHint": "Content is long; showing only the first {{size}} KB",
     "tooLarge": "File is larger than {{size}} MB",
     "tooLargeHint": "Contents are not previewed for performance",

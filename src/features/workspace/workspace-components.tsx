@@ -21,7 +21,7 @@ export function WorkspacePage({
 }) {
   return (
     <main aria-label={ariaLabel} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-7 px-7 pt-7 pb-10">{children}</div>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-9 px-8 pt-9 pb-14">{children}</div>
     </main>
   );
 }
@@ -47,8 +47,8 @@ export function WorkspacePageHeader({
           {/* `title`, not a display step: this is a file manager's home
               surface. An 18px/650 heading over a slogan reads as a landing
               page, which is exactly the impression to avoid. */}
-          <h1 className="text-title">{title}</h1>
-          {description && <p className="mt-1 text-caption text-muted-foreground">{description}</p>}
+          <h1 className="text-[1.75rem] leading-9 font-semibold tracking-[-0.03em]">{title}</h1>
+          {description && <p className="mt-1.5 text-caption text-muted-foreground">{description}</p>}
         </div>
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -58,12 +58,12 @@ export function WorkspacePageHeader({
 
 export function SectionHeader({ action, title }: { action?: ReactNode; title: string }) {
   return (
-    <div className="mb-3 flex items-center justify-between gap-4">
+    <div className="mb-3.5 flex items-center justify-between gap-4">
       {/* Sentence case, no tracking: a group caption in a file manager is a
           quiet 12px label. Uppercasing and tracking it out does nothing for
           the hanzi this is usually set in and reads as decoration when it is
           set in Latin. */}
-      <h2 className="text-caption font-medium text-muted-foreground">{title}</h2>
+      <h2 className="text-[13px] font-semibold text-foreground/85">{title}</h2>
       {action}
     </div>
   );
@@ -95,28 +95,33 @@ export function LocationCard({
   return (
     <button
       className={cn(
-        // Aurora card: a hairline box on the surface's own rung that answers
-        // the pointer by *lifting* — the one place the shell lets a surface
-        // rise. The hairline warms towards the accent, a soft contact shadow
-        // arrives under it, and the icon chip warms with it; nothing scales,
-        // nothing bounces. The height is the token its skeleton already uses,
-        // so the placeholder and the real card are the same box.
-        "group state-layer flex h-location-card w-full items-center gap-3 rounded-lg border border-border bg-card p-2 text-left",
-        "transition-[background-color,border-color,box-shadow,transform] duration-fast ease-standard",
-        "hover:-translate-y-px hover:border-primary/30 hover:shadow-ambient-sm",
+        // A quick-access tile: a quiet plate that answers the pointer by
+        // stepping *up* — the surface brightens, the border warms towards the
+        // accent, the icon plate lifts a hair. Nothing scales.
+        "group relative flex h-[4.75rem] w-full items-center gap-3.5 overflow-hidden rounded-2xl border border-border/60 bg-secondary/70 px-3.5 text-left",
+        "transition-[background-color,border-color,box-shadow] duration-normal ease-standard",
+        "hover:border-primary/30 hover:bg-secondary hover:shadow-ambient-xs",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
       )}
       onClick={onClick}
       title={description ? `${title} · ${description}` : title}
       type="button"
     >
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-secondary transition-colors duration-fast group-hover:bg-[color-mix(in_oklab,var(--primary)_12%,var(--secondary))]">
-        <Icon className={cn("size-4", iconClassName)} />
+      <span
+        className={cn(
+          // The plate takes a trace of the glyph's own hue, so a row of
+          // quick-access tiles reads as a palette of places rather than as
+          // identical grey boxes. `currentColor` is the tone class below.
+          "flex size-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklab,currentColor_12%,var(--card))] transition-[background-color,box-shadow] duration-normal group-hover:shadow-ambient-xs",
+          iconClassName,
+        )}
+      >
+        <Icon className="size-[19px]" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-body font-medium">{title}</span>
+        <span className="block truncate text-body font-medium tracking-[-0.006em]">{title}</span>
         {description && (
-          <span className="mt-0.5 block truncate text-caption text-muted-foreground">
+          <span className="mt-0.5 block truncate text-micro text-muted-foreground">
             {description}
           </span>
         )}

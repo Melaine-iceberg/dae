@@ -11,7 +11,7 @@ import {
   GitBranchIcon,
   RefreshIcon,
   UploadIcon,
-} from "@solar-icons/react/line-duotone";
+} from "@solar-icons/react/linear";
 
 import { commands } from "@/bindings";
 import { Button } from "@/components/ui/button";
