@@ -23,7 +23,7 @@ import { RestartIcon } from "@solar-icons/react/line-duotone";
 import {
   hasNonModifierKey,
   normalizeHotkey,
-  normalizeHotkeyFromEvent,
+  parseKeyboardEvent,
 } from "@tanstack/react-hotkeys";
 
 import { appSettingsAtom, hotkeysPausedAtom } from "./settings-atoms";
@@ -107,9 +107,9 @@ export function ShortcutRecorder({ binding, id, onCommit, onReset }: ShortcutRec
         return;
       }
       // Ignore modifier-only presses; wait for a real key to complete the combo.
-      if (!hasNonModifierKey(normalizeHotkeyFromEvent(event))) return;
+      if (!hasNonModifierKey(normalizeHotkey(parseKeyboardEvent(event)))) return;
 
-      const candidate = normalizeHotkeyFromEvent(event);
+      const candidate = normalizeHotkey(parseKeyboardEvent(event));
       const conflict = findConflict(candidate);
       if (conflict) {
         setPending(candidate);
