@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getDefaultStore, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { Channel, invoke } from "@tauri-apps/api/core";
-import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { Channel, invoke, readText, writeText } from "@/lib/ipc";
 import { Terminal, type ITheme } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebglAddon } from "@xterm/addon-webgl";

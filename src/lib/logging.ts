@@ -1,4 +1,4 @@
-import { error as logError, warn as logWarn } from "@tauri-apps/plugin-log";
+import { error as logError, warn as logWarn } from "@/lib/ipc";
 
 /**
  * Forwards the webview's own failures into the backend log file.

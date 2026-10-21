@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { writeText } from "@/lib/ipc";
 import { CheckIcon, CopyIcon, LoaderIcon } from "@solar-icons/react/linear";
 
 import { commands, type CloudProviderKind, type StoredCloudAccount } from "@/bindings";

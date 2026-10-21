@@ -10,7 +10,7 @@ import {
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openPath } from "@/lib/ipc";
 import {
   AddFolderIcon,
   ArrowLeftIcon,

@@ -3,7 +3,6 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./App.css";
 
-import { setupDevInvoke } from "tauri-plugin-dev-invoke-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { commands } from "@/bindings";
@@ -25,10 +24,6 @@ import { TabPerfProfiler } from "@/lib/tab-perf-profiler";
 // release build's webview has no console anyone will read, and this is what
 // turns its errors into a file the user can attach to a bug report.
 forwardConsoleToLogFile();
-
-if (import.meta.env.DEV) {
-  void setupDevInvoke();
-}
 
 setupNativeClipboardBridge();
 

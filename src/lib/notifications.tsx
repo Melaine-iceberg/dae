@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { writeText } from "@/lib/ipc";
 import { toast } from "sonner";
 
 import { Kbd } from "@/components/ui/kbd";

@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { DangerTriangleIcon, FolderOpenIcon, LoaderIcon } from "@solar-icons/react/linear";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openPath } from "@/lib/ipc";
 
 import {
   commands,

@@ -31,8 +31,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";import { useTranslation } from "react-i18next";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { open as openDialog, openPath } from "@/lib/ipc";
 
 import { tabPerfMark } from "@/lib/tab-perf";
 

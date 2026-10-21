@@ -10,7 +10,7 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useHotkeys } from "@tanstack/react-hotkeys";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openPath } from "@/lib/ipc";
 import { commands, type ArchiveFormat } from "@/bindings";
 import { i18n } from "@/i18n";
 import { localeDateTimeFormat, localeNumber, localeNumberFormat } from "@/i18n/format";

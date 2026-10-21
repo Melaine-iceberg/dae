@@ -1,9 +1,13 @@
 const {
   app,
   BrowserWindow,
+  clipboard,
+  dialog,
   ipcMain,
   net,
   protocol,
+  screen,
+  shell,
   utilityProcess,
 } = require("electron");
 const fs = require("node:fs");
@@ -11,6 +15,8 @@ const os = require("node:os");
 const path = require("node:path");
 
 const isBench = process.argv.includes("--bench");
+
+const OPENABLE_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
 
 function cliValue(name) {
   const prefix = `--${name}=`;
@@ -185,6 +191,49 @@ function broadcastEvent(event) {
   }
 }
 
+// Window facts ride the renderer's event bus under Tauri's names, so the
+// Window facade is just another listener rather than a second transport.
+function sendWindowEvent(window, name, payload) {
+  if (window.isDestroyed()) return;
+  window.webContents.send("dae:event", {
+    name,
+    target: window.daeLabel ?? null,
+    payloadJson: JSON.stringify(payload ?? null),
+    data: null,
+  });
+}
+
+function displayScaleFactor(window) {
+  return screen.getDisplayMatching(window.getBounds()).scaleFactor;
+}
+
+function physicalSize(window) {
+  const scale = displayScaleFactor(window);
+  const [width, height] = window.getSize();
+  return { width: Math.round(width * scale), height: Math.round(height * scale) };
+}
+
+function logDirectory() {
+  const directory = app.getPath("logs");
+  fs.mkdirSync(directory, { recursive: true });
+  return directory;
+}
+
+// `app.getVersion()` reports the Electron version rather than dae's when the
+// app is launched as a bare script (`electron electron/main.cjs`), so the
+// version row always reads dae's own manifest. If that manifest cannot be read
+// the request fails instead of falling back to a number that would be wrong.
+function appVersion() {
+  const manifest = app.isPackaged
+    ? path.join(app.getAppPath(), "package.json")
+    : path.resolve(__dirname, "..", "package.json");
+  const { version } = JSON.parse(fs.readFileSync(manifest, "utf8"));
+  if (typeof version !== "string" || version.length === 0) {
+    throw new Error(`package manifest has no version: ${manifest}`);
+  }
+  return version;
+}
+
 function registerCoreProtocol() {
   protocol.handle("thumbnail", async (request) => {
     try {
@@ -265,9 +314,115 @@ function registerIpc() {
     app.quit();
     return true;
   });
+
+  ipcMain.handle("dae:window:control", (event, action) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) throw new Error(`window action "${action}" has no sender window`);
+
+    switch (action) {
+      case "close":
+        window.close();
+        return null;
+      case "minimize":
+        window.minimize();
+        return null;
+      case "toggleMaximize":
+        if (window.isMaximized()) window.unmaximize();
+        else window.maximize();
+        return null;
+      case "isMaximized":
+        return window.isMaximized();
+      case "isFocused":
+        return window.isFocused();
+      case "setFocus":
+        window.focus();
+        return null;
+      case "scaleFactor":
+        return displayScaleFactor(window);
+      case "outerPosition": {
+        const scale = displayScaleFactor(window);
+        const [x, y] = window.getPosition();
+        return { x: Math.round(x * scale), y: Math.round(y * scale) };
+      }
+      default:
+        throw new Error(`unknown window action: ${String(action)}`);
+    }
+  });
+
+  ipcMain.handle("dae:dialog:open", async (event, options) => {
+    const parent = BrowserWindow.fromWebContents(event.sender);
+    const settings = options && typeof options === "object" ? options : {};
+    const properties = settings.directory ? ["openDirectory"] : ["openFile"];
+    if (settings.multiple) properties.push("multiSelections");
+
+    const filters = Array.isArray(settings.filters)
+      ? settings.filters
+          .filter(
+            (filter) =>
+              filter && typeof filter.name === "string" && Array.isArray(filter.extensions),
+          )
+          .map((filter) => ({
+            name: filter.name,
+            extensions: filter.extensions.map((extension) =>
+              String(extension).replace(/^\./, ""),
+            ),
+          }))
+      : [];
+
+    const dialogOptions = {
+      title: typeof settings.title === "string" ? settings.title : undefined,
+      defaultPath:
+        typeof settings.defaultPath === "string" ? settings.defaultPath : undefined,
+      filters: filters.length > 0 ? filters : undefined,
+      properties,
+    };
+    const result = parent
+      ? await dialog.showOpenDialog(parent, dialogOptions)
+      : await dialog.showOpenDialog(dialogOptions);
+
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return settings.multiple ? result.filePaths : result.filePaths[0];
+  });
+
+  ipcMain.handle("dae:opener:open-path", async (_event, target) => {
+    if (typeof target !== "string" || target.length === 0) {
+      throw new Error("open-path requires a non-empty path");
+    }
+    const failure = await shell.openPath(target);
+    if (failure) throw new Error(failure);
+  });
+
+  ipcMain.handle("dae:opener:open-url", async (_event, target) => {
+    if (typeof target !== "string") throw new Error("open-url requires a URL");
+    const url = new URL(target);
+    if (!OPENABLE_PROTOCOLS.has(url.protocol)) {
+      throw new Error(`open-url refuses ${url.protocol} URLs`);
+    }
+    await shell.openExternal(url.toString());
+  });
+
+  ipcMain.handle("dae:clipboard:read-text", () => clipboard.readText());
+
+  ipcMain.handle("dae:clipboard:write-text", (_event, text) => {
+    if (typeof text !== "string") throw new Error("write-text requires a string");
+    clipboard.writeText(text);
+  });
+
+  ipcMain.handle("dae:log:write", async (_event, level, message) => {
+    if (level !== "warn" && level !== "error") {
+      throw new Error(`log level must be warn or error, got ${String(level)}`);
+    }
+    const line = `${new Date().toISOString()} [${level}] ${String(message)}\n`;
+    await fs.promises.appendFile(path.join(logDirectory(), "dae.log"), line, "utf8");
+  });
+
+  ipcMain.handle("dae:app:version", () => appVersion());
+
+  ipcMain.handle("dae:app:log-dir", () => logDirectory());
 }
 
 function createWindow() {
+  const label = "main";
   const window = new BrowserWindow({
     width: 1180,
     height: 820,
@@ -280,14 +435,22 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       backgroundThrottling: false,
+      additionalArguments: [`--dae-window-label=${label}`],
     },
   });
 
-  windowsByLabel.set("main", window);
+  window.daeLabel = label;
+  windowsByLabel.set(label, window);
   window.on("closed", () => {
-    windowsByLabel.delete("main");
+    windowsByLabel.delete(label);
     if (windowsByLabel.size === 0) app.quit();
   });
+
+  window.on("resize", () => {
+    sendWindowEvent(window, "tauri://resize", physicalSize(window));
+  });
+  window.on("focus", () => sendWindowEvent(window, "tauri://focus", true));
+  window.on("blur", () => sendWindowEvent(window, "tauri://blur", false));
 
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event) => event.preventDefault());

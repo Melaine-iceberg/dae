@@ -1,8 +1,7 @@
 import { lazy, Suspense, useEffect } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { open as openDialog, openPath } from "@/lib/ipc";
 import {
   AddIcon,
   ArrowRightIcon,

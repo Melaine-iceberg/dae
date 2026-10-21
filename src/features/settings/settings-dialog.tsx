@@ -27,9 +27,7 @@ import {
   ProgrammingIcon,
   SettingsIcon,
 } from "@solar-icons/react/linear";
-import { getVersion } from "@tauri-apps/api/app";
-import { appLogDir } from "@tauri-apps/api/path";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { appLogDir, getVersion, openPath } from "@/lib/ipc";
 
 import { commands, type DefaultFileManagerStatus } from "@/bindings";
 import { getFileOperationErrorMessage } from "@/i18n/errors";

@@ -1,4 +1,4 @@
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { writeText } from "@/lib/ipc";
 
 import { deleteSelection, getSelectedText } from "@/lib/text-editing";
 

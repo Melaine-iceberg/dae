@@ -1,4 +1,4 @@
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "@/lib/ipc";
 
 /**
  * The app UI is the webview's own document, so a bare anchor click would

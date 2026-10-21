@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openPath } from "@/lib/ipc";
 import {
   ClipboardListIcon,
   CloseIcon,

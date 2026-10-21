@@ -1,18 +1,108 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
+
+const LABEL_PREFIX = "--dae-window-label=";
+const labelArgument = Array.isArray(process.argv)
+  ? process.argv.find((argument) => argument.startsWith(LABEL_PREFIX))
+  : undefined;
+const label = labelArgument ? labelArgument.slice(LABEL_PREFIX.length) : "main";
 
 const listeners = new Set();
 
-ipcRenderer.on("dae:event", (_event, payload) => {
-  for (const listener of listeners) {
+function dispatch(payload) {
+  for (const listener of [...listeners]) {
     try {
       listener(payload);
     } catch (error) {
       console.error("dae event listener failed", error);
     }
   }
+}
+
+ipcRenderer.on("dae:event", (_event, payload) => dispatch(payload));
+
+// Window facts the main process reports on the same event bus Tauri used, so
+// the facade's Window methods stay ordinary event listeners.
+function windowEvent(name, payload) {
+  dispatch({
+    name,
+    target: label,
+    payloadJson: JSON.stringify(payload ?? null),
+    data: null,
+  });
+}
+
+function positionOf(event) {
+  const scale = window.devicePixelRatio || 1;
+  return {
+    x: Math.round(event.clientX * scale),
+    y: Math.round(event.clientY * scale),
+  };
+}
+
+function hasFiles(event) {
+  return Array.from(event.dataTransfer?.types ?? []).includes("Files");
+}
+
+function pathsOf(event) {
+  const paths = [];
+  for (const item of event.dataTransfer?.items ?? []) {
+    if (item.kind !== "file") continue;
+    const file = item.getAsFile();
+    if (!file) continue;
+    try {
+      const path = webUtils.getPathForFile(file);
+      if (path) paths.push(path);
+    } catch {
+      // A File the renderer built itself has no path on disk.
+    }
+  }
+  return paths;
+}
+
+// Chromium delivers external file drags through the DOM; Tauri delivered them
+// as window events. The depth counter is what distinguishes leaving the window
+// from crossing a child element.
+let dragDepth = 0;
+
+window.addEventListener("dragenter", (event) => {
+  if (!hasFiles(event)) return;
+  event.preventDefault();
+  dragDepth += 1;
+  if (dragDepth === 1) {
+    windowEvent("tauri://drag-enter", {
+      paths: pathsOf(event),
+      position: positionOf(event),
+    });
+  }
+});
+
+window.addEventListener("dragover", (event) => {
+  if (!hasFiles(event)) return;
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = event.ctrlKey ? "copy" : "move";
+  }
+  windowEvent("tauri://drag-over", { position: positionOf(event) });
+});
+
+window.addEventListener("dragleave", (event) => {
+  if (dragDepth === 0) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) windowEvent("tauri://drag-leave", null);
+});
+
+window.addEventListener("drop", (event) => {
+  if (dragDepth === 0 && !hasFiles(event)) return;
+  event.preventDefault();
+  dragDepth = 0;
+  windowEvent("tauri://drag-drop", {
+    paths: pathsOf(event),
+    position: positionOf(event),
+  });
 });
 
 contextBridge.exposeInMainWorld("daeBridge", {
+  label,
   invokeJson: (command, args) => ipcRenderer.invoke("dae:invoke", command, args),
   invoke: async (command, args) => {
     const json = await ipcRenderer.invoke("dae:invoke", command, args);
@@ -22,6 +112,27 @@ contextBridge.exposeInMainWorld("daeBridge", {
   onEvent: (listener) => {
     listeners.add(listener);
     return () => listeners.delete(listener);
+  },
+  window: {
+    control: (action) => ipcRenderer.invoke("dae:window:control", action),
+  },
+  dialog: {
+    open: (options) => ipcRenderer.invoke("dae:dialog:open", options),
+  },
+  opener: {
+    openPath: (path) => ipcRenderer.invoke("dae:opener:open-path", path),
+    openUrl: (url) => ipcRenderer.invoke("dae:opener:open-url", url),
+  },
+  clipboard: {
+    readText: () => ipcRenderer.invoke("dae:clipboard:read-text"),
+    writeText: (text) => ipcRenderer.invoke("dae:clipboard:write-text", text),
+  },
+  log: {
+    write: (level, message) => ipcRenderer.invoke("dae:log:write", level, message),
+  },
+  app: {
+    version: () => ipcRenderer.invoke("dae:app:version"),
+    logDir: () => ipcRenderer.invoke("dae:app:log-dir"),
   },
   resetLag: () => ipcRenderer.invoke("dae:lag:reset"),
   readLag: () => ipcRenderer.invoke("dae:lag:read"),

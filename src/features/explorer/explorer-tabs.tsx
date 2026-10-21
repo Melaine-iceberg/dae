@@ -15,8 +15,7 @@ import { createPortal } from "react-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { type EventCallback, type UnlistenFn } from "@tauri-apps/api/event";
-import { Window as TauriWindow } from "@tauri-apps/api/window";
+import { Window as TauriWindow, type EventCallback, type UnlistenFn } from "@/lib/ipc";
 import {
   AddIcon,
   AltArrowLeftIcon,

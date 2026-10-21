@@ -81,6 +81,39 @@ fn get_package_family_name() -> String {
     }
 }
 
+/// Exports the command/event bindings through [`export_bindings_with`].
+pub fn export_bindings(path: &std::path::Path) {
+    let specta = specta_builder();
+    export_bindings_with(&specta, path);
+}
+
+/// Writes `bindings.ts`, then retargets its runtime imports at the renderer's
+/// own IPC facade. Tauri Specta hard-codes the `@tauri-apps` import paths, and
+/// the shell no longer links those packages; this is the one place that knows
+/// the difference.
+fn export_bindings_with(specta: &tauri_specta::Builder<tauri::Wry>, path: &std::path::Path) {
+    specta
+        .export(specta_typescript::Typescript::default(), path)
+        .expect("Failed to export TypeScript bindings");
+
+    let source =
+        std::fs::read_to_string(path).expect("Failed to read the exported TypeScript bindings");
+    let rewritten = source
+        .replace("\"@tauri-apps/api/core\"", "\"@/lib/ipc\"")
+        .replace("\"@tauri-apps/api/event\"", "\"@/lib/ipc\"")
+        .replace(
+            "import(\"@tauri-apps/api/webview\").Webview | import(\"@tauri-apps/api/window\").Window",
+            "import(\"@/lib/ipc\").Webview | import(\"@/lib/ipc\").Window",
+        );
+
+    assert!(
+        !rewritten.contains("@tauri-apps/api"),
+        "the generated bindings still import Tauri APIs; update the rewrite in `export_bindings_with`"
+    );
+
+    std::fs::write(path, rewritten).expect("Failed to write the rewritten TypeScript bindings");
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Before Tauri, before GTK, before any thread: the graphics stack reads
@@ -92,12 +125,10 @@ pub fn run() {
     let specta = specta_builder();
 
     #[cfg(debug_assertions)]
-    specta
-        .export(
-            specta_typescript::Typescript::default(),
-            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/bindings.ts"),
-        )
-        .expect("Failed to export TypeScript bindings");
+    export_bindings_with(
+        &specta,
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/bindings.ts"),
+    );
 
     // The terminal and the packet-mode directory listing push raw bytes over
     // IPC channels, which has no specta type, so they live outside the generated

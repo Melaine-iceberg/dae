@@ -1,4 +1,4 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@/lib/ipc";
 import { useEffect, useRef, useState } from "react";
 
 import { commands, events, type DirectoryEntry, type DirectoryView } from "@/bindings";

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import { CheckCircleIcon, CheckIcon, CloseCircleIcon, CopyIcon, LoaderIcon, RefreshIcon } from "@solar-icons/react/linear";
-import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { writeText } from "@/lib/ipc";
 
 import { i18n } from "@/i18n";
 import { localeDateTimeFormat, localeNumberFormat } from "@/i18n/format";

@@ -1,11 +1,8 @@
-import { getCurrentWindow, type Window } from "@tauri-apps/api/window";
+import { getCurrentWindow, hasDesktopBridge, type Window } from "@/lib/ipc";
 
-type TauriInternals = { __TAURI_INTERNALS__?: { metadata?: unknown } };
-
-// 在纯浏览器(经 dev-invoke 桥接)中 __TAURI_INTERNALS__ 只有 invoke，
-// 窗口 API 不可用，此时返回 null 而不是抛错。
+// A plain browser has no native window to drive, so everything that would ask
+// for one gets `null` instead. The focus seam already has a DOM fallback for
+// exactly this case.
 export function getAppWindow(): Window | null {
-  const internals = (globalThis as typeof globalThis & TauriInternals).__TAURI_INTERNALS__;
-  if (!internals?.metadata) return null;
-  return getCurrentWindow();
+  return hasDesktopBridge() ? getCurrentWindow() : null;
 }

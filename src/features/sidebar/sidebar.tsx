@@ -35,7 +35,7 @@ import {
   WidgetIcon,
 } from "@solar-icons/react/linear";
 
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog } from "@/lib/ipc";
 
 import { commands, type Breadcrumb, type StoredCloudAccount } from "@/bindings";
 

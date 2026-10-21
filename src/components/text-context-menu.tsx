@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { readText, writeText } from "@/lib/ipc";
 import { ClipboardPasteIcon, CopyIcon, ScissorsIcon, TextSelectionIcon, TrashBinTrashIcon } from "@solar-icons/react/linear";
 
 import {
