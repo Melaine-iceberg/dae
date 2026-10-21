@@ -33,6 +33,7 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import { WindowControls } from "@/components/window-controls";
 import { commands, events } from "@/bindings";
+import { FocusedPaneStatusBar } from "@/features/explorer/explorer-chrome";
 import { Sidebar } from "@/features/sidebar/sidebar";
 import { formatBinding } from "@/features/settings/shortcut-registry";
 import { useBinding } from "@/features/settings/settings-atoms";
@@ -618,6 +619,13 @@ export function ExplorerTabs() {
               <TerminalPanel />
             </Suspense>
           )}
+          {/* The reference's order, bottom of the main column: the terminal
+              drawer, then the status strip. The strip used to be painted by
+              the pane, which put it ABOVE the drawer — a status line sandwiched
+              between the list and the shell it describes. The focused pane
+              publishes the facts (see `explorerStatusAtom`); the window owns the
+              row, and `FocusedPaneStatusBar` is the only subscriber. */}
+          <FocusedPaneStatusBar />
         </div>
       </div>
     </div>

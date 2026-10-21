@@ -6,7 +6,7 @@
  * translation/shortcut lookups it needs — so they were lifted out of
  * `explorer-view.tsx` verbatim.
  */
-import { useAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { useTranslation } from "react-i18next";
 import { LoaderIcon, ProgrammingIcon } from "@solar-icons/react/linear";
 
@@ -22,6 +22,7 @@ import { localeNumber } from "@/i18n/format";
 import { cn, formatBytes } from "@/lib/utils";
 
 import type { FileOperationKind, FileOperationProgress } from "./types";
+import { explorerStatusAtom } from "./status-strip-atom";
 
 /**
  * How a toolbar toggle shows that it is on: the chip fills, the icon stays the
@@ -90,7 +91,7 @@ export function ListingStats({
         // What stays is the one thing a selection raises and the action bar
         // does not answer: how to get out of it. Hidden on narrow panes, where
         // the path bar has no room to spare for it.
-        <span className="hidden shrink-0 items-center gap-1 min-[1280px]:flex">
+        <span className="hidden shrink-0 items-center gap-1 @min-[900px]:flex">
           <Kbd className="h-4 px-1 text-nano">{clearSelectionBinding}</Kbd>
           {t("explorer:listing.clearSelectionHint")}
         </span>
@@ -305,5 +306,35 @@ export function ExplorerStatusBar({
         </span>
       )}
     </footer>
+  );
+}
+
+/**
+ * The window's bottom strip, bound to the focused pane.
+ *
+ * This is the only component that subscribes to `explorerStatusAtom`, and that
+ * is the point: the atom is republished whenever a selection, a listing count
+ * or a running operation changes, and a subscription in `ExplorerTabs` would
+ * re-render the whole window — tab strip, rail and every kept-alive surface —
+ * on every click in the listing. Keeping the subscription in this leaf confines
+ * the churn to a 26px row.
+ *
+ * It renders nothing when no folder pane is focused (the Overview and the other
+ * workspace surfaces have no status strip of their own).
+ */
+export function FocusedPaneStatusBar() {
+  const status = useAtomValue(explorerStatusAtom);
+  if (!status) return null;
+
+  if (status.progress) return <FileOperationStatusBar progress={status.progress} />;
+
+  return (
+    <ExplorerStatusBar
+      isLoading={status.isLoading}
+      isSearching={status.isSearching}
+      itemCount={status.itemCount}
+      path={status.path}
+      selectedCount={status.selectedCount}
+    />
   );
 }

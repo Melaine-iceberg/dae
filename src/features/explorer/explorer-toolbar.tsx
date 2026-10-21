@@ -66,9 +66,14 @@ import { FilterMenu } from "./filter-menu";
  *   split     a per-tab layout choice, not a per-folder one
  *   git       the branch is context, not a control
  */
-const TOOLBAR_OVERFLOW_CLASS = "max-[900px]:hidden";
-const TOOLBAR_OVERFLOW_FAVORITE_CLASS = "max-[1080px]:hidden";
-const TOOLBAR_OVERFLOW_GIT_CLASS = "max-[1180px]:hidden";
+/* Container queries, not viewport ones: in a split view each pane owns a
+   toolbar half the window's width, and a `max-[1080px]` breakpoint still reads
+   the window, so both toolbars kept every control while the panes were 600px
+   wide — the right-hand group painted over the breadcrumb. The thresholds are
+   the toolbar's own width, which is the width the controls actually live in. */
+const TOOLBAR_OVERFLOW_CLASS = "@max-[620px]:hidden";
+const TOOLBAR_OVERFLOW_FAVORITE_CLASS = "@max-[760px]:hidden";
+const TOOLBAR_OVERFLOW_GIT_CLASS = "@max-[820px]:hidden";
 
 /** A cluster of controls that reads as one object: a recessed plate holding
  *  evenly weighted keys. Groups are told apart by that plate and by
@@ -166,7 +171,7 @@ export function ExplorerToolbar({
 
   return (
     <header
-      className="flex h-toolbar shrink-0 items-center gap-2 px-3"
+      className="@container flex h-toolbar shrink-0 items-center gap-2 px-3"
       data-tauri-drag-region="deep"
     >
       {/* App chrome: the sidebar toggle, alone at the leading edge. */}

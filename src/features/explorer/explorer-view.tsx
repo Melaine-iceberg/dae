@@ -31,8 +31,7 @@ import {
   useSyncExternalStore,
   type ComponentType,
 } from "react";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useTranslation } from "react-i18next";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";import { useTranslation } from "react-i18next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 
@@ -77,12 +76,12 @@ import {
   RenameDialog,
   CreateEntryDialog,
 } from "./explorer-dialogs";
-import { ExplorerStatusBar, FileOperationStatusBar } from "./explorer-chrome";
 import { ExplorerToolbar } from "./explorer-toolbar";
 import { FileList, FileListSkeleton } from "./file-list";
 import { useGitStatus } from "./git-status";
 import { listingViewOf, allNames } from "./listing-view";
 import type { ExplorerNavigator } from "./navigation";
+import { explorerStatusAtom } from "./status-strip-atom";
 import { OpenWithDialog } from "./open-with-dialog";
 import { useSortedListingView } from "./sorted-entries";
 import { TransferConflictDialog } from "./transfer-conflict-dialog";
@@ -212,6 +211,12 @@ export function ExplorerView({
   // two failures of the same operation are one complaint. `useId` keeps the two
   // panes of a split out of each other's slots.
   const paneNotificationId = useId();
+  // The status strip is drawn by the window (below the terminal drawer), so the
+  // pane publishes its facts instead of painting a row of its own. This is the
+  // pane's identity in that atom: a pane may only clear the strip while the
+  // strip is still its own.
+  const statusOwner = useId();
+  const setExplorerStatus = useSetAtom(explorerStatusAtom);
   const notificationIds = useMemo(
     () => ({
       operationError: `explorer-operation-error-${paneNotificationId}`,
@@ -821,6 +826,52 @@ export function ExplorerView({
     ? (contentSearch.response?.truncated ?? false)
     : (search.response?.truncated ?? false);
 
+  // Publish this pane's foot facts for the window's status strip. Only the
+  // focused pane speaks: in a split, the pane that loses focus clears its own
+  // claim (and only its own), so the strip follows focus instead of freezing on
+  // whichever pane published last.
+  //
+  // This lives here, in the pane, because the window has no way to know the
+  // count of a directory it did not read. It is a passive effect rather than a
+  // render-time write so a large listing scan does not put a second setState
+  // into its own commit.
+  useEffect(() => {
+    if (!isActivePane) {
+      setExplorerStatus((current) => (current?.owner === statusOwner ? null : current));
+      return;
+    }
+
+    setExplorerStatus({
+      owner: statusOwner,
+      progress: fileOperationProgress,
+      isLoading,
+      isSearching: search.isSearching || contentSearch.isSearching,
+      itemCount: listingCount,
+      path: directory?.path ?? null,
+      selectedCount: selectedPaths.length,
+    });
+  }, [
+    contentSearch.isSearching,
+    directory?.path,
+    fileOperationProgress,
+    isActivePane,
+    isLoading,
+    listingCount,
+    search.isSearching,
+    selectedPaths.length,
+    setExplorerStatus,
+    statusOwner,
+  ]);
+
+  // A pane that unmounts (a tab closed, a split collapsed) must not leave a
+  // strip describing a folder nobody is looking at.
+  useEffect(
+    () => () => {
+      setExplorerStatus((current) => (current?.owner === statusOwner ? null : current));
+    },
+    [setExplorerStatus, statusOwner],
+  );
+
   return (
     <main className="h-full" data-explorer-container="true">
       <section className="flex h-full w-full flex-col overflow-hidden">
@@ -1016,17 +1067,6 @@ export function ExplorerView({
           </div>
         ) : (
           <FileListSkeleton />
-        )}
-        {fileOperationProgress ? (
-          <FileOperationStatusBar progress={fileOperationProgress} />
-        ) : (
-          <ExplorerStatusBar
-            isLoading={isLoading}
-            isSearching={search.isSearching || contentSearch.isSearching}
-            itemCount={listingCount}
-            path={directory?.path ?? null}
-            selectedCount={selectedPaths.length}
-          />
         )}
       </section>
 

@@ -170,7 +170,7 @@ export function DirectorySearch({
       // caret is in. Below 1360px it folds to its magnifier — a search box
       // nobody is using must never be the reason the path is unreadable — and
       // unfolds again on focus, which is exactly when it is being used.
-      className="h-8 w-44 min-w-0 shrink rounded-md shadow-[inset_0_0_0_1px_var(--border)] transition-[width] duration-normal ease-standard hover:w-56 focus-within:w-64 max-[1360px]:w-8 max-[1360px]:hover:w-8 max-[1360px]:focus-within:w-60"
+      className="h-8 w-44 min-w-0 shrink rounded-md shadow-[inset_0_0_0_1px_var(--border)] transition-[width] duration-normal ease-standard hover:w-56 focus-within:w-64 @max-[780px]:w-8 @max-[780px]:hover:w-8 @max-[780px]:focus-within:w-60"
     >
       <InputGroupInput
         // 13px on the reference's `.searchmini`, whose field is caption-sized
@@ -253,7 +253,7 @@ export function DirectorySearch({
         // Dropped where the field folds to its magnifier: outside a 176px box
         // the keycap is the widest thing in it, and a chip hanging out of a
         // 36px control reads as a rendering bug.
-        <InputGroupAddon align="inline-end" className="max-[1360px]:hidden">
+        <InputGroupAddon align="inline-end" className="@max-[780px]:hidden">
           <Kbd className="h-4 px-1 text-nano">{focusBinding}</Kbd>
         </InputGroupAddon>
       )}
