@@ -1286,6 +1286,7 @@ dependencies = [
  "async-trait",
  "base64 0.23.1",
  "dunce",
+ "git2",
  "grep-matcher",
  "grep-regex",
  "grep-searcher",

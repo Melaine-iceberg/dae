@@ -6,6 +6,18 @@ const labelArgument = Array.isArray(process.argv)
   : undefined;
 const label = labelArgument ? labelArgument.slice(LABEL_PREFIX.length) : "main";
 
+const MATERIAL_PREFIX = "--dae-window-material=";
+const materialArgument = Array.isArray(process.argv)
+  ? process.argv.find((argument) => argument.startsWith(MATERIAL_PREFIX))
+  : undefined;
+const windowMaterial = materialArgument
+  ? materialArgument.slice(MATERIAL_PREFIX.length)
+  : "none";
+
+// The splash reads this global before the bundle evaluates, so it has to be in
+// the main world from the preload rather than fetched over IPC.
+contextBridge.exposeInMainWorld("__DAE_WINDOW_MATERIAL__", windowMaterial);
+
 const listeners = new Set();
 const channelListeners = new Set();
 

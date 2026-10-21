@@ -33,6 +33,8 @@ let native;
 try {
   native = require(nativePath);
   log(`loaded ${nativePath}`);
+  native.initialize();
+  log("platform observers started");
 } catch (error) {
   log("unable to load native addon:", error?.stack || error);
   post({ type: "fatal", message: `unable to load native addon: ${error?.message || error}` });
@@ -140,6 +142,15 @@ parentPort.on("message", (event) => {
 
   if (message.type === "request") {
     void handleRequest(message);
+    return;
+  }
+
+  if (message.type === "window-appearance") {
+    try {
+      native.setWindowAppearance(message.hwnd, Boolean(message.dark));
+    } catch (error) {
+      log("window appearance failed:", error?.message || error);
+    }
     return;
   }
 

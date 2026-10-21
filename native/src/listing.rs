@@ -15,9 +15,10 @@ use std::thread;
 use dae_core::file_system::entry_codec;
 use dae_core::file_system::local;
 use dae_core::file_system::types::{DirectoryEntry, DirectoryView, canonical_path};
-use dae_core::file_system::vfs;
+use dae_core::file_system::vfs::{self, SharedBackend};
 use serde::Serialize;
 
+use crate::watch;
 use crate::{emit_channel, emit_event};
 
 /// The head is deliberately small: the first screenful paints from it while the
@@ -81,12 +82,22 @@ pub fn cancel(stream_id: &str) {
 pub fn open(
     requested_path: String,
     stream_id: String,
+    watcher_id: Option<String>,
     sink: Sink,
 ) -> Result<DirectoryView, String> {
     if !vfs::is_local_path(&requested_path) {
-        // Remote backends are resolved through vfs and are never streamed: the
-        // renderer only reaches local places in this slice of the migration.
+        // Remote backends are resolved through vfs and are never streamed; they
+        // keep answering in one piece and are observed by polling.
         let backend = vfs::resolve(&requested_path).map_err(|error| error.to_string())?;
+
+        if let Some(watcher_id) = &watcher_id {
+            watch::arm_polling_watcher(
+                &requested_path,
+                SharedBackend::clone(&backend),
+                watcher_id,
+            );
+        }
+
         return backend
             .read_dir(&requested_path)
             .map_err(|error| error.to_string());
@@ -100,6 +111,11 @@ pub fn open(
             return Err(error.to_string());
         }
     };
+
+    if let Some(watcher_id) = &watcher_id {
+        watch::arm_local_watcher(canonical.clone(), watcher_id);
+    }
+
     let mut listing = match local::open_canonical_listing(canonical, FIRST_BATCH_SIZE) {
         Ok(listing) => listing,
         Err(error) => {

@@ -8,18 +8,40 @@
 //! PTY sessions and image thumbnail decoding stay here because `dae-core` is a
 //! file-system crate; the renderer calls these directly.
 
+mod disks;
 mod listing;
+mod settings;
 mod shell;
+mod system;
 mod terminal;
+mod volumes;
+mod watch;
 
 use std::io::Cursor;
 use std::sync::OnceLock;
 
+use dae_core::file_system::git::GitStatusCache;
 use napi::bindgen_prelude::Buffer;
 use napi::{Error, Result};
 use napi_derive::napi;
 use serde::Deserialize;
 use tokio::sync::mpsc;
+
+/// One cache for every Git read and watcher notification in this process.
+pub(crate) fn git_cache() -> &'static GitStatusCache {
+    static GIT_CACHE: OnceLock<GitStatusCache> = OnceLock::new();
+    GIT_CACHE.get_or_init(GitStatusCache::default)
+}
+
+/// The config directory the Electron shell hands down. It mirrors Tauri's
+/// `app_config_dir` (the identifier under the platform config root) so a
+/// migrated install keeps reading the same files.
+pub(crate) fn config_dir() -> std::path::PathBuf {
+    std::env::var_os("DAE_CONFIG_DIR")
+        .map(std::path::PathBuf::from)
+        .or_else(|| dirs::config_dir().map(|root| root.join("com.melaine.dae")))
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+}
 
 // ---------------------------------------------------------------------------
 // Event bus
@@ -156,7 +178,7 @@ struct ReadDirectoryArgs {
     path: String,
     stream_id: String,
     #[serde(rename = "watcherId")]
-    _watcher_id: Option<String>,
+    watcher_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -165,7 +187,7 @@ struct ReadDirectoryPacketsArgs {
     path: String,
     stream_id: String,
     #[serde(rename = "watcherId")]
-    _watcher_id: Option<String>,
+    watcher_id: Option<String>,
     on_batch: ChannelRef,
 }
 
@@ -201,6 +223,31 @@ pub fn get_home_directory() -> String {
         .unwrap_or_else(|| ".".to_owned())
 }
 
+fn required_string(args: &serde_json::Value, key: &str) -> Result<String> {
+    args.get(key)
+        .and_then(|value| value.as_str())
+        .map(str::to_owned)
+        .ok_or_else(|| Error::from_reason(format!("missing {key}")))
+}
+
+/// Starts the platform observers that report changes the renderer subscribes
+/// to: system accent, desktop theme, and volume arrival/removal. Safe to call
+/// once; repeated calls are ignored by the modules themselves.
+#[napi(js_name = "initialize")]
+pub fn initialize() -> bool {
+    settings::ensure_loaded();
+    system::start();
+    volumes::start();
+    true
+}
+
+/// Applies the renderer's appearance choice to the Electron window's system
+/// backdrop. `hwnd` is the decimal HWND Electron reports for the window.
+#[napi(js_name = "setWindowAppearance")]
+pub fn set_window_appearance(hwnd: f64, dark: bool) -> bool {
+    shell::set_window_appearance(hwnd as isize, dark)
+}
+
 async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::Value> {
     match command {
         "get_home_directory" => Ok(serde_json::Value::String(get_home_directory())),
@@ -209,7 +256,12 @@ async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::
             let args: ReadDirectoryArgs = serde_json::from_value(args)
                 .map_err(|error| Error::from_reason(format!("invalid args: {error}")))?;
             let view = tokio::task::spawn_blocking(move || {
-                listing::open(args.path, args.stream_id, listing::Sink::Events)
+                listing::open(
+                    args.path,
+                    args.stream_id,
+                    args.watcher_id,
+                    listing::Sink::Events,
+                )
             })
             .await
             .map_err(|error| Error::from_reason(format!("listing join: {error}")))?
@@ -221,7 +273,12 @@ async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::
             let args: ReadDirectoryPacketsArgs = serde_json::from_value(args)
                 .map_err(|error| Error::from_reason(format!("invalid args: {error}")))?;
             let view = tokio::task::spawn_blocking(move || {
-                listing::open(args.path, args.stream_id, listing::Sink::Channel(args.on_batch.id))
+                listing::open(
+                    args.path,
+                    args.stream_id,
+                    args.watcher_id,
+                    listing::Sink::Channel(args.on_batch.id),
+                )
             })
             .await
             .map_err(|error| Error::from_reason(format!("listing join: {error}")))?
@@ -248,9 +305,127 @@ async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::
             Ok(serde_json::Value::Null)
         }
 
-        // Directory watchers are the next port; the command exists so the
-        // explorer's dispose path is not an unknown-command error.
-        "unwatch_directory" => Ok(serde_json::Value::Null),
+        "unwatch_directory" => {
+            let watcher_id = args
+                .get("watcherId")
+                .and_then(|value| value.as_str())
+                .ok_or_else(|| Error::from_reason("unwatch_directory: missing watcherId"))?;
+            watch::unwatch(watcher_id);
+            Ok(serde_json::Value::Null)
+        }
+
+        "load_settings" => {
+            let settings = settings::load()
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(settings).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "save_settings" => {
+            let settings: settings::AppSettings = serde_json::from_value(
+                args.get("settings")
+                    .cloned()
+                    .ok_or_else(|| Error::from_reason("save_settings: missing settings"))?,
+            )
+            .map_err(|error| Error::from_reason(format!("invalid settings: {error}")))?;
+            let saved = settings::save(&settings)
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(saved).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "get_system_accent" => {
+            serde_json::to_value(system::accent())
+                .map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "get_system_theme" => {
+            serde_json::to_value(system::theme())
+                .map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "get_git_status" => {
+            let path = required_string(&args, "path")?;
+            let status = tokio::task::spawn_blocking(move || {
+                dae_core::file_system::git::get_git_status(path, git_cache())
+            })
+            .await
+            .map_err(|error| Error::from_reason(format!("git join: {error}")))?
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(status).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "list_git_branches" => {
+            let path = required_string(&args, "path")?;
+            let branches = tokio::task::spawn_blocking(move || {
+                dae_core::file_system::git::list_git_branches(path)
+            })
+            .await
+            .map_err(|error| Error::from_reason(format!("git join: {error}")))?
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(branches).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "git_checkout_branch" => {
+            let path = required_string(&args, "path")?;
+            let name = required_string(&args, "name")?;
+            let remote = args
+                .get("remote")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            tokio::task::spawn_blocking(move || {
+                dae_core::file_system::git::git_checkout_branch(path, name, remote)
+            })
+            .await
+            .map_err(|error| Error::from_reason(format!("git join: {error}")))?
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "git_create_branch" => {
+            let path = required_string(&args, "path")?;
+            let name = required_string(&args, "name")?;
+            let checkout = args
+                .get("checkout")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            tokio::task::spawn_blocking(move || {
+                dae_core::file_system::git::git_create_branch(path, name, checkout)
+            })
+            .await
+            .map_err(|error| Error::from_reason(format!("git join: {error}")))?
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "git_fetch" | "git_push" | "git_pull" | "git_sync" => {
+            let path = required_string(&args, "path")?;
+            let command = command.to_owned();
+            tokio::task::spawn_blocking(move || match command.as_str() {
+                "git_fetch" => dae_core::file_system::git::git_fetch(path),
+                "git_push" => dae_core::file_system::git::git_push(path),
+                "git_pull" => dae_core::file_system::git::git_pull(path),
+                _ => dae_core::file_system::git::git_sync(path),
+            })
+            .await
+            .map_err(|error| Error::from_reason(format!("git join: {error}")))?
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "list_disks" => {
+            let volumes = tokio::task::spawn_blocking(disks::list_disks)
+                .await
+                .map_err(|error| Error::from_reason(format!("disk join: {error}")))?
+                .map_err(Error::from_reason)?;
+            serde_json::to_value(volumes).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "list_wsl_distros" => {
+            let distros = tokio::task::spawn_blocking(disks::list_wsl_distros)
+                .await
+                .map_err(|error| Error::from_reason(format!("wsl join: {error}")))?
+                .map_err(Error::from_reason)?;
+            serde_json::to_value(distros).map_err(|error| Error::from_reason(error.to_string()))
+        }
 
         "get_system_places" => {
             serde_json::to_value(shell::system_places())
@@ -342,5 +517,6 @@ pub async fn invoke_raw(command: String, args_json: String) -> Result<Option<Buf
 #[napi(js_name = "shutdown")]
 pub fn shutdown() -> bool {
     terminal::kill_all();
+    watch::release_all();
     true
 }

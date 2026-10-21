@@ -5,6 +5,13 @@ copyright: Copyright © 2026 melaine
 directories:
   output: dist-electron
 
+# The installer registers `dae://` so links such as `dae://open?path=...` reach
+# the running instance (the main process buffers and forwards them).
+protocols:
+  - name: dae
+    schemes:
+      - dae
+
 # The renderer is a self-contained Vite bundle; main/preload/core use Node
 # built-ins plus the .node addon. No runtime node_modules are needed.
 files:

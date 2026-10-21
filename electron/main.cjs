@@ -11,9 +11,12 @@ const {
   utilityProcess,
 } = require("electron");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const OPENABLE_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
+const APP_IDENTIFIER = "com.melaine.dae";
+const DEEP_LINK_SCHEME = "dae:";
 
 function cliValue(name) {
   const prefix = `--${name}=`;
@@ -54,6 +57,15 @@ let exitCode = 0;
 let requestSeq = 0;
 const pending = new Map();
 const windowsByLabel = new Map();
+// The system backdrop this shell asked the window to draw. A renderer that is
+// told "none" paints its own surface; anything else lets the material show
+// through the transparent background.
+let windowMaterial = "none";
+let windowMaterialDark = false;
+// A directory handed to this instance before its renderer was ready. The
+// renderer drains this exactly once through `take_pending_open_directory`.
+let pendingOpenDirectory = null;
+const deferredActivations = [];
 // Channel ids are allocated by the renderer, so main remembers which window
 // sent them and routes messages back to that window only.
 const channelOwners = new Map();
@@ -77,6 +89,191 @@ function appRoot() {
     : path.resolve(__dirname, "..");
 }
 
+// Tauri derived the config directory as `<platform config root>/<identifier>`;
+// keeping that exact path means a migrated install still reads its
+// settings.toml and workspace stores.
+function appConfigDir() {
+  return path.join(app.getPath("appData"), APP_IDENTIFIER);
+}
+
+function readRegistryDword(key, name) {
+  try {
+    const { execFileSync } = require("node:child_process");
+    const output = execFileSync("reg", ["query", key, "/v", name], {
+      windowsHide: true,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const match = output.match(new RegExp(`${name}\\s+REG_DWORD\\s+0x([0-9a-fA-F]+)`));
+    return match ? Number.parseInt(match[1], 16) : null;
+  } catch {
+    return null;
+  }
+}
+
+function windowsBuildNumber() {
+  // Electron is manifested for Windows 10, so `os.release()` keeps reporting
+  // 10.0.<build> on Windows 11 — the build is the part that matters.
+  const build = Number.parseInt(os.release().split(".")[2] ?? "", 10);
+  return Number.isFinite(build) ? build : 0;
+}
+
+function windowsTransparencyEnabled() {
+  const enabled = readRegistryDword(
+    "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+    "EnableTransparency",
+  );
+  // An absent value means the default: effects on.
+  return enabled === null || enabled !== 0;
+}
+
+// The same ladder as the Tauri shell, limited to what Electron can ask DWM for:
+// the system backdrop API exists from Windows 11 22H2 (build 22621) onwards.
+function detectWindowMaterial() {
+  if (process.platform === "win32") {
+    return windowsBuildNumber() >= 22621 && windowsTransparencyEnabled() ? "acrylic" : "none";
+  }
+  if (process.platform === "darwin") {
+    return "vibrancy";
+  }
+  if (process.platform === "linux") {
+    // Only niri lets a user rule blur a transparent window; elsewhere a
+    // transparent window would show the raw desktop.
+    const desktop = (process.env.XDG_CURRENT_DESKTOP ?? "").toLowerCase();
+    return desktop.includes("niri") || process.env.NIRI_SOCKET ? "blur" : "none";
+  }
+  return "none";
+}
+
+function windowMaterialSupported() {
+  return windowMaterial !== "none";
+}
+
+function parseOpenDirectory(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== DEEP_LINK_SCHEME) return null;
+
+  let target = url.searchParams.get("path");
+  if (target === null) {
+    const encoded = url.pathname.replace(/^\//, "");
+    if (encoded.length === 0) return null;
+    try {
+      target = decodeURIComponent(encoded);
+    } catch {
+      return null;
+    }
+  }
+
+  return resolveExistingDirectory(target);
+}
+
+function resolveExistingDirectory(target) {
+  try {
+    const stat = fs.statSync(target);
+    return stat.isDirectory() ? target : path.dirname(target);
+  } catch {
+    return null;
+  }
+}
+
+function rawDirectoryArg(argument) {
+  try {
+    return fs.statSync(argument).isDirectory() ? argument : null;
+  } catch {
+    return null;
+  }
+}
+
+function focusMainWindow() {
+  const window = windowsByLabel.get("main");
+  if (!window || window.isDestroyed()) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+}
+
+function handleActivation(args) {
+  for (const argument of args) {
+    if (typeof argument !== "string" || argument.length === 0) continue;
+    const directory = parseOpenDirectory(argument) ?? rawDirectoryArg(argument);
+    if (!directory) continue;
+
+    // Buffer first: a link that lands before the renderer subscribes to the
+    // event bus survives until `take_pending_open_directory` drains it.
+    pendingOpenDirectory = directory;
+    broadcastEvent({
+      name: "deep-link-open-directory",
+      payloadJson: JSON.stringify(directory),
+    });
+  }
+
+  focusMainWindow();
+}
+
+function queueActivation(args) {
+  if (windowsByLabel.size === 0) {
+    deferredActivations.push(args);
+    return;
+  }
+  handleActivation(args);
+}
+
+function flushDeferredActivations() {
+  while (deferredActivations.length > 0) {
+    handleActivation(deferredActivations.shift());
+  }
+}
+
+function hwndValue(window) {
+  const handle = window.getNativeWindowHandle();
+  return handle.length >= 8
+    ? Number(handle.readBigUInt64LE(0))
+    : handle.readUInt32LE(0);
+}
+
+function applyWindowAppearance(window, dark) {
+  windowMaterialDark = dark;
+  if (process.platform !== "win32" || !coreChild) return;
+  try {
+    coreChild.postMessage({ type: "window-appearance", hwnd: hwndValue(window), dark });
+  } catch (error) {
+    console.error(`[main] window appearance failed: ${error}`);
+  }
+}
+
+// DWM stops compositing a backdrop when the user turns transparency effects
+// off. The renderer has to hear about it so its canvas goes opaque, and the
+// window's own background has to cover the now-unpainted plate.
+function watchWindowBackdrop() {
+  if (watchWindowBackdrop.timer) return;
+  watchWindowBackdrop.timer = setInterval(() => {
+    const next = detectWindowMaterial();
+    if (next === windowMaterial) return;
+    windowMaterial = next;
+
+    for (const window of windowsByLabel.values()) {
+      if (window.isDestroyed()) continue;
+      try {
+        if (process.platform === "win32") window.setBackgroundMaterial(next);
+        window.setBackgroundColor(next === "none" ? "#101116" : "#00000000");
+      } catch (error) {
+        console.error(`[main] backdrop update failed: ${error}`);
+      }
+    }
+
+    broadcastEvent({
+      name: "window-material-changed",
+      payloadJson: JSON.stringify(next),
+    });
+  }, 5000);
+  watchWindowBackdrop.timer.unref?.();
+}
+
 function spawnCore() {
   const nativePath = path.join(appRoot(), "native", "dae_core_native.node");
   const coreEntry = path.join(appRoot(), "electron", "core", "core-entry.cjs");
@@ -93,6 +290,7 @@ function spawnCore() {
       env: {
         ...process.env,
         DAE_NATIVE_PATH: nativePath,
+        DAE_CONFIG_DIR: appConfigDir(),
         DAE_LOG_FILE: path.join(app.getPath("userData"), "core.log"),
       },
     });
@@ -378,6 +576,27 @@ function registerIpc() {
   ipcMain.handle("dae:invoke", async (event, command, args) => {
     if (typeof command !== "string") throw new Error("command must be a string");
     rememberChannels(event.sender, args ?? null);
+
+    // Shell-owned commands never cross the process boundary: the Electron
+    // main process is the one that knows the window's backdrop and the deep
+    // links this instance has been handed. Their replies are JSON-encoded
+    // exactly like the core's, because the preload parses every reply.
+    if (command === "take_pending_open_directory") {
+      const directory = pendingOpenDirectory;
+      pendingOpenDirectory = null;
+      return JSON.stringify(directory);
+    }
+    if (command === "get_window_material") return JSON.stringify(windowMaterial);
+    if (command === "set_window_material_appearance") {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (!window) throw new Error("set_window_material_appearance has no sender window");
+      if (typeof args?.dark !== "boolean") {
+        throw new Error("set_window_material_appearance requires a boolean dark");
+      }
+      applyWindowAppearance(window, args.dark);
+      return "null";
+    }
+
     return coreRequest(command, args ?? null);
   });
 
@@ -515,11 +734,16 @@ function registerIpc() {
 
 function createWindow() {
   const label = "main";
-  const window = new BrowserWindow({
+  windowMaterial = detectWindowMaterial();
+
+  const options = {
     width: 1180,
     height: 820,
     show: true,
-    backgroundColor: "#101116",
+    // A backdrop only exists if the window itself is transparent; otherwise
+    // CSS would fade the canvas over an opaque plate.
+    transparent: windowMaterialSupported(),
+    backgroundColor: windowMaterialSupported() ? "#00000000" : "#101116",
     title: "dae",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -527,9 +751,22 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: true,
       backgroundThrottling: false,
-      additionalArguments: [`--dae-window-label=${label}`],
+      additionalArguments: [
+        `--dae-window-label=${label}`,
+        `--dae-window-material=${windowMaterial}`,
+      ],
     },
-  });
+  };
+
+  if (process.platform === "win32" && windowMaterialSupported()) {
+    options.backgroundMaterial = windowMaterial;
+  }
+  if (process.platform === "darwin") {
+    options.vibrancy = "sidebar";
+    options.visualEffectState = "followWindow";
+  }
+
+  const window = new BrowserWindow(options);
 
   window.daeLabel = label;
   windowsByLabel.set(label, window);
@@ -558,7 +795,10 @@ function createWindow() {
       if (owner === contents) channelOwners.delete(id);
     }
   });
-  window.webContents.on("did-finish-load", () => console.log("[renderer] did-finish-load"));
+  window.webContents.on("did-finish-load", () => {
+    console.log("[renderer] did-finish-load");
+    flushDeferredActivations();
+  });
   window.webContents.on("did-fail-load", (_event, code, description, url) => {
     console.error(`[renderer] did-fail-load ${code} ${description} ${url}`);
   });
@@ -610,19 +850,36 @@ app.on("before-quit", (event) => {
   void shutdownCore().finally(() => app.exit(exitCode));
 });
 
-app.whenReady().then(async () => {
-  try {
-    await spawnCore();
-    registerIpc();
-    registerCoreProtocol();
-    registerRendererProtocol();
-    createWindow();
-  } catch (error) {
-    console.error(`[main] startup failed: ${error.stack || error}`);
-    exitCode = 1;
-    app.quit();
-  }
-});
+// A second launch forwards its arguments (including `dae://` URLs) to the
+// running instance instead of starting a second shell.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", (_event, argv) => queueActivation(argv));
+  // macOS delivers deep links through open-url rather than argv.
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    queueActivation([url]);
+  });
+
+  app.whenReady().then(async () => {
+    try {
+      if (app.isPackaged) app.setAsDefaultProtocolClient("dae");
+      await spawnCore();
+      registerIpc();
+      registerCoreProtocol();
+      registerRendererProtocol();
+      createWindow();
+      watchWindowBackdrop();
+      // The launch's own command line is the first activation (Windows/Linux).
+      handleActivation(process.argv);
+    } catch (error) {
+      console.error(`[main] startup failed: ${error.stack || error}`);
+      exitCode = 1;
+      app.quit();
+    }
+  });
+}
 
 app.on("window-all-closed", () => {
   app.quit();

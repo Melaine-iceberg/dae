@@ -34,3 +34,35 @@ pub fn system_places() -> Vec<SystemPlace> {
         })
         .collect()
 }
+
+/// Applies the renderer's light/dark choice to the Electron window's system
+/// backdrop. Electron exposes no runtime appearance API, so this reaches the
+/// window's HWND directly. Only Windows has a documented per-window switch.
+pub fn set_window_appearance(hwnd: isize, dark: bool) -> bool {
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::Graphics::Dwm::{
+            DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute,
+        };
+
+        let value = windows::core::BOOL(dark as i32);
+        // SAFETY: the HWND comes from Electron's `getNativeWindowHandle` and is
+        // valid for this process; the attribute pointer is a live BOOL.
+        unsafe {
+            DwmSetWindowAttribute(
+                HWND(hwnd as *mut core::ffi::c_void),
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                &value as *const _ as *const core::ffi::c_void,
+                std::mem::size_of::<windows::core::BOOL>() as u32,
+            )
+            .is_ok()
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = (hwnd, dark);
+        false
+    }
+}
