@@ -7,11 +7,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useAtomValue } from "jotai";
+import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import type { GitEntryStatusKind } from "@/bindings";
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
-import { cn } from "@/lib/utils";
+import { cn, formatBytes } from "@/lib/utils";
 
 import { DRAG_SOURCE_CLASS, EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
 import { EntryContextMenuContent } from "./entry-context-menu";
@@ -37,36 +38,38 @@ const GRID_CELL_MIN_WIDTH: Record<ExplorerDensity, number> = {
 };
 
 /** Native shell icons stay bare; sized a step under the type tiles. */
-const GRID_ICON_SIZE: Record<ExplorerDensity, number> = {
-  compact: 30,
-  comfortable: 36,
-  spacious: 42,
+/** The glyph a shell icon and a thumbnail fall back to, at the well's scale. */
+const GRID_GLYPH_SIZE: Record<ExplorerDensity, number> = {
+  compact: 28,
+  comfortable: 30,
+  spacious: 34,
 };
 
-/** Type tiles seat the glyph in a fixed square per density. */
-const GRID_TILE_CLASS: Record<ExplorerDensity, string> = {
-  compact: "size-tile-grid-compact",
-  comfortable: "size-tile-grid-comfortable",
-  spacious: "size-tile-grid-spacious",
+/**
+ * The reference's `.card .thumb`: a 56px well of 4% ink that seats whatever
+ * the entry has — a picture, the shell's icon, or the type glyph. It is the
+ * card's one recessed plate, and the reason the grid reads as a field of
+ * objects rather than as labelled swatches.
+ */
+const GRID_THUMB_WELL_CLASS: Record<ExplorerDensity, string> = {
+  compact: "h-10",
+  comfortable: "h-14",
+  spacious: "h-16",
 };
 
-const GRID_TILE_ICON_SIZE: Record<ExplorerDensity, number> = {
-  compact: 17,
-  comfortable: 22,
-  spacious: 26,
-};
-
-/** Fixed per-density cell height keeps virtualization math uniform. */
+/**
+ * Fixed per-density cell height keeps virtualization math uniform.
+ *
+ * The number is measured off the card, not guessed: 14px of vertical padding
+ * top and bottom, the well (40/56/64), two 10px gaps, one 19px name line and a
+ * 16px mono meta line. Anything less clips the meta row on the last virtual
+ * row; anything more leaves a gap between rows that the eye reads as a
+ * different gap than the column gap.
+ */
 const GRID_CELL_HEIGHT: Record<ExplorerDensity, number> = {
-  compact: 108,
-  comfortable: 128,
-  spacious: 148,
-};
-/** Static height classes matching the tile scale so thumbnails keep geometry. */
-const GRID_IMAGE_ZONE_CLASS: Record<ExplorerDensity, string> = {
-  compact: "h-image-zone-compact",
-  comfortable: "h-image-zone-comfortable",
-  spacious: "h-image-zone-spacious",
+  compact: 126,
+  comfortable: 142,
+  spacious: 150,
 };
 
 const GRID_GAP_PX = 12;
@@ -138,6 +141,8 @@ export function FileGridView({
   selectedPathSet,
 }: FileGridViewProps) {
   const density = useAtomValue(densityAtom);
+  const { t } = useTranslation("explorer");
+  const directoryLabel = t("fileType.directory");
   const cellMinWidth = GRID_CELL_MIN_WIDTH[density];
   const cellHeight = GRID_CELL_HEIGHT[density];
   const rowStride = cellHeight + GRID_GAP_PX;
@@ -277,6 +282,7 @@ export function FileGridView({
               ).map((entry, sliceIndex) => (
                 <GridCell
                   density={density}
+                  directoryLabel={directoryLabel}
                   entry={entry}
                   gitStatus={gitStatus}
                   index={virtualRow.index * columnCount + sliceIndex}
@@ -312,6 +318,7 @@ export function FileGridView({
  */
 function GridCell({
   density,
+  directoryLabel,
   entry,
   gitStatus,
   index,
@@ -331,6 +338,8 @@ function GridCell({
   selectedPathSet,
 }: {
   density: ExplorerDensity;
+  /** Localised `Folder`, resolved once per grid rather than once per cell. */
+  directoryLabel: string;
   entry: DirectoryEntry;
   gitStatus?: ExplorerGitStatus | null;
   index: number;
@@ -353,18 +362,20 @@ function GridCell({
   const isDirectory = entry.kind === "directory";
   const presentation = getEntryPresentation(entry);
   const showNativeIcon = useNativeIconFor(entry);
-  const iconSize = GRID_ICON_SIZE[density];
   const showThumbnail = isThumbnailSupported(entry);
   const entryStatus: GitEntryStatusKind | undefined = getEntryGitStatus(gitStatus, entry);
-  // The cell's own artwork when nothing is drawn over it: what a failed or
-  // unavailable thumbnail leaves behind.
-  const typeTile = (
-    <TypeIconTile
-      className={GRID_TILE_CLASS[density]}
-      iconSize={GRID_TILE_ICON_SIZE[density]}
-      presentation={presentation}
-    />
+  // The glyph the well seats when there is no picture to show. A type glyph is
+  // a silhouette that already carries its category colour, so it needs no tile
+  // plate inside the well — only the well's own 4% wash.
+  const typeGlyph = (
+    <TypeIconTile iconSize={GRID_GLYPH_SIZE[density]} presentation={presentation} />
   );
+  // The reference's `.cm`: a folder says what it is, a file says how big it is.
+  const meta = isDirectory
+    ? directoryLabel
+    : entry.size === null
+      ? "—"
+      : formatBytes(entry.size);
 
   return (
     <ContextMenu>
@@ -377,7 +388,13 @@ function GridCell({
             // hairline are the resting state and the hover is a wash of the
             // cell's own ink on top of them. Selection keeps the accent fill and
             // the accent edge, and drops the neutral ring it replaces.
-            "render-contain state-layer relative flex cursor-grab flex-col items-center gap-2 rounded-xl bg-card/45 px-3 py-3.5 text-center shadow-[inset_0_0_0_1px_var(--border)] transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
+            //
+            // `items-stretch` rather than `items-center`: the well is the only
+            // centred thing in the card. The reference's `.card` sets its text
+            // flush left under a centred thumb, and centring the name instead is
+            // what made a grid of long file names read as a wall of jagged
+            // labels.
+            "render-contain state-layer relative flex cursor-grab flex-col items-stretch gap-2.5 rounded-xl bg-card/45 px-3 py-3.5 text-left shadow-[inset_0_0_0_1px_var(--border)] transition-[background-color,box-shadow,opacity] duration-fast ease-standard select-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset",
             entry.hidden && HIDDEN_ENTRY_CLASS,
             isSelected &&
               "bg-selection shadow-[inset_0_0_0_1px_var(--selection-edge)]",
@@ -400,59 +417,54 @@ function GridCell({
           tabIndex={isCursor ? 0 : -1}
           title={entry.path}
         >
-          {showThumbnail ? (
-            <EntryIconFrame badgeSize="md" className="w-full" entry={entry}>
-              <ThumbnailImage
-                className={cn(
-                  "w-full shrink-0 self-center rounded-sm",
-                  GRID_IMAGE_ZONE_CLASS[density],
-                )}
-                entry={entry}
-                fallback={typeTile}
-                displaySize={128}
-              />
-            </EntryIconFrame>
-          ) : showNativeIcon ? (
-            <EntryIconFrame badgeSize="md" entry={entry}>
-              <NativeIconImage
-                className="shrink-0"
-                entry={entry}
-                fallback={typeTile}
-                pixelSize={iconSize}
-              />
-            </EntryIconFrame>
-          ) : (
-            <EntryIconFrame badgeSize="md" entry={entry}>
-              {typeTile}
-            </EntryIconFrame>
-          )}
+          {/* The reference's `.thumb`: one 4% well at a 6px corner, the only
+              recessed plate in the card. Thumbnail, shell icon and type glyph
+              all sit in it, so the grid's first row is a row of objects rather
+              than a row of differently sized images. */}
           <span
             className={cn(
-              // `min-h-[2lh]` reserves BOTH lines whether the name uses one or
-              // two. Without it the tile is as tall as its own label — 85px for
-              // `archive`, 101px for `logo-final-v3.png` — so a single long
-              // name made its tile hang a full line below its neighbours and
-              // every row of the grid came out ragged. The clamp still decides
-              // what is *shown*; this only decides how much room it is shown
-              // in, which is what makes the grid a grid.
-
-              // `overflow-wrap: anywhere`, not `word-break: break-all`. Both
-              // wrap, but `break-all` will split a token at any character —
-              // `logo-final-v3.png` came out as `logo-final-v3.pn` / `g` — and
-              // only falls back to that once a token has nowhere better to
-              // break. `anywhere` prefers the real break opportunities first,
-              // so the same name now wraps as `logo-final-` / `v3.png`, on the
-              // hyphen it already contains.
-
-              // It is `anywhere` and not the older `break-word` for the reason
-              // the note above records: inside a line-clamped `-webkit-box`,
-              // `overflow-wrap: break-word` is not applied and an overlong name
-              // stops wrapping altogether. `anywhere` is honoured there —
-              // measured, on the same six names that broke under `break-all`.
-              "line-clamp-2 min-h-[2lh] text-caption leading-snug font-medium [overflow-wrap:anywhere]",
+              "flex w-full shrink-0 items-center justify-center overflow-hidden rounded-md bg-foreground/4",
+              GRID_THUMB_WELL_CLASS[density],
             )}
           >
+            {showThumbnail ? (
+              <EntryIconFrame
+                badgeSize="md"
+                className="flex size-full items-center justify-center"
+                entry={entry}
+              >
+                <ThumbnailImage
+                  className="size-full"
+                  displaySize={128}
+                  entry={entry}
+                  fallback={typeGlyph}
+                  plate={false}
+                />
+              </EntryIconFrame>
+            ) : showNativeIcon ? (
+              <EntryIconFrame badgeSize="md" entry={entry}>
+                <NativeIconImage
+                  className="shrink-0"
+                  entry={entry}
+                  fallback={typeGlyph}
+                  pixelSize={GRID_GLYPH_SIZE[density]}
+                />
+              </EntryIconFrame>
+            ) : (
+              <EntryIconFrame badgeSize="md" entry={entry}>
+                {typeGlyph}
+              </EntryIconFrame>
+            )}
+          </span>
+          {/* One line, ellipsis — the reference's `.cn`. Two clamped lines made
+              the cell's height depend on its own label, and a grid whose rows
+              are ragged is not a grid. The full name is in the tooltip and the
+              context menu. */}
+          <span className="w-full min-w-0 truncate text-caption font-medium">
             {entry.name}
+          </span>
+          <span className="w-full truncate font-mono text-[0.65625rem] leading-4 text-meta tabular-nums">
+            {meta}
           </span>
           {entryStatus && (
             <span className="absolute right-1.5 top-1.5">

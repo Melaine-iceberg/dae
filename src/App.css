@@ -420,18 +420,7 @@
      how the `--duration-*` mistake above stayed invisible for a release. */
   --size-tile-list: 26px; /* entry icon cell in a 28/32/40px row */
   --size-tile-detail: 44px; /* dialog header tile */
-  --size-tile-grid-compact: 34px;
-  --size-tile-grid-comfortable: 46px;
-  --size-tile-grid-spacious: 54px;
   --size-action-glyph: 18px; /* entry-menu quick-action glyph */
-  /* The bare thumbnail above a grid cell is a step narrower than the tinted
-     tile at the compact density, so a full-bleed image does not read heavier
-     than the squircle it replaces. */
-  --height-image-zone-compact: 30px;
-  --height-image-zone-comfortable: 42px;
-  --height-image-zone-spacious: 50px;
-  --height-location-card: 4.75rem; /* LocationCard — its skeleton must match */
-  --height-project-card: 90px;
   --height-settings-body: 30rem; /* settings dialog body at a comfortable window */
   /* The bin's list scrolls inside its own surface rather than pushing the page
      header off the top: the header, the progress bar and the summary stay put
