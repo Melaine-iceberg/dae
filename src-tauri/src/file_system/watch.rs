@@ -1,10 +1,10 @@
 //! Directory change observation across backends. The local backend uses OS
 //! file notifications; every other backend falls back to snapshot polling.
 
-use crate::file_system::local;
+use crate::file_system::error::FileSystemError;
 use crate::file_system::types::{DirectoryView, entry_kind_rank, path_to_string};
 use crate::file_system::vfs::SharedBackend;
-use notify::RecommendedWatcher;
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
 use specta::Type;
 use std::collections::HashMap;
@@ -184,6 +184,89 @@ pub fn unwatch_directory(watcher_id: String, app: tauri::AppHandle) {
     app.state::<DirectoryWatcher>().release(&watcher_id);
 }
 
+/// Installs an OS watcher on `path`.
+///
+/// `path` must already be canonical (see [`crate::file_system::types::canonical_path`]):
+/// the watcher names the directory it watches in every event it emits, and the
+/// caller reports the listing under that same spelling, so the frontend can
+/// match an event against the directory on screen — and match the event's
+/// *children* against the rows it holds.
+fn create_directory_watcher(
+    path: PathBuf,
+    app: tauri::AppHandle,
+) -> Result<RecommendedWatcher, FileSystemError> {
+    let event_path = path_to_string(&path);
+    let watched = path.clone();
+    let mut watcher =
+        notify::recommended_watcher(move |result: Result<notify::Event, notify::Error>| {
+            let names = match result {
+                // An access event is a read bumping an atime; nothing a listing
+                // shows has changed.
+                Ok(event) if matches!(event.kind, EventKind::Access(_)) => return,
+                // A watcher error (e.g. ReadDirectoryChangesW buffer overflow on
+                // network shares) means changes were dropped, so what is left is
+                // "possibly dirty" — re-read, because a patch built from a
+                // partial report would silently keep a stale row.
+                Err(_) => Vec::new(),
+                Ok(event) => changed_children(&watched, &event),
+            };
+
+            // A change on disk can move a Git badge, and the watcher's report is
+            // the only freshness signal a badge has: a new file touches nothing
+            // in the index, so the cached worktree scan has to be dropped here
+            // or it would keep answering with the badges from before
+            // (`git::GitStatusCache`). Sent before the event, so the refresh the
+            // event triggers finds the cache already invalidated.
+            app.state::<crate::file_system::git::GitStatusCache>()
+                .note_change();
+
+            let _ = DirectoryChanged {
+                path: event_path.clone(),
+                names,
+            }
+            .emit(&app);
+        })
+        .map_err(|error| FileSystemError::Io(error.to_string()))?;
+
+    watcher
+        .watch(&path, RecursiveMode::NonRecursive)
+        .map_err(|error| FileSystemError::Io(error.to_string()))?;
+
+    Ok(watcher)
+}
+
+/// The children `event` accounts for, or an empty list when it accounts for
+/// nothing that maps to a single row.
+///
+/// The empty list is the re-read signal, and every branch that returns it is the
+/// safe way to be wrong: a listing gets re-read when a change could not be
+/// pinned to a row. `Any` and `Other` make no promise about what changed, and an
+/// event naming the watched directory itself — a delete of it, a rename reported
+/// against it — has no child to name.
+fn changed_children(directory: &Path, event: &notify::Event) -> Vec<String> {
+    if matches!(event.kind, EventKind::Any | EventKind::Other) {
+        return Vec::new();
+    }
+
+    let mut names = Vec::with_capacity(event.paths.len());
+
+    for path in &event.paths {
+        // Non-recursive watching should report children only, but "should" is
+        // not something to patch a listing against.
+        if path.parent() != Some(directory) {
+            return Vec::new();
+        }
+
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            return Vec::new();
+        };
+
+        names.push(name.to_owned());
+    }
+
+    names
+}
+
 /// Arms the OS watcher for a local directory under `watcher_id`, re-targeting
 /// the view's observation if it pointed elsewhere.
 ///
@@ -200,7 +283,7 @@ pub fn arm_local_watcher(app: &tauri::AppHandle, canonical_path: PathBuf, watche
         return;
     };
 
-    match local::create_directory_watcher(canonical_path.clone(), app.clone()) {
+    match create_directory_watcher(canonical_path.clone(), app.clone()) {
         Ok(watcher) => {
             watchers.install(watcher_id, generation, WatchHandle::Notify(watcher));
         }
@@ -326,6 +409,88 @@ fn fingerprint(view: &DirectoryView) -> u64 {
 mod tests {
     use super::*;
     use crate::file_system::types::{DirectoryEntry, EntryKind};
+
+    /// The event a watcher hands over, with the fields the attribution reads.
+    fn event(kind: EventKind, paths: Vec<PathBuf>) -> notify::Event {
+        notify::Event {
+            kind,
+            paths,
+            attrs: Default::default(),
+        }
+    }
+
+    #[test]
+    fn attributes_a_change_to_the_children_it_names() {
+        let directory = Path::new("/watched/dir");
+
+        let created = event(
+            EventKind::Create(notify::event::CreateKind::File),
+            vec![directory.join("new.txt")],
+        );
+        assert_eq!(
+            changed_children(directory, &created),
+            vec!["new.txt".to_owned()],
+            "a new child is one row the listing can add"
+        );
+
+        // A rename arrives as both halves: the name that went away and the name
+        // that appeared. Patching both is what keeps a move from leaving a row
+        // that points at nothing.
+        let moved = event(
+            EventKind::Modify(notify::event::ModifyKind::Name(
+                notify::event::RenameMode::From,
+            )),
+            vec![directory.join("old.txt"), directory.join("new.txt")],
+        );
+        assert_eq!(
+            changed_children(directory, &moved),
+            vec!["old.txt".to_owned(), "new.txt".to_owned()]
+        );
+    }
+
+    /// Every branch that answers nothing is a branch the listing is re-read on,
+    /// so the test is that none of them *pretends* to know a child.
+    #[test]
+    fn refuses_to_attribute_what_is_not_plainly_a_child() {
+        let directory = Path::new("/watched/dir");
+
+        let self_deleted = event(
+            EventKind::Remove(notify::event::RemoveKind::Folder),
+            vec![directory.to_path_buf()],
+        );
+        assert!(
+            changed_children(directory, &self_deleted).is_empty(),
+            "the watched directory itself is not a row in it"
+        );
+
+        let nested = event(
+            EventKind::Modify(notify::event::ModifyKind::Data(
+                notify::event::DataChange::Any,
+            )),
+            vec![directory.join("sub").join("deep.txt")],
+        );
+        assert!(
+            changed_children(directory, &nested).is_empty(),
+            "a grandchild is not attributable to one row"
+        );
+
+        for kind in [EventKind::Any, EventKind::Other] {
+            let vague = event(kind.clone(), vec![directory.join("a.txt")]);
+            assert!(
+                changed_children(directory, &vague).is_empty(),
+                "{kind:?} says nothing about what changed"
+            );
+        }
+
+        let nameless = event(
+            EventKind::Create(notify::event::CreateKind::File),
+            Vec::new(),
+        );
+        assert!(
+            changed_children(directory, &nameless).is_empty(),
+            "an event with no path cannot name a row to keep"
+        );
+    }
 
     fn entry(name: &str) -> DirectoryEntry {
         DirectoryEntry {

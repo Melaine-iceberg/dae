@@ -1,0 +1,59 @@
+[package]
+name = "dae-core"
+version = "0.4.0"
+description = "Platform-neutral file system core for dae"
+authors = ["melaine"]
+edition = "2024"
+
+[lib]
+name = "dae_core"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+specta = { version = "2.0.0-rc.25", features = ["derive"] }
+thiserror = "2.0.20"
+log = "0.4"
+keyring = "4.1.6"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "net", "io-util", "sync"] }
+async-trait = "0.1"
+rand = "0.10.2"
+sha2 = "0.11.0"
+md-5 = "0.11.0"
+sha1 = "0.11.0"
+base64 = "0.23.1"
+russh = { version = "0.64", default-features = false, features = ["ring", "rsa", "flate2"] }
+russh-sftp = "3.0.0"
+smb2 = "0.34.0"
+reqwest = { version = "0.13", default-features = false, features = [
+  "rustls-no-provider",
+  "json",
+  "form",
+  "query",
+] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+dunce = "1.0.5"
+rayon = "1.12.0"
+ignore = "0.4"
+grep-regex = "0.1"
+grep-searcher = "0.1"
+grep-matcher = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = [
+  "Win32_Foundation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+  "Win32_System_Threading",
+  "Win32_Security",
+] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+trash-core = { version = "0.3", default-features = false, features = ["macos"] }
+
+[dev-dependencies]
+keyring-core = "1"

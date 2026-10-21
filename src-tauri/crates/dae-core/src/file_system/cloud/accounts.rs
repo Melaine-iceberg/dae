@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
-use tauri::Manager;
 
 const ACCOUNTS_FILE_NAME: &str = "cloud_accounts.json";
 const KEYRING_SERVICE: &str = "dae";
@@ -52,13 +51,9 @@ struct RegistryInner {
 static REGISTRY: LazyLock<Mutex<RegistryInner>> =
     LazyLock::new(|| Mutex::new(RegistryInner::default()));
 
-/// Loads persisted accounts. Called once from app setup; safe to call again.
-pub fn init(app: &tauri::AppHandle) -> Result<(), FileSystemError> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?;
-
+/// Loads persisted accounts from `config_dir`. Called once from shell setup;
+/// safe to call again.
+pub fn init(config_dir: PathBuf) -> Result<(), FileSystemError> {
     let mut registry = REGISTRY.lock().expect("cloud registry poisoned");
     registry.config_dir = Some(config_dir.clone());
     registry.saved = read_accounts_file(&accounts_path(&config_dir))?;
@@ -66,8 +61,6 @@ pub fn init(app: &tauri::AppHandle) -> Result<(), FileSystemError> {
 }
 
 /// Lists saved accounts sorted by provider then email.
-#[tauri::command]
-#[specta::specta]
 pub fn list_cloud_accounts() -> Result<Vec<StoredCloudAccount>, FileSystemError> {
     let registry = REGISTRY.lock().expect("cloud registry poisoned");
     let mut accounts = registry.saved.clone();
@@ -81,8 +74,6 @@ pub fn list_cloud_accounts() -> Result<Vec<StoredCloudAccount>, FileSystemError>
 }
 
 /// Removes a saved account, its stored credentials, and any live backend.
-#[tauri::command]
-#[specta::specta]
 pub fn delete_cloud_account(id: String) -> Result<(), FileSystemError> {
     {
         let mut registry = REGISTRY.lock().expect("cloud registry poisoned");
@@ -269,7 +260,7 @@ fn persist_locked(registry: &mut RegistryInner) -> Result<(), FileSystemError> {
     fs::create_dir_all(&config_dir)?;
     let contents = serde_json::to_string_pretty(&registry.saved)
         .map_err(|error| FileSystemError::Internal(error.to_string()))?;
-    crate::file_system::sidebar::write_atomic(&accounts_path(&config_dir), contents.as_bytes())
+    crate::file_system::fs_atomic::write_atomic(&accounts_path(&config_dir), contents.as_bytes())
 }
 
 fn accounts_path(config_dir: &std::path::Path) -> PathBuf {

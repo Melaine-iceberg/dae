@@ -33,10 +33,9 @@ export-bindings = []
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-# SSH transport for the SFTP backend. `ring` (instead of the default
-# aws-lc-rs) keeps the build free of CMake/NASM requirements on Windows.
-russh = { version = "0.64", default-features = false, features = ["ring", "rsa", "flate2"] }
-russh-sftp = "3.0.0"
+# The platform-neutral file system core: backends, path handling, transfers,
+# and the connection/cloud stores. See `crates/dae-core`.
+dae-core = { path = "crates/dae-core" }
 # `macos-private-api` is the feature that makes a `transparent` window
 # compile on macOS at all (`WebviewWindowBuilder::transparent` is
 # `cfg`-gated on it), and `window_material` needs transparent windows to show
@@ -89,10 +88,6 @@ quick-xml = "0.42"
 thiserror = "2.0.20"
 notify = "8.2.0"
 ignore = "0.4"
-# Drops the `\\?\` prefix `canonicalize` returns on Windows, without letting a
-# path change meaning: a verbatim base makes every child path built on it
-# allocate a whole extra base path (see `types::canonical_path`).
-dunce = "1.0.5"
 rayon = "1.12.0"
 # Global allocator; installed in `main.rs` (bin target only, so the mobile
 # staticlib/cdylib build stays on the system allocator — mobile is untested).
@@ -105,8 +100,6 @@ sysinfo = { version = "0.39", default-features = false, features = ["disk"] }
 # Moves entries to the system trash (recycle bin) and can restore them again,
 # which backs the undoable delete flow in `file_system::commands`.
 trash = "5"
-smb2 = "0.34.0"
-keyring = "4.1.6"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "time", "net", "io-util", "sync"] }
 image = { version = "0.25", default-features = false, features = [
   "jpeg",
@@ -123,10 +116,6 @@ zip = { version = "9", default-features = false, features = ["deflate", "aes-cry
 tar = "0.4"
 flate2 = "1"
 sevenz-rust2 = "0.24.1"
-# ripgrep's core search crates: regex line matching + binary-aware file searching.
-grep-regex = "0.1"
-grep-searcher = "0.1"
-grep-matcher = "0.1"
 git2 = "0.21.0"
 # Spawns the cross-platform PTY (ConPTY on Windows, openpty on Unix) that
 # backs the integrated terminal panel.
@@ -136,30 +125,12 @@ portable-pty = "0.9"
 # The [patch] below swaps in a vendored copy that adds `DragMode::Link`
 # (DROPEFFECT_LINK) so Alt-drag can create shortcuts, like Explorer.
 drag = "2.1.1"
-# OAuth2 + REST for the cloud storage backends. rustls with `ring` (instead
-# of aws-lc-rs or native TLS) keeps the build free of CMake/NASM/OpenSSL
-# requirements, matching the `russh` choice above. `rustls-no-provider` leaves
-# provider selection to us — the code installs `ring` via
-# `install_default()` before building a client — and verifies certificates
-# through the platform trust store rather than bundled webpki roots, which
-# 0.13 dropped.
-reqwest = { version = "0.13", default-features = false, features = [
-  "rustls-no-provider",
-  "json",
-  # 0.13 made the urlencoded-serialised builders optional; `.form()` and
-  # `.query()` are how every cloud request in `file_system::cloud` is built.
-  "form",
-  "query",
-] }
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-async-trait = "0.1"
 sha2 = "0.11.0"
 # MD5 + SHA-1 alongside `sha2` back the properties dialog's checksum tab
 # (download verification); all three share the `digest` trait, so one read
 # updates every algorithm. `md-5` is RustCrypto's crate (lib name `md5`).
 md-5 = "0.11.0"
 sha1 = "0.11.0"
-rand = "0.10.2"
 # Maps file paths to freedesktop MIME types. The two Linux backends that name a
 # path's type use it: `shell_commands` matches KDE service menus with it, and
 # `file_icons` picks the mimetype icon to draw.
@@ -232,11 +203,6 @@ windows = { version = "0.62.2", features = [
   "Win32_Security",
 ] }
 
-# Resolves account names for the properties dialog (getpwnam_r/getgrnam_r),
-# which must honor NSS so domain-joined machines work.
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
 # CoreFoundation bindings for the macOS "Open With" picker: LaunchServices
 # application enumeration and default-handler registration.
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -282,15 +248,6 @@ objc2-uniform-type-identifiers = "0.3"
 # into the tree — `objc2-foundation`'s default features pull it in — so naming
 # it directly adds no build time.
 block2 = "0.6"
-# Reads the Finder put-back records (ptbN/ptbL) from ~/.Trash/.DS_Store so
-# the trash view can list and restore entries on macOS, where the `trash`
-# crate only supports `delete`. See file_system/macos_trash.rs.
-trash-core = { version = "0.3", default-features = false, features = ["macos"] }
-
-# The in-memory mock credential store for the cloud account tests, keeping
-# them away from the real OS keychain.
-[dev-dependencies]
-keyring-core = "1"
 
 # rustc 1.98 surfaces MSVC link.exe's informational stdout ("正在创建库 …" /
 # "正在创建对象 …") as `linker_messages` warnings on every link step. Nothing

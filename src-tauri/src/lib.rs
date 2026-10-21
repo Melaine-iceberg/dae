@@ -228,8 +228,9 @@ pub fn run() {
                 log::warn!("Unable to register the tab drop target: {error}");
             }
 
-            file_system::connections::init(app.handle())?;
-            file_system::cloud::accounts::init(app.handle())?;
+            let config_dir = app.path().app_config_dir()?;
+            file_system::connections::init(config_dir.clone())?;
+            file_system::cloud::accounts::init(config_dir)?;
             settings::init(app.handle())?;
             // Spawns the platform accent watcher. Its first report lands before
             // the webview has necessarily mounted a listener, which is why the
@@ -482,13 +483,13 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::spaces::delete_space,
             file_system::spaces::add_space_item,
             file_system::spaces::remove_space_item,
-            file_system::connections::list_connections,
-            file_system::connections::save_connection,
-            file_system::connections::delete_connection,
-            file_system::smb::test_connection,
-            file_system::cloud::accounts::list_cloud_accounts,
-            file_system::cloud::accounts::delete_cloud_account,
-            file_system::cloud::oauth::authorize_cloud_account,
+            file_system::network::list_connections,
+            file_system::network::save_connection,
+            file_system::network::delete_connection,
+            file_system::network::test_connection,
+            file_system::network::list_cloud_accounts,
+            file_system::network::delete_cloud_account,
+            file_system::network::authorize_cloud_account,
             deep_link::take_pending_open_directory,
             settings::load_settings,
             settings::save_settings,

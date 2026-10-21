@@ -14,15 +14,12 @@ mod windows_directory;
 
 pub use content_search::{ContentSearchParams, search_file_contents_sync};
 pub use directory::{
-    DirectoryListing, DirectoryListingCursor, create_directory_watcher, open_canonical_listing,
-    stat_named_children,
+    DirectoryListing, DirectoryListingCursor, open_canonical_listing, stat_named_children,
 };
 pub use operations::{
     copy_entries_with_progress, delete_entries_with_progress, move_entries_with_progress,
+    rename_entry_sync,
 };
-
-#[cfg(test)]
-pub use operations::rename_entry_sync;
 
 use crate::file_system::error::FileSystemError;
 use crate::file_system::progress::FileOperationProgressReporterTrait;

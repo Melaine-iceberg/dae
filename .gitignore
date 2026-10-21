@@ -69,3 +69,8 @@ NOTES.md
 /native/*.node
 /dist-electron/
 /bench-results/
+
+# The extracted core is built through the Tauri package; a nested lock and
+# target directory only appear when it is checked on its own.
+/src-tauri/crates/dae-core/target/
+/src-tauri/crates/dae-core/Cargo.lock

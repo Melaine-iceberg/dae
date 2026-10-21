@@ -428,7 +428,7 @@ mod tests {
     /// Prints what one content search over a real tree costs.
     ///
     /// ```bash
-    /// cd src-tauri
+    /// cd src-tauri/crates/dae-core
     /// DAE_CONTENT_SEARCH_BENCH=K:/dae-listing-bench/big \
     ///   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_content_search
     /// ```

@@ -6,7 +6,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
-use tauri::Manager;
 
 const CONNECTIONS_FILE_NAME: &str = "connections.json";
 const KEYRING_SERVICE: &str = "dae";
@@ -75,14 +74,9 @@ struct RegistryInner {
 static REGISTRY: LazyLock<Mutex<RegistryInner>> =
     LazyLock::new(|| Mutex::new(RegistryInner::default()));
 
-/// Loads persisted connections. Called once from app setup; safe to call
-/// again (re-reads from disk).
-pub fn init(app: &tauri::AppHandle) -> Result<(), FileSystemError> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?;
-
+/// Loads persisted connections from `config_dir`. Called once from shell
+/// setup; safe to call again (re-reads from disk).
+pub fn init(config_dir: PathBuf) -> Result<(), FileSystemError> {
     let mut registry = REGISTRY.lock().expect("connection registry poisoned");
     registry.config_dir = Some(config_dir.clone());
     registry.saved = read_connections_file(&connections_path(&config_dir))?;
@@ -101,8 +95,6 @@ pub fn session_key(protocol: Protocol, host: &str, port: Option<u16>) -> String 
 }
 
 /// Lists saved connections sorted by protocol then host.
-#[tauri::command]
-#[specta::specta]
 pub fn list_connections() -> Result<Vec<StoredConnection>, FileSystemError> {
     let registry = REGISTRY.lock().expect("connection registry poisoned");
     let mut connections = registry.saved.clone();
@@ -118,8 +110,6 @@ pub fn list_connections() -> Result<Vec<StoredConnection>, FileSystemError> {
 /// Creates or updates a connection. Passwords, when supplied and remembered,
 /// go to the OS keychain; if the keychain is unavailable they fall back to
 /// session memory so the connection still works until the app exits.
-#[tauri::command]
-#[specta::specta]
 pub fn save_connection(input: SaveConnectionInput) -> Result<StoredConnection, FileSystemError> {
     let host = normalize_host(&input.host);
     if host.is_empty() {
@@ -156,8 +146,6 @@ pub fn save_connection(input: SaveConnectionInput) -> Result<StoredConnection, F
 }
 
 /// Removes a saved connection, its stored credential, and any live session.
-#[tauri::command]
-#[specta::specta]
 pub fn delete_connection(id: String) -> Result<(), FileSystemError> {
     let mut registry = REGISTRY.lock().expect("connection registry poisoned");
     registry.saved.retain(|existing| existing.id != id);
@@ -266,7 +254,7 @@ fn persist_locked(registry: &mut RegistryInner) -> Result<(), FileSystemError> {
     fs::create_dir_all(&config_dir)?;
     let contents = serde_json::to_string_pretty(&registry.saved)
         .map_err(|error| FileSystemError::Internal(error.to_string()))?;
-    super::sidebar::write_atomic(&connections_path(&config_dir), contents.as_bytes())
+    super::fs_atomic::write_atomic(&connections_path(&config_dir), contents.as_bytes())
 }
 
 fn connections_path(config_dir: &std::path::Path) -> PathBuf {

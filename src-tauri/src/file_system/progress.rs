@@ -1,4 +1,5 @@
 use super::types::path_to_string;
+pub use dae_core::file_system::progress::FileOperationProgressReporterTrait;
 use serde::Serialize;
 use specta::Type;
 use std::path::Path;
@@ -54,16 +55,6 @@ pub(super) fn emit_preparing(
         None,
         None,
     );
-}
-
-pub trait FileOperationProgressReporterTrait: Send + Sync {
-    fn start(&self, total: u64);
-    fn begin_entry(&self, path: &Path);
-    fn advance(&self, path: &Path) {
-        self.advance_by(1, path);
-    }
-    fn advance_by(&self, units: u64, path: &Path);
-    fn finish(&self);
 }
 
 struct ReporterState {

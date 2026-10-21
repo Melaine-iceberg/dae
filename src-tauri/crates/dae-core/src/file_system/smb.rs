@@ -1089,10 +1089,8 @@ fn map_smb_error(error: smb2::Error) -> FileSystemError {
 
 /// Verifies a connection attempt before it is saved, using the credentials
 /// typed into the connect dialog rather than any stored ones.
-#[tauri::command]
-#[specta::specta]
 pub async fn test_connection(input: SaveConnectionInput) -> Result<(), FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let host = input.host.trim().to_owned();
         if host.is_empty() {
             return Err(FileSystemError::InvalidInput(
