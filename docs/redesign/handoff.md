@@ -193,9 +193,10 @@ cd /k/code/dae && bun run dev
 - **亮色模式只看了改动面**：概览、列表 + 检查器（代码预览）、右键菜单、空状态、键帽。
   `.inspector` / `.kbd-cap` / `.preview-body` / `.note` 全部走 token 混合，亮色下都成立；
   但没有逐个表单/对话框复查。
-- **终端抽屉的亮色没截**（xterm 的背景 `blendTokens` 每主题重算，逻辑上跟随，
-  但没在亮色下跑过一次 shell）。
-- `bun run lint` 仍未跑绿（与第 1 轮相同）。
+- **终端抽屉的亮色**已由 6.6 用真实 PTY 跑通（当时没留截图）。
+- `bun run lint` 与 `bun run lint:type-aware` **现在都是绿的**（第 6 轮复跑：`vp lint src
+  vite.config.ts` 与加 `--type-aware` 均 exit 0；往 `src/` 放一个故意违规的文件会让它
+  exit 1，说明不是空跑）。这一条可以划掉了。
 - `docs/design-v2.md` 仍在，作为 Atlas 历史保留。
 
 ## 3. 与旧 `design-v3.md`（Aura）的冲突清单 —— 已归档
@@ -322,10 +323,27 @@ cd /k/code/dae && bun run dev
 - 概览/最近使用/回收站没有发布者，原子为 null，状态条整行不渲染（和示例一致——它们没有
   这一行）。
 
-### 6.8 仍未做
+### 6.8 检查器成为三列的第三列 ✅
 
-- **检查器没有跟着终端变成整高**：示例里 `.insp` 是 `rail | main | insp` 三列中的独立一列，
-  终端和状态条只在 `main` 里；现在终端/状态条横跨整个窗格宽度，检查器到终端上方就结束。
-  要改成示例的构图，得把检查器从 `ExplorerView` 提到窗口层（还要处理分屏的两个检查器），
-  属于下一次布局重构。
-- `bun run lint` 仍未跑绿（与第 3 轮相同）。
+- 示例的构图是 `rail | main | insp` 三列：终端抽屉和状态条只在 `main` 里，检查器从标签条
+  一路贯到底。原来检查器是 `ExplorerView` 内部的一列，所以它到终端上方就结束，终端/状态条
+  又横跨整窗——既不是三列，也不是两列。
+- 检查器整块从 `ExplorerView` 提到窗口层：新增 `explorer/inspector-atom.ts` 与
+  `explorer/inspector-panel.tsx`，`ExplorerTabs` 在 `main` 列之后渲染 `InspectorPanel`，
+  它和 `main` 是兄弟节点，于是终端与状态条自然在检查器左侧收住。
+- 窗格只**发布**面板（和 6.7 的状态条同一条 seam）：`ExplorerView` 在 `isActivePane` 时写入
+  `{owner, isOpen, entries, onClose, onOpen}`；面板的订阅留在 `InspectorPanel` 这个叶子里，
+  点选一行只重渲染 300px 的列，不动标签条/侧栏/keep-alive 表面。
+- **分屏的两个检查器**：开合仍是窗格自己的 state（工具栏按钮的 `aria-pressed`、Space 键都
+  还在各自窗格里），所以左右各有各的面板；窗口只有一列，显示**聚焦**那个窗格的。旧窗格失
+  去焦点时只清掉自己的 owner（与状态条同一套防竞争规则），F6 换边就换回那一侧的面板。
+- 预览 chunk 的懒加载/预热（`preloadInspectorPanel`）跟着一起搬进 `inspector-panel.tsx`，
+  仍由窗格在首帧后预热，`entry-preview` 还是独立 chunk。
+
+### 6.9 仍未做
+
+- **没有在真实窗口里目视过这一版的构图**：三列改动的校验只到 `tsc`、`oxlint`、
+  `vp build` 为止（`dev-invoke` 预览需要外部宿主，本轮没跑）。要看的两处：分屏时 F6
+  换边检查器是否跟着聚焦走、窄窗（<1180px）手动打开后 `main` 列是否还剩得下列表。
+- **亮色/暗色都还没逐屏截图**（与 2.10 同一条）。
+- `bun run lint` 已经绿了，不再列为遗留项（见 2.10）。

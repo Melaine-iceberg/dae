@@ -8,6 +8,8 @@
  * - `explorer-toolbar.tsx`      — the toolbar's markup (props in, buttons out)
  * - `explorer-dialogs.tsx`      — presentational rename/create/delete/error dialogs
  * - `explorer-chrome.tsx`       — listing stats, terminal toggle, progress strip
+ * - `inspector-panel.tsx`      — the window's inspector column, which the pane
+ *                                publishes into (see `inspector-atom.ts`)
  * - `use-entry-dialogs.ts`      — dialog state + submission flows
  * - `use-file-operations.ts`    — the operation runner (progress/pending/error)
  * - `use-transfers.ts`          — copy/move pipeline + conflict resolution
@@ -20,8 +22,6 @@
  * the pieces above (delete/archive/undo/redo/open-with…), and the layout.
  */
 import {
-  lazy,
-  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -29,13 +29,11 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type ComponentType,
 } from "react";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";import { useTranslation } from "react-i18next";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 
-import { Skeleton } from "@/components/ui/skeleton";
 import { tabPerfMark } from "@/lib/tab-perf";
 
 import { commands, type ArchiveFormat, type UndoRedoOutcome } from "@/bindings";
@@ -67,7 +65,6 @@ import { ArchivePasswordDialog } from "./archive-password-dialog";
 import { BulkRenameDialog } from "./bulk-rename";
 import { useDirectorySearch, type ExplorerSearchMode } from "./directory-search";
 import { isLocalExplorerPath } from "./drag-drop";
-import type { EntryPreviewProps } from "./entry-preview";
 import { isArchiveFile } from "./entry-context-menu";
 import { displayNameOfPath, isWrongPasswordError } from "./explorer-errors";
 import {
@@ -79,6 +76,8 @@ import {
 import { ExplorerToolbar } from "./explorer-toolbar";
 import { FileList, FileListSkeleton } from "./file-list";
 import { useGitStatus } from "./git-status";
+import { inspectorAtom } from "./inspector-atom";
+import { preloadInspectorPanel } from "./inspector-panel";
 import { listingViewOf, allNames } from "./listing-view";
 import type { ExplorerNavigator } from "./navigation";
 import { explorerStatusAtom } from "./status-strip-atom";
@@ -109,51 +108,6 @@ const NO_FAVORITES: Favorite[] = [];
 /** The name list the bulk-rename dialog reads, which is only worth collecting
  *  while that dialog is open. */
 const NO_NAMES: string[] = [];
-
-/**
- * The preview panel is the only thing that reaches TanStack Markdown and the
- * highlight grammars: keeping it out of this chunk took the explorer from
- * 306 KB to 242 KB, with the preview chain left as a 66 KB chunk of its own.
- * It sits behind the toolbar toggle, so nothing on the first frame needs it.
- *
- * `PreloadedEntryPreview` mirrors `preloadExplorerSurface` in
- * `workspace-surface.tsx`, for the same reason: `lazy()` resumes its boundary
- * as scheduled concurrent work, which would put the first Quick Look a frame or
- * two behind the click that started it — and the shared-element transition from
- * the listing row to the preview's hero plate wants the plate present on that
- * click's own frame.
- */
-const LazyEntryPreview = lazy(() =>
-  import("./entry-preview").then((m) => ({ default: m.EntryPreview })),
-);
-let PreloadedEntryPreview: ComponentType<EntryPreviewProps> | null = null;
-
-/** Warms the preview chunk. Safe to call repeatedly; never rejects. */
-function preloadEntryPreview(): void {
-  if (PreloadedEntryPreview) return;
-
-  void import("./entry-preview").then(
-    (module) => {
-      PreloadedEntryPreview = module.EntryPreview;
-    },
-    () => {
-      // A failed warm is not fatal: the lazy boundary below retries it, and the
-      // panel then arrives a frame after the toggle instead of with it.
-    },
-  );
-}
-
-/** The preview column's shape while its chunk loads, so the listing beside it
- *  doesn't reflow when the panel lands. */
-function EntryPreviewSkeleton() {
-  return (
-    <aside className="flex h-full w-preview shrink-0 flex-col gap-3 overflow-hidden border-l border-border p-3">
-      <Skeleton className="h-5 w-2/3" />
-      <Skeleton className="min-h-48 flex-1 rounded-lg" />
-      <Skeleton className="h-16 shrink-0 rounded-lg" />
-    </aside>
-  );
-}
 
 interface ExplorerViewProps {
   navigator: ExplorerNavigator;
@@ -217,6 +171,14 @@ export function ExplorerView({
   // strip is still its own.
   const statusOwner = useId();
   const setExplorerStatus = useSetAtom(explorerStatusAtom);
+  // The inspector is the window's third column too (right of the terminal
+  // drawer and the status strip, not above them), so the pane publishes the
+  // panel instead of painting it beside its listing. Same ownership rule: a
+  // pane may only clear the column while the column is still its own, which is
+  // what makes a split show the focused pane's inspector rather than a race
+  // between the two.
+  const inspectorOwner = useId();
+  const setInspector = useSetAtom(inspectorAtom);
   const notificationIds = useMemo(
     () => ({
       operationError: `explorer-operation-error-${paneNotificationId}`,
@@ -433,7 +395,7 @@ export function ExplorerView({
   // toggle away at the earliest. Deferred so long as the user never opens it,
   // a window sitting on the Overview never asks for it at all.
   useEffect(() => {
-    const frame = requestAnimationFrame(preloadEntryPreview);
+    const frame = requestAnimationFrame(preloadInspectorPanel);
     return () => cancelAnimationFrame(frame);
   }, []);
 
@@ -546,6 +508,12 @@ export function ExplorerView({
   // spends the duration below `--pane-alpha` and the desktop shows through.
   const togglePreview = useCallback(() => {
     setIsPreviewOpen((open) => !open);
+  }, []);
+
+  /** The collapse control in the window's inspector column: the flag lives in
+   *  the pane, so the panel reaches it through the published snapshot. */
+  const closePreview = useCallback(() => {
+    setIsPreviewOpen(false);
   }, []);
 
   /** Duplicates the selection in place; the backend picks unique "副本" names. */
@@ -872,6 +840,42 @@ export function ExplorerView({
     [setExplorerStatus, statusOwner],
   );
 
+  // Publish the inspector for the window's third column, under the same rules
+  // as the strip above: only the focused pane speaks, a pane that loses focus
+  // clears only its own claim, and a selection change republishes. The panel
+  // and the actions its buttons run belong to this pane — the window only owns
+  // the 300px it is painted in.
+  useEffect(() => {
+    if (!isActivePane) {
+      setInspector((current) => (current?.owner === inspectorOwner ? null : current));
+      return;
+    }
+
+    setInspector({
+      owner: inspectorOwner,
+      isOpen: isPreviewOpen,
+      entries: selectedEntries,
+      onClose: closePreview,
+      onOpen: openSelectedEntries,
+    });
+  }, [
+    closePreview,
+    inspectorOwner,
+    isPreviewOpen,
+    openSelectedEntries,
+    selectedEntries,
+    setInspector,
+  ]);
+
+  // Same teardown rule: a collapsed split or a closed tab takes its panel with
+  // it instead of leaving the last selection up beside another pane.
+  useEffect(
+    () => () => {
+      setInspector((current) => (current?.owner === inspectorOwner ? null : current));
+    },
+    [inspectorOwner, setInspector],
+  );
+
   return (
     <main className="h-full" data-explorer-container="true">
       <section className="flex h-full w-full flex-col overflow-hidden">
@@ -938,8 +942,11 @@ export function ExplorerView({
             nothing to show: an unreadable directory, below. */}
 
         {directory ? (
-          <div className="flex min-h-0 flex-1">
-            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+          // The listing stopped being a row of two columns: the inspector is now
+          // the window's third column (`inspector-panel.tsx`), so nothing here
+          // competes with the listing for width. The pane publishes the panel
+          // instead of painting one.
+          <div className="relative flex min-h-0 flex-1 flex-col">
               {isContentSearchActive ? (
                 <ContentSearchResults
                   error={contentSearch.error}
@@ -1043,23 +1050,6 @@ export function ExplorerView({
                   selectedCount={selectedPaths.length}
                 />
               )}
-            </div>
-            {isPreviewOpen &&
-              (PreloadedEntryPreview ? (
-                <PreloadedEntryPreview
-                  entries={selectedEntries}
-                  onClose={() => setIsPreviewOpen(false)}
-                  onOpen={() => openSelectedEntries()}
-                />
-              ) : (
-                <Suspense fallback={<EntryPreviewSkeleton />}>
-                  <LazyEntryPreview
-                    entries={selectedEntries}
-                    onClose={() => setIsPreviewOpen(false)}
-                    onOpen={() => openSelectedEntries()}
-                  />
-                </Suspense>
-              ))}
           </div>
         ) : state.error ? (
           <div className="p-4">

@@ -34,6 +34,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { WindowControls } from "@/components/window-controls";
 import { commands, events } from "@/bindings";
 import { FocusedPaneStatusBar } from "@/features/explorer/explorer-chrome";
+import { InspectorPanel } from "@/features/explorer/inspector-panel";
 import { Sidebar } from "@/features/sidebar/sidebar";
 import { formatBinding } from "@/features/settings/shortcut-registry";
 import { useBinding } from "@/features/settings/settings-atoms";
@@ -582,7 +583,14 @@ export function ExplorerTabs() {
           and the listing sit on the window's own void, divided by whitespace and
           by the toolbar's hairline. The paper plate (`content-panel`) and the
           10px gutters it needed are gone with it, which returns 20px of width
-          and 20px of height to the listing. */}
+          and 20px of height to the listing.
+
+          The row is three columns: `rail | main | inspector`. The inspector is
+          a sibling of `main`, not a child of it, so the terminal drawer and the
+          status strip — both of which live in `main` — end at its hairline
+          instead of running under it. Which pane's inspector that column shows
+          is arbitrated by `inspectorAtom` (the focused pane publishes; see
+          `inspector-panel.tsx`). */}
       <div className="flex min-h-0 flex-1 bg-chrome">
         <Sidebar />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -627,6 +635,9 @@ export function ExplorerTabs() {
               row, and `FocusedPaneStatusBar` is the only subscriber. */}
           <FocusedPaneStatusBar />
         </div>
+        {/* The reference's third column: full height beside `main`, so the
+            inspector runs from the tab strip down past the terminal drawer. */}
+        <InspectorPanel />
       </div>
     </div>
   );
