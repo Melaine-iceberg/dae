@@ -1,0 +1,32 @@
+appId: com.melaine.dae.phase0
+productName: dae-phase0
+copyright: Copyright © 2026 melaine
+
+directories:
+  output: dist-electron
+
+# Phase 0 has no runtime npm dependencies: main/preload/core use Node built-ins
+# plus the .node addon. Excluding node_modules keeps the app.asar small enough
+# that the acceptance run is about the bridge, not about packing React.
+files:
+  - electron/**/*
+  - native/dae_core_phase0.node
+  - package.json
+  - "!node_modules/**/*"
+
+# The addon cannot be loaded from inside an asar, and the core entry runs in a
+# utility process, which needs a real path on disk too.
+asarUnpack:
+  - native/**/*
+  - electron/core/**/*
+
+npmRebuild: false
+
+# Use the Electron distribution already downloaded by node_modules/electron
+# instead of letting electron-builder fetch it from GitHub again. Phase 0 is
+# Windows-only; the real migration removes this and pins per-platform downloads.
+electronDist: node_modules/electron/dist
+
+win:
+  target:
+    - dir

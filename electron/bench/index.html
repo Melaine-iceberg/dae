@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>dae phase 0</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>dae <span>Phase 0</span></h1>
+      <div id="versions">loading…</div>
+    </header>
+
+    <main>
+      <section id="bench" hidden>
+        <div class="row spread">
+          <strong>Acceptance</strong>
+          <span id="bench-status" class="pill">booting</span>
+        </div>
+        <pre id="bench-summary"></pre>
+        <div id="bench-log" class="log"></div>
+      </section>
+
+      <section id="demo">
+        <div class="panel">
+          <div class="row">
+            <label for="dir-input">Directory</label>
+            <input id="dir-input" spellcheck="false" />
+            <button id="list-button">List</button>
+          </div>
+          <div id="list-meta" class="meta"></div>
+          <pre id="list-output" class="list"></pre>
+        </div>
+
+        <div class="panel">
+          <div class="row">
+            <label for="images-input">Images</label>
+            <input id="images-input" spellcheck="false" />
+            <button id="thumbs-button">Thumbnails</button>
+          </div>
+          <div id="thumbs-meta" class="meta"></div>
+          <div id="thumbs" class="thumbs"></div>
+        </div>
+
+        <div class="panel">
+          <div class="row spread">
+            <strong>Terminal</strong>
+            <button id="terminal-button">Start</button>
+          </div>
+          <pre id="terminal-output" class="terminal"></pre>
+          <div class="row">
+            <input id="terminal-input" placeholder="Type a command and press Enter" spellcheck="false" />
+            <button id="terminal-send">Send</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      window.addEventListener("error", (event) => {
+        console.error("PAGE ERROR", event.message, event.filename, event.lineno);
+      });
+      window.addEventListener("unhandledrejection", (event) => {
+        console.error("PAGE REJECTION", event.reason?.stack || event.reason);
+      });
+      console.log("[page] scripts starting");
+    </script>
+    <script src="./app.js"></script>
+  </body>
+</html>
