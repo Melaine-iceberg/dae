@@ -70,6 +70,20 @@ const deferredActivations = [];
 // sent them and routes messages back to that window only.
 const channelOwners = new Map();
 
+// Tear-off windows: the label counter, the handoff payloads the renderer
+// drains on boot, and the one pre-warmed hidden window kept ready in the pool.
+let tabWindowSeq = 0;
+const tabHandoffs = new Map();
+const tabPool = {
+  enabled: false,
+  label: null,
+  window: null,
+  state: "none",
+  readyTimer: null,
+  replenishTimer: null,
+};
+let tabDragSession = null;
+
 // Main-thread event-loop lag. The acceptance page resets it before each phase
 // and reads it after, so a payload that blocks main shows up as a number
 // instead of a vague feeling that the app is slow.
@@ -376,6 +390,13 @@ function coreRequest(command, args, { raw = false, timeoutMs = 120_000 } = {}) {
   });
 }
 
+// `coreRequest` hands back the JSON text the renderer bridge would parse; main
+// callers that need the value itself go through this.
+async function coreRequestJson(command, args, options) {
+  const data = await coreRequest(command, args, options);
+  return typeof data === "string" ? JSON.parse(data) : data;
+}
+
 function broadcastEvent(event) {
   if (!event) return;
   const payload = {
@@ -438,6 +459,284 @@ function sendWindowEvent(window, name, payload) {
     payloadJson: JSON.stringify(payload ?? null),
     data: null,
   });
+}
+
+function liveWindow(label) {
+  const window = windowsByLabel.get(label);
+  return window && !window.isDestroyed() ? window : null;
+}
+
+function nextTabLabel() {
+  tabWindowSeq += 1;
+  return `tab-${tabWindowSeq}`;
+}
+
+// Pointer coordinates cross the IPC boundary in physical pixels (the drag
+// gesture reads Tauri's coordinate space); Electron windows and `screen` speak
+// DIP, so the conversion happens here and nowhere else.
+function cursorDip(cursorX, cursorY) {
+  if (Number.isFinite(cursorX) && Number.isFinite(cursorY)) {
+    const point = { x: Number(cursorX), y: Number(cursorY) };
+    const scale = screen.getDisplayNearestPoint(point).scaleFactor;
+    return { x: point.x / scale, y: point.y / scale };
+  }
+  return screen.getCursorScreenPoint();
+}
+
+function tabWindowBounds(sourceWindow, grabX, grabY, cursorX, cursorY) {
+  const [width, height] = sourceWindow.getContentSize();
+  const cursor = cursorDip(cursorX, cursorY);
+  const display = screen.getDisplayNearestPoint(cursor);
+  const area = display.workArea;
+  const x = Math.min(
+    Math.max(Math.round(cursor.x - (Number(grabX) || 0)), area.x),
+    area.x + Math.max(area.width - width, 0),
+  );
+  const y = Math.min(
+    Math.max(Math.round(cursor.y - (Number(grabY) || 0)), area.y),
+    area.y + Math.max(area.height - height, 0),
+  );
+  return { x, y, width, height };
+}
+
+function cursorInWindow(cursor, window, { content = true } = {}) {
+  const bounds = content ? window.getContentBounds() : window.getBounds();
+  const x = cursor.x - bounds.x;
+  const y = cursor.y - bounds.y;
+  return {
+    x,
+    y,
+    inside: x >= 0 && y >= 0 && x < bounds.width && y < bounds.height,
+  };
+}
+
+function windowAt(cursor, excludeLabel) {
+  let hit = null;
+  for (const window of windowsByLabel.values()) {
+    if (window.isDestroyed() || !window.isVisible()) continue;
+    if (window.daeLabel === excludeLabel) continue;
+    if (window.daePool) continue;
+    if (!cursorInWindow(cursor, window).inside) continue;
+    // Later windows sit above earlier ones; keeping the last hit approximates
+    // Electron's z-order without reaching for a native hit test.
+    hit = window;
+  }
+  return hit;
+}
+
+function clearTabPoolReferences(label) {
+  if (tabPool.label !== label) return;
+  if (tabPool.readyTimer) clearTimeout(tabPool.readyTimer);
+  if (tabPool.replenishTimer) clearTimeout(tabPool.replenishTimer);
+  tabPool.label = null;
+  tabPool.window = null;
+  tabPool.state = "none";
+  tabPool.readyTimer = null;
+  tabPool.replenishTimer = null;
+}
+
+function disposeTabPool() {
+  const window = tabPool.window;
+  clearTabPoolReferences(tabPool.label);
+  if (window && !window.isDestroyed()) {
+    tabPool.window = null;
+    window.close();
+  }
+}
+
+function primeTabPool() {
+  if (!tabPool.enabled || tabPool.window || shuttingDown) return;
+  const label = nextTabLabel();
+  const window = createWindow({ label, pool: true });
+  tabPool.label = label;
+  tabPool.window = window;
+  tabPool.state = "booting";
+  tabPool.readyTimer = setTimeout(() => {
+    // A pool window that never reported ready would otherwise sit around
+    // invisible forever; tear-off would never get its fast path.
+    if (tabPool.state === "booting") disposeTabPool();
+  }, 15_000);
+  tabPool.readyTimer.unref?.();
+}
+
+function scheduleTabPoolReplenish() {
+  if (!tabPool.enabled || tabPool.window || shuttingDown) return;
+  if (tabPool.replenishTimer) clearTimeout(tabPool.replenishTimer);
+  tabPool.replenishTimer = setTimeout(() => {
+    tabPool.replenishTimer = null;
+    primeTabPool();
+  }, 800);
+  tabPool.replenishTimer.unref?.();
+}
+
+function adoptPoolWindow(bounds, payload) {
+  const window = tabPool.window;
+  const label = tabPool.label;
+  clearTabPoolReferences(label);
+  tabPool.window = null;
+
+  window.daePool = false;
+  window.setSkipTaskbar(false);
+  window.setBounds(bounds);
+  window.show();
+  window.focus();
+  sendWindowEvent(window, "tab-adopted-into-window", { payload });
+  scheduleTabPoolReplenish();
+  return label;
+}
+
+function tearOffTab(args) {
+  const source = liveWindow(String(args?.source ?? "main")) ?? [...windowsByLabel.values()].find(
+    (window) => !window.isDestroyed() && !window.daePool,
+  );
+  if (!source) throw new Error("tear_off_tab has no source window");
+
+  const payload = String(args?.payload ?? "");
+  const bounds = tabWindowBounds(
+    source,
+    args?.grabX,
+    args?.grabY,
+    args?.cursorX,
+    args?.cursorY,
+  );
+
+  if (tabPool.state === "ready" && tabPool.window && !tabPool.window.isDestroyed()) {
+    return adoptPoolWindow(bounds, payload);
+  }
+
+  const label = nextTabLabel();
+  tabHandoffs.set(label, payload);
+  createWindow({ label, bounds });
+  scheduleTabPoolReplenish();
+  return label;
+}
+
+function mergeTabIntoWindow(args) {
+  const window = liveWindow(String(args?.target ?? ""));
+  if (!window) throw new Error(`merge_tab_into_window: no window ${String(args?.target)}`);
+  sendWindowEvent(window, "tab-merged-into-window", {
+    payload: args?.payload ?? null,
+    x: typeof args?.x === "number" ? args.x : null,
+  });
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+}
+
+async function startTabDrag(args) {
+  const source = liveWindow(String(args?.source ?? "main"));
+  if (!source) return { released: false, outside: false, target: null, targetX: null, targetY: null, cursorX: null, cursorY: null };
+
+  // Linux has no process-wide pointer-button state exposed to Electron. The
+  // frontend-bounds path already knows the gesture was released outside, so
+  // settle it with a detach instead of holding a session that cannot end.
+  if (process.platform === "linux") {
+    const cursor = screen.getCursorScreenPoint();
+    const scale = displayScaleFactor(source);
+    return {
+      released: true,
+      outside: true,
+      target: null,
+      targetX: null,
+      targetY: null,
+      cursorX: Math.round(cursor.x * scale),
+      cursorY: Math.round(cursor.y * scale),
+    };
+  }
+
+  if (tabDragSession) {
+    clearInterval(tabDragSession.timer);
+    tabDragSession = null;
+  }
+
+  const session = { source, hover: null, timer: null };
+  const pollHover = () => {
+    if (source.isDestroyed()) return;
+    const cursor = screen.getCursorScreenPoint();
+    const target = windowAt(cursor, source.daeLabel);
+    if (target === session.hover) return;
+
+    if (session.hover && !session.hover.isDestroyed()) {
+      sendWindowEvent(session.hover, "tab-drag-leave", null);
+    }
+    session.hover = target;
+    if (target) {
+      const point = cursorInWindow(cursor, target);
+      sendWindowEvent(target, "tab-drag-hover", { x: point.x });
+    }
+  };
+
+  pollHover();
+  session.timer = setInterval(pollHover, 60);
+  tabDragSession = session;
+
+  let released = false;
+  try {
+    released = await coreRequestJson("wait_for_tab_drag_release", { timeoutMs: 60_000 }, {
+      timeoutMs: 65_000,
+    });
+  } catch (error) {
+    console.error(`[main] tab drag wait failed: ${error}`);
+  } finally {
+    clearInterval(session.timer);
+    if (tabDragSession === session) tabDragSession = null;
+    if (session.hover && !session.hover.isDestroyed()) {
+      sendWindowEvent(session.hover, "tab-drag-leave", null);
+    }
+  }
+
+  const cursor = screen.getCursorScreenPoint();
+  const scale = displayScaleFactor(source);
+  const cursorX = Math.round(cursor.x * scale);
+  const cursorY = Math.round(cursor.y * scale);
+
+  if (!released) {
+    return {
+      released: false,
+      outside: false,
+      target: null,
+      targetX: null,
+      targetY: null,
+      cursorX,
+      cursorY,
+    };
+  }
+
+  if (cursorInWindow(cursor, source, { content: false }).inside) {
+    return {
+      released: true,
+      outside: false,
+      target: null,
+      targetX: null,
+      targetY: null,
+      cursorX,
+      cursorY,
+    };
+  }
+
+  const target = windowAt(cursor, source.daeLabel);
+  const point = target ? cursorInWindow(cursor, target) : null;
+  return {
+    released: true,
+    outside: true,
+    target: target ? target.daeLabel : null,
+    targetX: point ? point.x : null,
+    targetY: point ? point.y : null,
+    cursorX,
+    cursorY,
+  };
+}
+
+async function syncTabPool() {
+  let settings = null;
+  try {
+    settings = await coreRequestJson("load_settings", null);
+  } catch (error) {
+    console.error(`[main] tab pool setting read failed: ${error}`);
+  }
+  tabPool.enabled = Boolean(settings?.warmTabPool);
+  if (tabPool.enabled) primeTabPool();
+  else disposeTabPool();
 }
 
 function displayScaleFactor(window) {
@@ -597,6 +896,51 @@ function registerIpc() {
       return "null";
     }
 
+    // Tab tear-off owns window creation, which only the main process can do.
+    // Labels and handoffs stay here so a window can ask for its payload exactly
+    // once, after its renderer is listening.
+    if (command === "tear_off_tab") return JSON.stringify(tearOffTab(args));
+    if (command === "take_tab_handoff") {
+      const label = String(args?.label ?? "");
+      const payload = tabHandoffs.get(label) ?? null;
+      tabHandoffs.delete(label);
+      return JSON.stringify(payload);
+    }
+    if (command === "pool_window_ready") {
+      const label = String(args?.label ?? "");
+      if (label && label === tabPool.label && tabPool.state === "booting") {
+        if (tabPool.readyTimer) clearTimeout(tabPool.readyTimer);
+        tabPool.readyTimer = null;
+        tabPool.state = "ready";
+      }
+      return "null";
+    }
+    if (command === "sync_tab_pool") {
+      await syncTabPool();
+      return "null";
+    }
+    if (command === "merge_tab_into_window") {
+      mergeTabIntoWindow(args);
+      return "null";
+    }
+    if (command === "start_tab_drag") return JSON.stringify(await startTabDrag(args));
+    if (command === "tab_drag_outside") {
+      const window = liveWindow(String(args?.source ?? ""));
+      if (!window) return JSON.stringify(true);
+      const bounds = window.getBounds();
+      const cursor = screen.getCursorScreenPoint();
+      const inside =
+        cursor.x >= bounds.x &&
+        cursor.y >= bounds.y &&
+        cursor.x < bounds.x + bounds.width &&
+        cursor.y < bounds.y + bounds.height;
+      return JSON.stringify(!inside);
+    }
+    if (command === "tab_drag_uses_frontend_bounds") {
+      return JSON.stringify(process.platform === "linux");
+    }
+    if (command === "tab_drag_hover_ack") return "null";
+
     return coreRequest(command, args ?? null);
   });
 
@@ -732,19 +1076,25 @@ function registerIpc() {
   ipcMain.handle("dae:app:log-dir", () => logDirectory());
 }
 
-function createWindow() {
-  const label = "main";
+function createWindow({
+  label = "main",
+  bounds = null,
+  pool = false,
+} = {}) {
   windowMaterial = detectWindowMaterial();
 
   const options = {
-    width: 1180,
-    height: 820,
-    show: true,
+    width: bounds?.width ?? 1180,
+    height: bounds?.height ?? 820,
+    x: bounds?.x,
+    y: bounds?.y,
+    show: !pool,
     // A backdrop only exists if the window itself is transparent; otherwise
     // CSS would fade the canvas over an opaque plate.
     transparent: windowMaterialSupported(),
     backgroundColor: windowMaterialSupported() ? "#00000000" : "#101116",
     title: "dae",
+    skipTaskbar: pool,
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -754,6 +1104,7 @@ function createWindow() {
       additionalArguments: [
         `--dae-window-label=${label}`,
         `--dae-window-material=${windowMaterial}`,
+        `--dae-window-pool=${pool ? 1 : 0}`,
       ],
     },
   };
@@ -769,9 +1120,13 @@ function createWindow() {
   const window = new BrowserWindow(options);
 
   window.daeLabel = label;
+  window.daePool = pool;
   windowsByLabel.set(label, window);
   window.on("closed", () => {
     windowsByLabel.delete(label);
+    tabHandoffs.delete(label);
+    if (pool) clearTabPoolReferences(label);
+    if (label === "main") disposeTabPool();
     if (windowsByLabel.size === 0) app.quit();
   });
 
@@ -797,7 +1152,7 @@ function createWindow() {
   });
   window.webContents.on("did-finish-load", () => {
     console.log("[renderer] did-finish-load");
-    flushDeferredActivations();
+    if (label === "main") flushDeferredActivations();
   });
   window.webContents.on("did-fail-load", (_event, code, description, url) => {
     console.error(`[renderer] did-fail-load ${code} ${description} ${url}`);
@@ -817,6 +1172,7 @@ function createWindow() {
   });
 
   loadRenderer(window);
+  return window;
 }
 
 async function shutdownCore() {
@@ -871,6 +1227,9 @@ if (!app.requestSingleInstanceLock()) {
       registerRendererProtocol();
       createWindow();
       watchWindowBackdrop();
+      // Keep the tear-off fast path warm from launch, matching the Tauri shell's
+      // startup priming rather than waiting for the first settings save.
+      void syncTabPool();
       // The launch's own command line is the first activation (Windows/Linux).
       handleActivation(process.argv);
     } catch (error) {

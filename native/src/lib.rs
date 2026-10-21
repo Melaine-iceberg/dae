@@ -9,9 +9,11 @@
 //! file-system crate; the renderer calls these directly.
 
 mod disks;
+mod file_ops;
 mod listing;
 mod settings;
 mod shell;
+mod shell_commands;
 mod system;
 mod terminal;
 mod volumes;
@@ -70,7 +72,15 @@ fn event_tx() -> &'static mpsc::Sender<RawEvent> {
 }
 
 fn emit(event: RawEvent) {
-    let _ = event_tx().blocking_send(event);
+    let tx = event_tx();
+    // Commands emit from both blocking threads and the async runtime's own
+    // workers; `blocking_send` panics on the latter. Async callers use the
+    // non-blocking send and drop under a stalled pump instead of deadlocking.
+    if tokio::runtime::Handle::try_current().is_ok() {
+        let _ = tx.try_send(event);
+    } else {
+        let _ = tx.blocking_send(event);
+    }
 }
 
 pub(crate) fn emit_event(name: &str, payload_json: String) {
@@ -490,7 +500,58 @@ async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::
             Ok(serde_json::Value::Bool(terminal::kill(id)))
         }
 
-        other => Err(Error::from_reason(format!("unknown command: {other}"))),
+        "list_shell_commands" => {
+            let paths: Vec<String> = args
+                .get("paths")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| Error::from_reason(format!("list_shell_commands: {error}")))?
+                .unwrap_or_default();
+            let primary = required_string(&args, "primary")?;
+            let items = shell_commands::list_shell_commands(paths, primary)
+                .await
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(items).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "warm_shell_commands" => {
+            shell_commands::warm_shell_commands()
+                .await
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "invoke_shell_command" => {
+            let id = required_string(&args, "id")?;
+            let paths: Vec<String> = args
+                .get("paths")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| Error::from_reason(format!("invoke_shell_command: {error}")))?
+                .unwrap_or_default();
+            shell_commands::invoke_shell_command(id, paths)
+                .await
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "wait_for_tab_drag_release" => {
+            let timeout_ms = args
+                .get("timeoutMs")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(60_000);
+            Ok(serde_json::Value::Bool(
+                file_ops::wait_for_mouse_release(timeout_ms).await,
+            ))
+        }
+
+        other => match file_ops::dispatch(other, &args).await {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => Err(Error::from_reason(format!("unknown command: {other}"))),
+            Err(error) => Err(Error::from_reason(error)),
+        },
     }
 }
 

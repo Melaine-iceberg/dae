@@ -14,9 +14,18 @@ const windowMaterial = materialArgument
   ? materialArgument.slice(MATERIAL_PREFIX.length)
   : "none";
 
+const POOL_PREFIX = "--dae-window-pool=";
+const poolArgument = Array.isArray(process.argv)
+  ? process.argv.find((argument) => argument.startsWith(POOL_PREFIX))
+  : undefined;
+const poolWindow = poolArgument?.slice(POOL_PREFIX.length) === "1" ? 1 : 0;
+
 // The splash reads this global before the bundle evaluates, so it has to be in
 // the main world from the preload rather than fetched over IPC.
 contextBridge.exposeInMainWorld("__DAE_WINDOW_MATERIAL__", windowMaterial);
+// The pool bootstrap reads this before subscribing to adoption events; the
+// window must not be handed a tab until it says it is listening.
+contextBridge.exposeInMainWorld("__DAE_POOL_WINDOW", poolWindow);
 
 const listeners = new Set();
 const channelListeners = new Set();
