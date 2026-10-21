@@ -119,6 +119,19 @@ pub fn record(
     })
 }
 
+/// Removes one path from the recent list, returning the updated list.
+pub fn remove(path: String) -> Result<Vec<RecentItem>, FileSystemError> {
+    RECENTS.edit(&recents_path(), |items| {
+        items.retain(|item| item.path != path);
+        items.clone()
+    })
+}
+
+/// Clears the whole recent list. This never touches the files themselves.
+pub fn clear() -> Result<(), FileSystemError> {
+    RECENTS.edit(&recents_path(), |items| items.clear())
+}
+
 /// Inserts at the front after removing any existing entry for the same path,
 /// then enforces the cap.
 fn upsert_recent(items: &mut Vec<RecentItem>, item: RecentItem, cap: usize) {

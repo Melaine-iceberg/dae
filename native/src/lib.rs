@@ -11,7 +11,10 @@
 mod directory_size;
 mod disks;
 mod file_ops;
+mod hashing;
 mod listing;
+mod media_meta;
+mod preview;
 mod recents;
 mod search;
 mod settings;
@@ -376,6 +379,47 @@ async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::
             serde_json::to_value(items).map_err(|error| Error::from_reason(error.to_string()))
         }
 
+        "remove_recent" => {
+            let path = required_string(&args, "path")?;
+            let items = tokio::task::spawn_blocking(move || recents::remove(path))
+                .await
+                .map_err(|error| Error::from_reason(format!("recents join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(items).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "clear_recents" => {
+            tokio::task::spawn_blocking(recents::clear)
+                .await
+                .map_err(|error| Error::from_reason(format!("recents join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "read_text_preview" => {
+            let path = required_string(&args, "path")?;
+            let max_bytes = args
+                .get("maxBytes")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(256 * 1024) as u32;
+            let preview = tokio::task::spawn_blocking(move || {
+                preview::read_text_preview(path, max_bytes)
+            })
+            .await
+            .map_err(|error| Error::from_reason(format!("preview join: {error}")))?
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(preview).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "read_media_preview" => {
+            let path = required_string(&args, "path")?;
+            let preview = tokio::task::spawn_blocking(move || media_meta::read_media_preview(path))
+                .await
+                .map_err(|error| Error::from_reason(format!("media preview join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(preview).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
         "search_directory" => {
             let args: SearchDirectoryArgs = serde_json::from_value(args)
                 .map_err(|error| Error::from_reason(format!("invalid args: {error}")))?;
@@ -426,6 +470,20 @@ async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::
             let args: CancelDirectorySizeArgs = serde_json::from_value(args)
                 .map_err(|error| Error::from_reason(format!("invalid args: {error}")))?;
             directory_size::cancel(&args.operation_id);
+            Ok(serde_json::Value::Null)
+        }
+
+        "start_file_hash_calculation" => {
+            let operation_id = required_string(&args, "operationId")?;
+            let path = required_string(&args, "path")?;
+            hashing::start(operation_id, path)
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "cancel_file_hash_calculation" => {
+            let operation_id = required_string(&args, "operationId")?;
+            hashing::cancel(&operation_id);
             Ok(serde_json::Value::Null)
         }
 

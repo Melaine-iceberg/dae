@@ -16,6 +16,9 @@ dirs = "6"
 ignore = "0.4"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 log = "0.4"
+# MD5 + SHA-1 alongside `sha2` back the properties dialog's checksum tab;
+# all three share the `digest` trait, so one read updates every algorithm.
+md-5 = "0.11.0"
 napi = { version = "2", default-features = false, features = ["async", "napi8", "serde-json", "tokio_rt"] }
 napi-derive = "2"
 notify = "8.2.0"
@@ -23,6 +26,8 @@ portable-pty = "0.9"
 quick-xml = "0.42"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha1 = "0.11.0"
+sha2 = "0.11.0"
 sysinfo = { version = "0.39.2", default-features = false, features = ["disk"] }
 tokio = { version = "1", features = ["sync", "rt", "time", "net"] }
 toml = "1.1.5"
