@@ -1,0 +1,251 @@
+//! Streaming folder-size calculation for the explorer's detail view.
+//!
+//! Folder sizes need a recursive scan, so they cannot ship with the `read_dir`
+//! snapshot without blocking the listing. The renderer requests sizes for the
+//! visible folders after paint and receives partial totals as
+//! `explorer-directory-size-progress` events while each scan runs, mirroring
+//! Windows Explorer's size column.
+
+use dae_core::file_system::types::path_to_string;
+use dae_core::file_system::vfs;
+use ignore::{WalkBuilder, WalkState};
+use serde::Serialize;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
+use std::sync::{Arc, LazyLock, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// How often partial totals are pushed to the UI while a scan runs.
+const SIZE_PROGRESS_INTERVAL_MS: u64 = 250;
+const PROGRESS_EVENT: &str = "explorer-directory-size-progress";
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DirectorySizeProgress {
+    operation_id: String,
+    path: String,
+    size: u64,
+    /// False while the scan runs (partial total); true on the final total.
+    completed: bool,
+}
+
+/// Live scans keyed by operation id, so navigating away can stop a scan.
+#[derive(Default)]
+struct DirectorySizeState {
+    operations: Mutex<HashMap<String, Arc<AtomicBool>>>,
+}
+
+impl DirectorySizeState {
+    fn register(&self, operation_id: &str) -> Arc<AtomicBool> {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        self.lock()
+            .insert(operation_id.to_owned(), Arc::clone(&cancelled));
+        cancelled
+    }
+
+    fn forget(&self, operation_id: &str) {
+        self.lock().remove(operation_id);
+    }
+
+    fn cancel(&self, operation_id: &str) {
+        if let Some(cancelled) = self.lock().remove(operation_id) {
+            cancelled.store(true, AtomicOrdering::Release);
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<AtomicBool>>> {
+        self.operations
+            .lock()
+            .expect("directory size state lock poisoned")
+    }
+}
+
+static OPERATIONS: LazyLock<DirectorySizeState> = LazyLock::new(DirectorySizeState::default);
+
+/// Starts a background size scan for the given local directories. Partial
+/// totals stream as events until each directory finishes with
+/// `completed: true`. Non-local paths and non-directories are skipped quietly;
+/// the caller cancels the operation when the view changes.
+pub fn start(operation_id: String, paths: Vec<String>) -> Result<(), String> {
+    let directories: Vec<PathBuf> = paths
+        .iter()
+        .filter(|path| vfs::is_local_path(path))
+        .map(PathBuf::from)
+        .filter(|path| path.is_dir())
+        .collect();
+
+    if directories.is_empty() {
+        return Ok(());
+    }
+
+    let cancelled = OPERATIONS.register(&operation_id);
+    let done_operation_id = operation_id.clone();
+
+    std::thread::Builder::new()
+        .name("dae-directory-size".into())
+        .spawn(move || {
+            for directory in directories {
+                if cancelled.load(AtomicOrdering::Acquire) {
+                    break;
+                }
+                scan_directory(&operation_id, &directory, &cancelled);
+            }
+            OPERATIONS.forget(&done_operation_id);
+        })
+        .map_err(|error| format!("directory size thread: {error}"))?;
+
+    Ok(())
+}
+
+/// Stops an in-flight size scan when the view navigates away.
+pub fn cancel(operation_id: &str) {
+    OPERATIONS.cancel(operation_id);
+}
+
+/// Sums every file under `directory` with a parallel walk, streaming partial
+/// totals. Symlinks are never followed, so symlink loops cannot hang a scan.
+fn scan_directory(operation_id: &str, directory: &Path, cancelled: &AtomicBool) {
+    let last_emit_ms = AtomicU64::new(0);
+    let total = walk_directory_size(directory, cancelled, &|current| {
+        emit_size(operation_id, directory, current, &last_emit_ms, false);
+    });
+
+    if !cancelled.load(AtomicOrdering::Relaxed) {
+        emit_size(operation_id, directory, total, &last_emit_ms, true);
+    }
+}
+
+/// Walks `directory` in parallel and sums the bytes of every regular file,
+/// reporting the running total to `progress` after each counted file.
+/// Returns the final total; a pre-set or mid-walk `cancelled` flag stops the
+/// traversal early (the returned sum is then partial).
+pub(crate) fn walk_directory_size(
+    directory: &Path,
+    cancelled: &AtomicBool,
+    progress: &(dyn Fn(u64) + Send + Sync),
+) -> u64 {
+    let total = AtomicU64::new(0);
+
+    let mut builder = WalkBuilder::new(directory);
+    // Count everything the shell would, including hidden files; none of the
+    // standard ignore filters apply to a size report.
+    builder
+        .standard_filters(false)
+        .hidden(false)
+        .follow_links(false);
+
+    builder.build_parallel().run(|| {
+        Box::new(|result| {
+            if cancelled.load(AtomicOrdering::Relaxed) {
+                return WalkState::Quit;
+            }
+
+            if let Ok(entry) = result
+                && entry
+                    .file_type()
+                    .is_some_and(|file_type| file_type.is_file())
+                && let Ok(metadata) = entry.metadata()
+            {
+                let length = metadata.len();
+                let current = total.fetch_add(length, AtomicOrdering::Relaxed) + length;
+                progress(current);
+            }
+
+            WalkState::Continue
+        })
+    });
+
+    total.load(AtomicOrdering::Relaxed)
+}
+
+/// Emits a running total at most once per throttle window. The
+/// compare-exchange lets exactly one walker thread win each window without a
+/// lock on the hot path.
+fn emit_size(operation_id: &str, path: &Path, size: u64, last_emit_ms: &AtomicU64, force: bool) {
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0);
+    let last_ms = last_emit_ms.load(AtomicOrdering::Relaxed);
+
+    if !force {
+        if now_ms < last_ms + SIZE_PROGRESS_INTERVAL_MS {
+            return;
+        }
+        if last_emit_ms
+            .compare_exchange(
+                last_ms,
+                now_ms,
+                AtomicOrdering::AcqRel,
+                AtomicOrdering::Relaxed,
+            )
+            .is_err()
+        {
+            return;
+        }
+    }
+
+    let payload = DirectorySizeProgress {
+        operation_id: operation_id.to_owned(),
+        path: path_to_string(path),
+        size,
+        completed: force,
+    };
+    if let Ok(payload) = serde_json::to_string(&payload) {
+        crate::emit_event(PROGRESS_EVENT, payload);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn walks_directory_sizes_including_nested_and_hidden_files() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-folder-size-test-{}", std::process::id()));
+        let nested = directory.join("nested");
+        fs::create_dir_all(&nested).expect("create test directory");
+        fs::write(directory.join("root.txt"), "root").expect("write root file");
+        fs::write(directory.join(".hidden"), "hidden!").expect("write hidden file");
+        fs::write(nested.join("leaf.bin"), "leaf-content").expect("write nested file");
+
+        let cancelled = AtomicBool::new(false);
+        let last_reported = AtomicU64::new(0);
+        let report_count = AtomicU64::new(0);
+
+        let total = walk_directory_size(&directory, &cancelled, &|current| {
+            last_reported.store(current, AtomicOrdering::Relaxed);
+            report_count.fetch_add(1, AtomicOrdering::Relaxed);
+        });
+
+        // Every file — including the hidden and the nested one — is counted
+        // exactly once, so the last progress report carries the final total.
+        assert_eq!(total, 4 + 7 + 12);
+        assert_eq!(last_reported.load(AtomicOrdering::Relaxed), total);
+        assert_eq!(report_count.load(AtomicOrdering::Relaxed), 3);
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+
+    #[test]
+    fn cancels_directory_size_walks_before_they_start() {
+        let directory =
+            std::env::temp_dir().join(format!("dae-folder-size-cancel-{}", std::process::id()));
+        fs::create_dir_all(&directory).expect("create test directory");
+        fs::write(directory.join("file.txt"), "content").expect("write file");
+
+        let cancelled = AtomicBool::new(true);
+        let report_count = AtomicU64::new(0);
+        let total = walk_directory_size(&directory, &cancelled, &|_| {
+            report_count.fetch_add(1, AtomicOrdering::Relaxed);
+        });
+
+        assert_eq!(total, 0);
+        assert_eq!(report_count.load(AtomicOrdering::Relaxed), 0);
+
+        fs::remove_dir_all(directory).expect("remove test directory");
+    }
+}

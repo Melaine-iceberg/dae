@@ -8,9 +8,12 @@
 //! PTY sessions and image thumbnail decoding stay here because `dae-core` is a
 //! file-system crate; the renderer calls these directly.
 
+mod directory_size;
 mod disks;
 mod file_ops;
 mod listing;
+mod recents;
+mod search;
 mod settings;
 mod shell;
 mod shell_commands;
@@ -216,6 +219,44 @@ struct CancelListingArgs {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RecordRecentArgs {
+    path: String,
+    kind: dae_core::file_system::types::EntryKind,
+    source: recents::RecentSource,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DirectorySizeArgs {
+    operation_id: String,
+    paths: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CancelDirectorySizeArgs {
+    operation_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchDirectoryArgs {
+    path: String,
+    query: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SearchFileContentsArgs {
+    path: String,
+    query: String,
+    is_regex: bool,
+    case_sensitive: bool,
+    file_filter: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct TerminalCreateArgs {
     cwd: Option<String>,
     cols: u16,
@@ -312,6 +353,79 @@ async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::
             let args: CancelListingArgs = serde_json::from_value(args)
                 .map_err(|error| Error::from_reason(format!("invalid args: {error}")))?;
             listing::cancel(&args.stream_id);
+            Ok(serde_json::Value::Null)
+        }
+
+        "list_recents" => {
+            let items = tokio::task::spawn_blocking(recents::list)
+                .await
+                .map_err(|error| Error::from_reason(format!("recents join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(items).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "record_recent" => {
+            let args: RecordRecentArgs = serde_json::from_value(args)
+                .map_err(|error| Error::from_reason(format!("invalid args: {error}")))?;
+            let items = tokio::task::spawn_blocking(move || {
+                recents::record(args.path, args.kind, args.source)
+            })
+            .await
+            .map_err(|error| Error::from_reason(format!("recents join: {error}")))?
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(items).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "search_directory" => {
+            let args: SearchDirectoryArgs = serde_json::from_value(args)
+                .map_err(|error| Error::from_reason(format!("invalid args: {error}")))?;
+            let generation = search::begin();
+            let response = tokio::task::spawn_blocking(move || {
+                search::directory(args.path, args.query, generation)
+            })
+            .await
+            .map_err(|error| Error::from_reason(format!("search join: {error}")))?
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(response).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "search_file_contents" => {
+            let args: SearchFileContentsArgs = serde_json::from_value(args)
+                .map_err(|error| Error::from_reason(format!("invalid args: {error}")))?;
+            let generation = search::begin();
+            let response = tokio::task::spawn_blocking(move || {
+                search::file_contents(
+                    args.path,
+                    args.query,
+                    args.is_regex,
+                    args.case_sensitive,
+                    args.file_filter,
+                    generation,
+                )
+            })
+            .await
+            .map_err(|error| Error::from_reason(format!("search join: {error}")))?
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(response).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "cancel_search" => {
+            search::cancel();
+            Ok(serde_json::Value::Null)
+        }
+
+        "start_directory_size_calculation" => {
+            let args: DirectorySizeArgs = serde_json::from_value(args)
+                .map_err(|error| Error::from_reason(format!("invalid args: {error}")))?;
+            directory_size::start(args.operation_id, args.paths)
+                .map_err(Error::from_reason)?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "cancel_directory_size_calculation" => {
+            let args: CancelDirectorySizeArgs = serde_json::from_value(args)
+                .map_err(|error| Error::from_reason(format!("invalid args: {error}")))?;
+            directory_size::cancel(&args.operation_id);
             Ok(serde_json::Value::Null)
         }
 
@@ -442,9 +556,10 @@ async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::
                 .map_err(|error| Error::from_reason(error.to_string()))
         }
 
-        // The workspace stores still live in the Tauri shell. Empty lists let
-        // the real renderer paint its empty states instead of error panels.
-        "load_favorites" | "list_recents" | "list_spaces" => {
+        // The remaining workspace stores still live in the Tauri shell. Empty
+        // lists let the real renderer paint its empty states instead of error
+        // panels.
+        "load_favorites" | "list_spaces" => {
             Ok(serde_json::Value::Array(Vec::new()))
         }
 

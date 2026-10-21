@@ -13,6 +13,7 @@ name = "dae_core_native"
 base64 = "0.23.1"
 dae-core = { path = "../src-tauri/crates/dae-core" }
 dirs = "6"
+ignore = "0.4"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 log = "0.4"
 napi = { version = "2", default-features = false, features = ["async", "napi8", "serde-json", "tokio_rt"] }

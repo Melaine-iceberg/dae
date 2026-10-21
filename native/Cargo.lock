@@ -733,6 +733,7 @@ dependencies = [
  "base64",
  "dae-core",
  "dirs",
+ "ignore",
  "image",
  "log",
  "napi",
