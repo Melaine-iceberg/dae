@@ -243,9 +243,9 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
       )}
 
       {space === null ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="flex flex-col gap-0.5">
           {Array.from({ length: 3 }, (_, index) => (
-            <Skeleton className="h-location-card rounded-md" key={index} />
+            <Skeleton className="h-9 rounded-md" key={index} />
           ))}
         </div>
       ) : space.items.length === 0 ? (
@@ -261,7 +261,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="flex flex-col gap-0.5">
           {space.items.map((item) => (
             <ContextMenu key={item.path}>
               <ContextMenuTrigger>

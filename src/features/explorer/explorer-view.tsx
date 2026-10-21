@@ -184,7 +184,18 @@ export function ExplorerView({
   const toggleFavorite = useSetAtom(toggleFavoriteAtom);
   const addFavoritePaths = useSetAtom(addFavoritePathsAtom);
   const [sidebarVisible, setSidebarVisible] = useAtom(sidebarVisibleAtom);
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  // The inspector is the reference's canonical layout — list on the left, the
+  // facts about the selection on the right — so a single-pane folder opens
+  // with it. A split pane does not: 300px of inspector out of ~600 is not an
+  // inspector, it is a second column of chrome. Neither does a window narrower
+  // than 1180px, where the panel would leave the listing under 400px; there
+  // the user can still ask for it by hand. `splitEnabled` is only read for the
+  // initial value; after that the toggle belongs to the user.
+  const [isPreviewOpen, setIsPreviewOpen] = useState(
+    () =>
+      !splitEnabled &&
+      (typeof window === "undefined" || !window.matchMedia("(max-width: 1180px)").matches),
+  );
   const [searchMode, setSearchMode] = useState<ExplorerSearchMode>("name");
   /** Bumped by Ctrl+L / Alt+D; the path bar edits on every increment. The
    *  signal is pane-local, so in a split only the active pane's bar reacts. */
@@ -421,12 +432,25 @@ export function ExplorerView({
     return () => cancelAnimationFrame(frame);
   }, []);
 
-  // A new directory/query also resets the view-local surfaces that neither
-  // the dialog hook nor the selection hook owns: the error banner and the
-  // preview pane.
+  // Crossing into a window too narrow for the canonical three-column layout
+  // closes the inspector. It never re-opens itself: re-opening on the way back
+  // up would fight a user who deliberately closed it at a wide size.
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 1180px)");
+    const onChange = (event: MediaQueryListEvent) => {
+      if (event.matches) setIsPreviewOpen(false);
+    };
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+
+  // A new directory/query resets the error banner. The preview pane is not
+  // reset with it any more: the inspector is a *panel* the user opened, and
+  // collapsing it on every navigation made the reference's canonical
+  // list-plus-inspector layout impossible to keep — every folder click threw
+  // it away, including the very first one after the window opened.
   useEffect(() => {
     setOperationError(null);
-    setIsPreviewOpen(false);
   }, [directoryPath, search.query, setOperationError]);
 
   const retry = () => {

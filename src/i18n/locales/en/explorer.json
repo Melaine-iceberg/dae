@@ -451,6 +451,12 @@
     "iconThemed": "Built-in icons",
     "rowThumbnails": "Thumbnails in lists and columns"
   },
+  "titleBar": {
+    "commandBarAria": "Open command bar",
+    "commandBarTitle": "Search or run a command ({{shortcut}})",
+    "commandBarLabel": "Search or run a command",
+    "commandBarShort": "Search"
+  },
   "tabs": {
     "ariaLabel": "File tabs",
     "scrollLeft": "Scroll tabs left",
@@ -490,7 +496,7 @@
     "contentAriaLabel": "Search file contents in “{{scope}}”",
     "nameAriaLabel": "Search files and folders in “{{scope}}”",
     "contentPlaceholder": "Search in contents",
-    "namePlaceholder": "Search {{scope}}",
+    "namePlaceholder": "Filter",
     "contentTitle": "Recursively search file contents in “{{scope}}” (regex optional)",
     "nameTitle": "Recursively search file names under “{{scope}}”",
     "switchToName": "Switch to search by name",

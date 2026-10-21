@@ -24,15 +24,23 @@ import {
   CloseIcon,
   HistoryIcon,
   HomeIcon,
+  MagnifierIcon,
   StarIcon,
   TrashBinTrashIcon,
   WidgetIcon,
 } from "@solar-icons/react/linear";
 
+import { Kbd } from "@/components/ui/kbd";
 import { WindowControls } from "@/components/window-controls";
 import { commands, events } from "@/bindings";
 import { Sidebar } from "@/features/sidebar/sidebar";
+import { formatBinding } from "@/features/settings/shortcut-registry";
+import { useBinding } from "@/features/settings/settings-atoms";
 import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
+import {
+  commandBarModeAtom,
+  commandBarOpenAtom,
+} from "@/features/workspace/command-bar-atoms";
 import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import { WorkspaceSurfaceView } from "@/features/workspace/workspace-surface";
@@ -368,6 +376,9 @@ export function ExplorerTabs() {
   const activeTabId = useAtomValue(activeTabIdAtom);
   const createTab = useSetAtom(createTabAtom);
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
+  const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
+  const setCommandBarMode = useSetAtom(commandBarModeAtom);
+  const commandBarBinding = formatBinding(useBinding("app.commandBar"));
   const terminalVisible = useAtomValue(terminalVisibleAtom);
   const stripRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
@@ -482,7 +493,15 @@ export function ExplorerTabs() {
             decoration that joined the row would have to be excluded from both.
             `deep` on the header already makes it part of the window's drag
             surface, which is the only interaction a mark should have. */}
-        <span aria-hidden="true" className="brand-stripe mr-1 ml-3.5 self-center" />
+        <span aria-hidden="true" className="brand-stripe ml-3.5 self-center" />
+        {/* The wordmark is the other half of the reference's `.mark`: the
+            stripes carry the motif and the name says whose window it is. The
+            strip's first tab used to sit alone against the stripes with 4px
+            between them, which read as a stray chip rather than as the tab
+            row's start. */}
+        <span aria-hidden="true" className="brand-wordmark mr-2.5 ml-2.5 self-center">
+          dae
+        </span>
         <StripScrollButton
           aria-label={t("tabs.scrollLeft")}
           direction={-1}
@@ -536,6 +555,25 @@ export function ExplorerTabs() {
           onClick={() => scrollStrip(1)}
           visible={canScroll.right}
         />
+        {/* The reference puts the palette's trigger in the title bar, not in
+            the toolbar: it is a *window* action, available from every surface,
+            and it earns the one capsule the strip spends. The overview's own
+            field remains the discoverable version of the same gesture. */}
+        <button
+          aria-label={t("titleBar.commandBarAria")}
+          className="flex h-7 shrink-0 items-center gap-2 rounded-full border border-border px-2.5 text-caption text-muted-foreground transition-[border-color,color] duration-fast ease-standard hover:border-foreground/16 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none max-[860px]:hidden"
+          data-tauri-drag-region="false"
+          onClick={() => {
+            setCommandBarMode("commands");
+            setCommandBarOpen(true);
+          }}
+          title={t("titleBar.commandBarTitle", { shortcut: commandBarBinding })}
+          type="button"
+        >
+          <MagnifierIcon className="size-3.5 shrink-0" />
+          <span className="max-w-40 truncate">{t("titleBar.commandBarShort")}</span>
+          <Kbd className="shrink-0">{commandBarBinding}</Kbd>
+        </button>
         <WindowControls />
       </header>
 
@@ -599,15 +637,20 @@ function StripScrollButton({
 }) {
   const Icon = direction === -1 ? AltArrowLeftIcon : AltArrowRightIcon;
 
+  // A scroll button that has nothing to scroll belongs to no layout: an
+  // `invisible` one still claimed 24px at the head of the strip, which pushed
+  // the first tab a whole gutter away from the wordmark. Mounting it only when
+  // it can act costs a reflow on overflow, which is the moment the row is
+  // re-flowing anyway.
+  if (!visible) return null;
+
   return (
     <button
       aria-label={ariaLabel}
       className={cn(
         "flex w-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-        !visible && "invisible",
       )}
       onClick={onClick}
-      tabIndex={visible ? 0 : -1}
       type="button"
     >
       <Icon className="size-3.5" />
@@ -891,7 +934,7 @@ function TabStripItem({
       ) : WorkspaceTabIcon ? (
         <WorkspaceTabIcon className="ml-2 size-[15px] shrink-0 text-muted-foreground" />
       ) : null}
-      <span className="w-full truncate pr-6 pl-1.5">{title}</span>
+      <span className="min-w-0 truncate pr-6 pl-1.5">{title}</span>
     </>
   );
 
@@ -913,7 +956,7 @@ function TabStripItem({
         // handed to the platform's drag loop, which swallows the release that
         // would clear both, and a chip still wearing them reads as a tab still
         // held down after it was put back.
-        "group state-layer relative flex h-[30px] w-[230px] shrink-0 touch-none cursor-grab items-center rounded-md text-caption select-none transition-[background-color,color,opacity] duration-fast ease-standard data-[pressed=true]:cursor-grabbing",
+        "group state-layer relative flex h-[30px] max-w-[230px] min-w-[6.5rem] shrink-0 touch-none cursor-grab items-center rounded-md text-caption select-none transition-[background-color,color,opacity] duration-fast ease-standard data-[pressed=true]:cursor-grabbing",
         isActive ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
         isDragging && "opacity-30",
       )}

@@ -1012,13 +1012,19 @@ function DiskItem({
   return (
     <div
       className={cn(
-        "w-full rounded-md px-2 py-2 transition-[background-color,box-shadow] duration-fast ease-standard",
+        // The reference's disk row: one 30px line (chevron, glyph, name, free
+        // space), then a 3px capacity capsule. The card this replaces stacked
+        // a two-line name, a 3px bar, and a full `remaining / of total`
+        // sentence — 60px per volume, which is why the rail could show three
+        // disks or a directory tree but never both, and why the last card was
+        // always being clipped by the rail's own edge.
+        "w-full rounded-md px-2 py-1 transition-[background-color,box-shadow] duration-fast ease-standard",
         isActive ? "row-active" : "hover:bg-sidebar-accent",
       )}
     >
-      <div className="flex items-center">
+      <div className="flex h-[30px] items-center">
         {/* The tree toggle leads, in the same size-5 slot the folder tree rows
-            use; with the card's px-2.5 both share one column with the section
+            use; with the row's px-2 both share one column with the section
             headers above. */}
         <button
           aria-expanded={treeOpen}
@@ -1042,31 +1048,34 @@ function DiskItem({
           type="button"
         >
           {volume.isRemovable ? (
-            <UsbIcon className="size-[17px] shrink-0 text-muted-foreground" />
+            <UsbIcon className="size-4 shrink-0 text-muted-foreground" />
           ) : (
-            <SsdRoundIcon className="size-[17px] shrink-0 text-muted-foreground" />
+            <SsdRoundIcon className="size-4 shrink-0 text-muted-foreground" />
           )}
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-caption">{presentation.primary}</div>
-            <div className="truncate text-micro text-muted-foreground">
-              {presentation.secondary}
-            </div>
-          </div>
+          <span className="min-w-0 flex-1 truncate text-caption">{presentation.primary}</span>
+          <span className="shrink-0 font-mono text-[0.65625rem] text-meta tabular-nums">
+            {formatBytes(volume.availableBytes)}
+          </span>
         </button>
       </div>
       {/* Secondary click target so the capacity block still navigates; the
           name row above carries keyboard focus for the same action. */}
       <button
-        className="mt-1.5 block w-full text-left"
+        aria-label={t("disk.capacity", {
+          free: formatBytes(volume.availableBytes),
+          total: formatBytes(volume.totalBytes),
+        })}
+        className="mt-0.5 block w-full pl-5 text-left"
         onClick={() => onNavigate(volume.mountPoint)}
         tabIndex={-1}
+        title={title}
         type="button"
       >
         <div
           aria-valuemax={100}
           aria-valuemin={0}
           aria-valuenow={usedPercent}
-          className="h-capacity-bar w-full overflow-hidden rounded-full bg-muted"
+          className="h-capacity-bar w-full overflow-hidden rounded-full bg-foreground/10"
           role="progressbar"
         >
           <div
@@ -1076,15 +1085,6 @@ function DiskItem({
             )}
             style={{ width: `${usedPercent}%` }}
           />
-        </div>
-        <div className="mt-1 flex justify-between gap-2 text-micro text-muted-foreground">
-          <span className="shrink-0">{t("disk.freePercent", { percent: freePercent })}</span>
-          <span className="truncate font-mono tabular-nums">
-            {t("disk.capacity", {
-              free: formatBytes(volume.availableBytes),
-              total: formatBytes(volume.totalBytes),
-            })}
-          </span>
         </div>
       </button>
       {treeOpen && (

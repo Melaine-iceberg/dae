@@ -31,9 +31,9 @@ const GRID_CELL_MIN_WIDTH: Record<ExplorerDensity, number> = {
   // padding, and 80px at 12px font-medium is what common names like
   // "package.json" need for one line. At 88 they wrapped mid-token —
   // "package.jso / n" — which reads as a rendering bug, not as a long name.
-  compact: 104,
-  comfortable: 112,
-  spacious: 128,
+  compact: 120,
+  comfortable: 148,
+  spacious: 172,
 };
 
 /** Native shell icons stay bare; sized a step under the type tiles. */
@@ -58,9 +58,9 @@ const GRID_TILE_ICON_SIZE: Record<ExplorerDensity, number> = {
 
 /** Fixed per-density cell height keeps virtualization math uniform. */
 const GRID_CELL_HEIGHT: Record<ExplorerDensity, number> = {
-  compact: 96,
-  comfortable: 112,
-  spacious: 124,
+  compact: 108,
+  comfortable: 128,
+  spacious: 148,
 };
 /** Static height classes matching the tile scale so thumbnails keep geometry. */
 const GRID_IMAGE_ZONE_CLASS: Record<ExplorerDensity, string> = {
@@ -69,7 +69,7 @@ const GRID_IMAGE_ZONE_CLASS: Record<ExplorerDensity, string> = {
   spacious: "h-image-zone-spacious",
 };
 
-const GRID_GAP_PX = 8;
+const GRID_GAP_PX = 12;
 /**
  * The grid's inset on all four sides — and it has to be the same number the
  * markup below paints, because it is subtracted twice in the geometry: once by

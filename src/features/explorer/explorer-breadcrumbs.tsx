@@ -53,13 +53,24 @@ function computeHiddenRange(
     return null;
   }
 
-  let usedWidth = widths[0] + unit + ellipsisWidth;
+  // The first and the last crumb are always on screen, so the minimal collapsed
+  // bar is `first › ⋯ › last`. Seeding the running width with the LAST crumb is
+  // the correction that matters: the old version seeded only the first crumb
+  // and the ellipsis, then grew from the end without ever counting the current
+  // folder it was growing towards. On a 900px window that said four ancestors
+  // fitted while the rendered row was 70px too wide, the flex children were
+  // squeezed past zero, and the bar read `C: › ⋯ › \ › Documents`.
+  let usedWidth = widths[0] + unit + ellipsisWidth + widths[count - 1] + unit;
   let start = count - 1;
   while (start > 1 && usedWidth + widths[start - 1] + unit <= availableWidth) {
     usedWidth += widths[start - 1] + unit;
     start -= 1;
   }
 
+  // Even `first › ⋯ › last` is too wide for this pane. Collapsing the whole
+  // middle is still the better answer than showing every crumb at zero width:
+  // the current folder is pinned and truncates inside its own box, and the
+  // ancestors give way to the ellipsis instead of to nothing.
   return start <= 1 ? null : [1, start];
 }
 

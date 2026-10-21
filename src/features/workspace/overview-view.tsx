@@ -142,20 +142,22 @@ export function OverviewView() {
       {/* The landing surface opens on a search field rather than on a slogan.
           It is the same surface Mod+K raises, so the shell's most useful
           gesture is discoverable from the very first screen. */}
-      <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-5">
+      <header className="flex flex-col gap-4">
         <div className="min-w-0">
-          <h1 className="text-[1.75rem] leading-9 font-semibold tracking-[-0.03em]">
-            {t("overview.title")}
-          </h1>
-          <p className="mt-1.5 text-caption text-muted-foreground">{t("overview.subtitle")}</p>
+          <h1 className="text-title">{t("overview.title")}</h1>
+          <p className="mt-1 text-caption text-muted-foreground">{t("overview.subtitle")}</p>
         </div>
+        {/* The launcher's own field. It is the surface Mod+K raises, so the
+            shell's most useful gesture is discoverable from the first screen;
+            at 40rem it reads as the head of the column rather than as a search
+            bar bolted to a page header. */}
         <button
-          className="group flex h-10 w-full max-w-sm items-center gap-2.5 rounded-xl border border-border/70 bg-secondary/40 px-3.5 text-left text-body text-muted-foreground transition-[background-color,border-color,color,box-shadow] duration-normal ease-standard hover:border-primary/35 hover:bg-secondary/80 hover:text-foreground hover:shadow-ambient-xs focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
+          className="group flex h-10 w-full max-w-[40rem] items-center gap-2.5 rounded-lg bg-card/60 px-3 text-left text-body text-muted-foreground shadow-[inset_0_0_0_1px_var(--border)] transition-[background-color,box-shadow,color] duration-normal ease-standard hover:bg-card hover:text-foreground hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
           onClick={() => setCommandBarOpen(true)}
           type="button"
         >
           <MagnifierIcon className="size-4 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">{t("commandBar.placeholder")}</span>
+          <span className="min-w-0 flex-1 truncate text-caption">{t("commandBar.placeholder")}</span>
           <Kbd className="shrink-0">{commandBarBinding}</Kbd>
         </button>
       </header>
@@ -206,9 +208,9 @@ export function OverviewView() {
             }
           />
         ) : places === null || favorites === null ? (
-          <div className="grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-4">
+          <div className="flex flex-col gap-0.5">
             {Array.from({ length: 4 }, (_, index) => (
-              <Skeleton className="h-location-card rounded-lg" key={index} />
+              <Skeleton className="h-9 rounded-md" key={index} />
             ))}
           </div>
         ) : visiblePlaces.length === 0 && favoriteList.length === 0 ? (
@@ -224,7 +226,7 @@ export function OverviewView() {
             </EmptyHeader>
           </Empty>
         ) : (
-          <div className="grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-4">
+          <div className="flex flex-col gap-0.5">
             {visiblePlaces.map((place) => {
               const presentation = PLACE_PRESENTATION[place.kind];
               return (
@@ -302,9 +304,9 @@ export function OverviewView() {
             title={t("loadError.recentsTitle")}
           />
         ) : recents === null ? (
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-0.5">
             {Array.from({ length: 3 }, (_, index) => (
-              <Skeleton className="h-8.5 rounded-sm" key={index} />
+              <Skeleton className="h-9 rounded-md" key={index} />
             ))}
           </div>
         ) : recentPreview.length === 0 ? (
@@ -324,7 +326,7 @@ export function OverviewView() {
               return (
                 <li key={item.path}>
                   <button
-                    className="group flex h-12 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
+                    className="group flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
                     onClick={() =>
                       openRecent(item.path, item.kind === "directory" ? "directory" : "file")
                     }
@@ -332,11 +334,11 @@ export function OverviewView() {
                     type="button"
                   >
                     <TypeIconTile
-                      className="size-[30px] shrink-0"
-                      iconSize={18}
+                      className="size-[22px] shrink-0"
+                      iconSize={15}
                       presentation={presentation}
                     />
-                    <span className="max-w-[45%] shrink-0 truncate text-body font-medium">
+                    <span className="max-w-[42%] shrink-0 truncate text-caption text-foreground">
                       {item.name}
                     </span>
                     {/* The parent path fills the row between the name and the
@@ -346,7 +348,7 @@ export function OverviewView() {
                     <span className="path-ellipsis min-w-0 flex-1 truncate text-caption text-muted-foreground">
                       {parentPathOf(item.path)}
                     </span>
-                    <span className="shrink-0 text-micro text-muted-foreground tabular-nums">
+                    <span className="shrink-0 font-mono text-[0.65625rem] text-meta tabular-nums">
                       {formatRecentTime(item.accessedAt, t("recents.groups.yesterday"))}
                     </span>
                   </button>
@@ -367,13 +369,13 @@ export function OverviewView() {
             title={t("loadError.spacesTitle")}
           />
         ) : spaces === null ? (
-          <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
+          <div className="flex flex-col gap-0.5">
             {Array.from({ length: 4 }, (_, index) => (
-              <Skeleton className="h-location-card rounded-lg" key={index} />
+              <Skeleton className="h-9 rounded-md" key={index} />
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3.5 md:grid-cols-4">
+          <div className="flex flex-col gap-0.5">
             {spaces.map((space) => (
               <LocationCard
                 description={

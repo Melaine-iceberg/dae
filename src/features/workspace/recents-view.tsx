@@ -137,7 +137,7 @@ export function RecentsView() {
       ) : recents === null ? (
         <div className="flex flex-col gap-1">
           {Array.from({ length: 6 }, (_, index) => (
-            <Skeleton className="h-14 rounded-xl" key={index} />
+            <Skeleton className="h-9 rounded-md" key={index} />
           ))}
         </div>
       ) : groups.length === 0 ? (
@@ -190,21 +190,21 @@ function RecentRow({
         <ContextMenuTrigger>
           <button
             aria-label={`${presentation.label} ${item.name}`}
-            className="flex h-14 w-full items-center gap-3 rounded-xl px-2.5 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
+            className="flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
             onClick={onOpen}
             title={item.path}
             type="button"
           >
-            <TypeIconTile className="size-[30px] shrink-0" iconSize={18} presentation={presentation} />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-body font-medium">{item.name}</span>
-              {location && (
-                <span className="block truncate text-micro text-muted-foreground">
-                  {location}
-                </span>
-              )}
+            <TypeIconTile className="size-[22px] shrink-0" iconSize={15} presentation={presentation} />
+            <span className="max-w-[42%] shrink-0 truncate text-caption text-foreground">
+              {item.name}
             </span>
-            <span className="shrink-0 text-micro text-muted-foreground tabular-nums">
+            {location && (
+              <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">
+                {location}
+              </span>
+            )}
+            <span className="shrink-0 font-mono text-[0.65625rem] text-meta tabular-nums">
               {formatTime(item.accessedAt)}
             </span>
           </button>

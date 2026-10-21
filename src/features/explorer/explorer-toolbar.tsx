@@ -229,7 +229,7 @@ export function ExplorerToolbar({
           crumbs name. */}
       <div
         className={cn(
-          "flex h-8 min-w-40 flex-1 items-center rounded-md bg-background/60 px-1",
+          "flex h-8 min-w-40 max-w-[44rem] flex-1 items-center rounded-md bg-background/60 px-1",
           // The field is a slot, not a card: one inset hairline at rest, a
           // brighter one under the pointer, and the focus ring only while it is
           // actually being typed into. `background-color` never changes — the
@@ -251,107 +251,121 @@ export function ExplorerToolbar({
         )}
       </div>
 
-      {/* Find: the search capsule, same height and corner as the path field. */}
-      <DirectorySearch
-        contentSearch={contentSearch}
-        directoryName={directory?.breadcrumbs.at(-1)?.name ?? null}
-        disabled={isLoading || !isActivePane}
-        mode={searchMode}
-        onModeChange={onSearchModeChange}
-        search={search}
-      />
-
-      {/* Act: the two things you do to the folder you are in — reload it,
-          keep it. */}
-      <div className="flex shrink-0 items-center gap-0.5">
-        <Button
-          aria-label={t("explorer:toolbar.refresh")}
-          disabled={isLoading || !directory}
-          onClick={onRefresh}
-          size="icon"
-          title={t("explorer:toolbar.refresh")}
-          type="button"
-          variant="ghost"
-        >
-          <RefreshIcon className={cn(isLoading && "animate-spin")} />
-        </Button>
-        <Button
-          aria-label={
-            isCurrentFavorited
-              ? t("explorer:toolbar.removeFavorite")
-              : t("explorer:toolbar.addFavorite")
-          }
-          className={TOOLBAR_OVERFLOW_FAVORITE_CLASS}
-          disabled={!directory}
-          onClick={onToggleFavorite}
-          size="icon"
-          title={
-            isCurrentFavorited
-              ? t("explorer:toolbar.removeFavorite")
-              : t("explorer:toolbar.addFavorite")
-          }
-          type="button"
-          variant="ghost"
-        >
-          <StarIcon className={cn(isCurrentFavorited && "fill-warning/70 text-warning")} />
-        </Button>
-      </div>
-
-      {/* View: how the listing looks, plus the repository it sits in. */}
-      <div className={CLUSTER_CLASS}>
-        <ViewMenu disabled={!directory} />
-        <FilterMenu disabled={!directory} />
-      </div>
-
+      {/* The repository is context for the place, so it sits against the path
+          field rather than in the view cluster: the reference reads
+          `place → branch` as one sentence, then pushes everything that acts on
+          the listing to the trailing edge. */}
       {gitStatus && (
         <div className={cn("shrink-0", TOOLBAR_OVERFLOW_GIT_CLASS)}>
           <GitBranchControl branch={gitStatus.branch} root={gitStatus.root} />
         </div>
       )}
 
-      {/* Panels: trailing edge, so the set stays put as the middle grows and
-          shrinks. A toggle fills its chip while on (`aria-pressed`), so an
-          open panel is legible at a glance instead of being a guess. */}
-      <div className="ml-0.5 flex shrink-0 items-center gap-0.5">
-        {onToggleSplit && (
+      {/* Everything from here on acts on the listing, so it is one group pinned
+          to the trailing edge. `ml-auto` spends the slack a capped path field
+          leaves behind: without it the controls drift right with the path and
+          the row loses its two-sided balance. */}
+      <div className="ml-auto flex min-w-0 items-center gap-2">
+        {/* Find: the search capsule, same height and corner as the path field. */}
+        <DirectorySearch
+          contentSearch={contentSearch}
+          directoryName={directory?.breadcrumbs.at(-1)?.name ?? null}
+          disabled={isLoading || !isActivePane}
+          mode={searchMode}
+          onModeChange={onSearchModeChange}
+          search={search}
+        />
+
+        {/* Act: the two things you do to the folder you are in — reload it,
+            keep it. */}
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Button
+            aria-label={t("explorer:toolbar.refresh")}
+            disabled={isLoading || !directory}
+            onClick={onRefresh}
+            size="icon"
+            title={t("explorer:toolbar.refresh")}
+            type="button"
+            variant="ghost"
+          >
+            <RefreshIcon className={cn(isLoading && "animate-spin")} />
+          </Button>
           <Button
             aria-label={
-              splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
+              isCurrentFavorited
+                ? t("explorer:toolbar.removeFavorite")
+                : t("explorer:toolbar.addFavorite")
             }
-            aria-pressed={splitEnabled}
-            className={cn(TOOLBAR_OVERFLOW_CLASS, TOGGLE_PRESSED_CLASS)}
-            onClick={onToggleSplit}
+            className={TOOLBAR_OVERFLOW_FAVORITE_CLASS}
+            disabled={!directory}
+            onClick={onToggleFavorite}
             size="icon"
             title={
-              splitEnabled ? t("explorer:toolbar.closeSplitView") : t("explorer:toolbar.splitView")
+              isCurrentFavorited
+                ? t("explorer:toolbar.removeFavorite")
+                : t("explorer:toolbar.addFavorite")
             }
             type="button"
             variant="ghost"
           >
-            <Columns3Icon />
+            <StarIcon className={cn(isCurrentFavorited && "fill-warning/70 text-warning")} />
           </Button>
-        )}
-        <Button
-          aria-label={
-            isPreviewOpen
-              ? t("explorer:toolbar.collapsePreview")
-              : t("explorer:toolbar.expandPreview")
-          }
-          aria-pressed={isPreviewOpen}
-          className={TOGGLE_PRESSED_CLASS}
-          onClick={onTogglePreview}
-          size="icon"
-          title={
-            isPreviewOpen
-              ? t("explorer:toolbar.collapsePreviewShortcut", { shortcut: previewBinding })
-              : t("explorer:toolbar.expandPreviewShortcut", { shortcut: previewBinding })
-          }
-          type="button"
-          variant="ghost"
-        >
-          <EyeIcon />
-        </Button>
-        <TerminalToggle />
+        </div>
+
+        {/* View: how the listing looks. */}
+        <div className={CLUSTER_CLASS}>
+          <ViewMenu disabled={!directory} />
+          <FilterMenu disabled={!directory} />
+        </div>
+
+        {/* Panels: trailing edge, so the set stays put as the middle grows and
+            shrinks. A toggle fills its chip while on (`aria-pressed`), so an
+            open panel is legible at a glance instead of being a guess. */}
+        <div className="ml-0.5 flex shrink-0 items-center gap-0.5">
+          {onToggleSplit && (
+            <Button
+              aria-label={
+                splitEnabled
+                  ? t("explorer:toolbar.closeSplitView")
+                  : t("explorer:toolbar.splitView")
+              }
+              aria-pressed={splitEnabled}
+              className={cn(TOOLBAR_OVERFLOW_CLASS, TOGGLE_PRESSED_CLASS)}
+              onClick={onToggleSplit}
+              size="icon"
+              title={
+                splitEnabled
+                  ? t("explorer:toolbar.closeSplitView")
+                  : t("explorer:toolbar.splitView")
+              }
+              type="button"
+              variant="ghost"
+            >
+              <Columns3Icon />
+            </Button>
+          )}
+          <Button
+            aria-label={
+              isPreviewOpen
+                ? t("explorer:toolbar.collapsePreview")
+                : t("explorer:toolbar.expandPreview")
+            }
+            aria-pressed={isPreviewOpen}
+            className={TOGGLE_PRESSED_CLASS}
+            onClick={onTogglePreview}
+            size="icon"
+            title={
+              isPreviewOpen
+                ? t("explorer:toolbar.collapsePreviewShortcut", { shortcut: previewBinding })
+                : t("explorer:toolbar.expandPreviewShortcut", { shortcut: previewBinding })
+            }
+            type="button"
+            variant="ghost"
+          >
+            <EyeIcon />
+          </Button>
+          <TerminalToggle />
+        </div>
       </div>
     </header>
   );

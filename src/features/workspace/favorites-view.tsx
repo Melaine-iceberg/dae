@@ -69,9 +69,9 @@ export function FavoritesView() {
           title={t("loadError.favoritesTitle")}
         />
       ) : favorites === null ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="flex flex-col gap-0.5">
           {Array.from({ length: 3 }, (_, index) => (
-            <Skeleton className="h-location-card rounded-md" key={index} />
+            <Skeleton className="h-9 rounded-md" key={index} />
           ))}
         </div>
       ) : favorites.length === 0 ? (
@@ -85,7 +85,7 @@ export function FavoritesView() {
           </EmptyHeader>
         </Empty>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="flex flex-col gap-0.5">
           {favorites.map((favorite) => (
             <ContextMenu key={favorite.path}>
               <ContextMenuTrigger>

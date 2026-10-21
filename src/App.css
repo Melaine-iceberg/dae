@@ -991,6 +991,19 @@ html[data-window-material="vibrancy"] .bg-chrome {
     );
   }
 
+  /* The name beside the mark. The reference sets it at 13px/600 with +0.04em
+     tracking in the secondary ink — small enough to stay a signature, not a
+     title, and read at the same optical weight as the idle tab labels it
+     leads into. */
+  .brand-wordmark {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    color: var(--muted-foreground);
+    user-select: none;
+  }
+
   /* macOS window chrome. The three stoplights are one control: their glyphs
      stay invisible until the pointer enters the group, and the set drains to
      grey while the window is inactive. Both are AppKit's own behaviour and
@@ -1596,52 +1609,42 @@ html[data-window-material="vibrancy"] .bg-chrome {
     background: color-mix(in oklab, var(--primary) 24%, transparent);
   }
 
-  /* Overlay scrollbars: a 4px pill inside a 12px lane, so the thumb stays
-     visually quiet while the grab target stays comfortable. The thumb only
-     shifts colour on hover — the lane itself never draws.
+  /* Overlay scrollbars: a 4px pill inside a 10px lane, the reference's own
+     geometry (`.stage::-webkit-scrollbar { width: 10px }`, thumb at 12% ink,
+     `border: 3px solid transparent`, `background-clip: content-box`). The lane
+     is transparent in every state; the thumb steps 12% → 22% → 30% on hover and
+     press, so it stays a quiet mark until it is actually grabbed.
 
-     ONE LADDER, TWO ENGINES. The thumb steps 22% → 34% → 46% of the ink, an even
-     +12 rung per state, and `scrollbar-color` below carries the resting strength
-     for the standard property. Keeping the two in step is not tidiness:
-     Chromium stops honouring `::-webkit-scrollbar` on an element that sets
-     `scrollbar-width` or `scrollbar-color`, so the standard pair is what WebView2
-     paints and the pseudo-elements are what the other engines paint. A bar tuned
-     in only one of them is a bar that looks different on the platforms this
-     shell ships on.
-
-     This ladder used to exist twice in this file: the second block at the end
-     restated the resting and hover stops while the press stop stayed behind at
-     the older strength, so the press was a 22-point jump from a hover that had
-     been quietly lowered. One declaration, three stops. */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in oklab, var(--foreground) 22%, transparent)
-      transparent;
-  }
+     WHY NO `scrollbar-width` / `scrollbar-color`: setting either standard
+     property makes Chromium ignore the `::-webkit-scrollbar` family and paint
+     its own 15px platform bar instead — measured in this window: a 232px rail
+     lost 15px to a thumb that read as a grey slab. Every engine this shell
+     ships on is Chromium or WebKit, so the pseudo-elements are the one ladder,
+     declared once. */
   ::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
   }
   ::-webkit-scrollbar-track,
   ::-webkit-scrollbar-corner {
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    /* The transparent 4px border inside a 12px lane is what makes the thumb a
+    /* The transparent 3px border inside a 10px lane is what makes the thumb a
        pill: `background-clip: padding-box` keeps the fill out of the border, so
-       the painted shape is 4px wide inside a 12px target. */
+       the painted shape is 4px wide inside a 10px target. */
     background-clip: padding-box;
-    background-color: color-mix(in oklab, var(--foreground) 22%, transparent);
-    border: 4px solid transparent;
+    background-color: color-mix(in oklab, var(--foreground) 12%, transparent);
+    border: 3px solid transparent;
     border-radius: 9999px;
     transition: background-color var(--transition-duration-fast)
       var(--ease-standard);
   }
   ::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(in oklab, var(--foreground) 34%, transparent);
+    background-color: color-mix(in oklab, var(--foreground) 22%, transparent);
   }
   ::-webkit-scrollbar-thumb:active {
-    background-color: color-mix(in oklab, var(--foreground) 46%, transparent);
+    background-color: color-mix(in oklab, var(--foreground) 30%, transparent);
   }
   ::-webkit-scrollbar-button {
     display: none;

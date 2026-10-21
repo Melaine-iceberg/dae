@@ -15,11 +15,14 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        // The primary fill is the accent, flat, with a contact shadow that
-        // deepens a step on hover and a 10% mix toward its own ink. No
-        // gradient, no gloss, no bevel.
+        // The primary fill is the foreground itself — a near-white capsule in
+        // the dark scheme, a near-black one in daylight — not the accent. That
+        // is the reference's `.btn-primary`: the accent is spent on selection
+        // and focus, and a window whose primary action were the same blue as
+        // its selection would have one state too many. Raycast's own action
+        // panels do exactly this, and it is why their blue stays scarce.
         default:
-          "bg-primary text-primary-foreground shadow-[0_1px_2px_-1px_color-mix(in_oklab,var(--shadow-color)_var(--shadow-a2),transparent)] hover:bg-[color-mix(in_oklab,var(--primary),var(--primary-foreground)_10%)] hover:shadow-[0_2px_6px_-2px_color-mix(in_oklab,var(--shadow-color)_var(--shadow-a2),transparent)]",
+          "rounded-full bg-foreground text-background hover:bg-[color-mix(in_oklab,var(--foreground)_90%,var(--background))] active:bg-[color-mix(in_oklab,var(--foreground)_82%,var(--background))]",
         outline:
           "border-input bg-transparent text-foreground hover:bg-accent hover:text-foreground aria-expanded:bg-accent aria-expanded:text-foreground",
         secondary:

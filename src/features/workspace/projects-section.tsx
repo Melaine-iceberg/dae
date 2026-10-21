@@ -95,9 +95,9 @@ export function ProjectsSection({ recents }: { recents: RecentItem[] | null }) {
     return (
       <section aria-label={t("workspace:overview.projectsTitle")}>
         <SectionHeader title={t("workspace:overview.projectsTitle")} />
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Skeleton className="h-project-card rounded-lg" />
-          <Skeleton className="h-project-card rounded-lg" />
+        <div className="flex flex-col gap-0.5">
+          <Skeleton className="h-9 rounded-md" />
+          <Skeleton className="h-9 rounded-md" />
         </div>
       </section>
     );
@@ -108,9 +108,9 @@ export function ProjectsSection({ recents }: { recents: RecentItem[] | null }) {
   return (
     <section aria-label={t("workspace:overview.projectsTitle")}>
       <SectionHeader title={t("workspace:overview.projectsTitle")} />
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="flex flex-col gap-0.5">
         {projects.map((project, index) => (
-          <ProjectCard
+          <ProjectRow
             entries={stats[index]?.data?.entries}
             key={project.root}
             onOpen={() => navigateToFolder(project.root)}
@@ -122,7 +122,7 @@ export function ProjectsSection({ recents }: { recents: RecentItem[] | null }) {
   );
 }
 
-function ProjectCard({
+function ProjectRow({
   entries,
   onOpen,
   project,
@@ -138,36 +138,26 @@ function ProjectCard({
   return (
     <button
       className={cn(
-        // Same card anatomy as LocationCard: hairline box on the plane's own
-        // rung that lifts on hover — hairline warms towards the accent, a soft
-        // contact shadow arrives, the icon chip warms with it. Height comes
-        // from the token its skeleton uses.
-        "group state-layer flex h-project-card w-full flex-col gap-2 rounded-lg border border-border bg-card p-3 text-left",
-        "transition-[background-color,border-color,box-shadow,transform] duration-fast ease-standard",
-        "hover:-translate-y-px hover:border-primary/30 hover:shadow-ambient-sm",
-        "focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none",
+        // The reference's row anatomy: a 36px line, the repository glyph in the
+        // slot every other row uses, the branch as a chip beside the name, and
+        // the dirty counts flush right in the status column's place. The card
+        // this replaces asked four repositories to share two 90px blocks —
+        // which made the least scannable section on the page the tallest one.
+        "group flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left",
+        "transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none",
       )}
       onClick={onOpen}
       title={project.root}
       type="button"
     >
-      <span className="flex w-full items-center gap-2.5">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-secondary transition-colors duration-fast group-hover:bg-[color-mix(in_oklab,var(--primary)_12%,var(--secondary))]">
-          <GitBranchIcon className="size-4 text-secondary-foreground" />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-body font-medium">{project.name}</span>
-        <span className="shrink-0 text-caption text-muted-foreground tabular-nums">
-          {formatRecentTime(project.accessedAt, t("workspace:recents.groups.yesterday"))}
-        </span>
+      <GitBranchIcon className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+      <span className="min-w-0 max-w-[34%] shrink-0 truncate text-caption text-foreground">
+        {project.name}
       </span>
-      {/* 42px is derived, not chosen: it is the row above's 32px avatar
-          (`size-8`) plus its 10px gap (`gap-2.5`), so this line starts exactly
-          where the project name does. `pl-10.5` is that sum on the 4px grid —
-          change either the avatar or the gap and this number is wrong. */}
-      <span className="flex w-full items-center gap-1.5 pl-10.5">
-        <span className="max-w-[60%] truncate rounded-xs bg-secondary px-2 py-0.5 font-mono text-micro leading-4 text-secondary-foreground">
-          {project.branch}
-        </span>
+      <span className="min-w-0 shrink truncate rounded-xs bg-secondary px-1.5 py-0.5 font-mono text-[0.625rem] leading-4 text-secondary-foreground">
+        {project.branch}
+      </span>
+      <span className="ml-auto flex shrink-0 items-center gap-1.5">
         {counts !== undefined &&
           (dirty ? (
             (Object.keys(GIT_STATUS_PRESENTATION) as GitEntryStatusKind[]).map((kind) =>
@@ -175,7 +165,7 @@ function ProjectCard({
                 <span
                   aria-label={t(`explorer:git.${kind}`)}
                   className={cn(
-                    "shrink-0 rounded-xs px-1.5 text-nano leading-4 font-semibold tabular-nums",
+                    "shrink-0 rounded-xs px-1.5 font-mono text-[0.625rem] leading-4 font-semibold tabular-nums",
                     GIT_STATUS_PRESENTATION[kind].className,
                   )}
                   key={kind}
@@ -191,6 +181,9 @@ function ProjectCard({
               {t("workspace:overview.projectClean")}
             </span>
           ))}
+      </span>
+      <span className="w-10 shrink-0 text-right font-mono text-[0.65625rem] text-meta tabular-nums">
+        {formatRecentTime(project.accessedAt, t("workspace:recents.groups.yesterday"))}
       </span>
     </button>
   );

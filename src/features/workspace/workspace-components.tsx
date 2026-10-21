@@ -21,7 +21,13 @@ export function WorkspacePage({
 }) {
   return (
     <main aria-label={ariaLabel} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-9 px-8 pt-9 pb-14">{children}</div>
+      {/* The reference's launcher rhythm: one column, capped at a readable
+          measure, left in the window's own gutter. The surface used to fill
+          `max-w-6xl` with 9-gap sections and 36px of air, which is a marketing
+          page's pacing — a file manager's home is a list of places. */}
+      <div className="mx-auto flex w-full max-w-[52rem] flex-col gap-8 px-8 pt-7 pb-16">
+        {children}
+      </div>
     </main>
   );
 }
@@ -47,8 +53,10 @@ export function WorkspacePageHeader({
           {/* `title`, not a display step: this is a file manager's home
               surface. An 18px/650 heading over a slogan reads as a landing
               page, which is exactly the impression to avoid. */}
-          <h1 className="text-[1.75rem] leading-9 font-semibold tracking-[-0.03em]">{title}</h1>
-          {description && <p className="mt-1.5 text-caption text-muted-foreground">{description}</p>}
+          <h1 className="text-title">{title}</h1>
+          {description && (
+            <p className="mt-1 text-caption text-muted-foreground">{description}</p>
+          )}
         </div>
       </div>
       {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
@@ -58,25 +66,23 @@ export function WorkspacePageHeader({
 
 export function SectionHeader({ action, title }: { action?: ReactNode; title: string }) {
   return (
-    <div className="mb-3.5 flex items-center justify-between gap-4">
-      {/* Sentence case, no tracking: a group caption in a file manager is a
-          quiet 12px label. Uppercasing and tracking it out does nothing for
-          the hanzi this is usually set in and reads as decoration when it is
-          set in Latin. */}
-      <h2 className="text-[13px] font-semibold text-foreground/85">{title}</h2>
+    <div className="mb-2 flex h-6 items-center justify-between gap-4">
+      {/* The reference's group caption: 11px, 600, uppercase, +0.08em, in the
+          meta ink. It is the one place the window uppercases, which is what
+          keeps the treatment from reading as decoration — a quiet label over a
+          row list, not a heading over a card grid. */}
+      <h2 className="text-nano font-semibold tracking-[0.08em] text-meta uppercase">{title}</h2>
       {action}
     </div>
   );
 }
 
 /**
- * Card for a folder, location, or space — one of the few places the design
- * system uses cards. Hierarchy: icon → name → useful metadata.
- *
- * The chip is always `bg-secondary`. Colour, where there is any, lives on the
- * glyph and only when it carries meaning (a favourite's accent star) or
- * identity (a Space's hue). The gradient squircle that used to sit here was
- * the loudest thing on the surface and said nothing the name did not.
+ * A place row — the reference's `.rail-row` / `.row` anatomy rather than a
+ * card: 36px tall, 6px corner, a 16px muted glyph, the name at 13px and the
+ * path as mono meta on the trailing edge. The card it replaces was 76px tall
+ * with a 40px tinted squircle and a two-line stack; four of them occupied the
+ * same height twelve rows do, which is the opposite of what a launcher wants.
  */
 export function LocationCard({
   description,
@@ -87,7 +93,7 @@ export function LocationCard({
 }: {
   description?: string;
   icon: ComponentType<{ className?: string }>;
-  /** Colour or weight for the glyph only; the chip plate stays neutral. */
+  /** Colour or weight for the glyph only; the row itself stays neutral. */
   iconClassName?: string;
   onClick: () => void;
   title: string;
@@ -95,37 +101,25 @@ export function LocationCard({
   return (
     <button
       className={cn(
-        // A quick-access tile: a quiet plate that answers the pointer by
-        // stepping *up* — the surface brightens, the border warms towards the
-        // accent, the icon plate lifts a hair. Nothing scales.
-        "group relative flex h-[4.75rem] w-full items-center gap-3.5 overflow-hidden rounded-2xl border border-border/60 bg-secondary/70 px-3.5 text-left",
-        "transition-[background-color,border-color,box-shadow] duration-normal ease-standard",
-        "hover:border-primary/30 hover:bg-secondary hover:shadow-ambient-xs",
-        "focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none",
+        "group flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-left",
+        "transition-colors duration-fast ease-standard hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none",
       )}
       onClick={onClick}
       title={description ? `${title} · ${description}` : title}
       type="button"
     >
-      <span
+      <Icon
         className={cn(
-          // The plate takes a trace of the glyph's own hue, so a row of
-          // quick-access tiles reads as a palette of places rather than as
-          // identical grey boxes. `currentColor` is the tone class below.
-          "flex size-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklab,currentColor_12%,var(--card))] transition-[background-color,box-shadow] duration-normal group-hover:shadow-ambient-xs",
+          "size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground",
           iconClassName,
         )}
-      >
-        <Icon className="size-[19px]" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-body font-medium tracking-[-0.006em]">{title}</span>
-        {description && (
-          <span className="mt-0.5 block truncate text-micro text-muted-foreground">
-            {description}
-          </span>
-        )}
-      </span>
+      />
+      <span className="min-w-0 flex-1 truncate text-caption text-foreground">{title}</span>
+      {description && (
+        <span className="hidden max-w-[52%] shrink-0 truncate font-mono text-[0.65625rem] text-meta sm:block">
+          {description}
+        </span>
+      )}
     </button>
   );
 }

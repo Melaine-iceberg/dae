@@ -451,6 +451,12 @@
     "iconThemed": "内置图标",
     "rowThumbnails": "在列表和分栏视图显示缩略图"
   },
+  "titleBar": {
+    "commandBarAria": "打开命令栏",
+    "commandBarTitle": "搜索或运行命令（{{shortcut}}）",
+    "commandBarLabel": "搜索或运行命令",
+    "commandBarShort": "搜索"
+  },
   "tabs": {
     "ariaLabel": "文件标签页",
     "scrollLeft": "向左滚动标签页",
@@ -490,7 +496,7 @@
     "contentAriaLabel": "搜索“{{scope}}”中的文件内容",
     "nameAriaLabel": "搜索“{{scope}}”中的文件和文件夹",
     "contentPlaceholder": "在内容中搜索",
-    "namePlaceholder": "搜索 {{scope}}",
+    "namePlaceholder": "筛选",
     "contentTitle": "递归搜索“{{scope}}”中的文件内容（正则可选）",
     "nameTitle": "递归搜索“{{scope}}”的文件名",
     "switchToName": "切换为按名称搜索",

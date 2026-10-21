@@ -244,29 +244,13 @@ export function ExplorerStatusBar({
   return (
     <footer
       aria-live="polite"
-      className="flex h-status-strip shrink-0 items-center gap-3 border-t border-border-soft px-3 text-nano text-muted-foreground select-none"
+      className="flex h-status-strip shrink-0 items-center gap-2.5 border-t border-border-soft px-3 text-nano text-muted-foreground select-none"
     >
-      {/* The mode pill: the strip's one assertion about the machine rather
-          than about the folder. Amber while reading, green once settled — the
-          dot carries it, and the label says what the dot means. */}
-      <span
-        className={cn(
-          "inline-flex h-[19px] shrink-0 items-center gap-1.5 rounded-full px-2 text-nano",
-          mode === "ready"
-            ? "bg-success/12 text-success"
-            : "bg-foreground/6 text-muted-foreground",
-        )}
-      >
-        <span
-          aria-hidden="true"
-          className={cn(
-            "size-1.5 rounded-full",
-            mode === "ready" ? "bg-success" : "bg-meta",
-          )}
-        />
-        {t(`explorer:listing.mode.${mode}`)}
-      </span>
-
+      {/* The reference's strip reads left to right as `count · selection ·
+          filter`, then pushes the volume to the far edge. The green mode pill
+          this used to open with was an assertion that nothing had happened
+          yet; it now appears only while something *is* happening (reading or
+          searching), which is when that fact is worth a 19px capsule. */}
       <span className="truncate tabular-nums">
         {t("explorer:listing.itemCount", {
           count: itemCount,
@@ -275,31 +259,48 @@ export function ExplorerStatusBar({
       </span>
 
       {selectedCount > 0 && (
-        <span className="shrink-0 tabular-nums text-foreground/80">
-          {t("explorer:listing.selectedCount", { display: localeNumber(selectedCount) })}
+        <>
+          <span aria-hidden="true" className="h-3 w-px shrink-0 bg-border" />
+          <span className="shrink-0 text-foreground/80 tabular-nums">
+            {t("explorer:listing.selectedCount", { display: localeNumber(selectedCount) })}
+          </span>
+        </>
+      )}
+
+      {mode !== "ready" && (
+        <span
+          className={cn(
+            "inline-flex h-[19px] shrink-0 items-center gap-1.5 rounded-full px-2 text-nano",
+            "bg-foreground/6 text-muted-foreground",
+          )}
+        >
+          <span aria-hidden="true" className="size-1.5 rounded-full bg-meta" />
+          {t(`explorer:listing.mode.${mode}`)}
         </span>
       )}
 
-      <span aria-hidden="true" className="h-3 w-px shrink-0 bg-border" />
-
       {volume && freePercent !== null && (
-        <span className="ml-auto flex shrink-0 items-center gap-2">
-          <span className="font-mono tabular-nums">
-            {t("explorer:listing.freeSpace", { size: formatBytes(volume.availableBytes) })}
-          </span>
-          {/* A 3px capsule, not a progress bar: at this size the fill is read
-              as a proportion, never as a quantity. */}
+        <span
+          className="ml-auto flex shrink-0 items-center gap-2"
+          title={`${volume.mountPoint} · ${volume.fileSystem}`}
+        >
           <span
             aria-hidden="true"
             className="block h-[3px] w-16 overflow-hidden rounded-full bg-foreground/10"
           >
+            {/* The capsule reports the *used* share, as the reference's does:
+                the bar fills as the volume does. Drawing the free share made
+                a nearly empty disk read as a nearly full bar. */}
             <span
               className={cn(
                 "block h-full rounded-full",
                 freePercent <= 10 ? "bg-warning" : "bg-foreground/42",
               )}
-              style={{ width: `${Math.max(freePercent, 2)}%` }}
+              style={{ width: `${Math.min(Math.max(100 - freePercent, 2), 100)}%` }}
             />
+          </span>
+          <span className="font-mono tabular-nums">
+            {t("explorer:listing.freeSpace", { size: formatBytes(volume.availableBytes) })}
           </span>
         </span>
       )}
