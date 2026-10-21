@@ -593,7 +593,15 @@ export function ExplorerTabs() {
           `inspector-panel.tsx`). */}
       <div className="flex min-h-0 flex-1 bg-chrome">
         <Sidebar />
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {/* The document plane. It paints the canvas at full strength on purpose
+            (`bg-background`, which stays opaque under a window material — see
+            THE WINDOW-MATERIAL SEAM in App.css): the rail and the tab strip
+            above are the two regions the platform's backdrop is allowed
+            through, and everything the user *reads* — toolbar, listing,
+            terminal drawer, status strip, inspector — sits on this plate.
+            Without it the whole row is `bg-chrome`, i.e. nothing paints, and
+            the material blurs the entire window. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
           {/* Chrome-style keep-alive: every tab's surface stays mounted and
               the surfaces are stacked; switching tabs flips visibility
               instead of swapping the key, so nothing remounts — directory

@@ -859,14 +859,16 @@ html[data-window-focused="false"] {
 /* ---------------------------------------------------------------------------
    THE WINDOW-MATERIAL SEAM — see src/lib/window-material.ts.
 
-   Two roles here are the *window* rather than a surface inside it: the canvas
-   the panels sit on, and the tab bar, which is the same canvas under another
-   name. Where the OS composites a backdrop behind a window — Acrylic or Mica on
-   Windows 11, the sidebar material on macOS, a compositor blur on the one Linux
-   desktop that offers it — those two stop being fully opaque and let a little
-   of it through, the way Explorer and Finder do. Nothing else does: panels,
-   menus and dialogs are solid paper, and a file list over a live blur is
-   unreadable.
+   WHO SHOWS THE BACKDROP. Two roles here are the *window* rather than a
+   surface inside it: the frame (the tab strip and the navigation rail, both
+   `--chrome`) leaves the body's tint alone, so a little of the platform's
+   backdrop comes through the L of chrome around the document. The document
+   plane — `bg-background`: the toolbar, the listing, the inspector, the drawer
+   and the status strip — paints the canvas at full strength whatever the
+   material is. That is the line Finder, Explorer and Files all stop at: a
+   vibrant source list, an opaque content view. A file list over a live blur is
+   unreadable, and a window that blurs everywhere reads as a screenshot of
+   someone else's desktop rather than as a file manager.
 
    This is garnish, not structure. The solid canvas is the design and the
    platform adds a trace of its own light to it; where there is no backdrop (a
@@ -887,10 +889,12 @@ html[data-window-focused="false"] {
    paint the canvas: `body`, and the root element, which the boot style in
    `index.html` fills so the pre-React splash is a solid plate. Under a material
    the root stops painting and `body` paints the canvas colour at `--pane-alpha`
-   instead of at full strength — the share left over is the share of the desktop
-   that comes through. `.bg-background`, the call-site spelling of the canvas on
-   the row the panels sit in, stops painting too, so the tint is not laid down
-   twice and run denser than `--pane-alpha` answers with.
+   instead of at full strength — and that share is a *floor*, not a decision
+   about any particular region: nothing in this shell ever shows the raw
+   desktop, only the canvas at 85% over the platform's backdrop. The regions
+   that show it are the ones that paint nothing on top, which is why `.bg-chrome`
+   — the call-site spelling of the frame — stops painting under a material and
+   `.bg-background` — the spelling of the document plane — does not.
 
    The overrides are `html[…]` selectors rather than a second `:root` because
    they have to outrank the scheme blocks, and the two background rules carry a
@@ -950,10 +954,11 @@ html[data-window-material="vibrancy"]:root body {
   );
 }
 
-html[data-window-material="mica"] .bg-background,
-html[data-window-material="acrylic"] .bg-background,
-html[data-window-material="blur"] .bg-background,
-html[data-window-material="vibrancy"] .bg-background,
+/* The frame is the only thing that leaves the body's tint alone, so the
+   backdrop arrives through the tab strip and the navigation rail — and nowhere
+   else. The document plane keeps its own paint (`bg-background`, which is
+   deliberately not in this list): the canvas under a listing has to be a solid
+   plate whatever is composited behind the window. */
 html[data-window-material="mica"] .bg-chrome,
 html[data-window-material="acrylic"] .bg-chrome,
 html[data-window-material="blur"] .bg-chrome,
