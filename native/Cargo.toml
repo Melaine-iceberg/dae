@@ -1,40 +1,32 @@
 [package]
-name = "dae-core-phase0"
+name = "dae-core-native"
 version = "0.0.0"
 edition = "2024"
-description = "Phase 0 N-API spike for the dae Electron migration"
+description = "N-API core process for the dae Electron shell"
 license = "MIT"
 
-# Standalone: the Tauri app under src-tauri is not a cargo workspace today, and
-# this spike must not inherit its target directory or lockfile.
-[workspace]
-
 [lib]
-name = "dae_core_phase0"
 crate-type = ["cdylib"]
+name = "dae_core_native"
 
 [dependencies]
-# Node-API is ABI-stable across Node and Electron, so this addon needs no
-# electron-rebuild. napi8 is below what every supported Electron ships.
-napi = { version = "2", features = ["napi8", "tokio_rt"] }
+dae-core = { path = "../src-tauri/crates/dae-core" }
+dirs = "6"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+napi = { version = "2", default-features = false, features = ["async", "napi8", "serde-json", "tokio_rt"] }
 napi-derive = "2"
-once_cell = "1"
 portable-pty = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
-
-# Thumbnails are decoded on the Rust side in the spike so the protocol path
-# exercises real work rather than a static fixture.
-image = { version = "0.25", default-features = false, features = [
-  "bmp",
-  "gif",
-  "ico",
-  "jpeg",
-  "png",
-  "tiff",
-  "webp",
-] }
+tokio = { version = "1", features = ["sync"] }
 
 [build-dependencies]
 napi-build = "2"
+
+[profile.release]
+lto = true
+strip = "symbols"
+
+# This crate shares its manifest directory with `src-tauri/crates/dae-core`, so
+# it owns its own lockfile/target instead of joining the shell's build.
+[workspace]

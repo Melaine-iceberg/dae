@@ -7,6 +7,7 @@ const labelArgument = Array.isArray(process.argv)
 const label = labelArgument ? labelArgument.slice(LABEL_PREFIX.length) : "main";
 
 const listeners = new Set();
+const channelListeners = new Set();
 
 function dispatch(payload) {
   for (const listener of [...listeners]) {
@@ -18,7 +19,18 @@ function dispatch(payload) {
   }
 }
 
+function dispatchChannel(payload) {
+  for (const listener of [...channelListeners]) {
+    try {
+      listener(payload);
+    } catch (error) {
+      console.error("dae channel listener failed", error);
+    }
+  }
+}
+
 ipcRenderer.on("dae:event", (_event, payload) => dispatch(payload));
+ipcRenderer.on("dae:channel", (_event, payload) => dispatchChannel(payload));
 
 // Window facts the main process reports on the same event bus Tauri used, so
 // the facade's Window methods stay ordinary event listeners.
@@ -112,6 +124,10 @@ contextBridge.exposeInMainWorld("daeBridge", {
   onEvent: (listener) => {
     listeners.add(listener);
     return () => listeners.delete(listener);
+  },
+  onChannelMessage: (listener) => {
+    channelListeners.add(listener);
+    return () => channelListeners.delete(listener);
   },
   window: {
     control: (action) => ipcRenderer.invoke("dae:window:control", action),

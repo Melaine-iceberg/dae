@@ -22,11 +22,8 @@
     "bindings:export": "cargo run --manifest-path src-tauri/Cargo.toml --features export-bindings --bin export_bindings",
     "native:build": "node scripts/native-build.mjs",
     "electron:install": "node node_modules/electron/install.js",
-    "electron:dev": "node scripts/native-build.mjs && electron electron/main.cjs",
-    "electron:pack": "node scripts/native-build.mjs && electron-builder --win --dir",
-    "phase0:accept": "node scripts/phase0-acceptance.mjs",
-    "phase0:accept:quick": "node scripts/phase0-acceptance.mjs --quick",
-    "phase0:accept:packaged": "node scripts/phase0-acceptance.mjs --packaged"
+    "electron:dev": "node scripts/native-build.mjs && npm run build && electron electron/main.cjs",
+    "electron:pack": "node scripts/native-build.mjs && npm run build && electron-builder --win --dir"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",

@@ -11,10 +11,7 @@ const {
   utilityProcess,
 } = require("electron");
 const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
-
-const isBench = process.argv.includes("--bench");
 
 const OPENABLE_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
 
@@ -22,15 +19,6 @@ function cliValue(name) {
   const prefix = `--${name}=`;
   const hit = process.argv.find((argument) => argument.startsWith(prefix));
   return hit ? hit.slice(prefix.length) : null;
-}
-
-// A bench run must not collide with a normal instance (or a previous run):
-// Electron's userData directory also scopes the single-instance lock and cache.
-if (isBench) {
-  const userData =
-    cliValue("bench-user-data") ||
-    path.join(os.tmpdir(), `dae-phase0-userdata-${process.pid}`);
-  app.setPath("userData", userData);
 }
 
 protocol.registerSchemesAsPrivileged([
@@ -44,19 +32,31 @@ protocol.registerSchemesAsPrivileged([
       bypassCSP: true,
     },
   },
+  {
+    // The renderer is a real ES-module bundle, which file:// cannot serve
+    // (opaque origin). A standard, secure scheme gives it a normal origin and
+    // lets Vite's absolute `/assets/...` URLs resolve unchanged.
+    scheme: "dae",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+    },
+  },
 ]);
-
-const benchOut = cliValue("bench-out");
-const benchRunId = cliValue("bench-run-id") || "manual";
 
 let coreChild = null;
 let coreInfo = null;
 let shuttingDown = false;
 let exitCode = 0;
 let requestSeq = 0;
-let benchTimer = null;
 const pending = new Map();
 const windowsByLabel = new Map();
+// Channel ids are allocated by the renderer, so main remembers which window
+// sent them and routes messages back to that window only.
+const channelOwners = new Map();
 
 // Main-thread event-loop lag. The acceptance page resets it before each phase
 // and reads it after, so a payload that blocks main shows up as a number
@@ -78,7 +78,7 @@ function appRoot() {
 }
 
 function spawnCore() {
-  const nativePath = path.join(appRoot(), "native", "dae_core_phase0.node");
+  const nativePath = path.join(appRoot(), "native", "dae_core_native.node");
   const coreEntry = path.join(appRoot(), "electron", "core", "core-entry.cjs");
   if (!fs.existsSync(nativePath)) {
     throw new Error(
@@ -88,7 +88,7 @@ function spawnCore() {
 
   return new Promise((resolve, reject) => {
     const child = utilityProcess.fork(coreEntry, [], {
-      serviceName: "dae-phase0-core",
+      serviceName: "dae-core",
       stdio: "pipe",
       env: {
         ...process.env,
@@ -124,6 +124,11 @@ function spawnCore() {
 
       if (message.type === "event") {
         broadcastEvent(message.event);
+        return;
+      }
+
+      if (message.type === "channel") {
+        sendChannel(message);
         return;
       }
 
@@ -191,6 +196,40 @@ function broadcastEvent(event) {
   }
 }
 
+function sendChannel(message) {
+  const payload = {
+    channelId: message.channelId,
+    payloadJson: message.payloadJson ?? null,
+    data: message.data ? new Uint8Array(message.data) : null,
+  };
+
+  const owner = channelOwners.get(payload.channelId);
+  if (owner && !owner.isDestroyed()) {
+    owner.send("dae:channel", payload);
+    return;
+  }
+
+  // A channel whose owner window is gone (or whose invoke raced the window
+  // teardown) is dropped rather than broadcast: another window has its own
+  // channel id space.
+}
+
+function collectChannelIds(value, ids) {
+  if (!value || typeof value !== "object" || ids.size >= 256) return;
+  if (typeof value.__dae_channel__ === "number") ids.add(value.__dae_channel__);
+  if (Array.isArray(value)) {
+    for (const item of value) collectChannelIds(item, ids);
+    return;
+  }
+  for (const item of Object.values(value)) collectChannelIds(item, ids);
+}
+
+function rememberChannels(sender, args) {
+  const ids = new Set();
+  collectChannelIds(args, ids);
+  for (const id of ids) channelOwners.set(id, sender);
+}
+
 // Window facts ride the renderer's event bus under Tauri's names, so the
 // Window facade is just another listener rather than a second transport.
 function sendWindowEvent(window, name, payload) {
@@ -234,6 +273,81 @@ function appVersion() {
   return version;
 }
 
+const DEV_SERVER_URL = cliValue("dev-server") || process.env.DAE_DEV_SERVER || null;
+
+const MIME_TYPES = new Map([
+  [".html", "text/html; charset=utf-8"],
+  [".js", "text/javascript; charset=utf-8"],
+  [".mjs", "text/javascript; charset=utf-8"],
+  [".css", "text/css; charset=utf-8"],
+  [".json", "application/json"],
+  [".svg", "image/svg+xml"],
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".webp", "image/webp"],
+  [".gif", "image/gif"],
+  [".ico", "image/x-icon"],
+  [".woff", "font/woff"],
+  [".woff2", "font/woff2"],
+  [".ttf", "font/ttf"],
+  [".otf", "font/otf"],
+  [".wasm", "application/wasm"],
+  [".map", "application/json"],
+  [".txt", "text/plain; charset=utf-8"],
+]);
+
+function rendererRoot() {
+  return app.isPackaged
+    ? path.join(app.getAppPath(), "dist")
+    : path.resolve(__dirname, "..", "dist");
+}
+
+// The Vite bundle is ES modules. file:// gives it an opaque origin where module
+// imports fail, so the packaged renderer is served over `dae://` instead.
+function registerRendererProtocol() {
+  const root = path.resolve(rendererRoot());
+  protocol.handle("dae", async (request) => {
+    try {
+      const url = new URL(request.url);
+      const relative = decodeURIComponent(url.pathname);
+      const resolved = path.resolve(root, `.${relative}`);
+      if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+        return new Response("forbidden", { status: 403 });
+      }
+
+      let filePath = resolved;
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+        if (path.extname(relative)) return new Response("not found", { status: 404 });
+        filePath = path.join(root, "index.html");
+      }
+
+      const body = fs.readFileSync(filePath);
+      return new Response(body, {
+        headers: {
+          "content-type": MIME_TYPES.get(path.extname(filePath).toLowerCase()) || "application/octet-stream",
+          "cache-control": "no-cache",
+        },
+      });
+    } catch (error) {
+      return new Response(String(error), { status: 500 });
+    }
+  });
+}
+
+function loadRenderer(window) {
+  if (DEV_SERVER_URL) {
+    window.loadURL(DEV_SERVER_URL);
+    return;
+  }
+
+  const index = path.join(rendererRoot(), "index.html");
+  if (!fs.existsSync(index)) {
+    throw new Error(`renderer bundle is missing at ${index}; run \`bun run build\` first`);
+  }
+  window.loadURL("dae://localhost/index.html");
+}
+
 function registerCoreProtocol() {
   protocol.handle("thumbnail", async (request) => {
     try {
@@ -248,7 +362,12 @@ function registerCoreProtocol() {
       // The token and port stay in main; the renderer only ever sees the
       // thumbnail:// URL it asked for.
       upstream.searchParams.set("token", coreInfo.token);
-      return await net.fetch(upstream.toString());
+      const response = await net.fetch(upstream.toString());
+      const headers = new Headers(response.headers);
+      // The grid loads thumbnails with crossOrigin="anonymous"; a custom scheme
+      // does not inherit the upstream localhost origin, so it needs CORS.
+      headers.set("access-control-allow-origin", "*");
+      return new Response(response.body, { status: response.status, headers });
     } catch (error) {
       return new Response(String(error), { status: 500 });
     }
@@ -256,13 +375,15 @@ function registerCoreProtocol() {
 }
 
 function registerIpc() {
-  ipcMain.handle("dae:invoke", async (_event, command, args) => {
+  ipcMain.handle("dae:invoke", async (event, command, args) => {
     if (typeof command !== "string") throw new Error("command must be a string");
+    rememberChannels(event.sender, args ?? null);
     return coreRequest(command, args ?? null);
   });
 
-  ipcMain.handle("dae:invokeRaw", async (_event, command, args) => {
+  ipcMain.handle("dae:invokeRaw", async (event, command, args) => {
     if (typeof command !== "string") throw new Error("command must be a string");
+    rememberChannels(event.sender, args ?? null);
     const data = await coreRequest(command, args ?? null, { raw: true });
     return data ? new Uint8Array(data) : null;
   });
@@ -276,7 +397,6 @@ function registerIpc() {
     nativePath: coreInfo?.nativePath ?? null,
     coreReady: Boolean(coreInfo),
     userData: app.getPath("userData"),
-    runId: benchRunId,
   }));
 
   ipcMain.handle("dae:lag:reset", () => {
@@ -286,34 +406,6 @@ function registerIpc() {
   });
 
   ipcMain.handle("dae:lag:read", () => lagMaxMs);
-
-  ipcMain.handle("dae:bench:log", (_event, message) => {
-    console.log(`[bench] ${String(message)}`);
-    return true;
-  });
-
-  ipcMain.handle("dae:bench:done", async (_event, result) => {
-    if (benchTimer) {
-      clearTimeout(benchTimer);
-      benchTimer = null;
-    }
-    const enriched = {
-      ...result,
-      main: { lagMaxMs },
-      versions: process.versions,
-      packaged: app.isPackaged,
-      nativePath: coreInfo?.nativePath ?? null,
-      corePort: coreInfo?.port ?? null,
-    };
-    if (benchOut) {
-      fs.mkdirSync(path.dirname(benchOut), { recursive: true });
-      fs.writeFileSync(benchOut, JSON.stringify(enriched, null, 2));
-      console.log(`[bench] wrote ${benchOut}`);
-    }
-    exitCode = enriched.pass ? 0 : 1;
-    app.quit();
-    return true;
-  });
 
   ipcMain.handle("dae:window:control", (event, action) => {
     const window = BrowserWindow.fromWebContents(event.sender);
@@ -428,7 +520,7 @@ function createWindow() {
     height: 820,
     show: true,
     backgroundColor: "#101116",
-    title: "dae phase 0",
+    title: "dae",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,
@@ -453,7 +545,19 @@ function createWindow() {
   window.on("blur", () => sendWindowEvent(window, "tauri://blur", false));
 
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  window.webContents.on("will-navigate", (event) => event.preventDefault());
+  const rendererOrigin = DEV_SERVER_URL ? new URL(DEV_SERVER_URL).origin : "dae://localhost";
+  window.webContents.on("will-navigate", (event, target) => {
+    // In-page routing is the renderer's job; only reloads of the app itself are
+    // allowed to navigate the main frame.
+    if (target.startsWith(rendererOrigin + "/")) return;
+    event.preventDefault();
+  });
+  const contents = window.webContents;
+  contents.on("destroyed", () => {
+    for (const [id, owner] of channelOwners) {
+      if (owner === contents) channelOwners.delete(id);
+    }
+  });
   window.webContents.on("did-finish-load", () => console.log("[renderer] did-finish-load"));
   window.webContents.on("did-fail-load", (_event, code, description, url) => {
     console.error(`[renderer] did-fail-load ${code} ${description} ${url}`);
@@ -472,29 +576,7 @@ function createWindow() {
     console.error(`[renderer] process gone: ${JSON.stringify(details)}`);
   });
 
-  const query = {
-    mode: isBench ? "bench" : "demo",
-    dir: cliValue("bench-dir") || "",
-    images: cliValue("bench-images") || "",
-    count: cliValue("bench-count") || "0",
-    runId: benchRunId,
-  };
-  window.loadFile(path.join(__dirname, "bench", "index.html"), { query });
-
-  if (isBench) {
-    benchTimer = setTimeout(() => {
-      console.error("[bench] timed out after 90s");
-      exitCode = 1;
-      if (benchOut) {
-        fs.mkdirSync(path.dirname(benchOut), { recursive: true });
-        fs.writeFileSync(
-          benchOut,
-          JSON.stringify({ pass: false, error: "bench timed out after 90s" }, null, 2),
-        );
-      }
-      app.quit();
-    }, 90_000);
-  }
+  loadRenderer(window);
 }
 
 async function shutdownCore() {
@@ -533,6 +615,7 @@ app.whenReady().then(async () => {
     await spawnCore();
     registerIpc();
     registerCoreProtocol();
+    registerRendererProtocol();
     createWindow();
   } catch (error) {
     console.error(`[main] startup failed: ${error.stack || error}`);

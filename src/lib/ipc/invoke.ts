@@ -1,6 +1,44 @@
-import { requireBridge } from "./bridge";
+import { getBridge, requireBridge } from "./bridge";
+import type { DaeBridge } from "./bridge";
 
 let nextChannelId = 1;
+
+const channels = new Map<number, Channel<unknown>>();
+let channelSubscription: (() => void) | null = null;
+let channelSubscriptionBridge: DaeBridge | null = null;
+
+/**
+ * Routes core-to-renderer channel messages to the `Channel` that created them.
+ *
+ * The bridge owns the transport: the core only knows channel ids, so `main`
+ * remembers which window invoked a command and preload delivers the message
+ * here. Byte payloads are turned into `ArrayBuffer` because that is the shape
+ * `Channel<ArrayBuffer>` consumers (packet listings) expect.
+ */
+function ensureChannelDelivery(): void {
+  const bridge = getBridge();
+  if (!bridge?.onChannelMessage || channelSubscriptionBridge === bridge) return;
+
+  channelSubscription?.();
+  channelSubscriptionBridge = bridge;
+  channelSubscription = bridge.onChannelMessage((message) => {
+    const channel = channels.get(message.channelId);
+    if (!channel) return;
+
+    if (message.payloadJson !== null) {
+      channel.onmessage(JSON.parse(message.payloadJson));
+      return;
+    }
+    if (message.data) {
+      const { data } = message;
+      channel.onmessage(
+        data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as unknown,
+      );
+      return;
+    }
+    channel.onmessage(null as unknown);
+  });
+}
 
 /**
  * A Tauri-shaped IPC channel.
@@ -16,6 +54,8 @@ export class Channel<T = unknown> {
 
   constructor(onmessage?: (message: T) => void) {
     if (onmessage) this.onmessage = onmessage;
+    channels.set(this.id, this as Channel<unknown>);
+    ensureChannelDelivery();
   }
 
   toJSON(): { __dae_channel__: number } {
@@ -32,6 +72,7 @@ export class Channel<T = unknown> {
  */
 export async function invoke<T>(command: string, args?: unknown): Promise<T> {
   const bridge = requireBridge();
+  ensureChannelDelivery();
   const payload = args === undefined ? null : JSON.parse(JSON.stringify(args));
   return (await bridge.invoke(command, payload)) as T;
 }

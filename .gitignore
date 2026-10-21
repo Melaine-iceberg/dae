@@ -63,8 +63,8 @@ NOTES.md
 # MAGI's local task-state file: working notes, not source.
 /PLAN.md
 
-# Phase 0 Electron migration spike: build output, the compiled N-API addon and
-# acceptance results are reproducible, never source.
+# Electron migration build output: the compiled N-API addon and packaged app
+# are reproducible, never source.
 /native/target/
 /native/*.node
 /dist-electron/

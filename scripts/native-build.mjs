@@ -19,9 +19,9 @@ if (cargo.status !== 0) process.exit(cargo.status ?? 1);
 
 const profile = debug ? "debug" : "release";
 const artifact = {
-  win32: "dae_core_phase0.dll",
-  darwin: "libdae_core_phase0.dylib",
-  linux: "libdae_core_phase0.so",
+  win32: "dae_core_native.dll",
+  darwin: "libdae_core_native.dylib",
+  linux: "libdae_core_native.so",
 }[process.platform];
 if (!artifact) {
   console.error(`[native] unsupported platform: ${process.platform}`);
@@ -36,6 +36,6 @@ if (!existsSync(built)) {
 
 const outDir = path.join(root, "native");
 mkdirSync(outDir, { recursive: true });
-const out = path.join(outDir, "dae_core_phase0.node");
+const out = path.join(outDir, "dae_core_native.node");
 copyFileSync(built, out);
 console.log(`[native] wrote ${path.relative(root, out)}`);

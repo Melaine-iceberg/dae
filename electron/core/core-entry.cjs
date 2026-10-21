@@ -48,6 +48,7 @@ function normalizeEvent(event) {
     target: event.target ?? null,
     payloadJson: event.payloadJson ?? event.payload_json ?? null,
     data: event.data ?? null,
+    channelId: event.channelId ?? event.channel_id ?? null,
   };
 }
 
@@ -62,8 +63,18 @@ async function pumpEvents() {
       return;
     }
     if (!running) return;
-    for (const event of events) {
-      post({ type: "event", event: normalizeEvent(event) });
+    for (const raw of events) {
+      const event = normalizeEvent(raw);
+      if (event.channelId != null) {
+        post({
+          type: "channel",
+          channelId: event.channelId,
+          payloadJson: event.payloadJson,
+          data: event.data,
+        });
+      } else {
+        post({ type: "event", event });
+      }
     }
   }
 }

@@ -16,6 +16,16 @@ export type BridgeEvent = {
   data: Uint8Array | null;
 };
 
+/**
+ * A message sent by the core to one renderer `Channel`. Buffers arrive as
+ * `Uint8Array`; JSON values arrive in `payloadJson`.
+ */
+export type BridgeChannelMessage = {
+  channelId: number;
+  payloadJson: string | null;
+  data: Uint8Array | null;
+};
+
 export type WindowAction =
   | "close"
   | "minimize"
@@ -46,6 +56,7 @@ export type DaeBridge = {
   invokeJson(command: string, args: unknown): Promise<string>;
   invokeRaw(command: string, args: unknown): Promise<Uint8Array | null>;
   onEvent(listener: (event: BridgeEvent) => void): () => void;
+  onChannelMessage(listener: (message: BridgeChannelMessage) => void): () => void;
   window: {
     control(action: WindowAction): Promise<unknown>;
   };
