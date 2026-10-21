@@ -10,6 +10,7 @@
 | [`gtk-stack-pinned-by-upstream.md`](gtk-stack-pinned-by-upstream.md) | **已定案，等上游** | gtk/gio 被上游锁在 0.18 —— gtk 0.19 连依赖解析都过不去，实测证据在案 |
 | [`completion-io.md`](completion-io.md) | **已实测否决，不改** | 文件 IO 换成 IOCP/io_uring —— 枚举无异步形态、小文件慢 12.6 倍、拷贝输给 `CopyFileExW`；harness 与原始数据在 `bench/io-backends/` |
 | [`windows-directory-enumeration.md`](windows-directory-enumeration.md) | **已实测，已实施** | Windows 目录枚举补上 `FIND_FIRST_EX_LARGE_FETCH` —— 35,803 条目 24.2ms → **13.7ms**（-43%）、120,000 条目 -42%；首次绘制不变；harness 与原始数据在 `bench/listing-pipeline/` |
+| [`sftp-host-key-tofu.md`](sftp-host-key-tofu.md) | **已实施，未对真实 sshd 验证** | SFTP 之前接受任何主机密钥 —— 改为按用户 `~/.ssh/known_hosts` 的 `accept-new`：首次记录、变更即拒、记不下来也拒 |
 
 第三份（`gtk-stack-pinned-by-upstream.md`）与上面两份**无关**：它记录的是**依赖升级遇到的上游阻断**，
 不是标签撕出的方案取舍 —— 下面各节只涉及前两份。

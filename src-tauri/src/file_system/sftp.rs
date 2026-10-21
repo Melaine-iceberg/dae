@@ -4,11 +4,13 @@
 //! single-server primitives, mirroring the SMB backend.
 //!
 //! Auth is password-based today; the username falls back to the local
-//! account name when the connection store has none. Host keys are accepted
-//! on first connect — a known-hosts store is future work.
+//! account name when the connection store has none. Host keys are verified
+//! against the user's OpenSSH `known_hosts` file and recorded on first
+//! contact — see [`super::known_hosts`] for the policy and its limits.
 
 use super::connections::{self, Protocol};
 use super::error::FileSystemError;
+use super::known_hosts::{HostKeyVerdict, verify_host_key};
 use super::smb::{parse_authority, split_authority};
 use super::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, FileProperties, NewEntryKind,
@@ -21,7 +23,7 @@ use russh_sftp::client::error::Error as SftpError;
 use russh_sftp::client::fs::File as SftpFile;
 use russh_sftp::protocol::{FileAttributes, StatusCode};
 use std::io::{self, Read, Write};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::UNIX_EPOCH;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -39,18 +41,90 @@ pub struct SftpBackend {
     sftp: SftpSession,
 }
 
-/// Accepts every host key on first connect. TODO: verify against a
-/// known-hosts store (TOFU) once one is persisted.
-struct AcceptAnyHostKey;
+/// Verifies the server's host key against the user's OpenSSH `known_hosts`
+/// file, recording it on first contact (trust on first use) and refusing a key
+/// that changed since. See [`super::known_hosts`] for why that file and what
+/// the policy cannot protect against.
+///
+/// A `russh` handler can only answer the handshake with yes/no, and `Ok(false)`
+/// surfaces as a generic "unknown key" abort. The refusal's real sentence —
+/// which fingerprints disagreed, and how to replace the line — is therefore
+/// left in `refusal` for [`connect_session`] to report.
+struct KnownHostsHandler {
+    host: String,
+    port: u16,
+    refusal: Arc<Mutex<Option<String>>>,
+    /// Test seam: the file to verify against instead of the user's
+    /// `~/.ssh/known_hosts`. `None` everywhere outside tests.
+    #[cfg(test)]
+    known_hosts_path: Option<std::path::PathBuf>,
+}
 
-impl russh::client::Handler for AcceptAnyHostKey {
+impl KnownHostsHandler {
+    /// Anything that is not a clean match refuses the handshake and records
+    /// why, so [`connect_session`] can report the actual sentence rather than
+    /// russh's generic abort.
+    fn accept(&mut self, key: &russh::keys::PublicKey, certificate: bool) -> bool {
+        // Synchronous I/O on a runtime worker, deliberately: this is one read
+        // (and at most one append) of a file measured in kilobytes, once per
+        // connection, and the handshake has nothing else to do until it
+        // answers. A `spawn_blocking` hop would only add a task for it.
+        #[cfg(test)]
+        let verdict = match &self.known_hosts_path {
+            Some(path) => super::known_hosts::verify_host_key_at(path, &self.host, self.port, key),
+            None => verify_host_key(&self.host, self.port, key),
+        };
+        #[cfg(not(test))]
+        let verdict = verify_host_key(&self.host, self.port, key);
+
+        match verdict {
+            Ok(HostKeyVerdict::Known) => {
+                if certificate {
+                    log::info!(
+                        "{}:{} presented a host certificate; its key matches the recorded one (the signing CA was not consulted)",
+                        self.host,
+                        self.port
+                    );
+                }
+                true
+            }
+            Ok(HostKeyVerdict::Learned) => {
+                log::info!(
+                    "Trusted the host key of {}:{} on first contact ({}{})",
+                    self.host,
+                    self.port,
+                    key.fingerprint(russh::keys::HashAlg::Sha256),
+                    if certificate {
+                        ", presented as a certificate; the signing CA was not consulted"
+                    } else {
+                        ""
+                    }
+                );
+                true
+            }
+            Err(reason) => {
+                if let Ok(mut slot) = self.refusal.lock() {
+                    *slot = Some(reason);
+                }
+                false
+            }
+        }
+    }
+}
+
+impl russh::client::Handler for KnownHostsHandler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKeyOrCertificate,
+        server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
-        Ok(true)
+        // A host *certificate* is pinned by its underlying key: the CA that
+        // signed it is not consulted (we have no `@cert-authority` support),
+        // so a renewed certificate for the same key keeps working while a
+        // different key is refused like any other change.
+        let certificate = server_public_key.certificate().is_some();
+        Ok(self.accept(&server_public_key.public_key(), certificate))
     }
 }
 
@@ -233,10 +307,24 @@ async fn connect_session(
     password: &str,
 ) -> Result<SftpSession, FileSystemError> {
     let config = Arc::new(russh::client::Config::default());
-    let mut session = russh::client::connect(config, (host, port), AcceptAnyHostKey)
+    let refusal = Arc::new(Mutex::new(None));
+    let handler = KnownHostsHandler {
+        host: host.to_owned(),
+        port,
+        refusal: refusal.clone(),
+        #[cfg(test)]
+        known_hosts_path: None,
+    };
+    let mut session = russh::client::connect(config, (host, port), handler)
         .await
         .map_err(|error| {
-            FileSystemError::Io(format!("Could not reach the SFTP server: {error}"))
+            // The host-key refusal is the one connect failure whose reason is
+            // ours; everything else is genuinely "could not reach".
+            let reason = refusal.lock().ok().and_then(|mut slot| slot.take());
+            match reason {
+                Some(reason) => FileSystemError::PermissionDenied(reason),
+                None => FileSystemError::Io(format!("Could not reach the SFTP server: {error}")),
+            }
         })?;
 
     let authenticated = session
@@ -815,6 +903,97 @@ impl Drop for SftpWriteAdapter {
 #[cfg(test)]
 mod sftp_tests {
     use super::*;
+
+    /// A known-hosts file in a scratch directory, so the handler tests never
+    /// touch the real `~/.ssh/known_hosts`.
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new(tag: &str) -> Self {
+            let path =
+                std::env::temp_dir().join(format!("dae-sftp-handler-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("create the scratch directory");
+            Self(path.join("known_hosts"))
+        }
+
+        fn handler(
+            &self,
+            host: &str,
+            port: u16,
+        ) -> (KnownHostsHandler, Arc<Mutex<Option<String>>>) {
+            let refusal = Arc::new(Mutex::new(None));
+            (
+                KnownHostsHandler {
+                    host: host.to_owned(),
+                    port,
+                    refusal: refusal.clone(),
+                    known_hosts_path: Some(self.0.clone()),
+                },
+                refusal,
+            )
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            if let Some(parent) = self.0.parent() {
+                let _ = std::fs::remove_dir_all(parent);
+            }
+        }
+    }
+
+    const KEY_A: &str =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJdD7y3aLq454yWBdwLWbieU1ebz9/cu7/QEXn9OIeZJ";
+    const KEY_B: &str =
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA6rWI3G2sz07DnfFlrouTcysQlj2P+jpNSOEWD9OJ3X";
+
+    fn key(openssh: &str) -> russh::keys::PublicKey {
+        russh::keys::PublicKey::from_openssh(openssh).expect("parse the fixture key")
+    }
+
+    #[test]
+    fn the_handler_accepts_first_contact_then_requires_the_same_key() {
+        let scratch = Scratch::new("known");
+        let (mut handler, refusal) = scratch.handler("nas.local", 2222);
+
+        assert!(
+            handler.accept(&key(KEY_A), false),
+            "an unknown host is trusted on first contact"
+        );
+        assert!(refusal.lock().unwrap().is_none());
+
+        assert!(
+            handler.accept(&key(KEY_A), false),
+            "the same key stays accepted"
+        );
+
+        assert!(
+            !handler.accept(&key(KEY_B), false),
+            "a changed key must refuse the handshake"
+        );
+        let reason = refusal
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("the reason is recorded");
+        assert!(
+            reason.contains("ssh-keygen -R \"[nas.local]:2222\""),
+            "the refusal tells the user how to repair it: {reason}"
+        );
+    }
+
+    #[test]
+    fn a_certificate_is_pinned_by_its_key() {
+        let scratch = Scratch::new("cert");
+        let (mut handler, _) = scratch.handler("nas.local", 22);
+
+        // The same key presented inside a certificate is the same pin: the
+        // flag only changes what is logged, never whether the key is trusted.
+        assert!(handler.accept(&key(KEY_A), false));
+        assert!(handler.accept(&key(KEY_A), true));
+        assert!(!handler.accept(&key(KEY_B), true));
+    }
 
     #[test]
     fn parses_sftp_urls() {

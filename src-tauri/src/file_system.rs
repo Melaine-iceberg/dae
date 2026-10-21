@@ -7,6 +7,7 @@ pub mod entry_codec;
 pub mod error;
 pub mod git;
 pub mod hashing;
+pub mod known_hosts;
 pub mod listing;
 pub mod local;
 #[cfg(target_os = "macos")]
