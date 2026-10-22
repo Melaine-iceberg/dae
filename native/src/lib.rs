@@ -631,12 +631,12 @@ async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::
         }
 
         "get_system_accent" => {
-            serde_json::to_value(system::accent())
+            serde_json::to_value(system::accent().await)
                 .map_err(|error| Error::from_reason(error.to_string()))
         }
 
         "get_system_theme" => {
-            serde_json::to_value(system::theme())
+            serde_json::to_value(system::theme().await)
                 .map_err(|error| Error::from_reason(error.to_string()))
         }
 

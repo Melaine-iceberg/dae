@@ -154,6 +154,15 @@ fn open_system_with_dialog(file: &Path) -> Result<(), FileSystemError> {
         .map_err(|error| FileSystemError::Internal(error.to_string()))
 }
 
+/// macOS and Linux have no system picker to show: the frontend opens its own
+/// (`list_open_with_apps` + `open_with_app`), so the shell command exists only
+/// to fail in a way a log or a stale caller can read. Windows keeps the native
+/// dialog above.
+#[cfg(not(target_os = "windows"))]
+fn open_system_with_dialog(_file: &Path) -> Result<(), FileSystemError> {
+    Err(FileSystemError::Internal("fs.open_with_unsupported".into()))
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     use super::{FileSystemError, OpenWithApp, OpenWithChoices};

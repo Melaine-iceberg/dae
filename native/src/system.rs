@@ -6,8 +6,6 @@
 //! forwards to the renderer.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-#[cfg(target_os = "linux")]
-use std::sync::OnceLock;
 
 use crate::emit_event;
 
@@ -48,13 +46,20 @@ pub(crate) fn from_abgr(packed: u32) -> Option<String> {
 
 /// The current OS accent as `#rrggbb`, or `None` where the platform has no
 /// accent setting (or it could not be read).
-pub fn accent() -> Option<String> {
-    accent_backend::read()
+///
+/// Asynchronous because the Linux reader talks to the XDG settings portal over
+/// D-Bus: awaiting it keeps the work on the runtime the caller is already on.
+/// Blocking on a private runtime instead panics there — the command dispatch
+/// runs on the addon's own tokio runtime, and `Runtime::block_on` is not
+/// allowed inside one.
+pub async fn accent() -> Option<String> {
+    accent_backend::read_async().await
 }
 
-/// The current OS light/dark preference: `Some(true)` is dark.
-pub fn theme() -> Option<bool> {
-    theme_backend::read()
+/// The current OS light/dark preference: `Some(true)` is dark. See [`accent`]
+/// for why this is asynchronous.
+pub async fn theme() -> Option<bool> {
+    theme_backend::read_async().await
 }
 
 /// Starts both platform observers once. Each reports the current value on
@@ -129,6 +134,10 @@ mod accent_backend {
         read_dword(ACCENT_VALUE)
             .and_then(super::from_abgr)
             .or_else(|| read_dword(COLORIZATION_VALUE).and_then(super::from_argb))
+    }
+
+    pub(super) async fn read_async() -> Option<String> {
+        read()
     }
 
     fn read_dword(name: &str) -> Option<u32> {
@@ -243,6 +252,10 @@ mod accent_backend {
         ))
     }
 
+    pub(super) async fn read_async() -> Option<String> {
+        read()
+    }
+
     pub(super) fn watch() {
         super::report_accent(read());
 
@@ -330,22 +343,31 @@ mod accent_backend {
         }
     }
 
-    pub(super) fn read() -> Option<String> {
-        crate::system::block_on(portal::read_accent())
+    pub(super) async fn read_async() -> Option<String> {
+        portal::read_accent().await
     }
 
+    /// Reports the accent now and then every change.
+    ///
+    /// The watcher owns its own thread, so it owns its own runtime too: the
+    /// portal is a D-Bus call, which belongs on tokio, and sharing the addon's
+    /// runtime from a plain thread would be the same nesting hazard the
+    /// command path had.
     pub(super) fn watch() {
-        super::report_accent(read());
+        let runtime = super::portal_runtime();
+        runtime.block_on(async {
+            super::report_accent(portal::read_accent().await);
 
-        let mut last = read();
-        loop {
-            std::thread::sleep(Duration::from_secs(2));
-            let now = read();
-            if now != last {
-                last = now.clone();
-                super::report_accent(now);
+            let mut last = portal::read_accent().await;
+            loop {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                let now = portal::read_accent().await;
+                if now != last {
+                    last = now.clone();
+                    super::report_accent(now);
+                }
             }
-        }
+        });
     }
 
     #[cfg(test)]
@@ -387,6 +409,10 @@ mod accent_backend {
 #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod accent_backend {
     pub(super) fn read() -> Option<String> {
+        None
+    }
+
+    pub(super) async fn read_async() -> Option<String> {
         None
     }
 
@@ -441,22 +467,27 @@ mod theme_backend {
         }
     }
 
-    pub(super) fn read() -> Option<bool> {
-        crate::system::block_on(portal::read_theme())
+    pub(super) async fn read_async() -> Option<bool> {
+        portal::read_theme().await
     }
 
+    /// Reports the theme now and then every change; see `accent_backend::watch`
+    /// for why this owns a runtime.
     pub(super) fn watch() {
-        super::report_theme(read());
+        let runtime = super::portal_runtime();
+        runtime.block_on(async {
+            super::report_theme(portal::read_theme().await);
 
-        let mut last = read();
-        loop {
-            std::thread::sleep(Duration::from_secs(2));
-            let now = read();
-            if now != last {
-                last = now;
-                super::report_theme(now);
+            let mut last = portal::read_theme().await;
+            loop {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                let now = portal::read_theme().await;
+                if now != last {
+                    last = now;
+                    super::report_theme(now);
+                }
             }
-        }
+        });
     }
 
     #[cfg(test)]
@@ -481,20 +512,23 @@ mod theme_backend {
         None
     }
 
+    pub(super) async fn read_async() -> Option<bool> {
+        None
+    }
+
     pub(super) fn watch() {}
 }
 
+/// A runtime the portal watchers can drive from their own threads.
+///
+/// One per watcher rather than one shared: a `current_thread` runtime may only
+/// be driven by one thread at a time, and both watchers poll independently.
 #[cfg(target_os = "linux")]
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
-    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RUNTIME
-        .get_or_init(|| {
-            tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("failed to build the portal runtime")
-        })
-        .block_on(future)
+fn portal_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("failed to build the portal runtime")
 }
 
 #[cfg(test)]
