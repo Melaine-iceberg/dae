@@ -5,7 +5,7 @@
 //! The engines are `dae-core`'s; this module only parses command arguments,
 //! owns the process-wide undo stacks, and reports progress on the event bus.
 
-mod progress;
+pub(crate) mod progress;
 mod undo;
 
 use dae_core::file_system::error::FileSystemError;

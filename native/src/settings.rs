@@ -156,6 +156,15 @@ pub fn save(settings: &AppSettings) -> Result<AppSettings, FileSystemError> {
     Ok(normalized)
 }
 
+/// Updates only the cached default-file-manager flag (used by
+/// [`crate::default_manager`] after a successful set/unset) and persists it.
+pub(crate) fn set_default_file_manager_cache(is_default: bool) -> Result<(), FileSystemError> {
+    ensure_loaded();
+    let mut registry = REGISTRY.lock().expect("settings registry poisoned");
+    registry.settings.default_file_manager.is_default = is_default;
+    persist_locked(&mut registry)
+}
+
 fn persist_locked(registry: &mut RegistryInner) -> Result<(), FileSystemError> {
     let Some(config_dir) = registry.config_dir.clone() else {
         return Err(FileSystemError::Internal(

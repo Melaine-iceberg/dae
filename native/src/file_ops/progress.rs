@@ -41,7 +41,7 @@ struct FileOperationProgress {
     current_path: Option<String>,
 }
 
-pub(super) fn emit_preparing(
+pub(crate) fn emit_preparing(
     operation_id: &str,
     operation: FileOperationKind,
 ) {
@@ -61,14 +61,14 @@ struct ReporterState {
     last_emit: Option<Instant>,
 }
 
-pub(super) struct FileOperationProgressReporter {
+pub(crate) struct FileOperationProgressReporter {
     operation_id: String,
     operation: FileOperationKind,
     state: std::sync::Mutex<ReporterState>,
 }
 
 impl FileOperationProgressReporter {
-    pub(super) fn new(operation_id: String, operation: FileOperationKind) -> Self {
+    pub(crate) fn new(operation_id: String, operation: FileOperationKind) -> Self {
         Self {
             operation_id,
             operation,

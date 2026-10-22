@@ -8,12 +8,16 @@
 //! PTY sessions and image thumbnail decoding stay here because `dae-core` is a
 //! file-system crate; the renderer calls these directly.
 
+mod archive;
+mod default_manager;
 mod directory_size;
 mod disks;
 mod file_ops;
 mod hashing;
 mod listing;
 mod media_meta;
+mod network;
+mod open_with;
 mod preview;
 mod recents;
 mod search;
@@ -22,8 +26,10 @@ mod shell;
 mod shell_commands;
 mod system;
 mod terminal;
+mod trash;
 mod volumes;
 mod watch;
+mod workspace;
 
 use std::io::Cursor;
 use std::sync::OnceLock;
@@ -284,12 +290,27 @@ fn required_string(args: &serde_json::Value, key: &str) -> Result<String> {
         .ok_or_else(|| Error::from_reason(format!("missing {key}")))
 }
 
+fn convert_arg<T: serde::de::DeserializeOwned>(
+    args: &serde_json::Value,
+    key: &str,
+    command: &str,
+) -> Result<T> {
+    args.get(key)
+        .cloned()
+        .ok_or_else(|| Error::from_reason(format!("{command}: missing {key}")))
+        .and_then(|value| {
+            serde_json::from_value(value)
+                .map_err(|error| Error::from_reason(format!("{command}: {error}")))
+        })
+}
+
 /// Starts the platform observers that report changes the renderer subscribes
 /// to: system accent, desktop theme, and volume arrival/removal. Safe to call
 /// once; repeated calls are ignored by the modules themselves.
 #[napi(js_name = "initialize")]
 pub fn initialize() -> bool {
     settings::ensure_loaded();
+    network::init(config_dir());
     system::start();
     volumes::start();
     true
@@ -614,11 +635,302 @@ async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::
                 .map_err(|error| Error::from_reason(error.to_string()))
         }
 
-        // The remaining workspace stores still live in the Tauri shell. Empty
-        // lists let the real renderer paint its empty states instead of error
-        // panels.
-        "load_favorites" | "list_spaces" => {
-            Ok(serde_json::Value::Array(Vec::new()))
+        "load_favorites" => {
+            let favorites = tokio::task::spawn_blocking(workspace::load_favorites)
+                .await
+                .map_err(|error| Error::from_reason(format!("favorites join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(favorites).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "save_favorites" => {
+            let favorites: Vec<workspace::Favorite> = args
+                .get("favorites")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| Error::from_reason(format!("save_favorites: {error}")))?
+                .unwrap_or_default();
+            tokio::task::spawn_blocking(move || workspace::save_favorites(favorites))
+                .await
+                .map_err(|error| Error::from_reason(format!("favorites join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "list_spaces" => {
+            let spaces = tokio::task::spawn_blocking(workspace::list_spaces)
+                .await
+                .map_err(|error| Error::from_reason(format!("spaces join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(spaces).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "create_space" => {
+            let name = required_string(&args, "name")?;
+            let space = tokio::task::spawn_blocking(move || workspace::create_space(name))
+                .await
+                .map_err(|error| Error::from_reason(format!("spaces join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(space).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "rename_space" => {
+            let space_id = required_string(&args, "spaceId")?;
+            let name = required_string(&args, "name")?;
+            let space =
+                tokio::task::spawn_blocking(move || workspace::rename_space(space_id, name))
+                    .await
+                    .map_err(|error| Error::from_reason(format!("spaces join: {error}")))?
+                    .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(space).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "delete_space" => {
+            let space_id = required_string(&args, "spaceId")?;
+            tokio::task::spawn_blocking(move || workspace::delete_space(space_id))
+                .await
+                .map_err(|error| Error::from_reason(format!("spaces join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "add_space_item" => {
+            let space_id = required_string(&args, "spaceId")?;
+            let path = required_string(&args, "path")?;
+            let space =
+                tokio::task::spawn_blocking(move || workspace::add_space_item(space_id, path))
+                    .await
+                    .map_err(|error| Error::from_reason(format!("spaces join: {error}")))?
+                    .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(space).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "remove_space_item" => {
+            let space_id = required_string(&args, "spaceId")?;
+            let path = required_string(&args, "path")?;
+            let space =
+                tokio::task::spawn_blocking(move || workspace::remove_space_item(space_id, path))
+                    .await
+                    .map_err(|error| Error::from_reason(format!("spaces join: {error}")))?
+                    .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(space).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "list_connections" => {
+            let connections = tokio::task::spawn_blocking(network::list_connections)
+                .await
+                .map_err(|error| Error::from_reason(format!("connections join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(connections).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "save_connection" => {
+            let input: dae_core::file_system::connections::SaveConnectionInput = args
+                .get("input")
+                .cloned()
+                .ok_or_else(|| Error::from_reason("save_connection: missing input"))
+                .and_then(|value| {
+                    serde_json::from_value(value)
+                        .map_err(|error| Error::from_reason(format!("save_connection: {error}")))
+                })?;
+            let saved = tokio::task::spawn_blocking(move || network::save_connection(input))
+                .await
+                .map_err(|error| Error::from_reason(format!("connections join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(saved).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "delete_connection" => {
+            let id = required_string(&args, "id")?;
+            tokio::task::spawn_blocking(move || network::delete_connection(id))
+                .await
+                .map_err(|error| Error::from_reason(format!("connections join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "test_connection" => {
+            let input = convert_arg::<dae_core::file_system::connections::SaveConnectionInput>(
+                &args,
+                "input",
+                "test_connection",
+            )?;
+            network::test_connection(input)
+                .await
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "list_cloud_accounts" => {
+            let accounts = tokio::task::spawn_blocking(network::list_cloud_accounts)
+                .await
+                .map_err(|error| Error::from_reason(format!("cloud join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(accounts).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "delete_cloud_account" => {
+            let id = required_string(&args, "id")?;
+            tokio::task::spawn_blocking(move || network::delete_cloud_account(id))
+                .await
+                .map_err(|error| Error::from_reason(format!("cloud join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "authorize_cloud_account" => {
+            let input = convert_arg::<
+                dae_core::file_system::cloud::oauth::AuthorizeCloudAccountInput,
+            >(&args, "input", "authorize_cloud_account")?;
+            let account = network::authorize_cloud_account(input)
+                .await
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(account).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "get_default_file_manager_status" => {
+            let status = tokio::task::spawn_blocking(default_manager::get_status)
+                .await
+                .map_err(|error| Error::from_reason(format!("default manager join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(status).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "set_default_file_manager" => {
+            let status = tokio::task::spawn_blocking(default_manager::set)
+                .await
+                .map_err(|error| Error::from_reason(format!("default manager join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(status).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "unset_default_file_manager" => {
+            let status = tokio::task::spawn_blocking(default_manager::unset)
+                .await
+                .map_err(|error| Error::from_reason(format!("default manager join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(status).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "open_with" => {
+            let path = required_string(&args, "path")?;
+            tokio::task::spawn_blocking(move || open_with::open_with(path))
+                .await
+                .map_err(|error| Error::from_reason(format!("open with join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "list_open_with_apps" => {
+            let path = required_string(&args, "path")?;
+            let choices = tokio::task::spawn_blocking(move || open_with::list_open_with_apps(path))
+                .await
+                .map_err(|error| Error::from_reason(format!("open with join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(choices).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "open_with_app" => {
+            let path = required_string(&args, "path")?;
+            let app_id = required_string(&args, "appId")?;
+            let set_default = args
+                .get("setDefault")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            tokio::task::spawn_blocking(move || {
+                open_with::open_with_app(path, app_id, set_default)
+            })
+            .await
+            .map_err(|error| Error::from_reason(format!("open with join: {error}")))?
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "list_trash" => {
+            let entries = trash::list_trash()
+                .await
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(entries).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "restore_trash_entries" => {
+            let ids: Vec<String> = args
+                .get("ids")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| Error::from_reason(format!("restore_trash_entries: {error}")))?
+                .unwrap_or_default();
+            let operation_id = required_string(&args, "operationId")?;
+            let restored = trash::restore_trash_entries(ids, operation_id)
+                .await
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::from(restored))
+        }
+
+        "delete_trash_entries" => {
+            let ids: Vec<String> = args
+                .get("ids")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| Error::from_reason(format!("delete_trash_entries: {error}")))?
+                .unwrap_or_default();
+            let operation_id = required_string(&args, "operationId")?;
+            let purged = trash::delete_trash_entries(ids, operation_id)
+                .await
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::from(purged))
+        }
+
+        "empty_trash" => {
+            let operation_id = required_string(&args, "operationId")?;
+            let purged = trash::empty_trash(operation_id)
+                .await
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::from(purged))
+        }
+
+        "compress_entries" => {
+            let sources: Vec<String> = args
+                .get("sources")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| Error::from_reason(format!("compress_entries: {error}")))?
+                .unwrap_or_default();
+            let destination_dir = required_string(&args, "destinationDir")?;
+            let format =
+                convert_arg::<archive::ArchiveFormat>(&args, "format", "compress_entries")?;
+            let password = args
+                .get("password")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned);
+            let operation_id = required_string(&args, "operationId")?;
+            let path =
+                archive::compress_entries(sources, destination_dir, format, password, operation_id)
+                    .await
+                    .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::String(path))
+        }
+
+        "extract_archive" => {
+            let archive_path = required_string(&args, "archivePath")?;
+            let destination_dir = args
+                .get("destinationDir")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned);
+            let password = args
+                .get("password")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned);
+            let operation_id = required_string(&args, "operationId")?;
+            let path =
+                archive::extract_archive(archive_path, destination_dir, password, operation_id)
+                    .await
+                    .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::String(path))
         }
 
         "terminal_create" => {
