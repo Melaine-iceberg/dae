@@ -20,6 +20,14 @@ const poolArgument = Array.isArray(process.argv)
   : undefined;
 const poolWindow = poolArgument?.slice(POOL_PREFIX.length) === "1" ? 1 : 0;
 
+// Opt-in diagnostics for the renderer-owned tab drag; see `createWindow`.
+const TAB_DRAG_DEBUG_PREFIX = "--dae-tab-drag-debug=";
+const tabDragDebugArgument = Array.isArray(process.argv)
+  ? process.argv.find((argument) => argument.startsWith(TAB_DRAG_DEBUG_PREFIX))
+  : undefined;
+const tabDragDebug =
+  tabDragDebugArgument?.slice(TAB_DRAG_DEBUG_PREFIX.length) === "1" ? 1 : 0;
+
 // The splash reads this global before the bundle evaluates, so it has to be in
 // the main world from the preload rather than fetched over IPC.
 contextBridge.exposeInMainWorld("__DAE_WINDOW_MATERIAL__", windowMaterial);
@@ -136,6 +144,7 @@ window.addEventListener("drop", (event) => {
 
 contextBridge.exposeInMainWorld("daeBridge", {
   label,
+  tabDragDebug,
   invokeJson: (command, args) => ipcRenderer.invoke("dae:invoke", command, args),
   invoke: async (command, args) => {
     const json = await ipcRenderer.invoke("dae:invoke", command, args);
@@ -171,6 +180,9 @@ contextBridge.exposeInMainWorld("daeBridge", {
   app: {
     version: () => ipcRenderer.invoke("dae:app:version"),
     logDir: () => ipcRenderer.invoke("dae:app:log-dir"),
+  },
+  tab: {
+    claim: (source, token) => ipcRenderer.invoke("dae:tab:claim", source, token),
   },
   resetLag: () => ipcRenderer.invoke("dae:lag:reset"),
   readLag: () => ipcRenderer.invoke("dae:lag:read"),

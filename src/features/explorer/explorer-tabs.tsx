@@ -7,15 +7,12 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode,
   type RefObject,
 } from "react";
-import { createPortal } from "react-dom";
 import { useAtomValue, useSetAtom } from "jotai";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import { Window as TauriWindow, type EventCallback, type UnlistenFn } from "@/lib/ipc";
+import { Window as TauriWindow, claimTabHandoff, getBridge, type EventCallback, type UnlistenFn } from "@/lib/ipc";
 import {
   AddIcon,
   AltArrowLeftIcon,
@@ -75,17 +72,101 @@ import {
   type ExplorerTab,
 } from "./tabs";
 import {
-  TAB_DRAG_PREVIEW_PAD,
-  beginTabDragGesture,
+  HANDOFF_CLAIM_GRACE_MS,
   dropIndicatorGeometryAt,
+  isTabDrag,
+  readTabDrag,
+  setTabDragImage,
+  stripAutoScrollStep,
   tabInsertionIndexAt,
+  tabReorderIndexAt,
+  takeClaimedTabHandoff,
+  trackOutgoingTabHandoff,
+  waitForClaimedTabHandoff,
+  writeTabDrag,
   type DropIndicatorGeometry,
-  type NativeDragOutcome,
-  type TabDragController,
-  type TabDragGhost,
 } from "./tab-drag";
 
 const TAB_STRIP_SCROLL_AMOUNT = 512;
+
+/** How soon after the drag left this window a release still counts as having
+ *  happened inside it.
+ *
+ *  Wayland sends no `drop` when the compositor reports no drag action; the
+ *  leave that ends the session is what a source window has to go on. A teardown
+ *  leave lands on top of `dragend`, while a real departure is followed by
+ *  travel before the release. Getting this wrong only keeps a tab the user
+ *  meant to cast out — a cross-window claim still wins. */
+const IN_WINDOW_RELEASE_GRACE_MS = 300;
+
+/** The tab the pointer is holding in *this* window, for the lifetime of one
+ *  HTML5 drag.
+ *
+ *  Every field is event-time data, so it lives in a ref rather than in state:
+ *  only `draggingTabId` and the drop indicator are painted, and everything here
+ *  would otherwise re-render the strip on every `dragover`. */
+type TabDragSession = {
+  tabId: string;
+  /** This handoff's identity, which is how a window that takes the tab answers
+   *  this one. See `tab-drag.ts`. */
+  token: string;
+  /** Where inside the chip the drag was grabbed, which is the point a tear-off
+   *  window keeps under the cursor. */
+  grabX: number;
+  grabY: number;
+  /** The last pointer position seen inside this window, in its CSS pixels. */
+  lastX: number;
+  lastY: number;
+  /** When this window last lost the drag (the dragleave that brought the
+   *  hover count to zero), in `performance.now()` milliseconds, or `null`
+   *  while the drag is still over it.
+   *
+   *  This — not the drag result — is what says whether the release happened
+   *  here: Wayland's compositor reports no drop action, Chromium reads that as
+   *  a cancellation, and a drop inside the source window arrives as
+   *  `dragleave` + `dragend` with no `drop` at all. A pointer that left has to
+   *  travel somewhere before it is released, so a leave that is still fresh
+   *  when the drag ends was part of the teardown, not a departure. */
+  leftAt: number | null;
+  /** Set once the drag has left this window: a release that nothing accepted
+   *  is then a tear-off rather than a cancelled gesture. */
+  leftWindow: boolean;
+  /** The drag was released over this window, which keeps the tab here even
+   *  though a drop in the strip still reorders it. Only a platform that
+   *  reports the drop sets this; Wayland is read from {@link leftAt}. */
+  landed: boolean;
+  /** Another window claimed this handoff. Remembered on the session rather
+   *  than acted on at once: the claim can cross the drag it belongs to, and
+   *  closing the chip while it is still the platform's drag source would pull
+   *  the gesture out from under the browser. */
+  claimed: boolean;
+  /** Last reorder slot pushed to the store, so a hover that changes nothing
+   *  costs no write. */
+  index: number;
+};
+
+/** The shell's answer that a window took a tab this one was dragging. */
+type TabHandoffClaim = {
+  token: string;
+  target: string | null;
+};
+
+/** Logs one stage of a tab drag when `DAE_TAB_DRAG_DEBUG=1`.
+ *
+ *  The gesture belongs to the renderer and, past the window edge, to the
+ *  platform, so the two ways it can fail — a drag the platform never started,
+ *  and a drop that arrived somewhere else — are indistinguishable from
+ *  inside the page unless the stages are printed. Paired with
+ *  `ELECTRON_ENABLE_LOGGING=1` these lines land next to Chromium's own. */
+function logTabDrag(stage: string, detail: Record<string, unknown> = {}): void {
+  if (!getBridge()?.tabDragDebug) return;
+  console.info(`[tab-drag ${getAppWindow()?.label ?? "?"}] ${stage}`, detail);
+}
+
+/** The drag's carried types, readable even in protected mode. */
+function dragTypes(dataTransfer: DataTransfer | null): string[] {
+  return dataTransfer ? Array.from(dataTransfer.types) : [];
+}
 
 /** A generated event, optionally callable with a target to scope its binding. */
 type WindowScopedEvent<T> = {
@@ -94,15 +175,15 @@ type WindowScopedEvent<T> = {
 };
 
 /**
- * Binds a tab-drag event to the window this webview belongs to.
+ * Binds a window event to the window this webview belongs to.
  *
  * Tauri matches JS listeners by the target they registered with, and the
  * generated `events.x.listen()` helper registers as `EventTarget::Any` — which
  * the backend hands every emit, including one addressed to a different window.
- * Unscoped, the source window therefore consumes its own handoff (re-inserting
- * the tab it just gave away, which also keeps its last tab from ever reaching
- * zero) and the drop preview lights up in every window. Listening through the
- * window object keeps this window's traffic to itself. Note this is no defence
+ * Unscoped, a window consumes handoffs meant for its siblings: a pooled window
+ * would adopt a tab another pool window was given, and the strip's preview
+ * would answer traffic that belongs elsewhere. Listening through the window
+ * object keeps this window's traffic to itself. Note this is no defence
  * against a broadcast — that path applies no filter at all — so the handoff
  * has to be addressed on the sending side too.
  */
@@ -114,164 +195,6 @@ function listenInThisWindow<T>(
   // The browser preview bridge has no native window to scope to, so the dev
   // plumbing falls back to the global listener.
   return (appWindow ? event(appWindow) : event).listen(handler);
-}
-
-/** The ghost mounts one React commit after the drag threshold, so the
- *  snapshot — which runs at the hand-off (see tab-drag.ts) — finds the portal
- *  mounted and resolves on its first check; the frame budget is the bound for
- *  the unlikely case the commit is still in flight when the cursor leaves the
- *  window almost immediately. */
-function waitForDragPreviewPortal(tabId: string, frames = 12): Promise<HTMLElement | null> {
-  return new Promise((resolve) => {
-    const tick = (remaining: number) => {
-      const portal = document.querySelector<HTMLElement>(`[data-tab-drag-preview="${tabId}"]`);
-      if (portal) resolve(portal);
-      else if (remaining > 0) requestAnimationFrame(() => tick(remaining - 1));
-      else resolve(null);
-    };
-    requestAnimationFrame(() => tick(frames));
-  });
-}
-
-/** Clones the ghost with every computed style inlined and <img> artwork
- *  embedded as data URLs: an SVG loaded as an image renders in isolation and
- *  can neither apply page stylesheets nor fetch external resources. */
-async function inlineSubtree(source: Element, clone: Element): Promise<void> {
-  const computed = getComputedStyle(source);
-  for (let index = 0; index < computed.length; index++) {
-    const property = computed.item(index);
-    (clone as HTMLElement | SVGElement).style.setProperty(
-      property,
-      computed.getPropertyValue(property),
-      computed.getPropertyPriority(property),
-    );
-  }
-
-  if (source instanceof HTMLImageElement && clone instanceof HTMLImageElement) {
-    try {
-      const blob = await (await fetch(source.src)).blob();
-      clone.src = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(blob);
-      });
-    } catch {
-      clone.remove();
-    }
-  }
-
-  const children = Array.from(source.children);
-  const copies = Array.from(clone.children);
-  for (let index = 0; index < children.length; index++) {
-    await inlineSubtree(children[index]!, copies[index]!);
-  }
-}
-
-/** Clears every box-shadow {@link inlineSubtree} inlined into the clone.
- *
- *  The native drag image is composited by the OS under the pointer with nothing
- *  behind it, so elevation does not read there as the in-window float it was
- *  drawn for — a rasterized copy of `--shadow-ambient-lg` trails the tab across
- *  the desktop as a stray smear, and its blurred edge is cut off wherever it
- *  overruns the bitmap. Kept as the snapshot's own guarantee rather than as a
- *  reflection of the ghost's current styling, and applied to the whole subtree,
- *  not just the root: a shadow on any descendant would be baked in the same
- *  way, and the snapshot must stay flat whatever the ghost becomes. */
-function clearBoxShadows(root: Element): void {
-  if (root instanceof HTMLElement) root.style.boxShadow = "none";
-  for (const node of root.querySelectorAll<HTMLElement>("*")) {
-    node.style.boxShadow = "none";
-  }
-}
-
-/** Rasterizes the live ghost portal (plus the antialiasing cushion) to a PNG
- *  data URL for the OS drag loop, so the native drag image carries the same tab
- *  the user was dragging in-window. Unlike a DOM portal it is also not clipped
- *  at the WebView boundary. Returns null on any failure; the Rust side then
- *  falls back to the application icon. */
-function snapshotTabDragPreview(tabId: string): Promise<string | null> {
-  return (async () => {
-    const portal = await waitForDragPreviewPortal(tabId);
-    if (!portal) return null;
-
-    const bounds = portal.getBoundingClientRect();
-    const scale = window.devicePixelRatio || 1;
-    const width = bounds.width + TAB_DRAG_PREVIEW_PAD * 2;
-    const height = bounds.height + TAB_DRAG_PREVIEW_PAD * 2;
-
-    const clone = portal.cloneNode(true) as HTMLElement;
-    await inlineSubtree(portal, clone);
-    clearBoxShadows(clone);
-    clone.style.position = "absolute";
-    clone.style.inset = "auto";
-    clone.style.left = `${TAB_DRAG_PREVIEW_PAD}px`;
-    clone.style.top = `${TAB_DRAG_PREVIEW_PAD}px`;
-    clone.style.margin = "0";
-    clone.style.transform = "none";
-
-    // The foreignObject viewport is sized in device pixels; the wrapper lays
-    // the clone out in CSS pixels and scales it so text rasterizes crisply at
-    // the display's pixel ratio instead of relying on drawImage upscaling.
-    // Rounded up, never down: at a fractional display scale a viewport rounded
-    // short of the content shaves that fraction off the far edge, and `ceil`
-    // only ever costs a transparent pixel that nothing paints.
-    const bitmapWidth = Math.ceil(width * scale);
-    const bitmapHeight = Math.ceil(height * scale);
-    const svgNamespace = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(svgNamespace, "svg");
-    svg.setAttribute("width", String(bitmapWidth));
-    svg.setAttribute("height", String(bitmapHeight));
-    const foreignObject = document.createElementNS(svgNamespace, "foreignObject");
-    foreignObject.setAttribute("width", String(bitmapWidth));
-    foreignObject.setAttribute("height", String(bitmapHeight));
-    const wrapper = document.createElementNS("http://www.w3.org/1999/xhtml", "div");
-    wrapper.setAttribute(
-      "style",
-      `width:${width}px;height:${height}px;transform:scale(${scale});transform-origin:0 0;`,
-    );
-    wrapper.appendChild(clone);
-    foreignObject.appendChild(wrapper);
-    svg.appendChild(foreignObject);
-
-    // The serialized SVG reaches the image as a base64 `data:` URL, never a
-    // `blob:` object URL: Chromium treats an SVG that contains a
-    // `<foreignObject>` as cross-origin when it is loaded from a blob URL, so
-    // drawing it taints the canvas below and `toDataURL` throws a
-    // `SecurityError` — the snapshot then degraded to the application icon on
-    // the OS drag image. A data URL stays origin-clean, and base64 keeps it at
-    // 4/3 of the mark-up where percent-encoding tripled it. An SVG loaded as an
-    // image is sandboxed — it can neither apply page stylesheets nor fetch
-    // external resources — so this remains a purely local rasterization step
-    // with no outbound request.
-    const svgSource = new XMLSerializer().serializeToString(svg);
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(new Blob([svgSource], { type: "image/svg+xml" }));
-    });
-    const image = new Image();
-    await new Promise<void>((resolve, reject) => {
-      image.onload = () => resolve();
-      image.onerror = () => reject(new Error("The drag preview SVG failed to rasterize"));
-      image.src = dataUrl;
-    });
-
-    const canvas = document.createElement("canvas");
-    canvas.width = bitmapWidth;
-    canvas.height = bitmapHeight;
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-    context.drawImage(image, 0, 0);
-    return canvas.toDataURL("image/png");
-  })().catch((error) => {
-    // The Rust side falls back to the application icon, which looks enough
-    // like a preview to hide a broken snapshot: a tainted canvas or a failed
-    // rasterization has to be visible in the log, not just in the drag image.
-    console.error("Failed to snapshot the tab drag preview", error);
-    return null;
-  });
 }
 
 const WORKSPACE_TAB_ICONS = {
@@ -291,9 +214,10 @@ const WORKSPACE_TAB_ICONS = {
  *  arithmetic, and none of them needs a thought when you measure the element
  *  that is actually on screen. One `getBoundingClientRect` per change.
  *
- *  Written straight to the node instead of through state for the same reason
- *  the drag ghost is: a re-render of the strip on every measurement would
- *  re-render every chip's title, icon and close button to move one decoration.
+ *  Written straight to the node instead of through state because a re-render
+ *  of the strip on every measurement would re-render every chip's title, icon
+ *  and close button to move one decoration — the same budget the drag loop
+ *  spends its reorders from.
  *
  *  `animate` is the difference between the plate sliding to a tab and
  *  teleporting. A cold strip and a resize want the second — an entrance that
@@ -376,6 +300,8 @@ export function ExplorerTabs() {
   const tabs = useAtomValue(tabsAtom);
   const activeTabId = useAtomValue(activeTabIdAtom);
   const createTab = useSetAtom(createTabAtom);
+  const activateTab = useSetAtom(activateTabAtom);
+  const closeTab = useSetAtom(closeTabAtom);
   const ensureSpacesLoaded = useSetAtom(ensureSpacesLoadedAtom);
   const setCommandBarOpen = useSetAtom(commandBarOpenAtom);
   const setCommandBarMode = useSetAtom(commandBarModeAtom);
@@ -384,6 +310,10 @@ export function ExplorerTabs() {
   const stripRef = useRef<HTMLDivElement>(null);
   const pillRef = useRef<HTMLSpanElement>(null);
   const [canScroll, setCanScroll] = useState({ left: false, right: false });
+  const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
+  const [dropGeometry, setDropGeometry] = useState<DropIndicatorGeometry | null>(null);
+  const dragSession = useRef<TabDragSession | null>(null);
+  const autoScrollFrame = useRef<number | null>(null);
   // Keep the terminal mounted after its first reveal so the PTY session
   // survives being hidden; before that there is nothing to keep alive.
   const [terminalMounted, setTerminalMounted] = useState(terminalVisible);
@@ -396,23 +326,12 @@ export function ExplorerTabs() {
     void ensureSpacesLoaded();
   }, [ensureSpacesLoaded]);
 
-  // Tabs dropped from other windows arrive as window-to-window events; the
-  // handoff carries the full tab state and the drop point picks the
-  // insertion index within this window's strip.
-  useEffect(() => {
-    const unlisten = listenInThisWindow(events.tabMergedIntoWindow, (event) => {
-      const { payload: handoff, x } = event.payload;
-      const strip = stripRef.current;
-      const index = strip ? tabInsertionIndexAt(strip, x ?? 0) : Number.MAX_SAFE_INTEGER;
-      try {
-        mergeTabFromHandoff(handoff, index);
-        void getAppWindow()?.setFocus();
-      } catch (error) {
-        console.error("Failed to merge a tab dropped from another window", error);
-      }
-    });
-    return () => void unlisten.then((unlisten) => unlisten());
-  }, []);
+  // A tab dropped from another window is inserted by the drop handler itself
+  // (see the drag and drop effect below): the drop carries the whole tab, so
+  // the window that receives it is the one that installs it, and the sending
+  // window closes its copy when the claim comes back. The old
+  // `tab-merged-into-window` event has no listener left to feed; the shell
+  // command behind it stays as part of the command surface.
 
   // A pooled window adopts the torn-off tab instead of merging it: it has been
   // running with its own default tab, which the tear-off replaces rather than
@@ -446,6 +365,351 @@ export function ExplorerTabs() {
     };
   }, []);
 
+  // The tab strip's drag and drop, in one place. The browser owns the gesture
+  // itself — its drag loop is the only one that reaches a window this page has
+  // no pointer events for, which on Wayland is every window but the source — so
+  // what is assembled here is the window's end of it: the live reorder, the
+  // insertion preview for a tab arriving from another window, and the two ways
+  // a drag can end. The wire format and the measuring live in `tab-drag.ts`.
+  useEffect(() => {
+    // How many elements of this window the drag is currently over. Chrome
+    // reports a null `relatedTarget` on every `dragleave`, so the count is the
+    // only reliable way to tell "moved to another child" from "left the
+    // window" — the same depth counter the preload keeps for file drags.
+    let dragDepth = 0;
+    // One `over` line per drag is enough to prove dragover is arriving; the
+    // event itself fires many times a second.
+    let overLogged = false;
+
+    const cancelAutoScroll = () => {
+      if (autoScrollFrame.current === null) return;
+      cancelAnimationFrame(autoScrollFrame.current);
+      autoScrollFrame.current = null;
+    };
+
+    /** The chip being dragged in this window, if the drag started here. The
+     *  `data-dragging` mark is what other windows lack, so it is also the
+     *  test for "this drag is ours"; the id is the fallback for the first
+     *  frame, before the chip's own state has been committed. */
+    const draggedTab = () => {
+      const strip = stripRef.current;
+      const tabId = dragSession.current?.tabId;
+      if (!strip || !tabId) return null;
+      return (
+        strip.querySelector<HTMLElement>('[data-dragging="true"]') ??
+        strip.querySelector<HTMLElement>(`[data-tab-id="${CSS.escape(tabId)}"]`)
+      );
+    };
+
+    const reorderToPointer = (session: TabDragSession) => {
+      const strip = stripRef.current;
+      const dragged = draggedTab();
+      if (!strip || !dragged) return;
+      const index = tabReorderIndexAt(strip, session.lastX, dragged);
+      if (index === session.index) return;
+      session.index = index;
+      moveTab(session.tabId, index);
+    };
+
+    /** One frame of edge scrolling. The tabs move under a cursor that is not
+     *  moving at all, so the reorder slot is recomputed from the last known
+     *  position instead of from a new event. */
+    const autoScroll = () => {
+      autoScrollFrame.current = null;
+      const session = dragSession.current;
+      const strip = stripRef.current;
+      if (!session || !strip) return;
+      const box = strip.getBoundingClientRect();
+      // Scrolling is the strip's, not the window's: a cursor parked at the same
+      // `x` in the listing is over no scroller that should follow it.
+      if (session.lastY < box.top || session.lastY > box.bottom) return;
+      const step = stripAutoScrollStep(strip, session.lastX);
+      if (step === 0) return;
+      strip.scrollLeft += step;
+      reorderToPointer(session);
+      autoScrollFrame.current = requestAnimationFrame(autoScroll);
+    };
+
+    const follow = (session: TabDragSession, x: number, y: number) => {
+      session.lastX = x;
+      session.lastY = y;
+      const strip = stripRef.current;
+      if (!strip) return;
+      const box = strip.getBoundingClientRect();
+      const inStrip = y >= box.top && y <= box.bottom && x >= box.left && x <= box.right;
+      if (inStrip) reorderToPointer(session);
+      const scrolling = inStrip && stripAutoScrollStep(strip, x) !== 0;
+      if (scrolling) {
+        autoScrollFrame.current ??= requestAnimationFrame(autoScroll);
+      } else {
+        cancelAutoScroll();
+      }
+    };
+
+    const begin = (event: DragEvent) => {
+      dragDepth = 0;
+      overLogged = false;
+      const element =
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>('[role="tab"][data-tab-id]')
+          : null;
+      const tabId = element?.dataset.tabId;
+      if (!element || !tabId || !event.dataTransfer) {
+        logTabDrag("start-ignored", { types: dragTypes(event.dataTransfer) });
+        return;
+      }
+
+      // A press that starts on the close button is a click on it, not a tab
+      // being lifted: the button sits inside the chip, so without this the
+      // browser would hand the gesture to the chip and swallow the click.
+      if (event.target instanceof Element && event.target.closest("button")) {
+        event.preventDefault();
+        logTabDrag("start-cancelled", { reason: "close-button" });
+        return;
+      }
+
+      const bounds = element.getBoundingClientRect();
+      const token = crypto.randomUUID();
+      const session: TabDragSession = {
+        tabId,
+        token,
+        grabX: event.clientX - bounds.left,
+        grabY: event.clientY - bounds.top,
+        lastX: event.clientX,
+        lastY: event.clientY,
+        leftAt: null,
+        leftWindow: false,
+        landed: false,
+        claimed: false,
+        index: -1,
+      };
+      dragSession.current = session;
+      trackOutgoingTabHandoff(token, tabId);
+      setDraggingTabId(tabId);
+      setDropGeometry(null);
+      activateTab(tabId);
+      event.dataTransfer.effectAllowed = "move";
+      writeTabDrag(event.dataTransfer, {
+        source: getAppWindow()?.label ?? "",
+        token,
+        payload: serializeTabHandoff(tabId),
+      });
+      setTabDragImage(event.dataTransfer, element, session.grabX, session.grabY);
+      logTabDrag("start", { tabId, types: dragTypes(event.dataTransfer) });
+    };
+
+    const over = (event: DragEvent) => {
+      if (!isTabDrag(event.dataTransfer)) return;
+      // A tab is welcome anywhere in this window: a drop that misses the strip
+      // keeps it, it does not cancel the gesture. Only `drop` decides what it
+      // means, so the whole window is a valid target for the platform.
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+
+      const session = dragSession.current;
+      if (!overLogged) {
+        overLogged = true;
+        logTabDrag("over", {
+          own: Boolean(session),
+          types: dragTypes(event.dataTransfer),
+          x: Math.round(event.clientX),
+        });
+      }
+      if (session) {
+        follow(session, event.clientX, event.clientY);
+        return;
+      }
+
+      const geometry = dropIndicatorGeometryAt(event.clientX);
+      if (!geometry) return;
+      setDropGeometry((previous) =>
+        previous && Math.abs(previous.left - geometry.left) < 0.5 ? previous : geometry,
+      );
+    };
+
+    const enter = (event: DragEvent) => {
+      if (!isTabDrag(event.dataTransfer)) return;
+      dragDepth += 1;
+      overLogged = false;
+      logTabDrag("enter", { depth: dragDepth, types: dragTypes(event.dataTransfer) });
+      const session = dragSession.current;
+      // A drag back in from outside is no longer a tear-off candidate.
+      if (session) {
+        session.leftWindow = false;
+        session.leftAt = null;
+      }
+    };
+
+    const leave = (event: DragEvent) => {
+      if (!isTabDrag(event.dataTransfer)) return;
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth > 0) return;
+      logTabDrag("leave-window", { own: Boolean(dragSession.current) });
+
+      const session = dragSession.current;
+      if (session) {
+        session.leftWindow = true;
+        session.leftAt = performance.now();
+        cancelAutoScroll();
+        return;
+      }
+      setDropGeometry(null);
+    };
+
+    const drop = (event: DragEvent) => {
+      if (!isTabDrag(event.dataTransfer)) return;
+      dragDepth = 0;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+
+      const session = dragSession.current;
+      if (session) {
+        session.landed = true;
+        follow(session, event.clientX, event.clientY);
+        cancelAutoScroll();
+        logTabDrag("drop-own", { x: Math.round(event.clientX) });
+        return;
+      }
+
+      setDropGeometry(null);
+      const handoff = readTabDrag(event.dataTransfer);
+      logTabDrag("drop-foreign", {
+        parsed: Boolean(handoff),
+        types: dragTypes(event.dataTransfer),
+        x: Math.round(event.clientX),
+      });
+      const appWindow = getAppWindow();
+      const strip = stripRef.current;
+      if (!handoff || !appWindow) return;
+
+      // The tab is inserted here, and only then claimed: the sending window
+      // gives its copy up when it hears the claim, so a handoff that cannot be
+      // inserted has to land somewhere on this side first. A window of its own
+      // keeps the tab reachable instead of losing it.
+      const index = strip ? tabInsertionIndexAt(strip, event.clientX) : Number.MAX_SAFE_INTEGER;
+      try {
+        mergeTabFromHandoff(handoff.payload, index);
+        void appWindow.setFocus();
+      } catch (error) {
+        console.error("Failed to insert a dropped tab", error);
+        void commands
+          .tearOffTab(appWindow.label, handoff.payload, 0, 0, null, null)
+          .catch((recovery) => console.error("Failed to recover a dropped tab", recovery));
+      }
+      void claimTabHandoff(handoff.source, handoff.token);
+    };
+
+    /** Where a drag ended, once every answer that can still arrive is in. */
+    const settle = async (session: TabDragSession) => {
+      // A claim that beat the drag's own end is the answer already.
+      if (session.claimed) {
+        closeTab(session.tabId);
+        return;
+      }
+
+      // Did the release happen over this window? A platform that reports the
+      // drop says so outright. Wayland does not — a drop inside the source
+      // window arrives as `dragleave` + `dragend`, with no `drop` and no
+      // effect — so the last departure is the evidence: a teardown leave is
+      // still fresh when `dragend` runs, a real one is followed by travel.
+      const leftSince = session.leftAt === null ? null : performance.now() - session.leftAt;
+      if (session.landed || leftSince === null || leftSince <= IN_WINDOW_RELEASE_GRACE_MS) {
+        // The live reorder has already moved the tab; only the final slot was
+        // missed when no `drop` announced the release.
+        reorderToPointer(session);
+        logTabDrag("settle-in-window", {
+          landed: session.landed,
+          leftAgoMs: leftSince === null ? null : Math.round(leftSince),
+        });
+        return;
+      }
+
+      // Another window may still be claiming the tab, and that claim crosses
+      // two renderers and the shell: wait for it before deciding the tab was
+      // dropped on nothing.
+      if (await waitForClaimedTabHandoff(session.token, HANDOFF_CLAIM_GRACE_MS)) return;
+      // A pointer that never left this window ended on a cancelled drag
+      // (Escape, on a session whose platform owns the keyboard): cancelling
+      // puts the tab back rather than casting it out.
+      if (!session.leftWindow) return;
+      logTabDrag("settle-tear-off", { leftAgoMs: Math.round(leftSince) });
+      void detachTab(getAppWindow(), session.tabId, session.grabX, session.grabY, closeTab);
+    };
+
+    const end = (event: DragEvent) => {
+      dragDepth = 0;
+      const session = dragSession.current;
+      if (!session) return;
+      dragSession.current = null;
+      setDraggingTabId(null);
+      cancelAutoScroll();
+      logTabDrag("end", {
+        landed: session.landed,
+        leftWindow: session.leftWindow,
+        claimed: session.claimed,
+        dropEffect: event.dataTransfer?.dropEffect ?? null,
+        leftAgoMs:
+          session.leftAt === null ? null : Math.round(performance.now() - session.leftAt),
+      });
+
+      // A reported drop is already settled: the strip reordered the tab and it
+      // stays here. Everything else has to be decided, because the platform's
+      // drag result cannot be trusted to say where the release happened.
+      if (session.landed) return;
+      void settle(session);
+    };
+
+    window.addEventListener("dragstart", begin, true);
+    window.addEventListener("dragenter", enter, true);
+    window.addEventListener("dragover", over, true);
+    window.addEventListener("dragleave", leave, true);
+    window.addEventListener("drop", drop, true);
+    window.addEventListener("dragend", end, true);
+    return () => {
+      window.removeEventListener("dragstart", begin, true);
+      window.removeEventListener("dragenter", enter, true);
+      window.removeEventListener("dragover", over, true);
+      window.removeEventListener("dragleave", leave, true);
+      window.removeEventListener("drop", drop, true);
+      window.removeEventListener("dragend", end, true);
+      cancelAutoScroll();
+    };
+  }, [activateTab, closeTab]);
+
+  // The other end of a handoff: a window that took one of this window's tabs
+  // says so through the shell, and this is where that answer becomes a closed
+  // tab. Mounted for the window's lifetime rather than per drag, because the
+  // answer can arrive after the drag that sent it is over.
+  useEffect(() => {
+    const appWindow = getAppWindow();
+    if (!appWindow) return;
+    let unlisten: UnlistenFn | undefined;
+    let cancelled = false;
+    void appWindow.listen<TabHandoffClaim>("tab-handoff-claimed", ({ payload }) => {
+      const token = payload?.token;
+      if (typeof token !== "string") return;
+      const tabId = takeClaimedTabHandoff(token);
+      if (!tabId) return;
+      logTabDrag("claim", { token, tabId, target: payload?.target ?? null });
+
+      // A drag of this very tab may still be running: hand the close to
+      // `settle`, which runs once the platform's gesture is over.
+      const session = dragSession.current;
+      if (session && session.tabId === tabId) {
+        session.claimed = true;
+        return;
+      }
+      closeTab(tabId);
+    }).then((stop) => {
+      if (cancelled) stop();
+      else unlisten = stop;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [closeTab]);
+
   const syncScrollButtons = useCallback(() => {
     const strip = stripRef.current;
     if (!strip) return;
@@ -474,7 +738,7 @@ export function ExplorerTabs() {
 
   return (
     <div className="flex h-full flex-col">
-      <TabDropIndicator />
+      <TabDropIndicator geometry={dropGeometry} />
       {/* Window chrome: one 44px bar carrying the tab trough and the native
           window controls, painted in the frame tone (`bg-chrome`, the rail's
           own rung). The bar is the top of the L of chrome the window is drawn
@@ -517,10 +781,8 @@ export function ExplorerTabs() {
           // gutter supplies the space underneath, and the two sides have to
           // measure the same or the row reads as pinned to the top.
           className="tab-trough relative my-1 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
-          // A tab drag pins its pointer capture here (see `tab-drag.ts`), and the
-          // header above is a `deep` drag region, so the strip has to opt out
-          // explicitly or the captured events read as a request to move the
-          // window.
+          // The header above is a `deep` drag region, so the strip has to opt
+          // out explicitly: a tab is dragged as a tab, never as the window.
           data-tauri-drag-region="false"
           onScroll={syncScrollButtons}
           role="tablist"
@@ -530,8 +792,13 @@ export function ExplorerTabs() {
               first child so the chips paint over it; `pointer-events: none`
               keeps it out of the gesture. */}
           <span aria-hidden="true" className="tab-pill" data-hold="true" ref={pillRef} />
-          {tabs.map((tab, index) => (
-            <TabStripItem key={tab.id} index={index} isActive={tab.id === activeTabId} tab={tab} />
+          {tabs.map((tab) => (
+            <TabStripItem
+              isActive={tab.id === activeTabId}
+              isDragging={tab.id === draggingTabId}
+              key={tab.id}
+              tab={tab}
+            />
           ))}
           {/* Inside the scroller, hard after the last chip: the plus belongs to
               the tab row, so it travels with it and sits one tab-gap away from
@@ -686,35 +953,12 @@ function StripScrollButton({
 
 /** Live insertion preview while a tab from another window is dragged over
  * this one: the whole window gains a subtle accept ring and the tab strip
- * shows where the tab would land. Mounts nothing until the first hover. */
-function TabDropIndicator() {
-  const [geometry, setGeometry] = useState<DropIndicatorGeometry | null>(null);
-
-  useEffect(() => {
-    const unlistenHover = listenInThisWindow(events.tabDragHover, ({ payload }) => {
-      // Release the host's in-flight slot before anything else: the hover
-      // monitor holds the next position back until this push has rendered,
-      // which is what keeps its `wry::eval` span chain on the host bounded to
-      // a single level during a cross-window drag (an unbounded chain is
-      // closed recursively, one stack frame per level, when the drag ends).
-      void commands.tabDragHoverAck();
-      if (payload.x == null) return;
-      setGeometry((previous) => {
-        const next = dropIndicatorGeometryAt(payload.x as number);
-        if (!next) return previous;
-        return previous && Math.abs(previous.left - next.left) < 0.5 ? previous : next;
-      });
-    });
-    const unlistenLeave = listenInThisWindow(events.tabDragLeave, () => setGeometry(null));
-    const unlistenMerge = listenInThisWindow(events.tabMergedIntoWindow, () => setGeometry(null));
-
-    return () => {
-      void unlistenHover.then((unlisten) => unlisten());
-      void unlistenLeave.then((unlisten) => unlisten());
-      void unlistenMerge.then((unlisten) => unlisten());
-    };
-  }, []);
-
+ * shows where the tab would land. Mounts nothing until the first hover.
+ *
+ *  The geometry is measured here rather than in the drag plumbing that feeds
+ *  it, because the answer is a fact about *this* window's strip and layout —
+ *  the drag itself only reports where the pointer is. */
+function TabDropIndicator({ geometry }: { geometry: DropIndicatorGeometry | null }) {
   if (!geometry) return null;
 
   return (
@@ -754,108 +998,39 @@ function surfaceTitle(
   }
 }
 
-/** Where the platform's drag loop left a tab that had already left the window.
- *
- *  Only the drop routing can answer where it went: a Wayland session reports
- *  neither a global pointer position nor a window position, so which of this
- *  app's windows accepted the drop *is* the evidence — and the source window
- *  answering for it is the platform saying the tab came back. */
-async function runNativeTabDrag(
-  source: string,
-  preview: string | null,
-  grabX: number,
-  grabY: number,
-  pressX: number,
-  pressY: number,
-): Promise<NativeDragOutcome> {
-  const outcome = await commands.startTabDrag(
-    source,
-    preview,
-    // The grab point travels in the preview bitmap's own pixels, the grid the
-    // platform spots the drag image against, so the snapshot's cushion and the
-    // device pixel ratio are both part of it.
-    (grabX + TAB_DRAG_PREVIEW_PAD) * window.devicePixelRatio,
-    (grabY + TAB_DRAG_PREVIEW_PAD) * window.devicePixelRatio,
-    // Where the press happened in the window, which is what a Wayland drag
-    // takes without settling; see `start_tab_drag`.
-    pressX,
-    pressY,
-  );
-  if (!outcome.released || !outcome.outside) return { action: "keep" };
-  if (!outcome.target) {
-    return { action: "detach", cursor: { x: outcome.cursorX, y: outcome.cursorY } };
-  }
-  return {
-    action: "merge",
-    target: outcome.target,
-    x: outcome.targetX ?? 0,
-    y: outcome.targetY ?? 0,
-  };
-}
-
 /** Puts the tab in a window of its own and drops it from this strip.
  *
  *  `grabX`/`grabY` keep the same point of the window pinned under the cursor.
- *  `cursor` is the desktop point the platform drag was released over, where the
- *  new window lands; without one the backend reads the live pointer, which
- *  suits a release the WebView saw for itself at a position only it knew. */
+ *  No cursor point is passed: the drop that tears a tab off is a release the
+ *  platform's drag loop owns, so on Wayland (where a client can neither read
+ *  the global pointer nor place its own toplevels) the shell has nothing to
+ *  aim at and the compositor decides where the window lands. On X11 the shell
+ *  reads the live pointer itself, which at this instant is still the release
+ *  point. */
 async function detachTab(
   appWindow: TauriWindow | null,
   tabId: string,
   grabX: number,
   grabY: number,
-  cursor: { x: number; y: number } | null,
   closeTab: (tabId: string) => void,
 ): Promise<void> {
   // The browser preview bridge has no native windows to create.
   if (!appWindow) return;
   try {
-    await commands.tearOffTab(
-      appWindow.label,
-      serializeTabHandoff(tabId),
-      grabX,
-      grabY,
-      cursor?.x ?? null,
-      cursor?.y ?? null,
-    );
+    await commands.tearOffTab(appWindow.label, serializeTabHandoff(tabId), grabX, grabY, null, null);
     closeTab(tabId);
   } catch (error) {
     console.error("Failed to detach tab", error);
   }
 }
 
-/** Hands the tab to another of this app's windows, which inserts it at the drop
- *  point, and only then closes it here: a handoff that failed to deliver has to
- *  leave the tab where it is rather than lose it. */
-async function mergeTabIntoWindow(
-  appWindow: TauriWindow | null,
-  tabId: string,
-  target: string,
-  x: number,
-  y: number,
-  closeTab: (tabId: string) => void,
-): Promise<void> {
-  if (!appWindow) return;
-  try {
-    // Addressed rather than broadcast: the receiving window is the only one that
-    // may consume this handoff, and above all the source must not, or it would
-    // re-insert the tab it is about to close. The backend does the emitting —
-    // an `emitTo` here would run on the async runtime, which can freeze the app
-    // on Linux; see the `merge_tab_into_window` command.
-    await commands.mergeTabIntoWindow(target, serializeTabHandoff(tabId), x, y);
-    closeTab(tabId);
-  } catch (error) {
-    console.error("Failed to merge the tab into the target window", error);
-  }
-}
-
 function TabStripItem({
-  index,
   isActive,
+  isDragging,
   tab,
 }: {
-  index: number;
   isActive: boolean;
+  isDragging: boolean;
   tab: ExplorerTab;
 }) {
   const { t } = useTranslation("explorer");
@@ -882,72 +1057,12 @@ function TabStripItem({
       : (directory?.breadcrumbs.at(-1)?.name ?? t("tabs.loading"));
   const title = surfaceTitle(surface, folderTitle, spaceName, t);
   const elementRef = useRef<HTMLDivElement>(null);
-  const ghostElementRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<TabDragController | null>(null);
-  const [dragPreview, setDragPreview] = useState<TabDragGhost | null>(null);
-  const [dragActive, setDragActive] = useState(false);
-  const [dragPressed, setDragPressed] = useState(false);
-  const isDragging = dragActive;
 
   useEffect(() => {
     if (isActive) {
       elementRef.current?.scrollIntoView({ inline: "nearest", block: "nearest" });
     }
   }, [isActive]);
-
-  useEffect(() => () => dragRef.current?.end(), []);
-
-  // The gesture itself — tracking, the band state machine, the live reorder —
-  // is `beginTabDragGesture`'s. What is assembled here is only this tab's end
-  // of it: the commands that move it between windows.
-  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || !event.isPrimary) return;
-    if ((event.target as HTMLElement).closest("button")) return;
-
-    const element = elementRef.current;
-    if (!element) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    activateTab(tab.id);
-    dragRef.current?.end();
-
-    const tabId = tab.id;
-    const bounds = element.getBoundingClientRect();
-    const grabX = event.clientX - bounds.left;
-    const grabY = event.clientY - bounds.top;
-    const pressX = event.clientX;
-    const pressY = event.clientY;
-    const appWindow = getAppWindow();
-
-    dragRef.current = beginTabDragGesture({
-      tabId,
-      element,
-      originalIndex: index,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      grabX,
-      grabY,
-      moveTab,
-      onGhost: setDragPreview,
-      moveGhost: (x, y) => {
-        const ghost = ghostElementRef.current;
-        if (ghost) ghost.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-      },
-      onDragging: setDragActive,
-      onPressed: setDragPressed,
-      capturePreview: () => snapshotTabDragPreview(tabId),
-      readNativeOutside: () =>
-        appWindow ? commands.tabDragOutside(appWindow.label) : Promise.resolve(false),
-      handOffToNative: (preview) =>
-        appWindow
-          ? runNativeTabDrag(appWindow.label, preview, grabX, grabY, pressX, pressY)
-          : Promise.resolve({ action: "keep" }),
-      detach: (cursor) => detachTab(appWindow, tabId, grabX, grabY, cursor, closeTab),
-      merge: (target, x, y) => mergeTabIntoWindow(appWindow, tabId, target, x, y, closeTab),
-    });
-  };
 
   // Folder tabs carry the folder's type glyph; workspace surfaces keep their
   // Solar UI glyphs, which are app chrome rather than file types.
@@ -977,24 +1092,29 @@ function TabStripItem({
         // only job here is ink and weight; the state layer's wash is the
         // idle tab's whole hover.
         //
-        // The press is the gesture's `data-pressed` rather than `:active`, and
-        // the grabbing cursor with it: a tab dragged past the window edge is
-        // handed to the platform's drag loop, which swallows the release that
-        // would clear both, and a chip still wearing them reads as a tab still
-        // held down after it was put back.
+        // The chip is `draggable`, so the platform owns the gesture from the
+        // first few pixels of travel: it runs the drag loop, carries the image
+        // and reports the drop, which is what lets a tab cross into another
+        // window at all. `data-dragging` marks the one being carried, and the
+        // `data-pressed` wash is driven by the drag rather than by `:active`:
+        // the drag swallows the release that would clear `:active`, and a chip
+        // still wearing that wash reads as a tab still held down after it was
+        // put back.
         "group state-layer relative flex h-[30px] max-w-[230px] min-w-[6.5rem] shrink-0 touch-none cursor-grab items-center rounded-md text-caption select-none transition-[background-color,color,opacity] duration-fast ease-standard data-[pressed=true]:cursor-grabbing",
         isActive ? "font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
         isDragging && "opacity-30",
       )}
-      data-pressed={dragPressed ? "true" : "false"}
+      data-dragging={isDragging ? "true" : "false"}
+      data-pressed={isDragging ? "true" : "false"}
       // The plate's anchor: `useTabPill` finds the chip to measure by this
       // attribute, so it never has to know which tab is current a second time.
       data-tab-active={isActive ? "true" : "false"}
+      data-tab-id={tab.id}
       data-tauri-drag-region="false"
+      draggable
       // The middle button is every browser's and every file manager's "close
-      // this tab", and it costs nothing here: the left button's gesture owns
-      // the pointerdown (which ignores other buttons), so this is the only
-      // handler a middle click reaches.
+      // this tab", and it costs nothing here: a left-button drag never reaches
+      // this handler, so this is the only one a middle click can hit.
       onAuxClick={(event) => {
         if (event.button !== 1) return;
         event.preventDefault();
@@ -1007,7 +1127,6 @@ function TabStripItem({
           activateTab(tab.id);
         }
       }}
-      onPointerDown={handlePointerDown}
       ref={elementRef}
       role="tab"
       tabIndex={0}
@@ -1037,63 +1156,6 @@ function TabStripItem({
       >
         <CloseIcon className="size-[11px]" />
       </button>
-      {/* No elevation on the ghost, deliberately: the ghost *is* the drag
-          image. The OS composites a snapshot of this element under the pointer
-          with nothing behind it, where a drop shadow is a smear on the desktop
-          rather than a float over the shell, so the two only stay identical if
-          neither carries one. */}
-      {dragPreview && (
-        <TabDragGhostPortal elementRef={ghostElementRef} geometry={dragPreview} tabId={tab.id}>
-          {tabContent}
-          <span className="absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center text-foreground/65">
-            <CloseIcon className="size-3" />
-          </span>
-        </TabDragGhostPortal>
-      )}
     </div>
-  );
-}
-
-/** The drag ghost: the tab's chip, floating with the cursor. It mounts once
- *  per gesture and is positioned imperatively from then on — the drag's rAF
- *  loop writes `transform` through `moveGhost` (see tab-drag.ts) — so
- *  tracking the cursor at frame rate costs no re-render of the strip.
- *
- *  The transform is deliberately absent from the style prop: the live reorder
- *  re-renders this subtree mid-drag, and a style-prop transform would reset
- *  the imperative position to wherever the ghost mounted. The layout effect
- *  below is the only transform React ever writes — it places the ghost before
- *  its first paint, so it never flashes at the top-left of the window while
- *  waiting for the first tracking frame. */
-function TabDragGhostPortal({
-  children,
-  elementRef,
-  geometry,
-  tabId,
-}: {
-  children: ReactNode;
-  elementRef: RefObject<HTMLDivElement | null>;
-  geometry: TabDragGhost;
-  tabId: string;
-}) {
-  useLayoutEffect(() => {
-    const ghost = elementRef.current;
-    if (ghost) {
-      ghost.style.transform = `translate3d(${geometry.x}px, ${geometry.y}px, 0)`;
-    }
-  }, [elementRef, geometry]);
-
-  return createPortal(
-    <div
-      aria-hidden="true"
-      className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-sm border border-border bg-card text-body text-foreground select-none"
-      data-tab-drag-preview={tabId}
-      ref={elementRef}
-      style={{ width: geometry.width, height: geometry.height }}
-    >
-      {children}
-    </div>,
-    // Escape the tab strip's overflow clipping and the source tab's opacity.
-    document.body,
   );
 }

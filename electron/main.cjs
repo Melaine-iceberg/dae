@@ -102,7 +102,6 @@ const tabPool = {
   readyTimer: null,
   replenishTimer: null,
 };
-let tabDragSession = null;
 
 // Windows 11 snap layouts. The renderer owns the maximize button's geometry
 // and its hover styling; the main process owns the native hotspot and watches
@@ -626,6 +625,31 @@ function nextTabLabel() {
   return `tab-${tabWindowSeq}`;
 }
 
+// Whether this Electron instance is a Wayland client.
+//
+// Electron stays an X11 client on a Wayland session unless it is asked
+// otherwise — `--ozone-platform[-hint]` on the command line, or the
+// `ELECTRON_OZONE_PLATFORM_HINT` environment variable — and XWayland then gives
+// the shell everything a Wayland client is denied: a global pointer position, a
+// window position, and a say in where a new toplevel appears. The distinction
+// is therefore about the *backend*, never about the session type: asking the
+// session would misreport the default configuration.
+function isWaylandSession() {
+  if (process.platform !== "linux") return false;
+
+  const platform = process.argv.find((arg) => arg.startsWith("--ozone-platform="));
+  if (platform) return platform.slice("--ozone-platform=".length) === "wayland";
+
+  const hintArg = process.argv.find((arg) => arg.startsWith("--ozone-platform-hint="));
+  const hint = hintArg
+    ? hintArg.slice("--ozone-platform-hint=".length)
+    : (process.env.ELECTRON_OZONE_PLATFORM_HINT ?? "");
+  if (hint !== "wayland" && hint !== "auto") return false;
+  // `auto` only picks Wayland when there is a compositor to pick, so the
+  // variable is the deciding fact rather than the hint.
+  return Boolean(process.env.WAYLAND_DISPLAY);
+}
+
 // Pointer coordinates cross the IPC boundary in physical pixels (the drag
 // gesture reads Tauri's coordinate space); Electron windows and `screen` speak
 // DIP, so the conversion happens here and nowhere else.
@@ -640,6 +664,14 @@ function cursorDip(cursorX, cursorY) {
 
 function tabWindowBounds(sourceWindow, grabX, grabY, cursorX, cursorY) {
   const [width, height] = sourceWindow.getContentSize();
+
+  // A Wayland compositor places toplevels itself: a client may not say where
+  // its window goes, and `screen.getCursorScreenPoint()` is unsupported there
+  // anyway. Size is the one thing this app still decides, so the tear-off is
+  // created without a position and the compositor puts it where it puts new
+  // windows.
+  if (isWaylandSession()) return { width, height };
+
   const cursor = cursorDip(cursorX, cursorY);
   const display = screen.getDisplayNearestPoint(cursor);
   const area = display.workArea;
@@ -652,31 +684,6 @@ function tabWindowBounds(sourceWindow, grabX, grabY, cursorX, cursorY) {
     area.y + Math.max(area.height - height, 0),
   );
   return { x, y, width, height };
-}
-
-function cursorInWindow(cursor, window, { content = true } = {}) {
-  const bounds = content ? window.getContentBounds() : window.getBounds();
-  const x = cursor.x - bounds.x;
-  const y = cursor.y - bounds.y;
-  return {
-    x,
-    y,
-    inside: x >= 0 && y >= 0 && x < bounds.width && y < bounds.height,
-  };
-}
-
-function windowAt(cursor, excludeLabel) {
-  let hit = null;
-  for (const window of windowsByLabel.values()) {
-    if (window.isDestroyed() || !window.isVisible()) continue;
-    if (window.daeLabel === excludeLabel) continue;
-    if (window.daePool) continue;
-    if (!cursorInWindow(cursor, window).inside) continue;
-    // Later windows sit above earlier ones; keeping the last hit approximates
-    // Electron's z-order without reaching for a native hit test.
-    hit = window;
-  }
-  return hit;
 }
 
 function clearTabPoolReferences(label) {
@@ -776,110 +783,6 @@ function mergeTabIntoWindow(args) {
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
-}
-
-async function startTabDrag(args) {
-  const source = liveWindow(String(args?.source ?? "main"));
-  if (!source) return { released: false, outside: false, target: null, targetX: null, targetY: null, cursorX: null, cursorY: null };
-
-  // Linux has no process-wide pointer-button state exposed to Electron. The
-  // frontend-bounds path already knows the gesture was released outside, so
-  // settle it with a detach instead of holding a session that cannot end.
-  if (process.platform === "linux") {
-    const cursor = screen.getCursorScreenPoint();
-    const scale = displayScaleFactor(source);
-    return {
-      released: true,
-      outside: true,
-      target: null,
-      targetX: null,
-      targetY: null,
-      cursorX: Math.round(cursor.x * scale),
-      cursorY: Math.round(cursor.y * scale),
-    };
-  }
-
-  if (tabDragSession) {
-    clearInterval(tabDragSession.timer);
-    tabDragSession = null;
-  }
-
-  const session = { source, hover: null, timer: null };
-  const pollHover = () => {
-    if (source.isDestroyed()) return;
-    const cursor = screen.getCursorScreenPoint();
-    const target = windowAt(cursor, source.daeLabel);
-    if (target === session.hover) return;
-
-    if (session.hover && !session.hover.isDestroyed()) {
-      sendWindowEvent(session.hover, "tab-drag-leave", null);
-    }
-    session.hover = target;
-    if (target) {
-      const point = cursorInWindow(cursor, target);
-      sendWindowEvent(target, "tab-drag-hover", { x: point.x });
-    }
-  };
-
-  pollHover();
-  session.timer = setInterval(pollHover, 60);
-  tabDragSession = session;
-
-  let released = false;
-  try {
-    released = await coreRequestJson("wait_for_tab_drag_release", { timeoutMs: 60_000 }, {
-      timeoutMs: 65_000,
-    });
-  } catch (error) {
-    console.error(`[main] tab drag wait failed: ${error}`);
-  } finally {
-    clearInterval(session.timer);
-    if (tabDragSession === session) tabDragSession = null;
-    if (session.hover && !session.hover.isDestroyed()) {
-      sendWindowEvent(session.hover, "tab-drag-leave", null);
-    }
-  }
-
-  const cursor = screen.getCursorScreenPoint();
-  const scale = displayScaleFactor(source);
-  const cursorX = Math.round(cursor.x * scale);
-  const cursorY = Math.round(cursor.y * scale);
-
-  if (!released) {
-    return {
-      released: false,
-      outside: false,
-      target: null,
-      targetX: null,
-      targetY: null,
-      cursorX,
-      cursorY,
-    };
-  }
-
-  if (cursorInWindow(cursor, source, { content: false }).inside) {
-    return {
-      released: true,
-      outside: false,
-      target: null,
-      targetX: null,
-      targetY: null,
-      cursorX,
-      cursorY,
-    };
-  }
-
-  const target = windowAt(cursor, source.daeLabel);
-  const point = target ? cursorInWindow(cursor, target) : null;
-  return {
-    released: true,
-    outside: true,
-    target: target ? target.daeLabel : null,
-    targetX: point ? point.x : null,
-    targetY: point ? point.y : null,
-    cursorX,
-    cursorY,
-  };
 }
 
 async function syncTabPool() {
@@ -1147,23 +1050,20 @@ function registerIpc() {
       mergeTabIntoWindow(args);
       return "null";
     }
-    if (command === "start_tab_drag") return JSON.stringify(await startTabDrag(args));
-    if (command === "tab_drag_outside") {
-      const window = liveWindow(String(args?.source ?? ""));
-      if (!window) return JSON.stringify(true);
-      const bounds = window.getBounds();
-      const cursor = screen.getCursorScreenPoint();
-      const inside =
-        cursor.x >= bounds.x &&
-        cursor.y >= bounds.y &&
-        cursor.x < bounds.x + bounds.width &&
-        cursor.y < bounds.y + bounds.height;
-      return JSON.stringify(!inside);
+
+    // Tab drags belong to the renderer since the move to HTML5 drag and drop:
+    // the platform's drag loop carries the tab, so the shell keeps no hover
+    // session, has no release to wait for and tracks no cursor. These four
+    // commands survive only so a stale caller fails loudly here instead of
+    // silently reaching the core, which never knew them.
+    if (
+      command === "start_tab_drag" ||
+      command === "tab_drag_outside" ||
+      command === "tab_drag_uses_frontend_bounds" ||
+      command === "tab_drag_hover_ack"
+    ) {
+      throw new Error(`${command} was replaced by renderer-driven tab drag and drop`);
     }
-    if (command === "tab_drag_uses_frontend_bounds") {
-      return JSON.stringify(process.platform === "linux");
-    }
-    if (command === "tab_drag_hover_ack") return "null";
 
     return coreRequest(command, args ?? null);
   });
@@ -1193,6 +1093,24 @@ function registerIpc() {
   });
 
   ipcMain.handle("dae:lag:read", () => lagMaxMs);
+
+  // A window that took a tab tells the shell, which passes the word to the
+  // window the tab came from. The drag itself cannot be trusted to carry that
+  // answer — see the comment on `claim_tab_handoff` in the renderer's
+  // `lib/ipc/tab.ts` — so the source closes its own copy when this arrives.
+  ipcMain.handle("dae:tab:claim", (event, source, token) => {
+    if (typeof source !== "string" || typeof token !== "string" || token.length === 0) {
+      return false;
+    }
+    const target = BrowserWindow.fromWebContents(event.sender);
+    const window = liveWindow(source);
+    if (!target || !window || target.isDestroyed() || window.isDestroyed()) return false;
+    sendWindowEvent(window, "tab-handoff-claimed", {
+      token,
+      target: target.daeLabel ?? null,
+    });
+    return true;
+  });
 
   ipcMain.handle("dae:window:control", (event, action) => {
     const window = BrowserWindow.fromWebContents(event.sender);
@@ -1357,6 +1275,11 @@ function createWindow({
         `--dae-window-label=${label}`,
         `--dae-window-material=${windowMaterial}`,
         `--dae-window-pool=${pool ? 1 : 0}`,
+        // Tab drags are the renderer's, so a drag that misbehaves on a
+        // platform has to be observable from the page: `DAE_TAB_DRAG_DEBUG=1`
+        // turns every stage of the handshake into a console line, which
+        // `ELECTRON_ENABLE_LOGGING=1` then prints next to Chromium's.
+        `--dae-tab-drag-debug=${process.env.DAE_TAB_DRAG_DEBUG === "1" ? 1 : 0}`,
       ],
     },
   };

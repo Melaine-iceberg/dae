@@ -60,6 +60,8 @@ export type BridgeOpenDialogOptions = {
 export type DaeBridge = {
   /** The label of this window, passed down as an additional renderer argument. */
   label: string;
+  /** `1` when `DAE_TAB_DRAG_DEBUG=1`; see the drag plumbing in the explorer. */
+  tabDragDebug?: number;
   invoke(command: string, args: unknown): Promise<unknown>;
   invokeJson(command: string, args: unknown): Promise<string>;
   invokeRaw(command: string, args: unknown): Promise<Uint8Array | null>;
@@ -86,6 +88,13 @@ export type DaeBridge = {
   app: {
     version(): Promise<string>;
     logDir(): Promise<string>;
+  };
+  tab: {
+    /**
+     * Tells `source` that this window took the tab its drag carried. Resolves
+     * `false` when there is no such window or the shell is not listening.
+     */
+    claim(source: string, token: string): Promise<boolean>;
   };
 };
 

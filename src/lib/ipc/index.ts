@@ -8,7 +8,7 @@
  * surface the application is written against.
  */
 
-export { hasDesktopBridge } from "./bridge";
+export { getBridge, hasDesktopBridge } from "./bridge";
 export { Channel, invoke } from "./invoke";
 export {
   emit,
@@ -32,5 +32,6 @@ export {
 export { open, type OpenDialogOptions } from "./dialog";
 export { openPath, openUrl } from "./opener";
 export { readText, writeText } from "./clipboard";
+export { claimTabHandoff } from "./tab";
 export { error, warn } from "./log";
 export { appLogDir, getVersion } from "./app";

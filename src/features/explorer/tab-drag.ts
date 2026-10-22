@@ -1,107 +1,187 @@
-import { commands } from "@/bindings";
+/** The MIME type a tab handoff travels under, between this app's windows.
+ *
+ *  A drag whose data store carries this type is a tab being moved: the strip
+ *  reorders it, another window of this app inserts it, and every other drop
+ *  target — the desktop, another application — ignores it. The payload is
+ *  opaque JSON (see {@link TabDragPayload}); nothing outside this app can do
+ *  anything with it.
+ *
+ *  The gesture itself is the platform's: the browser starts the drag when a
+ *  tab that is `draggable` is pulled off its strip, and the platform's drag
+ *  loop carries it from there. That is the one mechanism that reaches a window
+ *  the page holds no pointer events for, which on Wayland is every window but
+ *  the one the drag started in — an implicit pointer grab is compositor state,
+ *  and a drag session is the only way to cross it. */
+export const TAB_DRAG_TYPE = "application/x-dae-tab";
 
-/** Distance the pointer travels before a press on a tab becomes a drag. */
-export const TAB_DRAG_START_DISTANCE = 6;
-/** Cushion the drag-image snapshot keeps around the ghost, in CSS pixels, on
- *  every side.
- *
- *  Antialiasing slack only, so it stays small and — deliberately — symmetric.
- *  Nothing of the tab is painted outside its border box, because the drag image
- *  carries no elevation; the two device pixels only cover the half-covered
- *  pixel straddling the border box, where the rounded corners' edge lands. */
-export const TAB_DRAG_PREVIEW_PAD = 2;
-/** Room past the strip's edges before a dragged tab counts as detached.
- *
- *  Asymmetric on purpose. Above the strip there is the window's own edge, so a
- *  few pixels of slack is all a drag can want. Below it, a pull of a whole strip
- *  height is what reads as "this tab is its own window now": a hand travelling
- *  horizontally dips and rises by a few dozen pixels as a matter of course, and
- *  a band that punished that would freeze the reorder halfway across the strip.
- *  Matches how far Chrome has to drag a tab down before it floats. */
-const BAND_SLOP = 6;
-/** Width of the strip's auto-scroll zones at each end, in CSS px. */
-const SCROLL_EDGE = 28;
-/** Auto-scroll speed once the cursor is fully in the zone, px per frame. */
-const SCROLL_MAX_STEP = 20;
-/** How often the native edge query runs on a platform whose WebView stops
- *  reporting the pointer past the window edge. */
-const OUTSIDE_POLL_INTERVAL = 50;
-
-/** The strip band: the header row, stretched across the whole window width.
- *
- *  A tab strip spans its window, so the chrome's horizontal edges are not
- *  detach boundaries. Clipping the band to the strip's own extent made the
- *  boundary asymmetric: its left edge landed on the window edge, unreachable
- *  for a leftward drag, while its right one fell *inside* the window at the
- *  caption buttons, so dragging right popped the tab out. Only leaving the band
- *  vertically, or leaving the window, detaches a tab. */
-export type TabDragBand = {
-  top: number;
-  bottom: number;
+/** What a tab drag carries: the window the tab is leaving, a token that
+ *  identifies this one handoff, and the tab itself in the shape
+ *  `serializeTabHandoff` produces. */
+export type TabDragPayload = {
+  source: string;
+  token: string;
+  payload: string;
 };
 
-/** Ghost geometry in viewport pixels, tracking the cursor by the grab point.
- *  Captured once when the ghost mounts; the frames after that position the
- *  ghost purely through its `transform`, never through React state. */
-export type TabDragGhost = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
-/** Where a tab that left the window is going, as reported by the platform's
- *  drag loop. */
-export type NativeDragOutcome =
-  /** Released over this window again, or cancelled: the tab stays put. */
-  | { action: "keep" }
-  /** Released over the desktop, or over something that takes no tabs. The
-   *  cursor, when the platform could see it, is where the window lands. */
-  | { action: "detach"; cursor: { x: number; y: number } | null }
-  /** Released over another of this app's windows, at a point in that window's
-   *  CSS pixels. */
-  | { action: "merge"; target: string; x: number; y: number };
-
-/** Where a drag released over another window would insert this window's tabs. */
+/** Where a dropped tab would insert itself in this window's strip. */
 export type DropIndicatorGeometry = {
   left: number;
   top: number;
   height: number;
 };
 
-/** The gesture's stages, in the order a cursor walks them.
- *
- *  `pending` is the pre-threshold press, `inStrip` reorders live, `popped` has
- *  left the band and detaches on release unless the cursor comes back, and
- *  `native` has handed the pointer to the platform drag loop because it left
- *  the window. Only the last one is one-way. */
-type DragPhase = "pending" | "inStrip" | "popped" | "native";
+/** Width of the strip's auto-scroll zones at each end, in CSS px. */
+const SCROLL_EDGE = 28;
+/** Auto-scroll speed once the cursor is fully in the zone, px per frame. */
+const SCROLL_MAX_STEP = 20;
 
-/** Whether window-space coordinates lie outside the WebView's viewport.
- *
- *  The WebView keeps delivering pointer events past the window edge, and under
- *  Wayland those events are the only bound signal there is: the session exposes
- *  no global pointer position, and clamps the coordinates of a pointer that has
- *  left to exactly `innerWidth`/`innerHeight` rather than to one pixel short.
- *  The clamp is why the left and top edges are not detectable this way — they
- *  land on `0`, a legitimate position — and why losing pointer capture counts
- *  as an edge too. */
-export function isOutsideViewport(x: number, y: number): boolean {
-  return x < 0 || y < 0 || x >= window.innerWidth || y >= window.innerHeight;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
-export function measureTabBand(): TabDragBand | null {
-  const header = document.querySelector<HTMLElement>("[data-tab-bar]");
-  if (!header) return null;
-  const chrome = header.getBoundingClientRect();
-  return {
-    top: chrome.top - BAND_SLOP,
-    bottom: chrome.bottom + Math.max(BAND_SLOP, chrome.height),
-  };
+/** Whether this drag is a tab from one of this app's windows.
+ *
+ *  Only the type list is readable here: the data store is in protected mode
+ *  for the whole hover, so a drop target can recognise a tab without being
+ *  allowed to read it — which is all the indicator needs, and all a foreign
+ *  application would get to see anyway. */
+export function isTabDrag(dataTransfer: DataTransfer | null): boolean {
+  return dataTransfer ? Array.from(dataTransfer.types).includes(TAB_DRAG_TYPE) : false;
 }
 
-export function isInsideBand(band: TabDragBand, y: number): boolean {
-  return y >= band.top && y <= band.bottom;
+/** Stamps the tab this drag carries onto the platform's data store. Called
+ *  from `dragstart`, the only moment the source may write to it. */
+export function writeTabDrag(dataTransfer: DataTransfer, value: TabDragPayload): void {
+  dataTransfer.setData(TAB_DRAG_TYPE, JSON.stringify(value));
+}
+
+/** The tab a drop is carrying, read at the drop, where the data store is
+ *  unlocked. Returns null for anything malformed: a handoff crosses a process
+ *  boundary (each window is its own renderer), so the receiver validates
+ *  rather than trusts. */
+export function readTabDrag(dataTransfer: DataTransfer | null): TabDragPayload | null {
+  if (!dataTransfer) return null;
+
+  let raw: string;
+  try {
+    raw = dataTransfer.getData(TAB_DRAG_TYPE);
+  } catch {
+    return null;
+  }
+  if (!raw) return null;
+
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!isRecord(value)) return null;
+    const { source, token, payload } = value;
+    if (typeof source !== "string" || typeof token !== "string" || typeof payload !== "string") {
+      return null;
+    }
+    return { source, token, payload };
+  } catch {
+    return null;
+  }
+}
+
+/** A tab this window has put into a drag, waiting to hear who took it. */
+type OutgoingHandoff = {
+  tabId: string;
+  claimed: boolean;
+  settle: ((claimed: boolean) => void) | null;
+};
+
+/** Handoffs this window has sent out, keyed by the drag's token.
+ *
+ *  A drop target answers with the same token, and that answer is what tells
+ *  this window its tab is gone — not the platform's drag result. A result is
+ *  only a courtesy: Chromium derives it on Wayland from a drop action the
+ *  compositor may never report, and reads a missing action as a cancelled
+ *  drag, which would leave the tab in both windows (or tear off a second
+ *  copy). The token also survives the gesture: the answer can arrive after
+ *  `dragend`, once the source tab's own drag is already over. */
+const outgoingHandoffs = new Map<string, OutgoingHandoff>();
+
+/** How long an unanswered handoff is remembered. A claim crosses two renderers
+ *  and the shell, so it is not instant, but it is never minutes late either. */
+const OUTGOING_HANDOFF_TTL = 30_000;
+
+/** How long a drag that ended without a drop waits to hear that another window
+ *  took its tab, before deciding the tab was dropped on nothing. */
+export const HANDOFF_CLAIM_GRACE_MS = 150;
+
+export function trackOutgoingTabHandoff(token: string, tabId: string): void {
+  outgoingHandoffs.set(token, { tabId, claimed: false, settle: null });
+  window.setTimeout(() => outgoingHandoffs.delete(token), OUTGOING_HANDOFF_TTL);
+}
+
+/** Resolves the token a drop target claimed, reporting the tab it carried.
+ *  Called from the window that *sent* the handoff, once the shell says who
+ *  took it. */
+export function takeClaimedTabHandoff(token: string): string | null {
+  const handoff = outgoingHandoffs.get(token);
+  if (!handoff) return null;
+  handoff.claimed = true;
+  outgoingHandoffs.delete(token);
+  handoff.settle?.(true);
+  return handoff.tabId;
+}
+
+/** Reports whether the given handoff was claimed, waiting up to `timeout` ms
+ *  for an answer that is still in flight. */
+export function waitForClaimedTabHandoff(
+  token: string,
+  timeout: number,
+): Promise<boolean> {
+  const handoff = outgoingHandoffs.get(token);
+  if (!handoff) return Promise.resolve(false);
+  if (handoff.claimed) return Promise.resolve(true);
+
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      handoff.settle = null;
+      resolve(false);
+    }, timeout);
+    handoff.settle = (claimed) => {
+      window.clearTimeout(timer);
+      resolve(claimed);
+    };
+  });
+}
+
+/** Spots the OS drag image on the point the tab was grabbed by.
+ *
+ *  The image is a clone parked exactly over the chip for the one frame the
+ *  platform needs to rasterize it. Cloning rather than using the live chip is
+ *  what keeps the image undimmed: the source chip fades to mark the tab as
+ *  lifted (see `data-dragging`), and a snapshot taken after that fade would
+ *  drag a greyed-out tab across the desktop. `position: fixed` at the chip's
+ *  own box means no scroll offset or strip overflow can move the pixels, and
+ *  the clone is removed as soon as the platform owns it. */
+export function setTabDragImage(
+  dataTransfer: DataTransfer,
+  element: HTMLElement,
+  grabX: number,
+  grabY: number,
+): void {
+  const bounds = element.getBoundingClientRect();
+  const clone = element.cloneNode(true) as HTMLElement;
+  clone.removeAttribute("aria-grabbed");
+  clone.removeAttribute("data-dragging");
+  clone.setAttribute("aria-hidden", "true");
+  clone.style.position = "fixed";
+  clone.style.left = `${bounds.left}px`;
+  clone.style.top = `${bounds.top}px`;
+  clone.style.width = `${bounds.width}px`;
+  clone.style.height = `${bounds.height}px`;
+  clone.style.margin = "0";
+  clone.style.transform = "none";
+  clone.style.opacity = "1";
+  clone.style.pointerEvents = "none";
+  clone.style.zIndex = "2147483647";
+
+  document.body.appendChild(clone);
+  dataTransfer.setDragImage(clone, grabX, grabY);
+  requestAnimationFrame(() => clone.remove());
 }
 
 /** Index at which a tab dropped at window-space `x` belongs in the strip:
@@ -161,333 +241,4 @@ export function stripAutoScrollStep(strip: HTMLElement, x: number): number {
   if (depth <= 0) return 0;
   const speed = Math.min(SCROLL_MAX_STEP, (SCROLL_MAX_STEP * depth) / SCROLL_EDGE);
   return x < rect.left + SCROLL_EDGE ? -speed : speed;
-}
-
-/** Whether this session hides the pointer's global position, leaving the
- *  WebView's own pointer events as the only way to see that a drag has left the
- *  window — in which case the platform drag loop must not be handed the pointer
- *  while it is still inside, since that takes the remaining events with it.
- *
- *  Asked once and cached: the answer is a property of the session, not of the
- *  drag, and it is warmed on pointer down so it is in hand by the time the drag
- *  threshold is crossed. See the Rust `tab_drag_uses_frontend_bounds` command
- *  for what Wayland denies the native path. */
-let frontendBoundsAnswer: boolean | null = null;
-let frontendBoundsRequest: Promise<boolean> | null = null;
-
-function resolveFrontendBounds(): Promise<boolean> {
-  frontendBoundsRequest ??= commands
-    .tabDragUsesFrontendBounds()
-    .then((value) => {
-      frontendBoundsAnswer = value;
-      return value;
-    })
-    .catch(() => {
-      frontendBoundsAnswer = false;
-      return false;
-    });
-  return frontendBoundsRequest;
-}
-
-/** The cached answer, defaulting to a session with global coordinates. */
-function usesFrontendBounds(): boolean {
-  return frontendBoundsAnswer ?? false;
-}
-
-export type TabDragDeps = {
-  tabId: string;
-  element: HTMLElement;
-  /** The tab's slot when the press began, which Escape puts it back into. */
-  originalIndex: number;
-  pointerId: number;
-  startX: number;
-  startY: number;
-  /** The press, relative to the tab's border box: the point that keeps
-   *  following the cursor, and that the OS drag image is spotted by. */
-  grabX: number;
-  grabY: number;
-  moveTab: (tabId: string, insertionIndex: number) => void;
-  /** Mounts the ghost at this geometry, or unmounts it. Called once per
-   *  gesture — never per frame; the per-frame work is `moveGhost`. */
-  onGhost: (ghost: TabDragGhost | null) => void;
-  /** Positions the mounted ghost for one frame. Writes the portal element's
-   *  `transform` directly so a drag that tracks the cursor at rAF rate costs
-   *  no re-render — a ghost steered through React state was redrawing the
-   *  whole tab strip once per frame. */
-  moveGhost: (x: number, y: number) => void;
-  onDragging: (dragging: boolean) => void;
-  /** Reports the press itself: held from the pointer down to the gesture's
-   *  teardown, and released by a gesture that ends however it ends. The tab's
-   *  pressed wash comes from this rather than from `:active`, because the
-   *  WebView never sees the release of a drag that left the window — that one
-   *  belongs to the platform's drag loop, and a `:active` left behind outlives
-   *  the gesture it came from. */
-  onPressed: (pressed: boolean) => void;
-  /** Rasterizes the ghost for the OS drag image. Runs at the hand-off, where
-   *  the ghost has been in the DOM since the drag began — starting it there
-   *  instead of at the first move keeps the rasterization (a full-computed-
-   *  style clone plus a canvas round-trip) off the drag's frames entirely. */
-  capturePreview: () => Promise<string | null>;
-  /** Gives the gesture to the platform drag loop and reports where it landed. */
-  handOffToNative: (preview: string | null) => Promise<NativeDragOutcome>;
-  /** Puts the tab in a window of its own, at `cursor` where one is known. */
-  detach: (cursor: { x: number; y: number } | null) => Promise<void>;
-  /** Hands the tab to another of this app's windows, inserting it at `x`. */
-  merge: (target: string, x: number, y: number) => Promise<void>;
-  /** Asks the window itself whether the cursor has left it, for a platform
-   *  whose WebView stops reporting the pointer past that edge. */
-  readNativeOutside: () => Promise<boolean>;
-};
-
-export type TabDragController = {
-  /** Tears the gesture down. Idempotent, and safe to call from a dep. */
-  end: () => void;
-};
-
-/** Runs one tab drag: the pointer tracking, the band state machine, the live
- *  reorder, and the two ways out of it — detach, or hand off to the platform.
- *
- *  Called from pointer down; it owns the gesture's listeners until it ends.
- *  Everything that decides *where* a tab goes lives here, while how it actually
- *  moves between windows is the caller's, through `TabDragDeps`. */
-export function beginTabDragGesture(deps: TabDragDeps): TabDragController {
-  const { element, pointerId, tabId } = deps;
-  const strip = element.closest<HTMLElement>('[role="tablist"]');
-  // The pointer is pinned to the strip rather than to the tab: the live reorder
-  // moves the tab's node from slot to slot, and an engine that reads that move
-  // as a capture loss would otherwise end the gesture on its first swap — which
-  // is what makes a tab look as though it can only trade places with a
-  // neighbour. The strip itself never moves, so a loss on it means what it is
-  // supposed to mean: the WebView stopped reporting this pointer.
-  const captureTarget = strip ?? element;
-  // Read once for the whole gesture: the header does not move while a drag is
-  // under way, and a mid-drag relayout (a tab closing behind the cursor) would
-  // otherwise pop the tab on a boundary the user never crossed.
-  const band = measureTabBand();
-
-  let phase: DragPhase = "pending";
-  let pointerX = deps.startX;
-  let pointerY = deps.startY;
-  let lastReorderIndex = -1;
-  let frame: number | undefined;
-  let pollTimer: number | undefined;
-  let released = false;
-  let ended = false;
-
-  const end = () => {
-    if (ended) return;
-    ended = true;
-    window.clearInterval(pollTimer);
-    pollTimer = undefined;
-    if (frame !== undefined) window.cancelAnimationFrame(frame);
-    frame = undefined;
-    window.removeEventListener("pointermove", handlePointerMove, true);
-    window.removeEventListener("pointerup", handlePointerUp, true);
-    window.removeEventListener("pointercancel", handlePointerGone, true);
-    window.removeEventListener("keydown", handleKeyDown, true);
-    captureTarget.removeEventListener("lostpointercapture", handleCaptureLost);
-    if (captureTarget.hasPointerCapture(pointerId)) captureTarget.releasePointerCapture(pointerId);
-    deps.onGhost(null);
-    deps.onDragging(false);
-    deps.onPressed(false);
-  };
-
-  const reorderTo = (x: number) => {
-    if (!strip) return;
-    const target = tabReorderIndexAt(strip, x, element);
-    if (target === lastReorderIndex) return;
-    lastReorderIndex = target;
-    deps.moveTab(tabId, target);
-  };
-
-  /** One frame of the gesture. The ghost follows the cursor, and a cursor held
-   *  near either end of the strip scrolls it — which moves the tabs under a
-   *  cursor that has not moved at all, so the reorder slot is recomputed from
-   *  the last known position and the frame keeps running. */
-  const tick = () => {
-    frame = undefined;
-    if (ended || phase === "native") return;
-
-    // The ghost is positioned by writing its transform, not by re-rendering:
-    // a state-driven ghost meant the strip's React tree was redrawn once per
-    // frame just to move one absolutely-positioned portal.
-    deps.moveGhost(pointerX - deps.grabX, pointerY - deps.grabY);
-
-    if (phase !== "inStrip" || !strip) return;
-    const step = stripAutoScrollStep(strip, pointerX);
-    if (step === 0) return;
-    strip.scrollLeft += step;
-    reorderTo(pointerX);
-    frame ??= window.requestAnimationFrame(tick);
-  };
-
-  /** Hands the gesture to the platform drag loop — which happens exactly once
-   *  the cursor has left the window. Before that the WebView is still reporting
-   *  the pointer, and giving it away costs both the reorder and the ability to
-   *  tell where the release happened. */
-  const handOff = () => {
-    if (ended || phase === "native") return;
-    phase = "native";
-    window.clearInterval(pollTimer);
-    pollTimer = undefined;
-    if (frame !== undefined) window.cancelAnimationFrame(frame);
-    frame = undefined;
-    void (async () => {
-      // The rasterizer reads the live ghost, so the ghost — frozen at the
-      // WebView edge since the ticks stopped — stays on screen until its
-      // pixels are captured. The OS drag image then replaces it with the very
-      // same pixels, and what would otherwise be a half-clipped leftover is
-      // instead a seamless hand-over.
-      const snapshot = await deps.capturePreview();
-      if (ended) return;
-      deps.onGhost(null);
-      let outcome: NativeDragOutcome;
-      try {
-        outcome = await deps.handOffToNative(snapshot ?? null);
-      } catch (error) {
-        // The native loop is the only path that can report a merge, but failing
-        // to start it — a compositor refusing a drag begun just past the window
-        // edge, say — must not also cost the detach the cursor's own path
-        // already established by leaving the window.
-        console.error("Failed to start the native tab drag", error);
-        end();
-        await deps.detach(null);
-        return;
-      }
-      if (ended) return;
-      switch (outcome.action) {
-        case "merge":
-          end();
-          await deps.merge(outcome.target, outcome.x, outcome.y);
-          break;
-        case "detach":
-          end();
-          await deps.detach(outcome.cursor);
-          break;
-        case "keep":
-          end();
-          break;
-      }
-    })().catch((error) => {
-      console.error("Failed to settle a native tab drag", error);
-      end();
-    });
-  };
-
-  /** The edge query for platforms whose WebView stops reporting the pointer at
-   *  the window boundary, where the move handler gets no event to run on. */
-  const pollOutside = async () => {
-    if (ended || phase === "native") return;
-    try {
-      if ((await deps.readNativeOutside()) && !ended) handOff();
-    } catch (error) {
-      console.error("Failed to track the tab drag", error);
-      end();
-    }
-  };
-
-  const begin = () => {
-    phase = "inStrip";
-    deps.onDragging(true);
-    // One state change per gesture: the ghost mounts here, sized to the tab at
-    // the moment it was grabbed, and every position after this is `moveGhost`.
-    deps.onGhost({
-      x: pointerX - deps.grabX,
-      y: pointerY - deps.grabY,
-      width: element.offsetWidth,
-      height: element.offsetHeight,
-    });
-    // Wayland answers the native query with "inside" forever — it has no global
-    // pointer position to measure against — while its clamped event coordinates
-    // already carry the edge, so polling there only costs an IPC per tick.
-    void resolveFrontendBounds().then((frontendBounds) => {
-      if (!frontendBounds && !ended && phase !== "native") {
-        pollTimer = window.setInterval(() => void pollOutside(), OUTSIDE_POLL_INTERVAL);
-      }
-    });
-  };
-
-  function handlePointerMove(moveEvent: PointerEvent) {
-    if (moveEvent.pointerId !== pointerId || ended || released || phase === "native") return;
-
-    if (phase === "pending") {
-      const distance = Math.hypot(moveEvent.clientX - deps.startX, moveEvent.clientY - deps.startY);
-      if (distance < TAB_DRAG_START_DISTANCE) return;
-      begin();
-    }
-
-    pointerX = moveEvent.clientX;
-    pointerY = moveEvent.clientY;
-
-    // A pointer that has left the window has left the band too, so this covers
-    // every edge the band check below cannot see.
-    if (isOutsideViewport(pointerX, pointerY)) {
-      handOff();
-      return;
-    }
-
-    // Leaving the band pops the tab out of the strip; bringing it back docks it
-    // and resumes the live reorder.
-    phase = band && !isInsideBand(band, pointerY) ? "popped" : "inStrip";
-    if (phase === "inStrip") reorderTo(pointerX);
-
-    frame ??= window.requestAnimationFrame(tick);
-  }
-
-  function handlePointerUp(upEvent: PointerEvent) {
-    if (upEvent.pointerId !== pointerId || ended || phase === "native") return;
-    released = true;
-    const detached = phase === "popped";
-    // Releasing inside the window keeps the tab in the strip. Only a cursor
-    // that left the band — where the tab already reads as its own window —
-    // takes it away.
-    end();
-    if (detached) void deps.detach(null);
-  }
-
-  /** The WebView stopped reporting the pointer, either as `pointercancel` or as
-   *  a loss of DOM capture: on a session with global coordinates that is a
-   *  genuine cancellation, and on Wayland it is the compositor withdrawing the
-   *  cursor from the window — i.e. the release itself. */
-  const handlePointerGone = (event: PointerEvent) => {
-    if (event.pointerId !== pointerId) return;
-    // The platform drag loop owns the gesture past the window edge, so losing
-    // capture there must not cancel the pending result.
-    if (released || phase === "native" || ended) return;
-    // A Wayland compositor sends no pointerup once the cursor leaves the
-    // window, so the loss *is* the release: hand over, and let a drop on
-    // another window merge rather than detach.
-    if (usesFrontendBounds()) handOff();
-    else end();
-  };
-
-  /** The capture loss for the node the pointer is pinned to, and only for it:
-   *  the dragged tab's own node reports one every time the reorder moves it,
-   *  bubbling up through the strip, and dismissing that is the whole point of
-   *  pinning to the strip in the first place. */
-  const handleCaptureLost = (event: PointerEvent) => {
-    if (event.target !== captureTarget) return;
-    handlePointerGone(event);
-  };
-
-  function handleKeyDown(keyEvent: KeyboardEvent) {
-    if (keyEvent.key !== "Escape") return;
-    keyEvent.preventDefault();
-    if (phase !== "pending") deps.moveTab(tabId, deps.originalIndex);
-    // Past the window edge the native loop cancels on its own Escape and
-    // reports `keep`; restoring here is what makes that release land back in
-    // the slot the drag started from.
-    end();
-  }
-
-  void resolveFrontendBounds();
-  deps.onPressed(true);
-  captureTarget.setPointerCapture(pointerId);
-  window.addEventListener("pointermove", handlePointerMove, true);
-  window.addEventListener("pointerup", handlePointerUp, true);
-  window.addEventListener("pointercancel", handlePointerGone, true);
-  window.addEventListener("keydown", handleKeyDown, true);
-  captureTarget.addEventListener("lostpointercapture", handleCaptureLost);
-
-  return { end };
 }
