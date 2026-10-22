@@ -1582,6 +1582,53 @@ html[data-window-material="vibrancy"] .bg-chrome {
     stroke-linecap: round;
   }
 
+  /* ---------------------------------------------------------------------------
+     WINDOW DRAG REGIONS — Tauri's attributes, Chromium's app-region.
+
+     The chrome marks its drag surface with `data-tauri-drag-region`, and the
+     Tauri runtime's injected script is what turns that into a window drag. The
+     Electron shell has no such script; its equivalent is `-webkit-app-region`,
+     so this block is the mapping. The semantics are copied from Tauri's
+     drag.js rather than invented: `deep` means the whole subtree drags,
+     `false` punches a hole in it, and an interactive element (button, field,
+     tab, link…) is never a drag surface unless it opts in.
+
+     Scoped to `html[data-shell="electron"]` (written in src/main.tsx): WebView2
+     is Chromium too, but nothing behind it implements app-region, so applying
+     this in the Tauri shell would only make those elements swallow the mouse. */
+  html[data-shell="electron"] [data-tauri-drag-region="deep"] {
+    -webkit-app-region: drag;
+  }
+  html[data-shell="electron"] [data-tauri-drag-region="false"],
+  html[data-shell="electron"] [data-tauri-drag-region="false"] * {
+    -webkit-app-region: no-drag;
+  }
+  /* Tab drags and text selection need the pointer; the controls themselves are
+     clickable and must not start a window drag. */
+  html[data-shell="electron"]
+    [data-tauri-drag-region="deep"]
+    :is(
+      a,
+      button,
+      input,
+      select,
+      textarea,
+      label,
+      summary,
+      [contenteditable="true"],
+      [tabindex]:not([tabindex="-1"]),
+      [role="button"],
+      [role="link"],
+      [role="menuitem"],
+      [role="tab"],
+      [role="checkbox"],
+      [role="radio"],
+      [role="switch"],
+      [role="option"]
+    ) {
+    -webkit-app-region: no-drag;
+  }
+
   html {
     @apply font-sans;
   }

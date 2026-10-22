@@ -36,6 +36,14 @@ export type WindowAction =
   | "outerPosition"
   | "scaleFactor";
 
+/** A rect in CSS pixels, relative to the window's content area. */
+export type BridgeWindowRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type BridgeDialogFilter = {
   name: string;
   extensions: string[];
@@ -59,6 +67,7 @@ export type DaeBridge = {
   onChannelMessage(listener: (message: BridgeChannelMessage) => void): () => void;
   window: {
     control(action: WindowAction): Promise<unknown>;
+    setSnapBounds(rect: BridgeWindowRect | null): Promise<boolean>;
   };
   dialog: {
     open(options: BridgeOpenDialogOptions): Promise<string | string[] | null>;

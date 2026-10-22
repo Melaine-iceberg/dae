@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { getAppWindow } from "@/lib/app-window";
-import { isMacPlatform } from "@/lib/platform";
+import { isElectronShell, isMacPlatform, isWindowsPlatform } from "@/lib/platform";
 import { watchWindowFocus } from "@/lib/window-focus";
 
 const appWindow = getAppWindow();
@@ -107,6 +107,7 @@ export function WindowControls() {
   // The window's focus is a seam of its own (src/lib/window-focus.ts) — this
   // component is a second consumer of the same reading, not a second reader.
   const [focused, setFocused] = useState(true);
+  const maximizeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => watchWindowFocus(setFocused), []);
 
@@ -124,6 +125,67 @@ export function WindowControls() {
     return () => {
       disposed = true;
       void unlistenResizePromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  // Windows 11 shows its snap flyout only if the window answers HTMAXBUTTON
+  // over the maximize button. The shell lays a native hotspot there (see
+  // native/src/snap_layout.rs), so the button's rect has to follow every
+  // reflow, and the plate's hover state arrives as an event because the native
+  // child, not the DOM, sees the pointer.
+  useEffect(() => {
+    if (!isElectronShell || !isWindowsPlatform || !appWindow) return;
+    const button = maximizeRef.current;
+    if (!button) return;
+
+    let disposed = false;
+    let frame = 0;
+    const report = (rect: { x: number; y: number; width: number; height: number } | null) => {
+      void appWindow.setSnapBounds(rect).catch(() => {
+        // The window can go away between a reflow and this call.
+      });
+    };
+    const sync = () => {
+      frame = 0;
+      if (disposed) return;
+      const rect = button.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      report({
+        x: Math.round(rect.left),
+        y: Math.round(rect.top),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      });
+    };
+    const schedule = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(sync);
+    };
+
+    const observer = new ResizeObserver(schedule);
+    observer.observe(button);
+    observer.observe(document.documentElement);
+    window.addEventListener("resize", schedule);
+    schedule();
+
+    const unlisteners: Array<() => void> = [];
+    const listen = (event: string, handler: () => void) => {
+      void appWindow.listen(event, handler).then((unlisten) => {
+        if (disposed) unlisten();
+        else unlisteners.push(unlisten);
+      });
+    };
+    listen("tauri-snap://snap/mouseenter", () => button.classList.add("is-hovered"));
+    listen("tauri-snap://snap/mouseleave", () => button.classList.remove("is-hovered"));
+
+    return () => {
+      disposed = true;
+      if (frame) cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", schedule);
+      for (const unlisten of unlisteners) unlisten();
+      button.classList.remove("is-hovered");
+      report(null);
     };
   }, []);
 
@@ -179,9 +241,11 @@ export function WindowControls() {
       />
       <CaptionButton
         action="maximize"
+        buttonRef={maximizeRef}
         glyph={<CaptionGlyph kind={maximized ? "restore" : "maximize"} />}
         // Named by the snap layout plugin in src-tauri/src/lib.rs, which finds
-        // this button by id to hang its flyout off. Not a styling hook.
+        // this button by id to hang its flyout off. In Electron the same id is
+        // the CSS hook for the native hotspot's `.is-hovered` mirror.
         id="window-maximize"
         label={maximized ? t("windowControls.restore") : t("windowControls.maximize")}
         onClick={actions.toggleMaximize}
@@ -206,12 +270,14 @@ export function WindowControls() {
  */
 function CaptionButton({
   action,
+  buttonRef,
   glyph,
   id,
   label,
   onClick,
 }: {
   action: "close" | "maximize" | "minimize";
+  buttonRef?: React.Ref<HTMLButtonElement>;
   glyph: React.ReactNode;
   id?: string;
   label: string;
@@ -222,6 +288,7 @@ function CaptionButton({
       aria-label={label}
       className="window-control flex h-full w-window-control shrink-0 items-center justify-center"
       data-action={action}
+      ref={buttonRef}
       /* The bar is a `deep` drag region, so the one thing inside it that is a
          control has to say so — otherwise a click on Close starts a drag. */
       data-tauri-drag-region="false"

@@ -11,6 +11,7 @@ import { warmShellCommands } from "@/features/shell-commands/shell-commands-atom
 import { preloadExplorerSurface } from "@/features/workspace/workspace-surface";
 import { i18nReady } from "@/i18n";
 import { getAppWindow } from "@/lib/app-window";
+import { isElectronShell } from "@/lib/platform";
 import { applySystemTheme, watchSystemTheme } from "@/lib/theme";
 import { watchAccentSeam } from "@/lib/system-accent";
 import { setupNativeClipboardBridge } from "@/lib/clipboard-bridge";
@@ -24,6 +25,11 @@ import { TabPerfProfiler } from "@/lib/tab-perf-profiler";
 // release build's webview has no console anyone will read, and this is what
 // turns its errors into a file the user can attach to a bug report.
 forwardConsoleToLogFile();
+
+// The drag-region attributes in the chrome are Tauri's vocabulary; App.css
+// maps them onto Chromium's `-webkit-app-region` for this shell only. Set
+// before the first render so the frame is draggable from its first paint.
+if (isElectronShell) document.documentElement.dataset.shell = "electron";
 
 setupNativeClipboardBridge();
 

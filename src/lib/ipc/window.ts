@@ -1,4 +1,4 @@
-import { getBridge, requireBridge, type WindowAction } from "./bridge";
+import { getBridge, requireBridge, type BridgeWindowRect, type WindowAction } from "./bridge";
 import { emit, listen, once, type EventCallback, type UnlistenFn } from "./events";
 
 /** Tauri's synthetic window event names, kept so call sites read unchanged. */
@@ -86,6 +86,14 @@ export class Window {
 
   setFocus(): Promise<void> {
     return control("setFocus");
+  }
+
+  /**
+   * Reports the maximize button's client rect to the shell so Windows can lay
+   * its snap-layout hotspot over it. `null` removes the hotspot.
+   */
+  setSnapBounds(rect: BridgeWindowRect | null): Promise<boolean> {
+    return requireBridge().window.setSnapBounds(rect);
   }
 
   close(): Promise<void> {

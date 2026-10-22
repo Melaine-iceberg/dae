@@ -11,7 +11,8 @@
 - 97 个生成命令已全部进入 handler：除 `start_drag_out` 由 Electron 主进程处理外，其余都在 native addon；`terminal_*`、`read_directory_packets` 等不进 bindings 的通道命令也已实现。
 - 文件系统、文件操作、终端、系统剪贴板、原生拖出、快捷方式、标签撕离、主题/强调色、设置、最近使用、搜索、目录大小、Git、回收站、压缩包、连接/云账户、收藏/空间、默认文件管理器均已落到 Electron 侧。
 - 系统图标与缩略图管线已迁移：两个自定义协议、前端 URL、native 渲染层和 dae-core 平台后端均已接通，见下节。
-- 剩余工作集中在：**窗口壳层、macOS/Linux 平台能力、更新与打包发布**。
+- 窗口壳层已迁移：无边框窗口、拖拽区域、Windows 11 Snap Layout 与 macOS 生命周期均已落到 Electron 侧，见下节。
+- 剩余工作集中在：**macOS/Linux 平台能力、更新与打包发布**。
 
 ## 已完成：7 个命令
 
@@ -41,12 +42,12 @@
 
 验收：在 Windows 上连续浏览含 JPG/PNG/SVG/PDF/MP4 的目录，网格应出缩略图；含 `.exe`/`.lnk`/未知扩展名的目录应出系统图标；替换文件后缩略图应随 mtime/size 版本刷新。把菜单切到“系统图标”后，最近使用、内容搜索、属性、回收站与冲突对话框也应显示同一套 OS 图标；回收站中已知大小的文件行在开启“列表缩略图”后应出缩略图。
 
-## P1：窗口壳层
+## 已完成：窗口壳层
 
-- **窗口不是无边框。** Tauri 配置是 `decorations: false`（`src-tauri/tauri.conf.json:19`），前端自绘窗口控件（`src/components/window-controls.tsx:14`）。Electron 的 `createWindow` 没有 `frame: false` 或 `titleBarStyle`（`electron/main.cjs:1139`），当前会出现系统标题栏与自绘控件并存；macOS 上还会多一套原生红绿灯。
-- **没有拖拽区域实现。** 前端仍使用 `data-tauri-drag-region`（如 `src/features/explorer/explorer-tabs.tsx:489`、`explorer-toolbar.tsx:175`），Electron 侧没有对应的 `-webkit-app-region` 或 `startDragging` IPC。
-- **没有 Windows 11 Snap Layout。** Tauri 用 `tauri-plugin-snap-layout` 挂在 `#window-maximize`（`src-tauri/src/lib.rs:364`；按钮 id 见 `window-controls.tsx:183`），Electron 需要另行接入或明确放弃。
-- **macOS 生命周期不完整。** 主进程只处理了 `second-instance` 和 `open-url`（`electron/main.cjs:1274`），没有 `open-file`/`activate`；Finder 以 dae 打开文件夹时没有入口。
+- **无边框窗口。** Windows/Linux 使用 `frame: false`；macOS 使用 `titleBarStyle: "hidden"` 并在创建后调用 `setWindowButtonVisibility(false)`，保留原生圆角、阴影和全屏过渡，但不再出现第二套红绿灯。Windows/Linux 移除了 Electron 默认应用菜单，避免系统菜单栏出现在无边框窗口内；macOS 保留全局菜单，标准 Edit/Quit 角色仍然可用。
+- **拖拽区域。** 渲染层在 Electron 壳写入 `<html data-shell="electron">`，`App.css` 把 Tauri 的 `data-tauri-drag-region="deep"` / `"false"` 映射为 `-webkit-app-region: drag` / `no-drag`；按钮、输入框、标签等交互元素按 Tauri `drag.js` 的同一套规则自动退出拖拽区。映射只在 Electron 生效，Tauri/WebView2 的行为不变。
+- **Windows 11 Snap Layout。** `native/src/snap_layout.rs` 在最大化按钮上创建一个透明 `STATIC` 子窗口，命中测试返回 `HTMAXBUTTON`，点击通过 `WM_SYSCOMMAND` 切换最大化；主进程新增 `dae:window:snap-bounds` 接收按钮矩形，以 60ms 指针轮询产生 `tauri-snap://snap/mouseenter|mouseleave`，渲染层据此镜像 `.is-hovered`（原生覆盖层会吞掉 DOM 的 `:hover`）。仅 Windows 11（build ≥ 22000）启用。
+- **macOS 生命周期。** 补上 `open-file`（文件解析为所在目录后复用深链入口）与 `activate`；关闭最后一个窗口后应用不再退出，Dock 激活时重建窗口并重新预热撕标签池。
 
 验收：无边框窗口四边可缩放、标签栏空白处可拖动窗口、最大化按钮悬停出 Snap Layout、macOS 红绿灯不重复。
 
@@ -77,10 +78,9 @@
 
 ## 建议顺序
 
-1. 无边框窗口、拖拽区域、Snap Layout、macOS 生命周期。
-2. 打包/更新/CI/bindings 来源收尾。
-3. macOS/Linux 应用扩展、卷监听、`start_drag_out` mode 等平台差异。
-4. 日志轮转、启动预取、tab-perf 等次要项。
+1. 打包/更新/CI/bindings 来源收尾。
+2. macOS/Linux 应用扩展、卷监听、`start_drag_out` mode 等平台差异。
+3. 日志轮转、启动预取、tab-perf 等次要项。
 
 ## 验证记录
 
@@ -95,4 +95,6 @@
 - 真实 Electron 协议验证：在 `dae://localhost` 渲染进程内请求 `thumbnail://` / `fileicon://`——PNG、SVG（`image/svg+xml` 直传）、ICO、MP4 首帧、`notepad.exe` 路径图标和 `ext=exe` 类型图标均返回 200；不存在的路径返回 404；响应带 `Access-Control-Allow-Origin: *`，`<img crossOrigin="anonymous">` 成功加载 64×64。
 - 命令覆盖：`src/bindings.ts` 的 97 个命令全部能在 `native/src` 或 `electron/main.cjs` 找到 handler（`git_sync` 与 fetch/push/pull 共用分支）。
 - UI 回归（Windows，Electron 真实窗口）：切到“系统图标 + 列表缩略图”后，最近使用显示 Shell 文件夹/驱动器图标与 JPG 缩略图；内容搜索的分组头显示系统文件图标；属性对话框显示系统文件图标；回收站里的 PNG 显示缩略图，且 `TrashEntry.path` 指向回收站 payload；列表、网格和检查器中的缩略图/系统图标未回归。测试条目与临时偏好已清理。
-- 仍未验证：替换文件后的缩略图刷新（URL 版本逻辑未改，沿用现有 mtime/size 规则）、含 PDF 的网格（本机未注册 PDF 缩略图处理器，会按设计回退到类型图标）；macOS/Linux 相关项仍未在实机验证。
+- 窗口壳层构建验证：`cargo check --manifest-path native/Cargo.toml`、`npm run native:build`、`npm run build`、`npm run lint` 通过；加载 addon 确认 `installSnapLayout` / `destroySnapLayout` 存在。
+- 窗口壳层实机验证（Windows 11 build 26340）：Electron 真实窗口截图确认系统标题栏与默认菜单栏均已消失；`EnumChildWindows` 确认 Snap Layout 的 `Static` 热区创建在最大化按钮上（窗口坐标 1369,46–1407,90）。
+- 仍未验证：无边框窗口的拖拽、四边缩放、最大化点击与 Snap Layout 飞出动画（交互验证被中断，需人工点验）；macOS 的红绿灯隐藏、`open-file`/`activate` 与 Linux 无边框缩放未在实机验证。替换文件后的缩略图刷新（URL 版本逻辑未改，沿用现有 mtime/size 规则）、含 PDF 的网格（本机未注册 PDF 缩略图处理器，会按设计回退到类型图标）仍未验证。

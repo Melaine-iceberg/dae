@@ -4,6 +4,7 @@ const {
   clipboard,
   dialog,
   ipcMain,
+  Menu,
   nativeImage,
   net,
   protocol,
@@ -101,6 +102,17 @@ const tabPool = {
   replenishTimer: null,
 };
 let tabDragSession = null;
+
+// Windows 11 snap layouts. The renderer owns the maximize button's geometry
+// and its hover styling; the main process owns the native hotspot and watches
+// the pointer for it. `snapWindows` maps a window to the button rect in CSS
+// pixels (the same space as the DOM) plus the hover state last reported.
+const SNAP_LAYOUT_SUPPORTED =
+  process.platform === "win32" && windowsBuildNumber() >= 22000;
+const SNAP_POLL_MS = 60;
+const snapWindows = new Map();
+let snapPollTimer = null;
+let snapUnavailable = false;
 
 // Main-thread event-loop lag. The acceptance page resets it before each phase
 // and reads it after, so a payload that blocks main shows up as a number
@@ -258,6 +270,20 @@ function focusMainWindow() {
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
+}
+
+/** Brings whatever real window is left to the front; false when there is none. */
+function focusExistingWindow() {
+  const main = windowsByLabel.get("main");
+  const target =
+    main && !main.isDestroyed()
+      ? main
+      : [...windowsByLabel.values()].find((window) => !window.isDestroyed() && !window.daePool);
+  if (!target) return false;
+  if (target.isMinimized()) target.restore();
+  target.show();
+  target.focus();
+  return true;
 }
 
 function handleActivation(args) {
@@ -513,6 +539,85 @@ function sendWindowEvent(window, name, payload) {
 function liveWindow(label) {
   const window = windowsByLabel.get(label);
   return window && !window.isDestroyed() ? window : null;
+}
+
+// --- snap layout -----------------------------------------------------------
+
+function startSnapPoll() {
+  if (snapPollTimer || !SNAP_LAYOUT_SUPPORTED) return;
+  snapPollTimer = setInterval(pollSnapHover, SNAP_POLL_MS);
+  snapPollTimer.unref?.();
+}
+
+function stopSnapPollIfIdle() {
+  if (snapWindows.size > 0 || !snapPollTimer) return;
+  clearInterval(snapPollTimer);
+  snapPollTimer = null;
+}
+
+function pollSnapHover() {
+  if (snapWindows.size === 0) {
+    stopSnapPollIfIdle();
+    return;
+  }
+
+  const cursor = screen.getCursorScreenPoint();
+  for (const [window, state] of snapWindows) {
+    if (window.isDestroyed()) {
+      snapWindows.delete(window);
+      continue;
+    }
+    // The pointer is compared in DIPs, the same space as the content bounds
+    // and `screen`; the rect is CSS pixels, which are DIPs at zoom 1 (the
+    // default menu, and with it Electron's zoom roles, is removed).
+    const bounds = window.getContentBounds();
+    const hovered =
+      window.isFocused() &&
+      !window.isMinimized() &&
+      cursor.x >= bounds.x + state.x &&
+      cursor.x < bounds.x + state.x + state.width &&
+      cursor.y >= bounds.y + state.y &&
+      cursor.y < bounds.y + state.y + state.height;
+    if (hovered === state.hovered) continue;
+    state.hovered = hovered;
+    // The native hotspot covers the button, so the DOM never sees :hover.
+    sendWindowEvent(
+      window,
+      hovered ? "tauri-snap://snap/mouseenter" : "tauri-snap://snap/mouseleave",
+      null,
+    );
+  }
+}
+
+function installSnapBounds(window, rect) {
+  if (!SNAP_LAYOUT_SUPPORTED || snapUnavailable) return false;
+  try {
+    return nativeAddonModule().installSnapLayout(
+      hwndValue(window),
+      rect.x,
+      rect.y,
+      rect.width,
+      rect.height,
+    );
+  } catch (error) {
+    snapUnavailable = true;
+    console.error(`[main] snap layout unavailable: ${error.message || error}`);
+    return false;
+  }
+}
+
+function detachSnapBounds(window) {
+  const state = snapWindows.get(window);
+  if (!state) return false;
+  snapWindows.delete(window);
+  stopSnapPollIfIdle();
+  if (!SNAP_LAYOUT_SUPPORTED || snapUnavailable || window.isDestroyed()) return true;
+  try {
+    nativeAddonModule().destroySnapLayout(hwndValue(window));
+  } catch (error) {
+    console.error(`[main] snap layout teardown failed: ${error.message || error}`);
+  }
+  return true;
 }
 
 function nextTabLabel() {
@@ -1092,6 +1197,28 @@ function registerIpc() {
     }
   });
 
+  // The renderer reports the maximize button's client-relative rect whenever
+  // the frame reflows. `null` detaches the hotspot (the control unmounted);
+  // platforms without snap layouts simply answer false.
+  ipcMain.handle("dae:window:snap-bounds", (event, bounds) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window || !SNAP_LAYOUT_SUPPORTED) return false;
+    if (bounds === null) return detachSnapBounds(window);
+
+    const values = ["x", "y", "width", "height"].map((key) => Number(bounds?.[key]));
+    if (!values.every(Number.isFinite)) return false;
+    const [x, y, width, height] = values.map((value) => Math.round(value));
+    if (width <= 0 || height <= 0) return false;
+
+    const rect = { x, y, width, height };
+    if (!installSnapBounds(window, rect)) return false;
+    const state = snapWindows.get(window) ?? { hovered: false };
+    Object.assign(state, rect);
+    snapWindows.set(window, state);
+    startSnapPoll();
+    return true;
+  });
+
   ipcMain.handle("dae:dialog:open", async (event, options) => {
     const parent = BrowserWindow.fromWebContents(event.sender);
     const settings = options && typeof options === "object" ? options : {};
@@ -1177,6 +1304,12 @@ function createWindow({
     x: bounds?.x,
     y: bounds?.y,
     show: !pool,
+    // The renderer draws the whole frame (src/components/window-controls.tsx).
+    // Windows and Linux get a frameless window; macOS keeps its native frame
+    // so the rounded corners, shadow and full-screen transition stay, but hides
+    // the title bar (and then the traffic lights below) because the app draws
+    // its own.
+    ...(process.platform === "darwin" ? { titleBarStyle: "hidden" } : { frame: false }),
     // A backdrop only exists if the window itself is transparent; otherwise
     // CSS would fade the canvas over an opaque plate.
     transparent: windowMaterialSupported(),
@@ -1207,18 +1340,37 @@ function createWindow({
 
   const window = new BrowserWindow(options);
 
+  if (process.platform === "darwin") {
+    // `titleBarStyle: "hidden"` keeps the native frame but leaves the traffic
+    // lights floating over the content; the app draws its own (AppKit-shaped)
+    // set at the leading edge, so the native one must go.
+    window.setWindowButtonVisibility(false);
+  }
+
   window.daeLabel = label;
   window.daePool = pool;
   windowsByLabel.set(label, window);
   window.on("closed", () => {
+    detachSnapBounds(window);
     windowsByLabel.delete(label);
     tabHandoffs.delete(label);
     if (pool) clearTabPoolReferences(label);
     if (label === "main") disposeTabPool();
-    if (windowsByLabel.size === 0) app.quit();
+    // macOS apps stay alive after their last window closes and rebuild a
+    // window from the dock's `activate`; everywhere else the shell quits.
+    if (windowsByLabel.size === 0 && process.platform !== "darwin") app.quit();
   });
 
   window.on("resize", () => {
+    sendWindowEvent(window, "tauri://resize", physicalSize(window));
+  });
+  // Maximizing is not guaranteed to emit `resize` before the renderer needs to
+  // swap the maximize/restore glyph (and the snap hotspot toggles it through
+  // WM_SYSCOMMAND, not the DOM), so report it as the same window-size event.
+  window.on("maximize", () => {
+    sendWindowEvent(window, "tauri://resize", physicalSize(window));
+  });
+  window.on("unmaximize", () => {
     sendWindowEvent(window, "tauri://resize", physicalSize(window));
   });
   window.on("focus", () => sendWindowEvent(window, "tauri://focus", true));
@@ -1305,10 +1457,38 @@ if (!app.requestSingleInstanceLock()) {
     event.preventDefault();
     queueActivation([url]);
   });
+  // "Open With" and a drop on the dock icon arrive as a file path, not argv.
+  // A file opens the directory that contains it, like a `dae://` link does;
+  // launch arguments stay directory-only so argv[0] (the executable) can never
+  // turn into a navigation.
+  app.on("open-file", (event, filePath) => {
+    event.preventDefault();
+    if (typeof filePath !== "string") return;
+    const directory = resolveExistingDirectory(filePath);
+    if (directory) queueActivation([directory]);
+  });
+  // On macOS closing the last window leaves the app running; clicking the dock
+  // icon (or Finder asking it to open something) must bring a window back.
+  app.on("activate", () => {
+    if (!app.isReady() || shuttingDown) return;
+    if (focusExistingWindow()) return;
+    // Startup owns the first window; `whenReady` creates it as soon as the
+    // core is up, so there is nothing to rebuild yet.
+    if (!coreChild) return;
+    createWindow();
+    // Closing the last window tore the pool down; a rebuilt window gets its
+    // tear-off fast path back from the same settings read the launch used.
+    void syncTabPool();
+  });
 
   app.whenReady().then(async () => {
     try {
       if (app.isPackaged) app.setAsDefaultProtocolClient("dae");
+      // The frame is drawn by the renderer, so the default File/Edit menu would
+      // add a second, system-drawn bar *inside* it on Windows and Linux (and
+      // its zoom roles would break the app-region coordinate space). macOS
+      // keeps its global menu, where the default app/Edit roles belong.
+      if (process.platform !== "darwin") Menu.setApplicationMenu(null);
       await spawnCore();
       registerIpc();
       registerCoreProtocol();
@@ -1329,5 +1509,7 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 app.on("window-all-closed", () => {
-  app.quit();
+  // macOS keeps the process (and the core) alive with no windows open; the
+  // dock's `activate` rebuilds one. Every other platform quits as before.
+  if (process.platform !== "darwin") app.quit();
 });

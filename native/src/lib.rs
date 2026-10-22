@@ -25,6 +25,7 @@ mod search;
 mod settings;
 mod shell;
 mod shell_commands;
+mod snap_layout;
 mod system;
 mod system_files;
 mod terminal;
@@ -384,6 +385,20 @@ pub fn start_file_drag(paths: Vec<String>, mode: String, hwnd: f64) -> Result<bo
     system_files::start_drag_out(paths, &mode, hwnd as isize)
         .map(|()| true)
         .map_err(|error| Error::from_reason(error.to_string()))
+}
+
+/// Lays a Windows 11 snap-layout hotspot over the maximize button. `x`, `y`,
+/// `width` and `height` are CSS pixels inside the window's client area; the
+/// main process calls this on its own (UI) thread whenever the button moves.
+#[napi(js_name = "installSnapLayout")]
+pub fn install_snap_layout(hwnd: f64, x: i32, y: i32, width: i32, height: i32) -> bool {
+    snap_layout::install(hwnd as isize, x, y, width, height)
+}
+
+/// Removes the snap-layout hotspot; called when the button unmounts.
+#[napi(js_name = "destroySnapLayout")]
+pub fn destroy_snap_layout(hwnd: f64) -> bool {
+    snap_layout::destroy(hwnd as isize)
 }
 
 async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::Value> {

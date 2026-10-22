@@ -152,6 +152,7 @@ contextBridge.exposeInMainWorld("daeBridge", {
   },
   window: {
     control: (action) => ipcRenderer.invoke("dae:window:control", action),
+    setSnapBounds: (rect) => ipcRenderer.invoke("dae:window:snap-bounds", rect),
   },
   dialog: {
     open: (options) => ipcRenderer.invoke("dae:dialog:open", options),
