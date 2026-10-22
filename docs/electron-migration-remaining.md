@@ -61,7 +61,7 @@
 
 **做法。** 把跨窗口那半段交给 Chromium 自己的拖放：标签芯片 `draggable`，`dragstart` 写入自定义 MIME `application/x-dae-tab`（JSON：`source` 窗口 label、`token`、`payload` = `serializeTabHandoff`），平台拖拽循环负责跨窗口投递、拖拽图与拖拽光标；窗口级的 `dragover`/`drop` 负责合并与落点。这是理论上唯一能在 Wayland 下跨窗口的机制——指针在拖拽期间被合成器抓走，兄弟窗口收不到任何 pointer 事件。
 
-> **已知限制：原生 Wayland 下真机鼠标仍拖不动。** WSLg/Weston + `--ozone-platform=wayland` 实测：真鼠标按下拖动无效（用户实测）；用 CDP 合成鼠标事件时 `dragstart`/`dragover`/实时重排能跑通，说明渲染层接线是好的，断点在 Chromium 的 Wayland 拖拽源（合成器不回报 action，Chromium 把 drop 当取消）。同样的原生 Wayland 拖拽在 VS Code 也没有实现，属于 Electron/Chromium 层面的限制，不在本次壳层迁移范围内。默认的 XWayland 后端不受影响。下一步若要补：在 `useNativeWayland` 时改回纯指针手势做**窗口内重排**（不再跨窗口），或等 Chromium 的 `xdg-toplevel-drag`/DnD action 补齐；也可以让 Linux 发行版包强制 `--ozone-platform=x11`。
+> **已知限制：原生 Wayland 下真机鼠标仍拖不动。** WSLg/Weston + `--ozone-platform=wayland` 实测：真鼠标按下拖动无效（用户实测）；用 CDP 合成鼠标事件时 `dragstart`/`dragover`/实时重排能跑通，说明渲染层接线是好的，断点在 Chromium 的 Wayland 拖拽源（合成器不回报 action，Chromium 把 drop 当取消）。同样的原生 Wayland 拖拽在 VS Code 也没有实现，属于 Electron/Chromium 层面的限制，不在本次壳层迁移范围内。默认的 XWayland 后端不受影响。下一步若要补：在原生 Wayland（`isWaylandSession()`）时改回纯指针手势做**窗口内重排**（不再跨窗口），或等 Chromium 的 `xdg-toplevel-drag`/DnD action 补齐；也可以让 Linux 发行版包强制 `--ozone-platform=x11`。
 
 - **窗口内重排。** `dragover` 用 `tabReorderIndexAt` 实时 `moveTab`，`stripAutoScrollStep` 边缘自动滚动（光标停住也会继续，靠 rAF 自己续帧）；拖拽图是芯片的克隆（`setTabDragImage`），免得 `data-dragging` 的淡出被拍进 OS 拖拽图。
 - **跨窗口合并。** 目标窗口在 `drop` 里自己 `mergeTabFromHandoff`（插入点由它自己的 `tabInsertionIndexAt` 量），然后回调 `claimTabHandoff`；主进程把 `tab-handoff-claimed` 转给来源窗口。
@@ -174,4 +174,4 @@
 - Linux 的 AppImage 更新与 deb 安装；以及 macOS / Linux 两个 CI 发布腿。
 - MSIX 实际安装后的 `process.windowsStore` 跳过路径、包身份与 AppData 虚拟化行为。
 - 无边框窗口的拖拽、四边缩放、最大化点击与 Snap Layout 飞出动画（交互验证被中断，需人工点验）；macOS 的红绿灯隐藏、`open-file`/`activate`、Services 列表与执行，Linux 的无边框缩放、KDE service menu 与 GIO 卷监听未在实机验证。替换文件后的缩略图刷新（沿用现有 mtime/size 规则）、含 PDF 的网格仍未验证。
-- **HTML5 标签拖拽：三个平台都未真机验证。** 尤其要确认两点：渲染层 `dragstart` 写入的自定义 MIME 是否能跨窗口读到（`dragover` 的 `types`、`drop` 的 `getData`），以及 Linux 原生 Wayland（`--ozone-platform=wayland`）下 `dragenter`/`drop` 是否能投递到兄弟窗口。若某合成器拒绝自定义类型或拒绝投递，退路是把跨窗口段改回“菜单/快捷键合并”，而不是回到自绘手势。
+- **HTML5 标签拖拽的跨窗口段未真机验证。** Linux 默认 XWayland 已用 CDP 合成鼠标自动验证（窗口内重排、不误撕离），但真正的人工拖拽（跨窗口合并、拖到桌面撕离、自动滚动）与 Windows/macOS 上的一切都未点验。要确认的核心两点：渲染层 `dragstart` 写入的自定义 MIME 能否被兄弟窗口读到（`dragover.types` / `drop.getData`），以及不同合成器是否派发 `drop`。原生 Wayland 已知不可用（见上方限制），退路是让原生 Wayland 改回“指针手势只做窗口内重排”，跨窗口改用显式“合并到窗口…”入口。
