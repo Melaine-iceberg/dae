@@ -13,22 +13,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # One empty draft per tag: the matrix jobs below attach their own installers
+  # and updater metadata to it, and publishing the draft is the single manual
+  # step that makes the release (and the update feed) live.
+  create-release:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: dae ${{ github.ref_name }}
+          draft: true
+          generate_release_notes: true
+
   build:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: windows-latest
-            target: ""
-            args: ""
+            args: --win
           - platform: ubuntu-26.04
-            target: ""
-            args: ""
+            args: --linux
           # The macOS artifact targets Apple Silicon, matching current macOS
           # software support and the runner architecture.
           - platform: macos-latest
-            target: aarch64-apple-darwin
-            args: "--target aarch64-apple-darwin"
+            args: --mac
 
     runs-on: ${{ matrix.platform }}
 
@@ -44,17 +54,10 @@ jobs:
       - name: Verify tag matches app version
         shell: bash
         run: |
-          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
-          pkg=$(node -p "require('./package.json').version")
+          version=$(node -p "require('./package.json').version")
           if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
-            echo "::error::Pushed tag ${GITHUB_REF_NAME} but tauri.conf.json declares v$version."
-            echo "::error::Bump the version in src-tauri/tauri.conf.json, src-tauri/Cargo.toml and package.json, then re-tag."
-            exit 1
-          fi
-          # The MSIX version follows package.json (scripts/sync-msix-version.mjs),
-          # so a drifted package.json would ship an installer whose version lies.
-          if [ "$pkg" != "$version" ]; then
-            echo "::error::package.json declares v$pkg but tauri.conf.json declares v$version."
+            echo "::error::Pushed tag ${GITHUB_REF_NAME} but package.json declares v$version."
+            echo "::error::Bump package.json (optionally the legacy Tauri manifests), then re-tag."
             exit 1
           fi
 
@@ -62,91 +65,131 @@ jobs:
         if: matrix.platform == 'ubuntu-26.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential curl wget file pkg-config cmake \
-            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev \
-            libgtk-3-dev librsvg2-dev libxdo-dev \
-            libssl-dev libdbus-1-dev zlib1g-dev rpm
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake zlib1g-dev libssl-dev \
+            libglib2.0-dev libgtk-3-dev
 
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      # Windows leg only: the MSIX steps below need winapp on PATH. Nothing
-      # else to run after it — there is no winapp.yaml to `winapp restore`
-      # because Tauri brings its own Rust bindings (see the winapp Tauri guide).
+      # Windows leg only: the MSIX step below needs winapp on PATH.
       - name: Install winapp CLI
         if: matrix.platform == 'windows-latest'
         uses: microsoft/setup-WinAppCli@v0.1
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: native -> target
           cache-on-failure: true
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "dae v__VERSION__"
-          releaseBody: "See the assets below to download and install this version."
-          releaseDraft: true
-          prerelease: false
-          generateReleaseNotes: true
-          # The updater config and signing requirement live in an overlay so
-          # that local `bun tauri build` keeps working without a signing key.
-          args: "--config src-tauri/tauri.release.conf.json ${{ matrix.args }}"
-          tauriScript: bun tauri
-          # Point latest.json at the NSIS installer rather than the MSI, which
-          # cannot silently replace a running install.
-          updaterJsonPreferNsis: true
+      # electronDist points electron-builder at node_modules/electron/dist; the
+      # installer script is idempotent and makes a skipped postinstall visible
+      # before the packaging step fails on a missing Electron tree.
+      - name: Ensure Electron binary
+        run: node node_modules/electron/install.js
 
-      # The MSIX ships the release exe tauri-action just built: its
-      # beforeBuildCommand already left the frontend in dist/, so only the exe
-      # is copied in. The committed Package.appxmanifest + Assets/ at the repo
-      # root are what `winapp pack` picks up (it auto-detects the manifest from
-      # the working directory). No `winapp run` registration happens in CI.
+      - name: Build native addon
+        run: node scripts/native-build.mjs
+
+      - name: Build renderer
+        run: bun run build
+
+      # Notarization needs a signing identity and all three Apple credentials;
+      # without them the dmg is built unsigned and only the first install is
+      # possible (Squirrel.Mac cannot apply an update to an unsigned bundle).
+      - name: Resolve notarization flags
+        if: matrix.platform == 'macos-latest'
+        id: signing
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$CSC_LINK" ] && [ -n "$APPLE_ID" ] \
+             && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            echo "notarize=-c.mac.notarize=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "notarize=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # --publish never: the draft job above owns the release, and every asset
+      # (including latest.yml / latest-mac.yml / latest-linux.yml) is attached
+      # below. Empty signing secrets are unset so electron-builder skips
+      # signing instead of treating an empty CSC_LINK as a certificate path.
+      - name: Package installers
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          for name in CSC_LINK CSC_KEY_PASSWORD WIN_CSC_LINK WIN_CSC_KEY_PASSWORD \
+                      APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then unset "$name"; fi
+          done
+          npx electron-builder ${{ matrix.args }} --publish never ${{ steps.signing.outputs.notarize }}
+
+      # The MSIX is a separate package format with its own identity and signer.
+      # The committed Package.appxmanifest + Assets/ describe it; the script
+      # stages win-unpacked, copies the assets and calls winapp. Without a
+      # certificate secret it falls back to a throwaway development cert.
       - name: Package MSIX
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         env:
-          # Optional real code-signing certificate as a base64-encoded .pfx:
-          #   [Convert]::ToBase64String([IO.File]::ReadAllBytes("cert.pfx"))
-          # Whichever cert is used, its subject must match the manifest's
-          # Publisher (CN=Mt342) or installs fail. Without the secret the
-          # package falls back to a throwaway development certificate — fine
-          # for a draft release, but every user then has to trust a
-          # self-signed publisher.
           MSIX_CERTIFICATE: ${{ secrets.MSIX_CERTIFICATE }}
           MSIX_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_CERTIFICATE_PASSWORD }}
         run: |
           node scripts/sync-msix-version.mjs --release
-          Copy-Item src-tauri\target\release\dae.exe dist\ -Force
           if ($env:MSIX_CERTIFICATE) {
             [IO.File]::WriteAllBytes("release.pfx", [Convert]::FromBase64String($env:MSIX_CERTIFICATE))
-            winapp pack .\dist --cert .\release.pfx --cert-password "$env:MSIX_CERTIFICATE_PASSWORD"
-          } else {
-            winapp cert generate --if-exists skip
-            winapp pack .\dist --cert .\devcert.pfx
+            $env:MSIX_CERT = "release.pfx"
+            $env:MSIX_CERT_PASSWORD = $env:MSIX_CERTIFICATE_PASSWORD
           }
+          node scripts/pack-msix.mjs
 
-      # tauri-action created the release as a draft; append the MSIX to that
-      # same draft so one manual publish ships every installer. `draft: true`
-      # is load-bearing: without it this action PUBLISHES the draft after
-      # uploading. Release name/body/notes set by tauri-action are retained.
-      - name: Attach MSIX to release
+      - name: Attach Windows artifacts
         if: matrix.platform == 'windows-latest'
         uses: softprops/action-gh-release@v2
         with:
-          files: "*.msix"
           draft: true
+          files: |
+            dist-electron/*.exe
+            dist-electron/*.exe.blockmap
+            dist-electron/latest.yml
+            dist-electron/*.msix
+
+      - name: Attach macOS artifacts
+        if: matrix.platform == 'macos-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            dist-electron/*.dmg
+            dist-electron/*.zip
+            dist-electron/*.zip.blockmap
+            dist-electron/latest-mac.yml
+
+      - name: Attach Linux artifacts
+        if: matrix.platform == 'ubuntu-26.04'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            dist-electron/*.AppImage
+            dist-electron/*.AppImage.blockmap
+            dist-electron/*.deb
+            dist-electron/latest-linux.yml

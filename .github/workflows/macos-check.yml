@@ -62,6 +62,18 @@ jobs:
             --all-targets \
             --target aarch64-apple-darwin
 
+      # `src/bindings.ts` is checked in so a clean Electron build does not need
+      # the Tauri shell to export it. Regenerate it here and fail on drift: the
+      # Tauri commands remain the typed schema source until the last Tauri-only
+      # code is deleted, and a stale checked-in file would hide that change.
+      - name: Verify checked-in bindings are current
+        run: |
+          cargo run \
+            --manifest-path src-tauri/Cargo.toml \
+            --features export-bindings \
+            --bin export_bindings
+          git diff --exit-code -- src/bindings.ts
+
       # The Electron addon has its own workspace and its own macOS-only code
       # (`shell_commands/macos.rs`, `volumes.rs`); nothing else in CI compiles
       # those modules.

@@ -1,9 +1,10 @@
 # dae
 
-An aesthetic desktop file manager with an integrated terminal. The shell is
-Rust ([Tauri 2](https://tauri.app/)) and the interface is React 19 +
-TypeScript in Vite. It is meant to read as native on Windows, macOS and Linux
-without imitating any of them.
+An aesthetic desktop file manager with an integrated terminal. The shipping
+shell is [Electron](https://www.electronjs.org/) with a Rust N-API core
+(`native/` on top of `dae-core`), and the interface is React 19 + TypeScript in
+Vite. It is meant to read as native on Windows, macOS and Linux without
+imitating any of them.
 
 - **Tabs and windows.** Tabs drag between windows and tear off into their own;
   a pool of pre-warmed windows makes a tear-off look immediate.
@@ -19,74 +20,161 @@ without imitating any of them.
   shortcuts, `dae://` deep links, and registering dae as the default file
   manager. Interface in English and Simplified Chinese.
 
+The original Tauri 2 shell still lives in `src-tauri/` as the migration
+reference and the typed command schema behind `src/bindings.ts`. Releases are
+built from the Electron shell; everything that ships is under `electron/`,
+`native/` and `src/`.
+
 ## Prerequisites
 
 - [Bun](https://bun.sh/) — every frontend script runs through it.
+- Node 24 — Electron tooling, `electron-builder` and the release scripts.
 - A stable Rust toolchain. The crate is edition 2024, so 1.85 or newer.
-- Platform build dependencies, the same set the release workflow installs:
-  - **Linux** — `build-essential curl wget file pkg-config cmake`, plus
-    `libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
-    libgtk-3-dev librsvg2-dev libxdo-dev libssl-dev libdbus-1-dev zlib1g-dev
-    rpm`.
-  - **Windows** — MSVC build tools and the WebView2 runtime (built into
-    Windows 11). [`winapp`](https://github.com/microsoft/winappCli) is needed
-    only for the MSIX packaging script.
+- Platform build dependencies for the addon:
+  - **Linux** — `build-essential pkg-config cmake zlib1g-dev libssl-dev
+    libglib2.0-dev libgtk-3-dev` (the addon binds GTK/GIO directly and builds
+    the bundled libgit2; Electron ships its own Chromium).
+  - **Windows** — MSVC build tools. [`winapp`](https://github.com/microsoft/winappCli)
+    is needed only for MSIX packaging.
   - **macOS** — the Xcode command line tools.
-- Node 24 only for the release tooling (`scripts/sync-msix-version.mjs`, the
-  version check); CI pins it rather than trusting the runner image.
+- `bun install` downloads the Electron distribution into
+  `node_modules/electron/dist`; `electron-builder` reuses it instead of
+  fetching a second copy.
+
+`src/bindings.ts` is checked in, so a clean checkout can build the Electron
+app without compiling the Tauri shell first.
 
 ## Getting started
 
 ```bash
 bun install
-bun run tauri dev
+bun run electron:dev
 ```
 
-`tauri dev` starts Vite from `beforeDevCommand` and builds the Rust side, which
-— in a debug build — regenerates the TypeScript bindings into
-`src/bindings.ts` (`src-tauri/src/lib.rs`). That file is gitignored and is
-imported by the frontend, so anything that type-checks the frontend without
-building Rust first needs it explicitly:
+`electron:dev` builds the native addon, builds the renderer and launches
+Electron. For renderer HMR, run Vite and Electron separately:
 
 ```bash
-bun run bindings:export   # regenerate src/bindings.ts alone
+bun run dev                                            # Vite on :1420
+node scripts/native-build.mjs --debug                  # addon, debug profile
+electron electron/main.cjs --dev-server=http://localhost:1420
 ```
 
-`bun run build` does this for you: `beforeBuildCommand` is
-`bun run bindings:export && bun run build`.
+The addon is copied to `native/dae_core_native.node`, which is the path both
+the main process and the core utility process load. Rebuild it after touching
+`native/` or `src-tauri/crates/dae-core/`.
+
+`src/bindings.ts` is generated from the Tauri command registry whenever the
+typed command surface changes:
+
+```bash
+bun run bindings:export   # regenerate src/bindings.ts
+bun run bindings:check    # regenerate and fail if the checked-in file drifted
+```
+
+The file is committed so `electron:dev`, `electron:pack` and CI do not need
+the Tauri shell. The macOS check workflow regenerates it on every push and
+fails on drift.
 
 ## Scripts
 
 | Command | What it does |
 | --- | --- |
-| `bun run tauri dev` | Vite + the Rust app, with HMR; refreshes `src/bindings.ts` |
-| `bun run bindings:export` | Regenerate `src/bindings.ts` from the Rust commands |
+| `bun run electron:dev` | Native addon + renderer, then Electron |
+| `bun run electron:pack` | Unpacked app in `dist-electron/` for the host platform |
+| `bun run electron:dist` | Installer for the host platform, with updater metadata |
+| `bun run pack:msix` | Windows: unpacked app staged and packed as MSIX |
+| `bun run native:build` | Release addon → `native/dae_core_native.node` |
+| `bun run bindings:export` / `bindings:check` | Regenerate / verify `src/bindings.ts` |
+| `bun run test:native` | `cargo test` for the Electron addon |
 | `bun run dev` | Vite alone on `http://localhost:1420` |
 | `bun run build` | `tsc`, then Vite, into `dist/` |
-| `bun run tauri:build:release` | Release bundle, with `src-tauri/tauri.release.conf.json` |
-| `bun run pack:msix` | Windows: release exe plus a development certificate, packed as MSIX |
-| `bun run tauri:dev:withidentity` | Windows: register the app with its identity (`winapp run`) |
 | `bun run lint` / `lint:type-aware` | Oxlint over `src` and `vite.config.ts`; add `:fix` to apply |
-| `bun run test:rust:setup` / `test:rust` | cargo-nextest, see [Tests](#tests) |
 | `bun run icons:icon` | Re-render the platform icon set, see [App icon](#app-icon) |
+| `bun run tauri dev` | Legacy Tauri shell, for migration reference only |
 
-Releases are cut by pushing a `v*` tag, which runs
-`.github/workflows/release.yml` for Windows, Linux and Apple Silicon. The tag
-must match the version in `src-tauri/tauri.conf.json` **and**
-`package.json`; CI fails the build otherwise. `main` is additionally
-type-checked for macOS on every push, since `#[cfg(target_os = "macos")]` code
-is invisible on the other platforms.
+## Packaging and releases
+
+Releases are cut by pushing a `v*` tag. `package.json` is the version source of
+truth: the workflow fails if the tag and the manifest disagree. It then builds
+the native addon and the renderer on Windows, Linux and macOS, and packages:
+
+- **Windows** — NSIS installer (and its blockmap) for the update feed, plus an
+  MSIX built by `scripts/pack-msix.mjs` from the same `win-unpacked` layout.
+- **macOS** — dmg for first installs and zip for Squirrel.Mac updates (Apple
+  Silicon).
+- **Linux** — AppImage for the update feed and deb for package managers.
+
+Every artifact is attached to one **draft** GitHub release. Publishing that
+draft is the single manual step that makes both the downloads and the update
+feed live. The metadata files (`latest.yml`, `latest-mac.yml`,
+`latest-linux.yml`) must ship with the installers; publishing the draft is what
+moves `releases/latest/download` to them.
+
+### Auto-update
+
+Packaged builds check the feed a few seconds after launch, download a newer
+build in the background, install it silently and restart. The feed is the same
+`releases/latest/download/...` path the Tauri shell used:
+
+```
+https://github.com/Melaine-iceberg/dae/releases/latest/download
+```
+
+`electron/updater.cjs` uses `electron-updater`'s generic provider, so the check
+is a plain asset request rather than the GitHub provider's `releases/latest`
+scrape (which is rate-limited and can answer 406). The outcome is logged to
+`dae.log`; an offline machine or a missing release only costs a log line. Dev
+builds and unpackaged runs do not check.
+
+Platform behaviour:
+
+- **Windows** — NSIS installs update in place. An MSIX install is owned by the
+  package (`process.windowsStore`), so it skips the feed and updates by
+  installing a newer MSIX.
+- **macOS** — Squirrel.Mac only applies updates to a signed, notarized bundle.
+  Without `MAC_CSC_LINK` and the `APPLE_*` secrets the dmg still installs, but
+  auto-update cannot.
+- **Linux** — AppImage updates in place. A deb install is managed by the
+  system package manager and skips the feed.
+
+Code signing is optional for Windows NSIS (updates are still validated against
+the sha512 in `latest.yml`) and required for macOS updates. CI uses these
+secrets when present:
+
+| Secret | Purpose |
+| --- | --- |
+| `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD` | Authenticode for the Windows installer |
+| `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD` | Developer ID Application identity for macOS |
+| `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | macOS notarization |
+| `MSIX_CERTIFICATE`, `MSIX_CERTIFICATE_PASSWORD` | Base64 PFX for the MSIX |
+
+Without a code-signing certificate the Windows leg builds unsigned; without an
+Apple identity the macOS leg builds unsigned. Both are acceptable for a draft
+release, but only the signed variants can update themselves.
+
+`scripts/sync-msix-version.mjs` keeps the four-part `Package.appxmanifest`
+version in step with `package.json`; `--release` resets the revision so the tag
+ships as `<app>.0`. The local `pack:msix` path uses a throwaway development
+certificate (`devcert.pfx`) unless `MSIX_CERT`/`MSIX_CERT_PASSWORD` are set.
 
 ## Where things live
 
-- `src-tauri/src/` — Rust. `file_system/` holds the backends (local, `sftp.rs`,
-  `smb.rs`, `archive.rs`) behind one VFS; also `terminal.rs` (the PTY),
-  `system_accent/`, `system_theme/`, `window_material/`, `tab_windows.rs`,
-  `settings.rs`, `default_manager.rs`.
+- `electron/main.cjs` — window lifecycle, IPC handlers, deep links, custom
+  protocols, snap layout and the core utility process.
+- `electron/updater.cjs` — the startup self-update check.
+- `electron/preload.cjs` — the `window.daeBridge` transport.
+- `native/src/` — the N-API addon: terminal, shell verbs, thumbnails, icons,
+  drag-out, volume watching and the platform backends.
+- `src-tauri/crates/dae-core/` — the platform-neutral file system core shared
+  by the addon and the legacy Tauri shell.
+- `src-tauri/` — the Tauri 2 shell kept as the migration reference; it is not
+  part of the release artifacts.
 - `src/features/` — React by area: `explorer/`, `sidebar/`, `workspace/`,
   `terminal/`, `settings/`, `shell-commands/`.
-- `src/lib/` — the seams between the two halves: `system-accent.ts`,
-  `theme.ts`, `window-material.ts`, `window-focus.ts`.
+- `src/lib/` — the seams between the two halves: `ipc/` (the Tauri-shaped IPC
+  facade over the preload bridge), `system-accent.ts`, `theme.ts`,
+  `window-material.ts`, `window-focus.ts`.
 
 ## Design
 
@@ -122,12 +210,13 @@ The two halves meet at a pair of functions, `applySystemAccent` /
 useEffect(() => watchSystemAccent(applySystemAccent), []);
 ```
 
-- `src-tauri/src/system_accent/` — the platform half. `windows.rs` reads
+- `native/src/system.rs` — the platform half. `windows` reads
   `HKCU\Software\Microsoft\Windows\DWM!AccentColor` and blocks on
-  `RegNotifyChangeKeyValue` for changes; `macos.rs` reads
+  `RegNotifyChangeKeyValue` for changes; `macos` reads
   `NSColor.controlAccentColor` and polls (macOS posts nothing when the accent
-  moves); `linux.rs` reads `org.freedesktop.appearance accent-color` from the
-  freedesktop settings portal and polls. Each reports `system-accent-changed`.
+  moves); `linux` reads `org.freedesktop.appearance accent-color` from the
+  freedesktop settings portal and polls. Each reports `system-accent-changed`
+  through the core event pump.
 - `src/lib/system-accent.ts` — the CSS half. `watchSystemAccent()` subscribes
   and pulls once; `applySystemAccent()` is the whole write side.
 
@@ -164,8 +253,18 @@ archived PoC it links to is not part of the build.
 
 ## Tests
 
-Rust tests use [cargo-nextest](https://nexte.st/). Install it once, then run
-the suite:
+The Electron addon's Rust tests run with the standard toolchain:
+
+```bash
+bun run test:native
+# or: cargo test --manifest-path native/Cargo.toml -- --test-threads=1
+```
+
+The serial flag matters on Windows: two Shell-icon tests race on the Shell COM
+apartment when run in parallel.
+
+The legacy Tauri shell still has its own suite; it uses
+[cargo-nextest](https://nexte.st/):
 
 ```bash
 bun run test:rust:setup
@@ -217,10 +316,12 @@ bun run icons:icon
 
 This renders `goose-master.png` from the SVG and runs `tauri icon`, which
 rewrites `src-tauri/icons/**` (PNG sizes, `icon.icns` for macOS, `icon.ico`
-for Windows, and the `android/`/`ios/` sets). The default is the classic
-`.icns` look; a macOS 26 Tahoe Liquid Glass `.icon` (Icon Composer) can be
-added later — Tauri's bundler supports it since 2.9.
+for Windows, and the `android/`/`ios/` sets). `electron-builder.yml` reads
+`icon.ico`, `icon.icns` and `icon.png` from that directory, so the installer
+and the app window share one icon. The icon CLI is the last build step that
+still needs the Tauri CLI; the generated files are checked in.
 
 ## Recommended IDE Setup
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+- [VS Code](https://code.visualstudio.com/) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+  + the Oxlint extension.

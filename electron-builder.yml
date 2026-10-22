@@ -5,6 +5,8 @@ copyright: Copyright © 2026 melaine
 directories:
   output: dist-electron
 
+artifactName: ${productName}-${version}-${arch}.${ext}
+
 # The installer registers `dae://` so links such as `dae://open?path=...` reach
 # the running instance (the main process buffers and forwards them).
 protocols:
@@ -13,14 +15,14 @@ protocols:
       - dae
 
 # The renderer is a self-contained Vite bundle; main/preload/core use Node
-# built-ins plus the .node addon. No runtime node_modules are needed.
+# built-ins plus the .node addon. The only production dependency is
+# electron-updater, which electron-builder collects from package.json.
 files:
   - dist/**/*
   - electron/**/*
   - native/dae_core_native.node
   - src-tauri/icons/32x32.png
   - package.json
-  - "!node_modules/**/*"
 
 # The addon cannot be loaded from inside an asar, and the core entry runs in a
 # utility process, which needs a real path on disk too. The drag preview is
@@ -36,6 +38,59 @@ npmRebuild: false
 # instead of letting electron-builder fetch it from GitHub again.
 electronDist: node_modules/electron/dist
 
+# electron-updater reads this from the packaged `resources/app-update.yml` and
+# fetches `latest.yml` / `latest-mac.yml` / `latest-linux.yml` from the newest
+# published release. A generic provider keeps the check on the same
+# `releases/latest/download/...` URL the Tauri update feed used: the GitHub
+# provider additionally scrapes `releases/latest` for the tag, which rate-limits
+# and anti-bot answers with 406, while the release assets themselves are plain
+# redirects.
+publish:
+  provider: generic
+  url: https://github.com/Melaine-iceberg/dae/releases/latest/download
+
 win:
+  icon: src-tauri/icons/icon.ico
   target:
-    - dir
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: dae
+  deleteAppDataOnUninstall: false
+  artifactName: ${productName}-${version}-${arch}-setup.${ext}
+
+# `zip` is the artifact Squirrel.Mac updates from; the dmg is for first
+# installs. Signing and notarization are supplied by CI through CSC_LINK /
+# APPLE_* and only happen when those secrets exist.
+mac:
+  icon: src-tauri/icons/icon.icns
+  category: public.app-category.utilities
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  target:
+    - target: dmg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+
+linux:
+  icon: src-tauri/icons/icon.png
+  category: Utility
+  synopsis: Aesthetic file manager
+  maintainer: melaine <melaine@users.noreply.github.com>
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: deb
+      arch:
+        - x64

@@ -15,6 +15,7 @@ const {
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const { scheduleStartupUpdateCheck } = require("./updater.cjs");
 
 const OPENABLE_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
 const APP_IDENTIFIER = "com.melaine.dae";
@@ -1513,6 +1514,9 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     try {
+      // The shortcut, taskbar group and toast identity on Windows all key off
+      // this; electron-builder puts the same id in the installer metadata.
+      if (process.platform === "win32") app.setAppUserModelId(APP_IDENTIFIER);
       if (app.isPackaged) app.setAsDefaultProtocolClient("dae");
       // The frame is drawn by the renderer, so the default File/Edit menu would
       // add a second, system-drawn bar *inside* it on Windows and Linux (and
@@ -1528,6 +1532,9 @@ if (!app.requestSingleInstanceLock()) {
       // Keep the tear-off fast path warm from launch, matching the Tauri shell's
       // startup priming rather than waiting for the first settings save.
       void syncTabPool();
+      // Release builds only; the check is delayed off the startup path and
+      // writes its outcome to the same dae.log the shell logs to.
+      scheduleStartupUpdateCheck({ app, logDirectory });
       // The launch's own command line is the first activation (Windows/Linux).
       handleActivation(process.argv);
     } catch (error) {

@@ -35,8 +35,6 @@ devcert.pfx
 *.sln
 *.slnx
 *.sw?
-src/bindings.ts
-
 /skills-lock.json
 /.ai/mcp/mcp.json
 .ai-memory/20260818/daily.md

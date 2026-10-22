@@ -5,9 +5,9 @@
  * apart (run as the first step of `pack:msix`).
  *
  * Rules:
- *  - App version lives in three files (package.json, tauri.conf.json,
- *    Cargo.toml). A mismatch only warns — those are kept in sync by hand at
- *    release time, and blocking a pack over it helps nobody.
+ *  - App version lives in package.json. The legacy Tauri manifests
+ *    (tauri.conf.json, Cargo.toml) are kept in sync by hand; drift only warns,
+ *    because the Electron release does not read them.
  *  - The MSIX base (first three parts) always follows package.json. When the
  *    app version changes, the manifest resets to `<app>.0`.
  *  - Packing the same app version again bumps the revision (fourth part),
@@ -17,8 +17,7 @@
  *    track), no revision can catch up: fail loudly and ask for an uninstall
  *    instead of producing an .msix that will be refused at install time.
  *  - `--release` (CI, after a tag push): the revision resets to 0 so the tag
- *    ships as `<app>.0` regardless of what local packs left in the manifest,
- *    and version drift becomes a hard error instead of a warning.
+ *    ships as `<app>.0` regardless of what local packs left in the manifest.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
@@ -48,7 +47,7 @@ if (!/^\d+\.\d+\.\d+$/.test(appVersion)) {
 }
 
 // Cross-file drift is informational: package.json is the source of truth for
-// this script, and a hard stop here would only ever fire mid-release.
+// this script, and the Electron release is the only consumer of the manifest.
 const drift = [
   ["src-tauri/tauri.conf.json", readJson("src-tauri/tauri.conf.json").version],
   [
@@ -60,12 +59,6 @@ const drift = [
 ].filter(([, version]) => version !== appVersion);
 for (const [file, version] of drift) {
   console.warn(`⚠ version drift: package.json ${appVersion} vs ${file} ${version}`);
-}
-if (releaseMode && drift.length > 0) {
-  console.error(
-    "✖ release build: package.json, tauri.conf.json and Cargo.toml must agree (see warnings above)",
-  );
-  process.exit(1);
 }
 
 /** Installed MSIX version, or null when nothing is installed / not on Windows. */
