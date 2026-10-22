@@ -22,7 +22,7 @@ import { localeNumber } from "@/i18n/format";
 import { translateBackendMessage } from "@/i18n/errors";
 
 import { getFilePresentation } from "./file-icons";
-import { TypeIconTile } from "./icon-tile";
+import { EntryArtwork } from "./entry-artwork";
 
 /** Content scans read every candidate file, so they debounce longer than name search. */
 const CONTENT_SEARCH_DEBOUNCE_MS = 350;
@@ -257,7 +257,13 @@ function FileMatchGroup({
   return (
     <div className="overflow-hidden rounded-lg border border-border">
       <div className="flex items-center gap-2 bg-accent/40 px-3 py-1.5">
-        <TypeIconTile className="size-tile-list" iconSize={13} presentation={presentation} />
+        <EntryArtwork
+          className="size-tile-list shrink-0 rounded-xs"
+          displaySize={26}
+          entry={{ path: file.path, name: fileName, kind: "file" }}
+          fallback={<presentation.icon size={13} />}
+          pixelSize={20}
+        />
         <button
           className="min-w-0 flex-1 truncate text-left text-body font-medium"
           onClick={() => setExpanded((value) => !value)}

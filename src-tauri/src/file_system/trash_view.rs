@@ -27,6 +27,13 @@ use specta::Type;
     not(target_os = "android")
 ))]
 use super::types::path_to_string;
+#[cfg(all(
+    unix,
+    not(target_os = "macos"),
+    not(target_os = "ios"),
+    not(target_os = "android")
+))]
+use std::path::{Path, PathBuf};
 
 /// One entry currently sitting in the system trash.
 #[derive(Debug, Clone, Serialize, Type)]
@@ -35,6 +42,10 @@ pub struct TrashEntry {
     /// System identifier of the item inside the trash: the shell parsing
     /// name on Windows, the `.trashinfo` path on freedesktop systems.
     pub id: String,
+    /// Absolute path of the payload inside the trash, when the backend can
+    /// name it. This is what `fileicon://` and `thumbnail://` read; `id` is
+    /// not a usable path on freedesktop systems.
+    pub path: Option<String>,
     /// Display name of the entry as it was deleted.
     pub name: String,
     /// Folder the entry lived in before deletion; restore puts it back there.
@@ -77,6 +88,7 @@ impl TrashEntry {
 
         Self {
             id: item.id.to_string_lossy().into_owned(),
+            path: payload_path(Path::new(&item.id)).map(|path| path_to_string(&path)),
             name: item.name.to_string_lossy().into_owned(),
             original_parent: path_to_string(&item.original_parent),
             time_deleted: item.time_deleted,
@@ -84,6 +96,22 @@ impl TrashEntry {
             size_bytes,
         }
     }
+}
+
+/// The freedesktop spec keeps an entry's payload and its `.trashinfo` under
+/// the same name in sibling `files/` and `info/` directories, while the crate
+/// hands back only the info path. Anything that is not an info file has no
+/// payload this can name.
+#[cfg(all(
+    unix,
+    not(target_os = "macos"),
+    not(target_os = "ios"),
+    not(target_os = "android")
+))]
+fn payload_path(info: &Path) -> Option<PathBuf> {
+    let name = info.file_name()?.to_str()?.strip_suffix(".trashinfo")?;
+    let trash_root = info.parent()?.parent()?;
+    Some(trash_root.join("files").join(name))
 }
 
 /// Windows reads the recycle bin's `$I` metadata files instead of enumerating
@@ -453,6 +481,7 @@ mod macos_view {
     fn trash_entry(entry: &TrashDiskEntry) -> TrashEntry {
         TrashEntry {
             id: path_to_string(&entry.path),
+            path: Some(path_to_string(&entry.path)),
             name: entry.name.clone(),
             original_parent: entry.original_parent.clone().unwrap_or_default(),
             time_deleted: entry.time_modified,

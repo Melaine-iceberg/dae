@@ -32,8 +32,8 @@ import { formatBinding } from "@/features/settings/shortcut-registry";
 import { useBinding } from "@/features/settings/settings-atoms";
 import { commandBarOpenAtom } from "@/features/workspace/command-bar-atoms";
 import { ErrorState } from "@/components/ui/error-state";
+import { EntryArtwork } from "@/features/explorer/entry-artwork";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
-import { TypeIconTile } from "@/features/explorer/icon-tile";
 import { PLACE_PRESENTATION, PLACE_TONE } from "@/features/sidebar/place-presentation";
 import {
   addFavoritePathsAtom,
@@ -332,10 +332,12 @@ export function OverviewView() {
                     title={item.path}
                     type="button"
                   >
-                    <TypeIconTile
-                      className="size-[22px] shrink-0"
-                      iconSize={15}
-                      presentation={presentation}
+                    <EntryArtwork
+                      className="size-[22px] shrink-0 rounded-xs"
+                      displaySize={22}
+                      entry={item}
+                      fallback={<presentation.icon size={15} />}
+                      pixelSize={22}
                     />
                     <span className="max-w-[42%] shrink-0 truncate text-caption text-foreground">
                       {item.name}

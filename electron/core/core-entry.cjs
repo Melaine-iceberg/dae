@@ -112,11 +112,15 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    // An icon URL is keyed by the path, type or theme name it is an icon *of*,
+    // so it never changes. A thumbnail is only immutable when the caller
+    // versioned it with the entry's mtime/size: recents, content-search hits
+    // and trash rows have no metadata to version with, so their thumbnails
+    // must be revalidated rather than frozen for a day.
+    const immutable = url.pathname === "/icon" || url.searchParams.has("v");
     response.writeHead(200, {
       "content-type": rendered.mime,
-      // Every URL is versioned by what it is an icon *of* — an entry's mtime
-      // and size, or a type and a size — so a given URL never changes.
-      "cache-control": "public, max-age=86400, immutable",
+      "cache-control": immutable ? "public, max-age=86400, immutable" : "no-store",
     });
     response.end(Buffer.from(rendered.bytes));
   } catch (error) {

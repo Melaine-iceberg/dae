@@ -27,7 +27,7 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empt
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/error-state";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
-import { TypeIconTile } from "@/features/explorer/icon-tile";
+import { EntryArtwork } from "@/features/explorer/entry-artwork";
 import { copyWithNotice } from "@/lib/notifications";
 
 import {
@@ -195,7 +195,13 @@ function RecentRow({
             title={item.path}
             type="button"
           >
-            <TypeIconTile className="size-[22px] shrink-0" iconSize={15} presentation={presentation} />
+            <EntryArtwork
+              className="size-[22px] shrink-0 rounded-xs"
+              displaySize={22}
+              entry={item}
+              fallback={<presentation.icon size={15} />}
+              pixelSize={22}
+            />
             <span className="max-w-[42%] shrink-0 truncate text-caption text-foreground">
               {item.name}
             </span>

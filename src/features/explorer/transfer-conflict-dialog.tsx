@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import type { TransferOperation } from "./drag-drop";
+import { EntryArtwork } from "./entry-artwork";
 import {
   DIRECTORY_PRESENTATION,
   getFilePresentation,
@@ -117,6 +118,20 @@ export function TransferConflictDialog({
   const TargetIcon = targetPresentation.icon;
   const sourceLabel = sourcePresentation.label;
   const targetLabel = targetPresentation.label;
+  const sourceEntry = {
+    path: conflict.sourcePath,
+    name: conflict.name,
+    kind: conflict.sourceKind,
+    size: conflict.sourceSize,
+    modifiedAt: conflict.sourceModifiedAt,
+  };
+  const targetEntry = {
+    path: conflict.targetPath,
+    name: conflict.name,
+    kind: conflict.targetKind,
+    size: conflict.targetSize,
+    modifiedAt: conflict.targetModifiedAt,
+  };
 
   return (
     <Dialog
@@ -143,7 +158,16 @@ export function TransferConflictDialog({
 
         <div className="grid grid-cols-2 gap-3">
           <ConflictSideCard
-            icon={<SourceIcon className="size-5" />}
+            icon={
+              <EntryArtwork
+                className="size-5"
+                displaySize={20}
+                entry={sourceEntry}
+                fallback={<SourceIcon className="size-5" />}
+                pixelSize={20}
+                thumbnail="never"
+              />
+            }
             metadata={`${sourceLabel} · ${formatConflictSize(conflict.sourceSize)}`}
             modifiedAt={formatConflictDate(conflict.sourceModifiedAt)}
             title={conflict.name}
@@ -151,7 +175,16 @@ export function TransferConflictDialog({
           />
           <ConflictSideCard
             highlight
-            icon={<TargetIcon className="size-5" />}
+            icon={
+              <EntryArtwork
+                className="size-5"
+                displaySize={20}
+                entry={targetEntry}
+                fallback={<TargetIcon className="size-5" />}
+                pixelSize={20}
+                thumbnail="never"
+              />
+            }
             metadata={`${targetLabel} · ${formatConflictSize(conflict.targetSize)}`}
             modifiedAt={formatConflictDate(conflict.targetModifiedAt)}
             title={conflict.name}

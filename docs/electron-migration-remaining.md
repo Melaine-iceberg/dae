@@ -35,8 +35,11 @@
 - **桌面缩略图生产者已迁移。** Windows 使用 `IShellItemImageFactory`（PDF 首页、视频首帧、HEIC，均取决于机器是否注册了对应处理器），Linux 使用 freedesktop `.thumbnailer` 与 ffmpeg 兜底；macOS 与 Tauri 现状一致，没有 QuickLook 生产者，PDF/视频/HEIC 会 404 回退到类型图标。
 - **系统图标提取已迁移。** `dae-core` 的 `file_icons` 现在接线为共享模块：Windows 路径图标走 Shell item，类型图标先用 `SHDefExtractIconW`、失败时回退 `SHGetFileInfoW + SHGFI_USEFILEATTRIBUTES`；macOS 走 `NSWorkspace`，Linux 走 XDG 图标主题。路径图标、按扩展名的共享类型图标和 freedesktop 图标名都已暴露给 native。
 - **渲染不占 Node / 列表线程。** `native/src/render_pool.rs` 使用 3 个专用线程；Windows 线程进入 STA 并在任务之间泵消息，避免 Shell 缩略图提供程序回调死锁。
+- **前端已收敛到同一个入口。** `EntryArtwork` 统一决定“缩略图 > 系统图标 > 类型字形”，`RowEntryIcon`、网格、检查器，以及最近使用、概览、内容搜索、回收站、属性对话框和传输冲突对话框都走它；图标样式与列表缩略图偏好因此对所有文件视图一致生效。标签条、面包屑、侧栏树和空间卡片仍使用内置字形：它们是导航外壳，不是文件内容。
+- **回收站条目带上了可读取的 payload 路径。** `TrashEntry.path` 在 Windows/macOS 上就是回收站内的真实路径，在 freedesktop 上由 `.trashinfo` 文件名推导出同名 `files/` 条目；`fileicon://` / `thumbnail://` 因此也能画出回收站里文件夹的图标和文件的缩略图。
+- **无版本缩略图不再冒充不可变。** 最近使用、内容搜索和回收站目录没有 mtime/size 可做 URL 版本；Electron core 与 Tauri 协议对不带 `v` 的缩略图都回 `no-store`，带版本的列表/网格缩略图仍保持一天 immutable 缓存。
 
-验收：在 Windows 上连续浏览含 JPG/PNG/SVG/PDF/MP4 的目录，网格应出缩略图；含 `.exe`/`.lnk`/未知扩展名的目录应出系统图标；替换文件后缩略图应随 mtime/size 版本刷新。
+验收：在 Windows 上连续浏览含 JPG/PNG/SVG/PDF/MP4 的目录，网格应出缩略图；含 `.exe`/`.lnk`/未知扩展名的目录应出系统图标；替换文件后缩略图应随 mtime/size 版本刷新。把菜单切到“系统图标”后，最近使用、内容搜索、属性、回收站与冲突对话框也应显示同一套 OS 图标；回收站中已知大小的文件行在开启“列表缩略图”后应出缩略图。
 
 ## P1：窗口壳层
 
@@ -83,10 +86,13 @@
 
 - `cargo check --manifest-path native/Cargo.toml`：通过。
 - `cargo check --manifest-path src-tauri/Cargo.toml`：通过（dae-core 接线未破坏 Tauri 壳）。
-- `cargo test --manifest-path native/Cargo.toml`：56 passed，0 failed（新增缩略图/图标路由、格式覆盖与 Windows 图标测试）。
+- `cargo test --manifest-path native/Cargo.toml`：59 passed，0 failed（新增缩略图/图标路由、格式覆盖、Windows 图标与 freedesktop 回收站 payload 路径测试）。
+- `cargo test --manifest-path src-tauri/Cargo.toml trash`：4 passed，1 ignored，0 failed（schema 增加 `TrashEntry.path` 后仍通过）。
+- `cargo test --manifest-path src-tauri/Cargo.toml preview::`：21 passed，0 failed（含新增“无版本缩略图不走 immutable 缓存”测试）。
 - `cargo test --manifest-path src-tauri/crates/dae-core/Cargo.toml`：179 passed，7 ignored，0 failed。
-- `npm run build`：通过。
+- `npm run build`、`npm run lint`、`npm run bindings:export`：通过。
 - N-API 快速验证：直接加载 addon 确认 `thumbnail`、`fileIcon`、`typeIcon`、`namedIcon` 可调用；PNG 缩略图返回 `image/png`，`notepad.exe` 返回 Shell 图标，`ext=exe` 返回类型图标，未知路径返回 `null`。
 - 真实 Electron 协议验证：在 `dae://localhost` 渲染进程内请求 `thumbnail://` / `fileicon://`——PNG、SVG（`image/svg+xml` 直传）、ICO、MP4 首帧、`notepad.exe` 路径图标和 `ext=exe` 类型图标均返回 200；不存在的路径返回 404；响应带 `Access-Control-Allow-Origin: *`，`<img crossOrigin="anonymous">` 成功加载 64×64。
 - 命令覆盖：`src/bindings.ts` 的 97 个命令全部能在 `native/src` 或 `electron/main.cjs` 找到 handler（`git_sync` 与 fetch/push/pull 共用分支）。
-- 尚未做完整 UI 回归：含 PDF 的网格（本机未注册 PDF 缩略图处理器，会按设计回退到类型图标）、系统图标偏好切换、替换文件后的缩略图刷新；macOS/Linux 相关项仍未在实机验证。
+- UI 回归（Windows，Electron 真实窗口）：切到“系统图标 + 列表缩略图”后，最近使用显示 Shell 文件夹/驱动器图标与 JPG 缩略图；内容搜索的分组头显示系统文件图标；属性对话框显示系统文件图标；回收站里的 PNG 显示缩略图，且 `TrashEntry.path` 指向回收站 payload；列表、网格和检查器中的缩略图/系统图标未回归。测试条目与临时偏好已清理。
+- 仍未验证：替换文件后的缩略图刷新（URL 版本逻辑未改，沿用现有 mtime/size 规则）、含 PDF 的网格（本机未注册 PDF 缩略图处理器，会按设计回退到类型图标）；macOS/Linux 相关项仍未在实机验证。

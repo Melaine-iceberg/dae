@@ -17,9 +17,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { copyWithNotice } from "@/lib/notifications";
 
 import { getPreviewLanguage, highlightCode, highlightMarkdownCode } from "./code-highlight";
+import { EntryArtwork } from "./entry-artwork";
 import { getEntryPresentation } from "./file-icons";
 import { createMarkdownUrlTransform } from "./markdown-links";
-import { NativeIconImage, useNativeIconFor } from "./native-icon";
 import { isThumbnailSupported, ThumbnailImage } from "./thumbnail";
 import type { DirectoryEntry } from "./types";
 
@@ -171,7 +171,6 @@ export function EntryPreview({ entries, onClose, onOpen }: EntryPreviewProps) {
   const language =
     entry?.kind === "file" && !supportsMarkdown ? getPreviewLanguage(entry.name) : null;
   const supportsThumbnail = entry !== null && isThumbnailSupported(entry);
-  const showNativeIcon = useNativeIconFor(entry);
   // Markdown rides the text-read path even though it skips code highlighting.
   const supportsText =
     entry?.kind === "file" &&
@@ -303,7 +302,16 @@ export function EntryPreview({ entries, onClose, onOpen }: EntryPreviewProps) {
         ) : (
           <>
             <PreviewHead
-              glyph={VisualIcon ? <VisualIcon size={26} /> : null}
+              glyph={
+                <EntryArtwork
+                  className="size-[26px]"
+                  displaySize={26}
+                  entry={entry}
+                  fallback={VisualIcon ? <VisualIcon size={26} /> : null}
+                  pixelSize={26}
+                  thumbnail="never"
+                />
+              }
               name={entry.name}
               sub={`${visual?.label ?? "—"} · ${formatFileSize(entry.size)}`}
             />
@@ -364,16 +372,14 @@ export function EntryPreview({ entries, onClose, onOpen }: EntryPreviewProps) {
               <p className="note">{t("preview.readError")}</p>
             ) : (
               <div className="preview-body mb-5 flex h-32 shrink-0 items-center justify-center">
-                {showNativeIcon ? (
-                  <NativeIconImage
-                    className="size-12"
-                    entry={entry}
-                    fallback={VisualIcon ? <VisualIcon size={48} /> : null}
-                    pixelSize={48}
-                  />
-                ) : VisualIcon ? (
-                  <VisualIcon size={48} />
-                ) : null}
+                <EntryArtwork
+                  className="size-12"
+                  displaySize={48}
+                  entry={entry}
+                  fallback={VisualIcon ? <VisualIcon size={48} /> : null}
+                  pixelSize={48}
+                  thumbnail="never"
+                />
               </div>
             )}
 

@@ -111,6 +111,7 @@ fn collect_bin(sid_dir: &Path, out: &mut Vec<TrashEntry>) {
             // The shell hands back the payload's own path as the trash id, so
             // ids built the same way still match in `take_trash_items`.
             id: payload.path.to_string_lossy().into_owned(),
+            path: Some(payload.path.to_string_lossy().into_owned()),
             name: metadata.name,
             original_parent: metadata.original_parent,
             time_deleted: metadata.time_deleted,

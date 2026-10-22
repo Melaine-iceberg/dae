@@ -15,16 +15,14 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/component
 import { cn, formatBytes } from "@/lib/utils";
 
 import { DRAG_SOURCE_CLASS, EntryIconFrame, HIDDEN_ENTRY_CLASS } from "./entry-badges";
+import { EntryArtwork } from "./entry-artwork";
 import { EntryContextMenuContent } from "./entry-context-menu";
 import { getEntryPresentation } from "./file-icons";
 import type { ListingNavContext, MenuActions } from "./file-list";
-import { TypeIconTile } from "./icon-tile";
 import { getEntryGitStatus, GitStatusBadge, type ExplorerGitStatus } from "./git-status";
 import { entriesInRange, type ListingView } from "./listing-view";
 import { MarqueeOverlay, useMarqueeSelection, type MarqueeRect } from "./marquee";
-import { NativeIconImage, useNativeIconFor } from "./native-icon";
 import { densityAtom, type ExplorerDensity } from "./preferences";
-import { isThumbnailSupported, ThumbnailImage } from "./thumbnail";
 import type { DirectoryEntry } from "./types";
 
 const GRID_CELL_MIN_WIDTH: Record<ExplorerDensity, number> = {
@@ -361,15 +359,11 @@ function GridCell({
 }) {
   const isDirectory = entry.kind === "directory";
   const presentation = getEntryPresentation(entry);
-  const showNativeIcon = useNativeIconFor(entry);
-  const showThumbnail = isThumbnailSupported(entry);
   const entryStatus: GitEntryStatusKind | undefined = getEntryGitStatus(gitStatus, entry);
   // The glyph the well seats when there is no picture to show. A type glyph is
   // a silhouette that already carries its category colour, so it needs no tile
   // plate inside the well — only the well's own 4% wash.
-  const typeGlyph = (
-    <TypeIconTile iconSize={GRID_GLYPH_SIZE[density]} presentation={presentation} />
-  );
+  const typeGlyph = <presentation.icon size={GRID_GLYPH_SIZE[density]} />;
   // The reference's `.cm`: a folder says what it is, a file says how big it is.
   const meta = isDirectory
     ? directoryLabel
@@ -427,34 +421,20 @@ function GridCell({
               GRID_THUMB_WELL_CLASS[density],
             )}
           >
-            {showThumbnail ? (
-              <EntryIconFrame
-                badgeSize="md"
-                className="flex size-full items-center justify-center"
+            <EntryIconFrame
+              badgeSize="md"
+              className="flex size-full items-center justify-center"
+              entry={entry}
+            >
+              <EntryArtwork
+                className="size-full"
+                displaySize={128}
                 entry={entry}
-              >
-                <ThumbnailImage
-                  className="size-full"
-                  displaySize={128}
-                  entry={entry}
-                  fallback={typeGlyph}
-                  plate={false}
-                />
-              </EntryIconFrame>
-            ) : showNativeIcon ? (
-              <EntryIconFrame badgeSize="md" entry={entry}>
-                <NativeIconImage
-                  className="shrink-0"
-                  entry={entry}
-                  fallback={typeGlyph}
-                  pixelSize={GRID_GLYPH_SIZE[density]}
-                />
-              </EntryIconFrame>
-            ) : (
-              <EntryIconFrame badgeSize="md" entry={entry}>
-                {typeGlyph}
-              </EntryIconFrame>
-            )}
+                fallback={typeGlyph}
+                pixelSize={GRID_GLYPH_SIZE[density]}
+                thumbnail="always"
+              />
+            </EntryIconFrame>
           </span>
           {/* One line, ellipsis — the reference's `.cn`. Two clamped lines made
               the cell's height depend on its own label, and a grid whose rows

@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 import { getFileExtension, hasKnownFileExtension } from "./file-icons";
 import { iconStyleAtom } from "./preferences";
-import type { DirectoryEntry } from "./types";
+import type { ArtworkEntry } from "./types";
 
 /** Extensions whose shell icon belongs to the individual file rather than to its
  *  type — an embedded icon resource, a shortcut's target, a `.url`'s site
@@ -41,7 +41,7 @@ const FILE_ICON_URL_ORIGIN =
  * `fileicon://` for files and folders alike, and when the shell has nothing for
  * a path the protocol 404s and `NativeIconImage` keeps the drawn glyph.
  */
-export function useNativeIconFor(entry: DirectoryEntry | null | undefined): boolean {
+export function useNativeIconFor(entry: ArtworkEntry | null | undefined): boolean {
   const iconStyle = useAtomValue(iconStyleAtom);
   if (!entry) {
     return false;
@@ -59,7 +59,7 @@ export function useNativeIconFor(entry: DirectoryEntry | null | undefined): bool
  * icon there. Known categories keep their toned type glyphs, which is what
  * makes the listing read as one design.
  */
-function usesShellIconWhereNoGlyphExists(entry: DirectoryEntry): boolean {
+function usesShellIconWhereNoGlyphExists(entry: ArtworkEntry): boolean {
   if (!isWindowsPlatform || entry.kind !== "file") {
     return false;
   }
@@ -86,7 +86,7 @@ function usesShellIconWhereNoGlyphExists(entry: DirectoryEntry): boolean {
  * The version travels in the URL rather than being read off the disk here for the
  * same reason: the row exists because something already stat'd this file.
  */
-export function buildFileIconUrl(entry: DirectoryEntry, size: number): string {
+export function buildFileIconUrl(entry: ArtworkEntry, size: number): string {
   const extension = sharedIconExtension(entry);
   if (extension) {
     return `${FILE_ICON_URL_ORIGIN}/?ext=${encodeURIComponent(extension)}&size=${size}`;
@@ -99,7 +99,7 @@ export function buildFileIconUrl(entry: DirectoryEntry, size: number): string {
 
 /** The extension every row of this entry's type shares an icon with, or `""` when
  *  the icon is this entry's own and only a path can name it. */
-function sharedIconExtension(entry: DirectoryEntry): string {
+function sharedIconExtension(entry: ArtworkEntry): string {
   if (entry.kind !== "file") {
     // A directory carries a per-folder icon wherever the desktop can hold one —
     // a dropped `.icon` on macOS, a `desktop.ini` on Windows — so even where the
@@ -158,7 +158,7 @@ export function NativeIconImage({
   pixelSize,
 }: {
   className?: string;
-  entry: DirectoryEntry;
+  entry: ArtworkEntry;
   fallback: ReactNode;
   pixelSize: number;
 }) {

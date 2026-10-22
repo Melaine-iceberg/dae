@@ -62,8 +62,8 @@ import {
 import { Kbd } from "@/components/ui/kbd";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EntryArtwork } from "@/features/explorer/entry-artwork";
 import { DIRECTORY_PRESENTATION, getFilePresentation } from "@/features/explorer/file-icons";
-import { TypeIconTile } from "@/features/explorer/icon-tile";
 import { HOTKEY_COMMON_OPTIONS, asHotkey, guardedAction } from "@/features/settings/hotkeys";
 import { formatBinding, resolveBinding } from "@/features/settings/shortcut-registry";
 import { appSettingsAtom, hotkeysPausedAtom, useBinding } from "@/features/settings/settings-atoms";
@@ -841,7 +841,22 @@ function TrashRow({
         >
           <RowCheckbox isSelected={isSelected} />
           <span className="flex min-w-0 items-center gap-2">
-            <TypeIconTile className="size-tile-list" iconSize={13} presentation={presentation} />
+            <EntryArtwork
+              className="size-tile-list shrink-0 rounded-xs"
+              displaySize={26}
+              entry={
+                entry.path
+                  ? {
+                      path: entry.path,
+                      name: entry.name,
+                      kind: entry.isDirectory ? "directory" : "file",
+                      size: entry.sizeBytes,
+                    }
+                  : null
+              }
+              fallback={<presentation.icon size={13} />}
+              pixelSize={20}
+            />
             <span className="truncate text-body">{entry.name}</span>
           </span>
           <span className="truncate text-caption text-muted-foreground">{originalLocation}</span>

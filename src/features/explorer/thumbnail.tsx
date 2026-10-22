@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 import { getFileExtension } from "./file-icons";
 import { devicePixelSize } from "./native-icon";
-import type { DirectoryEntry } from "./types";
+import type { ArtworkEntry } from "./types";
 
 /**
  * Extensions with a thumbnail producer on at least one platform. Three groups,
@@ -95,7 +95,7 @@ const IN_PROCESS_IMAGE_EXTENSIONS = new Set([
  */
 const SHELL_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 
-export function isThumbnailSupported(entry: DirectoryEntry): boolean {
+export function isThumbnailSupported(entry: ArtworkEntry): boolean {
   if (entry.kind !== "file") return false;
   const extension = getFileExtension(entry.name);
   if (!THUMBNAIL_EXTENSIONS.has(extension)) return false;
@@ -115,13 +115,22 @@ const THUMBNAIL_URL_ORIGIN =
     : "http://thumbnail.localhost";
 
 /**
- * Versioned URL for the `thumbnail://` protocol handler. Embedding mtime and
- * size lets the webview cache responses immutably and refresh automatically
- * when a file is replaced — no frontend promise cache needed.
+ * URL for the `thumbnail://` protocol handler. Embedding mtime and size lets
+ * the webview cache responses immutably and refresh automatically when a file
+ * is replaced — no frontend promise cache needed.
+ *
+ * Sources that carry neither (a recent item, a content-search hit, a trash
+ * row) leave the version off. The core answers an unversioned thumbnail with
+ * `no-store` instead of promising immutability for a URL that cannot notice a
+ * replaced file; the listing surfaces, which always have the metadata, keep the
+ * cache.
  */
-export function buildThumbnailUrl(entry: DirectoryEntry, size: number): string {
-  const version = `${entry.modifiedAt ?? 0}-${entry.size ?? 0}`;
-  return `${THUMBNAIL_URL_ORIGIN}/?path=${encodeURIComponent(entry.path)}&size=${size}&v=${version}`;
+export function buildThumbnailUrl(entry: ArtworkEntry, size: number): string {
+  let url = `${THUMBNAIL_URL_ORIGIN}/?path=${encodeURIComponent(entry.path)}&size=${size}`;
+  if (entry.modifiedAt != null || entry.size != null) {
+    url += `&v=${entry.modifiedAt ?? 0}-${entry.size ?? 0}`;
+  }
+  return url;
 }
 
 /**
@@ -148,12 +157,12 @@ export function ThumbnailImage({
   plate = true,
 }: {
   className?: string;
-  entry: DirectoryEntry;
+  entry: ArtworkEntry;
   fallback?: ReactNode;
   displaySize: number;
   plate?: boolean;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLSpanElement>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isFailed, setIsFailed] = useState(false);
@@ -190,8 +199,10 @@ export function ThumbnailImage({
 
   return (
     // `image-plate` is the hairline frame (App.css): the corner stays the
-    // call site's, from the shape scale.
-    <div className={cn(plate && "image-plate", className)} ref={containerRef}>
+    // call site's, from the shape scale. A span rather than a div because most
+    // call sites seat the artwork inside a button, whose content model is
+    // phrasing content.
+    <span className={cn("block", plate && "image-plate", className)} ref={containerRef}>
       {isVisible && !isFailed && (
         <img
           alt=""
@@ -206,8 +217,8 @@ export function ThumbnailImage({
       )}
       {isFailed && fallback}
       {!isLoaded && !isFailed && (
-        <div className="h-full w-full animate-pulse rounded-sm bg-muted" />
+        <span className="block h-full w-full animate-pulse rounded-sm bg-muted" />
       )}
-    </div>
+    </span>
   );
 }

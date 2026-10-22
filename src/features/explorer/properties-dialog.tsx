@@ -38,7 +38,7 @@ import {
   SYMLINK_PRESENTATION,
   getFilePresentation,
 } from "./file-icons";
-import { TypeIconTile } from "./icon-tile";
+import { EntryArtwork } from "./entry-artwork";
 
 const TIMESTAMP_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   year: "numeric",
@@ -401,7 +401,14 @@ export function PropertiesDialog() {
 
         {target && (
           <div className="flex items-center gap-3">
-            <TypeIconTile className="size-tile-detail" iconSize={20} presentation={presentation} />
+            <EntryArtwork
+              className="size-tile-detail shrink-0 rounded-xs"
+              displaySize={44}
+              entry={target}
+              fallback={<presentation.icon size={20} />}
+              pixelSize={40}
+              thumbnail="never"
+            />
             <div className="min-w-0">
               <p className="truncate text-body font-medium" title={target.name}>
                 {target.name}

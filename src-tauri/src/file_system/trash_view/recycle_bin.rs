@@ -139,6 +139,7 @@ fn collect_bin(sid_dir: &Path, out: &mut Vec<TrashEntry>) {
             // deliberately not run through `path_to_string`: the shell-side id
             // is not normalized either.
             id: payload.path.to_string_lossy().into_owned(),
+            path: Some(payload.path.to_string_lossy().into_owned()),
             name: metadata.name,
             original_parent: metadata.original_parent,
             time_deleted: metadata.time_deleted,

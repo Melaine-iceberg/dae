@@ -526,14 +526,26 @@ fn render_response(kind: RenderKind, query: &str) -> ProtocolResponse {
         (RenderKind::Thumbnail, _) => return empty_response(400),
     };
 
+    // An icon URL is keyed by the path, type or theme name it is an icon *of*,
+    // so it never changes. A thumbnail is only immutable when the caller
+    // versioned it with the entry's mtime/size: recents, content-search hits
+    // and trash rows have no metadata to version with, so their thumbnails
+    // must be revalidated rather than frozen for a day. Mirrors the Electron
+    // core's `/thumb` response.
+    let immutable = matches!(kind, RenderKind::FileIcon) || query_has_version(query);
+
     match rendered {
         Ok(Some(rendered)) => tauri::http::Response::builder()
             .header("Content-Type", rendered.mime)
             .header("Access-Control-Allow-Origin", ALLOW_ORIGIN)
-            // Every URL is versioned by what it is an icon *of* — an entry's
-            // mtime and size, or a type and a size — so a given URL never
-            // changes. See [`render_file_icon`] and [`render_type_icon`].
-            .header("Cache-Control", "public, max-age=86400, immutable")
+            .header(
+                "Cache-Control",
+                if immutable {
+                    "public, max-age=86400, immutable"
+                } else {
+                    "no-store"
+                },
+            )
             .body(Cow::Owned(rendered.bytes.clone()))
             .unwrap_or_else(|_| empty_response(500)),
         // Unsupported files yield 404 so the frontend can fall back to the
@@ -615,6 +627,15 @@ fn render_request_params(query: &str) -> Option<RenderRequest> {
         subject,
         size: size.unwrap_or(256),
     })
+}
+
+/// Whether the request carried the listing's `mtime-size` version tag. The
+/// unversioned thumbnail sources (recents, content-search hits, trash rows)
+/// leave it off and must not be cached immutably.
+fn query_has_version(query: &str) -> bool {
+    query
+        .split('&')
+        .any(|pair| matches!(pair.split_once('='), Some(("v", _))))
 }
 
 /// Longest extension the shared-icon route accepts. Real ones run to a handful
@@ -1406,7 +1427,7 @@ mod render_tests {
 
         /// The query string a webview would send for this fixture.
         fn query(&self, size: u16) -> String {
-            format!("path={}&size={size}", self.0.to_string_lossy())
+            format!("path={}&size={size}&v=0-1", self.0.to_string_lossy())
         }
     }
 
@@ -1445,6 +1466,22 @@ mod render_tests {
             "public, max-age=86400, immutable",
             "the URL embeds mtime and size, so the response has to be cacheable"
         );
+    }
+
+    /// Sources that cannot version their URL — recents, content-search hits,
+    /// trash rows — must not freeze the first thumbnail for a day.
+    #[test]
+    fn serves_an_unversioned_thumbnail_without_immutable_caching() {
+        let fixture = Fixture::png("thumb.png");
+        let versioned = fixture.query(32);
+        let unversioned = versioned
+            .split_once("&v=")
+            .map(|(query, _)| query)
+            .expect("the fixture query is versioned");
+        let response = render_response(RenderKind::Thumbnail, unversioned);
+
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.headers()["cache-control"], "no-store");
     }
 
     /// The two failure modes are deliberately different, and the frontend reads

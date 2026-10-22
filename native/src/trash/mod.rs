@@ -15,6 +15,18 @@ use serde::{Deserialize, Serialize};
     not(target_os = "android")
 ))]
 use dae_core::file_system::types::path_to_string;
+// The freedesktop helper is host-independent, so the Windows development
+// machine type-checks and tests it too.
+#[cfg(any(
+    test,
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
+))]
+use std::path::{Path, PathBuf};
 
 /// One entry currently sitting in the system trash.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +35,10 @@ pub struct TrashEntry {
     /// System identifier of the item inside the trash: the shell parsing name
     /// on Windows, the `.trashinfo` path on freedesktop systems.
     pub id: String,
+    /// Absolute path of the payload inside the trash, when the backend can
+    /// name it. This is what `fileicon://` and `thumbnail://` read; `id` is
+    /// not a usable path on freedesktop systems.
+    pub path: Option<String>,
     /// Display name of the entry as it was deleted.
     pub name: String,
     /// Folder the entry lived in before deletion; restore puts it back there.
@@ -61,12 +77,67 @@ impl TrashEntry {
 
         Self {
             id: item.id.to_string_lossy().into_owned(),
+            path: payload_path(Path::new(&item.id)).map(|path| path_to_string(&path)),
             name: item.name.to_string_lossy().into_owned(),
             original_parent: path_to_string(&item.original_parent),
             time_deleted: item.time_deleted,
             is_directory,
             size_bytes,
         }
+    }
+}
+
+/// The freedesktop spec keeps an entry's payload and its `.trashinfo` under
+/// the same name in sibling `files/` and `info/` directories, while the crate
+/// hands back only the info path. Anything that is not an info file has no
+/// payload this can name.
+#[cfg(any(
+    test,
+    all(
+        unix,
+        not(target_os = "macos"),
+        not(target_os = "ios"),
+        not(target_os = "android")
+    )
+))]
+fn payload_path(info: &Path) -> Option<PathBuf> {
+    let name = info.file_name()?.to_str()?.strip_suffix(".trashinfo")?;
+    let trash_root = info.parent()?.parent()?;
+    Some(trash_root.join("files").join(name))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::payload_path;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn derives_a_freedesktop_payload_from_its_trashinfo_file() {
+        let info = Path::new("/home/user/.local/share/Trash/info/report.pdf.trashinfo");
+        assert_eq!(
+            payload_path(info),
+            Some(PathBuf::from(
+                "/home/user/.local/share/Trash/files/report.pdf"
+            ))
+        );
+    }
+
+    #[test]
+    fn derives_a_mounted_volume_payload_too() {
+        let info = Path::new("/media/usb/.Trash-1000/info/clip.mp4.trashinfo");
+        assert_eq!(
+            payload_path(info),
+            Some(PathBuf::from("/media/usb/.Trash-1000/files/clip.mp4"))
+        );
+    }
+
+    #[test]
+    fn refuses_names_that_are_not_trashinfo_files() {
+        assert_eq!(
+            payload_path(Path::new("/home/user/.local/share/Trash/files/report.pdf")),
+            None
+        );
+        assert_eq!(payload_path(Path::new("")), None);
     }
 }
 
@@ -390,6 +461,7 @@ mod macos_view {
     fn trash_entry(entry: &TrashDiskEntry) -> TrashEntry {
         TrashEntry {
             id: path_to_string(&entry.path),
+            path: Some(path_to_string(&entry.path)),
             name: entry.name.clone(),
             original_parent: entry.original_parent.clone().unwrap_or_default(),
             time_deleted: entry.time_modified,
