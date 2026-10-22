@@ -22,6 +22,21 @@ sha2 = "0.11.0"
 md-5 = "0.11.0"
 sha1 = "0.11.0"
 base64 = "0.23.1"
+# Thumbnail decoding and the macOS Finder-icon transcode. The Electron addon
+# reuses this list, so every format the frontend offers an image slot for is
+# decodable here.
+image = { version = "0.25", default-features = false, features = [
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+  "bmp",
+  "tiff",
+  "ico",
+] }
+# Maps a path to the freedesktop MIME type the Linux icon and `.thumbnailer`
+# lookups key on. Pure Rust and host-independent, so it is named everywhere.
+mime_guess = "2"
 russh = { version = "0.64", default-features = false, features = ["ring", "rsa", "flate2"] }
 russh-sftp = "3.0.0"
 smb2 = "0.34.0"
@@ -43,9 +58,13 @@ grep-matcher = "0.1"
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
   "Win32_Foundation",
+  # Shell icons and thumbnails: `IShellItemImageFactory` hands back an
+  # `HBITMAP` that `file_system::preview` copies through GDI.
+  "Win32_Graphics_Gdi",
   "Win32_Storage_FileSystem",
   "Win32_System_Com",
   "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
   "Win32_System_Threading",
   "Win32_Security",
 ] }
@@ -53,8 +72,29 @@ windows = { version = "0.62.2", features = [
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# gdk-pixbuf rasterizes the SVG icon themes ship. The resolver itself reads
+# theme files without GTK; only the final vector→PNG step needs this, and the
+# GTK stack is already present in every desktop Electron session.
+gtk = "0.18"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 trash-core = { version = "0.3", default-features = false, features = ["macos"] }
+# `file_icons::macos` asks `NSWorkspace` for the Finder icon and re-encodes the
+# best representation's TIFF through `image`.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = [
+  "NSWorkspace",
+  "NSImage",
+  "NSImageRep",
+  "NSBitmapImageRep",
+] }
+objc2-foundation = { version = "0.3", features = [
+  "NSArray",
+  "NSEnumerator",
+  "NSString",
+  "NSData",
+] }
 
 [dev-dependencies]
 keyring-core = "1"

@@ -1,7 +1,7 @@
 import { useAtomValue } from "jotai";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
-import { isWindowsPlatform } from "@/lib/platform";
+import { isElectronShell, isWindowsPlatform } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import { getFileExtension, hasKnownFileExtension } from "./file-icons";
@@ -15,7 +15,9 @@ import type { DirectoryEntry } from "./types";
  *  path; everywhere else an extension's icon is shared by every file with it. */
 const FILE_SPECIFIC_ICON_EXTENSIONS = new Set(["exe", "msi", "lnk", "url", "dll", "scr", "cpl"]);
 
-/** Windows exposes Tauri custom schemes as `http://<scheme>.localhost`.
+/** Electron serves `fileicon://` verbatim on every platform. Tauri on Windows
+ *  maps the same scheme to `http://<scheme>.localhost`, so the old shell keeps
+ *  its URL while both point at one protocol handler.
  *
  *  Cross-origin to the page either way, which is why every `<img>` below carries
  *  `crossOrigin="anonymous"`: WebKitGTK refuses a *no-cors* subresource load of a
@@ -23,9 +25,10 @@ const FILE_SPECIFIC_ICON_EXTENSIONS = new Set(["exe", "msi", "lnk", "url", "dll"
  *  `onError` fallback and nothing is left in any log to explain the empty icon. A
  *  CORS-mode load is sent, and the backend answers it with
  *  `Access-Control-Allow-Origin`. */
-const FILE_ICON_URL_ORIGIN = isWindowsPlatform
-  ? "http://fileicon.localhost"
-  : "fileicon://localhost";
+const FILE_ICON_URL_ORIGIN =
+  isElectronShell || !isWindowsPlatform
+    ? "fileicon://localhost"
+    : "http://fileicon.localhost";
 
 /**
  * Whether this row should draw the operating system's icon for its entry.

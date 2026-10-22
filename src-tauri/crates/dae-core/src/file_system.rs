@@ -10,6 +10,10 @@ pub mod known_hosts;
 pub mod local;
 #[cfg(target_os = "macos")]
 pub mod macos_trash;
+// The Windows shell image pipeline behind `file_icons` and the Electron
+// thumbnail protocol: `IShellItemImageFactory` and the GDI-to-PNG copy.
+#[cfg(windows)]
+pub mod preview;
 pub mod progress;
 pub mod sftp;
 pub mod smb;

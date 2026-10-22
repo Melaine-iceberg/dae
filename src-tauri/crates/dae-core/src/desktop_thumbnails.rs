@@ -51,7 +51,7 @@ use crate::xdg::{cache_home, data_roots};
 /// — the label belongs to whatever made them, and the caller answers a protocol
 /// request with it verbatim. Here it is always PNG: a producer is asked for a
 /// `.png` output name, and [`collect`] refuses anything else.
-pub(crate) struct Produced {
+pub struct Produced {
     pub mime: &'static str,
     pub bytes: Vec<u8>,
 }
@@ -665,7 +665,7 @@ enum Rendered {
 /// reasons answer it, and the caller has no use for the distinction: nothing on
 /// this machine renders this type, the producer failed, or the producer wrote
 /// something that is not a PNG.
-pub(crate) fn extract(path: &str, size: u32, modified: Option<SystemTime>) -> Option<Produced> {
+pub fn extract(path: &str, size: u32, modified: Option<SystemTime>) -> Option<Produced> {
     let root = cache_home()?.join(THUMBNAIL_DIR);
     let entry = CacheEntry::for_path(path, size);
 

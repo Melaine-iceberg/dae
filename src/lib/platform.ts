@@ -12,5 +12,13 @@ export const isMacPlatform =
 export const isWindowsPlatform =
   typeof navigator !== "undefined" && /Windows/i.test(navigator.userAgent);
 
+/**
+ * True when the Electron preload bridge is installed. Electron serves custom
+ * schemes under their own names on every platform, unlike WebView2, which
+ * maps them to `http://<scheme>.localhost`.
+ */
+export const isElectronShell =
+  typeof window !== "undefined" && "daeBridge" in window;
+
 /** Platform-appropriate primary modifier label ("⌘" or "Ctrl"). */
 export const MOD_KEY = isMacPlatform ? "⌘" : "Ctrl";

@@ -15,7 +15,17 @@ dae-core = { path = "../src-tauri/crates/dae-core" }
 dirs = "6"
 flate2 = "1"
 ignore = "0.4"
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+# The same format list the frontend offers an image slot for; everything else
+# is the desktop's to thumb through the shell or a `.thumbnailer`.
+image = { version = "0.25", default-features = false, features = [
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+  "bmp",
+  "tiff",
+  "ico",
+] }
 log = "0.4"
 # MD5 + SHA-1 alongside `sha2` back the properties dialog's checksum tab;
 # all three share the `digest` trait, so one read updates every algorithm.

@@ -4,13 +4,14 @@
 >
 > 迁移目标：Tauri 2 壳 → Electron 主进程 + `dae-core` N-API addon。
 >
-> 判定方法：把 `src/bindings.ts` 的 97 个生成命令逐项对照 `native/src` 与 `electron/main.cjs` 的 handler；Tauri 侧同名实现作为行为参考。本文只列未完成项。
+> 判定方法：把 `src/bindings.ts` 的 97 个生成命令逐项对照 `native/src` 与 `electron/main.cjs` 的 handler；Tauri 侧同名实现作为行为参考。本文列未完成项，刚收尾的关键管线保留在对应小节。
 
 ## 状态摘要
 
 - 97 个生成命令已全部进入 handler：除 `start_drag_out` 由 Electron 主进程处理外，其余都在 native addon；`terminal_*`、`read_directory_packets` 等不进 bindings 的通道命令也已实现。
 - 文件系统、文件操作、终端、系统剪贴板、原生拖出、快捷方式、标签撕离、主题/强调色、设置、最近使用、搜索、目录大小、Git、回收站、压缩包、连接/云账户、收藏/空间、默认文件管理器均已落到 Electron 侧。
-- 剩余工作集中在：**系统图标/缩略图、窗口壳层、macOS/Linux 平台能力、更新与打包发布**。
+- 系统图标与缩略图管线已迁移：两个自定义协议、前端 URL、native 渲染层和 dae-core 平台后端均已接通，见下节。
+- 剩余工作集中在：**窗口壳层、macOS/Linux 平台能力、更新与打包发布**。
 
 ## 已完成：7 个命令
 
@@ -25,14 +26,15 @@
 
 `start_drag_out` 在 macOS/Linux 暂未映射 mode 参数（Electron `startDrag` 不提供效果掩码），这是仅剩的行为差异，不影响拖出本身。
 
-## P0：系统图标与缩略图管线
+## 已完成：系统图标与缩略图管线
 
-- **`fileicon://` 协议没有注册。** Electron 目前只注册了 `dae` 和 `thumbnail`（`electron/main.cjs:27`、`:881`）；Tauri 的 `fileicon` 在 `src-tauri/src/file_system/preview.rs:323`。所有使用系统图标的行都会退回绘制图标。
-- **Windows 上的 URL 会被绕过。** 前端仍按 Tauri/WebView2 的映射请求 `http://thumbnail.localhost` / `http://fileicon.localhost`（`src/features/explorer/thumbnail.tsx:110`、`native-icon.tsx:26`），但 Electron 主进程没有拦截这两个 HTTP host。按当前代码，Windows 上连已注册的 `thumbnail` 协议也不会命中。
-- **原生缩略图只覆盖一部分图片。** `native/src/lib.rs:168` 直接 `image::open`，`native/Cargo.toml:18` 只启用 jpeg/png/webp；前端认为可用的 GIF、BMP、TIFF、ICO 也会失败。
-- **桌面缩略图生产能力未迁移。** SVG 直传、PDF 首页、视频首帧、HEIC/AVIF，以及 Linux `.thumbnailer`、Windows Shell 缩略图、macOS QuickLook 都没有对应实现；Tauri 侧在 `src-tauri/src/file_system/preview.rs`、`src-tauri/src/desktop_thumbnails.rs`。
-- **系统图标提取未迁移。** Tauri 的 `src-tauri/src/file_icons.rs` 及三个平台后端还没有进入 native addon。
-- **协议 CORS 需一起验证。** `thumbnail` scheme 没有声明 `corsEnabled`，而前端以 `crossOrigin="anonymous"` 请求；主进程虽然回写了 `Access-Control-Allow-Origin`，跨源是否放行仍需实测。
+- **两个自定义协议都已注册。** `electron/main.cjs` 把 `thumbnail` 和 `fileicon` 声明为 standard/secure/CORS-enabled scheme，并都由 `registerCoreProtocol` 转发到 core 的本地 HTTP 端点（`/thumb`、`/icon`）。`fileicon` 之前完全缺失。
+- **URL 在 Electron 下不再走 WebView2 映射。** `src/features/explorer/thumbnail.tsx` 与 `native-icon.tsx` 通过 `isElectronShell` 区分壳层：Electron 请求 `thumbnail://localhost` / `fileicon://localhost`，Tauri on Windows 仍保留 `http://*.localhost` 映射。
+- **响应携带真实 MIME 与状态。** core 按渲染结果返回 `image/png`、`image/jpeg` 或 `image/svg+xml`；无生产者/文件消失返回 404，读取或解码失败返回 500。主进程补齐 `Access-Control-Allow-Origin`，与 `corsEnabled` 一起满足 `crossOrigin="anonymous"` 的加载。
+- **native 缩略图覆盖前端声明的格式。** `native/src/thumbnails.rs` 支持 jpeg/png/gif/webp/bmp/tiff/ico 的进程内解码、SVG 字节直传、64 MB 源上限和 40 MP 解码上限；超过像素上限的图片改走桌面生产者。
+- **桌面缩略图生产者已迁移。** Windows 使用 `IShellItemImageFactory`（PDF 首页、视频首帧、HEIC，均取决于机器是否注册了对应处理器），Linux 使用 freedesktop `.thumbnailer` 与 ffmpeg 兜底；macOS 与 Tauri 现状一致，没有 QuickLook 生产者，PDF/视频/HEIC 会 404 回退到类型图标。
+- **系统图标提取已迁移。** `dae-core` 的 `file_icons` 现在接线为共享模块：Windows 路径图标走 Shell item，类型图标先用 `SHDefExtractIconW`、失败时回退 `SHGetFileInfoW + SHGFI_USEFILEATTRIBUTES`；macOS 走 `NSWorkspace`，Linux 走 XDG 图标主题。路径图标、按扩展名的共享类型图标和 freedesktop 图标名都已暴露给 native。
+- **渲染不占 Node / 列表线程。** `native/src/render_pool.rs` 使用 3 个专用线程；Windows 线程进入 STA 并在任务之间泵消息，避免 Shell 缩略图提供程序回调死锁。
 
 验收：在 Windows 上连续浏览含 JPG/PNG/SVG/PDF/MP4 的目录，网格应出缩略图；含 `.exe`/`.lnk`/未知扩展名的目录应出系统图标；替换文件后缩略图应随 mtime/size 版本刷新。
 
@@ -72,16 +74,19 @@
 
 ## 建议顺序
 
-1. 系统图标与缩略图协议。
-2. 无边框窗口、拖拽区域、Snap Layout、macOS 生命周期。
-3. 打包/更新/CI/bindings 来源收尾。
-4. macOS/Linux 应用扩展、卷监听、`start_drag_out` mode 等平台差异。
-5. 日志轮转、启动预取、tab-perf 等次要项。
+1. 无边框窗口、拖拽区域、Snap Layout、macOS 生命周期。
+2. 打包/更新/CI/bindings 来源收尾。
+3. macOS/Linux 应用扩展、卷监听、`start_drag_out` mode 等平台差异。
+4. 日志轮转、启动预取、tab-perf 等次要项。
 
 ## 验证记录
 
 - `cargo check --manifest-path native/Cargo.toml`：通过。
-- `cargo test --manifest-path native/Cargo.toml`：48 passed，0 failed。
+- `cargo check --manifest-path src-tauri/Cargo.toml`：通过（dae-core 接线未破坏 Tauri 壳）。
+- `cargo test --manifest-path native/Cargo.toml`：56 passed，0 failed（新增缩略图/图标路由、格式覆盖与 Windows 图标测试）。
+- `cargo test --manifest-path src-tauri/crates/dae-core/Cargo.toml`：179 passed，7 ignored，0 failed。
+- `npm run build`：通过。
+- N-API 快速验证：直接加载 addon 确认 `thumbnail`、`fileIcon`、`typeIcon`、`namedIcon` 可调用；PNG 缩略图返回 `image/png`，`notepad.exe` 返回 Shell 图标，`ext=exe` 返回类型图标，未知路径返回 `null`。
+- 真实 Electron 协议验证：在 `dae://localhost` 渲染进程内请求 `thumbnail://` / `fileicon://`——PNG、SVG（`image/svg+xml` 直传）、ICO、MP4 首帧、`notepad.exe` 路径图标和 `ext=exe` 类型图标均返回 200；不存在的路径返回 404；响应带 `Access-Control-Allow-Origin: *`，`<img crossOrigin="anonymous">` 成功加载 64×64。
 - 命令覆盖：`src/bindings.ts` 的 97 个命令全部能在 `native/src` 或 `electron/main.cjs` 找到 handler（`git_sync` 与 fetch/push/pull 共用分支）。
-- N-API 快速验证：直接加载 addon 确认 `startFileDrag` 导出存在，`get_key_modifiers`、`get_package_family_name`、`create_shortcuts` 可正常调用并产出 `.lnk`。
-- 尚未做 UI 回归：剪切板写入/读取、拖出到 Explorer、外部终端启动、Windows OLE 拖拽的实际手势；macOS/Linux 相关项仍未在实机验证。
+- 尚未做完整 UI 回归：含 PDF 的网格（本机未注册 PDF 缩略图处理器，会按设计回退到类型图标）、系统图标偏好切换、替换文件后的缩略图刷新；macOS/Linux 相关项仍未在实机验证。

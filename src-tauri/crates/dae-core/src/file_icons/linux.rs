@@ -119,25 +119,6 @@ fn icon_candidates(name: &str) -> Vec<&str> {
         .collect()
 }
 
-/// [`resolve_named_icon`]'s bytes wrapped as a `data:` URL.
-///
-/// Rows that are built as a whole list and handed over in one message — a
-/// context menu — take this rather than a `fileicon://` URL, because the protocol
-/// would cost the webview a request per row for bytes the backend already holds.
-/// A list too long for that is the "Open With" picker, which goes through the
-/// protocol instead: a theme's application icons run to hundreds of kilobytes
-/// each, so a full list of them does not belong in one `invoke` reply.
-pub(crate) fn named_icon_data_url(name: &str, size: u32) -> Option<String> {
-    use base64::Engine as _;
-
-    let icon = resolve_named_icon(name, size)?;
-    Some(format!(
-        "data:{};base64,{}",
-        icon.mime,
-        base64::engine::general_purpose::STANDARD.encode(&icon.bytes)
-    ))
-}
-
 /// The icon names to try for one path, best first.
 ///
 /// The type half of the answer comes from [`type_icon_names`]; what a path adds

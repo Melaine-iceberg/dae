@@ -20,6 +20,7 @@ mod network;
 mod open_with;
 mod preview;
 mod recents;
+mod render_pool;
 mod search;
 mod settings;
 mod shell;
@@ -27,12 +28,12 @@ mod shell_commands;
 mod system;
 mod system_files;
 mod terminal;
+mod thumbnails;
 mod trash;
 mod volumes;
 mod watch;
 mod workspace;
 
-use std::io::Cursor;
 use std::sync::OnceLock;
 
 use dae_core::file_system::git::GitStatusCache;
@@ -166,23 +167,74 @@ fn into_js(event: RawEvent) -> CoreEvent {
 // Thumbnails
 // ---------------------------------------------------------------------------
 
-#[napi(js_name = "thumbnail")]
-pub async fn thumbnail(path: String, size: u32) -> Result<Buffer> {
-    let bytes = tokio::task::spawn_blocking(move || -> std::result::Result<Vec<u8>, String> {
-        let image = image::open(&path).map_err(|error| format!("thumbnail: {error}"))?;
-        let edge = size.clamp(1, 1024);
-        let thumb = image.thumbnail(edge, edge);
-        let mut out = Cursor::new(Vec::<u8>::new());
-        thumb
-            .write_to(&mut out, image::ImageFormat::Png)
-            .map_err(|error| format!("thumbnail encode: {error}"))?;
-        Ok(out.into_inner())
-    })
-    .await
-    .map_err(|error| Error::from_reason(format!("thumbnail join: {error}")))?
-    .map_err(Error::from_reason)?;
+/// One rendered image with the MIME type its bytes have.
+#[napi(object)]
+pub struct RenderedImage {
+    pub mime: String,
+    pub bytes: Buffer,
+}
 
-    Ok(Buffer::from(bytes))
+impl From<thumbnails::Rendered> for RenderedImage {
+    fn from(rendered: thumbnails::Rendered) -> Self {
+        Self {
+            mime: rendered.mime.to_owned(),
+            bytes: Buffer::from(rendered.bytes),
+        }
+    }
+}
+
+/// Runs one blocking render on the dedicated pool, which keeps decodes and
+/// shell COM off both the Node event loop and the listing pool.
+async fn run_on_render_pool<T, F>(job: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    render_pool::submit(Box::new(move || {
+        let _ = sender.send(job());
+    }));
+
+    receiver.await.map_err(|error| {
+        Error::from_reason(format!("render worker stopped before the job ran: {error}"))
+    })
+}
+
+/// The `thumbnail://` response body: null is a 404 the frontend falls back
+/// from, an error is a failed read the protocol turns into a 500.
+#[napi(js_name = "thumbnail")]
+pub async fn thumbnail(path: String, size: u32) -> Result<Option<RenderedImage>> {
+    let rendered = run_on_render_pool(move || thumbnails::render_thumbnail(&path, size))
+        .await?
+        .map_err(Error::from_reason)?;
+    Ok(rendered.map(RenderedImage::from))
+}
+
+/// The `fileicon://` response for one path, file or folder.
+#[napi(js_name = "fileIcon")]
+pub async fn file_icon(
+    path: String,
+    is_dir: bool,
+    size: u32,
+) -> Result<Option<RenderedImage>> {
+    let rendered =
+        run_on_render_pool(move || thumbnails::render_file_icon(&path, is_dir, size)).await?;
+    Ok(rendered.map(RenderedImage::from))
+}
+
+/// The `fileicon://` response for a whole type, named by its extension.
+#[napi(js_name = "typeIcon")]
+pub async fn type_icon(extension: String, size: u32) -> Result<Option<RenderedImage>> {
+    let rendered =
+        run_on_render_pool(move || thumbnails::render_type_icon(&extension, size)).await?;
+    Ok(rendered.map(RenderedImage::from))
+}
+
+/// The `fileicon://` response for a freedesktop icon-theme name.
+#[napi(js_name = "namedIcon")]
+pub async fn named_icon(name: String, size: u32) -> Result<Option<RenderedImage>> {
+    let rendered = run_on_render_pool(move || thumbnails::render_named_icon(&name, size)).await?;
+    Ok(rendered.map(RenderedImage::from))
 }
 
 // ---------------------------------------------------------------------------

@@ -32,6 +32,23 @@ protocol.registerSchemesAsPrivileged([
       standard: true,
       secure: true,
       supportFetchAPI: true,
+      // The grid loads these with crossOrigin="anonymous"; without this the
+      // CORS-mode request is not treated as fetchable at all.
+      corsEnabled: true,
+      stream: true,
+      bypassCSP: true,
+    },
+  },
+  {
+    // The operating system's icons for files and folders. Same raw-bytes
+    // pipeline as thumbnails, so a column of rows costs one request per URL
+    // rather than one base64 IPC payload each.
+    scheme: "fileicon",
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
       stream: true,
       bypassCSP: true,
     },
@@ -877,30 +894,41 @@ function loadRenderer(window) {
   window.loadURL("dae://localhost/index.html");
 }
 
-function registerCoreProtocol() {
-  protocol.handle("thumbnail", async (request) => {
-    try {
-      const url = new URL(request.url);
-      const filePath = url.searchParams.get("path");
-      if (!filePath) return new Response("missing path", { status: 400 });
-      if (!coreInfo) return new Response("core not ready", { status: 503 });
+// Query keys the two image protocols forward to the core. More than either
+// handler needs today: the core decides which one names the resource, so main
+// stays a transport rather than a second parser.
+const IMAGE_QUERY_KEYS = ["path", "size", "dir", "ext", "name", "v"];
 
-      const upstream = new URL(`http://127.0.0.1:${coreInfo.port}/thumb`);
-      upstream.searchParams.set("path", filePath);
-      upstream.searchParams.set("size", url.searchParams.get("size") || "160");
-      // The token and port stay in main; the renderer only ever sees the
-      // thumbnail:// URL it asked for.
-      upstream.searchParams.set("token", coreInfo.token);
-      const response = await net.fetch(upstream.toString());
-      const headers = new Headers(response.headers);
-      // The grid loads thumbnails with crossOrigin="anonymous"; a custom scheme
-      // does not inherit the upstream localhost origin, so it needs CORS.
-      headers.set("access-control-allow-origin", "*");
-      return new Response(response.body, { status: response.status, headers });
-    } catch (error) {
-      return new Response(String(error), { status: 500 });
-    }
-  });
+function registerCoreProtocol() {
+  const routes = { thumbnail: "/thumb", fileicon: "/icon" };
+
+  for (const [scheme, route] of Object.entries(routes)) {
+    protocol.handle(scheme, async (request) => {
+      try {
+        if (!coreInfo) return new Response("core not ready", { status: 503 });
+
+        const url = new URL(request.url);
+        const upstream = new URL(`http://127.0.0.1:${coreInfo.port}${route}`);
+        for (const key of IMAGE_QUERY_KEYS) {
+          const value = url.searchParams.get(key);
+          if (value !== null) upstream.searchParams.set(key, value);
+        }
+        // The token and port stay in main; the renderer only ever sees the
+        // thumbnail:// or fileicon:// URL it asked for.
+        upstream.searchParams.set("token", coreInfo.token);
+
+        const response = await net.fetch(upstream.toString());
+        const headers = new Headers(response.headers);
+        // The renderer loads these with crossOrigin="anonymous"; a custom
+        // scheme does not inherit the upstream localhost origin, so it needs
+        // CORS even though the scheme itself is privileged.
+        headers.set("access-control-allow-origin", "*");
+        return new Response(response.body, { status: response.status, headers });
+      } catch (error) {
+        return new Response(String(error), { status: 500 });
+      }
+    });
+  }
 }
 
 function registerIpc() {

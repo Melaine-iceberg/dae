@@ -89,7 +89,7 @@ const server = http.createServer(async (request, response) => {
       response.end(JSON.stringify({ ok: true }));
       return;
     }
-    if (url.pathname !== "/thumb") {
+    if (url.pathname !== "/thumb" && url.pathname !== "/icon") {
       response.writeHead(404);
       response.end();
       return;
@@ -100,24 +100,62 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    const filePath = url.searchParams.get("path");
-    if (!filePath) {
-      response.writeHead(400);
-      response.end("missing path");
+    const rendered =
+      url.pathname === "/thumb"
+        ? await thumbnailFor(url.searchParams)
+        : await iconFor(url.searchParams);
+    if (!rendered) {
+      // A type with no producer, or a path that went away. The frontend's
+      // `<img onError>` falls back to its drawn glyph; this is not an error.
+      response.writeHead(404, { "cache-control": "no-store" });
+      response.end();
       return;
     }
-    const size = Number(url.searchParams.get("size") || 160);
-    const bytes = await native.thumbnail(filePath, size);
+
     response.writeHead(200, {
-      "content-type": "image/png",
-      "cache-control": "public, max-age=60",
+      "content-type": rendered.mime,
+      // Every URL is versioned by what it is an icon *of* — an entry's mtime
+      // and size, or a type and a size — so a given URL never changes.
+      "cache-control": "public, max-age=86400, immutable",
     });
-    response.end(Buffer.from(bytes));
+    response.end(Buffer.from(rendered.bytes));
   } catch (error) {
-    response.writeHead(404, { "content-type": "text/plain" });
+    // A malformed query is the caller's fault; a thrown render is a broken
+    // read or a producer failure.
+    const status = error?.status ?? 500;
+    response.writeHead(status, { "content-type": "text/plain" });
     response.end(String(error?.message || error));
   }
 });
+
+async function thumbnailFor(params) {
+  const filePath = params.get("path");
+  if (!filePath) throw badRequest("missing path");
+
+  const size = Number(params.get("size") || 160);
+  return native.thumbnail(filePath, Number.isFinite(size) ? size : 160);
+}
+
+async function iconFor(params) {
+  const filePath = params.get("path");
+  const extension = params.get("ext");
+  const name = params.get("name");
+  const size = Number(params.get("size") || 32);
+  const edge = Number.isFinite(size) ? size : 32;
+
+  // Most specific first, the same order the Tauri protocol parser used: an
+  // entry outranks a type, and a type outranks a theme name.
+  if (filePath) return native.fileIcon(filePath, params.get("dir") === "1", edge);
+  if (extension) return native.typeIcon(extension, edge);
+  if (name) return native.namedIcon(name, edge);
+  throw badRequest("missing path, ext or name");
+}
+
+function badRequest(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
 
 async function handleRequest(message) {
   const args = message.args ?? null;

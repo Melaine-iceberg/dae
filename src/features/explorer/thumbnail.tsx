@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { isWindowsPlatform } from "@/lib/platform";
+import { isElectronShell, isWindowsPlatform } from "@/lib/platform";
 import { cn } from "@/lib/utils";
 
 import { getFileExtension } from "./file-icons";
@@ -10,10 +10,10 @@ import type { DirectoryEntry } from "./types";
 /**
  * Extensions with a thumbnail producer on at least one platform. Three groups,
  * mirroring `IN_PROCESS_IMAGE_EXTENSIONS` / `DESKTOP_RENDERED_EXTENSIONS` in
- * `src-tauri/src/file_system/preview.rs`. The two lists are kept in step by
- * hand and nothing enforces it — this one decides which entries get an image
- * slot at all, so a file it forgets keeps its type icon with no error logged
- * anywhere.
+ * `native/src/thumbnails.rs` (the Electron handler) and the Tauri shell's
+ * `file_system/preview.rs`. The lists are kept in step by hand and nothing
+ * enforces it — this one decides which entries get an image slot at all, so a
+ * file it forgets keeps its type icon with no error logged anywhere.
  *
  * - The first block is what Rust's `image` crate decodes in process on every
  *   platform. Past the backend's decode cap these route to the desktop's
@@ -70,7 +70,7 @@ const THUMBNAIL_EXTENSIONS = new Set([
 
 /**
  * The formats Rust decodes in process. Mirrors
- * `IN_PROCESS_IMAGE_EXTENSIONS` in `preview.rs`.
+ * `IN_PROCESS_IMAGE_EXTENSIONS` in `native/src/thumbnails.rs`.
  *
  * The distinction is not cosmetic: it decides which size budget applies, and
  * these stay under the cheap one because a decode here costs milliseconds
@@ -103,13 +103,16 @@ export function isThumbnailSupported(entry: DirectoryEntry): boolean {
   return (entry.size ?? 0) <= SHELL_THUMBNAIL_MAX_BYTES;
 }
 
-/** Windows exposes Tauri custom schemes as `http://<scheme>.localhost`.
+/** Electron serves `thumbnail://` verbatim on every platform. Tauri on Windows
+ *  maps the same scheme to `http://<scheme>.localhost`, so the old shell keeps
+ *  its URL while both point at one protocol handler.
  *
  *  Cross-origin to the page either way, which is why the `<img>` below carries
  *  `crossOrigin="anonymous"` — see `FILE_ICON_URL_ORIGIN` in `native-icon.tsx`. */
-const THUMBNAIL_URL_ORIGIN = isWindowsPlatform
-  ? "http://thumbnail.localhost"
-  : "thumbnail://localhost";
+const THUMBNAIL_URL_ORIGIN =
+  isElectronShell || !isWindowsPlatform
+    ? "thumbnail://localhost"
+    : "http://thumbnail.localhost";
 
 /**
  * Versioned URL for the `thumbnail://` protocol handler. Embedding mtime and
