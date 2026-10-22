@@ -38,12 +38,21 @@ trash = "5"
 zip = { version = "9", default-features = false, features = ["deflate", "aes-crypto"] }
 
 [target.'cfg(windows)'.dependencies]
+# The Electron main process starts the OLE drag-out through this crate's
+# `startFileDrag`; the vendored copy carries the Link/Any effects the file
+# manager needs. It only runs on the window's own thread.
+drag = { path = "../src-tauri/vendor/drag" }
+raw-window-handle = "0.6"
 windows = { version = "0.62.2", features = [
+  "ApplicationModel",
   "Win32_Foundation",
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
   "Win32_System_Com",
+  "Win32_System_DataExchange",
   "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
   "Win32_System_Registry",
   "Win32_System_Threading",
   "Win32_Storage_FileSystem",

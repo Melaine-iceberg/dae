@@ -25,6 +25,7 @@ mod settings;
 mod shell;
 mod shell_commands;
 mod system;
+mod system_files;
 mod terminal;
 mod trash;
 mod volumes;
@@ -321,6 +322,16 @@ pub fn initialize() -> bool {
 #[napi(js_name = "setWindowAppearance")]
 pub fn set_window_appearance(hwnd: f64, dark: bool) -> bool {
     shell::set_window_appearance(hwnd as isize, dark)
+}
+
+/// Starts the OLE drag-out on the Electron main thread. The core process must
+/// not run this: DoDragDrop needs the message loop of the window's own thread,
+/// so the main process loads this addon and calls the function synchronously.
+#[napi(js_name = "startFileDrag")]
+pub fn start_file_drag(paths: Vec<String>, mode: String, hwnd: f64) -> Result<bool> {
+    system_files::start_drag_out(paths, &mode, hwnd as isize)
+        .map(|()| true)
+        .map_err(|error| Error::from_reason(error.to_string()))
 }
 
 async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::Value> {
@@ -633,6 +644,71 @@ async fn dispatch(command: &str, args: serde_json::Value) -> Result<serde_json::
         "get_system_places" => {
             serde_json::to_value(shell::system_places())
                 .map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "get_package_family_name" => {
+            Ok(serde_json::Value::String(system_files::package_family_name()))
+        }
+
+        "get_key_modifiers" => serde_json::to_value(system_files::get_key_modifiers())
+            .map_err(|error| Error::from_reason(error.to_string())),
+
+        "open_terminal" => {
+            let path = required_string(&args, "path")?;
+            tokio::task::spawn_blocking(move || system_files::open_terminal(path))
+                .await
+                .map_err(|error| Error::from_reason(format!("terminal join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "write_files_to_clipboard" => {
+            let paths: Vec<String> = args
+                .get("paths")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| {
+                    Error::from_reason(format!("write_files_to_clipboard: {error}"))
+                })?
+                .unwrap_or_default();
+            let cut = args
+                .get("cut")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            tokio::task::spawn_blocking(move || {
+                system_files::write_files_to_clipboard(paths, cut)
+            })
+            .await
+            .map_err(|error| Error::from_reason(format!("clipboard join: {error}")))?
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+            Ok(serde_json::Value::Null)
+        }
+
+        "read_files_from_clipboard" => {
+            let files = tokio::task::spawn_blocking(system_files::read_files_from_clipboard)
+                .await
+                .map_err(|error| Error::from_reason(format!("clipboard join: {error}")))?
+                .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(files).map_err(|error| Error::from_reason(error.to_string()))
+        }
+
+        "create_shortcuts" => {
+            let sources: Vec<String> = args
+                .get("sources")
+                .cloned()
+                .map(serde_json::from_value)
+                .transpose()
+                .map_err(|error| Error::from_reason(format!("create_shortcuts: {error}")))?
+                .unwrap_or_default();
+            let destination = required_string(&args, "destination")?;
+            let created = tokio::task::spawn_blocking(move || {
+                system_files::create_shortcuts(sources, destination)
+            })
+            .await
+            .map_err(|error| Error::from_reason(format!("shortcut join: {error}")))?
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+            serde_json::to_value(created).map_err(|error| Error::from_reason(error.to_string()))
         }
 
         "load_favorites" => {

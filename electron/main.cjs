@@ -4,6 +4,7 @@ const {
   clipboard,
   dialog,
   ipcMain,
+  nativeImage,
   net,
   protocol,
   screen,
@@ -101,6 +102,37 @@ function appRoot() {
   return app.isPackaged
     ? path.join(process.resourcesPath, "app.asar.unpacked")
     : path.resolve(__dirname, "..");
+}
+
+function nativeAddonPath() {
+  return path.join(appRoot(), "native", "dae_core_native.node");
+}
+
+// Windows drag-out has to run on this process's UI thread, so main loads the
+// addon itself for `startFileDrag`; the core process keeps its own copy for
+// everything else.
+let nativeAddon = null;
+
+function nativeAddonModule() {
+  if (!nativeAddon) {
+    const addonPath = nativeAddonPath();
+    if (!fs.existsSync(addonPath)) {
+      throw new Error(`native addon is missing at ${addonPath}; run \`bun run native:build\``);
+    }
+    nativeAddon = require(addonPath);
+  }
+  return nativeAddon;
+}
+
+let dragPreviewImage = null;
+
+function dragPreview() {
+  if (!dragPreviewImage) {
+    dragPreviewImage = nativeImage.createFromPath(
+      path.join(appRoot(), "src-tauri", "icons", "32x32.png"),
+    );
+  }
+  return dragPreviewImage;
 }
 
 // Tauri derived the config directory as `<platform config root>/<identifier>`;
@@ -289,7 +321,7 @@ function watchWindowBackdrop() {
 }
 
 function spawnCore() {
-  const nativePath = path.join(appRoot(), "native", "dae_core_native.node");
+  const nativePath = nativeAddonPath();
   const coreEntry = path.join(appRoot(), "electron", "core", "core-entry.cjs");
   if (!fs.existsSync(nativePath)) {
     throw new Error(
@@ -896,6 +928,34 @@ function registerIpc() {
       return "null";
     }
 
+    // Windows drag-out has to run on this process's UI thread, so the OLE
+    // gesture is started here rather than in the core process.
+    if (command === "start_drag_out") {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (!window) throw new Error("start_drag_out has no sender window");
+
+      const paths = Array.isArray(args?.paths)
+        ? args.paths.filter((item) => typeof item === "string" && item.length > 0)
+        : [];
+      if (paths.length === 0) {
+        throw new Error("start_drag_out requires at least one path");
+      }
+
+      const mode = typeof args?.mode === "string" ? args.mode : "any";
+      if (process.platform === "win32") {
+        // DoDragDrop must run on the window's own thread; the addon keeps the
+        // requested copy/move/link effect in its OLE data object.
+        nativeAddonModule().startFileDrag(paths, mode, hwndValue(window));
+        return "null";
+      }
+
+      // Electron's startDrag carries a file list and a preview but no effect
+      // mask, so macOS and Linux leave the operation to the drop target.
+      const icon = dragPreview();
+      if (icon.isEmpty()) throw new Error("start_drag_out has no drag preview icon");
+      event.sender.startDrag({ files: paths, icon });
+      return "null";
+    }
     // Tab tear-off owns window creation, which only the main process can do.
     // Labels and handoffs stay here so a window can ask for its payload exactly
     // once, after its renderer is listening.

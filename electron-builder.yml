@@ -18,14 +18,17 @@ files:
   - dist/**/*
   - electron/**/*
   - native/dae_core_native.node
+  - src-tauri/icons/32x32.png
   - package.json
   - "!node_modules/**/*"
 
 # The addon cannot be loaded from inside an asar, and the core entry runs in a
-# utility process, which needs a real path on disk too.
+# utility process, which needs a real path on disk too. The drag preview is
+# read from main, which needs the same unpacked treatment on macOS and Linux.
 asarUnpack:
   - native/**/*
   - electron/core/**/*
+  - src-tauri/icons/32x32.png
 
 npmRebuild: false
 
