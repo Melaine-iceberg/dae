@@ -1061,8 +1061,9 @@ function registerIpc() {
       return "null";
     }
 
-    // Windows drag-out has to run on this process's UI thread, so the OLE
-    // gesture is started here rather than in the core process.
+    // Drag-out has to start from the window's own UI thread; Windows runs the
+    // OLE gesture through the addon, macOS/Linux fall back to Electron's
+    // startDrag below.
     if (command === "start_drag_out") {
       const window = BrowserWindow.fromWebContents(event.sender);
       if (!window) throw new Error("start_drag_out has no sender window");
@@ -1083,7 +1084,9 @@ function registerIpc() {
       }
 
       // Electron's startDrag carries a file list and a preview but no effect
-      // mask, so macOS and Linux leave the operation to the drop target.
+      // mask. macOS and Linux therefore let the drop target apply its own
+      // native convention (Finder's Option/Ctrl/Shift), which matches the
+      // platform; Windows keeps the forced effect above.
       const icon = dragPreview();
       if (icon.isEmpty()) throw new Error("start_drag_out has no drag preview icon");
       event.sender.startDrag({ files: paths, icon });

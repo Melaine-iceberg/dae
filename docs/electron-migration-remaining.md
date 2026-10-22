@@ -13,7 +13,7 @@
 - 系统图标与缩略图管线已迁移：两个自定义协议、前端 URL、native 渲染层和 dae-core 平台后端均已接通，见下节。
 - 窗口壳层已迁移：无边框窗口、拖拽区域、Windows 11 Snap Layout 与 macOS 生命周期均已落到 Electron 侧，见下节。
 - macOS/Linux 平台能力已迁移：应用扩展右键菜单、卷变化监听、启动打开文件夹均已落到 Electron 侧，见下节。
-- 剩余工作集中在：**更新与打包发布**，以及 `start_drag_out` mode 这一条 Electron API 固有限制。
+- 剩余工作集中在：**更新与打包发布**。`start_drag_out` 的 mode 已按平台语义收口（见 macOS / Linux 平台能力一节），不再列为迁移缺口。
 
 ## 已完成：7 个命令
 
@@ -21,12 +21,12 @@
 | --- | --- | --- |
 | `open_terminal` | `native/src/system_files.rs` | Windows 优先 `wt.exe`，否则新控制台 PowerShell；macOS 用 Terminal.app；Linux 依次尝试 `$TERMINAL`、`xdg-terminal-exec` 和常见终端 |
 | `write_files_to_clipboard` / `read_files_from_clipboard` | `native/src/system_files.rs` | Windows 写读 `CF_HDROP` 与 Preferred DropEffect；其他平台按 Tauri 原有行为返回不支持 |
-| `start_drag_out` | `electron/main.cjs` + `native/src/system_files.rs` | Windows 在主进程调用 native OLE 拖拽，保留 copy/move/link/any 效果；macOS/Linux 使用 Electron `startDrag`，由目标决定效果 |
+| `start_drag_out` | `electron/main.cjs` + `native/src/system_files.rs` | Windows 在主进程调用 native OLE 拖拽，保留 copy/move/link/any 效果；macOS/Linux 使用 Electron `startDrag`，效果由拖放目标按平台惯例决定 |
 | `get_key_modifiers` | `native/src/system_files.rs` | Windows 读取全局 Ctrl/Shift/Alt/Win；其他平台返回默认值 |
 | `create_shortcuts` | `native/src/system_files.rs` | Windows 创建 `.lnk`；macOS/Linux 创建符号链接，冲突名追加 ` (2)`、` (3)` |
 | `get_package_family_name` | `native/src/system_files.rs` | Windows 查询 Package identity；未以 MSIX 安装时返回 `No package identity` |
 
-`start_drag_out` 在 macOS/Linux 暂未映射 mode 参数（Electron `startDrag` 不提供效果掩码），这是仅剩的行为差异，不影响拖出本身。
+`start_drag_out` 的 mode 在 Windows 上由 OLE 强制；macOS/Linux 的 Electron `startDrag` 不提供效果掩码，因此把 copy/move/link 交给拖放目标决定，这与 Finder/文件管理器的拖放语义一致，见“macOS / Linux 平台能力”一节。
 
 ## 已完成：系统图标与缩略图管线
 
@@ -61,7 +61,7 @@
 - **卷变化监听。** `native/src/volumes.rs` 现在启动三个平台的后端：Windows `WM_DEVICECHANGE`、macOS `NSWorkspace` 的 mount/unmount/rename 通知、Linux GIO `VolumeMonitor`（专用线程 + GLib 主循环，转发到 core 的事件队列）。三者都发送 `volumes-changed`，侧栏按原有防抖重新读取磁盘列表。
 - **启动时打开文件夹。** Windows/Linux 走启动参数与 `second-instance`，macOS 走 `open-file`；文件参数会被解析成所在目录，再复用深链入口，见窗口壳层一节。
 - **平台行为差异（与 Tauri 一致）。** 文件剪贴板和全局按键查询仍只在 Windows 实现；macOS/Linux 上对应命令按原有行为返回不支持或默认值。
-- **`start_drag_out` 的 mode 仍未映射。** macOS/Linux 走 Electron `startDrag`，该 API 不提供拖拽效果掩码，只能拖出文件，不能强制 copy/move/link；Windows 已由 native OLE 完整支持。这是 Electron API 的固有限制，不是移植遗漏。
+- **`start_drag_out` 的 mode 按平台委托。** Windows 由 native OLE 完整支持 copy/move/link/any；macOS/Linux 使用 Electron `startDrag`，该 API 不提供效果掩码，copy/move/link 由拖放目标按平台惯例和修饰键决定，与 Finder/文件管理器的原生拖放语义一致，不属于迁移缺口。若以后需要跨平台强制效果：macOS 可用原生 `NSDraggingSource` 掩码补齐（需先重做 macOS 修饰键映射），Linux 因 Electron 只暴露 X11 `Window`、没有可用的 GTK 窗口，暂无低成本方案。
 
 ## P1：更新、打包与发布
 
