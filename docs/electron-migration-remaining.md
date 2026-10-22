@@ -1,6 +1,6 @@
 # Electron 迁移剩余工作
 
-> 基线：`main` @ `bf5b281`（2026-10-22），并包含工作区中尚未提交的 7 命令补齐。
+> 基线：`main` @ `cca549e`（2026-10-22）。
 >
 > 迁移目标：Tauri 2 壳 → Electron 主进程 + `dae-core` N-API addon。
 >
@@ -8,11 +8,12 @@
 
 ## 状态摘要
 
-- 97 个生成命令已全部进入 handler：除 `start_drag_out` 由 Electron 主进程处理外，其余都在 native addon；`terminal_*`、`read_directory_packets` 等不进 bindings 的通道命令也已实现。
+- 97 个生成命令已全部进入 handler：`start_drag_out` 由 Electron 主进程处理，macOS 的 `invoke_shell_command` 由主进程转交 addon 执行，其余都在 native addon；`terminal_*`、`read_directory_packets` 等不进 bindings 的通道命令也已实现。
 - 文件系统、文件操作、终端、系统剪贴板、原生拖出、快捷方式、标签撕离、主题/强调色、设置、最近使用、搜索、目录大小、Git、回收站、压缩包、连接/云账户、收藏/空间、默认文件管理器均已落到 Electron 侧。
 - 系统图标与缩略图管线已迁移：两个自定义协议、前端 URL、native 渲染层和 dae-core 平台后端均已接通，见下节。
 - 窗口壳层已迁移：无边框窗口、拖拽区域、Windows 11 Snap Layout 与 macOS 生命周期均已落到 Electron 侧，见下节。
-- 剩余工作集中在：**macOS/Linux 平台能力、更新与打包发布**。
+- macOS/Linux 平台能力已迁移：应用扩展右键菜单、卷变化监听、启动打开文件夹均已落到 Electron 侧，见下节。
+- 剩余工作集中在：**更新与打包发布**，以及 `start_drag_out` mode 这一条 Electron API 固有限制。
 
 ## 已完成：7 个命令
 
@@ -51,19 +52,22 @@
 
 验收：无边框窗口四边可缩放、标签栏空白处可拖动窗口、最大化按钮悬停出 Snap Layout、macOS 红绿灯不重复。
 
-## P1：macOS / Linux 平台能力
+## 已完成：macOS / Linux 平台能力
 
-- **应用扩展右键菜单为空。** `native/src/shell_commands.rs:5` 明确说明 macOS Services 和 Linux KDE service menus 仍留在 Tauri 壳；Electron 侧固定返回空列表。Tauri 的 `src-tauri/src/shell_commands/macos.rs`、`linux.rs` 可作参考。
-- **卷变化监听只有 Windows。** `native/src/volumes.rs:15` 只启动了 Windows 的 `WM_DEVICECHANGE`；Tauri 有 Linux GIO 和 macOS NSWorkspace 实现（`src-tauri/src/file_system/volume_monitor.rs:21`）。macOS/Linux 插拔 U 盘不会即时刷新侧栏。
-- **`start_drag_out` 的 mode 未映射。** macOS/Linux 走 Electron `startDrag`，只能拖出文件，不能强制 copy/move/link；Windows 已由 native OLE 完整支持。
-- **打开文件夹的入口。** 与上面的 macOS `open-file` 一起补；Windows 目前通过启动参数和 `second-instance` 正常处理。
+- **应用扩展右键菜单。** macOS Services 与 Linux KDE service menus 都已进入 `native/src/shell_commands/`，三个平台共用同一套 `ShellCommand` 行、选择判定与分组规则。
+  - 平台无关的解析代码随迁移进入 native：`desktop_entry.rs`（`MimeType`/`Actions`/`Exec` 字段码展开）和 `plist.rs`（`NSServices`/UTI 与命令 id）。两者都在任意宿主上编译并有单元测试。
+  - macOS 的发现、`Info.plist` 扫描和 UTI 匹配在 core 进程完成；`NSPerformService` 需要主进程的 `NSApplication` 和 UI 线程，因此 `electron/main.cjs` 在 `dae:invoke` 中拦截 `invoke_shell_command`（仅 darwin）：先同步调用 `resolveShellService` 校验 id，再 `setTimeout` 排队执行 `performShellService`，IPC 立即返回，不会被慢速 Automator 服务卡住。addon 侧的 `invoke` 明确拒绝在 core 中执行。
+  - Linux 在 core 中直接按 `Exec` 展开并 `spawn`（不经 shell，避免文件名注入语义）；图标通过 `thumbnail`/`fileicon` 同一套主题渲染返回 `data:` URL。
+- **卷变化监听。** `native/src/volumes.rs` 现在启动三个平台的后端：Windows `WM_DEVICECHANGE`、macOS `NSWorkspace` 的 mount/unmount/rename 通知、Linux GIO `VolumeMonitor`（专用线程 + GLib 主循环，转发到 core 的事件队列）。三者都发送 `volumes-changed`，侧栏按原有防抖重新读取磁盘列表。
+- **启动时打开文件夹。** Windows/Linux 走启动参数与 `second-instance`，macOS 走 `open-file`；文件参数会被解析成所在目录，再复用深链入口，见窗口壳层一节。
 - **平台行为差异（与 Tauri 一致）。** 文件剪贴板和全局按键查询仍只在 Windows 实现；macOS/Linux 上对应命令按原有行为返回不支持或默认值。
+- **`start_drag_out` 的 mode 仍未映射。** macOS/Linux 走 Electron `startDrag`，该 API 不提供拖拽效果掩码，只能拖出文件，不能强制 copy/move/link；Windows 已由 native OLE 完整支持。这是 Electron API 的固有限制，不是移植遗漏。
 
 ## P1：更新、打包与发布
 
 - **自动更新缺失。** Tauri release 使用 `tauri-plugin-updater` 和 `src-tauri/src/updater.rs`；Electron 没有 electron-updater、更新源或签名配置。
 - **Electron 打包只有 Windows `dir`。** `electron-builder.yml:36` 与 `package.json:26` 都只做 `--win --dir`；没有安装包、应用图标、签名、MSIX 和包身份。`get_package_family_name` 已能用，但要安装成 MSIX 才会返回真实 family name。
-- **CI 仍是 Tauri。** `.github/workflows/release.yml:94` 使用 `tauri-action`，macOS 检查也跑 Tauri。
+- **发布/打包 CI 仍是 Tauri。** `.github/workflows/release.yml:94` 使用 `tauri-action`；`macos-check.yml` 已补 addon 的 macOS 类型检查，`native-check.yml` 覆盖 addon 的 Linux 类型检查，但发布产物仍只有 Tauri。
 - **构建仍依赖 Tauri 生成 bindings。** `src/bindings.ts` 被 gitignore（`.gitignore:38`），只能通过 `bindings:export` 从 `src-tauri` 生成（`package.json:22`）。干净环境下直接跑 `electron:dev` 会缺少该文件，说明 Electron 还没脱离 Tauri 的 schema 源。
 - **文档仍是 Tauri 优先。** `README.md:3` 还把 Tauri 写成 shell，开发/发布说明也没有 Electron 路径。
 
@@ -74,19 +78,20 @@
 - `tab_perf_report` 只在 Tauri 侧实现（`src-tauri/src/tab_perf.rs`；前端 `src/lib/tab-perf.ts:62`），`DAE_TAB_PERF=1` 在 Electron 下不会出报告。
 - 日志无轮转：Tauri 按 4 MB × 5 轮转，Electron 的 `core.log` / `dae.log` 是无限 append（`electron/main.cjs:1131`、`electron/core/core-entry.cjs:14`）。
 - 启动预取未迁移：Tauri 在 webview 加载时预热收藏/空间/最近使用（`src-tauri/src/file_system/prefetch.rs`），Electron 首屏会多走几次 IPC。
-- `native/src/shell.rs` 顶部注释还写着 workspace 列表未迁移，已过时，可顺手清理。
 
 ## 建议顺序
 
 1. 打包/更新/CI/bindings 来源收尾。
-2. macOS/Linux 应用扩展、卷监听、`start_drag_out` mode 等平台差异。
-3. 日志轮转、启动预取、tab-perf 等次要项。
+2. 日志轮转、启动预取、tab-perf 等次要项。
 
 ## 验证记录
 
-- `cargo check --manifest-path native/Cargo.toml`：通过。
-- `cargo check --manifest-path src-tauri/Cargo.toml`：通过（dae-core 接线未破坏 Tauri 壳）。
-- `cargo test --manifest-path native/Cargo.toml`：59 passed，0 failed（新增缩略图/图标路由、格式覆盖、Windows 图标与 freedesktop 回收站 payload 路径测试）。
+- `cargo check --manifest-path native/Cargo.toml`：通过（含 `resolveShellService` / `performShellService`）。
+- `cargo check --manifest-path src-tauri/Cargo.toml`：通过（dae-core 的 `xdg::data_roots` 放宽为 `pub` 未破坏 Tauri 壳）。
+- `cargo test --manifest-path native/Cargo.toml -- --test-threads=1`：89 passed，0 failed（新增 `desktop_entry` 服务菜单解析、`plist` 服务声明解析、Linux MIME 判定；两个 Windows Shell 图标测试在默认并行下偶发 Shell COM 互斥失败，串行运行稳定，与本次改动无关）。
+- macOS 框架代码类型检查：Windows 上无法为 `aarch64-apple-darwin` 完成整 crate `cargo check`（`ring` 的 C 构建需要 Apple SDK），因此在临时校验 crate 中以 `#[path]` 引入真实的 `native/src/shell_commands/{plist,macos}.rs` 与 `native/src/volumes.rs`，对 `objc2`/`objc2-app-kit`/`objc2-foundation`/`objc2-uniform-type-identifiers`/`block2` 0.3/0.6 实际绑定做 `cargo check --target aarch64-apple-darwin`：通过。尚未在真实 macOS 上运行。
+- Linux 卷监听尚未在 Linux 宿主编译：`linux.rs` 与 `desktop_entry.rs` 已在 Windows 的 `cfg(test)` 下编译并通过测试；GIO 后端逐项对照了 gio/glib 0.18 的 `VolumeMonitor` 信号与 `MainLoop` API。新增的 `.github/workflows/native-check.yml` 会在 Ubuntu 上编译整个 addon，仍需首次 CI 或真机验证。
+- `npm run native:build`、`node --check electron/main.cjs`、`npm run build`、`npm run lint`：通过；加载 release addon 确认 `resolveShellService` / `performShellService` 已导出，Windows 上按设计返回 `fs.shell_command_not_macos`。
 - `cargo test --manifest-path src-tauri/Cargo.toml trash`：4 passed，1 ignored，0 failed（schema 增加 `TrashEntry.path` 后仍通过）。
 - `cargo test --manifest-path src-tauri/Cargo.toml preview::`：21 passed，0 failed（含新增“无版本缩略图不走 immutable 缓存”测试）。
 - `cargo test --manifest-path src-tauri/crates/dae-core/Cargo.toml`：179 passed，7 ignored，0 failed。
@@ -97,4 +102,4 @@
 - UI 回归（Windows，Electron 真实窗口）：切到“系统图标 + 列表缩略图”后，最近使用显示 Shell 文件夹/驱动器图标与 JPG 缩略图；内容搜索的分组头显示系统文件图标；属性对话框显示系统文件图标；回收站里的 PNG 显示缩略图，且 `TrashEntry.path` 指向回收站 payload；列表、网格和检查器中的缩略图/系统图标未回归。测试条目与临时偏好已清理。
 - 窗口壳层构建验证：`cargo check --manifest-path native/Cargo.toml`、`npm run native:build`、`npm run build`、`npm run lint` 通过；加载 addon 确认 `installSnapLayout` / `destroySnapLayout` 存在。
 - 窗口壳层实机验证（Windows 11 build 26340）：Electron 真实窗口截图确认系统标题栏与默认菜单栏均已消失；`EnumChildWindows` 确认 Snap Layout 的 `Static` 热区创建在最大化按钮上（窗口坐标 1369,46–1407,90）。
-- 仍未验证：无边框窗口的拖拽、四边缩放、最大化点击与 Snap Layout 飞出动画（交互验证被中断，需人工点验）；macOS 的红绿灯隐藏、`open-file`/`activate` 与 Linux 无边框缩放未在实机验证。替换文件后的缩略图刷新（URL 版本逻辑未改，沿用现有 mtime/size 规则）、含 PDF 的网格（本机未注册 PDF 缩略图处理器，会按设计回退到类型图标）仍未验证。
+- 仍未验证：无边框窗口的拖拽、四边缩放、最大化点击与 Snap Layout 飞出动画（交互验证被中断，需人工点验）；macOS 的红绿灯隐藏、`open-file`/`activate`、Services 列表与执行，Linux 的无边框缩放、KDE service menu 与 GIO 卷监听未在实机验证。替换文件后的缩略图刷新（URL 版本逻辑未改，沿用现有 mtime/size 规则）、含 PDF 的网格（本机未注册 PDF 缩略图处理器，会按设计回退到类型图标）仍未验证。

@@ -46,7 +46,9 @@ jobs:
 
       - uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: |
+            src-tauri -> target
+            native -> target
           cache-on-failure: true
 
       - name: Install frontend dependencies
@@ -59,3 +61,12 @@ jobs:
             --features export-bindings \
             --all-targets \
             --target aarch64-apple-darwin
+
+      # The Electron addon has its own workspace and its own macOS-only code
+      # (`shell_commands/macos.rs`, `volumes.rs`); nothing else in CI compiles
+      # those modules.
+      - name: Type-check the Electron addon for macOS
+        run: |
+          cargo check \
+            --manifest-path native/Cargo.toml \
+            --all-targets

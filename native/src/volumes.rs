@@ -12,11 +12,142 @@ pub fn start() {
 
     #[cfg(windows)]
     windows_backend::spawn();
+    #[cfg(target_os = "macos")]
+    macos_backend::spawn();
+    #[cfg(target_os = "linux")]
+    linux_backend::spawn();
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 fn emit_volumes_changed() {
     crate::emit_event(EVENT_NAME, "null".to_owned());
+}
+
+#[cfg(target_os = "macos")]
+mod macos_backend {
+    //! macOS' channel: `NSWorkspace`'s mount notifications.
+    //!
+    //! NSWorkspace is the AppKit object that owns the desktop's view of the
+    //! filesystem — the Finder itself is one of its clients — and it posts three
+    //! notifications when the mounted set changes: a volume was mounted (a USB
+    //! stick, a disk image, an install volume), a volume was unmounted (eject),
+    //! or a volume was renamed. Those are the three ways the sidebar's list can
+    //! go stale between polls.
+    //!
+    //! Two details of the API shape the code below:
+    //!
+    //!   * The notifications go to the workspace's *own* notification center
+    //!     (`NSWorkspace.notificationCenter`), not to
+    //!     `NotificationCenter.default`. Subscribing to the default center is the
+    //!     mistake that compiles, runs and silently never fires.
+    //!   * Observers are registered with a block rather than a selector, because
+    //!     a Rust closure is the block: `block2::RcBlock` wraps it, the center
+    //!     copies it, and this module never hears about it again — the observers
+    //!     are deliberately never removed, since the process exit is what ends
+    //!     them, matching the other backends' watchers.
+
+    use objc2_app_kit::{
+        NSWorkspace, NSWorkspaceDidMountNotification, NSWorkspaceDidRenameVolumeNotification,
+        NSWorkspaceDidUnmountNotification,
+    };
+    use objc2_foundation::{NSNotification, NSNotificationName};
+    use std::ptr::NonNull;
+
+    use block2::{DynBlock, RcBlock};
+
+    pub(super) fn spawn() {
+        let center = NSWorkspace::sharedWorkspace().notificationCenter();
+
+        // SAFETY: the three names are the framework's own notification name
+        // constants, live for the process by construction.
+        let names: [&NSNotificationName; 3] = unsafe {
+            [
+                NSWorkspaceDidMountNotification,
+                NSWorkspaceDidUnmountNotification,
+                NSWorkspaceDidRenameVolumeNotification,
+            ]
+        };
+
+        for name in names {
+            let on_change = RcBlock::new(move |_notification: NonNull<NSNotification>| {
+                super::emit_volumes_changed();
+            });
+            // The annotation is what pins the closure's signature into the
+            // `dyn Fn` type the method takes; inference alone leaves the block's
+            // dynamic type open, and the call then does not resolve.
+            let on_change: &DynBlock<dyn Fn(NonNull<NSNotification>) + 'static> = &on_change;
+
+            // SAFETY: `name` is a valid notification name and the block is a
+            // valid block for its `dyn Fn` shape; `None` for object and queue is
+            // the documented "every object, delivered on the posting thread" —
+            // which for a workspace notification is the main thread. The token
+            // is only needed to remove the observer and is dropped on purpose:
+            // nothing here ever removes it, and the center holds the
+            // registration itself.
+            let _ = unsafe {
+                center.addObserverForName_object_queue_usingBlock(Some(name), None, None, on_change)
+            };
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod linux_backend {
+    //! Linux' channel: GIO's `VolumeMonitor`, the same object GTK's file chooser
+    //! and nautilus listen to. It reports volumes (mountable things), mounts
+    //! (mounted filesystems) and drives (the physical device) as the desktop's
+    //! udisks2/gvfs stack sees them, which is exactly the set the sidebar lists —
+    //! it enumerates through the same GIO layer.
+    //!
+    //! The Node process has no GLib main loop of its own, and the monitor's
+    //! D-Bus connections dispatch on the *thread-default* main context of the
+    //! thread that created them. So this backend owns a dedicated thread with a
+    //! context of its own: the monitor is created and its loop run inside
+    //! `with_thread_default`, which keeps GIO from attaching to — and later
+    //! depending on — the process-wide default context. The monitor's signals
+    //! arrive on that thread and are forwarded to the core's event queue.
+
+    use gio::glib;
+    use gio::prelude::*;
+
+    pub(super) fn spawn() {
+        let spawned = std::thread::Builder::new()
+            .name("volume-monitor".to_owned())
+            .spawn(run);
+
+        if let Err(error) = spawned {
+            eprintln!("[dae-native] failed to start the volume-monitor thread: {error}");
+        }
+    }
+
+    fn run() {
+        let context = glib::MainContext::new();
+        let result = context.with_thread_default(|| {
+            let monitor = gio::VolumeMonitor::get();
+
+            // One closure per signal argument type, cloneable so one definition
+            // can serve its pair of connected/disconnected (or added/removed)
+            // signals.
+            let on_volume =
+                |_: &gio::VolumeMonitor, _: &gio::Volume| super::emit_volumes_changed();
+            let on_mount = |_: &gio::VolumeMonitor, _: &gio::Mount| super::emit_volumes_changed();
+            let on_drive = |_: &gio::VolumeMonitor, _: &gio::Drive| super::emit_volumes_changed();
+
+            monitor.connect_volume_added(on_volume.clone());
+            monitor.connect_volume_removed(on_volume);
+            monitor.connect_mount_added(on_mount.clone());
+            monitor.connect_mount_removed(on_mount);
+            monitor.connect_drive_connected(on_drive.clone());
+            monitor.connect_drive_disconnected(on_drive);
+
+            let main_loop = glib::MainLoop::new(Some(&context), false);
+            main_loop.run();
+        });
+
+        if let Err(error) = result {
+            eprintln!("[dae-native] the volume-monitor loop could not start: {error}");
+        }
+    }
 }
 
 #[cfg(windows)]

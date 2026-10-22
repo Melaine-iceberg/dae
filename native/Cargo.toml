@@ -30,6 +30,9 @@ log = "0.4"
 # MD5 + SHA-1 alongside `sha2` back the properties dialog's checksum tab;
 # all three share the `digest` trait, so one read updates every algorithm.
 md-5 = "0.11.0"
+# Linux service menus are matched by the MIME type a filename maps to; the
+# same database dae-core's icon resolver keys off.
+mime_guess = "2"
 napi = { version = "2", default-features = false, features = ["async", "napi8", "serde-json", "tokio_rt"] }
 napi-derive = "2"
 notify = "8.2.0"
@@ -75,7 +78,27 @@ windows = { version = "0.62.2", features = [
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10.1"
-objc2-app-kit = { version = "0.3.2", features = ["NSColor", "NSColorSpace", "NSEvent"] }
+# The main process's context-menu invocation holds a service selection on an
+# `NSPasteboard`; `NSPerformService` is gated by that feature.
+objc2 = "0.6"
+objc2-foundation = { version = "0.3.2", features = [
+  "NSArray",
+  "NSLocale",
+  "NSNotification",
+  "NSString",
+  "NSURL",
+] }
+# `UTType` decides which `NSServices` declarations apply to a file.
+objc2-uniform-type-identifiers = "0.3"
+# Block observers on `NSWorkspace`'s notification center, for volume changes.
+block2 = "0.6"
+objc2-app-kit = { version = "0.3.2", features = [
+  "NSColor",
+  "NSColorSpace",
+  "NSEvent",
+  "NSPasteboard",
+  "NSWorkspace",
+] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gio = "0.18"

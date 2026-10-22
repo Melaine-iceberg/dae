@@ -1089,6 +1089,33 @@ function registerIpc() {
       event.sender.startDrag({ files: paths, icon });
       return "null";
     }
+
+    // macOS Services reach AppKit through the application object, which the core
+    // utility process does not have. Resolve the row here so a stale id still
+    // reaches the renderer as an error, then queue the blocking service call so
+    // the IPC reply is not held up by a slow Automator action.
+    if (command === "invoke_shell_command" && process.platform === "darwin") {
+      const id = typeof args?.id === "string" ? args.id : "";
+      const paths = Array.isArray(args?.paths)
+        ? args.paths.filter((item) => typeof item === "string" && item.length > 0)
+        : [];
+      if (!id) throw new Error("invoke_shell_command requires an id");
+      if (paths.length === 0) throw new Error("invoke_shell_command requires at least one path");
+
+      const addon = nativeAddonModule();
+      const title = addon.resolveShellService(id);
+      setTimeout(() => {
+        try {
+          if (!addon.performShellService(title, paths)) {
+            console.warn(`[shell] service "${title}" did not run`);
+          }
+        } catch (error) {
+          console.warn(`[shell] service "${title}" failed: ${error?.message || error}`);
+        }
+      }, 0);
+      return "null";
+    }
+
     // Tab tear-off owns window creation, which only the main process can do.
     // Labels and handoffs stay here so a window can ask for its payload exactly
     // once, after its renderer is listening.

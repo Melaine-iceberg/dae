@@ -31,7 +31,10 @@ pub(crate) fn home_dir() -> PathBuf {
 
 /// The XDG data roots, most specific first: `$XDG_DATA_HOME`, then each
 /// `$XDG_DATA_DIRS` entry, each defaulted as the spec prescribes.
-pub(crate) fn data_roots() -> Vec<PathBuf> {
+///
+/// Public because the Electron addon's Linux shell-command backend searches
+/// those roots for KDE service menus, the same way the icon resolver here does.
+pub fn data_roots() -> Vec<PathBuf> {
     resolve_data_roots(
         std::env::var_os("XDG_DATA_HOME").as_deref(),
         std::env::var_os("XDG_DATA_DIRS").as_deref(),

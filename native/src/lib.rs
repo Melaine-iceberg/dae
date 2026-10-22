@@ -387,6 +387,23 @@ pub fn start_file_drag(paths: Vec<String>, mode: String, hwnd: f64) -> Result<bo
         .map_err(|error| Error::from_reason(error.to_string()))
 }
 
+/// Validates a macOS "应用扩展" row and returns the service title it runs.
+/// Called by the Electron main process before it queues `performShellService`.
+#[napi(js_name = "resolveShellService")]
+pub fn resolve_shell_service(id: String) -> Result<String> {
+    shell_commands::resolve_service_title(&id)
+        .map_err(|error| Error::from_reason(error.to_string()))
+}
+
+/// Runs a macOS service through `NSPerformService`. Only the Electron main
+/// process may call this: AppKit reaches the services machinery through its
+/// application object and UI thread. Blocks until the service finishes.
+#[napi(js_name = "performShellService")]
+pub fn perform_shell_service(title: String, paths: Vec<String>) -> Result<bool> {
+    shell_commands::perform_service(&title, &paths)
+        .map_err(|error| Error::from_reason(error.to_string()))
+}
+
 /// Lays a Windows 11 snap-layout hotspot over the maximize button. `x`, `y`,
 /// `width` and `height` are CSS pixels inside the window's client area; the
 /// main process calls this on its own (UI) thread whenever the button moves.

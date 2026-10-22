@@ -2,12 +2,14 @@
 //! the rows installed applications contribute rather than the ones dae
 //! declares itself.
 //!
-//! The Electron core ships the Windows backing (`IExplorerCommand` verbs from
-//! packaged `AppxManifest.xml` registrations). The other desktop mechanisms
-//! macOS Services and Linux KDE service menus — live in the Tauri shell and
-//! are not part of this core yet; they answer with an empty list, exactly like
-//! a platform with no extension point, so the frontend renders one section
-//! unconditionally and it simply does not appear.
+//! Each platform reaches the same three-step shape through a different
+//! mechanism:
+//!
+//! | Platform | Declared in | Hosted by |
+//! |---|---|---|
+//! | Windows | each package's `AppxManifest.xml` (`desktop5:Verb`) | `CoCreateInstance` → `IExplorerCommand` |
+//! | macOS | each bundle's `Info.plist` (`NSServices`) | `NSPerformService` (main process) |
+//! | Linux | each service menu's `.desktop` (`Actions`, `MimeType`) | the `Exec` line, run directly |
 //!
 //! What is shared lives here: the row type, the selection a row is matched
 //! against, and the Explorer-style grouping applied to the finished list.
@@ -16,9 +18,25 @@ use dae_core::file_system::error::FileSystemError;
 use dae_core::file_system::vfs::is_local_path;
 use serde::Serialize;
 
+// The parsers are compiled under `cfg(test)` on every host so their pure logic
+// runs on the machine this was written on; the Linux backend is too, so it at
+// least type-checks there.
+#[cfg(any(target_os = "linux", test))]
+mod desktop_entry;
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(test, allow(dead_code))]
+mod linux;
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(any(target_os = "macos", test))]
+mod plist;
 #[cfg(windows)]
 mod windows;
 
+#[cfg(target_os = "linux")]
+use linux as backend;
+#[cfg(target_os = "macos")]
+use macos as backend;
 #[cfg(windows)]
 use windows as backend;
 
@@ -166,9 +184,47 @@ pub async fn warm_shell_commands() -> Result<(), FileSystemError> {
     backend::warm().await
 }
 
+/// Resolves a macOS service row to the title `NSPerformService` is addressed
+/// by. The core process exposes this so the Electron main process can validate
+/// the row before queueing the blocking call on its own thread.
+pub fn resolve_service_title(id: &str) -> Result<String, FileSystemError> {
+    #[cfg(target_os = "macos")]
+    {
+        macos::resolve_title(id)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err(FileSystemError::Unsupported(format!(
+            "fs.shell_command_not_macos: {id}"
+        )))
+    }
+}
+
+/// Runs a macOS service. Must be called on the Electron main process's UI
+/// thread; returns whether the service ran.
+pub fn perform_service(title: &str, paths: &[String]) -> Result<bool, FileSystemError> {
+    if paths.is_empty() {
+        return Err(FileSystemError::InvalidInput(
+            "fs.shell_command_empty_selection".into(),
+        ));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Ok(macos::perform(title, paths))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (title, paths);
+        Err(FileSystemError::Unsupported(
+            "fs.shell_command_not_macos".into(),
+        ))
+    }
+}
+
 /// Platforms without a backing module in this core: the section stays empty
 /// rather than pretending otherwise.
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod backend {
     use super::{FileSystemError, ShellCommand};
 

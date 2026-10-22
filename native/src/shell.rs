@@ -1,9 +1,6 @@
-//! Small shell-level answers the renderer needs before it can paint.
-//!
-//! These are the commands still owned by the Electron shell rather than
-//! `dae-core`: system places are an OS lookup, and the workspace lists are
-//! empty until the shell's stores are ported. They are served here so the real
-//! renderer has a coherent first paint instead of four failed queries.
+//! Small shell-level answers the renderer needs before it can paint: the
+//! platform's well-known folders, and the window's system backdrop. Both are
+//! properties of the shell rather than of `dae-core`'s file-system backends.
 
 use serde::Serialize;
 

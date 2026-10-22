@@ -1,0 +1,50 @@
+# Compiles the Electron addon's Linux-only code (GIO volume monitor, KDE
+# service menus) on every push to main.
+#
+# The Windows dev machine and the macOS check both skip it: `native/Cargo.toml`
+# gates `gio` and `gtk` on `target_os = "linux"`, so a break there stays
+# invisible until someone builds the addon on Linux. `cargo check` needs the
+# system libraries below but no packaging or signing.
+name: Linux native check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-26.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: native -> target
+          cache-on-failure: true
+
+      # `gio` and `gtk` bind the libraries directly; the lockfile's pure-Rust
+      # zbus path needs no libdbus package.
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libglib2.0-dev libgtk-3-dev
+
+      - name: Type-check the Electron addon for Linux
+        run: |
+          cargo check \
+            --manifest-path native/Cargo.toml \
+            --all-targets
