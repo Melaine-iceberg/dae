@@ -1,21 +1,21 @@
 # Electron 迁移剩余工作
 
-> 基线：`main` @ `6453bf6`（2026-10-22）。本次完成“更新、打包与发布”收尾。
+> 基线：`electron` @ `07d7b20`（2026-10-22）。本文在“更新、打包与发布”收尾后做了一次完整复核，把仍存在的缺口按影响排序重写；`main` 回到 Tauri（迁移起点 `32d7700`），Electron 壳层只活在本分支。
 >
 > 迁移目标：Tauri 2 壳 → Electron 主进程 + `dae-core` N-API addon。
 >
-> 判定方法：把 `src/bindings.ts` 的 97 个生成命令逐项对照 `native/src` 与 `electron/main.cjs` 的 handler；Tauri 侧同名实现作为行为参考。本文列未完成项，刚收尾的关键管线保留在对应小节。
+> 判定方法：把 `src/bindings.ts` 的 94 个唯一生成命令（含通道命令共 98 处 invoke）逐项对照 `native/src` 与 `electron/main.cjs` 的 handler；Tauri 侧同名实现作为行为参考。本文列未完成项，刚收尾的关键管线保留在对应小节。
 
 ## 状态摘要
 
-- 97 个生成命令已全部进入 handler：`start_drag_out` 由 Electron 主进程处理，macOS 的 `invoke_shell_command` 由主进程转交 addon 执行，其余都在 native addon；`terminal_*`、`read_directory_packets` 等不进 bindings 的通道命令也已实现。
+- 94 个唯一生成命令（`src/bindings.ts` 共 98 处 invoke）已全部进入 handler：`start_drag_out` 由 Electron 主进程处理，macOS 的 `invoke_shell_command` 由主进程转交 addon 执行，其余都在 native addon；`terminal_*`、`read_directory_packets` 等不进 bindings 的通道命令也已实现。
 - 文件系统、文件操作、终端、系统剪贴板、原生拖出、快捷方式、标签撕离、主题/强调色、设置、最近使用、搜索、目录大小、Git、回收站、压缩包、连接/云账户、收藏/空间、默认文件管理器均已落到 Electron 侧。
 - 系统图标与缩略图管线已迁移：两个自定义协议、前端 URL、native 渲染层和 dae-core 平台后端均已接通，见下节。
 - 窗口壳层已迁移：无边框窗口、拖拽区域、Windows 11 Snap Layout 与 macOS 生命周期均已落到 Electron 侧，见下节。
 - **标签页拖拽已改成 HTML5 拖放**：跨窗口合并与撕离走 Chromium 的拖拽循环，X11/XWayland 与 Windows/macOS 可用；**原生 Wayland 真机鼠标拖拽仍不可用**（合成输入可跑通），与 VS Code 同类问题，见“已完成：标签页拖拽改为 HTML5 拖放”一节。主进程的 hover 会话与原生拖拽命令已删除。
 - macOS/Linux 平台能力已迁移：应用扩展右键菜单、卷变化监听、启动打开文件夹均已落到 Electron 侧，见下节。
 - **更新、打包与发布已迁移**：NSIS / dmg+zip / AppImage+deb / MSIX 全部由 Electron 构建产出，`electron-updater` 在启动后后台检查更新，release CI 已从 `tauri-action` 换成 Electron 打包并上传更新元数据；`src/bindings.ts` 已入库，干净环境不再需要 Tauri 才能构建 Electron。见“已完成：更新、打包与发布”一节。
-- 迁移已无 P1 缺口，剩余为 P2 次要项（`tab_perf_report`、日志轮转、启动预取）。
+- 迁移已无 P1 缺口。2026-10-22 复核后剩余 6 项：P2 三项（`tab_perf_report`、日志轮转、启动预取）与本次新查出的三项（Rust 日志/panic 无落盘、主进程日志只进 console、Tauri → Electron 的升级路径断裂），另有两项平台/性能差异（Windows 21H2/22H2 早期版本的背景材质、mimalloc）。见“未迁移清单”。
 
 ## 已完成：7 个命令
 
@@ -121,18 +121,41 @@
 - **签名秘密全部可选。** `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD`（Windows Authenticode）、`MAC_CSC_LINK` / `MAC_CSC_KEY_PASSWORD`（Developer ID）、`APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID`（公证）、`MSIX_CERTIFICATE` / `MSIX_CERTIFICATE_PASSWORD`（MSIX）。CI 在调用 electron-builder 前 unset 空值，避免空 `CSC_LINK` 被当成证书路径。
 - **bindings 已脱离构建依赖。** `src/bindings.ts` 移出 `.gitignore` 并入库（1445 行，由 `bindings:export` 重新生成）；`electron:dev` / `electron:pack` / release 不再要求先编译 `src-tauri`。macOS check workflow 新增 `bindings:check`：重新导出并 `git diff --exit-code`，防止命令 schema 改动后入库文件悄悄过期。
 
-## P2：次要项
+## 未迁移清单（2026-10-22 复核）
 
-- `tab_perf_report` 只在 Tauri 侧实现（`src-tauri/src/tab_perf.rs`；前端 `src/lib/tab-perf.ts:62`），`DAE_TAB_PERF=1` 在 Electron 下不会出报告。
-- 日志无轮转：Tauri 按 4 MB × 5 轮转，Electron 的 `core.log` / `dae.log` 是无限 append（`electron/main.cjs:1317`、`electron/core/core-entry.cjs:14`）。`electron/updater.cjs` 也写同一个 `dae.log`，长时间运行会把更新记录和 shell 日志放在一个无界文件里。
-- 启动预取未迁移：Tauri 在 webview 加载时预热收藏/空间/最近使用（`src-tauri/src/file_system/prefetch.rs`），Electron 首屏会多走几次 IPC。
+复核方式：`rg` 逐项对照 `src/bindings.ts` 的命令名、`src-tauri/src` 的事件名与同名实现。结论先行：94 个唯一生成命令 + `terminal_write` / `terminal_resize` / `terminal_kill` / `read_directory_packets` 通道命令全部有 handler；15 个事件除刻意删除的 `tab-drag-hover` / `tab-drag-leave` 外全部在 Electron 侧发出；`src/` 已无 `@tauri-apps/*` 运行时导入。下面每一条都是复核后仍然存在的缺口，按影响排序。
+
+### P2：已知次要项（上一版列出，复核确认仍存在）
+
+| 缺口 | 现状 | Tauri 侧 |
+| --- | --- | --- |
+| `tab_perf_report` | 前端 `src/lib/tab-perf.ts:62` 会 invoke，`electron/` 与 `native/src` 都没有 handler；`invoke(...).catch(() => {})` 把错误吞掉，所以 `DAE_TAB_PERF=1` 在 Electron 下是**静默空转**。缺口有两层：连开关都没注入——`window.__DAE_TAB_PERF` / `__DAE_TAB_PERF_ANCHOR` 只由 `src-tauri/src/tab_perf.rs:112,127` 写进页面，`electron/preload.cjs` 与 `index.html` 全无 | `src-tauri/src/tab_perf.rs` |
+| 日志无轮转 | 三处无界 append：`electron/main.cjs:1235`（渲染层转发的 `dae.log`）、`electron/core/core-entry.cjs:14`（`core.log`）、`electron/updater.cjs:35`（同一 `dae.log`，与 shell 日志混在一起） | `src-tauri/src/lib.rs:49,54,315-316`：4 MB × 5（`RotationStrategy::KeepSome`） |
+| 启动预取 | 无对应实现，首屏直接打 IPC（如 `src/features/sidebar/sidebar-atoms.ts:103,121`） | `src-tauri/src/file_system/prefetch.rs`，由 `lib.rs:286` 在 webview 加载时预热 `system_places` / `favorites` / `recents` / `spaces` |
+
+### 本次复核新发现
+
+1. **Rust panic 不落盘。** Tauri 在 `src-tauri/src/lib.rs:388` 装 `install_panic_logger`，release 的 `panic = "abort"` 也能留下一条记录；`native/src` 里没有任何 `set_hook`。打包版是 GUI 子系统，addon panic / core 进程异常退出只剩 `electron/main.cjs` 的 `console.error`（`:421-437`、`:1362`、`:1365`），写不进任何文件——用户机器上表现为“应用消失，没有痕迹”。
+2. **addon 的 `log` 没有 logger。** `native/Cargo.toml:29` 声明了 `log`，全仓却没有 `set_logger` / `env_logger`，于是 `native/src/render_pool.rs:44,109`、`native/src/shell_commands/windows.rs:774,846` 以及 dae-core 的 `log::warn!` 全部被 `log` crate 静默丢弃（Tauri 由 `tauri-plugin-log` 装文件 target）。
+3. **主进程日志只进 console。** `dae.log` 目前只有两个写入者：渲染层（`src/lib/logging.ts` 给 `console.warn/error` 打补丁后经 `dae:log:write`）与 `electron/updater.cjs`。main 自己的 core 退出、`render-process-gone`、`preload-error`、`console-message` 都只 `console.*`（`:1362`、`:1365`），GUI 打包后 stdout 无人读。
+4. **Tauri → Electron 的升级路径断了。** Tauri 客户端查 `latest.json`（`src-tauri/tauri.release.conf.json`，minisign 校验），Electron release 只附 `latest.yml` / `latest-mac.yml` / `latest-linux.yml`（`.github/workflows/release.yml:170-197`）。现有 Tauri 安装不会被提示升级，必须手动重装；要么首个 Electron 版本额外附一份 minisign 的 `latest.json`（指向 Electron 安装包），要么在 release notes 里写清手动迁移。
+5. **Windows 21H2/22H2 早期版本失去背景材质。** Tauri 在 build ≥ 22000 用 Mica、≥ 22523 用 Acrylic（`src-tauri/src/window_material/windows.rs:56,63`）；Electron 只有 `< 22621 → none`（`electron/main.cjs:207-212`），因为 `setBackgroundMaterial` 走 `DWMWA_SYSTEMBACKDROP_TYPE`。macOS（vibrancy）与 Linux（niri blur）判定与 Tauri 一致。
+6. **mimalloc 随壳层一起消失（性能项，非功能项）。** `src-tauri/src/main.rs:7` 的全局分配器只装在 Tauri bin 上；addon 不能安全接管 Node 进程的 global allocator，现在走系统分配器，`docs/performance-opportunities.md` 里那条大目录列举 -31% 的收益在 Electron 下不再成立。
 
 ## 建议顺序
 
-1. 日志轮转（`dae.log`、`core.log`），顺便给更新器日志分文件或打 tag。
-2. 启动预取、`tab_perf_report` 等次要项。
+1. 日志一条线做完：轮转（`dae.log` / `core.log`，4 MB × 5）+ 给 addon 装 logger + panic hook + main 进程日志落盘。这是排查后面所有问题的前置，成本也最低。
+2. 升级路径：首个 Electron release 附 `latest.json`，或写清手动迁移说明。
+3. 启动预取、`tab_perf_report`（含 `__DAE_TAB_PERF` 注入）；有 Windows 21H2/22H2 用户时再补材质回退。
 
 ## 验证记录
+
+### 本次“剩余缺口复核”改动
+
+- 命令覆盖：`rg -o '__TAURI_INVOKE(?:<[^>]*>)?\("[a-z_0-9]+' src/bindings.ts` 得到 94 个唯一命令名，逐个在 `electron/` 与 `native/src` 内检索 `"<name>"`，无未命中；`terminal_*`、`read_directory_packets` 同样命中 `native/src/lib.rs`。
+- 事件覆盖：`src-tauri/src` 的 15 个事件名与 `electron/`、`native/src` 的字符串逐一对照，除 `tab-drag-hover` / `tab-drag-leave`（HTML5 拖拽重写时删除）外全部存在。
+- 前端依赖：`rg -n '@tauri-apps' src` 只剩 2 处注释；`rg -n '__TAURI_INTERNALS__' src` 无命中。
+- 缺口证据：`rg -n 'tab_perf_report' electron native` 无命中；`rg -n 'TAB_PERF' electron index.html` 无命中；`rg -n 'set_logger|set_hook' native/src` 无命中；`rg -n 'appendFile' electron` 命中上述三处无界写入；`rg -n 'latest.json' .github src-tauri` 只在 Tauri 更新配置里出现。
 
 ### 本次“更新、打包与发布”改动
 
