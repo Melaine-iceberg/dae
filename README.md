@@ -112,7 +112,9 @@ reopen them.
 Two build-time optimisations are wired up on top of the release profile — LLVM IR
 PGO and, on Linux, a post-link pass with LLVM BOLT. How to run them, why BOLT is
 ELF-only, and what CI falls back to when a profile or a tool is missing is
-[`docs/pgo-bolt.md`](docs/pgo-bolt.md).
+[`docs/pgo-bolt.md`](docs/pgo-bolt.md). The cold-start budget above the Rust side
+lives in the WebView; the options for it — and which ones are ruled out — are
+[`docs/cold-start-js.md`](docs/cold-start-js.md).
 
 ## System accent
 
