@@ -195,7 +195,7 @@ export function OpenWithDialog({
                       <button
                         aria-checked={app.id === selectedId}
                         className={cn(
-                          "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-body",
+                          "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-body",
                           "outline-none hover:bg-accent focus-visible:bg-accent",
                           app.id === selectedId && "bg-accent",
                         )}

@@ -510,7 +510,7 @@ export function TerminalPanel() {
             wash, not a bare caption. The drawer is a stack of sessions in every
             terminal that has one, and the chip is the shape that says so — even
             while there is only ever one of them. */}
-        <span className="flex h-[22px] items-center gap-1.5 rounded-[4px] bg-foreground/7 px-2 text-[12px] text-foreground/85 select-none">
+        <span className="flex h-[22px] items-center gap-1.5 rounded-xs bg-foreground/7 px-2 text-[12px] text-foreground/85 select-none">
           <ProgrammingIcon size={12} />
           {t("panel.title")}
         </span>
@@ -521,7 +521,7 @@ export function TerminalPanel() {
         <div className="ml-auto flex items-center gap-0.5">
           <button
             aria-label={t("panel.restart.label")}
-            className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground"
             onClick={restart}
             title={t("panel.restart.label")}
             type="button"
@@ -530,7 +530,7 @@ export function TerminalPanel() {
           </button>
           <button
             aria-label={t("panel.close.label")}
-            className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground"
+            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground"
             onClick={() => setVisible(false)}
             title={t("panel.close.title")}
             type="button"
@@ -587,7 +587,7 @@ export function TerminalPanel() {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-card text-body text-muted-foreground">
             <span>{t("panel.sessionEnded", { code: exitCode })}</span>
             <button
-              className="flex h-7 items-center gap-1 rounded-lg border px-3 transition-colors hover:bg-accent hover:text-foreground"
+              className="flex h-7 items-center gap-1 rounded-md border px-3 transition-colors hover:bg-accent hover:text-foreground"
               onClick={restart}
               type="button"
             >

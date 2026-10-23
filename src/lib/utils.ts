@@ -33,16 +33,16 @@ import { localeNumberFormat } from "@/i18n/format";
  * where the later `text-*` colour no longer eats them.
  *
  * `rounded` is here for the same reason one step over: the radius scale is
- * `--radius-xs/sm/md/lg/xl`, and tailwind-merge knows `xs/sm/md/lg` as
- * t-shirt sizes but has no `xl`, so `rounded-xl` would not displace an
- * inherited `rounded-lg` — both would be emitted and plain CSS order would
+ * `--radius-xs/sm/md/lg/xl/panel`, and tailwind-merge knows `xs/sm/md/lg` as
+ * t-shirt sizes but has no `xl` or `panel`, so `rounded-xl` would not displace
+ * an inherited `rounded-lg` — both would be emitted and plain CSS order would
  * pick the winner, which is not a thing to leave to chance.
  */
 const twMerge = extendTailwindMerge({
   extend: {
     theme: {
       text: ["title", "lead", "body", "caption", "micro", "label", "nano"],
-      radius: ["xs", "sm", "md", "lg", "xl"],
+      radius: ["xs", "sm", "md", "lg", "xl", "panel"],
     },
   },
 });

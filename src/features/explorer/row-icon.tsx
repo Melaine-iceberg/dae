@@ -48,7 +48,7 @@ export function RowEntryIcon({
     return (
       <EntryIconFrame entry={entry}>
         <ThumbnailImage
-          className="size-tile-list shrink-0 rounded-xs"
+          className="size-tile-list shrink-0 rounded-md"
           displaySize={ROW_TILE_PX}
           entry={entry}
           fallback={glyph}

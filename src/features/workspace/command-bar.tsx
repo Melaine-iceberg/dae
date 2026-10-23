@@ -866,7 +866,7 @@ export function CommandBar() {
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogContent
-        className="top-[12vh] w-[calc(100%-2.5rem)] max-w-[41.25rem] translate-y-0 gap-0 overflow-hidden rounded-2xl border-border bg-card p-0 shadow-ambient-lg sm:max-w-[41.25rem]"
+        className="top-[12vh] w-[calc(100%-2.5rem)] max-w-[41.25rem] translate-y-0 gap-0 overflow-hidden rounded-panel border-border bg-card p-0 shadow-ambient-lg sm:max-w-[41.25rem]"
         showCloseButton={false}
       >
         <DialogTitle className="sr-only">{t("commandBar.title")}</DialogTitle>

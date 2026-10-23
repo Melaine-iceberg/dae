@@ -64,8 +64,8 @@ function InspectorSkeleton() {
   return (
     <aside className="flex h-full w-preview shrink-0 flex-col gap-3 overflow-hidden border-l border-border p-3">
       <Skeleton className="h-5 w-2/3" />
-      <Skeleton className="min-h-48 flex-1 rounded-lg" />
-      <Skeleton className="h-16 shrink-0 rounded-lg" />
+      <Skeleton className="min-h-48 flex-1 rounded-xl" />
+      <Skeleton className="h-16 shrink-0 rounded-md" />
     </aside>
   );
 }

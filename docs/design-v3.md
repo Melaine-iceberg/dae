@@ -54,18 +54,19 @@
 
 ## 三、形状
 
-8px 基数，六级台阶，一个平面步：
+以 8px 为基数，四级台阶：
 
 ```
-4   keycap
-6   menu row / list row（--radius-md）
-8   inputs / chips / buttons 附近的控件（--radius-lg）
-12  menus / palette / preview well（--radius-xl）
-16  dialogs / content panel（--radius-panel）
-999 capsule：状态点、磁盘余量条
+4   micro：keycap / inline code / 关闭与排序靶（--radius-xs）
+6   controls & rows：buttons / inputs / menu row / list row（--radius-md）
+12  surfaces：menus / cards / overlays / preview well（--radius-xl）
+16  dialogs / command palette / content panel（--radius-panel）
+999 capsule：状态点、容量条、动作岛、主按钮
 ```
 
-胶囊是例外，只给"真的没有角"的两三个东西；其余一律方角。
+`--radius-sm` 与 `--radius-lg` 已退役，只作为 6px / 12px 的别名保留，防止旧调用点
+重新引入 5px / 8px 两个几乎看不出的相邻档。胶囊是例外，只给"真的没有角"的东西；
+其余一律方角。
 
 ## 四、尺度
 

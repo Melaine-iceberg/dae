@@ -142,14 +142,14 @@ export function ShortcutRecorder({ binding, id, onCommit, onReset }: ShortcutRec
             {t("recorder.conflict", { action: t(`actions.${conflictId}`) })}
           </span>
           <button
-            className="h-6 rounded-sm border border-input px-2 text-caption font-medium transition-colors duration-fast ease-standard hover:bg-accent"
+            className="h-6 rounded-md border border-input px-2 text-caption font-medium transition-colors duration-fast ease-standard hover:bg-accent"
             onClick={() => pending != null && commit(pending)}
             type="button"
           >
             {t("recorder.replace")}
           </button>
           <button
-            className="h-6 rounded-sm px-2 text-caption text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground"
+            className="h-6 rounded-md px-2 text-caption text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground"
             onClick={stopCapture}
             type="button"
           >
@@ -164,7 +164,7 @@ export function ShortcutRecorder({ binding, id, onCommit, onReset }: ShortcutRec
               // The field renders the chord, not its spelling: one Kbd chip per
               // key, so a rebound binding re-renders instead of re-measuring.
               // Recording is the controls' 2px focus halo in a held state.
-              "flex h-7 min-w-24 items-center justify-center gap-0.5 rounded-sm border px-2 transition-[background-color,border-color,box-shadow] duration-fast ease-standard",
+              "flex h-7 min-w-24 items-center justify-center gap-0.5 rounded-md border px-2 transition-[background-color,border-color,box-shadow] duration-fast ease-standard",
               capturing
                 ? "border-ring text-caption text-muted-foreground ring-2 ring-ring/40"
                 : "border-input hover:bg-accent",
@@ -183,7 +183,7 @@ export function ShortcutRecorder({ binding, id, onCommit, onReset }: ShortcutRec
           </button>
           <button
             aria-label={t("recorder.resetAria", { action: t(`actions.${id}`) })}
-            className="flex size-7 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast ease-standard hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
             disabled={binding === DEFAULT_BINDINGS[id]}
             onClick={onReset}
             title={t("recorder.reset")}

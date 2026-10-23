@@ -154,7 +154,7 @@ export function SpaceView({ spaceId }: { spaceId: string }) {
       }
     >
       {space === null ? (
-        <Skeleton className="h-9 w-40 rounded-lg" />
+        <Skeleton className="h-9 w-40 rounded-md" />
       ) : (
         <WorkspacePageHeader
           actions={

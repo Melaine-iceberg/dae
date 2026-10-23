@@ -348,61 +348,33 @@
   --color-error-container: var(--error-container);
   --color-on-error-container: var(--on-error-container);
 
-  /* Shape scale: five steps, spent in ascending order of how much the thing
-     draws attention — 4px inline code → 5px buttons, chips, keycaps, rows,
-     inputs and small images → 6px menus, toasts and cards → 8px the larger
-     toolbars and panes → 12px the command palette and dialogs. The window's
-     content plane takes a sixth step, `--radius-panel`, below.
+  /* Shape scale: four steps, spent in ascending order of how much the thing
+     draws attention — 4px micro parts (keycaps, inline code, close and sort
+     targets, tiny row actions), 6px the controls and rows (buttons, inputs,
+     selects, menu items, tabs, sidebar and settings rows, small images),
+     12px the surfaces (menus, cards, overlays, toasts, the empty-state plate,
+     the preview well) and 16px the floating layers and the window's content
+     plane (`--radius-panel`: dialogs, the command palette, `.content-panel`).
 
-     CALIBRATED TO NOTION'S OWN RADIUS SCALE: these are five rungs of their
-     `--tatami-border-radius-*` token scale (4/5/6/8/10/12/14/16px + pill),
-     read off their shipped CSS — radius-200/300/400/500/700 for the five
-     steps, radius-600 for the plane. The ladder was 3/4/6/8/12 before, which
-     put its smallest step off their scale entirely; 3px exists nowhere in
-     Notion.
-
-     THE NOTION RETUNE: `--radius` moved from 12px to 8px and the five steps
-     moved with it, as one edit. The 12px base was tuned when the shell's
-     reference was the refreshed glass vocabulary — pill search fields, glass
-     chips and lifted cards, where a 6px corner read as a component-library
-     default rather than as a shape anyone chose. The Notion language is drawn
-     the other way round: its corners are small and quiet, its state is carried
-     by fill and by ink rather than by shape, and the eye is meant to land on
-     the content rather than on the container. Nothing in this scale is a pill
-     any more — a capsule is reserved for the two shapes that genuinely have no
-     corners (status dots and the capacity bar).
+     A radius outside those four is not legal. The old ladder ran to five
+     working steps (4/5/6/8/12) and the 1px differences between 4/5 and 6/8
+     read as one size drawn twice rather than as two deliberate sizes. The
+     `sm` and `lg` names remain as aliases for `md` and `xl` so a stale call
+     site cannot reintroduce those two near-duplicate corners around the ones
+     the shell actually uses.
 
      Every step is the `--radius` base (0.5rem) minus or plus a constant
-     rather than five independent numbers, so retuning the shell's roundness is
+     rather than four independent numbers, so retuning the shell's roundness is
      one edit on a scheme token and the steps keep their spacing at any base.
 
-     Four of those five steps are the whole scale; a radius outside them is
-     not legal. It used to run to nine steps (4/5/6/8/10/13/16/20/24) of which
-     only the first five were ever used. A 4px and a 5px corner sitting side
-     by side read as one size drawn twice rather than as two deliberate sizes
-     — which is why these rungs are taken whole from Notion's scale rather
-     than interpolated: two adjacent sizes are either both theirs or one of
-     them is a mistake.
-
-     The end that used to follow — 16, 20 and 24px — is still gone, and with
-     it the reason it went. Giving the command palette and the dialogs a
-     roundness nothing else in the shell had is how a floating layer ended up
-     rounder than the window it belongs to.
-
-     `--radius-xl` is a single step, not a ladder, and it is spent on exactly
-     the surfaces that are *already* floating one above another: a dialog over
-     the window, a sheet over a dialog. There is nothing for it to be rounder
-     than, because every surface it touches is a layer the platform has
-     already lifted off the window. What it buys is the thing `--radius-lg`
-     cannot: a 12px corner reads as a panel that has its own boundary, which
-     is what a dialog is, while a smaller step on the same box reads as a menu
-     that grew. It is deliberately NOT reachable from the inline elements —
-     buttons, inputs, rows and chips stay on `sm` and `md`, so tightening this
-     step never touches them. */
+     A capsule is reserved for shapes with no corners to speak of: status dots,
+     count/status capsules, the capacity and progress bars, the action island,
+     the command trigger and the primary button's single call to action.
+     Everything else takes a step above. */
   --radius-xs: calc(var(--radius) - 4px);
-  --radius-sm: calc(var(--radius) - 3px);
+  --radius-sm: var(--radius-md); /* retired alias → 6px */
   --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
+  --radius-lg: var(--radius-xl); /* retired alias → 12px */
   --radius-xl: calc(var(--radius) + 4px);
   --radius-panel: calc(var(--radius) + 8px);
 
@@ -969,7 +941,7 @@ html[data-window-material="vibrancy"] .bg-chrome {
     width: 1rem;
     height: 1rem;
     flex-shrink: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     object-fit: cover;
     user-select: none;
   }
@@ -1215,7 +1187,7 @@ html[data-window-material="vibrancy"] .bg-chrome {
 
      The values kept here are the ones that were actually rendering, with two
      deliberate exceptions, both noted where they are applied: the panel takes
-     the shape scale's plane step (14px, `--radius-panel`) rather than the card
+     the shape scale's plane step (16px, `--radius-panel`) rather than the card
      step one duplicate had quietly lowered it to, and the inactive tab plate
      keeps its bevel instead of losing it with its shadow. */
   .content-panel {
@@ -1413,7 +1385,7 @@ html[data-window-material="vibrancy"] .bg-chrome {
     height: 19px;
     min-width: 19px;
     padding: 0 4px;
-    border-radius: 4px;
+    border-radius: var(--radius-xs);
     background-image: linear-gradient(
       180deg,
       color-mix(in oklab, var(--card) 88%, var(--foreground)),
@@ -1446,7 +1418,7 @@ html[data-window-material="vibrancy"] .bg-chrome {
      reason as `.drop-target`: one rectangle, one treatment. */
   .marquee {
     border: 1px solid color-mix(in oklab, var(--primary) 60%, transparent);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     background: color-mix(in oklab, var(--primary) 10%, transparent);
   }
 
@@ -1476,7 +1448,7 @@ html[data-window-material="vibrancy"] .bg-chrome {
     /* A fill, not a bar with a frame: the 3px track behind it is the only
        container it needs, so the corner is the one shape in the shell that is
        a true capsule. */
-    border-radius: 999px;
+    border-radius: 9999px;
   }
   .capacity-fill--warn {
     background: var(--warning);
@@ -2097,7 +2069,7 @@ html[data-window-material="vibrancy"] .bg-chrome {
 }
 .markdown-preview img {
   max-width: 100%;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
 }
 
 /* ---------------------------------------------------------------------------
@@ -2122,7 +2094,7 @@ html[data-window-material="vibrancy"] .bg-chrome {
    as every other floating layer and follows `.dark` with no second declaration.
 
    The compact-scale and shape tokens read below (`--text-body`, its line
-   height, `--text-caption`, `--radius-lg`) are `@theme inline` entries, and
+   height, `--text-caption`, `--radius-xl`) are `@theme inline` entries, and
    Tailwind emits such a token as a real custom property only when something
    references it — which is why this block, like the shell's other hand-written
    overrides, spells them as `var()` and does not restate their values. Deleting
@@ -2136,7 +2108,7 @@ html[data-window-material="vibrancy"] .bg-chrome {
    shell's vocabulary for "one step further" is the outline button.
    --------------------------------------------------------------------------- */
 html [data-sonner-toaster][data-sonner-theme] {
-  --border-radius: var(--radius-lg);
+  --border-radius: var(--radius-xl);
   --normal-bg: var(--popover);
   --normal-text: var(--popover-foreground);
   --normal-border: var(--border);
@@ -2190,7 +2162,7 @@ html
   height: 1.25rem;
   padding: 0 0.5rem;
   border: 1px solid var(--input);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--foreground);
   font-family: inherit;

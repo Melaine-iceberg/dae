@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
  * The fill is the reference's `--fg 4%` wash, not a surface token and not a
  * shimmer sweep: a skeleton is a smudge of the row that is coming, so its ink
  * is the text's ink at 4%, and its radius is the row's radius (`--radius-md`,
- * the reference's `--radius-sm`). `--muted` and `--secondary` are opaque
+ * the 6px control step). `--muted` and `--secondary` are opaque
  * greys — on the card plane they turned a loading list into a ladder of
  * filled boxes, which is the one thing a skeleton must not be.
  *

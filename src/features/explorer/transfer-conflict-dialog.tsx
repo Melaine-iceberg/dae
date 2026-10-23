@@ -175,7 +175,7 @@ export function TransferConflictDialog({
               they share a frame. Only a Replace that will be repeated over
               every remaining conflict wears the destructive fill — a single
               replace is an ordinary action. */}
-          <div className="flex overflow-hidden rounded-sm border border-border">
+          <div className="flex overflow-hidden rounded-md border border-border">
             <Button
               className="rounded-none border-0 border-r border-border"
               onClick={() => choose("skip")}
@@ -227,7 +227,7 @@ function ConflictSideCard({
   return (
     <div
       className={cn(
-        "flex flex-col gap-1 rounded-lg border p-3",
+        "flex flex-col gap-1 rounded-xl border p-3",
         highlight ? "border-primary/40 bg-primary/5" : "border-border bg-muted/40",
       )}
     >

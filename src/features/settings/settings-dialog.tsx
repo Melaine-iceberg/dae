@@ -106,7 +106,7 @@ export function SettingsDialog() {
 
   return (
     <Dialog onOpenChange={setOpen} open={open}>
-      <DialogContent className="gap-0 overflow-hidden rounded-2xl p-0 sm:max-w-[52rem]">
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[52rem]">
         <DialogTitle className="sr-only">{t("dialog.title")}</DialogTitle>
         {/* The body caps below the dialog's own max-height, so a short window
             shrinks the two panes instead of scrolling the whole dialog out
@@ -120,7 +120,7 @@ export function SettingsDialog() {
               <button
                 aria-current={pane === item}
                 className={cn(
-                  "flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-body font-medium transition-[background-color,color] duration-fast ease-standard outline-none",
+                  "flex h-9 items-center gap-2.5 rounded-md px-2.5 text-body font-medium transition-[background-color,color] duration-fast ease-standard outline-none",
                   pane === item
                     ? "row-active"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -359,7 +359,7 @@ function ShortcutsPane() {
             </h3>
             {actions.map((action) => (
               <div
-                className="flex min-h-8 items-center justify-between gap-4 rounded-sm px-2 text-body transition-colors duration-fast ease-standard hover:bg-accent"
+                className="flex min-h-8 items-center justify-between gap-4 rounded-md px-2 text-body transition-colors duration-fast ease-standard hover:bg-accent"
                 key={action.id}
               >
                 <span>{t(`actions.${action.id}`)}</span>

@@ -259,7 +259,7 @@ function TreeNodeRow({
           <button
             aria-current={isActive ? "page" : undefined}
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-1.5 rounded-sm py-[3px] pr-1.5 text-left text-body transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent",
+              "flex min-w-0 flex-1 items-center gap-1.5 rounded-md py-[3px] pr-1.5 text-left text-body transition-[background-color,color] duration-fast ease-standard hover:bg-sidebar-accent",
               isActive && "bg-sidebar-accent font-medium text-foreground",
               entry.hidden && "opacity-60",
             )}

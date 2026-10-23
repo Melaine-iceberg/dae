@@ -96,10 +96,11 @@ function DialogContent({
           // itself. With the backdrop unpainted this fill is what separates
           // the dialog from the listing under it.
           //
-          // `rounded-xl`, the one step above the menu's `rounded-md`. A dialog
-          // is a lifted layer rather than a window, so there is no frame for it
-          // to be rounder than, and at the menu's corner it read as a menu that
-          // had grown into a dialog. See the radius scale in App.css.
+          // `rounded-panel` (16px), the step above the menu's `rounded-xl`
+          // (12px). A dialog is a lifted layer rather than a window, so there
+          // is no frame for it to be rounder than, and at the menu's corner it
+          // read as a menu that had grown into a dialog. See the radius scale
+          // in App.css.
           "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-panel border border-border bg-card p-5 text-body text-popover-foreground shadow-ambient-lg outline-none sm:max-w-[27.5rem]",
           motion === "float" && POPUP_MOTION,
           className,

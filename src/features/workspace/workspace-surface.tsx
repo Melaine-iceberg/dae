@@ -83,7 +83,7 @@ function SurfaceSkeleton() {
   return (
     <div className="flex flex-1 flex-col gap-3 p-4">
       <Skeleton className="h-5 w-32" />
-      <Skeleton className="h-full w-full rounded-lg" />
+      <Skeleton className="h-full w-full rounded-md" />
     </div>
   );
 }

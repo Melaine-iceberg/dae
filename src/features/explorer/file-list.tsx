@@ -1256,7 +1256,7 @@ export function FileList({
           </div>
         )}
         {externalDropItemCount > 0 && (
-          <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-lg border-2 border-dashed border-primary/50 bg-primary/5 text-body font-medium text-primary">
+          <div className="pointer-events-none absolute inset-2 flex items-center justify-center rounded-xl border-2 border-dashed border-primary/50 bg-primary/5 text-body font-medium text-primary">
             {t(
               externalDropOperation === "link"
                 ? "explorer:drag.dropToLink"
@@ -1403,7 +1403,7 @@ function SortHeaderCell({
           // it), `w-full` the track's edge — which is also the box a
           // right-aligned heading needs before `flex-row-reverse` has anything
           // to push the label against.
-          "flex h-full w-full min-w-0 items-center gap-1 rounded-[4px] px-2 text-left transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
+          "flex h-full w-full min-w-0 items-center gap-1 rounded-xs px-2 text-left transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
           active && "text-foreground",
           align === "right" && "flex-row-reverse",
         )}
@@ -1741,7 +1741,7 @@ export function FileListSkeleton() {
                 style={{ gridTemplateColumns: template }}
               >
                 <div className="flex min-w-0 items-center gap-2.5 px-2">
-                  <Skeleton className="size-[18px] shrink-0 rounded-[5px]" />
+                  <Skeleton className="size-[18px] shrink-0 rounded-md" />
                   <Skeleton
                     className={index % 3 === 0 ? "h-[9px] w-44" : "h-[9px] w-32"}
                   />

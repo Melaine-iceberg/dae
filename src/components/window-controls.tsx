@@ -230,7 +230,7 @@ function CaptionButton({
       title={label}
       type="button"
     >
-      <span className="window-control-plate flex size-window-control shrink-0 items-center justify-center rounded-sm">
+      <span className="window-control-plate flex size-window-control shrink-0 items-center justify-center rounded-md">
         {glyph}
       </span>
     </button>

@@ -203,7 +203,7 @@ export function ThumbnailImage({
       )}
       {isFailed && fallback}
       {!isLoaded && !isFailed && (
-        <div className="h-full w-full animate-pulse rounded-sm bg-muted" />
+        <div className="h-full w-full animate-pulse rounded-[inherit] bg-muted" />
       )}
     </div>
   );

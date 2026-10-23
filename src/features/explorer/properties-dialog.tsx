@@ -706,7 +706,7 @@ function PropertiesTabButton({
     <button
       aria-selected={active}
       className={cn(
-        "relative -mb-px rounded-sm px-3 py-1.5 text-body transition-colors duration-fast ease-standard focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none",
+        "relative -mb-px rounded-md px-3 py-1.5 text-body transition-colors duration-fast ease-standard focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none",
         active
           ? "font-medium text-foreground after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:rounded-full after:bg-primary"
           : "text-muted-foreground hover:text-foreground",
@@ -838,7 +838,7 @@ function FileHashPanel({ active, path }: { active: boolean; path: string }) {
                 </dd>
                 <button
                   aria-label={t("explorer:properties.hashCopy", { algorithm: label })}
-                  className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground"
+                  className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground"
                   onClick={() => copyDigest(label, run.digests?.[key] ?? "")}
                   type="button"
                 >

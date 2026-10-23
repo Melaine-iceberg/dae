@@ -380,7 +380,7 @@ export function TrashView({ active = true }: { active?: boolean }) {
         loadError === null && (
           <div className="flex flex-col gap-1">
             {Array.from({ length: 8 }, (_, index) => (
-              <Skeleton className="h-10 rounded-lg" key={index} />
+              <Skeleton className="h-10 rounded-md" key={index} />
             ))}
           </div>
         )
@@ -643,7 +643,7 @@ function TrashList({
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
+    <div className="overflow-hidden rounded-xl border border-border">
       {/* The column labels describe the whole list, so they stay outside the
           scroller: pinning them costs nothing and scrolling them away costs
           the reader a column. */}
@@ -738,7 +738,7 @@ function TrashProgress({ progress }: { progress: FileOperationProgress }) {
         });
 
   return (
-    <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-popover p-3 shadow-ambient">
+    <div className="flex flex-col gap-1.5 rounded-xl border border-border bg-popover p-3 shadow-ambient">
       <div className="flex items-center justify-between gap-3 text-caption text-muted-foreground">
         <span className="truncate">{label}</span>
         {progress.total !== null && (

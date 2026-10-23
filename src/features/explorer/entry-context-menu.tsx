@@ -386,7 +386,7 @@ function EntryActionRow({
     <ContextMenuGroup className="mb-1 grid grid-cols-4 divide-x divide-border pb-1">
       {actions.map(({ Icon, label, onSelect }) => (
         <ContextMenuItem
-          className="h-auto flex-col justify-center gap-1 rounded-sm px-1 py-1 text-caption"
+          className="h-auto flex-col justify-center gap-1 rounded-md px-1 py-1 text-caption"
           disabled={disabled}
           key={label}
           onClick={onSelect}

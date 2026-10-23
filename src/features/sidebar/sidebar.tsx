@@ -355,7 +355,7 @@ function SidebarContent() {
       <div className="flex shrink-0 items-center justify-end gap-1 px-2.5 pt-2 pb-1">
         <button
           aria-label={t("settings.open")}
-          className="mr-auto flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-foreground"
+          className="mr-auto flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-foreground"
           onClick={() => setSettingsOpen(true)}
           title={t("settings.open")}
           type="button"
@@ -457,7 +457,7 @@ function CollapsibleSection({
           <button
             aria-label={action.label}
             className={cn(
-              "flex size-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast group-hover/section:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
+              "flex size-5 shrink-0 items-center justify-center rounded-xs text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast group-hover/section:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
               // An empty group has nothing below the header to look at, so its
               // action stops hiding until hover — it is the content.
               empty && "opacity-100",
@@ -486,7 +486,7 @@ function CollapsibleSection({
 function SectionSkeleton() {
   return (
     <div aria-hidden="true" className="px-2 py-1">
-      <div className="h-7 animate-pulse rounded-sm bg-muted/70" />
+      <div className="h-7 animate-pulse rounded-md bg-muted/70" />
     </div>
   );
 }
@@ -868,7 +868,7 @@ function SectionLabel({
         <button
           aria-label={addTitle}
           className={cn(
-            "flex size-5 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast group-hover/section:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
+            "flex size-5 items-center justify-center rounded-xs text-muted-foreground opacity-0 transition-[opacity,background-color,color] duration-fast group-hover/section:opacity-100 hover:bg-accent hover:text-foreground focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none",
             // An empty group has nothing below the label to look at, so its add
             // button stops hiding until hover — it is the content.
             empty && "opacity-100",

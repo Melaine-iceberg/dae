@@ -565,7 +565,7 @@ export function ExplorerTabs() {
               measures and scrolls. */}
           <button
             aria-label={t("tabs.newTab")}
-            className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
             data-tauri-drag-region="false"
             onClick={createTab}
             title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
@@ -748,7 +748,7 @@ function TabDropIndicator() {
     <>
       <div
         aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-40 rounded-lg ring-2 ring-primary/50 ring-inset"
+        className="pointer-events-none fixed inset-0 z-40 rounded-xl ring-2 ring-primary/50 ring-inset"
       />
       <div
         aria-hidden="true"
@@ -1050,7 +1050,7 @@ function TabStripItem({
       <button
         aria-label={t("tabs.closeTab", { title })}
         className={cn(
-          "absolute top-1/2 right-1 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-[4px] transition-colors hover:bg-accent",
+          "absolute top-1/2 right-1 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-xs transition-colors hover:bg-accent",
           isActive
             ? "text-muted-foreground hover:text-foreground"
             : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
@@ -1113,7 +1113,7 @@ function TabDragGhostPortal({
   return createPortal(
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-sm border border-border bg-card text-body text-foreground select-none"
+      className="pointer-events-none fixed top-0 left-0 z-50 flex items-center rounded-md border border-border bg-card text-body text-foreground select-none"
       data-tab-drag-preview={tabId}
       ref={elementRef}
       style={{ width: geometry.width, height: geometry.height }}

@@ -152,7 +152,7 @@ export function OverviewView() {
             at 40rem it reads as the head of the column rather than as a search
             bar bolted to a page header. */}
         <button
-          className="group flex h-10 w-full max-w-[40rem] items-center gap-2.5 rounded-lg bg-card/60 px-3 text-left text-body text-muted-foreground shadow-[inset_0_0_0_1px_var(--border)] transition-[background-color,box-shadow,color] duration-normal ease-standard hover:bg-card hover:text-foreground hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
+          className="group flex h-10 w-full max-w-[40rem] items-center gap-2.5 rounded-md bg-card/60 px-3 text-left text-body text-muted-foreground shadow-[inset_0_0_0_1px_var(--border)] transition-[background-color,box-shadow,color] duration-normal ease-standard hover:bg-card hover:text-foreground hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
           onClick={() => setCommandBarOpen(true)}
           type="button"
         >
