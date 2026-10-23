@@ -239,16 +239,20 @@ const LIST_COLUMN_MIN_WIDTH_PX = { modified: 340, size: 480, type: 640 } as cons
 
 /**
  * Where the last column ends, shared by the sticky header grid and every row
- * wrapper: 36.5rem of name plus the 9.5+6.5+5.5 rem the three metadata tracks
- * ask for.
+ * wrapper.
  *
- * The name track is `1fr`, so this cap is what makes the two grids resolve
- * that track identically: a header free to span a wider pane would pour the
- * extra width into its own name column and slide the modified/type/size
- * headings out from under the values they label. Cap one without the other
- * and the columns drift by exactly `pane width - 58rem`.
+ * The name track is `1fr` and the three metadata tracks are capped, so a wide
+ * pane pours every spare pixel into the name column and pins modified/type/
+ * size to the far right edge. That reads as the attributes stretching with the
+ * window even though their own tracks are fixed, and on a maximized monitor
+ * it leaves a mile of empty row between a short name and its date. The whole
+ * track therefore stops at 72rem: the name gets at most 48rem beside the
+ * 24rem of metadata, and everything beyond that is blank listing plane.
+ *
+ * Both the header and the rows read this one value. Cap one without the other
+ * and the headings drift off the values they label.
  */
-const LIST_CONTENT_MAX_WIDTH = "100%";
+const LIST_CONTENT_MAX_WIDTH = "72rem";
 
 interface ListColumns {
   modified: boolean;
@@ -1705,7 +1709,7 @@ export function FileListSkeleton() {
         <div
           aria-hidden="true"
           className="grid h-full items-center px-2 text-nano font-semibold tracking-[0.07em] whitespace-nowrap text-muted-foreground uppercase"
-          style={{ gridTemplateColumns: template }}
+          style={{ gridTemplateColumns: template, maxWidth: LIST_CONTENT_MAX_WIDTH }}
         >
           <span className="px-2">{t("explorer:columns.name")}</span>
           {columns.modified && (
@@ -1726,7 +1730,11 @@ export function FileListSkeleton() {
               aria-hidden="true"
               className="absolute top-0 left-0 w-full px-2"
               key={index}
-              style={{ height: rowHeight, transform: `translateY(${index * rowHeight}px)` }}
+              style={{
+                height: rowHeight,
+                maxWidth: LIST_CONTENT_MAX_WIDTH,
+                transform: `translateY(${index * rowHeight}px)`,
+              }}
             >
               <div
                 className="grid h-full items-center rounded-md"

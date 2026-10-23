@@ -23,6 +23,7 @@ import { cn, formatBytes } from "@/lib/utils";
 
 import type { FileOperationKind, FileOperationProgress } from "./types";
 import { explorerStatusAtom } from "./status-strip-atom";
+import { GitBranchControl } from "./git-branches";
 
 /**
  * How a toolbar toggle shows that it is on: the chip fills, the icon stays the
@@ -208,12 +209,15 @@ function pickVolumeFor(volumes: DiskVolume[] | null, path: string | null): DiskV
  * This shell used to carry one and then dropped it, on the argument that the
  * few facts it held — how many rows, whether a search is running — read better
  * beside the breadcrumbs that name the folder. That argument still holds for
- * the *count*, which is why the count stays in the path field and is not
- * repeated here. What the strip holds instead is the layer the path field
- * cannot: the state of the *system* the folder sits on — whether the listing is
- * live or still reading, and how much room is left on the volume it lives on.
- * Neither is a fact about this folder, which is exactly why it belongs at the
- * edge of the window and not in the spine of the toolbar.
+ * transient search/selection status, which stays in the path field. What the
+ * strip keeps is the layer the path field cannot: the listing's mode and count,
+ * the volume the folder sits on, and the repository branch. Those are facts
+ * about the *system* the folder lives in, not about the listing's contents, so
+ * they belong at the edge of the window rather than in the toolbar's spine.
+ *
+ * The Git branch joined them from the toolbar: it is the widest optional chip
+ * on a row that must stay one line, and moving it here frees that width for the
+ * path and search while keeping the branch one click away.
  *
  * The volume probe is the same hook the rail's disk section uses. Two instances
  * cost one extra `listDisks` a minute and one on focus; the strip is always
@@ -226,12 +230,14 @@ export function ExplorerStatusBar({
   itemCount,
   path,
   selectedCount,
+  git,
 }: {
   isLoading: boolean;
   isSearching: boolean;
   itemCount: number;
   path: string | null;
   selectedCount: number;
+  git: { branch: string; root: string } | null;
 }) {
   const { t } = useTranslation("explorer");
   const volumes = useDiskVolumes(path);
@@ -280,29 +286,38 @@ export function ExplorerStatusBar({
         </span>
       )}
 
-      {volume && freePercent !== null && (
-        <span
-          className="ml-auto flex shrink-0 items-center gap-2"
-          title={`${volume.mountPoint} · ${volume.fileSystem}`}
-        >
-          <span
-            aria-hidden="true"
-            className="block h-[3px] w-16 overflow-hidden rounded-full bg-foreground/10"
-          >
-            {/* The capsule reports the *used* share, as the reference's does:
-                the bar fills as the volume does. Drawing the free share made
-                a nearly empty disk read as a nearly full bar. */}
+      {(git || (volume && freePercent !== null)) && (
+        <span className="ml-auto flex min-w-0 shrink items-center gap-2.5">
+          {/* The branch moves here from the toolbar: it is a property of the
+              folder's repository, not an action on the listing, and the strip
+              is where the window already keeps system context (the volume).
+              Its menu opens upward — see `GitBranchControl`. */}
+          {git && <GitBranchControl branch={git.branch} root={git.root} />}
+          {volume && freePercent !== null && (
             <span
-              className={cn(
-                "block h-full rounded-full",
-                freePercent <= 10 ? "bg-warning" : "bg-foreground/42",
-              )}
-              style={{ width: `${Math.min(Math.max(100 - freePercent, 2), 100)}%` }}
-            />
-          </span>
-          <span className="font-mono tabular-nums">
-            {t("explorer:listing.freeSpace", { size: formatBytes(volume.availableBytes) })}
-          </span>
+              className="flex shrink-0 items-center gap-2"
+              title={`${volume.mountPoint} · ${volume.fileSystem}`}
+            >
+              <span
+                aria-hidden="true"
+                className="block h-[3px] w-16 overflow-hidden rounded-full bg-foreground/10"
+              >
+                {/* The capsule reports the *used* share, as the reference's does:
+                    the bar fills as the volume does. Drawing the free share made
+                    a nearly empty disk read as a nearly full bar. */}
+                <span
+                  className={cn(
+                    "block h-full rounded-full",
+                    freePercent <= 10 ? "bg-warning" : "bg-foreground/42",
+                  )}
+                  style={{ width: `${Math.min(Math.max(100 - freePercent, 2), 100)}%` }}
+                />
+              </span>
+              <span className="font-mono tabular-nums">
+                {t("explorer:listing.freeSpace", { size: formatBytes(volume.availableBytes) })}
+              </span>
+            </span>
+          )}
         </span>
       )}
     </footer>
@@ -330,6 +345,7 @@ export function FocusedPaneStatusBar() {
 
   return (
     <ExplorerStatusBar
+      git={status.git}
       isLoading={status.isLoading}
       isSearching={status.isSearching}
       itemCount={status.itemCount}

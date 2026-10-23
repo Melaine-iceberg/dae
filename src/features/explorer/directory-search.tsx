@@ -128,11 +128,28 @@ export function DirectorySearch({
   const { t } = useTranslation("explorer");
   const inputRef = useRef<HTMLInputElement>(null);
   const [isFocused, setIsFocused] = useState(false);
+  // The field folds to its leading glyph below 780px of toolbar. The glyph is
+  // then the *only* thing a pointer can see, so its click has to open the
+  // search rather than toggle the search scope behind a closed door; the mode
+  // switch comes back once the caret is in. Measured off the input because the
+  // fold is a container query — there is no viewport breakpoint to mirror here;
+  // the input's own width steps from ~94px to 12px as the group folds.
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const isContentMode = mode === "content";
   const activeQuery = isContentMode ? contentSearch.query : search.query;
   const setActiveQuery = isContentMode ? contentSearch.setQuery : search.setQuery;
   const isSearching = isContentMode ? contentSearch.isSearching : search.isSearching;
   const activeError = isContentMode ? contentSearch.error : search.error;
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    const observer = new ResizeObserver(([entry]) => {
+      setIsCollapsed(entry.contentRect.width < 48);
+    });
+    observer.observe(input);
+    return () => observer.disconnect();
+  }, []);
 
   const shortcuts = useAtomValue(appSettingsAtom)?.shortcuts;
   const hotkeysPaused = useAtomValue(hotkeysPausedAtom);
@@ -156,20 +173,38 @@ export function DirectorySearch({
 
   const scopeName = directoryName ?? t("directorySearch.currentDirectory");
   const focusBinding = formatBinding(resolveBinding(shortcuts, "explorer.focusSearch"));
+  // Folded, the glyph opens the field; unfolded, it is the name/content switch.
+  // The accessible name follows the same split so a screen reader hears the
+  // action the click actually performs.
+  const leadingAriaLabel = isCollapsed
+    ? isContentMode
+      ? t("directorySearch.contentAriaLabel", { scope: scopeName })
+      : t("directorySearch.nameAriaLabel", { scope: scopeName })
+    : isContentMode
+      ? t("directorySearch.switchToName")
+      : t("directorySearch.switchToContent");
+  const leadingTitle = isCollapsed
+    ? isContentMode
+      ? t("directorySearch.contentTitle", { scope: scopeName })
+      : t("directorySearch.nameTitle", { scope: scopeName })
+    : isContentMode
+      ? t("directorySearch.currentContentTitle")
+      : t("directorySearch.currentNameTitle");
 
   return (
     // `shrink` rather than `shrink-0`: the toolbar is one non-wrapping row, and
     // a fixed 224px field was the first thing to push the controls past the
-    // pane's edge. `min-w-24` keeps the field usable down to the narrowest
-    // window instead of letting it collapse to an icon-less sliver. It is the
-    // same 36px capsule as the path field beside it — two fields in one row
-    // that disagree about their height read as two different toolbars.
+    // pane's edge. `min-w-0` lets it fold to the 32px glyph instead of forcing
+    // the rest of the row out of the pane. It is the same 32px capsule as the
+    // path field beside it — two fields in one row that disagree about their
+    // height read as two different toolbars.
     <InputGroup
       // The field gives width back to the path bar while it is idle and takes
       // it when the user is actually typing: 176px at rest, 256px once the
-      // caret is in. Below 1360px it folds to its magnifier — a search box
-      // nobody is using must never be the reason the path is unreadable — and
-      // unfolds again on focus, which is exactly when it is being used.
+      // caret is in. Below 780px of toolbar it folds to its magnifier — a
+      // search box nobody is using must never be the reason the path is
+      // unreadable — and unfolds again on focus, which is exactly when it is
+      // being used.
       className="h-8 w-44 min-w-0 shrink rounded-md shadow-[inset_0_0_0_1px_var(--border)] transition-[width] duration-normal ease-standard hover:w-56 focus-within:w-64 @max-[780px]:w-8 @max-[780px]:hover:w-8 @max-[780px]:focus-within:w-60"
     >
       <InputGroupInput
@@ -209,16 +244,18 @@ export function DirectorySearch({
       />
       <InputGroupAddon align="inline-start">
         <InputGroupButton
-          aria-label={
-            isContentMode ? t("directorySearch.switchToName") : t("directorySearch.switchToContent")
-          }
-          onClick={() => onModeChange(isContentMode ? "name" : "content")}
+          aria-label={leadingAriaLabel}
+          disabled={disabled}
+          onClick={() => {
+            if (isCollapsed) {
+              inputRef.current?.focus();
+              inputRef.current?.select();
+              return;
+            }
+            onModeChange(isContentMode ? "name" : "content");
+          }}
           size="icon-xs"
-          title={
-            isContentMode
-              ? t("directorySearch.currentContentTitle")
-              : t("directorySearch.currentNameTitle")
-          }
+          title={leadingTitle}
         >
           {/* The glyph is the field's primary affordance, so it carries full
               ink: the addon's muted step is meant for a trailing keycap hint,

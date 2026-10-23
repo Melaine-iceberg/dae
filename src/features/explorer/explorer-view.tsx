@@ -817,11 +817,14 @@ export function ExplorerView({
       itemCount: listingCount,
       path: directory?.path ?? null,
       selectedCount: selectedPaths.length,
+      git: gitStatus ? { branch: gitStatus.branch, root: gitStatus.root } : null,
     });
   }, [
     contentSearch.isSearching,
     directory?.path,
     fileOperationProgress,
+    gitStatus?.branch,
+    gitStatus?.root,
     isActivePane,
     isLoading,
     listingCount,
@@ -885,7 +888,6 @@ export function ExplorerView({
           canGoUp={canGoUp}
           contentSearch={contentSearch}
           directory={directory}
-          gitStatus={gitStatus}
           isActivePane={isActivePane}
           isCurrentFavorited={isCurrentFavorited}
           isLoading={isLoading}

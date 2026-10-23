@@ -1,6 +1,6 @@
 /**
  * The explorer's toolbar: navigation, favorites, path bar, search, view
- * menus, Git branch, split toggle, preview toggle and the terminal toggle.
+ * menus, split toggle, preview toggle and the terminal toggle.
  *
  * ONE ROW, PATH FIRST. The toolbar used to be two stacked rows — a path strip
  * over a row of controls — because the breadcrumbs were the first thing to be
@@ -15,8 +15,13 @@
  *   place    the path field — the row's spine, `flex-1`
  *   find     the name/content search capsule
  *   act      reload, favorite
- *   view     view menu, filter menu, the folder's git branch
+ *   view     view menu, filter menu
  *   panels   split, preview, terminal — pinned to the trailing edge
+ *
+ * The repository branch used to sit after the path field. It is context about
+ * the folder, not an action on the listing, and it is the widest optional chip
+ * in a row that must stay one line — so it now lives in the window's status
+ * strip with the other system facts (see `ExplorerStatusBar`).
  *
  * The path field is a filled capsule rather than bare crumbs: it is the one
  * control in the row that holds a *value*, and a field that looks like a field
@@ -52,8 +57,6 @@ import {
   type ExplorerSearchMode,
 } from "./directory-search";
 import { ExplorerPathBar } from "./explorer-path-bar";
-import { GitBranchControl } from "./git-branches";
-import type { ExplorerGitStatus } from "./git-status";
 import type { Breadcrumb, DirectoryView } from "./types";
 import { ViewMenu } from "./view-menu";
 import { FilterMenu } from "./filter-menu";
@@ -64,7 +67,6 @@ import { FilterMenu } from "./filter-menu";
  *
  *   favorite  the folder's own context menu
  *   split     a per-tab layout choice, not a per-folder one
- *   git       the branch is context, not a control
  */
 /* Container queries, not viewport ones: in a split view each pane owns a
    toolbar half the window's width, and a `max-[1080px]` breakpoint still reads
@@ -73,7 +75,6 @@ import { FilterMenu } from "./filter-menu";
    the toolbar's own width, which is the width the controls actually live in. */
 const TOOLBAR_OVERFLOW_CLASS = "@max-[620px]:hidden";
 const TOOLBAR_OVERFLOW_FAVORITE_CLASS = "@max-[760px]:hidden";
-const TOOLBAR_OVERFLOW_GIT_CLASS = "@max-[820px]:hidden";
 
 /** A cluster of controls that reads as one object: a recessed plate holding
  *  evenly weighted keys. Groups are told apart by that plate and by
@@ -121,7 +122,6 @@ export interface ExplorerToolbarProps {
   contentSearch: ContentSearchController;
   searchMode: ExplorerSearchMode;
   onSearchModeChange: (mode: ExplorerSearchMode) => void;
-  gitStatus: ExplorerGitStatus | null;
   /** Whether this pane is the one that owns keyboard shortcuts — passed down
    *  to the search field so its Mod+F listener answers for this pane only. */
   isActivePane: boolean;
@@ -155,7 +155,6 @@ export function ExplorerToolbar({
   contentSearch,
   searchMode,
   onSearchModeChange,
-  gitStatus,
   isActivePane,
   pathEditSignal,
   splitEnabled,
@@ -234,7 +233,7 @@ export function ExplorerToolbar({
           crumbs name. */}
       <div
         className={cn(
-          "flex h-8 min-w-40 max-w-[44rem] flex-1 items-center rounded-md bg-background/60 px-1",
+          "flex h-8 min-w-40 flex-1 items-center rounded-md bg-background/60 px-1",
           // The field is a slot, not a card: one inset hairline at rest, a
           // brighter one under the pointer, and the focus ring only while it is
           // actually being typed into. `background-color` never changes — the
@@ -256,20 +255,10 @@ export function ExplorerToolbar({
         )}
       </div>
 
-      {/* The repository is context for the place, so it sits against the path
-          field rather than in the view cluster: the reference reads
-          `place → branch` as one sentence, then pushes everything that acts on
-          the listing to the trailing edge. */}
-      {gitStatus && (
-        <div className={cn("shrink-0", TOOLBAR_OVERFLOW_GIT_CLASS)}>
-          <GitBranchControl branch={gitStatus.branch} root={gitStatus.root} />
-        </div>
-      )}
-
       {/* Everything from here on acts on the listing, so it is one group pinned
-          to the trailing edge. `ml-auto` spends the slack a capped path field
-          leaves behind: without it the controls drift right with the path and
-          the row loses its two-sided balance. */}
+          to the trailing edge. The path field takes all remaining width, so the
+          group follows it directly; `ml-auto` also holds the edge while the
+          field is a skeleton or a narrow pane clamps it at `min-w-40`. */}
       <div className="ml-auto flex min-w-0 items-center gap-2">
         {/* Find: the search capsule, same height and corner as the path field. */}
         <DirectorySearch

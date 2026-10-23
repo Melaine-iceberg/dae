@@ -61,12 +61,14 @@ function useGitBranches(root: string | null) {
 }
 
 /**
- * 工具栏的 Git 区域：分支徽标（点击弹出分支菜单）+ 同步按钮。
+ * 状态栏的 Git 区域：分支徽标（点击弹出分支菜单）+ 同步按钮。
  * 菜单支持查看/切换本地与远程分支、新建分支、获取、拉取、推送与同步；
- * 操作失败时在控件下方弹出错误提示。
+ * 操作失败时通过通知报告。
  *
- * 它原本挂在 24px 高的状态栏上，改为挂在工具栏中路径栏右侧：分支是
- * 关于“当前这个文件夹”的上下文，而路径栏正是描述这一点的地方。
+ * 它是关于“当前文件夹所在仓库”的系统上下文，而不是对文件列表的操作，
+ * 所以挂在窗口底部的状态栏上，与磁盘余量并列。它曾短暂地挂在工具栏里
+ * 路径栏右侧；那一行要同时容纳路径、搜索和视图控件，分支徽标作为最宽的
+ * 可选块会先被挤掉，最终移回状态栏，把宽度让给路径与搜索。
  */
 export function GitBranchControl({ root, branch }: { root: string | null; branch: string | null }) {
   const { t } = useTranslation("explorer");
@@ -81,7 +83,7 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
    *
    * A failure is reported as a notification by default. These operations are
    * started from a dropdown that has already closed, and the branch control
-   * itself is a 20px button in the toolbar — neither has anywhere to put a
+   * itself is a 20px chip in the status strip — neither has anywhere to put a
    * sentence. `silent` is for the one caller that renders its own error: the
    * create-branch dialog writes the failure under its input.
    */
@@ -144,7 +146,7 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
           title={t("git.menuTitle", { branch })}
         >
           <GitBranchIcon className="size-3.5 shrink-0" />
-          <span className="max-w-32 truncate font-mono text-micro leading-4">{branch}</span>
+          <span className="max-w-32 truncate font-mono text-nano leading-4">{branch}</span>
           {(ahead > 0 || behind > 0) && (
             <span className="flex shrink-0 items-center gap-0.5 tabular-nums">
               {ahead > 0 && (
@@ -162,7 +164,11 @@ export function GitBranchControl({ root, branch }: { root: string | null; branch
             </span>
           )}
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-64">
+        {/* Upward, not down: the control sits in the 26px strip at the bottom
+            edge of the window, where a menu opening below it would be off
+            screen. Aligning to the end keeps the 16rem panel inside the
+            window even though the trigger is near the right corner. */}
+        <DropdownMenuContent align="end" className="w-64" side="top" sideOffset={6}>
           <DropdownMenuLabel className="flex min-w-0 items-center gap-1.5">
             <GitBranchIcon className="size-3.5 shrink-0" />
             <span className="truncate font-mono">{branch}</span>

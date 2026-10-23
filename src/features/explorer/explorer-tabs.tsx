@@ -586,7 +586,10 @@ export function ExplorerTabs() {
             field remains the discoverable version of the same gesture. */}
         <button
           aria-label={t("titleBar.commandBarAria")}
-          className="flex h-7 shrink-0 items-center gap-2 rounded-full border border-border px-2.5 text-caption text-muted-foreground transition-[border-color,color] duration-fast ease-standard hover:border-foreground/16 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none max-[860px]:hidden"
+          // `self-center`: the bar stretches its children, so without it the
+          // capsule hangs off the top edge of the 44px strip while the tabs
+          // and the window controls sit on the bar's centre line.
+          className="mr-1 flex h-7 shrink-0 self-center items-center gap-2 rounded-full border border-border px-2.5 text-caption text-muted-foreground transition-[border-color,color] duration-fast ease-standard hover:border-foreground/16 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none max-[860px]:hidden"
           data-tauri-drag-region="false"
           onClick={() => {
             setCommandBarMode("commands");

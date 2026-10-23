@@ -25,6 +25,10 @@ export interface ExplorerStatusSnapshot {
   itemCount: number;
   path: string | null;
   selectedCount: number;
+  /** The focused pane's repository, if its folder is inside one. Kept here
+   *  rather than passed to the strip as a prop because the strip is mounted by
+   *  the window, not by the pane — the same seam as every other fact above. */
+  git: { branch: string; root: string } | null;
 }
 
 export const explorerStatusAtom = atom<ExplorerStatusSnapshot | null>(null);
