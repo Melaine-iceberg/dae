@@ -1205,20 +1205,6 @@ fn finite_i32(value: f64) -> i32 {
     }
 }
 
-/// Opens the serialized tab snapshot in a new, independent application window
-/// and returns that window's label.
-///
-/// `source` lends the detached window its size and scale. `grab_x`/`grab_y` are
-/// the original pointer coordinates inside the webview in CSS pixels, keeping
-/// the same point of the window pinned beneath the release position. The
-/// optional cursor coordinates preserve the exact native drop point.
-///
-/// Deliberately not `async`: building a webview window ends with tauri's
-/// `webview-created` broadcast, which holds the `webviews` lock across an
-/// `eval` round trip — see [`emit_to_window`] for what that costs on a worker
-/// thread. A non-`async` command runs inline on the thread that received the
-/// invoke, which on every platform this app builds windows on is the one that
-/// owns the event loop, so the eval completes where it is issued.
 /// The two things every window that can hold a tab owes, whether it was built
 /// for the tear-off or adopted from the pool.
 ///
@@ -1235,12 +1221,29 @@ fn finish_tab_window(window: &tauri::WebviewWindow) {
     }
 }
 
+/// Opens the serialized tab snapshot in a new, independent application window
+/// and returns that window's label.
+///
+/// `source` lends the detached window its size and scale. `grab_x`/`grab_y` are
+/// the original pointer coordinates inside the webview in CSS pixels, keeping
+/// the same point of the window pinned beneath the release position. The
+/// optional cursor coordinates preserve the exact native drop point.
+///
+/// `async`, with the build posted back to the event loop, because a synchronous
+/// command runs inside the platform's IPC handler — on Windows, WebView2's
+/// `WebMessageReceived` callback. Creating a WebView2 controller from there
+/// re-enters the apartment delivering the callback: the new controller stops at
+/// `about:blank` and its completion never arrives, so the command never
+/// returns. Letting the handler unwind first avoids that. The build still runs
+/// on the main thread, which it must: it ends with tauri's `webview-created`
+/// broadcast, which holds the `webviews` lock across an `eval` round trip (see
+/// [`emit_to_window`]), and doing that on a worker thread deadlocks against it
+/// on Linux.
 #[tauri::command]
 #[specta::specta]
 #[allow(clippy::too_many_arguments)]
-pub fn tear_off_tab(
+pub async fn tear_off_tab(
     app: tauri::AppHandle,
-    state: tauri::State<'_, TabWindowState>,
     source: String,
     payload: String,
     grab_x: Option<f64>,
@@ -1248,6 +1251,30 @@ pub fn tear_off_tab(
     cursor_x: Option<f64>,
     cursor_y: Option<f64>,
 ) -> Result<String, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let main_app = app.clone();
+    app.run_on_main_thread(move || {
+        let _ = sender.send(tear_off_tab_on_main(
+            main_app, source, payload, grab_x, grab_y, cursor_x, cursor_y,
+        ));
+    })
+    .map_err(|error| error.to_string())?;
+    receiver
+        .await
+        .map_err(|_| "The tab tear-off ended without a result".to_string())?
+}
+
+#[allow(clippy::too_many_arguments)]
+fn tear_off_tab_on_main(
+    app: tauri::AppHandle,
+    source: String,
+    payload: String,
+    grab_x: Option<f64>,
+    grab_y: Option<f64>,
+    cursor_x: Option<f64>,
+    cursor_y: Option<f64>,
+) -> Result<String, String> {
+    let state = app.state::<TabWindowState>();
     let source_window = app
         .get_webview_window(&source)
         .ok_or_else(|| format!("Source window '{source}' was not found"))?;
@@ -1428,13 +1455,26 @@ pub fn prime_pool_at_startup(app: &tauri::AppHandle) {
 /// stay empty until a tear-off happened to refill it, so the first tear-off
 /// after the change would still be cold. Switched off, the hidden window keeps
 /// its memory for nothing.
+///
+/// `async` and deferred for the same reason as [`tear_off_tab`]: switching the
+/// pool on builds a webview window, which must not happen inside the IPC
+/// handler that received this invoke.
 #[tauri::command]
 #[specta::specta]
-pub fn sync_tab_pool(app: tauri::AppHandle, state: tauri::State<'_, TabWindowState>) {
-    if TabWindowState::pool_enabled() {
-        state.prime_pool(&app);
-    } else {
-        state.dispose_pool(&app);
+pub async fn sync_tab_pool(app: tauri::AppHandle) {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let main_app = app.clone();
+    let dispatched = app.run_on_main_thread(move || {
+        let state = main_app.state::<TabWindowState>();
+        if TabWindowState::pool_enabled() {
+            state.prime_pool(&main_app);
+        } else {
+            state.dispose_pool(&main_app);
+        }
+        let _ = sender.send(());
+    });
+    if dispatched.is_ok() {
+        let _ = receiver.await;
     }
 }
 
