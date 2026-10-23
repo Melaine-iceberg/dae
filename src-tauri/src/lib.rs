@@ -256,6 +256,8 @@ pub fn run() {
             #[cfg(not(debug_assertions))]
             updater::spawn_startup_check(app.handle());
 
+            spawn_training_quit();
+
             Ok(())
         })
         .manage(file_system::DirectoryWatcher::default())
@@ -374,6 +376,47 @@ fn install_panic_logger() {
         // release, where nothing is attached to stderr in the first place.
         previous(info);
     }));
+}
+
+/// Quits on a timer, for the profiled builds only.
+///
+/// `docs/pgo-bolt.md` trains LLVM PGO and BOLT by running the app on a corpus.
+/// Their counters are written by `atexit` / `.fini_array` hooks, so the process
+/// has to leave through the C runtime's exit path for a profile to exist — and
+/// an unattended run has nobody to close it.
+///
+/// `DAE_PERF_TRAIN_QUIT_MS`, unset in every normal launch, does exactly that
+/// after N milliseconds. Three other endings were measured and all of them lose
+/// the profile on Windows:
+///
+/// - `std::process::exit` (what `AppHandle::exit` and the end of Tauri's event
+///   loop both reach) calls `ExitProcess`, which skips the CRT's atexit hooks;
+/// - closing the main window does not end the process at all, because the warm
+///   tab pool keeps hidden windows alive;
+/// - killing it from outside skips the hooks by definition.
+///
+/// Hence the direct `exit` below, which *is* the CRT path on both Windows and
+/// Unix. It is also what makes this a one-line hook instead of a flag threaded
+/// through the exit sequence.
+fn spawn_training_quit() {
+    let Some(milliseconds) = std::env::var("DAE_PERF_TRAIN_QUIT_MS")
+        .ok()
+        .and_then(|value| value.trim().parse::<u64>().ok())
+    else {
+        return;
+    };
+
+    unsafe extern "C" {
+        fn exit(code: i32) -> !;
+    }
+
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(milliseconds));
+        // SAFETY: `exit` terminates the process and runs the registered exit
+        // handlers, which is the entire purpose here; nothing alive is observed
+        // afterwards.
+        unsafe { exit(0) }
+    });
 }
 
 /// Creates the shared command registry for Tauri and TypeScript binding export.

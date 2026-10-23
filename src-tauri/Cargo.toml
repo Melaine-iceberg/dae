@@ -304,6 +304,14 @@ keyring-core = "1"
 linker_messages = "allow"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+#
+# `strip = true` is why the PGO/BOLT build cannot reuse this profile as-is: BOLT
+# needs the symbol table and the relocations the linker emitted with
+# `-Wl,--emit-relocs`. Those builds override the field from the environment
+# (`CARGO_PROFILE_RELEASE_STRIP=false`, set by scripts/opt/pgo.mjs) instead of
+# adding a second profile here, because `tauri build` always builds the `release`
+# profile and has no `--profile` flag. The post-link step strips the binary again
+# once BOLT is done with it. See docs/pgo-bolt.md.
 [profile.release]
 codegen-units = 1
 lto = "fat"

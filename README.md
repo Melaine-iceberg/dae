@@ -69,6 +69,8 @@ bun run bindings:export   # regenerate src/bindings.ts alone
 | `bun run lint` / `lint:type-aware` | Oxlint over `src` and `vite.config.ts`; add `:fix` to apply |
 | `bun run test:rust:setup` / `test:rust` | cargo-nextest, see [Tests](#tests) |
 | `bun run icons:icon` | Re-render the platform icon set, see [App icon](#app-icon) |
+| `bun run perf:pgo:instrument` / `perf:pgo:merge` / `perf:pgo:build` | Staged LLVM IR PGO build, see [PGO and BOLT](docs/pgo-bolt.md) |
+| `bun run perf:bolt` | Linux: rewrite the linked release binary with LLVM BOLT |
 
 Releases are cut by pushing a `v*` tag, which runs
 `.github/workflows/release.yml` for Windows, Linux and Apple Silicon. The tag
@@ -106,6 +108,11 @@ already measured and done, and the remaining opportunities with the harness and
 the numbers behind each one. Measure before changing anything — `docs/decisions/`
 holds the experiments that were run and declined, and the conditions that would
 reopen them.
+
+Two build-time optimisations are wired up on top of the release profile — LLVM IR
+PGO and, on Linux, a post-link pass with LLVM BOLT. How to run them, why BOLT is
+ELF-only, and what CI falls back to when a profile or a tool is missing is
+[`docs/pgo-bolt.md`](docs/pgo-bolt.md).
 
 ## System accent
 

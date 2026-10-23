@@ -65,3 +65,7 @@ NOTES.md
 
 # MAGI's local task-state file: working notes, not source.
 /PLAN.md
+
+# PGO / BOLT profiles and the training corpus: outputs of `bun run perf:*`,
+# never source. See docs/pgo-bolt.md.
+/.perf/
