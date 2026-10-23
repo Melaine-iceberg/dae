@@ -8,6 +8,7 @@ import {
   useState,
   useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -473,6 +474,21 @@ export function ExplorerTabs() {
     stripRef.current?.scrollBy({ left: direction * TAB_STRIP_SCROLL_AMOUNT, behavior: "smooth" });
   };
 
+  /** Gives the strip's empty space back to the window's title bar.
+   *
+   *  The strip opts out of tauri's drag region so a captured tab drag is never
+   *  read as a window move (see its `data-tauri-drag-region="false"`), which
+   *  also takes the space between chips out of the drag surface. A press on
+   *  the strip itself — not on a chip or the plus button — moves the window,
+   *  and a second click maximizes it, matching the platform's own region. */
+  const handleStripMouseDown = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || event.target !== event.currentTarget) return;
+    const appWindow = getAppWindow();
+    if (!appWindow) return;
+    if (event.detail === 2) void appWindow.toggleMaximize();
+    else void appWindow.startDragging();
+  };
+
   return (
     <div className="flex h-full flex-col">
       <TabDropIndicator />
@@ -523,6 +539,7 @@ export function ExplorerTabs() {
           // explicitly or the captured events read as a request to move the
           // window.
           data-tauri-drag-region="false"
+          onMouseDown={handleStripMouseDown}
           onScroll={syncScrollButtons}
           role="tablist"
         >
