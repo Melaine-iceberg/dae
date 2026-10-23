@@ -1,16 +1,80 @@
-// 渲染鹅图标: SVG -> 1024 母版 PNG + 256 预览, 并输出 ASCII 字符画便于验收
+// 渲染鹅图标: JPG 原画 -> 1024 母版 PNG + 256 预览 + MSIX 磁贴资源,
+// 并输出 ASCII 字符画便于验收
 import sharp from "sharp";
 import { readFileSync } from "node:fs";
 import zlib from "node:zlib";
 
-const SRC = "src-tauri/icons/source/goose-icon.svg";
+const SRC = "src-tauri/icons/source/goose-source.jpg";
 const MASTER = "src-tauri/icons/source/goose-master.png";
 const PREVIEW = "src-tauri/icons/source/goose-preview.png";
+const APP_ICON = "src/assets/app-icon.png";
+const MSIX = "Assets";
 
-const svg = readFileSync(SRC);
-await sharp(svg, { density: 384 }).resize(1024, 1024).png().toFile(MASTER);
-await sharp(svg, { density: 384 }).resize(256, 256).png().toFile(PREVIEW);
-console.log("rendered", MASTER, "and", PREVIEW);
+// 18% 圆角，与旧图标在 1024 画布上的 186px 半径一致。透明四角让系统
+// 图标底和窗口背景透出来，而不是留下一个黑方块。
+const ICON_RADIUS = 186;
+const ROUNDED_MASK = Buffer.from(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024"><rect width="1024" height="1024" rx="${ICON_RADIUS}" fill="#fff"/></svg>`,
+);
+
+await sharp(SRC)
+  .resize(1024, 1024, { kernel: "lanczos3" })
+  .ensureAlpha()
+  .composite([{ input: ROUNDED_MASK, blend: "dest-in" }])
+  .png()
+  .toFile(MASTER);
+await sharp(MASTER).resize(256, 256, { kernel: "lanczos3" }).png().toFile(PREVIEW);
+await sharp(MASTER).resize(256, 256, { kernel: "lanczos3" }).png().toFile(APP_ICON);
+console.log("rendered", MASTER, PREVIEW, "and", APP_ICON);
+
+// ---- MSIX 资源 ----
+// Windows 的磁贴清单引用 Assets/ 下的固定文件名，尺寸由系统按 DPI 缩放选取。
+const scales = [1, 1.25, 1.5, 2, 4];
+const scaleSuffix = (scale) =>
+  scale === 1 ? "" : `.scale-${String(Math.round(scale * 100))}`;
+
+const squares = [
+  ["AppList", 44],
+  ["MedTile", 150],
+  ["StoreLogo", 50],
+];
+for (const [name, size] of squares) {
+  for (const scale of scales) {
+    await sharp(MASTER)
+      .resize(Math.round(size * scale), Math.round(size * scale), { kernel: "lanczos3" })
+      .png()
+      .toFile(`${MSIX}/${name}${scaleSuffix(scale)}.png`);
+  }
+}
+
+// 列表图标另外需要 targetsize 变体，Windows 在任务栏和开始菜单按像素尺寸取用。
+for (const size of [16, 20, 24, 30, 32, 36, 40, 48, 60, 64, 72, 80, 96, 256]) {
+  for (const suffix of ["", "_altform-unplated"]) {
+    await sharp(MASTER)
+      .resize(size, size, { kernel: "lanczos3" })
+      .png()
+      .toFile(`${MSIX}/AppList.targetsize-${size}${suffix}.png`);
+  }
+}
+
+// 宽磁贴是 310×150 的透明画布，图标居中、保持 150px 见方（与旧资源一致）。
+for (const scale of scales) {
+  const iconSize = Math.round(150 * scale);
+  const width = Math.round(310 * scale);
+  const height = Math.round(150 * scale);
+  await sharp(MASTER)
+    .resize(iconSize, iconSize, { kernel: "lanczos3" })
+    .extend({
+      top: Math.floor((height - iconSize) / 2),
+      bottom: Math.ceil((height - iconSize) / 2),
+      left: Math.floor((width - iconSize) / 2),
+      right: Math.ceil((width - iconSize) / 2),
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toFile(`${MSIX}/WideTile${scaleSuffix(scale)}.png`);
+}
+console.log("rendered MSIX tiles in", MSIX);
 
 // ---- ASCII 校验 ----
 function decode(f) {

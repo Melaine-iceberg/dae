@@ -33,6 +33,7 @@ import {
 
 import { Kbd } from "@/components/ui/kbd";
 import { WindowControls } from "@/components/window-controls";
+import appIcon from "@/assets/app-icon.png";
 import { commands, events } from "@/bindings";
 import { FocusedPaneStatusBar } from "@/features/explorer/explorer-chrome";
 import { InspectorPanel } from "@/features/explorer/inspector-panel";
@@ -511,10 +512,15 @@ export function ExplorerTabs() {
             decoration that joined the row would have to be excluded from both.
             `deep` on the header already makes it part of the window's drag
             surface, which is the only interaction a mark should have. */}
-        <span aria-hidden="true" className="brand-stripe ml-3.5 self-center" />
+        <img
+          alt=""
+          className="brand-mark ml-3.5 self-center"
+          draggable={false}
+          src={appIcon}
+        />
         {/* The wordmark is the other half of the reference's `.mark`: the
-            stripes carry the motif and the name says whose window it is. The
-            strip's first tab used to sit alone against the stripes with 4px
+            icon carries the motif and the name says whose window it is. The
+            strip's first tab used to sit alone against the mark with 4px
             between them, which read as a stray chip rather than as the tab
             row's start. */}
         <span aria-hidden="true" className="brand-wordmark mr-2.5 ml-2.5 self-center">

@@ -203,23 +203,25 @@ Auto-fixable issues can be applied with `bun run lint:fix` or
 
 ## App icon
 
-The app icon (a white goose on a pond-green squircle, orange beak) is designed
-as a hand-written SVG:
+The app icon (a white goose with an orange beak and a red line on a rounded
+charcoal plate) starts from a 2048×2048 raster artwork:
 
-- `src-tauri/icons/source/goose-icon.svg` — the 1024×1024 design source
+- `src-tauri/icons/source/goose-source.jpg` — the original artwork
+- `src-tauri/icons/source/goose-master.png` — 1024×1024 master rendered from it
 - `src-tauri/icons/source/goose-preview.png` — 256px preview for quick review
 
-To regenerate the whole platform icon set after editing the SVG:
+To regenerate every derived icon after replacing the artwork:
 
 ```bash
 bun run icons:icon
 ```
 
-This renders `goose-master.png` from the SVG and runs `tauri icon`, which
-rewrites `src-tauri/icons/**` (PNG sizes, `icon.icns` for macOS, `icon.ico`
-for Windows, and the `android/`/`ios/` sets). The default is the classic
-`.icns` look; a macOS 26 Tahoe Liquid Glass `.icon` (Icon Composer) can be
-added later — Tauri's bundler supports it since 2.9.
+This renders the master, preview and the 256px in-app mark
+(`src/assets/app-icon.png`), runs `tauri icon` (which rewrites
+`src-tauri/icons/**`: PNG sizes, `icon.icns` for macOS, `icon.ico` for Windows,
+and the `android/`/`ios/` sets), and refreshes the MSIX tiles in `Assets/`.
+The default is the classic `.icns` look; a macOS 26 Tahoe Liquid Glass `.icon`
+(Icon Composer) can be added later — Tauri's bundler supports it since 2.9.
 
 ## Recommended IDE Setup
 

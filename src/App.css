@@ -909,13 +909,6 @@ html[data-window-focused="false"] {
      platform's own backdrop shows through the frame only. */
   --chrome: var(--sidebar);
 
-  /* THE BRAND MARK. Raycast Red, and the one place in the shell where it
-     appears outside a destructive action. Deliberately NOT wired to the accent
-     seam: the interactive hue is the OS's to retint (see THE ACCENT SEAM), and
-     a mark that changed colour with a desktop setting would stop being a mark.
-     It is the only decorative value in this file. */
-  --brand-stripe: #ff6363;
-
   /* How much of the canvas colour is kept. At 100% the canvas is the opaque
      plate every platform shares; under a material it drops, and the complement
      is exactly the share of the desktop the compositor shows through. */
@@ -967,22 +960,18 @@ html[data-window-material="vibrancy"] .bg-chrome {
 }
 
 @layer components {
-  /* The brand mark — three diagonal stripes in the drag region, left of the
-     first tab. Raycast's hero motif, spent once: at 14×16px it reads as the
-     window's own signature rather than as decoration, and it is drawn at the
-     same 2px stroke as the hairline system so the two feel cut from one sheet.
-     A `repeating-linear-gradient` rather than three elements, because there is
-     nothing to interact with and nothing to select. */
-  .brand-stripe {
-    width: 0.875rem;
+  /* The brand mark — the app icon in the drag region, left of the first tab.
+     It is the same artwork as the window and taskbar icon, drawn at 16px so it
+     reads as the window's own signature rather than as decoration. The radius
+     keeps the bitmap's rounded plate crisp at this size; nothing is masked
+     away beyond those corners, so the mark survives on either chrome tone. */
+  .brand-mark {
+    width: 1rem;
     height: 1rem;
     flex-shrink: 0;
-    border-radius: 1px;
-    background-image: repeating-linear-gradient(
-      45deg,
-      var(--brand-stripe) 0 2px,
-      transparent 2px 5px
-    );
+    border-radius: 4px;
+    object-fit: cover;
+    user-select: none;
   }
 
   /* The name beside the mark. The reference sets it at 13px/600 with +0.04em
