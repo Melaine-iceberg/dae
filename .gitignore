@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# TypeScript incremental build cache
+*.tsbuildinfo
+
 # winapp CLI (MSIX): the self-signed signing key and packed output are build
 # artifacts, never source.
 devcert.pfx
