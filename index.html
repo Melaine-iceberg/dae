@@ -1,6 +1,16 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <script>
+      /* 冷启动归因（docs/cold-start-js.md §1）。这一段必须排在所有脚本之前：
+         它记录的是「HTML 到了」，晚于任何解析或样式工作就不再是第一个点。
+         开关与零点是 Rust 侧用 initialization_script 注入的
+         （`tab_perf::startup_script`）；关闭时这里只做一次属性判断，不建任何
+         全局。标记用 epoch 毫秒，和 Rust 的 mark 同一条时间线。 */
+      if (window.__DAE_STARTUP_PERF === 1) {
+        window.__DAE_STARTUP_MARKS = [["html-start", performance.timeOrigin + performance.now()]];
+      }
+    </script>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,6 +23,23 @@
          src/App.css 实际读取并注入，而不是在这里手抄十六进制值——手抄版本
          曾经落后调色板两个版本，导致每次冷启动都会闪一下过期的画布色。 -->
     <style>
+      /* 静态首屏的取色。和下面画布/转圈那些值一样由 vite.config.ts 的
+         themeBootStyles 从 src/App.css 读出来，不在这里手抄：骨架要是比调色板
+         落后一版，冷启动就会先闪一下旧灰，再被 React 换成新灰。 */
+      html {
+        --bs-chrome: __DAE_CHROME__;
+        --bs-canvas: __DAE_CANVAS__;
+        --bs-fill: __DAE_FILL__;
+        --bs-ink: __DAE_MUTED_FG__;
+        --bs-line: __DAE_BORDER__;
+      }
+      html.dark {
+        --bs-chrome: __DAE_CHROME_DARK__;
+        --bs-canvas: __DAE_CANVAS_DARK__;
+        --bs-fill: __DAE_FILL_DARK__;
+        --bs-ink: __DAE_MUTED_FG_DARK__;
+        --bs-line: __DAE_BORDER_DARK__;
+      }
       html,
       body {
         margin: 0;
@@ -54,6 +81,242 @@
           transform: rotate(360deg);
         }
       }
+
+      /* -------------------------------------------------------------------
+         BOOT SKELETON — docs/cold-start-js.md §2 (shell tier), measured by the
+         A/B its §8 asks for.
+
+         A static first screen: the frame, the rail and an empty listing, drawn
+         from plain markup in this file, so the browser has something to paint
+         before the entry bundle is evaluated. It is not part of the product yet
+         — `html[data-boot-skeleton]` is set by a script below only when Rust
+         injected the flag (`DAE_BOOT_SKELETON=1`), so an ordinary launch still
+         shows the spinner.
+
+         Measured (`docs/decisions/boot-screen-prerender.md`): on its own this
+         is **never painted** — parse, bundle and React's first mount form one
+         continuous block of main-thread work, so the engine gets no rendering
+         opportunity until after the commit that removes it. It shows only if
+         the boot yields a frame first (`DAE_BOOT_YIELD=1`, in `main.tsx`), and
+         that costs ~40–55 ms of `first-frame` to fill the ~80 ms before the
+         mount. So Rust pre-rendering was rejected; this block stays as the arm
+         for that (still open) product decision, not as a shipped screen.
+
+         Two constraints shaped it:
+         - No text that has to be translated and no interaction: the locale is
+           not known before the bundle runs, and this screen disappears at
+           React's first commit (React clears `#root`).
+         - Same shape of motion as the spinner it replaces (a periodic pulse),
+           so the A/B compares content rather than "animated vs static". The
+           measurement showed neither animation mattered: no frame is produced
+           before React's commit either way, which is why the pulse did not turn
+           the skeleton into an exception.
+         ------------------------------------------------------------------- */
+      #boot-skeleton {
+        display: none;
+      }
+      /* `#root` is `h-full` in App.css, which has not arrived yet — without
+         this the percentage heights below resolve against an auto-height box
+         and the skeleton paints as a 44px strip at the top. */
+      html[data-boot-skeleton] #root,
+      html[data-boot-skeleton] #boot-skeleton {
+        height: 100%;
+      }
+      html[data-boot-skeleton] #boot-skeleton {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      /* One boot screen at a time; the spinner is the other arm. */
+      html[data-boot-skeleton] #splash {
+        display: none;
+      }
+
+      #boot-skeleton .bs-strip {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 10px;
+        height: __DAE_STRIP__;
+        padding: 0 12px 0 14px;
+        background-color: var(--bs-chrome);
+      }
+      #boot-skeleton .bs-brand {
+        flex: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        background-color: var(--bs-fill);
+      }
+      #boot-skeleton .bs-wordmark {
+        font:
+          600 13px/1 ui-sans-serif,
+          system-ui,
+          sans-serif;
+        letter-spacing: 0.04em;
+        color: var(--bs-ink);
+      }
+      #boot-skeleton .bs-tab {
+        flex: none;
+        width: 132px;
+        height: 36px;
+        border-radius: 8px;
+        background-color: color-mix(in srgb, var(--bs-fill) 55%, transparent);
+      }
+      #boot-skeleton .bs-tab-current {
+        background-color: var(--bs-fill);
+      }
+      #boot-skeleton .bs-search {
+        flex: none;
+        width: 168px;
+        height: 28px;
+        margin-left: auto;
+        border: 1px solid var(--bs-line);
+        border-radius: 999px;
+      }
+
+      #boot-skeleton .bs-columns {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+        background-color: var(--bs-chrome);
+      }
+      #boot-skeleton .bs-rail {
+        display: flex;
+        flex: none;
+        flex-direction: column;
+        width: __DAE_RAIL__;
+        padding: 12px 10px;
+        overflow: hidden;
+      }
+      #boot-skeleton .bs-nav {
+        width: var(--w, 70%);
+        height: 12px;
+        margin: 7px 0;
+        border-radius: 6px;
+        background-color: var(--bs-fill);
+      }
+      #boot-skeleton .bs-label {
+        width: var(--w, 40%);
+        height: 6px;
+        margin: 14px 0 6px;
+        border-radius: 3px;
+        background-color: var(--bs-fill);
+        opacity: 0.6;
+      }
+
+      #boot-skeleton .bs-main {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        min-width: 0;
+        background-color: var(--bs-canvas);
+      }
+      #boot-skeleton .bs-toolbar {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 10px;
+        height: 44px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--bs-line);
+      }
+      #boot-skeleton .bs-crumb {
+        width: var(--w, 140px);
+        height: 10px;
+        border-radius: 5px;
+        background-color: var(--bs-fill);
+      }
+      #boot-skeleton .bs-tool {
+        flex: none;
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        background-color: var(--bs-fill);
+      }
+      #boot-skeleton .bs-tool:first-of-type {
+        margin-left: auto;
+      }
+      #boot-skeleton .bs-tool + .bs-tool {
+        margin-left: 0;
+      }
+
+      #boot-skeleton .bs-list {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 2px;
+        min-height: 0;
+        padding: 12px 16px;
+        overflow: hidden;
+      }
+      #boot-skeleton .bs-line {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 10px;
+        height: 30px;
+      }
+      #boot-skeleton .bs-dot {
+        flex: none;
+        width: 14px;
+        height: 14px;
+        border-radius: 4px;
+        background-color: var(--bs-fill);
+      }
+      #boot-skeleton .bs-bar {
+        flex: none;
+        width: var(--w, 40%);
+        height: 8px;
+        border-radius: 4px;
+        background-color: var(--bs-fill);
+      }
+
+      /* The pulse is the skeleton's equivalent of the spinner's rotation: it
+         keeps frames coming while the main thread is mounting React. */
+      #boot-skeleton .bs-nav,
+      #boot-skeleton .bs-label,
+      #boot-skeleton .bs-dot,
+      #boot-skeleton .bs-bar {
+        animation: bs-pulse 1.6s ease-in-out infinite;
+      }
+      @keyframes bs-pulse {
+        0%,
+        100% {
+          opacity: 0.45;
+        }
+        50% {
+          opacity: 0.9;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #boot-skeleton .bs-nav,
+        #boot-skeleton .bs-label,
+        #boot-skeleton .bs-dot,
+        #boot-skeleton .bs-bar {
+          animation: none;
+        }
+      }
+
+      /* 材质窗口的边框不画画（同 App.css 的 .bg-chrome 材质块）：Acrylic/Mica/
+         vibrancy 由平台自己着色，把标签条和侧栏交出去就是想要的答案；文档平
+         面（.bs-main）仍然保持不透明，和挂载后一样。 */
+      html:is(
+          [data-window-material="mica"],
+          [data-window-material="acrylic"],
+          [data-window-material="vibrancy"]
+        )
+        #boot-skeleton
+        .bs-strip,
+      html:is(
+          [data-window-material="mica"],
+          [data-window-material="acrylic"],
+          [data-window-material="vibrancy"]
+        )
+        #boot-skeleton
+        .bs-columns {
+        background-color: transparent;
+      }
       /* 系统窗口材质（Win11 Acrylic / Win11 Mica / macOS vibrancy / 合成器模糊）只会在“这张文档什么都没画”的
          地方透出来，所以首帧就要按材质决定画布是否透明：等 React 挂载再改，等于
          在整包加载期间用一块不透明画布把材质盖住。属性由下面的启动脚本写入，
@@ -78,13 +341,19 @@
         background-color: transparent;
       }
     </style>
+    <!-- §2 A/B arm（docs/cold-start-js.md §8 第 3 条）。Rust 只在
+         `DAE_BOOT_SKELETON=1` 时注入这个全局；普通启动这里只做一次属性判断。 -->
+    <script>
+      if (window.__DAE_BOOT_SKELETON === 1) {
+        document.documentElement.dataset.bootSkeleton = "";
+      }
+    </script>
     <script>
       try {
         var stored = localStorage.getItem("app.theme");
         var dark =
           stored === "dark" ||
-          (stored !== "light" &&
-            matchMedia("(prefers-color-scheme: dark)").matches);
+          (stored !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
         if (dark) document.documentElement.classList.add("dark");
         document.documentElement.style.colorScheme = dark ? "dark" : "light";
       } catch (e) {}
@@ -105,7 +374,94 @@
   </head>
 
   <body>
-    <div id="root"><div id="splash"></div></div>
+    <div id="root">
+      <!-- 静态首屏（§2 外壳档）。纯标记、无脚本、无文案：语言要等 bundle 才
+           知道，而 React 第一次 commit 会连同这一整块一起清掉。 -->
+      <div id="boot-skeleton" aria-hidden="true">
+        <div class="bs-strip">
+          <span class="bs-brand"></span>
+          <span class="bs-wordmark">dae</span>
+          <span class="bs-tab bs-tab-current"></span>
+          <span class="bs-tab"></span>
+          <span class="bs-search"></span>
+        </div>
+        <div class="bs-columns">
+          <div class="bs-rail">
+            <span class="bs-nav" style="--w: 86%"></span>
+            <span class="bs-nav" style="--w: 74%"></span>
+            <span class="bs-nav" style="--w: 62%"></span>
+            <span class="bs-label" style="--w: 44%"></span>
+            <span class="bs-nav" style="--w: 78%"></span>
+            <span class="bs-nav" style="--w: 66%"></span>
+            <span class="bs-nav" style="--w: 82%"></span>
+            <span class="bs-nav" style="--w: 58%"></span>
+            <span class="bs-label" style="--w: 36%"></span>
+            <span class="bs-nav" style="--w: 70%"></span>
+            <span class="bs-nav" style="--w: 52%"></span>
+          </div>
+          <div class="bs-main">
+            <div class="bs-toolbar">
+              <span class="bs-crumb"></span>
+              <span class="bs-tool"></span>
+              <span class="bs-tool"></span>
+            </div>
+            <div class="bs-list">
+              <div class="bs-line">
+                <span class="bs-dot"></span><span class="bs-bar" style="--w: 46%"></span>
+              </div>
+              <div class="bs-line">
+                <span class="bs-dot"></span><span class="bs-bar" style="--w: 61%"></span>
+              </div>
+              <div class="bs-line">
+                <span class="bs-dot"></span><span class="bs-bar" style="--w: 38%"></span>
+              </div>
+              <div class="bs-line">
+                <span class="bs-dot"></span><span class="bs-bar" style="--w: 54%"></span>
+              </div>
+              <div class="bs-line">
+                <span class="bs-dot"></span><span class="bs-bar" style="--w: 43%"></span>
+              </div>
+              <div class="bs-line">
+                <span class="bs-dot"></span><span class="bs-bar" style="--w: 67%"></span>
+              </div>
+              <div class="bs-line">
+                <span class="bs-dot"></span><span class="bs-bar" style="--w: 35%"></span>
+              </div>
+              <div class="bs-line">
+                <span class="bs-dot"></span><span class="bs-bar" style="--w: 58%"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="splash"></div>
+    </div>
+    <script>
+      /* 解析段的终点、bundle 段的起点，同一个瞬间：到这里为止 HTML 只剩下面
+         那个 module 标签没处理。DOMContentLoaded 不能用——module 的求值本身
+         会把它推后，那会把「解析完」和「执行完」量成一件事，而这正是要拆开的
+         两笔账。 */
+      if (window.__DAE_STARTUP_PERF === 1) {
+        var now = performance.timeOrigin + performance.now();
+        window.__DAE_STARTUP_MARKS.push(["html-parsed", now], ["boot-eval-start", now]);
+        /* §8 第 3 条要量的是这一件事：引擎会不会在 deferred module（入口
+           bundle）求值之前就把文档画出来。rAF 回调只在真正产生帧时触发，
+           所以它和 `boot-eval-end` 的先后就是答案，不依赖 WebView2 上不稳
+           定的 paint entry。连要三帧，用来区分「一帧都没有」和「只是被
+           React 的同步挂载挡住」：第一帧早于 boot-eval-end = 静态骨架在 JS
+           跑完之前已经上屏。 */
+        var frame = 0;
+        var probeFrame = function () {
+          frame += 1;
+          window.__DAE_STARTUP_MARKS.push([
+            "html-frame-" + frame,
+            performance.timeOrigin + performance.now(),
+          ]);
+          if (frame < 3) requestAnimationFrame(probeFrame);
+        };
+        requestAnimationFrame(probeFrame);
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

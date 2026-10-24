@@ -41,14 +41,12 @@ import { Sidebar } from "@/features/sidebar/sidebar";
 import { formatBinding } from "@/features/settings/shortcut-registry";
 import { useBinding } from "@/features/settings/settings-atoms";
 import { terminalVisibleAtom } from "@/features/terminal/terminal-atoms";
-import {
-  commandBarModeAtom,
-  commandBarOpenAtom,
-} from "@/features/workspace/command-bar-atoms";
+import { commandBarModeAtom, commandBarOpenAtom } from "@/features/workspace/command-bar-atoms";
 import { ensureSpacesLoadedAtom, spacesAtom } from "@/features/workspace/spaces-atoms";
 import { tabSurfaceFamily } from "@/features/workspace/tab-surface";
 import { WorkspaceSurfaceView } from "@/features/workspace/workspace-surface";
 import { TabPerfProfiler } from "@/lib/tab-perf-profiler";
+import { tabPerfMark } from "@/lib/tab-perf";
 import type { WorkspaceSurface } from "@/features/workspace/types";
 import { MOD_KEY } from "@/lib/platform";
 import { getAppWindow } from "@/lib/app-window";
@@ -332,6 +330,10 @@ function useTabPill({
       }
 
       if (!animate) pill.dataset.hold = "true";
+      // The two reads below force the document's first style+layout on mount.
+      // Measured (`docs/decisions/first-mount-cost.md`): style recalc 0 ms,
+      // these reads 40 ms, the `offsetWidth` flush 0 ms — so this is one cold
+      // layout, not two, and it is where the commit phase's time goes.
       const tabBox = active.getBoundingClientRect();
       const stripBox = strip.getBoundingClientRect();
       // `left: 0` on an absolutely positioned child of a scroller resolves
@@ -360,7 +362,13 @@ function useTabPill({
 
     const first = !measuredRef.current;
     measuredRef.current = true;
+    // Where the mount's commit actually goes: the first `getBoundingClientRect`
+    // inside `measure` runs right after React inserted the tree, so it forces
+    // the document's first style+layout. `docs/decisions/first-mount-cost.md`
+    // has the split; this row is how the next person sees it move.
+    tabPerfMark("pill:layout:start");
     measure(!first);
+    tabPerfMark("pill:layout:end");
 
     // A ResizeObserver rather than a window listener: what moves the plate is
     // the strip changing size — a scroll button appearing, the window
@@ -501,109 +509,111 @@ export function ExplorerTabs() {
           here. Under a window material the frame stops painting and the
           platform's backdrop shows through it (App.css, THE WINDOW-MATERIAL
           SEAM). */}
-      <header
-        className="flex h-tab-strip shrink-0 items-stretch bg-chrome"
-        data-tab-bar="true"
-        data-tauri-drag-region="deep"
-      >
-        {/* The window's own mark, in the drag region before the first tab. It
+      <TabPerfProfiler id="TabStrip">
+        <header
+          className="flex h-tab-strip shrink-0 items-stretch bg-chrome"
+          data-tab-bar="true"
+          data-tauri-drag-region="deep"
+        >
+          {/* The window's own mark, in the drag region before the first tab. It
             is outside the tablist on purpose: the strip measures its chips by
             `[data-tab-active]` and routes drags by hit-testing them, so a
             decoration that joined the row would have to be excluded from both.
             `deep` on the header already makes it part of the window's drag
             surface, which is the only interaction a mark should have. */}
-        <img
-          alt=""
-          className="brand-mark ml-3.5 self-center"
-          draggable={false}
-          src={appIcon}
-        />
-        {/* The wordmark is the other half of the reference's `.mark`: the
+          <img alt="" className="brand-mark ml-3.5 self-center" draggable={false} src={appIcon} />
+          {/* The wordmark is the other half of the reference's `.mark`: the
             icon carries the motif and the name says whose window it is. The
             strip's first tab used to sit alone against the mark with 4px
             between them, which read as a stray chip rather than as the tab
             row's start. */}
-        <span aria-hidden="true" className="brand-wordmark mr-2.5 ml-2.5 self-center">
-          dae
-        </span>
-        <StripScrollButton
-          aria-label={t("tabs.scrollLeft")}
-          direction={-1}
-          onClick={() => scrollStrip(-1)}
-          visible={canScroll.left}
-        />
-        <div
-          ref={stripRef}
-          aria-label={t("tabs.ariaLabel")}
-          // `mt-2` and no bottom margin, so the tab row sits 8px below the
-          // window edge and 8px above the content row: that row's own `p-2`
-          // gutter supplies the space underneath, and the two sides have to
-          // measure the same or the row reads as pinned to the top.
-          className="tab-trough relative my-1 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
-          // A tab drag pins its pointer capture here (see `tab-drag.ts`), and the
-          // header above is a `deep` drag region, so the strip has to opt out
-          // explicitly or the captured events read as a request to move the
-          // window.
-          data-tauri-drag-region="false"
-          onMouseDown={handleStripMouseDown}
-          onScroll={syncScrollButtons}
-          role="tablist"
-        >
-          {/* The plate under the current tab, and the node that makes the switch
+          <span aria-hidden="true" className="brand-wordmark mr-2.5 ml-2.5 self-center">
+            dae
+          </span>
+          <StripScrollButton
+            aria-label={t("tabs.scrollLeft")}
+            direction={-1}
+            onClick={() => scrollStrip(-1)}
+            visible={canScroll.left}
+          />
+          <div
+            ref={stripRef}
+            aria-label={t("tabs.ariaLabel")}
+            // `mt-2` and no bottom margin, so the tab row sits 8px below the
+            // window edge and 8px above the content row: that row's own `p-2`
+            // gutter supplies the space underneath, and the two sides have to
+            // measure the same or the row reads as pinned to the top.
+            className="tab-trough relative my-1 flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-1 scrollbar-none [&::-webkit-scrollbar]:hidden"
+            // A tab drag pins its pointer capture here (see `tab-drag.ts`), and the
+            // header above is a `deep` drag region, so the strip has to opt out
+            // explicitly or the captured events read as a request to move the
+            // window.
+            data-tauri-drag-region="false"
+            onMouseDown={handleStripMouseDown}
+            onScroll={syncScrollButtons}
+            role="tablist"
+          >
+            {/* The plate under the current tab, and the node that makes the switch
               a TRAVEL rather than a swap — see `useTabPill`. It is the strip's
               first child so the chips paint over it; `pointer-events: none`
               keeps it out of the gesture. */}
-          <span aria-hidden="true" className="tab-pill" data-hold="true" ref={pillRef} />
-          {tabs.map((tab, index) => (
-            <TabStripItem key={tab.id} index={index} isActive={tab.id === activeTabId} tab={tab} />
-          ))}
-          {/* Inside the scroller, hard after the last chip: the plus belongs to
+            <span aria-hidden="true" className="tab-pill" data-hold="true" ref={pillRef} />
+            {tabs.map((tab, index) => (
+              <TabStripItem
+                key={tab.id}
+                index={index}
+                isActive={tab.id === activeTabId}
+                tab={tab}
+              />
+            ))}
+            {/* Inside the scroller, hard after the last chip: the plus belongs to
               the tab row, so it travels with it and sits one tab-gap away from
               the tab it would extend. The trade-off is that a tablist now owns
               a button; the alternative — a `role="tablist"` wrapper inside the
               scroller — would move the role off the element `tab-drag.ts`
               measures and scrolls. */}
-          <button
-            aria-label={t("tabs.newTab")}
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
-            data-tauri-drag-region="false"
-            onClick={createTab}
-            title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
-            type="button"
-          >
-            <AddIcon className="size-3.5" />
-          </button>
-        </div>
-        <StripScrollButton
-          aria-label={t("tabs.scrollRight")}
-          direction={1}
-          onClick={() => scrollStrip(1)}
-          visible={canScroll.right}
-        />
-        {/* The reference puts the palette's trigger in the title bar, not in
+            <button
+              aria-label={t("tabs.newTab")}
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors duration-fast hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none"
+              data-tauri-drag-region="false"
+              onClick={createTab}
+              title={t("tabs.newTabShortcut", { modifier: MOD_KEY })}
+              type="button"
+            >
+              <AddIcon className="size-3.5" />
+            </button>
+          </div>
+          <StripScrollButton
+            aria-label={t("tabs.scrollRight")}
+            direction={1}
+            onClick={() => scrollStrip(1)}
+            visible={canScroll.right}
+          />
+          {/* The reference puts the palette's trigger in the title bar, not in
             the toolbar: it is a *window* action, available from every surface,
             and it earns the one capsule the strip spends. The overview's own
             field remains the discoverable version of the same gesture. */}
-        <button
-          aria-label={t("titleBar.commandBarAria")}
-          // `self-center`: the bar stretches its children, so without it the
-          // capsule hangs off the top edge of the 44px strip while the tabs
-          // and the window controls sit on the bar's centre line.
-          className="mr-1 flex h-7 shrink-0 self-center items-center gap-2 rounded-full border border-border px-2.5 text-caption text-muted-foreground transition-[border-color,color] duration-fast ease-standard hover:border-foreground/16 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none max-[860px]:hidden"
-          data-tauri-drag-region="false"
-          onClick={() => {
-            setCommandBarMode("commands");
-            setCommandBarOpen(true);
-          }}
-          title={t("titleBar.commandBarTitle", { shortcut: commandBarBinding })}
-          type="button"
-        >
-          <MagnifierIcon className="size-3.5 shrink-0" />
-          <span className="max-w-40 truncate">{t("titleBar.commandBarShort")}</span>
-          <Kbd className="shrink-0">{commandBarBinding}</Kbd>
-        </button>
-        <WindowControls />
-      </header>
+          <button
+            aria-label={t("titleBar.commandBarAria")}
+            // `self-center`: the bar stretches its children, so without it the
+            // capsule hangs off the top edge of the 44px strip while the tabs
+            // and the window controls sit on the bar's centre line.
+            className="mr-1 flex h-7 shrink-0 self-center items-center gap-2 rounded-full border border-border px-2.5 text-caption text-muted-foreground transition-[border-color,color] duration-fast ease-standard hover:border-foreground/16 hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none max-[860px]:hidden"
+            data-tauri-drag-region="false"
+            onClick={() => {
+              setCommandBarMode("commands");
+              setCommandBarOpen(true);
+            }}
+            title={t("titleBar.commandBarTitle", { shortcut: commandBarBinding })}
+            type="button"
+          >
+            <MagnifierIcon className="size-3.5 shrink-0" />
+            <span className="max-w-40 truncate">{t("titleBar.commandBarShort")}</span>
+            <Kbd className="shrink-0">{commandBarBinding}</Kbd>
+          </button>
+          <WindowControls />
+        </header>
+      </TabPerfProfiler>
 
       {/* FLAT WINDOW: the reference draws no paper on this row at all — the rail
           and the listing sit on the window's own void, divided by whitespace and
@@ -618,7 +628,9 @@ export function ExplorerTabs() {
           is arbitrated by `inspectorAtom` (the focused pane publishes; see
           `inspector-panel.tsx`). */}
       <div className="flex min-h-0 flex-1 bg-chrome">
-        <Sidebar />
+        <TabPerfProfiler id="Sidebar">
+          <Sidebar />
+        </TabPerfProfiler>
         {/* The document plane. It paints the canvas at full strength on purpose
             (`bg-background`, which stays opaque under a window material — see
             THE WINDOW-MATERIAL SEAM in App.css): the rail and the tab strip

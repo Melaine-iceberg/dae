@@ -14,8 +14,11 @@
 //! the pointer at that edge, which leaves no position to measure; Wayland has
 //! neither, so the frontend measures the edge from its own events.
 //!
-//! The same commands create the detached webview window while keeping the
-//! opaque tab snapshot in Rust until the new frontend consumes it.
+//! The same commands create the detached webview window and hand it the opaque
+//! tab snapshot as an initialization script, so the new page has its content
+//! before the first line of the bundle runs. `take_tab_handoff` stays as the
+//! fallback for a window that was built without that script; the extra round
+//! trip it costs is why the script is the primary channel.
 //!
 //! When the drag is released over another of this app's windows, the tab is
 //! merged into that window instead of spawning a new one: the source frontend
@@ -44,6 +47,27 @@ const MIN_WIDTH: f64 = 640.0;
 const MIN_HEIGHT: f64 = 480.0;
 const MAX_WIDTH: f64 = 1280.0;
 const MAX_HEIGHT: f64 = 900.0;
+
+/// The script every window that has no snapshot carries.
+///
+/// `null` is deliberately not the same as "the global is missing": the frontend
+/// treats a missing global as "this window was built without the channel" and
+/// asks over IPC instead, which is the round trip this channel exists to avoid.
+/// A window that legitimately has nothing to restore must say so rather than
+/// stay silent.
+pub const NO_HANDOFF_SCRIPT: &str = "window.__DAE_TAB_HANDOFF=null;";
+
+/// The snapshot as the new page's first script sees it.
+///
+/// `payload` is already JSON; the page expects the JSON *string* containing it,
+/// so it goes through `serde_json::to_string` for escaping. A hand-written
+/// `format!("\"{payload}\"")` breaks on the first folder name with a quote or a
+/// backslash, which is most of a Windows path.
+pub fn handoff_script(payload: &str) -> String {
+    let literal = serde_json::to_string(payload).unwrap_or_else(|_| "null".to_string());
+    format!("window.__DAE_TAB_HANDOFF={literal};")
+}
+
 static TAB_DRAG_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 const TAB_DRAG_FALLBACK_ICON: &[u8] = include_bytes!("../icons/32x32.png");
 /// MIME type this application advertises while a tab is dragged. Nothing
@@ -455,6 +479,9 @@ impl TabWindowState {
                 .visible(false)
                 // Tells the page it is the pool, so only the pool reports back.
                 .initialization_script("window.__DAE_POOL_WINDOW = 1;")
+                // A pooled window boots on Overview, and says so before any
+                // page script can mistake the silence for a missing channel.
+                .initialization_script(NO_HANDOFF_SCRIPT)
                 // And switches its probe on. The anchor is left for later,
                 // because this window is built before anyone drags anything.
                 .initialization_script(crate::tab_perf::enable_script()),
@@ -1336,6 +1363,10 @@ fn tear_off_tab_on_main(
 
     let label = state.next_label(&app);
 
+    // Escaped before the payload is parked: the fallback keeps a copy for a
+    // window that never reads the script, while the script is the copy every
+    // shipped window actually uses.
+    let injected_handoff = handoff_script(&payload);
     state.insert(label.clone(), payload)?;
 
     // The drag path already stamped the release and this keeps that first
@@ -1344,9 +1375,9 @@ fn tear_off_tab_on_main(
     // a drag has nothing stamped yet and gets one here.
     let _ = crate::tab_perf::mark_release();
     crate::tab_perf::set_current_label(&label);
-    // The window's own first mark. Its distance from the release is the JS round
-    // trip plus this command's IPC — the cost a hand-off done through
-    // `initialization_script` would remove.
+    // The window's own first mark. Its distance from the release is the round
+    // trip into this command; the new page no longer adds a second one for its
+    // hand-off, which arrives as an injected script.
     crate::tab_perf::mark("TEAR_OFF_ENTER");
 
     let build_result = crate::window_material::configure(
@@ -1370,7 +1401,11 @@ fn tear_off_tab_on_main(
             .focused(true)
             // Hands the new window its anchor before any page script runs, and
             // nothing at all when profiling is off.
-            .initialization_script(crate::tab_perf::anchor_script()),
+            .initialization_script(crate::tab_perf::anchor_script())
+            // And its content. The page-side read is synchronous, so restoring
+            // the tab no longer costs a fresh webview's first IPC round trip
+            // (~26 ms, docs/cold-start-js.md §1.3) before `createRoot`.
+            .initialization_script(injected_handoff),
     )
     .build();
 
@@ -1478,8 +1513,12 @@ pub async fn sync_tab_pool(app: tauri::AppHandle) {
     }
 }
 
-/// Pulls the snapshot parked for a newly created window and clears it. The new
-/// frontend calls this once before its first render.
+/// Pulls the snapshot parked for a newly created window and clears it.
+///
+/// The fallback half of the hand-off: a window built with [`handoff_script`]
+/// already has its snapshot and never calls this. Kept for a window built by a
+/// path that does not yet inject one, because losing a tab is worse than one
+/// extra round trip.
 #[tauri::command]
 #[specta::specta]
 pub fn take_tab_handoff(
@@ -1519,7 +1558,7 @@ fn point_is_outside(
 
 #[cfg(test)]
 mod tests {
-    use super::{TabWindowState, point_is_outside};
+    use super::{TabWindowState, handoff_script, point_is_outside};
 
     #[test]
     fn detects_every_side_of_window_bounds() {
@@ -1529,6 +1568,24 @@ mod tests {
         assert!(point_is_outside(900.0, 300.0, 100, 50, 800, 600));
         assert!(point_is_outside(400.0, 49.0, 100, 50, 800, 600));
         assert!(point_is_outside(400.0, 650.0, 100, 50, 800, 600));
+    }
+
+    #[test]
+    fn the_handoff_script_keeps_the_payload_intact() {
+        // A snapshot of Windows paths carries backslashes, and a folder name can
+        // carry a quote; both have to survive the trip into a JavaScript string
+        // literal, or the new window restores a different tab than the one that
+        // was dragged out.
+        let payload = r#"{"version":1,"primary":{"path":"C:\\Users\\a\"b","name":"line\nbreak"}}"#;
+        let script = handoff_script(payload);
+        let literal = script
+            .strip_prefix("window.__DAE_TAB_HANDOFF=")
+            .and_then(|rest| rest.strip_suffix(';'))
+            .expect("the script has the shape the page reads");
+        assert_eq!(
+            serde_json::from_str::<String>(literal).expect("a JSON string literal"),
+            payload
+        );
     }
 
     #[test]

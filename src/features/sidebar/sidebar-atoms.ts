@@ -3,6 +3,7 @@ import { atomWithStorage } from "jotai/utils";
 
 import { commands, type StoredCloudAccount, type StoredConnection } from "@/bindings";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
+import { tabPerfFirstData } from "@/lib/tab-perf";
 
 import type { Favorite, PlaceKind, SystemPlace } from "./types";
 
@@ -101,6 +102,7 @@ export const ensureSystemPlacesLoadedAtom = atom(null, async (get, set) => {
   set(systemPlacesErrorAtom, null);
   try {
     set(systemPlacesAtom, await commands.getSystemPlaces());
+    tabPerfFirstData();
   } catch (error) {
     console.warn("Unable to load system places", error);
     set(systemPlacesErrorAtom, getFileOperationErrorMessage(error));
@@ -130,6 +132,7 @@ export const ensureFavoritesLoadedAtom = atom(null, async (get, set) => {
     }
 
     set(favoritesAtom, favorites);
+    tabPerfFirstData();
   } catch (error) {
     console.warn("Unable to load favorites", error);
     set(favoritesErrorAtom, getFileOperationErrorMessage(error));

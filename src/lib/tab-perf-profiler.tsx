@@ -36,6 +36,14 @@ export function TabPerfProfiler({ id, children }: { id: string; children: ReactN
           `${id}[${phase}] ${actualDuration.toFixed(1)}ms`,
           performance.timeOrigin + commitTime,
         );
+        // React calls `onRender` from the layout phase — after mutations, after
+        // this subtree's own layout effects. Its wall clock is therefore the end
+        // of this subtree's commit, and the row above (placed at `commitTime`,
+        // the commit's start) plus this one bracket the commit phase. Without
+        // the pair, `render -> commit` looked like render work; it is not:
+        // `actualDuration` is the render, and the gap is DOM insertion plus
+        // layout effects.
+        tabPerfMark(`commit:${id}:end`);
       }}
     >
       {children}

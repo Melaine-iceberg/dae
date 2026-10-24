@@ -7,7 +7,7 @@ import { setupDevInvoke } from "tauri-plugin-dev-invoke-api";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { commands } from "@/bindings";
-import { restoreInitialTabHandoff } from "@/features/explorer/tabs";
+import { restoreInitialTabHandoff, takeInjectedTabHandoff } from "@/features/explorer/tabs";
 import { warmShellCommands } from "@/features/shell-commands/shell-commands-atoms";
 import { preloadExplorerSurface } from "@/features/workspace/workspace-surface";
 import { i18nReady } from "@/i18n";
@@ -18,8 +18,20 @@ import { setupNativeClipboardBridge } from "@/lib/clipboard-bridge";
 import { setupExternalLinkGuard } from "@/lib/external-links";
 import { forwardConsoleToLogFile } from "@/lib/logging";
 import { setupNativeContextMenuGuard } from "@/lib/native-context-menu";
-import { tabPerfEnabled, tabPerfMark, tabPerfReport } from "@/lib/tab-perf";
+import {
+  startupPerfEnabled,
+  tabPerfEnabled,
+  tabPerfMark,
+  tabPerfOnFirstData,
+  tabPerfReport,
+} from "@/lib/tab-perf";
 import { TabPerfProfiler } from "@/lib/tab-perf-profiler";
+
+// The last instant that belongs to loading rather than to running: every import
+// of the entry graph has been evaluated by the time this module's own body
+// starts, so this is where parse+execute ends and the app's own start-up
+// begins. `boot-eval-start` (in `index.html`) is the other end.
+tabPerfMark("boot-eval-end");
 
 // First, so that anything failing during the rest of startup is recorded: the
 // release build's webview has no console anyone will read, and this is what
@@ -70,14 +82,27 @@ async function bootstrap() {
   tabPerfMark("locale");
 
   let bootsOnFolder = false;
-  const appWindow = getAppWindow();
-  if (appWindow) {
+  const injectedHandoff = takeInjectedTabHandoff();
+  if (injectedHandoff === undefined) {
+    // A window built without the injected channel still gets its snapshot the
+    // old way. Every window this app builds carries `null` or the payload, so on
+    // the shipped paths this branch never runs — but losing a tab is worse than
+    // the round trip this channel exists to avoid.
+    const appWindow = getAppWindow();
+    if (appWindow) {
+      try {
+        const handoff = await commands.takeTabHandoff(appWindow.label);
+        if (handoff) bootsOnFolder = restoreInitialTabHandoff(handoff).kind === "folder";
+      } catch (error) {
+        // A malformed or unavailable handoff must not abort startup; the window
+        // can still open normally on the Overview surface.
+        console.error("Failed to restore detached tab", error);
+      }
+    }
+  } else if (injectedHandoff !== null) {
     try {
-      const handoff = await commands.takeTabHandoff(appWindow.label);
-      if (handoff) bootsOnFolder = restoreInitialTabHandoff(handoff).kind === "folder";
+      bootsOnFolder = restoreInitialTabHandoff(injectedHandoff).kind === "folder";
     } catch (error) {
-      // A malformed or unavailable handoff must not abort startup; the window
-      // can still open normally on the Overview surface.
       console.error("Failed to restore detached tab", error);
     }
   }
@@ -93,6 +118,21 @@ async function bootstrap() {
   if (bootsOnFolder) await explorerPreload;
   tabPerfMark("chunk");
 
+  // DIAGNOSTIC for the §2 A/B (`docs/cold-start-js.md` §8 第 3 条), off unless Rust
+  // injected the flag. The measured answer to "does a pre-rendered first
+  // screen get painted" was "no frame is produced at all until after React's
+  // first commit" — which cannot tell two very different causes apart: the
+  // boot is one continuous block of main-thread work (parse → bundle → mount),
+  // or the engine simply will not paint this document before the mount. Yielding
+  // two frames here is the smallest change that separates them, and it is also
+  // exactly what showing the skeleton would cost: the screen stays on the
+  // static markup for the length of the mount instead of on an empty window.
+  if ((globalThis as { __DAE_BOOT_YIELD?: number }).__DAE_BOOT_YIELD === 1) {
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  }
+
   const root = document.getElementById("root") as HTMLElement;
 
   // `render -> first-frame` used to be one number, so it could not say whether
@@ -104,8 +144,59 @@ async function bootstrap() {
   const report = () => {
     if (reported) return;
     reported = true;
+    // Paint entries are kept by the engine, and they are the only record of the
+    // instant the splash actually reached the screen: that happens before React
+    // commits and nothing in script can observe it. A window that painted its
+    // splash late and then committed late has two different problems, and this
+    // row is what tells them apart.
+    for (const entry of performance.getEntriesByType("paint")) {
+      tabPerfMark(`paint:${entry.name}`, performance.timeOrigin + entry.startTime);
+    }
+    // Resource timing splits the bundle span into fetch and eval: the entry
+    // script's `responseEnd` is when its bytes were all here, so
+    // `boot-eval-end - responseEnd` is parse+execute and `responseEnd -
+    // boot-eval-start` is protocol round-trip plus download. Matched on this
+    // module's own URL so the later explorer chunk cannot stand in for it.
+    const resource = (performance.getEntriesByType("resource") as PerformanceResourceTiming[])
+      .filter((entry) => entry.name === import.meta.url)
+      // `dist/index.html` carries a `<link rel="modulepreload">` for the entry
+      // graph, so the same URL has two entries: the preload and the module
+      // script that reused it. The last one's `responseEnd` is when the bytes
+      // were actually all in hand.
+      .reduce<PerformanceResourceTiming | undefined>(
+        (latest, entry) => (!latest || entry.responseEnd > latest.responseEnd ? entry : latest),
+        undefined,
+      );
+    if (resource) {
+      tabPerfMark("bundle:fetched", performance.timeOrigin + resource.responseEnd);
+    }
     tabPerfReport();
   };
+
+  // A cold start waits for one thing a tear-off does not: the first payload.
+  // Reporting on the frame alone would put `first-data` after the table's last
+  // row, and the report is a one-shot (`reported`), so it would never appear at
+  // all — which would hide whether the first frame waited on the backend. The
+  // two-second cap keeps a surface that fetches nothing from hiding the frame it
+  // did paint.
+  let painted = false;
+  let dataArrived = false;
+  const reportWhenSettled = () => {
+    if (!painted) return;
+    if (!startupPerfEnabled()) {
+      setTimeout(report, 0);
+      return;
+    }
+    if (dataArrived) {
+      setTimeout(report, 0);
+      return;
+    }
+    setTimeout(report, 2_000);
+  };
+  tabPerfOnFirstData(() => {
+    dataArrived = true;
+    reportWhenSettled();
+  });
 
   const observer = new MutationObserver(() => {
     tabPerfMark("commit");
@@ -116,12 +207,18 @@ async function bootstrap() {
     // first one after the commit, so it is measured from here.
     requestAnimationFrame(() => {
       tabPerfMark("first-frame");
+      // How big the tree React just committed actually is. The commit phase
+      // (see `tab-perf-profiler.tsx`) is DOM insertion plus layout effects, so
+      // the node count is what makes that number readable: a few hundred nodes
+      // and tens of milliseconds means forced layout, not insertion volume.
+      tabPerfMark(`dom-nodes:${document.getElementsByTagName("*").length}`);
       // The warm-pool question, in one row. If this says `hidden`, a window
       // nobody has looked at still reached a frame, so a pool could bank the
       // work. If it only ever says `visible`, WebKit held the work back until
       // the window was shown and a pool would have banked nothing at all.
       tabPerfMark(`gfx:${document.visibilityState}`);
-      setTimeout(report, 0);
+      painted = true;
+      reportWhenSettled();
     });
   });
 

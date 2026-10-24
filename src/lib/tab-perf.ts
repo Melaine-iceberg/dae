@@ -3,17 +3,18 @@ import { invoke } from "@tauri-apps/api/core";
 import { getAppWindow } from "@/lib/app-window";
 
 /**
- * Start-up instrumentation for a torn-off tab window.
+ * Start-up instrumentation for a torn-off tab window and for a cold start.
  *
  * Every mark is an epoch timestamp, so the numbers line up on one timeline with
- * the marks the Rust side records around the same tear-off: the anchor is the
- * instant the native drag returned, and the last mark here is the first frame
- * the detached window paints. Reading the two halves apart is what makes this
- * worth measuring, because the busy half might have nothing to do with React.
+ * the marks the Rust side records around the same event. A tear-off anchors on
+ * the instant the native drag returned; a cold start anchors on `run()`, so the
+ * head of the table is the webview being created and the tail is the first frame
+ * it paints. Reading the halves apart is what makes this worth measuring,
+ * because `render -> commit` might have nothing to do with the bundle load.
  *
  * Inert unless the Rust side injected an anchor, which it only does when
- * `DAE_TAB_PERF=1` is set. A normal run executes the `tabPerfEnabled` check and
- * nothing else: no globals, no marks, no IPC.
+ * `DAE_TAB_PERF=1` or `DAE_STARTUP_PERF=1` is set. A normal run executes the
+ * `tabPerfEnabled` check and nothing else: no globals, no marks, no IPC.
  */
 
 type Mark = [stage: string, at: number];
@@ -21,14 +22,45 @@ type Mark = [stage: string, at: number];
 const globals = globalThis as typeof globalThis & {
   __DAE_TAB_PERF?: number;
   __DAE_TAB_PERF_ANCHOR?: number;
+  __DAE_STARTUP_PERF?: number;
+  __DAE_STARTUP_ANCHOR?: number;
+  __DAE_STARTUP_MARKS?: Mark[];
 };
 
 const marks: Mark[] = [];
 
-/** Whether this window was started with profiling on. */
+/**
+ * Whether this window was started with a probe on.
+ *
+ * Two probes share this timeline because they share a clock and a report:
+ * `__DAE_TAB_PERF` for a tear-off (anchored on the drag release) and
+ * `__DAE_STARTUP_PERF` for a cold start (anchored on `run()`), whose zero point
+ * is the main window's process rather than a drag. Which one is on decides only
+ * what the zero point is; the marks are the same shape.
+ */
 export function tabPerfEnabled(): boolean {
-  return globals.__DAE_TAB_PERF === 1;
+  return globals.__DAE_TAB_PERF === 1 || globals.__DAE_STARTUP_PERF === 1;
 }
+
+/** Whether this window is reporting a cold start rather than a tear-off. */
+export function startupPerfEnabled(): boolean {
+  return globals.__DAE_STARTUP_PERF === 1;
+}
+
+// The cold-start probe records its first marks in `index.html`, before any
+// module exists — the HTML itself is earlier than the bundle that would record
+// it, which is the whole point of the split. The array is adopted by
+// **reference**, not copied: the frame probe in `index.html` keeps appending to
+// it (a frame can land while React is mounting, after this module has already
+// been evaluated), and a copy taken here would silently drop exactly the rows
+// §2's A/B is asking about.
+const pageMarks: Mark[] = globals.__DAE_STARTUP_MARKS ?? [];
+
+/** Stages already recorded, for the probe that must not repeat a first. */
+const once = new Set<string>();
+
+/** Continues a cold-start report once the first payload has landed. */
+let onFirstData: (() => void) | null = null;
 
 /**
  * Records one stage of this window's start-up, in epoch milliseconds so it can
@@ -45,6 +77,29 @@ export function tabPerfMark(stage: string, at?: number): void {
 }
 
 /**
+ * Marks the first payload a startup surface receives, and lets the cold-start
+ * reporter know it can close the timeline.
+ *
+ * The instant that matters is arrival, not the render it causes: whether the
+ * first frame waited for this is exactly the question the waterfall answers, so
+ * the mark has to sit on the response side of that boundary.
+ */
+export function tabPerfFirstData(): void {
+  if (!tabPerfEnabled() || once.has("first-data")) return;
+  once.add("first-data");
+  tabPerfMark("first-data");
+  onFirstData?.();
+}
+
+/**
+ * Registers what to do when the first payload lands. One window has one cold
+ * start, so this is a slot rather than a listener set.
+ */
+export function tabPerfOnFirstData(callback: () => void): void {
+  onFirstData = callback;
+}
+
+/**
  * Hands the collected marks back for the Rust side to fold into one timeline
  * and print. Failure is swallowed: a probe must never take down the window it
  * is measuring.
@@ -56,11 +111,13 @@ export function tabPerfMark(stage: string, at?: number): void {
  * for one.
  */
 export function tabPerfReport(anchorAt?: number): void {
-  if (!tabPerfEnabled() || marks.length === 0) return;
+  if (!tabPerfEnabled()) return;
+  const all = pageMarks.length > 0 ? [...pageMarks, ...marks] : marks;
+  if (all.length === 0) return;
   const label = getAppWindow()?.label ?? "";
-  const anchor = anchorAt ?? globals.__DAE_TAB_PERF_ANCHOR ?? 0;
+  const anchor = anchorAt ?? globals.__DAE_TAB_PERF_ANCHOR ?? globals.__DAE_STARTUP_ANCHOR ?? 0;
   void invoke("tab_perf_report", {
-    data: JSON.stringify({ label, anchor, marks }),
+    data: JSON.stringify({ label, anchor, marks: all }),
   }).catch(() => {});
 }
 

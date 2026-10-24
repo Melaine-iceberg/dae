@@ -3,6 +3,7 @@ import { useAtomValue } from "jotai";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { tabPerfMark } from "@/lib/tab-perf";
+import { TabPerfProfiler } from "@/lib/tab-perf-profiler";
 
 import { OverviewView } from "./overview-view";
 import { tabSurfaceFamily } from "./tab-surface";
@@ -98,12 +99,25 @@ function SurfaceSkeleton() {
  * the surfaces that register window-level keyboard shortcuts gate themselves
  * on it instead of on being the only thing in the tree.
  */
-export function WorkspaceSurfaceView({ active = true, tabId }: { active?: boolean; tabId: string }) {
+export function WorkspaceSurfaceView({
+  active = true,
+  tabId,
+}: {
+  active?: boolean;
+  tabId: string;
+}) {
   const surface = useAtomValue(tabSurfaceFamily(tabId));
 
   switch (surface.kind) {
     case "overview":
-      return <OverviewView />;
+      // Named separately from the `Surface` profiler around it: on a cold start
+      // this is the only surface that mounts, and `docs/cold-start-js.md` §8
+      // asks what inside the 62–74 ms mount is worth moving.
+      return (
+        <TabPerfProfiler id="Overview">
+          <OverviewView />
+        </TabPerfProfiler>
+      );
     case "recents":
       return (
         <Suspense fallback={<SurfaceSkeleton />}>

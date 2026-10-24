@@ -115,6 +115,46 @@ pub fn anchor_script() -> String {
     }
 }
 
+/// Whether this run was asked for a cold-start profile.
+///
+/// A separate switch from [`enabled`] because the two probes answer different
+/// questions and are anchored on different instants: a tear-off is measured from
+/// the drag release and only means anything in a window born from one, while a
+/// cold start is measured from this process and wants the main window untouched
+/// by any drag state.
+///
+/// Inert unless `DAE_STARTUP_PERF=1`.
+pub fn startup_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    *ENABLED.get_or_init(|| match std::env::var("DAE_STARTUP_PERF") {
+        Ok(value) => !value.is_empty() && value != "0",
+        Err(_) => false,
+    })
+}
+
+/// Epoch millis at which this process entered `run()`, stamped on first ask.
+///
+/// The one instant earlier than any window or webview exists, and therefore the
+/// only honest zero point for a cold-start timeline. It is the entry to this
+/// crate's `run`, not the OS `CreateProcess`: the gap between them holds the
+/// loader and the runtime's own init, which neither side can mark from here.
+pub fn process_start() -> f64 {
+    static START: OnceLock<f64> = OnceLock::new();
+    *START.get_or_init(now_ms)
+}
+
+/// The cold-start half of [`anchor_script`]: turns the frontend probe on and
+/// hands it the process start to measure from.
+pub fn startup_script() -> String {
+    if !startup_enabled() {
+        return String::new();
+    }
+    format!(
+        "window.__DAE_STARTUP_PERF=1;window.__DAE_STARTUP_ANCHOR={};",
+        process_start()
+    )
+}
+
 /// The enabling half of [`anchor_script`], for a window whose release is not
 /// known when it is built.
 ///
@@ -150,6 +190,18 @@ pub fn mark(stage: &str) {
     record(&label, stage, now_ms());
 }
 
+/// Records a mark with a timestamp the caller already holds.
+///
+/// [`mark`] stamps on arrival, which cannot express an instant that happened
+/// before the label was known - process start, for one. Used by the cold-start
+/// probe, whose Rust-side marks all carry a timestamp observed elsewhere.
+pub fn mark_at(label: &str, stage: &str, at: f64) {
+    if !startup_enabled() {
+        return;
+    }
+    record(label, stage, at);
+}
+
 fn record(label: &str, stage: &str, at: f64) {
     let mut store = store().lock().expect("tab_perf store poisoned");
     let marks = store.entry(label.to_string()).or_default();
@@ -172,14 +224,52 @@ pub fn report(label: &str, anchor: f64, from_frontend: Vec<(String, f64)>) {
         .unwrap_or_default();
 
     let rows = offset_rows(anchor, ours, from_frontend);
+    // `RELEASE` is the tear-off zero point, not a stage of a cold start (which
+    // is anchored on `process-start` and says so itself).
+    let rows: Vec<(String, f64)> = if startup_enabled() {
+        rows.into_iter()
+            .filter(|(stage, _)| stage != "RELEASE")
+            .collect()
+    } else {
+        rows
+    };
 
-    let last = rows.last().map_or(0.0, |(_, offset)| *offset);
-    let mut out = format!("\ntab tear-off timeline [{label}]\n");
+    // A cold start's total is the first frame, not the last row: the timeline is
+    // held open for `first-data`, which lands after the frame and is not part of
+    // what the user waited for. A tear-off has no such row and ends at its last
+    // mark.
+    let first_frame = rows
+        .iter()
+        .find(|(stage, _)| startup_enabled() && stage == "first-frame")
+        .map(|(_, offset)| *offset);
+    let last = first_frame
+        .or_else(|| rows.last().map(|(_, offset)| *offset))
+        .unwrap_or(0.0);
+    let title = if startup_enabled() {
+        "cold start timeline"
+    } else {
+        "tab tear-off timeline"
+    };
+    let mut out = format!("\n{title} [{label}]\n");
     for (stage, offset) in &rows {
-        out.push_str(&format!("  {stage:<14} {offset:>8.1} ms\n"));
+        out.push_str(&format!("  {stage:<28} {offset:>8.1} ms\n"));
     }
-    out.push_str(&format!("  {:<14} {last:>8.1} ms\n", "TOTAL"));
+    out.push_str(&format!("  {:<28} {last:>8.1} ms\n", "TOTAL"));
     eprintln!("{out}");
+    log::info!("{out}");
+
+    // A release build is a `windows_subsystem = "windows"` binary, so its
+    // stderr goes nowhere and the log file is rotated. A harness needs one file
+    // it can poll, with one block per run, so the path is opt-in.
+    if let Ok(path) = std::env::var("DAE_STARTUP_PERF_OUT") {
+        if !path.is_empty() {
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .and_then(|mut file| std::io::Write::write_all(&mut file, out.as_bytes()));
+        }
+    }
 
     // The run is done, so the next tear-off anchors on its own release.
     LAST_RELEASE_MS.store(0, Ordering::SeqCst);

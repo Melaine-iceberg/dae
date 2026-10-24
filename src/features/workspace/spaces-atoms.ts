@@ -2,6 +2,7 @@ import { atom, getDefaultStore } from "jotai";
 
 import { commands, type Space } from "@/bindings";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
+import { tabPerfFirstData } from "@/lib/tab-perf";
 
 const store = getDefaultStore();
 
@@ -27,6 +28,7 @@ export const ensureSpacesLoadedAtom = atom(null, async (get, set) => {
   set(spacesErrorAtom, null);
   try {
     set(spacesAtom, await commands.listSpaces());
+    tabPerfFirstData();
   } catch (error) {
     console.warn("Unable to load spaces", error);
     set(spacesErrorAtom, getFileOperationErrorMessage(error));

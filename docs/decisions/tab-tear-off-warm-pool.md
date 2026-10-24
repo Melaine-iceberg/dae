@@ -98,8 +98,10 @@
 
 ### 2.3 可以复用的既有机制
 
-- **交接 payload**：新窗口取「要显示什么」的既有通道（`takeTabHandoff`），收养应当复用它，
-  而不是新造一条
+- **交接 payload**：新窗口要显示什么复用同一份载荷与解析（`parseTabHandoff`），不新造
+  一条。冷路径已经改为 `initialization_script` 注入 `window.__DAE_TAB_HANDOFF`
+  （`take_tab_handoff` 退为回退，见 `docs/cold-start-js.md` §1.3）；收养走
+  `TabAdoptedIntoWindow` 事件，两条路共用格式。
 - **注入锚点**：`initialization_script` 已在用（材质与埋点），池窗口建窗时可直接沿用
 - **`linux_graphics` / `window_material` 的 `configure`**：建窗时的既有装饰路径
 - **⭐ 收养本身**：`merge_tab_into_window(target, payload, x, y)`

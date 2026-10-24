@@ -20,6 +20,7 @@
 | 目录变更走「按名字打补丁」而不是重读 | `navigation.ts::patch`、`watch.rs` |
 | IO 机制迁移（IOCP / io_uring）已实测否决 | `docs/decisions/completion-io.md` |
 | 冷启动：locale、explorer chunk、启动预取、预热窗口池 | `main.tsx`、`prefetch.rs`、`docs/decisions/tab-tear-off-warm-pool.md` |
+| 冷启动归因：WebView2 创建占 63–65%，parse+exec 只有 3–4%；交接 IPC 26 ms → 0 | `docs/cold-start-js.md` §1.2、`bench/cold-start/` |
 
 这一层的结论是：**列举、排序、IPC、变更通知基本到顶了**。下面几条的共性不是「算法不够好」，
 而是「某条路径还没人对它做过判断」——要么还在全量遍历不该遍历的东西，要么每帧都在重算同一份东西。

@@ -34,7 +34,7 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";import { useTranslatio
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 
-import { tabPerfMark } from "@/lib/tab-perf";
+import { tabPerfFirstData, tabPerfMark } from "@/lib/tab-perf";
 
 import { commands, type ArchiveFormat, type UndoRedoOutcome } from "@/bindings";
 
@@ -238,7 +238,9 @@ export function ExplorerView({
   // loading is what tells the two apart in an adoption, where both are IPC calls
   // that settle within a few milliseconds of each other.
   useEffect(() => {
-    if (!isLoading) tabPerfMark("listing");
+    if (isLoading) return;
+    tabPerfMark("listing");
+    tabPerfFirstData();
   }, [isLoading]);
   const canGoBack = !isLoading && state.historyIndex > 0;
   const canGoForward = !isLoading && state.historyIndex < state.history.length - 1;

@@ -52,6 +52,8 @@
   `commands.mergeTabIntoWindow(target, payload, x, y)`（`explorer-tabs.tsx:736`）交给 Rust，
   Rust 侧暂存后递给接收窗口，接收窗口**新建窗口 + 新 webview**，前端用
   `commands.takeTabHandoff(appWindow.label)`（`src/main.tsx:54`）复原。
+  （2026-10 更新：冷路径已改成 `initialization_script` 注入 `window.__DAE_TAB_HANDOFF`，
+  见 `docs/cold-start-js.md` §1.3；`takeTabHandoff` 只作为回退保留。）
   → JS 上下文丢失、有冷启动闪烁，**但指针定位/跨窗口悬停已解决**（见下方附注）。
 - **拖动本身是原生 OS 拖动**：`run_native_tab_drag`（`src-tauri/src/tab_windows.rs:440`）调
   `drag::start_drag`（`vendor/drag`）；拖动期间 hover 监控循环按 33 ms

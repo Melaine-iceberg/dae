@@ -196,6 +196,26 @@ export function restoreInitialTabHandoff(payload: string): WorkspaceSurface {
   return applyTabHandoff(initialTab.id, payload);
 }
 
+/**
+ * The snapshot this window was born with, or `null` when it has none.
+ *
+ * Rust injects it as an initialization script, so it is already here before the
+ * first line of the bundle runs. That is the point: asking for it over IPC cost
+ * ~26 ms on a fresh webview and sat between the locale wait and `createRoot`
+ * (docs/cold-start-js.md §1.3). The distinction between `null` and `undefined`
+ * is the fallback: `null` is an explicit "nothing to restore", while a missing
+ * global means this window was built without the channel and the caller should
+ * ask the old way rather than silently open on Overview.
+ */
+export function takeInjectedTabHandoff(): string | null | undefined {
+  const globals = globalThis as typeof globalThis & {
+    __DAE_TAB_HANDOFF?: string | null;
+  };
+  const handoff = globals.__DAE_TAB_HANDOFF;
+  if (handoff === null || typeof handoff === "string") return handoff;
+  return undefined;
+}
+
 /** Inserts a tab dropped from another window at `index` and activates it.
  * Mirrors `restoreInitialTabHandoff` but for a window that is already
  * running, so the merged tab lands beside the existing tabs. */

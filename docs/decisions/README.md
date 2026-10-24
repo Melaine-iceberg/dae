@@ -11,6 +11,8 @@
 | [`completion-io.md`](completion-io.md) | **已实测否决，不改** | 文件 IO 换成 IOCP/io_uring —— 枚举无异步形态、小文件慢 12.6 倍、拷贝输给 `CopyFileExW`；harness 与原始数据在 `bench/io-backends/` |
 | [`windows-directory-enumeration.md`](windows-directory-enumeration.md) | **已实测，已实施** | Windows 目录枚举补上 `FIND_FIRST_EX_LARGE_FETCH` —— 35,803 条目 24.2ms → **13.7ms**（-43%）、120,000 条目 -42%；首次绘制不变；harness 与原始数据在 `bench/listing-pipeline/` |
 | [`sftp-host-key-tofu.md`](sftp-host-key-tofu.md) | **已实施，未对真实 sshd 验证** | SFTP 之前接受任何主机密钥 —— 改为按用户 `~/.ssh/known_hosts` 的 `accept-new`：首次记录、变更即拒、记不下来也拒 |
+| [`boot-screen-prerender.md`](boot-screen-prerender.md) | **已实测否决** | 预渲染第一屏（`cold-start-js.md` §2）—— 静态骨架在 bundle 求值前一帧都没被画出来（0/18），`first-frame` 结构上不可能提前；让一帧才上屏 ~80ms，代价 +40–53ms，Rust 预渲染不做 |
+| [`first-mount-cost.md`](first-mount-cost.md) | **已实测，§5 对冷启动关闭** | 首次挂载的 62–74ms = React render **19ms**（首屏 Overview 仅 **1.4ms**）+ 树插入后的首次布局 **~40ms**（style 0、flush 0、248 节点；splash 只要 4.1ms）；这 40ms 是一次性冷成本（CJK 字面 + 首次布局），预热净亏，没有可搬去 Rust 的活 |
 
 第三份（`gtk-stack-pinned-by-upstream.md`）与上面两份**无关**：它记录的是**依赖升级遇到的上游阻断**，
 不是标签撕出的方案取舍 —— 下面各节只涉及前两份。
@@ -18,6 +20,12 @@
 `windows-directory-enumeration.md` 与 `completion-io.md` 相邻但结论相反，并不矛盾：
 后者问的是「换**派发机制**值不值」（不值），前者做的是「同一套机制下减少**系统调用次数**」
 （值，-43%）—— 后者结尾自己给出的建议就是「把力气花在减少系统调用次数、批量读上」。
+`boot-screen-prerender.md` 与上面各份都无关：它测的是**冷启动首帧之前有没有绘制机会**
+（没有），以及让出一帧的代价；结论是否决 `cold-start-js.md` §2 的 Rust 预渲染，
+但不改变 `first-frame` 本身的归因（§1.2）。`first-mount-cost.md` 接在它后面：
+§2 死了之后，页面侧只剩 React 挂载那一笔；拆开看是 render 19ms + 首次布局 40ms，
+**没有可搬到 Rust 的活**，所以 `§5` 对冷启动也关闭。两份合起来说明：冷启动首帧
+只剩 §6（不冷启动）这一条。
 
 ## 两份文档的关系
 

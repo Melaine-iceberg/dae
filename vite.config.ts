@@ -10,13 +10,16 @@ const host = process.env.TAURI_DEV_HOST;
 /**
  * Boot-screen theme injection.
  *
- * `index.html` has to paint the window canvas and the splash spinner before
- * React — and therefore `App.css` — is parsed, so it cannot read the theme
- * tokens at runtime. It used to hardcode them, and silently fell two palette
- * revisions behind: every cold start flashed the wrong canvas colour. Reading
- * the tokens out of `App.css` here makes that file the single source of truth
- * — a renamed or moved token now fails the build with a named error instead of
- * shipping a wrong-coloured splash.
+ * `index.html` has to paint the window canvas, the splash spinner and the
+ * static boot skeleton before React — and therefore `App.css` — is parsed, so
+ * it cannot read the theme tokens at runtime. It used to hardcode them, and
+ * silently fell two palette revisions behind: every cold start flashed the
+ * wrong canvas colour. Reading the tokens out of `App.css` here makes that
+ * file the single source of truth — a renamed or moved token now fails the
+ * build with a named error instead of shipping a wrong-coloured boot screen.
+ * Geometry is read the same way: the skeleton's rail and tab strip have to be
+ * the width and height `App.css` lays the mounted shell out with, or the two
+ * screens jump against each other at React's first commit.
  */
 function themeBootStyles() {
   return {
@@ -59,6 +62,19 @@ function themeBootStyles() {
           __DAE_CANVAS_DARK__: token(dark, "background"),
           __DAE_PRIMARY_DARK__: token(dark, "accent-default"),
           __DAE_BORDER_DARK__: token(dark, "border"),
+          // Boot skeleton (docs/cold-start-js.md §2). `sidebar` is the chrome
+          // tone the strip and the rail are painted with, and `sidebar-accent`
+          // is the one rung above it — the fill of every placeholder shape in
+          // both schemes (it is the only neutral that stays visible on the
+          // dark scheme's near-black chrome and on the light scheme's paper).
+          __DAE_CHROME__: token(light, "sidebar"),
+          __DAE_CHROME_DARK__: token(dark, "sidebar"),
+          __DAE_FILL__: token(light, "sidebar-accent"),
+          __DAE_FILL_DARK__: token(dark, "sidebar-accent"),
+          __DAE_MUTED_FG__: token(light, "muted-foreground"),
+          __DAE_MUTED_FG_DARK__: token(dark, "muted-foreground"),
+          __DAE_RAIL__: token(light, "sidebar-width"),
+          __DAE_STRIP__: token(light, "tab-strip-height"),
         };
 
         return Object.entries(values).reduce(

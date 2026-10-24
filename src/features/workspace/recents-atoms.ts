@@ -2,6 +2,7 @@ import { atom, getDefaultStore } from "jotai";
 
 import { commands, type EntryKind, type RecentItem, type RecentSource } from "@/bindings";
 import { getFileOperationErrorMessage } from "@/i18n/errors";
+import { tabPerfFirstData } from "@/lib/tab-perf";
 
 const MAX_RECENT_ITEMS = 300;
 const store = getDefaultStore();
@@ -26,6 +27,7 @@ export const ensureRecentsLoadedAtom = atom(null, async (get, set) => {
   set(recentsErrorAtom, null);
   try {
     set(recentsAtom, await commands.listRecents());
+    tabPerfFirstData();
   } catch (error) {
     console.warn("Unable to load recent items", error);
     set(recentsErrorAtom, getFileOperationErrorMessage(error));

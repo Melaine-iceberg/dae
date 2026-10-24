@@ -53,6 +53,38 @@ const LOG_FILE_BYTES: u128 = 4 * 1024 * 1024;
 /// history; five bounds the directory at five times [`LOG_FILE_BYTES`].
 const LOG_FILES_KEPT: usize = 5;
 
+/// The §2 A/B arm of the boot screen (`docs/cold-start-js.md` §8 第 3 条).
+///
+/// The skeleton is in `index.html` either way; these only decide what the page
+/// does with it. Opt-in, and the measurement that asked for them is in
+/// `docs/decisions/boot-screen-prerender.md`: the skeleton alone is **never
+/// painted** before React's commit (the boot gives the engine no rendering
+/// opportunity), so Rust pre-rendering was rejected. They are kept because the
+/// remaining question is a product one — pay ~40–55 ms of `first-frame` to fill
+/// the ~80 ms before the mount — and this makes that a one-env-var experiment.
+///
+/// - `DAE_BOOT_SKELETON=1` — show the static first screen instead of the spinner.
+/// - `DAE_BOOT_YIELD=1` — let the engine paint one frame before React mounts.
+///   This is what makes the skeleton visible at all; it is also its whole cost.
+pub fn boot_ab_script() -> String {
+    let mut script = String::new();
+    if env_flag("DAE_BOOT_SKELETON") {
+        script.push_str("window.__DAE_BOOT_SKELETON=1;");
+    }
+    if env_flag("DAE_BOOT_YIELD") {
+        script.push_str("window.__DAE_BOOT_YIELD=1;");
+    }
+    script
+}
+
+/// `NAME=1` (or any non-empty value but `0`), the shape every probe switch uses.
+fn env_flag(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(value) => !value.is_empty() && value != "0",
+        Err(_) => false,
+    }
+}
+
 /// The Windows package family name this process runs under, or the reason it
 /// has none — the check that tells a packaged launch (MSIX install or
 /// `winapp run`) from a plain `cargo build` one, per the winapp CLI's Tauri
@@ -83,6 +115,10 @@ fn get_package_family_name() -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Stamped before anything else: every cold-start row is measured from here,
+    // so this call must stay the first thing `run` does. See `tab_perf`.
+    let process_start = tab_perf::process_start();
+
     // Before Tauri, before GTK, before any thread: the graphics stack reads
     // this process's environment exactly once, when it initializes. See
     // `linux_graphics` for the defect and for why the check is this narrow.
@@ -174,6 +210,10 @@ pub fn run() {
 
             specta.mount_events(app);
 
+            let main_label = app.config().app.windows[0].label.clone();
+            tab_perf::mark_at(&main_label, "process-start", process_start);
+            tab_perf::mark_at(&main_label, "setup", tab_perf::now_ms());
+
             // The config declares this window but no longer creates it, because
             // whether it must be transparent is a run-time question that has to be
             // answered before the window exists: Acrylic, Mica and vibrancy are
@@ -187,7 +227,25 @@ pub fn run() {
                 app.handle(),
                 &app.config().app.windows[0],
             )?;
-            let main_window = window_material::configure(builder).build()?;
+            let builder = window_material::configure(builder)
+                // Runs before any page script, which is what lets `index.html`
+                // record its first mark without an IPC round-trip.
+                .initialization_script(tab_perf::startup_script())
+                // §2 A/B: the arm has to be decided before the first byte of
+                // markup is parsed, so it cannot be a page-side choice either.
+                .initialization_script(boot_ab_script())
+                // The main window never opens onto a handed-off tab, and says so
+                // before the bundle asks. Without it the frontend would fall
+                // back to the `take_tab_handoff` IPC and pay ~26 ms for a null.
+                .initialization_script(tab_windows::NO_HANDOFF_SCRIPT);
+            // Everything from here to `window-built` is the WebView2 environment
+            // and controller being created, which is the one account a page-side
+            // probe cannot see at all.
+            tab_perf::mark_at(&main_label, "window-config", tab_perf::now_ms());
+            let main_window = builder.build()?;
+            // The instant the webview existed and WebView2 began loading the
+            // document; every page-side row is later than this one.
+            tab_perf::mark_at(&main_label, "window-built", tab_perf::now_ms());
             window_material::attach(&main_window);
             // Registered before any drag can start: a window that does not
             // declare itself a tab drop destination is one GTK refuses the drag
@@ -252,6 +310,7 @@ pub fn run() {
             // Answer the startup surface's queries while the webview loads
             // so the first paint resolves them from memory.
             file_system::prefetch::warm_startup_data(app.handle());
+            tab_perf::mark_at(&main_label, "prefetch", tab_perf::now_ms());
 
             #[cfg(not(debug_assertions))]
             updater::spawn_startup_check(app.handle());
