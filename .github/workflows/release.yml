@@ -41,11 +41,11 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # `bun run build` shells out to `tsc`, and the version check below uses
       # `node -p`, so pin Node rather than trusting the runner image.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
 
@@ -95,7 +95,7 @@ jobs:
       # because Tauri brings its own Rust bindings (see the winapp Tauri guide).
       - name: Install winapp CLI
         if: matrix.platform == 'windows-latest'
-        uses: microsoft/setup-WinAppCli@v0.1
+        uses: microsoft/setup-WinAppCli@v0.2
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -210,7 +210,7 @@ jobs:
       # uploading. Release name/body/notes set by tauri-action are retained.
       - name: Attach MSIX to release
         if: matrix.platform == 'windows-latest'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: "*.msix"
           draft: true

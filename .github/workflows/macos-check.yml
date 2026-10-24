@@ -32,7 +32,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The tauri build script reads the frontend manifest, and the bindings
       # binary is built against the same feature set the release uses.
