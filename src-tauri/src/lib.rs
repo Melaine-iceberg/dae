@@ -119,6 +119,14 @@ pub fn run() {
     // so this call must stay the first thing `run` does. See `tab_perf`.
     let process_start = tab_perf::process_start();
 
+    // Armed here, not in `setup`: the harness counts its grace window from the
+    // spawn, so this has to count from the same instant. `setup` runs after
+    // Tauri has built the window and the webview, which under xvfb (software GL,
+    // cold font cache) can take long enough that a 44s timer started there
+    // lands *after* the harness has already killed the process — which is
+    // exactly the shape the Linux leg kept failing in.
+    spawn_training_quit();
+
     // Before Tauri, before GTK, before any thread: the graphics stack reads
     // this process's environment exactly once, when it initializes. See
     // `linux_graphics` for the defect and for why the check is this narrow.
@@ -189,11 +197,6 @@ pub fn run() {
             }
         })
         .setup(move |app| {
-            // Armed before anything else: it is the only way out of an
-            // unattended training run, and a step below hanging would otherwise
-            // take the profiled build's exit with it.
-            spawn_training_quit();
-
             // Every registered plugin has run its setup by now, so the file
             // target is open. From this point on a panic leaves a record
             // instead of an app that silently disappears.
@@ -477,14 +480,28 @@ fn spawn_training_quit() {
 
     // On stderr, so it lands in the training log the harness prints when a run
     // ends badly. It is what tells "the hook never fired" apart from "it fired
-    // and the exit hung".
-    eprintln!("[perf] training quit armed: {milliseconds}ms");
+    // and the exit hung" — and the absolute timestamp says how late the process
+    // got here, which is the difference between a timer that never ran and one
+    // that ran after the harness had already given up.
+    eprintln!(
+        "[perf] training quit armed at {} (+{milliseconds}ms)",
+        epoch_ms()
+    );
 
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(milliseconds));
         flush_training_profile();
         finish_training_process();
     });
+}
+
+/// Milliseconds since the Unix epoch, for correlating a training log with the
+/// job log it was produced in.
+fn epoch_ms() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis())
+        .unwrap_or(0)
 }
 
 /// Writes the profiling counters out, for the instrumented build only.
@@ -505,7 +522,10 @@ fn flush_training_profile() {
     // SAFETY: compiler-rt documents this as callable from any thread; it takes
     // the runtime's own lock and writes the counters accumulated so far.
     let status = unsafe { __llvm_profile_write_file() };
-    eprintln!("[perf] profile counters flushed (status {status})");
+    eprintln!(
+        "[perf] profile counters flushed at {} (status {status})",
+        epoch_ms()
+    );
 }
 
 /// No-op: an ordinary build has no profiling runtime to flush.

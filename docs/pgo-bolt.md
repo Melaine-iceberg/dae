@@ -221,8 +221,14 @@ BOLT 只认 **ELF**（x86-64 / AArch64）。Windows 是 PE/COFF、macOS 是 Mach
   `Total count` 不为 0。为 0 就说明训练没跑出东西（本地实测：一次 24 秒的启动+列目录 =
   63,858 个函数、12,547,845 次计数、20 MiB profdata）。
 - `.perf/training.log` 里那两行 `[perf] training quit armed` / `[perf] profile counters
-  flushed` 是训练链路的两个断点：前者说明 `setup` 里挂上了定时器，后者说明计数器落了盘。
-  只有前者 → 退出路径有问题；两者都没有 → 应用没走到 `setup`（缺 WebKit、没显示、配置不对）。
+  flushed` 是训练链路的两个断点：前者说明进程起来了、定时器挂上了（带 epoch 毫秒，可以拿去
+  对 job log 的时间戳），后者说明计数器落了盘。只有前者 → 要么退出路径没走完，要么
+  `perf-train` 没编进去（`grep -a "profile counters flushed" target/release/dae` 一秒判定）；
+  两者都没有 → 应用没启动起来（缺 WebKit、没显示、配置不对）。
+- **定时器从进程启动算起，不是从 `setup` 算起。** harness 的宽限期也是从 spawn 算的，
+  两边必须是同一个起点。`setup` 在窗口和 webview 建好之后才跑，xvfb 下（软件 GL、font cache
+  冷启动）这一段可能就有几十秒，44 秒的计时点会落到 harness 的 65 秒之后——这正是
+  Linux 那条腿之前一直"超时"的形态。
 - `-Cprofile-use` 本身**不会**告诉你“匹配了多少”，除非加 `-Cllvm-args=-pgo-warn-missing-function`。
   默认不加：这个 crate 上它会吐 **77,886 行** "no profile data available for function …"（build script、
   没被训练覆盖的 crate 都在里面），把有用的信号埋掉。调试某份 profile 时用

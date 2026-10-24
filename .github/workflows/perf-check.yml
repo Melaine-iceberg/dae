@@ -77,6 +77,25 @@ jobs:
           TRAIN_SECONDS: ${{ inputs.seconds }}
         run: bun scripts/opt/pgo.mjs train --seconds "${TRAIN_SECONDS:-45}"
 
+      # Separates the two ways this can fail, which the training log alone cannot
+      # tell apart: with the feature compiled in, a missing `flushed` line means
+      # the exit never finished; without it, the flush is a no-op and the log
+      # looks exactly the same.
+      - name: Confirm perf-train reached the build
+        if: always()
+        run: |
+          exe=src-tauri/target/release/dae
+          if [ ! -f "$exe" ]; then
+            echo "::error::no binary at $exe — the instrumented build did not finish"
+            exit 1
+          fi
+          if grep -aq "profile counters flushed" "$exe"; then
+            echo "perf-train is compiled in: the flush path is present"
+          else
+            echo "::error title=perf-train missing::--features perf-train did not reach cargo, so the flush is a no-op and the counters depend on an exit that never completes"
+            exit 1
+          fi
+
       - name: Show what the profile covers
         if: always()
         run: |

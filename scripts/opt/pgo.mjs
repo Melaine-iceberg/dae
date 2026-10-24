@@ -262,9 +262,9 @@ async function train({ seconds, target }) {
         "The app most likely never started (no display, or a missing WebKit/WebView " +
         "dependency), so there is nothing to merge.\n" +
         `Read ${path.relative(repoRoot, path.join(perfDir, "training.log"))}: ` +
-        "`[perf] training quit armed` means the hook ran, `profile counters flushed` " +
-        "means the counters reached the disk. Neither line means the app never got as " +
-        "far as its setup hook.",
+        "`[perf] training quit armed` means the binary started, `profile counters flushed` " +
+        "means the counters reached the disk. The first without the second means the flush " +
+        "is missing from the build (no `perf-train`), and neither means the app never started.",
     );
   }
   merge();
