@@ -386,9 +386,20 @@ export const targetDir = () => {
 /** The binary `tauri build` produced. Hooks run by tauri get
  *  `TAURI_ENV_TARGET_TRIPLE`; a cross build puts the exe one directory deeper. */
 export const appBinary = (profile = "release") => {
+  const name = IS_WINDOWS ? "dae.exe" : "dae";
+  const bare = path.join(targetDir(), profile, name);
   const triple = process.env.DAE_PERF_TARGET_TRIPLE || process.env.TAURI_ENV_TARGET_TRIPLE;
-  const dir = triple ? path.join(targetDir(), triple, profile) : path.join(targetDir(), profile);
-  return path.join(dir, IS_WINDOWS ? "dae.exe" : "dae");
+  if (!triple) return bare;
+  const scoped = path.join(targetDir(), triple, profile, name);
+  // The tauri CLI sets `TAURI_ENV_TARGET_TRIPLE` to the host triple even when
+  // `tauri build` ran without `--target`, so that variable is a hint about the
+  // platform, not a fact about the output directory: a host build still lands
+  // in `target/release/`. Trusting it unconditionally is what made the Linux
+  // `beforeBundleCommand` look for `target/x86_64-unknown-linux-gnu/release/dae`
+  // while the build had written `target/release/dae` — post-link then warned
+  // "nothing to post-process" and skipped BOLT on a release that asked for it.
+  // Prefer the triple directory only when a binary is actually in it.
+  return existsSync(scoped) || !existsSync(bare) ? scoped : bare;
 };
 
 /** `tauri build` with the given environment. `--no-bundle` is the default here
