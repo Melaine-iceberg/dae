@@ -110,6 +110,13 @@ function dropBuildTimeProfiles() {
 
 const instrumentFlags = () => ["-C", `profile-generate=${pgoRawDir}`];
 
+/** The instrumented build is the only one that links compiler-rt's profiling
+ *  runtime, and `perf-train` is what lets `lib.rs::spawn_training_quit` call
+ *  `__llvm_profile_write_file` — flushing the counters itself instead of
+ *  trusting the exit path to finish. Any other build with this feature fails to
+ *  link, so it cannot be switched on by accident. */
+const TRAIN_FEATURE_ARGS = ["--features", "perf-train"];
+
 const useFlags = () => ["-C", `profile-use=${pgoProfilePath}`, ...PROFILE_USE_ARGS];
 
 function describeArtifacts() {
@@ -135,7 +142,7 @@ function instrument({ bolt, target }) {
   resetProfileDirectory(pgoRawDir);
   profdataTool();
   say(`profile directory emptied: ${path.relative(repoRoot, pgoRawDir)}`);
-  tauriBuild({ env: rustflagsEnv(instrumentFlags()), args: targetArgs(target) });
+  tauriBuild({ env: rustflagsEnv(instrumentFlags()), args: [...targetArgs(target), ...TRAIN_FEATURE_ARGS] });
   dropBuildTimeProfiles();
 
   const exe = appBinary();
@@ -238,7 +245,7 @@ async function train({ seconds, target }) {
   resetProfileDirectory(pgoRawDir);
   profdataTool();
   prepareCorpus();
-  tauriBuild({ env: rustflagsEnv(instrumentFlags()), args: targetArgs(target) });
+  tauriBuild({ env: rustflagsEnv(instrumentFlags()), args: [...targetArgs(target), ...TRAIN_FEATURE_ARGS] });
   dropBuildTimeProfiles();
 
   const exe = appBinary();
@@ -253,7 +260,11 @@ async function train({ seconds, target }) {
     fail(
       `the training run wrote no .profraw files into ${path.relative(repoRoot, pgoRawDir)}.\n` +
         "The app most likely never started (no display, or a missing WebKit/WebView " +
-        "dependency), so there is nothing to merge.",
+        "dependency), so there is nothing to merge.\n" +
+        `Read ${path.relative(repoRoot, path.join(perfDir, "training.log"))}: ` +
+        "`[perf] training quit armed` means the hook ran, `profile counters flushed` " +
+        "means the counters reached the disk. Neither line means the app never got as " +
+        "far as its setup hook.",
     );
   }
   merge();

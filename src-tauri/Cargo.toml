@@ -28,6 +28,13 @@ required-features = ["export-bindings"]
 # Enables the dev-only `export_bindings` helper above:
 # `cargo run --features export-bindings --bin export_bindings`.
 export-bindings = []
+# Only for the `-Cprofile-generate` build that `scripts/opt/pgo.mjs train` makes
+# and immediately runs. It links compiler-rt's profiling runtime, whose
+# `__llvm_profile_write_file` the training exit path calls to put the counters
+# on disk before the process goes away. Enabling it in a build that is *not*
+# instrumented fails to link, which is the intended guard: nothing else may
+# reference that symbol. See `spawn_training_quit` in `src/lib.rs`.
+perf-train = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

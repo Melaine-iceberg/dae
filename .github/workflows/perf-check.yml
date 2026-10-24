@@ -1,0 +1,118 @@
+name: Perf — PGO training
+
+# Answers one question without tagging a release to find out: does the Linux
+# training run leave a usable `.profdata` behind?
+#
+# The release legs run this same step with `continue-on-error`, because a
+# release must not be blocked by its optimiser — but that also means a silently
+# empty profile looks exactly like a successful release. This workflow is the
+# place where it is allowed to be red: manual only, no release, artifacts kept.
+#
+# Linux only on purpose. Windows and macOS have produced a profile since the
+# hook was added; Linux is the leg where `exit` does not finish under xvfb, so
+# it is the one worth watching.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Training run length in seconds"
+        required: false
+        default: "45"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-pgo-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pgo:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl wget file pkg-config cmake \
+            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev \
+            libgtk-3-dev librsvg2-dev libxdo-dev \
+            libssl-dev libdbus-1-dev zlib1g-dev rpm \
+            xvfb
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # `llvm-profdata` has to be the one rustc ships, or it refuses the
+          # profraw files that rustc wrote.
+          components: llvm-tools-preview
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          cache-on-failure: true
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      # Not `continue-on-error`: here a missing profile is the thing under test,
+      # so it fails the job. The training log and whatever counters did reach
+      # the disk are uploaded either way.
+      - name: Instrument, train, merge
+        env:
+          # Not `SECONDS`: that is a bash builtin, and shadowing it silently
+          # resets the shell's own timer.
+          TRAIN_SECONDS: ${{ inputs.seconds }}
+        run: bun scripts/opt/pgo.mjs train --seconds "${TRAIN_SECONDS:-45}"
+
+      - name: Show what the profile covers
+        if: always()
+        run: |
+          log=.perf/training.log
+          if [ -f "$log" ]; then
+            echo "### training.log"
+            echo '```'
+            tail -40 "$log"
+            echo '```'
+          else
+            echo "### training.log"
+            echo "missing — the app never wrote anything to stderr"
+          fi
+          {
+            echo "### counters"
+            echo '```'
+            find .perf/pgo -name '*.profraw' 2>/dev/null | wc -l | sed 's/^/profraw files: /'
+            if [ -f .perf/pgo/dae.profdata ]; then
+              ls -l .perf/pgo/dae.profdata
+              # Same location `findLlvmTool` uses. Best effort: the summary must
+              # not be the thing that fails, the step above already decided.
+              llvm_profdata="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/llvm-profdata"
+              [ -x "$llvm_profdata" ] && "$llvm_profdata" show .perf/pgo/dae.profdata \
+                | grep -E '^(Total functions|Total count):' || true
+            else
+              echo "no merged profile"
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pgo-profile
+          path: |
+            .perf/training.log
+            .perf/pgo/
+          if-no-files-found: warn
+          retention-days: 7

@@ -111,6 +111,26 @@ bun run perf:bolt                  # instrument → 跑训练负载 → merge-fd
 没设置时（即所有正常启动）它什么都不做。这个差别不是理论：同一个 instrumented
 小程序，用 CRT `exit` 退出会写出 7.8 KB 的 profraw，用 `std::process::exit` 退出什么都没有。
 
+**但 Linux 上这个 `exit` 不返回。** CI 里 Windows / macOS 都拿到了 profile（20 MiB /
+14.5 MiB），Linux 每次都是：训练进程活过自己的定时器 → harness 在 45+20 秒后 SIGTERM →
+`.perf/pgo/raw` 一个 profraw 都没有。`xvfb-run` 下的 `exit` 卡在退出路径上（GTK/WebKit 的
+teardown 与 `atexit` 钩子），进程既没活着完成也没退出。v0.5.0 的 Linux 产物就是这样发出去的：
+BOLT 有（它的 runtime 每 5 秒自己 dump，不依赖退出），PGO 没有。
+
+现在的做法是不再依赖退出路径：
+
+- `perf-train` 这个 feature 只给 `-Cprofile-generate` 的构建开。它让
+  `spawn_training_quit` 直接调 compiler-rt 的 `__llvm_profile_write_file()`——也就是它自己
+  `atexit` 钩子调的那个函数——把计数器先落盘，然后走 `_exit`（**不进入任何 exit 钩子**，
+  因此绕开卡住的那段 teardown）。
+- Windows / macOS 仍是 `exit(0)`：那条路本来就通，不动。
+- 没开这个 feature 的构建根本引用不到那个符号，所以它不会误开——反过来，给非插桩构建
+  开 `perf-train` 会**链接失败**，这正是想要的约束。
+- 应用还会往 stderr 打两行：`[perf] training quit armed: …ms`（钩子挂上了）和
+  `[perf] profile counters flushed (status N)`（计数器落盘了）。两行都没有，说明应用
+  根本没走到 setup——那是另一类问题，不是退出路径的问题。harness 在失败时会把
+  `.perf/training.log` 的尾巴打出来。
+
 BOLT 那一侧还叠了一层保险：插桩时加 `-instrumentation-sleep-time=5`
 `-instrumentation-no-counters-clear`，runtime 会 fork 一个 watcher 每 5 秒把累计计数器
 dump 一次，所以即使训练进程被意外杀掉，也能拿到最后一份数据。PGO 没有等价机制，
@@ -183,15 +203,26 @@ BOLT 只认 **ELF**（x86-64 / AArch64）。Windows 是 PE/COFF、macOS 是 Mach
 - **CI 的训练负载只是「启动 + 列一个目录」。** 它一定不如人练得好。正式发布前如果在意收益，
   应该用本地训练出来的 `.profdata`（可以传进 CI 复用，但 BOLT 的 fdata 必须对应 CI 自己链接
   出来的那个二进制，不能跨机构复用）。
-- **`DAE_PERF_TRAIN_QUIT_MS` 是唯一的产品代码改动**（`lib.rs::spawn_training_quit`，~25 行含注释）。
-  不设就走原路径，不注册任何东西；如果不想要它，删掉那个函数和调用点即可，
-  代价是 CI 里的训练步骤以后采不到 profile（本地手动训练也采不到，因为人也没法把它“干净”关掉）。
+- **`DAE_PERF_TRAIN_QUIT_MS` 是唯一的产品代码改动**（`lib.rs::spawn_training_quit` 及其后两个
+  小函数，含注释约 60 行）。不设就走原路径，不注册任何东西；如果不想要它，删掉那个函数和调用点、
+  以及 `Cargo.toml` 里的 `perf-train` feature 即可，代价是 CI 里的训练步骤以后采不到 profile
+  （本地手动训练也采不到，因为人也没法把它“干净”关掉）。
+- **`perf-train` 只能开在插桩构建上。** 它引用的 `__llvm_profile_write_file` 由
+  `-Cprofile-generate` 带进来的 compiler-rt 提供；给别的构建开它会链接失败。`pgo.mjs` 只在
+  `instrument` / `train` 里传，`build` 不传——那边是 `-Cprofile-use`，没有那个运行时。
 
 ## 7. 怎么确认它真的生效了
 
+- **`.github/workflows/perf-check.yml`（手动触发，只跑 Linux）**：它会完整跑一遍
+  插桩 → 训练 → merge，并把 `.perf/training.log` 和 `.perf/pgo/` 传成 artifact。
+  release 腿那一步是 `continue-on-error`，空的 profile 与成功的发布长得一模一样；
+  这个 workflow 是专门让它可以变红的地方。改训练链路前后都应跑一次。
 - `perf:pgo:merge` 结尾会打印 `llvm-profdata show` 的摘要：`Total functions` 应该在几万这个量级、
   `Total count` 不为 0。为 0 就说明训练没跑出东西（本地实测：一次 24 秒的启动+列目录 =
   63,858 个函数、12,547,845 次计数、20 MiB profdata）。
+- `.perf/training.log` 里那两行 `[perf] training quit armed` / `[perf] profile counters
+  flushed` 是训练链路的两个断点：前者说明 `setup` 里挂上了定时器，后者说明计数器落了盘。
+  只有前者 → 退出路径有问题；两者都没有 → 应用没走到 `setup`（缺 WebKit、没显示、配置不对）。
 - `-Cprofile-use` 本身**不会**告诉你“匹配了多少”，除非加 `-Cllvm-args=-pgo-warn-missing-function`。
   默认不加：这个 crate 上它会吐 **77,886 行** "no profile data available for function …"（build script、
   没被训练覆盖的 crate 都在里面），把有用的信号埋掉。调试某份 profile 时用

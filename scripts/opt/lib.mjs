@@ -555,8 +555,14 @@ export async function runTrainingWorkload({ exe, seconds = 45, env = {}, directo
       );
     }
   } else {
-    // Backstop: no clean exit, so the counters will most likely be lost.
-    warn(`the app did not quit on its own within ${seconds + 20}s; killing it (the profile will be incomplete)`);
+    // Backstop: the app never asked to go, so nothing has been written yet.
+    // The tail is printed here as well as above: whether the hook armed at all
+    // is the difference between "the timer never started" and "it fired and the
+    // exit did not finish", and that decision belongs to whoever reads this.
+    warn(
+      `the app did not quit on its own within ${seconds + 20}s; killing it ` +
+        `(the profile will be incomplete)${output()}`,
+    );
     signal(child, "SIGTERM");
     const stopped = await Promise.race([exited, sleep(4000).then(() => null)]);
     if (!stopped) {

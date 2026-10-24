@@ -189,6 +189,11 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // Armed before anything else: it is the only way out of an
+            // unattended training run, and a step below hanging would otherwise
+            // take the profiled build's exit with it.
+            spawn_training_quit();
+
             // Every registered plugin has run its setup by now, so the file
             // target is open. From this point on a panic leaves a record
             // instead of an app that silently disappears.
@@ -314,8 +319,6 @@ pub fn run() {
 
             #[cfg(not(debug_assertions))]
             updater::spawn_startup_check(app.handle());
-
-            spawn_training_quit();
 
             Ok(())
         })
@@ -457,6 +460,13 @@ fn install_panic_logger() {
 /// Hence the direct `exit` below, which *is* the CRT path on both Windows and
 /// Unix. It is also what makes this a one-line hook instead of a flag threaded
 /// through the exit sequence.
+///
+/// Linux is the exception that the original shape did not survive: under
+/// `xvfb-run` the process outlives the timer, the harness falls back to
+/// SIGTERM, and no counters are ever written — which is why the Linux leg of a
+/// release shipped with no PGO profile while Windows and macOS had one. There
+/// the instrumented build writes the counters itself and leaves through
+/// `_exit`, skipping the teardown that hangs. See `flush_training_profile`.
 fn spawn_training_quit() {
     let Some(milliseconds) = std::env::var("DAE_PERF_TRAIN_QUIT_MS")
         .ok()
@@ -465,17 +475,66 @@ fn spawn_training_quit() {
         return;
     };
 
-    unsafe extern "C" {
-        fn exit(code: i32) -> !;
-    }
+    // On stderr, so it lands in the training log the harness prints when a run
+    // ends badly. It is what tells "the hook never fired" apart from "it fired
+    // and the exit hung".
+    eprintln!("[perf] training quit armed: {milliseconds}ms");
 
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(milliseconds));
-        // SAFETY: `exit` terminates the process and runs the registered exit
-        // handlers, which is the entire purpose here; nothing alive is observed
-        // afterwards.
-        unsafe { exit(0) }
+        flush_training_profile();
+        finish_training_process();
     });
+}
+
+/// Writes the profiling counters out, for the instrumented build only.
+///
+/// `__llvm_profile_write_file` is compiler-rt's own "save now" entry point —
+/// the same function its exit handler calls — so what lands on disk is exactly
+/// what a clean exit would have produced. Having it here is what removes the
+/// dependence on the exit path completing at all.
+#[cfg(feature = "perf-train")]
+fn flush_training_profile() {
+    // SAFETY: this symbol is part of the profiling runtime that
+    // `-Cprofile-generate` links into the binary. `perf-train` is only ever set
+    // for that build, so the reference cannot resolve to anything else — and a
+    // build without the runtime fails to link rather than calling into nothing.
+    unsafe extern "C" {
+        fn __llvm_profile_write_file() -> i32;
+    }
+    // SAFETY: compiler-rt documents this as callable from any thread; it takes
+    // the runtime's own lock and writes the counters accumulated so far.
+    let status = unsafe { __llvm_profile_write_file() };
+    eprintln!("[perf] profile counters flushed (status {status})");
+}
+
+/// No-op: an ordinary build has no profiling runtime to flush.
+#[cfg(not(feature = "perf-train"))]
+fn flush_training_profile() {}
+
+/// Ends the process after the counters are on disk.
+#[cfg(all(feature = "perf-train", target_os = "linux"))]
+fn finish_training_process() -> ! {
+    // SAFETY: `_exit` ends the process without entering a single exit handler,
+    // which is the point — the counters are already written, and the teardown
+    // those handlers drive is what does not finish under xvfb.
+    unsafe extern "C" {
+        fn _exit(status: i32) -> !;
+    }
+    unsafe { _exit(0) }
+}
+
+/// Ends the process and lets the C runtime write the profile, as it always has
+/// on Windows and macOS.
+#[cfg(not(all(feature = "perf-train", target_os = "linux")))]
+fn finish_training_process() -> ! {
+    unsafe extern "C" {
+        fn exit(code: i32) -> !;
+    }
+    // SAFETY: `exit` terminates the process and runs the registered exit
+    // handlers, which is the entire purpose here; nothing alive is observed
+    // afterwards.
+    unsafe { exit(0) }
 }
 
 /// Creates the shared command registry for Tauri and TypeScript binding export.
