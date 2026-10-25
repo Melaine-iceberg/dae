@@ -23,6 +23,7 @@
 //! because emitting is the one thing that is genuinely engine-specific.
 pub mod error;
 pub mod host;
+pub mod progress;
 pub mod types;
 
 pub use error::FileSystemError;

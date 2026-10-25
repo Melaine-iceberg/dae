@@ -13,6 +13,7 @@ use super::types::{
 };
 use super::undo::{self, Operation, TrashRecord, UndoRedoOutcome, UndoRedoState};
 use super::vfs::{self, SharedBackend};
+use crate::host;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
@@ -233,7 +234,7 @@ pub async fn rename_entries_batch(
         return Ok(Vec::new());
     }
 
-    emit_preparing(&app, &operation_id, FileOperationKind::Move);
+    emit_preparing(host::of(&app).as_ref(), &operation_id, FileOperationKind::Move);
 
     tauri::async_runtime::spawn_blocking(move || {
         // Derive full destination paths and drop no-ops before touching disk.
@@ -278,7 +279,7 @@ pub async fn rename_entries_batch(
         }
 
         let progress =
-            FileOperationProgressReporter::new(app.clone(), operation_id, FileOperationKind::Move);
+            FileOperationProgressReporter::new(host::of(&app), operation_id, FileOperationKind::Move);
         let applied = undo::apply_rename_pairs(&pairs, &progress)?;
 
         // Report destinations in request order so the UI can reselect them;
@@ -344,13 +345,13 @@ pub async fn copy_entries(
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<(), FileSystemError> {
-    emit_preparing(&app, &operation_id, FileOperationKind::Copy);
+    emit_preparing(host::of(&app).as_ref(), &operation_id, FileOperationKind::Copy);
 
     tauri::async_runtime::spawn_blocking(move || {
         let sources = resolve_transfer_items(items)?;
         let destination_backend = vfs::resolve(&destination)?;
         let progress =
-            FileOperationProgressReporter::new(app.clone(), operation_id, FileOperationKind::Copy);
+            FileOperationProgressReporter::new(host::of(&app), operation_id, FileOperationKind::Copy);
 
         // The journal records every entry that actually landed on disk, so a
         // partially failed copy still gets an undo record for its successes.
@@ -406,13 +407,13 @@ pub async fn move_entries(
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<(), FileSystemError> {
-    emit_preparing(&app, &operation_id, FileOperationKind::Move);
+    emit_preparing(host::of(&app).as_ref(), &operation_id, FileOperationKind::Move);
 
     tauri::async_runtime::spawn_blocking(move || {
         let sources = resolve_transfer_items(items)?;
         let destination_backend = vfs::resolve(&destination)?;
         let progress =
-            FileOperationProgressReporter::new(app.clone(), operation_id, FileOperationKind::Move);
+            FileOperationProgressReporter::new(host::of(&app), operation_id, FileOperationKind::Move);
 
         // The journal records every entry that actually moved, so a partially
         // failed move still gets an undo record for its successes.
@@ -477,12 +478,12 @@ pub async fn delete_entries(
         return Ok(());
     }
 
-    emit_preparing(&app, &operation_id, FileOperationKind::Delete);
+    emit_preparing(host::of(&app).as_ref(), &operation_id, FileOperationKind::Delete);
 
     tauri::async_runtime::spawn_blocking(move || {
         let targets = resolve_sources(paths)?;
         let progress =
-            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Delete);
+            FileOperationProgressReporter::new(host::of(&app), operation_id, FileOperationKind::Delete);
 
         if targets
             .iter()
@@ -552,11 +553,11 @@ pub async fn trash_entries(
         return Err(FileSystemError::InvalidInput("fs.trash_local_only".into()));
     }
 
-    emit_preparing(&app, &operation_id, FileOperationKind::Delete);
+    emit_preparing(host::of(&app).as_ref(), &operation_id, FileOperationKind::Delete);
 
     tauri::async_runtime::spawn_blocking(move || {
         let progress = FileOperationProgressReporter::new(
-            app.clone(),
+            host::of(&app),
             operation_id,
             FileOperationKind::Delete,
         );
@@ -614,7 +615,7 @@ pub async fn undo_operation(
         .peek_undo()
         .map(|operation| operation.undo_kind())
         .unwrap_or(FileOperationKind::Move);
-    emit_preparing(&app, &operation_id, kind);
+    emit_preparing(host::of(&app).as_ref(), &operation_id, kind);
 
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<UndoRedoState>();
@@ -623,7 +624,7 @@ pub async fn undo_operation(
         };
 
         let op = operation.op_code();
-        let progress = FileOperationProgressReporter::new(app.clone(), operation_id, kind);
+        let progress = FileOperationProgressReporter::new(host::of(&app), operation_id, kind);
         let result = undo::execute_undo(operation, &progress);
 
         match result {
@@ -663,7 +664,7 @@ pub async fn redo_operation(
         .peek_redo()
         .map(|operation| operation.redo_kind())
         .unwrap_or(FileOperationKind::Move);
-    emit_preparing(&app, &operation_id, kind);
+    emit_preparing(host::of(&app).as_ref(), &operation_id, kind);
 
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<UndoRedoState>();
@@ -672,7 +673,7 @@ pub async fn redo_operation(
         };
 
         let op = operation.op_code();
-        let progress = FileOperationProgressReporter::new(app.clone(), operation_id, kind);
+        let progress = FileOperationProgressReporter::new(host::of(&app), operation_id, kind);
         let result = undo::execute_redo(operation, &progress);
 
         match result {
@@ -713,12 +714,12 @@ pub async fn duplicate_entries(
         ));
     }
 
-    emit_preparing(&app, &operation_id, FileOperationKind::Copy);
+    emit_preparing(host::of(&app).as_ref(), &operation_id, FileOperationKind::Copy);
 
     tauri::async_runtime::spawn_blocking(move || {
         let sources = resolve_sources(paths.clone())?;
         let progress =
-            FileOperationProgressReporter::new(app.clone(), operation_id, FileOperationKind::Copy);
+            FileOperationProgressReporter::new(host::of(&app), operation_id, FileOperationKind::Copy);
         let created = transfer::duplicate_sources(sources, &progress)?;
 
         app.state::<UndoRedoState>().record(
@@ -791,11 +792,11 @@ pub async fn update_file_properties_recursive(
         return Err(FileSystemError::NotDirectory(path));
     }
 
-    emit_preparing(&app, &operation_id, FileOperationKind::Properties);
+    emit_preparing(host::of(&app).as_ref(), &operation_id, FileOperationKind::Properties);
 
     tauri::async_runtime::spawn_blocking(move || {
         let progress =
-            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Properties);
+            FileOperationProgressReporter::new(host::of(&app), operation_id, FileOperationKind::Properties);
         let outcome =
             vfs::resolve(&path)?.update_properties_recursive(&path, &changes, &progress)?;
         progress.finish();

@@ -6,8 +6,19 @@
 //! the boundary.
 
 use dae_core::host::{Event, Host};
+use std::sync::Arc;
 use tauri::AppHandle;
 use tauri_specta::Event as _;
+
+/// Wraps an `AppHandle` as the seam.
+///
+/// One `Arc` per operation, not per emit: the reporter/emitter keeps it for its
+/// lifetime. `Host` cannot be implemented on `AppHandle` itself — both the trait
+/// and the type are foreign to this crate — so this newtype is the price of the
+/// orphan rule, and it is a cheap one.
+pub(crate) fn of(app: &AppHandle) -> Arc<dyn Host> {
+    Arc::new(TauriHost::new(app.clone()))
+}
 
 /// Reports through the same `tauri_specta::Event` structs the frontend's
 /// bindings are generated from, so the wire names (`system-theme-changed`,
@@ -33,6 +44,26 @@ impl Host for TauriHost {
             }
             Event::SystemAccentChanged(accent) => {
                 let _ = crate::system_accent::SystemAccentChanged(accent).emit(&self.app);
+            }
+            Event::FileOperationProgress {
+                operation_id,
+                operation,
+                phase,
+                completed,
+                total,
+                current_path,
+            } => {
+                // Field-by-field on purpose: a field added to the wire type stops
+                // this compiling instead of silently staying at its default.
+                let _ = crate::file_system::progress::FileOperationProgress {
+                    operation_id,
+                    operation,
+                    phase,
+                    completed,
+                    total,
+                    current_path,
+                }
+                .emit(&self.app);
             }
         }
     }

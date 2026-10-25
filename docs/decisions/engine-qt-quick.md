@@ -104,9 +104,17 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
 2. 在原路径留 `pub use dae_core::<module>::*;` 垫片，**call site 一个都不改**；
 3. 最后一个调用者搬完后删垫片。
 
-已完成的第 1 片（本分支）：`file_system/types.rs`（600 行）与
-`file_system/error.rs` 进入 `dae-core`，`src-tauri` 侧只剩两个垫片。
-选它们是因为它们是**契约** —— 后面的每个模块都依赖它们，先搬完就能一直往里搬。
+已完成的切片（本分支，按依赖顺序）：
+
+1. **契约**：`file_system/types.rs`（600 行）与 `file_system/error.rs` 进入 `dae-core`；
+   `src-tauri` 侧只剩垫片。选它们是因为后面的每个模块都依赖它们。
+2. **接缝**：`dae_core::host::{Host, Event}` + `TauriHost`；`system_theme` /
+   `system_accent` 两个 watcher 改走 `&dyn Host`，**模块里的 `tauri_specta::Event`
+   import 被删掉**——这是“不再自己发事件”的编译期证明。
+3. **进度**：`FileOperationKind` / `FileOperationPhase` 进 `dae-core::progress`；
+   `FileOperationProgressReporter` 与 `emit_preparing` 收 `Arc<dyn Host>` /
+   `&dyn Host`，17 个构造点改为 `host::of(&app)`（每次操作一个 `Arc`，不是每次
+   emit 一个）。wire 结构体留在壳里，由 `TauriHost` 字段对字段地填充。
 
 ## 5. 定案前必须量出来的四组数字
 

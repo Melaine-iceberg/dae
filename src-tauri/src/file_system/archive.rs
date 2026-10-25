@@ -5,6 +5,7 @@ use super::progress::{
 };
 use super::types::{EntryKind, display_name_from_path, path_to_string};
 use super::vfs::{self, FileSystemBackend};
+use crate::host;
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -114,11 +115,11 @@ pub async fn compress_entries(
         ));
     }
 
-    emit_preparing(&app, &operation_id, FileOperationKind::Compress);
+    emit_preparing(host::of(&app).as_ref(), &operation_id, FileOperationKind::Compress);
 
     tauri::async_runtime::spawn_blocking(move || {
         let progress =
-            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Compress);
+            FileOperationProgressReporter::new(host::of(&app), operation_id, FileOperationKind::Compress);
         compress_sync(
             sources,
             &destination_dir,
@@ -143,11 +144,11 @@ pub async fn extract_archive(
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<String, FileSystemError> {
-    emit_preparing(&app, &operation_id, FileOperationKind::Extract);
+    emit_preparing(host::of(&app).as_ref(), &operation_id, FileOperationKind::Extract);
 
     tauri::async_runtime::spawn_blocking(move || {
         let progress =
-            FileOperationProgressReporter::new(app, operation_id, FileOperationKind::Extract);
+            FileOperationProgressReporter::new(host::of(&app), operation_id, FileOperationKind::Extract);
         extract_sync(
             &archive_path,
             destination_dir.as_deref(),

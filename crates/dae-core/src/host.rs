@@ -44,6 +44,22 @@ pub enum Event {
     /// The OS accent colour moved, as the `#rrggbb` the CSS seam takes. `None`
     /// where the platform has no accent setting.
     SystemAccentChanged(Option<String>),
+    /// One tick of a long file operation.
+    ///
+    /// Deliberately flat rather than a payload struct: the shell's wire type
+    /// already exists (`file_system::progress::FileOperationProgress`, which
+    /// owns the `explorer-file-operation-progress` name), and a second struct
+    /// here would be a third definition of the same five fields. The mapping in
+    /// `TauriHost` is field-by-field, so a field added on the wire side stops
+    /// compiling rather than silently staying zero.
+    FileOperationProgress {
+        operation_id: String,
+        operation: crate::progress::FileOperationKind,
+        phase: crate::progress::FileOperationPhase,
+        completed: u64,
+        total: Option<u64>,
+        current_path: Option<String>,
+    },
 }
 
 /// What a module needs in order to report. Implemented once per shell.
