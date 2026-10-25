@@ -24,7 +24,7 @@ use specta::Type;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use dae_core::host::{Event as UiEvent, Host};
+use crate::host::{Event as UiEvent, Host};
 use std::sync::OnceLock;
 
 /// How many operations stay undoable; older entries drop off the bottom.
@@ -770,7 +770,7 @@ fn undo_trash(
 
     #[cfg(target_os = "macos")]
     {
-        let entries = crate::file_system::macos_trash::list_entries()?;
+        let entries = crate::fs::macos_trash::list_entries()?;
         // (source inside ~/.Trash, destination) pairs, one per record.
         let mut to_restore: Vec<(PathBuf, PathBuf)> = Vec::new();
         let mut restored: Vec<TrashRecord> = Vec::new();
@@ -810,7 +810,7 @@ fn undo_trash(
 
         progress.start(to_restore.len() as u64);
         for (source, destination) in to_restore {
-            crate::file_system::macos_trash::restore(&source, &destination)?;
+            crate::fs::macos_trash::restore(&source, &destination)?;
             progress.advance(&destination);
         }
         Ok(restored)
@@ -929,8 +929,8 @@ fn resolve_sources(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file_system::local::{move_entries_with_progress, rename_entry_sync};
-    use crate::file_system::test_support::TestProgress;
+    use crate::fs::local::{move_entries_with_progress, rename_entry_sync};
+    use crate::fs::test_support::TestProgress;
     use crate::host::testing::RecordingHost;
     use std::fs;
 

@@ -14,8 +14,8 @@ use super::types::{
 use super::undo::{self, Operation, TrashRecord, UndoRedoOutcome};
 use super::vfs::{self, SharedBackend};
 use std::collections::HashSet;
-use dae_core::fs::listing::{BatchTarget, EventsTarget};
-use dae_core::host::Host;
+use crate::fs::listing::{BatchTarget, EventsTarget};
+use crate::host::Host;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -87,7 +87,7 @@ pub async fn read_directory_changes(
 
 /// The read both directory commands perform; they differ only in where the
 /// streamed batches are delivered.
-pub(crate) async fn read_directory_into(
+pub async fn read_directory_into(
     path: String,
     stream_id: String,
     watcher_id: Option<String>,
