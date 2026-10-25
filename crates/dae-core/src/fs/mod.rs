@@ -15,21 +15,33 @@
 
 pub use crate::{error, types};
 
+pub mod archive;
 pub mod atomic;
 pub mod cloud;
 pub mod connections;
+pub mod directory_size;
 pub mod entry_codec;
 pub mod git;
+pub mod hashing;
 pub mod known_hosts;
 pub mod listing;
 pub mod local;
+#[cfg(target_os = "macos")]
+pub mod macos_trash;
 pub mod media_meta;
+pub mod open_with;
+pub mod prefetch;
 pub mod progress;
+pub mod recents;
 pub mod search;
 pub mod sftp;
+pub mod sidebar;
 pub mod smb;
+pub mod spaces;
 pub mod transfer;
+pub mod trash_view;
 pub mod vfs;
+pub mod watch;
 
 #[cfg(test)]
 pub(crate) mod test_support;

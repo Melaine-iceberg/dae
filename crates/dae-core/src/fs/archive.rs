@@ -101,7 +101,7 @@ pub async fn compress_entries(
     format: ArchiveFormat,
     password: Option<String>,
     operation_id: String,
-    host: std::sync::Arc<dyn dae_core::host::Host>,
+    host: std::sync::Arc<dyn crate::host::Host>,
 ) -> Result<String, FileSystemError> {
     if sources.is_empty() {
         return Err(FileSystemError::InvalidInput(
@@ -132,7 +132,7 @@ pub async fn extract_archive(
     destination_dir: Option<String>,
     password: Option<String>,
     operation_id: String,
-    host: std::sync::Arc<dyn dae_core::host::Host>,
+    host: std::sync::Arc<dyn crate::host::Host>,
 ) -> Result<String, FileSystemError> {
     emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Extract);
 
@@ -895,7 +895,7 @@ fn extract_sevenzip(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file_system::test_support::TestProgress;
+    use crate::fs::test_support::TestProgress;
     use std::fs;
     use std::path::Path;
     use std::sync::atomic::Ordering as AtomicOrdering;

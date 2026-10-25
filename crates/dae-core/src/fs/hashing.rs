@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dae_core::host::{Event as UiEvent, Host};
+use crate::host::{Event as UiEvent, Host};
 use std::sync::OnceLock;
 
 /// How often partial byte counts are pushed to the UI while the read runs.
@@ -25,7 +25,7 @@ const HASH_PROGRESS_INTERVAL_MS: u64 = 200;
 /// One mebibyte per read keeps the digest loop fast without over-buffering.
 const HASH_CHUNK_SIZE: usize = 1024 * 1024;
 
-pub use dae_core::hashing::FileHashDigests;
+pub use crate::hashing::FileHashDigests;
 
 /// Live hash runs keyed by operation id, so closing the dialog stops a run.
 #[derive(Default)]
@@ -66,7 +66,7 @@ impl FileHashState {
 pub fn start_file_hash_calculation(
     operation_id: String,
     path: String,
-    host: std::sync::Arc<dyn dae_core::host::Host>,
+    host: std::sync::Arc<dyn crate::host::Host>,
 ) -> Result<(), FileSystemError> {
     if !vfs::is_local_path(&path) {
         return Err(FileSystemError::Unsupported(path));

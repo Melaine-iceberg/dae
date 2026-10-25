@@ -1,6 +1,6 @@
 use super::error::FileSystemError;
 use super::types::path_to_string;
-use dae_core::fs::atomic::write_atomic;
+use crate::fs::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 #[cfg(target_os = "linux")]
@@ -396,9 +396,9 @@ pub(super) fn dedupe_favorites(favorites: Vec<Favorite>) -> Vec<Favorite> {
 }
 
 fn favorites_path() -> Result<PathBuf, FileSystemError> {
-    // Resolved by `dae_core::paths`, so both shells land in the same profile
+    // Resolved by `crate::paths`, so both shells land in the same profile
     // directory instead of each deriving it from its own window handle.
-    let config_dir = dae_core::paths::config_dir()?;
+    let config_dir = crate::paths::config_dir()?;
 
     Ok(config_dir.join(FAVORITES_FILE_NAME))
 }

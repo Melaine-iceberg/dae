@@ -140,7 +140,7 @@ mod browse {
     pub async fn restore_trash_entries(
         ids: Vec<String>,
         operation_id: String,
-        host: std::sync::Arc<dyn dae_core::host::Host>,
+        host: std::sync::Arc<dyn crate::host::Host>,
     ) -> Result<u64, FileSystemError> {
         if ids.is_empty() {
             return Ok(0);
@@ -178,7 +178,7 @@ mod browse {
     pub async fn delete_trash_entries(
         ids: Vec<String>,
         operation_id: String,
-        host: std::sync::Arc<dyn dae_core::host::Host>,
+        host: std::sync::Arc<dyn crate::host::Host>,
     ) -> Result<u64, FileSystemError> {
         if ids.is_empty() {
             return Ok(0);
@@ -215,7 +215,7 @@ mod browse {
     /// See `commands::empty_trash` for the contract; this half is engine-free.
     pub async fn empty_trash(
         operation_id: String,
-        host: std::sync::Arc<dyn dae_core::host::Host>,
+        host: std::sync::Arc<dyn crate::host::Host>,
     ) -> Result<u64, FileSystemError> {
         emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Delete);
 
@@ -285,7 +285,7 @@ mod macos_view {
     };
     use super::super::types::path_to_string;
     use super::TrashEntry;
-    use crate::file_system::macos_trash::{self, TrashDiskEntry};
+    use crate::fs::macos_trash::{self, TrashDiskEntry};
     use std::cmp::Reverse;
     use std::path::{Path, PathBuf};
 
@@ -308,7 +308,7 @@ mod macos_view {
     pub async fn restore_trash_entries(
         ids: Vec<String>,
         operation_id: String,
-        host: std::sync::Arc<dyn dae_core::host::Host>,
+        host: std::sync::Arc<dyn crate::host::Host>,
     ) -> Result<u64, FileSystemError> {
         if ids.is_empty() {
             return Ok(0);
@@ -350,7 +350,7 @@ mod macos_view {
     pub async fn delete_trash_entries(
         ids: Vec<String>,
         operation_id: String,
-        host: std::sync::Arc<dyn dae_core::host::Host>,
+        host: std::sync::Arc<dyn crate::host::Host>,
     ) -> Result<u64, FileSystemError> {
         if ids.is_empty() {
             return Ok(0);
@@ -386,7 +386,7 @@ mod macos_view {
     /// See `commands::empty_trash` for the contract; this half is engine-free.
     pub async fn empty_trash(
         operation_id: String,
-        host: std::sync::Arc<dyn dae_core::host::Host>,
+        host: std::sync::Arc<dyn crate::host::Host>,
     ) -> Result<u64, FileSystemError> {
         emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Delete);
 

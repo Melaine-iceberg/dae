@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use dae_core::host::{Event as UiEvent, Host};
+use crate::host::{Event as UiEvent, Host};
 use std::sync::OnceLock;
 
 /// How often partial totals are pushed to the UI while a scan runs.
@@ -60,7 +60,7 @@ impl DirectorySizeState {
 pub fn start_directory_size_calculation(
     operation_id: String,
     paths: Vec<String>,
-    host: std::sync::Arc<dyn dae_core::host::Host>,
+    host: std::sync::Arc<dyn crate::host::Host>,
 ) -> Result<(), FileSystemError> {
     let directories: Vec<PathBuf> = paths
         .iter()

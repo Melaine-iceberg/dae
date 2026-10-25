@@ -1,10 +1,10 @@
 //! Directory change observation across backends. The local backend uses OS
 //! file notifications; every other backend falls back to snapshot polling.
 
-use crate::file_system::local;
-use crate::file_system::types::{DirectoryView, entry_kind_rank, path_to_string};
-use crate::file_system::vfs::SharedBackend;
-use dae_core::host::{Event as UiEvent, Host};
+use crate::fs::local;
+use crate::fs::types::{DirectoryView, entry_kind_rank, path_to_string};
+use crate::fs::vfs::SharedBackend;
+use crate::host::{Event as UiEvent, Host};
 use notify::RecommendedWatcher;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -170,7 +170,7 @@ fn registry() -> &'static DirectoryWatcher {
 /// Arms the OS watcher for a local directory under `watcher_id`, re-targeting
 /// the view's observation if it pointed elsewhere.
 ///
-/// `canonical_path` must be canonical (see [`crate::file_system::types::canonical_path`])
+/// `canonical_path` must be canonical (see [`crate::fs::types::canonical_path`])
 /// — the listing this accompanies reports that spelling, and the events have
 /// to name the same directory.
 ///
@@ -309,7 +309,7 @@ fn fingerprint(view: &DirectoryView) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file_system::types::{DirectoryEntry, EntryKind};
+    use crate::fs::types::{DirectoryEntry, EntryKind};
 
     fn entry(name: &str) -> DirectoryEntry {
         DirectoryEntry {

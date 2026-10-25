@@ -56,7 +56,7 @@ impl StartupPrefetch {
 
 /// The process-wide prefetch slots. One app per process, so this is the
 /// lifetime the managed state had.
-pub(crate) fn state() -> &'static StartupPrefetch {
+pub fn state() -> &'static StartupPrefetch {
     static STATE: OnceLock<StartupPrefetch> = OnceLock::new();
     STATE.get_or_init(StartupPrefetch::default)
 }
