@@ -149,11 +149,24 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
    必须拥有窗口所在的 apartment），那是真的引擎形状，Qt 侧会用 `QWindow` 重做这
    三步。这是 `file_system` 里唯一"因为真的需要、而不是因为惯性"而依赖窗口的操作。
 
-累计（切片 1→7）：`tauri::` 引用 **389 → 297**、`tauri::AppHandle` **125 → 99**、
+8. **`dae_core::paths` + 再 29 个命令**：把 `tauri::Manager::path()` 的
+   `{系统配置目录}/{identifier}` 规则搬进 `dae-core`——Windows 漫游 `%APPDATA%`、
+   macOS `$HOME/Library/Application Support`、Linux `$XDG_CONFIG_HOME`（须为绝对路径）
+   否则 `$HOME/.config`。三条分支各自是纯函数，用合成输入测试，而不是靠跑测试的机器。
+   这一条比别处更要紧：这个目录里放的是 `settings.toml`、收藏、最近记录、连接、
+   known_hosts——两个壳算得不一样，用户升级后就是"全新安装"。
+   两道保险：`the_identifier_matches_the_bundle` 编译期读 `tauri.conf.json` 校验
+   identifier 没漂；实测在本机解析到 `%APPDATA%\com.melaine.dae`，而
+   `settings.toml` / `recent-items.json` / `spaces.json` 本来就在那里。
+   `get_system_places` 是唯一故意留下的命令：它经 `Manager::path()` 解析桌面/文档/下载
+   等七个目录，把这套规则也搬进 core 是另一个决定，不该夹带在这一刀里。
+
+累计（切片 1→8）：`tauri::` 引用 **389 → 267**、`tauri::AppHandle` **125 → 80**、
 `app.state::<…>` **33 → 2**、`.manage()` **12 → 3**。
-`file_system/` 下已有 **18 个模块完全不含 `tauri::`**：archive、cloud、entry_codec、
-error、git、known_hosts、local、macos_trash、open_with、progress、search、sftp、
-test_support、transfer、trash_view、types、undo、vfs。
+`file_system/` 下 **40 / 51 个文件完全不含 `tauri::`**；剩下 11 个里 95 处是
+`commands.rs`（IPC 壳本身），其余是 `preview`（`dae://` URI scheme，随 webview 消失）、
+`system_files` 的 drag-out、`sidebar` 的 get_system_places、`volume_monitor`、
+`prefetch::warm_startup_data`、`listing` 的 `Channel`。
 
 ## 5. 定案前必须量出来的四组数字
 
