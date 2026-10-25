@@ -8,11 +8,18 @@ use super::types::{ContentSearchResponse, SearchResponse};
 use super::vfs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-use tauri::Manager;
+use std::sync::OnceLock;
 
 #[derive(Default)]
 pub struct FileSearchState {
     generation: AtomicU64,
+}
+
+/// The process-wide generation counter. One app per process, so this is the
+/// lifetime the managed state had; tests keep constructing their own.
+fn state() -> &'static FileSearchState {
+    static STATE: OnceLock<FileSearchState> = OnceLock::new();
+    STATE.get_or_init(FileSearchState::default)
 }
 
 impl FileSearchState {
@@ -33,18 +40,12 @@ impl FileSearchState {
 /// cancels any older traversal.
 #[tauri::command]
 #[specta::specta]
-pub async fn search_directory(
-    path: String,
-    query: String,
-    app: tauri::AppHandle,
-) -> Result<SearchResponse, FileSystemError> {
-    let generation = app.state::<FileSearchState>().begin();
-    let search_app = app.clone();
+pub async fn search_directory(path: String, query: String) -> Result<SearchResponse, FileSystemError> {
+    let generation = state().begin();
 
     tauri::async_runtime::spawn_blocking(move || {
         let backend = vfs::resolve(&path)?;
-        let state = search_app.state::<FileSearchState>();
-        let is_current = || state.is_current(generation);
+        let is_current = || state().is_current(generation);
         backend.search(&path, &query, &is_current)
     })
     .await
@@ -54,8 +55,8 @@ pub async fn search_directory(
 /// Stops the active traversal when the search surface is dismissed.
 #[tauri::command]
 #[specta::specta]
-pub fn cancel_search(app: tauri::AppHandle) {
-    app.state::<FileSearchState>().cancel();
+pub fn cancel_search() {
+    state().cancel();
 }
 
 /// Searches file contents beneath one local directory with optional regex,
@@ -70,7 +71,6 @@ pub async fn search_file_contents(
     is_regex: bool,
     case_sensitive: bool,
     file_filter: Option<String>,
-    app: tauri::AppHandle,
 ) -> Result<ContentSearchResponse, FileSystemError> {
     if !vfs::is_local_path(&path) {
         return Err(FileSystemError::InvalidInput(
@@ -78,12 +78,10 @@ pub async fn search_file_contents(
         ));
     }
 
-    let generation = app.state::<FileSearchState>().begin();
-    let search_app = app.clone();
+    let generation = state().begin();
 
     tauri::async_runtime::spawn_blocking(move || {
-        let state = search_app.state::<FileSearchState>();
-        let is_current = move || state.is_current(generation);
+        let is_current = move || state().is_current(generation);
         local::search_file_contents_sync(
             PathBuf::from(path),
             &local::ContentSearchParams {

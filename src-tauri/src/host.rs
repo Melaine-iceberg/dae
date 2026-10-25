@@ -82,6 +82,44 @@ impl Host for TauriHost {
                 }
                 .emit(&self.app);
             }
+            Event::UndoRedoChanged { can_undo, can_redo } => {
+                let _ = crate::file_system::undo::UndoRedoChanged { can_undo, can_redo }
+                    .emit(&self.app);
+            }
+            Event::DirectorySizeProgress {
+                operation_id,
+                path,
+                size,
+                completed,
+            } => {
+                let _ = crate::file_system::directory_size::DirectorySizeProgress {
+                    operation_id,
+                    path,
+                    size,
+                    completed,
+                }
+                .emit(&self.app);
+            }
+            Event::FileHashProgress {
+                operation_id,
+                path,
+                bytes_read,
+                total_bytes,
+                completed,
+                digests,
+                error,
+            } => {
+                let _ = crate::file_system::hashing::FileHashProgress {
+                    operation_id,
+                    path,
+                    bytes_read,
+                    total_bytes,
+                    completed,
+                    digests,
+                    error,
+                }
+                .emit(&self.app);
+            }
         }
     }
 }

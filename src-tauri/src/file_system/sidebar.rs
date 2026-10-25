@@ -64,10 +64,7 @@ pub struct WslDistro {
 #[tauri::command]
 #[specta::specta]
 pub fn get_system_places(app: tauri::AppHandle) -> Result<Vec<SystemPlace>, FileSystemError> {
-    if let Some(places) = app
-        .state::<super::prefetch::StartupPrefetch>()
-        .take_system_places()
-    {
+    if let Some(places) = super::prefetch::state().take_system_places() {
         return Ok(places);
     }
     let resolver = app.path();
@@ -122,10 +119,7 @@ pub async fn list_wsl_distros() -> Result<Vec<WslDistro>, FileSystemError> {
 #[tauri::command]
 #[specta::specta]
 pub fn load_favorites(app: tauri::AppHandle) -> Result<Vec<Favorite>, FileSystemError> {
-    if let Some(favorites) = app
-        .state::<super::prefetch::StartupPrefetch>()
-        .take_favorites()
-    {
+    if let Some(favorites) = super::prefetch::state().take_favorites() {
         return Ok(favorites);
     }
     let path = favorites_path(&app)?;

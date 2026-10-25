@@ -23,7 +23,9 @@ use serde::Serialize;
 use specta::Type;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use tauri_specta::Event;
+
+use dae_core::host::{Event as UiEvent, Host};
+use std::sync::OnceLock;
 
 /// How many operations stay undoable; older entries drop off the bottom.
 const MAX_HISTORY: usize = 50;
@@ -147,7 +149,7 @@ pub struct UndoRedoState {
 
 impl UndoRedoState {
     /// Appends one executed operation and clears the redo stack.
-    pub fn record(&self, app: &tauri::AppHandle, operation: Operation) {
+    pub fn record(&self, host: &dyn Host, operation: Operation) {
         if operation.is_empty() {
             return;
         }
@@ -159,7 +161,7 @@ impl UndoRedoState {
             undo.drain(..overflow);
         }
         self.redo.lock().expect("redo stack lock poisoned").clear();
-        emit_changed(app, self);
+        emit_changed(host, self);
     }
 
     /// The operation Ctrl+Z would run, for progress reporting.
@@ -219,13 +221,20 @@ impl UndoRedoState {
     }
 }
 
-/// Notifies the frontend that shortcut availability changed.
-pub fn emit_changed(app: &tauri::AppHandle, state: &UndoRedoState) {
-    let _ = UndoRedoChanged {
+/// The process-wide history. One app per process, so this is the lifetime the
+/// managed state had; tests keep constructing `UndoRedoState::default()` so they
+/// never share it.
+pub(crate) fn state() -> &'static UndoRedoState {
+    static STATE: OnceLock<UndoRedoState> = OnceLock::new();
+    STATE.get_or_init(UndoRedoState::default)
+}
+
+/// Notifies the UI that shortcut availability changed.
+pub fn emit_changed(host: &dyn Host, state: &UndoRedoState) {
+    host.emit(UiEvent::UndoRedoChanged {
         can_undo: state.can_undo(),
         can_redo: state.can_redo(),
-    }
-    .emit(app);
+    });
 }
 
 /// Reverts one operation. Returns the affected-entry count plus the
@@ -931,7 +940,42 @@ mod tests {
     use super::*;
     use crate::file_system::local::{move_entries_with_progress, rename_entry_sync};
     use crate::file_system::test_support::TestProgress;
+    use crate::host::testing::RecordingHost;
     use std::fs;
+
+    /// Recording an operation reports the new shortcut availability through the
+    /// seam, and recording an *empty* one reports nothing — the latter is what
+    /// keeps a batch that landed zero entries from lighting up Ctrl+Z.
+    #[test]
+    fn only_a_recorded_operation_moves_the_shortcut_state() {
+        let recorder = RecordingHost::default();
+        let history = UndoRedoState::default();
+
+        history.record(
+            &recorder,
+            Operation::Rename {
+                from: "a.txt".to_owned(),
+                to: "b.txt".to_owned(),
+            },
+        );
+        assert_eq!(
+            recorder.take(),
+            vec![UiEvent::UndoRedoChanged {
+                can_undo: true,
+                can_redo: false,
+            }]
+        );
+
+        history.record(
+            &recorder,
+            Operation::Copy {
+                sources: Vec::new(),
+                destination: "dst".to_owned(),
+                created: Vec::new(),
+            },
+        );
+        assert!(recorder.take().is_empty(), "an empty batch changed nothing");
+    }
 
     #[test]
     fn undo_and_redo_revert_a_batch_move() {

@@ -11,7 +11,7 @@ use super::types::{
     RecursivePropertyUpdateOutcome, RenameRequest, TransferConflict, TransferItem, TransferPair,
     path_to_string,
 };
-use super::undo::{self, Operation, TrashRecord, UndoRedoOutcome, UndoRedoState};
+use super::undo::{self, Operation, TrashRecord, UndoRedoOutcome};
 use super::vfs::{self, SharedBackend};
 use crate::host;
 use std::collections::HashSet;
@@ -216,8 +216,8 @@ pub async fn rename_entry(
         if let Some(to) = undo::renamed_path(&path, &new_name)
             && to != path
         {
-            app.state::<UndoRedoState>()
-                .record(&app, Operation::Rename { from: path, to });
+            undo::state()
+                .record(host::of(&app).as_ref(), Operation::Rename { from: path, to });
         }
         Ok(())
     })
@@ -305,8 +305,8 @@ pub async fn rename_entries_batch(
             .collect();
 
         if !applied.is_empty() {
-            app.state::<UndoRedoState>()
-                .record(&app, Operation::RenameBatch { pairs: applied });
+            undo::state()
+                .record(host::of(&app).as_ref(), Operation::RenameBatch { pairs: applied });
         }
         progress.finish();
 
@@ -327,8 +327,8 @@ pub async fn create_entry(
 ) -> Result<String, FileSystemError> {
     tauri::async_runtime::spawn_blocking(move || {
         let created = vfs::resolve(&directory)?.create_entry(&directory, &name, kind)?;
-        app.state::<UndoRedoState>().record(
-            &app,
+        undo::state().record(
+            host::of(&app).as_ref(),
             Operation::Create {
                 path: created.clone(),
                 kind,
@@ -387,8 +387,8 @@ pub async fn copy_entries(
             .into_iter()
             .map(|pair| (pair.source, pair.destination))
             .unzip();
-        app.state::<UndoRedoState>().record(
-            &app,
+        undo::state().record(
+            host::of(&app).as_ref(),
             Operation::Copy {
                 sources: recorded_sources,
                 destination,
@@ -445,8 +445,8 @@ pub async fn move_entries(
             )
         };
 
-        app.state::<UndoRedoState>()
-            .record(&app, Operation::Move { transfers: journal });
+        undo::state()
+            .record(host::of(&app).as_ref(), Operation::Move { transfers: journal });
 
         result
     })
@@ -594,8 +594,8 @@ pub async fn trash_entries(
 
         // Even when a later entry fails, the ones that did reach the trash
         // stay undoable.
-        app.state::<UndoRedoState>()
-            .record(&app, Operation::Trash { records });
+        undo::state()
+            .record(host::of(&app).as_ref(), Operation::Trash { records });
         progress.finish();
 
         if let Some(error) = first_error {
@@ -616,15 +616,14 @@ pub async fn undo_operation(
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<UndoRedoOutcome, FileSystemError> {
-    let kind = app
-        .state::<UndoRedoState>()
+    let kind = undo::state()
         .peek_undo()
         .map(|operation| operation.undo_kind())
         .unwrap_or(FileOperationKind::Move);
     emit_preparing(host::of(&app).as_ref(), &operation_id, kind);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<UndoRedoState>();
+        let state = undo::state();
         let Some(operation) = state.pop_undo() else {
             return Err(FileSystemError::InvalidInput("fs.undo_empty".into()));
         };
@@ -638,7 +637,7 @@ pub async fn undo_operation(
                 if let Some(redo_operation) = redo_operation {
                     state.push_redo(redo_operation);
                 }
-                undo::emit_changed(&app, &state);
+                undo::emit_changed(host::of(&app).as_ref(), state);
                 progress.finish();
                 Ok(UndoRedoOutcome {
                     action: "undo",
@@ -648,7 +647,7 @@ pub async fn undo_operation(
             }
             Err(error) => {
                 // The entry stays consumed; report what blocked the undo.
-                undo::emit_changed(&app, &state);
+                undo::emit_changed(host::of(&app).as_ref(), state);
                 Err(error)
             }
         }
@@ -665,15 +664,14 @@ pub async fn redo_operation(
     operation_id: String,
     app: tauri::AppHandle,
 ) -> Result<UndoRedoOutcome, FileSystemError> {
-    let kind = app
-        .state::<UndoRedoState>()
+    let kind = undo::state()
         .peek_redo()
         .map(|operation| operation.redo_kind())
         .unwrap_or(FileOperationKind::Move);
     emit_preparing(host::of(&app).as_ref(), &operation_id, kind);
 
     tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<UndoRedoState>();
+        let state = undo::state();
         let Some(operation) = state.pop_redo() else {
             return Err(FileSystemError::InvalidInput("fs.redo_empty".into()));
         };
@@ -687,7 +685,7 @@ pub async fn redo_operation(
                 if let Some(undo_operation) = undo_operation {
                     state.push_undo(undo_operation);
                 }
-                undo::emit_changed(&app, &state);
+                undo::emit_changed(host::of(&app).as_ref(), state);
                 progress.finish();
                 Ok(UndoRedoOutcome {
                     action: "redo",
@@ -696,7 +694,7 @@ pub async fn redo_operation(
                 })
             }
             Err(error) => {
-                undo::emit_changed(&app, &state);
+                undo::emit_changed(host::of(&app).as_ref(), state);
                 Err(error)
             }
         }
@@ -728,8 +726,8 @@ pub async fn duplicate_entries(
             FileOperationProgressReporter::new(host::of(&app), operation_id, FileOperationKind::Copy);
         let created = transfer::duplicate_sources(sources, &progress)?;
 
-        app.state::<UndoRedoState>().record(
-            &app,
+        undo::state().record(
+            host::of(&app).as_ref(),
             Operation::Duplicate {
                 sources: paths,
                 created: created.clone(),

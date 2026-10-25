@@ -11,9 +11,8 @@
 //! warming them here would spend startup time (the WSL probe spawns
 //! `wsl.exe`) on data that is usually never shown.
 
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
-use tauri::Manager;
 
 use super::recents::{self, RecentItem};
 use super::sidebar::{self, Favorite, SystemPlace};
@@ -55,13 +54,20 @@ impl StartupPrefetch {
     }
 }
 
+/// The process-wide prefetch slots. One app per process, so this is the
+/// lifetime the managed state had.
+pub(crate) fn state() -> &'static StartupPrefetch {
+    static STATE: OnceLock<StartupPrefetch> = OnceLock::new();
+    STATE.get_or_init(StartupPrefetch::default)
+}
+
 /// Answers the startup surface's queries on a background thread while the
 /// webview loads. A plain thread, not the async runtime: `get_system_places`
 /// asks the OS for its volumes, which blocks on a dead mapped drive.
 pub fn warm_startup_data(app: &tauri::AppHandle) {
     let app = app.clone();
     std::thread::spawn(move || {
-        let state = app.state::<StartupPrefetch>();
+        let state = state();
 
         // The overview and sidebar first-frame queries. Fallible reads stay
         // uncached on failure so the real command surfaces the error.

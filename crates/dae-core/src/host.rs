@@ -73,6 +73,29 @@ pub enum Event {
         /// True on the final batch: the listing is complete.
         done: bool,
     },
+    /// The undo/redo stacks moved, so shortcut availability did too.
+    UndoRedoChanged { can_undo: bool, can_redo: bool },
+    /// A running total for one directory of a size scan.
+    DirectorySizeProgress {
+        operation_id: String,
+        path: String,
+        size: u64,
+        /// True on the final reading for that directory.
+        completed: bool,
+    },
+    /// Byte progress for one file of a checksum run, and the report that ends it.
+    FileHashProgress {
+        operation_id: String,
+        path: String,
+        bytes_read: u64,
+        total_bytes: u64,
+        /// False while the read runs; true on the final report.
+        completed: bool,
+        /// Present only in the successful final report.
+        digests: Option<crate::hashing::FileHashDigests>,
+        /// Present only when the final report carries a failure.
+        error: Option<String>,
+    },
 }
 
 /// What a module needs in order to report. Implemented once per shell.

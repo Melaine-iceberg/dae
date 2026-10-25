@@ -35,6 +35,4 @@ pub mod watch;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-pub use search::FileSearchState;
-pub use undo::UndoRedoState;
 pub use watch::DirectoryChanged;

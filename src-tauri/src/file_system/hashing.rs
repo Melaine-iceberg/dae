@@ -18,22 +18,17 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::Manager;
-use tauri_specta::Event;
+
+use crate::host;
+use dae_core::host::{Event as UiEvent, Host};
+use std::sync::OnceLock;
 
 /// How often partial byte counts are pushed to the UI while the read runs.
 const HASH_PROGRESS_INTERVAL_MS: u64 = 200;
 /// One mebibyte per read keeps the digest loop fast without over-buffering.
 const HASH_CHUNK_SIZE: usize = 1024 * 1024;
 
-/// Lowercase hex digests of one file, computed in a single pass.
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct FileHashDigests {
-    pub md5: String,
-    pub sha1: String,
-    pub sha256: String,
-}
+pub use dae_core::hashing::FileHashDigests;
 
 #[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
 #[tauri_specta(event_name = "explorer-file-hash-progress")]
@@ -106,13 +101,13 @@ pub fn start_file_hash_calculation(
         return Err(FileSystemError::InvalidInput(path));
     }
 
-    let cancelled = app.state::<FileHashState>().register(&operation_id);
-    let done_app = app.clone();
+    let cancelled = state().register(&operation_id);
+    let host = host::of(&app);
     let done_operation_id = operation_id.clone();
 
     std::thread::spawn(move || {
-        hash_and_report(&app, &operation_id, &file_path, &cancelled);
-        done_app.state::<FileHashState>().forget(&done_operation_id);
+        hash_and_report(host.as_ref(), &operation_id, &file_path, &cancelled);
+        state().forget(&done_operation_id);
     });
 
     Ok(())
@@ -121,14 +116,21 @@ pub fn start_file_hash_calculation(
 /// Stops an in-flight checksum run when the dialog closes.
 #[tauri::command]
 #[specta::specta]
-pub fn cancel_file_hash_calculation(operation_id: String, app: tauri::AppHandle) {
-    app.state::<FileHashState>().cancel(&operation_id);
+pub fn cancel_file_hash_calculation(operation_id: String) {
+    state().cancel(&operation_id);
+}
+
+/// The process-wide registry of hash runs. One app per process, so this is the
+/// lifetime the managed state had; tests keep constructing their own.
+fn state() -> &'static FileHashState {
+    static STATE: OnceLock<FileHashState> = OnceLock::new();
+    STATE.get_or_init(FileHashState::default)
 }
 
 /// Runs the digest pass and emits progress plus the final report. Cancelled
 /// runs end quietly — the requester is already gone.
 fn hash_and_report(
-    app: &tauri::AppHandle,
+    host: &dyn Host,
     operation_id: &str,
     path: &Path,
     cancelled: &AtomicBool,
@@ -150,7 +152,7 @@ fn hash_and_report(
         }
         last_emit_ms = now_ms;
 
-        let _ = FileHashProgress {
+        host.emit(UiEvent::FileHashProgress {
             operation_id: operation_id.to_owned(),
             path: path_to_string(path),
             bytes_read,
@@ -158,8 +160,7 @@ fn hash_and_report(
             completed,
             digests,
             error,
-        }
-        .emit(app);
+        });
     };
 
     match hash_file(path, cancelled, &mut |bytes_read, total_bytes| {

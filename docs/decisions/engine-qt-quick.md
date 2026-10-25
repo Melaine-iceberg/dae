@@ -124,8 +124,16 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
    `listing.rs` 只留 `tauri::ipc::Channel` —— 那是 packet 通道，随 `entry_codec`
    一起在 Qt 壳落地时删除。
 
-累计（切片 1→4）：`tauri::` 引用 **389 → 363**、`tauri::AppHandle` **125 → 114**、
-`app.state::<…>` 在这三个模块里 **6 → 0**、`.manage()` **12 → 9**。
+5. **其余领域状态**：`UndoRedoState`、`DirectorySizeState`、`FileHashState`、
+   `RecentsState`、`FileSearchState`、`StartupPrefetch` 同样换成模块内 `OnceLock`；
+   对应三个事件（`UndoRedoChanged` / `DirectorySizeProgress` / `FileHashProgress`）
+   走接缝，`FileHashDigests` 进 `dae-core::hashing`。
+   **结果是领域侧已经没有任何代码再去摸 Tauri 的托管状态**——剩下的两个
+   `app.state::<…>` 都在 `tab_windows.rs`（窗口池，随 Tauri 一起删），
+   三个 `.manage()` 也都是壳状态（深链缓冲、标签窗口、终端字节流）。
+
+累计（切片 1→5）：`tauri::` 引用 **389 → 349**、`tauri::AppHandle` **125 → 104**、
+`app.state::<…>` **33 → 2**、`.manage()` **12 → 3**。
 
 ## 5. 定案前必须量出来的四组数字
 

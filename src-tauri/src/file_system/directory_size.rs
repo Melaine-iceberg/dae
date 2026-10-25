@@ -16,8 +16,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::Manager;
-use tauri_specta::Event;
+
+use crate::host;
+use dae_core::host::{Event as UiEvent, Host};
+use std::sync::OnceLock;
 
 /// How often partial totals are pushed to the UI while a scan runs.
 const SIZE_PROGRESS_INTERVAL_MS: u64 = 250;
@@ -90,8 +92,8 @@ pub fn start_directory_size_calculation(
         return Ok(());
     }
 
-    let cancelled = app.state::<DirectorySizeState>().register(&operation_id);
-    let done_app = app.clone();
+    let cancelled = state().register(&operation_id);
+    let host = host::of(&app);
     let done_operation_id = operation_id.clone();
 
     std::thread::spawn(move || {
@@ -99,11 +101,9 @@ pub fn start_directory_size_calculation(
             if cancelled.load(AtomicOrdering::Acquire) {
                 break;
             }
-            scan_directory(&app, &operation_id, &directory, &cancelled);
+            scan_directory(host.as_ref(), &operation_id, &directory, &cancelled);
         }
-        done_app
-            .state::<DirectorySizeState>()
-            .forget(&done_operation_id);
+        state().forget(&done_operation_id);
     });
 
     Ok(())
@@ -112,25 +112,32 @@ pub fn start_directory_size_calculation(
 /// Stops an in-flight size scan when the view navigates away.
 #[tauri::command]
 #[specta::specta]
-pub fn cancel_directory_size_calculation(operation_id: String, app: tauri::AppHandle) {
-    app.state::<DirectorySizeState>().cancel(&operation_id);
+pub fn cancel_directory_size_calculation(operation_id: String) {
+    state().cancel(&operation_id);
+}
+
+/// The process-wide registry of size scans. One app per process, so this is the
+/// lifetime the managed state had; tests keep constructing their own.
+fn state() -> &'static DirectorySizeState {
+    static STATE: OnceLock<DirectorySizeState> = OnceLock::new();
+    STATE.get_or_init(DirectorySizeState::default)
 }
 
 /// Sums every file under `directory` with a parallel walk, streaming partial
 /// totals. Symlinks are never followed, so symlink loops cannot hang a scan.
 fn scan_directory(
-    app: &tauri::AppHandle,
+    host: &dyn Host,
     operation_id: &str,
     directory: &Path,
     cancelled: &AtomicBool,
 ) {
     let last_emit_ms = AtomicU64::new(0);
     let total = walk_directory_size(directory, cancelled, &|current| {
-        emit_size(app, operation_id, directory, current, &last_emit_ms, false);
+        emit_size(host, operation_id, directory, current, &last_emit_ms, false);
     });
 
     if !cancelled.load(AtomicOrdering::Relaxed) {
-        emit_size(app, operation_id, directory, total, &last_emit_ms, true);
+        emit_size(host, operation_id, directory, total, &last_emit_ms, true);
     }
 }
 
@@ -181,7 +188,7 @@ pub(super) fn walk_directory_size(
 /// compare-exchange lets exactly one walker thread win each window without a
 /// lock on the hot path.
 fn emit_size(
-    app: &tauri::AppHandle,
+    host: &dyn Host,
     operation_id: &str,
     path: &Path,
     size: u64,
@@ -211,13 +218,12 @@ fn emit_size(
         }
     }
 
-    let _ = DirectorySizeProgress {
+    host.emit(UiEvent::DirectorySizeProgress {
         operation_id: operation_id.to_owned(),
         path: path_to_string(path),
         size,
         completed: force,
-    }
-    .emit(app);
+    });
 }
 
 #[cfg(test)]

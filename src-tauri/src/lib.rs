@@ -337,12 +337,6 @@ pub fn run() {
 
             Ok(())
         })
-        .manage(file_system::prefetch::StartupPrefetch::default())
-        .manage(file_system::recents::RecentsState::default())
-        .manage(file_system::FileSearchState::default())
-        .manage(file_system::UndoRedoState::default())
-        .manage(file_system::directory_size::DirectorySizeState::default())
-        .manage(file_system::hashing::FileHashState::default())
         .manage(deep_link::PendingDeepLink::default())
         .manage(tab_windows::TabWindowState::default())
         .manage(terminal::TerminalState::default())

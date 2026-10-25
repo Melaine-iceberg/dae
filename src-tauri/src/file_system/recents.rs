@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
@@ -101,14 +101,11 @@ impl RecentsState {
 #[tauri::command]
 #[specta::specta]
 pub fn list_recents(app: tauri::AppHandle) -> Result<Vec<RecentItem>, FileSystemError> {
-    if let Some(recents) = app
-        .state::<super::prefetch::StartupPrefetch>()
-        .take_recents()
-    {
+    if let Some(recents) = super::prefetch::state().take_recents() {
         return Ok(recents);
     }
     let path = recents_path(&app)?;
-    app.state::<RecentsState>().snapshot(&path)
+    state().snapshot(&path)
 }
 
 /// Records one access, moving an existing entry for the same path to the front.
@@ -136,7 +133,7 @@ pub async fn record_recent(
             accessed_at: now_millis(),
         };
 
-        app.state::<RecentsState>().edit(&store_path, |items| {
+        state().edit(&store_path, |items| {
             upsert_recent(items, item, MAX_RECENT_ITEMS);
             items.clone()
         })
@@ -154,7 +151,7 @@ pub async fn remove_recent(
 ) -> Result<Vec<RecentItem>, FileSystemError> {
     tauri::async_runtime::spawn_blocking(move || {
         let store_path = recents_path(&app)?;
-        app.state::<RecentsState>().edit(&store_path, |items| {
+        state().edit(&store_path, |items| {
             items.retain(|item| item.path != path);
             items.clone()
         })
@@ -169,8 +166,7 @@ pub async fn remove_recent(
 pub async fn clear_recents(app: tauri::AppHandle) -> Result<(), FileSystemError> {
     tauri::async_runtime::spawn_blocking(move || {
         let store_path = recents_path(&app)?;
-        app.state::<RecentsState>()
-            .edit(&store_path, |items| items.clear())
+        state().edit(&store_path, |items| items.clear())
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
@@ -205,6 +201,13 @@ fn write_recents(path: &std::path::Path, items: &[RecentItem]) -> Result<(), Fil
     let contents = serde_json::to_string_pretty(items)
         .map_err(|error| FileSystemError::Internal(error.to_string()))?;
     write_atomic(path, contents.as_bytes())
+}
+
+/// The process-wide recent list. One app per process, so this is the lifetime
+/// the managed state had; tests keep constructing their own.
+fn state() -> &'static RecentsState {
+    static STATE: OnceLock<RecentsState> = OnceLock::new();
+    STATE.get_or_init(RecentsState::default)
 }
 
 fn recents_path(app: &tauri::AppHandle) -> Result<PathBuf, FileSystemError> {
