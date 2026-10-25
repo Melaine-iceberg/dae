@@ -115,6 +115,17 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
    `FileOperationProgressReporter` 与 `emit_preparing` 收 `Arc<dyn Host>` /
    `&dyn Host`，17 个构造点改为 `host::of(&app)`（每次操作一个 `Arc`，不是每次
    emit 一个）。wire 结构体留在壳里，由 `TauriHost` 字段对字段地填充。
+4. **目录观察与列举**：`watch.rs` / `listing.rs` 的 emit 全改走接缝
+   （`DirectoryChanged` / `DirectoryEntries`）。这一刀同时切掉了**托管状态**：
+   `DirectoryWatcher`、`DirectoryListingState`、`GitStatusCache` 从
+   `app.state::<T>()` 变成各自模块里的 `OnceLock`（一进程一实例，和原来同寿命），
+   于是 `arm_local_watcher` / `open_streamed_listing` / `unwatch_directory` /
+   `cancel_directory_listing` / `get_git_status` 都不再收 `AppHandle`。
+   `listing.rs` 只留 `tauri::ipc::Channel` —— 那是 packet 通道，随 `entry_codec`
+   一起在 Qt 壳落地时删除。
+
+累计（切片 1→4）：`tauri::` 引用 **389 → 363**、`tauri::AppHandle` **125 → 114**、
+`app.state::<…>` 在这三个模块里 **6 → 0**、`.manage()` **12 → 9**。
 
 ## 5. 定案前必须量出来的四组数字
 
