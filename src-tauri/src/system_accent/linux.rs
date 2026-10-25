@@ -21,6 +21,9 @@
 //! needs. Two seconds costs one bus round trip and lands the retint while the
 //! settings window is still open. The signal is the obvious upgrade.
 
+#[cfg(target_os = "linux")]
+use dae_core::host::Host;
+
 /// The fallback palette. The spec's `accent-color` is `(ddd)`, but a portal
 /// that answers with a `u` is publishing a 1-based index into these swatches
 /// (`0` is "no preference"), so such a desktop still gets its colour rather
@@ -72,6 +75,7 @@ pub(super) fn rgb_to_hex(rgb: [f64; 3]) -> Option<String> {
 fn channel(value: f64) -> u8 {
     (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }
+
 
 #[cfg(target_os = "linux")]
 mod portal {
@@ -172,8 +176,8 @@ pub(super) fn read() -> Option<String> {
 }
 
 #[cfg(target_os = "linux")]
-pub(super) fn watch(app: &tauri::AppHandle) {
-    super::report(app, read());
+pub(super) fn watch(host: &dyn Host) {
+    super::report(host, read());
 
     let mut last = read();
     loop {
@@ -181,7 +185,7 @@ pub(super) fn watch(app: &tauri::AppHandle) {
         let now = read();
         if now != last {
             last = now.clone();
-            super::report(app, now);
+            super::report(host, now);
         }
     }
 }

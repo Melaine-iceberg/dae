@@ -14,6 +14,7 @@
 
 use std::time::Duration;
 
+use dae_core::host::Host;
 use objc2_app_kit::{NSColor, NSColorSpace};
 
 use super::SystemAccentChanged;
@@ -37,8 +38,8 @@ pub(super) fn read() -> Option<String> {
     ))
 }
 
-pub(super) fn watch(app: &tauri::AppHandle) {
-    super::report(app, read());
+pub(super) fn watch(host: &dyn Host) {
+    super::report(host, read());
 
     let mut last = read();
     loop {
@@ -46,7 +47,7 @@ pub(super) fn watch(app: &tauri::AppHandle) {
         let now = read();
         if now != last {
             last = now.clone();
-            super::report(app, now);
+            super::report(host, now);
         }
     }
 }

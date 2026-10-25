@@ -19,9 +19,10 @@
 //!
 //! The order matters: the *contract* (types, errors) comes first, then the
 //! modules with no Tauri references beyond injected handles, then the ones that
-//! actually emit events — those need a `host` module to exist before they can
-//! move, because emitting is the one thing that is genuinely engine-specific.
+//! actually emit events — those need [`host`] to exist before they can move,
+//! because emitting is the one thing that is genuinely engine-specific.
 pub mod error;
+pub mod host;
 pub mod types;
 
 pub use error::FileSystemError;

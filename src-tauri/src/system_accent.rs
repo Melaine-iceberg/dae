@@ -6,11 +6,15 @@
 //! imitating any of them. Reading it is the platform half of that seam; the
 //! frontend owns everything derived from it (ink, selection, focus rings).
 //!
-//! Two things cross the IPC boundary and nothing else:
+//! Two things reach the UI and nothing else:
 //!
 //!   * `get_system_accent()` — the accent as `#rrggbb`, or `None` where the
 //!     platform has no accent setting (the frontend then keeps its default);
 //!   * `SystemAccentChanged` — the same payload, every time it moves.
+//!
+//! The second one travels through [`dae_core::host::Host`], not through
+//! `tauri::AppHandle`: the watcher thread knows nothing about a webview, which
+//! is what lets this module move to the Qt shell unchanged.
 //!
 //! Each backend answers two questions (`read`, `watch`) and `watch` blocks its
 //! thread for the life of the app, emitting once on startup and again per
@@ -18,9 +22,10 @@
 //! woken is a watcher nobody shuts down cleanly, and the process exit already
 //! reaps the thread.
 
+use dae_core::host::{Event as UiEvent, Host};
 use serde::Serialize;
 use specta::Type;
-use tauri_specta::Event;
+use std::sync::Arc;
 
 #[cfg(any(target_os = "linux", test))]
 #[cfg_attr(test, allow(dead_code))]
@@ -42,11 +47,13 @@ mod backend {
     //! No accent reader is written for this platform. Saying so explicitly is
     //! the difference between an app that falls back to its default accent and
     //! one that fails to build.
+    use dae_core::host::Host;
+
     pub(super) fn read() -> Option<String> {
         None
     }
 
-    pub(super) fn watch(_app: &tauri::AppHandle) {}
+    pub(super) fn watch(_host: &dyn Host) {}
 }
 
 /// Emitted when the OS accent changes. `None` means the platform has no accent
@@ -66,11 +73,13 @@ pub fn get_system_accent() -> Option<String> {
 /// Starts the platform watcher on its own thread. It reports the current
 /// accent immediately and then every change as `SystemAccentChanged`, so a
 /// listener that mounts late still converges.
-pub fn init(app: &tauri::AppHandle) {
-    let app = app.clone();
+///
+/// Takes the seam rather than an `AppHandle`: the thread outlives every window
+/// and has no business holding one.
+pub fn init(host: Arc<dyn Host>) {
     std::thread::Builder::new()
         .name("system-accent".to_owned())
-        .spawn(move || backend::watch(&app))
+        .spawn(move || backend::watch(host.as_ref()))
         .expect("failed to spawn the system-accent watcher");
 }
 
@@ -80,10 +89,10 @@ fn srgb_hex(r: u8, g: u8, b: u8) -> String {
     format!("#{r:02x}{g:02x}{b:02x}")
 }
 
-/// Hands one reading to the frontend. Every emission goes through here so a
-/// backend cannot forget the event and leave the shell on a stale tint.
-fn report(app: &tauri::AppHandle, accent: Option<String>) {
-    let _ = SystemAccentChanged(accent).emit(app);
+/// Hands one reading to the UI. Every emission goes through here so a backend
+/// cannot forget the event and leave the shell on a stale tint.
+fn report(host: &dyn Host, accent: Option<String>) {
+    host.emit(UiEvent::SystemAccentChanged(accent));
 }
 
 /// Unpacks `0xAARRGGBB`, the layout WinRT's `UIColorType::Accent` and
@@ -154,5 +163,24 @@ mod tests {
     #[test]
     fn formats_channels_with_leading_zeroes() {
         assert_eq!(srgb_hex(0, 7, 255), "#0007ff");
+    }
+
+    /// The watcher's reading reaches the seam unchanged. Passing `&RecordingHost`
+    /// where a `&dyn Host` is expected is also the proof that the module no
+    /// longer names a window type.
+    #[test]
+    fn a_reading_reaches_the_seam_unchanged() {
+        let host = crate::host::testing::RecordingHost::default();
+
+        report(&host, Some("#0078d4".to_owned()));
+        report(&host, None);
+
+        assert_eq!(
+            host.take(),
+            vec![
+                UiEvent::SystemAccentChanged(Some("#0078d4".to_owned())),
+                UiEvent::SystemAccentChanged(None),
+            ]
+        );
     }
 }

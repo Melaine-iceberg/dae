@@ -14,7 +14,7 @@
 //! publishes the same value the desktop's toggle writes, so reading it is what
 //! makes "follow system" agree with the desktop.
 //!
-//! Two things cross the IPC boundary and nothing else:
+//! Two things reach the UI and nothing else:
 //!
 //!   * `get_system_theme()` — `Some(true)` dark, `Some(false)` light, or `None`
 //!     where the platform publishes no preference (the frontend then keeps its
@@ -22,15 +22,20 @@
 //!     this module reads nothing);
 //!   * `SystemThemeChanged` — the same payload, every time it moves.
 //!
+//! The second one travels through [`dae_core::host::Host`], not through
+//! `tauri::AppHandle`: the watcher thread knows nothing about a webview, which
+//! is what lets this module move to the Qt shell unchanged.
+//!
 //! Each backend answers two questions (`read`, `watch`) and `watch` blocks its
 //! thread for the life of the app, emitting once on startup and again per
 //! change — the same shape as `system_accent`, for the same reason: a watcher
 //! that has to be polled, joined or woken is a watcher nobody shuts down
 //! cleanly, and the process exit already reaps the thread.
 
+use dae_core::host::{Event as UiEvent, Host};
 use serde::Serialize;
 use specta::Type;
-use tauri_specta::Event;
+use std::sync::Arc;
 
 #[cfg(any(target_os = "linux", test))]
 #[cfg_attr(test, allow(dead_code))]
@@ -46,11 +51,13 @@ use linux as backend;
 /// and one that fails to build.
 #[cfg(not(target_os = "linux"))]
 mod backend {
+    use dae_core::host::Host;
+
     pub(super) fn read() -> Option<bool> {
         None
     }
 
-    pub(super) fn watch(_app: &tauri::AppHandle) {}
+    pub(super) fn watch(_host: &dyn Host) {}
 }
 
 /// Emitted when the OS light/dark preference changes. `None` means the platform
@@ -72,16 +79,44 @@ pub fn get_system_theme() -> Option<bool> {
 /// Starts the platform watcher on its own thread. It reports the current
 /// preference immediately and then every change as `SystemThemeChanged`, so a
 /// listener that mounts late still converges.
-pub fn init(app: &tauri::AppHandle) {
-    let app = app.clone();
+///
+/// Takes the seam rather than an `AppHandle`: the thread outlives every window
+/// and has no business holding one.
+pub fn init(host: Arc<dyn Host>) {
     std::thread::Builder::new()
         .name("system-theme".to_owned())
-        .spawn(move || backend::watch(&app))
+        .spawn(move || backend::watch(host.as_ref()))
         .expect("failed to spawn the system-theme watcher");
 }
 
-/// Hands one reading to the frontend. Every emission goes through here so a
-/// backend cannot forget the event and leave the shell on a stale appearance.
-fn report(app: &tauri::AppHandle, dark: Option<bool>) {
-    let _ = SystemThemeChanged(dark).emit(app);
+/// Hands one reading to the UI. Every emission goes through here so a backend
+/// cannot forget the event and leave the shell on a stale appearance.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn report(host: &dyn Host, dark: Option<bool>) {
+    host.emit(UiEvent::SystemThemeChanged(dark));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::host::testing::RecordingHost;
+
+    /// The watcher's reading reaches the seam unchanged. The type is also the
+    /// guard: `report` has no `AppHandle` to fall back to, so a future edit
+    /// cannot quietly bypass the seam and still compile.
+    #[test]
+    fn a_reading_reaches_the_seam_unchanged() {
+        let host = RecordingHost::default();
+
+        report(&host, Some(true));
+        report(&host, None);
+
+        assert_eq!(
+            host.take(),
+            vec![
+                UiEvent::SystemThemeChanged(Some(true)),
+                UiEvent::SystemThemeChanged(None),
+            ]
+        );
+    }
 }

@@ -22,6 +22,9 @@
 //! the same trade `system_accent::linux` makes for the accent, for the same
 //! reason.
 
+#[cfg(target_os = "linux")]
+use dae_core::host::Host;
+
 /// Maps the portal's `color-scheme` value to the seam's `Option<bool>`.
 /// `0` ("no preference") and anything outside the spec are `None`, so the
 /// frontend keeps its media-query reading rather than snapping to a guess.
@@ -36,6 +39,7 @@ pub(super) fn color_scheme(value: u32) -> Option<bool> {
         _ => None,
     }
 }
+
 
 #[cfg(target_os = "linux")]
 mod portal {
@@ -106,8 +110,8 @@ pub(super) fn read() -> Option<bool> {
 }
 
 #[cfg(target_os = "linux")]
-pub(super) fn watch(app: &tauri::AppHandle) {
-    super::report(app, read());
+pub(super) fn watch(host: &dyn Host) {
+    super::report(host, read());
 
     let mut last = read();
     loop {
@@ -115,7 +119,7 @@ pub(super) fn watch(app: &tauri::AppHandle) {
         let now = read();
         if now != last {
             last = now;
-            super::report(app, now);
+            super::report(host, now);
         }
     }
 }

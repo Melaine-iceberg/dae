@@ -9,6 +9,7 @@
 //! *colorization* colour (title bars) rather than the accent. Blocking on a
 //! registry key costs one thread and one event.
 
+use dae_core::host::Host;
 use windows::Win32::System::Registry::{
     HKEY, HKEY_CURRENT_USER, KEY_NOTIFY, KEY_READ, REG_DWORD, REG_NOTIFY_CHANGE_LAST_SET,
     RegCloseKey, RegNotifyChangeKeyValue, RegOpenKeyExW, RegQueryValueExW,
@@ -105,8 +106,8 @@ fn read_dword(name: &str) -> Option<u32> {
     read_value
 }
 
-pub(super) fn watch(app: &tauri::AppHandle) {
-    super::report(app, read());
+pub(super) fn watch(host: &dyn Host) {
+    super::report(host, read());
 
     let Some(handle) = open_key(KEY_NOTIFY) else {
         // Without the key there is nothing to watch; the one reading above is
@@ -131,7 +132,7 @@ pub(super) fn watch(app: &tauri::AppHandle) {
         if changed.is_err() {
             break;
         }
-        super::report(app, read());
+        super::report(host, read());
     }
 
     // SAFETY: `handle` is closed exactly once, on the way out of the loop.

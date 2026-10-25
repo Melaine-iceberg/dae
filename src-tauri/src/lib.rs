@@ -8,6 +8,9 @@ mod default_manager;
 mod desktop_thumbnails;
 mod file_icons;
 mod file_system;
+// The Tauri implementation of `dae_core::host::Host` — the one place a core
+// event becomes a webview event. Everything else takes the trait.
+mod host;
 // Answers the Wayland/NVIDIA startup crash a file manager should not ask its
 // user to know about, and has to be asked before GTK exists — see its module
 // docs. Built under `cfg(test)` on every host, the same way
@@ -266,17 +269,26 @@ pub fn run() {
             file_system::connections::init(app.handle())?;
             file_system::cloud::accounts::init(app.handle())?;
             settings::init(app.handle())?;
+
+            // The engine-agnostic handle everything that reports to the screen
+            // takes instead of `app.handle()`. Cloned into each watcher below;
+            // the modules that receive it never name a window type, which is
+            // what lets them compile into the Qt shell unchanged — see
+            // `crates/dae-core/src/host.rs`.
+            let ui_host: std::sync::Arc<dyn dae_core::host::Host> =
+                std::sync::Arc::new(host::TauriHost::new(app.handle().clone()));
+
             // Spawns the platform accent watcher. Its first report lands before
             // the webview has necessarily mounted a listener, which is why the
             // frontend also pulls `get_system_accent` once — the pair is the
             // same read-late-or-early race the deep link buffer closes.
-            system_accent::init(app.handle());
+            system_accent::init(ui_host.clone());
             // Spawns the platform light/dark watcher. On Linux this is the
             // source of truth for "follow system": WebKitGTK (GTK 3) infers
             // `prefers-color-scheme` from the GTK theme, which can disagree
             // with the desktop's own toggle. Same read-late-or-early race as
             // the accent watcher, closed the same way by the frontend's pull.
-            system_theme::init(app.handle());
+            system_theme::init(ui_host.clone());
             // Same shape as the accent watcher: an OS setting that can move while
             // the app runs (the transparency toggle in Settings › Personalisation)
             // is re-read rather than polled by the frontend. Unlike the accent, its
