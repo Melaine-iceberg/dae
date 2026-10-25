@@ -77,3 +77,8 @@ NOTES.md
 # workspace lands with `apps/dae` — see docs/decisions/engine-qt-quick.md §4.
 /crates/*/target/
 /crates/*/Cargo.lock
+
+# The Qt toolchain smoke test is a throwaway crate: its build output and lock
+# are not source. See bench/qt-toolchain/README.md.
+/bench/*/target/
+/bench/*/Cargo.lock

@@ -13,7 +13,7 @@
 | [`sftp-host-key-tofu.md`](sftp-host-key-tofu.md) | **已实施，未对真实 sshd 验证** | SFTP 之前接受任何主机密钥 —— 改为按用户 `~/.ssh/known_hosts` 的 `accept-new`：首次记录、变更即拒、记不下来也拒 |
 | [`boot-screen-prerender.md`](boot-screen-prerender.md) | **已实测否决** | 预渲染第一屏（`cold-start-js.md` §2）—— 静态骨架在 bundle 求值前一帧都没被画出来（0/18），`first-frame` 结构上不可能提前；让一帧才上屏 ~80ms，代价 +40–53ms，Rust 预渲染不做 |
 | [`first-mount-cost.md`](first-mount-cost.md) | **已实测，§5 对冷启动关闭** | 首次挂载的 62–74ms = React render **19ms**（首屏 Overview 仅 **1.4ms**）+ 树插入后的首次布局 **~40ms**（style 0、flush 0、248 节点；splash 只要 4.1ms）；这 40ms 是一次性冷成本（CJK 字面 + 首次布局），预热净亏，没有可搬去 Rust 的活 |
-| [`engine-qt-quick.md`](engine-qt-quick.md) | **方向已定，spike 未做** | 引擎从系统 WebView 换成 Qt Quick（QML 视图 + cxx-qt 的 Rust 后端）—— 结构性理由：每 tab ~200 MB PSS、WebView2 占冷启动 63–65%；四组门槛数字待量 |
+| [`engine-qt-quick.md`](engine-qt-quick.md) | **方向已定，工具链已验，4 项门槛待测** | 引擎从系统 WebView 换成 Qt Quick（QML 视图 + cxx-qt 的 Rust 后端）—— 结构性理由：每 tab ~200 MB PSS、WebView2 占冷启动 63–65%；四组门槛数字待量 |
 
 第三份（`gtk-stack-pinned-by-upstream.md`）与上面两份**无关**：它记录的是**依赖升级遇到的上游阻断**，
 不是标签撕出的方案取舍 —— 下面各节只涉及前两份。

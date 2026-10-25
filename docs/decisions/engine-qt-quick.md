@@ -1,10 +1,11 @@
 # 引擎从 WebView 换成 Qt Quick：**已定方向，spike 未做**
 
-> **状态：方向已定，证据未到。** 分支 `refactor/qt-quick`。本文记录的是
-> 「为什么离开系统 WebView」「为什么是 Qt Quick 而不是 egui / Slint / GPUI」
+> **状态：方向已定，工具链已实测通过，四组 UX/性能门槛未测。** 分支 `refactor/qt-quick`。
+> 本文记录的是「为什么离开系统 WebView」「为什么是 Qt Quick 而不是 egui / Slint / GPUI」
 > 「许可证为什么是 GPL-3.0-or-later」，以及**定案前必须量出来的四组数字**。
 > 其中的门槛数字全部是待验证的假设，不是结论 —— 与 `docs/decisions/README.md`
 > 「先量，再改」的约定一致：这份文档的第一版是**假设清单**，spike 结束后回填实测值。
+> §8 是已经回填的那部分：Qt 6.12 + cxx-qt 0.10 在本机编译、链接并跑通了 QML → Rust 调用。
 
 ## 0. 结论先行
 
@@ -134,3 +135,78 @@ WebView2/WebKitGTK 创建 **270–340 ms**、预热池 **+200 MB**。
 旧壳在 P4 之前**保持可构建、可发布**。任何一个 spike 门槛不达标，回退成本是
 `git revert` 这一串垫片 + 放弃 `qml/`，`dae-core` 的产出**不浪费** ——
 它可以原样喂给 egui 或 Slint。这是把「先剥 core」放在「先定引擎」之前的唯一理由。
+
+## 8. 附：工具链已实测（Qt 6.12.0 + cxx-qt 0.10 + VS 18 Insiders）
+
+§6 里最大的未知数是「双工具链」：cxx-qt 要在 Rust 的构建里塞进 C++ 编译和
+Qt 的链接。这条链现在通了，复现代码在 `bench/qt-toolchain/`。
+
+### 8.1 安装：aqt 的 PyPI 版本装不了 6.11+
+
+**这是这次踩到的最贵的坑，写下来给 CI 用。** Qt 从 **6.11 起改了 Windows
+仓库布局**：不再有 `qt6_6110/qt6_6110/` 这一层，改成每种编译器一个子目录
+（`qt6_6120/qt6_6120_msvc2022_64/`）。aqtinstall 的 **PyPI 最新版 3.3.0 不认这个布局**
+（[#1007](https://github.com/miurahr/aqtinstall/issues/1007)、
+[#1022](https://github.com/miurahr/aqtinstall/issues/1022)），它去要
+`qt6_6120/qt6_6120/Updates.xml`，404，然后报一句容易误读的
+「Failed to download checksum … This may happen on unofficial mirrors」。
+修复只在 git master 上（`v3.3.1.dev166`），没有发版。
+
+实际可用的命令：
+
+```bash
+uvx --from "git+https://github.com/miurahr/aqtinstall" aqt install-qt \
+  windows desktop 6.12.0 win64_msvc2022_64 -O C:/Qt \
+  --archives qtbase qtdeclarative qtsvg qttools qttranslations d3dcompiler_47 opengl32sw \
+  -m qtshadertools qtimageformats
+```
+
+两个必须记住的分类（弄错就是上面那条 404 同级的报错）：
+
+| | 名字 | 传参方式 |
+|---|---|---|
+| **base archives**（默认装，可省略） | `qtbase qtdeclarative qtsvg qttools qttranslations d3dcompiler_47 opengl32sw` | `--archives …` |
+| **模块 / addons** | `qtshadertools qtimageformats`（还有 qtcharts / qtmultimedia / qtwebengine …） | `-m …` |
+
+`-m qtdeclarative` 会失败：它已经是 base archive，不是模块。`qtdoc` 被显式排掉
+（200 MB 文档，spike 用不上）。
+
+装完 **2.5 GB**，落在 `C:/Qt/6.12.0/msvc2022_64`。没有 Qt 账号（`aqt` 走的是
+开源仓库），没有 Qt Creator。
+
+### 8.2 装出来的东西（已核对）
+
+- `qmake6` / `qmllint` / `qmlls` / `windeployqt` / `qml` 齐全 —— `qmlls` 是 VS Code
+  做 QML 类型检查的那一环。
+- `QtQuick/Controls` 风格有 **Basic / Fusion / FluentWinUI3**（最后一个正好是
+  Windows 11 观感，可以作为设计的对照物）。
+- `QtQuick/Effects` 在（`effectsplugin.dll`、`BlurItem.qml`）—— 圆角/模糊/阴影
+  的 `MultiEffect` 可用，这是"美学"那一半的前提。
+
+### 8.3 ABI 风险已排除
+
+Qt 6.12 的官方 Windows 二进制是 **v143（MSVC 14.4x）** 编的，这台机器是
+**VS 18 Insiders / MSVC 14.52／x64**。§6 里把它列为"可能需要退到 VS 2022 Build
+Tools"的风险 —— **实测不需要**：cxx-qt 0.10 生成的 C++ 用 14.52 编译，与 Qt 的
+静态导入库链接干净，没有 LNK 警告。
+
+### 8.4 端到端证据
+
+`bench/qt-toolchain/` 是一个 5 文件的最小 QML 应用：Rust 里 `#[qobject]` 的类型
+由 `cxx-qt-build` 注册成 QML 模块 `dae.smoke`，QML 在 `Component.onCompleted`
+里调 `incrementNumber()`。跑出来的输出：
+
+```
+rust: starting
+rust: number -> 2
+```
+
+第二行只可能来自「QML 解析到模块 → 实例化 Rust 支撑的 QObject → 调用
+`#[qinvokable]`」这一整条链。**`qml/` 这一层写 QML、`crates/dae-qt` 这一层写
+Rust 对象的分工，从这一刻起是有实测支撑的，不再是纸面方案。**
+
+### 8.5 因此仍未解决的两件事
+
+1. **`lib.rs` 里 `window_material` 的 Mica/acrylic 要接到 `QWindow` 的 HWND 上** —— 
+   代码在，但 WndProc 子类化 + 自绘标题栏是另一条链，§5 门槛 3 照旧待测。
+2. **PGO / BOLT 的 C++ 那一半** —— 见 §6，仍未动。
