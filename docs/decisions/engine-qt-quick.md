@@ -140,9 +140,20 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
    验收方式不是"看起来对"：**重新生成 `src/bindings.ts` 后逐字节对比，唯一差异是一个
    早先提交里加的文档注释**，没有任何命令名/参数/返回类型/事件变化。
 
-累计（切片 1→6）：`tauri::` 引用 **389 → 330**、`tauri::AppHandle` **125 → 102**、
+7. **命令全部收口到包装文件**：`git`、`preview`、`search`、`open_with`、
+   `system_files`、`archive`、`trash_view` 的 27 个命令也照 slice 6 拆了——函数留在
+   各自模块且引擎无关，包装集中在 `file_system/commands.rs`（45 个）。
+   `trash_view` 是个特例：同样四个命令名在两个 cfg 门控的平台模块里各有一份，
+   包装只写一份，靠 `pub use` 在对应平台解析。
+   **`start_drag_out` 故意留在壳里**：原生拖出需要窗口 + 主线程（OLE modal loop
+   必须拥有窗口所在的 apartment），那是真的引擎形状，Qt 侧会用 `QWindow` 重做这
+   三步。这是 `file_system` 里唯一"因为真的需要、而不是因为惯性"而依赖窗口的操作。
+
+累计（切片 1→7）：`tauri::` 引用 **389 → 297**、`tauri::AppHandle` **125 → 99**、
 `app.state::<…>` **33 → 2**、`.manage()` **12 → 3**。
-`file_system/service.rs` 这 914 行现在就是 Qt 壳可以直接调用的服务层。
+`file_system/` 下已有 **18 个模块完全不含 `tauri::`**：archive、cloud、entry_codec、
+error、git、known_hosts、local、macos_trash、open_with、progress、search、sftp、
+test_support、transfer、trash_view、types、undo、vfs。
 
 ## 5. 定案前必须量出来的四组数字
 
