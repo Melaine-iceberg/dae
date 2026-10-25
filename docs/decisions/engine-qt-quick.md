@@ -132,8 +132,17 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
    `app.state::<…>` 都在 `tab_windows.rs`（窗口池，随 Tauri 一起删），
    三个 `.manage()` 也都是壳状态（深链缓冲、标签窗口、终端字节流）。
 
-累计（切片 1→5）：`tauri::` 引用 **389 → 349**、`tauri::AppHandle` **125 → 104**、
+6. **命令层一分为二**：原 `file_system/commands.rs`（1046 行）拆成
+   `commands.rs`（350 行，全是 Tauri 包装：拿注入的 `AppHandle` → 换成接缝 → 调
+   `service::*`）与 `service.rs`（914 行，**一个 Tauri 类型都不提**，`spawn_blocking`
+   也换成了 `tokio::task::spawn_blocking`）。长文档注释留在包装上，因为 specta 会把它
+   抄进 `src/bindings.ts`——那是 TS 消费者读文档的地方。
+   验收方式不是"看起来对"：**重新生成 `src/bindings.ts` 后逐字节对比，唯一差异是一个
+   早先提交里加的文档注释**，没有任何命令名/参数/返回类型/事件变化。
+
+累计（切片 1→6）：`tauri::` 引用 **389 → 330**、`tauri::AppHandle` **125 → 102**、
 `app.state::<…>` **33 → 2**、`.manage()` **12 → 3**。
+`file_system/service.rs` 这 914 行现在就是 Qt 壳可以直接调用的服务层。
 
 ## 5. 定案前必须量出来的四组数字
 
