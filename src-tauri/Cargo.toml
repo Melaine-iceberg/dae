@@ -5,6 +5,7 @@ description = "Aesthetic file manager"
 authors = ["melaine"]
 edition = "2024"
 default-run = "dae"
+license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -40,6 +41,15 @@ perf-train = []
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+# Engine-agnostic core. Everything that stops naming `tauri::` moves here so the
+# Qt Quick shell can link it without a webview in the middle. See
+# docs/decisions/engine-qt-quick.md. A path dependency rather than a workspace
+# member on purpose: `src-tauri/` is both the Cargo package and the Tauri CLI's
+# project root, and a workspace root at the repository top would move `target/`,
+# drop `src-tauri/.cargo/config.toml` (the Windows /STACK flag) and invalidate a
+# 73 GB incremental target in one commit. The workspace lands when `apps/dae`
+# exists and the paths can be re-pointed deliberately.
+dae-core = { path = "../crates/dae-core" }
 # SSH transport for the SFTP backend. `ring` (instead of the default
 # aws-lc-rs) keeps the build free of CMake/NASM requirements on Windows.
 russh = { version = "0.64", default-features = false, features = ["ring", "rsa", "flate2"] }

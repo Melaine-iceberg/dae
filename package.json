@@ -2,6 +2,7 @@
   "name": "dae",
   "version": "0.5.0",
   "private": true,
+  "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
     "dev": "vp dev",

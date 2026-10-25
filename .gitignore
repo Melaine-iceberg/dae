@@ -69,3 +69,11 @@ NOTES.md
 # PGO / BOLT profiles and the training corpus: outputs of `bun run perf:*`,
 # never source. See docs/pgo-bolt.md.
 /.perf/
+
+# Rust build output for crates that are built standalone during the engine
+# migration. `crates/dae-core` is a path dependency of `src-tauri` (whose
+# `/target/` is ignored by `src-tauri/.gitignore`), but running its own tests
+# resolves a second lock against a second target dir. Both disappear when the
+# workspace lands with `apps/dae` — see docs/decisions/engine-qt-quick.md §4.
+/crates/*/target/
+/crates/*/Cargo.lock

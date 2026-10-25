@@ -235,3 +235,13 @@ The default is the classic `.icns` look; a macOS 26 Tahoe Liquid Glass `.icon`
 ## Recommended IDE Setup
 
 - [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+
+## License
+
+GPL-3.0-or-later — see [`LICENSE`](LICENSE). Chosen because the interface layer
+is moving to Qt 6 (`docs/decisions/engine-qt-quick.md`), whose GPLv3 option this
+matches without the LGPL relinking obligations; the trade-off is that macOS App
+Store distribution is out.
+
+The engine migration lives on `refactor/qt-quick`. `main` still ships the Tauri
+shell until the Qt shell reaches parity.

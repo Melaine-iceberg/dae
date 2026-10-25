@@ -1226,6 +1226,7 @@ dependencies = [
  "base64 0.23.1",
  "block2",
  "core-foundation 0.10.1",
+ "dae-core",
  "drag",
  "dunce",
  "flate2",
@@ -1291,6 +1292,16 @@ dependencies = [
  "windows 0.62.2",
  "zbus",
  "zip 9.0.5",
+]
+
+[[package]]
+name = "dae-core"
+version = "0.5.0"
+dependencies = [
+ "dunce",
+ "serde",
+ "specta",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

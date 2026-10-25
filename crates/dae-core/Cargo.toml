@@ -1,0 +1,18 @@
+[package]
+name = "dae-core"
+version = "0.5.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+description = "Engine-agnostic core of dae: the data contract, the file system services and the seam both shells link"
+publish = false
+
+# Nothing in this crate may name an engine. If a dependency here forces a
+# renderer, a window system or an IPC format on the two shells, it belongs in a
+# shell crate instead. `specta` is the one deliberate exception: it is a plain
+# introspection derive, not a UI framework, and the Tauri shell still generates
+# its TypeScript bindings from these types while both shells coexist.
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+specta = { version = "2.0.0-rc.25", features = ["derive"] }
+thiserror = "2.0.20"
+dunce = "1.0.5"
