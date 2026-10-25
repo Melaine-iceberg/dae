@@ -16,6 +16,7 @@ pub mod local;
 pub mod macos_trash;
 pub mod media_meta;
 pub mod open_with;
+pub mod places;
 pub mod prefetch;
 pub mod preview;
 pub mod progress;

@@ -329,7 +329,9 @@ pub fn run() {
 
             // Answer the startup surface's queries while the webview loads
             // so the first paint resolves them from memory.
-            file_system::prefetch::warm_startup_data(app.handle());
+            file_system::prefetch::warm_startup_data(
+                file_system::places::resolve_system_places(app.handle()).ok(),
+            );
             tab_perf::mark_at(&main_label, "prefetch", tab_perf::now_ms());
 
             #[cfg(not(debug_assertions))]
@@ -620,7 +622,7 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             file_system::commands::extract_archive,
             file_system::commands::read_text_preview,
             file_system::commands::read_media_preview,
-            file_system::sidebar::get_system_places,
+            file_system::places::get_system_places,
             file_system::commands::list_disks,
             file_system::commands::list_wsl_distros,
             file_system::commands::load_favorites,

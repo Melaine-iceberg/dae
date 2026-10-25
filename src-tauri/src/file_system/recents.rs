@@ -1,5 +1,5 @@
 use super::error::FileSystemError;
-use super::sidebar::write_atomic;
+use dae_core::fs::atomic::write_atomic;
 use super::types::{EntryKind, display_name_from_path};
 use serde::{Deserialize, Serialize};
 use specta::Type;

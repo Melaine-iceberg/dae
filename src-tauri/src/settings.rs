@@ -213,7 +213,7 @@ fn persist_locked(registry: &mut RegistryInner) -> Result<(), FileSystemError> {
     fs::create_dir_all(&config_dir)?;
     let contents = toml::to_string_pretty(&registry.settings)
         .map_err(|error| FileSystemError::Internal(format!("settings.save_failed: {error}")))?;
-    crate::file_system::sidebar::write_atomic(&settings_path(&config_dir), contents.as_bytes())
+    dae_core::fs::atomic::write_atomic(&settings_path(&config_dir), contents.as_bytes())
 }
 
 fn settings_path(config_dir: &Path) -> PathBuf {

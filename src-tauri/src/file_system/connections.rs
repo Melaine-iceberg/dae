@@ -261,7 +261,7 @@ fn persist_locked(registry: &mut RegistryInner) -> Result<(), FileSystemError> {
     fs::create_dir_all(&config_dir)?;
     let contents = serde_json::to_string_pretty(&registry.saved)
         .map_err(|error| FileSystemError::Internal(error.to_string()))?;
-    super::sidebar::write_atomic(&connections_path(&config_dir), contents.as_bytes())
+    dae_core::fs::atomic::write_atomic(&connections_path(&config_dir), contents.as_bytes())
 }
 
 fn connections_path(config_dir: &std::path::Path) -> PathBuf {

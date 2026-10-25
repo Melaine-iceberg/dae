@@ -9,5 +9,6 @@
 //! serves the Tauri webview. When the Qt shell lands, the packing half and the
 //! shell's `listing_packets` channel target go away together.
 
+pub mod atomic;
 pub mod entry_codec;
 pub mod listing;

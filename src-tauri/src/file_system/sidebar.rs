@@ -1,5 +1,6 @@
 use super::error::FileSystemError;
 use super::types::path_to_string;
+use dae_core::fs::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 #[cfg(target_os = "linux")]
@@ -11,7 +12,6 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::path::PathBuf;
 use sysinfo::Disks;
-use tauri::Manager;
 
 const FAVORITES_FILE_NAME: &str = "sidebar-favorites.json";
 
@@ -58,39 +58,6 @@ pub struct DiskVolume {
 pub struct WslDistro {
     pub name: String,
     pub path: String,
-}
-
-// A shell command on purpose: resolving the user's Desktop/Documents/Downloads
-// is `tauri::Manager::path()`'s job today. Porting that resolver into
-// `dae_core::paths` is its own decision (seven directories, each with a
-// per-platform rule), so it is not happening inside this refactor.
-/// Resolves the fixed set of system places, skipping any the OS cannot provide.
-#[tauri::command]
-#[specta::specta]
-pub fn get_system_places(app: tauri::AppHandle) -> Result<Vec<SystemPlace>, FileSystemError> {
-    if let Some(places) = super::prefetch::state().take_system_places() {
-        return Ok(places);
-    }
-    let resolver = app.path();
-    let candidates = [
-        (PlaceKind::Home, resolver.home_dir()),
-        (PlaceKind::Desktop, resolver.desktop_dir()),
-        (PlaceKind::Documents, resolver.document_dir()),
-        (PlaceKind::Downloads, resolver.download_dir()),
-        (PlaceKind::Pictures, resolver.picture_dir()),
-        (PlaceKind::Music, resolver.audio_dir()),
-        (PlaceKind::Videos, resolver.video_dir()),
-    ];
-
-    Ok(candidates
-        .into_iter()
-        .filter_map(|(kind, resolved)| {
-            resolved.ok().map(|path| SystemPlace {
-                kind,
-                path: path_to_string(&path),
-            })
-        })
-        .collect())
 }
 
 /// See `commands::list_disks` for the contract; this half is engine-free.
@@ -434,14 +401,6 @@ fn favorites_path() -> Result<PathBuf, FileSystemError> {
     let config_dir = dae_core::paths::config_dir()?;
 
     Ok(config_dir.join(FAVORITES_FILE_NAME))
-}
-
-/// Writes via a temp file + rename so readers never observe a partial document.
-pub(crate) fn write_atomic(path: &std::path::Path, contents: &[u8]) -> Result<(), FileSystemError> {
-    let temp_path = path.with_extension("tmp");
-    fs::write(&temp_path, contents)?;
-    fs::rename(&temp_path, path)?;
-    Ok(())
 }
 
 #[cfg(test)]

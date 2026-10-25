@@ -15,7 +15,7 @@ use std::sync::{Mutex, OnceLock};
 
 
 use super::recents::{self, RecentItem};
-use super::sidebar::{self, Favorite, SystemPlace};
+use super::sidebar::{Favorite, SystemPlace};
 use super::spaces::{self, Space};
 
 #[derive(Default)]
@@ -62,19 +62,21 @@ pub(crate) fn state() -> &'static StartupPrefetch {
 }
 
 /// Answers the startup surface's queries on a background thread while the
-/// webview loads. A plain thread, not the async runtime: `get_system_places`
-/// asks the OS for its volumes, which blocks on a dead mapped drive.
-pub fn warm_startup_data(app: &tauri::AppHandle) {
-    let app = app.clone();
+/// webview loads.
+///
+/// The caller resolves the system places first — that needs the window
+/// manager — and hands them over, so this module never sees a shell handle.
+/// A plain thread, not the async runtime: the sidebar reads block on disk.
+pub fn warm_startup_data(places: Option<Vec<SystemPlace>>) {
     std::thread::spawn(move || {
         let state = state();
 
         // The overview and sidebar first-frame queries. Fallible reads stay
         // uncached on failure so the real command surfaces the error.
-        if let Ok(places) = sidebar::get_system_places(app.clone()) {
+        if let Some(places) = places {
             store(&state.system_places, places);
         }
-        if let Ok(favorites) = sidebar::load_favorites() {
+        if let Ok(favorites) = super::sidebar::load_favorites() {
             store(&state.favorites, favorites);
         }
         if let Ok(recent_items) = recents::list_recents() {
