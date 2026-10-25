@@ -13,15 +13,22 @@ Window {
     height: 780
     visible: false
     color: "transparent"
-    title: "dae"
+    title: listing.path !== "" ? listing.path : "dae"
     flags: Qt.Window | Qt.FramelessWindowHint
         | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint
         | Qt.WindowCloseButtonHint
 
-    property bool dark: true
+    property bool dark: config.systemDark
     property string material: "none"
     property int windowSerial: 0
     property var tearOffs: []
+
+    readonly property string sourceLabel: config.startupSource === "recent"
+        ? "最近访问"
+        : config.startupSource === "commandLine" ? "命令行" : "主目录"
+    readonly property string profileText: "启动: " + sourceLabel
+        + " · " + (config.settingsFound ? "settings.toml" : "默认设置")
+        + " · " + (config.configDir !== "" ? config.configDir : "配置目录不可用")
 
     readonly property color chromeTint: dark
         ? Qt.rgba(0.055, 0.063, 0.075, 0.38)
@@ -32,6 +39,10 @@ Window {
     readonly property color mutedColor: dark ? "#8d94a2" : "#657080"
     readonly property color hairline: dark ? "#26ffffff" : "#16000000"
 
+    AppConfig {
+        id: config
+    }
+
     WindowController {
         id: chrome
         token: root.objectName
@@ -39,6 +50,15 @@ Window {
 
     DirectoryListModel {
         id: listing
+    }
+
+    Shortcut {
+        sequence: config.pathJump
+        enabled: config.pathJump !== ""
+        onActivated: {
+            pathInput.forceActiveFocus()
+            pathInput.selectAll()
+        }
     }
 
     Component {
@@ -64,7 +84,7 @@ Window {
             console.warn("dae: native window attach failed")
         material = chrome.startupMaterial()
         chrome.applyMaterial(material, dark)
-        listing.load(chrome.homePath())
+        listing.load(config.startupPath)
         visible = true
     }
 
@@ -113,8 +133,18 @@ Window {
                     clip: true
 
                     onAccepted: {
-                        if (text.trim().length > 0)
-                            listing.load(text)
+                        let target = text.trim()
+                        if (target.length >= 2
+                                && target.charAt(0) === '"'
+                                && target.charAt(target.length - 1) === '"')
+                            target = target.substring(1, target.length - 1)
+                        if (target.length > 0)
+                            listing.load(target)
+                    }
+
+                    Keys.onEscapePressed: {
+                        text = listing.path
+                        focus = false
                     }
                 }
             }
@@ -161,7 +191,9 @@ Window {
             color: root.chromeColor
 
             Text {
+                id: statusText
                 x: 12
+                width: parent.width * 0.42
                 anchors.verticalCenter: parent.verticalCenter
                 text: listing.finished
                     ? listing.status
@@ -169,6 +201,21 @@ Window {
                 color: root.mutedColor
                 font.family: "Cascadia Mono"
                 font.pixelSize: 11
+                elide: Text.ElideRight
+            }
+
+            Text {
+                anchors.left: statusText.right
+                anchors.leftMargin: 16
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                horizontalAlignment: Text.AlignRight
+                text: root.profileText
+                color: root.mutedColor
+                font.family: "Cascadia Mono"
+                font.pixelSize: 11
+                elide: Text.ElideMiddle
             }
         }
     }

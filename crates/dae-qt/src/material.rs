@@ -74,9 +74,20 @@ fn choose(build: Option<u32>, transparency_on: bool) -> Material {
 
 /// The decision for this machine. Frozen on first read: a window's transparent
 /// flag is fixed at creation, so the answer must not move under it.
+///
+/// `DAE_WINDOW_MATERIAL=mica|acrylic|none` overrides the machine decision for
+/// an A/B run. Gate 3 measured Mica this way on a build whose product decision
+/// is Acrylic; the override stays because the two shells will be compared side
+/// by side and the backdrop must be the same on both sides.
 pub fn startup() -> Material {
     static STARTUP: OnceLock<Material> = OnceLock::new();
     *STARTUP.get_or_init(|| {
+        if let Some(material) = std::env::var("DAE_WINDOW_MATERIAL")
+            .ok()
+            .and_then(|name| Material::from_name(&name))
+        {
+            return material;
+        }
         read()
             .map(|(build, on)| choose(build, on))
             .unwrap_or(Material::None)

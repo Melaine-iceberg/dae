@@ -162,8 +162,12 @@ Item {
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton
-                onClicked: list.currentIndex = row.index
+                onClicked: {
+                    list.forceActiveFocus()
+                    list.currentIndex = row.index
+                }
                 onDoubleClicked: {
+                    list.forceActiveFocus()
                     if (row.isDir)
                         root.model.load(row.filePath)
                 }

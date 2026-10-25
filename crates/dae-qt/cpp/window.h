@@ -35,8 +35,8 @@
 #include <QHash>
 #include <QPointer>
 #include <QQuickWindow>
-#include <QStandardPaths>
 #include <QString>
+#include <QStyleHints>
 #include <QTimer>
 #include <QWindow>
 
@@ -407,9 +407,12 @@ inline void dae_qt_enable_alpha()
     QQuickWindow::setDefaultAlphaBuffer(true);
 }
 
-inline QString dae_qt_home_path()
+/// The OS light/dark preference. Qt reads the same Windows setting the Tauri
+/// shell's `prefers-color-scheme` resolves to, so the Mica/Acrylic tint agrees
+/// with the rest of the desktop instead of being fixed at dark.
+inline bool dae_qt_system_dark()
 {
-    return QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
 }
 
 } // namespace dae_qt

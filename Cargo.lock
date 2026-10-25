@@ -978,6 +978,7 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "dae-core",
+ "toml",
  "windows",
 ]
 

@@ -38,10 +38,6 @@ pub mod qobject {
         fn dae_qt_apply_backdrop(token: &QString, material: i32, dark: bool) -> bool;
 
         #[namespace = "dae_qt"]
-        #[rust_name = "native_home_path"]
-        fn dae_qt_home_path() -> QString;
-
-        #[namespace = "dae_qt"]
         fn dae_qt_enable_alpha();
     }
 
@@ -66,11 +62,6 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "startupMaterial"]
         fn startup_material(&self) -> QString;
-
-        /// The user's home directory, used by the skeleton as its first listing.
-        #[qinvokable]
-        #[cxx_name = "homePath"]
-        fn home_path(&self) -> QString;
     }
 }
 
@@ -102,10 +93,6 @@ impl qobject::WindowController {
 
     pub fn startup_material(&self) -> QString {
         QString::from(crate::material::startup().as_str())
-    }
-
-    pub fn home_path(&self) -> QString {
-        qobject::native_home_path()
     }
 }
 

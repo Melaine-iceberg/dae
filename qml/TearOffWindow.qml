@@ -18,7 +18,7 @@ Window {
     height: 620
     visible: false
     color: "transparent"
-    title: "dae"
+    title: root.model && root.model.path !== "" ? root.model.path : "dae"
     flags: Qt.Window | Qt.FramelessWindowHint
         | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint
         | Qt.WindowCloseButtonHint

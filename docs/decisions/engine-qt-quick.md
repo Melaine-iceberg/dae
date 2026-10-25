@@ -205,8 +205,8 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
   「主窗口 State + 次窗口 SecondaryState」两套路径。
 - `crates/dae-qt/cpp/ime.h` — 换焦点前 `CPS_CANCEL` 守卫（门槛 2），随窗口
   attach 安装，点击别处或 Tab 时先取消组合，Qt 的 `reset()` 没有东西可提交。
-- `apps/dae` + 根 `qml/` — `QGuiApplication` + `QQmlApplicationEngine`，启动
-  读真实 home 目录；「新建窗口」撕出第二个 HWND，两个视图共用同一个模型。
+- `apps/dae` + 根 `qml/` — `QGuiApplication` + `QQmlApplicationEngine`；
+  「新建窗口」撕出第二个 HWND，两个视图共用同一个模型。
 - 仓库根 `Cargo.toml` 建立工作区；`src-tauri` 暂排除，保留自己的 `target/`
   与锁文件（见该文件依赖注释）。
 - spike 的 `run*.sh` 已删，`results/` 与 README 的实测记录保留；产品代码
@@ -216,6 +216,63 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
 并把 Qt 的 `bin/` 放进 `PATH`，然后 `cargo run -p dae-app`。原生那半目前是
 Windows-first（Win32 / DWM / IMM32）；Linux 与 macOS 的 chrome/输入后端各自
 另立门槛，不拿未实测的移植冒充产品代码。
+
+### 4.3 真路径已打通：配置 → 目录 → 导航（2026-10-25）
+
+骨架的起点原来是 `QStandardPaths::HomeLocation`，绕过了旧壳已经写下的所有
+文档。`crates/dae-qt/src/config.rs` 把它换成同一条规则
+（[`dae_core::paths::config_dir`](../../crates/dae-core/src/paths.rs)）：
+
+- **配置目录**：`%APPDATA%\com.melaine.dae`；读 `settings.toml` 的
+  `[shortcuts].app.pathJump`（`Mod` 翻成 Qt 的 `Ctrl`），并读
+  `recent-items.json` 里最近一个仍然存在的目录。
+- **起点优先级**：命令行传入的目录/文件 → 最近访问 → home。文件参数取父目录；
+  坏路径、缺失文件与坏 TOML 都回落到默认值，不阻塞启动。
+- **明暗**：`cpp/window.h` 的 `dae_qt_system_dark()` 读
+  `QStyleHints::colorScheme()`，Mica/Acrylic 的 immersive-dark 不再硬编码。
+- **视图**：标题跟随当前目录；状态栏显示启动来源、`settings.toml` 是否读到
+  与真实配置目录；路径栏 Enter、双击目录、`Ctrl+P` 聚焦（绑定来自真实
+  `settings.toml`）都可用。`FileList` 点击时把焦点从路径栏移开，IME 守卫
+  仍在换焦点前取消组合。
+
+材质决策没有改：本机 build 26340 仍按 Tauri 的规则选 **Acrylic**
+（`DWMWA_SYSTEMBACKDROP_TYPE` read-back **3**）；22000–22522 走 Mica
+（read-back **2**），门槛 3 的强制 Mica 路径保留。`DAE_WINDOW_MATERIAL=mica`
+（或 `acrylic` / `none`）可以覆写机器判定，供 A/B 与设计对照使用；实测强制
+Mica 后 read-back 为 **2**。无边框窗口、原生 move/size loop、`HTMAXBUTTON`
+与 `CPS_CANCEL` 守卫都直接复用 §5.3 / §5.2 的实现。
+
+**独立 exe 的构建与部署**（Windows-first）：
+
+```powershell
+$env:QMAKE = "C:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"
+$env:PATH  = "C:/Qt/6.12.0/msvc2022_64/bin;$env:PATH"
+cargo build --release -p dae-app
+New-Item -ItemType Directory -Force dist/qt
+Copy-Item target/release/dae.exe dist/qt/
+windeployqt --release --no-translations --compiler-runtime --qmldir qml dist/qt/dae.exe
+```
+
+release 用 `windows_subsystem = "windows"`，没有控制台窗口；`dae.exe` 的 PE
+导入表只有 Qt 6 与系统 DLL（**没有 Tauri / WebView2**），运行时的模块列表里
+也没有它们。`dist/qt` 约 **70 MB**（Qt DLL + QML 插件 + MSVC runtime），exe
+本体 **3.3 MB**。
+
+**端到端冒烟：29/29 通过**（Windows 11 build 26340 / 3840×2160 @150%）：
+
+| 项目 | 实测 |
+|---|---|
+| 启动 | 标题 = `C:\Users\Mt342\.cargo\binstall`，来自真实 `recent-items.json`；状态栏显示 `settings.toml` 与 `%APPDATA%\com.melaine.dae` |
+| 配置隔离 | 把 `APPDATA` 指向假 profile（不同 recent + `Mod+Shift+P`）后，启动目录变为 `K:\code\dae`；`Ctrl+P` 不再生效，`Ctrl+Shift+P` 生效 |
+| 路径导航 | `Ctrl+P` → `C:\Windows` → Enter，标题切换；双击 `appcompat` 进入下一层 |
+| 原生 chrome | style `0x16cf0000`（THICKFRAME/MAXIMIZEBOX）、`WS_EX_LAYERED`；hit test caption **2** / max **9** / min **1** / close **1** / left **10** / content **1**；拖动 +135/+94 px、右边缘加宽 +95 px |
+| 最大化 | 自绘按钮 → client **3840×2088 = 工作区**；还原回原尺寸 |
+| 材质 / 明暗 | 默认 `DWMWA_SYSTEMBACKDROP_TYPE` = **3**（本机 Acrylic）；`DAE_WINDOW_MATERIAL=mica` 强制后 = **2**（Mica）；immersive-dark = **1**（跟随系统） |
+| IME | 微软拼音 `nihao` 出现候选窗（`1 你好` …），Esc 取消后路径文字保持不变 |
+| 关闭 | `WM_CLOSE` 后进程退出，无残留控制台窗口 |
+
+旧壳同时复验：`cargo build --manifest-path src-tauri/Cargo.toml` 通过（仅保留
+原有的 `TabDropTarget` dead-code 警告），A/B 的两条路径都仍然可构建。
 
 ## 5. 定案前必须量出来的四组数字
 

@@ -3,6 +3,10 @@
 //! `main` only creates the application and the QML engine; views live in
 //! `qml/`, the bridge in `crates/dae-qt`, and the domain in `dae-core`.
 
+// A GUI binary must not allocate a console window in release. Debug keeps it,
+// because that is where the startup profile lines are printed.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 
 fn main() {

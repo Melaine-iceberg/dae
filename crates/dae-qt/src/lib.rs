@@ -20,6 +20,7 @@
 //! were measured there. The Linux/macOS chrome and input backends land with
 //! their own measured gates rather than as an untested guess.
 
+pub mod config;
 pub mod format;
 pub mod ime;
 pub mod material;
