@@ -40,10 +40,11 @@ pub fn is_video_extension(extension: &str) -> bool {
     VIDEO_EXTENSIONS.contains(&extension)
 }
 
-#[tauri::command]
-#[specta::specta]
-pub async fn read_media_preview(path: String) -> Result<MediaPreview, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || read_media_preview_sync(&path))
+/// See `commands::read_media_preview` for the contract; this half is engine-free.
+pub async fn read_media_preview(
+    path: String,
+) -> Result<MediaPreview, FileSystemError> {
+    tokio::task::spawn_blocking(move || read_media_preview_sync(&path))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }

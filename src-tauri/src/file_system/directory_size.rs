@@ -17,7 +17,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::host;
 use dae_core::host::{Event as UiEvent, Host};
 use std::sync::OnceLock;
 
@@ -70,16 +69,11 @@ impl DirectorySizeState {
     }
 }
 
-/// Starts a background size scan for the given local directories. Partial
-/// totals stream as [`DirectorySizeProgress`] events until each directory
-/// finishes with `completed: true`. Non-local paths and non-directories are
-/// skipped quietly; the caller cancels the operation when the view changes.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::start_directory_size_calculation` for the contract; this half is engine-free.
 pub fn start_directory_size_calculation(
     operation_id: String,
     paths: Vec<String>,
-    app: tauri::AppHandle,
+    host: std::sync::Arc<dyn dae_core::host::Host>,
 ) -> Result<(), FileSystemError> {
     let directories: Vec<PathBuf> = paths
         .iter()
@@ -93,7 +87,6 @@ pub fn start_directory_size_calculation(
     }
 
     let cancelled = state().register(&operation_id);
-    let host = host::of(&app);
     let done_operation_id = operation_id.clone();
 
     std::thread::spawn(move || {
@@ -109,10 +102,10 @@ pub fn start_directory_size_calculation(
     Ok(())
 }
 
-/// Stops an in-flight size scan when the view navigates away.
-#[tauri::command]
-#[specta::specta]
-pub fn cancel_directory_size_calculation(operation_id: String) {
+/// See `commands::cancel_directory_size_calculation` for the contract; this half is engine-free.
+pub fn cancel_directory_size_calculation(
+    operation_id: String,
+)  {
     state().cancel(&operation_id);
 }
 

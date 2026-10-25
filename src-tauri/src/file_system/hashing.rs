@@ -19,7 +19,6 @@ use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::host;
 use dae_core::host::{Event as UiEvent, Host};
 use std::sync::OnceLock;
 
@@ -81,16 +80,11 @@ impl FileHashState {
     }
 }
 
-/// Starts a background checksum run for one local file. Partial byte counts
-/// stream as [`FileHashProgress`] events; the final event carries either the
-/// three digests or an error message. Non-local paths and non-files are
-/// rejected up front so the frontend gets an immediate failure.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::start_file_hash_calculation` for the contract; this half is engine-free.
 pub fn start_file_hash_calculation(
     operation_id: String,
     path: String,
-    app: tauri::AppHandle,
+    host: std::sync::Arc<dyn dae_core::host::Host>,
 ) -> Result<(), FileSystemError> {
     if !vfs::is_local_path(&path) {
         return Err(FileSystemError::Unsupported(path));
@@ -102,7 +96,6 @@ pub fn start_file_hash_calculation(
     }
 
     let cancelled = state().register(&operation_id);
-    let host = host::of(&app);
     let done_operation_id = operation_id.clone();
 
     std::thread::spawn(move || {
@@ -113,10 +106,10 @@ pub fn start_file_hash_calculation(
     Ok(())
 }
 
-/// Stops an in-flight checksum run when the dialog closes.
-#[tauri::command]
-#[specta::specta]
-pub fn cancel_file_hash_calculation(operation_id: String) {
+/// See `commands::cancel_file_hash_calculation` for the contract; this half is engine-free.
+pub fn cancel_file_hash_calculation(
+    operation_id: String,
+)  {
     state().cancel(&operation_id);
 }
 

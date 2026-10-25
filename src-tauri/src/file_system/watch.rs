@@ -167,11 +167,10 @@ impl DirectoryWatcher {
     }
 }
 
-/// Stops the observation a view held. Called when the view goes away — its
-/// pane unmounted, its tab closed — and must be safe to call more than once.
-#[tauri::command]
-#[specta::specta]
-pub fn unwatch_directory(watcher_id: String) {
+/// See `commands::unwatch_directory` for the contract; this half is engine-free.
+pub fn unwatch_directory(
+    watcher_id: String,
+)  {
     registry().release(&watcher_id);
 }
 

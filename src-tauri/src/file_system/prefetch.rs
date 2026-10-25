@@ -74,13 +74,13 @@ pub fn warm_startup_data(app: &tauri::AppHandle) {
         if let Ok(places) = sidebar::get_system_places(app.clone()) {
             store(&state.system_places, places);
         }
-        if let Ok(favorites) = sidebar::load_favorites(app.clone()) {
+        if let Ok(favorites) = sidebar::load_favorites() {
             store(&state.favorites, favorites);
         }
-        if let Ok(recent_items) = recents::list_recents(app.clone()) {
+        if let Ok(recent_items) = recents::list_recents() {
             store(&state.recents, recent_items);
         }
-        if let Ok(spaces_list) = spaces::list_spaces(app.clone()) {
+        if let Ok(spaces_list) = spaces::list_spaces() {
             store(&state.spaces, spaces_list);
         }
     });

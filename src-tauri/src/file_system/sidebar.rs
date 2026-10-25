@@ -60,6 +60,10 @@ pub struct WslDistro {
     pub path: String,
 }
 
+// A shell command on purpose: resolving the user's Desktop/Documents/Downloads
+// is `tauri::Manager::path()`'s job today. Porting that resolver into
+// `dae_core::paths` is its own decision (seven directories, each with a
+// per-platform rule), so it is not happening inside this refactor.
 /// Resolves the fixed set of system places, skipping any the OS cannot provide.
 #[tauri::command]
 #[specta::specta]
@@ -89,40 +93,29 @@ pub fn get_system_places(app: tauri::AppHandle) -> Result<Vec<SystemPlace>, File
         .collect())
 }
 
-/// Lists local disk volumes with capacity information for the sidebar's disks
-/// section. Called lazily — only when the user expands the section.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_disks() -> Result<Vec<DiskVolume>, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(list_disks_sync)
+/// See `commands::list_disks` for the contract; this half is engine-free.
+pub async fn list_disks(
+) -> Result<Vec<DiskVolume>, FileSystemError> {
+    tokio::task::spawn_blocking(list_disks_sync)
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))
 }
 
-/// Lists installed WSL distributions for the sidebar's WSL section.
-///
-/// The `\\wsl$` share root only exposes running distros, so discovery goes
-/// through `wsl.exe` instead; each distro stays reachable at `\\wsl$\<name>`
-/// because accessing that path auto-starts a stopped distro.
-///
-/// Called lazily — only when the user expands the section — since the probe
-/// spawns `wsl.exe` and must not run on the cold-start path.
-#[tauri::command]
-#[specta::specta]
-pub async fn list_wsl_distros() -> Result<Vec<WslDistro>, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(list_wsl_distros_sync)
+/// See `commands::list_wsl_distros` for the contract; this half is engine-free.
+pub async fn list_wsl_distros(
+) -> Result<Vec<WslDistro>, FileSystemError> {
+    tokio::task::spawn_blocking(list_wsl_distros_sync)
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))
 }
 
-/// Loads the user's favorite folders, returning an empty list on first launch.
-#[tauri::command]
-#[specta::specta]
-pub fn load_favorites(app: tauri::AppHandle) -> Result<Vec<Favorite>, FileSystemError> {
+/// See `commands::load_favorites` for the contract; this half is engine-free.
+pub fn load_favorites(
+) -> Result<Vec<Favorite>, FileSystemError> {
     if let Some(favorites) = super::prefetch::state().take_favorites() {
         return Ok(favorites);
     }
-    let path = favorites_path(&app)?;
+    let path = favorites_path()?;
 
     match fs::read_to_string(&path) {
         Ok(contents) => {
@@ -135,14 +128,11 @@ pub fn load_favorites(app: tauri::AppHandle) -> Result<Vec<Favorite>, FileSystem
     }
 }
 
-/// Persists the full favorite list, deduplicating entries that share a path.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::save_favorites` for the contract; this half is engine-free.
 pub fn save_favorites(
-    app: tauri::AppHandle,
     favorites: Vec<Favorite>,
 ) -> Result<(), FileSystemError> {
-    let path = favorites_path(&app)?;
+    let path = favorites_path()?;
     let favorites = dedupe_favorites(favorites);
 
     if let Some(parent) = path.parent() {
@@ -438,11 +428,10 @@ pub(super) fn dedupe_favorites(favorites: Vec<Favorite>) -> Vec<Favorite> {
         .collect()
 }
 
-fn favorites_path(app: &tauri::AppHandle) -> Result<PathBuf, FileSystemError> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+fn favorites_path() -> Result<PathBuf, FileSystemError> {
+    // Resolved by `dae_core::paths`, so both shells land in the same profile
+    // directory instead of each deriving it from its own window handle.
+    let config_dir = dae_core::paths::config_dir()?;
 
     Ok(config_dir.join(FAVORITES_FILE_NAME))
 }

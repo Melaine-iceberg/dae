@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
-use tauri::Manager;
 
 const ACCOUNTS_FILE_NAME: &str = "cloud_accounts.json";
 const KEYRING_SERVICE: &str = "dae";
@@ -53,11 +52,10 @@ static REGISTRY: LazyLock<Mutex<RegistryInner>> =
     LazyLock::new(|| Mutex::new(RegistryInner::default()));
 
 /// Loads persisted accounts. Called once from app setup; safe to call again.
-pub fn init(app: &tauri::AppHandle) -> Result<(), FileSystemError> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+pub fn init() -> Result<(), FileSystemError> {
+    // Resolved by `dae_core::paths`, so both shells land in the same profile
+    // directory instead of each deriving it from its own window handle.
+    let config_dir = dae_core::paths::config_dir()?;
 
     let mut registry = REGISTRY.lock().expect("cloud registry poisoned");
     registry.config_dir = Some(config_dir.clone());
@@ -65,10 +63,9 @@ pub fn init(app: &tauri::AppHandle) -> Result<(), FileSystemError> {
     Ok(())
 }
 
-/// Lists saved accounts sorted by provider then email.
-#[tauri::command]
-#[specta::specta]
-pub fn list_cloud_accounts() -> Result<Vec<StoredCloudAccount>, FileSystemError> {
+/// See `commands::list_cloud_accounts` for the contract; this half is engine-free.
+pub fn list_cloud_accounts(
+) -> Result<Vec<StoredCloudAccount>, FileSystemError> {
     let registry = REGISTRY.lock().expect("cloud registry poisoned");
     let mut accounts = registry.saved.clone();
     accounts.sort_by(|a, b| {
@@ -80,10 +77,10 @@ pub fn list_cloud_accounts() -> Result<Vec<StoredCloudAccount>, FileSystemError>
     Ok(accounts)
 }
 
-/// Removes a saved account, its stored credentials, and any live backend.
-#[tauri::command]
-#[specta::specta]
-pub fn delete_cloud_account(id: String) -> Result<(), FileSystemError> {
+/// See `commands::delete_cloud_account` for the contract; this half is engine-free.
+pub fn delete_cloud_account(
+    id: String,
+) -> Result<(), FileSystemError> {
     {
         let mut registry = REGISTRY.lock().expect("cloud registry poisoned");
         registry.saved.retain(|existing| existing.id != id);

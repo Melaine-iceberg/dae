@@ -157,11 +157,10 @@ impl DirectoryListingState {
     }
 }
 
-/// Stops an in-flight listing when the view navigates away. Ids the backend no
-/// longer knows are ignored: the listing may already have finished.
-#[tauri::command]
-#[specta::specta]
-pub fn cancel_directory_listing(stream_id: String) {
+/// See `commands::cancel_directory_listing` for the contract; this half is engine-free.
+pub fn cancel_directory_listing(
+    stream_id: String,
+)  {
     state().cancel(&stream_id);
 }
 

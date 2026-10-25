@@ -24,6 +24,7 @@
 pub mod error;
 pub mod hashing;
 pub mod host;
+pub mod paths;
 pub mod progress;
 pub mod types;
 

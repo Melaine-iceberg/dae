@@ -20,7 +20,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
-use tauri::Manager;
 
 const SETTINGS_FILE_NAME: &str = "settings.toml";
 
@@ -153,11 +152,10 @@ static REGISTRY: LazyLock<Mutex<RegistryInner>> =
 /// Loads persisted settings. Called once from app setup; safe to call again.
 /// A missing file yields defaults; a corrupt file is reported but still falls
 /// back to defaults so a bad hand-edit cannot brick startup.
-pub fn init(app: &tauri::AppHandle) -> Result<(), FileSystemError> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+pub fn init() -> Result<(), FileSystemError> {
+    // Resolved by `dae_core::paths`, so both shells land in the same profile
+    // directory instead of each deriving it from its own window handle.
+    let config_dir = dae_core::paths::config_dir()?;
 
     let mut registry = REGISTRY.lock().expect("settings registry poisoned");
     registry.config_dir = Some(config_dir.clone());

@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::fs;
 use std::path::PathBuf;
-use tauri::Manager;
 
 const SPACES_FILE_NAME: &str = "spaces.json";
 
@@ -32,15 +31,13 @@ pub struct Space {
     pub items: Vec<SpaceItem>,
 }
 
-/// Lists all spaces, seeding the preset set (Work/Personal/Shared/Archive)
-/// on first launch.
-#[tauri::command]
-#[specta::specta]
-pub fn list_spaces(app: tauri::AppHandle) -> Result<Vec<Space>, FileSystemError> {
+/// See `commands::list_spaces` for the contract; this half is engine-free.
+pub fn list_spaces(
+) -> Result<Vec<Space>, FileSystemError> {
     if let Some(spaces) = super::prefetch::state().take_spaces() {
         return Ok(spaces);
     }
-    let path = spaces_path(&app)?;
+    let path = spaces_path()?;
 
     match read_spaces(&path)? {
         Some(spaces) => Ok(spaces),
@@ -52,12 +49,12 @@ pub fn list_spaces(app: tauri::AppHandle) -> Result<Vec<Space>, FileSystemError>
     }
 }
 
-/// Creates a new empty space and returns it.
-#[tauri::command]
-#[specta::specta]
-pub fn create_space(app: tauri::AppHandle, name: String) -> Result<Space, FileSystemError> {
+/// See `commands::create_space` for the contract; this half is engine-free.
+pub fn create_space(
+    name: String,
+) -> Result<Space, FileSystemError> {
     let name = validated_name(&name)?;
-    let path = spaces_path(&app)?;
+    let path = spaces_path()?;
     let mut spaces = read_spaces(&path)?.unwrap_or_else(seed_spaces);
 
     let space = Space {
@@ -72,16 +69,13 @@ pub fn create_space(app: tauri::AppHandle, name: String) -> Result<Space, FileSy
     Ok(space)
 }
 
-/// Renames a space. Preset spaces may be renamed but not deleted.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::rename_space` for the contract; this half is engine-free.
 pub fn rename_space(
-    app: tauri::AppHandle,
     space_id: String,
     name: String,
 ) -> Result<Space, FileSystemError> {
     let name = validated_name(&name)?;
-    let path = spaces_path(&app)?;
+    let path = spaces_path()?;
     let mut spaces = read_spaces(&path)?.unwrap_or_else(seed_spaces);
 
     let space = spaces
@@ -95,12 +89,11 @@ pub fn rename_space(
     Ok(updated)
 }
 
-/// Deletes a space. The items inside it are pointers, so no files are removed.
-/// Preset spaces cannot be deleted.
-#[tauri::command]
-#[specta::specta]
-pub fn delete_space(app: tauri::AppHandle, space_id: String) -> Result<(), FileSystemError> {
-    let path = spaces_path(&app)?;
+/// See `commands::delete_space` for the contract; this half is engine-free.
+pub fn delete_space(
+    space_id: String,
+) -> Result<(), FileSystemError> {
+    let path = spaces_path()?;
     let mut spaces = read_spaces(&path)?.unwrap_or_else(seed_spaces);
 
     let Some(space) = spaces.iter().find(|space| space.id == space_id) else {
@@ -118,16 +111,12 @@ pub fn delete_space(app: tauri::AppHandle, space_id: String) -> Result<(), FileS
     write_spaces(&path, &spaces)
 }
 
-/// Pins a path inside a space, returning the updated space. Adding the same
-/// path twice keeps the original entry.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::add_space_item` for the contract; this half is engine-free.
 pub fn add_space_item(
-    app: tauri::AppHandle,
     space_id: String,
     path: String,
 ) -> Result<Space, FileSystemError> {
-    update_space_items(&app, &space_id, |items| {
+    update_space_items(&space_id, |items| {
         if items.iter().any(|item| item.path == path) {
             return;
         }
@@ -140,15 +129,12 @@ pub fn add_space_item(
     })
 }
 
-/// Removes one path from a space, returning the updated space.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::remove_space_item` for the contract; this half is engine-free.
 pub fn remove_space_item(
-    app: tauri::AppHandle,
     space_id: String,
     path: String,
 ) -> Result<Space, FileSystemError> {
-    update_space_items(&app, &space_id, |items| {
+    update_space_items(&space_id, |items| {
         items.retain(|item| item.path != path);
     })
 }
@@ -173,11 +159,10 @@ pub(super) fn seed_spaces() -> Vec<Space> {
 }
 
 fn update_space_items(
-    app: &tauri::AppHandle,
     space_id: &str,
     update: impl FnOnce(&mut Vec<SpaceItem>),
 ) -> Result<Space, FileSystemError> {
-    let path = spaces_path(app)?;
+    let path = spaces_path()?;
     let mut spaces = read_spaces(&path)?.unwrap_or_else(seed_spaces);
 
     let space = spaces
@@ -225,11 +210,10 @@ fn write_spaces(path: &std::path::Path, spaces: &[Space]) -> Result<(), FileSyst
     write_atomic(path, contents.as_bytes())
 }
 
-fn spaces_path(app: &tauri::AppHandle) -> Result<PathBuf, FileSystemError> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+fn spaces_path() -> Result<PathBuf, FileSystemError> {
+    // Resolved by `dae_core::paths`, so both shells land in the same profile
+    // directory instead of each deriving it from its own window handle.
+    let config_dir = dae_core::paths::config_dir()?;
 
     Ok(config_dir.join(SPACES_FILE_NAME))
 }

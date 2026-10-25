@@ -41,10 +41,7 @@ pub struct AuthorizeCloudAccountInput {
     pub client_secret: Option<String>,
 }
 
-/// Runs the full browser authorization for one provider and saves the
-/// resulting account. Re-authorizing an existing account replaces it.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::authorize_cloud_account` for the contract; this half is engine-free.
 pub async fn authorize_cloud_account(
     input: AuthorizeCloudAccountInput,
 ) -> Result<StoredCloudAccount, FileSystemError> {

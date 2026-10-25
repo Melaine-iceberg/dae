@@ -7,7 +7,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::Manager;
 
 const RECENTS_FILE_NAME: &str = "recent-items.json";
 const MAX_RECENT_ITEMS: usize = 300;
@@ -97,34 +96,24 @@ impl RecentsState {
     }
 }
 
-/// Loads the recent items list, most recently used first. Empty on first launch.
-#[tauri::command]
-#[specta::specta]
-pub fn list_recents(app: tauri::AppHandle) -> Result<Vec<RecentItem>, FileSystemError> {
+/// See `commands::list_recents` for the contract; this half is engine-free.
+pub fn list_recents(
+) -> Result<Vec<RecentItem>, FileSystemError> {
     if let Some(recents) = super::prefetch::state().take_recents() {
         return Ok(recents);
     }
-    let path = recents_path(&app)?;
+    let path = recents_path()?;
     state().snapshot(&path)
 }
 
-/// Records one access, moving an existing entry for the same path to the front.
-/// Returns the updated list so callers can sync their local state.
-///
-/// Blocking file I/O on the blocking pool rather than on the invoke thread: this
-/// runs on every directory visit and every file open, and the write is a
-/// temp-file-and-rename under the app config directory, which an antivirus
-/// scanner or a roamed profile can turn into milliseconds.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::record_recent` for the contract; this half is engine-free.
 pub async fn record_recent(
-    app: tauri::AppHandle,
     path: String,
     kind: EntryKind,
     source: RecentSource,
 ) -> Result<Vec<RecentItem>, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let store_path = recents_path(&app)?;
+    tokio::task::spawn_blocking(move || {
+        let store_path = recents_path()?;
         let item = RecentItem {
             name: display_name_from_path(&path),
             path,
@@ -142,15 +131,12 @@ pub async fn record_recent(
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// Removes one path from the recent list, returning the updated list.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::remove_recent` for the contract; this half is engine-free.
 pub async fn remove_recent(
-    app: tauri::AppHandle,
     path: String,
 ) -> Result<Vec<RecentItem>, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let store_path = recents_path(&app)?;
+    tokio::task::spawn_blocking(move || {
+        let store_path = recents_path()?;
         state().edit(&store_path, |items| {
             items.retain(|item| item.path != path);
             items.clone()
@@ -160,12 +146,11 @@ pub async fn remove_recent(
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// Clears the whole recent list. This never touches the files themselves.
-#[tauri::command]
-#[specta::specta]
-pub async fn clear_recents(app: tauri::AppHandle) -> Result<(), FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let store_path = recents_path(&app)?;
+/// See `commands::clear_recents` for the contract; this half is engine-free.
+pub async fn clear_recents(
+) -> Result<(), FileSystemError> {
+    tokio::task::spawn_blocking(move || {
+        let store_path = recents_path()?;
         state().edit(&store_path, |items| items.clear())
     })
     .await
@@ -210,11 +195,10 @@ fn state() -> &'static RecentsState {
     STATE.get_or_init(RecentsState::default)
 }
 
-fn recents_path(app: &tauri::AppHandle) -> Result<PathBuf, FileSystemError> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+fn recents_path() -> Result<PathBuf, FileSystemError> {
+    // Resolved by `dae_core::paths`, so both shells land in the same profile
+    // directory instead of each deriving it from its own window handle.
+    let config_dir = dae_core::paths::config_dir()?;
 
     Ok(config_dir.join(RECENTS_FILE_NAME))
 }

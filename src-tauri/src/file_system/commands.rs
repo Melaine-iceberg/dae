@@ -23,10 +23,17 @@ use super::search;
 use super::service;
 use super::system_files::{self, KeyModifiers, SystemClipboardFiles};
 use super::trash_view::{self, TrashEntry};
+use super::cloud::accounts::StoredCloudAccount;
+use super::cloud::oauth::AuthorizeCloudAccountInput;
+use super::connections::{SaveConnectionInput, StoredConnection};
+use super::media_meta::MediaPreview;
+use super::recents::{RecentItem, RecentSource};
+use super::sidebar::{DiskVolume, Favorite, WslDistro};
+use super::spaces::Space;
 use super::types::{
-    ContentSearchResponse, DirectoryEntry, DirectoryView, FileProperties, NewEntryKind,
-    PropertyChanges, RecursivePropertyUpdateOutcome, RenameRequest, SearchResponse, TransferConflict,
-    TransferItem,
+    ContentSearchResponse, DirectoryEntry, DirectoryView, EntryKind, FileProperties, NewEntryKind,
+    PropertyChanges, RecursivePropertyUpdateOutcome, RenameRequest, SearchResponse,
+    TransferConflict, TransferItem,
 };
 use super::undo::UndoRedoOutcome;
 use crate::host;
@@ -589,19 +596,279 @@ pub async fn empty_trash(
     trash_view::empty_trash(operation_id, host::of(&app)).await
 }
 
-/// Lists every entry in `~/.Trash`, newest modification first (macOS
-/// records no deletion time; see `macos_trash`). Runs on a blocking
-/// thread like the shell-backed implementations.
-/// Puts trashed entries back to their original locations, replaying the
-/// Finder put-back records one rename at a time so progress streams and
-/// a later failure does not roll back earlier successes. Returns the
-/// number of entries actually restored.
-/// Permanently deletes trashed entries (selected by their trash ids).
-/// Returns the number of entries actually purged.
-/// Permanently deletes everything in `~/.Trash`, then drops the stale
-/// put-back records by removing `.DS_Store` (Finder recreates it on
-/// demand). Returns the purged count; the UI must confirm before calling
-/// this command.
+/// Lists saved accounts sorted by provider then email.
+#[tauri::command]
+#[specta::specta]
+pub fn list_cloud_accounts() -> Result<Vec<StoredCloudAccount>, FileSystemError> {
+    super::cloud::accounts::list_cloud_accounts()
+}
+
+/// Removes a saved account, its stored credentials, and any live backend.
+#[tauri::command]
+#[specta::specta]
+pub fn delete_cloud_account(
+    id: String,
+) -> Result<(), FileSystemError> {
+    super::cloud::accounts::delete_cloud_account(id)
+}
+
+/// Runs the full browser authorization for one provider and saves the
+/// resulting account. Re-authorizing an existing account replaces it.
+#[tauri::command]
+#[specta::specta]
+pub async fn authorize_cloud_account(
+    input: AuthorizeCloudAccountInput,
+) -> Result<StoredCloudAccount, FileSystemError> {
+    super::cloud::oauth::authorize_cloud_account(input).await
+}
+
+/// Lists saved connections sorted by protocol then host.
+#[tauri::command]
+#[specta::specta]
+pub fn list_connections() -> Result<Vec<StoredConnection>, FileSystemError> {
+    super::connections::list_connections()
+}
+
+/// Creates or updates a connection. Passwords, when supplied and remembered,
+/// go to the OS keychain; if the keychain is unavailable they fall back to
+/// session memory so the connection still works until the app exits.
+#[tauri::command]
+#[specta::specta]
+pub fn save_connection(
+    input: SaveConnectionInput,
+) -> Result<StoredConnection, FileSystemError> {
+    super::connections::save_connection(input)
+}
+
+/// Removes a saved connection, its stored credential, and any live session.
+#[tauri::command]
+#[specta::specta]
+pub fn delete_connection(
+    id: String,
+) -> Result<(), FileSystemError> {
+    super::connections::delete_connection(id)
+}
+
+/// Starts a background size scan for the given local directories. Partial
+/// totals stream as [`DirectorySizeProgress`] events until each directory
+/// finishes with `completed: true`. Non-local paths and non-directories are
+/// skipped quietly; the caller cancels the operation when the view changes.
+#[tauri::command]
+#[specta::specta]
+pub fn start_directory_size_calculation(
+    operation_id: String,
+    paths: Vec<String>,
+    app: tauri::AppHandle,
+) -> Result<(), FileSystemError> {
+    super::directory_size::start_directory_size_calculation(operation_id, paths, host::of(&app))
+}
+
+/// Stops an in-flight size scan when the view navigates away.
+#[tauri::command]
+#[specta::specta]
+pub fn cancel_directory_size_calculation(
+    operation_id: String,
+)  {
+    super::directory_size::cancel_directory_size_calculation(operation_id);
+}
+
+/// Starts a background checksum run for one local file. Partial byte counts
+/// stream as [`FileHashProgress`] events; the final event carries either the
+/// three digests or an error message. Non-local paths and non-files are
+/// rejected up front so the frontend gets an immediate failure.
+#[tauri::command]
+#[specta::specta]
+pub fn start_file_hash_calculation(
+    operation_id: String,
+    path: String,
+    app: tauri::AppHandle,
+) -> Result<(), FileSystemError> {
+    super::hashing::start_file_hash_calculation(operation_id, path, host::of(&app))
+}
+
+/// Stops an in-flight checksum run when the dialog closes.
+#[tauri::command]
+#[specta::specta]
+pub fn cancel_file_hash_calculation(
+    operation_id: String,
+)  {
+    super::hashing::cancel_file_hash_calculation(operation_id);
+}
+
+/// Stops an in-flight listing when the view navigates away. Ids the backend no
+/// longer knows are ignored: the listing may already have finished.
+#[tauri::command]
+#[specta::specta]
+pub fn cancel_directory_listing(
+    stream_id: String,
+)  {
+    super::listing::cancel_directory_listing(stream_id);
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn read_media_preview(
+    path: String,
+) -> Result<MediaPreview, FileSystemError> {
+    super::media_meta::read_media_preview(path).await
+}
+
+/// Loads the recent items list, most recently used first. Empty on first launch.
+#[tauri::command]
+#[specta::specta]
+pub fn list_recents() -> Result<Vec<RecentItem>, FileSystemError> {
+    super::recents::list_recents()
+}
+
+/// Records one access, moving an existing entry for the same path to the front.
+/// Returns the updated list so callers can sync their local state.
+///
+/// Blocking file I/O on the blocking pool rather than on the invoke thread: this
+/// runs on every directory visit and every file open, and the write is a
+/// temp-file-and-rename under the app config directory, which an antivirus
+/// scanner or a roamed profile can turn into milliseconds.
+#[tauri::command]
+#[specta::specta]
+pub async fn record_recent(
+    path: String,
+    kind: EntryKind,
+    source: RecentSource,
+) -> Result<Vec<RecentItem>, FileSystemError> {
+    super::recents::record_recent(path, kind, source).await
+}
+
+/// Removes one path from the recent list, returning the updated list.
+#[tauri::command]
+#[specta::specta]
+pub async fn remove_recent(
+    path: String,
+) -> Result<Vec<RecentItem>, FileSystemError> {
+    super::recents::remove_recent(path).await
+}
+
+/// Clears the whole recent list. This never touches the files themselves.
+#[tauri::command]
+#[specta::specta]
+pub async fn clear_recents() -> Result<(), FileSystemError> {
+    super::recents::clear_recents().await
+}
+
+/// Lists local disk volumes with capacity information for the sidebar's disks
+/// section. Called lazily — only when the user expands the section.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_disks() -> Result<Vec<DiskVolume>, FileSystemError> {
+    super::sidebar::list_disks().await
+}
+
+/// Lists installed WSL distributions for the sidebar's WSL section.
+///
+/// The `\\wsl$` share root only exposes running distros, so discovery goes
+/// through `wsl.exe` instead; each distro stays reachable at `\\wsl$\<name>`
+/// because accessing that path auto-starts a stopped distro.
+///
+/// Called lazily — only when the user expands the section — since the probe
+/// spawns `wsl.exe` and must not run on the cold-start path.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_wsl_distros() -> Result<Vec<WslDistro>, FileSystemError> {
+    super::sidebar::list_wsl_distros().await
+}
+
+/// Loads the user's favorite folders, returning an empty list on first launch.
+#[tauri::command]
+#[specta::specta]
+pub fn load_favorites() -> Result<Vec<Favorite>, FileSystemError> {
+    super::sidebar::load_favorites()
+}
+
+/// Persists the full favorite list, deduplicating entries that share a path.
+#[tauri::command]
+#[specta::specta]
+pub fn save_favorites(
+    favorites: Vec<Favorite>,
+) -> Result<(), FileSystemError> {
+    super::sidebar::save_favorites(favorites)
+}
+
+/// Verifies a connection attempt before it is saved, using the credentials
+/// typed into the connect dialog rather than any stored ones.
+#[tauri::command]
+#[specta::specta]
+pub async fn test_connection(
+    input: SaveConnectionInput,
+) -> Result<(), FileSystemError> {
+    super::smb::test_connection(input).await
+}
+
+/// Lists all spaces, seeding the preset set (Work/Personal/Shared/Archive)
+/// on first launch.
+#[tauri::command]
+#[specta::specta]
+pub fn list_spaces() -> Result<Vec<Space>, FileSystemError> {
+    super::spaces::list_spaces()
+}
+
+/// Creates a new empty space and returns it.
+#[tauri::command]
+#[specta::specta]
+pub fn create_space(
+    name: String,
+) -> Result<Space, FileSystemError> {
+    super::spaces::create_space(name)
+}
+
+/// Renames a space. Preset spaces may be renamed but not deleted.
+#[tauri::command]
+#[specta::specta]
+pub fn rename_space(
+    space_id: String,
+    name: String,
+) -> Result<Space, FileSystemError> {
+    super::spaces::rename_space(space_id, name)
+}
+
+/// Deletes a space. The items inside it are pointers, so no files are removed.
+/// Preset spaces cannot be deleted.
+#[tauri::command]
+#[specta::specta]
+pub fn delete_space(
+    space_id: String,
+) -> Result<(), FileSystemError> {
+    super::spaces::delete_space(space_id)
+}
+
+/// Pins a path inside a space, returning the updated space. Adding the same
+/// path twice keeps the original entry.
+#[tauri::command]
+#[specta::specta]
+pub fn add_space_item(
+    space_id: String,
+    path: String,
+) -> Result<Space, FileSystemError> {
+    super::spaces::add_space_item(space_id, path)
+}
+
+/// Removes one path from a space, returning the updated space.
+#[tauri::command]
+#[specta::specta]
+pub fn remove_space_item(
+    space_id: String,
+    path: String,
+) -> Result<Space, FileSystemError> {
+    super::spaces::remove_space_item(space_id, path)
+}
+
+/// Stops the observation a view held. Called when the view goes away — its
+/// pane unmounted, its tab closed — and must be safe to call more than once.
+#[tauri::command]
+#[specta::specta]
+pub fn unwatch_directory(
+    watcher_id: String,
+)  {
+    super::watch::unwatch_directory(watcher_id);
+}
+
 /// The same read as [`read_directory`], but the batches that follow the head
 /// arrive as columnar packets on `on_batch` instead of as events.
 ///
