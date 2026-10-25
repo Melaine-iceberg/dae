@@ -1,7 +1,7 @@
-use crate::file_system::error::FileSystemError;
-use crate::file_system::progress::FileOperationProgressReporterTrait;
-use crate::file_system::transfer::{duplicate_name, path_contains};
-use crate::file_system::types::{
+use crate::fs::error::FileSystemError;
+use crate::fs::progress::FileOperationProgressReporterTrait;
+use crate::fs::transfer::{duplicate_name, path_contains};
+use crate::fs::types::{
     ConflictAction, NewEntryKind, TransferPair, canonical_path, path_to_string,
 };
 use rayon::prelude::*;
@@ -506,7 +506,7 @@ fn delete_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file_system::test_support::TestProgress;
+    use crate::fs::test_support::TestProgress;
     use std::sync::atomic::Ordering as AtomicOrdering;
 
     #[test]

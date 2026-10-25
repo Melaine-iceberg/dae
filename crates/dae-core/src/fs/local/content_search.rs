@@ -1,6 +1,6 @@
 use super::ignores;
-use crate::file_system::error::FileSystemError;
-use crate::file_system::types::{
+use crate::fs::error::FileSystemError;
+use crate::fs::types::{
     ContentSearchFile, ContentSearchMatch, ContentSearchResponse, canonical_path, path_to_string,
 };
 use grep_matcher::Matcher as _;

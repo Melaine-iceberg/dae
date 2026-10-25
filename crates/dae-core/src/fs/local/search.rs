@@ -1,7 +1,7 @@
 use super::directory::{entry_kind, entry_state_flags, modified_at_millis};
 use super::ignores;
-use crate::file_system::error::FileSystemError;
-use crate::file_system::types::{
+use crate::fs::error::FileSystemError;
+use crate::fs::types::{
     EntryKind, SearchEntry, SearchResponse, canonical_path, entry_kind_rank, path_to_string,
 };
 use ignore::{WalkBuilder, WalkState};

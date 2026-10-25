@@ -1,16 +1,15 @@
 pub mod archive;
-pub mod cloud;
+pub use dae_core::fs::cloud;
 pub mod commands;
-pub mod connections;
+pub use dae_core::fs::connections;
 pub mod directory_size;
 pub use dae_core::fs::entry_codec;
-pub mod git;
+pub use dae_core::fs::git;
 pub mod hashing;
 pub mod ipc_events;
-pub mod known_hosts;
 pub mod listing;
 pub mod listing_packets;
-pub mod local;
+pub use dae_core::fs::local;
 #[cfg(target_os = "macos")]
 pub mod macos_trash;
 pub use dae_core::fs::media_meta;
@@ -20,18 +19,17 @@ pub mod prefetch;
 pub mod preview;
 pub use dae_core::fs::progress;
 pub mod recents;
-pub mod search;
+pub use dae_core::fs::search;
 // The engine-free half of the command layer: no `tauri::`, no `AppHandle`.
 pub mod service;
-pub mod sftp;
 pub mod sidebar;
-pub mod smb;
+pub use dae_core::fs::smb;
 pub mod spaces;
 pub mod system_files;
-pub mod transfer;
+pub use dae_core::fs::transfer;
 pub mod trash_view;
 pub mod undo;
-pub mod vfs;
+pub use dae_core::fs::vfs;
 pub mod volume_monitor;
 pub mod watch;
 

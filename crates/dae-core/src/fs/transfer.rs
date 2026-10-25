@@ -547,7 +547,7 @@ fn unique_sibling_path(
 }
 
 /// The directory containing `path`, keeping the trailing separator style.
-pub(super) fn parent_path_of(path: &str) -> Option<String> {
+pub fn parent_path_of(path: &str) -> Option<String> {
     let trimmed = path.trim_end_matches(['/', '\\']);
     let separator_index = trimmed.rfind(['/', '\\'])?;
     Some(trimmed[..=separator_index].to_owned())
@@ -968,7 +968,7 @@ fn ensure_unique_paths(sources: &[TransferSource]) -> Result<(), FileSystemError
     Ok(())
 }
 
-pub(super) fn last_segment(path: &str) -> Option<&str> {
+pub fn last_segment(path: &str) -> Option<&str> {
     let trimmed = path.trim_end_matches(['/', '\\']);
     trimmed
         .rsplit(['/', '\\'])
@@ -999,10 +999,10 @@ pub(super) fn path_contains(ancestor: &str, descendant: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file_system::local::LocalBackend;
-    use crate::file_system::test_support::TestProgress;
-    use crate::file_system::types::{DirectoryView, NewEntryKind, SearchResponse};
-    use crate::file_system::vfs;
+    use crate::fs::local::LocalBackend;
+    use crate::fs::test_support::TestProgress;
+    use crate::fs::types::{DirectoryView, NewEntryKind, SearchResponse};
+    use crate::fs::vfs;
     use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 

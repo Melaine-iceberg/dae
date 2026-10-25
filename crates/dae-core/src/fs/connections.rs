@@ -77,9 +77,9 @@ static REGISTRY: LazyLock<Mutex<RegistryInner>> =
 /// Loads persisted connections. Called once from app setup; safe to call
 /// again (re-reads from disk).
 pub fn init() -> Result<(), FileSystemError> {
-    // Resolved by `dae_core::paths`, so both shells land in the same profile
+    // Resolved by `crate::paths`, so both shells land in the same profile
     // directory instead of each deriving it from its own window handle.
-    let config_dir = dae_core::paths::config_dir()?;
+    let config_dir = crate::paths::config_dir()?;
 
     let mut registry = REGISTRY.lock().expect("connection registry poisoned");
     registry.config_dir = Some(config_dir.clone());
@@ -261,7 +261,7 @@ fn persist_locked(registry: &mut RegistryInner) -> Result<(), FileSystemError> {
     fs::create_dir_all(&config_dir)?;
     let contents = serde_json::to_string_pretty(&registry.saved)
         .map_err(|error| FileSystemError::Internal(error.to_string()))?;
-    dae_core::fs::atomic::write_atomic(&connections_path(&config_dir), contents.as_bytes())
+    crate::fs::atomic::write_atomic(&connections_path(&config_dir), contents.as_bytes())
 }
 
 fn connections_path(config_dir: &std::path::Path) -> PathBuf {
@@ -284,7 +284,7 @@ fn normalize_host(host: &str) -> String {
 /// Points the store at `config_dir` and reloads from disk, without an app
 /// handle. Test-only.
 #[cfg(test)]
-pub(crate) fn use_config_dir_for_tests(config_dir: PathBuf) -> Result<(), FileSystemError> {
+pub fn use_config_dir_for_tests(config_dir: PathBuf) -> Result<(), FileSystemError> {
     let mut registry = REGISTRY.lock().expect("connection registry poisoned");
     registry.config_dir = Some(config_dir.clone());
     registry.saved = read_connections_file(&connections_path(&config_dir))?;

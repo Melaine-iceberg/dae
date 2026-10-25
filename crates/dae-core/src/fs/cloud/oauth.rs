@@ -8,7 +8,7 @@
 
 use super::accounts::{self, StoredCloudAccount};
 use super::provider::{self, CloudProviderKind};
-use crate::file_system::error::FileSystemError;
+use crate::fs::error::FileSystemError;
 use base64::Engine;
 use rand::{RngExt, distr::Alphanumeric};
 use serde::Deserialize;

@@ -9,12 +9,12 @@ pub mod oauth;
 mod onedrive;
 pub mod provider;
 
-use crate::file_system::error::FileSystemError;
-use crate::file_system::types::{
+use crate::fs::error::FileSystemError;
+use crate::fs::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, NewEntryKind, SearchEntry,
     SearchResponse, entry_sort_key,
 };
-use crate::file_system::vfs::{FileSystemBackend, SharedBackend};
+use crate::fs::vfs::{FileSystemBackend, SharedBackend};
 use provider::{CloudMeta, CloudProviderKind};
 use std::collections::HashMap;
 use std::future::Future;

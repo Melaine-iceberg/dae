@@ -1,10 +1,10 @@
-use crate::file_system::entry_codec::{self, ListingRow};
-use crate::file_system::error::FileSystemError;
-use crate::file_system::types::{
+use crate::fs::entry_codec::{self, ListingRow};
+use crate::fs::error::FileSystemError;
+use crate::fs::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, canonical_path, entry_sort_key,
     name_order, path_to_string,
 };
-use dae_core::host::{Event as UiEvent, Host};
+use crate::host::{Event as UiEvent, Host};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rayon::prelude::*;
 use std::fs;
@@ -47,7 +47,7 @@ pub fn create_directory_watcher(
             // or it would keep answering with the badges from before
             // (`git::GitStatusCache`). Sent before the event, so the refresh the
             // event triggers finds the cache already invalidated.
-            crate::file_system::git::status_cache().note_change();
+            crate::fs::git::status_cache().note_change();
 
             host.emit(UiEvent::DirectoryChanged {
                 path: event_path.clone(),
@@ -264,7 +264,7 @@ pub fn open_canonical_listing(
 
     let mut cursor = DirectoryListingCursor {
         #[cfg(windows)]
-        iterator: crate::file_system::local::windows_directory::WindowsDirectoryEntries::open(
+        iterator: crate::fs::local::windows_directory::WindowsDirectoryEntries::open(
             &path,
         )?,
         #[cfg(not(windows))]
@@ -469,7 +469,7 @@ mod tests {
     #[cfg(windows)]
     use super::super::properties::update_properties;
     #[cfg(windows)]
-    use crate::file_system::types::PropertyChanges;
+    use crate::fs::types::PropertyChanges;
 
     #[test]
     fn builds_clickable_breadcrumbs_from_a_path() {
@@ -794,7 +794,7 @@ mod tests {
     #[test]
     #[ignore = "prints measurements for the directory in DAE_LISTING_BENCH"]
     fn reports_where_a_large_listing_spends_its_time() {
-        use crate::file_system::listing::{FIRST_BATCH_SIZE, MAX_BATCH_SIZE};
+        use crate::fs::listing::{FIRST_BATCH_SIZE, MAX_BATCH_SIZE};
         use std::time::Instant;
 
         let Some(directory) = std::env::var_os("DAE_LISTING_BENCH") else {
@@ -910,7 +910,7 @@ mod tests {
 
         let listing = open_canonical_listing(
             canonical_path(&directory).expect("canonicalize the empty directory"),
-            crate::file_system::listing::FIRST_BATCH_SIZE,
+            crate::fs::listing::FIRST_BATCH_SIZE,
         )
         .expect("open an empty listing");
         assert!(listing.view.entries.is_empty());

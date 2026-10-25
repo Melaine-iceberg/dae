@@ -6,9 +6,9 @@
 //! [`FileProperties`] model declared in `types.rs`.
 
 use super::directory::entry_kind;
-use crate::file_system::error::FileSystemError;
-use crate::file_system::progress::FileOperationProgressReporterTrait;
-use crate::file_system::types::{
+use crate::fs::error::FileSystemError;
+use crate::fs::progress::FileOperationProgressReporterTrait;
+use crate::fs::types::{
     EntryKind, FileProperties, PlatformProperties, PropertyChanges, RecursivePropertyUpdateOutcome,
     display_name_from_path, path_to_string,
 };
@@ -16,9 +16,9 @@ use std::fs;
 use std::path::Path;
 
 #[cfg(unix)]
-use crate::file_system::types::UnixProperties;
+use crate::fs::types::UnixProperties;
 #[cfg(windows)]
-use crate::file_system::types::WindowsProperties;
+use crate::fs::types::WindowsProperties;
 #[cfg(windows)]
 use windows::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_ARCHIVE, FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_SYSTEM,
@@ -602,7 +602,7 @@ mod accounts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::file_system::test_support::TestProgress;
+    use crate::fs::test_support::TestProgress;
     use std::sync::atomic::Ordering as AtomicOrdering;
 
     fn temp_dir(tag: &str) -> std::path::PathBuf {

@@ -5,8 +5,8 @@ use super::provider::{
     CloudMeta, CloudProvider, TokenSet, map_status, map_token_error, parse_timestamp, read_chunk,
     text_checked, url_encode,
 };
-use crate::file_system::error::FileSystemError;
-use crate::file_system::types::EntryKind;
+use crate::fs::error::FileSystemError;
+use crate::fs::types::EntryKind;
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::Path;

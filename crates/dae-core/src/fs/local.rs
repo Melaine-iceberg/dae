@@ -19,18 +19,16 @@ pub use directory::{
 };
 pub use operations::{
     copy_entries_with_progress, delete_entries_with_progress, move_entries_with_progress,
+    rename_entry_sync,
 };
 
-#[cfg(test)]
-pub use operations::rename_entry_sync;
-
-use crate::file_system::error::FileSystemError;
-use crate::file_system::progress::FileOperationProgressReporterTrait;
-use crate::file_system::types::{
+use crate::fs::error::FileSystemError;
+use crate::fs::progress::FileOperationProgressReporterTrait;
+use crate::fs::types::{
     DirectoryView, EntryStat, FileProperties, NewEntryKind, PropertyChanges,
     RecursivePropertyUpdateOutcome, SearchResponse,
 };
-use crate::file_system::vfs::FileSystemBackend;
+use crate::fs::vfs::FileSystemBackend;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 

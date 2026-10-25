@@ -19,7 +19,7 @@
 //! number, and a number that silently omits dependency directories is wrong
 //! rather than cheap.
 
-use crate::file_system::error::FileSystemError;
+use crate::fs::error::FileSystemError;
 use ignore::overrides::{Override, OverrideBuilder};
 use std::path::Path;
 

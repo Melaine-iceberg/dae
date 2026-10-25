@@ -56,9 +56,9 @@
 //! `directory.rs` pins that down against the `std` walk on a real directory,
 //! because nothing else would notice if the two drifted.
 
-use crate::file_system::entry_codec::ListingRow;
-use crate::file_system::error::FileSystemError;
-use crate::file_system::types::EntryKind;
+use crate::fs::entry_codec::ListingRow;
+use crate::fs::error::FileSystemError;
+use crate::fs::types::EntryKind;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 use windows::Win32::Foundation::{

@@ -16,10 +16,20 @@
 pub use crate::{error, types};
 
 pub mod atomic;
+pub mod cloud;
+pub mod connections;
 pub mod entry_codec;
+pub mod git;
+pub mod known_hosts;
 pub mod listing;
+pub mod local;
 pub mod media_meta;
 pub mod progress;
+pub mod search;
+pub mod sftp;
+pub mod smb;
+pub mod transfer;
+pub mod vfs;
 
 #[cfg(test)]
 pub(crate) mod test_support;

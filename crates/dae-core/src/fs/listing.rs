@@ -10,6 +10,16 @@ use crate::fs::entry_codec::{self, ListingRow};
 use crate::host::{Event as UiEvent, Host};
 use std::sync::Arc;
 
+/// Entries in the batch `read_directory` answers with. Small enough that a
+/// large directory paints long before its walk has finished.
+pub const FIRST_BATCH_SIZE: usize = 512;
+
+/// Ceiling for the batches that follow. A directory with 50_000 entries then
+/// costs a handful of messages instead of a hundred, while no single message
+/// grows large enough to stall the IPC.
+pub const MAX_BATCH_SIZE: usize = 8192;
+
+
 /// A batch of already-read listing rows, ready for delivery.
 pub struct Batch {
     pub stream_id: String,

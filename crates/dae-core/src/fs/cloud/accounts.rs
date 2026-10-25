@@ -2,8 +2,8 @@
 //! in the OS keychain, and cached live backends. Mirrors `connections.rs`.
 
 use super::provider::CloudProviderKind;
-use crate::file_system::error::FileSystemError;
-use crate::file_system::vfs::SharedBackend;
+use crate::fs::error::FileSystemError;
+use crate::fs::vfs::SharedBackend;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
@@ -53,9 +53,9 @@ static REGISTRY: LazyLock<Mutex<RegistryInner>> =
 
 /// Loads persisted accounts. Called once from app setup; safe to call again.
 pub fn init() -> Result<(), FileSystemError> {
-    // Resolved by `dae_core::paths`, so both shells land in the same profile
+    // Resolved by `crate::paths`, so both shells land in the same profile
     // directory instead of each deriving it from its own window handle.
-    let config_dir = dae_core::paths::config_dir()?;
+    let config_dir = crate::paths::config_dir()?;
 
     let mut registry = REGISTRY.lock().expect("cloud registry poisoned");
     registry.config_dir = Some(config_dir.clone());
@@ -266,7 +266,7 @@ fn persist_locked(registry: &mut RegistryInner) -> Result<(), FileSystemError> {
     fs::create_dir_all(&config_dir)?;
     let contents = serde_json::to_string_pretty(&registry.saved)
         .map_err(|error| FileSystemError::Internal(error.to_string()))?;
-    dae_core::fs::atomic::write_atomic(&accounts_path(&config_dir), contents.as_bytes())
+    crate::fs::atomic::write_atomic(&accounts_path(&config_dir), contents.as_bytes())
 }
 
 fn accounts_path(config_dir: &std::path::Path) -> PathBuf {

@@ -25,14 +25,7 @@ use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
-/// Entries in the batch `read_directory` answers with. Small enough that a
-/// large directory paints long before its walk has finished.
-pub const FIRST_BATCH_SIZE: usize = 512;
-
-/// Ceiling for the batches that follow. A directory with 50_000 entries then
-/// costs a handful of messages instead of a hundred, while no single message
-/// grows large enough to stall the IPC.
-pub const MAX_BATCH_SIZE: usize = 8192;
+pub use dae_core::fs::listing::{FIRST_BATCH_SIZE, MAX_BATCH_SIZE};
 
 /// Batches that may sit between the reader and the emitter. Bounded so the
 /// reader cannot run ahead and hold a whole huge directory in memory.

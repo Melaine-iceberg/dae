@@ -2,8 +2,8 @@
 //! its OAuth endpoints and file API primitives; `super::CloudBackend` wraps
 //! one provider with token management and the explorer's path model.
 
-use crate::file_system::error::FileSystemError;
-use crate::file_system::types::EntryKind;
+use crate::fs::error::FileSystemError;
+use crate::fs::types::EntryKind;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use specta::Type;
