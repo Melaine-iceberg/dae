@@ -53,14 +53,9 @@ pub(crate) fn status_cache() -> &'static GitStatusCache {
     CACHE.get_or_init(GitStatusCache::default)
 }
 
-/// 读取一个目录的 Git 装饰信息：当前分支与直接子项的 M/A/U 徽标。
-/// 目录不在 Git 工作区内时返回 `None`。git2 的状态扫描在阻塞线程池
-/// 执行，不会阻塞异步运行时或 UI；扫描结果按工作区根缓存（见
-/// [`GitStatusCache`]），所以同一个工作区里的相邻目录只付一次扫描。
-#[tauri::command]
-#[specta::specta]
+/// See `commands::get_git_status` for the contract; this half is engine-free.
 pub async fn get_git_status(path: String) -> Result<Option<GitDirectoryStatus>, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || git_status_cached(&path, status_cache()))
+    tokio::task::spawn_blocking(move || git_status_cached(&path, status_cache()))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
@@ -378,76 +373,59 @@ pub struct GitBranches {
     pub remote: Vec<GitBranchInfo>,
 }
 
-/// 列出仓库的本地与远程分支、当前分支及其相对上游的领先/落后计数。
-/// 目录不在 Git 工作区内时返回 `None`。
-#[tauri::command]
-#[specta::specta]
+/// See `commands::list_git_branches` for the contract; this half is engine-free.
 pub async fn list_git_branches(path: String) -> Result<Option<GitBranches>, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || branches(&path))
+    tokio::task::spawn_blocking(move || branches(&path))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// 切换分支。`remote` 为真时 `name` 形如 "origin/feature"，
-/// 会创建同名的本地跟踪分支再切换。
-#[tauri::command]
-#[specta::specta]
+/// See `commands::git_checkout_branch` for the contract; this half is engine-free.
 pub async fn git_checkout_branch(
     path: String,
     name: String,
     remote: bool,
 ) -> Result<(), FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || checkout_branch(&path, &name, remote))
+    tokio::task::spawn_blocking(move || checkout_branch(&path, &name, remote))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// 基于当前 HEAD 创建分支；`checkout` 为真时同时切换过去。
-#[tauri::command]
-#[specta::specta]
+/// See `commands::git_create_branch` for the contract; this half is engine-free.
 pub async fn git_create_branch(
     path: String,
     name: String,
     checkout: bool,
 ) -> Result<(), FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || create_branch(&path, &name, checkout))
+    tokio::task::spawn_blocking(move || create_branch(&path, &name, checkout))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// 从远程仓库获取更新（fetch --prune）。走 git 命令行，复用系统凭据
-/// （凭据管理器 / SSH agent），本地操作仍由 git2 完成。
-#[tauri::command]
-#[specta::specta]
+/// See `commands::git_fetch` for the contract; this half is engine-free.
 pub async fn git_fetch(path: String) -> Result<(), FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || fetch(&path))
+    tokio::task::spawn_blocking(move || fetch(&path))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// 推送当前分支；无上游时自动 `push --set-upstream` 到首个远程。
-#[tauri::command]
-#[specta::specta]
+/// See `commands::git_push` for the contract; this half is engine-free.
 pub async fn git_push(path: String) -> Result<(), FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || push(&path))
+    tokio::task::spawn_blocking(move || push(&path))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// 拉取当前分支（fetch + merge/rebase，遵循仓库配置）。
-#[tauri::command]
-#[specta::specta]
+/// See `commands::git_pull` for the contract; this half is engine-free.
 pub async fn git_pull(path: String) -> Result<(), FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || pull(&path))
+    tokio::task::spawn_blocking(move || pull(&path))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// 同步：有上游时先拉取再推送；无上游时发布分支（push --set-upstream）。
-#[tauri::command]
-#[specta::specta]
+/// See `commands::git_sync` for the contract; this half is engine-free.
 pub async fn git_sync(path: String) -> Result<(), FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || sync(&path))
+    tokio::task::spawn_blocking(move || sync(&path))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }

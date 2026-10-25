@@ -51,10 +51,7 @@ pub struct OpenWithChoices {
     pub other: Vec<OpenWithApp>,
 }
 
-/// Lists the applications registered as able to open the local file or
-/// directory at `path`, grouped the way a desktop's own picker groups them.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::list_open_with_apps` for the contract; this half is engine-free.
 pub async fn list_open_with_apps(path: String) -> Result<OpenWithChoices, FileSystemError> {
     if !vfs::is_local_path(&path) {
         return Err(FileSystemError::InvalidInput(
@@ -69,16 +66,12 @@ pub async fn list_open_with_apps(path: String) -> Result<OpenWithChoices, FileSy
         ));
     }
 
-    tauri::async_runtime::spawn_blocking(move || list_apps(&target))
+    tokio::task::spawn_blocking(move || list_apps(&target))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// Opens `path` with the application identified by `app_id`. When
-/// `set_default` is set, the application also becomes the default handler for
-/// the item's type.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::open_with_app` for the contract; this half is engine-free.
 pub async fn open_with_app(
     path: String,
     app_id: String,
@@ -97,7 +90,7 @@ pub async fn open_with_app(
         ));
     }
 
-    tauri::async_runtime::spawn_blocking(move || open_app(&target, &app_id, set_default))
+    tokio::task::spawn_blocking(move || open_app(&target, &app_id, set_default))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }

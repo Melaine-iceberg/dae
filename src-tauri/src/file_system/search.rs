@@ -36,14 +36,11 @@ impl FileSearchState {
     }
 }
 
-/// Recursively searches entry names beneath one directory. A newer request
-/// cancels any older traversal.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::search_directory` for the contract; this half is engine-free.
 pub async fn search_directory(path: String, query: String) -> Result<SearchResponse, FileSystemError> {
     let generation = state().begin();
 
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let backend = vfs::resolve(&path)?;
         let is_current = || state().is_current(generation);
         backend.search(&path, &query, &is_current)
@@ -52,19 +49,12 @@ pub async fn search_directory(path: String, query: String) -> Result<SearchRespo
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// Stops the active traversal when the search surface is dismissed.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::cancel_search` for the contract; this half is engine-free.
 pub fn cancel_search() {
     state().cancel();
 }
 
-/// Searches file contents beneath one local directory with optional regex,
-/// case sensitivity, and file-type filtering. Ignores VCS/dependency
-/// directories (`.git`, `node_modules`, `target`) by default. A newer request
-/// cancels any older traversal.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::search_file_contents` for the contract; this half is engine-free.
 pub async fn search_file_contents(
     path: String,
     query: String,
@@ -80,7 +70,7 @@ pub async fn search_file_contents(
 
     let generation = state().begin();
 
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let is_current = move || state().is_current(generation);
         local::search_file_contents_sync(
             PathBuf::from(path),

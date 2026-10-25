@@ -14,12 +14,7 @@ pub struct SystemClipboardFiles {
     pub cut: bool,
 }
 
-/// Places the given paths on the system clipboard as a file list (CF_HDROP on
-/// Windows) so Explorer, browsers, and chat apps accept a paste. Setting `cut`
-/// also writes Explorer's "Preferred DropEffect" marker, which turns a paste
-/// in Explorer or here into a move instead of a copy.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::write_files_to_clipboard` for the contract; this half is engine-free.
 pub async fn write_files_to_clipboard(
     paths: Vec<String>,
     cut: bool,
@@ -30,16 +25,15 @@ pub async fn write_files_to_clipboard(
         ));
     }
 
-    tauri::async_runtime::spawn_blocking(move || write_files_to_clipboard_impl(&paths, cut))
+    tokio::task::spawn_blocking(move || write_files_to_clipboard_impl(&paths, cut))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// Reads a file list from the system clipboard, if the clipboard holds one.
-#[tauri::command]
-#[specta::specta]
-pub async fn read_files_from_clipboard() -> Result<Option<SystemClipboardFiles>, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(read_files_from_clipboard_impl)
+/// See `commands::read_files_from_clipboard` for the contract; this half is engine-free.
+pub async fn read_files_from_clipboard(
+) -> Result<Option<SystemClipboardFiles>, FileSystemError> {
+    tokio::task::spawn_blocking(read_files_from_clipboard_impl)
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
@@ -72,13 +66,9 @@ pub struct KeyModifiers {
     pub shift_key: bool,
 }
 
-/// Reports the modifier keys currently held, straight from the OS. Tauri's
-/// drag-drop events carry only paths and a position, so a drop of files from
-/// another application cannot read Ctrl/Shift/Alt off a DOM event the way the
-/// in-window drag does; the frontend polls this instead while a drag hovers.
-#[tauri::command]
-#[specta::specta]
-pub fn get_key_modifiers() -> KeyModifiers {
+/// See `commands::get_key_modifiers` for the contract; this half is engine-free.
+pub fn get_key_modifiers(
+) -> KeyModifiers {
     #[cfg(windows)]
     {
         use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -107,6 +97,11 @@ pub fn get_key_modifiers() -> KeyModifiers {
     }
 }
 
+// Kept here, and not behind `commands::`, on purpose: a native drag-out needs the
+// window it starts from and the main thread (the OLE modal loop must own the
+// apartment that window lives in), which is engine-shaped. The Qt shell does the
+// same three steps against a `QWindow` instead of calling this. Everything else
+// in this module is already free of Tauri.
 /// Starts a native drag carrying the given files out of the window, e.g. into
 /// Explorer, a chat app, or a browser upload field. `mode` decides the effect
 /// the target performs: `copy` duplicates the files, `move` relocates them,
@@ -128,12 +123,7 @@ pub fn start_drag_out(
     start_drag_out_impl(paths, mode, &app)
 }
 
-/// Creates links pointing at `sources` inside `destination`: `.lnk`
-/// shortcuts on Windows (IShellLink), real symlinks on macOS and Linux.
-/// Resolves name collisions with ` (2)`, ` (3)`… suffixes like Explorer.
-/// Returns the created link paths so the UI can refresh and select them.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::create_shortcuts` for the contract; this half is engine-free.
 pub async fn create_shortcuts(
     sources: Vec<String>,
     destination: String,
@@ -144,7 +134,7 @@ pub async fn create_shortcuts(
         ));
     }
 
-    tauri::async_runtime::spawn_blocking(move || create_shortcuts_impl(&sources, &destination))
+    tokio::task::spawn_blocking(move || create_shortcuts_impl(&sources, &destination))
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }

@@ -13,12 +13,20 @@
 //! dispatched by name in [`handle_raw_invoke`] instead of through `specta`. Both
 //! leave with the packet codec when the Qt shell lands.
 
+use super::archive::{self, ArchiveFormat};
 use super::error::FileSystemError;
+use super::git::{self, GitBranches, GitDirectoryStatus};
 use super::listing;
+use super::open_with::{self, OpenWithChoices};
+use super::preview::{self, TextPreview};
+use super::search;
 use super::service;
+use super::system_files::{self, KeyModifiers, SystemClipboardFiles};
+use super::trash_view::{self, TrashEntry};
 use super::types::{
-    DirectoryEntry, DirectoryView, FileProperties, NewEntryKind, PropertyChanges,
-    RecursivePropertyUpdateOutcome, RenameRequest, TransferConflict, TransferItem,
+    ContentSearchResponse, DirectoryEntry, DirectoryView, FileProperties, NewEntryKind,
+    PropertyChanges, RecursivePropertyUpdateOutcome, RenameRequest, SearchResponse, TransferConflict,
+    TransferItem,
 };
 use super::undo::UndoRedoOutcome;
 use crate::host;
@@ -302,6 +310,298 @@ pub async fn open_with(
     service::open_with(path).await
 }
 
+
+/// 读取一个目录的 Git 装饰信息：当前分支与直接子项的 M/A/U 徽标。
+/// 目录不在 Git 工作区内时返回 `None`。git2 的状态扫描在阻塞线程池
+/// 执行，不会阻塞异步运行时或 UI；扫描结果按工作区根缓存（见
+/// [`GitStatusCache`]），所以同一个工作区里的相邻目录只付一次扫描。
+#[tauri::command]
+#[specta::specta]
+pub async fn get_git_status(
+    path: String,
+) -> Result<Option<GitDirectoryStatus>, FileSystemError> {
+    git::get_git_status(path).await
+}
+
+/// 列出仓库的本地与远程分支、当前分支及其相对上游的领先/落后计数。
+/// 目录不在 Git 工作区内时返回 `None`。
+#[tauri::command]
+#[specta::specta]
+pub async fn list_git_branches(
+    path: String,
+) -> Result<Option<GitBranches>, FileSystemError> {
+    git::list_git_branches(path).await
+}
+
+/// 切换分支。`remote` 为真时 `name` 形如 "origin/feature"，
+/// 会创建同名的本地跟踪分支再切换。
+#[tauri::command]
+#[specta::specta]
+pub async fn git_checkout_branch(
+    path: String,
+    name: String,
+    remote: bool,
+) -> Result<(), FileSystemError> {
+    git::git_checkout_branch(path, name, remote).await
+}
+
+/// 基于当前 HEAD 创建分支；`checkout` 为真时同时切换过去。
+#[tauri::command]
+#[specta::specta]
+pub async fn git_create_branch(
+    path: String,
+    name: String,
+    checkout: bool,
+) -> Result<(), FileSystemError> {
+    git::git_create_branch(path, name, checkout).await
+}
+
+/// 从远程仓库获取更新（fetch --prune）。走 git 命令行，复用系统凭据
+/// （凭据管理器 / SSH agent），本地操作仍由 git2 完成。
+#[tauri::command]
+#[specta::specta]
+pub async fn git_fetch(
+    path: String,
+) -> Result<(), FileSystemError> {
+    git::git_fetch(path).await
+}
+
+/// 推送当前分支；无上游时自动 `push --set-upstream` 到首个远程。
+#[tauri::command]
+#[specta::specta]
+pub async fn git_push(
+    path: String,
+) -> Result<(), FileSystemError> {
+    git::git_push(path).await
+}
+
+/// 拉取当前分支（fetch + merge/rebase，遵循仓库配置）。
+#[tauri::command]
+#[specta::specta]
+pub async fn git_pull(
+    path: String,
+) -> Result<(), FileSystemError> {
+    git::git_pull(path).await
+}
+
+/// 同步：有上游时先拉取再推送；无上游时发布分支（push --set-upstream）。
+#[tauri::command]
+#[specta::specta]
+pub async fn git_sync(
+    path: String,
+) -> Result<(), FileSystemError> {
+    git::git_sync(path).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn read_text_preview(
+    path: String,
+    max_bytes: u32,
+) -> Result<TextPreview, FileSystemError> {
+    preview::read_text_preview(path, max_bytes).await
+}
+
+/// Recursively searches entry names beneath one directory. A newer request
+/// cancels any older traversal.
+#[tauri::command]
+#[specta::specta]
+pub async fn search_directory(
+    path: String,
+    query: String,
+) -> Result<SearchResponse, FileSystemError> {
+    search::search_directory(path, query).await
+}
+
+/// Stops the active traversal when the search surface is dismissed.
+#[tauri::command]
+#[specta::specta]
+pub fn cancel_search()  {
+    search::cancel_search();
+}
+
+/// Searches file contents beneath one local directory with optional regex,
+/// case sensitivity, and file-type filtering. Ignores VCS/dependency
+/// directories (`.git`, `node_modules`, `target`) by default. A newer request
+/// cancels any older traversal.
+#[tauri::command]
+#[specta::specta]
+pub async fn search_file_contents(
+    path: String,
+    query: String,
+    is_regex: bool,
+    case_sensitive: bool,
+    file_filter: Option<String>,
+) -> Result<ContentSearchResponse, FileSystemError> {
+    search::search_file_contents(path, query, is_regex, case_sensitive, file_filter).await
+}
+
+/// Lists the applications registered as able to open the local file or
+/// directory at `path`, grouped the way a desktop's own picker groups them.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_open_with_apps(
+    path: String,
+) -> Result<OpenWithChoices, FileSystemError> {
+    open_with::list_open_with_apps(path).await
+}
+
+/// Opens `path` with the application identified by `app_id`. When
+/// `set_default` is set, the application also becomes the default handler for
+/// the item's type.
+#[tauri::command]
+#[specta::specta]
+pub async fn open_with_app(
+    path: String,
+    app_id: String,
+    set_default: bool,
+) -> Result<(), FileSystemError> {
+    open_with::open_with_app(path, app_id, set_default).await
+}
+
+
+/// Places the given paths on the system clipboard as a file list (CF_HDROP on
+/// Windows) so Explorer, browsers, and chat apps accept a paste. Setting `cut`
+/// also writes Explorer's "Preferred DropEffect" marker, which turns a paste
+/// in Explorer or here into a move instead of a copy.
+#[tauri::command]
+#[specta::specta]
+pub async fn write_files_to_clipboard(
+    paths: Vec<String>,
+    cut: bool,
+) -> Result<(), FileSystemError> {
+    system_files::write_files_to_clipboard(paths, cut).await
+}
+
+/// Reads a file list from the system clipboard, if the clipboard holds one.
+#[tauri::command]
+#[specta::specta]
+pub async fn read_files_from_clipboard() -> Result<Option<SystemClipboardFiles>, FileSystemError> {
+    system_files::read_files_from_clipboard().await
+}
+
+/// Reports the modifier keys currently held, straight from the OS. Tauri's
+/// drag-drop events carry only paths and a position, so a drop of files from
+/// another application cannot read Ctrl/Shift/Alt off a DOM event the way the
+/// in-window drag does; the frontend polls this instead while a drag hovers.
+#[tauri::command]
+#[specta::specta]
+pub fn get_key_modifiers() -> KeyModifiers {
+    system_files::get_key_modifiers()
+}
+
+/// Starts a native drag carrying the given files out of the window, e.g. into
+/// Explorer, a chat app, or a browser upload field. `mode` decides the effect
+/// the target performs: `copy` duplicates the files, `move` relocates them,
+/// `link` creates shortcuts. Returns immediately; the drag runs on the main
+
+/// Creates links pointing at `sources` inside `destination`: `.lnk`
+/// shortcuts on Windows (IShellLink), real symlinks on macOS and Linux.
+/// Resolves name collisions with ` (2)`, ` (3)`… suffixes like Explorer.
+/// Returns the created link paths so the UI can refresh and select them.
+#[tauri::command]
+#[specta::specta]
+pub async fn create_shortcuts(
+    sources: Vec<String>,
+    destination: String,
+) -> Result<Vec<String>, FileSystemError> {
+    system_files::create_shortcuts(sources, destination).await
+}
+
+/// Compresses entries into an archive of the requested format inside
+/// `destination_dir` and returns the archive path. Sources may live on any
+/// backend (streamed through the VFS primitives); the archive itself is
+/// always a local file.
+#[tauri::command]
+#[specta::specta]
+pub async fn compress_entries(
+    sources: Vec<String>,
+    destination_dir: String,
+    format: ArchiveFormat,
+    password: Option<String>,
+    operation_id: String,
+    app: tauri::AppHandle,
+) -> Result<String, FileSystemError> {
+    archive::compress_entries(sources, destination_dir, format, password, operation_id, host::of(&app)).await
+}
+
+/// Extracts a local archive. Without `destination_dir` the entries land in a
+/// fresh folder named after the archive stem next to the archive; the folder
+/// path is returned.
+#[tauri::command]
+#[specta::specta]
+pub async fn extract_archive(
+    archive_path: String,
+    destination_dir: Option<String>,
+    password: Option<String>,
+    operation_id: String,
+    app: tauri::AppHandle,
+) -> Result<String, FileSystemError> {
+    archive::extract_archive(archive_path, destination_dir, password, operation_id, host::of(&app)).await
+}
+
+
+/// Lists every entry currently in the system trash, newest deletion first.
+///
+/// Either implementation walks the whole bin, so this runs on a blocking
+/// thread; the frontend only calls it when opening the trash view or after
+/// a trash operation.
+#[tauri::command]
+#[specta::specta]
+pub async fn list_trash() -> Result<Vec<TrashEntry>, FileSystemError> {
+    trash_view::list_trash().await
+}
+
+/// Restores trashed entries (selected by their trash ids) to their original
+/// locations, one shell operation per entry so progress streams and a later
+/// collision does not roll back earlier successes. Returns the number of
+/// entries actually restored.
+#[tauri::command]
+#[specta::specta]
+pub async fn restore_trash_entries(
+    ids: Vec<String>,
+    operation_id: String,
+    app: tauri::AppHandle,
+) -> Result<u64, FileSystemError> {
+    trash_view::restore_trash_entries(ids, operation_id, host::of(&app)).await
+}
+
+/// Permanently deletes trashed entries (selected by their trash ids).
+/// Returns the number of entries actually purged.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_trash_entries(
+    ids: Vec<String>,
+    operation_id: String,
+    app: tauri::AppHandle,
+) -> Result<u64, FileSystemError> {
+    trash_view::delete_trash_entries(ids, operation_id, host::of(&app)).await
+}
+
+/// Permanently deletes everything in the trash. Returns the purged count;
+/// the UI must confirm before calling this command.
+#[tauri::command]
+#[specta::specta]
+pub async fn empty_trash(
+    operation_id: String,
+    app: tauri::AppHandle,
+) -> Result<u64, FileSystemError> {
+    trash_view::empty_trash(operation_id, host::of(&app)).await
+}
+
+/// Lists every entry in `~/.Trash`, newest modification first (macOS
+/// records no deletion time; see `macos_trash`). Runs on a blocking
+/// thread like the shell-backed implementations.
+/// Puts trashed entries back to their original locations, replaying the
+/// Finder put-back records one rename at a time so progress streams and
+/// a later failure does not roll back earlier successes. Returns the
+/// number of entries actually restored.
+/// Permanently deletes trashed entries (selected by their trash ids).
+/// Returns the number of entries actually purged.
+/// Permanently deletes everything in `~/.Trash`, then drops the stale
+/// put-back records by removing `.DS_Store` (Finder recreates it on
+/// demand). Returns the purged count; the UI must confirm before calling
+/// this command.
 /// The same read as [`read_directory`], but the batches that follow the head
 /// arrive as columnar packets on `on_batch` instead of as events.
 ///

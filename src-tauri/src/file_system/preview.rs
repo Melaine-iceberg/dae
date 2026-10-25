@@ -1771,13 +1771,12 @@ fn decode_and_scale(path: &Path, size: u16) -> Result<DecodeOutcome, FileSystemE
     }
 }
 
-#[tauri::command]
-#[specta::specta]
+/// See `commands::read_text_preview` for the contract; this half is engine-free.
 pub async fn read_text_preview(
     path: String,
     max_bytes: u32,
 ) -> Result<TextPreview, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let metadata = fs::metadata(&path).map_err(FileSystemError::from)?;
         if !metadata.is_file() {
             return Err(FileSystemError::InvalidInput(path));

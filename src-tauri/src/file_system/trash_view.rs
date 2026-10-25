@@ -111,15 +111,10 @@ mod browse {
     use super::TrashEntry;
     use std::ffi::OsString;
 
-    /// Lists every entry currently in the system trash, newest deletion first.
-    ///
-    /// Either implementation walks the whole bin, so this runs on a blocking
-    /// thread; the frontend only calls it when opening the trash view or after
-    /// a trash operation.
-    #[tauri::command]
-    #[specta::specta]
-    pub async fn list_trash() -> Result<Vec<TrashEntry>, FileSystemError> {
-        tauri::async_runtime::spawn_blocking(|| {
+    /// See `commands::list_trash` for the contract; this half is engine-free.
+    pub async fn list_trash(
+    ) -> Result<Vec<TrashEntry>, FileSystemError> {
+        tokio::task::spawn_blocking(|| {
             let mut entries = collect_entries()?;
             entries.sort_by_key(|entry| std::cmp::Reverse(entry.time_deleted));
             Ok(entries)
@@ -141,24 +136,19 @@ mod browse {
         Ok(items.iter().map(TrashEntry::from_item).collect())
     }
 
-    /// Restores trashed entries (selected by their trash ids) to their original
-    /// locations, one shell operation per entry so progress streams and a later
-    /// collision does not roll back earlier successes. Returns the number of
-    /// entries actually restored.
-    #[tauri::command]
-    #[specta::specta]
+    /// See `commands::restore_trash_entries` for the contract; this half is engine-free.
     pub async fn restore_trash_entries(
         ids: Vec<String>,
         operation_id: String,
-        app: tauri::AppHandle,
+        host: std::sync::Arc<dyn dae_core::host::Host>,
     ) -> Result<u64, FileSystemError> {
         if ids.is_empty() {
             return Ok(0);
         }
 
-        emit_preparing(crate::host::of(&app).as_ref(), &operation_id, FileOperationKind::Move);
+        emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Move);
 
-        tauri::async_runtime::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let selected = take_trash_items(&ids)?;
             if selected.is_empty() {
                 return Err(FileSystemError::InvalidInput(
@@ -167,7 +157,7 @@ mod browse {
             }
 
             let progress =
-                FileOperationProgressReporter::new(crate::host::of(&app), operation_id, FileOperationKind::Move);
+                FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Move);
             progress.start(selected.len() as u64);
 
             let mut restored = 0u64;
@@ -184,22 +174,19 @@ mod browse {
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
     }
 
-    /// Permanently deletes trashed entries (selected by their trash ids).
-    /// Returns the number of entries actually purged.
-    #[tauri::command]
-    #[specta::specta]
+    /// See `commands::delete_trash_entries` for the contract; this half is engine-free.
     pub async fn delete_trash_entries(
         ids: Vec<String>,
         operation_id: String,
-        app: tauri::AppHandle,
+        host: std::sync::Arc<dyn dae_core::host::Host>,
     ) -> Result<u64, FileSystemError> {
         if ids.is_empty() {
             return Ok(0);
         }
 
-        emit_preparing(crate::host::of(&app).as_ref(), &operation_id, FileOperationKind::Delete);
+        emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Delete);
 
-        tauri::async_runtime::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let selected = take_trash_items(&ids)?;
             if selected.is_empty() {
                 return Err(FileSystemError::InvalidInput(
@@ -208,7 +195,7 @@ mod browse {
             }
 
             let progress =
-                FileOperationProgressReporter::new(crate::host::of(&app), operation_id, FileOperationKind::Delete);
+                FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Delete);
             progress.start(selected.len() as u64);
 
             let mut purged = 0u64;
@@ -225,24 +212,21 @@ mod browse {
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
     }
 
-    /// Permanently deletes everything in the trash. Returns the purged count;
-    /// the UI must confirm before calling this command.
-    #[tauri::command]
-    #[specta::specta]
+    /// See `commands::empty_trash` for the contract; this half is engine-free.
     pub async fn empty_trash(
         operation_id: String,
-        app: tauri::AppHandle,
+        host: std::sync::Arc<dyn dae_core::host::Host>,
     ) -> Result<u64, FileSystemError> {
-        emit_preparing(crate::host::of(&app).as_ref(), &operation_id, FileOperationKind::Delete);
+        emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Delete);
 
-        tauri::async_runtime::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let items = trash::os_limited::list().map_err(trash_error)?;
             if items.is_empty() {
                 return Ok(0);
             }
 
             let progress =
-                FileOperationProgressReporter::new(crate::host::of(&app), operation_id, FileOperationKind::Delete);
+                FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Delete);
             progress.start(items.len() as u64);
 
             let mut purged = 0u64;
@@ -305,13 +289,10 @@ mod macos_view {
     use std::cmp::Reverse;
     use std::path::{Path, PathBuf};
 
-    /// Lists every entry in `~/.Trash`, newest modification first (macOS
-    /// records no deletion time; see `macos_trash`). Runs on a blocking
-    /// thread like the shell-backed implementations.
-    #[tauri::command]
-    #[specta::specta]
-    pub async fn list_trash() -> Result<Vec<TrashEntry>, FileSystemError> {
-        tauri::async_runtime::spawn_blocking(|| {
+    /// See `commands::list_trash` for the contract; this half is engine-free.
+    pub async fn list_trash(
+    ) -> Result<Vec<TrashEntry>, FileSystemError> {
+        tokio::task::spawn_blocking(|| {
             let mut entries: Vec<TrashEntry> = macos_trash::list_entries()?
                 .iter()
                 .map(trash_entry)
@@ -323,24 +304,19 @@ mod macos_view {
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
     }
 
-    /// Puts trashed entries back to their original locations, replaying the
-    /// Finder put-back records one rename at a time so progress streams and
-    /// a later failure does not roll back earlier successes. Returns the
-    /// number of entries actually restored.
-    #[tauri::command]
-    #[specta::specta]
+    /// See `commands::restore_trash_entries` for the contract; this half is engine-free.
     pub async fn restore_trash_entries(
         ids: Vec<String>,
         operation_id: String,
-        app: tauri::AppHandle,
+        host: std::sync::Arc<dyn dae_core::host::Host>,
     ) -> Result<u64, FileSystemError> {
         if ids.is_empty() {
             return Ok(0);
         }
 
-        emit_preparing(crate::host::of(&app).as_ref(), &operation_id, FileOperationKind::Move);
+        emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Move);
 
-        tauri::async_runtime::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let selected = take_trash_entries(&ids)?;
             if selected.is_empty() {
                 return Err(FileSystemError::InvalidInput(
@@ -349,7 +325,7 @@ mod macos_view {
             }
 
             let progress =
-                FileOperationProgressReporter::new(crate::host::of(&app), operation_id, FileOperationKind::Move);
+                FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Move);
             progress.start(selected.len() as u64);
 
             let mut restored = 0u64;
@@ -370,22 +346,19 @@ mod macos_view {
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
     }
 
-    /// Permanently deletes trashed entries (selected by their trash ids).
-    /// Returns the number of entries actually purged.
-    #[tauri::command]
-    #[specta::specta]
+    /// See `commands::delete_trash_entries` for the contract; this half is engine-free.
     pub async fn delete_trash_entries(
         ids: Vec<String>,
         operation_id: String,
-        app: tauri::AppHandle,
+        host: std::sync::Arc<dyn dae_core::host::Host>,
     ) -> Result<u64, FileSystemError> {
         if ids.is_empty() {
             return Ok(0);
         }
 
-        emit_preparing(crate::host::of(&app).as_ref(), &operation_id, FileOperationKind::Delete);
+        emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Delete);
 
-        tauri::async_runtime::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let selected = take_trash_entries(&ids)?;
             if selected.is_empty() {
                 return Err(FileSystemError::InvalidInput(
@@ -394,7 +367,7 @@ mod macos_view {
             }
 
             let progress =
-                FileOperationProgressReporter::new(crate::host::of(&app), operation_id, FileOperationKind::Delete);
+                FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Delete);
             progress.start(selected.len() as u64);
 
             let mut purged = 0u64;
@@ -410,26 +383,21 @@ mod macos_view {
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
     }
 
-    /// Permanently deletes everything in `~/.Trash`, then drops the stale
-    /// put-back records by removing `.DS_Store` (Finder recreates it on
-    /// demand). Returns the purged count; the UI must confirm before calling
-    /// this command.
-    #[tauri::command]
-    #[specta::specta]
+    /// See `commands::empty_trash` for the contract; this half is engine-free.
     pub async fn empty_trash(
         operation_id: String,
-        app: tauri::AppHandle,
+        host: std::sync::Arc<dyn dae_core::host::Host>,
     ) -> Result<u64, FileSystemError> {
-        emit_preparing(crate::host::of(&app).as_ref(), &operation_id, FileOperationKind::Delete);
+        emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Delete);
 
-        tauri::async_runtime::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let entries = macos_trash::list_entries()?;
             if entries.is_empty() {
                 return Ok(0);
             }
 
             let progress =
-                FileOperationProgressReporter::new(crate::host::of(&app), operation_id, FileOperationKind::Delete);
+                FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Delete);
             progress.start(entries.len() as u64);
 
             let mut purged = 0u64;

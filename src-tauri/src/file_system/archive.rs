@@ -5,7 +5,6 @@ use super::progress::{
 };
 use super::types::{EntryKind, display_name_from_path, path_to_string};
 use super::vfs::{self, FileSystemBackend};
-use crate::host;
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -95,19 +94,14 @@ impl ArchiveFormat {
     }
 }
 
-/// Compresses entries into an archive of the requested format inside
-/// `destination_dir` and returns the archive path. Sources may live on any
-/// backend (streamed through the VFS primitives); the archive itself is
-/// always a local file.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::compress_entries` for the contract; this half is engine-free.
 pub async fn compress_entries(
     sources: Vec<String>,
     destination_dir: String,
     format: ArchiveFormat,
     password: Option<String>,
     operation_id: String,
-    app: tauri::AppHandle,
+    host: std::sync::Arc<dyn dae_core::host::Host>,
 ) -> Result<String, FileSystemError> {
     if sources.is_empty() {
         return Err(FileSystemError::InvalidInput(
@@ -115,11 +109,11 @@ pub async fn compress_entries(
         ));
     }
 
-    emit_preparing(host::of(&app).as_ref(), &operation_id, FileOperationKind::Compress);
+    emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Compress);
 
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let progress =
-            FileOperationProgressReporter::new(host::of(&app), operation_id, FileOperationKind::Compress);
+            FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Compress);
         compress_sync(
             sources,
             &destination_dir,
@@ -132,23 +126,19 @@ pub async fn compress_entries(
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
-/// Extracts a local archive. Without `destination_dir` the entries land in a
-/// fresh folder named after the archive stem next to the archive; the folder
-/// path is returned.
-#[tauri::command]
-#[specta::specta]
+/// See `commands::extract_archive` for the contract; this half is engine-free.
 pub async fn extract_archive(
     archive_path: String,
     destination_dir: Option<String>,
     password: Option<String>,
     operation_id: String,
-    app: tauri::AppHandle,
+    host: std::sync::Arc<dyn dae_core::host::Host>,
 ) -> Result<String, FileSystemError> {
-    emit_preparing(host::of(&app).as_ref(), &operation_id, FileOperationKind::Extract);
+    emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Extract);
 
-    tauri::async_runtime::spawn_blocking(move || {
+    tokio::task::spawn_blocking(move || {
         let progress =
-            FileOperationProgressReporter::new(host::of(&app), operation_id, FileOperationKind::Extract);
+            FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Extract);
         extract_sync(
             &archive_path,
             destination_dir.as_deref(),
