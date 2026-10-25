@@ -1,0 +1,32 @@
+//! The Qt Quick shell binary.
+//!
+//! `main` only creates the application and the QML engine; views live in
+//! `qml/`, the bridge in `crates/dae-qt`, and the domain in `dae-core`.
+
+use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
+
+fn main() {
+    if std::env::var_os("QSG_RHI_BACKEND").is_none() {
+        // No other thread exists yet; this is the same single-threaded setup
+        // the spike did before creating QGuiApplication.
+        unsafe {
+            std::env::set_var("QSG_RHI_BACKEND", "d3d11");
+        }
+    }
+
+    let mut application = QGuiApplication::new();
+
+    // The alpha buffer is chosen before the engine creates the first window;
+    // DwmEnableBlurBehindWindow then composites the backdrop behind it.
+    dae_qt::init();
+
+    let mut engine = QQmlApplicationEngine::new();
+    match engine.as_mut() {
+        Some(engine) => engine.load(&QUrl::from("qrc:/qt/qml/dae/qml/Main.qml")),
+        None => eprintln!("could not create QQmlApplicationEngine"),
+    }
+
+    if let Some(application) = application.as_mut() {
+        application.exec();
+    }
+}

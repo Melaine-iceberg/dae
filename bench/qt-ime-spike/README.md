@@ -112,9 +112,9 @@ QT_ASSUME_STDERR_HAS_CONSOLE=1 ./target/release/qt-ime-spike.exe \
   --out results/win11-ime.json --shots results/shots
 ```
 
-or `./run.sh`. The window takes the foreground, waits for focus, and runs the
-script for about 40 seconds. It writes one JSON document plus a `.log` next to
-it, and quits with 0 only when every check passes.
+The window takes the foreground, waits for focus, and runs the script for about
+40 seconds. It writes one JSON document plus a `.log` next to it, and quits with
+0 only when every check passes.
 
 Manual mode skips the script and leaves the window open; type with the real IME
 and press <kbd>F12</kbd> to capture the desktop:

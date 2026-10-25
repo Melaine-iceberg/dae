@@ -194,6 +194,29 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
 §5 的四组门槛（12 万行列表、中文 IME、无边框 + Mica、撕出/关闭）已经全部
 量完（§5.1–§5.4）。
 
+### 4.2 骨架已落地（2026-10-25）
+
+`crates/dae-qt` 与 `apps/dae` 已建，门槛里验证过的三块搬成产品模块：
+
+- `crates/dae-qt/src/model.rs` — `DirectoryListModel`（门槛 1）。加了
+  generation 与旧流取消：导航到新目录后，旧目录迟到的批次不会插进新列表。
+- `crates/dae-qt/cpp/window.h` — **一张按 HWND 索引的状态表**（门槛 3/4）。
+  首窗与撕出窗走同一套样式、背景、命中测试和 `WM_NCCALCSIZE`，不再有
+  「主窗口 State + 次窗口 SecondaryState」两套路径。
+- `crates/dae-qt/cpp/ime.h` — 换焦点前 `CPS_CANCEL` 守卫（门槛 2），随窗口
+  attach 安装，点击别处或 Tab 时先取消组合，Qt 的 `reset()` 没有东西可提交。
+- `apps/dae` + 根 `qml/` — `QGuiApplication` + `QQmlApplicationEngine`，启动
+  读真实 home 目录；「新建窗口」撕出第二个 HWND，两个视图共用同一个模型。
+- 仓库根 `Cargo.toml` 建立工作区；`src-tauri` 暂排除，保留自己的 `target/`
+  与锁文件（见该文件依赖注释）。
+- spike 的 `run*.sh` 已删，`results/` 与 README 的实测记录保留；产品代码
+  不含脚本化栅门、合成滚动负载或假目录。
+
+构建需要 Qt 6.12 的 `qmake`：`QMAKE="C:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"`，
+并把 Qt 的 `bin/` 放进 `PATH`，然后 `cargo run -p dae-app`。原生那半目前是
+Windows-first（Win32 / DWM / IMM32）；Linux 与 macOS 的 chrome/输入后端各自
+另立门槛，不拿未实测的移植冒充产品代码。
+
 ## 5. 定案前必须量出来的四组数字
 
 | # | 待验证 | 门槛 | 不达标怎么办 |

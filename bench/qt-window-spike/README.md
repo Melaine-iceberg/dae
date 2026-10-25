@@ -211,9 +211,9 @@ there produces exactly `[0, 0, 1920, 2088]`.
    `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE`, and the script drags it with real
    `SendInput`. The source window stays alive and keeps its own counters.
 
-The run is `./run-gate4.sh` (or the command below). It takes about 20 seconds
-for six cycles, takes the foreground, and moves the torn-off window with real
-input, exactly like gate 3.
+The run is the command below. It takes about 20 seconds for six cycles, takes
+the foreground, and moves the torn-off window with real input, exactly like
+gate 3.
 
 ## Build and run
 
@@ -227,20 +227,21 @@ cargo build --release
   --out results/win11-gate3.json --shots results
 ```
 
-or `./run.sh`. The run takes about 25 seconds and takes the foreground, moving
-and resizing the window with real `SendInput` events. It exits 0 only when
-every check passes.
+The run takes about 25 seconds and takes the foreground, moving and resizing
+the window with real `SendInput` events. It exits 0 only when every check
+passes.
 
 Gate 4 reuses the same binary and component, but with a listing model and a
 second window:
 
 ```bash
-./run-gate4.sh              # six cycles, 120k fixture
-CYCLES=3 DATASET=K:/dae-listing-bench/small ./run-gate4.sh
+./target/release/qt-window-spike.exe --gate4 --cycles 6 \
+  --path K:/dae-listing-bench/huge \
+  --out results/win11-gate4.json --shots results
 ```
 
-The script builds, passes `--gate4 --cycles 6 --path …`, writes
-`results/win11-gate4.json`, and exits 0 only when every check passes.
+Use `--cycles 3 --path K:/dae-listing-bench/small` for a short run. The command
+writes `results/win11-gate4.json` and exits 0 only when every check passes.
 
 Manual mode leaves the window open without the script; the sidebar switches
 material and theme by hand:
@@ -277,7 +278,6 @@ with and without invokables/captures).
 | `src/format.rs` | delegate text (size, UTC mtime) |
 | `cpp/window_probe.h` | DWM backdrop, per-HWND style/hit test/`WM_NCCALCSIZE`, `SendInput`, captures |
 | `src/main.rs` | `QGuiApplication`, alpha buffer, QML engine |
-| `run.sh` / `run-gate4.sh` | build + gate 3 / gate 4 |
 | `results/win11-gate3.json` | all 63 gate-3 checks and the raw sample/stats record |
 | `results/win11-gate4.json` | all 167 gate-4 checks, six cycles, per-cycle timings and PSS |
 

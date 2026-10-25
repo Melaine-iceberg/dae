@@ -70,17 +70,18 @@ NOTES.md
 # never source. See docs/pgo-bolt.md.
 /.perf/
 
-# Rust build output for crates that are built standalone during the engine
-# migration. `crates/dae-core` is a path dependency of `src-tauri` (whose
-# `/target/` is ignored by `src-tauri/.gitignore`), but running its own tests
-# resolves a second lock against a second target dir. Both disappear when the
-# workspace lands with `apps/dae` — see docs/decisions/engine-qt-quick.md §4.
+# Rust build output for the workspace. `src-tauri` keeps its own `/target/`
+# and `Cargo.lock` (ignored by `src-tauri/.gitignore`) because it is excluded
+# from the workspace until the Tauri shell retires. See
+# docs/decisions/engine-qt-quick.md §4.
+/target/
+# Leftovers from building `crates/dae-core` standalone before the workspace
+# landed; harmless if present, never source.
 /crates/*/target/
-/crates/*/Cargo.lock
 
 # The Qt toolchain smoke test is a throwaway crate: its build output and lock
 # are not source. See bench/qt-toolchain/README.md.
 /bench/*/target/
 /bench/*/Cargo.lock
 # qmlls writes this next to a QML project; it holds machine-specific paths.
-/bench/*/.qmlls.ini
+**/.qmlls.ini

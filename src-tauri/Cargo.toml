@@ -47,8 +47,9 @@ tauri-build = { version = "2", features = [] }
 # member on purpose: `src-tauri/` is both the Cargo package and the Tauri CLI's
 # project root, and a workspace root at the repository top would move `target/`,
 # drop `src-tauri/.cargo/config.toml` (the Windows /STACK flag) and invalidate a
-# 73 GB incremental target in one commit. The workspace lands when `apps/dae`
-# exists and the paths can be re-pointed deliberately.
+# 73 GB incremental target in one commit. The root workspace now exists for
+# `apps/dae`; this package stays in its `exclude` list so the Tauri shell keeps
+# that target and its `/STACK` flag until it retires.
 dae-core = { path = "../crates/dae-core" }
 # SSH transport for the SFTP backend. `ring` (instead of the default
 # aws-lc-rs) keeps the build free of CMake/NASM requirements on Windows.

@@ -122,7 +122,8 @@ PATH="/c/Qt/6.12.0/msvc2022_64/bin:$PATH" \
 The app quits itself after the measuring window and writes one JSON document
 (stdout and `--out`). `--grab <png>` optionally saves the window content.
 
-`run.sh` runs the 12 s vsync-off and vsync-on pair.
+Run the same command twice, once with `--vsync off` and once with `--vsync on`,
+to get the frame-work and display-cadence pair.
 
 ## Method notes
 

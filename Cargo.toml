@@ -1,0 +1,8 @@
+[workspace]
+resolver = "3"
+members = ["apps/dae", "crates/dae-core", "crates/dae-qt"]
+
+# `src-tauri` is still the shipped Tauri shell. It keeps its own target dir and
+# `.cargo/config.toml` (the Windows 8 MB stack flag) until the Qt shell
+# replaces it; see docs/decisions/engine-qt-quick.md §4.
+exclude = ["src-tauri"]
