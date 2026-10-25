@@ -4,7 +4,6 @@ pub mod commands;
 pub mod connections;
 pub mod directory_size;
 pub use dae_core::fs::entry_codec;
-pub mod error;
 pub mod git;
 pub mod hashing;
 pub mod ipc_events;
@@ -14,12 +13,12 @@ pub mod listing_packets;
 pub mod local;
 #[cfg(target_os = "macos")]
 pub mod macos_trash;
-pub mod media_meta;
+pub use dae_core::fs::media_meta;
 pub mod open_with;
 pub mod places;
 pub mod prefetch;
 pub mod preview;
-pub mod progress;
+pub use dae_core::fs::progress;
 pub mod recents;
 pub mod search;
 // The engine-free half of the command layer: no `tauri::`, no `AppHandle`.
@@ -31,11 +30,12 @@ pub mod spaces;
 pub mod system_files;
 pub mod transfer;
 pub mod trash_view;
-pub mod types;
 pub mod undo;
 pub mod vfs;
 pub mod volume_monitor;
 pub mod watch;
+
+pub use dae_core::{error, types};
 
 #[cfg(test)]
 pub(crate) mod test_support;

@@ -104,3 +104,33 @@ pub trait Host: Send + Sync + 'static {
     /// threads and, later, from file-system worker threads.
     fn emit(&self, event: Event);
 }
+
+/// Test doubles for modules that report through the seam.
+///
+/// Public rather than `#[cfg(test)]` because the Tauri shell's own tests
+/// (`system_theme`, `system_accent`) drive it too, and a `cfg(test)` item is
+/// invisible to a dependent crate. It records instead of delivering, so a test
+/// can assert that a module goes through the seam and hands its reading over
+/// unchanged.
+pub mod testing {
+    use super::*;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    pub struct RecordingHost {
+        events: Mutex<Vec<Event>>,
+    }
+
+    impl RecordingHost {
+        pub fn take(&self) -> Vec<Event> {
+            std::mem::take(&mut *self.events.lock().expect("poisoned"))
+        }
+    }
+
+    impl Host for RecordingHost {
+        fn emit(&self, event: Event) {
+            self.events.lock().expect("poisoned").push(event);
+        }
+    }
+}
+

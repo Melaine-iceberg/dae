@@ -1,29 +1,24 @@
-//! Throttled delivery of `dae_core::progress` to the webview.
+//! Throttled delivery of [`crate::progress`] to the UI.
 //!
-//! The types live in `dae_core` (they are part of the IPC contract), the event
-//! goes through [`dae_core::host::Host`], and what stays here is the part that
-//! is genuinely shell-specific: how often a webview wants to be told. A Qt
-//! queued signal would pick its own rate; this one is 60 ms unless something
-//! crossed a boundary, because the frontend recomputes a progress bar on every
-//! event and a per-entry rate on a 35,000-entry copy is not a rate at all.
-//!
-//! [`FileOperationProgress`] is the wire type — it owns the
-//! `explorer-file-operation-progress` name — but nothing in this module emits it
-//! directly any more: [`TauriHost`] does, from the core event.
-//!
-//! [`TauriHost`]: crate::host::TauriHost
+//! The types live in [`crate::progress`] (they are part of the IPC contract),
+//! the event goes through [`crate::host::Host`], and what stays here is the
+//! part that is genuinely engine-agnostic: how often a UI wants to be told. A
+//! Qt queued signal would pick its own rate; the Tauri shell uses 60 ms unless
+//! something crossed a boundary, because the frontend recomputes a progress bar
+//! on every event and a per-entry rate on a 35,000-entry copy is not a rate at
+//! all.
 
 use super::types::path_to_string;
-use dae_core::host::{Event as UiEvent, Host};
+use crate::host::{Event as UiEvent, Host};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-pub use dae_core::progress::{FileOperationKind, FileOperationPhase};
+pub use crate::progress::{FileOperationKind, FileOperationPhase};
 
 const FILE_OPERATION_PROGRESS_INTERVAL: Duration = Duration::from_millis(60);
 
-pub(super) fn emit_preparing(
+pub fn emit_preparing(
     host: &dyn Host,
     operation_id: &str,
     operation: FileOperationKind,
@@ -55,7 +50,7 @@ struct ReporterState {
     last_emit: Option<Instant>,
 }
 
-pub(super) struct FileOperationProgressReporter {
+pub struct FileOperationProgressReporter {
     /// The seam, not an `AppHandle`: a transfer thread outlives every window and
     /// has no business holding one. One `Arc` per operation, cloned into the
     /// worker.
@@ -66,7 +61,7 @@ pub(super) struct FileOperationProgressReporter {
 }
 
 impl FileOperationProgressReporter {
-    pub(super) fn new(
+    pub fn new(
         host: Arc<dyn Host>,
         operation_id: String,
         operation: FileOperationKind,

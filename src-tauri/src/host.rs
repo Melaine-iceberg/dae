@@ -125,28 +125,9 @@ impl Host for TauriHost {
     }
 }
 
-/// Test doubles for modules that report through the seam.
+/// Test doubles live in the core so moved modules can keep using them; this
+/// re-export keeps the shell's own tests on the same spelling.
 #[cfg(test)]
 pub(crate) mod testing {
-    use super::*;
-    use std::sync::Mutex;
-
-    /// Records instead of delivering, so a test can assert that a module goes
-    /// through the seam and hands its reading over unchanged.
-    #[derive(Default)]
-    pub(crate) struct RecordingHost {
-        events: Mutex<Vec<Event>>,
-    }
-
-    impl RecordingHost {
-        pub(crate) fn take(&self) -> Vec<Event> {
-            std::mem::take(&mut *self.events.lock().expect("poisoned"))
-        }
-    }
-
-    impl Host for RecordingHost {
-        fn emit(&self, event: Event) {
-            self.events.lock().expect("poisoned").push(event);
-        }
-    }
+    pub(crate) use dae_core::host::testing::RecordingHost;
 }
