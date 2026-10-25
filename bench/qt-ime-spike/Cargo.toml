@@ -1,0 +1,16 @@
+[package]
+name = "qt-ime-spike"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Gate 2 of docs/decisions/engine-qt-quick.md §5: Chinese IME in a custom-styled QML TextInput"
+
+[dependencies]
+cxx = "1"
+cxx-qt = "0.10"
+cxx-qt-lib = { version = "0.10", features = ["full"] }
+
+[build-dependencies]
+cxx-qt-build = "0.10"
+
+[workspace]

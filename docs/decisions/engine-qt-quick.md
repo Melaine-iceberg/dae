@@ -1,6 +1,6 @@
-# 引擎从 WebView 换成 Qt Quick：**已定方向，门槛 1 已过**
+# 引擎从 WebView 换成 Qt Quick：**已定方向，门槛 1、2 已过**
 
-> **状态：方向已定，工具链已实测通过；门槛 1 已通过（§5.1），其余三组待测。** 分支 `refactor/qt-quick`。
+> **状态：方向已定，工具链已实测通过；门槛 1、2 已通过（§5.1、§5.2），其余两组待测。** 分支 `refactor/qt-quick`。
 > 本文记录的是「为什么离开系统 WebView」「为什么是 Qt Quick 而不是 egui / Slint / GPUI」
 > 「许可证为什么是 GPL-3.0-or-later」，以及**定案前必须量出来的四组数字**。
 > 其中的门槛数字全部是待验证的假设，不是结论 —— 与 `docs/decisions/README.md`
@@ -49,7 +49,8 @@
 选型的第一原则是「这份代码要对冲的风险是跨平台窗口/输入/文本，而不是绘制速度」。
 
 1. **中文 IME 不用自己造。** `QInputMethod` 是三平台原生级实现（预编辑串、候选窗
-   跟随、组字取消）。这是 egui 最弱、而本项目不能妥协的一块。
+   跟随、组字取消）。这是 egui 最弱、而本项目不能妥协的一块。Windows 侧已实测
+   （§5.2）：预编辑与候选窗都成立；唯一要带进壳的是换焦点前取消组合的原生守卫。
 2. **`QAbstractListModel` + `ListView.reuseItems`** 是 12 万行列表的原生解，
    KDE 系文件管理器用的就是这套；`listing.rs` 的增量打补丁直接映射成
    `beginInsertRows` / `dataChanged`。
@@ -189,15 +190,15 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
 
 切片八已完成，施工单保留作验收记录与踩坑清单：
 [`../slice-8-core-extraction.md`](../slice-8-core-extraction.md)。
-§5 的门槛 1（12 万行列表）已经用 `dae-core::fs::listing` 的真批次量完（§5.1）；
-余下三组——中文 IME、无边框 + Mica 窗口、撕出内存——仍待测。
+§5 的门槛 1（12 万行列表）与门槛 2（中文 IME）已经量完（§5.1、§5.2）；
+余下两组——无边框 + Mica 窗口、撕出内存——仍待测。
 
 ## 5. 定案前必须量出来的四组数字
 
 | # | 待验证 | 门槛 | 不达标怎么办 |
 |---|---|---|---|
 | 1 | Rust `QAbstractListModel` + QML `ListView.reuseItems` 跑 12 万行 + 增量补丁 | **已达标：**每帧工作 p95 最差 **5.68 ms**（3×12 s），PSS 滚动峰值最差 **123.7 MB**（全 CJK）—— §5.1 | 委托改为 `QQuickItem` 自绘 / 分页模型 / 回到 egui |
-| 2 | QML 自定义样式 `TextInput` 里的中文 IME | 预编辑不丢字、候选窗不偏位、组字可取消 | 该输入框回退到 `QTextEdit`-based 原生控件 |
+| 2 | QML 自定义样式 `TextInput` 里的中文 IME | **已达标：**7 场景 214 项检查全过；预编辑与 `GCS_COMPSTR` 全程一致、候选锚点偏差 ≤ 0.43 px、Esc 与换焦点取消都成立（需壳里的 `CPS_CANCEL` 守卫）—— §5.2 | 该输入框回退到 `QTextEdit`-based 原生控件（未触发） |
 | 3 | Win11 无边框 + Mica + 自绘标题栏 + 拖动/缩放/贴靠 | 全正常，DWM 切换不闪；复用 `window_material` 的 raw Win32 | 保留系统标题栏（放弃自绘 chrome） |
 | 4 | 单窗口撕出 / 关闭的内存与延迟增量 | ≤ 20 MB / 窗口；撕出 ≤ 150 ms | 恢复预热池（但这意味着内存目标放弃） |
 
@@ -242,6 +243,53 @@ WebView2/WebKitGTK 创建 **270–340 ms**、预热池 **+200 MB**。
 
 复现、fixture 生成和全部原始 JSON：[`bench/qt-list-spike/`](../../bench/qt-list-spike/README.md)。
 
+### 5.2 门槛 2 实测：中文 IME（2026-10-25，Windows 11）
+
+**通过。** 7 个场景、214 项检查全部通过。环境：Windows 11 Insider / Qt 6.12.0 /
+3840×2160 @ 150%（DPR 1.5）/ 微软拼音（HKL `0x08040804`，`TextInputHost.exe`）。
+
+三个输入框都是自定义样式（自绘背景、焦点环、光标 delegate、选区颜色）：
+A 是路径栏，`textChanged` 实时回写镜像；B 贴屏幕右下角；C 在 `contentY=140`
+的 `Flickable` 里。探针在 Rust/cxx-qt 侧，直接读 IMM32 而不只信 QML：
+
+- QML `TextInput.preeditText` vs `ImmGetCompositionStringW(GCS_COMPSTR)`；
+- 提交后的 `text` 增量 vs `GCS_RESULTSTR`；
+- Qt 交给 IME 的 `CANDIDATEFORM`（`CFS_EXCLUDE`，客户端像素）vs
+  `QInputMethod.cursorRectangle() × devicePixelRatio`；
+- `SendInput` 注入真实按键；候选窗出现时用 BitBlt + `CAPTUREBLT` 抓桌面。
+
+| 场景 | 输入 | 预编辑（QML = IMM32） | 结果 |
+|---|---|---|---|
+| 正常提交 | `nihao` | `ni'hao` | 提交 `你好` |
+| 退格纠正 | `nihao` → 2×Backspace → `ao` | `ni'hao` → `nih` → `ni'hao` | 提交 `你好` |
+| Esc 取消 | `zhongwen` | `zhong'wen` | 预编辑清空、文本保持 `keep`、无提交 |
+| 快速连打（35 ms/键） | `zhongwenshuru` | `zhong'wen'shu'ru` | 提交 `中文输入` |
+| 屏幕右下角 | `nihao` | `ni'hao` | 候选窗翻到光标上方，未越界 |
+| 点击换焦点 | `shijie`，再点 A | `shi'jie` | 预编辑清空、B 保持 `keep`、无原始拼音 |
+| 滚动容器 | `wenjian` | `wen'jian` | 提交 `文件`，候选窗跟随内容偏移 |
+
+- **预编辑不丢字**：在每个记录点（快速连打取整串），QML `preeditText` 与
+  `GCS_COMPSTR` 的字母序列完全一致；68 次注入（字母、空格、Esc、退格）全部送达；
+  提交增量与 `GCS_RESULTSTR` 逐字相同。IME 自己加的隔音撇号（`ni'hao`）两边都在。
+- **候选窗不偏位**：7 个组合快照里，`CANDIDATEFORM` 与
+  `cursorRectangle × 1.5` 的最大偏差 **0.43 px**（x）、**0 px**（y）。
+  150% 缩放下成立；`contentY=140` 的滚动偏移被计入；窗口贴屏幕右下角时
+  IME 把候选窗翻到输入框上方。`ImmGetCandidateList` 在 TextInputHost 的
+  IMM 桥上返回空，候选词内容与最终窗口位置用截图核对。
+- **组字可取消**：Esc 后 `WM_IME_ENDCOMPOSITION`、预编辑清空、文本不变、无提交。
+- **失焦不是免费的**：直接点另一个输入框时，Qt 6.12 的
+  `QWindowsInputContext::reset()` 会把**原始组合串**（`shi'jie`）当作 commit
+  string 发给旧控件，而不是取消。这不是 `TextInput` 的问题：`reset()` 在平台
+  输入上下文里，`QTextEdit` 收到的是同一个 `QInputMethodEvent`。spike 里加了一个
+  约 50 行的窗口事件过滤器：鼠标按下到焦点项之外或按 Tab 时，先
+  `ImmNotifyIME(NI_COMPOSITIONSTR, CPS_CANCEL)`，再让 Qt 换焦点；验证后 B 保持
+  `keep`、预编辑清空。**壳里必须带这个守卫。**
+
+**结论：保留 QML 自定义样式 `TextInput`，不触发 `QTextEdit` 回退。**
+门槛 2 没有推翻文本层结构；唯一新增的是上面那个「换焦点前取消组合」的原生守卫。
+复现、脚本、原始 JSON 与三张只含应用内容的截图：
+[`bench/qt-ime-spike/`](../../bench/qt-ime-spike/README.md)。
+
 ## 6. 已知代价（写在前面，不做事后解释）
 
 - 视图层是 QML + JS，不是 Rust。心智模型与 React 接近，但确实是第二种语言。
@@ -253,6 +301,9 @@ WebView2/WebKitGTK 创建 **270–340 ms**、预热池 **+200 MB**。
 - 内存不会到 Slint 那个量级。目标从「30 MB」改成「**≤ 250 MB 且不随标签线性增长**」。
   门槛 1 实测 12 万行：混合名字 ~57 MB、全 CJK ~116 MB（滚动峰值 123.7 MB），
   没有随滚动时间增长（§5.1）。
+- **Windows IME 的失焦语义**：Qt 6.12 的 `QWindowsInputContext::reset()` 在焦点对象
+  变化时把原始组合串提交给旧控件；壳里必须在换焦点前调用 `CPS_CANCEL`（§5.2 的
+  守卫，约 50 行）。换 `QTextEdit` 不能规避——行为在平台输入上下文，不在文本控件。
 
 ## 7. 回退
 
