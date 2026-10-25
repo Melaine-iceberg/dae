@@ -35,6 +35,14 @@
    IPC 包装，那部分本来就要留）。`src-tauri/src/file_system/` 下只剩
    `commands.rs` / `preview.rs` / `system_files.rs` / `places.rs` /
    `listing_packets.rs` / `volume_monitor*` 提到 `tauri::`。
+
+   > **事后更正（切片 8 完成时实测）**：这条门槛的前提有误。被搬走的 51 个文件
+   > 在切片 3–8 里已经全部接缝化，本来就不含 `tauri::`，所以搬移只能带走 2 处
+   > （`prefetch` 的 `AppHandle`），全树停在 **265**。剩余引用里 95 处在
+   > `commands.rs`、139 处在壳根模块（随 webview 一起退役）、31 处在
+   > `preview` / `system_files` / `places` / `volume_monitor`。真正可验证的门槛是
+   > “core 的 `Cargo.toml`/源码里不出现 `tauri`/`winit`/`qt` 依赖”与
+   > “`file_system/` 只剩 7+3 个壳文件”，这两条已满足。
 5. `docs/decisions/engine-qt-quick.md` 的切片列表追加第 9 条，写下实测数字。
 
 ---

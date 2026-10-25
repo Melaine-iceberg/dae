@@ -161,18 +161,35 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
    `get_system_places` 是唯一故意留下的命令：它经 `Manager::path()` 解析桌面/文档/下载
    等七个目录，把这套规则也搬进 core 是另一个决定，不该夹带在这一刀里。
 
-累计（切片 1→8）：`tauri::` 引用 **389 → 267**、`tauri::AppHandle` **125 → 80**、
+9. **文件系统整体搬入 `dae-core`**：按[施工单](../slice-8-core-extraction.md)执行，
+   两处波次按真实依赖调整——`local` 必须与 `git` / `transfer` / `vfs` 同批
+   （`local/directory` 会作废 Git 状态缓存），`sidebar` / `prefetch` 必须与
+   `recents` / `spaces` 同批（`prefetch` 同时在读写两侧）。六个 wire 事件收进壳的
+   `ipc_events.rs`；列举管线拆成 core 的 `Batch`/`BatchTarget` 与壳的 `ChannelTarget`；
+   `entry_codec` 随行模型先进 core，打包那半等 Qt 壳落地时与 `listing_packets.rs`
+   一起删除。`get_system_places` 移到 `places.rs`，`warm_startup_data` 改为接收已解析的
+   places，`write_atomic` 进 `dae_core::fs::atomic`。
+   **实测**：`dae-core` 单独 `cargo test` **187 通过 / 8 忽略**；`src-tauri` nextest
+   **167 通过 / 2 跳过**；重新生成的 `src/bindings.ts` **逐字节不变**；
+   `bunx tsc --noEmit` 为 0。`src-tauri/src/file_system/` 只剩 10 个 `.rs`：
+   `commands`、`preview`、`system_files`、`volume_monitor{,.rs}`、`places`、
+   `listing_packets`、`ipc_events`。
+
+累计（切片 1→9）：`tauri::` 引用 **389 → 265**、`tauri::AppHandle` **125 → 80**、
 `app.state::<…>` **33 → 2**、`.manage()` **12 → 3**。
-`file_system/` 下 **40 / 51 个文件完全不含 `tauri::`**；剩下 11 个里 95 处是
-`commands.rs`（IPC 壳本身），其余是 `preview`（`dae://` URI scheme，随 webview 消失）、
-`system_files` 的 drag-out、`sidebar` 的 get_system_places、`volume_monitor`、
-`prefetch::warm_startup_data`、`listing` 的 `Channel`。
+
+切片 8 本身只减了 2 处 `tauri::`，因为搬走的 51 个文件在切片 3–8 里已经全部接缝化
+（这正是验收标准 #4 里“267 → ≤180”没有发生的理由：该预估假设搬移会带走 Tauri 引用，
+但那些文件早已是零引用）。剩余 265 处：**95 处在 `commands.rs`**（IPC 壳本身）、
+**139 处在 `src-tauri/src/` 根下的壳模块**（`tab_windows`、`default_manager`、
+`window_material`、`terminal`、深链、更新器等，随 webview 一起退役或重写）、
+其余 **31 处**在 `preview` / `system_files` / `places` / `volume_monitor`。
 
 ## 4.1 下一刀的执行手册
 
-切片八（把 `file_system` 整体搬进 `dae-core`）的施工单在
-[`../slice-8-core-extraction.md`](../slice-8-core-extraction.md)：51 个文件的分组、
-五步顺序、每步的验证门、以及前七刀踩过的十个坑。
+切片八已完成，施工单保留作验收记录与踩坑清单：
+[`../slice-8-core-extraction.md`](../slice-8-core-extraction.md)。
+接下来是 §5 的四个 Qt 门槛 spike——它们现在可以直接吃 `dae-core::fs` 的真数据。
 
 ## 5. 定案前必须量出来的四组数字
 
