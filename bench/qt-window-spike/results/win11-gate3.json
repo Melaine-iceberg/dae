@@ -1,0 +1,906 @@
+{
+  "gate": 3,
+  "title": "frameless QQuickWindow + Mica/Acrylic + custom title bar",
+  "qt_version": "6.12.0",
+  "os": "Windows 11 Version 26H2",
+  "dpr": 1.5,
+  "screen": [
+    3840,
+    2160
+  ],
+  "material_decision": {
+    "acrylic_min_build": 22523,
+    "build": 26340,
+    "material": "acrylic",
+    "mica_min_build": 22000,
+    "transparency": true
+  },
+  "checks": [
+    {
+      "name": "attach:window-handle",
+      "ok": true,
+      "detail": "hwnd=1d0772",
+      "t_ms": 184
+    },
+    {
+      "name": "attach:foreground",
+      "ok": true,
+      "detail": "",
+      "t_ms": 184
+    },
+    {
+      "name": "material:build-read",
+      "ok": true,
+      "detail": "build=26340",
+      "t_ms": 184
+    },
+    {
+      "name": "material:transparency-on",
+      "ok": true,
+      "detail": "",
+      "t_ms": 184
+    },
+    {
+      "name": "material:mica-supported",
+      "ok": true,
+      "detail": "mica from 22000",
+      "t_ms": 184
+    },
+    {
+      "name": "backdrop:mica-accepted",
+      "ok": true,
+      "detail": "read_backdrop=2",
+      "t_ms": 184
+    },
+    {
+      "name": "backdrop:dark-accepted",
+      "ok": true,
+      "detail": "",
+      "t_ms": 184
+    },
+    {
+      "name": "backdrop:transparent-path",
+      "ok": true,
+      "detail": "layered=true blur_behind=true",
+      "t_ms": 184
+    },
+    {
+      "name": "chrome:native-style",
+      "ok": true,
+      "detail": "WS_THICKFRAME/WS_MAXIMIZEBOX style=0x16cf0000",
+      "t_ms": 184
+    },
+    {
+      "name": "backdrop:mica-light-accepted",
+      "ok": true,
+      "detail": "read=2 dark=false",
+      "t_ms": 954
+    },
+    {
+      "name": "regions:titlebar-height",
+      "ok": true,
+      "detail": "px=60 dpr=1.5",
+      "t_ms": 1364
+    },
+    {
+      "name": "regions:button-width",
+      "ok": true,
+      "detail": "px=69",
+      "t_ms": 1365
+    },
+    {
+      "name": "hit:caption",
+      "ok": true,
+      "detail": "at 1202,210 got 2 want 2",
+      "t_ms": 1365
+    },
+    {
+      "name": "hit:min",
+      "ok": true,
+      "detail": "at 1957,210 got 1 want 1",
+      "t_ms": 1365
+    },
+    {
+      "name": "hit:max",
+      "ok": true,
+      "detail": "at 2026,210 got 9 want 9",
+      "t_ms": 1365
+    },
+    {
+      "name": "hit:close",
+      "ok": true,
+      "detail": "at 2095,210 got 1 want 1",
+      "t_ms": 1365
+    },
+    {
+      "name": "hit:border_left",
+      "ok": true,
+      "detail": "at 485,720 got 10 want 10",
+      "t_ms": 1365
+    },
+    {
+      "name": "hit:border_right",
+      "ok": true,
+      "detail": "at 2125,720 got 11 want 11",
+      "t_ms": 1365
+    },
+    {
+      "name": "hit:border_top",
+      "ok": true,
+      "detail": "at 1305,185 got 12 want 12",
+      "t_ms": 1366
+    },
+    {
+      "name": "hit:border_bottom",
+      "ok": true,
+      "detail": "at 1305,1255 got 15 want 15",
+      "t_ms": 1366
+    },
+    {
+      "name": "hit:corner_tl",
+      "ok": true,
+      "detail": "at 485,185 got 13 want 13",
+      "t_ms": 1366
+    },
+    {
+      "name": "hit:corner_br",
+      "ok": true,
+      "detail": "at 2125,1255 got 17 want 17",
+      "t_ms": 1366
+    },
+    {
+      "name": "hit:content",
+      "ok": true,
+      "detail": "at 1305,750 got 1 want 1",
+      "t_ms": 1366
+    },
+    {
+      "name": "hit:max-observed-by-messages",
+      "ok": true,
+      "detail": "",
+      "t_ms": 1367
+    },
+    {
+      "name": "hit:caption-observed-by-messages",
+      "ok": true,
+      "detail": "",
+      "t_ms": 1367
+    },
+    {
+      "name": "drag:mouse-down",
+      "ok": true,
+      "detail": "",
+      "t_ms": 1556
+    },
+    {
+      "name": "drag:moved-by-pointer",
+      "ok": true,
+      "detail": "moved 80,55",
+      "t_ms": 3183
+    },
+    {
+      "name": "drag:size-unchanged",
+      "ok": true,
+      "detail": "[560,235,2210,1315]",
+      "t_ms": 3183
+    },
+    {
+      "name": "drag:hit-caption",
+      "ok": true,
+      "detail": "hits=5",
+      "t_ms": 3183
+    },
+    {
+      "name": "drag:nc-down-caption",
+      "ok": true,
+      "detail": "nc_down={\"2\":1}",
+      "t_ms": 3184
+    },
+    {
+      "name": "drag:native-move-loop",
+      "ok": true,
+      "detail": "enter=1 exit=1",
+      "t_ms": 3184
+    },
+    {
+      "name": "resize:mouse-down",
+      "ok": true,
+      "detail": "",
+      "t_ms": 3373
+    },
+    {
+      "name": "resize:width-grew",
+      "ok": true,
+      "detail": "width +120",
+      "t_ms": 4042
+    },
+    {
+      "name": "resize:left-edge-moved",
+      "ok": true,
+      "detail": "left -120",
+      "t_ms": 4042
+    },
+    {
+      "name": "resize:height-unchanged",
+      "ok": true,
+      "detail": "",
+      "t_ms": 4042
+    },
+    {
+      "name": "resize:hit-left",
+      "ok": true,
+      "detail": "",
+      "t_ms": 4043
+    },
+    {
+      "name": "resize:nc-down-left",
+      "ok": true,
+      "detail": "",
+      "t_ms": 4043
+    },
+    {
+      "name": "resize:native-size-loop",
+      "ok": true,
+      "detail": "enter=1 exit=1",
+      "t_ms": 4043
+    },
+    {
+      "name": "corner:mouse-down",
+      "ok": true,
+      "detail": "",
+      "t_ms": 4227
+    },
+    {
+      "name": "corner:width-grew",
+      "ok": true,
+      "detail": "width +60",
+      "t_ms": 4889
+    },
+    {
+      "name": "corner:height-grew",
+      "ok": true,
+      "detail": "height +40",
+      "t_ms": 4889
+    },
+    {
+      "name": "corner:hit-bottom-right",
+      "ok": true,
+      "detail": "",
+      "t_ms": 4889
+    },
+    {
+      "name": "maximize:click",
+      "ok": true,
+      "detail": "at [2166,265]",
+      "t_ms": 5126
+    },
+    {
+      "name": "maximize:zoomed",
+      "ok": true,
+      "detail": "",
+      "t_ms": 5780
+    },
+    {
+      "name": "maximize:client-is-work-area",
+      "ok": true,
+      "detail": "client 0,0,3840,2088 origin 0,0 work 0,0,3840,2088",
+      "t_ms": 5780
+    },
+    {
+      "name": "maximize:no-resize-border",
+      "ok": true,
+      "detail": "",
+      "t_ms": 5781
+    },
+    {
+      "name": "maximize:max-button-still-max",
+      "ok": true,
+      "detail": "",
+      "t_ms": 5781
+    },
+    {
+      "name": "restore:not-zoomed",
+      "ok": true,
+      "detail": "",
+      "t_ms": 6942
+    },
+    {
+      "name": "restore:same-rect",
+      "ok": true,
+      "detail": "[440,235,2270,1355] vs [440,235,2270,1355]",
+      "t_ms": 6942
+    },
+    {
+      "name": "dwm:two-stable-levels",
+      "ok": true,
+      "detail": "dark=25.09 light=155.99",
+      "t_ms": 8540
+    },
+    {
+      "name": "dwm:no-black-frame",
+      "ok": true,
+      "detail": "samples=0",
+      "t_ms": 8540
+    },
+    {
+      "name": "dwm:no-white-frame",
+      "ok": true,
+      "detail": "samples=0",
+      "t_ms": 8540
+    },
+    {
+      "name": "dwm:no-out-of-envelope-frame",
+      "ok": true,
+      "detail": "worst outside=0.00 envelope 19.1..162.0",
+      "t_ms": 8540
+    },
+    {
+      "name": "dwm:transition-sampled",
+      "ok": true,
+      "detail": "in-between samples=18",
+      "t_ms": 8540
+    },
+    {
+      "name": "dwm:no-background-erase",
+      "ok": true,
+      "detail": "WM_ERASEBKGND=0",
+      "t_ms": 8540
+    },
+    {
+      "name": "snap:flyout-appeared",
+      "ok": true,
+      "detail": "changed=25291 fraction=0.1556369230769231",
+      "t_ms": 10580
+    },
+    {
+      "name": "snap:flyout-size",
+      "ok": true,
+      "detail": "bbox=1908,281,2365,646",
+      "t_ms": 10581
+    },
+    {
+      "name": "snap:hit-max-button",
+      "ok": true,
+      "detail": "",
+      "t_ms": 10581
+    },
+    {
+      "name": "snap:window-left-half",
+      "ok": true,
+      "detail": "[0,0,1920,2088] work [0,0,3840,2088]",
+      "t_ms": 11826
+    },
+    {
+      "name": "snap:not-zoomed",
+      "ok": true,
+      "detail": "",
+      "t_ms": 11826
+    },
+    {
+      "name": "material:acrylic-accepted",
+      "ok": true,
+      "detail": "read=3",
+      "t_ms": 12588
+    },
+    {
+      "name": "material:none-accepted",
+      "ok": true,
+      "detail": "read=1",
+      "t_ms": 13150
+    },
+    {
+      "name": "material:none-not-blurred",
+      "ok": true,
+      "detail": "",
+      "t_ms": 13150
+    }
+  ],
+  "notes": [
+    {
+      "name": "material:tauri-decision",
+      "detail": "acrylic (the Tauri backend picks this on build 26340)",
+      "t_ms": 184
+    },
+    {
+      "name": "maximize:after",
+      "detail": "nc_up=0 actions=1 zoomed=true",
+      "t_ms": 5780
+    },
+    {
+      "name": "dwm:samples",
+      "detail": "34 samples at ~20 ms, worst adjacent jump 27.98",
+      "t_ms": 8540
+    },
+    {
+      "name": "dwm:levels",
+      "detail": "stable dark 25.09 / light 155.99, cross-fade over 18 samples",
+      "t_ms": 8540
+    },
+    {
+      "name": "dwm:qt-frames",
+      "detail": "Qt presented 1 frames during the capture sequence",
+      "t_ms": 8540
+    }
+  ],
+  "failures": 0,
+  "check_count": 63,
+  "samples": [
+    {
+      "frames": 81,
+      "mean": 25.085806451612903,
+      "p05": 25,
+      "p95": 25,
+      "path": "",
+      "t_ms": 7745,
+      "tag": "dark",
+      "variance": 6.497798543184103
+    },
+    {
+      "frames": 81,
+      "mean": 25.085806451612903,
+      "p05": 25,
+      "p95": 25,
+      "path": "",
+      "t_ms": 7769,
+      "tag": "dark",
+      "variance": 6.497798543184103
+    },
+    {
+      "frames": 81,
+      "mean": 25.085806451612903,
+      "p05": 25,
+      "p95": 25,
+      "path": "",
+      "t_ms": 7787,
+      "tag": "dark",
+      "variance": 6.497798543184103
+    },
+    {
+      "frames": 81,
+      "mean": 25.085806451612903,
+      "p05": 25,
+      "p95": 25,
+      "path": "",
+      "t_ms": 7806,
+      "tag": "dark",
+      "variance": 6.497798543184103
+    },
+    {
+      "frames": 81,
+      "mean": 25.085806451612903,
+      "p05": 25,
+      "p95": 25,
+      "path": "",
+      "t_ms": 7830,
+      "tag": "dark",
+      "variance": 6.497798543184103
+    },
+    {
+      "frames": 81,
+      "mean": 25.085806451612903,
+      "p05": 25,
+      "p95": 25,
+      "path": "",
+      "t_ms": 7848,
+      "tag": "dark",
+      "variance": 6.497798543184103
+    },
+    {
+      "frames": 81,
+      "mean": 25.085806451612903,
+      "p05": 25,
+      "p95": 25,
+      "path": "",
+      "t_ms": 7866,
+      "tag": "dark",
+      "variance": 6.497798543184103
+    },
+    {
+      "frames": 81,
+      "mean": 25.085806451612903,
+      "p05": 25,
+      "p95": 25,
+      "path": "",
+      "t_ms": 7890,
+      "tag": "dark",
+      "variance": 6.497798543184103
+    },
+    {
+      "frames": 81,
+      "mean": 34.07951612903226,
+      "p05": 34,
+      "p95": 34,
+      "path": "",
+      "t_ms": 7927,
+      "tag": "light",
+      "variance": 5.538354604578672
+    },
+    {
+      "frames": 81,
+      "mean": 47.06983870967742,
+      "p05": 47,
+      "p95": 47,
+      "path": "",
+      "t_ms": 7951,
+      "tag": "light",
+      "variance": 4.313993522372584
+    },
+    {
+      "frames": 81,
+      "mean": 56.064193548387095,
+      "p05": 56,
+      "p95": 56,
+      "path": "",
+      "t_ms": 7970,
+      "tag": "light",
+      "variance": 3.6055566077006915
+    },
+    {
+      "frames": 81,
+      "mean": 66.05677419354839,
+      "p05": 66,
+      "p95": 66,
+      "path": "",
+      "t_ms": 7988,
+      "tag": "light",
+      "variance": 2.8419379812685293
+    },
+    {
+      "frames": 81,
+      "mean": 75.0508064516129,
+      "p05": 75,
+      "p95": 75,
+      "path": "",
+      "t_ms": 8006,
+      "tag": "light",
+      "variance": 2.262096123829906
+    },
+    {
+      "frames": 81,
+      "mean": 87.04274193548387,
+      "p05": 87,
+      "p95": 87,
+      "path": "",
+      "t_ms": 8030,
+      "tag": "light",
+      "variance": 1.5738182882405454
+    },
+    {
+      "frames": 81,
+      "mean": 97.035,
+      "p05": 97,
+      "p95": 97,
+      "path": "",
+      "t_ms": 8049,
+      "tag": "light",
+      "variance": 1.0840975806459028
+    },
+    {
+      "frames": 81,
+      "mean": 107.02774193548387,
+      "p05": 107,
+      "p95": 107,
+      "path": "",
+      "t_ms": 8067,
+      "tag": "light",
+      "variance": 0.6789078043693735
+    },
+    {
+      "frames": 81,
+      "mean": 119.01983870967742,
+      "p05": 119,
+      "p95": 119,
+      "path": "",
+      "t_ms": 8091,
+      "tag": "light",
+      "variance": 0.33686449011474906
+    },
+    {
+      "frames": 81,
+      "mean": 128.0140322580645,
+      "p05": 128,
+      "p95": 128,
+      "path": "",
+      "t_ms": 8109,
+      "tag": "light",
+      "variance": 0.1606095473471214
+    },
+    {
+      "frames": 81,
+      "mean": 155.9933870967742,
+      "p05": 156,
+      "p95": 156,
+      "path": "",
+      "t_ms": 8176,
+      "tag": "light",
+      "variance": 0.0391498178942129
+    },
+    {
+      "frames": 81,
+      "mean": 155.9933870967742,
+      "p05": 156,
+      "p95": 156,
+      "path": "",
+      "t_ms": 8187,
+      "tag": "light",
+      "variance": 0.0391498178942129
+    },
+    {
+      "frames": 81,
+      "mean": 155.9933870967742,
+      "p05": 156,
+      "p95": 156,
+      "path": "",
+      "t_ms": 8206,
+      "tag": "light",
+      "variance": 0.0391498178942129
+    },
+    {
+      "frames": 81,
+      "mean": 155.9933870967742,
+      "p05": 156,
+      "p95": 156,
+      "path": "",
+      "t_ms": 8230,
+      "tag": "light",
+      "variance": 0.0391498178942129
+    },
+    {
+      "frames": 81,
+      "mean": 155.9933870967742,
+      "p05": 156,
+      "p95": 156,
+      "path": "",
+      "t_ms": 8248,
+      "tag": "light",
+      "variance": 0.0391498178942129
+    },
+    {
+      "frames": 81,
+      "mean": 155.9933870967742,
+      "p05": 156,
+      "p95": 156,
+      "path": "",
+      "t_ms": 8266,
+      "tag": "light",
+      "variance": 0.0391498178942129
+    },
+    {
+      "frames": 81,
+      "mean": 155.9933870967742,
+      "p05": 156,
+      "p95": 156,
+      "path": "",
+      "t_ms": 8290,
+      "tag": "light",
+      "variance": 0.0391498178942129
+    },
+    {
+      "frames": 81,
+      "mean": 155.9933870967742,
+      "p05": 156,
+      "p95": 156,
+      "path": "",
+      "t_ms": 8309,
+      "tag": "light",
+      "variance": 0.0391498178942129
+    },
+    {
+      "frames": 81,
+      "mean": 143.00306451612903,
+      "p05": 143,
+      "p95": 143,
+      "path": "",
+      "t_ms": 8351,
+      "tag": "dark",
+      "variance": 0.006603511967114173
+    },
+    {
+      "frames": 81,
+      "mean": 133.01048387096773,
+      "p05": 133,
+      "p95": 133,
+      "path": "",
+      "t_ms": 8369,
+      "tag": "dark",
+      "variance": 0.09101912070764229
+    },
+    {
+      "frames": 81,
+      "mean": 124.01629032258064,
+      "p05": 124,
+      "p95": 124,
+      "path": "",
+      "t_ms": 8388,
+      "tag": "dark",
+      "variance": 0.2324765608736925
+    },
+    {
+      "frames": 81,
+      "mean": 115.0224193548387,
+      "p05": 115,
+      "p95": 115,
+      "path": "",
+      "t_ms": 8407,
+      "tag": "dark",
+      "variance": 0.4351425338190893
+    },
+    {
+      "frames": 81,
+      "mean": 102.03209677419355,
+      "p05": 102,
+      "p95": 102,
+      "path": "",
+      "t_ms": 8430,
+      "tag": "dark",
+      "variance": 0.8871956035382027
+    },
+    {
+      "frames": 81,
+      "mean": 93.03806451612903,
+      "p05": 93,
+      "p95": 93,
+      "path": "",
+      "t_ms": 8449,
+      "tag": "dark",
+      "variance": 1.2620994797089224
+    },
+    {
+      "frames": 81,
+      "mean": 84.04387096774194,
+      "p05": 84,
+      "p95": 84,
+      "path": "",
+      "t_ms": 8468,
+      "tag": "dark",
+      "variance": 1.7003334027049277
+    },
+    {
+      "frames": 81,
+      "mean": 71.05306451612903,
+      "p05": 71,
+      "p95": 71,
+      "path": "",
+      "t_ms": 8491,
+      "tag": "dark",
+      "variance": 2.487990608741711
+    }
+  ],
+  "dwm": {
+    "stable_dark": 25.085806451612903,
+    "stable_light": 155.9933870967742,
+    "samples": 34,
+    "in_between": 18,
+    "worst_jump": 27.979354838709696,
+    "qt_frames": 1,
+    "erasebkgnd": 0
+  },
+  "initial_window": {
+    "backdrop": {
+      "backdrop_hr": "0",
+      "blur_behind": true,
+      "composition": true,
+      "dark": true,
+      "dark_hr": "0",
+      "layered": true,
+      "material": 0,
+      "mica_hr": "0",
+      "read_backdrop": 2,
+      "read_backdrop_hr": "0",
+      "read_dark": true,
+      "read_dark_hr": "0"
+    },
+    "border_px": 11,
+    "button_px": 69,
+    "class": "Qt6120QWindowIcon",
+    "client_origin": [
+      480,
+      180
+    ],
+    "client_rect": [
+      0,
+      0,
+      1650,
+      1080
+    ],
+    "dpr": 1.5,
+    "exstyle": "80100",
+    "foreground": true,
+    "frame_rect": [
+      480,
+      180,
+      2130,
+      1260
+    ],
+    "hwnd": "1d0772",
+    "iconic": false,
+    "monitor": [
+      0,
+      0,
+      3840,
+      2160
+    ],
+    "os": "Windows 11 Version 26H2",
+    "qt_version": "6.12.0",
+    "style": "16cf0000",
+    "titlebar_px": 60,
+    "visible": true,
+    "window_rect": [
+      480,
+      180,
+      2130,
+      1260
+    ],
+    "work_area": [
+      0,
+      0,
+      3840,
+      2088
+    ],
+    "zoomed": false
+  },
+  "window": {
+    "backdrop": {
+      "backdrop_hr": "0",
+      "blur_behind": true,
+      "composition": true,
+      "dark": true,
+      "dark_hr": "0",
+      "layered": true,
+      "material": 0,
+      "mica_hr": "0",
+      "read_backdrop": 2,
+      "read_backdrop_hr": "0",
+      "read_dark": true,
+      "read_dark_hr": "0"
+    },
+    "border_px": 11,
+    "button_px": 69,
+    "class": "Qt6120QWindowIcon",
+    "client_origin": [
+      0,
+      0
+    ],
+    "client_rect": [
+      0,
+      0,
+      1920,
+      2088
+    ],
+    "dpr": 1.5,
+    "exstyle": "80100",
+    "foreground": true,
+    "frame_rect": [
+      0,
+      0,
+      1920,
+      2088
+    ],
+    "hwnd": "1d0772",
+    "iconic": false,
+    "monitor": [
+      0,
+      0,
+      3840,
+      2160
+    ],
+    "os": "Windows 11 Version 26H2",
+    "qt_version": "6.12.0",
+    "style": "16cf0000",
+    "titlebar_px": 60,
+    "visible": true,
+    "window_rect": [
+      0,
+      0,
+      1920,
+      2088
+    ],
+    "work_area": [
+      0,
+      0,
+      3840,
+      2088
+    ],
+    "zoomed": false
+  }
+}

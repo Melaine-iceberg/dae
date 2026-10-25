@@ -1,6 +1,6 @@
-# 引擎从 WebView 换成 Qt Quick：**已定方向，门槛 1、2 已过**
+# 引擎从 WebView 换成 Qt Quick：**已定方向，门槛 1、2、3 已过**
 
-> **状态：方向已定，工具链已实测通过；门槛 1、2 已通过（§5.1、§5.2），其余两组待测。** 分支 `refactor/qt-quick`。
+> **状态：方向已定，工具链已实测通过；门槛 1、2、3 已通过（§5.1–§5.3），第 4 组待测。** 分支 `refactor/qt-quick`。
 > 本文记录的是「为什么离开系统 WebView」「为什么是 Qt Quick 而不是 egui / Slint / GPUI」
 > 「许可证为什么是 GPL-3.0-or-later」，以及**定案前必须量出来的四组数字**。
 > 其中的门槛数字全部是待验证的假设，不是结论 —— 与 `docs/decisions/README.md`
@@ -190,8 +190,8 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
 
 切片八已完成，施工单保留作验收记录与踩坑清单：
 [`../slice-8-core-extraction.md`](../slice-8-core-extraction.md)。
-§5 的门槛 1（12 万行列表）与门槛 2（中文 IME）已经量完（§5.1、§5.2）；
-余下两组——无边框 + Mica 窗口、撕出内存——仍待测。
+§5 的门槛 1（12 万行列表）、门槛 2（中文 IME）与门槛 3（无边框 + Mica）
+已经量完（§5.1–§5.3）；余下第 4 组——撕出内存——仍待测。
 
 ## 5. 定案前必须量出来的四组数字
 
@@ -199,7 +199,7 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
 |---|---|---|---|
 | 1 | Rust `QAbstractListModel` + QML `ListView.reuseItems` 跑 12 万行 + 增量补丁 | **已达标：**每帧工作 p95 最差 **5.68 ms**（3×12 s），PSS 滚动峰值最差 **123.7 MB**（全 CJK）—— §5.1 | 委托改为 `QQuickItem` 自绘 / 分页模型 / 回到 egui |
 | 2 | QML 自定义样式 `TextInput` 里的中文 IME | **已达标：**7 场景 214 项检查全过；预编辑与 `GCS_COMPSTR` 全程一致、候选锚点偏差 ≤ 0.43 px、Esc 与换焦点取消都成立（需壳里的 `CPS_CANCEL` 守卫）—— §5.2 | 该输入框回退到 `QTextEdit`-based 原生控件（未触发） |
-| 3 | Win11 无边框 + Mica + 自绘标题栏 + 拖动/缩放/贴靠 | 全正常，DWM 切换不闪；复用 `window_material` 的 raw Win32 | 保留系统标题栏（放弃自绘 chrome） |
+| 3 | Win11 无边框 + Mica + 自绘标题栏 + 拖动/缩放/贴靠 | **已达标：** 63 项检查全过；拖动/缩放走原生 modal loop，Snap Layouts 悬停出菜单并贴到左半屏；DWM 明暗切换 34 帧采样无闪、0 `WM_ERASEBKGND` —— §5.3 | 保留系统标题栏（未触发） |
 | 4 | 单窗口撕出 / 关闭的内存与延迟增量 | ≤ 20 MB / 窗口；撕出 ≤ 150 ms | 恢复预热池（但这意味着内存目标放弃） |
 
 对照基线（现有实测）：**447–483 MB PSS**（1 窗口）、**+190–200 MB / tab**、
@@ -290,6 +290,58 @@ A 是路径栏，`textChanged` 实时回写镜像；B 贴屏幕右下角；C 在
 复现、脚本、原始 JSON 与三张只含应用内容的截图：
 [`bench/qt-ime-spike/`](../../bench/qt-ime-spike/README.md)。
 
+### 5.3 门槛 3 实测：无边框 + Mica + 自绘标题栏（2026-10-25，Windows 11）
+
+**通过。** 63 项检查全过。环境：Windows 11 Version 26H2 / build 26340 /
+Qt 6.12.0 / D3D11 / 3840×2160 @ 150%（工作区 3840×2088）。
+
+窗口用 `QQuickWindow::setDefaultAlphaBuffer(true)` + QML `color: "transparent"`，
+再由 `cpp/window_probe.h` 走 winit/Tauri 的同一组 raw Win32：
+`DwmEnableBlurBehindWindow`（空 blur region，让 DWM 在 client 后面合成）+
+`DwmSetWindowAttribute(DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_MAINWINDOW/
+TRANSIENTWINDOW)`。材质决策照搬 `window_material/windows.rs`（`CurrentBuild`、
+`EnableTransparency`、22000/22523 两条线），本机判定是 Acrylic；门槛另外强制
+测了 Mica，两个方向的 read-back 分别是 **2** 和 **3**，`none` 是 **1**。
+
+| 项目 | 实测 |
+|---|---|
+| 拖动 | 真实鼠标 **+80, +55 px**；`WM_NCLBUTTONDOWN` = HTCAPTION；`WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE` 各 1 |
+| 缩放 | 左边 **+120 px**（宽 +120、x −120）；右下角 **+60 × +40**；八个 resize code 全部命中 |
+| 最大化 | 自绘按钮 → client 正好是工作区 **(0,0,3840,2088)**；最大化时边缘返回 HTCLIENT；还原回到原 rect |
+| Snap Layouts | 悬停最大化按钮 1.5 s 后 flyout 出现（屏幕 diff **25,291 px**）；点左半区后窗口 = **(0,0,1920,2088)** |
+| DWM 切换 | 34 帧 / ~20 ms；暗 **25.09**、亮 **155.99**；中间 18 帧是 DWM 自己的 cross-fade（约 150–200 ms）；黑/白/越界帧 0；`WM_ERASEBKGND` 0；Qt 重绘 **1** 帧（采样前的状态栏更新） |
+
+**这不是“没有动画”，而是“没有闪”。** 切换只改 immersive-dark，不动 QML，
+所以任何异常帧都只可能来自 DWM；实测是一段单调的 cross-fade，没有黑帧、白帧
+或超出两端 ±6 的帧。第一次测量时采样步骤走 QML plan，plan 的属性写入让 Qt
+每帧重绘一次，掩盖了 DWM 的贡献；改成单个 20 ms Timer 后 Qt 只落了 1 帧。
+Snap flyout 由 DWM/Shell 合成，**不出现在 `EnumWindows` 里**，所以“菜单出现了”
+是用悬停前后的屏幕像素差来判定的，而不是窗口枚举。
+
+**三件只有接上 Windows 才知道的事**（壳里必须照此实现）：
+
+1. **最大化按钮必须常驻 `HTMAXBUTTON`。** Snap Layouts 的悬停菜单只认
+   `WM_NCHITTEST` 的这个返回值；Windows 不会在按下时重跑 hit test，所以
+   “悬停返回 HTMAXBUTTON、按下返回 HTCLIENT”这种取巧不成立。代价是这个
+   按钮拿不到 QML hover，壳里要用 `WM_NCMOUSEMOVE` + `TME_NONCLIENT` 转发
+   悬停状态。最小化/关闭按钮则可以是普通 client 区域。
+2. **DefWindowProc 的 non-client 按钮跟踪会吞掉 `WM_NCLBUTTONUP`。**
+   过滤器从头到尾看不到 up（实测 `nc_up=0`）。在跟踪循环里调用
+   `ShowWindow`/`showMaximized` 会让 Qt 重入并崩溃；正确做法是轮询
+   `GetAsyncKeyState(VK_LBUTTON)`，等物理按键抬起、循环退出后再调用
+   `QWindow::showMaximized()/showNormal()`。同理，过滤器里不要自己调
+   `DefWindowProc` 跑 move loop——让它由 Qt 的 WndProc 在返回后调用。
+3. **最大化的 client 不等于工作区。** `WS_THICKFRAME` + Qt frameless 的
+   `WM_NCCALCSIZE=0` 让最大化窗口的 client 等于 window rect，而 Windows 会把
+   后者扩到工作区外加一条不可见 resize border——150% 下每边 11 px。
+   必须在 `WM_NCCALCSIZE` 里对 `IsZoomed` 的窗口把 client 设成
+   `MONITORINFO.rcWork`，否则内容从三边压到任务栏下面。
+
+另外，`WM_MOVING`/`WM_SIZING` 不会进 `QAbstractNativeEventFilter`（它们在
+Qt 的 `isInputMessage` 里被排除）；判断原生 modal loop 是否跑过要看
+`WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE`。复现、脚本、逐帧数据和截图：
+[`bench/qt-window-spike/`](../../bench/qt-window-spike/README.md)。
+
 ## 6. 已知代价（写在前面，不做事后解释）
 
 - 视图层是 QML + JS，不是 Rust。心智模型与 React 接近，但确实是第二种语言。
@@ -304,6 +356,10 @@ A 是路径栏，`textChanged` 实时回写镜像；B 贴屏幕右下角；C 在
 - **Windows IME 的失焦语义**：Qt 6.12 的 `QWindowsInputContext::reset()` 在焦点对象
   变化时把原始组合串提交给旧控件；壳里必须在换焦点前调用 `CPS_CANCEL`（§5.2 的
   守卫，约 50 行）。换 `QTextEdit` 不能规避——行为在平台输入上下文，不在文本控件。
+- **自绘标题栏的原生细节**（§5.3）：最大化按钮必须常驻 `HTMAXBUTTON`，而
+  DefWindowProc 的 NC 按钮跟踪会吞掉 `WM_NCLBUTTONUP`——壳里必须等物理按键
+  释放后再调用窗口状态 API；这个按钮的 hover 也要用 `WM_NCMOUSEMOVE` 自己
+  转发。最大化时 `WM_NCCALCSIZE` 还必须把 client 修正到工作区。
 
 ## 7. 回退
 
@@ -380,8 +436,8 @@ rust: number -> 2
 `#[qinvokable]`」这一整条链。**`qml/` 这一层写 QML、`crates/dae-qt` 这一层写
 Rust 对象的分工，从这一刻起是有实测支撑的，不再是纸面方案。**
 
-### 8.5 因此仍未解决的两件事
+### 8.5 因此仍未解决的一件事
 
-1. **`lib.rs` 里 `window_material` 的 Mica/acrylic 要接到 `QWindow` 的 HWND 上** —— 
-   代码在，但 WndProc 子类化 + 自绘标题栏是另一条链，§5 门槛 3 照旧待测。
-2. **PGO / BOLT 的 C++ 那一半** —— 见 §6，仍未动。
+1. **PGO / BOLT 的 C++ 那一半** —— 见 §6，仍未动。
+
+（`window_material` 的 Mica/Acrylic 已接到 `QWindow` 的 HWND 上，见 §5.3。）
