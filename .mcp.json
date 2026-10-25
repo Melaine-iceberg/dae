@@ -13,6 +13,10 @@
         "-y",
         "@solar-icons/mcp"
       ]
+    },
+    "qt-docs": {
+      "type": "http",
+      "url": "https://qt-docs-mcp.qt.io/mcp"
     }
   }
 }
