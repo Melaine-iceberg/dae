@@ -16,17 +16,16 @@ use super::error::FileSystemError;
 use super::local::{self, DirectoryListing, DirectoryListingCursor};
 use super::types::{DirectoryEntry, DirectoryView, canonical_path};
 use super::watch;
+use dae_core::host::{Event as UiEvent, Host};
 use serde::Serialize;
 use specta::Type;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use tauri::Manager;
 use tauri::ipc::{Channel, InvokeResponseBody};
-use tauri_specta::Event;
 
 /// Entries in the batch `read_directory` answers with. Small enough that a
 /// large directory paints long before its walk has finished.
@@ -69,9 +68,15 @@ pub enum BatchSink {
 }
 
 impl BatchSink {
-    /// Delivers one batch. `false` means the other end is gone — the app is
-    /// shutting down, or the webview dropped the channel — and the emitter
-    /// should stop instead of packing batches nobody will read.
+    /// Delivers one batch. `false` means the other end is gone — the webview
+    /// dropped the channel — and the emitter should stop instead of packing
+    /// batches nobody will read.
+    ///
+    /// Only the channel arm can say so. The event arm always reports success:
+    /// `Host::emit` has no failure channel by design (a `Result` there would
+    /// make every OS watcher invent a policy for "nobody is listening"), and
+    /// Tauri's `emit` did not report a missing listener either — it reported a
+    /// dead event loop, which is a shutdown, where the extra batch is free.
     ///
     /// `done` travels differently per transport and that is deliberate: an event
     /// says so in a field, a packet says so in its header flags, because the
@@ -82,7 +87,7 @@ impl BatchSink {
     /// it emits, and the raw channel never has to spell one.
     fn send(
         &self,
-        app: &tauri::AppHandle,
+        host: &dyn Host,
         stream_id: &str,
         path: &str,
         rows: Vec<ListingRow>,
@@ -91,7 +96,7 @@ impl BatchSink {
         match self {
             Self::Events => {
                 let base = entry_codec::base_of(path);
-                DirectoryEntriesBatch {
+                host.emit(UiEvent::DirectoryEntries {
                     stream_id: stream_id.to_owned(),
                     path: path.to_owned(),
                     entries: rows
@@ -99,9 +104,8 @@ impl BatchSink {
                         .map(|row| row.into_entry(&base))
                         .collect(),
                     done,
-                }
-                .emit(app)
-                .is_ok()
+                });
+                true
             }
             Self::Channel(channel) => {
                 let flags = if done { HEADER_FLAG_FINAL } else { 0 };
@@ -157,8 +161,17 @@ impl DirectoryListingState {
 /// longer knows are ignored: the listing may already have finished.
 #[tauri::command]
 #[specta::specta]
-pub fn cancel_directory_listing(stream_id: String, app: tauri::AppHandle) {
-    app.state::<DirectoryListingState>().cancel(&stream_id);
+pub fn cancel_directory_listing(stream_id: String) {
+    state().cancel(&stream_id);
+}
+
+/// The process-wide registry of live listings.
+///
+/// One app per process, so this is the lifetime Tauri's managed state had. The
+/// type stays constructible per test.
+fn state() -> &'static DirectoryListingState {
+    static STATE: OnceLock<DirectoryListingState> = OnceLock::new();
+    STATE.get_or_init(DirectoryListingState::default)
 }
 
 /// Opens a streamed listing: reserves `stream_id`, reads the first batch, and
@@ -179,17 +192,16 @@ pub fn cancel_directory_listing(stream_id: String, app: tauri::AppHandle) {
 /// A directory that fits in one batch comes back complete, with its
 /// reservation already released, and streams nothing.
 pub fn open_streamed_listing(
-    app: &tauri::AppHandle,
+    host: Arc<dyn Host>,
     requested_path: PathBuf,
     stream_id: String,
     watcher_id: Option<String>,
     sink: BatchSink,
 ) -> Result<DirectoryView, FileSystemError> {
-    let state = app.state::<DirectoryListingState>();
     // Reserved before the directory is opened so that a cancellation arriving
     // while the head is still being read takes effect instead of being
     // ignored as an unknown id.
-    let cancelled = state.register(&stream_id);
+    let cancelled = state().register(&stream_id);
 
     // Canonicalized once, so the watcher that may be armed below names the
     // same directory the view reports; the frontend matches events against the
@@ -197,31 +209,31 @@ pub fn open_streamed_listing(
     let path = match canonical_path(&requested_path) {
         Ok(path) => path,
         Err(error) => {
-            state.forget(&stream_id);
+            state().forget(&stream_id);
             return Err(error.into());
         }
     };
 
     if let Some(watcher_id) = &watcher_id {
-        watch::arm_local_watcher(app, path.clone(), watcher_id);
+        watch::arm_local_watcher(Arc::clone(&host), path.clone(), watcher_id);
     }
 
     let head = match local::open_canonical_listing(path, FIRST_BATCH_SIZE) {
         Ok(head) => head,
         Err(error) => {
-            state.forget(&stream_id);
+            state().forget(&stream_id);
             return Err(error);
         }
     };
 
     let DirectoryListing { mut view, cursor } = head;
     let Some(cursor) = cursor else {
-        state.forget(&stream_id);
+        state().forget(&stream_id);
         return Ok(view);
     };
 
     view.stream_id = Some(stream_id.clone());
-    spawn_listing_reader(app, stream_id, view.path.clone(), cursor, cancelled, sink);
+    spawn_listing_reader(host, stream_id, view.path.clone(), cursor, cancelled, sink);
     Ok(view)
 }
 
@@ -232,7 +244,7 @@ pub fn open_streamed_listing(
 /// checks it before every batch, and the emitter drops queued batches as soon
 /// as it is set.
 fn spawn_listing_reader(
-    app: &tauri::AppHandle,
+    host: Arc<dyn Host>,
     stream_id: String,
     path: String,
     cursor: DirectoryListingCursor,
@@ -245,7 +257,7 @@ fn spawn_listing_reader(
     // into events, so the reader never waits on the IPC while it could be
     // reading the next batch off the disk.
     spawn_batch_emitter(
-        app.clone(),
+        host,
         stream_id.clone(),
         path,
         Arc::clone(&cancelled),
@@ -254,17 +266,16 @@ fn spawn_listing_reader(
     );
 
     // The I/O half: owns the directory iterator until it is exhausted.
-    let app = app.clone();
     thread::spawn(move || {
         read_remaining_batches(cursor, batch_tx, &cancelled);
         // Releasing the sender ends the emitter once it drained the batches
         // that were already in flight.
-        app.state::<DirectoryListingState>().forget(&stream_id);
+        state().forget(&stream_id);
     });
 }
 
 fn spawn_batch_emitter(
-    app: tauri::AppHandle,
+    host: Arc<dyn Host>,
     stream_id: String,
     path: String,
     cancelled: Arc<AtomicBool>,
@@ -281,7 +292,7 @@ fn spawn_batch_emitter(
 
             // A delivery that fails ends the stream: the reader thread would
             // otherwise keep packing batches into a channel nobody holds.
-            if !sink.send(&app, &stream_id, &path, rows, done) {
+            if !sink.send(host.as_ref(), &stream_id, &path, rows, done) {
                 return;
             }
 
@@ -328,7 +339,48 @@ fn next_batch_size(current: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::file_system::types::EntryKind;
+    use crate::host::testing::RecordingHost;
     use std::fs;
+
+    /// The event arm of the sink feeds the sidebar and the Miller columns. It has
+    /// to spell every row against the directory before handing it over: only the
+    /// packet arm is allowed to leave that to the webview, because only it has a
+    /// decoder on the other end.
+    #[test]
+    fn an_events_sink_spells_the_rows_and_hands_the_batch_to_the_seam() {
+        let recorder = Arc::new(RecordingHost::default());
+        let host: Arc<dyn Host> = recorder.clone();
+        let row = ListingRow {
+            name: "a.txt".to_owned(),
+            path: None,
+            kind: EntryKind::File,
+            modified_at: Some(1),
+            size: Some(2),
+            hidden: false,
+            read_only: false,
+        };
+
+        assert!(BatchSink::Events.send(host.as_ref(), "s-1", "remote:/dir/", vec![row], true));
+
+        let events = recorder.take();
+        let [
+            UiEvent::DirectoryEntries {
+                stream_id,
+                path,
+                entries,
+                done,
+            },
+        ] = events.as_slice()
+        else {
+            panic!("expected one listing event, got {events:?}");
+        };
+        assert_eq!(stream_id, "s-1");
+        assert_eq!(path, "remote:/dir/");
+        assert!(done);
+        assert_eq!(entries[0].path, "remote:/dir/a.txt");
+        assert_eq!(entries[0].name, "a.txt");
+    }
 
     #[test]
     fn collects_the_unread_remainder_across_batches() {

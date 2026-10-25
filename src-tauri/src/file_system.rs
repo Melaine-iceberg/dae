@@ -37,4 +37,4 @@ pub(crate) mod test_support;
 
 pub use search::FileSearchState;
 pub use undo::UndoRedoState;
-pub use watch::{DirectoryChanged, DirectoryWatcher};
+pub use watch::DirectoryChanged;

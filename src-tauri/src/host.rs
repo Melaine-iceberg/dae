@@ -65,6 +65,23 @@ impl Host for TauriHost {
                 }
                 .emit(&self.app);
             }
+            Event::DirectoryChanged { path, names } => {
+                let _ = crate::file_system::watch::DirectoryChanged { path, names }.emit(&self.app);
+            }
+            Event::DirectoryEntries {
+                stream_id,
+                path,
+                entries,
+                done,
+            } => {
+                let _ = crate::file_system::listing::DirectoryEntriesBatch {
+                    stream_id,
+                    path,
+                    entries,
+                    done,
+                }
+                .emit(&self.app);
+            }
         }
     }
 }

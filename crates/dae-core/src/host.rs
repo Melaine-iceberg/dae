@@ -60,6 +60,19 @@ pub enum Event {
         total: Option<u64>,
         current_path: Option<String>,
     },
+    /// A directory changed. `names` empty means the change is *not attributable
+    /// to a row* — the watcher errored or a backend only knows "something
+    /// differs" — and the only honest answer is to re-read the directory.
+    DirectoryChanged { path: String, names: Vec<String> },
+    /// One batch of a streamed listing. The head (`read_directory`'s response)
+    /// and these batches together form the complete directory.
+    DirectoryEntries {
+        stream_id: String,
+        path: String,
+        entries: Vec<crate::types::DirectoryEntry>,
+        /// True on the final batch: the listing is complete.
+        done: bool,
+    },
 }
 
 /// What a module needs in order to report. Implemented once per shell.

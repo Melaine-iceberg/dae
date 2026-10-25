@@ -10,7 +10,6 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
-use tauri::Manager;
 
 /// Git 工作区徽标类型，对应文件管理器中的 M/A/U 状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -43,22 +42,27 @@ pub struct GitDirectoryStatus {
     pub directory_untracked: bool,
 }
 
+/// The process-wide scan cache.
+///
+/// One app per process, so this is the lifetime Tauri's managed state had —
+/// without a window handle between the directory watcher and the cache it has
+/// to invalidate. Tests construct `GitStatusCache::default()` directly and stay
+/// isolated from this slot.
+pub(crate) fn status_cache() -> &'static GitStatusCache {
+    static CACHE: std::sync::OnceLock<GitStatusCache> = std::sync::OnceLock::new();
+    CACHE.get_or_init(GitStatusCache::default)
+}
+
 /// 读取一个目录的 Git 装饰信息：当前分支与直接子项的 M/A/U 徽标。
 /// 目录不在 Git 工作区内时返回 `None`。git2 的状态扫描在阻塞线程池
 /// 执行，不会阻塞异步运行时或 UI；扫描结果按工作区根缓存（见
 /// [`GitStatusCache`]），所以同一个工作区里的相邻目录只付一次扫描。
 #[tauri::command]
 #[specta::specta]
-pub async fn get_git_status(
-    path: String,
-    app: tauri::AppHandle,
-) -> Result<Option<GitDirectoryStatus>, FileSystemError> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let cache = app.state::<GitStatusCache>();
-        git_status_cached(&path, &cache)
-    })
-    .await
-    .map_err(|error| FileSystemError::Internal(error.to_string()))?
+pub async fn get_git_status(path: String) -> Result<Option<GitDirectoryStatus>, FileSystemError> {
+    tauri::async_runtime::spawn_blocking(move || git_status_cached(&path, status_cache()))
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
 /// How long one worktree-wide scan may keep answering directory reads.

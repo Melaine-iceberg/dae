@@ -169,13 +169,13 @@ async fn read_directory_into(
     // watcher polls, and is armed before the read for the same reason the
     // local one is (see [`listing::open_streamed_listing`]).
     if !vfs::is_local_path(&path) {
-        let watch_app = app.clone();
+        let watch_host = host::of(&app);
         return tauri::async_runtime::spawn_blocking(move || {
             let backend = vfs::resolve(&path)?;
 
             if let Some(watcher_id) = &watcher_id {
                 super::watch::arm_polling_watcher(
-                    &watch_app,
+                    watch_host,
                     &path,
                     SharedBackend::clone(&backend),
                     watcher_id,
@@ -188,10 +188,16 @@ async fn read_directory_into(
         .map_err(|error| FileSystemError::Internal(error.to_string()))?;
     }
 
-    let listing_app = app.clone();
+    let listing_host = host::of(&app);
     let listing_path = PathBuf::from(path);
     tauri::async_runtime::spawn_blocking(move || {
-        listing::open_streamed_listing(&listing_app, listing_path, stream_id, watcher_id, sink)
+        listing::open_streamed_listing(
+            listing_host,
+            listing_path,
+            stream_id,
+            watcher_id,
+            sink,
+        )
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?

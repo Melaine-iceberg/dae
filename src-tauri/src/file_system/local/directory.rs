@@ -4,13 +4,12 @@ use crate::file_system::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, canonical_path, entry_sort_key,
     name_order, path_to_string,
 };
-use crate::file_system::watch::DirectoryChanged;
+use dae_core::host::{Event as UiEvent, Host};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rayon::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tauri::Manager;
-use tauri_specta::Event;
+use std::sync::Arc;
 
 #[cfg(windows)]
 use windows::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_READONLY};
@@ -24,7 +23,7 @@ use windows::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_HIDDEN, FILE_ATTRIBUTE_
 /// against the rows it holds.
 pub fn create_directory_watcher(
     path: PathBuf,
-    app: tauri::AppHandle,
+    host: Arc<dyn Host>,
 ) -> Result<RecommendedWatcher, FileSystemError> {
     let event_path = path_to_string(&path);
     let watched = path.clone();
@@ -48,14 +47,12 @@ pub fn create_directory_watcher(
             // or it would keep answering with the badges from before
             // (`git::GitStatusCache`). Sent before the event, so the refresh the
             // event triggers finds the cache already invalidated.
-            app.state::<crate::file_system::git::GitStatusCache>()
-                .note_change();
+            crate::file_system::git::status_cache().note_change();
 
-            let _ = DirectoryChanged {
+            host.emit(UiEvent::DirectoryChanged {
                 path: event_path.clone(),
                 names,
-            }
-            .emit(&app);
+            });
         })
         .map_err(|error| FileSystemError::Io(error.to_string()))?;
 

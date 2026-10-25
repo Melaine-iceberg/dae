@@ -21,7 +21,7 @@ pub enum EntryKind {
     Other,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DirectoryEntry {
     pub name: String,

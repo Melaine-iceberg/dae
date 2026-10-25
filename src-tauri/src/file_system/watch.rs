@@ -4,18 +4,16 @@
 use crate::file_system::local;
 use crate::file_system::types::{DirectoryView, entry_kind_rank, path_to_string};
 use crate::file_system::vfs::SharedBackend;
+use dae_core::host::{Event as UiEvent, Host};
 use notify::RecommendedWatcher;
 use serde::Serialize;
 use specta::Type;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
-use tauri::Manager;
-use tauri_specta::Event;
 
 /// How long to wait between polls of a remote directory, and the ceiling that
 /// wait backs off to while nothing changes.
@@ -46,13 +44,6 @@ pub struct DirectoryChanged {
     /// differs". A caller then has to re-read; a non-empty list is everything it
     /// needs to repair a listing it already holds.
     pub names: Vec<String>,
-}
-
-impl DirectoryChanged {
-    /// A change that can only be answered by re-reading the directory.
-    pub fn resync(path: String) -> Self {
-        Self { path, names: Vec::new() }
-    }
 }
 
 /// The active observation. Dropping a `Notify` handle stops its OS watcher;
@@ -180,8 +171,19 @@ impl DirectoryWatcher {
 /// pane unmounted, its tab closed — and must be safe to call more than once.
 #[tauri::command]
 #[specta::specta]
-pub fn unwatch_directory(watcher_id: String, app: tauri::AppHandle) {
-    app.state::<DirectoryWatcher>().release(&watcher_id);
+pub fn unwatch_directory(watcher_id: String) {
+    registry().release(&watcher_id);
+}
+
+/// The process-wide registry of observations.
+///
+/// One app per process, so this is the same lifetime Tauri's managed state had,
+/// without a window handle standing between the watchers and their bookkeeping.
+/// The type is still constructible per test (`DirectoryWatcher::default()`), so
+/// the tests below do not share this slot.
+fn registry() -> &'static DirectoryWatcher {
+    static REGISTRY: OnceLock<DirectoryWatcher> = OnceLock::new();
+    REGISTRY.get_or_init(DirectoryWatcher::default)
 }
 
 /// Arms the OS watcher for a local directory under `watcher_id`, re-targeting
@@ -194,18 +196,17 @@ pub fn unwatch_directory(watcher_id: String, app: tauri::AppHandle) {
 /// Failing to watch is not fatal: the explorer still lists the directory, it
 /// just stops seeing live changes, so the error is logged rather than
 /// propagated into the read the user is waiting for.
-pub fn arm_local_watcher(app: &tauri::AppHandle, canonical_path: PathBuf, watcher_id: &str) {
-    let watchers = app.state::<DirectoryWatcher>();
-    let Some(generation) = watchers.claim(watcher_id, &canonical_path) else {
+pub fn arm_local_watcher(host: Arc<dyn Host>, canonical_path: PathBuf, watcher_id: &str) {
+    let Some(generation) = registry().claim(watcher_id, &canonical_path) else {
         return;
     };
 
-    match local::create_directory_watcher(canonical_path.clone(), app.clone()) {
+    match local::create_directory_watcher(canonical_path.clone(), host) {
         Ok(watcher) => {
-            watchers.install(watcher_id, generation, WatchHandle::Notify(watcher));
+            registry().install(watcher_id, generation, WatchHandle::Notify(watcher));
         }
         Err(error) => {
-            watchers.abandon(watcher_id, generation);
+            registry().abandon(watcher_id, generation);
             log::warn!(
                 "Unable to watch {} for changes: {error}",
                 path_to_string(&canonical_path)
@@ -218,18 +219,17 @@ pub fn arm_local_watcher(app: &tauri::AppHandle, canonical_path: PathBuf, watche
 /// `watcher_id`, re-targeting the view's observation if it pointed elsewhere.
 /// Failures are logged, never fatal (see [`arm_local_watcher`]).
 pub fn arm_polling_watcher(
-    app: &tauri::AppHandle,
+    host: Arc<dyn Host>,
     path: &str,
     backend: SharedBackend,
     watcher_id: &str,
 ) {
-    let watchers = app.state::<DirectoryWatcher>();
-    let Some(generation) = watchers.claim(watcher_id, Path::new(path)) else {
+    let Some(generation) = registry().claim(watcher_id, Path::new(path)) else {
         return;
     };
 
-    let handle = spawn_polling_watcher(path.to_owned(), backend, app.clone());
-    watchers.install(watcher_id, generation, handle);
+    let handle = spawn_polling_watcher(path.to_owned(), backend, host);
+    registry().install(watcher_id, generation, handle);
 }
 
 /// Watches `path` on `backend` by diffing directory snapshots until the
@@ -239,7 +239,7 @@ pub fn arm_polling_watcher(
 pub fn spawn_polling_watcher(
     path: String,
     backend: SharedBackend,
-    app: tauri::AppHandle,
+    host: Arc<dyn Host>,
 ) -> WatchHandle {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_flag = Arc::clone(&stop);
@@ -275,7 +275,10 @@ pub fn spawn_polling_watcher(
                     // Something is happening, so go back to watching closely.
                     // A poll only learns *that* the directory differs, never
                     // which rows, so this stays the re-read form.
-                    let _ = DirectoryChanged::resync(view.path.clone()).emit(&app);
+                    host.emit(UiEvent::DirectoryChanged {
+                        path: view.path.clone(),
+                        names: Vec::new(),
+                    });
                 }
                 // A transient read error skips a tick instead of killing the
                 // poller, so a briefly unreachable server does not blind the
