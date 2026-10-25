@@ -1,0 +1,141 @@
+{
+  "delegates_created": 236,
+  "frame": {
+    "cadence_ms": {
+      "max": 153.55,
+      "mean": 8.44,
+      "p50": 8.32,
+      "p95": 9.54,
+      "p99": 12.2
+    },
+    "count": 1422,
+    "cpu_ms": {
+      "max": 171.88,
+      "mean": 2.98,
+      "p50": 0.0,
+      "p95": 15.63,
+      "p99": 31.25
+    },
+    "fps": 118.2,
+    "gui_ms": {
+      "max": 6.38,
+      "mean": 0.7,
+      "p50": 0.54,
+      "p95": 1.36,
+      "p99": 4.31
+    },
+    "render": {
+      "count": 1423,
+      "paint_ms": {
+        "max": 6.33,
+        "mean": 0.9,
+        "p50": 0.89,
+        "p95": 1.28,
+        "p99": 1.67
+      },
+      "sync_ms": {
+        "max": 1.42,
+        "mean": 0.2,
+        "p50": 0.18,
+        "p95": 0.36,
+        "p99": 0.71
+      },
+      "total_ms": {
+        "max": 6.5,
+        "mean": 1.12,
+        "p50": 1.1,
+        "p95": 1.57,
+        "p99": 2.31
+      }
+    },
+    "seconds": 12.03,
+    "work_ms": {
+      "max": 12.88,
+      "mean": 1.82,
+      "p50": 1.64,
+      "p95": 2.93,
+      "p99": 6.62
+    }
+  },
+  "gate": {
+    "pass": true,
+    "pss": 115.64,
+    "pss_mb": 250.0,
+    "pss_pass": true,
+    "scroll_cadence_p95": 9.54,
+    "scroll_gui_p95": 1.36,
+    "scroll_p95": 2.93,
+    "scroll_p95_ms": 8.0,
+    "scroll_pass": true,
+    "scroll_render_p95": 1.57
+  },
+  "kind": "qt-list-spike",
+  "load": {
+    "batches": 19,
+    "ms": 260.88840000000005
+  },
+  "memory": [
+    {
+      "at_ms": 550,
+      "label": "process-start",
+      "peak_working_set_mb": 56.23,
+      "private_mb": 29.8,
+      "pss_mb": 17.71,
+      "working_set_mb": 50.34
+    },
+    {
+      "at_ms": 815,
+      "label": "loaded",
+      "peak_working_set_mb": 93.67,
+      "private_mb": 99.8,
+      "pss_mb": 40.67,
+      "working_set_mb": 87.56
+    },
+    {
+      "at_ms": 2619,
+      "label": "begin",
+      "peak_working_set_mb": 173.08,
+      "private_mb": 149.17,
+      "pss_mb": 92.41,
+      "working_set_mb": 173.08
+    },
+    {
+      "at_ms": 7638,
+      "label": "scroll",
+      "peak_working_set_mb": 207.87,
+      "private_mb": 178.96,
+      "pss_mb": 122.39,
+      "working_set_mb": 203.87
+    },
+    {
+      "at_ms": 12634,
+      "label": "scroll",
+      "peak_working_set_mb": 207.87,
+      "private_mb": 180.57,
+      "pss_mb": 123.65,
+      "working_set_mb": 205.59
+    },
+    {
+      "at_ms": 14637,
+      "label": "end",
+      "peak_working_set_mb": 207.87,
+      "private_mb": 172.55,
+      "pss_mb": 115.64,
+      "working_set_mb": 197.65
+    }
+  ],
+  "patch": {
+    "count": 48,
+    "max_us": 738.0,
+    "p50_us": 390.0,
+    "p95_us": 600.0
+  },
+  "qt_version": "6.12.0",
+  "rhi_backend": "d3d11",
+  "rows": 120000,
+  "vsync_off": true,
+  "workload": {
+    "jumps": true,
+    "patches": true
+  }
+}

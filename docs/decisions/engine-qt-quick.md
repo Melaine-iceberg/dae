@@ -1,6 +1,6 @@
-# 引擎从 WebView 换成 Qt Quick：**已定方向，spike 未做**
+# 引擎从 WebView 换成 Qt Quick：**已定方向，门槛 1 已过**
 
-> **状态：方向已定，工具链已实测通过，四组 UX/性能门槛未测。** 分支 `refactor/qt-quick`。
+> **状态：方向已定，工具链已实测通过；门槛 1 已通过（§5.1），其余三组待测。** 分支 `refactor/qt-quick`。
 > 本文记录的是「为什么离开系统 WebView」「为什么是 Qt Quick 而不是 egui / Slint / GPUI」
 > 「许可证为什么是 GPL-3.0-or-later」，以及**定案前必须量出来的四组数字**。
 > 其中的门槛数字全部是待验证的假设，不是结论 —— 与 `docs/decisions/README.md`
@@ -189,19 +189,58 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
 
 切片八已完成，施工单保留作验收记录与踩坑清单：
 [`../slice-8-core-extraction.md`](../slice-8-core-extraction.md)。
-接下来是 §5 的四个 Qt 门槛 spike——它们现在可以直接吃 `dae-core::fs` 的真数据。
+§5 的门槛 1（12 万行列表）已经用 `dae-core::fs::listing` 的真批次量完（§5.1）；
+余下三组——中文 IME、无边框 + Mica 窗口、撕出内存——仍待测。
 
 ## 5. 定案前必须量出来的四组数字
 
 | # | 待验证 | 门槛 | 不达标怎么办 |
 |---|---|---|---|
-| 1 | Rust `QAbstractListModel` + QML `ListView.reuseItems` 跑 12 万行 + 增量补丁 | 滚动 p95 ≤ 8 ms，PSS ≤ 250 MB | 委托改为 `QQuickItem` 自绘 / 分页模型 / 回到 egui |
+| 1 | Rust `QAbstractListModel` + QML `ListView.reuseItems` 跑 12 万行 + 增量补丁 | **已达标：**每帧工作 p95 最差 **5.68 ms**（3×12 s），PSS 滚动峰值最差 **123.7 MB**（全 CJK）—— §5.1 | 委托改为 `QQuickItem` 自绘 / 分页模型 / 回到 egui |
 | 2 | QML 自定义样式 `TextInput` 里的中文 IME | 预编辑不丢字、候选窗不偏位、组字可取消 | 该输入框回退到 `QTextEdit`-based 原生控件 |
 | 3 | Win11 无边框 + Mica + 自绘标题栏 + 拖动/缩放/贴靠 | 全正常，DWM 切换不闪；复用 `window_material` 的 raw Win32 | 保留系统标题栏（放弃自绘 chrome） |
 | 4 | 单窗口撕出 / 关闭的内存与延迟增量 | ≤ 20 MB / 窗口；撕出 ≤ 150 ms | 恢复预热池（但这意味着内存目标放弃） |
 
 对照基线（现有实测）：**447–483 MB PSS**（1 窗口）、**+190–200 MB / tab**、
 WebView2/WebKitGTK 创建 **270–340 ms**、预热池 **+200 MB**。
+
+### 5.1 门槛 1 实测：12 万行列表（2026-10-25，Windows 11）
+
+**通过。** 12 万个真实目录条目经 `open_streamed_listing`（512 条头 + 18 个流式批次，
+共 19 批）进入 Rust `QAbstractListModel`，QML `ListView.reuseItems: true` 渲染。
+负载包含每秒一次的随机跳转和每 250 ms 对 24 个可见行的一次 `dataChanged`。
+
+| 指标 | 3 次 12 s（vsync off） | 门槛 |
+|---|---:|---:|
+| **每帧工作 p95**（GUI 忙时 + 渲染 sync+paint） | **3.93 / 5.68 / 2.14 ms** | ≤ 8 ms |
+| GUI 线程忙时 p95 | 2.84 / 4.71 / 1.15 ms | — |
+| 渲染线程 sync+paint p95 | 1.09 / 0.98 / 0.99 ms | — |
+| `frameSwapped` 间隔 p95（120 Hz） | 9.77 / 12.23 / 9.03 ms | — |
+| **PSS** | **61.2 / 58.2 / 57.8 MB** | ≤ 250 MB |
+| 委托对象创建数 | 236（三次相同） | 证明 `reuseItems` 生效 |
+
+补充实测：
+
+- **全 CJK 名字**（120k，最坏情况）：工作 p95 **2.93 ms**，PSS 结束值 **115.6 MB**、
+  滚动中峰值 **123.7 MB**。首个 CJK 名字触发字体回退，一次性增加约 52 MB
+  （loaded 40.7 MB → settle 结束 92.4 MB），滚动前几秒字形缓存继续升温到 ~124 MB。
+- **这不是泄漏**：混合名字的 60 s 无跳转运行从 begin 的 47.4 MB 涨到 ~55 MB 后
+  平坦，结束时 56.7 MB；60 s 带跳转的运行在 44.1 MB 起步，全程在 57–58.6 MB 之间，
+  没有出现字体回退台阶。混合 fixture 只有在随机跳转恰好落到 CJK 名字时才会付这笔
+  52 MB，已提交的运行没有命中。真实壳应当在启动时预载 CJK 回退字体，否则滚动到
+  第一个中文名字会同步付出这笔加载。
+- **vsync on** 的同一负载：工作 p95 **2.47 ms**，与 vsync off 持平——瓶颈不在垂直同步。
+- **236 个委托** ≈ 2,600 px `cacheBuffer` 覆盖的行数；12–60 s 的滚动没有新增委托，
+  `reuseItems` 确实在复用。
+
+**8 ms 门槛量的是「每帧工作量」，不是 `frameSwapped` 间隔。** 本机显示器是 120 Hz，
+空列表的间隔也是 8.33 ms；实测 `QSG_NO_VSYNC=1` 在 D3D11 后端也解不开呈现节流。
+所以间隔只能说明有没有掉帧，成本必须拆开量：GUI 线程用
+`QAbstractEventDispatcher` 的 `awake → aboutToBlock` 忙时，渲染线程用
+`beforeSynchronizing → afterRendering` 的 sync + paint。GUI 线程在 sync 期间阻塞，
+两段互斥，把两个 p95 相加是保守的每帧成本。
+
+复现、fixture 生成和全部原始 JSON：[`bench/qt-list-spike/`](../../bench/qt-list-spike/README.md)。
 
 ## 6. 已知代价（写在前面，不做事后解释）
 
@@ -212,6 +251,8 @@ WebView2/WebKitGTK 创建 **270–340 ms**、预热池 **+200 MB**。
 - PGO / BOLT 要改造：`scripts/opt/pgo.mjs` 只 profile Rust 侧，cxx-qt 生成的 C++
   需单独加 `-fprofile-instr-generate`；先不管 C++ 侧，量过再决定。
 - 内存不会到 Slint 那个量级。目标从「30 MB」改成「**≤ 250 MB 且不随标签线性增长**」。
+  门槛 1 实测 12 万行：混合名字 ~57 MB、全 CJK ~116 MB（滚动峰值 123.7 MB），
+  没有随滚动时间增长（§5.1）。
 
 ## 7. 回退
 

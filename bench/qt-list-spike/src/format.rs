@@ -1,0 +1,73 @@
+//! Delegate text, computed on the model side.
+//!
+//! The model hands QML finished strings rather than raw numbers so a frame
+//! costs one `data()` call per role instead of a JS format in every delegate.
+
+/// Human-readable byte count. The fixture has empty files, so most rows say
+/// `0 B`; that is the real reading, not a placeholder.
+pub fn size(bytes: u64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit + 1 < UNITS.len() {
+        value /= 1024.0;
+        unit += 1;
+    }
+    format!("{value:.1} {}", UNITS[unit])
+}
+
+/// `YYYY-MM-DD HH:MM` in UTC. Calendar math is inlined (Howard Hinnant's
+/// `civil_from_days`) so the spike does not pull a date crate in just to label
+/// a row.
+pub fn timestamp(epoch_millis: u64) -> String {
+    if epoch_millis == 0 {
+        return "-".to_owned();
+    }
+    let seconds = (epoch_millis / 1000) as i64;
+    let days = seconds.div_euclid(86_400);
+    let seconds_of_day = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let hour = seconds_of_day / 3_600;
+    let minute = (seconds_of_day % 3_600) / 60;
+    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}")
+}
+
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let day_of_era = (z - era * 146_097) as u64;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era as i64 + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_prime = (5 * day_of_year + 2) / 153;
+    let day = (day_of_year - (153 * month_prime + 2) / 5 + 1) as u32;
+    let month = if month_prime < 10 {
+        month_prime + 3
+    } else {
+        month_prime - 9
+    } as u32;
+    (if month <= 2 { year + 1 } else { year }, month, day)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_a_known_epoch() {
+        // 2026-10-25T00:00:00Z
+        assert_eq!(timestamp(1_792_886_400_000), "2026-10-25 00:00");
+    }
+
+    #[test]
+    fn formats_sizes() {
+        assert_eq!(size(0), "0 B");
+        assert_eq!(size(1023), "1023 B");
+        assert_eq!(size(1024), "1.0 KB");
+        assert_eq!(size(1024 * 1024 * 3 / 2), "1.5 MB");
+    }
+}

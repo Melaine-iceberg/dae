@@ -82,3 +82,5 @@ NOTES.md
 # are not source. See bench/qt-toolchain/README.md.
 /bench/*/target/
 /bench/*/Cargo.lock
+# qmlls writes this next to a QML project; it holds machine-specific paths.
+/bench/*/.qmlls.ini
