@@ -328,10 +328,15 @@ pub fn run() {
             }
 
             // Answer the startup surface's queries while the webview loads
-            // so the first paint resolves them from memory.
-            file_system::prefetch::warm_startup_data(
-                file_system::places::resolve_system_places(app.handle()).ok(),
-            );
+            // so the first paint resolves them from memory. Resolving the
+            // places needs the window manager and can block on a network
+            // profile, so it stays off the setup thread like the rest.
+            let prefetch_handle = app.handle().clone();
+            std::thread::spawn(move || {
+                file_system::prefetch::warm_startup_data(
+                    file_system::places::resolve_system_places(&prefetch_handle).ok(),
+                );
+            });
             tab_perf::mark_at(&main_label, "prefetch", tab_perf::now_ms());
 
             #[cfg(not(debug_assertions))]
