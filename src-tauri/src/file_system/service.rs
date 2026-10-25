@@ -14,6 +14,7 @@ use super::types::{
 use super::undo::{self, Operation, TrashRecord, UndoRedoOutcome};
 use super::vfs::{self, SharedBackend};
 use std::collections::HashSet;
+use dae_core::fs::listing::{BatchTarget, EventsTarget};
 use dae_core::host::Host;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -58,8 +59,8 @@ pub async fn read_directory(
         path,
         stream_id,
         watcher_id,
-        host,
-        listing::BatchSink::Events,
+        Arc::clone(&host),
+        Arc::new(EventsTarget::new(host)),
     )
     .await
 }
@@ -91,7 +92,7 @@ pub(crate) async fn read_directory_into(
     stream_id: String,
     watcher_id: Option<String>,
     host: Arc<dyn Host>,
-    sink: listing::BatchSink,
+    target: Arc<dyn BatchTarget>,
 ) -> Result<DirectoryView, FileSystemError> {
     // 这里原先会消费 `prefetch::warm_startup_data` 预读的目录快照，但那条路径
     // 从来没有生效过：唯一会被预读的是 home 目录，而它只由 `initialize()` 读取，
@@ -132,7 +133,7 @@ pub(crate) async fn read_directory_into(
             listing_path,
             stream_id,
             watcher_id,
-            sink,
+            target,
         )
     })
     .await

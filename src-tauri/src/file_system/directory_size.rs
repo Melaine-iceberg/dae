@@ -21,8 +21,6 @@ use std::sync::OnceLock;
 /// How often partial totals are pushed to the UI while a scan runs.
 const SIZE_PROGRESS_INTERVAL_MS: u64 = 250;
 
-pub use crate::file_system::ipc_events::DirectorySizeProgress;
-
 /// Live scans keyed by operation id, so navigating away can stop a scan.
 #[derive(Default)]
 pub struct DirectorySizeState {

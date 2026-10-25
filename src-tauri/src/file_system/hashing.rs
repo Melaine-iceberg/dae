@@ -27,8 +27,6 @@ const HASH_CHUNK_SIZE: usize = 1024 * 1024;
 
 pub use dae_core::hashing::FileHashDigests;
 
-pub use crate::file_system::ipc_events::FileHashProgress;
-
 /// Live hash runs keyed by operation id, so closing the dialog stops a run.
 #[derive(Default)]
 pub struct FileHashState {

@@ -3,13 +3,14 @@ pub mod cloud;
 pub mod commands;
 pub mod connections;
 pub mod directory_size;
-pub mod entry_codec;
+pub use dae_core::fs::entry_codec;
 pub mod error;
 pub mod git;
 pub mod hashing;
 pub mod ipc_events;
 pub mod known_hosts;
 pub mod listing;
+pub mod listing_packets;
 pub mod local;
 #[cfg(target_os = "macos")]
 pub mod macos_trash;

@@ -28,8 +28,6 @@ use std::time::Duration;
 const POLL_INTERVAL: Duration = Duration::from_secs(4);
 const POLL_INTERVAL_MAX: Duration = Duration::from_secs(30);
 
-pub use crate::file_system::ipc_events::DirectoryChanged;
-
 /// The active observation. Dropping a `Notify` handle stops its OS watcher;
 /// a `Poll` handle owns a stop flag that its poller thread checks each tick.
 pub enum WatchHandle {

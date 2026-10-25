@@ -46,7 +46,7 @@
 use std::borrow::Cow;
 use std::fmt;
 
-use super::types::{DirectoryEntry, EntryKind};
+use crate::types::{DirectoryEntry, EntryKind};
 
 /// Marks a buffer as a packed listing. Reads as "dae, layout 2".
 pub const MAGIC: [u8; 4] = *b"DAE1";

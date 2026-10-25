@@ -11,19 +11,19 @@
 //! owns nothing but the OS directory iterator, so JSON serialization of batch
 //! *n* overlaps with the disk walk for batch *n + 1* instead of delaying it.
 
-use super::entry_codec::{self, HEADER_FLAG_FINAL, ListingRow};
+use super::entry_codec::ListingRow;
 use super::error::FileSystemError;
 use super::local::{self, DirectoryListing, DirectoryListingCursor};
 use super::types::{DirectoryView, canonical_path};
 use super::watch;
-use dae_core::host::{Event as UiEvent, Host};
+use dae_core::fs::listing::{Batch, BatchTarget};
+use dae_core::host::Host;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use tauri::ipc::{Channel, InvokeResponseBody};
 
 /// Entries in the batch `read_directory` answers with. Small enough that a
 /// large directory paints long before its walk has finished.
@@ -37,75 +37,6 @@ pub const MAX_BATCH_SIZE: usize = 8192;
 /// Batches that may sit between the reader and the emitter. Bounded so the
 /// reader cannot run ahead and hold a whole huge directory in memory.
 const PIPELINE_DEPTH: usize = 2;
-
-pub use crate::file_system::ipc_events::DirectoryEntriesBatch;
-
-/// Where the batches of a streamed listing go.
-///
-/// The explorer's own pane takes them as columnar packets over an IPC channel,
-/// which is the only transport that carries raw bytes: an event payload is
-/// evaluated as JavaScript source, so a 5 MB listing costs the webview 25 ms of
-/// parsing on the thread that paints (measured). The sidebar and the Miller
-/// columns keep taking the event, which carries `DirectoryEntry` objects
-/// directly and is what they already consume.
-pub enum BatchSink {
-    Events,
-    Channel(Channel<InvokeResponseBody>),
-}
-
-impl BatchSink {
-    /// Delivers one batch. `false` means the other end is gone — the webview
-    /// dropped the channel — and the emitter should stop instead of packing
-    /// batches nobody will read.
-    ///
-    /// Only the channel arm can say so. The event arm always reports success:
-    /// `Host::emit` has no failure channel by design (a `Result` there would
-    /// make every OS watcher invent a policy for "nobody is listening"), and
-    /// Tauri's `emit` did not report a missing listener either — it reported a
-    /// dead event loop, which is a shutdown, where the extra batch is free.
-    ///
-    /// `done` travels differently per transport and that is deliberate: an event
-    /// says so in a field, a packet says so in its header flags, because the
-    /// entries cannot express "there are no more of me".
-    ///
-    /// The rows carry names rather than paths, which is the shape the packet
-    /// wants: the events channel spells each path against the directory before
-    /// it emits, and the raw channel never has to spell one.
-    fn send(
-        &self,
-        host: &dyn Host,
-        stream_id: &str,
-        path: &str,
-        rows: Vec<ListingRow>,
-        done: bool,
-    ) -> bool {
-        match self {
-            Self::Events => {
-                let base = entry_codec::base_of(path);
-                host.emit(UiEvent::DirectoryEntries {
-                    stream_id: stream_id.to_owned(),
-                    path: path.to_owned(),
-                    entries: rows
-                        .into_iter()
-                        .map(|row| row.into_entry(&base))
-                        .collect(),
-                    done,
-                });
-                true
-            }
-            Self::Channel(channel) => {
-                let flags = if done { HEADER_FLAG_FINAL } else { 0 };
-                channel
-                    .send(InvokeResponseBody::Raw(entry_codec::pack_with_header_flags(
-                        &rows,
-                        &entry_codec::base_of(path),
-                        flags,
-                    )))
-                    .is_ok()
-            }
-        }
-    }
-}
 
 /// Live listings keyed by stream id, so navigating away stops the read
 /// instead of walking a directory nobody is looking at any more.
@@ -181,7 +112,7 @@ pub fn open_streamed_listing(
     requested_path: PathBuf,
     stream_id: String,
     watcher_id: Option<String>,
-    sink: BatchSink,
+    target: Arc<dyn BatchTarget>,
 ) -> Result<DirectoryView, FileSystemError> {
     // Reserved before the directory is opened so that a cancellation arriving
     // while the head is still being read takes effect instead of being
@@ -218,35 +149,32 @@ pub fn open_streamed_listing(
     };
 
     view.stream_id = Some(stream_id.clone());
-    spawn_listing_reader(host, stream_id, view.path.clone(), cursor, cancelled, sink);
+    spawn_listing_reader(stream_id, view.path.clone(), cursor, cancelled, target);
     Ok(view)
 }
 
-/// Streams the unread remainder of a listing as [`DirectoryEntriesBatch`]
-/// events, then stops.
+/// Streams the unread remainder of a listing to `target`, then stops.
 ///
 /// `cancelled` is the flag [`open_streamed_listing`] reserved: the reader
 /// checks it before every batch, and the emitter drops queued batches as soon
 /// as it is set.
 fn spawn_listing_reader(
-    host: Arc<dyn Host>,
     stream_id: String,
     path: String,
     cursor: DirectoryListingCursor,
     cancelled: Arc<AtomicBool>,
-    sink: BatchSink,
+    target: Arc<dyn BatchTarget>,
 ) {
     let (batch_tx, batch_rx) = sync_channel::<(Vec<ListingRow>, bool)>(PIPELINE_DEPTH);
 
     // The serialization half: one thread that does nothing but turn batches
-    // into events, so the reader never waits on the IPC while it could be
+    // into deliveries, so the reader never waits on the IPC while it could be
     // reading the next batch off the disk.
     spawn_batch_emitter(
-        host,
         stream_id.clone(),
         path,
         Arc::clone(&cancelled),
-        sink,
+        target,
         batch_rx,
     );
 
@@ -260,11 +188,10 @@ fn spawn_listing_reader(
 }
 
 fn spawn_batch_emitter(
-    host: Arc<dyn Host>,
     stream_id: String,
     path: String,
     cancelled: Arc<AtomicBool>,
-    sink: BatchSink,
+    target: Arc<dyn BatchTarget>,
     batches: Receiver<(Vec<ListingRow>, bool)>,
 ) {
     thread::spawn(move || {
@@ -277,7 +204,12 @@ fn spawn_batch_emitter(
 
             // A delivery that fails ends the stream: the reader thread would
             // otherwise keep packing batches into a channel nobody holds.
-            if !sink.send(host.as_ref(), &stream_id, &path, rows, done) {
+            if !target.deliver(Batch {
+                stream_id: stream_id.clone(),
+                path: path.clone(),
+                rows,
+                done,
+            }) {
                 return;
             }
 
@@ -328,12 +260,14 @@ mod tests {
     use crate::host::testing::RecordingHost;
     use std::fs;
 
-    /// The event arm of the sink feeds the sidebar and the Miller columns. It has
-    /// to spell every row against the directory before handing it over: only the
-    /// packet arm is allowed to leave that to the webview, because only it has a
-    /// decoder on the other end.
+    /// The events target feeds the sidebar and the Miller columns. It has to
+    /// spell every row against the directory before handing it over: only the
+    /// packet target is allowed to leave that to the webview, because only it
+    /// has a decoder on the other end.
     #[test]
-    fn an_events_sink_spells_the_rows_and_hands_the_batch_to_the_seam() {
+    fn an_events_target_spells_the_rows_and_hands_the_batch_to_the_seam() {
+        use dae_core::fs::listing::EventsTarget;
+
         let recorder = Arc::new(RecordingHost::default());
         let host: Arc<dyn Host> = recorder.clone();
         let row = ListingRow {
@@ -346,11 +280,17 @@ mod tests {
             read_only: false,
         };
 
-        assert!(BatchSink::Events.send(host.as_ref(), "s-1", "remote:/dir/", vec![row], true));
+        let target = EventsTarget::new(host);
+        assert!(target.deliver(Batch {
+            stream_id: "s-1".to_owned(),
+            path: "remote:/dir/".to_owned(),
+            rows: vec![row],
+            done: true,
+        }));
 
         let events = recorder.take();
         let [
-            UiEvent::DirectoryEntries {
+            dae_core::host::Event::DirectoryEntries {
                 stream_id,
                 path,
                 entries,

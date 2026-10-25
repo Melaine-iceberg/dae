@@ -22,6 +22,7 @@
 //! actually emit events — those need [`host`] to exist before they can move,
 //! because emitting is the one thing that is genuinely engine-specific.
 pub mod error;
+pub mod fs;
 pub mod hashing;
 pub mod host;
 pub mod paths;

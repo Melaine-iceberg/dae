@@ -23,8 +23,6 @@ pub use dae_core::progress::{FileOperationKind, FileOperationPhase};
 
 const FILE_OPERATION_PROGRESS_INTERVAL: Duration = Duration::from_millis(60);
 
-pub use crate::file_system::ipc_events::FileOperationProgress;
-
 pub(super) fn emit_preparing(
     host: &dyn Host,
     operation_id: &str,

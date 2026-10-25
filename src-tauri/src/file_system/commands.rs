@@ -16,7 +16,7 @@
 use super::archive::{self, ArchiveFormat};
 use super::error::FileSystemError;
 use super::git::{self, GitBranches, GitDirectoryStatus};
-use super::listing;
+use super::listing_packets::ChannelTarget;
 use super::open_with::{self, OpenWithChoices};
 use super::preview::{self, TextPreview};
 use super::search;
@@ -37,6 +37,7 @@ use super::types::{
 };
 use super::undo::UndoRedoOutcome;
 use crate::host;
+use std::sync::Arc;
 
 /// Returns the operating system's home directory for the initial explorer view.
 #[tauri::command]
@@ -902,7 +903,7 @@ pub async fn read_directory_packets(
         stream_id,
         watcher_id,
         host::of(&app),
-        listing::BatchSink::Channel(on_batch),
+        Arc::new(ChannelTarget::new(on_batch)),
     )
     .await
 }

@@ -130,8 +130,6 @@ pub struct UndoRedoOutcome {
     pub count: u64,
 }
 
-pub use crate::file_system::ipc_events::UndoRedoChanged;
-
 /// The app-wide undo/redo stacks. All access goes through short critical
 /// sections; execution happens outside the locks on blocking threads.
 #[derive(Default)]
