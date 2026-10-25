@@ -19,6 +19,8 @@ pub mod preview;
 pub mod progress;
 pub mod recents;
 pub mod search;
+// The engine-free half of the command layer: no `tauri::`, no `AppHandle`.
+pub mod service;
 pub mod sftp;
 pub mod sidebar;
 pub mod smb;
