@@ -130,14 +130,7 @@ pub struct UndoRedoOutcome {
     pub count: u64,
 }
 
-/// Emitted whenever the undo/redo stacks change so shortcuts stay accurate.
-#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
-#[tauri_specta(event_name = "explorer-undo-redo-changed")]
-#[serde(rename_all = "camelCase")]
-pub struct UndoRedoChanged {
-    pub can_undo: bool,
-    pub can_redo: bool,
-}
+pub use crate::file_system::ipc_events::UndoRedoChanged;
 
 /// The app-wide undo/redo stacks. All access goes through short critical
 /// sections; execution happens outside the locks on blocking threads.

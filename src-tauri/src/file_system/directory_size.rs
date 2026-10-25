@@ -9,8 +9,6 @@ use super::error::FileSystemError;
 use super::types::path_to_string;
 use super::vfs::{self, Scheme};
 use ignore::{WalkBuilder, WalkState};
-use serde::Serialize;
-use specta::Type;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
@@ -23,16 +21,7 @@ use std::sync::OnceLock;
 /// How often partial totals are pushed to the UI while a scan runs.
 const SIZE_PROGRESS_INTERVAL_MS: u64 = 250;
 
-#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
-#[tauri_specta(event_name = "explorer-directory-size-progress")]
-#[serde(rename_all = "camelCase")]
-pub struct DirectorySizeProgress {
-    pub operation_id: String,
-    pub path: String,
-    pub size: u64,
-    /// False while the scan runs (partial total); true on the final total.
-    pub completed: bool,
-}
+pub use crate::file_system::ipc_events::DirectorySizeProgress;
 
 /// Live scans keyed by operation id, so navigating away can stop a scan.
 #[derive(Default)]

@@ -8,9 +8,7 @@
 use super::error::FileSystemError;
 use super::types::path_to_string;
 use super::vfs;
-use serde::Serialize;
 use sha2::Digest;
-use specta::Type;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Read};
@@ -29,21 +27,7 @@ const HASH_CHUNK_SIZE: usize = 1024 * 1024;
 
 pub use dae_core::hashing::FileHashDigests;
 
-#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
-#[tauri_specta(event_name = "explorer-file-hash-progress")]
-#[serde(rename_all = "camelCase")]
-pub struct FileHashProgress {
-    pub operation_id: String,
-    pub path: String,
-    pub bytes_read: u64,
-    pub total_bytes: u64,
-    /// False while the read runs; true on the final report.
-    pub completed: bool,
-    /// Present only in the successful final report.
-    pub digests: Option<FileHashDigests>,
-    /// Present only when the final report carries a failure.
-    pub error: Option<String>,
-}
+pub use crate::file_system::ipc_events::FileHashProgress;
 
 /// Live hash runs keyed by operation id, so closing the dialog stops a run.
 #[derive(Default)]

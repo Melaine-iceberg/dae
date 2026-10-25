@@ -6,8 +6,6 @@ use crate::file_system::types::{DirectoryView, entry_kind_rank, path_to_string};
 use crate::file_system::vfs::SharedBackend;
 use dae_core::host::{Event as UiEvent, Host};
 use notify::RecommendedWatcher;
-use serde::Serialize;
-use specta::Type;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AtomicOrdering};
@@ -30,21 +28,7 @@ use std::time::Duration;
 const POLL_INTERVAL: Duration = Duration::from_secs(4);
 const POLL_INTERVAL_MAX: Duration = Duration::from_secs(30);
 
-#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
-#[tauri_specta(event_name = "explorer-directory-changed")]
-#[serde(rename_all = "camelCase")]
-pub struct DirectoryChanged {
-    /// The directory that changed, in the spelling its listing reports.
-    pub path: String,
-    /// The children that changed, by name.
-    ///
-    /// Empty means the change is *not attributable to a row* — the watcher hit
-    /// an error (whose payload may have been dropped), reported the watched
-    /// directory itself, or came from a backend that only knows "something
-    /// differs". A caller then has to re-read; a non-empty list is everything it
-    /// needs to repair a listing it already holds.
-    pub names: Vec<String>,
-}
+pub use crate::file_system::ipc_events::DirectoryChanged;
 
 /// The active observation. Dropping a `Notify` handle stops its OS watcher;
 /// a `Poll` handle owns a stop flag that its poller thread checks each tick.

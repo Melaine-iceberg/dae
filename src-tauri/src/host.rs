@@ -55,7 +55,7 @@ impl Host for TauriHost {
             } => {
                 // Field-by-field on purpose: a field added to the wire type stops
                 // this compiling instead of silently staying at its default.
-                let _ = crate::file_system::progress::FileOperationProgress {
+                let _ = crate::file_system::ipc_events::FileOperationProgress {
                     operation_id,
                     operation,
                     phase,
@@ -66,7 +66,8 @@ impl Host for TauriHost {
                 .emit(&self.app);
             }
             Event::DirectoryChanged { path, names } => {
-                let _ = crate::file_system::watch::DirectoryChanged { path, names }.emit(&self.app);
+                let _ = crate::file_system::ipc_events::DirectoryChanged { path, names }
+                    .emit(&self.app);
             }
             Event::DirectoryEntries {
                 stream_id,
@@ -74,7 +75,7 @@ impl Host for TauriHost {
                 entries,
                 done,
             } => {
-                let _ = crate::file_system::listing::DirectoryEntriesBatch {
+                let _ = crate::file_system::ipc_events::DirectoryEntriesBatch {
                     stream_id,
                     path,
                     entries,
@@ -83,7 +84,7 @@ impl Host for TauriHost {
                 .emit(&self.app);
             }
             Event::UndoRedoChanged { can_undo, can_redo } => {
-                let _ = crate::file_system::undo::UndoRedoChanged { can_undo, can_redo }
+                let _ = crate::file_system::ipc_events::UndoRedoChanged { can_undo, can_redo }
                     .emit(&self.app);
             }
             Event::DirectorySizeProgress {
@@ -92,7 +93,7 @@ impl Host for TauriHost {
                 size,
                 completed,
             } => {
-                let _ = crate::file_system::directory_size::DirectorySizeProgress {
+                let _ = crate::file_system::ipc_events::DirectorySizeProgress {
                     operation_id,
                     path,
                     size,
@@ -109,7 +110,7 @@ impl Host for TauriHost {
                 digests,
                 error,
             } => {
-                let _ = crate::file_system::hashing::FileHashProgress {
+                let _ = crate::file_system::ipc_events::FileHashProgress {
                     operation_id,
                     path,
                     bytes_read,

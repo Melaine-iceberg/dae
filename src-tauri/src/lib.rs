@@ -667,12 +667,12 @@ pub fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             get_package_family_name
         ])
         .events(tauri_specta::collect_events![
-            file_system::DirectoryChanged,
-            file_system::listing::DirectoryEntriesBatch,
-            file_system::progress::FileOperationProgress,
-            file_system::directory_size::DirectorySizeProgress,
-            file_system::hashing::FileHashProgress,
-            file_system::undo::UndoRedoChanged,
+            file_system::ipc_events::DirectoryChanged,
+            file_system::ipc_events::DirectoryEntriesBatch,
+            file_system::ipc_events::FileOperationProgress,
+            file_system::ipc_events::DirectorySizeProgress,
+            file_system::ipc_events::FileHashProgress,
+            file_system::ipc_events::UndoRedoChanged,
             file_system::volume_monitor::VolumesChanged,
             deep_link::OpenDirectoryRequested,
             tab_windows::TabDragHover,

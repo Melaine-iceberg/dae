@@ -7,6 +7,7 @@ pub mod entry_codec;
 pub mod error;
 pub mod git;
 pub mod hashing;
+pub mod ipc_events;
 pub mod known_hosts;
 pub mod listing;
 pub mod local;
@@ -36,5 +37,3 @@ pub mod watch;
 
 #[cfg(test)]
 pub(crate) mod test_support;
-
-pub use watch::DirectoryChanged;

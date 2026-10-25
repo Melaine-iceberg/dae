@@ -14,11 +14,9 @@
 use super::entry_codec::{self, HEADER_FLAG_FINAL, ListingRow};
 use super::error::FileSystemError;
 use super::local::{self, DirectoryListing, DirectoryListingCursor};
-use super::types::{DirectoryEntry, DirectoryView, canonical_path};
+use super::types::{DirectoryView, canonical_path};
 use super::watch;
 use dae_core::host::{Event as UiEvent, Host};
-use serde::Serialize;
-use specta::Type;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
@@ -40,19 +38,7 @@ pub const MAX_BATCH_SIZE: usize = 8192;
 /// reader cannot run ahead and hold a whole huge directory in memory.
 const PIPELINE_DEPTH: usize = 2;
 
-/// One batch of a streamed listing. The head (`read_directory`'s response) and
-/// these batches together form the complete directory.
-#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
-#[tauri_specta(event_name = "explorer-directory-entries")]
-#[serde(rename_all = "camelCase")]
-pub struct DirectoryEntriesBatch {
-    /// Echoes the `stream_id` the caller passed to `read_directory`.
-    pub stream_id: String,
-    pub path: String,
-    pub entries: Vec<DirectoryEntry>,
-    /// True on the final batch: the listing is complete.
-    pub done: bool,
-}
+pub use crate::file_system::ipc_events::DirectoryEntriesBatch;
 
 /// Where the batches of a streamed listing go.
 ///

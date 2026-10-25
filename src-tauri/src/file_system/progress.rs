@@ -15,8 +15,6 @@
 
 use super::types::path_to_string;
 use dae_core::host::{Event as UiEvent, Host};
-use serde::Serialize;
-use specta::Type;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -25,19 +23,7 @@ pub use dae_core::progress::{FileOperationKind, FileOperationPhase};
 
 const FILE_OPERATION_PROGRESS_INTERVAL: Duration = Duration::from_millis(60);
 
-/// Emitted while a long operation runs. `completed` is clamped to `total` so a
-/// backend that over-counts cannot push a bar past 100%.
-#[derive(Debug, Clone, Serialize, Type, tauri_specta::Event)]
-#[tauri_specta(event_name = "explorer-file-operation-progress")]
-#[serde(rename_all = "camelCase")]
-pub struct FileOperationProgress {
-    pub operation_id: String,
-    pub operation: FileOperationKind,
-    pub phase: FileOperationPhase,
-    pub completed: u64,
-    pub total: Option<u64>,
-    pub current_path: Option<String>,
-}
+pub use crate::file_system::ipc_events::FileOperationProgress;
 
 pub(super) fn emit_preparing(
     host: &dyn Host,
