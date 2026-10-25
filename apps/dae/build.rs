@@ -6,9 +6,19 @@ use qt_build_utils::QResourceFile;
 /// relative to `qml/` even though the files come from `../../qml/`.
 const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/Main.qml", "qml/Main.qml"),
+    ("../../qml/ShellWindow.qml", "qml/ShellWindow.qml"),
+    ("../../qml/Tab.qml", "qml/Tab.qml"),
+    ("../../qml/TabStrip.qml", "qml/TabStrip.qml"),
+    ("../../qml/TerminalPanel.qml", "qml/TerminalPanel.qml"),
     ("../../qml/TitleBar.qml", "qml/TitleBar.qml"),
     ("../../qml/FileList.qml", "qml/FileList.qml"),
+    ("../../qml/Sidebar.qml", "qml/Sidebar.qml"),
+    ("../../qml/ContextMenu.qml", "qml/ContextMenu.qml"),
+    ("../../qml/NamePrompt.qml", "qml/NamePrompt.qml"),
+    ("../../qml/SettingsPanel.qml", "qml/SettingsPanel.qml"),
+    ("../../qml/Toast.qml", "qml/Toast.qml"),
     ("../../qml/TearOffWindow.qml", "qml/TearOffWindow.qml"),
+    ("../../qml/Shell.js", "qml/Shell.js"),
 ];
 
 fn main() {

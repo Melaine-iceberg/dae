@@ -77,6 +77,30 @@ pub mod qobject {
         #[qinvokable]
         fn reload(self: Pin<&mut DirectoryListModel>);
 
+        /// The row whose full path is `path`, or -1. QML uses this to keep a
+        /// renamed or newly created entry selected after the reload.
+        #[qinvokable]
+        #[cxx_name = "indexOfPath"]
+        fn index_of_path(&self, path: &QString) -> i32;
+
+        /// The full path of `row`, or an empty string. Selection ranges are
+        /// computed in QML from row indices, which only the model can turn
+        /// back into paths.
+        #[qinvokable]
+        #[cxx_name = "pathAt"]
+        fn path_at(&self, row: i32) -> QString;
+
+        /// Whether `row` is a directory, for Enter/activation.
+        #[qinvokable]
+        #[cxx_name = "isDirectoryAt"]
+        fn is_directory_at(&self, row: i32) -> bool;
+
+        /// Stops the stream and drops every row. A closed tab calls this
+        /// before it is released, so a 120k-row directory is not kept alive by
+        /// a model nobody shows.
+        #[qinvokable]
+        fn dispose(self: Pin<&mut DirectoryListModel>);
+
         #[inherit]
         #[rust_name = "begin_insert_rows"]
         unsafe fn beginInsertRows(
@@ -211,7 +235,7 @@ impl qobject::DirectoryListModel {
     fn load(mut self: Pin<&mut Self>, path: &QString) {
         let requested = path.to_string();
         if requested.trim().is_empty() {
-            self.as_mut().set_status(QString::from("no path"));
+            self.as_mut().set_status(QString::from("无路径"));
             return;
         }
 
@@ -234,7 +258,7 @@ impl qobject::DirectoryListModel {
         self.as_mut().set_loaded(0);
         self.as_mut().set_finished(false);
         self.as_mut().set_path(QString::from(requested.as_str()));
-        self.as_mut().set_status(QString::from("reading"));
+        self.as_mut().set_status(QString::from("读取中…"));
 
         let stream_id = next_stream_id();
         self.as_mut().rust_mut().stream_id = Some(stream_id.clone());
@@ -273,6 +297,51 @@ impl qobject::DirectoryListModel {
         if !path.as_slice().is_empty() {
             self.as_mut().load(&path);
         }
+    }
+
+    fn index_of_path(&self, path: &QString) -> i32 {
+        let path = path.to_string();
+        self.rows
+            .iter()
+            .position(|row| row.full_path(&self.base) == path)
+            .map(|index| index as i32)
+            .unwrap_or(-1)
+    }
+
+    fn path_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|entry| QString::from(entry.full_path(&self.base).as_str()))
+            .unwrap_or_default()
+    }
+
+    fn is_directory_at(&self, row: i32) -> bool {
+        self.rows
+            .get(row as usize)
+            .map(|entry| entry.kind == EntryKind::Directory)
+            .unwrap_or(false)
+    }
+
+    fn dispose(mut self: Pin<&mut Self>) {
+        if let Some(stream_id) = self.as_mut().rust_mut().stream_id.take() {
+            listing::cancel_directory_listing(stream_id);
+        }
+        // A batch already queued on the Qt thread carries the old generation
+        // and is dropped instead of appending to a model its window let go.
+        let generation = self.generation.wrapping_add(1);
+        unsafe {
+            self.as_mut().begin_reset_model();
+            {
+                let mut rust = self.as_mut().rust_mut();
+                rust.generation = generation;
+                rust.rows.clear();
+                rust.base.clear();
+            }
+            self.as_mut().end_reset_model();
+        }
+        self.as_mut().set_loaded(0);
+        self.as_mut().set_status(QString::from("已关闭"));
+        self.as_mut().set_finished(true);
     }
 
     fn append_head(
@@ -315,7 +384,7 @@ impl qobject::DirectoryListModel {
             // Status before `finished`: QML reads the status in
             // `onFinishedChanged`, which is emitted synchronously.
             self.as_mut()
-                .set_status(QString::from(format!("{total} rows")));
+                .set_status(QString::from(format!("{total} 项")));
             self.as_mut().set_finished(true);
         }
     }

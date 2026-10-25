@@ -25,9 +25,17 @@ pub mod format;
 pub mod ime;
 pub mod material;
 pub mod model;
+pub mod platform;
+mod runtime;
+pub mod shell;
+pub mod sidebar_model;
+pub mod terminal;
 pub mod window;
+pub mod workspace;
 
 /// Process-wide setup that must run before the QML engine creates a window.
 pub fn init() {
+    window::enable_diagnostics();
     window::enable_alpha();
+    terminal::register_item();
 }

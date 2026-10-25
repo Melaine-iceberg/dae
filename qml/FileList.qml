@@ -1,23 +1,232 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import dae 1.0
 
-// The explorer row from gate 1: 26 dp fixed-height delegates, recycling and a
-// cache buffer sized to the visible page. The model supplies finished strings,
-// so a delegate never formats a size or a timestamp in JavaScript.
+// The explorer listing. Delegates stay at 26 dp, recycle, and read nothing but
+// finished strings from the model. Selection lives on the tab object so it
+// survives a tab switch and travels with a torn-off tab.
 Item {
     id: root
 
-    property var model: null
+    property var tab: null
     property bool dark: true
     property color headerColor: dark ? "#14161a" : "#f4f6f8"
+    property color accent: "#2f6fdf"
 
+    readonly property var model: tab !== null ? tab.listing : null
     readonly property int rowHeight: 26
     readonly property color contentColor: dark ? "#191b1f" : "#ffffff"
     readonly property color alternateColor: dark ? "#15181e" : "#f7f8fa"
     readonly property color textColor: dark ? "#e6e9ef" : "#1c1f24"
     readonly property color mutedColor: dark ? "#8f98aa" : "#657080"
     readonly property color hairline: dark ? "#26ffffff" : "#16000000"
-    readonly property color selectionColor: dark ? "#22314a" : "#dbe7fb"
+    readonly property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b,
+                                                   dark ? 0.30 : 0.18)
+
+    readonly property int selectionCount: {
+        const version = tab !== null ? tab.selectionVersion : 0
+        if (version < 0 || tab === null)
+            return 0
+        let count = 0
+        for (const key in tab.selected) {
+            if (tab.selected[key])
+                count += 1
+        }
+        return count
+    }
+
+    property string pendingFocus: ""
+
+    signal navigateRequested(string path)
+    signal upRequested()
+    signal renameRequested(string path, string name)
+    signal createFolderRequested()
+    signal contextRequested(string path, bool isDir, real x, real y)
+    signal emptyContextRequested(real x, real y)
+
+    function selectedPathList() {
+        const paths = []
+        if (tab === null)
+            return paths
+        for (const key in tab.selected) {
+            if (tab.selected[key])
+                paths.push(key)
+        }
+        return paths
+    }
+
+    /// Keyboard focus lives on the inner ListView, not on this container.
+    function takeFocus() {
+        list.forceActiveFocus()
+    }
+
+    function currentPath() {
+        if (root.model === null || list.currentIndex < 0)
+            return ""
+        return root.model.pathAt(list.currentIndex)
+    }
+
+    function handleClick(index, ctrl, shift) {
+        if (root.tab === null || root.model === null)
+            return
+        list.forceActiveFocus()
+        list.currentIndex = index
+        const path = root.model.pathAt(index)
+        if (path === "")
+            return
+
+        if (shift && root.tab.selectionAnchor !== "") {
+            const anchor = root.model.indexOfPath(root.tab.selectionAnchor)
+            if (anchor >= 0) {
+                const first = Math.min(anchor, index)
+                const last = Math.max(anchor, index)
+                const paths = []
+                for (let row = first; row <= last; row += 1) {
+                    const value = root.model.pathAt(row)
+                    if (value !== "")
+                        paths.push(value)
+                }
+                root.tab.selectMany(paths)
+                return
+            }
+        }
+
+        if (ctrl)
+            root.tab.toggle(path)
+        else
+            root.tab.selectOnly(path)
+    }
+
+    function handleActivate(index) {
+        if (root.model === null)
+            return
+        const path = root.model.pathAt(index)
+        if (path === "")
+            return
+        if (root.model.isDirectoryAt(index))
+            root.navigateRequested(path)
+        else
+            Workspace.openPath(path)
+    }
+
+    function selectAll() {
+        if (root.model === null || root.tab === null)
+            return
+        const paths = []
+        for (let row = 0; row < root.model.loaded; row += 1) {
+            const path = root.model.pathAt(row)
+            if (path !== "")
+                paths.push(path)
+        }
+        root.tab.selectMany(paths)
+    }
+
+    /// Reloads and, once the listing finishes, selects `path` and scrolls to
+    /// it. Used after create/rename so the new row is visible and selected.
+    function focusPath(path) {
+        root.pendingFocus = path
+        if (root.model !== null && root.model.finished)
+            root.applyFocus()
+    }
+
+    function applyFocus() {
+        const path = root.pendingFocus
+        if (path === "" || root.model === null)
+            return
+        const index = root.model.indexOfPath(path)
+        root.pendingFocus = ""
+        if (index < 0)
+            return
+        list.currentIndex = index
+        list.positionViewAtIndex(index, ListView.Contain)
+        root.tab.selectOnly(path)
+    }
+
+    function copySelection(cut) {
+        let paths = root.selectedPathList()
+        if (paths.length === 0) {
+            const path = root.currentPath()
+            if (path !== "")
+                paths = [path]
+        }
+        if (paths.length > 0)
+            Workspace.setClipboard(cut ? "cut" : "copy", paths)
+    }
+
+    function deleteSelection(permanent) {
+        const paths = root.selectedPathList()
+        if (paths.length === 0)
+            return
+        if (permanent)
+            Workspace.deleteEntries(paths)
+        else
+            Workspace.trashEntries(paths)
+    }
+
+    function handleKey(event) {
+        const ctrl = (event.modifiers & Qt.ControlModifier) !== 0
+        const shift = (event.modifiers & Qt.ShiftModifier) !== 0
+
+        if (event.key === Qt.Key_Delete) {
+            root.deleteSelection(shift)
+            return true
+        }
+        if (event.key === Qt.Key_F2) {
+            const path = root.currentPath()
+            if (path !== "")
+                root.renameRequested(path, path.split(/[\\/]/).pop())
+            return true
+        }
+        if (event.key === Qt.Key_F5) {
+            if (root.model !== null)
+                root.model.reload()
+            return true
+        }
+        if (event.key === Qt.Key_Backspace) {
+            root.upRequested()
+            return true
+        }
+        if (event.key === Qt.Key_Escape) {
+            if (root.tab !== null)
+                root.tab.clearSelection()
+            return true
+        }
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            if (list.currentIndex >= 0)
+                root.handleActivate(list.currentIndex)
+            return true
+        }
+        if (ctrl && shift && event.key === Qt.Key_N) {
+            root.createFolderRequested()
+            return true
+        }
+        if (ctrl && event.key === Qt.Key_A) {
+            root.selectAll()
+            return true
+        }
+        if (ctrl && event.key === Qt.Key_C) {
+            root.copySelection(false)
+            return true
+        }
+        if (ctrl && event.key === Qt.Key_X) {
+            root.copySelection(true)
+            return true
+        }
+        if (ctrl && event.key === Qt.Key_V) {
+            if (root.model !== null)
+                Workspace.pasteInto(root.model.path)
+            return true
+        }
+        if (ctrl && shift && event.key === Qt.Key_Z) {
+            Workspace.redo()
+            return true
+        }
+        if (ctrl && event.key === Qt.Key_Z) {
+            Workspace.undo()
+            return true
+        }
+        return false
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -79,6 +288,22 @@ Item {
         font.pixelSize: 13
     }
 
+    /// The space under the last row is part of the listing to a user, so a
+    /// right-click there has to open the empty-area menu. It sits behind the
+    /// ListView: the delegates' own right-clicks are above it, and the
+    /// Flickable only claims the left button.
+    MouseArea {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: columnHeader.bottom
+        anchors.bottom: parent.bottom
+        acceptedButtons: Qt.RightButton
+        onPressed: function (mouse) {
+            const point = mapToItem(null, mouse.x, mouse.y)
+            root.emptyContextRequested(point.x, point.y)
+        }
+    }
+
     ListView {
         id: list
         anchors.left: parent.left
@@ -89,8 +314,15 @@ Item {
         reuseItems: true
         cacheBuffer: 2600
         clip: true
+        focus: true
         boundsBehavior: Flickable.StopAtBounds
         spacing: 0
+        currentIndex: -1
+
+        Keys.onPressed: function (event) {
+            if (root.handleKey(event))
+                event.accepted = true
+        }
 
         delegate: Item {
             id: row
@@ -109,9 +341,11 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                color: list.currentIndex === row.index
+                color: (root.tab !== null && root.tab.isSelected(row.filePath))
                     ? root.selectionColor
-                    : (row.index % 2 === 0 ? root.contentColor : root.alternateColor)
+                    : (list.currentIndex === row.index
+                        ? (root.dark ? "#1d2026" : "#eef1f5")
+                        : (row.index % 2 === 0 ? root.contentColor : root.alternateColor))
             }
 
             Rectangle {
@@ -120,7 +354,7 @@ Item {
                 width: 14
                 height: 14
                 radius: 3
-                color: row.isDir ? "#5b8def" : (row.readOnly ? "#59606e" : "#3b4250")
+                color: row.isDir ? root.accent : (row.readOnly ? "#59606e" : "#3b4250")
             }
 
             Text {
@@ -161,17 +395,33 @@ Item {
 
             MouseArea {
                 anchors.fill: parent
-                acceptedButtons: Qt.LeftButton
-                onClicked: {
-                    list.forceActiveFocus()
-                    list.currentIndex = row.index
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onClicked: function (mouse) {
+                    if (mouse.button === Qt.RightButton) {
+                        if (root.tab === null || !root.tab.isSelected(row.filePath))
+                            root.handleClick(row.index, false, false)
+                        const point = row.mapToItem(null, mouse.x, mouse.y)
+                        root.contextRequested(row.filePath, row.isDir, point.x, point.y)
+                        return
+                    }
+                    root.handleClick(row.index,
+                                     (mouse.modifiers & Qt.ControlModifier) !== 0,
+                                     (mouse.modifiers & Qt.ShiftModifier) !== 0)
                 }
-                onDoubleClicked: {
-                    list.forceActiveFocus()
-                    if (row.isDir)
-                        root.model.load(row.filePath)
+                onDoubleClicked: function (mouse) {
+                    if (mouse.button === Qt.LeftButton)
+                        root.handleActivate(row.index)
                 }
             }
+        }
+    }
+
+    Connections {
+        target: root.model
+
+        function onFinishedChanged() {
+            if (root.model !== null && root.model.finished && root.pendingFocus !== "")
+                root.applyFocus()
         }
     }
 }

@@ -27,6 +27,8 @@ pub mod hashing;
 pub mod host;
 pub mod paths;
 pub mod progress;
+pub mod pty;
+pub mod settings;
 pub mod types;
 
 pub use error::FileSystemError;

@@ -16,7 +16,7 @@ use sysinfo::Disks;
 const FAVORITES_FILE_NAME: &str = "sidebar-favorites.json";
 
 /// Well-known directories that are always offered in the sidebar's places section.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaceKind {
     Home,
@@ -60,25 +60,56 @@ pub struct WslDistro {
     pub path: String,
 }
 
+/// The sidebar's well-known directories, resolved once per call.
+///
+/// Tauri's shell asked `tauri::Manager::path`; that resolver is `dirs` plus a
+/// bundle-directory layer, and only the first half is needed here. Both shells
+/// therefore produce the same seven entries on the same machine, which matters
+/// because the list is also what `recent-items.json` is keyed against.
+pub fn system_places() -> Vec<SystemPlace> {
+    let candidates = [
+        (PlaceKind::Home, dirs::home_dir()),
+        (PlaceKind::Desktop, dirs::desktop_dir()),
+        (PlaceKind::Documents, dirs::document_dir()),
+        (PlaceKind::Downloads, dirs::download_dir()),
+        (PlaceKind::Pictures, dirs::picture_dir()),
+        (PlaceKind::Music, dirs::audio_dir()),
+        (PlaceKind::Videos, dirs::video_dir()),
+    ];
+
+    collect_system_places(candidates)
+}
+
+/// Filters unresolvable directories out. Kept separate so the filtering rule
+/// can be tested without depending on the machine's home directory.
+fn collect_system_places(candidates: [(PlaceKind, Option<PathBuf>); 7]) -> Vec<SystemPlace> {
+    candidates
+        .into_iter()
+        .filter_map(|(kind, resolved)| {
+            resolved.map(|path| SystemPlace {
+                kind,
+                path: path_to_string(&path),
+            })
+        })
+        .collect()
+}
+
 /// See `commands::list_disks` for the contract; this half is engine-free.
-pub async fn list_disks(
-) -> Result<Vec<DiskVolume>, FileSystemError> {
+pub async fn list_disks() -> Result<Vec<DiskVolume>, FileSystemError> {
     tokio::task::spawn_blocking(list_disks_sync)
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))
 }
 
 /// See `commands::list_wsl_distros` for the contract; this half is engine-free.
-pub async fn list_wsl_distros(
-) -> Result<Vec<WslDistro>, FileSystemError> {
+pub async fn list_wsl_distros() -> Result<Vec<WslDistro>, FileSystemError> {
     tokio::task::spawn_blocking(list_wsl_distros_sync)
         .await
         .map_err(|error| FileSystemError::Internal(error.to_string()))
 }
 
 /// See `commands::load_favorites` for the contract; this half is engine-free.
-pub fn load_favorites(
-) -> Result<Vec<Favorite>, FileSystemError> {
+pub fn load_favorites() -> Result<Vec<Favorite>, FileSystemError> {
     if let Some(favorites) = super::prefetch::state().take_favorites() {
         return Ok(favorites);
     }
@@ -96,9 +127,7 @@ pub fn load_favorites(
 }
 
 /// See `commands::save_favorites` for the contract; this half is engine-free.
-pub fn save_favorites(
-    favorites: Vec<Favorite>,
-) -> Result<(), FileSystemError> {
+pub fn save_favorites(favorites: Vec<Favorite>) -> Result<(), FileSystemError> {
     let path = favorites_path()?;
     let favorites = dedupe_favorites(favorites);
 
@@ -505,5 +534,27 @@ mod tests {
         assert_eq!(deduped[0].path, "/a");
         assert_eq!(deduped[0].name, "First");
         assert_eq!(deduped[1].path, "/b");
+    }
+
+    /// A directory the OS cannot name is skipped, not shown as an empty row.
+    #[test]
+    fn system_places_skip_unresolved_directories() {
+        let home = PathBuf::from("/home/example");
+        let places = collect_system_places([
+            (PlaceKind::Home, Some(home.clone())),
+            (PlaceKind::Desktop, None),
+            (PlaceKind::Documents, Some(home.join("Documents"))),
+            (PlaceKind::Downloads, None),
+            (PlaceKind::Pictures, None),
+            (PlaceKind::Music, None),
+            (PlaceKind::Videos, Some(home.join("Videos"))),
+        ]);
+
+        let kinds: Vec<PlaceKind> = places.iter().map(|place| place.kind).collect();
+        assert_eq!(
+            kinds,
+            [PlaceKind::Home, PlaceKind::Documents, PlaceKind::Videos]
+        );
+        assert_eq!(places[0].path, path_to_string(&home));
     }
 }

@@ -39,6 +39,10 @@ pub mod qobject {
 
         #[namespace = "dae_qt"]
         fn dae_qt_enable_alpha();
+
+        #[namespace = "dae_qt"]
+        #[rust_name = "install_message_handler"]
+        fn dae_qt_install_message_handler();
     }
 
     unsafe extern "RustQt" {
@@ -98,4 +102,8 @@ impl qobject::WindowController {
 
 pub fn enable_alpha() {
     qobject::dae_qt_enable_alpha();
+}
+
+pub fn enable_diagnostics() {
+    qobject::install_message_handler();
 }

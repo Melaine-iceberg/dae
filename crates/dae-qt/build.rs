@@ -14,6 +14,16 @@ fn main() {
     CxxQtBuilder::new_qml_module(QmlModule::new("dae"))
         .qt_module("Quick")
         .include_dir("cpp")
-        .files(["src/config.rs", "src/ime.rs", "src/model.rs", "src/window.rs"])
+        .cpp_files(["cpp/terminal_item.cpp", "cpp/terminal_item.h"])
+        .files([
+            "src/config.rs",
+            "src/ime.rs",
+            "src/model.rs",
+            "src/shell.rs",
+            "src/sidebar_model.rs",
+            "src/terminal.rs",
+            "src/window.rs",
+            "src/workspace.rs",
+        ])
         .build();
 }

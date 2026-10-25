@@ -12,8 +12,10 @@ publish = false
 # introspection derive, not a UI framework, and the Tauri shell still generates
 # its TypeScript bindings from these types while both shells coexist.
 [dependencies]
+alacritty_terminal = { version = "0.26", default-features = false }
 async-trait = "0.1"
 base64 = "0.23.1"
+dirs = "7"
 dunce = "1.0.5"
 flate2 = "1"
 git2 = "0.21.0"
@@ -25,6 +27,7 @@ keyring = "4.1.6"
 log = "0.4"
 md-5 = "0.11.0"
 notify = "8.2.0"
+portable-pty = "0.9"
 rand = "0.10.2"
 rayon = "1.12.0"
 reqwest = { version = "0.13", default-features = false, features = [
@@ -46,6 +49,7 @@ specta = { version = "2.0.0-rc.25", features = ["derive"] }
 sysinfo = { version = "0.39", default-features = false, features = ["disk"] }
 tar = "0.4"
 thiserror = "2.0.20"
+toml = "0.8"
 tokio = { version = "1.53.1", features = [
   "rt-multi-thread",
   "macros",

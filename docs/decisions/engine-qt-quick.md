@@ -274,6 +274,105 @@ release 用 `windows_subsystem = "windows"`，没有控制台窗口；`dae.exe` 
 旧壳同时复验：`cargo build --manifest-path src-tauri/Cargo.toml` 通过（仅保留
 原有的 `TabDropTarget` dead-code 警告），A/B 的两条路径都仍然可构建。
 
+### 4.4 标签与撕出：直接复用门槛 4，不建池（2026-10-26）
+
+标签是 QML 对象，不是窗口：`qml/Tab.qml` 持有一个 `DirectoryListModel` 和
+自己的选择集，**没有 QObject 父对象**，所以撕出时整个对象（连同 12 万行）只是
+换一个窗口引用，不复制、不重新枚举。选择存在 tab 上而不是窗口上，切标签、
+撕出、合并都跟着走。
+
+`qml/ShellWindow.qml` 是唯一窗口实现，主窗与撕出窗都实例化它；`TearOffWindow.qml`
+只是 `ShellWindow { firstWindow: false }`。因为两者互相引用，撕出窗口按 URL
+`Qt.createComponent(..., Component.PreferSynchronous)` 加载，规避 QML 静态循环。
+
+拖动检测不依赖 `MouseArea`：指针越过窗口边界后 QML 就收不到事件了。`TabStrip`
+在拖动期间每 16 ms 向 `Shell` 单例要三件事——物理光标、`WindowFromPoint` 下的
+本应用窗口 token、`GetAsyncKeyState(VK_LBUTTON)`——据此决定重排、合并还是撕出。
+没有预热窗口池：撕出按需创建窗口，`WindowController.attach()` 给新 HWND 写同一套
+边框、背景与命中测试（门槛 4 的路径原样复用）。
+
+实测（2026-10-26，Windows 11 build 26340 / 150%）：`+` 新建标签 → 2 标签；
+把第二个标签拖出窗口 → **2 个 HWND**；再拖回第一个窗口 → **1 个 HWND**。
+脚本与截图在 `.perf/tab-actions.ps1`（gitignored）。
+
+### 4.5 终端：alacritty_terminal + 自绘网格（2026-10-26）
+
+- `crates/dae-core/src/pty.rs` — `portable-pty` 起真实 shell（Windows 依次尝试
+  `pwsh` / `powershell` / `cmd`），`alacritty_terminal` 的 `Term` + `Processor`
+  维护网格。`PtyListener` 把 `Event::PtyWrite` 写回 PTY，并回答
+  `TextAreaSizeRequest`——缺了这一步 PowerShell/Starship 的 prompt 不会出现。
+  调色板覆盖 16 色、256 色立方与灰阶、命名色。
+- `crates/dae-qt/src/terminal.rs` — `TerminalSession` QObject 把快照压成
+  `DAET` v1 帧（13 字节/单元格），输出用 `AtomicBool` 合并，一帧一次
+  `updated()`，不会让一次 `ls` 排满 Qt 事件队列。
+- `cpp/terminal_item.{h,cpp}` — `QQuickPaintedItem` 自绘：背景按行合并成 run，
+  文本按样式/颜色合并成 run；宽字符、astral codepoint（`QString::fromUcs4`）、
+  粗/斜/下划线/删除线、块/下划线/竖线光标与闪烁、IME 预编辑与提交、滚轮、
+  按键转义序列。字号、行高、字体族作为属性，来自 `settings.toml`。
+- `qml/TerminalPanel.qml` — 每个窗口一个会话；隐藏面板只是改变高度，shell
+  继续运行，再打开同一个会话，历史仍在。
+
+实测（2026-10-25/26）：真实 PowerShell + Starship prompt 正常显示；`echo hello`、
+`echo 你好` 回显与配色正确；隐藏再打开后 `echo survived` 仍接在同一会话上；
+把字号保存为 14 后新终端按 14 号绘制。
+
+已知未做：会话是每窗口而不是每标签；没有选区/复制、滚动条；Nerd Font 私有区
+字形缺字时仍显示方框。
+
+### 4.6 命令与平台模块：设置、位置、文件操作（2026-10-26）
+
+**设置进 core。** `crates/dae-core/src/settings.rs` 从 Tauri 壳原样搬入
+（同样的 registry、默认快捷键、8–24 字号/0.8–3.0 行高钳制、原子写）；
+`src-tauri/src/settings.rs` 只剩两个 `#[tauri::command]` 包装和 crate 内访问器。
+两个壳现在读写同一份 `%APPDATA%\com.melaine.dae\settings.toml`，不会各写各的。
+
+**系统位置进 core。** `dae_core::fs::sidebar::system_places()` 用 `dirs` 解析
+七个已知目录；Tauri 的 `PathResolver` 也是 `dirs`，所以两个壳在同一台机器上
+得到同一组路径，与 `recent-items.json` 的键一致。
+
+**命令面 `Workspace` 单例**（`crates/dae-qt/src/workspace.rs`）：
+
+- 文件：新建文件夹/文件、重命名、移到回收站、永久删除、创建副本、复制/剪切/
+  粘贴、撤销/重做。全部直接调用 `dae_core::fs::service`；冲突默认 `KeepBoth`
+  （同目录粘贴不会互相覆盖）。
+- 剪贴板：应用内剪切板（`copy`/`cut` + 路径列表）；剪切是一次性的，复制可以
+  连续粘贴到多个目录。
+- 位置：收藏读写、最近访问记录；侧栏模型在收藏变化时刷新。
+- 打开：默认程序（`ShellExecuteW` / `open` / `xdg-open`）、文件管理器定位
+  （Explorer `/select,` / `open -R` / `xdg-open` 父目录）、系统终端、系统
+  “打开方式”对话框（Windows `SHOpenWithDialog`）。
+- 设置：终端字号/行高/字体族保存后立即应用到所有已挂载的 `TerminalItem`。
+- 线程：一个进程级 Tokio runtime；`Host` 事件经 `CxxQtThread::queue` 回到 Qt
+  线程，更新 `busy`、进度、`canUndo`/`canRedo`，并发出
+  `operationFinished` / `operationFailed`。
+
+**视图**：`qml/Sidebar.qml` + `sidebar_model.rs` 用一个带 section 的
+`QAbstractListModel` 画位置/收藏/磁盘/最近；`FileList` 支持 Ctrl/Shift 多选、
+F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
+`ContextMenu.qml` 提供行菜单、空白区菜单与侧栏菜单；`NamePrompt.qml` 负责
+新建/重命名；`SettingsPanel.qml` 编辑终端排版；`Toast.qml` 显示结果。
+强调色从 `HKCU\...\DWM` 读取（`AccentColor` 的 ABGR 与 `ColorizationColor`
+的 ARGB 都处理），用于选中行与焦点色。
+
+端到端实测（2026-10-26，`.perf/phase3-test.ps1`，Windows 11 build 26340）：
+
+| 步骤 | 结果 |
+|---|---|
+| Ctrl+Shift+N → 输入名字 → 确定 | 目录创建，列表刷新并选中，toast「已创建」 |
+| F2 → 输入新名字 → 确定 | 改名成功，选中新名字，toast「已重命名」 |
+| Ctrl+C → 进入子目录 → Ctrl+V | 目录复制到目标，路径栏与标题随导航更新 |
+| 右键行 / 右键空白 | 行菜单（打开/新标签/新窗口/定位/打开方式/终端/复制/剪切/粘贴/副本/重命名/收藏/回收站/永久删除）与空白菜单（新建/粘贴/全选/刷新/终端） |
+| Ctrl+A → Delete | 两项进入回收站，列表清空 |
+| Ctrl+Z | 两项恢复，toast「已撤销」 |
+| Ctrl+Shift+Z | 再次删除 |
+| Ctrl+, → 字号改 14 → 保存 | `settings.toml` 写入 `fontSize = 14`，终端按 14 号绘制 |
+
+**这一刀还没铺的**（core 已有实现，缺 Qt 视图/命令包装）：搜索 UI（文件名与
+内容搜索）、预览/缩略图、文件图标、打开方式选择器（macOS/Linux）、默认文件
+管理器注册、`dae://` 深链、自动更新、磁盘热插拔监听、回收站视图、压缩包、
+云盘/SFTP/SMB 的连接管理界面。它们按依赖排在下一刀，不会改变上面这层的
+接口。
+
 ## 5. 定案前必须量出来的四组数字
 
 | # | 待验证 | 门槛 | 不达标怎么办 |

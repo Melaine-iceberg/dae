@@ -25,9 +25,12 @@ fn main() {
     dae_qt::init();
 
     let mut engine = QQmlApplicationEngine::new();
-    match engine.as_mut() {
-        Some(engine) => engine.load(&QUrl::from("qrc:/qt/qml/dae/qml/Main.qml")),
-        None => eprintln!("could not create QQmlApplicationEngine"),
+    if let Some(mut engine) = engine.as_mut() {
+        engine
+            .as_mut()
+            .load(&QUrl::from("qrc:/qt/qml/dae/qml/Main.qml"));
+    } else {
+        eprintln!("dae: could not create QQmlApplicationEngine");
     }
 
     if let Some(application) = application.as_mut() {

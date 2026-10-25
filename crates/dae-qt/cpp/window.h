@@ -30,6 +30,7 @@
 
 #include <QAbstractNativeEventFilter>
 #include <QCoreApplication>
+#include <QCursor>
 #include <QDir>
 #include <QGuiApplication>
 #include <QHash>
@@ -39,6 +40,8 @@
 #include <QStyleHints>
 #include <QTimer>
 #include <QWindow>
+
+#include <cstdio>
 
 #include "ime.h"
 #include "lookup.h"
@@ -69,6 +72,8 @@ constexpr double kButtonDp = 46.0;
 struct WindowState
 {
     QPointer<QQuickWindow> window;
+    /// The QML `objectName`; what a tab drag names when it lands here.
+    QString token;
     HWND hwnd = nullptr;
     qreal dpr = 1.0;
     int material = 2; // 0 mica, 1 acrylic, 2 none
@@ -370,6 +375,7 @@ inline bool dae_qt_attach(const QString& token)
 
     WindowState state;
     state.window = window;
+    state.token = token;
     state.hwnd = hwnd;
     state.dpr = window->devicePixelRatio();
     window_states().insert(key, state);
@@ -413,6 +419,98 @@ inline void dae_qt_enable_alpha()
 inline bool dae_qt_system_dark()
 {
     return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+}
+
+// ---------------------------------------------------------------------------
+// Tab drag helpers.
+//
+// A QML MouseArea keeps receiving coordinates only while the pointer is inside
+// the window. Tearing a tab out is defined by the pointer leaving it, so the
+// tab strip polls the global cursor and the physical button instead of trusting
+// the last QML event. These are the four facts that poll needs.
+// ---------------------------------------------------------------------------
+
+/// The token of this application's window under a physical screen point.
+///
+/// `WindowFromPoint` returns the deepest child (a QML render surface), so the
+/// lookup walks to its root and then matches the HWND-keyed state table. A
+/// point over another application — or over the desktop — answers empty, which
+/// is exactly what "this became a new window" means.
+inline QString dae_qt_window_at(int x, int y)
+{
+    const POINT point{ x, y };
+    HWND hwnd = WindowFromPoint(point);
+    if (!hwnd)
+        return {};
+    const HWND root = GetAncestor(hwnd, GA_ROOT);
+    if (!root)
+        return {};
+    for (auto it = window_states().cbegin(); it != window_states().cend(); ++it) {
+        if (it->hwnd == root)
+            return it->token;
+    }
+    return {};
+}
+
+inline int dae_qt_cursor_physical_x()
+{
+    POINT point{};
+    GetCursorPos(&point);
+    return point.x;
+}
+
+inline int dae_qt_cursor_physical_y()
+{
+    POINT point{};
+    GetCursorPos(&point);
+    return point.y;
+}
+
+/// Device-independent cursor position, the space QML `Window.x/y` uses.
+inline int dae_qt_cursor_logical_x()
+{
+    return QCursor::pos().x();
+}
+
+inline int dae_qt_cursor_logical_y()
+{
+    return QCursor::pos().y();
+}
+
+/// Whether the physical primary button is down, independent of which window
+/// currently owns mouse capture. The tab drag ends when this goes false, even
+/// if Qt stopped delivering events when the pointer crossed the frame.
+inline bool dae_qt_primary_button_down()
+{
+    return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+}
+
+inline bool dae_qt_focus_window(const QString& token)
+{
+    QQuickWindow* window = find_window_by_token(token);
+    if (!window)
+        return false;
+    window->requestActivate();
+    return true;
+}
+
+/// Sends Qt's own diagnostics to stderr.
+///
+/// A QML component that fails to instantiate reports why only through the
+/// engine's warnings, and a GUI-subsystem process has no console for the
+/// default handler to find. Installing this before the engine loads turns a
+/// silent blank window into the exact file, line and reason.
+inline void dae_qt_install_message_handler()
+{
+    static bool installed = false;
+    if (installed)
+        return;
+    installed = true;
+    qInstallMessageHandler([](QtMsgType, const QMessageLogContext&, const QString& message) {
+        const QByteArray utf8 = message.toUtf8();
+        std::fprintf(stderr, "qt: %s\n", utf8.constData());
+        std::fflush(stderr);
+    });
 }
 
 } // namespace dae_qt
