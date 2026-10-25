@@ -9,7 +9,7 @@ Window {
     x: 320
     y: 120
     visible: true
-    title: "dae · 门槛 3 · 无边框 + Mica"
+    title: gate4 ? "dae · 门槛 4 · 撕出" : "dae · 门槛 3 · 无边框 + Mica"
     flags: Qt.Window | Qt.FramelessWindowHint
         | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint
         | Qt.WindowCloseButtonHint
@@ -22,12 +22,18 @@ Window {
     readonly property bool snapProbe: args.indexOf("--snap-probe") >= 0
     readonly property bool idleProbe: args.indexOf("--idle-probe") >= 0
     readonly property bool maxProbe: args.indexOf("--max-probe") >= 0
+    readonly property bool gate4: args.indexOf("--gate4") >= 0
     property var idleState: ({"tick": 0, "framesStart": 0, "framesIdle": 0,
                               "framesInvokable": 0})
     readonly property bool autoRun: !manualMode && !probeOnly && !flyoutProbe && !snapProbe
-        && !idleProbe && !maxProbe
-    readonly property string outputPath: argument("--out", "results/win11-gate3.json")
-    readonly property string shotsDir: argument("--shots", "results/shots")
+        && !idleProbe && !maxProbe && !gate4
+    readonly property string outputPath: argument("--out",
+        gate4 ? "results/win11-gate4.json" : "results/win11-gate3.json")
+    readonly property string shotsDir: argument("--shots",
+        gate4 ? "results" : "results/shots")
+    readonly property string datasetPath: argument("--path", "K:/dae-listing-bench/huge")
+    readonly property int cycles: parseInt(argument("--cycles", "6"))
+    readonly property int settleMs: parseInt(argument("--settle", "800"))
 
     property bool dark: true
     property string material: "mica"
@@ -53,6 +59,18 @@ Window {
     property var dwmSummary: ({})
     property var dwmStatsBefore: ({})
     property var dwmState: ({})
+
+    // Gate 4 state.
+    property var secondaryWindow: null
+    property int frameCycle: -1
+    property var tearOffCycles: []
+    property var tearOffLatencies: []
+    property var tearOffOpenIncrements: []
+    property var tearOffCloseResiduals: []
+    property var tearOffClosePrivateResiduals: []
+    property var secondaryRectBeforeDrag: null
+    property bool secondaryClosing: false
+    property bool finished: false
 
     readonly property bool maximized: visibility === Window.Maximized
     readonly property color chromeTint: dark
@@ -700,8 +718,375 @@ Window {
     }
 
     // ------------------------------------------------------------------
+    // Gate 4: tear a tab out into a second window, then close it
+
+    function tearMetrics() {
+        return JSON.parse(tearProbe.metricsJson())
+    }
+
+    function memorySample(cycle, label) {
+        const samples = tearMetrics().memory
+        for (let index = samples.length - 1; index >= 0; --index) {
+            if (samples[index].cycle === cycle && samples[index].label === label)
+                return samples[index]
+        }
+        return null
+    }
+
+    function cycleLatency(cycle) {
+        const cycles = tearMetrics().cycles
+        for (let index = 0; index < cycles.length; ++index) {
+            if (cycles[index].label === cycle)
+                return cycles[index].latency_ms
+        }
+        return null
+    }
+
+    function startGate4() {
+        startedAt = Date.now()
+        running = true
+        material = "mica"
+        probe.applyMaterial(material, true)
+        // Allocate the PSS query buffers once, before the baseline, so the
+        // sampler itself does not show up as a window cost.
+        tearProbe.sampleMemory("warmup", "warmup")
+        statusLine = "listing " + datasetPath
+        dirModel.start(datasetPath, "gate4-" + Date.now())
+    }
+
+    function gate4Begin() {
+        if (dirModel.loaded === 0) {
+            check("listing:loaded", false, dirModel.status)
+            finishGate4()
+            return
+        }
+        check("listing:loaded", dirModel.loaded > 0, dirModel.status)
+        note("listing", dirModel.loaded + " rows / " + dirModel.batches
+             + " batches / " + dirModel.load_ms.toFixed(1) + " ms")
+        plan = []
+        planIndex = 0
+        schedule("baseline", settleMs, function() {
+            tearProbe.sampleMemory("baseline", "baseline")
+        })
+        schedule("cycles", 0, function() { scheduleCycle(1) })
+        planTimer.interval = 1
+        planTimer.start()
+    }
+
+    function scheduleCycle(number) {
+        if (number > cycles) {
+            schedule("finish", 200, finishGate4)
+            return
+        }
+        const cycle = String(number)
+        schedule("cycle" + cycle + ":baseline", settleMs, function() {
+            tearProbe.sampleMemory(cycle, "baseline")
+            schedule("cycle" + cycle + ":create", 0, function() { runTearOffCycle(number) })
+        })
+    }
+
+    function runTearOffCycle(number) {
+        const cycle = String(number)
+        const token = "dae-tearoff-" + cycle + "-" + Date.now()
+        frameCycle = -1
+        secondaryClosing = false
+
+        tearProbe.beginCycle(cycle)
+        tearProbe.mark("request")
+        try {
+            secondaryWindow = tearOffComponent.createObject(null, {
+                "model": dirModel,
+                "token": token,
+                "dark": root.dark,
+                "material": root.material
+            })
+        } catch (error) {
+            check("cycle" + cycle + ":created", false, String(error))
+            finishGate4()
+            return
+        }
+        tearProbe.mark("created")
+        check("cycle" + cycle + ":created", secondaryWindow !== null)
+        check("cycle" + cycle + ":shared-model", secondaryWindow.model === dirModel,
+              "the torn-off view binds the source model, not a copy")
+        check("cycle" + cycle + ":attach", tearProbe.attachSecondary(token), "token=" + token)
+        tearProbe.applySecondaryMaterial("mica", root.dark)
+        tearProbe.clearSecondaryStats()
+
+        // The first presented frame is the latency this gate is about. The
+        // handler is installed before `visible` so the show cannot race it.
+        secondaryWindow.frameSwapped.connect(function() {
+            if (root.frameCycle === number)
+                return
+            root.frameCycle = number
+            tearProbe.mark("frame")
+        })
+        secondaryWindow.closing.connect(function() { root.secondaryClosing = true })
+
+        secondaryWindow.visible = true
+        tearProbe.mark("shown")
+        schedule("cycle" + cycle + ":open-check", settleMs, function() {
+            checkTearOffOpen(number)
+        })
+    }
+
+    function checkTearOffOpen(number) {
+        const cycle = String(number)
+        tearProbe.mark("settled")
+        tearProbe.sampleMemory(cycle, "open")
+
+        const info = JSON.parse(tearProbe.secondaryInfo())
+        const primary = readInfo()
+        const backdrop = info.backdrop || {}
+        const regions = JSON.parse(tearProbe.secondaryRegions())
+        const stats = JSON.parse(tearProbe.secondaryStats())
+        const latency = cycleLatency(cycle)
+        const baseline = memorySample(cycle, "baseline")
+        const open = memorySample(cycle, "open")
+        const increment = (baseline && open) ? open.pss_mb - baseline.pss_mb : NaN
+
+        const style = info.style !== undefined ? Number("0x" + info.style) : 0
+        check("cycle" + cycle + ":hwnd", info.hwnd !== undefined && info.hwnd !== "0"
+              && info.hwnd !== primary.hwnd, info.hwnd + " vs primary " + primary.hwnd)
+        check("cycle" + cycle + ":visible", info.visible === true)
+        check("cycle" + cycle + ":native-style",
+              (style & 0x00040000) !== 0 && (style & 0x00010000) !== 0,
+              "style=0x" + info.style)
+        check("cycle" + cycle + ":client-is-window",
+              info.client_rect !== undefined && info.window_rect !== undefined
+              && info.client_rect[2] === info.window_rect[2] - info.window_rect[0]
+              && info.client_rect[3] === info.window_rect[3] - info.window_rect[1],
+              "client " + info.client_rect + " window " + info.window_rect)
+        check("cycle" + cycle + ":mica", backdrop.read_backdrop === 2
+              && backdrop.read_dark === true,
+              "read_backdrop=" + backdrop.read_backdrop + " dark=" + backdrop.read_dark)
+        check("cycle" + cycle + ":transparent-path",
+              backdrop.layered === true && backdrop.blur_behind === true,
+              "layered=" + backdrop.layered + " blur=" + backdrop.blur_behind)
+        check("cycle" + cycle + ":hit-caption",
+              tearProbe.secondaryHitTest(regions.caption[0], regions.caption[1]) === 2)
+        check("cycle" + cycle + ":hit-close",
+              tearProbe.secondaryHitTest(regions.close[0], regions.close[1]) === 1)
+        check("cycle" + cycle + ":hit-max",
+              tearProbe.secondaryHitTest(regions.max[0], regions.max[1]) === 9)
+        check("cycle" + cycle + ":hit-content",
+              tearProbe.secondaryHitTest(regions.content[0], regions.content[1]) === 1)
+        check("cycle" + cycle + ":hit-border-left",
+              tearProbe.secondaryHitTest(regions.border_left[0], regions.border_left[1]) === 10)
+        check("cycle" + cycle + ":frames", stats.frames >= 1, "frames=" + stats.frames)
+        check("cycle" + cycle + ":latency", latency !== null && latency <= 150,
+              "tear-off " + latency + " ms")
+        check("cycle" + cycle + ":pss-increment", increment <= 20,
+              baseline.pss_mb + " -> " + open.pss_mb + " = +" + increment.toFixed(2)
+              + " MB (baseline " + baseline.pss_mb + ")")
+
+        tearOffLatencies.push(latency)
+        tearOffOpenIncrements.push(increment)
+        tearOffCycles.push({
+            cycle: cycle,
+            latency_ms: latency,
+            pss_baseline_mb: baseline.pss_mb,
+            pss_open_mb: open.pss_mb,
+            pss_increment_mb: Math.round(increment * 100) / 100,
+            marks: tearMetrics().cycles[tearMetrics().cycles.length - 1].marks,
+            window_rect: info.window_rect,
+            client_rect: info.client_rect,
+            backdrop: backdrop
+        })
+
+        tearProbe.captureSecondaryWindow(shotsDir + "/gate4-window-" + cycle + ".png")
+        schedule("cycle" + cycle + ":drag", 150, function() { startSecondaryDrag(number) })
+    }
+
+    function startSecondaryDrag(number) {
+        const cycle = String(number)
+        const info = JSON.parse(tearProbe.secondaryInfo())
+        secondaryRectBeforeDrag = info.window_rect
+        tearProbe.clearSecondaryStats()
+        check("cycle" + cycle + ":foreground", tearProbe.secondarySetForeground())
+        const point = JSON.parse(tearProbe.secondaryRegions()).caption
+        // Windows sometimes spends the first click on activation after a
+        // window is shown; gate 3 waited 800 ms, this waits long enough for the
+        // activation to settle while still inside the measurement's tail.
+        schedule("cycle" + cycle + ":drag-down", 250, function() {
+            tearProbe.secondarySetForeground()
+            tearProbe.moveCursor(point[0], point[1])
+        })
+        schedule("cycle" + cycle + ":drag-press", 150, function() {
+            check("cycle" + cycle + ":drag-mouse-down", tearProbe.secondaryMouseDown())
+        })
+        for (let step = 1; step <= 8; ++step) {
+            schedule("cycle" + cycle + ":drag-move" + step, 18, function() {
+                tearProbe.moveCursor(point[0] + 60 * step / 8, point[1] + 40 * step / 8)
+            })
+        }
+        schedule("cycle" + cycle + ":drag-up", 80, function() { tearProbe.mouseUp() })
+        schedule("cycle" + cycle + ":drag-check", 350, function() { checkSecondaryDrag(number) })
+    }
+
+    function checkSecondaryDrag(number) {
+        const cycle = String(number)
+        const info = JSON.parse(tearProbe.secondaryInfo())
+        const after = info.window_rect
+        const movedX = after[0] - secondaryRectBeforeDrag[0]
+        const movedY = after[1] - secondaryRectBeforeDrag[1]
+        const stats = JSON.parse(tearProbe.secondaryStats())
+        check("cycle" + cycle + ":drag-moved",
+              Math.abs(movedX - 60) <= 3 && Math.abs(movedY - 40) <= 3,
+              "moved " + movedX + "," + movedY + " from " + secondaryRectBeforeDrag
+              + " to " + after + " cursor " + probe.cursorPosition())
+        check("cycle" + cycle + ":drag-hit-caption", count(stats.hit_test, "2") >= 1)
+        check("cycle" + cycle + ":drag-nc-down-caption", count(stats.nc_down, "2") >= 1,
+              "nc_down=" + JSON.stringify(stats.nc_down))
+        check("cycle" + cycle + ":drag-native-loop",
+              stats.entersizemove >= 1 && stats.exitsizemove >= 1,
+              "enter=" + stats.entersizemove + " exit=" + stats.exitsizemove)
+        schedule("cycle" + cycle + ":close", 200, function() { closeTearOff(number) })
+    }
+
+    function closeTearOff(number) {
+        const cycle = String(number)
+        check("cycle" + cycle + ":close-posted", tearProbe.closeSecondary())
+        schedule("cycle" + cycle + ":closed", 600, function() {
+            check("cycle" + cycle + ":closed-hidden",
+                  secondaryWindow !== null && secondaryWindow.visible === false,
+                  "visible=" + (secondaryWindow ? secondaryWindow.visible : "gone")
+                  + " closing=" + secondaryClosing)
+            if (secondaryWindow !== null)
+                secondaryWindow.destroy()
+            secondaryWindow = null
+            tearProbe.forgetSecondary()
+            schedule("cycle" + cycle + ":closed-memory", settleMs, function() {
+                checkTearOffClosed(number)
+            })
+        })
+    }
+
+    function checkTearOffClosed(number) {
+        const cycle = String(number)
+        tearProbe.sampleMemory(cycle, "closed")
+        const baseline = memorySample(cycle, "baseline")
+        const closed = memorySample(cycle, "closed")
+        const residual = closed.pss_mb - baseline.pss_mb
+        const privateResidual = closed.private_mb - baseline.private_mb
+        tearOffCloseResiduals.push(residual)
+        tearOffClosePrivateResiduals.push(privateResidual)
+        check("cycle" + cycle + ":close-residual", residual <= 20,
+              baseline.pss_mb + " -> " + closed.pss_mb + " = " + residual.toFixed(2) + " MB")
+        // Private commit is recorded, not asserted per cycle: the first extra
+        // window commits the render loop's one-time caches (~25 MB) and keeps
+        // them. The no-leak check is the growth across cycles in finishGate4.
+        check("cycle" + cycle + ":primary-alive", readInfo().hwnd !== "0")
+        const entry = tearOffCycles[tearOffCycles.length - 1]
+        entry.pss_closed_mb = closed.pss_mb
+        entry.pss_residual_mb = Math.round(residual * 100) / 100
+        entry.private_closed_mb = closed.private_mb
+        entry.private_residual_mb = Math.round(privateResidual * 100) / 100
+
+        if (number < cycles)
+            scheduleCycle(number + 1)
+        else
+            schedule("finish", 200, finishGate4)
+    }
+
+    function finishGate4() {
+        if (finished)
+            return
+        finished = true
+        running = false
+        const current = readInfo()
+        const maxLatency = tearOffLatencies.length > 0 ? Math.max.apply(null, tearOffLatencies) : 0
+        const maxIncrement = tearOffOpenIncrements.length > 0
+            ? Math.max.apply(null, tearOffOpenIncrements) : 0
+        const maxResidual = tearOffCloseResiduals.length > 0
+            ? Math.max.apply(null, tearOffCloseResiduals) : 0
+
+        check("gate:latency", maxLatency > 0 && maxLatency <= 150,
+              "worst tear-off " + maxLatency.toFixed(2) + " ms")
+        check("gate:pss", maxIncrement <= 20,
+              "worst increment +" + maxIncrement.toFixed(2) + " MB")
+        check("gate:close", maxResidual <= 20,
+              "worst close residual " + maxResidual.toFixed(2) + " MB")
+        // The first close keeps the render loop's one-time caches; the check
+        // that matters is that a second and third open/close do not grow the
+        // process. Private commit is the leak signal; PSS also counts shared
+        // pages and drifts by a page-cache-sized amount.
+        const coldClose = tearOffCycles.length > 0 ? tearOffCycles[0].pss_closed_mb : 0
+        const lastClose = tearOffCycles.length > 1
+            ? tearOffCycles[tearOffCycles.length - 1].pss_closed_mb : coldClose
+        const closedGrowth = lastClose - coldClose
+        const coldClosePrivate = tearOffCycles.length > 0
+            ? tearOffCycles[0].private_closed_mb : 0
+        const lastClosePrivate = tearOffCycles.length > 1
+            ? tearOffCycles[tearOffCycles.length - 1].private_closed_mb : coldClosePrivate
+        const privateGrowth = lastClosePrivate - coldClosePrivate
+        check("gate:close-private-no-growth", tearOffCycles.length < 2 || privateGrowth <= 5,
+              "private " + coldClosePrivate + " -> " + lastClosePrivate + " MB ("
+              + privateGrowth.toFixed(2) + ")")
+        note("tear-off:pss-close-growth", "closed PSS " + coldClose + " -> " + lastClose
+             + " MB (" + closedGrowth.toFixed(2) + "); private commit "
+             + coldClosePrivate + " -> " + lastClosePrivate + " MB ("
+             + privateGrowth.toFixed(2) + ")");
+        note("tear-off:phases", tearOffCycles.map(function(entry) {
+            return entry.cycle + ": created " + entry.marks.created + " ms, shown "
+                + entry.marks.shown + " ms, frame " + entry.marks.frame + " ms"
+        }).join(" | "))
+
+        const metrics = tearMetrics()
+        const body = {
+            gate: 4,
+            title: "tear-off / close increment of a second QQuickWindow",
+            qt_version: current.qt_version,
+            os: current.os,
+            dpr: current.dpr,
+            screen: [Screen.width * Screen.devicePixelRatio,
+                     Screen.height * Screen.devicePixelRatio],
+            input: {
+                path: datasetPath,
+                rows: dirModel.loaded,
+                batches: dirModel.batches,
+                load_ms: dirModel.load_ms
+            },
+            thresholds: { tear_off_ms: 150, pss_mb: 20 },
+            summary: {
+                cycles: tearOffCycles.length,
+                latency_ms: tearOffLatencies,
+                max_latency_ms: Math.round(maxLatency * 100) / 100,
+                pss_increment_mb: tearOffOpenIncrements.map(function(value) {
+                    return Math.round(value * 100) / 100
+                }),
+                max_pss_increment_mb: Math.round(maxIncrement * 100) / 100,
+                pss_close_residual_mb: tearOffCloseResiduals.map(function(value) {
+                    return Math.round(value * 100) / 100
+                }),
+                max_pss_close_residual_mb: Math.round(maxResidual * 100) / 100,
+                closed_pss_growth_mb: Math.round(closedGrowth * 100) / 100,
+                private_close_residual_mb: tearOffClosePrivateResiduals.map(function(value) {
+                    return Math.round(value * 100) / 100
+                }),
+                closed_private_growth_mb: Math.round(privateGrowth * 100) / 100
+            },
+            cycles: tearOffCycles,
+            timings: metrics.cycles,
+            memory: metrics.memory,
+            checks: checks,
+            notes: notes,
+            failures: failures,
+            check_count: checks.length,
+            primary_window: current
+        }
+        tearProbe.writeResults(outputPath, JSON.stringify(body, null, 2))
+        const summary = "SUMMARY failures=" + failures + " checks=" + checks.length
+        console.log(summary)
+        tearProbe.appendLog(outputPath + ".log", summary)
+        Qt.exit(failures === 0 ? 0 : 1)
+    }
 
     function finishRun() {
+        if (gate4) {
+            finishGate4()
+            return
+        }
         if (!running)
             return
         running = false
@@ -732,6 +1117,25 @@ Window {
     }
 
     WindowProbe { id: probe }
+    TearOffProbe { id: tearProbe }
+    DirectoryListModel { id: dirModel }
+
+    // Preloaded, so the measured tear-off is window creation and first frame,
+    // not QML file I/O — the shell has its view components loaded already.
+    Component {
+        id: tearOffComponent
+        TearOffWindow {}
+    }
+
+    Connections {
+        target: dirModel
+
+        function onFinishedChanged() {
+            if (!root.gate4 || !dirModel.finished)
+                return
+            root.gate4Begin()
+        }
+    }
 
     Component.onCompleted: {
         if (!probe.attach()) {
@@ -746,6 +1150,8 @@ Window {
         console.log("probe: material=" + material + " info=" + probe.windowInfo())
         if (autoRun)
             startRun()
+        else if (gate4)
+            startGate4()
     }
 
     Timer {
@@ -907,7 +1313,8 @@ Window {
             anchors.left: logo.right
             anchors.leftMargin: 48
             anchors.verticalCenter: parent.verticalCenter
-            text: "gate 3 · frameless + mica + custom chrome"
+            text: root.gate4 ? "gate 4 · tear-off / close"
+                             : "gate 3 · frameless + mica + custom chrome"
             color: root.mutedColor
             font.pixelSize: 12
         }
@@ -1061,9 +1468,11 @@ Window {
         color: root.contentColor
 
         Column {
+            id: gate3Content
             x: 28
             y: 24
             spacing: 14
+            visible: !root.gate4
 
             Text {
                 text: "门槛 3"
@@ -1142,6 +1551,106 @@ Window {
                 color: root.mutedColor
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
+            }
+        }
+
+        // Gate 4: the source tab. Its model is the same object the torn-off
+        // window binds, so a tear-off adds a view, not a second copy of 120k
+        // rows.
+        ListView {
+            id: sourceList
+            anchors.fill: parent
+            anchors.topMargin: 34
+            visible: root.gate4
+            model: dirModel
+            reuseItems: true
+            cacheBuffer: 2600
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            spacing: 0
+
+            delegate: Item {
+                id: sourceDelegate
+                required property int index
+                required property string fileName
+                required property string sizeText
+                required property string modifiedText
+                required property bool isDir
+                required property bool hidden
+
+                width: ListView.view.width
+                height: 26
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: (sourceDelegate.index % 2) === 0 ? root.contentColor
+                                                          : (root.dark ? "#15181e" : "#f7f8fa")
+                }
+
+                Rectangle {
+                    x: 12
+                    y: 6
+                    width: 14
+                    height: 14
+                    radius: 3
+                    color: sourceDelegate.isDir ? "#5b8def" : "#3b4250"
+                }
+
+                Text {
+                    x: 36
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.max(0, sourceDelegate.width - 36 - 340)
+                    text: sourceDelegate.fileName
+                    color: sourceDelegate.hidden ? "#6b7280" : root.textColor
+                    font.pixelSize: 13
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    anchors.right: sourceModified.left
+                    anchors.rightMargin: 24
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 90
+                    horizontalAlignment: Text.AlignRight
+                    text: sourceDelegate.sizeText
+                    color: root.mutedColor
+                    font.pixelSize: 12
+                    textFormat: Text.PlainText
+                }
+
+                Text {
+                    id: sourceModified
+                    anchors.right: parent.right
+                    anchors.rightMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 140
+                    horizontalAlignment: Text.AlignRight
+                    text: sourceDelegate.modifiedText
+                    color: root.mutedColor
+                    font.pixelSize: 12
+                    textFormat: Text.PlainText
+                }
+            }
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: 34
+            visible: root.gate4
+            color: root.chromeColor
+
+            Text {
+                x: 12
+                anchors.verticalCenter: parent.verticalCenter
+                text: "源窗口 · " + (dirModel.finished
+                    ? dirModel.status
+                    : (dirModel.loaded + " rows · reading…"))
+                color: root.textColor
+                font.family: "Cascadia Mono"
+                font.pixelSize: 11
             }
         }
     }

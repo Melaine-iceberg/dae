@@ -37,6 +37,7 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QGuiApplication>
+#include <QHash>
 #include <QImage>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -154,6 +155,73 @@ inline State& state()
     return value;
 }
 
+/// One torn-off window. Gate 3 only ever attached to the focused window; gate 4
+/// creates a second QQuickWindow and has to prove that the same native path
+/// (style, backdrop, hit test, message loop) runs per HWND, not once per
+/// process. The source window stays in `state()`; every additional window gets
+/// an entry here, keyed by HWND.
+struct SecondaryState
+{
+    QQuickWindow* window = nullptr;
+    HWND hwnd = nullptr;
+    qreal dpr = 1.0;
+
+    int material = 2; // 0 mica, 1 acrylic, 2 none
+    bool dark = false;
+    long dark_result = 0;
+    long backdrop_result = 0;
+    long mica_result = 0;
+    bool blur_behind = false;
+    bool style_applied = false;
+
+    qint64 hit_counts[32] = {};
+    qint64 nc_down_counts[32] = {};
+    qint64 nc_up = 0;
+    qint64 nc_dblclk = 0;
+    qint64 nccalcsize = 0;
+    qint64 entersizemove = 0;
+    qint64 exitsizemove = 0;
+    qint64 moving = 0;
+    qint64 sizing = 0;
+    qint64 erasebkgnd = 0;
+    qint64 activate = 0;
+    qint64 dpichanged = 0;
+    qint64 frames = 0;
+    qint64 before_rendering = 0;
+    qint64 chrome_actions = 0;
+    QVector<HitRecord> recent_hits;
+};
+
+inline QHash<quintptr, SecondaryState>& secondary_states()
+{
+    static QHash<quintptr, SecondaryState> value;
+    return value;
+}
+
+inline quintptr& current_secondary_key()
+{
+    static quintptr value = 0;
+    return value;
+}
+
+inline quintptr window_key(HWND hwnd)
+{
+    return reinterpret_cast<quintptr>(hwnd);
+}
+
+inline SecondaryState* secondary_for(HWND hwnd)
+{
+    if (!hwnd)
+        return nullptr;
+    auto it = secondary_states().find(window_key(hwnd));
+    return it == secondary_states().end() ? nullptr : &it.value();
+}
+
+inline SecondaryState* current_secondary()
+{
+    return secondary_for(reinterpret_cast<HWND>(current_secondary_key()));
+}
+
 inline qint64 now_ms()
 {
     return state().clock.isValid() ? state().clock.elapsed() : 0;
@@ -176,24 +244,39 @@ inline HWND window_handle()
     return window ? reinterpret_cast<HWND>(window->winId()) : nullptr;
 }
 
+inline int titlebar_px_for(qreal dpr)
+{
+    return qRound(kTitleBarDp * dpr);
+}
+
+inline int button_px_for(qreal dpr)
+{
+    return qRound(kButtonDp * dpr);
+}
+
 inline int titlebar_px()
 {
-    return qRound(kTitleBarDp * state().dpr);
+    return titlebar_px_for(state().dpr);
 }
 
 inline int button_px()
 {
-    return qRound(kButtonDp * state().dpr);
+    return button_px_for(state().dpr);
 }
 
 /// The thickness Windows itself uses for a resize border at this DPI. This is
 /// what Qt's `getResizeBorderThickness` uses for the expanded-client-area
 /// path, and it is one visible pixel wider than the QML frame line.
-inline int resize_border_px()
+inline int resize_border_px_for(HWND hwnd)
 {
-    const UINT dpi = state().hwnd ? GetDpiForWindow(state().hwnd) : 96;
+    const UINT dpi = hwnd ? GetDpiForWindow(hwnd) : 96;
     return GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi)
         + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+}
+
+inline int resize_border_px()
+{
+    return resize_border_px_for(state().hwnd);
 }
 
 inline QJsonArray point_json(POINT point)
@@ -233,12 +316,12 @@ inline POINT client_origin(HWND hwnd)
 /// them; while maximized there is no resize edge, exactly as on a native
 /// window. The button strip is the three rightmost `kButtonDp` columns of the
 /// title bar, so the layout is defined once (here) and QML draws to it.
-inline LRESULT hit_test(HWND hwnd, POINT screen)
+inline LRESULT hit_test_for(HWND hwnd, qreal dpr, POINT screen)
 {
     RECT window_rect;
     GetWindowRect(hwnd, &window_rect);
     const bool zoomed = IsZoomed(hwnd) != FALSE;
-    const int border = resize_border_px();
+    const int border = resize_border_px_for(hwnd);
 
     if (!zoomed) {
         const bool left = screen.x >= window_rect.left && screen.x < window_rect.left + border;
@@ -267,8 +350,8 @@ inline LRESULT hit_test(HWND hwnd, POINT screen)
     ScreenToClient(hwnd, &client);
     RECT client_rect;
     GetClientRect(hwnd, &client_rect);
-    const int titlebar = titlebar_px();
-    const int button = button_px();
+    const int titlebar = titlebar_px_for(dpr);
+    const int button = button_px_for(dpr);
 
     if (client.y >= 0 && client.y < titlebar) {
         const int right = client_rect.right;
@@ -285,6 +368,11 @@ inline LRESULT hit_test(HWND hwnd, POINT screen)
     }
 
     return HTCLIENT;
+}
+
+inline LRESULT hit_test(HWND hwnd, POINT screen)
+{
+    return hit_test_for(hwnd, state().dpr, screen);
 }
 
 inline bool maximize_native(bool via_qt)
@@ -341,6 +429,47 @@ inline void maximize_after_release(bool was_zoomed)
     timer->start();
 }
 
+/// Qt's frameless path returns 0 for every size, which makes the client the
+/// whole window rect. When maximized, Windows sizes a WS_THICKFRAME window to
+/// the work area *plus* the invisible resize border (11 px at 150%), so that
+/// client would be 22 px larger than the work area and run under the taskbar.
+/// Handing DWM the work area as the client keeps the QML content aligned while
+/// the extra window area stays off-screen.
+inline bool fix_zoomed_client(HWND hwnd, WPARAM wParam, LPARAM lParam, LRESULT* result)
+{
+    if (!wParam || !IsZoomed(hwnd))
+        return false;
+    auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam);
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    if (params
+        && GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &monitor)) {
+        params->rgrc[0] = monitor.rcWork;
+        *result = 0;
+        return true;
+    }
+    return false;
+}
+
+inline void record_hit(SecondaryState& value, HWND hwnd, POINT screen, LRESULT code)
+{
+    POINT client = screen;
+    ScreenToClient(hwnd, &client);
+    HitRecord record;
+    record.at_ms = now_ms();
+    record.code = int(code);
+    record.screen_x = screen.x;
+    record.screen_y = screen.y;
+    record.client_x = client.x;
+    record.client_y = client.y;
+    record.zoomed = IsZoomed(hwnd) != FALSE;
+    value.recent_hits.push_back(record);
+    if (value.recent_hits.size() > 240)
+        value.recent_hits.remove(0, 60);
+    if (code >= 0 && code < 32)
+        value.hit_counts[code] += 1;
+}
+
 class NativeFilter final : public QAbstractNativeEventFilter
 {
 public:
@@ -353,87 +482,119 @@ public:
             return false;
 
         State& value = state();
-        if (!value.hwnd || msg->hwnd != value.hwnd)
+        if (value.hwnd && msg->hwnd == value.hwnd) {
+            switch (msg->message) {
+            case WM_NCHITTEST: {
+                const POINT screen{ GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam) };
+                const LRESULT code = hit_test(msg->hwnd, screen);
+
+                POINT client = screen;
+                ScreenToClient(msg->hwnd, &client);
+                HitRecord record;
+                record.at_ms = now_ms();
+                record.code = int(code);
+                record.screen_x = screen.x;
+                record.screen_y = screen.y;
+                record.client_x = client.x;
+                record.client_y = client.y;
+                record.zoomed = IsZoomed(msg->hwnd) != FALSE;
+                value.recent_hits.push_back(record);
+                if (value.recent_hits.size() > 240)
+                    value.recent_hits.remove(0, 60);
+                if (code >= 0 && code < 32)
+                    value.hit_counts[code] += 1;
+
+                *result = code;
+                return true;
+            }
+            case WM_NCLBUTTONDOWN:
+                if (msg->wParam >= 0 && msg->wParam < 32)
+                    value.nc_down_counts[msg->wParam] += 1;
+                if (msg->wParam == HTMAXBUTTON)
+                    maximize_after_release(IsZoomed(msg->hwnd) != FALSE);
+                return false;
+            case WM_NCLBUTTONUP:
+                value.nc_up += 1;
+                return false;
+            case WM_NCLBUTTONDBLCLK:
+                value.nc_dblclk += 1;
+                return false;
+            case WM_NCCALCSIZE:
+                value.nccalcsize += 1;
+                if (fix_zoomed_client(msg->hwnd, msg->wParam, msg->lParam, result))
+                    return true;
+                return false;
+            case WM_ENTERSIZEMOVE:
+                value.entersizemove += 1;
+                return false;
+            case WM_EXITSIZEMOVE:
+                value.exitsizemove += 1;
+                return false;
+            case WM_MOVING:
+                value.moving += 1;
+                return false;
+            case WM_SIZING:
+                value.sizing += 1;
+                return false;
+            case WM_ERASEBKGND:
+                value.erasebkgnd += 1;
+                return false;
+            case WM_ACTIVATE:
+                value.activate += 1;
+                return false;
+            case WM_DPICHANGED:
+                value.dpichanged += 1;
+                return false;
+            default:
+                return false;
+            }
+        }
+
+        SecondaryState* secondary = secondary_for(msg->hwnd);
+        if (!secondary)
             return false;
 
         switch (msg->message) {
         case WM_NCHITTEST: {
             const POINT screen{ GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam) };
-            const LRESULT code = hit_test(msg->hwnd, screen);
-
-            POINT client = screen;
-            ScreenToClient(msg->hwnd, &client);
-            HitRecord record;
-            record.at_ms = now_ms();
-            record.code = int(code);
-            record.screen_x = screen.x;
-            record.screen_y = screen.y;
-            record.client_x = client.x;
-            record.client_y = client.y;
-            record.zoomed = IsZoomed(msg->hwnd) != FALSE;
-            value.recent_hits.push_back(record);
-            if (value.recent_hits.size() > 240)
-                value.recent_hits.remove(0, 60);
-            if (code >= 0 && code < 32)
-                value.hit_counts[code] += 1;
-
+            const LRESULT code = hit_test_for(msg->hwnd, secondary->dpr, screen);
+            record_hit(*secondary, msg->hwnd, screen, code);
             *result = code;
             return true;
         }
         case WM_NCLBUTTONDOWN:
             if (msg->wParam >= 0 && msg->wParam < 32)
-                value.nc_down_counts[msg->wParam] += 1;
-            if (msg->wParam == HTMAXBUTTON)
-                maximize_after_release(IsZoomed(msg->hwnd) != FALSE);
+                secondary->nc_down_counts[msg->wParam] += 1;
             return false;
         case WM_NCLBUTTONUP:
-            value.nc_up += 1;
+            secondary->nc_up += 1;
             return false;
         case WM_NCLBUTTONDBLCLK:
-            value.nc_dblclk += 1;
+            secondary->nc_dblclk += 1;
             return false;
         case WM_NCCALCSIZE:
-            value.nccalcsize += 1;
-            // Qt's frameless path returns 0 for every size, which makes the
-            // client the whole window rect. When maximized, Windows sizes a
-            // WS_THICKFRAME window to the work area *plus* the invisible
-            // resize border (11 px at 150%), so that client would be 22 px
-            // larger than the work area and run under the taskbar. Handing
-            // DWM the work area as the client keeps the QML content aligned
-            // while the extra window area stays off-screen.
-            if (msg->wParam && IsZoomed(msg->hwnd)) {
-                auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(msg->lParam);
-                MONITORINFO monitor{};
-                monitor.cbSize = sizeof(monitor);
-                if (params
-                    && GetMonitorInfoW(MonitorFromWindow(msg->hwnd, MONITOR_DEFAULTTONEAREST),
-                                       &monitor)) {
-                    params->rgrc[0] = monitor.rcWork;
-                    *result = 0;
-                    return true;
-                }
-            }
-            return false;
+            secondary->nccalcsize += 1;
+            return fix_zoomed_client(msg->hwnd, msg->wParam, msg->lParam, result);
         case WM_ENTERSIZEMOVE:
-            value.entersizemove += 1;
+            secondary->entersizemove += 1;
             return false;
         case WM_EXITSIZEMOVE:
-            value.exitsizemove += 1;
+            secondary->exitsizemove += 1;
             return false;
         case WM_MOVING:
-            value.moving += 1;
+            secondary->moving += 1;
             return false;
         case WM_SIZING:
-            value.sizing += 1;
+            secondary->sizing += 1;
             return false;
         case WM_ERASEBKGND:
-            value.erasebkgnd += 1;
+            secondary->erasebkgnd += 1;
             return false;
         case WM_ACTIVATE:
-            value.activate += 1;
+            secondary->activate += 1;
             return false;
         case WM_DPICHANGED:
-            value.dpichanged += 1;
+            secondary->dpichanged += 1;
             return false;
         default:
             return false;
@@ -465,8 +626,7 @@ inline bool enable_blur_behind(HWND hwnd)
     blur.fTransitionOnMaximized = FALSE;
     const HRESULT result = DwmEnableBlurBehindWindow(hwnd, &blur);
     DeleteObject(region);
-    state().blur_behind = SUCCEEDED(result);
-    return state().blur_behind;
+    return SUCCEEDED(result) != FALSE;
 }
 
 inline void disable_blur_behind(HWND hwnd)
@@ -475,7 +635,6 @@ inline void disable_blur_behind(HWND hwnd)
     blur.dwFlags = DWM_BB_ENABLE;
     blur.fEnable = FALSE;
     DwmEnableBlurBehindWindow(hwnd, &blur);
-    state().blur_behind = false;
 }
 
 inline void style_window(HWND hwnd)
@@ -492,7 +651,6 @@ inline void style_window(HWND hwnd)
     SetWindowLongPtrW(hwnd, GWL_STYLE, style);
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-    state().style_applied = true;
 }
 
 inline bool attach()
@@ -518,6 +676,7 @@ inline bool attach()
 
     if (!value.styled) {
         style_window(hwnd);
+        value.style_applied = true;
         value.styled = true;
     }
 
@@ -528,6 +687,66 @@ inline bool attach()
         value.connected = true;
     }
     return true;
+}
+
+/// Attach the native half to a second QQuickWindow, matched by its title.
+///
+/// The QML side creates the window hidden with a per-cycle title, calls this,
+/// and only then sets `visible`. `winId()` forces the platform window to exist,
+/// so the frameless style and the backdrop are in place before the first
+/// frame — the same order a shell needs if it does not want a visible flash of
+/// the system frame. Frames are counted per HWND; the process-wide probe
+/// callbacks in gate 3 would otherwise attribute a second window's paints to
+/// the source window.
+inline bool attach_secondary(const QString& title)
+{
+    QQuickWindow* window = nullptr;
+    for (QWindow* candidate : QGuiApplication::topLevelWindows()) {
+        auto* quick = qobject_cast<QQuickWindow*>(candidate);
+        if (quick && quick->title() == title) {
+            window = quick;
+            break;
+        }
+    }
+    if (!window)
+        return false;
+
+    const HWND hwnd = reinterpret_cast<HWND>(window->winId());
+    if (!hwnd)
+        return false;
+
+    SecondaryState record;
+    record.window = window;
+    record.hwnd = hwnd;
+    record.dpr = window->devicePixelRatio();
+    style_window(hwnd);
+    record.style_applied = true;
+
+    const quintptr key = window_key(hwnd);
+    secondary_states().insert(key, record);
+    current_secondary_key() = key;
+
+    QObject::connect(window, &QQuickWindow::frameSwapped, window, [key]() {
+        auto it = secondary_states().find(key);
+        if (it != secondary_states().end())
+            it.value().frames += 1;
+    });
+    QObject::connect(window, &QQuickWindow::beforeRendering, window, [key]() {
+        auto it = secondary_states().find(key);
+        if (it != secondary_states().end())
+            it.value().before_rendering += 1;
+    });
+    return true;
+}
+
+/// Drop the record after QML destroyed the window. Keeping it would make the
+/// next cycle's HWND key collide with a recycled handle.
+inline void forget_secondary()
+{
+    auto it = secondary_states().find(current_secondary_key());
+    if (it != secondary_states().end())
+        secondary_states().erase(it);
+    current_secondary_key() = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -556,10 +775,11 @@ inline bool apply_backdrop(int material, bool dark)
         BOOL off = FALSE;
         value.mica_result = long(DwmSetWindowAttribute(hwnd, kDwmwaMicaEffect, &off, sizeof(off)));
         disable_blur_behind(hwnd);
+        value.blur_behind = false;
         return true;
     }
 
-    enable_blur_behind(hwnd);
+    value.blur_behind = enable_blur_behind(hwnd);
 
     const int type = material == 0 ? kDwmsbtMainWindow : kDwmsbtTransientWindow;
     HRESULT backdrop = DwmSetWindowAttribute(hwnd, kDwmwaSystemBackdropType, &type, sizeof(type));
@@ -577,31 +797,75 @@ inline bool apply_backdrop(int material, bool dark)
     return SUCCEEDED(backdrop);
 }
 
-inline QJsonObject backdrop_state_object()
+inline bool apply_secondary_backdrop(int material, bool dark)
 {
-    State& value = state();
-    QJsonObject root;
-    root["material"] = value.material;
-    root["dark"] = value.dark;
-    root["dark_hr"] = QString::number(value.dark_result, 16);
-    root["backdrop_hr"] = QString::number(value.backdrop_result, 16);
-    root["mica_hr"] = QString::number(value.mica_result, 16);
-    root["blur_behind"] = value.blur_behind;
+    SecondaryState* secondary = current_secondary();
+    if (!secondary || !secondary->hwnd)
+        return false;
+    const HWND hwnd = secondary->hwnd;
 
-    if (value.hwnd) {
-        BOOL dark = FALSE;
+    secondary->material = material;
+    secondary->dark = dark;
+
+    const BOOL dark_flag = dark ? TRUE : FALSE;
+    secondary->dark_result =
+        long(DwmSetWindowAttribute(hwnd, kDwmwaUseImmersiveDarkMode, &dark_flag, sizeof(dark_flag)));
+
+    if (material == 2) { // none
+        int none = kDwmsbtNone;
+        secondary->backdrop_result =
+            long(DwmSetWindowAttribute(hwnd, kDwmwaSystemBackdropType, &none, sizeof(none)));
+        BOOL off = FALSE;
+        secondary->mica_result =
+            long(DwmSetWindowAttribute(hwnd, kDwmwaMicaEffect, &off, sizeof(off)));
+        disable_blur_behind(hwnd);
+        secondary->blur_behind = false;
+        return true;
+    }
+
+    secondary->blur_behind = enable_blur_behind(hwnd);
+
+    const int type = material == 0 ? kDwmsbtMainWindow : kDwmsbtTransientWindow;
+    const HRESULT backdrop =
+        DwmSetWindowAttribute(hwnd, kDwmwaSystemBackdropType, &type, sizeof(type));
+    secondary->backdrop_result = long(backdrop);
+
+    if (FAILED(backdrop) && material == 0) {
+        BOOL on = TRUE;
+        secondary->mica_result =
+            long(DwmSetWindowAttribute(hwnd, kDwmwaMicaEffect, &on, sizeof(on)));
+        return SUCCEEDED(secondary->mica_result);
+    }
+    secondary->mica_result = long(S_OK);
+    return SUCCEEDED(backdrop);
+}
+
+inline QJsonObject backdrop_state_for(HWND hwnd, int material, bool dark,
+                                      long dark_result, long backdrop_result,
+                                      long mica_result, bool blur_behind)
+{
+    QJsonObject root;
+    root["material"] = material;
+    root["dark"] = dark;
+    root["dark_hr"] = QString::number(dark_result, 16);
+    root["backdrop_hr"] = QString::number(backdrop_result, 16);
+    root["mica_hr"] = QString::number(mica_result, 16);
+    root["blur_behind"] = blur_behind;
+
+    if (hwnd) {
+        BOOL read_dark = FALSE;
         const HRESULT dark_hr =
-            DwmGetWindowAttribute(value.hwnd, kDwmwaUseImmersiveDarkMode, &dark, sizeof(dark));
-        root["read_dark"] = SUCCEEDED(dark_hr) ? bool(dark) : false;
+            DwmGetWindowAttribute(hwnd, kDwmwaUseImmersiveDarkMode, &read_dark, sizeof(read_dark));
+        root["read_dark"] = SUCCEEDED(dark_hr) ? bool(read_dark) : false;
         root["read_dark_hr"] = QString::number(dark_hr, 16);
 
         int type = -1;
         const HRESULT type_hr =
-            DwmGetWindowAttribute(value.hwnd, kDwmwaSystemBackdropType, &type, sizeof(type));
+            DwmGetWindowAttribute(hwnd, kDwmwaSystemBackdropType, &type, sizeof(type));
         root["read_backdrop"] = SUCCEEDED(type_hr) ? type : -1;
         root["read_backdrop_hr"] = QString::number(type_hr, 16);
 
-        const LONG_PTR exstyle = GetWindowLongPtrW(value.hwnd, GWL_EXSTYLE);
+        const LONG_PTR exstyle = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
         root["layered"] = (exstyle & WS_EX_LAYERED) != 0;
 
         BOOL composition = FALSE;
@@ -611,22 +875,28 @@ inline QJsonObject backdrop_state_object()
     return root;
 }
 
+inline QJsonObject backdrop_state_object()
+{
+    State& value = state();
+    return backdrop_state_for(value.hwnd, value.material, value.dark, value.dark_result,
+                              value.backdrop_result, value.mica_result, value.blur_behind);
+}
+
 // ---------------------------------------------------------------------------
 // Geometry
 
-inline QJsonObject chrome_regions_object()
+inline QJsonObject chrome_regions_for(HWND hwnd, qreal dpr)
 {
     QJsonObject root;
-    State& value = state();
-    if (!value.hwnd)
+    if (!hwnd)
         return root;
 
     RECT client;
-    GetClientRect(value.hwnd, &client);
-    const POINT origin = client_origin(value.hwnd);
-    const int titlebar = titlebar_px();
-    const int button = button_px();
-    const int border = resize_border_px();
+    GetClientRect(hwnd, &client);
+    const POINT origin = client_origin(hwnd);
+    const int titlebar = titlebar_px_for(dpr);
+    const int button = button_px_for(dpr);
+    const int border = resize_border_px_for(hwnd);
     const int width = client.right;
     const int height = client.bottom;
 
@@ -653,6 +923,12 @@ inline QJsonObject chrome_regions_object()
     return root;
 }
 
+inline QJsonObject chrome_regions_object()
+{
+    State& value = state();
+    return chrome_regions_for(value.hwnd, value.dpr);
+}
+
 inline int hit_test_at(int x, int y)
 {
     State& value = state();
@@ -662,52 +938,65 @@ inline int hit_test_at(int x, int y)
     return int(SendMessageW(value.hwnd, WM_NCHITTEST, 0, point));
 }
 
-inline QJsonObject window_info_object()
+inline QJsonObject window_info_for(HWND hwnd, qreal dpr, int material, bool dark,
+                                   long dark_result, long backdrop_result, long mica_result,
+                                   bool blur_behind)
 {
     QJsonObject root;
-    State& value = state();
-    if (!value.hwnd)
+    if (!hwnd)
         return root;
 
     RECT window_rect;
-    GetWindowRect(value.hwnd, &window_rect);
+    GetWindowRect(hwnd, &window_rect);
     RECT frame_rect = window_rect;
-    DwmGetWindowAttribute(value.hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &frame_rect,
+    DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &frame_rect,
                           sizeof(frame_rect));
     RECT client_rect;
-    GetClientRect(value.hwnd, &client_rect);
-    const POINT origin = client_origin(value.hwnd);
+    GetClientRect(hwnd, &client_rect);
+    const POINT origin = client_origin(hwnd);
 
     MONITORINFO monitor{};
     monitor.cbSize = sizeof(monitor);
-    const HMONITOR handle = MonitorFromWindow(value.hwnd, MONITOR_DEFAULTTONEAREST);
+    const HMONITOR handle = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
     GetMonitorInfoW(handle, &monitor);
 
     wchar_t class_name[256] = {};
-    GetClassNameW(value.hwnd, class_name, 256);
+    GetClassNameW(hwnd, class_name, 256);
+    wchar_t title[512] = {};
+    GetWindowTextW(hwnd, title, 512);
 
-    root["hwnd"] = QString::number(reinterpret_cast<quintptr>(value.hwnd), 16);
+    root["hwnd"] = QString::number(reinterpret_cast<quintptr>(hwnd), 16);
+    root["title"] = QString::fromWCharArray(title);
     root["class"] = QString::fromWCharArray(class_name);
     root["qt_version"] = QString::fromLatin1(qVersion());
     root["os"] = QSysInfo::prettyProductName();
-    root["dpr"] = value.dpr;
+    root["dpr"] = dpr;
     root["window_rect"] = rect_json(window_rect);
     root["frame_rect"] = rect_json(frame_rect);
     root["client_rect"] = rect_json(client_rect);
     root["client_origin"] = point_json(origin);
     root["work_area"] = rect_json(monitor.rcWork);
     root["monitor"] = rect_json(monitor.rcMonitor);
-    root["zoomed"] = IsZoomed(value.hwnd) != FALSE;
-    root["iconic"] = IsIconic(value.hwnd) != FALSE;
-    root["visible"] = IsWindowVisible(value.hwnd) != FALSE;
-    root["foreground"] = GetForegroundWindow() == value.hwnd;
-    root["style"] = QString::number(GetWindowLongPtrW(value.hwnd, GWL_STYLE), 16);
-    root["exstyle"] = QString::number(GetWindowLongPtrW(value.hwnd, GWL_EXSTYLE), 16);
-    root["titlebar_px"] = titlebar_px();
-    root["button_px"] = button_px();
-    root["border_px"] = resize_border_px();
-    root["backdrop"] = backdrop_state_object();
+    root["zoomed"] = IsZoomed(hwnd) != FALSE;
+    root["iconic"] = IsIconic(hwnd) != FALSE;
+    root["visible"] = IsWindowVisible(hwnd) != FALSE;
+    root["foreground"] = GetForegroundWindow() == hwnd;
+    root["style"] = QString::number(GetWindowLongPtrW(hwnd, GWL_STYLE), 16);
+    root["exstyle"] = QString::number(GetWindowLongPtrW(hwnd, GWL_EXSTYLE), 16);
+    root["titlebar_px"] = titlebar_px_for(dpr);
+    root["button_px"] = button_px_for(dpr);
+    root["border_px"] = resize_border_px_for(hwnd);
+    root["backdrop"] = backdrop_state_for(hwnd, material, dark, dark_result, backdrop_result,
+                                          mica_result, blur_behind);
     return root;
+}
+
+inline QJsonObject window_info_object()
+{
+    State& value = state();
+    return window_info_for(value.hwnd, value.dpr, value.material, value.dark,
+                           value.dark_result, value.backdrop_result, value.mica_result,
+                           value.blur_behind);
 }
 
 // ---------------------------------------------------------------------------
@@ -723,9 +1012,9 @@ inline QJsonObject counter_json(const qint64 (&counts)[32])
     return root;
 }
 
-inline QJsonObject chrome_stats_object()
+template <typename T>
+inline QJsonObject chrome_stats_for(const T& value)
 {
-    State& value = state();
     QJsonObject root;
     root["hit_test"] = counter_json(value.hit_counts);
     root["nc_down"] = counter_json(value.nc_down_counts);
@@ -759,9 +1048,14 @@ inline QJsonObject chrome_stats_object()
     return root;
 }
 
-inline void clear_chrome_stats()
+inline QJsonObject chrome_stats_object()
 {
-    State& value = state();
+    return chrome_stats_for(state());
+}
+
+template <typename T>
+inline void clear_stats_for(T& value)
+{
     std::fill(std::begin(value.hit_counts), std::end(value.hit_counts), 0);
     std::fill(std::begin(value.nc_down_counts), std::end(value.nc_down_counts), 0);
     value.nc_up = 0;
@@ -777,18 +1071,32 @@ inline void clear_chrome_stats()
     value.recent_hits.clear();
 }
 
+inline void clear_chrome_stats()
+{
+    clear_stats_for(state());
+}
+
+inline void clear_secondary_stats()
+{
+    if (auto* secondary = current_secondary())
+        clear_stats_for(*secondary);
+}
+
 // ---------------------------------------------------------------------------
 // Mouse input (real SendInput, guarded by "our window is foreground")
 
-inline bool is_foreground()
+inline bool is_foreground_for(HWND hwnd)
 {
-    const HWND hwnd = state().hwnd;
     return hwnd && GetForegroundWindow() == hwnd;
 }
 
-inline bool set_foreground()
+inline bool is_foreground()
 {
-    HWND hwnd = state().hwnd;
+    return is_foreground_for(state().hwnd);
+}
+
+inline bool set_foreground_for(HWND hwnd)
+{
     if (!hwnd)
         return false;
     if (GetForegroundWindow() == hwnd)
@@ -820,6 +1128,23 @@ inline bool set_foreground()
     return GetForegroundWindow() == hwnd;
 }
 
+inline bool set_foreground()
+{
+    return set_foreground_for(state().hwnd);
+}
+
+inline bool set_secondary_foreground()
+{
+    SecondaryState* secondary = current_secondary();
+    return secondary && set_foreground_for(secondary->hwnd);
+}
+
+inline bool is_secondary_foreground()
+{
+    SecondaryState* secondary = current_secondary();
+    return secondary && is_foreground_for(secondary->hwnd);
+}
+
 inline bool send_mouse(DWORD flags, int x, int y, bool absolute)
 {
     INPUT input{};
@@ -842,11 +1167,16 @@ inline bool move_cursor(int x, int y)
     return send_mouse(MOUSEEVENTF_MOVE, x, y, true);
 }
 
-inline bool mouse_down()
+inline bool mouse_down_for(HWND hwnd)
 {
-    if (!is_foreground())
+    if (!is_foreground_for(hwnd))
         return false;
     return send_mouse(MOUSEEVENTF_LEFTDOWN, 0, 0, false);
+}
+
+inline bool mouse_down()
+{
+    return mouse_down_for(state().hwnd);
 }
 
 inline bool mouse_up()
@@ -854,9 +1184,9 @@ inline bool mouse_up()
     return send_mouse(MOUSEEVENTF_LEFTUP, 0, 0, false);
 }
 
-inline bool click(int x, int y)
+inline bool click_for(HWND hwnd, int x, int y)
 {
-    if (!set_foreground())
+    if (!set_foreground_for(hwnd))
         return false;
     if (!move_cursor(x, y))
         return false;
@@ -869,6 +1199,23 @@ inline bool click(int x, int y)
         return false;
     Sleep(60);
     return send_mouse(MOUSEEVENTF_LEFTUP, 0, 0, false);
+}
+
+inline bool click(int x, int y)
+{
+    return click_for(state().hwnd, x, y);
+}
+
+inline bool click_secondary(int x, int y)
+{
+    SecondaryState* secondary = current_secondary();
+    return secondary && click_for(secondary->hwnd, x, y);
+}
+
+inline bool secondary_mouse_down()
+{
+    SecondaryState* secondary = current_secondary();
+    return secondary && mouse_down_for(secondary->hwnd);
 }
 
 inline std::unique_ptr<std::string> cursor_position_json()
@@ -946,14 +1293,24 @@ inline bool capture(const QString& path, int x, int y, int width, int height)
     return save_image(path, capture_rect(x, y, width, height));
 }
 
-inline bool capture_window(const QString& path)
+inline bool capture_window_for(HWND hwnd, const QString& path)
 {
-    State& value = state();
-    if (!value.hwnd)
+    if (!hwnd)
         return false;
     RECT rect;
-    GetWindowRect(value.hwnd, &rect);
+    GetWindowRect(hwnd, &rect);
     return capture(path, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top);
+}
+
+inline bool capture_window(const QString& path)
+{
+    return capture_window_for(state().hwnd, path);
+}
+
+inline bool capture_secondary_window(const QString& path)
+{
+    SecondaryState* secondary = current_secondary();
+    return secondary && capture_window_for(secondary->hwnd, path);
 }
 
 // ---------------------------------------------------------------------------
@@ -1192,6 +1549,62 @@ inline std::unique_ptr<std::string> chrome_stats_json()
 inline std::unique_ptr<std::string> sample_report_json()
 {
     return to_json(sample_report_array());
+}
+
+// ---------------------------------------------------------------------------
+// Secondary-window wrappers (gate 4)
+
+inline std::unique_ptr<std::string> secondary_info_json()
+{
+    SecondaryState* secondary = current_secondary();
+    if (!secondary)
+        return to_json(QJsonObject{});
+    return to_json(window_info_for(secondary->hwnd, secondary->dpr, secondary->material,
+                                   secondary->dark, secondary->dark_result,
+                                   secondary->backdrop_result, secondary->mica_result,
+                                   secondary->blur_behind));
+}
+
+inline std::unique_ptr<std::string> secondary_backdrop_json()
+{
+    SecondaryState* secondary = current_secondary();
+    if (!secondary)
+        return to_json(QJsonObject{});
+    return to_json(backdrop_state_for(secondary->hwnd, secondary->material, secondary->dark,
+                                      secondary->dark_result, secondary->backdrop_result,
+                                      secondary->mica_result, secondary->blur_behind));
+}
+
+inline std::unique_ptr<std::string> secondary_regions_json()
+{
+    SecondaryState* secondary = current_secondary();
+    if (!secondary)
+        return to_json(QJsonObject{});
+    return to_json(chrome_regions_for(secondary->hwnd, secondary->dpr));
+}
+
+inline std::unique_ptr<std::string> secondary_stats_json()
+{
+    SecondaryState* secondary = current_secondary();
+    if (!secondary)
+        return to_json(QJsonObject{});
+    return to_json(chrome_stats_for(*secondary));
+}
+
+inline int secondary_hit_test_at(int x, int y)
+{
+    SecondaryState* secondary = current_secondary();
+    if (!secondary || !secondary->hwnd)
+        return -1;
+    return int(SendMessageW(secondary->hwnd, WM_NCHITTEST, 0, MAKELPARAM(x, y)));
+}
+
+inline bool close_secondary()
+{
+    SecondaryState* secondary = current_secondary();
+    if (!secondary || !secondary->hwnd)
+        return false;
+    return PostMessageW(secondary->hwnd, WM_CLOSE, 0, 0) != FALSE;
 }
 
 } // namespace dae_window_probe

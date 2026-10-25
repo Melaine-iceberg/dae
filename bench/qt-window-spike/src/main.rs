@@ -13,7 +13,11 @@
 //! ```
 
 mod bridge;
+mod format;
 mod material;
+mod memory;
+mod model;
+mod tearoff;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 

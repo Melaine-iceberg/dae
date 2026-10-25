@@ -1,0 +1,1665 @@
+{
+  "gate": 4,
+  "title": "tear-off / close increment of a second QQuickWindow",
+  "qt_version": "6.12.0",
+  "os": "Windows 11 Version 26H2",
+  "dpr": 1.5,
+  "screen": [
+    3840,
+    2160
+  ],
+  "input": {
+    "path": "K:/dae-listing-bench/huge",
+    "rows": 120000,
+    "batches": 19,
+    "load_ms": 187.93009999999998
+  },
+  "thresholds": {
+    "tear_off_ms": 150,
+    "pss_mb": 20
+  },
+  "summary": {
+    "cycles": 6,
+    "latency_ms": [
+      67.21,
+      59.08,
+      60.56,
+      76.82,
+      58.52,
+      59.4
+    ],
+    "max_latency_ms": 76.82,
+    "pss_increment_mb": [
+      13.74,
+      6.24,
+      5.48,
+      5.79,
+      5.12,
+      5.27
+    ],
+    "max_pss_increment_mb": 13.74,
+    "pss_close_residual_mb": [
+      9.49,
+      0.61,
+      0.47,
+      1.56,
+      -0.54,
+      -0.66
+    ],
+    "max_pss_close_residual_mb": 9.49,
+    "closed_pss_growth_mb": 3.78,
+    "private_close_residual_mb": [
+      25.2,
+      -0.61,
+      1.11,
+      0.36,
+      -1.6,
+      -2.35
+    ],
+    "closed_private_growth_mb": 0.56
+  },
+  "cycles": [
+    {
+      "cycle": "1",
+      "latency_ms": 67.21,
+      "pss_baseline_mb": 96.43,
+      "pss_open_mb": 110.17,
+      "pss_increment_mb": 13.74,
+      "marks": {
+        "created": 1.64,
+        "frame": 67.21,
+        "request": 0,
+        "settled": 873.99,
+        "shown": 18.12
+      },
+      "window_rect": [
+        1245,
+        579,
+        2595,
+        1509
+      ],
+      "client_rect": [
+        0,
+        0,
+        1350,
+        930
+      ],
+      "backdrop": {
+        "backdrop_hr": "0",
+        "blur_behind": true,
+        "composition": true,
+        "dark": true,
+        "dark_hr": "0",
+        "layered": true,
+        "material": 0,
+        "mica_hr": "0",
+        "read_backdrop": 2,
+        "read_backdrop_hr": "0",
+        "read_dark": true,
+        "read_dark_hr": "0"
+      },
+      "pss_closed_mb": 105.92,
+      "pss_residual_mb": 9.49,
+      "private_closed_mb": 178.64,
+      "private_residual_mb": 25.2
+    },
+    {
+      "cycle": "2",
+      "latency_ms": 59.08,
+      "pss_baseline_mb": 106.7,
+      "pss_open_mb": 112.94,
+      "pss_increment_mb": 6.24,
+      "marks": {
+        "created": 0.91,
+        "frame": 59.08,
+        "request": 0,
+        "settled": 868.71,
+        "shown": 10.18
+      },
+      "window_rect": [
+        1245,
+        579,
+        2595,
+        1509
+      ],
+      "client_rect": [
+        0,
+        0,
+        1350,
+        930
+      ],
+      "backdrop": {
+        "backdrop_hr": "0",
+        "blur_behind": true,
+        "composition": true,
+        "dark": true,
+        "dark_hr": "0",
+        "layered": true,
+        "material": 0,
+        "mica_hr": "0",
+        "read_backdrop": 2,
+        "read_backdrop_hr": "0",
+        "read_dark": true,
+        "read_dark_hr": "0"
+      },
+      "pss_closed_mb": 107.31,
+      "pss_residual_mb": 0.61,
+      "private_closed_mb": 178.48,
+      "private_residual_mb": -0.61
+    },
+    {
+      "cycle": "3",
+      "latency_ms": 60.56,
+      "pss_baseline_mb": 107.31,
+      "pss_open_mb": 112.79,
+      "pss_increment_mb": 5.48,
+      "marks": {
+        "created": 0.83,
+        "frame": 60.56,
+        "request": 0,
+        "settled": 866.42,
+        "shown": 10.36
+      },
+      "window_rect": [
+        1245,
+        579,
+        2595,
+        1509
+      ],
+      "client_rect": [
+        0,
+        0,
+        1350,
+        930
+      ],
+      "backdrop": {
+        "backdrop_hr": "0",
+        "blur_behind": true,
+        "composition": true,
+        "dark": true,
+        "dark_hr": "0",
+        "layered": true,
+        "material": 0,
+        "mica_hr": "0",
+        "read_backdrop": 2,
+        "read_backdrop_hr": "0",
+        "read_dark": true,
+        "read_dark_hr": "0"
+      },
+      "pss_closed_mb": 107.78,
+      "pss_residual_mb": 0.47,
+      "private_closed_mb": 179.59,
+      "private_residual_mb": 1.11
+    },
+    {
+      "cycle": "4",
+      "latency_ms": 76.82,
+      "pss_baseline_mb": 107.78,
+      "pss_open_mb": 113.57,
+      "pss_increment_mb": 5.79,
+      "marks": {
+        "created": 0.99,
+        "frame": 76.82,
+        "request": 0,
+        "settled": 882.49,
+        "shown": 10.5
+      },
+      "window_rect": [
+        1245,
+        579,
+        2595,
+        1509
+      ],
+      "client_rect": [
+        0,
+        0,
+        1350,
+        930
+      ],
+      "backdrop": {
+        "backdrop_hr": "0",
+        "blur_behind": true,
+        "composition": true,
+        "dark": true,
+        "dark_hr": "0",
+        "layered": true,
+        "material": 0,
+        "mica_hr": "0",
+        "read_backdrop": 2,
+        "read_backdrop_hr": "0",
+        "read_dark": true,
+        "read_dark_hr": "0"
+      },
+      "pss_closed_mb": 109.34,
+      "pss_residual_mb": 1.56,
+      "private_closed_mb": 179.41,
+      "private_residual_mb": 0.36
+    },
+    {
+      "cycle": "5",
+      "latency_ms": 58.52,
+      "pss_baseline_mb": 110.11,
+      "pss_open_mb": 115.23,
+      "pss_increment_mb": 5.12,
+      "marks": {
+        "created": 1.23,
+        "frame": 58.52,
+        "request": 0,
+        "settled": 864.05,
+        "shown": 11.48
+      },
+      "window_rect": [
+        1245,
+        579,
+        2595,
+        1509
+      ],
+      "client_rect": [
+        0,
+        0,
+        1350,
+        930
+      ],
+      "backdrop": {
+        "backdrop_hr": "0",
+        "blur_behind": true,
+        "composition": true,
+        "dark": true,
+        "dark_hr": "0",
+        "layered": true,
+        "material": 0,
+        "mica_hr": "0",
+        "read_backdrop": 2,
+        "read_backdrop_hr": "0",
+        "read_dark": true,
+        "read_dark_hr": "0"
+      },
+      "pss_closed_mb": 109.57,
+      "pss_residual_mb": -0.54,
+      "private_closed_mb": 179.61,
+      "private_residual_mb": -1.6
+    },
+    {
+      "cycle": "6",
+      "latency_ms": 59.4,
+      "pss_baseline_mb": 110.36,
+      "pss_open_mb": 115.63,
+      "pss_increment_mb": 5.27,
+      "marks": {
+        "created": 0.96,
+        "frame": 59.4,
+        "request": 0,
+        "settled": 864.67,
+        "shown": 10.21
+      },
+      "window_rect": [
+        1245,
+        579,
+        2595,
+        1509
+      ],
+      "client_rect": [
+        0,
+        0,
+        1350,
+        930
+      ],
+      "backdrop": {
+        "backdrop_hr": "0",
+        "blur_behind": true,
+        "composition": true,
+        "dark": true,
+        "dark_hr": "0",
+        "layered": true,
+        "material": 0,
+        "mica_hr": "0",
+        "read_backdrop": 2,
+        "read_backdrop_hr": "0",
+        "read_dark": true,
+        "read_dark_hr": "0"
+      },
+      "pss_closed_mb": 109.7,
+      "pss_residual_mb": -0.66,
+      "private_closed_mb": 179.2,
+      "private_residual_mb": -2.35
+    }
+  ],
+  "timings": [
+    {
+      "label": "1",
+      "latency_ms": 67.21,
+      "marks": {
+        "created": 1.64,
+        "frame": 67.21,
+        "request": 0,
+        "settled": 873.99,
+        "shown": 18.12
+      }
+    },
+    {
+      "label": "2",
+      "latency_ms": 59.08,
+      "marks": {
+        "created": 0.91,
+        "frame": 59.08,
+        "request": 0,
+        "settled": 868.71,
+        "shown": 10.18
+      }
+    },
+    {
+      "label": "3",
+      "latency_ms": 60.56,
+      "marks": {
+        "created": 0.83,
+        "frame": 60.56,
+        "request": 0,
+        "settled": 866.42,
+        "shown": 10.36
+      }
+    },
+    {
+      "label": "4",
+      "latency_ms": 76.82,
+      "marks": {
+        "created": 0.99,
+        "frame": 76.82,
+        "request": 0,
+        "settled": 882.49,
+        "shown": 10.5
+      }
+    },
+    {
+      "label": "5",
+      "latency_ms": 58.52,
+      "marks": {
+        "created": 1.23,
+        "frame": 58.52,
+        "request": 0,
+        "settled": 864.05,
+        "shown": 11.48
+      }
+    },
+    {
+      "label": "6",
+      "latency_ms": 59.4,
+      "marks": {
+        "created": 0.96,
+        "frame": 59.4,
+        "request": 0,
+        "settled": 864.67,
+        "shown": 10.21
+      }
+    }
+  ],
+  "memory": [
+    {
+      "at_ms": 830,
+      "cycle": "warmup",
+      "label": "warmup",
+      "peak_working_set_mb": 131.8,
+      "private_mb": 69.58,
+      "pss_mb": 61.37,
+      "working_set_mb": 128.16
+    },
+    {
+      "at_ms": 1044,
+      "cycle": "baseline",
+      "label": "baseline",
+      "peak_working_set_mb": 177.36,
+      "private_mb": 148.91,
+      "pss_mb": 95.14,
+      "working_set_mb": 175.25
+    },
+    {
+      "at_ms": 1854,
+      "cycle": "1",
+      "label": "baseline",
+      "peak_working_set_mb": 178.65,
+      "private_mb": 153.44,
+      "pss_mb": 96.43,
+      "working_set_mb": 178.65
+    },
+    {
+      "at_ms": 2737,
+      "cycle": "1",
+      "label": "open",
+      "peak_working_set_mb": 192.38,
+      "private_mb": 184.96,
+      "pss_mb": 110.17,
+      "working_set_mb": 192.38
+    },
+    {
+      "at_ms": 6085,
+      "cycle": "1",
+      "label": "closed",
+      "peak_working_set_mb": 207.63,
+      "private_mb": 178.64,
+      "pss_mb": 105.92,
+      "working_set_mb": 196.48
+    },
+    {
+      "at_ms": 6895,
+      "cycle": "2",
+      "label": "baseline",
+      "peak_working_set_mb": 207.63,
+      "private_mb": 179.09,
+      "pss_mb": 106.7,
+      "working_set_mb": 197.66
+    },
+    {
+      "at_ms": 7773,
+      "cycle": "2",
+      "label": "open",
+      "peak_working_set_mb": 207.63,
+      "private_mb": 186.32,
+      "pss_mb": 112.94,
+      "working_set_mb": 195.75
+    },
+    {
+      "at_ms": 11116,
+      "cycle": "2",
+      "label": "closed",
+      "peak_working_set_mb": 210.87,
+      "private_mb": 178.48,
+      "pss_mb": 107.31,
+      "working_set_mb": 197.91
+    },
+    {
+      "at_ms": 11927,
+      "cycle": "3",
+      "label": "baseline",
+      "peak_working_set_mb": 210.87,
+      "private_mb": 178.48,
+      "pss_mb": 107.31,
+      "working_set_mb": 197.91
+    },
+    {
+      "at_ms": 12803,
+      "cycle": "3",
+      "label": "open",
+      "peak_working_set_mb": 210.87,
+      "private_mb": 185.31,
+      "pss_mb": 112.79,
+      "working_set_mb": 195.65
+    },
+    {
+      "at_ms": 16146,
+      "cycle": "3",
+      "label": "closed",
+      "peak_working_set_mb": 210.87,
+      "private_mb": 179.59,
+      "pss_mb": 107.78,
+      "working_set_mb": 198.44
+    },
+    {
+      "at_ms": 16956,
+      "cycle": "4",
+      "label": "baseline",
+      "peak_working_set_mb": 210.87,
+      "private_mb": 179.05,
+      "pss_mb": 107.78,
+      "working_set_mb": 198.85
+    },
+    {
+      "at_ms": 17847,
+      "cycle": "4",
+      "label": "open",
+      "peak_working_set_mb": 210.87,
+      "private_mb": 185.59,
+      "pss_mb": 113.57,
+      "working_set_mb": 196.52
+    },
+    {
+      "at_ms": 21220,
+      "cycle": "4",
+      "label": "closed",
+      "peak_working_set_mb": 211.58,
+      "private_mb": 179.41,
+      "pss_mb": 109.34,
+      "working_set_mb": 200.07
+    },
+    {
+      "at_ms": 22029,
+      "cycle": "5",
+      "label": "baseline",
+      "peak_working_set_mb": 211.58,
+      "private_mb": 181.21,
+      "pss_mb": 110.11,
+      "working_set_mb": 201.26
+    },
+    {
+      "at_ms": 22903,
+      "cycle": "5",
+      "label": "open",
+      "peak_working_set_mb": 211.58,
+      "private_mb": 188.24,
+      "pss_mb": 115.23,
+      "working_set_mb": 198.64
+    },
+    {
+      "at_ms": 26265,
+      "cycle": "5",
+      "label": "closed",
+      "peak_working_set_mb": 213.24,
+      "private_mb": 179.61,
+      "pss_mb": 109.57,
+      "working_set_mb": 200.35
+    },
+    {
+      "at_ms": 27075,
+      "cycle": "6",
+      "label": "baseline",
+      "peak_working_set_mb": 213.24,
+      "private_mb": 181.55,
+      "pss_mb": 110.36,
+      "working_set_mb": 201.56
+    },
+    {
+      "at_ms": 27950,
+      "cycle": "6",
+      "label": "open",
+      "peak_working_set_mb": 213.24,
+      "private_mb": 188.66,
+      "pss_mb": 115.63,
+      "working_set_mb": 199.05
+    },
+    {
+      "at_ms": 31313,
+      "cycle": "6",
+      "label": "closed",
+      "peak_working_set_mb": 213.24,
+      "private_mb": 179.2,
+      "pss_mb": 109.7,
+      "working_set_mb": 200.5
+    }
+  ],
+  "checks": [
+    {
+      "name": "listing:loaded",
+      "ok": true,
+      "detail": "120000 rows / 19 batches / 187.9 ms",
+      "t_ms": 195
+    },
+    {
+      "name": "cycle1:created",
+      "ok": true,
+      "detail": "",
+      "t_ms": 1033
+    },
+    {
+      "name": "cycle1:shared-model",
+      "ok": true,
+      "detail": "the torn-off view binds the source model, not a copy",
+      "t_ms": 1035
+    },
+    {
+      "name": "cycle1:attach",
+      "ok": true,
+      "detail": "token=dae-tearoff-1-1792934169438",
+      "t_ms": 1041
+    },
+    {
+      "name": "cycle1:hwnd",
+      "ok": true,
+      "detail": "100534 vs primary 606ac",
+      "t_ms": 1915
+    },
+    {
+      "name": "cycle1:visible",
+      "ok": true,
+      "detail": "",
+      "t_ms": 1915
+    },
+    {
+      "name": "cycle1:native-style",
+      "ok": true,
+      "detail": "style=0x16cf0000",
+      "t_ms": 1915
+    },
+    {
+      "name": "cycle1:client-is-window",
+      "ok": true,
+      "detail": "client 0,0,1350,930 window 1245,579,2595,1509",
+      "t_ms": 1915
+    },
+    {
+      "name": "cycle1:mica",
+      "ok": true,
+      "detail": "read_backdrop=2 dark=true",
+      "t_ms": 1915
+    },
+    {
+      "name": "cycle1:transparent-path",
+      "ok": true,
+      "detail": "layered=true blur=true",
+      "t_ms": 1915
+    },
+    {
+      "name": "cycle1:hit-caption",
+      "ok": true,
+      "detail": "",
+      "t_ms": 1916
+    },
+    {
+      "name": "cycle1:hit-close",
+      "ok": true,
+      "detail": "",
+      "t_ms": 1916
+    },
+    {
+      "name": "cycle1:hit-max",
+      "ok": true,
+      "detail": "",
+      "t_ms": 1916
+    },
+    {
+      "name": "cycle1:hit-content",
+      "ok": true,
+      "detail": "",
+      "t_ms": 1916
+    },
+    {
+      "name": "cycle1:hit-border-left",
+      "ok": true,
+      "detail": "",
+      "t_ms": 1916
+    },
+    {
+      "name": "cycle1:frames",
+      "ok": true,
+      "detail": "frames=4",
+      "t_ms": 1916
+    },
+    {
+      "name": "cycle1:latency",
+      "ok": true,
+      "detail": "tear-off 67.21 ms",
+      "t_ms": 1916
+    },
+    {
+      "name": "cycle1:pss-increment",
+      "ok": true,
+      "detail": "96.43 -> 110.17 = +13.74 MB (baseline 96.43)",
+      "t_ms": 1916
+    },
+    {
+      "name": "cycle1:foreground",
+      "ok": true,
+      "detail": "",
+      "t_ms": 2113
+    },
+    {
+      "name": "cycle1:drag-mouse-down",
+      "ok": true,
+      "detail": "",
+      "t_ms": 2519
+    },
+    {
+      "name": "cycle1:drag-moved",
+      "ok": true,
+      "detail": "moved 60,40 from 1245,579,2595,1509 to 1305,619,2655,1549 cursor [1877,649]",
+      "t_ms": 3621
+    },
+    {
+      "name": "cycle1:drag-hit-caption",
+      "ok": true,
+      "detail": "",
+      "t_ms": 3621
+    },
+    {
+      "name": "cycle1:drag-nc-down-caption",
+      "ok": true,
+      "detail": "nc_down={\"2\":1}",
+      "t_ms": 3621
+    },
+    {
+      "name": "cycle1:drag-native-loop",
+      "ok": true,
+      "detail": "enter=1 exit=1",
+      "t_ms": 3621
+    },
+    {
+      "name": "cycle1:close-posted",
+      "ok": true,
+      "detail": "",
+      "t_ms": 3823
+    },
+    {
+      "name": "cycle1:closed-hidden",
+      "ok": true,
+      "detail": "visible=false closing=true",
+      "t_ms": 4433
+    },
+    {
+      "name": "cycle1:close-residual",
+      "ok": true,
+      "detail": "96.43 -> 105.92 = 9.49 MB",
+      "t_ms": 5261
+    },
+    {
+      "name": "cycle1:primary-alive",
+      "ok": true,
+      "detail": "",
+      "t_ms": 5261
+    },
+    {
+      "name": "cycle2:created",
+      "ok": true,
+      "detail": "",
+      "t_ms": 6075
+    },
+    {
+      "name": "cycle2:shared-model",
+      "ok": true,
+      "detail": "the torn-off view binds the source model, not a copy",
+      "t_ms": 6075
+    },
+    {
+      "name": "cycle2:attach",
+      "ok": true,
+      "detail": "token=dae-tearoff-2-1792934174479",
+      "t_ms": 6079
+    },
+    {
+      "name": "cycle2:hwnd",
+      "ok": true,
+      "detail": "17054e vs primary 606ac",
+      "t_ms": 6950
+    },
+    {
+      "name": "cycle2:visible",
+      "ok": true,
+      "detail": "",
+      "t_ms": 6950
+    },
+    {
+      "name": "cycle2:native-style",
+      "ok": true,
+      "detail": "style=0x16cf0000",
+      "t_ms": 6950
+    },
+    {
+      "name": "cycle2:client-is-window",
+      "ok": true,
+      "detail": "client 0,0,1350,930 window 1245,579,2595,1509",
+      "t_ms": 6951
+    },
+    {
+      "name": "cycle2:mica",
+      "ok": true,
+      "detail": "read_backdrop=2 dark=true",
+      "t_ms": 6951
+    },
+    {
+      "name": "cycle2:transparent-path",
+      "ok": true,
+      "detail": "layered=true blur=true",
+      "t_ms": 6951
+    },
+    {
+      "name": "cycle2:hit-caption",
+      "ok": true,
+      "detail": "",
+      "t_ms": 6951
+    },
+    {
+      "name": "cycle2:hit-close",
+      "ok": true,
+      "detail": "",
+      "t_ms": 6951
+    },
+    {
+      "name": "cycle2:hit-max",
+      "ok": true,
+      "detail": "",
+      "t_ms": 6952
+    },
+    {
+      "name": "cycle2:hit-content",
+      "ok": true,
+      "detail": "",
+      "t_ms": 6952
+    },
+    {
+      "name": "cycle2:hit-border-left",
+      "ok": true,
+      "detail": "",
+      "t_ms": 6952
+    },
+    {
+      "name": "cycle2:frames",
+      "ok": true,
+      "detail": "frames=4",
+      "t_ms": 6952
+    },
+    {
+      "name": "cycle2:latency",
+      "ok": true,
+      "detail": "tear-off 59.08 ms",
+      "t_ms": 6952
+    },
+    {
+      "name": "cycle2:pss-increment",
+      "ok": true,
+      "detail": "106.7 -> 112.94 = +6.24 MB (baseline 106.7)",
+      "t_ms": 6952
+    },
+    {
+      "name": "cycle2:foreground",
+      "ok": true,
+      "detail": "",
+      "t_ms": 7144
+    },
+    {
+      "name": "cycle2:drag-mouse-down",
+      "ok": true,
+      "detail": "",
+      "t_ms": 7550
+    },
+    {
+      "name": "cycle2:drag-moved",
+      "ok": true,
+      "detail": "moved 60,40 from 1245,579,2595,1509 to 1305,619,2655,1549 cursor [1877,649]",
+      "t_ms": 8652
+    },
+    {
+      "name": "cycle2:drag-hit-caption",
+      "ok": true,
+      "detail": "",
+      "t_ms": 8652
+    },
+    {
+      "name": "cycle2:drag-nc-down-caption",
+      "ok": true,
+      "detail": "nc_down={\"2\":1}",
+      "t_ms": 8652
+    },
+    {
+      "name": "cycle2:drag-native-loop",
+      "ok": true,
+      "detail": "enter=1 exit=1",
+      "t_ms": 8652
+    },
+    {
+      "name": "cycle2:close-posted",
+      "ok": true,
+      "detail": "",
+      "t_ms": 8853
+    },
+    {
+      "name": "cycle2:closed-hidden",
+      "ok": true,
+      "detail": "visible=false closing=true",
+      "t_ms": 9464
+    },
+    {
+      "name": "cycle2:close-residual",
+      "ok": true,
+      "detail": "106.7 -> 107.31 = 0.61 MB",
+      "t_ms": 10291
+    },
+    {
+      "name": "cycle2:primary-alive",
+      "ok": true,
+      "detail": "",
+      "t_ms": 10291
+    },
+    {
+      "name": "cycle3:created",
+      "ok": true,
+      "detail": "",
+      "t_ms": 11106
+    },
+    {
+      "name": "cycle3:shared-model",
+      "ok": true,
+      "detail": "the torn-off view binds the source model, not a copy",
+      "t_ms": 11107
+    },
+    {
+      "name": "cycle3:attach",
+      "ok": true,
+      "detail": "token=dae-tearoff-3-1792934179511",
+      "t_ms": 11111
+    },
+    {
+      "name": "cycle3:hwnd",
+      "ok": true,
+      "detail": "f05d0 vs primary 606ac",
+      "t_ms": 11980
+    },
+    {
+      "name": "cycle3:visible",
+      "ok": true,
+      "detail": "",
+      "t_ms": 11980
+    },
+    {
+      "name": "cycle3:native-style",
+      "ok": true,
+      "detail": "style=0x16cf0000",
+      "t_ms": 11980
+    },
+    {
+      "name": "cycle3:client-is-window",
+      "ok": true,
+      "detail": "client 0,0,1350,930 window 1245,579,2595,1509",
+      "t_ms": 11980
+    },
+    {
+      "name": "cycle3:mica",
+      "ok": true,
+      "detail": "read_backdrop=2 dark=true",
+      "t_ms": 11980
+    },
+    {
+      "name": "cycle3:transparent-path",
+      "ok": true,
+      "detail": "layered=true blur=true",
+      "t_ms": 11981
+    },
+    {
+      "name": "cycle3:hit-caption",
+      "ok": true,
+      "detail": "",
+      "t_ms": 11981
+    },
+    {
+      "name": "cycle3:hit-close",
+      "ok": true,
+      "detail": "",
+      "t_ms": 11981
+    },
+    {
+      "name": "cycle3:hit-max",
+      "ok": true,
+      "detail": "",
+      "t_ms": 11981
+    },
+    {
+      "name": "cycle3:hit-content",
+      "ok": true,
+      "detail": "",
+      "t_ms": 11981
+    },
+    {
+      "name": "cycle3:hit-border-left",
+      "ok": true,
+      "detail": "",
+      "t_ms": 11981
+    },
+    {
+      "name": "cycle3:frames",
+      "ok": true,
+      "detail": "frames=4",
+      "t_ms": 11981
+    },
+    {
+      "name": "cycle3:latency",
+      "ok": true,
+      "detail": "tear-off 60.56 ms",
+      "t_ms": 11981
+    },
+    {
+      "name": "cycle3:pss-increment",
+      "ok": true,
+      "detail": "107.31 -> 112.79 = +5.48 MB (baseline 107.31)",
+      "t_ms": 11981
+    },
+    {
+      "name": "cycle3:foreground",
+      "ok": true,
+      "detail": "",
+      "t_ms": 12176
+    },
+    {
+      "name": "cycle3:drag-mouse-down",
+      "ok": true,
+      "detail": "",
+      "t_ms": 12587
+    },
+    {
+      "name": "cycle3:drag-moved",
+      "ok": true,
+      "detail": "moved 60,40 from 1245,579,2595,1509 to 1305,619,2655,1549 cursor [1877,649]",
+      "t_ms": 13686
+    },
+    {
+      "name": "cycle3:drag-hit-caption",
+      "ok": true,
+      "detail": "",
+      "t_ms": 13686
+    },
+    {
+      "name": "cycle3:drag-nc-down-caption",
+      "ok": true,
+      "detail": "nc_down={\"2\":1}",
+      "t_ms": 13687
+    },
+    {
+      "name": "cycle3:drag-native-loop",
+      "ok": true,
+      "detail": "enter=1 exit=1",
+      "t_ms": 13687
+    },
+    {
+      "name": "cycle3:close-posted",
+      "ok": true,
+      "detail": "",
+      "t_ms": 13888
+    },
+    {
+      "name": "cycle3:closed-hidden",
+      "ok": true,
+      "detail": "visible=false closing=true",
+      "t_ms": 14495
+    },
+    {
+      "name": "cycle3:close-residual",
+      "ok": true,
+      "detail": "107.31 -> 107.78 = 0.47 MB",
+      "t_ms": 15323
+    },
+    {
+      "name": "cycle3:primary-alive",
+      "ok": true,
+      "detail": "",
+      "t_ms": 15323
+    },
+    {
+      "name": "cycle4:created",
+      "ok": true,
+      "detail": "",
+      "t_ms": 16134
+    },
+    {
+      "name": "cycle4:shared-model",
+      "ok": true,
+      "detail": "the torn-off view binds the source model, not a copy",
+      "t_ms": 16134
+    },
+    {
+      "name": "cycle4:attach",
+      "ok": true,
+      "detail": "token=dae-tearoff-4-1792934184539",
+      "t_ms": 16139
+    },
+    {
+      "name": "cycle4:hwnd",
+      "ok": true,
+      "detail": "9069a vs primary 606ac",
+      "t_ms": 17023
+    },
+    {
+      "name": "cycle4:visible",
+      "ok": true,
+      "detail": "",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:native-style",
+      "ok": true,
+      "detail": "style=0x16cf0000",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:client-is-window",
+      "ok": true,
+      "detail": "client 0,0,1350,930 window 1245,579,2595,1509",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:mica",
+      "ok": true,
+      "detail": "read_backdrop=2 dark=true",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:transparent-path",
+      "ok": true,
+      "detail": "layered=true blur=true",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:hit-caption",
+      "ok": true,
+      "detail": "",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:hit-close",
+      "ok": true,
+      "detail": "",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:hit-max",
+      "ok": true,
+      "detail": "",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:hit-content",
+      "ok": true,
+      "detail": "",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:hit-border-left",
+      "ok": true,
+      "detail": "",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:frames",
+      "ok": true,
+      "detail": "frames=4",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:latency",
+      "ok": true,
+      "detail": "tear-off 76.82 ms",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:pss-increment",
+      "ok": true,
+      "detail": "107.78 -> 113.57 = +5.79 MB (baseline 107.78)",
+      "t_ms": 17025
+    },
+    {
+      "name": "cycle4:foreground",
+      "ok": true,
+      "detail": "",
+      "t_ms": 17219
+    },
+    {
+      "name": "cycle4:drag-mouse-down",
+      "ok": true,
+      "detail": "",
+      "t_ms": 17630
+    },
+    {
+      "name": "cycle4:drag-moved",
+      "ok": true,
+      "detail": "moved 60,40 from 1245,579,2595,1509 to 1305,619,2655,1549 cursor [1877,649]",
+      "t_ms": 18757
+    },
+    {
+      "name": "cycle4:drag-hit-caption",
+      "ok": true,
+      "detail": "",
+      "t_ms": 18757
+    },
+    {
+      "name": "cycle4:drag-nc-down-caption",
+      "ok": true,
+      "detail": "nc_down={\"2\":1}",
+      "t_ms": 18758
+    },
+    {
+      "name": "cycle4:drag-native-loop",
+      "ok": true,
+      "detail": "enter=1 exit=1",
+      "t_ms": 18758
+    },
+    {
+      "name": "cycle4:close-posted",
+      "ok": true,
+      "detail": "",
+      "t_ms": 18959
+    },
+    {
+      "name": "cycle4:closed-hidden",
+      "ok": true,
+      "detail": "visible=false closing=true",
+      "t_ms": 19569
+    },
+    {
+      "name": "cycle4:close-residual",
+      "ok": true,
+      "detail": "107.78 -> 109.34 = 1.56 MB",
+      "t_ms": 20395
+    },
+    {
+      "name": "cycle4:primary-alive",
+      "ok": true,
+      "detail": "",
+      "t_ms": 20397
+    },
+    {
+      "name": "cycle5:created",
+      "ok": true,
+      "detail": "",
+      "t_ms": 21209
+    },
+    {
+      "name": "cycle5:shared-model",
+      "ok": true,
+      "detail": "the torn-off view binds the source model, not a copy",
+      "t_ms": 21209
+    },
+    {
+      "name": "cycle5:attach",
+      "ok": true,
+      "detail": "token=dae-tearoff-5-1792934189613",
+      "t_ms": 21213
+    },
+    {
+      "name": "cycle5:hwnd",
+      "ok": true,
+      "detail": "1a054e vs primary 606ac",
+      "t_ms": 22080
+    },
+    {
+      "name": "cycle5:visible",
+      "ok": true,
+      "detail": "",
+      "t_ms": 22080
+    },
+    {
+      "name": "cycle5:native-style",
+      "ok": true,
+      "detail": "style=0x16cf0000",
+      "t_ms": 22080
+    },
+    {
+      "name": "cycle5:client-is-window",
+      "ok": true,
+      "detail": "client 0,0,1350,930 window 1245,579,2595,1509",
+      "t_ms": 22080
+    },
+    {
+      "name": "cycle5:mica",
+      "ok": true,
+      "detail": "read_backdrop=2 dark=true",
+      "t_ms": 22080
+    },
+    {
+      "name": "cycle5:transparent-path",
+      "ok": true,
+      "detail": "layered=true blur=true",
+      "t_ms": 22080
+    },
+    {
+      "name": "cycle5:hit-caption",
+      "ok": true,
+      "detail": "",
+      "t_ms": 22081
+    },
+    {
+      "name": "cycle5:hit-close",
+      "ok": true,
+      "detail": "",
+      "t_ms": 22081
+    },
+    {
+      "name": "cycle5:hit-max",
+      "ok": true,
+      "detail": "",
+      "t_ms": 22081
+    },
+    {
+      "name": "cycle5:hit-content",
+      "ok": true,
+      "detail": "",
+      "t_ms": 22081
+    },
+    {
+      "name": "cycle5:hit-border-left",
+      "ok": true,
+      "detail": "",
+      "t_ms": 22081
+    },
+    {
+      "name": "cycle5:frames",
+      "ok": true,
+      "detail": "frames=4",
+      "t_ms": 22081
+    },
+    {
+      "name": "cycle5:latency",
+      "ok": true,
+      "detail": "tear-off 58.52 ms",
+      "t_ms": 22081
+    },
+    {
+      "name": "cycle5:pss-increment",
+      "ok": true,
+      "detail": "110.11 -> 115.23 = +5.12 MB (baseline 110.11)",
+      "t_ms": 22081
+    },
+    {
+      "name": "cycle5:foreground",
+      "ok": true,
+      "detail": "",
+      "t_ms": 22274
+    },
+    {
+      "name": "cycle5:drag-mouse-down",
+      "ok": true,
+      "detail": "",
+      "t_ms": 22678
+    },
+    {
+      "name": "cycle5:drag-moved",
+      "ok": true,
+      "detail": "moved 60,40 from 1245,579,2595,1509 to 1305,619,2655,1549 cursor [1877,649]",
+      "t_ms": 23799
+    },
+    {
+      "name": "cycle5:drag-hit-caption",
+      "ok": true,
+      "detail": "",
+      "t_ms": 23799
+    },
+    {
+      "name": "cycle5:drag-nc-down-caption",
+      "ok": true,
+      "detail": "nc_down={\"2\":1}",
+      "t_ms": 23799
+    },
+    {
+      "name": "cycle5:drag-native-loop",
+      "ok": true,
+      "detail": "enter=1 exit=1",
+      "t_ms": 23800
+    },
+    {
+      "name": "cycle5:close-posted",
+      "ok": true,
+      "detail": "",
+      "t_ms": 24001
+    },
+    {
+      "name": "cycle5:closed-hidden",
+      "ok": true,
+      "detail": "visible=false closing=true",
+      "t_ms": 24610
+    },
+    {
+      "name": "cycle5:close-residual",
+      "ok": true,
+      "detail": "110.11 -> 109.57 = -0.54 MB",
+      "t_ms": 25441
+    },
+    {
+      "name": "cycle5:primary-alive",
+      "ok": true,
+      "detail": "",
+      "t_ms": 25442
+    },
+    {
+      "name": "cycle6:created",
+      "ok": true,
+      "detail": "",
+      "t_ms": 26256
+    },
+    {
+      "name": "cycle6:shared-model",
+      "ok": true,
+      "detail": "the torn-off view binds the source model, not a copy",
+      "t_ms": 26256
+    },
+    {
+      "name": "cycle6:attach",
+      "ok": true,
+      "detail": "token=dae-tearoff-6-1792934194660",
+      "t_ms": 26259
+    },
+    {
+      "name": "cycle6:hwnd",
+      "ok": true,
+      "detail": "1205d0 vs primary 606ac",
+      "t_ms": 27126
+    },
+    {
+      "name": "cycle6:visible",
+      "ok": true,
+      "detail": "",
+      "t_ms": 27127
+    },
+    {
+      "name": "cycle6:native-style",
+      "ok": true,
+      "detail": "style=0x16cf0000",
+      "t_ms": 27127
+    },
+    {
+      "name": "cycle6:client-is-window",
+      "ok": true,
+      "detail": "client 0,0,1350,930 window 1245,579,2595,1509",
+      "t_ms": 27127
+    },
+    {
+      "name": "cycle6:mica",
+      "ok": true,
+      "detail": "read_backdrop=2 dark=true",
+      "t_ms": 27127
+    },
+    {
+      "name": "cycle6:transparent-path",
+      "ok": true,
+      "detail": "layered=true blur=true",
+      "t_ms": 27127
+    },
+    {
+      "name": "cycle6:hit-caption",
+      "ok": true,
+      "detail": "",
+      "t_ms": 27127
+    },
+    {
+      "name": "cycle6:hit-close",
+      "ok": true,
+      "detail": "",
+      "t_ms": 27127
+    },
+    {
+      "name": "cycle6:hit-max",
+      "ok": true,
+      "detail": "",
+      "t_ms": 27127
+    },
+    {
+      "name": "cycle6:hit-content",
+      "ok": true,
+      "detail": "",
+      "t_ms": 27127
+    },
+    {
+      "name": "cycle6:hit-border-left",
+      "ok": true,
+      "detail": "",
+      "t_ms": 27127
+    },
+    {
+      "name": "cycle6:frames",
+      "ok": true,
+      "detail": "frames=4",
+      "t_ms": 27128
+    },
+    {
+      "name": "cycle6:latency",
+      "ok": true,
+      "detail": "tear-off 59.4 ms",
+      "t_ms": 27128
+    },
+    {
+      "name": "cycle6:pss-increment",
+      "ok": true,
+      "detail": "110.36 -> 115.63 = +5.27 MB (baseline 110.36)",
+      "t_ms": 27128
+    },
+    {
+      "name": "cycle6:foreground",
+      "ok": true,
+      "detail": "",
+      "t_ms": 27322
+    },
+    {
+      "name": "cycle6:drag-mouse-down",
+      "ok": true,
+      "detail": "",
+      "t_ms": 27727
+    },
+    {
+      "name": "cycle6:drag-moved",
+      "ok": true,
+      "detail": "moved 60,40 from 1245,579,2595,1509 to 1305,619,2655,1549 cursor [1877,649]",
+      "t_ms": 28847
+    },
+    {
+      "name": "cycle6:drag-hit-caption",
+      "ok": true,
+      "detail": "",
+      "t_ms": 28847
+    },
+    {
+      "name": "cycle6:drag-nc-down-caption",
+      "ok": true,
+      "detail": "nc_down={\"2\":1}",
+      "t_ms": 28848
+    },
+    {
+      "name": "cycle6:drag-native-loop",
+      "ok": true,
+      "detail": "enter=1 exit=1",
+      "t_ms": 28848
+    },
+    {
+      "name": "cycle6:close-posted",
+      "ok": true,
+      "detail": "",
+      "t_ms": 29049
+    },
+    {
+      "name": "cycle6:closed-hidden",
+      "ok": true,
+      "detail": "visible=false closing=true",
+      "t_ms": 29660
+    },
+    {
+      "name": "cycle6:close-residual",
+      "ok": true,
+      "detail": "110.36 -> 109.7 = -0.66 MB",
+      "t_ms": 30490
+    },
+    {
+      "name": "cycle6:primary-alive",
+      "ok": true,
+      "detail": "",
+      "t_ms": 30490
+    },
+    {
+      "name": "gate:latency",
+      "ok": true,
+      "detail": "worst tear-off 76.82 ms",
+      "t_ms": 30691
+    },
+    {
+      "name": "gate:pss",
+      "ok": true,
+      "detail": "worst increment +13.74 MB",
+      "t_ms": 30691
+    },
+    {
+      "name": "gate:close",
+      "ok": true,
+      "detail": "worst close residual 9.49 MB",
+      "t_ms": 30691
+    },
+    {
+      "name": "gate:close-private-no-growth",
+      "ok": true,
+      "detail": "private 178.64 -> 179.2 MB (0.56)",
+      "t_ms": 30691
+    }
+  ],
+  "notes": [
+    {
+      "name": "listing",
+      "detail": "120000 rows / 19 batches / 187.9 ms",
+      "t_ms": 195
+    },
+    {
+      "name": "tear-off:pss-close-growth",
+      "detail": "closed PSS 105.92 -> 109.7 MB (3.78); private commit 178.64 -> 179.2 MB (0.56)",
+      "t_ms": 30692
+    },
+    {
+      "name": "tear-off:phases",
+      "detail": "1: created 1.64 ms, shown 18.12 ms, frame 67.21 ms | 2: created 0.91 ms, shown 10.18 ms, frame 59.08 ms | 3: created 0.83 ms, shown 10.36 ms, frame 60.56 ms | 4: created 0.99 ms, shown 10.5 ms, frame 76.82 ms | 5: created 1.23 ms, shown 11.48 ms, frame 58.52 ms | 6: created 0.96 ms, shown 10.21 ms, frame 59.4 ms",
+      "t_ms": 30692
+    }
+  ],
+  "failures": 0,
+  "check_count": 167,
+  "primary_window": {
+    "backdrop": {
+      "backdrop_hr": "0",
+      "blur_behind": true,
+      "composition": true,
+      "dark": true,
+      "dark_hr": "0",
+      "layered": true,
+      "material": 0,
+      "mica_hr": "0",
+      "read_backdrop": 2,
+      "read_backdrop_hr": "0",
+      "read_dark": true,
+      "read_dark_hr": "0"
+    },
+    "border_px": 11,
+    "button_px": 69,
+    "class": "Qt6120QWindowIcon",
+    "client_origin": [
+      480,
+      180
+    ],
+    "client_rect": [
+      0,
+      0,
+      1650,
+      1080
+    ],
+    "dpr": 1.5,
+    "exstyle": "80100",
+    "foreground": true,
+    "frame_rect": [
+      480,
+      180,
+      2130,
+      1260
+    ],
+    "hwnd": "606ac",
+    "iconic": false,
+    "monitor": [
+      0,
+      0,
+      3840,
+      2160
+    ],
+    "os": "Windows 11 Version 26H2",
+    "qt_version": "6.12.0",
+    "style": "16cf0000",
+    "title": "dae · 门槛 4 · 撕出",
+    "titlebar_px": 60,
+    "visible": true,
+    "window_rect": [
+      480,
+      180,
+      2130,
+      1260
+    ],
+    "work_area": [
+      0,
+      0,
+      3840,
+      2088
+    ],
+    "zoomed": false
+  }
+}

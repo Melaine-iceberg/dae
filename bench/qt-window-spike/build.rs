@@ -10,9 +10,11 @@ fn main() {
         println!("cargo:rustc-link-lib=dwmapi");
     }
 
-    CxxQtBuilder::new_qml_module(QmlModule::new("dae.windowspike").qml_file("qml/main.qml"))
-        .qt_module("Quick")
-        .include_dir("cpp")
-        .files(["src/bridge.rs"])
-        .build();
+    CxxQtBuilder::new_qml_module(
+        QmlModule::new("dae.windowspike").qml_files(["qml/main.qml", "qml/TearOffWindow.qml"]),
+    )
+    .qt_module("Quick")
+    .include_dir("cpp")
+    .files(["src/bridge.rs", "src/model.rs", "src/tearoff.rs"])
+    .build();
 }
