@@ -168,6 +168,12 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
 `system_files` 的 drag-out、`sidebar` 的 get_system_places、`volume_monitor`、
 `prefetch::warm_startup_data`、`listing` 的 `Channel`。
 
+## 4.1 下一刀的执行手册
+
+切片八（把 `file_system` 整体搬进 `dae-core`）的施工单在
+[`../slice-8-core-extraction.md`](../slice-8-core-extraction.md)：51 个文件的分组、
+五步顺序、每步的验证门、以及前七刀踩过的十个坑。
+
 ## 5. 定案前必须量出来的四组数字
 
 | # | 待验证 | 门槛 | 不达标怎么办 |
