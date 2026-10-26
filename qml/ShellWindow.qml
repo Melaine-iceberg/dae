@@ -22,7 +22,9 @@ Window {
     property string startupPath: ""
     property var initialTabs: []
     property int initialActive: 0
-    property bool dark: true
+    // Follows the OS preference live; the native watcher updates
+    // `Workspace.systemDark`, which re-tints every window's backdrop below.
+    property bool dark: Workspace.systemDark
     property string material: "none"
 
     objectName: token
@@ -98,6 +100,11 @@ Window {
     onActiveIndexChanged: {
         root.resetSearchState()
         previewPanel.showPaths([])
+    }
+
+    onDarkChanged: {
+        if (chrome && chrome.attached)
+            chrome.applyMaterial(root.material, root.dark)
     }
 
     WindowController {
@@ -225,7 +232,6 @@ Window {
             "firstWindow": false,
             "initialTabs": [tab],
             "initialActive": 0,
-            "dark": root.dark,
             "material": root.material,
             "x": Math.round(globalX - 90),
             "y": Math.round(globalY - 18),
@@ -268,7 +274,6 @@ Window {
             "token": Shell.newToken(),
             "firstWindow": false,
             "startupPath": path || root.activePath,
-            "dark": root.dark,
             "material": root.material,
             "x": Math.round(root.x + 32),
             "y": Math.round(root.y + 32),
@@ -1247,8 +1252,7 @@ Window {
             console.warn("dae: native window attach failed")
 
         if (root.firstWindow) {
-            if (root.config !== null)
-                root.dark = root.config.systemDark
+            Workspace.startSystemWatch()
             root.material = chrome.startupMaterial()
             if (root.config !== null)
                 root.startupPath = root.config.startupPath

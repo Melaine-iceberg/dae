@@ -57,6 +57,10 @@ pub mod qobject {
         #[qproperty(QString, clipboard_mode, cxx_name = "clipboardMode")]
         #[qproperty(QStringList, clipboard_paths, cxx_name = "clipboardPaths")]
         #[qproperty(QString, accent)]
+        /// The OS light/dark preference, kept current by the native watcher.
+        /// Every window binds its `dark` property to this instead of reading
+        /// the preference once at startup.
+        #[qproperty(bool, system_dark, cxx_name = "systemDark")]
         #[qproperty(QString, home_directory, cxx_name = "homeDirectory")]
         #[qproperty(i32, terminal_font_size, cxx_name = "terminalFontSize")]
         #[qproperty(f64, terminal_line_height, cxx_name = "terminalLineHeight")]
@@ -117,6 +121,12 @@ pub mod qobject {
         #[qinvokable]
         fn redo(self: Pin<&mut Workspace>);
 
+        /// Starts the native accent, theme and volume watchers. Called once by
+        /// the first window; later calls are ignored.
+        #[qinvokable]
+        #[cxx_name = "startSystemWatch"]
+        fn start_system_watch(self: Pin<&mut Workspace>);
+
         #[qinvokable]
         #[cxx_name = "openPath"]
         fn open_path(self: Pin<&mut Workspace>, path: &QString);
@@ -172,6 +182,13 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "favoritesChanged"]
         fn favorites_changed(self: Pin<&mut Workspace>);
+
+        /// A drive or mount arrived or left. The sidebar answers by calling
+        /// `SidebarModel.refresh()`, which already re-reads the disk list off
+        /// the Qt thread.
+        #[qsignal]
+        #[cxx_name = "volumesChanged"]
+        fn volumes_changed(self: Pin<&mut Workspace>);
     }
 
     impl cxx_qt::Threading for Workspace {}
@@ -189,6 +206,7 @@ pub struct WorkspaceRust {
     clipboard_mode: QString,
     clipboard_paths: QStringList,
     accent: QString,
+    system_dark: bool,
     home_directory: QString,
     terminal_font_size: i32,
     terminal_line_height: f64,
@@ -216,6 +234,7 @@ impl Default for WorkspaceRust {
             clipboard_mode: QString::default(),
             clipboard_paths: QStringList::default(),
             accent: QString::from(platform::accent_hex().as_str()),
+            system_dark: crate::config::system_dark(),
             home_directory: QString::from(home.as_str()),
             terminal_font_size: settings.terminal.font_size as i32,
             terminal_line_height: settings.terminal.line_height as f64,
@@ -548,6 +567,38 @@ impl qobject::Workspace {
                 Err(error) => Outcome::failed(error),
             }
         });
+    }
+
+    fn start_system_watch(self: Pin<&mut Self>) {
+        crate::system_watch::start(self.qt_thread());
+    }
+
+    /// Applies an accent reading from the native watcher. `None` means the
+    /// platform published no colour, and the current default is kept.
+    pub(crate) fn apply_system_accent(mut self: Pin<&mut Self>, accent: Option<String>) {
+        let Some(accent) = accent else {
+            return;
+        };
+        if self.accent.to_string() == accent {
+            return;
+        }
+        self.as_mut().set_accent(QString::from(accent.as_str()));
+    }
+
+    /// Applies a light/dark reading from the native watcher. `None` means the
+    /// platform published no preference, and the current reading is kept.
+    pub(crate) fn apply_system_theme(mut self: Pin<&mut Self>, dark: Option<bool>) {
+        let Some(dark) = dark else {
+            return;
+        };
+        if self.system_dark == dark {
+            return;
+        }
+        self.as_mut().set_system_dark(dark);
+    }
+
+    pub(crate) fn notify_volumes_changed(mut self: Pin<&mut Self>) {
+        self.as_mut().volumes_changed();
     }
 
     fn open_path(mut self: Pin<&mut Self>, path: &QString) {

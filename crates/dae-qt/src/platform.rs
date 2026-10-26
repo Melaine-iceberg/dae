@@ -123,7 +123,14 @@ pub fn reveal_path(path: &str) -> Result<(), String> {
 /// The OS accent colour as `#rrggbb`, or the shell's default blue where the
 /// platform publishes none.
 pub fn accent_hex() -> String {
-    platform_accent().unwrap_or_else(|| "#2f6fdf".to_owned())
+    accent().unwrap_or_else(|| "#2f6fdf".to_owned())
+}
+
+/// The OS accent colour, or `None` where the platform publishes none. The
+/// native watcher re-reads through here so startup and every later change
+/// share one decoder.
+pub(crate) fn accent() -> Option<String> {
+    platform_accent()
 }
 
 #[cfg(windows)]

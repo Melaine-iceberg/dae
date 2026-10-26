@@ -342,6 +342,12 @@ release 用 `windows_subsystem = "windows"`，没有控制台窗口；`dae.exe` 
   （Explorer `/select,` / `open -R` / `xdg-open` 父目录）、系统终端、系统
   “打开方式”对话框（Windows `SHOpenWithDialog`）。
 - 设置：终端字号/行高/字体族保存后立即应用到所有已挂载的 `TerminalItem`。
+- 系统外观：强调色（`HKCU\...\DWM` 的 `AccentColor` ABGR 与
+  `ColorizationColor` ARGB）和明暗偏好（`...\Themes\Personalize` 的
+  `AppsUseLightTheme`）都走 Windows 原生 watcher，变化经 `qt_thread()` 队列写回
+  `Workspace.accent` / `Workspace.systemDark`，QML 与 Mica/Acrylic 背景随之更新。
+- 磁盘：`WM_DEVICECHANGE` 的卷到达/移除经 350 ms 去抖后发 `volumesChanged`，
+  每个窗口的侧栏调用已有的 `SidebarModel.refresh()` 重新读取磁盘。
 - 线程：一个进程级 Tokio runtime；`Host` 事件经 `CxxQtThread::queue` 回到 Qt
   线程，更新 `busy`、进度、`canUndo`/`canRedo`，并发出
   `operationFinished` / `operationFailed`。
@@ -351,8 +357,6 @@ release 用 `windows_subsystem = "windows"`，没有控制台窗口；`dae.exe` 
 F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
 `ContextMenu.qml` 提供行菜单、空白区菜单与侧栏菜单；`NamePrompt.qml` 负责
 新建/重命名；`SettingsPanel.qml` 编辑终端排版；`Toast.qml` 显示结果。
-强调色从 `HKCU\...\DWM` 读取（`AccentColor` 的 ABGR 与 `ColorizationColor`
-的 ARGB 都处理），用于选中行与焦点色。
 
 端到端实测（2026-10-26，`.perf/phase3-test.ps1`，Windows 11 build 26340）：
 
@@ -369,7 +373,7 @@ F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
 
 **这一刀还没铺的**（core 已有实现，缺 Qt 视图/命令包装）：搜索 UI（文件名与
 内容搜索）、预览/缩略图、文件图标、打开方式选择器（macOS/Linux）、默认文件
-管理器注册、`dae://` 深链、自动更新、磁盘热插拔监听、回收站视图、压缩包、
+管理器注册、`dae://` 深链、自动更新、回收站视图、压缩包、
 云盘/SFTP/SMB 的连接管理界面。它们按依赖排在下一刀，不会改变上面这层的
 接口。
 

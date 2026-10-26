@@ -12,9 +12,6 @@
 //! * **How to jump to the path bar.** `settings.toml` carries the same
 //!   `app.pathJump` binding the React shell uses (`Mod+P` by default). `Mod`
 //!   is translated to Qt's `Ctrl` spelling; Qt maps `Ctrl` to Command on macOS.
-//! * **Which appearance to tint the backdrop in.** The OS light/dark
-//!   preference comes from Qt's platform style hints, so Mica/Acrylic matches
-//!   the rest of the desktop rather than a hard-coded dark window.
 //!
 //! Reading stays small on purpose: the files are a few hundred bytes and this
 //! runs once, before the first frame. Writing recents and settings belongs to
@@ -56,7 +53,6 @@ pub mod qobject {
         #[qproperty(QString, startup_source, cxx_name = "startupSource")]
         #[qproperty(QString, path_jump, cxx_name = "pathJump")]
         #[qproperty(bool, settings_found, cxx_name = "settingsFound")]
-        #[qproperty(bool, system_dark, cxx_name = "systemDark")]
         type AppConfig = super::AppConfigRust;
     }
 }
@@ -219,7 +215,13 @@ pub struct AppConfigRust {
     startup_source: QString,
     path_jump: QString,
     settings_found: bool,
-    system_dark: bool,
+}
+
+/// The OS light/dark preference as Qt reports it. Exposed to the rest of the
+/// crate so `Workspace` starts on the same reading the native watcher will
+/// later keep current.
+pub fn system_dark() -> bool {
+    qobject::system_dark()
 }
 
 impl Default for AppConfigRust {
@@ -260,7 +262,6 @@ impl Default for AppConfigRust {
             startup_source: QString::from(snapshot.source.as_str()),
             path_jump: QString::from(snapshot.path_jump.as_str()),
             settings_found: snapshot.settings_found,
-            system_dark: qobject::system_dark(),
         }
     }
 }

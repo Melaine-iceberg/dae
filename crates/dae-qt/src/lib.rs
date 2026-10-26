@@ -31,6 +31,7 @@ mod runtime;
 pub mod search_model;
 pub mod shell;
 pub mod sidebar_model;
+mod system_watch;
 pub mod terminal;
 pub mod window;
 pub mod workspace;

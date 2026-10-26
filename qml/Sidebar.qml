@@ -74,6 +74,10 @@ Item {
         function onFavoritesChanged() {
             model.refresh()
         }
+
+        function onVolumesChanged() {
+            model.refresh()
+        }
     }
 
     Rectangle {
