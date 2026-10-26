@@ -1,12 +1,11 @@
 mod deep_link;
 mod default_manager;
 // Linux's thumbnail producers are compiled under `cfg(test)` too, exactly as
-// `file_icons`' Linux backend is, so the module type-checks and its
+// the core's icon backends are, so the module type-checks and its
 // host-independent tests run on a machine that cannot build a Linux app at all.
 #[cfg(any(target_os = "linux", test))]
 #[cfg_attr(test, allow(dead_code))]
 mod desktop_thumbnails;
-mod file_icons;
 mod file_system;
 // The Tauri implementation of `dae_core::host::Host` — the one place a core
 // event becomes a webview event. Everything else takes the trait.
@@ -30,8 +29,12 @@ mod system_theme;
 mod tab_perf;
 mod tab_windows;
 mod terminal;
-// XDG base-directory resolution, shared by `file_icons` and `shell_commands`.
-mod xdg;
+// XDG base-directory resolution moved to `dae-core` with the icon themes; the
+// shell's `shell_commands` and `desktop_thumbnails` still reach it as
+// `crate::xdg`. Both consumers are Linux-only, so on Windows this alias is
+// intentionally unused.
+#[cfg_attr(not(target_os = "linux"), allow(unused_imports))]
+pub(crate) use dae_core::xdg;
 // Decides whether the OS paints anything behind this window (Mica, vibrancy)
 // and has to be asked before the first window is built — see its module docs.
 mod window_material;

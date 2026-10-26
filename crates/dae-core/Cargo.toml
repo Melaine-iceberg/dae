@@ -23,6 +23,9 @@ grep-matcher = "0.1"
 grep-regex = "0.1"
 grep-searcher = "0.1"
 ignore = "0.4"
+# The icon backends: macOS re-encodes AppKit's TIFF as PNG, Windows encodes the
+# shell's DIB. Thumbnail decoding stays in the shells' renderers.
+image = { version = "0.25", default-features = false, features = ["png", "tiff"] }
 keyring = "4.1.6"
 log = "0.4"
 md-5 = "0.11.0"
@@ -65,23 +68,50 @@ zip = { version = "9", default-features = false, features = ["deflate", "aes-cry
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
   "Win32_Foundation",
+  "Win32_Graphics_Gdi",
   "Win32_Storage_FileSystem",
   "Win32_System_Com",
   "Win32_System_Ole",
   "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
 ] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+# The icon theme's SVG answers are rasterized out of process-free gdk-pixbuf
+# (no display, no main-thread hop). The windowing toolkit itself stays out of
+# this crate.
+gdk-pixbuf = "0.18"
 gio = "0.18"
+# The theme lookup names mimetype icons; the Linux module is also compiled
+# under `cfg(test)` on other hosts so its rules can be tested there.
+mime_guess = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10.1"
 trash-core = { version = "0.3", default-features = false, features = ["macos"] }
+# `file_icons::macos` reads the Finder's icon: `iconForFile:` hands back an
+# `NSImage`, whose representations are downcast to `NSBitmapImageRep` for a
+# lossless TIFF that the `image` crate re-encodes as PNG.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = [
+  "NSWorkspace",
+  "NSImage",
+  "NSImageRep",
+  "NSBitmapImageRep",
+] }
+objc2-foundation = { version = "0.3", features = [
+  "NSArray",
+  "NSEnumerator",
+  "NSString",
+  "NSData",
+] }
 
 [dev-dependencies]
 # The in-memory mock credential store for the cloud account tests, keeping them
 # away from the real OS keychain.
 keyring-core = "1"
+# `icons::linux` is type-checked and tested on every host.
+mime_guess = "2"

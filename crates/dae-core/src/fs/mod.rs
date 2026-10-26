@@ -23,6 +23,7 @@ pub mod directory_size;
 pub mod entry_codec;
 pub mod git;
 pub mod hashing;
+pub mod icons;
 pub mod known_hosts;
 pub mod listing;
 pub mod local;
@@ -40,11 +41,14 @@ pub mod sftp;
 pub mod sidebar;
 pub mod smb;
 pub mod spaces;
+pub mod thumbnails;
 pub mod transfer;
-pub mod undo;
 pub mod trash_view;
+pub mod undo;
 pub mod vfs;
 pub mod watch;
+#[cfg(windows)]
+pub mod windows_image;
 
 #[cfg(test)]
 pub(crate) mod test_support;

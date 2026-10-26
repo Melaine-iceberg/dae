@@ -1,17 +1,18 @@
 //! XDG base-directory resolution, shared by every consumer that reads data
 //! dropped outside the app's own directory tree.
 //!
-//! Two modules need it today: `shell_commands::linux` finds the `.desktop`
-//! service menus a packaged application installed, and `file_icons::linux`
-//! finds the icon themes. Both had to implement the same spec rules, and the
-//! rules are the sort that fail quietly — an unset `XDG_DATA_HOME` that reads
-//! as the empty path turns a theme lookup into a scan of the working directory
-//! and yields *nothing* rather than an error.
+//! The callers today are `fs::icons::linux` (the icon themes), the shell's
+//! `shell_commands::linux` (the `.desktop` service menus a packaged application
+//! installed) and its `desktop_thumbnails` (the freedesktop thumbnailer spec).
+//! They all need the same spec rules, and the rules are the sort that fail
+//! quietly — an unset `XDG_DATA_HOME` that reads as the empty path turns a theme
+//! lookup into a scan of the working directory and yields *nothing* rather than
+//! an error.
 //!
 //! Pure path arithmetic, so it compiles and tests on any host: which is the
-//! same reason `shell_commands::desktop_entry` is platform-independent.
+//! same reason the shell's `shell_commands::desktop_entry` is platform-independent.
 //!
-//! Both consumers are Linux-only, so on the other two platforms every function
+//! The consumers are Linux-only, so on the other two platforms every function
 //! here is dead until `cargo test` builds the Linux module to type-check it —
 //! which is exactly the arrangement, and why the warning is silenced rather than
 //! the module cfg-gated away.
@@ -22,7 +23,7 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 
 /// `$HOME`, or `/` when the environment does not carry a usable one.
-pub(crate) fn home_dir() -> PathBuf {
+pub fn home_dir() -> PathBuf {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
@@ -31,7 +32,7 @@ pub(crate) fn home_dir() -> PathBuf {
 
 /// The XDG data roots, most specific first: `$XDG_DATA_HOME`, then each
 /// `$XDG_DATA_DIRS` entry, each defaulted as the spec prescribes.
-pub(crate) fn data_roots() -> Vec<PathBuf> {
+pub fn data_roots() -> Vec<PathBuf> {
     resolve_data_roots(
         std::env::var_os("XDG_DATA_HOME").as_deref(),
         std::env::var_os("XDG_DATA_DIRS").as_deref(),
@@ -50,10 +51,7 @@ pub(crate) fn data_roots() -> Vec<PathBuf> {
 ///   `icons/…` relative to the working directory and find nothing.
 /// - A relative path in either variable is invalid and is ignored, rather than
 ///   resolved against the working directory.
-pub(crate) fn resolve_data_roots(
-    data_home: Option<&OsStr>,
-    data_dirs: Option<&OsStr>,
-) -> Vec<PathBuf> {
+pub fn resolve_data_roots(data_home: Option<&OsStr>, data_dirs: Option<&OsStr>) -> Vec<PathBuf> {
     let mut roots = vec![
         data_home
             .map(PathBuf::from)
@@ -85,7 +83,7 @@ pub(crate) fn resolve_data_roots(
 ///
 /// One root rather than a list: the base directory spec defines a search path
 /// for data and config but not for the cache, which is per-user by construction.
-pub(crate) fn cache_home() -> Option<PathBuf> {
+pub fn cache_home() -> Option<PathBuf> {
     resolve_cache_home(
         std::env::var_os("XDG_CACHE_HOME").as_deref(),
         std::env::var_os("HOME").as_deref(),
@@ -99,10 +97,7 @@ pub(crate) fn cache_home() -> Option<PathBuf> {
 /// happens to be — and a relative value is invalid rather than resolved.
 /// With no `XDG_CACHE_HOME` and no usable `HOME` there is no cache directory,
 /// and a caller has to treat that as "generate, but do not keep".
-pub(crate) fn resolve_cache_home(
-    cache_home: Option<&OsStr>,
-    home: Option<&OsStr>,
-) -> Option<PathBuf> {
+pub fn resolve_cache_home(cache_home: Option<&OsStr>, home: Option<&OsStr>) -> Option<PathBuf> {
     cache_home
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
@@ -114,7 +109,7 @@ pub(crate) fn resolve_cache_home(
 }
 
 /// `$XDG_CONFIG_HOME`, defaulting to `$HOME/.config`.
-pub(crate) fn config_roots() -> Vec<PathBuf> {
+pub fn config_roots() -> Vec<PathBuf> {
     resolve_config_roots(
         std::env::var_os("XDG_CONFIG_HOME").as_deref(),
         std::env::var_os("HOME").as_deref(),
@@ -125,11 +120,11 @@ pub(crate) fn config_roots() -> Vec<PathBuf> {
 /// The rules are the same; only the defaults differ — an unset or empty
 /// `XDG_CONFIG_HOME` means `$HOME/.config`, and a missing `$HOME` leaves no
 /// user config directory at all rather than inventing one.
-pub(crate) fn resolve_config_roots(
-    config_home: Option<&OsStr>,
-    home: Option<&OsStr>,
-) -> Vec<PathBuf> {
-    match config_home.map(PathBuf::from).filter(|path| path.is_absolute()) {
+pub fn resolve_config_roots(config_home: Option<&OsStr>, home: Option<&OsStr>) -> Vec<PathBuf> {
+    match config_home
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+    {
         Some(path) if !path.as_os_str().is_empty() => return vec![path],
         _ => {}
     }

@@ -30,5 +30,6 @@ pub mod progress;
 pub mod pty;
 pub mod settings;
 pub mod types;
+pub mod xdg;
 
 pub use error::FileSystemError;

@@ -12,12 +12,10 @@
 //!
 //!   * **Nothing here links against GTK.** The `gtk` crate is in the dependency
 //!     tree already, but `GtkIconTheme` needs a realized display and has to be
-//!     driven from the GTK main thread. This extraction runs on the render pool
-//!     specifically so a scrolling listing never blocks the UI — see
-//!     [`crate::file_system::preview`] — so a resolver that had to hop to the
-//!     main thread would undo the one thing that design is for. Reading the same
-//!     files GTK reads costs a parser and buys a thread-safe, display-free,
-//!     testable lookup.
+//!     driven from the GTK main thread. This extraction runs off the UI thread
+//!     in both shells, so a resolver that had to hop to the main thread would
+//!     undo the one thing that design is for. Reading the same files GTK reads
+//!     costs a parser and buys a thread-safe, display-free, testable lookup.
 //!   * **`Directories=` is the theme's own inventory.** Guessing at fixed
 //!     subdirectory names is what the one-off lookup in `shell_commands::linux.rs`
 //!     did, and it misses exactly the themes that matter: one that ships only
@@ -26,13 +24,13 @@
 //!     between "works on the machine it was written on" and works on a user's.
 //!
 //! SVG answers are rasterized here, at the size the row asked for, and travel
-//! as PNG. Handing the vector to the webview does not work: WebKitGTK
-//! rasterizes an SVG in an `<img>` at the CSS box rather than at the device
-//! pixels and then upscales that bitmap, so a 16 CSS-px row on a 1.5-scale
-//! display drew a 16-px render blown up to 24 — a smear where the same vector
-//! rendered at 24 by `rsvg-convert` is crisp. gdk-pixbuf is the same librsvg
-//! the desktop's own icon loaders drive, and `gtk` is already a dependency, so
-//! the crisp render costs no new crate.
+//! as PNG. Handing the vector to WebKitGTK does not work: it rasterizes an SVG
+//! in an `<img>` at the CSS box rather than at the device pixels and then
+//! upscales that bitmap, so a 16 CSS-px row on a 1.5-scale display drew a 16-px
+//! render blown up to 24 — a smear where the same vector rendered at 24 by
+//! `rsvg-convert` is crisp. gdk-pixbuf is the same librsvg the desktop's own
+//! icon loaders drive, and it needs no display, so the crisp render costs one
+//! small crate and no main-thread hop.
 
 use super::FileIcon;
 use crate::xdg::{config_roots, data_roots, home_dir};
@@ -127,7 +125,7 @@ fn icon_candidates(name: &str) -> Vec<&str> {
 /// A list too long for that is the "Open With" picker, which goes through the
 /// protocol instead: a theme's application icons run to hundreds of kilobytes
 /// each, so a full list of them does not belong in one `invoke` reply.
-pub(crate) fn named_icon_data_url(name: &str, size: u32) -> Option<String> {
+pub fn named_icon_data_url(name: &str, size: u32) -> Option<String> {
     use base64::Engine as _;
 
     let icon = resolve_named_icon(name, size)?;
@@ -274,9 +272,7 @@ fn lookup(names: &[&str], contexts: &[&str], size: u32) -> Option<FileIcon> {
                 let base = root.join("icons").join(&theme.name);
                 for directory in theme.directories_for(contexts, size) {
                     for extension in ["svg", "png"] {
-                        let candidate = base
-                            .join(directory)
-                            .join(format!("{name}.{extension}"));
+                        let candidate = base.join(directory).join(format!("{name}.{extension}"));
                         if let Some(icon) = read_icon_file(&candidate, size) {
                             return Some(icon);
                         }
@@ -326,7 +322,10 @@ impl Theme {
             .filter(|directory| contexts.contains(&&*directory.context))
             .collect();
         matched.sort_by_key(|directory| directory.rank_for(size));
-        matched.into_iter().map(|directory| &*directory.relative).collect()
+        matched
+            .into_iter()
+            .map(|directory| &*directory.relative)
+            .collect()
     }
 }
 
@@ -440,7 +439,10 @@ fn parse_theme(name: &str, text: &str) -> ReadTheme {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-        if let Some(header) = line.strip_prefix('[').and_then(|rest| rest.strip_suffix(']')) {
+        if let Some(header) = line
+            .strip_prefix('[')
+            .and_then(|rest| rest.strip_suffix(']'))
+        {
             section = header.to_owned();
             continue;
         }
@@ -550,7 +552,9 @@ fn read_user_icon_theme() -> Option<String> {
         return Some(value);
     }
 
-    std::env::var("GTK_ICON_THEME").ok().filter(|value| !value.is_empty())
+    std::env::var("GTK_ICON_THEME")
+        .ok()
+        .filter(|value| !value.is_empty())
 }
 
 /// One key from an INI-ish settings file, matched case-insensitively and
@@ -627,7 +631,7 @@ fn read_icon_file(path: &Path, size: u32) -> Option<FileIcon> {
 /// here reads theme files instead of driving `GtkIconTheme`.
 #[cfg(target_os = "linux")]
 fn rasterize_svg(path: &Path, size: u32) -> Option<Vec<u8>> {
-    use gtk::gdk_pixbuf::Pixbuf;
+    use gdk_pixbuf::Pixbuf;
 
     let edge = i32::try_from(size).ok()?;
     let pixbuf = Pixbuf::from_file_at_size(path, edge, edge).ok()?;
@@ -864,10 +868,10 @@ Type=Fixed
     }
 
     #[test]
-    fn only_webview_renderables_are_served() {
+    fn only_renderer_safe_formats_are_served() {
         assert_eq!(mime_for_extension("svg"), Some("image/svg+xml"));
         assert_eq!(mime_for_extension("png"), Some("image/png"));
-        // `xpm` is still shipped by some themes and no webview renders it.
+        // `xpm` is still shipped by some themes and no renderer decodes it.
         assert_eq!(mime_for_extension("xpm"), None);
         assert_eq!(mime_for_extension("jpg"), None);
     }
@@ -875,7 +879,7 @@ Type=Fixed
     #[test]
     fn an_unreadable_icon_file_is_a_miss() {
         assert!(read_icon_file(Path::new("/nonexistent/folder.svg"), 32).is_none());
-        // A `.xpm` that exists is still not something to hand to a webview.
+        // A `.xpm` that exists is still not something to hand to a renderer.
         assert!(read_icon_file(Path::new("/usr/share/pixmaps"), 32).is_none());
     }
 

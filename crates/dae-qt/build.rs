@@ -23,6 +23,7 @@ fn main() {
         ])
         .files([
             "src/config.rs",
+            "src/icons.rs",
             "src/ime.rs",
             "src/model.rs",
             "src/preview.rs",

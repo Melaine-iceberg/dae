@@ -49,9 +49,9 @@ use super::desktop_entry::{
     ANY_FILE, ServiceMenu, expand_exec, mime_matches, parse_service_menu, split_id, user_language,
 };
 use super::{Selection, SelectionKind, ShellCommand, assign_groups};
-use crate::file_icons::named_icon_data_url;
 use crate::file_system::error::FileSystemError;
 use crate::xdg::data_roots;
+use dae_core::fs::icons::named_icon_data_url;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};

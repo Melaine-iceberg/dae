@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Window
 import dae 1.0
 
 // The explorer listing. Delegates stay at 26 dp, recycle, and read nothing but
@@ -360,6 +361,7 @@ Item {
             required property bool isDir
             required property bool hidden
             required property bool readOnly
+            required property string iconSource
 
             width: ListView.view.width
             height: root.rowHeight
@@ -380,6 +382,22 @@ Item {
                 height: 14
                 radius: 3
                 color: row.isDir ? root.accent : (row.readOnly ? "#59606e" : "#3b4250")
+                visible: rowIcon.status !== Image.Ready
+            }
+
+            Image {
+                id: rowIcon
+                x: 9
+                y: 4
+                width: 18
+                height: 18
+                source: row.iconSource
+                sourceSize.width: Math.round(18 * Screen.devicePixelRatio)
+                sourceSize.height: Math.round(18 * Screen.devicePixelRatio)
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                visible: status === Image.Ready
+                Accessible.ignored: true
             }
 
             Row {

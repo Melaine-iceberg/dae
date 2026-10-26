@@ -69,11 +69,19 @@ pub mod qobject {
     impl cxx_qt::Threading for PreviewController {}
 }
 
-/// Registers the `thumbnail://` provider before the QML root is loaded.
+/// Registers the `thumbnail://` and `fileicon://` providers before the QML
+/// root is loaded.
 pub fn register_image_providers(engine: *mut cxx_qt_lib::QQmlApplicationEngine) {
     unsafe {
         qobject::register_thumbnail_provider(engine);
     }
+    crate::icons::register_provider(engine);
+}
+
+/// Whether the pane should give this file an image slot: formats Qt decodes
+/// itself, plus the ones the desktop can produce (PDF, video, HEIC).
+fn has_thumbnail(path: &str) -> bool {
+    preview::is_thumbnail_path(path) || dae_core::fs::thumbnails::is_supported_path(path)
 }
 
 #[derive(Default)]
@@ -125,8 +133,7 @@ impl qobject::PreviewController {
         self.as_mut().set_content(QString::default());
         self.as_mut().set_truncated(false);
         self.as_mut().set_has_text(false);
-        self.as_mut()
-            .set_has_thumbnail(preview::is_thumbnail_path(&path));
+        self.as_mut().set_has_thumbnail(has_thumbnail(&path));
         self.as_mut().set_thumbnail_revision(QString::default());
         self.as_mut().set_media_text(QString::default());
         self.as_mut().set_error(QString::default());
@@ -254,7 +261,7 @@ fn snapshot_from(
         content,
         truncated,
         has_text,
-        has_thumbnail: preview::is_thumbnail_path(&properties.path),
+        has_thumbnail: has_thumbnail(&properties.path),
         thumbnail_revision: format!(
             "{}-{}",
             properties.modified_at.unwrap_or(0),
@@ -341,5 +348,13 @@ mod tests {
         assert!(is_media_path("C:/clip.MP4"));
         assert!(is_media_path("C:/song.flac"));
         assert!(!is_media_path("C:/main.rs"));
+    }
+
+    #[test]
+    fn desktop_rendered_types_get_a_thumbnail_slot() {
+        assert!(has_thumbnail("C:/tree/photo.jpg"));
+        assert!(has_thumbnail("C:/tree/report.pdf"));
+        assert!(has_thumbnail("C:/tree/clip.mp4"));
+        assert!(!has_thumbnail("C:/tree/main.rs"));
     }
 }

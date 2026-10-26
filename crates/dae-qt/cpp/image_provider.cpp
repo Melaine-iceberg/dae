@@ -1,11 +1,16 @@
 #include "image_provider.h"
 
+#include "dae-qt/src/icons.cxxqt.h"
+
 #include <QFileInfo>
 #include <QImageReader>
 #include <QMutexLocker>
 #include <QUrl>
 #include <QUrlQuery>
 #include <QtQml/QQmlApplicationEngine>
+
+#include <cstdint>
+#include <string>
 
 namespace dae_qt {
 
@@ -56,7 +61,7 @@ QImage ThumbnailImageProvider::requestImage(const QString& id, QSize* size,
 {
     const QString path = decodedPath(id);
     const QFileInfo info(path);
-    if (!info.isFile() || !info.isReadable() || info.size() > kMaxSourceBytes)
+    if (!info.isFile() || !info.isReadable())
         return {};
 
     const int dimension = requestedDimension(id, requestedSize);
@@ -75,23 +80,38 @@ QImage ThumbnailImageProvider::requestImage(const QString& id, QSize* size,
         }
     }
 
-    QImageReader reader(path);
-    reader.setAutoTransform(true);
-    const QSize original = reader.size();
-    if (original.isValid() && original.width() > 0 && original.height() > 0) {
-        const QSize target = original.scaled(dimension, dimension, Qt::KeepAspectRatio);
-        if (target.isValid())
-            reader.setScaledSize(target);
+    QImage image;
+    // The in-process decode stays bounded by the byte cap. A desktop-produced
+    // thumbnail runs out of process, so the video this check would have
+    // rejected is still eligible for a first frame.
+    if (info.size() <= kMaxSourceBytes) {
+        QImageReader reader(path);
+        reader.setAutoTransform(true);
+        const QSize original = reader.size();
+        if (original.isValid() && original.width() > 0 && original.height() > 0) {
+            const QSize target = original.scaled(dimension, dimension, Qt::KeepAspectRatio);
+            if (target.isValid())
+                reader.setScaledSize(target);
+        }
+        image = reader.read();
+
+        if (!image.isNull()
+            && (image.width() > dimension || image.height() > dimension)) {
+            image = image.scaled(dimension, dimension, Qt::KeepAspectRatio,
+                                 Qt::SmoothTransformation);
+        }
     }
 
-    QImage image = reader.read();
-    if (image.isNull())
-        return {};
-
-    if (image.width() > dimension || image.height() > dimension) {
-        image = image.scaled(dimension, dimension, Qt::KeepAspectRatio,
-                             Qt::SmoothTransformation);
+    // PDF first pages, video frames and formats Qt has no image plugin for.
+    if (image.isNull()) {
+        const rust::Vec<uint8_t> bytes =
+            dae_qt_render_system_thumbnail(path.toStdString(), dimension);
+        if (!bytes.empty()) {
+            image = QImage::fromData(reinterpret_cast<const uchar*>(bytes.data()),
+                                     int(bytes.size()));
+        }
     }
+
     if (image.isNull())
         return {};
 
@@ -103,6 +123,69 @@ QImage ThumbnailImageProvider::requestImage(const QString& id, QSize* size,
         m_cache.insert(key, new QImage(image));
     }
     return image;
+}
+
+FileIconImageProvider::FileIconImageProvider()
+    : QQuickImageProvider(QQuickImageProvider::Image)
+{
+}
+
+QImage FileIconImageProvider::requestImage(const QString& id, QSize* size,
+                                           const QSize& requestedSize)
+{
+    constexpr int kDefaultIconSize = 36;
+    constexpr int kMinIconSize = 16;
+    constexpr int kMaxIconSize = 256;
+
+    const int queryStart = id.indexOf(QLatin1Char('?'));
+    const QString body = queryStart >= 0 ? id.left(queryStart) : id;
+    const QUrlQuery query(queryStart >= 0 ? id.mid(queryStart + 1) : QString());
+
+    int dimension = requestedSize.isValid()
+        ? qMax(requestedSize.width(), requestedSize.height())
+        : 0;
+    if (dimension <= 0)
+        dimension = query.queryItemValue(QStringLiteral("size")).toInt();
+    if (dimension <= 0)
+        dimension = kDefaultIconSize;
+    dimension = qBound(kMinIconSize, dimension, kMaxIconSize);
+
+    rust::Vec<uint8_t> bytes;
+    if (body.startsWith(QStringLiteral("type/"))) {
+        const QByteArray extension =
+            QUrl::fromPercentEncoding(body.mid(5).toUtf8()).toUtf8();
+        bytes = dae_qt_render_type_icon(
+            std::string(extension.constData(), extension.size()), dimension);
+    } else if (body.startsWith(QStringLiteral("path/"))) {
+        const QByteArray path =
+            QUrl::fromPercentEncoding(body.mid(5).toUtf8()).toUtf8();
+        const QByteArray version =
+            query.queryItemValue(QStringLiteral("v")).toUtf8();
+        const bool isDir =
+            query.queryItemValue(QStringLiteral("dir")) == QStringLiteral("1");
+        bytes = dae_qt_render_file_icon(
+            std::string(path.constData(), path.size()), isDir, dimension,
+            std::string(version.constData(), version.size()));
+    }
+
+    if (bytes.empty())
+        return {};
+
+    QImage image = QImage::fromData(reinterpret_cast<const uchar*>(bytes.data()),
+                                    int(bytes.size()));
+    if (image.isNull())
+        return {};
+
+    if (size)
+        *size = image.size();
+    return image;
+}
+
+void dae_qt_register_file_icon_provider(QQmlApplicationEngine* engine)
+{
+    if (engine)
+        engine->addImageProvider(QStringLiteral("fileicon"),
+                                 new FileIconImageProvider());
 }
 
 void dae_qt_register_thumbnail_provider(QQmlApplicationEngine* engine)

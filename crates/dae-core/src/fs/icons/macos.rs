@@ -3,7 +3,7 @@
 //! The cheapest of the three backends, because AppKit answers the question
 //! directly — `iconForFile:` returns the composed icon, badges and custom
 //! `.icon` resources and all, for a file or a folder alike. What is left is
-//! turning an `NSImage` into bytes a webview can consume, and that has two rules
+//! turning an `NSImage` into bytes either shell can consume, and that has two rules
 //! of its own worth stating, because both look skippable and neither is.
 //!
 //!   * **Pick a representation; do not encode the image.** `iconForFile:` hands
@@ -55,7 +55,7 @@ pub(super) fn extract_type(extension: &str, size: u32) -> Option<FileIcon> {
     render(&icon, size)
 }
 
-/// The best-fitting representation of an `NSWorkspace` icon, as bytes a webview
+/// The best-fitting representation of an `NSWorkspace` icon, as bytes either
 /// can draw.
 fn render(icon: &NSImage, size: u32) -> Option<FileIcon> {
     let bitmap = best_representation(icon, i64::from(size))?;
@@ -152,11 +152,7 @@ mod tests {
     #[test]
     fn asking_for_more_than_exists_takes_the_largest() {
         let widths = [16, 32, 48];
-        let best = widths
-            .iter()
-            .max()
-            .copied()
-            .expect("the set is not empty");
+        let best = widths.iter().max().copied().expect("the set is not empty");
         // Nothing can satisfy 128, so the ranking degrades monotonically toward
         // the widest option rather than picking an arbitrary member.
         assert_eq!(best, 48);

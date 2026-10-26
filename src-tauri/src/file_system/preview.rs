@@ -1,5 +1,5 @@
 use super::error::FileSystemError;
-use crate::file_icons::FileIcon;
+use dae_core::fs::icons::FileIcon;
 use image::{DynamicImage, GenericImageView};
 use serde::Serialize;
 use specta::Type;
@@ -309,7 +309,7 @@ pub fn handle_thumbnail_protocol(
 
 /// Serves `fileicon://localhost/?path=...&dir=...&v=...&size=...` with the operating
 /// system's icon for the file or folder, on every platform — the extraction
-/// itself is in [`crate::file_icons`]. `dir` and `v` are the entry's kind and its
+/// itself is in [`dae_core::fs::icons`]. `dir` and `v` are the entry's kind and its
 /// listing-reported `mtime-size`, so nothing here re-reads the disk to name a
 /// cache key.
 ///
@@ -794,7 +794,7 @@ fn render_file_icon(
     let cache_key = format!("icon|{path_string}|{version}|{size}");
 
     cached_icon(cache_key, || {
-        crate::file_icons::extract(path_string, u32::from(size), is_dir)
+        dae_core::fs::icons::extract(path_string, u32::from(size), is_dir)
     })
 }
 
@@ -811,7 +811,7 @@ fn render_type_icon(extension: &str, size: u16) -> Option<Arc<RenderedThumbnail>
     let cache_key = format!("icon-ext|{extension}|{size}");
 
     cached_icon(cache_key, || {
-        crate::file_icons::extract_type(extension, u32::from(size))
+        dae_core::fs::icons::extract_type(extension, u32::from(size))
     })
 }
 
@@ -882,144 +882,8 @@ fn render_named_icon(name: &str, size: u16) -> Option<Arc<RenderedThumbnail>> {
     let cache_key = format!("icon-name|{name}|{size}");
 
     cached_icon(cache_key, || {
-        crate::file_icons::named(name, u32::from(size))
+        dae_core::fs::icons::named(name, u32::from(size))
     })
-}
-
-/// Windows shell icon extraction: `IShellItemImageFactory` resolves whatever
-/// Explorer would show — the target icon for `.lnk`/`.url` shortcuts, the
-/// embedded icon for executables, the registered handler icon otherwise.
-///
-/// Two callers: [`crate::file_icons`] on the render pool, and `shell_commands.rs`
-/// for the icon paths an `IExplorerCommand` reports. They share the apartment
-/// and the cache here for exactly that reason.
-#[cfg(windows)]
-pub(crate) fn extract_file_icon_png(path: &str, size: u32) -> Option<Vec<u8>> {
-    use windows::Win32::UI::Shell::{SIIGBF_ICONONLY, SIIGBF_RESIZETOFIT};
-    // ICONONLY keeps document thumbnails out — views pair these icons
-    // with their own image thumbnails.
-    shell_image_png(path, size, SIIGBF_ICONONLY | SIIGBF_RESIZETOFIT)
-}
-
-/// First-page / first-frame thumbnails from the registered shell thumbnail
-/// handler (Edge for PDFs, the WMP/Media handler for videos, the HEIF
-/// extensions for `.heic`). Files without a handler yield `None`, which the
-/// frontend turns into a type-icon fallback.
-#[cfg(windows)]
-fn extract_shell_thumbnail_png(path: &str, size: u32) -> Option<Vec<u8>> {
-    use windows::Win32::UI::Shell::SIIGBF_RESIZETOFIT;
-    shell_image_png(path, size, SIIGBF_RESIZETOFIT)
-}
-
-/// Shared `IShellItemImageFactory` pipeline: resolves the shell image for
-/// `path` at `size` and rasterizes it to PNG.
-#[cfg(windows)]
-fn shell_image_png(
-    path: &str,
-    size: u32,
-    flags: windows::Win32::UI::Shell::SIIGBF,
-) -> Option<Vec<u8>> {
-    use windows::Win32::Foundation::SIZE;
-    use windows::Win32::Graphics::Gdi::DeleteObject;
-    use windows::Win32::Graphics::Gdi::HGDIOBJ;
-    use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
-    use windows::Win32::UI::Shell::{IShellItemImageFactory, SHCreateItemFromParsingName};
-    use windows::core::HSTRING;
-
-    unsafe {
-        // Protocol-handler threads may never have initialized COM; the shell
-        // item APIs require an apartment.
-        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
-
-        let factory: IShellItemImageFactory =
-            SHCreateItemFromParsingName(&HSTRING::from(path), None).ok()?;
-        let bitmap = factory
-            .GetImage(
-                SIZE {
-                    cx: size as i32,
-                    cy: size as i32,
-                },
-                flags,
-            )
-            .ok()?;
-
-        let result = bitmap_to_png(bitmap);
-        let _ = DeleteObject(HGDIOBJ(bitmap.0));
-        result
-    }
-}
-
-/// Copies a shell-produced HBITMAP into top-down RGBA pixels and encodes it
-/// as PNG. Shared with `shell_commands.rs`, which reaches a bitmap through
-/// `SHDefExtractIconW` when a command names an icon resource rather than a file.
-#[cfg(windows)]
-pub(crate) fn bitmap_to_png(bitmap: windows::Win32::Graphics::Gdi::HBITMAP) -> Option<Vec<u8>> {
-    use windows::Win32::Graphics::Gdi::{
-        BITMAP, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, GetDC, GetDIBits, GetObjectW,
-        HGDIOBJ, ReleaseDC,
-    };
-
-    unsafe {
-        let mut info = BITMAP::default();
-        if GetObjectW(
-            HGDIOBJ(bitmap.0),
-            std::mem::size_of::<BITMAP>() as i32,
-            Some(&mut info as *mut BITMAP as *mut core::ffi::c_void),
-        ) == 0
-        {
-            return None;
-        }
-        let width = info.bmWidth as usize;
-        let height = info.bmHeight as usize;
-        if width == 0 || height == 0 {
-            return None;
-        }
-
-        // Top-down 32bpp read so scanlines arrive in image order.
-        let mut header = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: info.bmWidth,
-                biHeight: -(info.bmHeight),
-                biPlanes: 1,
-                biBitCount: 32,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let mut pixels = vec![0u8; width * height * 4];
-        // GetDIBits wants a real DC for format negotiation; the screen DC
-        // is process-wide and costs nothing here.
-        let dc = GetDC(None);
-        let copied = GetDIBits(
-            dc,
-            bitmap,
-            0,
-            height as u32,
-            Some(pixels.as_mut_ptr() as *mut core::ffi::c_void),
-            &mut header,
-            DIB_RGB_COLORS,
-        );
-        let _ = ReleaseDC(None, dc);
-        if copied == 0 {
-            return None;
-        }
-
-        // Shell bitmaps are BGRA; swap channels for the `image` crate.
-        for pixel in pixels.as_chunks_mut::<4>().0 {
-            pixel.swap(0, 2);
-        }
-
-        let image = image::RgbaImage::from_raw(width as u32, height as u32, pixels)?;
-        let mut buffer = Vec::new();
-        image::DynamicImage::ImageRgba8(image)
-            .write_to(
-                &mut std::io::Cursor::new(&mut buffer),
-                image::ImageFormat::Png,
-            )
-            .ok()?;
-        Some(buffer)
-    }
 }
 
 /// The first-page / first-frame producers that are not the `image` crate, one
@@ -1042,7 +906,7 @@ fn produce_shell_thumbnail(
     _metadata: &fs::Metadata,
 ) -> Result<Option<RenderedThumbnail>, FileSystemError> {
     Ok(
-        extract_shell_thumbnail_png(path, u32::from(size)).map(|bytes| RenderedThumbnail {
+        dae_core::fs::thumbnails::extract(path, u32::from(size)).map(|bytes| RenderedThumbnail {
             mime: "image/png",
             bytes,
         }),

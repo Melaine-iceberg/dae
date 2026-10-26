@@ -30,6 +30,7 @@ const SEARCH_MODIFIED: i32 = 0x0204;
 const SEARCH_IS_DIR: i32 = 0x0205;
 const SEARCH_HIDDEN: i32 = 0x0206;
 const SEARCH_READ_ONLY: i32 = 0x0207;
+const SEARCH_ICON: i32 = 0x0208;
 
 const CONTENT_IS_HEADER: i32 = 0x0300;
 const CONTENT_NAME: i32 = 0x0301;
@@ -250,6 +251,13 @@ impl qobject::SearchModel {
             SEARCH_IS_DIR => QVariant::from(&(row.kind == EntryKind::Directory)),
             SEARCH_HIDDEN => QVariant::from(&row.hidden),
             SEARCH_READ_ONLY => QVariant::from(&row.read_only),
+            SEARCH_ICON => {
+                let version = format!("{}-{}", row.modified_at.unwrap_or(0), row.size.unwrap_or(0));
+                QVariant::from(&QString::from(
+                    crate::icons::source_for(&row.path, row.kind == EntryKind::Directory, &version)
+                        .as_str(),
+                ))
+            }
             _ => QVariant::default(),
         }
     }
@@ -264,6 +272,7 @@ impl qobject::SearchModel {
             (SEARCH_IS_DIR, "isDir"),
             (SEARCH_HIDDEN, "hidden"),
             (SEARCH_READ_ONLY, "readOnly"),
+            (SEARCH_ICON, "iconSource"),
         ])
     }
 

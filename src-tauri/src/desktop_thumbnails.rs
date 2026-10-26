@@ -8,7 +8,7 @@
 //! `$XDG_DATA_DIRS/thumbnailers/` naming the MIME types they render and an
 //! `Exec=` line with `%i`/`%o`/`%s` holes to fill, and the agreed output is
 //! cached in `$XDG_CACHE_HOME/thumbnails/`. So this module is a reader of those
-//! two things plus a process spawner — the same shape as [`crate::file_icons`]
+//! two things plus a process spawner — the same shape as [`dae_core::fs::icons`]
 //! and for the same reason: no GTK, no D-Bus, no display connection, nothing
 //! that has to hop to the main thread. It runs on the render pool
 //! ([`crate::file_system::preview`]), and a producer that needed a realized
@@ -47,7 +47,7 @@ use crate::xdg::{cache_home, data_roots};
 
 /// A thumbnail a producer rendered, labelled with the type its bytes have.
 ///
-/// The mime travels with the bytes as it does for [`crate::file_icons::FileIcon`]
+/// The mime travels with the bytes as it does for [`dae_core::fs::icons::FileIcon`]
 /// — the label belongs to whatever made them, and the caller answers a protocol
 /// request with it verbatim. Here it is always PNG: a producer is asked for a
 /// `.png` output name, and [`collect`] refuses anything else.
@@ -338,7 +338,7 @@ fn is_executable(path: &Path) -> bool {
 ///
 /// Cached for the life of the process. Installing a package adds a thumbnailer,
 /// and the alternative is re-reading a directory of small INI files per request;
-/// the same trade [`crate::file_icons::linux`] makes for the icon theme chain,
+/// the same trade [`dae_core::fs::icons::linux`] makes for the icon theme chain,
 /// with the same consequence — a thumbnailer installed while this app runs is
 /// picked up on the next launch.
 fn thumbnailers() -> &'static Vec<Thumbnailer> {

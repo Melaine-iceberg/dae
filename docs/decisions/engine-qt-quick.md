@@ -377,11 +377,72 @@ F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
 | Ctrl+Shift+Z | 再次删除 |
 | Ctrl+, → 字号改 14 → 保存 | `settings.toml` 写入 `fontSize = 14`，终端按 14 号绘制 |
 
-**这一刀还没铺的**（core 已有实现，缺 Qt 视图/命令包装）：搜索 UI（文件名与
-内容搜索）、预览/缩略图、文件图标、打开方式选择器（macOS/Linux）、默认文件
-管理器注册、`dae://` 深链、自动更新、压缩包、
+**§4.6 之后已经补齐的**（代码已落地，不再算待办）：
+
+- **搜索**：`qml/SearchBar.qml` + `crates/dae-qt/src/search_model.rs`，文件名
+  与内容搜索各一个模型，结果复用同一个 `FileList` 委托。
+- **预览**：`qml/PreviewPanel.qml` + `crates/dae-qt/src/preview.rs`；图片由
+  `thumbnail://` provider 解码并缓存。
+- **压缩包**：`qml/ArchivePasswordDialog.qml` +
+  `Workspace.compressEntries` / `extractArchive`，加密包走同一套密码重试。
+- **回收站**：§4.6 的 `TrashView.qml` 与三个回收站命令。
+
+**仍然没铺的**（core 已有实现，缺 Qt 视图/命令包装，或只在旧壳里）：打开方式
+选择器（macOS/Linux）、默认文件管理器注册、`dae://` 深链与单实例、自动更新、
 云盘/SFTP/SMB 的连接管理界面。它们按依赖排在下一刀，不会改变上面这层的
-接口。
+接口。文件图标与系统缩略图已在 §4.7 落地（Linux 的 `.thumbnailer` 除外）。
+
+### 4.7 文件图标与系统缩略图（2026-10-26）
+
+图标抽取整体搬进 `dae-core::fs::icons`（三平台后端原样），`xdg` 一并搬进
+`dae-core::xdg`，旧壳通过薄垫片复用同一份实现：`file_system/preview.rs` 与
+`shell_commands/windows.rs` 不再自带 COM/GDI 代码。Windows 的
+`IShellItemImageFactory` + DIB→PNG 移进 `dae_core::fs::windows_image`，系统
+缩略图入口是 `dae_core::fs::thumbnails`。
+
+**类型图标换了一条 Win32 路径。** 旧实现在
+`SHDefExtractIconW("type.<ext>", 0, 0, …)` 上取扩展名图标；在 Windows 11
+build 26340 上它对任何扩展名都返回 `E_FAIL`（实测 json/txt/rs/exe/docx/zzz
+全部失败，而真实路径的 `notepad.exe` 成功）。`extract_type` 改为
+`SHGetFileInfoW(…, SHGFI_USEFILEATTRIBUTES | SHGFI_ICON | SHGFI_LARGEICON)`：
+同样只看名字、不需要文件存在，对上述全部扩展名返回图标，未知扩展名回落到
+通用文档图标。尺寸只有大/小两档（32 / 16 px），其余交给
+`QQuickImageProvider` 缩放；18 dp @1.5× 要 27 px，32 px 的源不需要放大。
+
+**Qt 侧**：
+
+- `crates/dae-qt/src/icons.rs` — `image://fileicon/path/<path>?dir=&v=&size=`
+  与 `image://fileicon/type/<ext>?size=`。目录、快捷方式和可执行文件按路径取
+  （各自图标可能不同），普通文件按扩展名共享一次请求；命中与未命中都记，
+  LRU 512 项。
+- `cpp/image_provider.cpp` — `FileIconImageProvider` 在 Qt 的图像加载线程上
+  调用 Rust；`DirectoryListModel` / `SearchModel` 新增 `iconSource` 角色。
+- `qml/FileList.qml` — 18 dp 的 `Image` 覆盖原来的色块；图标未就绪或失败时
+  色块仍在，所以每一行永远有东西画。
+- `thumbnail://` 在 Qt 自己解不了（PDF / 视频 / HEIC）时回落到
+  `dae_core::fs::thumbnails`，且缩略图请求带 `SIIGBF_THUMBNAILONLY`：没有真实
+  缩略图就返回空，预览面板显示「无法生成缩略图」，而不是把 384 px 的图标当成
+  首页缩略图。`PreviewController.hasThumbnail` 相应加入桌面可渲染扩展名。
+
+**实测（2026-10-26，Windows 11 build 26340 / 150%）**：
+
+- `dae-core` **223 通过 / 8 忽略**（新增 notepad.exe 图标、`.json` 类型图标、
+  缩略图扩展名分类）；`dae-qt` **43 通过**；旧壳 `cargo check` 通过。
+- debug 构建启动后列表显示真实图标：仓库根的文件夹图标、`crates-v1.json` 的
+  JSON 图标、`C:\Windows\System32\WindowsPowerShell\v1.0` 里
+  `powershell.exe` 的 PowerShell 图标、`.ps1xml` / `.config` 的文档图标；
+  stderr 无 provider 错误。
+- PDF 预览在这台机器上显示「无法生成缩略图」：本机没有注册 PDF 缩略图处理器
+  （旧壳同样拿不到首页）。这条验证的是「没有处理器时不冒充缩略图」，不是
+  处理器本身；装了 Edge/Adobe 缩略图处理器的机器走同一调用。
+
+**还没做**：
+
+1. Linux 的 `.thumbnailer` 仍在旧壳（`desktop_thumbnails`，还依赖未搬的 XDG
+   desktop-entry 解析），随 Qt 的 Linux 门槛一起搬。
+2. 图标接入后要在门槛 1 的 12 万行 fixture 上复测每帧 p95 与 PSS。本次的设计
+   把请求限制在可见行：类型图标每个扩展一次，目录/快捷方式每个可见路径一次；
+   但「每帧工作」是实测项，不是推理项。
 
 ## 5. 定案前必须量出来的四组数字
 

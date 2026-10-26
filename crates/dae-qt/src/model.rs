@@ -33,6 +33,8 @@ const ROLE_READ_ONLY: i32 = 0x0106;
 /// A listing row's relative path is its name; search rows carry the path below
 /// the search root. Exposing it here lets one delegate paint both models.
 const ROLE_RELATIVE: i32 = 0x0107;
+/// The `image://fileicon/...` URL for this row's OS icon.
+const ROLE_ICON: i32 = 0x0108;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -220,6 +222,14 @@ impl qobject::DirectoryListModel {
             ROLE_IS_DIR => QVariant::from(&(row.kind == EntryKind::Directory)),
             ROLE_HIDDEN => QVariant::from(&row.hidden),
             ROLE_READ_ONLY => QVariant::from(&row.read_only),
+            ROLE_ICON => {
+                let path = row.full_path(&self.base);
+                let version = icon_version(row);
+                QVariant::from(&QString::from(
+                    crate::icons::source_for(&path, row.kind == EntryKind::Directory, &version)
+                        .as_str(),
+                ))
+            }
             _ => QVariant::default(),
         }
     }
@@ -234,6 +244,7 @@ impl qobject::DirectoryListModel {
         roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));
         roles.insert(ROLE_HIDDEN, QByteArray::from("hidden"));
         roles.insert(ROLE_READ_ONLY, QByteArray::from("readOnly"));
+        roles.insert(ROLE_ICON, QByteArray::from("iconSource"));
         roles
     }
 
@@ -497,6 +508,12 @@ impl BatchTarget for QtBatchTarget {
 fn next_stream_id() -> String {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     format!("qt-{}", NEXT.fetch_add(1, Ordering::Relaxed))
+}
+
+/// The listing's `mtime-size`, used to version a per-file icon URL. Type icons
+/// are shared and deliberately not versioned.
+fn icon_version(row: &StoredRow) -> String {
+    format!("{}-{}", row.modified_at.unwrap_or(0), row.size.unwrap_or(0))
 }
 
 #[cfg(test)]

@@ -913,7 +913,7 @@ fn take_pwstr(value: Option<PWSTR>) -> Option<String> {
 fn resolve_icon(spec: &str) -> Option<String> {
     let (path, index) = split_icon_spec(spec);
     let bytes = if index == 0 {
-        crate::file_system::preview::extract_file_icon_png(path, ICON_SIZE)
+        dae_core::fs::icons::extract(path, ICON_SIZE, false).map(|icon| icon.bytes)
     } else {
         icon_from_resource(path, index)
     }?;
@@ -958,7 +958,7 @@ fn icon_to_png(icon: HICON) -> Option<Vec<u8>> {
     // SAFETY: `icon` is a live icon handle and `info` a valid out-pointer.
     unsafe { GetIconInfo(icon, &mut info) }.ok()?;
 
-    let png = crate::file_system::preview::bitmap_to_png(info.hbmColor);
+    let png = dae_core::fs::windows_image::bitmap_to_png(info.hbmColor);
     // SAFETY: `GetIconInfo` hands over two bitmaps that the caller owns.
     unsafe {
         let _ = DeleteObject(HGDIOBJ(info.hbmColor.0));
