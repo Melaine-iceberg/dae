@@ -29,6 +29,7 @@ fn main() {
             "src/shell.rs",
             "src/sidebar_model.rs",
             "src/terminal.rs",
+            "src/trash_model.rs",
             "src/window.rs",
             "src/workspace.rs",
         ])

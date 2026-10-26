@@ -52,10 +52,19 @@ Window {
     property string promptPath: ""
     property string contextPath: ""
     property bool contextIsDir: false
+    property string contextTrashId: ""
+    property string contextTrashParent: ""
+    property string confirmMode: ""
+    property var confirmTrashIds: []
+    property string archiveMode: ""
+    property string archiveTarget: ""
+    property string archiveDestination: ""
+    property var archivePaths: []
 
     readonly property var activeTab: (activeIndex >= 0 && activeIndex < tabs.length)
         ? tabs[activeIndex] : null
     readonly property string activePath: activeTab !== null ? activeTab.listing.path : ""
+    readonly property bool trashActive: activeTab !== null && activeTab.trash
     readonly property bool searchActive: searchQuery.trim().length > 0
     readonly property bool contentSearchActive: searchActive && searchMode === "content"
     readonly property bool searchBusy: activeTab === null ? false
@@ -88,7 +97,8 @@ Window {
     }
 
     readonly property var config: configLoader.item
-    readonly property bool modalOpen: menu.visible || namePrompt.visible || settingsPanel.visible
+    readonly property bool modalOpen: menu.visible || namePrompt.visible
+        || passwordDialog.visible || settingsPanel.visible || confirmDialog.visible
 
     Timer {
         id: searchTimer
@@ -100,6 +110,8 @@ Window {
     onActiveIndexChanged: {
         root.resetSearchState()
         previewPanel.showPaths([])
+        if (root.trashActive)
+            trashModel.refresh()
     }
 
     onDarkChanged: {
@@ -110,6 +122,13 @@ Window {
     WindowController {
         id: chrome
         token: root.objectName
+    }
+
+    /// One bin per window. The bin itself is process-wide, but a window that
+    /// tears a tab off refreshes its own snapshot rather than sharing rows
+    /// across windows.
+    TrashModel {
+        id: trashModel
     }
 
     Component {
@@ -292,6 +311,65 @@ Window {
         Qt.callLater(fileList.takeFocus)
     }
 
+    function openTrash() {
+        if (root.activeTab === null || root.modalOpen)
+            return
+        root.resetSearchState()
+        previewPanel.showPaths([])
+        root.activeTab.openTrash()
+        trashModel.refresh()
+        Qt.callLater(trashView.takeFocus)
+    }
+
+    function trashTargetIds() {
+        const ids = trashView.selectedIdList()
+        if (ids.length > 0)
+            return ids
+        return root.contextTrashId !== "" ? [root.contextTrashId] : []
+    }
+
+    function restoreTrash(ids) {
+        if (!ids || ids.length === 0 || Workspace.busy)
+            return
+        trashView.clearSelection()
+        Workspace.restoreTrashEntries(ids)
+    }
+
+    function requestTrashPurge(ids) {
+        if (!ids || ids.length === 0 || Workspace.busy)
+            return
+        root.confirmMode = "purge"
+        root.confirmTrashIds = ids
+        confirmDialog.open("永久删除这些项目？",
+                           ids.length + " 个项目将被永久删除，无法恢复。",
+                           "永久删除", true)
+    }
+
+    function requestEmptyTrash() {
+        if (Workspace.busy)
+            return
+        root.confirmMode = "empty"
+        root.confirmTrashIds = []
+        confirmDialog.open("清空回收站？",
+                           "回收站中的 " + trashModel.count + " 个项目将被永久删除，无法恢复。",
+                           "清空回收站", true)
+    }
+
+    function acceptConfirm() {
+        const mode = root.confirmMode
+        const ids = root.confirmTrashIds
+        root.confirmMode = ""
+        root.confirmTrashIds = []
+        if (mode === "purge") {
+            trashView.clearSelection()
+            Workspace.deleteTrashEntries(ids)
+        } else if (mode === "empty") {
+            trashView.clearSelection()
+            Workspace.emptyTrash()
+        }
+        root.modalClosed()
+    }
+
     function resetSearchState() {
         searchTimer.stop()
         for (let index = 0; index < root.tabs.length; index += 1) {
@@ -366,6 +444,8 @@ Window {
     }
 
     function goUp() {
+        if (root.trashActive)
+            return
         const parent = root.parentOf(root.activePath)
         if (parent !== "")
             root.navigate(parent)
@@ -388,6 +468,64 @@ Window {
             return paths
         const path = root.contextPath !== "" ? root.contextPath : fileList.currentPath()
         return path !== "" ? [path] : []
+    }
+
+    function isArchivePath(path) {
+        return /\.(zip|tar|tar\.gz|tgz|7z)$/i.test(path)
+    }
+
+    function displayNameOfPath(path) {
+        const parts = path.split(/[\\/]/)
+        return parts.length > 0 ? parts[parts.length - 1] : path
+    }
+
+    function startCompress(format, encrypted) {
+        const paths = root.currentSelection()
+        if (paths.length === 0 || root.activePath === "")
+            return
+        if (encrypted) {
+            root.archiveMode = "compress"
+            root.archivePaths = paths
+            root.archiveTarget = ""
+            root.archiveDestination = root.activePath
+            passwordDialog.open("compress", "", "")
+            return
+        }
+        Workspace.compressEntries(paths, root.activePath, format, "")
+    }
+
+    function startExtract(path) {
+        if (!root.isArchivePath(path))
+            return
+        root.archiveMode = "extract"
+        root.archiveTarget = path
+        root.archiveDestination = ""
+        Workspace.extractArchive(path, "", "")
+    }
+
+    function requestArchivePassword(target, message) {
+        root.archiveMode = "extract"
+        root.archiveTarget = target
+        root.archiveDestination = ""
+        if (passwordDialog.visible) {
+            passwordDialog.showError(message)
+            return
+        }
+        passwordDialog.open("extract", root.displayNameOfPath(target), "")
+    }
+
+    function acceptArchivePassword(password) {
+        if (root.archiveMode === "compress")
+            Workspace.compressEntries(root.archivePaths, root.archiveDestination, "7z", password)
+        else if (root.archiveMode === "extract")
+            Workspace.extractArchive(root.archiveTarget, root.archiveDestination, password)
+    }
+
+    function resetArchiveState() {
+        root.archiveMode = ""
+        root.archiveTarget = ""
+        root.archiveDestination = ""
+        root.archivePaths = []
     }
 
     function promptCreate(folder) {
@@ -425,6 +563,7 @@ Window {
         const many = fileList.selectionCount > 1
         const hasPath = path !== ""
         const hasClipboard = Workspace.clipboardMode !== ""
+        const canExtract = hasPath && !isDir && root.isArchivePath(path)
         menu.openAt(x, y, [
             { id: "open", label: isDir ? "打开" : "用默认应用打开", enabled: hasPath, shortcut: "Enter" },
             { id: "openTab", label: "在新标签页打开", enabled: hasPath && isDir },
@@ -438,11 +577,31 @@ Window {
             { id: "cut", label: "剪切", shortcut: "Ctrl+X", enabled: hasPath },
             { id: "paste", label: "粘贴到此处", shortcut: "Ctrl+V", enabled: hasClipboard && isDir },
             { id: "duplicate", label: "创建副本", enabled: hasPath },
+            { id: "compress", label: "压缩为…", enabled: hasPath, submenu: [
+                { id: "compressZip", label: "ZIP 压缩包" },
+                { id: "compressTar", label: "TAR 归档" },
+                { id: "compressTarGz", label: "TAR.GZ 压缩包" },
+                { id: "compress7z", label: "7Z 压缩包" },
+                { id: "compress7zEncrypted", label: "7Z 压缩包（加密）" }
+            ] },
+            { id: "extractHere", label: "解压到此处", enabled: canExtract },
             { id: "rename", label: "重命名", shortcut: "F2", enabled: hasPath && !many },
             { separator: true },
             { id: "favorite", label: "加入收藏", enabled: hasPath && isDir },
             { id: "trash", label: "移到回收站", shortcut: "Delete", enabled: hasPath, danger: true },
             { id: "delete", label: "永久删除", shortcut: "Shift+Delete", enabled: hasPath, danger: true }
+        ])
+    }
+
+    function showTrashRowMenu(id, originalParent, x, y) {
+        root.contextTrashId = id
+        root.contextTrashParent = originalParent
+        menu.openAt(x, y, [
+            { id: "trashRestore", label: "恢复", shortcut: "Enter" },
+            { id: "trashOpenOriginal", label: "打开原位置",
+              enabled: originalParent !== "" },
+            { separator: true },
+            { id: "trashPurge", label: "永久删除", shortcut: "Delete", danger: true }
         ])
     }
 
@@ -513,6 +672,24 @@ Window {
         case "duplicate":
             Workspace.duplicateEntries(root.currentSelection())
             break
+        case "compressZip":
+            root.startCompress("zip", false)
+            break
+        case "compressTar":
+            root.startCompress("tar", false)
+            break
+        case "compressTarGz":
+            root.startCompress("tar.gz", false)
+            break
+        case "compress7z":
+            root.startCompress("7z", false)
+            break
+        case "compress7zEncrypted":
+            root.startCompress("7z", true)
+            break
+        case "extractHere":
+            root.startExtract(path)
+            break
         case "rename":
             root.promptRename(path, path.split(/[\\/]/).pop())
             break
@@ -541,14 +718,27 @@ Window {
             if (root.activeTab !== null)
                 root.activeTab.listing.reload()
             break
+        case "trashRestore":
+            root.restoreTrash(root.trashTargetIds())
+            break
+        case "trashOpenOriginal":
+            if (root.contextTrashParent !== "")
+                root.navigate(root.contextTrashParent)
+            break
+        case "trashPurge":
+            root.requestTrashPurge(root.trashTargetIds())
+            break
         }
     }
 
     function reloadAfterOperation(kind, focus) {
         if (root.activeTab === null)
             return
+        const trashKinds = ["trash", "restore_trash", "purge_trash", "empty_trash"]
+        if (trashKinds.indexOf(kind) >= 0 && root.trashActive)
+            trashModel.refresh()
         const reloadKinds = ["create", "rename", "trash", "delete", "copy", "move",
-                             "duplicate", "undo", "redo"]
+                             "duplicate", "compress", "extract", "undo", "redo"]
         if (reloadKinds.indexOf(kind) < 0)
             return
         root.activeTab.listing.reload()
@@ -558,7 +748,11 @@ Window {
 
     function modalClosed() {
         Qt.callLater(function () {
-            if (!root.modalOpen)
+            if (root.modalOpen)
+                return
+            if (root.trashActive)
+                trashView.takeFocus()
+            else
                 fileList.takeFocus()
         })
     }
@@ -567,6 +761,8 @@ Window {
         root.terminalActive = !root.terminalActive
         if (root.terminalActive)
             Qt.callLater(terminalPanel.focusTerminal)
+        else if (root.trashActive)
+            trashView.takeFocus()
         else
             fileList.takeFocus()
     }
@@ -575,13 +771,30 @@ Window {
         target: Workspace
 
         function onOperationFinished(kind, focus) {
+            if (kind === "compress" || kind === "extract") {
+                root.resetArchiveState()
+                if (passwordDialog.visible) {
+                    passwordDialog.close()
+                    root.modalClosed()
+                }
+            }
             root.reloadAfterOperation(kind, focus)
             if (Workspace.status !== "")
                 toast.show(Workspace.status, false)
         }
 
         function onOperationFailed(kind, message) {
+            if (passwordDialog.visible && kind === root.archiveMode) {
+                passwordDialog.showError(message)
+                return
+            }
+            if (kind === "compress" || kind === "extract")
+                root.resetArchiveState()
             toast.show(message, true)
+        }
+
+        function onArchivePasswordRequired(target, message) {
+            root.requestArchivePassword(target, message)
         }
     }
 
@@ -663,13 +876,13 @@ Window {
                 width: 24
                 height: 24
                 radius: 5
-                color: upMouse.containsMouse
+                color: !root.trashActive && upMouse.containsMouse
                     ? (root.dark ? "#24ffffff" : "#12000000") : "transparent"
 
                 Text {
                     anchors.centerIn: parent
                     text: "\u2191"
-                    color: root.mutedColor
+                    color: root.trashActive ? root.hairline : root.mutedColor
                     font.pixelSize: 13
                 }
 
@@ -677,6 +890,7 @@ Window {
                     id: upMouse
                     anchors.fill: parent
                     hoverEnabled: true
+                    enabled: !root.trashActive
                     onClicked: root.goUp()
                 }
             }
@@ -685,8 +899,8 @@ Window {
                 id: pathField
                 anchors.left: upButton.right
                 anchors.leftMargin: 6
-                anchors.right: searchBar.left
-                anchors.rightMargin: 6
+                anchors.right: root.trashActive ? parent.right : searchBar.left
+                anchors.rightMargin: root.trashActive ? 12 : 6
                 anchors.verticalCenter: parent.verticalCenter
                 height: 26
                 radius: 7
@@ -709,18 +923,21 @@ Window {
                     font.pixelSize: 13
                     selectByMouse: true
                     clip: true
+                    readOnly: root.trashActive
 
                     // TextInput assigns to `text` while the user edits, which
                     // permanently drops any binding on it. Keep the display in
                     // sync explicitly instead: reset on focus loss and
                     // whenever the tab navigates.
                     onActiveFocusChanged: {
-                        text = root.activePath
-                        if (activeFocus)
+                        text = root.trashActive ? "回收站" : root.activePath
+                        if (activeFocus && !root.trashActive)
                             selectAll()
                     }
 
                     onAccepted: {
+                        if (root.trashActive)
+                            return
                         let target = text.trim()
                         if (target.length >= 2
                                 && target.charAt(0) === '"'
@@ -737,6 +954,7 @@ Window {
 
             SearchBar {
                 id: searchBar
+                visible: !root.trashActive
                 anchors.right: parent.right
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
@@ -888,10 +1106,12 @@ Window {
                 activePath: root.activePath
                 accent: root.accent
                 showHeader: true
+                trashActive: root.trashActive
 
                 onNavigateRequested: function (path) {
                     root.navigate(path)
                 }
+                onTrashRequested: root.openTrash()
                 onContextRequested: function (kind, path, x, y) {
                     root.showSidebarMenu(kind, path, x, y)
                 }
@@ -908,7 +1128,7 @@ Window {
                     FileList {
                         id: fileList
                         anchors.fill: parent
-                        visible: !root.contentSearchActive
+                        visible: !root.trashActive && !root.contentSearchActive
                         tab: root.activeTab
                         searchModel: root.searchActive && root.activeTab !== null
                                      && root.searchMode === "name"
@@ -938,13 +1158,34 @@ Window {
 
                     ContentResults {
                         anchors.fill: parent
-                        visible: root.contentSearchActive
+                        visible: !root.trashActive && root.contentSearchActive
                         model: root.activeTab !== null ? root.activeTab.contentSearch : null
                         dark: root.dark
                         accent: root.accent
 
                         onPreviewRequested: function (path) {
                             previewPanel.showPaths([path])
+                        }
+                    }
+
+                    TrashView {
+                        id: trashView
+                        anchors.fill: parent
+                        visible: root.trashActive
+                        model: trashModel
+                        dark: root.dark
+                        accent: root.accent
+                        headerColor: root.chromeColor
+
+                        onRestoreRequested: function (ids) {
+                            root.restoreTrash(ids)
+                        }
+                        onPurgeRequested: function (ids) {
+                            root.requestTrashPurge(ids)
+                        }
+                        onEmptyRequested: root.requestEmptyTrash()
+                        onContextRequested: function (id, originalParent, x, y) {
+                            root.showTrashRowMenu(id, originalParent, x, y)
                         }
                     }
                 }
@@ -964,7 +1205,7 @@ Window {
 
             PreviewPanel {
                 id: previewPanel
-                width: root.previewVisible ? 300 : 0
+                width: root.previewVisible && !root.trashActive ? 300 : 0
                 height: parent.height
                 visible: width > 0
                 dark: root.dark
@@ -993,6 +1234,14 @@ Window {
                 text: {
                     if (root.activeTab === null)
                         return ""
+                    if (root.trashActive) {
+                        if (Workspace.busy && Workspace.progressLabel !== "")
+                            return Workspace.progressLabel
+                        const bin = trashModel.loaded ? trashModel.status : "读取回收站…"
+                        if (trashView.selectionCount > 0)
+                            return trashView.selectionCount + " 项已选择 · " + bin
+                        return bin
+                    }
                     if (root.searchActive) {
                         const search = root.searchMode === "content"
                             ? root.activeTab.contentSearch : root.activeTab.nameSearch
@@ -1022,6 +1271,7 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 58
                 height: 18
+                opacity: root.trashActive ? 0.35 : 1
 
                 Rectangle {
                     anchors.fill: parent
@@ -1041,6 +1291,7 @@ Window {
                     id: previewMouse
                     anchors.fill: parent
                     hoverEnabled: true
+                    enabled: !root.trashActive
                     onClicked: {
                         root.previewVisible = !root.previewVisible
                         if (!root.previewVisible)
@@ -1149,6 +1400,33 @@ Window {
         onCanceled: root.modalClosed()
     }
 
+    ConfirmDialog {
+        id: confirmDialog
+        anchors.fill: parent
+        dark: root.dark
+
+        onAccepted: root.acceptConfirm()
+        onCanceled: {
+            root.confirmMode = ""
+            root.confirmTrashIds = []
+            root.modalClosed()
+        }
+    }
+
+    ArchivePasswordDialog {
+        id: passwordDialog
+        anchors.fill: parent
+        dark: root.dark
+
+        onAccepted: function (password) {
+            root.acceptArchivePassword(password)
+        }
+        onCanceled: {
+            root.resetArchiveState()
+            root.modalClosed()
+        }
+    }
+
     SettingsPanel {
         id: settingsPanel
         anchors.fill: parent
@@ -1193,7 +1471,7 @@ Window {
     Shortcut {
         sequence: root.config !== null && root.config.pathJump !== ""
             ? root.config.pathJump : "Ctrl+P"
-        enabled: !root.modalOpen
+        enabled: !root.modalOpen && !root.trashActive
         onActivated: {
             pathInput.forceActiveFocus()
             pathInput.selectAll()
@@ -1208,7 +1486,7 @@ Window {
 
     Shortcut {
         sequence: "Ctrl+F"
-        enabled: !root.modalOpen
+        enabled: !root.modalOpen && !root.trashActive
         onActivated: searchBar.focusInput()
     }
 
@@ -1240,7 +1518,10 @@ Window {
                 menu.close()
             else if (namePrompt.visible)
                 namePrompt.close()
-            else if (settingsPanel.visible)
+            else if (passwordDialog.visible) {
+                passwordDialog.close()
+                root.resetArchiveState()
+            } else if (settingsPanel.visible)
                 settingsPanel.close()
         }
     }
@@ -1273,7 +1554,7 @@ Window {
         if (root.activePath !== "")
             Workspace.recordRecent(root.activePath, true, false)
 
-        pathInput.text = root.activePath
+        pathInput.text = root.trashActive ? "回收站" : root.activePath
         root.visible = true
     }
 
@@ -1292,7 +1573,16 @@ Window {
 
         function onActivePathChanged() {
             if (!pathInput.activeFocus)
-                pathInput.text = root.activePath
+                pathInput.text = root.trashActive ? "回收站" : root.activePath
+        }
+
+        function onTrashActiveChanged() {
+            if (!pathInput.activeFocus)
+                pathInput.text = root.trashActive ? "回收站" : root.activePath
+            if (root.trashActive) {
+                root.terminalActive = false
+                trashView.takeFocus()
+            }
         }
     }
 }

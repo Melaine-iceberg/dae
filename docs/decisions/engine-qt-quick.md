@@ -338,6 +338,10 @@ release 用 `windows_subsystem = "windows"`，没有控制台窗口；`dae.exe` 
 - 剪贴板：应用内剪切板（`copy`/`cut` + 路径列表）；剪切是一次性的，复制可以
   连续粘贴到多个目录。
 - 位置：收藏读写、最近访问记录；侧栏模型在收藏变化时刷新。
+- 回收站：`TrashModel` 异步列出系统回收站（Windows 直接解析 `$I` 元数据），
+  `restoreTrashEntries` / `deleteTrashEntries` / `emptyTrash` 三个命令走
+  `dae_core::fs::trash_view`，沿用同一套进度与 toast；永久删除与清空先弹
+  `ConfirmDialog`。
 - 打开：默认程序（`ShellExecuteW` / `open` / `xdg-open`）、文件管理器定位
   （Explorer `/select,` / `open -R` / `xdg-open` 父目录）、系统终端、系统
   “打开方式”对话框（Windows `SHOpenWithDialog`）。
@@ -353,7 +357,9 @@ release 用 `windows_subsystem = "windows"`，没有控制台窗口；`dae.exe` 
   `operationFinished` / `operationFailed`。
 
 **视图**：`qml/Sidebar.qml` + `sidebar_model.rs` 用一个带 section 的
-`QAbstractListModel` 画位置/收藏/磁盘/最近；`FileList` 支持 Ctrl/Shift 多选、
+`QAbstractListModel` 画位置/收藏/磁盘/最近，并在固定位置提供回收站入口；
+`TrashView.qml` 画回收站（名称/原位置/删除时间/大小、多选、右键菜单、
+恢复/永久删除/清空）；`FileList` 支持 Ctrl/Shift 多选、
 F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
 `ContextMenu.qml` 提供行菜单、空白区菜单与侧栏菜单；`NamePrompt.qml` 负责
 新建/重命名；`SettingsPanel.qml` 编辑终端排版；`Toast.qml` 显示结果。
@@ -373,7 +379,7 @@ F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
 
 **这一刀还没铺的**（core 已有实现，缺 Qt 视图/命令包装）：搜索 UI（文件名与
 内容搜索）、预览/缩略图、文件图标、打开方式选择器（macOS/Linux）、默认文件
-管理器注册、`dae://` 深链、自动更新、回收站视图、压缩包、
+管理器注册、`dae://` 深链、自动更新、压缩包、
 云盘/SFTP/SMB 的连接管理界面。它们按依赖排在下一刀，不会改变上面这层的
 接口。
 

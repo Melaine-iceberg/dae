@@ -17,9 +17,11 @@ use std::sync::Arc;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use dae_core::error::FileSystemError;
+use dae_core::fs::archive::{self, ArchiveFormat};
 use dae_core::fs::recents::RecentSource;
 use dae_core::fs::service;
 use dae_core::fs::sidebar::{self, Favorite};
+use dae_core::fs::trash_view;
 use dae_core::fs::types::{ConflictAction, NewEntryKind, TransferItem, display_name_from_path};
 use dae_core::host::{Event, Host};
 
@@ -91,6 +93,30 @@ pub mod qobject {
         #[cxx_name = "duplicateEntries"]
         fn duplicate_entries(self: Pin<&mut Workspace>, paths: &QStringList);
 
+        /// Compresses `sources` into a new archive inside `destination_dir`.
+        /// `format` is `"zip"`, `"tar"`, `"tar.gz"` or `"7z"`; an empty
+        /// `password` means no encryption.
+        #[qinvokable]
+        #[cxx_name = "compressEntries"]
+        fn compress_entries(
+            self: Pin<&mut Workspace>,
+            sources: &QStringList,
+            destination_dir: &QString,
+            format: &QString,
+            password: &QString,
+        );
+
+        /// Extracts a local archive next to itself when `destination_dir` is
+        /// empty. A protected archive answers with `archivePasswordRequired`.
+        #[qinvokable]
+        #[cxx_name = "extractArchive"]
+        fn extract_archive(
+            self: Pin<&mut Workspace>,
+            archive_path: &QString,
+            destination_dir: &QString,
+            password: &QString,
+        );
+
         /// Copies or moves `paths` into `destination`. `cut` selects move.
         #[qinvokable]
         #[cxx_name = "transferEntries"]
@@ -126,6 +152,21 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "startSystemWatch"]
         fn start_system_watch(self: Pin<&mut Workspace>);
+
+        /// Restores the trash entries with `ids` to their original locations.
+        #[qinvokable]
+        #[cxx_name = "restoreTrashEntries"]
+        fn restore_trash_entries(self: Pin<&mut Workspace>, ids: &QStringList);
+
+        /// Permanently deletes the trash entries with `ids`.
+        #[qinvokable]
+        #[cxx_name = "deleteTrashEntries"]
+        fn delete_trash_entries(self: Pin<&mut Workspace>, ids: &QStringList);
+
+        /// Permanently deletes everything in the trash.
+        #[qinvokable]
+        #[cxx_name = "emptyTrash"]
+        fn empty_trash(self: Pin<&mut Workspace>);
 
         #[qinvokable]
         #[cxx_name = "openPath"]
@@ -178,6 +219,17 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "operationFailed"]
         fn operation_failed(self: Pin<&mut Workspace>, kind: &QString, message: &QString);
+
+        /// An extraction needs a password. `target` is the archive path and
+        /// `message` is a ready-to-display explanation (also a wrong-password
+        /// retry). The caller answers by calling `extractArchive` again.
+        #[qsignal]
+        #[cxx_name = "archivePasswordRequired"]
+        fn archive_password_required(
+            self: Pin<&mut Workspace>,
+            target: &QString,
+            message: &QString,
+        );
 
         #[qsignal]
         #[cxx_name = "favoritesChanged"]
@@ -318,12 +370,7 @@ impl qobject::Workspace {
     }
 
     fn finish_operation(mut self: Pin<&mut Self>, kind: &str, focus: &str, error: Option<String>) {
-        let active = (self.active_operations - 1).max(0);
-        self.as_mut().rust_mut().active_operations = active;
-        self.as_mut().set_busy(active > 0);
-        self.as_mut().set_progress_done(0);
-        self.as_mut().set_progress_total(0);
-        self.as_mut().set_progress_label(QString::default());
+        self.as_mut().settle_operation();
 
         let kind_value = QString::from(kind);
         let focus_value = QString::from(focus);
@@ -340,6 +387,25 @@ impl qobject::Workspace {
                 self.as_mut().operation_finished(&kind_value, &focus_value);
             }
         }
+    }
+
+    /// Clears the progress row without reporting an outcome. A protected
+    /// archive uses this before asking for a password: nothing failed yet, and
+    /// an `operationFinished` would wrongly say the extraction completed.
+    fn settle_operation(mut self: Pin<&mut Self>) {
+        let active = (self.active_operations - 1).max(0);
+        self.as_mut().rust_mut().active_operations = active;
+        self.as_mut().set_busy(active > 0);
+        self.as_mut().set_progress_done(0);
+        self.as_mut().set_progress_total(0);
+        self.as_mut().set_progress_label(QString::default());
+    }
+
+    fn request_archive_password(mut self: Pin<&mut Self>, target: &str, message: &str) {
+        let target = QString::from(target);
+        let message = QString::from(message);
+        self.as_mut().set_last_error(message.clone());
+        self.as_mut().archive_password_required(&target, &message);
     }
 
     fn apply_event(mut self: Pin<&mut Self>, event: Event) {
@@ -484,6 +550,111 @@ impl qobject::Workspace {
         });
     }
 
+    fn compress_entries(
+        mut self: Pin<&mut Self>,
+        sources: &QStringList,
+        destination_dir: &QString,
+        format: &QString,
+        password: &QString,
+    ) {
+        let sources = strings(sources);
+        if sources.is_empty() {
+            self.as_mut()
+                .finish_operation("compress", "", Some("请选择要压缩的项目".to_owned()));
+            return;
+        }
+
+        let destination_dir = destination_dir.to_string();
+        if destination_dir.is_empty() {
+            self.as_mut().finish_operation(
+                "compress",
+                "",
+                Some("无法确定压缩包保存位置".to_owned()),
+            );
+            return;
+        }
+
+        let Some(format) = archive_format(&format.to_string()) else {
+            self.as_mut()
+                .finish_operation("compress", "", Some("不支持的压缩格式".to_owned()));
+            return;
+        };
+
+        let password = optional_string(password);
+        self.as_mut().begin_operation("压缩中…");
+        let thread = self.as_mut().qt_thread();
+        let host = host_for(&thread);
+        dispatch(thread, "compress", async move {
+            match archive::compress_entries(
+                sources,
+                destination_dir,
+                format,
+                password,
+                operation_id(),
+                host,
+            )
+            .await
+            {
+                Ok(archive_path) => Outcome::ok(archive_path),
+                Err(error) => Outcome::failed(error),
+            }
+        });
+    }
+
+    fn extract_archive(
+        mut self: Pin<&mut Self>,
+        archive_path: &QString,
+        destination_dir: &QString,
+        password: &QString,
+    ) {
+        let archive_path = archive_path.to_string();
+        if archive_path.is_empty() {
+            return;
+        }
+
+        let destination_dir = optional_string(destination_dir);
+        let password = optional_string(password);
+        let password_supplied = password.is_some();
+        self.as_mut().begin_operation("解压中…");
+        let thread = self.as_mut().qt_thread();
+        let host = host_for(&thread);
+        let signal_target = archive_path.clone();
+        runtime::spawn(async move {
+            let result = archive::extract_archive(
+                archive_path,
+                destination_dir,
+                password,
+                operation_id(),
+                host,
+            )
+            .await;
+
+            let _ = thread.queue(move |mut workspace| match result {
+                Ok(destination) => {
+                    workspace
+                        .as_mut()
+                        .finish_operation("extract", &destination, None)
+                }
+                Err(FileSystemError::WrongPassword(_)) => {
+                    let message = if password_supplied {
+                        "密码不正确，请重新输入"
+                    } else {
+                        "压缩包已加密，请输入密码"
+                    };
+                    workspace.as_mut().settle_operation();
+                    workspace
+                        .as_mut()
+                        .request_archive_password(&signal_target, message);
+                }
+                Err(error) => workspace.as_mut().finish_operation(
+                    "extract",
+                    "",
+                    Some(friendly_error(&error.to_string())),
+                ),
+            });
+        });
+    }
+
     fn transfer_entries(
         mut self: Pin<&mut Self>,
         paths: &QStringList,
@@ -599,6 +770,50 @@ impl qobject::Workspace {
 
     pub(crate) fn notify_volumes_changed(mut self: Pin<&mut Self>) {
         self.as_mut().volumes_changed();
+    }
+
+    fn restore_trash_entries(mut self: Pin<&mut Self>, ids: &QStringList) {
+        let ids = strings(ids);
+        if ids.is_empty() {
+            return;
+        }
+        self.as_mut().begin_operation("恢复中…");
+        let thread = self.as_mut().qt_thread();
+        let host = host_for(&thread);
+        dispatch(thread, "restore_trash", async move {
+            match trash_view::restore_trash_entries(ids, operation_id(), host).await {
+                Ok(_) => Outcome::empty(),
+                Err(error) => Outcome::failed(error),
+            }
+        });
+    }
+
+    fn delete_trash_entries(mut self: Pin<&mut Self>, ids: &QStringList) {
+        let ids = strings(ids);
+        if ids.is_empty() {
+            return;
+        }
+        self.as_mut().begin_operation("永久删除中…");
+        let thread = self.as_mut().qt_thread();
+        let host = host_for(&thread);
+        dispatch(thread, "purge_trash", async move {
+            match trash_view::delete_trash_entries(ids, operation_id(), host).await {
+                Ok(_) => Outcome::empty(),
+                Err(error) => Outcome::failed(error),
+            }
+        });
+    }
+
+    fn empty_trash(mut self: Pin<&mut Self>) {
+        self.as_mut().begin_operation("清空回收站…");
+        let thread = self.as_mut().qt_thread();
+        let host = host_for(&thread);
+        dispatch(thread, "empty_trash", async move {
+            match trash_view::empty_trash(operation_id(), host).await {
+                Ok(_) => Outcome::empty(),
+                Err(error) => Outcome::failed(error),
+            }
+        });
     }
 
     fn open_path(mut self: Pin<&mut Self>, path: &QString) {
@@ -746,6 +961,22 @@ fn strings(list: &QStringList) -> Vec<String> {
     list.iter().map(ToString::to_string).collect()
 }
 
+/// QML passes empty strings where the bridge means `None`.
+fn optional_string(value: &QString) -> Option<String> {
+    let value = value.to_string();
+    (!value.is_empty()).then_some(value)
+}
+
+fn archive_format(value: &str) -> Option<ArchiveFormat> {
+    match value {
+        "zip" => Some(ArchiveFormat::Zip),
+        "tar" => Some(ArchiveFormat::Tar),
+        "tar.gz" => Some(ArchiveFormat::TarGz),
+        "7z" => Some(ArchiveFormat::SevenZip),
+        _ => None,
+    }
+}
+
 fn transfer_items(list: &QStringList) -> Vec<TransferItem> {
     list.iter()
         .map(|path| TransferItem {
@@ -770,9 +1001,14 @@ fn success_message(kind: &str) -> &'static str {
         "duplicate" => "已创建副本",
         "copy" => "已复制",
         "move" => "已移动",
+        "compress" => "已压缩",
+        "extract" => "已解压",
         "undo" => "已撤销",
         "redo" => "已重做",
         "openWith" => "已打开",
+        "restore_trash" => "已恢复",
+        "purge_trash" => "已永久删除",
+        "empty_trash" => "已清空回收站",
         _ => "完成",
     }
 }
@@ -808,6 +1044,12 @@ fn friendly_error(message: &str) -> String {
     if message.starts_with("fs.open_with_local_only") {
         return "只有本地项目可以选择打开方式".to_owned();
     }
+    if message.starts_with("fs.trash_entries_missing") {
+        return "所选项目已不在回收站".to_owned();
+    }
+    if message.starts_with("fs.trash_restore_no_origin") {
+        return "无法确定该项目的原位置".to_owned();
+    }
     message.to_owned()
 }
 
@@ -833,5 +1075,14 @@ mod tests {
             friendly_error("The requested path was not found: C:/x"),
             "The requested path was not found: C:/x"
         );
+    }
+
+    #[test]
+    fn qml_archive_ids_map_to_core_formats() {
+        assert_eq!(archive_format("zip"), Some(ArchiveFormat::Zip));
+        assert_eq!(archive_format("tar"), Some(ArchiveFormat::Tar));
+        assert_eq!(archive_format("tar.gz"), Some(ArchiveFormat::TarGz));
+        assert_eq!(archive_format("7z"), Some(ArchiveFormat::SevenZip));
+        assert_eq!(archive_format("rar"), None);
     }
 }

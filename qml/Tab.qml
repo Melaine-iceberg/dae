@@ -8,10 +8,13 @@ import dae 1.0
 QtObject {
     id: tab
 
-    property string title: listing.path !== "" ? listing.path : "dae"
+    property string title: trash ? "回收站" : (listing.path !== "" ? listing.path : "dae")
     property DirectoryListModel listing: DirectoryListModel {}
     property SearchModel nameSearch: SearchModel {}
     property ContentSearchModel contentSearch: ContentSearchModel {}
+    /// The recycle bin is a surface of the tab, not a path. Navigating to a
+    /// folder clears this flag; the window then shows `listing` again.
+    property bool trash: false
 
     /// path -> true. Replaced wholesale so QML bindings re-evaluate; mutating
     /// an object in place would not notify the delegates.
@@ -21,10 +24,19 @@ QtObject {
 
     function navigate(path) {
         if (path && path.length > 0) {
+            trash = false
             cancelSearch()
             listing.load(path)
             clearSelection()
         }
+    }
+
+    /// Shows the system recycle bin in this tab. The window owns the model and
+    /// refreshes it when the surface becomes active.
+    function openTrash() {
+        cancelSearch()
+        clearSelection()
+        trash = true
     }
 
     function cancelSearch() {

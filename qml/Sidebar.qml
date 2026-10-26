@@ -13,8 +13,10 @@ Item {
     property string activePath: ""
     property color accent: "#2f6fdf"
     property bool showHeader: true
+    property bool trashActive: false
 
     signal navigateRequested(string path)
+    signal trashRequested()
     signal contextRequested(string kind, string path, real x, real y)
 
     readonly property color panelColor: material === "none"
@@ -103,13 +105,67 @@ Item {
         font.letterSpacing: 1
     }
 
+    /// The bin is a fixed destination above the sectioned list, not a path the
+    /// model resolves.
+    Rectangle {
+        id: trashRow
+        x: 6
+        y: root.showHeader ? heading.bottom + 6 : 4
+        width: parent.width - 12
+        height: 27
+        radius: 5
+        color: root.trashActive
+            ? root.activeColor
+            : (trashMouse.containsMouse ? root.hoverColor : "transparent")
+
+        Accessible.role: Accessible.Button
+        Accessible.name: "回收站"
+        Accessible.onPressAction: root.trashRequested()
+
+        Rectangle {
+            x: 6
+            anchors.verticalCenter: parent.verticalCenter
+            width: 16
+            height: 16
+            radius: 4
+            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+
+            Text {
+                anchors.centerIn: parent
+                text: "回"
+                color: root.accent
+                font.pixelSize: 10
+            }
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 30
+            anchors.right: parent.right
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            text: "回收站"
+            color: root.trashActive ? root.textColor
+                : (root.dark ? "#cfd5df" : "#333940")
+            font.pixelSize: 12
+            elide: Text.ElideRight
+        }
+
+        MouseArea {
+            id: trashMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: root.trashRequested()
+        }
+    }
+
     ListView {
         id: list
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: root.showHeader ? heading.bottom : parent.top
+        anchors.top: trashRow.bottom
         anchors.bottom: parent.bottom
-        anchors.topMargin: root.showHeader ? 6 : 4
+        anchors.topMargin: 4
         model: model
         clip: true
         boundsBehavior: Flickable.StopAtBounds
@@ -145,7 +201,8 @@ Item {
             width: ListView.view.width
             height: 27
 
-            readonly property bool current: root.pathEquals(row.path, root.activePath)
+            readonly property bool current: !root.trashActive
+                && root.pathEquals(row.path, root.activePath)
 
             Rectangle {
                 anchors.fill: parent
