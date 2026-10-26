@@ -19,6 +19,11 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/ContextMenu.qml", "qml/ContextMenu.qml"),
     ("../../qml/NamePrompt.qml", "qml/NamePrompt.qml"),
     ("../../qml/SettingsPanel.qml", "qml/SettingsPanel.qml"),
+    ("../../qml/ConnectDialog.qml", "qml/ConnectDialog.qml"),
+    (
+        "../../qml/CloudAccountDialog.qml",
+        "qml/CloudAccountDialog.qml",
+    ),
     ("../../qml/Toast.qml", "qml/Toast.qml"),
     ("../../qml/TrashView.qml", "qml/TrashView.qml"),
     ("../../qml/ConfirmDialog.qml", "qml/ConfirmDialog.qml"),

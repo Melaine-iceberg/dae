@@ -60,6 +60,10 @@ Window {
     property string archiveTarget: ""
     property string archiveDestination: ""
     property var archivePaths: []
+    /// True while the cloud dialog owns an in-flight browser round trip. If the
+    /// user dismisses the dialog first, a late success only refreshes the
+    /// sidebar instead of navigating away from what they are doing.
+    property bool cloudPending: false
 
     readonly property var activeTab: (activeIndex >= 0 && activeIndex < tabs.length)
         ? tabs[activeIndex] : null
@@ -99,6 +103,7 @@ Window {
     readonly property var config: configLoader.item
     readonly property bool modalOpen: menu.visible || namePrompt.visible
         || passwordDialog.visible || settingsPanel.visible || confirmDialog.visible
+        || connectDialog.visible || cloudDialog.visible
 
     Timer {
         id: searchTimer
@@ -427,6 +432,34 @@ Window {
             Workspace.openPath(path)
     }
 
+    function openConnectDialog() {
+        if (root.modalOpen)
+            return
+        connectDialog.open()
+    }
+
+    function openCloudDialog() {
+        if (root.modalOpen)
+            return
+        cloudDialog.open()
+    }
+
+    function startConnectionTest(protocol, host, port, username, password) {
+        connectDialog.setTesting(true)
+        Workspace.testConnection(protocol, host, port, username, password)
+    }
+
+    function startConnectionSave(protocol, host, port, username, password, remember) {
+        connectDialog.setSaving(true)
+        Workspace.saveConnection(protocol, host, port, username, password, remember)
+    }
+
+    function startCloudAuthorize(provider, clientId, clientSecret) {
+        root.cloudPending = true
+        cloudDialog.setAuthorizing(true)
+        Workspace.authorizeCloudAccount(provider, clientId, clientSecret)
+    }
+
     function parentOf(path) {
         if (!path)
             return ""
@@ -434,6 +467,10 @@ Window {
         while (trimmed.length > 1
                && (trimmed.endsWith("/") || trimmed.endsWith("\\")))
             trimmed = trimmed.slice(0, -1)
+        // `smb://host:445`, `sftp://host:22` and `cloud://provider:email` are
+        // roots. Without this guard the next cut would produce `smb:/`.
+        if (/^[a-z][a-z0-9+.-]*:\/\/[^/]+$/i.test(trimmed))
+            return ""
         const cut = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"))
         if (cut < 0)
             return ""
@@ -623,6 +660,18 @@ Window {
     function showSidebarMenu(kind, path, x, y) {
         root.contextPath = path
         root.contextIsDir = true
+        if (kind === "connection" || kind === "cloud") {
+            menu.openAt(x, y, [
+                { id: "open", label: "打开" },
+                { id: "openTab", label: "在新标签页打开" },
+                { id: "openWindow", label: "在新窗口打开" },
+                { separator: true },
+                { id: kind === "connection" ? "removeConnection" : "removeCloud",
+                  label: kind === "connection" ? "移除连接" : "移除云盘账户",
+                  danger: true }
+            ])
+            return
+        }
         const items = []
         if (kind === "favorite")
             items.push({ id: "removeFavorite", label: "从收藏移除", danger: true })
@@ -698,6 +747,12 @@ Window {
             break
         case "removeFavorite":
             Workspace.removeFavorite(path)
+            break
+        case "removeConnection":
+            Workspace.deleteConnection(path)
+            break
+        case "removeCloud":
+            Workspace.deleteCloudAccount(path)
             break
         case "trash":
             Workspace.trashEntries(root.currentSelection())
@@ -795,6 +850,47 @@ Window {
 
         function onArchivePasswordRequired(target, message) {
             root.requestArchivePassword(target, message)
+        }
+
+        function onConnectionTestFinished(ok, message) {
+            if (connectDialog.visible)
+                connectDialog.applyTestResult(ok, message)
+        }
+
+        function onConnectionSaveFinished(ok, id, message) {
+            if (!ok) {
+                if (connectDialog.visible)
+                    connectDialog.applySaveError(message)
+                else
+                    toast.show(message, true)
+                return
+            }
+            if (connectDialog.visible) {
+                connectDialog.close()
+                root.modalClosed()
+            }
+            toast.show("连接已保存", false)
+            if (id !== "")
+                root.navigate(id)
+        }
+
+        function onCloudAuthorizeFinished(ok, message) {
+            const pending = root.cloudPending
+            root.cloudPending = false
+            if (!ok) {
+                if (cloudDialog.visible)
+                    cloudDialog.applyError(message)
+                else
+                    toast.show(message, true)
+                return
+            }
+            if (cloudDialog.visible) {
+                cloudDialog.close()
+                root.modalClosed()
+            }
+            toast.show("云盘账户已连接", false)
+            if (pending)
+                root.navigate(message)
         }
     }
 
@@ -1112,6 +1208,12 @@ Window {
                     root.navigate(path)
                 }
                 onTrashRequested: root.openTrash()
+                onAddRequested: function (kind) {
+                    if (kind === "cloud")
+                        root.openCloudDialog()
+                    else
+                        root.openConnectDialog()
+                }
                 onContextRequested: function (kind, path, x, y) {
                     root.showSidebarMenu(kind, path, x, y)
                 }
@@ -1435,6 +1537,36 @@ Window {
         onClosed: root.modalClosed()
     }
 
+    ConnectDialog {
+        id: connectDialog
+        anchors.fill: parent
+        dark: root.dark
+        accent: root.accent
+
+        onTestRequested: function (protocol, host, port, username, password) {
+            root.startConnectionTest(protocol, host, port, username, password)
+        }
+        onSaveRequested: function (protocol, host, port, username, password, remember) {
+            root.startConnectionSave(protocol, host, port, username, password, remember)
+        }
+        onCanceled: root.modalClosed()
+    }
+
+    CloudAccountDialog {
+        id: cloudDialog
+        anchors.fill: parent
+        dark: root.dark
+        accent: root.accent
+
+        onAuthorizeRequested: function (provider, clientId, clientSecret) {
+            root.startCloudAuthorize(provider, clientId, clientSecret)
+        }
+        onCanceled: {
+            root.cloudPending = false
+            root.modalClosed()
+        }
+    }
+
     Toast {
         id: toast
         width: 360
@@ -1521,7 +1653,11 @@ Window {
             else if (passwordDialog.visible) {
                 passwordDialog.close()
                 root.resetArchiveState()
-            } else if (settingsPanel.visible)
+            } else if (cloudDialog.visible)
+                cloudDialog.dismiss()
+            else if (connectDialog.visible)
+                connectDialog.dismiss()
+            else if (settingsPanel.visible)
                 settingsPanel.close()
         }
     }

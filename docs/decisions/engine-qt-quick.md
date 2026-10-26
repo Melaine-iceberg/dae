@@ -388,9 +388,9 @@ F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
 - **回收站**：§4.6 的 `TrashView.qml` 与三个回收站命令。
 
 **仍然没铺的**（core 已有实现，缺 Qt 视图/命令包装，或只在旧壳里）：打开方式
-选择器（macOS/Linux）、默认文件管理器注册、`dae://` 深链与单实例、自动更新、
-云盘/SFTP/SMB 的连接管理界面。它们按依赖排在下一刀，不会改变上面这层的
-接口。文件图标与系统缩略图已在 §4.7 落地（Linux 的 `.thumbnailer` 除外）。
+选择器（macOS/Linux）、默认文件管理器注册、`dae://` 深链与单实例、自动更新。
+它们按依赖排在下一刀，不会改变上面这层的接口。文件图标与系统缩略图已在 §4.7
+落地（Linux 的 `.thumbnailer` 除外），网络存储/云盘连接管理已在 §4.8 落地。
 
 ### 4.7 文件图标与系统缩略图（2026-10-26）
 
@@ -442,6 +442,64 @@ build 26340 上它对任何扩展名都返回 `E_FAIL`（实测 json/txt/rs/exe/
   desktop-entry 解析），随 Qt 的 Linux 门槛一起搬。
 - 图标接入后的 12 万行复测已通过：见 §5.1.1。work p95 1.60–1.66 ms，与无图标的
   1.64–1.82 ms 在噪声内；PSS +3–4 MB。
+
+### 4.8 网络存储与云盘连接管理（2026-10-26）
+
+**存储注册表进 Qt 进程。** `connections.rs` 与 `cloud::accounts` 早就在
+`dae-core`，但 Qt 壳从未初始化它们。`dae-qt::init_stores()` 用 `Once`
+调用两份 `init()`，由 `Workspace` 构造和 `SidebarModel.refresh()` 共用；
+两个壳因此读同一份 `%APPDATA%\com.melaine.dae\{connections,cloud_accounts}.json`
+和同一组钥匙串条目。
+
+**命令面**（`crates/dae-qt/src/workspace.rs`）：
+
+- `testConnection` / `saveConnection` / `deleteConnection`：SMB 与 SFTP。
+  测试使用对话框里刚输入的凭据，不落盘；保存把密码交给系统钥匙串，
+  `rememberPassword=false` 时只留在本次进程内（与旧壳一致）。
+- `authorizeCloudAccount` / `deleteCloudAccount`：Google Drive、OneDrive、
+  Dropbox 的 loopback OAuth 可达 5 分钟，因此命令立即返回，结果经
+  `cloudAuthorizeFinished(ok, idOrMessage)` 回到 Qt 线程。
+- `connectionsChanged`：新增/删除后通知侧栏刷新；保存成功的
+  `connectionSaveFinished` 携带连接 id，供 QML 直接导航。
+- 连接失败文案在 `friendly_error()` 里翻译成可操作的句子（服务器不可达、
+  账号密码被拒、缺 SFTP 账号、无 SFTP 子系统）。
+
+**视图**：
+
+- `qml/Sidebar.qml` + `sidebar_model.rs`：在磁盘之后新增「网络存储」「云存储」
+  两组，行尾常驻「连接网络存储…」「添加网盘账户…」动作行，因此空分组也有
+  添加入口；右键菜单对连接/云盘分别提供「移除连接」「移除云盘账户」。
+- `qml/ConnectDialog.qml`：SMB/SFTP 协议切换、地址/端口/账号/密码、
+  「记住密码」、测试连接与保存；端口空表示协议默认值，非法端口和空地址
+  在本地拦下，测试结果与保存错误分别回显。
+- `qml/CloudAccountDialog.qml`：三家网盘卡片、Client ID/Secret、服务商
+  引导文案与固定回调 `http://127.0.0.1:51888`；复制按钮通过 1×1 的
+  `TextInput` 写入系统剪贴板。授权期间显示等待提示，失败保留对话框。
+- 保存成功或授权成功后直接导航到 `smb://` / `sftp://` / `cloud://` 根路径。
+
+**远程路径**：`DirectoryListModel.load()` 先用 `vfs::scheme_of()` 分流；
+非 `Local` 的路径交给 `vfs::resolve(path).read_dir()`（远程后端本来就一次性
+返回），本地继续走原来的流式列举。`parentOf()` 识别 `scheme://authority`
+根，不再把 `smb://host:445` 的上一级算成 `smb:/`。列表为空且 `status`
+不是「0 项」时，`FileList` 显示该状态而不是「空目录」，连接失败不再伪装成
+空文件夹。
+
+**实测（2026-10-26，Windows 11 build 26340 / 150%）**：
+
+| 步骤 | 结果 |
+|---|---|
+| 空地址点「测试连接」 | 「请输入服务器地址」；端口 70000 报「端口必须是 1-65535」 |
+| `127.0.0.1:1` 测试 | 失败态显示「无法连接服务器，请检查地址、端口和网络」 |
+| 保存 `127.0.0.1:1` | 对话框关闭，侧栏出现 `127.0.0.1 · SMB`，并导航到 `smb://127.0.0.1:1` |
+| 右键该行 → 移除连接 | 行消失，toast「已移除连接」，`connections.json` 变为 `[]` |
+| 云盘对话框切 OneDrive | Client Secret 标签与引导文案同步切换；空 Client ID 报错 |
+| 复制重定向 URI → 粘贴 | Client ID 字段得到 `http://127.0.0.1:51888` |
+
+`dae-qt` **49 通过**（新增连接字段解析、校验文案、侧栏行映射与错误翻译）。
+
+**已知边界**：远程后端的搜索、预览、回收站、终端仍是本地语义；FTP/WebDAV
+在协议表中保留但未接后端。真实 SMB/SFTP/云盘登录需要可达服务器与 OAuth
+凭据，本次只验证了失败路径、保存/删除与本地 UI 状态。
 
 ## 5. 定案前必须量出来的四组数字
 

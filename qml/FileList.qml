@@ -300,7 +300,8 @@ Item {
         visible: root.model !== null && root.model.finished && root.model.loaded === 0
         text: root.searchModel !== null
             ? (root.searchModel.status !== "" ? root.searchModel.status : "没有匹配项")
-            : "空目录"
+            : (root.model !== null && root.model.status !== "0 项"
+                ? root.model.status : "空目录")
         color: root.mutedColor
         font.pixelSize: 13
     }

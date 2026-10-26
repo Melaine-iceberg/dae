@@ -17,6 +17,7 @@ Item {
 
     signal navigateRequested(string path)
     signal trashRequested()
+    signal addRequested(string kind)
     signal contextRequested(string kind, string path, real x, real y)
 
     readonly property color panelColor: material === "none"
@@ -55,6 +56,9 @@ Item {
         case "star": return "★"
         case "disk": return "盘"
         case "recent": return "近"
+        case "server": return "服"
+        case "cloud": return "云"
+        case "add": return "+"
         default: return "•"
         }
     }
@@ -64,6 +68,7 @@ Item {
         case "disk": return dark ? "#8a93a6" : "#6b7482"
         case "star": return dark ? "#d8b45a" : "#b8892a"
         case "recent": return dark ? "#6fa0d8" : "#3f78bd"
+        case "add": return root.mutedColor
         default: return root.accent
         }
     }
@@ -78,6 +83,10 @@ Item {
         }
 
         function onVolumesChanged() {
+            model.refresh()
+        }
+
+        function onConnectionsChanged() {
             model.refresh()
         }
     }
@@ -203,6 +212,8 @@ Item {
 
             readonly property bool current: !root.trashActive
                 && root.pathEquals(row.path, root.activePath)
+            readonly property bool isAction: row.kind === "addConnection"
+                || row.kind === "addCloud"
 
             Rectangle {
                 anchors.fill: parent
@@ -238,7 +249,9 @@ Item {
                 anchors.rightMargin: 6
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.name
-                color: row.current ? root.textColor : (root.dark ? "#cfd5df" : "#333940")
+                color: row.current ? root.textColor
+                    : (row.isAction ? root.mutedColor
+                        : (root.dark ? "#cfd5df" : "#333940"))
                 font.pixelSize: 12
                 elide: Text.ElideRight
                 textFormat: Text.PlainText
@@ -264,8 +277,18 @@ Item {
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 onClicked: function (event) {
                     if (event.button === Qt.RightButton) {
+                        if (row.isAction)
+                            return
                         const point = row.mapToItem(null, event.x, event.y)
                         root.contextRequested(row.kind, row.path, point.x, point.y)
+                        return
+                    }
+                    if (row.kind === "addConnection") {
+                        root.addRequested("network")
+                        return
+                    }
+                    if (row.kind === "addCloud") {
+                        root.addRequested("cloud")
                         return
                     }
                     if (row.kind === "recent" && !row.isDir)

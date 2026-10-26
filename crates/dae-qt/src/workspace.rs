@@ -18,13 +18,19 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use dae_core::error::FileSystemError;
 use dae_core::fs::archive::{self, ArchiveFormat};
+use dae_core::fs::cloud::accounts as cloud_accounts;
+use dae_core::fs::cloud::oauth::{self as cloud_oauth, AuthorizeCloudAccountInput};
+use dae_core::fs::cloud::provider::CloudProviderKind;
+use dae_core::fs::connections::{self, Protocol, SaveConnectionInput};
 use dae_core::fs::recents::RecentSource;
 use dae_core::fs::service;
 use dae_core::fs::sidebar::{self, Favorite};
+use dae_core::fs::smb;
 use dae_core::fs::trash_view;
 use dae_core::fs::types::{ConflictAction, NewEntryKind, TransferItem, display_name_from_path};
 use dae_core::host::{Event, Host};
 
+use crate::errors::friendly_error;
 use crate::platform;
 use crate::runtime;
 
@@ -241,6 +247,80 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "volumesChanged"]
         fn volumes_changed(self: Pin<&mut Workspace>);
+
+        /// Verifies a server connection with the credentials typed into the
+        /// dialog, without saving them. `port` is text so an empty field means
+        /// the protocol default; the outcome arrives on `connectionTestFinished`.
+        #[qinvokable]
+        #[cxx_name = "testConnection"]
+        fn test_connection(
+            self: Pin<&mut Workspace>,
+            protocol: &QString,
+            host: &QString,
+            port: &QString,
+            username: &QString,
+            password: &QString,
+        );
+
+        /// Persists a server connection and its password policy. The outcome
+        /// arrives on `connectionSaveFinished`, carrying the connection id.
+        #[qinvokable]
+        #[cxx_name = "saveConnection"]
+        fn save_connection(
+            self: Pin<&mut Workspace>,
+            protocol: &QString,
+            host: &QString,
+            port: &QString,
+            username: &QString,
+            password: &QString,
+            remember_password: bool,
+        );
+
+        #[qinvokable]
+        #[cxx_name = "deleteConnection"]
+        fn delete_connection(self: Pin<&mut Workspace>, id: &QString);
+
+        /// Runs the provider's loopback OAuth flow. The browser round trip can
+        /// take minutes, so the result arrives on `cloudAuthorizeFinished`.
+        #[qinvokable]
+        #[cxx_name = "authorizeCloudAccount"]
+        fn authorize_cloud_account(
+            self: Pin<&mut Workspace>,
+            provider: &QString,
+            client_id: &QString,
+            client_secret: &QString,
+        );
+
+        #[qinvokable]
+        #[cxx_name = "deleteCloudAccount"]
+        fn delete_cloud_account(self: Pin<&mut Workspace>, id: &QString);
+
+        /// A saved connection was tested; `message` is a finished sentence.
+        #[qsignal]
+        #[cxx_name = "connectionTestFinished"]
+        fn connection_test_finished(self: Pin<&mut Workspace>, ok: bool, message: &QString);
+
+        /// A connection was saved. `id` is the explorer path on success.
+        #[qsignal]
+        #[cxx_name = "connectionSaveFinished"]
+        fn connection_save_finished(
+            self: Pin<&mut Workspace>,
+            ok: bool,
+            id: &QString,
+            message: &QString,
+        );
+
+        /// The OAuth round trip finished. `message` is the account id
+        /// (`cloud://…`) on success, a user-facing sentence otherwise.
+        #[qsignal]
+        #[cxx_name = "cloudAuthorizeFinished"]
+        fn cloud_authorize_finished(self: Pin<&mut Workspace>, ok: bool, message: &QString);
+
+        /// A connection or cloud account was added or removed. The sidebar
+        /// answers by refreshing its model.
+        #[qsignal]
+        #[cxx_name = "connectionsChanged"]
+        fn connections_changed(self: Pin<&mut Workspace>);
     }
 
     impl cxx_qt::Threading for Workspace {}
@@ -271,6 +351,9 @@ impl Default for WorkspaceRust {
         // Settings are a process-wide registry; initializing here means the
         // first QML window and every later one read the same document.
         let _ = dae_core::settings::init();
+        // The connection and cloud registries are file/keychain backed; the
+        // sidebar and the connect dialogs read them through this same store.
+        crate::init_stores();
         let settings = dae_core::settings::load_settings().unwrap_or_default();
         let home = service::get_home_directory().unwrap_or_default();
 
@@ -925,6 +1008,191 @@ impl qobject::Workspace {
         }
     }
 
+    fn test_connection(
+        mut self: Pin<&mut Self>,
+        protocol: &QString,
+        host: &QString,
+        port: &QString,
+        username: &QString,
+        password: &QString,
+    ) {
+        let input = match connection_input(protocol, host, port, username, password, false) {
+            Ok(input) => input,
+            Err(message) => {
+                self.as_mut()
+                    .connection_test_finished(false, &QString::from(message.as_str()));
+                return;
+            }
+        };
+
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let result = smb::test_connection(input).await;
+            let _ = thread.queue(move |mut workspace| match result {
+                Ok(()) => workspace
+                    .as_mut()
+                    .connection_test_finished(true, &QString::from("连接测试成功")),
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    workspace
+                        .as_mut()
+                        .set_last_error(QString::from(message.as_str()));
+                    workspace
+                        .as_mut()
+                        .connection_test_finished(false, &QString::from(message.as_str()));
+                }
+            });
+        });
+    }
+
+    fn save_connection(
+        mut self: Pin<&mut Self>,
+        protocol: &QString,
+        host: &QString,
+        port: &QString,
+        username: &QString,
+        password: &QString,
+        remember_password: bool,
+    ) {
+        let input =
+            match connection_input(protocol, host, port, username, password, remember_password) {
+                Ok(input) => input,
+                Err(message) => {
+                    self.as_mut().connection_save_finished(
+                        false,
+                        &QString::default(),
+                        &QString::from(message.as_str()),
+                    );
+                    return;
+                }
+            };
+
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || connections::save_connection(input))
+                .await
+                .map_err(|error| FileSystemError::Internal(error.to_string()))
+                .and_then(|result| result);
+            let _ = thread.queue(move |mut workspace| match result {
+                Ok(connection) => {
+                    workspace.as_mut().connections_changed();
+                    workspace.as_mut().connection_save_finished(
+                        true,
+                        &QString::from(connection.id.as_str()),
+                        &QString::default(),
+                    );
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    workspace
+                        .as_mut()
+                        .set_last_error(QString::from(message.as_str()));
+                    workspace.as_mut().connection_save_finished(
+                        false,
+                        &QString::default(),
+                        &QString::from(message.as_str()),
+                    );
+                }
+            });
+        });
+    }
+
+    fn delete_connection(mut self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        if id.trim().is_empty() {
+            return;
+        }
+        match connections::delete_connection(id) {
+            Ok(()) => {
+                self.as_mut().set_status(QString::from("已移除连接"));
+                self.as_mut().connections_changed();
+                let kind = QString::from("connection_delete");
+                self.as_mut().operation_finished(&kind, &QString::default());
+            }
+            Err(error) => {
+                let message = friendly_error(&error.to_string());
+                self.as_mut()
+                    .set_last_error(QString::from(message.as_str()));
+                let kind = QString::from("connection_delete");
+                self.as_mut()
+                    .operation_failed(&kind, &QString::from(message.as_str()));
+            }
+        }
+    }
+
+    fn authorize_cloud_account(
+        mut self: Pin<&mut Self>,
+        provider: &QString,
+        client_id: &QString,
+        client_secret: &QString,
+    ) {
+        let provider = match CloudProviderKind::parse(provider.to_string().trim()) {
+            Ok(provider) => provider,
+            Err(error) => {
+                let message = friendly_error(&error.to_string());
+                self.as_mut()
+                    .cloud_authorize_finished(false, &QString::from(message.as_str()));
+                return;
+            }
+        };
+        let client_id = client_id.to_string().trim().to_owned();
+        if client_id.is_empty() {
+            self.as_mut()
+                .cloud_authorize_finished(false, &QString::from("请输入 Client ID"));
+            return;
+        }
+
+        let input = AuthorizeCloudAccountInput {
+            provider,
+            client_id,
+            client_secret: optional_string(client_secret),
+        };
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let result = cloud_oauth::authorize_cloud_account(input).await;
+            let _ = thread.queue(move |mut workspace| match result {
+                Ok(account) => {
+                    workspace.as_mut().connections_changed();
+                    workspace
+                        .as_mut()
+                        .cloud_authorize_finished(true, &QString::from(account.id.as_str()));
+                }
+                Err(error) => {
+                    let message = friendly_error(&error.to_string());
+                    workspace
+                        .as_mut()
+                        .set_last_error(QString::from(message.as_str()));
+                    workspace
+                        .as_mut()
+                        .cloud_authorize_finished(false, &QString::from(message.as_str()));
+                }
+            });
+        });
+    }
+
+    fn delete_cloud_account(mut self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        if id.trim().is_empty() {
+            return;
+        }
+        match cloud_accounts::delete_cloud_account(id) {
+            Ok(()) => {
+                self.as_mut().set_status(QString::from("已移除云盘账户"));
+                self.as_mut().connections_changed();
+                let kind = QString::from("cloud_delete");
+                self.as_mut().operation_finished(&kind, &QString::default());
+            }
+            Err(error) => {
+                let message = friendly_error(&error.to_string());
+                self.as_mut()
+                    .set_last_error(QString::from(message.as_str()));
+                let kind = QString::from("cloud_delete");
+                self.as_mut()
+                    .operation_failed(&kind, &QString::from(message.as_str()));
+            }
+        }
+    }
+
     fn save_terminal_settings(
         mut self: Pin<&mut Self>,
         font_size: i32,
@@ -965,6 +1233,55 @@ fn strings(list: &QStringList) -> Vec<String> {
 fn optional_string(value: &QString) -> Option<String> {
     let value = value.to_string();
     (!value.is_empty()).then_some(value)
+}
+
+/// Validates the typed fields and turns them into the core's save contract.
+/// Both Test and Connect go through here so the two paths cannot disagree
+/// about what a blank port or a padded host means.
+fn connection_input(
+    protocol: &QString,
+    host: &QString,
+    port: &QString,
+    username: &QString,
+    password: &QString,
+    remember_password: bool,
+) -> Result<SaveConnectionInput, String> {
+    let protocol = protocol_from(&protocol.to_string())?;
+    let host = host.to_string().trim().to_owned();
+    if host.is_empty() {
+        return Err("请输入服务器地址".into());
+    }
+    let username = username.to_string().trim().to_owned();
+
+    Ok(SaveConnectionInput {
+        protocol,
+        host,
+        port: parse_port(&port.to_string())?,
+        username: (!username.is_empty()).then_some(username),
+        password: optional_string(password),
+        remember_password,
+    })
+}
+
+fn protocol_from(value: &str) -> Result<Protocol, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "smb" => Ok(Protocol::Smb),
+        "sftp" => Ok(Protocol::Sftp),
+        "ftp" => Ok(Protocol::Ftp),
+        "webdav" => Ok(Protocol::WebDav),
+        other => Err(format!("不支持的连接协议：{other}")),
+    }
+}
+
+fn parse_port(value: &str) -> Result<Option<u16>, String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    match value.parse::<u16>() {
+        Ok(port) if port > 0 => Ok(Some(port)),
+        _ => Err("端口必须是 1-65535".into()),
+    }
 }
 
 fn archive_format(value: &str) -> Option<ArchiveFormat> {
@@ -1025,34 +1342,6 @@ fn operation_label(operation: dae_core::progress::FileOperationKind) -> &'static
     }
 }
 
-/// Core errors are stable codes in some paths and prose in others. Translate
-/// the codes a user can actually reach here, and leave the rest intact rather
-/// than hiding an unexpected failure behind a generic sentence.
-fn friendly_error(message: &str) -> String {
-    if message.starts_with("fs.undo_empty") {
-        return "没有可撤销的操作".to_owned();
-    }
-    if message.starts_with("fs.redo_empty") {
-        return "没有可重做的操作".to_owned();
-    }
-    if message.starts_with("fs.trash_local_only") {
-        return "回收站只支持本地项目".to_owned();
-    }
-    if message.starts_with("fs.terminal_local_dir_only") {
-        return "终端只能打开本地目录".to_owned();
-    }
-    if message.starts_with("fs.open_with_local_only") {
-        return "只有本地项目可以选择打开方式".to_owned();
-    }
-    if message.starts_with("fs.trash_entries_missing") {
-        return "所选项目已不在回收站".to_owned();
-    }
-    if message.starts_with("fs.trash_restore_no_origin") {
-        return "无法确定该项目的原位置".to_owned();
-    }
-    message.to_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1069,20 +1358,80 @@ mod tests {
     }
 
     #[test]
-    fn known_core_codes_become_sentences_and_others_pass_through() {
-        assert_eq!(friendly_error("fs.undo_empty"), "没有可撤销的操作");
-        assert_eq!(
-            friendly_error("The requested path was not found: C:/x"),
-            "The requested path was not found: C:/x"
-        );
-    }
-
-    #[test]
     fn qml_archive_ids_map_to_core_formats() {
         assert_eq!(archive_format("zip"), Some(ArchiveFormat::Zip));
         assert_eq!(archive_format("tar"), Some(ArchiveFormat::Tar));
         assert_eq!(archive_format("tar.gz"), Some(ArchiveFormat::TarGz));
         assert_eq!(archive_format("7z"), Some(ArchiveFormat::SevenZip));
         assert_eq!(archive_format("rar"), None);
+    }
+
+    #[test]
+    fn connection_fields_are_trimmed_and_blank_extras_dropped() {
+        let input = connection_input(
+            &QString::from("SMB"),
+            &QString::from("  nas.local "),
+            &QString::from(""),
+            &QString::from(" alice "),
+            &QString::from(""),
+            true,
+        )
+        .expect("valid connection input");
+
+        assert_eq!(input.protocol, Protocol::Smb);
+        assert_eq!(input.host, "nas.local");
+        assert_eq!(input.port, None);
+        assert_eq!(input.username.as_deref(), Some("alice"));
+        assert_eq!(input.password, None);
+        assert!(input.remember_password);
+
+        let sftp = connection_input(
+            &QString::from("sftp"),
+            &QString::from("nas.local"),
+            &QString::from("2222"),
+            &QString::default(),
+            &QString::from("secret"),
+            false,
+        )
+        .expect("valid sftp input");
+        assert_eq!(sftp.protocol, Protocol::Sftp);
+        assert_eq!(sftp.port, Some(2222));
+        assert_eq!(sftp.password.as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn connection_validation_reports_the_offending_field() {
+        let missing_host = connection_input(
+            &QString::from("smb"),
+            &QString::from("   "),
+            &QString::default(),
+            &QString::default(),
+            &QString::default(),
+            false,
+        )
+        .expect_err("host is required");
+        assert_eq!(missing_host, "请输入服务器地址");
+
+        let bad_port = connection_input(
+            &QString::from("smb"),
+            &QString::from("nas.local"),
+            &QString::from("70000"),
+            &QString::default(),
+            &QString::default(),
+            false,
+        )
+        .expect_err("port is out of range");
+        assert_eq!(bad_port, "端口必须是 1-65535");
+
+        let unknown = connection_input(
+            &QString::from("s3"),
+            &QString::from("bucket"),
+            &QString::default(),
+            &QString::default(),
+            &QString::default(),
+            false,
+        )
+        .expect_err("unknown protocol");
+        assert!(unknown.starts_with("不支持的连接协议"));
     }
 }

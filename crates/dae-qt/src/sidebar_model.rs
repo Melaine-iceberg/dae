@@ -11,6 +11,9 @@ use std::path::Path;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
+use dae_core::fs::cloud::accounts::{StoredCloudAccount, list_cloud_accounts};
+use dae_core::fs::cloud::provider::CloudProviderKind;
+use dae_core::fs::connections::{self, Protocol, StoredConnection};
 use dae_core::fs::recents::list_recents;
 use dae_core::fs::sidebar::{self, PlaceKind};
 
@@ -20,6 +23,8 @@ use crate::runtime;
 const SECTION_PLACES: &str = "位置";
 const SECTION_FAVORITES: &str = "收藏";
 const SECTION_VOLUMES: &str = "磁盘";
+const SECTION_NETWORK: &str = "网络存储";
+const SECTION_CLOUD: &str = "云存储";
 const SECTION_RECENTS: &str = "最近";
 
 const ROLE_SECTION: i32 = 0x0200;
@@ -147,6 +152,9 @@ impl qobject::SidebarModel {
 
     fn refresh(mut self: Pin<&mut Self>) {
         self.as_mut().set_status(QString::from("读取中…"));
+        // A sidebar may be created before the command singleton; both stores
+        // are process-wide and loading them here is idempotent.
+        crate::init_stores();
 
         let mut base = Vec::new();
         for place in sidebar::system_places() {
@@ -163,6 +171,24 @@ impl qobject::SidebarModel {
                 is_dir: true,
             });
         }
+
+        let mut network = Vec::new();
+        for connection in connections::list_connections().unwrap_or_default() {
+            network.push(connection_row(connection));
+        }
+        // The add row keeps the group reachable while it is empty, and stays
+        // at the end once there is something to manage.
+        network.push(action_row(
+            SECTION_NETWORK,
+            "连接网络存储…",
+            "addConnection",
+        ));
+
+        let mut cloud = Vec::new();
+        for account in list_cloud_accounts().unwrap_or_default() {
+            cloud.push(cloud_row(account));
+        }
+        cloud.push(action_row(SECTION_CLOUD, "添加网盘账户…", "addCloud"));
 
         let mut recent = Vec::new();
         for item in list_recents().unwrap_or_default().into_iter().take(12) {
@@ -197,6 +223,8 @@ impl qobject::SidebarModel {
                     is_dir: true,
                 });
             }
+            rows.extend(network);
+            rows.extend(cloud);
             rows.extend(recent);
             let _ = thread.queue(move |mut model| model.as_mut().replace_rows(rows));
         });
@@ -250,6 +278,64 @@ fn volume_name(label: &str, mount_point: &str) -> String {
     }
 }
 
+fn connection_row(connection: StoredConnection) -> SidebarRow {
+    let protocol = protocol_label(connection.protocol);
+    let detail = match connection.port {
+        Some(port) => format!("{protocol} · {port}"),
+        None => protocol.to_owned(),
+    };
+    SidebarRow {
+        section: SECTION_NETWORK.to_owned(),
+        name: connection.host,
+        path: connection.id,
+        kind: "connection".to_owned(),
+        detail,
+        icon: "server".to_owned(),
+        is_dir: true,
+    }
+}
+
+fn cloud_row(account: StoredCloudAccount) -> SidebarRow {
+    SidebarRow {
+        section: SECTION_CLOUD.to_owned(),
+        name: account.email,
+        path: account.id,
+        kind: "cloud".to_owned(),
+        detail: cloud_provider_label(account.provider).to_owned(),
+        icon: "cloud".to_owned(),
+        is_dir: true,
+    }
+}
+
+fn action_row(section: &str, name: &str, kind: &str) -> SidebarRow {
+    SidebarRow {
+        section: section.to_owned(),
+        name: name.to_owned(),
+        path: String::new(),
+        kind: kind.to_owned(),
+        detail: String::new(),
+        icon: "add".to_owned(),
+        is_dir: true,
+    }
+}
+
+fn protocol_label(protocol: Protocol) -> &'static str {
+    match protocol {
+        Protocol::Smb => "SMB",
+        Protocol::Sftp => "SFTP",
+        Protocol::Ftp => "FTP",
+        Protocol::WebDav => "WebDAV",
+    }
+}
+
+fn cloud_provider_label(provider: CloudProviderKind) -> &'static str {
+    match provider {
+        CloudProviderKind::GoogleDrive => "Google Drive",
+        CloudProviderKind::Onedrive => "OneDrive",
+        CloudProviderKind::Dropbox => "Dropbox",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,5 +363,45 @@ mod tests {
     fn an_unlabelled_volume_falls_back_to_its_mount_point() {
         assert_eq!(volume_name("  ", "D:/"), "D:/");
         assert_eq!(volume_name("Data", "D:/"), "Data");
+    }
+
+    #[test]
+    fn a_saved_connection_becomes_a_network_row() {
+        let row = connection_row(StoredConnection {
+            id: "sftp://nas.local:2222".into(),
+            protocol: Protocol::Sftp,
+            host: "nas.local".into(),
+            port: Some(2222),
+            username: Some("alice".into()),
+        });
+
+        assert_eq!(row.section, SECTION_NETWORK);
+        assert_eq!(row.name, "nas.local");
+        assert_eq!(row.path, "sftp://nas.local:2222");
+        assert_eq!(row.kind, "connection");
+        assert_eq!(row.detail, "SFTP · 2222");
+        assert!(row.is_dir);
+    }
+
+    #[test]
+    fn a_cloud_account_becomes_a_cloud_row() {
+        let row = cloud_row(StoredCloudAccount {
+            id: "cloud://google_drive:user@example.com".into(),
+            provider: CloudProviderKind::GoogleDrive,
+            email: "user@example.com".into(),
+            display_name: "User".into(),
+        });
+
+        assert_eq!(row.section, SECTION_CLOUD);
+        assert_eq!(row.name, "user@example.com");
+        assert_eq!(row.detail, "Google Drive");
+        assert_eq!(row.kind, "cloud");
+    }
+
+    #[test]
+    fn add_rows_are_not_paths() {
+        let row = action_row(SECTION_NETWORK, "连接网络存储…", "addConnection");
+        assert_eq!(row.path, "");
+        assert_eq!(row.icon, "add");
     }
 }

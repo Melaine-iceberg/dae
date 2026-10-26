@@ -20,6 +20,7 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use dae_core::fs::entry_codec::{self, ListingRow};
 use dae_core::fs::listing::{self, Batch, BatchTarget};
+use dae_core::fs::vfs::{self, Scheme};
 use dae_core::host::{Event, Host};
 use dae_core::types::{DirectoryEntry, EntryKind};
 
@@ -192,6 +193,10 @@ pub struct DirectoryListModelRust {
     base: String,
     stream_id: Option<String>,
     generation: u64,
+    /// Rows came from a network backend. Their `name` is the only part that
+    /// carries a file extension, so the icon URL is built from it rather than
+    /// from the full path.
+    remote: bool,
 }
 
 impl qobject::DirectoryListModel {
@@ -223,7 +228,11 @@ impl qobject::DirectoryListModel {
             ROLE_HIDDEN => QVariant::from(&row.hidden),
             ROLE_READ_ONLY => QVariant::from(&row.read_only),
             ROLE_ICON => {
-                let path = row.full_path(&self.base);
+                let path = if self.remote {
+                    row.name.clone()
+                } else {
+                    row.full_path(&self.base)
+                };
                 let version = icon_version(row);
                 QVariant::from(&QString::from(
                     crate::icons::source_for(&path, row.kind == EntryKind::Directory, &version)
@@ -260,6 +269,11 @@ impl qobject::DirectoryListModel {
             listing::cancel_directory_listing(stream_id);
         }
 
+        // A scheme prefix sends this load through the vfs backend instead of
+        // the local streaming reader. Remote backends list in one piece.
+        let scheme = vfs::scheme_of(&requested);
+        let remote = matches!(scheme, Ok(scheme) if scheme != Scheme::Local);
+
         unsafe {
             self.as_mut().begin_reset_model();
             {
@@ -267,6 +281,7 @@ impl qobject::DirectoryListModel {
                 rust.generation = generation;
                 rust.rows.clear();
                 rust.base.clear();
+                rust.remote = remote;
             }
             self.as_mut().end_reset_model();
         }
@@ -276,19 +291,46 @@ impl qobject::DirectoryListModel {
         self.as_mut().set_path(QString::from(requested.as_str()));
         self.as_mut().set_status(QString::from("读取中…"));
 
+        // An unknown scheme is a failure of this path, not of the previous
+        // directory: the model has already adopted `requested` above.
+        if let Err(error) = scheme {
+            let message = crate::errors::friendly_error(&error.to_string());
+            self.as_mut().set_status(QString::from(message.as_str()));
+            self.as_mut().set_finished(true);
+            return;
+        }
+
         let stream_id = next_stream_id();
         self.as_mut().rust_mut().stream_id = Some(stream_id.clone());
 
         let thread = self.as_mut().qt_thread();
         let target = Arc::new(QtBatchTarget::new(thread, generation));
         let worker = Arc::clone(&target);
-        let requested_path = PathBuf::from(requested);
+        let requested_path = requested.clone();
 
         std::thread::spawn(move || {
+            if remote {
+                match vfs::resolve(&requested_path)
+                    .and_then(|backend| backend.read_dir(&requested_path))
+                {
+                    Ok(view) => {
+                        let base = entry_codec::base_of(&view.path);
+                        let rows = view
+                            .entries
+                            .iter()
+                            .map(|entry| StoredRow::from_entry(entry, &base))
+                            .collect();
+                        worker.deliver_head(base, view.path, rows, true);
+                    }
+                    Err(error) => worker.fail(crate::errors::friendly_error(&error.to_string())),
+                }
+                return;
+            }
+
             let host: Arc<dyn Host> = Arc::new(ListingHost);
             match listing::open_streamed_listing(
                 host,
-                requested_path,
+                PathBuf::from(&requested_path),
                 stream_id,
                 None,
                 worker.clone(),
@@ -303,7 +345,7 @@ impl qobject::DirectoryListModel {
                         .collect();
                     worker.deliver_head(base, view.path, rows, done);
                 }
-                Err(error) => worker.fail(format!("{error}")),
+                Err(error) => worker.fail(crate::errors::friendly_error(&error.to_string())),
             }
         });
     }
@@ -352,6 +394,7 @@ impl qobject::DirectoryListModel {
                 rust.generation = generation;
                 rust.rows.clear();
                 rust.base.clear();
+                rust.remote = false;
             }
             self.as_mut().end_reset_model();
         }

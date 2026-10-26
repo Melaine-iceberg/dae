@@ -21,6 +21,7 @@
 //! their own measured gates rather than as an untested guess.
 
 pub mod config;
+mod errors;
 pub mod format;
 pub mod icons;
 pub mod ime;
@@ -43,4 +44,21 @@ pub fn init() {
     window::enable_diagnostics();
     window::enable_alpha();
     terminal::register_item();
+}
+
+/// Loads the file-backed connection and cloud-account registries once. Both
+/// live in `dae-core` and are shared with the Tauri shell, so the Qt shell
+/// reads the same `%APPDATA%` documents instead of keeping its own list.
+pub(crate) fn init_stores() {
+    use std::sync::Once;
+
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        if let Err(error) = dae_core::fs::connections::init() {
+            eprintln!("dae: connection store initialization failed: {error}");
+        }
+        if let Err(error) = dae_core::fs::cloud::accounts::init() {
+            eprintln!("dae: cloud account store initialization failed: {error}");
+        }
+    });
 }
