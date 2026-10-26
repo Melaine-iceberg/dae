@@ -2,7 +2,7 @@
 //!
 //! Two QObjects:
 //!
-//! * `DirectoryListModel` — a real `QAbstractListModel` over the rows that
+//! * `SpikeListModel` — a real `QAbstractListModel` over the rows that
 //!   `dae_core::fs::listing` emits. The reader thread calls `BatchTarget` from
 //!   `dae-core`; this file is only the shell half of that seam: it queues the
 //!   batch onto the Qt thread and turns it into `beginInsertRows`.
@@ -29,6 +29,10 @@ const ROLE_SIZE: i32 = 0x0101;
 const ROLE_MODIFIED: i32 = 0x0102;
 const ROLE_IS_DIR: i32 = 0x0103;
 const ROLE_HIDDEN: i32 = 0x0104;
+/// The same `image://fileicon/type/...` URL the product model emits. The
+/// fixture is files-only, so every row shares one request per extension; a
+/// directory fixture would ask by path instead.
+const ROLE_ICON: i32 = 0x0105;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -83,7 +87,7 @@ pub mod qobject {
         #[qproperty(f64, load_ms)]
         #[qproperty(i64, last_patch_us)]
         #[qproperty(QString, status)]
-        type DirectoryListModel = super::DirectoryListModelRust;
+        type SpikeListModel = super::SpikeListModelRust;
 
         #[cxx_override]
         #[rust_name = "row_count"]
@@ -97,16 +101,16 @@ pub mod qobject {
         fn roleNames(&self) -> QHash_i32_QByteArray;
 
         #[qinvokable]
-        fn start(self: Pin<&mut DirectoryListModel>, path: &QString, stream_id: &QString);
+        fn start(self: Pin<&mut SpikeListModel>, path: &QString, stream_id: &QString);
 
         #[qinvokable]
         #[cxx_name = "applyPatches"]
-        fn apply_patches(self: Pin<&mut DirectoryListModel>, first: i32, count: i32);
+        fn apply_patches(self: Pin<&mut SpikeListModel>, first: i32, count: i32);
 
         #[inherit]
         #[rust_name = "begin_insert_rows"]
         unsafe fn beginInsertRows(
-            self: Pin<&mut DirectoryListModel>,
+            self: Pin<&mut SpikeListModel>,
             parent: &QModelIndex,
             first: i32,
             last: i32,
@@ -114,19 +118,19 @@ pub mod qobject {
 
         #[inherit]
         #[rust_name = "end_insert_rows"]
-        unsafe fn endInsertRows(self: Pin<&mut DirectoryListModel>);
+        unsafe fn endInsertRows(self: Pin<&mut SpikeListModel>);
 
         #[inherit]
         #[rust_name = "begin_reset_model"]
-        unsafe fn beginResetModel(self: Pin<&mut DirectoryListModel>);
+        unsafe fn beginResetModel(self: Pin<&mut SpikeListModel>);
 
         #[inherit]
         #[rust_name = "end_reset_model"]
-        unsafe fn endResetModel(self: Pin<&mut DirectoryListModel>);
+        unsafe fn endResetModel(self: Pin<&mut SpikeListModel>);
 
         #[inherit]
         fn index(
-            self: &DirectoryListModel,
+            self: &SpikeListModel,
             row: i32,
             column: i32,
             parent: &QModelIndex,
@@ -136,14 +140,14 @@ pub mod qobject {
         #[qsignal]
         #[rust_name = "data_changed"]
         fn dataChanged(
-            self: Pin<&mut DirectoryListModel>,
+            self: Pin<&mut SpikeListModel>,
             top_left: &QModelIndex,
             bottom_right: &QModelIndex,
             roles: &QVector_i32,
         );
     }
 
-    impl cxx_qt::Threading for DirectoryListModel {}
+    impl cxx_qt::Threading for SpikeListModel {}
 
     unsafe extern "RustQt" {
         #[qobject]
@@ -233,7 +237,7 @@ impl StoredRow {
 }
 
 #[derive(Default)]
-pub struct DirectoryListModelRust {
+pub struct SpikeListModelRust {
     loaded: i32,
     finished: bool,
     batches: i32,
@@ -244,7 +248,7 @@ pub struct DirectoryListModelRust {
     started: Option<Instant>,
 }
 
-impl qobject::DirectoryListModel {
+impl qobject::SpikeListModel {
     fn row_count(&self, parent: &QModelIndex) -> i32 {
         // A list model has one level: any valid parent has no children.
         if parent.is_valid() {
@@ -269,6 +273,16 @@ impl qobject::DirectoryListModel {
             ))),
             ROLE_IS_DIR => QVariant::from(&row.row.is_dir),
             ROLE_HIDDEN => QVariant::from(&row.row.hidden),
+            ROLE_ICON => {
+                let extension = Path::new(row.name.as_str())
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .unwrap_or_default()
+                    .to_ascii_lowercase();
+                QVariant::from(&QString::from(
+                    format!("image://fileicon/type/{extension}?size=36").as_str(),
+                ))
+            }
             _ => QVariant::default(),
         }
     }
@@ -280,6 +294,7 @@ impl qobject::DirectoryListModel {
         roles.insert(ROLE_MODIFIED, QByteArray::from("modifiedText"));
         roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));
         roles.insert(ROLE_HIDDEN, QByteArray::from("hidden"));
+        roles.insert(ROLE_ICON, QByteArray::from("iconSource"));
         roles
     }
 
@@ -405,7 +420,7 @@ impl Host for NoopHost {
 /// release and the normal path queue while holding the same lock, which keeps
 /// the QObject-side delivery order equal to the reader's order.
 struct QtBatchTarget {
-    thread: cxx_qt::CxxQtThread<qobject::DirectoryListModel>,
+    thread: cxx_qt::CxxQtThread<qobject::SpikeListModel>,
     state: Mutex<TargetState>,
 }
 
@@ -416,7 +431,7 @@ struct TargetState {
 }
 
 impl QtBatchTarget {
-    fn new(thread: cxx_qt::CxxQtThread<qobject::DirectoryListModel>) -> Self {
+    fn new(thread: cxx_qt::CxxQtThread<qobject::SpikeListModel>) -> Self {
         Self {
             thread,
             state: Mutex::new(TargetState::default()),

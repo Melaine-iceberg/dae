@@ -10,6 +10,9 @@ cxx = "1"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["full"] }
 dae-core = { path = "../../crates/dae-core" }
+# The real icon provider is part of the workload: the gate has to be measured
+# with the rows the product actually draws, not a coloured square.
+dae-qt = { path = "../../crates/dae-qt" }
 serde_json = "1"
 
 [target.'cfg(windows)'.dependencies]

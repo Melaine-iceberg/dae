@@ -49,8 +49,12 @@ fn main() {
     let mut application = QGuiApplication::new();
     let mut engine = QQmlApplicationEngine::new();
 
+    let engine_ptr = engine.as_mut_ptr();
     match engine.as_mut() {
         Some(engine) => {
+            // The same `fileicon://` provider the product registers: extraction
+            // and caching are part of what the gate measures.
+            dae_qt::icons::register_provider(engine_ptr);
             engine.load(&QUrl::from("qrc:/qt/qml/dae/listspike/qml/main.qml"));
         }
         None => eprintln!("could not create QQmlApplicationEngine"),

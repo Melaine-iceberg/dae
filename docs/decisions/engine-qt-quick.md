@@ -436,19 +436,18 @@ build 26340 上它对任何扩展名都返回 `E_FAIL`（实测 json/txt/rs/exe/
   （旧壳同样拿不到首页）。这条验证的是「没有处理器时不冒充缩略图」，不是
   处理器本身；装了 Edge/Adobe 缩略图处理器的机器走同一调用。
 
-**还没做**：
+**遗留与复测**：
 
-1. Linux 的 `.thumbnailer` 仍在旧壳（`desktop_thumbnails`，还依赖未搬的 XDG
-   desktop-entry 解析），随 Qt 的 Linux 门槛一起搬。
-2. 图标接入后要在门槛 1 的 12 万行 fixture 上复测每帧 p95 与 PSS。本次的设计
-   把请求限制在可见行：类型图标每个扩展一次，目录/快捷方式每个可见路径一次；
-   但「每帧工作」是实测项，不是推理项。
+- Linux 的 `.thumbnailer` 仍在旧壳（`desktop_thumbnails`，还依赖未搬的 XDG
+  desktop-entry 解析），随 Qt 的 Linux 门槛一起搬。
+- 图标接入后的 12 万行复测已通过：见 §5.1.1。work p95 1.60–1.66 ms，与无图标的
+  1.64–1.82 ms 在噪声内；PSS +3–4 MB。
 
 ## 5. 定案前必须量出来的四组数字
 
 | # | 待验证 | 门槛 | 不达标怎么办 |
 |---|---|---|---|
-| 1 | Rust `QAbstractListModel` + QML `ListView.reuseItems` 跑 12 万行 + 增量补丁 | **已达标：**每帧工作 p95 最差 **5.68 ms**（3×12 s），PSS 滚动峰值最差 **123.7 MB**（全 CJK）—— §5.1 | 委托改为 `QQuickItem` 自绘 / 分页模型 / 回到 egui |
+| 1 | Rust `QAbstractListModel` + QML `ListView.reuseItems` 跑 12 万行 + 增量补丁 | **已达标：**每帧工作 p95 最差 **5.68 ms**（3×12 s），PSS 滚动峰值最差 **123.7 MB**（全 CJK）—— §5.1；画真实 OS 图标后同会话 A/B：work **1.60–1.66 ms**，PSS **+3–4 MB** —— §5.1.1 | 委托改为 `QQuickItem` 自绘 / 分页模型 / 回到 egui |
 | 2 | QML 自定义样式 `TextInput` 里的中文 IME | **已达标：**7 场景 214 项检查全过；预编辑与 `GCS_COMPSTR` 全程一致、候选锚点偏差 ≤ 0.43 px、Esc 与换焦点取消都成立（需壳里的 `CPS_CANCEL` 守卫）—— §5.2 | 该输入框回退到 `QTextEdit`-based 原生控件（未触发） |
 | 3 | Win11 无边框 + Mica + 自绘标题栏 + 拖动/缩放/贴靠 | **已达标：** 63 项检查全过；拖动/缩放走原生 modal loop，Snap Layouts 悬停出菜单并贴到左半屏；DWM 明暗切换 34 帧采样无闪、0 `WM_ERASEBKGND` —— §5.3 | 保留系统标题栏（未触发） |
 | 4 | 单窗口撕出 / 关闭的内存与延迟增量 | **已达标：** 6 轮开/关，撕出延迟最差 **76.82 ms**；第二窗口 PSS 增量最差 **13.74 MB**（冷启动一轮），热态 +5.12–6.24 MB；关闭后私有提交 6 轮仅 +0.56 MB —— §5.4 | 恢复预热池（未触发） |
@@ -493,6 +492,36 @@ WebView2/WebKitGTK 创建 **270–340 ms**、预热池 **+200 MB**。
 两段互斥，把两个 p95 相加是保守的每帧成本。
 
 复现、fixture 生成和全部原始 JSON：[`bench/qt-list-spike/`](../../bench/qt-list-spike/README.md)。
+
+### 5.1.1 图标接入后的复测（2026-10-26）
+
+行委托现在画真实的 OS 图标（§4.7）。spike 链接 `crates/dae-qt` 并注册同一个
+provider，`--icons on|off` 在同一会话里交替跑三次；夹具与 §5.1 相同（120,000
+条、24 个可见行、每秒随机跳转、每 250 ms 补丁）。
+
+| 12 s | work p95（无图标 / 有图标） | PSS（无 / 有） |
+|---|---:|---:|
+| #1 | 1.82 / **1.68 ms** | 59.1 / 62.8 MB |
+| #2 | 1.64 / **1.60 ms** | 59.3 / 63.3 MB |
+| #3 | 1.65 / **1.66 ms** | 58.9 / 62.1 MB |
+| 全 CJK | 1.98–2.02 / **1.99 ms** | 106.3–109.0 / 110.1 MB |
+| 30 s soak（有图标） | **1.55 ms** | 111.3 MB |
+
+- **每帧工作没有可测增量。** 三对 on/off 的 work p95 差在 ±0.14 ms 内；有图标的
+  三次数值甚至略低，这是运行间噪声，不作为提速解释。8 ms 门槛仍然宽裕。
+- **PSS +3–4 MB。** 夹具只有文件，所有行共享 `type/<ext>` URL，整个运行只有
+  14 次 provider 调用和 14 张纹理；增量来自这些纹理和 provider 的 512 项字节缓存。
+- **30 s soak 的 111 MB 是 CJK 字体回退**：第 6 s 一次随机跳转落到中文名，
+  PSS 50.5 → 109.2 MB 后 25 s 持平，不是图标累积。
+- **绝对值低于 §5.1 的 10-25 记录**（当时的 2.1–5.7 ms 不再复现）；同一负载在
+  同一台机器上受会话状态影响，门槛判断用同会话 A/B，不看跨日绝对值。
+- **覆盖范围**：文件夹具只测类型图标。目录/快捷方式按路径取图标的那条路没有
+  被这条 A/B 覆盖；它受可见行数与 512 项缓存约束，改动时应另建目录夹具。
+
+原始 JSON：[`bench/qt-list-spike/results/`](../../bench/qt-list-spike/results/) 下的
+`win11-120k-{icons,noicons}-off-*.json`、`win11-120k-cjk-noicons-*.json`、
+`win11-120k-icons-cjk.json`、`win11-120k-icons-off-30s.json`；窗口截图
+`win11-120k-icons-window.png`（图标确实在跑，不是 provider 静默失败）。
 
 ### 5.2 门槛 2 实测：中文 IME（2026-10-25，Windows 11）
 

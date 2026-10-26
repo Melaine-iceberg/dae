@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import dae.listspike 1.0
 
 Window {
@@ -18,6 +19,7 @@ Window {
     readonly property string grabPath: argument("--grab", "")
     readonly property bool patchesEnabled: argument("--patches", "on") !== "off"
     readonly property bool jumpsEnabled: argument("--jumps", "on") !== "off"
+    readonly property bool iconsEnabled: argument("--icons", "on") !== "off"
 
     property bool scrollActive: false
     property real scrollStep: rowHeight * 3
@@ -32,7 +34,7 @@ Window {
         return fallback
     }
 
-    DirectoryListModel {
+    SpikeListModel {
         id: dirModel
     }
 
@@ -89,6 +91,7 @@ Window {
                 required property string modifiedText
                 required property bool isDir
                 required property bool hidden
+                required property string iconSource
 
                 width: ListView.view.width
                 height: root.rowHeight
@@ -107,6 +110,21 @@ Window {
                     height: 14
                     radius: 3
                     color: delegateRoot.isDir ? "#5b8def" : "#3b4250"
+                    visible: !root.iconsEnabled || rowIcon.status !== Image.Ready
+                }
+
+                Image {
+                    id: rowIcon
+                    x: 9
+                    y: 4
+                    width: 18
+                    height: 18
+                    source: root.iconsEnabled ? delegateRoot.iconSource : ""
+                    sourceSize.width: Math.round(18 * Screen.devicePixelRatio)
+                    sourceSize.height: Math.round(18 * Screen.devicePixelRatio)
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    visible: root.iconsEnabled && status === Image.Ready
                 }
 
                 Text {

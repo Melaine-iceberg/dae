@@ -43,6 +43,52 @@ a random scrollbar jump every second:
 Raw JSON for every run is in [`results/`](results/). The CJK window grab is
 [`results/win11-120k-cjk-window.png`](results/win11-120k-cjk-window.png).
 
+### Icon A/B (2026-10-26)
+
+The row now draws the OS icon through the product's `fileicon://` provider; the
+spike links `crates/dae-qt` and registers the same provider. Same machine, same
+fixtures, `--icons on|off` alternated in one session:
+
+| run | icons | work p95 | GUI p95 | render p95 | cadence p95 | PSS |
+|---|---:|---:|---:|---:|---:|---:|
+| 12 s #1 | off | 1.82 ms | 0.85 ms | 0.97 ms | 10.48 ms | 59.1 MB |
+| 12 s #1 | on | **1.68 ms** | 0.75 ms | 0.94 ms | 10.18 ms | 62.8 MB |
+| 12 s #2 | off | 1.64 ms | 0.70 ms | 0.94 ms | 6.55 ms | 59.3 MB |
+| 12 s #2 | on | **1.60 ms** | 0.69 ms | 0.92 ms | 6.53 ms | 63.3 MB |
+| 12 s #3 | off | 1.65 ms | 0.74 ms | 0.91 ms | 10.91 ms | 58.9 MB |
+| 12 s #3 | on | **1.66 ms** | 0.74 ms | 0.92 ms | 8.90 ms | 62.1 MB |
+| 12 s all-CJK #1 | off | 2.02 ms | 0.72 ms | 1.30 ms | 6.64 ms | 106.3 MB |
+| 12 s all-CJK | on | **1.99 ms** | 0.70 ms | 1.29 ms | 6.65 ms | 110.1 MB |
+| 12 s all-CJK #2 | off | 1.98 ms | 0.70 ms | 1.28 ms | 6.66 ms | 109.0 MB |
+| 30 s soak | on | **1.55 ms** | 0.66 ms | 0.89 ms | 9.98 ms | 111.3 MB |
+
+**The icon frame costs nothing measurable; PSS +3–4 MB.** The three on/off
+pairs give work p95 1.60–1.66 vs 1.64–1.82 ms — the on runs are marginally
+lower, which is run-to-run variance, not a speedup. PSS is +3.7 / +4.0 / +3.2 MB:
+14 extension textures plus the provider's bounded byte cache. The all-CJK pair is
+flat too (1.99 vs 1.98–2.02 ms; 110.1 vs 106.3–109.0 MB).
+
+The 30 s soak reaches 111.3 MB because a random jump landed on a CJK name and
+paid the one-time font fallback at ~6 s (50.5 → 109.2 MB, then flat for 25 s) —
+not because icons accumulate. Its work p95 is the lowest of the session, again
+within noise.
+
+The absolute numbers are lower than the October 25 table above on the same
+workload (2.1–5.7 ms no longer reproduces; the machine was busier then). The gate
+decision is unchanged, and the icon delta is the same-session A/B, not a
+cross-day absolute.
+
+**Scope:** the fixture is files-only, so every row uses a shared
+`type/<ext>` URL — 14 provider calls and 14 textures for the whole run. A folder
+listing asks by path (custom folder icons); that path is bounded by visible rows
+and the 512-entry cache, but this A/B does not measure it. A directory-heavy
+fixture is the next check if that code changes.
+
+Raw JSON: `results/win11-120k-{icons,noicons}-off-*.json`,
+`results/win11-120k-cjk-noicons-*.json`, `results/win11-120k-icons-cjk.json`,
+`results/win11-120k-icons-off-30s.json`. Window grab:
+[`results/win11-120k-icons-window.png`](results/win11-120k-icons-window.png).
+
 ### Why "work", not the frame interval
 
 The display runs at 120 Hz, so an **empty** list also presents at ~8.33 ms. On
@@ -67,7 +113,9 @@ recorded; it is what the `cadence p95` column shows.
   receives head + streamed batches through `BatchTarget`. The model stores the
   name, size, mtime, directory bit and hidden bit per row.
 * `ListView.reuseItems: true`, `cacheBuffer: 2600`, 26 px fixed-height
-  delegates with icon + name + size + mtime.
+  delegates with icon + name + size + mtime. The icon is the product's OS icon
+  (the provider from `crates/dae-qt`); `--icons off` swaps it back to the drawn
+  square for the A/B above.
 * The scroll handler moves `contentY` by three rows on every `frameSwapped`,
   which requests the next frame — the loop is driven by presented frames, not a
   timer. A 1 s timer jumps to a random position, and a 250 ms timer applies one
