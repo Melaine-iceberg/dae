@@ -28,6 +28,7 @@ use dae_core::fs::sidebar::{self, Favorite};
 use dae_core::fs::smb;
 use dae_core::fs::trash_view;
 use dae_core::fs::types::{ConflictAction, NewEntryKind, TransferItem, display_name_from_path};
+use dae_core::fs::vfs;
 use dae_core::host::{Event, Host};
 
 use crate::errors::friendly_error;
@@ -901,6 +902,14 @@ impl qobject::Workspace {
 
     fn open_path(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
+        if !vfs::is_local_path(&path) {
+            self.as_mut().finish_operation(
+                "open",
+                "",
+                Some("远程文件需要用本地应用打开前，请先复制到本地文件夹".to_owned()),
+            );
+            return;
+        }
         if let Err(message) = platform::open_path(&path) {
             self.as_mut().finish_operation("open", "", Some(message));
             return;
@@ -923,6 +932,11 @@ impl qobject::Workspace {
 
     fn open_terminal(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
+        if !vfs::is_local_path(&path) {
+            self.as_mut()
+                .finish_operation("terminal", "", Some("终端只能打开本地目录".to_owned()));
+            return;
+        }
         match service::open_terminal(path) {
             Ok(()) => self
                 .as_mut()
@@ -930,13 +944,21 @@ impl qobject::Workspace {
             Err(error) => {
                 let message = friendly_error(&error.to_string());
                 self.as_mut()
-                    .set_last_error(QString::from(message.as_str()));
+                    .finish_operation("terminal", "", Some(message));
             }
         }
     }
 
     fn reveal(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
+        if !vfs::is_local_path(&path) {
+            self.as_mut().finish_operation(
+                "reveal",
+                "",
+                Some("远程项目无法在系统资源管理器中定位".to_owned()),
+            );
+            return;
+        }
         if let Err(message) = platform::reveal_path(&path) {
             self.as_mut().finish_operation("reveal", "", Some(message));
         }

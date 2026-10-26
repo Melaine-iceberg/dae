@@ -21,6 +21,9 @@ Item {
     readonly property color mutedColor: dark ? "#8f98aa" : "#657080"
     readonly property color hairline: dark ? "#26ffffff" : "#16000000"
     readonly property bool single: paths.length === 1
+    /// The entry was read through a network backend. Text previews work, but
+    /// thumbnails, media tags, and OS open/reveal do not.
+    readonly property bool remote: controller.remote
 
     implicitWidth: 300
 
@@ -247,6 +250,17 @@ Item {
 
             Text {
                 x: 14
+                visible: root.single && controller.remote && !controller.loading
+                       && controller.error === ""
+                width: content.width - 28
+                text: "远程项目：可预览文本；缩略图和媒体信息仅支持本地文件。"
+                color: root.mutedColor
+                font.pixelSize: 11
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                x: 14
                 visible: root.single && controller.loading
                 width: content.width - 28
                 text: "读取中…"
@@ -333,10 +347,12 @@ Item {
                     height: parent.height
                     radius: 6
                     color: root.accent
+                    opacity: (!root.remote || controller.isDirectory) ? 1 : 0.4
 
                     Text {
                         anchors.centerIn: parent
-                        text: controller.isDirectory ? "打开文件夹" : "打开"
+                        text: controller.isDirectory ? "打开文件夹"
+                            : (root.remote ? "远程文件" : "打开")
                         color: "#ffffff"
                         font.pixelSize: 11
                         font.bold: true
@@ -344,7 +360,8 @@ Item {
 
                     MouseArea {
                         anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
+                        enabled: !root.remote || controller.isDirectory
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: root.openRequested(controller.path, controller.isDirectory)
                     }
                 }
@@ -357,6 +374,7 @@ Item {
                     color: "transparent"
                     border.width: 1
                     border.color: root.hairline
+                    opacity: root.remote ? 0.4 : 1
 
                     Text {
                         anchors.centerIn: parent
@@ -367,7 +385,8 @@ Item {
 
                     MouseArea {
                         anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
+                        enabled: !root.remote
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: Workspace.reveal(controller.path)
                     }
                 }

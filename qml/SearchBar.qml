@@ -13,6 +13,9 @@ Item {
     property string text: ""
     property string mode: "name"
     property bool busy: false
+    /// Content search is a local ripgrep walk; network listings only get
+    /// filename search, so the mode toggle is disabled there.
+    property bool contentEnabled: true
     property bool dark: true
     property color accent: "#2f6fdf"
     property color textColor: dark ? "#e7e9ee" : "#1c1f24"
@@ -53,14 +56,17 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: root.mode === "content" ? "文" : "名"
-                color: root.mode === "content" ? root.accent : root.mutedColor
+                color: !root.contentEnabled ? root.mutedColor
+                    : (root.mode === "content" ? root.accent : root.mutedColor)
+                opacity: root.contentEnabled ? 1 : 0.55
                 font.pixelSize: 12
-                font.bold: root.mode === "content"
+                font.bold: root.contentEnabled && root.mode === "content"
             }
 
             MouseArea {
                 anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
+                enabled: root.contentEnabled
+                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                 onClicked: root.modeToggled()
             }
         }

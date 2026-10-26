@@ -20,6 +20,11 @@ Item {
 
     readonly property var model: searchModel !== null ? searchModel
         : (tab !== null ? tab.listing : null)
+    /// The tab is browsing a network backend, so local-only actions (OS open,
+    /// recycle bin) are routed through the window instead of failing.
+    readonly property bool remote: tab !== null
+        && (tab.listing.remote
+            || /^(smb|sftp|ftp|webdav|webdavs|cloud):\/\//i.test(tab.listing.path))
     readonly property int rowHeight: 26
     readonly property color contentColor: dark ? "#191b1f" : "#ffffff"
     readonly property color alternateColor: dark ? "#15181e" : "#f7f8fa"
@@ -50,6 +55,8 @@ Item {
     signal contextRequested(string path, bool isDir, real x, real y)
     signal emptyContextRequested(real x, real y)
     signal selectionChanged()
+    signal remoteDeleteRequested(var paths)
+    signal remoteOpenRequested(string path)
 
     function selectedPathList() {
         const paths = []
@@ -114,6 +121,8 @@ Item {
             return
         if (root.model.isDirectoryAt(index))
             root.navigateRequested(path)
+        else if (root.remote)
+            root.remoteOpenRequested(path)
         else
             Workspace.openPath(path)
     }
@@ -170,6 +179,8 @@ Item {
             return
         if (permanent)
             Workspace.deleteEntries(paths)
+        else if (root.remote)
+            root.remoteDeleteRequested(paths)
         else
             Workspace.trashEntries(paths)
     }

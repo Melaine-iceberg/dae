@@ -388,9 +388,10 @@ F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
 - **回收站**：§4.6 的 `TrashView.qml` 与三个回收站命令。
 
 **仍然没铺的**（core 已有实现，缺 Qt 视图/命令包装，或只在旧壳里）：打开方式
-选择器（macOS/Linux）、默认文件管理器注册、`dae://` 深链与单实例、自动更新。
-它们按依赖排在下一刀，不会改变上面这层的接口。文件图标与系统缩略图已在 §4.7
-落地（Linux 的 `.thumbnailer` 除外），网络存储/云盘连接管理已在 §4.8 落地。
+选择器（macOS/Linux）、默认文件管理器注册、自动更新。它们按依赖排在下一刀，
+不会改变上面这层的接口。文件图标与系统缩略图已在 §4.7 落地（Linux 的
+`.thumbnailer` 除外），网络存储/云盘连接管理已在 §4.8 落地，`dae://` 深链与
+单实例已在 §4.9 落地。
 
 ### 4.7 文件图标与系统缩略图（2026-10-26）
 
@@ -500,6 +501,51 @@ build 26340 上它对任何扩展名都返回 `E_FAIL`（实测 json/txt/rs/exe/
 **已知边界**：远程后端的搜索、预览、回收站、终端仍是本地语义；FTP/WebDAV
 在协议表中保留但未接后端。真实 SMB/SFTP/云盘登录需要可达服务器与 OAuth
 凭据，本次只验证了失败路径、保存/删除与本地 UI 状态。
+
+### 4.9 `dae://` 深链与单实例（2026-10-26）
+
+**单实例在 Qt 进程里落地。** `cpp/activation.cpp` 用 `QLockFile`
+（`%TEMP%\dae-qt-activation-<home hash>.lock`）判定第一个进程；胜者建立
+`QLocalServer`（`UserAccessOption`），并把对象注册成 QML 单例
+`dae.activation/Activation`。后来者把 argv[1..] 连同自己的 cwd 用带版本号的
+`QDataStream` 发过去，调用 `AllowSetForegroundWindow(ownerPid)` 后以 0 退出，
+不创建引擎或窗口。若转发早于第一个窗口完成，路径留在 `Activation` 的 pending
+列表；QML 的 `Component.onCompleted` 再取，启动竞态不会丢。
+
+**深链解析。** `crates/dae-qt/src/activation.rs` 支持 query、path 与裸 path
+三种拼法；只解 `%XX`，不再把 `+` 当空格；相对路径按启动进程的 cwd 解析，文件
+落到父目录，不存在的目标丢弃。`config.rs` 的启动目录与
+`StartSource::DeepLink` 共用这套解析。Windows 上胜者写
+`HKCU\Software\Classes\dae`（`URL Protocol`、`DefaultIcon`、
+`shell\open\command` 指向当前 exe），便携版不需要安装器；每次启动按 exe 实际
+位置重写，移动后第一次启动即恢复。
+
+**外部打开与「从标签恢复」。** `qml/Shell.js` 记住最后活动窗口，并跨窗口查找
+同一路径；`ShellWindow.qml` 的 `receiveActivation()` 先用
+`dae_qt_focus_window`（`SW_RESTORE` + `SetForegroundWindow`）把窗口连同原有标签
+恢复到前台，目标已在某个标签里就切过去（不复制），否则在活动窗口新开标签。
+启动参数也走同一条 pending 管线，所以冷启动 URL 与 `dae.exe <dir>` 都只会给
+起始目录开一个标签。状态栏的启动来源新增「深链」。
+
+**实测（2026-10-26，Windows 11 build 26340 / 150%）**：
+
+| 步骤 | 结果 |
+|---|---|
+| 启动 A；再 `dae.exe "dae://open?path=B"` | 第二个进程退出码 0，只剩 1 个进程；原窗口标题变 B，标签数由 1 变 2，A 保留 |
+| 再深链 A | 标题回 A，仍 2 个标签（复用已有标签，不复制） |
+| 再深链一次 A | 仍 2 个标签，焦点在 A |
+| 最小化后深链 C | `IsIconic=false`，标题 C，标签数 3；窗口恢复到前台 |
+| 冷启动 `Start-Process "dae://open?path=B"` | 由协议启动一个新进程，标题 B，状态栏「启动: 深链」 |
+| 运行中由 Explorer 打开 `dae://…` | 走注册命令启动的第二个进程转发后退出，原窗口切换目标，仍 1 个进程 |
+| `HKCU\Software\Classes\dae\shell\open\command` | 指向当前构建的 exe + `"%1"` |
+
+`dae-qt` **58 通过**（新增三种 URL 拼法、相对 cwd、文件→父目录、`+` 不解码、
+去重、注册命令引号与启动来源标签）。
+
+**已知边界**：协议注册目前是 Windows 的 HKCU 路径；Linux 的 `.desktop` /
+macOS 的 `CFBundleURLTypes` 随对应平台的打包一起做。深链只接受已存在的本地
+目录，远程 `smb://` / `cloud://` 目标不通过 URL 进入。单实例按用户隔离，没有
+「强制新实例」开关。
 
 ## 5. 定案前必须量出来的四组数字
 

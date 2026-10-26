@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import dae 1.0
+import dae.activation 1.0
 import "Shell.js" as ShellState
 
 // One top-level window and its tabs.
@@ -40,6 +41,9 @@ Window {
     property var tabs: []
     property int activeIndex: 0
     property bool closingDisposed: false
+    /// Set after the first window has built its starting tab. An activation
+    /// that arrives before this stays in the native pending list.
+    property bool activationReady: false
     property bool terminalActive: false
     property bool sidebarVisible: true
     property bool previewVisible: true
@@ -69,6 +73,11 @@ Window {
         ? tabs[activeIndex] : null
     readonly property string activePath: activeTab !== null ? activeTab.listing.path : ""
     readonly property bool trashActive: activeTab !== null && activeTab.trash
+    /// True while the tab is browsing a network backend. Local-only actions
+    /// (terminal, recycle bin, content search, OS open/reveal) are gated on
+    /// this instead of failing after the click.
+    readonly property bool remoteLocation: activeTab !== null && !trashActive
+        && (activeTab.listing.remote || root.isRemotePath(activeTab.listing.path))
     readonly property bool searchActive: searchQuery.trim().length > 0
     readonly property bool contentSearchActive: searchActive && searchMode === "content"
     readonly property bool searchBusy: activeTab === null ? false
@@ -76,6 +85,7 @@ Window {
     readonly property string mod: Qt.platform.os === "osx" ? "Meta" : "Ctrl"
     readonly property color accent: Workspace.accent
     readonly property string sourceLabel: config === null ? ""
+        : config.startupSource === "deepLink" ? "深链"
         : config.startupSource === "recent" ? "最近访问"
         : config.startupSource === "commandLine" ? "命令行" : "主目录"
     readonly property string profileText: config === null ? ""
@@ -115,9 +125,12 @@ Window {
     onActiveIndexChanged: {
         root.resetSearchState()
         previewPanel.showPaths([])
+        root.applyRemotePolicy()
         if (root.trashActive)
             trashModel.refresh()
     }
+
+    onActiveChanged: ShellState.noteActive(root.token, active)
 
     onDarkChanged: {
         if (chrome && chrome.attached)
@@ -175,7 +188,57 @@ Window {
         next.splice(at, 0, tab)
         root.tabs = next
         root.activeIndex = at
+        root.applyRemotePolicy()
         Qt.callLater(fileList.takeFocus)
+    }
+
+    /// Handles an external `dae://` open (or a second launch with paths).
+    ///
+    /// The window is brought back first, together with every tab it already
+    /// had. Each target then either restores an existing tab (in any window)
+    /// or becomes a new tab here; it never replaces what the user was viewing.
+    function receiveActivation(paths) {
+        if (!Shell.focusWindow(root.token)) {
+            if (root.visibility === Window.Minimized)
+                root.showNormal()
+            else if (!root.visible)
+                root.show()
+            root.raise()
+            root.requestActivate()
+        }
+
+        if (!paths)
+            return
+        for (let index = 0; index < paths.length; index += 1)
+            root.openActivationPath(paths[index])
+    }
+
+    function openActivationPath(path) {
+        if (!path)
+            return
+
+        const existing = ShellState.findOpenTab(path)
+        if (existing !== null) {
+            const existingWindow = ShellState.windowFor(existing.token)
+            if (existingWindow !== null) {
+                existingWindow.activeIndex = existing.index
+                Shell.focusWindow(existingWindow.token)
+                return
+            }
+        }
+
+        root.addTab(path)
+        Workspace.recordRecent(path, true, false)
+    }
+
+    /// Pulls what the native side buffered. `focusAlways` is for the signal:
+    /// a second launch with no openable argument still raises the window.
+    function consumePendingActivation(focusAlways) {
+        if (ShellState.activationTarget() !== root)
+            return
+        const paths = Activation.takePending()
+        if (paths.length > 0 || focusAlways)
+            root.receiveActivation(paths)
     }
 
     function closeTab(index) {
@@ -306,12 +369,28 @@ Window {
         })
     }
 
+    function isRemotePath(path) {
+        return /^(smb|sftp|ftp|webdav|webdavs|cloud):\/\//i.test(path || "")
+    }
+
+    /// Local-only surfaces are switched off when the active tab moves to a
+    /// network backend. An already running terminal is hidden, not killed:
+    /// hiding was never closing, and it keeps its local working directory.
+    function applyRemotePolicy() {
+        if (!root.remoteLocation)
+            return
+        root.terminalActive = false
+        if (root.searchMode === "content")
+            root.searchMode = "name"
+    }
+
     function navigate(path) {
         if (root.activeTab === null || !path || path.length === 0)
             return
         root.resetSearchState()
         previewPanel.showPaths([])
         root.activeTab.navigate(path)
+        root.applyRemotePolicy()
         Workspace.recordRecent(path, true, false)
         Qt.callLater(fileList.takeFocus)
     }
@@ -350,6 +429,18 @@ Window {
                            "永久删除", true)
     }
 
+    /// A network entry has no path through the local recycle bin, so Delete
+    /// asks before permanently deleting it instead of calling the trash.
+    function requestRemoteDelete(paths) {
+        if (!paths || paths.length === 0 || Workspace.busy)
+            return
+        root.confirmMode = "remoteDelete"
+        root.confirmTrashIds = paths
+        confirmDialog.open("永久删除这些项目？",
+                           paths.length + " 个远程项目无法移入回收站，将被永久删除。",
+                           "永久删除", true)
+    }
+
     function requestEmptyTrash() {
         if (Workspace.busy)
             return
@@ -371,6 +462,8 @@ Window {
         } else if (mode === "empty") {
             trashView.clearSelection()
             Workspace.emptyTrash()
+        } else if (mode === "remoteDelete") {
+            Workspace.deleteEntries(ids)
         }
         root.modalClosed()
     }
@@ -402,6 +495,10 @@ Window {
     }
 
     function toggleSearchMode() {
+        if (root.remoteLocation) {
+            toast.show("内容搜索只支持本地目录", false)
+            return
+        }
         root.searchMode = root.searchMode === "name" ? "content" : "name"
         if (root.searchActive)
             searchTimer.restart()
@@ -428,8 +525,19 @@ Window {
     function acceptPreview(path, isDir) {
         if (isDir)
             root.navigate(path)
+        else if (root.isRemotePath(path))
+            root.acceptRemotePreview(path)
         else
             Workspace.openPath(path)
+    }
+
+    /// Enter on a remote file cannot reach a local handler. Show the preview
+    /// (the one operation that works over the VFS) and say what to do instead
+    /// of letting the open call fail.
+    function acceptRemotePreview(path) {
+        root.previewVisible = true
+        previewPanel.showPaths([path])
+        toast.show("远程文件可预览；用本地应用打开前请先复制到本地", false)
     }
 
     function openConnectDialog() {
@@ -600,21 +708,25 @@ Window {
         const many = fileList.selectionCount > 1
         const hasPath = path !== ""
         const hasClipboard = Workspace.clipboardMode !== ""
-        const canExtract = hasPath && !isDir && root.isArchivePath(path)
+        const remote = root.remoteLocation
+        // Archiving streams remote sources into a local container, so the
+        // sources may be remote but the destination (here) may not.
+        const canExtract = hasPath && !isDir && !remote && root.isArchivePath(path)
         menu.openAt(x, y, [
-            { id: "open", label: isDir ? "打开" : "用默认应用打开", enabled: hasPath, shortcut: "Enter" },
+            { id: "open", label: isDir ? "打开" : "用默认应用打开",
+              enabled: hasPath && (!remote || isDir), shortcut: "Enter" },
             { id: "openTab", label: "在新标签页打开", enabled: hasPath && isDir },
             { id: "openWindow", label: "在新窗口打开", enabled: hasPath && isDir },
             { separator: true },
-            { id: "reveal", label: "在资源管理器中显示", enabled: hasPath },
-            { id: "openWith", label: "选择打开方式…", enabled: hasPath },
-            { id: "terminal", label: "在终端中打开", enabled: hasPath && isDir },
+            { id: "reveal", label: "在资源管理器中显示", enabled: hasPath && !remote },
+            { id: "openWith", label: "选择打开方式…", enabled: hasPath && !remote },
+            { id: "terminal", label: "在终端中打开", enabled: hasPath && isDir && !remote },
             { separator: true },
             { id: "copy", label: "复制", shortcut: "Ctrl+C", enabled: hasPath },
             { id: "cut", label: "剪切", shortcut: "Ctrl+X", enabled: hasPath },
             { id: "paste", label: "粘贴到此处", shortcut: "Ctrl+V", enabled: hasClipboard && isDir },
             { id: "duplicate", label: "创建副本", enabled: hasPath },
-            { id: "compress", label: "压缩为…", enabled: hasPath, submenu: [
+            { id: "compress", label: "压缩为…", enabled: hasPath && !remote, submenu: [
                 { id: "compressZip", label: "ZIP 压缩包" },
                 { id: "compressTar", label: "TAR 归档" },
                 { id: "compressTarGz", label: "TAR.GZ 压缩包" },
@@ -625,7 +737,8 @@ Window {
             { id: "rename", label: "重命名", shortcut: "F2", enabled: hasPath && !many },
             { separator: true },
             { id: "favorite", label: "加入收藏", enabled: hasPath && isDir },
-            { id: "trash", label: "移到回收站", shortcut: "Delete", enabled: hasPath, danger: true },
+            { id: "trash", label: "移到回收站", shortcut: "Delete",
+              enabled: hasPath && !remote, danger: true },
             { id: "delete", label: "永久删除", shortcut: "Shift+Delete", enabled: hasPath, danger: true }
         ])
     }
@@ -653,7 +766,7 @@ Window {
             { id: "selectAll", label: "全选", shortcut: "Ctrl+A" },
             { id: "refresh", label: "刷新", shortcut: "F5" },
             { separator: true },
-            { id: "terminal", label: "在终端中打开" }
+            { id: "terminal", label: "在终端中打开", enabled: !root.remoteLocation }
         ])
     }
 
@@ -675,7 +788,7 @@ Window {
         const items = []
         if (kind === "favorite")
             items.push({ id: "removeFavorite", label: "从收藏移除", danger: true })
-        if (kind === "recent")
+        if (kind === "recent" && !root.isRemotePath(path))
             items.push({ id: "reveal", label: "在资源管理器中显示" })
         items.push({ id: "openTab", label: "在新标签页打开" })
         items.push({ id: "openWindow", label: "在新窗口打开" })
@@ -813,6 +926,10 @@ Window {
     }
 
     function toggleTerminal() {
+        if (root.remoteLocation) {
+            toast.show("终端只能打开本地目录", false)
+            return
+        }
         root.terminalActive = !root.terminalActive
         if (root.terminalActive)
             Qt.callLater(terminalPanel.focusTerminal)
@@ -1057,6 +1174,7 @@ Window {
                 width: 224
                 mode: root.searchMode
                 busy: root.searchBusy
+                contentEnabled: !root.remoteLocation
                 dark: root.dark
                 accent: root.accent
                 textColor: root.textColor
@@ -1217,6 +1335,9 @@ Window {
                 onContextRequested: function (kind, path, x, y) {
                     root.showSidebarMenu(kind, path, x, y)
                 }
+                onRemoteOpenRequested: function (path) {
+                    root.acceptRemotePreview(path)
+                }
             }
 
             Column {
@@ -1255,6 +1376,12 @@ Window {
                         }
                         onSelectionChanged: {
                             previewPanel.showPaths(fileList.selectedPathList())
+                        }
+                        onRemoteDeleteRequested: function (paths) {
+                            root.requestRemoteDelete(paths)
+                        }
+                        onRemoteOpenRequested: function (path) {
+                            root.acceptRemotePreview(path)
                         }
                     }
 
@@ -1440,7 +1567,8 @@ Window {
                 width: 62
                 height: 18
                 radius: 4
-                color: terminalMouse.containsMouse
+                opacity: root.remoteLocation ? 0.35 : 1
+                color: !root.remoteLocation && terminalMouse.containsMouse
                     ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
 
                 Text {
@@ -1454,6 +1582,7 @@ Window {
                     id: terminalMouse
                     anchors.fill: parent
                     hoverEnabled: true
+                    enabled: !root.remoteLocation
                     onClicked: root.toggleTerminal()
                 }
             }
@@ -1612,7 +1741,7 @@ Window {
 
     Shortcut {
         sequence: "Ctrl+J"
-        enabled: !root.modalOpen
+        enabled: !root.modalOpen && !root.remoteLocation
         onActivated: root.toggleTerminal()
     }
 
@@ -1659,6 +1788,11 @@ Window {
                 connectDialog.dismiss()
             else if (settingsPanel.visible)
                 settingsPanel.close()
+            else if (confirmDialog.visible) {
+                confirmDialog.close()
+                root.confirmMode = ""
+                root.confirmTrashIds = []
+            }
         }
     }
 
@@ -1690,8 +1824,15 @@ Window {
         if (root.activePath !== "")
             Workspace.recordRecent(root.activePath, true, false)
 
+        root.applyRemotePolicy()
         pathInput.text = root.trashActive ? "回收站" : root.activePath
         root.visible = true
+        root.activationReady = true
+        ShellState.noteActive(root.token, root.active)
+        // A second launch that arrived while this window was being built has
+        // been waiting in the native list; apply it now that the starting tab
+        // exists, so the first target reuses that tab instead of duplicating it.
+        root.consumePendingActivation(false)
     }
 
     Component.onDestruction: {
@@ -1705,11 +1846,22 @@ Window {
     }
 
     Connections {
+        target: Activation
+
+        function onActivated() {
+            if (!root.activationReady || ShellState.activationTarget() !== root)
+                return
+            root.consumePendingActivation(true)
+        }
+    }
+
+    Connections {
         target: root
 
         function onActivePathChanged() {
             if (!pathInput.activeFocus)
                 pathInput.text = root.trashActive ? "回收站" : root.activePath
+            root.applyRemotePolicy()
         }
 
         function onTrashActiveChanged() {

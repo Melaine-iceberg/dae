@@ -6,9 +6,10 @@
 //! ([`dae_core::paths::config_dir`]) and answers the three questions the shell
 //! needs before its first listing:
 //!
-//! * **Where to start.** A directory passed on the command line wins, then the
-//!   most recent directory in `recent-items.json`, then the user's home. A
-//!   stale recent path is skipped instead of opening an error.
+//! * **Where to start.** A directory passed on the command line or as a
+//!   `dae://` deep link wins, then the most recent directory in
+//!   `recent-items.json`, then the user's home. A stale recent path is skipped
+//!   instead of opening an error.
 //! * **How to jump to the path bar.** `settings.toml` carries the same
 //!   `app.pathJump` binding the React shell uses (`Mod+P` by default). `Mod`
 //!   is translated to Qt's `Ctrl` spelling; Qt maps `Ctrl` to Command on macOS.
@@ -17,7 +18,6 @@
 //! runs once, before the first frame. Writing recents and settings belongs to
 //! a later slice; this one must not change a user's profile just by opening it.
 
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use cxx_qt_lib::QString;
@@ -62,6 +62,7 @@ pub mod qobject {
 /// "it fell back to home".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartSource {
+    DeepLink,
     CommandLine,
     Recent,
     Home,
@@ -70,6 +71,7 @@ pub enum StartSource {
 impl StartSource {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::DeepLink => "deepLink",
             Self::CommandLine => "commandLine",
             Self::Recent => "recent",
             Self::Home => "home",
@@ -112,10 +114,19 @@ pub fn snapshot() -> Snapshot {
         .map(|item| PathBuf::from(&item.path))
         .find(|path| path.is_dir());
 
-    let launch_dir = std::env::args_os().nth(1).and_then(|arg| launch_dir(&arg));
+    let working_directory = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let launch_target = std::env::args_os()
+        .skip(1)
+        .find_map(|arg| crate::activation::target_for_arg(&arg, &working_directory));
     let home = home_dir();
-    let (start_path, source) = match (launch_dir, recent_dir, home) {
-        (Some(path), _, _) => (path, StartSource::CommandLine),
+    let (start_path, source) = match (launch_target, recent_dir, home) {
+        (Some(target), _, _) => (
+            target.path,
+            match target.source {
+                crate::activation::TargetSource::DeepLink => StartSource::DeepLink,
+                crate::activation::TargetSource::CommandLine => StartSource::CommandLine,
+            },
+        ),
         (_, Some(path), _) => (path, StartSource::Recent),
         (_, _, Some(path)) => (path, StartSource::Home),
         _ => (
@@ -132,19 +143,6 @@ pub fn snapshot() -> Snapshot {
         settings_found,
         path_jump,
     }
-}
-
-/// A launch target can be a folder (open it) or a file (open its folder).
-/// Anything else — a `dae://` URL, a Chromium-style flag — is not a start path.
-fn launch_dir(arg: &OsStr) -> Option<PathBuf> {
-    let path = PathBuf::from(arg);
-    if path.is_dir() {
-        return Some(path);
-    }
-    if path.is_file() {
-        return path.parent().map(Path::to_path_buf);
-    }
-    None
 }
 
 #[cfg(windows)]
@@ -318,22 +316,10 @@ mod tests {
     }
 
     #[test]
-    fn a_launch_argument_can_be_a_folder_or_a_file() {
-        static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-        let directory = std::env::temp_dir().join(format!(
-            "dae-qt-launch-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&directory).expect("create temp directory");
-        let file = directory.join("note.txt");
-        std::fs::write(&file, b"x").expect("write temp file");
-
-        assert_eq!(launch_dir(directory.as_os_str()), Some(directory.clone()));
-        assert_eq!(launch_dir(file.as_os_str()), Some(directory.clone()));
-        assert_eq!(launch_dir(OsStr::new("dae://open?path=K:/code")), None);
-        assert_eq!(launch_dir(OsStr::new("--some-flag")), None);
-
-        let _ = std::fs::remove_dir_all(&directory);
+    fn start_sources_map_to_status_labels() {
+        assert_eq!(StartSource::DeepLink.as_str(), "deepLink");
+        assert_eq!(StartSource::CommandLine.as_str(), "commandLine");
+        assert_eq!(StartSource::Recent.as_str(), "recent");
+        assert_eq!(StartSource::Home.as_str(), "home");
     }
 }

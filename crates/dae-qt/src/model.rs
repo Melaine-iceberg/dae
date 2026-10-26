@@ -64,6 +64,10 @@ pub mod qobject {
         #[qproperty(bool, finished)]
         #[qproperty(QString, status)]
         #[qproperty(QString, path)]
+        /// True when this model was loaded through a network backend. The
+        /// shell reads it to keep local-only actions off `smb://`, `sftp://`
+        /// and `cloud://` paths instead of letting them fail on click.
+        #[qproperty(bool, remote)]
         type DirectoryListModel = super::DirectoryListModelRust;
 
         #[cxx_override]
@@ -195,7 +199,7 @@ pub struct DirectoryListModelRust {
     generation: u64,
     /// Rows came from a network backend. Their `name` is the only part that
     /// carries a file extension, so the icon URL is built from it rather than
-    /// from the full path.
+    /// from the full path. Exposed to QML so local-only actions can be gated.
     remote: bool,
 }
 
@@ -228,6 +232,13 @@ impl qobject::DirectoryListModel {
             ROLE_HIDDEN => QVariant::from(&row.hidden),
             ROLE_READ_ONLY => QVariant::from(&row.read_only),
             ROLE_ICON => {
+                // The desktop icon lookup cannot answer for a remote
+                // directory (a bare name is not a local path), so leave the
+                // URL empty and let the delegate paint its fallback square
+                // instead of asking the provider for an icon it cannot make.
+                if self.remote && row.kind == EntryKind::Directory {
+                    return QVariant::from(&QString::default());
+                }
                 let path = if self.remote {
                     row.name.clone()
                 } else {
@@ -281,10 +292,10 @@ impl qobject::DirectoryListModel {
                 rust.generation = generation;
                 rust.rows.clear();
                 rust.base.clear();
-                rust.remote = remote;
             }
             self.as_mut().end_reset_model();
         }
+        self.as_mut().set_remote(remote);
 
         self.as_mut().set_loaded(0);
         self.as_mut().set_finished(false);
@@ -394,10 +405,10 @@ impl qobject::DirectoryListModel {
                 rust.generation = generation;
                 rust.rows.clear();
                 rust.base.clear();
-                rust.remote = false;
             }
             self.as_mut().end_reset_model();
         }
+        self.as_mut().set_remote(false);
         self.as_mut().set_loaded(0);
         self.as_mut().set_status(QString::from("已关闭"));
         self.as_mut().set_finished(true);

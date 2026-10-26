@@ -15,6 +15,7 @@ use std::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use dae_core::fs::search;
+use dae_core::fs::vfs;
 use dae_core::types::{
     ContentSearchFile, EntryKind, SearchEntry, SearchResponse, display_name_from_path,
 };
@@ -253,8 +254,21 @@ impl qobject::SearchModel {
             SEARCH_READ_ONLY => QVariant::from(&row.read_only),
             SEARCH_ICON => {
                 let version = format!("{}-{}", row.modified_at.unwrap_or(0), row.size.unwrap_or(0));
+                // Network rows only carry a usable extension in their name;
+                // passing the full remote path to the OS icon lookup would
+                // never match anything. Directories have no fallback icon name
+                // that the provider can resolve, so they stay URL-less.
+                let remote = !vfs::is_local_path(&row.path);
+                if remote && row.kind == EntryKind::Directory {
+                    return QVariant::from(&QString::default());
+                }
+                let icon_path = if remote {
+                    row.name.as_str()
+                } else {
+                    row.path.as_str()
+                };
                 QVariant::from(&QString::from(
-                    crate::icons::source_for(&row.path, row.kind == EntryKind::Directory, &version)
+                    crate::icons::source_for(icon_path, row.kind == EntryKind::Directory, &version)
                         .as_str(),
                 ))
             }

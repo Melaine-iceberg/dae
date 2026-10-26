@@ -14,6 +14,7 @@ use std::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use dae_core::fs::media_meta;
+use dae_core::fs::vfs;
 use dae_core::fs::{preview, service};
 use dae_core::types::{EntryKind, FileProperties, display_name_from_path};
 
@@ -57,6 +58,10 @@ pub mod qobject {
         #[qproperty(QString, media_text, cxx_name = "mediaText")]
         #[qproperty(bool, loading)]
         #[qproperty(QString, error)]
+        /// True for `smb://`, `sftp://` and `cloud://` entries. Their text is
+        /// read through the VFS, but thumbnails and media tags are desktop
+        /// services that only know local paths.
+        #[qproperty(bool, remote)]
         type PreviewController = super::PreviewControllerRust;
 
         #[qinvokable]
@@ -79,9 +84,12 @@ pub fn register_image_providers(engine: *mut cxx_qt_lib::QQmlApplicationEngine) 
 }
 
 /// Whether the pane should give this file an image slot: formats Qt decodes
-/// itself, plus the ones the desktop can produce (PDF, video, HEIC).
+/// itself, plus the ones the desktop can produce (PDF, video, HEIC). Network
+/// entries have no desktop thumbnail provider, so they get none rather than a
+/// slot that only ever says "无法生成缩略图".
 fn has_thumbnail(path: &str) -> bool {
-    preview::is_thumbnail_path(path) || dae_core::fs::thumbnails::is_supported_path(path)
+    vfs::is_local_path(path)
+        && (preview::is_thumbnail_path(path) || dae_core::fs::thumbnails::is_supported_path(path))
 }
 
 #[derive(Default)]
@@ -100,6 +108,7 @@ pub struct PreviewControllerRust {
     media_text: QString,
     loading: bool,
     error: QString,
+    remote: bool,
     generation: u64,
 }
 
@@ -115,6 +124,7 @@ struct Snapshot {
     has_thumbnail: bool,
     thumbnail_revision: String,
     media_text: String,
+    remote: bool,
 }
 
 impl qobject::PreviewController {
@@ -137,6 +147,7 @@ impl qobject::PreviewController {
         self.as_mut().set_thumbnail_revision(QString::default());
         self.as_mut().set_media_text(QString::default());
         self.as_mut().set_error(QString::default());
+        self.as_mut().set_remote(!vfs::is_local_path(&path));
         self.as_mut().set_loading(true);
 
         let thread = self.as_mut().qt_thread();
@@ -165,6 +176,7 @@ impl qobject::PreviewController {
         self.as_mut().set_media_text(QString::default());
         self.as_mut().set_loading(false);
         self.as_mut().set_error(QString::default());
+        self.as_mut().set_remote(false);
     }
 
     fn apply(
@@ -198,6 +210,7 @@ impl qobject::PreviewController {
                     .set_thumbnail_revision(QString::from(snapshot.thumbnail_revision.as_str()));
                 self.as_mut()
                     .set_media_text(QString::from(snapshot.media_text.as_str()));
+                self.as_mut().set_remote(snapshot.remote);
                 self.as_mut().set_error(QString::default());
             }
             Err(message) => {
@@ -219,14 +232,19 @@ async fn load_snapshot(path: &str) -> Result<Snapshot, String> {
     let (text, media) = if is_directory {
         (None, None)
     } else {
-        let text = if preview::is_text_preview_path(path) {
+        // Cloud paths end in opaque provider ids, so extension checks belong
+        // on the resolved name rather than on the path text.
+        let name = properties.name.as_str();
+        let text = if preview::is_text_preview_path(name) {
             preview::read_text_preview(path.to_owned(), PREVIEW_READ_BYTES)
                 .await
                 .ok()
         } else {
             None
         };
-        let media = if is_media_path(path) {
+        // Media tags come from the platform's metadata readers, which only
+        // open local files. A remote clip still gets its name and size.
+        let media = if is_media_path(name) && vfs::is_local_path(path) {
             media_meta::read_media_preview(path.to_owned()).await.ok()
         } else {
             None
@@ -268,6 +286,7 @@ fn snapshot_from(
             properties.size.unwrap_or(0)
         ),
         media_text: media.map(media_lines).unwrap_or_default(),
+        remote: !vfs::is_local_path(&properties.path),
     }
 }
 
@@ -356,5 +375,14 @@ mod tests {
         assert!(has_thumbnail("C:/tree/report.pdf"));
         assert!(has_thumbnail("C:/tree/clip.mp4"));
         assert!(!has_thumbnail("C:/tree/main.rs"));
+    }
+
+    #[test]
+    fn network_entries_have_no_desktop_thumbnail() {
+        assert!(!has_thumbnail("smb://nas/media/photo.jpg"));
+        assert!(!has_thumbnail("sftp://nas/home/clip.mp4"));
+        assert!(!has_thumbnail(
+            "cloud://google_drive:me@example.com/photo.jpg"
+        ));
     }
 }

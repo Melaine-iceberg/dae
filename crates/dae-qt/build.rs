@@ -13,8 +13,11 @@ fn main() {
 
     let mut builder = CxxQtBuilder::new_qml_module(QmlModule::new("dae"))
         .qt_module("Quick")
+        .qt_module("Network")
         .include_dir("cpp")
         .cpp_files([
+            "cpp/activation.cpp",
+            "cpp/activation.h",
             "cpp/image_provider.cpp",
             "cpp/image_provider.h",
             "cpp/qml_debug.cpp",
@@ -22,6 +25,7 @@ fn main() {
             "cpp/terminal_item.h",
         ])
         .files([
+            "src/activation.rs",
             "src/config.rs",
             "src/icons.rs",
             "src/ime.rs",

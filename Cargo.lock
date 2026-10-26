@@ -1057,8 +1057,10 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "dae-core",
+ "percent-encoding",
  "tokio",
  "toml",
+ "url",
  "windows",
 ]
 

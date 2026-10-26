@@ -5,9 +5,12 @@
 //! image thumbnail. Image decoding itself stays in the shell that draws it.
 
 use super::error::FileSystemError;
+use super::types::EntryKind;
+use super::vfs;
 use serde::Serialize;
 use specta::Type;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -163,26 +166,35 @@ const THUMBNAIL_EXTENSIONS: &[&str] = &[
 ///
 /// Lossy decoding is deliberate: a multi-byte character cut by the byte limit
 /// should not fail the whole preview. The limit is clamped so a caller cannot
-/// ask for an unbounded read.
+/// ask for an unbounded read. Local files keep the symlink-following
+/// `fs::metadata` size check; network files get the same bounded read through
+/// their VFS backend, so a preview never downloads a file just to show its
+/// first page.
 pub async fn read_text_preview(
     path: String,
     max_bytes: u32,
 ) -> Result<TextPreview, FileSystemError> {
     tokio::task::spawn_blocking(move || {
-        let metadata = fs::metadata(&path).map_err(FileSystemError::from)?;
-        if !metadata.is_file() {
+        let limit = max_bytes.clamp(1, 256 * 1024) as u64;
+        let backend = vfs::resolve(&path)?;
+
+        let (file_size, is_directory) = if vfs::is_local_path(&path) {
+            let metadata = fs::metadata(&path).map_err(FileSystemError::from)?;
+            (metadata.len(), metadata.is_dir())
+        } else {
+            let stat = backend.stat(&path)?;
+            (stat.size, stat.kind == EntryKind::Directory)
+        };
+        if is_directory {
             return Err(FileSystemError::InvalidInput(path));
         }
 
-        let limit = max_bytes.clamp(1, 256 * 1024) as usize;
-        let file_size = metadata.len();
-        let truncated = file_size > limit as u64;
-        let bytes_to_read = file_size.min(limit as u64) as usize;
-
-        let mut buffer = vec![0u8; bytes_to_read];
-        let mut file = fs::File::open(&path).map_err(FileSystemError::from)?;
-        use std::io::Read;
-        file.read_exact(&mut buffer)
+        let truncated = file_size > limit;
+        let mut buffer = Vec::new();
+        backend
+            .open_read(&path)?
+            .take(limit)
+            .read_to_end(&mut buffer)
             .map_err(FileSystemError::from)?;
 
         Ok(TextPreview {

@@ -19,6 +19,7 @@ Item {
     signal trashRequested()
     signal addRequested(string kind)
     signal contextRequested(string kind, string path, real x, real y)
+    signal remoteOpenRequested(string path)
 
     readonly property color panelColor: material === "none"
         ? (dark ? "#121418" : "#eef1f5")
@@ -291,10 +292,14 @@ Item {
                         root.addRequested("cloud")
                         return
                     }
-                    if (row.kind === "recent" && !row.isDir)
-                        Workspace.openPath(row.path)
-                    else
+                    if (row.kind === "recent" && !row.isDir) {
+                        if (/^(smb|sftp|ftp|webdav|webdavs|cloud):\/\//i.test(row.path))
+                            root.remoteOpenRequested(row.path)
+                        else
+                            Workspace.openPath(row.path)
+                    } else {
                         root.navigateRequested(row.path)
+                    }
                 }
             }
         }

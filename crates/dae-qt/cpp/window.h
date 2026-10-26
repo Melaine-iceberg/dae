@@ -490,7 +490,19 @@ inline bool dae_qt_focus_window(const QString& token)
     QQuickWindow* window = find_window_by_token(token);
     if (!window)
         return false;
+
+    if (!window->isVisible())
+        window->show();
+
+    const auto hwnd = reinterpret_cast<HWND>(window->winId());
+    // SW_RESTORE also brings back the placement a minimized window had before
+    // (maximized often), where showNormal() would always shrink it.
+    if (hwnd && IsIconic(hwnd))
+        ShowWindow(hwnd, SW_RESTORE);
+    window->raise();
     window->requestActivate();
+    if (hwnd)
+        SetForegroundWindow(hwnd);
     return true;
 }
 

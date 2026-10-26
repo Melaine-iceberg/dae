@@ -20,6 +20,13 @@ fn main() {
 
     let mut application = QGuiApplication::new();
 
+    // A later launch must not create a second shell. The owner receives the
+    // command line over a local socket; this process exits before the engine or
+    // any window exists. Claiming also registers `dae://` for this user.
+    if !dae_qt::activation::claim() {
+        return;
+    }
+
     // The alpha buffer is chosen before the engine creates the first window;
     // DwmEnableBlurBehindWindow then composites the backdrop behind it.
     dae_qt::init();

@@ -53,6 +53,9 @@ pub(crate) fn friendly_error(message: &str) -> String {
     if message.starts_with("fs.open_with_local_only") {
         return "只有本地项目可以选择打开方式".to_owned();
     }
+    if message.contains("No cloud account is connected for:") {
+        return "尚未连接这个云盘账户，请先在侧边栏添加网盘账户并完成授权".to_owned();
+    }
     if message.starts_with("fs.trash_entries_missing") {
         return "所选项目已不在回收站".to_owned();
     }
@@ -98,6 +101,12 @@ mod tests {
         assert_eq!(
             friendly_error("The file system operation failed: The server has no SFTP subsystem"),
             "服务器未启用 SFTP 子系统"
+        );
+        assert_eq!(
+            friendly_error(
+                "The requested path was not found: No cloud account is connected for: cloud://google_drive:me@example.com"
+            ),
+            "尚未连接这个云盘账户，请先在侧边栏添加网盘账户并完成授权"
         );
         assert_eq!(
             friendly_error("The directory operation could not complete: disk full"),
