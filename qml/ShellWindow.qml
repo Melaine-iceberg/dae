@@ -612,13 +612,11 @@ Window {
                 TextInput {
                     id: pathInput
 
-                    property string draftPath: ""
-
                     anchors.fill: parent
                     anchors.leftMargin: 8
                     anchors.rightMargin: 8
                     verticalAlignment: TextInput.AlignVCenter
-                    text: activeFocus ? draftPath : root.activePath
+                    text: ""
                     color: root.textColor
                     selectionColor: root.accent
                     selectedTextColor: "#ffffff"
@@ -626,15 +624,18 @@ Window {
                     selectByMouse: true
                     clip: true
 
+                    // TextInput assigns to `text` while the user edits, which
+                    // permanently drops any binding on it. Keep the display in
+                    // sync explicitly instead: reset on focus loss and
+                    // whenever the tab navigates.
                     onActiveFocusChanged: {
+                        text = root.activePath
                         if (activeFocus)
-                            draftPath = root.activePath
+                            selectAll()
                     }
 
-                    onTextEdited: draftPath = text
-
                     onAccepted: {
-                        let target = draftPath.trim()
+                        let target = text.trim()
                         if (target.length >= 2
                                 && target.charAt(0) === '"'
                                 && target.charAt(target.length - 1) === '"')
@@ -963,6 +964,7 @@ Window {
         if (root.activePath !== "")
             Workspace.recordRecent(root.activePath, true, false)
 
+        pathInput.text = root.activePath
         root.visible = true
     }
 
@@ -974,5 +976,14 @@ Window {
     onClosing: {
         root.disposeTabs()
         Qt.callLater(root.destroy)
+    }
+
+    Connections {
+        target: root
+
+        function onActivePathChanged() {
+            if (!pathInput.activeFocus)
+                pathInput.text = root.activePath
+        }
     }
 }

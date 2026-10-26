@@ -319,6 +319,14 @@ Item {
         spacing: 0
         currentIndex: -1
 
+        /// A tap anywhere in the viewport — including the empty space below
+        /// the last row — moves keyboard focus here, so an input that lost
+        /// its composition (the path bar) also loses focus.
+        TapHandler {
+            acceptedButtons: Qt.LeftButton
+            onTapped: root.takeFocus()
+        }
+
         Keys.onPressed: function (event) {
             if (root.handleKey(event))
                 event.accepted = true
