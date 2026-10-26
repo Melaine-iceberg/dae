@@ -11,12 +11,13 @@ fn main() {
         println!("cargo:rustc-link-lib=imm32");
     }
 
-    CxxQtBuilder::new_qml_module(QmlModule::new("dae"))
+    let mut builder = CxxQtBuilder::new_qml_module(QmlModule::new("dae"))
         .qt_module("Quick")
         .include_dir("cpp")
         .cpp_files([
             "cpp/image_provider.cpp",
             "cpp/image_provider.h",
+            "cpp/qml_debug.cpp",
             "cpp/terminal_item.cpp",
             "cpp/terminal_item.h",
         ])
@@ -32,6 +33,18 @@ fn main() {
             "src/trash_model.rs",
             "src/window.rs",
             "src/workspace.rs",
-        ])
-        .build();
+        ]);
+
+    if std::env::var("PROFILE").as_deref() == Ok("debug") {
+        // SAFETY: the only change is one compile definition. QT_QML_DEBUG
+        // opens a debug service that can load arbitrary QML, so it stays out
+        // of release builds.
+        unsafe {
+            builder = builder.cc_builder(|cc| {
+                cc.define("QT_QML_DEBUG", None);
+            });
+        }
+    }
+
+    builder.build();
 }

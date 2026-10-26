@@ -112,8 +112,11 @@ pub async fn compress_entries(
     emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Compress);
 
     tokio::task::spawn_blocking(move || {
-        let progress =
-            FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Compress);
+        let progress = FileOperationProgressReporter::new(
+            std::sync::Arc::clone(&host),
+            operation_id,
+            FileOperationKind::Compress,
+        );
         compress_sync(
             sources,
             &destination_dir,
@@ -137,8 +140,11 @@ pub async fn extract_archive(
     emit_preparing(host.as_ref(), &operation_id, FileOperationKind::Extract);
 
     tokio::task::spawn_blocking(move || {
-        let progress =
-            FileOperationProgressReporter::new(std::sync::Arc::clone(&host), operation_id, FileOperationKind::Extract);
+        let progress = FileOperationProgressReporter::new(
+            std::sync::Arc::clone(&host),
+            operation_id,
+            FileOperationKind::Extract,
+        );
         extract_sync(
             &archive_path,
             destination_dir.as_deref(),

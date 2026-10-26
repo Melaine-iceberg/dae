@@ -212,7 +212,7 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
 - spike 的 `run*.sh` 已删，`results/` 与 README 的实测记录保留；产品代码
   不含脚本化栅门、合成滚动负载或假目录。
 
-构建需要 Qt 6.12 的 `qmake`：`QMAKE="C:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"`，
+构建需要 Qt 6.12 的 `qmake`：`QMAKE="K:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"`，
 并把 Qt 的 `bin/` 放进 `PATH`，然后 `cargo run -p dae-app`。原生那半目前是
 Windows-first（Win32 / DWM / IMM32）；Linux 与 macOS 的 chrome/输入后端各自
 另立门槛，不拿未实测的移植冒充产品代码。
@@ -245,8 +245,8 @@ Mica 后 read-back 为 **2**。无边框窗口、原生 move/size loop、`HTMAXB
 **独立 exe 的构建与部署**（Windows-first）：
 
 ```powershell
-$env:QMAKE = "C:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"
-$env:PATH  = "C:/Qt/6.12.0/msvc2022_64/bin;$env:PATH"
+$env:QMAKE = "K:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"
+$env:PATH  = "K:/Qt/6.12.0/msvc2022_64/bin;$env:PATH"
 cargo build --release -p dae-app
 New-Item -ItemType Directory -Force dist/qt
 Copy-Item target/release/dae.exe dist/qt/
@@ -669,7 +669,25 @@ rust: number -> 2
 `#[qinvokable]`」这一整条链。**`qml/` 这一层写 QML、`crates/dae-qt` 这一层写
 Rust 对象的分工，从这一刻起是有实测支撑的，不再是纸面方案。**
 
-### 8.5 因此仍未解决的一件事
+### 8.5 工具链统一到官方安装器（2026-10-26）
+
+§8.1 的 aqt 安装记录保留为踩坑历史；当前工具链以本节为准。Qt 现在由官方
+Qt Online Installer 装在 `K:/Qt`：
+
+- 组件：`qtbase qtdeclarative qtsvg qttools qttranslations qtshadertools
+  qtimageformats`，另加 **Agentic Development Tools → QML Live Preview for
+  AI Agents**（提供 `bin/QmlPreviewMcpServer.exe`）。
+- 安装器同时带 `K:/Qt/Tools/{CMake_64,Ninja,QtCreator}`，不再依赖单独的
+  CMake/Ninja 安装。
+- 构建仍用 `QMAKE="K:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"` 并把该 `bin/`
+  放进 `PATH`；`dae-app` 已在新 Qt 上完成 debug 构建并冒烟启动。
+- `QmlPreviewMcpServer.exe` 已注册到 Qoder（用户级 `qmlpreview`），工具名为
+  `run_qmlPreview`。
+- 实时预览需要 `QT_QML_DEBUG`。`crates/dae-qt/build.rs` **只在 debug
+  profile** 定义它，`cpp/qml_debug.cpp` 包含 `<QtQml/qqmldebug.h>` 以装入
+  `QQmlDebuggingEnabler`；release 构建不定义，调试服务不会随包发布。
+
+### 8.6 因此仍未解决的一件事
 
 1. **PGO / BOLT 的 C++ 那一半** —— 见 §6，仍未动。
 

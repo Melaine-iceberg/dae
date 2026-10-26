@@ -22,7 +22,10 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/Toast.qml", "qml/Toast.qml"),
     ("../../qml/TrashView.qml", "qml/TrashView.qml"),
     ("../../qml/ConfirmDialog.qml", "qml/ConfirmDialog.qml"),
-    ("../../qml/ArchivePasswordDialog.qml", "qml/ArchivePasswordDialog.qml"),
+    (
+        "../../qml/ArchivePasswordDialog.qml",
+        "qml/ArchivePasswordDialog.qml",
+    ),
     ("../../qml/TearOffWindow.qml", "qml/TearOffWindow.qml"),
     ("../../qml/Shell.js", "qml/Shell.js"),
 ];
