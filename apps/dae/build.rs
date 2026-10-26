@@ -18,6 +18,7 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/Sidebar.qml", "qml/Sidebar.qml"),
     ("../../qml/ContextMenu.qml", "qml/ContextMenu.qml"),
     ("../../qml/NamePrompt.qml", "qml/NamePrompt.qml"),
+    ("../../qml/OpenWithDialog.qml", "qml/OpenWithDialog.qml"),
     ("../../qml/SettingsPanel.qml", "qml/SettingsPanel.qml"),
     ("../../qml/ConnectDialog.qml", "qml/ConnectDialog.qml"),
     (
@@ -25,6 +26,7 @@ const QML_FILES: &[(&str, &str)] = &[
         "qml/CloudAccountDialog.qml",
     ),
     ("../../qml/Toast.qml", "qml/Toast.qml"),
+    ("../../qml/UpdateDialog.qml", "qml/UpdateDialog.qml"),
     ("../../qml/TrashView.qml", "qml/TrashView.qml"),
     ("../../qml/ConfirmDialog.qml", "qml/ConfirmDialog.qml"),
     (

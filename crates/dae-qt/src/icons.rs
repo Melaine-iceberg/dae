@@ -49,6 +49,11 @@ pub mod qobject {
         /// The OS icon shared by every file with `extension`.
         fn dae_qt_render_type_icon(extension: &str, size: i32) -> Vec<u8>;
 
+        /// A launcher's icon name, as found in a `.desktop` entry. Linux only;
+        /// the other shells key icons on a file, so this answers empty and the
+        /// open-with row keeps its fallback glyph.
+        fn dae_qt_render_named_icon(names: &str, size: i32) -> Vec<u8>;
+
         /// A desktop-produced thumbnail (PDF page, video frame, HEIC photo).
         /// The image provider's own cache version-tags these, so they are not
         /// kept a second time here.
@@ -100,6 +105,15 @@ fn dae_qt_render_type_icon(extension: &str, size: i32) -> Vec<u8> {
     let key = format!("type|{extension}|{size}");
     cached(&key, || {
         dae_core::fs::icons::extract_type(&extension, size).map(|icon| icon.bytes)
+    })
+    .unwrap_or_default()
+}
+
+fn dae_qt_render_named_icon(names: &str, size: i32) -> Vec<u8> {
+    let size = clamp_edge(size);
+    let key = format!("name|{names}|{size}");
+    cached(&key, || {
+        dae_core::fs::icons::named(names, size).map(|icon| icon.bytes)
     })
     .unwrap_or_default()
 }

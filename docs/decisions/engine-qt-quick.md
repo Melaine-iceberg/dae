@@ -344,7 +344,8 @@ release 用 `windows_subsystem = "windows"`，没有控制台窗口；`dae.exe` 
   `ConfirmDialog`。
 - 打开：默认程序（`ShellExecuteW` / `open` / `xdg-open`）、文件管理器定位
   （Explorer `/select,` / `open -R` / `xdg-open` 父目录）、系统终端、系统
-  “打开方式”对话框（Windows `SHOpenWithDialog`）。
+  “打开方式”对话框（Windows `SHOpenWithDialog`；macOS/Linux 走 §4.10 的自绘
+  选择器）。
 - 设置：终端字号/行高/字体族保存后立即应用到所有已挂载的 `TerminalItem`。
 - 系统外观：强调色（`HKCU\...\DWM` 的 `AccentColor` ABGR 与
   `ColorizationColor` ARGB）和明暗偏好（`...\Themes\Personalize` 的
@@ -386,12 +387,16 @@ F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
 - **压缩包**：`qml/ArchivePasswordDialog.qml` +
   `Workspace.compressEntries` / `extractArchive`，加密包走同一套密码重试。
 - **回收站**：§4.6 的 `TrashView.qml` 与三个回收站命令。
+- **打开方式选择器**：`qml/OpenWithDialog.qml` + `OpenWithModel`；macOS/Linux
+  自绘，Windows 仍用原生对话框（详见 §4.10）。
+- **自动更新**：`dae_core::update` + `Updater` 单例 + `qml/UpdateDialog.qml`
+  （详见 §4.10）。
 
-**仍然没铺的**（core 已有实现，缺 Qt 视图/命令包装，或只在旧壳里）：打开方式
-选择器（macOS/Linux）、默认文件管理器注册、自动更新。它们按依赖排在下一刀，
-不会改变上面这层的接口。文件图标与系统缩略图已在 §4.7 落地（Linux 的
-`.thumbnailer` 除外），网络存储/云盘连接管理已在 §4.8 落地，`dae://` 深链与
-单实例已在 §4.9 落地。
+**仍然没铺的**（core 已有实现，缺 Qt 视图/命令包装，或只在旧壳里）：默认文件
+管理器注册（Windows 由原生打开方式对话框承担，Linux/macOS 未做）。文件图标与
+系统缩略图已在 §4.7 落地（Linux 的 `.thumbnailer` 除外），网络存储/云盘连接
+管理已在 §4.8 落地，`dae://` 深链与单实例已在 §4.9 落地，打开方式选择器与
+自动更新已在 §4.10 落地。
 
 ### 4.7 文件图标与系统缩略图（2026-10-26）
 
@@ -542,10 +547,99 @@ build 26340 上它对任何扩展名都返回 `E_FAIL`（实测 json/txt/rs/exe/
 `dae-qt` **58 通过**（新增三种 URL 拼法、相对 cwd、文件→父目录、`+` 不解码、
 去重、注册命令引号与启动来源标签）。
 
-**已知边界**：协议注册目前是 Windows 的 HKCU 路径；Linux 的 `.desktop` /
-macOS 的 `CFBundleURLTypes` 随对应平台的打包一起做。深链只接受已存在的本地
-目录，远程 `smb://` / `cloud://` 目标不通过 URL 进入。单实例按用户隔离，没有
+**已知边界**：协议注册在运行期由 Windows 的 HKCU 路径完成；macOS 的
+`CFBundleURLTypes`（`dae://`）与 Linux 的 `.desktop`
+`x-scheme-handler/dae` 由 §4.10 的发布包携带。深链只接受已存在的本地目录，
+远程 `smb://` / `cloud://` 目标不通过 URL 进入。单实例按用户隔离，没有
 「强制新实例」开关。
+
+### 4.10 打开方式选择器与自动更新（2026-10-26）
+
+**打开方式：Windows 继续用系统对话框，macOS/Linux 用自绘选择器。**
+`Workspace.openWithPickerSupported` 按目标平台取 `false` / `true`；右键
+「打开方式」在 Windows 仍调用 `Workspace.openWith()`（`SHOpenWithDialog`
+同时提供“始终使用”关联），其余平台打开 `qml/OpenWithDialog.qml`。数据由
+`crates/dae-qt/src/open_with_model.rs` 提供：`list_open_with_apps()` 的
+`default` / `recommended` / `other` 三组被压成带 section header 的扁平
+`QAbstractListModel`，过滤按应用名做大小写不敏感包含匹配，组内没有命中时连
+header 一起消失；默认应用同时出现在“推荐”组并带 `isDefault` 徽标，条目总数
+超过 8 个才显示过滤框。确认后调用
+`Workspace.openWithApp(path, appId, setDefault)`，由 core 的 `open_with_app`
+写关联或直接启动；错误经 `errors.rs` 映射成「这个项目已经不存在」/
+「当前系统不支持选择打开方式」。
+
+图标复用已有的 `image://fileicon/` provider，只新增 `name/<icon>` 分支：
+Linux 的 `icon_name` 可能是冒号分隔的候选集，原样交给
+`dae_core::fs::icons::named` 依次尝试；macOS 没有图标名，委托用应用名首字母
+占位。键盘上下选择、Enter 确认、Esc 取消、双击直接打开，都与其它对话框一致。
+
+**自动更新用独立 feed，不碰 Tauri 的 `latest.json`。** 地址是
+`https://github.com/Melaine-iceberg/dae/releases/latest/download/latest-qt.json`，
+格式与 Tauri 同形：
+
+```json
+{
+  "version": "0.6.0",
+  "notes": "…",
+  "pub_date": "2026-10-26T00:00:00Z",
+  "platforms": {
+    "windows-x86_64": { "url": "dae-0.6.0-windows-x86_64.zip", "signature": "…" }
+  }
+}
+```
+
+平台键为 `windows-x86_64` / `windows-aarch64` / `darwin-x86_64` /
+`darwin-aarch64` / `linux-x86_64` / `linux-aarch64`。更新包是普通 zip：
+Windows/Linux 的根目录内容镜像安装目录（必须含 `platforms/`），macOS 的 zip
+内放一个 `dae.app`。签名沿用发布用的 minisign 公钥（常量
+`UPDATE_PUBLIC_KEY` 在 `dae-core/src/update/mod.rs`）；下载后先验签、再解压，
+zip 拒绝绝对路径与 `..`，Unix symlink 拒绝绝对目标和越界 `..`。
+
+**安装由 detached 脚本完成。** 应用进程不覆盖正在映射的 Qt DLL / `.so` /
+exe。`InstallLayout` 从 `current_exe()` 反推安装位置：Windows/Linux 要求 exe
+同目录有 `platforms/`（所以 `target/debug` 不会自更新），macOS 要求 exe 位于
+`dae.app/Contents/MacOS`。新包先解到同卷的 `.dae-update-<pid>-<nanos>` staging，
+确认包内确有将被启动的可执行文件，然后启动脚本：
+
+- Windows：`powershell -File` + `Wait-Process`，复制 staging → 安装目录，
+  `Start-Process` 重启；失败写 `%TEMP%\dae-update.log`。
+- Linux：`/bin/sh` 轮询 `kill -0` 等进程退出，`cp -R -p` 覆盖后重启；日志
+  `$TMPDIR/dae-update.log`。
+- macOS：旧 `.app` 改名 → 移入新 bundle → 失败回滚 → `open -n`。
+
+路径全部以 argv 传给脚本，不做字符串插值，空格与引号由 OS 处理。
+
+**UI。** `crates/dae-qt/src/updater.rs` 注册成 QML 单例 `Updater`
+（`supported` / `checking` / `checked` / `available` / `latestVersion` /
+`notes` / `downloading` / `installProgress` / `restarting` / `error`）。第一个
+窗口在 4 s 后静默检查一次，失败只写 stderr；发现新版本时 toast 提示。状态栏
+的「检查更新 / 更新可用 / 更新中… / 重启中…」按钮打开
+`qml/UpdateDialog.qml`，显示当前版本、release notes、下载进度与安装提示。
+安装脚本启动成功后 `Updater.restartRequested` 让第一个窗口 `Qt.quit()`，
+脚本随即替换文件并重启。
+
+**测试开关。** debug 构建默认不启用更新（`cfg!(not(debug_assertions))`），且
+部署目录旁边必须有 `platforms/`；`DAE_UPDATE_DEV=1` 放开前者，
+`DAE_UPDATE_ENDPOINT` 替换 feed 地址（例如本地 HTTP 服务器），用于不重新
+打包就走通检查与下载。
+
+**验证（2026-10-26，Windows 本机 debug 构建）**：`dae-core` 236 通过、
+`dae-qt` 68 通过；新增覆盖 feed 选版（含“已是最新时忽略缺失平台”）、缺平台、
+可选字段、minisign 样例、zip 路径穿越拒绝、staging 唯一性与脚本参数化。
+debug 构建启动 10 s 无 QML 加载错误。Windows 的“打开方式”仍由系统对话框
+承担；自绘选择器的 macOS/Linux 渲染与关联写入未在本机实测。
+
+**发布流水线（2026-10-26 已闭环）**：`.github/workflows/release.yml` 新增
+`qt` 矩阵，分别用 `windeployqt`、linuxdeploy + Qt 插件、`macdeployqt` 部署
+Qt 运行库，按上面的布局生成 `dae-<version>-<platform>.zip`。zip 用发布私钥
+（`TAURI_SIGNING_PRIVATE_KEY`）经 `tauri signer sign` 签名；`qt-feed` 作业
+合并各平台 artifact，运行 `scripts/qt-update-feed.mjs` 校验 zip 布局与签名
+后写出 `latest-qt.json`，最后先上传 zip、再上传 feed，全部追加到 Tauri 作业
+创建的 draft release。feed 的 `signature` 直接内嵌 Tauri 生成的 base64
+`.sig`；`dae-core` 的验签同时接受 base64 与明文 minisign。macOS 的
+`CFBundleURLTypes` 与 Linux 的 `x-scheme-handler/dae` 随打包模板一起输出。
+发布仍由人工点击 publish；release 公开后
+`releases/latest/download/latest-qt.json` 即成为正式版的更新源。
 
 ## 5. 定案前必须量出来的四组数字
 

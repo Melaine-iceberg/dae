@@ -65,6 +65,18 @@ jobs:
             echo "::error::package.json declares v$pkg but tauri.conf.json declares v$version."
             exit 1
           fi
+          # The Qt shell compares the feed against its own CARGO_PKG_VERSION
+          # (read inside dae-qt), and the zip name is built from package.json.
+          # A crate that lags behind would make every launch offer the update
+          # it just installed, so keep the whole workspace on the release tag.
+          for crate in apps/dae crates/dae-qt crates/dae-core; do
+            crate_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$crate/Cargo.toml" | head -n 1)
+            if [ "$crate_version" != "$version" ]; then
+              echo "::error::$crate/Cargo.toml declares v$crate_version but the tag is ${GITHUB_REF_NAME}."
+              echo "::error::Bump apps/dae, crates/dae-qt and crates/dae-core to v$version, then re-tag."
+              exit 1
+            fi
+          done
 
       - name: Install Linux system dependencies
         if: matrix.platform == 'ubuntu-26.04'
@@ -214,3 +226,395 @@ jobs:
         with:
           files: "*.msix"
           draft: true
+
+  # ---------------------------------------------------------------------------
+  # Qt shell update artifacts.
+  #
+  # These jobs are deliberately separate from the Tauri matrix: the Qt shell
+  # ships a portable directory (Windows/Linux) or a .app (macOS), not an MSI,
+  # NSIS installer or DMG. They also run without PGO/BOLT so a packaging
+  # problem cannot hide behind the Tauri optimiser.
+  #
+  # The archives are signed with the same Tauri updater private key, and the
+  # feed is published as `latest-qt.json` on the same (draft) release. Once the
+  # release is published, `releases/latest/download/latest-qt.json` is the URL
+  # baked into dae-core (`DEFAULT_FEED_URL`).
+  # ---------------------------------------------------------------------------
+  qt:
+    name: Qt shell (${{ matrix.platform_key }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            platform_key: windows-x86_64
+            qt_arch: win64_msvc2022_64
+            target: ""
+            binary: target/release/dae.exe
+          - platform: ubuntu-26.04
+            platform_key: linux-x86_64
+            qt_arch: linux_gcc_64
+            target: ""
+            binary: target/release/dae
+          # Matches the Tauri leg above: Apple Silicon only.
+          - platform: macos-latest
+            platform_key: darwin-aarch64
+            qt_arch: clang_64
+            target: aarch64-apple-darwin
+            binary: target/aarch64-apple-darwin/release/dae
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Qt's Linux binaries need both the runtime XCB/Wayland packages and the
+      # development headers used by cxx-qt. `patchelf` is for the portable
+      # layout below, and zip/unzip are only for packaging checks.
+      - name: Install Linux Qt build dependencies
+        if: matrix.platform == 'ubuntu-26.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl wget file pkg-config cmake ninja-build \
+            libgl1-mesa-dev libglu1-mesa-dev libegl1-mesa-dev \
+            libx11-xcb-dev libxrender-dev libxext-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb1-dev libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-sync1 \
+            libxcb-util1 libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1 \
+            libgtk-3-dev libgdk-pixbuf-2.0-dev librsvg2-dev \
+            libdbus-1-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
+            libsecret-1-dev patchelf zip unzip
+
+      # The same Qt minor as the local development instructions. cxx-qt picks
+      # qmake up from PATH; QT_ROOT_DIR is used by the deployment steps.
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.12.0"
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+          cache-key-prefix: qt-6.12-${{ matrix.platform_key }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: qt-${{ matrix.platform_key }}
+          cache-on-failure: true
+
+      - name: Install winapp CLI
+        if: matrix.platform == 'windows-latest'
+        uses: microsoft/setup-WinAppCli@v0.2
+
+      - name: Build Qt shell
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            cargo build --release --package dae-app --target ${{ matrix.target }}
+          else
+            cargo build --release --package dae-app
+          fi
+
+      # ---- Windows: windeployqt -> optional Authenticode -> root-level zip ----
+      - name: Deploy Qt runtime and package (Windows)
+        if: matrix.platform == 'windows-latest'
+        # PowerShell 7 is load-bearing: Windows PowerShell 5.1 writes backslash
+        # separators into the archive, which violates the zip layout §4.10 and
+        # the forward-slash checks below.
+        shell: pwsh
+        env:
+          # Optional real certificate, same secret the MSIX uses. The updater
+          # itself trusts minisign, not Authenticode; this only suppresses the
+          # unsigned-publisher prompt when a certificate is configured.
+          MSIX_CERTIFICATE: ${{ secrets.MSIX_CERTIFICATE }}
+          MSIX_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_CERTIFICATE_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = node -p "require('./package.json').version"
+          $staging = Join-Path $PWD 'dist\qt'
+          New-Item -ItemType Directory -Force $staging | Out-Null
+          Copy-Item '${{ matrix.binary }}' (Join-Path $staging 'dae.exe') -Force
+
+          & (Join-Path $env:QT_ROOT_DIR 'bin\windeployqt.exe') `
+            --release --no-translations --compiler-runtime --qmldir qml `
+            (Join-Path $staging 'dae.exe')
+          if ($LASTEXITCODE -ne 0) {
+            throw "windeployqt failed with exit code $LASTEXITCODE"
+          }
+
+          foreach ($required in @('dae.exe', 'platforms\qwindows.dll', 'qml\QtQuick')) {
+            if (-not (Test-Path (Join-Path $staging $required))) {
+              throw "windeployqt did not produce $required"
+            }
+          }
+
+          if ($env:MSIX_CERTIFICATE) {
+            [IO.File]::WriteAllBytes('release.pfx', [Convert]::FromBase64String($env:MSIX_CERTIFICATE))
+            winapp sign (Join-Path $staging 'dae.exe') release.pfx `
+              --password "$env:MSIX_CERTIFICATE_PASSWORD" `
+              --timestamp https://timestamp.digicert.com
+            if ($LASTEXITCODE -ne 0) {
+              throw "winapp sign failed with exit code $LASTEXITCODE"
+            }
+            Remove-Item release.pfx -Force -ErrorAction SilentlyContinue
+          }
+
+          $out = Join-Path $PWD 'dist\qt-release'
+          New-Item -ItemType Directory -Force $out | Out-Null
+          $zip = Join-Path $out "dae-$version-${{ matrix.platform_key }}.zip"
+          Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zip -CompressionLevel Optimal -Force
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $archive = [IO.Compression.ZipFile]::OpenRead($zip)
+          try {
+            $names = @($archive.Entries | ForEach-Object { $_.FullName })
+            foreach ($required in @('dae.exe', 'platforms/qwindows.dll', 'qml/QtQuick')) {
+              if (-not ($names | Where-Object { $_ -eq $required -or $_.StartsWith("$required/") })) {
+                throw "$zip is missing $required"
+              }
+            }
+          } finally {
+            $archive.Dispose()
+          }
+
+      # ---- Linux: linuxdeploy + Qt plugin -> portable root layout -> zip ----
+      - name: Deploy Qt runtime and package (Linux)
+        if: matrix.platform == 'ubuntu-26.04'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          staging="$PWD/dist/qt"
+          appdir="$PWD/dist/qt-appdir"
+          rm -rf "$staging" "$appdir"
+          mkdir -p "$appdir/usr/bin"
+          cp target/release/dae "$appdir/usr/bin/dae"
+          cp packaging/qt/dae.desktop "$appdir/dae.desktop"
+          cp src-tauri/icons/128x128.png "$appdir/dae.png"
+
+          tools="$PWD/dist/qt-tools"
+          mkdir -p "$tools"
+          wget -q --tries=3 --timeout=30 -O "$tools/linuxdeploy-x86_64.AppImage" \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          wget -q --tries=3 --timeout=30 -O "$tools/linuxdeploy-plugin-qt-x86_64.AppImage" \
+            https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
+          chmod +x "$tools/"*.AppImage
+
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          if [ -x "$QT_ROOT_DIR/bin/qmake6" ]; then
+            export QMAKE="$QT_ROOT_DIR/bin/qmake6"
+          else
+            export QMAKE="$QT_ROOT_DIR/bin/qmake"
+          fi
+          # QML is compiled into the binary; the scanner still needs the source
+          # tree to know which Qt Quick modules to deploy.
+          export QML_SOURCES_PATHS="$PWD/qml"
+
+          "$tools/linuxdeploy-x86_64.AppImage" \
+            --appdir "$appdir" \
+            --executable "$appdir/usr/bin/dae" \
+            --desktop-file "$appdir/dae.desktop" \
+            --icon-file "$appdir/dae.png" \
+            --plugin qt
+
+          test -f "$appdir/usr/plugins/platforms/libqxcb.so"
+          test -d "$appdir/usr/qml/QtQuick"
+
+          # Start from linuxdeploy's AppDir, then fold `usr/` into the
+          # install-directory shape §4.10 requires: executable at the root,
+          # Qt libraries beside it in lib/, and every plugin directory
+          # (including platforms/) at the root.
+          mkdir -p "$staging"
+          cp "$appdir/usr/bin/dae" "$staging/dae"
+          cp -a "$appdir/usr/lib" "$staging/lib"
+          for plugin in "$appdir"/usr/plugins/*; do
+            cp -a "$plugin" "$staging/"
+          done
+          cp -a "$appdir/usr/qml" "$staging/qml"
+          if [ -d "$appdir/usr/translations" ]; then
+            cp -a "$appdir/usr/translations" "$staging/translations"
+          fi
+          cp packaging/qt/dae.desktop "$staging/dae.desktop"
+          cp src-tauri/icons/128x128.png "$staging/dae.png"
+          cat > "$staging/qt.conf" <<'EOF'
+          [Paths]
+          Prefix = .
+          Libraries = lib
+          Plugins = .
+          Imports = qml
+          Qml2Imports = qml
+          Translations = translations
+          EOF
+
+          chmod +x "$staging/dae"
+          patchelf --set-rpath '$ORIGIN/lib' "$staging/dae"
+          find "$staging/lib" -maxdepth 1 -type f -name '*.so*' \
+            -exec patchelf --set-rpath '$ORIGIN' {} +
+          # Plugin directories moved from usr/plugins/<name> to <name>.
+          for plugin_dir in "$staging"/*/; do
+            case "$(basename "$plugin_dir")" in
+              lib|qml|translations) continue ;;
+            esac
+            find "$plugin_dir" -maxdepth 1 -type f -name '*.so*' \
+              -exec patchelf --set-rpath '$ORIGIN/../lib' {} +
+          done
+          # QML plugins keep their depth, but recompute anyway so a different
+          # module layout cannot silently lose the path to lib/.
+          while IFS= read -r -d '' module; do
+            relative=$(realpath --relative-to="$(dirname "$module")" "$staging/lib")
+            patchelf --set-rpath "\$ORIGIN/$relative" "$module"
+          done < <(find "$staging/qml" -type f -name '*.so*' -print0)
+
+          if env -u LD_LIBRARY_PATH ldd "$staging/dae" | grep -q 'not found'; then
+            env -u LD_LIBRARY_PATH ldd "$staging/dae" | grep 'not found'
+            echo "::error::the portable Qt tree is missing a shared library"
+            exit 1
+          fi
+
+          out="$PWD/dist/qt-release"
+          mkdir -p "$out"
+          zip="$out/dae-$version-${{ matrix.platform_key }}.zip"
+          rm -f "$zip"
+          shopt -s dotglob nullglob
+          (cd "$staging" && zip -r -y -X -q "$zip" *)
+          unzip -Z1 "$zip" | grep -qx 'platforms/libqxcb.so'
+          unzip -Z1 "$zip" | grep -qx 'dae'
+
+      # ---- macOS: .app + macdeployqt -> ad-hoc sign -> zip the bundle ----
+      - name: Deploy Qt runtime and package (macOS)
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          staging="$PWD/dist/qt"
+          app="$staging/dae.app"
+          rm -rf "$staging"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp target/aarch64-apple-darwin/release/dae "$app/Contents/MacOS/dae"
+          cp packaging/qt/Info.plist "$app/Contents/Info.plist"
+          cp src-tauri/icons/icon.icns "$app/Contents/Resources/icon.icns"
+          plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
+          plutil -replace CFBundleVersion -string "$version" "$app/Contents/Info.plist"
+          plutil -lint "$app/Contents/Info.plist"
+
+          macdeployqt "$app" -qmldir="$PWD/qml" -always-overwrite
+          test -d "$app/Contents/Frameworks"
+          test -f "$app/Contents/PlugIns/platforms/libqcocoa.dylib"
+          test -d "$app/Contents/Resources/qml/QtQuick"
+
+          # Ad-hoc signing keeps the bundle internally consistent. A Developer
+          # ID signature and notarization would need Apple credentials this
+          # workflow does not have; updates downloaded by the app do not carry
+          # the quarantine attribute.
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep "$app"
+
+          out="$PWD/dist/qt-release"
+          mkdir -p "$out"
+          zip="$out/dae-$version-${{ matrix.platform_key }}.zip"
+          rm -f "$zip"
+          (cd "$staging" && COPYFILE_DISABLE=1 zip -r -y -X -q "$zip" dae.app)
+          unzip -Z1 "$zip" | grep -qx 'dae.app/Contents/MacOS/dae'
+          tops=$(unzip -Z1 "$zip" | awk -F/ '{print $1}' | sort -u | tr -d '\r')
+          if [ "$tops" != "dae.app" ]; then
+            echo "::error::the macOS archive must contain only dae.app, got: $tops"
+            exit 1
+          fi
+
+      # Reuses the release minisign key. The public half is the
+      # `UPDATE_PUBLIC_KEY` constant in dae-core/src/update/mod.rs, so a
+      # signature produced here is exactly what the installed app verifies.
+      - name: Install frontend dependencies for the Tauri signer
+        run: bun install --frozen-lockfile
+
+      - name: Sign the Qt update archive
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          zip="dist/qt-release/dae-$version-${{ matrix.platform_key }}.zip"
+          test -s "$zip"
+
+          # Tauri accepts either the key text or a path in this variable.
+          # `signer sign` only accepts the text, so normalize a path secret.
+          if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && [ -f "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            TAURI_SIGNING_PRIVATE_KEY="$(cat "$TAURI_SIGNING_PRIVATE_KEY")"
+            export TAURI_SIGNING_PRIVATE_KEY
+          fi
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is not configured; refusing to publish an unsigned Qt update."
+            exit 1
+          fi
+
+          bun tauri signer sign "$zip" --app-version "$version"
+          test -s "$zip.sig"
+
+      - name: Upload Qt update artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: qt-${{ matrix.platform_key }}
+          path: dist/qt-release/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # Merge the matrix results into the single feed the app fetches. This runs
+  # after the Tauri matrix too, because tauri-action is what creates the draft
+  # release these assets are appended to.
+  qt-feed:
+    name: Qt update feed
+    needs: [build, qt]
+    runs-on: ubuntu-26.04
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Download Qt artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: qt-*
+          path: dist-qt
+          merge-multiple: true
+
+      - name: Generate latest-qt.json
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          node scripts/qt-update-feed.mjs \
+            --dir dist-qt \
+            --version "$version" \
+            --notes-file "docs/release-notes/v$version.md"
+          cat dist-qt/latest-qt.json
+
+      # Upload the archives first and the feed last: a feed at
+      # `releases/latest/download/latest-qt.json` must never advertise a zip
+      # that is not on the same release yet.
+      - name: Attach Qt assets to the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release upload "${GITHUB_REF_NAME}" dist-qt/*.zip --clobber
+          gh release upload "${GITHUB_REF_NAME}" dist-qt/latest-qt.json --clobber
+          gh release view "${GITHUB_REF_NAME}" --json isDraft,tagName,assets \
+            --jq '"release " + .tagName + " draft=" + (.isDraft|tostring) + " assets=" + ([.assets[].name]|join(","))'

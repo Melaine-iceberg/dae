@@ -22,6 +22,7 @@ use dae_core::fs::cloud::accounts as cloud_accounts;
 use dae_core::fs::cloud::oauth::{self as cloud_oauth, AuthorizeCloudAccountInput};
 use dae_core::fs::cloud::provider::CloudProviderKind;
 use dae_core::fs::connections::{self, Protocol, SaveConnectionInput};
+use dae_core::fs::open_with;
 use dae_core::fs::recents::RecentSource;
 use dae_core::fs::service;
 use dae_core::fs::sidebar::{self, Favorite};
@@ -74,6 +75,10 @@ pub mod qobject {
         #[qproperty(i32, terminal_font_size, cxx_name = "terminalFontSize")]
         #[qproperty(f64, terminal_line_height, cxx_name = "terminalLineHeight")]
         #[qproperty(QString, terminal_font_family, cxx_name = "terminalFontFamily")]
+        /// True where the in-app picker is the only way to choose an
+        /// application (macOS and Linux). Windows keeps the native
+        /// `SHOpenWithDialog`, which the `openWith` command invokes.
+        #[qproperty(bool, open_with_picker_supported, cxx_name = "openWithPickerSupported")]
         type Workspace = super::WorkspaceRust;
 
         #[qinvokable]
@@ -182,6 +187,17 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "openWith"]
         fn open_with(self: Pin<&mut Workspace>, path: &QString);
+
+        /// Opens `path` with one application chosen in the in-app picker and,
+        /// when `set_default` is true, registers it as the new handler.
+        #[qinvokable]
+        #[cxx_name = "openWithApp"]
+        fn open_with_app(
+            self: Pin<&mut Workspace>,
+            path: &QString,
+            app_id: &QString,
+            set_default: bool,
+        );
 
         #[qinvokable]
         #[cxx_name = "openTerminal"]
@@ -344,6 +360,7 @@ pub struct WorkspaceRust {
     terminal_font_size: i32,
     terminal_line_height: f64,
     terminal_font_family: QString,
+    open_with_picker_supported: bool,
     active_operations: i32,
 }
 
@@ -377,6 +394,7 @@ impl Default for WorkspaceRust {
             terminal_font_family: QString::from(
                 settings.terminal.font_family.as_deref().unwrap_or(""),
             ),
+            open_with_picker_supported: cfg!(any(target_os = "macos", target_os = "linux")),
             active_operations: 0,
         }
     }
@@ -924,6 +942,34 @@ impl qobject::Workspace {
         let thread = self.as_mut().qt_thread();
         dispatch(thread, "openWith", async move {
             match service::open_with(path).await {
+                Ok(()) => Outcome::empty(),
+                Err(error) => Outcome::failed(error),
+            }
+        });
+    }
+
+    fn open_with_app(
+        mut self: Pin<&mut Self>,
+        path: &QString,
+        app_id: &QString,
+        set_default: bool,
+    ) {
+        let path = path.to_string();
+        let app_id = app_id.to_string();
+        if path.trim().is_empty() || app_id.trim().is_empty() {
+            self.as_mut()
+                .finish_operation("openWith", "", Some("请选择一个应用".to_owned()));
+            return;
+        }
+
+        self.as_mut().begin_operation(if set_default {
+            "正在设为默认打开方式…"
+        } else {
+            "正在打开…"
+        });
+        let thread = self.as_mut().qt_thread();
+        dispatch(thread, "openWith", async move {
+            match open_with::open_with_app(path, app_id, set_default).await {
                 Ok(()) => Outcome::empty(),
                 Err(error) => Outcome::failed(error),
             }

@@ -74,10 +74,13 @@ bun run bindings:export   # regenerate src/bindings.ts alone
 
 Releases are cut by pushing a `v*` tag, which runs
 `.github/workflows/release.yml` for Windows, Linux and Apple Silicon. The tag
-must match the version in `src-tauri/tauri.conf.json` **and**
-`package.json`; CI fails the build otherwise. `main` is additionally
-type-checked for macOS on every push, since `#[cfg(target_os = "macos")]` code
-is invisible on the other platforms.
+must match the version in `src-tauri/tauri.conf.json`, `package.json`, and the
+Qt crates (`apps/dae`, `crates/dae-qt`, `crates/dae-core`); CI fails the build
+otherwise. Besides the Tauri installers, the workflow deploys the Qt runtime,
+attaches `dae-<version>-<platform>.zip` files and a signed `latest-qt.json`
+feed, then leaves the release as a draft for manual publishing. `main` is
+additionally type-checked for macOS on every push, since
+`#[cfg(target_os = "macos")]` code is invisible on the other platforms.
 
 ## Where things live
 

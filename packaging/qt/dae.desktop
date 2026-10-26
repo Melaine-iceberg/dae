@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=dae
+GenericName=File Manager
+Comment=Browse local, network and cloud files
+Exec=dae %u
+Icon=dae
+Terminal=false
+Categories=System;FileManager;Utility;
+MimeType=x-scheme-handler/dae;
+StartupWMClass=dae

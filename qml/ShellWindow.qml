@@ -113,13 +113,26 @@ Window {
     readonly property var config: configLoader.item
     readonly property bool modalOpen: menu.visible || namePrompt.visible
         || passwordDialog.visible || settingsPanel.visible || confirmDialog.visible
-        || connectDialog.visible || cloudDialog.visible
+        || connectDialog.visible || cloudDialog.visible || openWithDialog.visible
+        || updateDialog.visible
 
     Timer {
         id: searchTimer
         interval: root.searchMode === "content" ? 350 : 180
         repeat: false
         onTriggered: root.runSearch()
+    }
+
+    // One silent feed check per launch, after the window has settled. Deployed
+    // builds only: `Updater.supported` is false when running from `target/` or
+    // from any layout without the deployed Qt runtime, and this startup check
+    // never puts a network error in front of the user.
+    Timer {
+        id: updateCheck
+        interval: 4000
+        repeat: false
+        running: root.firstWindow && Updater.supported && !Updater.checked
+        onTriggered: Updater.check(false)
     }
 
     onActiveIndexChanged: {
@@ -817,7 +830,12 @@ Window {
             Workspace.reveal(path)
             break
         case "openWith":
-            Workspace.openWith(path)
+            if (Workspace.openWithPickerSupported) {
+                openWithDialog.open(path)
+            } else {
+                // Windows: the native dialog also owns the association UI.
+                Workspace.openWith(path)
+            }
             break
         case "terminal":
             Workspace.openTerminal(path !== "" ? path : root.activePath)
@@ -943,6 +961,10 @@ Window {
         target: Workspace
 
         function onOperationFinished(kind, focus) {
+            if (kind === "openWith" && openWithDialog.visible) {
+                openWithDialog.close()
+                root.modalClosed()
+            }
             if (kind === "compress" || kind === "extract") {
                 root.resetArchiveState()
                 if (passwordDialog.visible) {
@@ -956,6 +978,10 @@ Window {
         }
 
         function onOperationFailed(kind, message) {
+            if (kind === "openWith" && openWithDialog.visible) {
+                openWithDialog.showError(message)
+                return
+            }
             if (passwordDialog.visible && kind === root.archiveMode) {
                 passwordDialog.showError(message)
                 return
@@ -1530,6 +1556,42 @@ Window {
             }
 
             Item {
+                id: updateButton
+                anchors.right: settingsButton.left
+                anchors.rightMargin: Updater.supported ? 4 : 0
+                anchors.verticalCenter: parent.verticalCenter
+                width: Updater.supported ? 64 : 0
+                height: 18
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 4
+                    color: updateMouse.containsMouse
+                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: Updater.restarting ? "重启中…"
+                            : Updater.downloading ? "更新中…"
+                            : Updater.available ? "更新可用"
+                            : Updater.checking ? "检查中…" : "检查更新"
+                        color: Updater.available ? root.accent
+                            : Updater.checking || Updater.downloading ? root.textColor
+                            : root.mutedColor
+                        font.pixelSize: 10
+                    }
+                }
+
+                MouseArea {
+                    id: updateMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: Updater.supported
+                    onClicked: updateDialog.open()
+                }
+            }
+
+            Item {
                 id: settingsButton
                 anchors.right: previewButton.left
                 anchors.rightMargin: 4
@@ -1590,7 +1652,7 @@ Window {
             Text {
                 anchors.left: statusText.right
                 anchors.leftMargin: 16
-                anchors.right: settingsButton.left
+                anchors.right: updateButton.left
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 horizontalAlignment: Text.AlignRight
@@ -1696,6 +1758,40 @@ Window {
         }
     }
 
+    OpenWithDialog {
+        id: openWithDialog
+        anchors.fill: parent
+        dark: root.dark
+        accent: root.accent
+
+        onCanceled: root.modalClosed()
+    }
+
+    UpdateDialog {
+        id: updateDialog
+        anchors.fill: parent
+        dark: root.dark
+        accent: root.accent
+
+        onCanceled: root.modalClosed()
+    }
+
+    // The detached installer is already waiting for this process to exit; the
+    // quit is what lets it replace the mapped Qt libraries and relaunch.
+    Connections {
+        target: Updater
+        enabled: root.firstWindow
+
+        function onRestartRequested() {
+            Qt.quit()
+        }
+
+        function onAvailableChanged() {
+            if (Updater.available && !updateDialog.visible)
+                toast.show("发现新版本 v" + Updater.latestVersion, false)
+        }
+    }
+
     Toast {
         id: toast
         width: 360
@@ -1777,6 +1873,8 @@ Window {
         onActivated: {
             if (menu.visible)
                 menu.close()
+            else if (updateDialog.visible)
+                updateDialog.dismiss()
             else if (namePrompt.visible)
                 namePrompt.close()
             else if (passwordDialog.visible) {

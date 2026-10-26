@@ -156,6 +156,12 @@ QImage FileIconImageProvider::requestImage(const QString& id, QSize* size,
             QUrl::fromPercentEncoding(body.mid(5).toUtf8()).toUtf8();
         bytes = dae_qt_render_type_icon(
             std::string(extension.constData(), extension.size()), dimension);
+    } else if (body.startsWith(QStringLiteral("name/"))) {
+        // A freedesktop icon name, or a colon-separated list of candidates.
+        const QByteArray names =
+            QUrl::fromPercentEncoding(body.mid(5).toUtf8()).toUtf8();
+        bytes = dae_qt_render_named_icon(
+            std::string(names.constData(), names.size()), dimension);
     } else if (body.startsWith(QStringLiteral("path/"))) {
         const QByteArray path =
             QUrl::fromPercentEncoding(body.mid(5).toUtf8()).toUtf8();

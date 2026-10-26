@@ -8,6 +8,11 @@
 
 /// Translates the prefixes and codes a user can reach from the Qt shell.
 pub(crate) fn friendly_error(message: &str) -> String {
+    // Some callers pass the code itself; most pass `FileSystemError::to_string`,
+    // so the same lookup runs again on the detail of each known wrapper below.
+    if let Some(text) = friendly_code(message) {
+        return text.to_owned();
+    }
     if message.contains("has no SFTP subsystem") {
         return "服务器未启用 SFTP 子系统".to_owned();
     }
@@ -18,9 +23,15 @@ pub(crate) fn friendly_error(message: &str) -> String {
         if detail.starts_with("SFTP authentication failed") {
             return "SFTP 认证失败，请检查账号和密码".to_owned();
         }
+        if let Some(text) = friendly_code(detail) {
+            return text.to_owned();
+        }
         return format!("操作失败：{detail}");
     }
     if let Some(detail) = message.strip_prefix("The directory operation could not complete: ") {
+        if let Some(text) = friendly_code(detail) {
+            return text.to_owned();
+        }
         return format!("操作失败：{detail}");
     }
     if let Some(detail) = message.strip_prefix("Permission was denied: ") {
@@ -33,36 +44,52 @@ pub(crate) fn friendly_error(message: &str) -> String {
         return format!("权限被拒绝：{detail}");
     }
     if let Some(detail) = message.strip_prefix("The requested operation has invalid input: ") {
+        if let Some(text) = friendly_code(detail) {
+            return text.to_owned();
+        }
         if detail.contains("SFTP account is required") {
             return "SFTP 需要账号，请填写后重试".to_owned();
         }
         return format!("输入无效：{detail}");
     }
-    if message.starts_with("fs.undo_empty") {
-        return "没有可撤销的操作".to_owned();
-    }
-    if message.starts_with("fs.redo_empty") {
-        return "没有可重做的操作".to_owned();
-    }
-    if message.starts_with("fs.trash_local_only") {
-        return "回收站只支持本地项目".to_owned();
-    }
-    if message.starts_with("fs.terminal_local_dir_only") {
-        return "终端只能打开本地目录".to_owned();
-    }
-    if message.starts_with("fs.open_with_local_only") {
-        return "只有本地项目可以选择打开方式".to_owned();
+    if let Some(detail) =
+        message.strip_prefix("The storage backend does not support this operation: ")
+    {
+        if let Some(text) = friendly_code(detail) {
+            return text.to_owned();
+        }
+        return format!("当前平台不支持：{detail}");
     }
     if message.contains("No cloud account is connected for:") {
         return "尚未连接这个云盘账户，请先在侧边栏添加网盘账户并完成授权".to_owned();
     }
-    if message.starts_with("fs.trash_entries_missing") {
-        return "所选项目已不在回收站".to_owned();
-    }
-    if message.starts_with("fs.trash_restore_no_origin") {
-        return "无法确定该项目的原位置".to_owned();
-    }
     message.to_owned()
+}
+
+/// The stable codes emitted by `dae-core`, independent of the error variant
+/// that wrapped them.
+fn friendly_code(code: &str) -> Option<&'static str> {
+    if code.starts_with("fs.undo_empty") {
+        Some("没有可撤销的操作")
+    } else if code.starts_with("fs.redo_empty") {
+        Some("没有可重做的操作")
+    } else if code.starts_with("fs.trash_local_only") {
+        Some("回收站只支持本地项目")
+    } else if code.starts_with("fs.terminal_local_dir_only") {
+        Some("终端只能打开本地目录")
+    } else if code.starts_with("fs.open_with_local_only") {
+        Some("只有本地项目可以选择打开方式")
+    } else if code.starts_with("fs.open_with_not_found") {
+        Some("这个项目已经不存在")
+    } else if code.starts_with("fs.open_with_picker_unsupported") {
+        Some("当前系统不支持选择打开方式")
+    } else if code.starts_with("fs.trash_entries_missing") {
+        Some("所选项目已不在回收站")
+    } else if code.starts_with("fs.trash_restore_no_origin") {
+        Some("无法确定该项目的原位置")
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -75,6 +102,28 @@ mod tests {
         assert_eq!(
             friendly_error("The requested path was not found: C:/x"),
             "The requested path was not found: C:/x"
+        );
+    }
+
+    #[test]
+    fn wrapped_core_codes_are_translated() {
+        assert_eq!(
+            friendly_error("The requested operation has invalid input: fs.open_with_not_found"),
+            "这个项目已经不存在"
+        );
+        assert_eq!(
+            friendly_error(
+                "The storage backend does not support this operation: fs.open_with_picker_unsupported"
+            ),
+            "当前系统不支持选择打开方式"
+        );
+        assert_eq!(
+            friendly_error("The requested operation has invalid input: fs.undo_empty"),
+            "没有可撤销的操作"
+        );
+        assert_eq!(
+            friendly_error("The requested operation has invalid input: fs.something_new"),
+            "输入无效：fs.something_new"
         );
     }
 
