@@ -40,6 +40,12 @@ Window {
     property bool closingDisposed: false
     property bool terminalActive: false
     property bool sidebarVisible: true
+    property bool previewVisible: true
+    property string searchQuery: ""
+    property string searchMode: "name"
+    property bool searchRegex: false
+    property bool searchCase: false
+    property string searchFilter: ""
     property string promptMode: ""
     property string promptPath: ""
     property string contextPath: ""
@@ -48,6 +54,10 @@ Window {
     readonly property var activeTab: (activeIndex >= 0 && activeIndex < tabs.length)
         ? tabs[activeIndex] : null
     readonly property string activePath: activeTab !== null ? activeTab.listing.path : ""
+    readonly property bool searchActive: searchQuery.trim().length > 0
+    readonly property bool contentSearchActive: searchActive && searchMode === "content"
+    readonly property bool searchBusy: activeTab === null ? false
+        : (searchMode === "content" ? activeTab.contentSearch.busy : activeTab.nameSearch.busy)
     readonly property string mod: Qt.platform.os === "osx" ? "Meta" : "Ctrl"
     readonly property color accent: Workspace.accent
     readonly property string sourceLabel: config === null ? ""
@@ -77,6 +87,18 @@ Window {
 
     readonly property var config: configLoader.item
     readonly property bool modalOpen: menu.visible || namePrompt.visible || settingsPanel.visible
+
+    Timer {
+        id: searchTimer
+        interval: root.searchMode === "content" ? 350 : 180
+        repeat: false
+        onTriggered: root.runSearch()
+    }
+
+    onActiveIndexChanged: {
+        root.resetSearchState()
+        previewPanel.showPaths([])
+    }
 
     WindowController {
         id: chrome
@@ -258,9 +280,68 @@ Window {
     function navigate(path) {
         if (root.activeTab === null || !path || path.length === 0)
             return
+        root.resetSearchState()
+        previewPanel.showPaths([])
         root.activeTab.navigate(path)
         Workspace.recordRecent(path, true, false)
         Qt.callLater(fileList.takeFocus)
+    }
+
+    function resetSearchState() {
+        searchTimer.stop()
+        for (let index = 0; index < root.tabs.length; index += 1) {
+            if (root.tabs[index])
+                root.tabs[index].cancelSearch()
+        }
+        root.searchQuery = ""
+        root.searchRegex = false
+        root.searchCase = false
+        root.searchFilter = ""
+        if (searchBar)
+            searchBar.setText("")
+    }
+
+    function acceptSearchText(value) {
+        root.searchQuery = value
+        root.scheduleSearch()
+    }
+
+    function scheduleSearch() {
+        if (root.searchActive)
+            searchTimer.restart()
+        else
+            root.runSearch()
+    }
+
+    function toggleSearchMode() {
+        root.searchMode = root.searchMode === "name" ? "content" : "name"
+        if (root.searchActive)
+            searchTimer.restart()
+    }
+
+    function runSearch() {
+        const tab = root.activeTab
+        if (tab === null)
+            return
+        const query = root.searchQuery.trim()
+        tab.nameSearch.cancel()
+        tab.contentSearch.cancel()
+        if (query === "")
+            return
+        tab.clearSelection()
+        previewPanel.showPaths([])
+        if (root.searchMode === "content")
+            tab.contentSearch.search(tab.listing.path, query, root.searchRegex,
+                                    root.searchCase, root.searchFilter)
+        else
+            tab.nameSearch.search(tab.listing.path, query)
+    }
+
+    function acceptPreview(path, isDir) {
+        if (isDir)
+            root.navigate(path)
+        else
+            Workspace.openPath(path)
     }
 
     function parentOf(path) {
@@ -599,8 +680,8 @@ Window {
                 id: pathField
                 anchors.left: upButton.right
                 anchors.leftMargin: 6
-                anchors.right: parent.right
-                anchors.rightMargin: 12
+                anchors.right: searchBar.left
+                anchors.rightMargin: 6
                 anchors.verticalCenter: parent.verticalCenter
                 height: 26
                 radius: 7
@@ -648,12 +729,149 @@ Window {
                     Keys.onEscapePressed: focus = false
                 }
             }
+
+            SearchBar {
+                id: searchBar
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                width: 224
+                mode: root.searchMode
+                busy: root.searchBusy
+                dark: root.dark
+                accent: root.accent
+                textColor: root.textColor
+                mutedColor: root.mutedColor
+                hairline: root.hairline
+
+                onQueryEdited: function (value) {
+                    root.acceptSearchText(value)
+                }
+                onModeToggled: root.toggleSearchMode()
+                onClearRequested: root.acceptSearchText("")
+            }
+        }
+
+        Rectangle {
+            id: searchOptions
+            width: parent.width
+            height: visible ? 30 : 0
+            visible: root.contentSearchActive
+            color: root.chromeColor
+            clip: true
+
+            Row {
+                x: 12
+                height: parent.height
+                spacing: 8
+
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 28
+                    height: 20
+                    radius: 4
+                    color: root.searchRegex ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24)
+                                            : "transparent"
+                    border.width: 1
+                    border.color: root.searchRegex ? root.accent : root.hairline
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: ".*"
+                        color: root.searchRegex ? root.textColor : root.mutedColor
+                        font.pixelSize: 11
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.searchRegex = !root.searchRegex
+                            root.scheduleSearch()
+                        }
+                    }
+                }
+
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 28
+                    height: 20
+                    radius: 4
+                    color: root.searchCase ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24)
+                                           : "transparent"
+                    border.width: 1
+                    border.color: root.searchCase ? root.accent : root.hairline
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Aa"
+                        color: root.searchCase ? root.textColor : root.mutedColor
+                        font.pixelSize: 11
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.searchCase = !root.searchCase
+                            root.scheduleSearch()
+                        }
+                    }
+                }
+
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 170
+                    height: 22
+                    radius: 5
+                    color: root.dark ? "#1affffff" : "#0d000000"
+                    border.width: 1
+                    border.color: filterInput.activeFocus ? root.accent : root.hairline
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 7
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: filterInput.text.length === 0
+                        text: "类型过滤，如 *.rs"
+                        color: root.mutedColor
+                        font.pixelSize: 11
+                    }
+
+                    TextInput {
+                        id: filterInput
+                        anchors.fill: parent
+                        anchors.leftMargin: 7
+                        anchors.rightMargin: 7
+                        verticalAlignment: TextInput.AlignVCenter
+                        color: root.textColor
+                        selectionColor: root.accent
+                        selectedTextColor: "#ffffff"
+                        font.pixelSize: 11
+                        clip: true
+
+                        onTextEdited: {
+                            root.searchFilter = text
+                            root.scheduleSearch()
+                        }
+                    }
+                }
+
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.searchBusy ? "搜索中…"
+                        : (root.activeTab !== null && root.activeTab.contentSearch.status !== ""
+                            ? root.activeTab.contentSearch.status : "遵循 .gitignore")
+                    color: root.mutedColor
+                    font.pixelSize: 11
+                }
+            }
         }
 
         Row {
             id: body
             width: parent.width
-            height: parent.height - 40 - 34 - 40 - 22
+            height: parent.height - 40 - 34 - 40 - 22 - searchOptions.height
 
             Sidebar {
                 id: sidebar
@@ -675,31 +893,54 @@ Window {
             }
 
             Column {
-                width: parent.width - sidebar.width
+                width: parent.width - sidebar.width - previewPanel.width
                 height: parent.height
 
-                FileList {
-                    id: fileList
+                Item {
                     width: parent.width
                     height: parent.height - terminalPanel.height
-                    tab: root.activeTab
-                    dark: root.dark
-                    headerColor: root.chromeColor
-                    accent: root.accent
 
-                    onNavigateRequested: function (path) {
-                        root.navigate(path)
+                    FileList {
+                        id: fileList
+                        anchors.fill: parent
+                        visible: !root.contentSearchActive
+                        tab: root.activeTab
+                        searchModel: root.searchActive && root.activeTab !== null
+                                     && root.searchMode === "name"
+                                     ? root.activeTab.nameSearch : null
+                        dark: root.dark
+                        headerColor: root.chromeColor
+                        accent: root.accent
+
+                        onNavigateRequested: function (path) {
+                            root.navigate(path)
+                        }
+                        onUpRequested: root.goUp()
+                        onRenameRequested: function (path, name) {
+                            root.promptRename(path, name)
+                        }
+                        onCreateFolderRequested: root.promptCreate(true)
+                        onContextRequested: function (path, isDir, x, y) {
+                            root.showRowMenu(path, isDir, x, y)
+                        }
+                        onEmptyContextRequested: function (x, y) {
+                            root.showEmptyMenu(x, y)
+                        }
+                        onSelectionChanged: {
+                            previewPanel.showPaths(fileList.selectedPathList())
+                        }
                     }
-                    onUpRequested: root.goUp()
-                    onRenameRequested: function (path, name) {
-                        root.promptRename(path, name)
-                    }
-                    onCreateFolderRequested: root.promptCreate(true)
-                    onContextRequested: function (path, isDir, x, y) {
-                        root.showRowMenu(path, isDir, x, y)
-                    }
-                    onEmptyContextRequested: function (x, y) {
-                        root.showEmptyMenu(x, y)
+
+                    ContentResults {
+                        anchors.fill: parent
+                        visible: root.contentSearchActive
+                        model: root.activeTab !== null ? root.activeTab.contentSearch : null
+                        dark: root.dark
+                        accent: root.accent
+
+                        onPreviewRequested: function (path) {
+                            previewPanel.showPaths([path])
+                        }
                     }
                 }
 
@@ -713,6 +954,23 @@ Window {
                     onExited: {
                         fileList.takeFocus()
                     }
+                }
+            }
+
+            PreviewPanel {
+                id: previewPanel
+                width: root.previewVisible ? 300 : 0
+                height: parent.height
+                visible: width > 0
+                dark: root.dark
+                accent: root.accent
+
+                onCloseRequested: {
+                    root.previewVisible = false
+                    fileList.takeFocus()
+                }
+                onOpenRequested: function (path, isDir) {
+                    root.acceptPreview(path, isDir)
                 }
             }
         }
@@ -730,6 +988,13 @@ Window {
                 text: {
                     if (root.activeTab === null)
                         return ""
+                    if (root.searchActive) {
+                        const search = root.searchMode === "content"
+                            ? root.activeTab.contentSearch : root.activeTab.nameSearch
+                        if (search.busy)
+                            return root.searchMode === "content" ? "搜索文件内容…" : "搜索中…"
+                        return search.status !== "" ? search.status : "没有匹配项"
+                    }
                     const listing = root.activeTab.listing
                     const base = listing.finished ? listing.status
                         : (listing.loaded + " 项 · 读取中…")
@@ -746,8 +1011,42 @@ Window {
             }
 
             Item {
-                id: settingsButton
+                id: previewButton
                 anchors.right: terminalButton.left
+                anchors.rightMargin: 4
+                anchors.verticalCenter: parent.verticalCenter
+                width: 58
+                height: 18
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 4
+                    color: previewMouse.containsMouse
+                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.previewVisible ? "隐藏预览" : "预览"
+                        color: root.previewVisible ? root.textColor : root.mutedColor
+                        font.pixelSize: 10
+                    }
+                }
+
+                MouseArea {
+                    id: previewMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: {
+                        root.previewVisible = !root.previewVisible
+                        if (!root.previewVisible)
+                            fileList.takeFocus()
+                    }
+                }
+            }
+
+            Item {
+                id: settingsButton
+                anchors.right: previewButton.left
                 anchors.rightMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
                 width: 52
@@ -900,6 +1199,12 @@ Window {
         sequence: "Ctrl+J"
         enabled: !root.modalOpen
         onActivated: root.toggleTerminal()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+F"
+        enabled: !root.modalOpen
+        onActivated: searchBar.focusInput()
     }
 
     Shortcut {

@@ -10,6 +10,8 @@ QtObject {
 
     property string title: listing.path !== "" ? listing.path : "dae"
     property DirectoryListModel listing: DirectoryListModel {}
+    property SearchModel nameSearch: SearchModel {}
+    property ContentSearchModel contentSearch: ContentSearchModel {}
 
     /// path -> true. Replaced wholesale so QML bindings re-evaluate; mutating
     /// an object in place would not notify the delegates.
@@ -19,9 +21,15 @@ QtObject {
 
     function navigate(path) {
         if (path && path.length > 0) {
+            cancelSearch()
             listing.load(path)
             clearSelection()
         }
+    }
+
+    function cancelSearch() {
+        nameSearch.cancel()
+        contentSearch.cancel()
     }
 
     function clearSelection() {
@@ -68,6 +76,9 @@ QtObject {
     }
 
     function dispose() {
+        cancelSearch()
         listing.dispose()
+        nameSearch.dispose()
+        contentSearch.dispose()
     }
 }

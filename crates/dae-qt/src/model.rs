@@ -30,6 +30,9 @@ const ROLE_MODIFIED: i32 = 0x0103;
 const ROLE_IS_DIR: i32 = 0x0104;
 const ROLE_HIDDEN: i32 = 0x0105;
 const ROLE_READ_ONLY: i32 = 0x0106;
+/// A listing row's relative path is its name; search rows carry the path below
+/// the search root. Exposing it here lets one delegate paint both models.
+const ROLE_RELATIVE: i32 = 0x0107;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -209,6 +212,7 @@ impl qobject::DirectoryListModel {
         match role {
             ROLE_NAME => QVariant::from(&QString::from(row.name.as_str())),
             ROLE_PATH => QVariant::from(&QString::from(row.full_path(&self.base))),
+            ROLE_RELATIVE => QVariant::from(&QString::from(row.name.as_str())),
             ROLE_SIZE => QVariant::from(&QString::from(crate::format::size(row.size.unwrap_or(0)))),
             ROLE_MODIFIED => QVariant::from(&QString::from(crate::format::timestamp(
                 row.modified_at.unwrap_or(0),
@@ -224,6 +228,7 @@ impl qobject::DirectoryListModel {
         let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
         roles.insert(ROLE_NAME, QByteArray::from("fileName"));
         roles.insert(ROLE_PATH, QByteArray::from("filePath"));
+        roles.insert(ROLE_RELATIVE, QByteArray::from("relativePath"));
         roles.insert(ROLE_SIZE, QByteArray::from("sizeText"));
         roles.insert(ROLE_MODIFIED, QByteArray::from("modifiedText"));
         roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));

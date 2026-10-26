@@ -14,11 +14,18 @@ fn main() {
     CxxQtBuilder::new_qml_module(QmlModule::new("dae"))
         .qt_module("Quick")
         .include_dir("cpp")
-        .cpp_files(["cpp/terminal_item.cpp", "cpp/terminal_item.h"])
+        .cpp_files([
+            "cpp/image_provider.cpp",
+            "cpp/image_provider.h",
+            "cpp/terminal_item.cpp",
+            "cpp/terminal_item.h",
+        ])
         .files([
             "src/config.rs",
             "src/ime.rs",
             "src/model.rs",
+            "src/preview.rs",
+            "src/search_model.rs",
             "src/shell.rs",
             "src/sidebar_model.rs",
             "src/terminal.rs",

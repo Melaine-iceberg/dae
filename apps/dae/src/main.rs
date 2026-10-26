@@ -25,7 +25,9 @@ fn main() {
     dae_qt::init();
 
     let mut engine = QQmlApplicationEngine::new();
+    let engine_ptr = engine.as_mut_ptr();
     if let Some(mut engine) = engine.as_mut() {
+        dae_qt::preview::register_image_providers(engine_ptr);
         engine
             .as_mut()
             .load(&QUrl::from("qrc:/qt/qml/dae/qml/Main.qml"));

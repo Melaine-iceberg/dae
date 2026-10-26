@@ -1,0 +1,390 @@
+pragma ComponentBehavior: Bound
+import QtQuick
+import dae 1.0
+
+// The docked preview pane.
+//
+// The controller answers metadata and a bounded text peek asynchronously; the
+// image itself comes from the `thumbnail://` provider, which caches by file
+// revision and decodes off the GUI thread. Selecting several entries collapses
+// the pane to a count rather than describing only the first one.
+Item {
+    id: root
+
+    property var paths: []
+    property bool dark: true
+    property color accent: "#2f6fdf"
+
+    readonly property color panelColor: dark ? "#17191e" : "#fbfcfd"
+    readonly property color sectionColor: dark ? "#1f2229" : "#f1f4f7"
+    readonly property color textColor: dark ? "#e6e9ef" : "#1c1f24"
+    readonly property color mutedColor: dark ? "#8f98aa" : "#657080"
+    readonly property color hairline: dark ? "#26ffffff" : "#16000000"
+    readonly property bool single: paths.length === 1
+
+    implicitWidth: 300
+
+    signal closeRequested()
+    signal openRequested(string path, bool isDir)
+
+    function showPaths(next) {
+        paths = (next || []).slice()
+        if (paths.length === 1)
+            controller.open(paths[0])
+        else
+            controller.clear()
+    }
+
+    PreviewController {
+        id: controller
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        color: root.panelColor
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: 1
+            color: root.hairline
+        }
+    }
+
+    Item {
+        id: header
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: 36
+
+        Text {
+            x: 14
+            anchors.verticalCenter: parent.verticalCenter
+            text: "预览"
+            color: root.mutedColor
+            font.pixelSize: 11
+            font.bold: true
+        }
+
+        Item {
+            anchors.right: parent.right
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            width: 24
+            height: 24
+
+            Text {
+                anchors.centerIn: parent
+                text: "×"
+                color: root.mutedColor
+                font.pixelSize: 16
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.closeRequested()
+            }
+        }
+    }
+
+    Flickable {
+        id: scroller
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: header.bottom
+        anchors.bottom: parent.bottom
+        contentWidth: width
+        contentHeight: content.height
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+
+        Column {
+            id: content
+            width: scroller.width
+            spacing: 10
+
+            Text {
+                x: 14
+                visible: !root.single
+                width: content.width - 28
+                text: root.paths.length === 0 ? "未选择文件"
+                    : root.paths.length + " 项已选择"
+                color: root.textColor
+                font.pixelSize: 14
+                font.bold: true
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                x: 14
+                visible: !root.single && root.paths.length > 1
+                width: content.width - 28
+                text: "多选时不展开内容预览"
+                color: root.mutedColor
+                font.pixelSize: 11
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                x: 14
+                visible: root.single
+                width: content.width - 28
+                text: controller.name !== "" ? controller.name
+                    : (root.paths.length === 1 ? root.paths[0].split(/[\\/]/).pop() : "")
+                color: root.textColor
+                font.pixelSize: 14
+                font.bold: true
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                x: 14
+                visible: root.single && !controller.loading && controller.error === ""
+                width: content.width - 28
+                text: controller.kindText + (controller.sizeText !== "" ? " · " + controller.sizeText : "")
+                color: root.mutedColor
+                font.pixelSize: 11
+                wrapMode: Text.Wrap
+            }
+
+            Rectangle {
+                visible: root.single && controller.hasThumbnail
+                width: content.width - 24
+                x: 12
+                height: 200
+                radius: 9
+                color: root.sectionColor
+                border.width: 1
+                border.color: root.hairline
+                clip: true
+
+                Image {
+                    id: thumbnail
+                    anchors.fill: parent
+                    anchors.margins: 10
+                    source: root.single && controller.hasThumbnail
+                        && controller.thumbnailRevision !== ""
+                        ? "image://thumbnail/" + encodeURIComponent(controller.path)
+                          + "?size=384&v=" + encodeURIComponent(controller.thumbnailRevision)
+                        : ""
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    cache: false
+                    visible: status === Image.Ready
+                }
+
+                Text {
+                    anchors.centerIn: parent
+                    visible: thumbnail.status !== Image.Ready
+                    text: thumbnail.status === Image.Error ? "无法生成缩略图" : "正在加载…"
+                    color: root.mutedColor
+                    font.pixelSize: 11
+                }
+            }
+
+            Rectangle {
+                visible: root.single && controller.hasText
+                width: content.width - 24
+                x: 12
+                height: Math.min(300, Math.max(100, root.height * 0.34))
+                radius: 9
+                color: root.sectionColor
+                border.width: 1
+                border.color: root.hairline
+                clip: true
+
+                Flickable {
+                    anchors.fill: parent
+                    anchors.margins: 1
+                    contentWidth: width
+                    contentHeight: textPreview.contentHeight + 16
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    TextEdit {
+                        id: textPreview
+                        x: 10
+                        y: 8
+                        width: parent.width - 20
+                        height: Math.max(contentHeight, parent.height - 16)
+                        readOnly: true
+                        selectByMouse: true
+                        text: controller.content !== "" ? controller.content : "（空文件）"
+                        color: root.textColor
+                        selectionColor: root.accent
+                        selectedTextColor: "#ffffff"
+                        font.pixelSize: 11
+                        font.family: "Cascadia Mono"
+                        textFormat: TextEdit.PlainText
+                        wrapMode: TextEdit.Wrap
+                    }
+                }
+
+                Text {
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.margins: 6
+                    visible: controller.truncated
+                    text: "仅显示前 64 KB"
+                    color: root.mutedColor
+                    font.pixelSize: 10
+                }
+            }
+
+            Text {
+                x: 14
+                visible: root.single && controller.mediaText !== ""
+                width: content.width - 28
+                text: controller.mediaText
+                color: root.mutedColor
+                font.pixelSize: 11
+                lineHeight: 1.35
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                x: 14
+                visible: root.single && controller.loading
+                width: content.width - 28
+                text: "读取中…"
+                color: root.mutedColor
+                font.pixelSize: 11
+            }
+
+            Text {
+                x: 14
+                visible: root.single && controller.error !== ""
+                width: content.width - 28
+                text: controller.error
+                color: "#e06c75"
+                font.pixelSize: 11
+                wrapMode: Text.Wrap
+            }
+
+            Column {
+                width: content.width
+                visible: root.single && controller.error === "" && !controller.loading
+
+                Repeater {
+                    model: [
+                        ["类型", controller.kindText],
+                        ["大小", controller.sizeText],
+                        ["修改时间", controller.modifiedText]
+                    ]
+
+                    Item {
+                        id: metaRow
+                        required property var modelData
+                        width: content.width
+                        height: 28
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.leftMargin: 14
+                            anchors.rightMargin: 14
+                            height: 1
+                            color: root.hairline
+                        }
+
+                        Text {
+                            x: 14
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 66
+                            text: metaRow.modelData[0]
+                            color: root.mutedColor
+                            font.pixelSize: 11
+                        }
+
+                        Text {
+                            anchors.left: parent.left
+                            anchors.leftMargin: 86
+                            anchors.right: parent.right
+                            anchors.rightMargin: 14
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: metaRow.modelData[1]
+                            color: root.textColor
+                            font.pixelSize: 11
+                            textFormat: Text.PlainText
+                            elide: Text.ElideMiddle
+                        }
+                    }
+                }
+            }
+
+            Item {
+                width: 1
+                height: 4
+            }
+
+            Row {
+                x: 12
+                width: content.width - 24
+                height: visible ? 30 : 0
+                spacing: 8
+                visible: root.single && controller.path !== "" && !controller.loading
+
+                Rectangle {
+                    width: (parent.width - parent.spacing) * 0.58
+                    height: parent.height
+                    radius: 6
+                    color: root.accent
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: controller.isDirectory ? "打开文件夹" : "打开"
+                        color: "#ffffff"
+                        font.pixelSize: 11
+                        font.bold: true
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.openRequested(controller.path, controller.isDirectory)
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width - parent.spacing
+                           - (parent.width - parent.spacing) * 0.58
+                    height: parent.height
+                    radius: 6
+                    color: "transparent"
+                    border.width: 1
+                    border.color: root.hairline
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "定位"
+                        color: root.textColor
+                        font.pixelSize: 11
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: Workspace.reveal(controller.path)
+                    }
+                }
+            }
+
+            Item {
+                width: 1
+                height: 12
+            }
+        }
+    }
+
+    Connections {
+        target: controller
+
+        function onPathChanged() {
+            scroller.contentY = 0
+        }
+    }
+}

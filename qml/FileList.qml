@@ -9,11 +9,16 @@ Item {
     id: root
 
     property var tab: null
+    /// Set while a filename search is showing. The same delegate and selection
+    /// code then work for search rows, which expose the listing's roles plus
+    /// `relativePath`.
+    property var searchModel: null
     property bool dark: true
     property color headerColor: dark ? "#14161a" : "#f4f6f8"
     property color accent: "#2f6fdf"
 
-    readonly property var model: tab !== null ? tab.listing : null
+    readonly property var model: searchModel !== null ? searchModel
+        : (tab !== null ? tab.listing : null)
     readonly property int rowHeight: 26
     readonly property color contentColor: dark ? "#191b1f" : "#ffffff"
     readonly property color alternateColor: dark ? "#15181e" : "#f7f8fa"
@@ -43,6 +48,7 @@ Item {
     signal createFolderRequested()
     signal contextRequested(string path, bool isDir, real x, real y)
     signal emptyContextRequested(real x, real y)
+    signal selectionChanged()
 
     function selectedPathList() {
         const paths = []
@@ -87,6 +93,7 @@ Item {
                         paths.push(value)
                 }
                 root.tab.selectMany(paths)
+                root.selectionChanged()
                 return
             }
         }
@@ -95,6 +102,7 @@ Item {
             root.tab.toggle(path)
         else
             root.tab.selectOnly(path)
+        root.selectionChanged()
     }
 
     function handleActivate(index) {
@@ -119,6 +127,7 @@ Item {
                 paths.push(path)
         }
         root.tab.selectMany(paths)
+        root.selectionChanged()
     }
 
     /// Reloads and, once the listing finishes, selects `path` and scrolls to
@@ -140,6 +149,7 @@ Item {
         list.currentIndex = index
         list.positionViewAtIndex(index, ListView.Contain)
         root.tab.selectOnly(path)
+        root.selectionChanged()
     }
 
     function copySelection(cut) {
@@ -187,8 +197,12 @@ Item {
             return true
         }
         if (event.key === Qt.Key_Escape) {
-            if (root.tab !== null)
+            if (root.tab !== null) {
+                const hadSelection = root.selectionCount > 0
                 root.tab.clearSelection()
+                if (hadSelection)
+                    root.selectionChanged()
+            }
             return true
         }
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
@@ -283,7 +297,9 @@ Item {
     Text {
         anchors.centerIn: parent
         visible: root.model !== null && root.model.finished && root.model.loaded === 0
-        text: "空目录"
+        text: root.searchModel !== null
+            ? (root.searchModel.status !== "" ? root.searchModel.status : "没有匹配项")
+            : "空目录"
         color: root.mutedColor
         font.pixelSize: 13
     }
@@ -338,6 +354,7 @@ Item {
             required property int index
             required property string fileName
             required property string filePath
+            required property string relativePath
             required property string sizeText
             required property string modifiedText
             required property bool isDir
@@ -365,18 +382,40 @@ Item {
                 color: row.isDir ? root.accent : (row.readOnly ? "#59606e" : "#3b4250")
             }
 
-            Text {
+            Row {
                 x: 36
-                anchors.verticalCenter: parent.verticalCenter
                 width: Math.max(0, row.width - 36 - 340)
-                text: row.fileName
-                color: row.hidden ? (root.dark ? "#6b7280" : "#9aa1ad") : root.textColor
-                font.pixelSize: 13
-                textFormat: Text.PlainText
-                elide: Text.ElideRight
+                height: parent.height
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 10
+
+                Text {
+                    id: fileNameText
+                    width: Math.min(implicitWidth, parent.width * 0.6)
+                    height: parent.height
+                    verticalAlignment: Text.AlignVCenter
+                    text: row.fileName
+                    color: row.hidden ? (root.dark ? "#6b7280" : "#9aa1ad") : root.textColor
+                    font.pixelSize: 13
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    width: Math.max(0, parent.width - fileNameText.width - parent.spacing)
+                    height: parent.height
+                    verticalAlignment: Text.AlignVCenter
+                    visible: row.relativePath !== row.fileName && row.relativePath !== ""
+                    text: row.relativePath !== row.fileName ? row.relativePath : ""
+                    color: root.mutedColor
+                    font.pixelSize: 11
+                    textFormat: Text.PlainText
+                    elide: Text.ElideMiddle
+                }
             }
 
             Text {
+                id: sizeTextItem
                 anchors.right: modifiedTextItem.left
                 anchors.rightMargin: 24
                 anchors.verticalCenter: parent.verticalCenter
