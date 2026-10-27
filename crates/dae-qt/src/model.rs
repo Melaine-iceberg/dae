@@ -138,6 +138,19 @@ pub mod qobject {
         unsafe fn endInsertRows(self: Pin<&mut DirectoryListModel>);
 
         #[inherit]
+        #[rust_name = "begin_remove_rows"]
+        unsafe fn beginRemoveRows(
+            self: Pin<&mut DirectoryListModel>,
+            parent: &QModelIndex,
+            first: i32,
+            last: i32,
+        );
+
+        #[inherit]
+        #[rust_name = "end_remove_rows"]
+        unsafe fn endRemoveRows(self: Pin<&mut DirectoryListModel>);
+
+        #[inherit]
         #[rust_name = "begin_reset_model"]
         unsafe fn beginResetModel(self: Pin<&mut DirectoryListModel>);
 
@@ -149,6 +162,10 @@ pub mod qobject {
     impl cxx_qt::Threading for DirectoryListModel {}
 }
 
+/// `PartialEq` is what lets a refresh keep the rows it already has: the diff
+/// compares old and new entries field by field, so an unchanged row costs no
+/// model signal at all.
+#[derive(Clone, PartialEq)]
 struct StoredRow {
     name: String,
     /// Kept only for the rare row that is not under the listing base. Rows that
@@ -200,6 +217,16 @@ impl StoredRow {
     }
 }
 
+/// Rows collected while the directory already on screen is re-read. The old
+/// rows stay visible until this is complete, so the view never shows an empty
+/// model between the two listings.
+#[derive(Default)]
+struct RefreshStage {
+    rows: Vec<StoredRow>,
+    base: String,
+    path: String,
+}
+
 pub struct DirectoryListModelRust {
     loaded: i32,
     finished: bool,
@@ -207,6 +234,9 @@ pub struct DirectoryListModelRust {
     path: QString,
     rows: Vec<StoredRow>,
     base: String,
+    /// `Some` while a same-directory refresh runs; the rows above are the
+    /// previous listing until the stage is swapped in.
+    refresh: Option<RefreshStage>,
     stream_id: Option<String>,
     generation: u64,
     /// Rows came from a network backend. Their `name` is the only part that
@@ -234,6 +264,7 @@ impl Default for DirectoryListModelRust {
             path: QString::default(),
             rows: Vec::new(),
             base: String::new(),
+            refresh: None,
             stream_id: None,
             generation: 0,
             remote: false,
@@ -324,9 +355,16 @@ impl qobject::DirectoryListModel {
             return;
         }
 
-        // A view can only remember where it was scrolled before the reset
-        // below; afterwards the rows — and the position with them — are gone.
-        self.as_mut().about_to_reload();
+        // Reloading the directory already on screen keeps its rows until the
+        // replacement has arrived; the reset is deferred to the swap so the
+        // user never sees an empty list. Navigating elsewhere still clears at
+        // once, or the old rows would appear under the new path.
+        let refreshing = !self.path.as_slice().is_empty() && self.path.to_string() == requested;
+        if !refreshing {
+            // A view can only remember where it was scrolled before the reset
+            // below; afterwards the rows — and the position with them — are gone.
+            self.as_mut().about_to_reload();
+        }
 
         let generation = self.generation.wrapping_add(1);
         if let Some(stream_id) = self.as_mut().rust_mut().stream_id.take() {
@@ -338,28 +376,40 @@ impl qobject::DirectoryListModel {
         let scheme = vfs::scheme_of(&requested);
         let remote = matches!(scheme, Ok(scheme) if scheme != Scheme::Local);
 
-        unsafe {
-            self.as_mut().begin_reset_model();
-            {
-                let mut rust = self.as_mut().rust_mut();
-                rust.generation = generation;
-                rust.rows.clear();
-                rust.base.clear();
-                rust.reload_pending = false;
-                rust.closed = false;
+        if refreshing {
+            let mut rust = self.as_mut().rust_mut();
+            rust.generation = generation;
+            rust.refresh = Some(RefreshStage::default());
+            rust.reload_pending = false;
+            rust.closed = false;
+        } else {
+            unsafe {
+                self.as_mut().begin_reset_model();
+                {
+                    let mut rust = self.as_mut().rust_mut();
+                    rust.generation = generation;
+                    rust.rows.clear();
+                    rust.base.clear();
+                    rust.refresh = None;
+                    rust.reload_pending = false;
+                    rust.closed = false;
+                }
+                self.as_mut().end_reset_model();
             }
-            self.as_mut().end_reset_model();
         }
         self.as_mut().set_remote(remote);
 
-        self.as_mut().set_loaded(0);
         self.as_mut().set_finished(false);
-        self.as_mut().set_path(QString::from(requested.as_str()));
-        self.as_mut().set_status(QString::from("读取中…"));
+        if !refreshing {
+            self.as_mut().set_loaded(0);
+            self.as_mut().set_path(QString::from(requested.as_str()));
+            self.as_mut().set_status(QString::from("读取中…"));
+        }
 
         // An unknown scheme is a failure of this path, not of the previous
         // directory: the model has already adopted `requested` above.
         if let Err(error) = scheme {
+            self.as_mut().rust_mut().refresh = None;
             let message = crate::errors::friendly_error(&error.to_string());
             self.as_mut().set_status(QString::from(message.as_str()));
             self.as_mut().set_finished(true);
@@ -465,6 +515,7 @@ impl qobject::DirectoryListModel {
         watch::unwatch_directory(self.watcher_id.clone());
         self.as_mut().rust_mut().closed = true;
         self.as_mut().rust_mut().reload_pending = false;
+        self.as_mut().rust_mut().refresh = None;
         if let Some(stream_id) = self.as_mut().rust_mut().stream_id.take() {
             listing::cancel_directory_listing(stream_id);
         }
@@ -498,6 +549,19 @@ impl qobject::DirectoryListModel {
         if self.generation != generation {
             return;
         }
+
+        if self.refresh.is_some() {
+            if let Some(stage) = self.as_mut().rust_mut().refresh.as_mut() {
+                stage.base = base;
+                stage.path = path;
+                stage.rows.extend(rows);
+            }
+            if done {
+                self.as_mut().finish_refresh(generation);
+            }
+            return;
+        }
+
         self.as_mut().set_path(QString::from(path.as_str()));
         self.as_mut().rust_mut().base = base;
         self.as_mut().append_rows(generation, rows, done);
@@ -505,6 +569,16 @@ impl qobject::DirectoryListModel {
 
     fn append_rows(mut self: Pin<&mut Self>, generation: u64, rows: Vec<StoredRow>, done: bool) {
         if self.generation != generation {
+            return;
+        }
+
+        if self.refresh.is_some() {
+            if let Some(stage) = self.as_mut().rust_mut().refresh.as_mut() {
+                stage.rows.extend(rows);
+            }
+            if done {
+                self.as_mut().finish_refresh(generation);
+            }
             return;
         }
 
@@ -542,6 +616,92 @@ impl qobject::DirectoryListModel {
         }
     }
 
+    /// Applies a completed refresh. The new rows are already in hand, so the
+    /// model can edit itself in place: the diff keeps every unchanged row and
+    /// only inserts, removes or replaces the ones that differ. A full reset is
+    /// reserved for a refresh that also changes the base or path, where the
+    /// rows would address different files.
+    fn finish_refresh(mut self: Pin<&mut Self>, generation: u64) {
+        if self.generation != generation {
+            self.as_mut().rust_mut().refresh = None;
+            return;
+        }
+        let Some(stage) = self.as_mut().rust_mut().refresh.take() else {
+            return;
+        };
+
+        let pending = self.reload_pending;
+        let total = stage.rows.len() as i32;
+        let path_changed = self.path.to_string() != stage.path;
+        let base_changed = self.base != stage.base;
+
+        self.as_mut().rust_mut().stream_id = None;
+        self.as_mut().rust_mut().reload_pending = false;
+
+        if path_changed || base_changed {
+            if path_changed {
+                self.as_mut().set_path(QString::from(stage.path.as_str()));
+            }
+            self.as_mut().about_to_reload();
+            unsafe {
+                self.as_mut().begin_reset_model();
+                {
+                    let mut rust = self.as_mut().rust_mut();
+                    rust.rows = stage.rows;
+                    rust.base = stage.base;
+                }
+                self.as_mut().end_reset_model();
+            }
+            self.as_mut().set_loaded(total);
+        } else {
+            self.as_mut().apply_refreshed_rows(stage.rows);
+        }
+
+        self.as_mut()
+            .set_status(QString::from(format!("{total} 项")));
+        self.as_mut().set_finished(true);
+        // A change arrived during this read; re-read now that the stream is
+        // over instead of having shown a mix of the two listings.
+        if pending {
+            self.as_mut().reload();
+        }
+    }
+
+    /// Turns `fresh` into the smallest set of row operations that reaches it
+    /// from the rows on screen. Unchanged rows keep their delegates, so a
+    /// create/delete does not rebuild the whole view.
+    fn apply_refreshed_rows(mut self: Pin<&mut Self>, mut fresh: Vec<StoredRow>) {
+        let (prefix, removed, added) = row_edit(&self.rows, &fresh);
+        let middle: Vec<StoredRow> = fresh.drain(prefix..prefix + added).collect();
+
+        unsafe {
+            if removed > 0 {
+                self.as_mut().begin_remove_rows(
+                    &QModelIndex::default(),
+                    prefix as i32,
+                    (prefix + removed - 1) as i32,
+                );
+                self.as_mut()
+                    .rust_mut()
+                    .rows
+                    .drain(prefix..prefix + removed);
+                self.as_mut().end_remove_rows();
+            }
+            if added > 0 {
+                self.as_mut().begin_insert_rows(
+                    &QModelIndex::default(),
+                    prefix as i32,
+                    (prefix + added - 1) as i32,
+                );
+                self.as_mut().rust_mut().rows.splice(prefix..prefix, middle);
+                self.as_mut().end_insert_rows();
+            }
+        }
+
+        let total = self.rows.len() as i32;
+        self.as_mut().set_loaded(total);
+    }
+
     /// A watcher reported a change in `changed`. `changed` is re-checked
     /// because an arm that lost a navigation can still have an event in flight.
     fn reload_after_change(mut self: Pin<&mut Self>, changed: &str) {
@@ -567,6 +727,9 @@ impl qobject::DirectoryListModel {
         }
         self.as_mut().rust_mut().stream_id = None;
         self.as_mut().rust_mut().reload_pending = false;
+        // A failed refresh keeps the rows already on screen; a failed
+        // navigation had already cleared them.
+        self.as_mut().rust_mut().refresh = None;
         self.as_mut().set_status(QString::from(message));
         self.as_mut().set_finished(true);
     }
@@ -732,6 +895,38 @@ fn next_watcher_id() -> String {
     format!("qt-view-{}", NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
+/// The smallest single block of rows that has to change to turn `old` into
+/// `new`: everything before the common prefix and after the common suffix is
+/// kept. Returns `(prefix, removed, added)`.
+///
+/// A create or delete therefore costs one insert or one remove — the rest of
+/// the view keeps its delegates — instead of the whole-model reset that made
+/// the list flicker. A change spread across the listing widens the block, but
+/// it is still a legal edit: the rows in it are removed and re-inserted.
+fn row_edit(old: &[StoredRow], new: &[StoredRow]) -> (usize, usize, usize) {
+    let prefix = old
+        .iter()
+        .zip(new.iter())
+        .take_while(|(old, new)| old == new)
+        .count();
+    // The suffix must not overlap the prefix when the lists share a tail that
+    // is longer than what is left after the prefix.
+    let max_suffix = old.len().min(new.len()) - prefix;
+    let suffix = old
+        .iter()
+        .rev()
+        .zip(new.iter().rev())
+        .take(max_suffix)
+        .take_while(|(old, new)| old == new)
+        .count();
+
+    (
+        prefix,
+        old.len() - prefix - suffix,
+        new.len() - prefix - suffix,
+    )
+}
+
 /// The listing's `mtime-size`, used to version a per-file icon URL. Type icons
 /// are shared and deliberately not versioned.
 fn icon_version(row: &StoredRow) -> String {
@@ -765,5 +960,50 @@ mod tests {
     fn rows_outside_the_base_keep_their_spelling() {
         let row = StoredRow::from_entry(&entry("K:/elsewhere/file.txt"), "K:/dae/");
         assert_eq!(row.path.as_deref(), Some("K:/elsewhere/file.txt"));
+    }
+
+    fn rows(names: &[&str]) -> Vec<StoredRow> {
+        names
+            .iter()
+            .map(|name| StoredRow::from_entry(&entry(&format!("K:/dae/{name}")), "K:/dae/"))
+            .collect()
+    }
+
+    #[test]
+    fn an_unchanged_listing_edits_nothing() {
+        let old = rows(&["a.txt", "b.txt"]);
+        assert_eq!(row_edit(&old, &old.clone()), (2, 0, 0));
+    }
+
+    #[test]
+    fn a_new_entry_is_one_insert_at_its_sorted_position() {
+        let old = rows(&["a.txt", "b.txt"]);
+        let new = rows(&["a.txt", "b.txt", "c.txt"]);
+        assert_eq!(row_edit(&old, &new), (2, 0, 1));
+
+        let middle = rows(&["a.txt", "ab.txt", "b.txt"]);
+        assert_eq!(row_edit(&old, &middle), (1, 0, 1));
+    }
+
+    #[test]
+    fn a_deleted_entry_is_one_remove() {
+        let old = rows(&["a.txt", "b.txt", "c.txt"]);
+        let new = rows(&["a.txt", "c.txt"]);
+        assert_eq!(row_edit(&old, &new), (1, 1, 0));
+    }
+
+    #[test]
+    fn a_changed_entry_is_one_replace() {
+        let old = rows(&["a.txt", "b.txt"]);
+        let mut new = old.clone();
+        new[1].size = Some(4_096);
+        assert_eq!(row_edit(&old, &new), (1, 1, 1));
+    }
+
+    #[test]
+    fn a_tail_shared_with_a_shorter_list_does_not_overlap_the_prefix() {
+        let old = rows(&["a.txt", "b.txt"]);
+        let new = rows(&["a.txt"]);
+        assert_eq!(row_edit(&old, &new), (1, 1, 0));
     }
 }
