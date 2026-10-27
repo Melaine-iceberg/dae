@@ -659,6 +659,45 @@ Qt 运行库，按上面的布局生成 `dae-<version>-<platform>.zip`。zip 用
 发布仍由人工点击 publish；release 公开后
 `releases/latest/download/latest-qt.json` 即成为正式版的更新源。
 
+### 4.11 分配器随壳迁移：mimalloc 进 Qt 壳（2026-10-27）
+
+**搬的是什么。** Tauri 壳的 `#[global_allocator]`（`src-tauri/src/main.rs`）原样
+搬到 `apps/dae/src/main.rs`，依赖从 `src-tauri/Cargo.toml` 复制到
+`apps/dae/Cargo.toml`，`default-features = false` 保持不变——`secure` 会给每次
+分配加 canary，直接改掉 §4.1 引用过的 −31% / −38% 那组数字。
+
+**为什么位置重要。** `#[global_allocator]` 由链接最终可执行文件的 crate 安装；
+`dae-qt`、`dae-core` 在这里以 rlib 形式进来，把声明放进它们会让分配器 shim 变成
+链接顺序依赖（并在将来某天被编成 cdylib 时变成第二份堆）。因此它留在 bin 里。
+
+**能力边界。** 它只覆盖 Rust 侧分配。QML 引擎、`QString`、`QQuickItem` 与场景图
+的分配发生在预编译 Qt DLL 内部，其 import table 直指 `ucrtbase.dll`，exe 里的
+`malloc` 符号拦不住；Windows + 动态 Qt 下"整进程换分配器"不可达，除非静态 Qt +
+`-DMI_OVERRIDE` 自建。收益本身不在这里：48.3 → 32.6 ms 全部来自 `dae-core` 的
+目录枚举路径，随 crate 一起搬过来了。
+
+**顺手补上的一处遗漏。** 根 `Cargo.toml` 原先只有 `[workspace]`，没有
+`[profile.release]`；`src-tauri` 被 `exclude`，它的 `panic = "abort"` /
+`lto = "fat"` / `codegen-units = 1` / `strip = true` 从来不作用于 `apps/dae`。
+现在根清单按字段对齐复制了一份，两个壳在 `src-tauri` 退役前保持一致。
+
+**验证（2026-10-27，本机 debug）**：`cargo build -p dae-app` 通过；新
+`target/debug/dae.exe` 内可见 `mimalloc_version` / `mimalloc: error:` 等字符串，
+确认 C 运行库已链入；另用一次性探针 crate（同配置、`[global_allocator]` +
+`Vec` 分配）实测可链接并正常运行，证明该属性在 bin target 上成立。跨语言释放
+失配的静态核对结论不变：`crates/` 下没有 `into_raw` / `Box::leak` /
+`mem::forget` 这类把所有权丢给 C 侧释放的写法。注意本机增量构建需要给
+`cxx-qt-build` 一个 qmake（`QMAKE=` 指到 `bin/qmake.exe`，或把 `bin` 放进
+`PATH`，CI 走的是后者）；`QT_ROOT_DIR` 只有部署步骤读，构建阶段不读——见
+`release.yml` 上方的注释。
+
+**关于 qmake 的角色。** 它在这里不是构建系统，只是一个元数据查询器：
+`qt-build-utils` 调 `qmake -query QT_INSTALL_HEADERS / QT_INSTALL_LIBS /
+QT_INSTALL_PREFIX` 拿到头文件与库路径，然后交给 `cc` crate 去调 `cl.exe`。
+0.10 只有 `qmake` 与 `qt_minimal`（下载一份预编译 Qt）两个后端，没有 CMake
+后端；仓库里也没有任何 `CMakeLists.txt`。`moc` / `rcc` / `qmltyperegistrar` /
+`qmlcachegen` 同样是被直接当 exe 调用，不经过 CMake 或 qmake 生成的 Makefile。
+
 ## 5. 定案前必须量出来的四组数字
 
 | # | 待验证 | 门槛 | 不达标怎么办 |

@@ -7,6 +7,19 @@
 // because that is where the startup profile lines are printed.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
+// Ported from the Tauri shell's `main.rs`, and it belongs here for the same
+// reason it lived in that bin target: `#[global_allocator]` is installed by the
+// crate that links the final executable. `dae-qt` and `dae-core` arrive as
+// rlibs, so declaring it there would make the shim a link-order dependency.
+//
+// Scope: this covers Rust-side allocations only. The QML engine, `QString`,
+// `QQuickItem` and the scene graph allocate inside the prebuilt Qt DLLs, whose
+// import tables point straight at `ucrtbase.dll` — a `malloc` symbol in this
+// binary cannot intercept them. That is acceptable because the measured win was
+// never on the Qt side: it is the directory enumeration in `dae-core`.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 
 fn main() {

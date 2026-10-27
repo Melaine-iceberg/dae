@@ -15,6 +15,17 @@ cxx = "1"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["full"] }
 dae-qt = { path = "../../crates/dae-qt" }
+# Same swap, same numbers as the Tauri shell (`src-tauri/Cargo.toml`): the
+# Windows process heap charges ~36 ns per small allocation and listing a large
+# directory allocates per entry — a 35,821-entry directory went 48.3 -> 32.6 ms
+# (-31%). The listing runs in `dae-core`, which this binary links, so the win
+# carries over untouched; only Qt's own allocations stay on the CRT heap (see
+# the note on `GLOBAL` in `src/main.rs`).
+#
+# `default-features = false` on purpose: `secure` adds a canary per allocation
+# and changes the very numbers the comment above quotes, and `override` targets
+# a `malloc` replacement that cannot reach the prebuilt Qt DLLs on Windows.
+mimalloc = { version = "0.1", default-features = false }
 
 [build-dependencies]
 cxx-qt-build = "0.10"
