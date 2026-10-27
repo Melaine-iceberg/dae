@@ -1,10 +1,10 @@
 //! The sidebar's rows, as one flat model with section names.
 //!
-//! Places, favourites, volumes and recents are four different domain calls
-//! with four different lifetimes, but the sidebar draws them as one list. A
+//! Places, favourites, volumes, WSL distros and recents are different domain
+//! calls with different lifetimes, but the sidebar draws them as one list. A
 //! single `QAbstractListModel` keeps the QML side to one `ListView` and lets
-//! `section.property` draw the headers, instead of four nested views that each
-//! scroll independently.
+//! `section.property` draw the headers, instead of several nested views that
+//! each scroll independently.
 
 use core::pin::Pin;
 use std::path::Path;
@@ -15,7 +15,7 @@ use dae_core::fs::cloud::accounts::{StoredCloudAccount, list_cloud_accounts};
 use dae_core::fs::cloud::provider::CloudProviderKind;
 use dae_core::fs::connections::{self, Protocol, StoredConnection};
 use dae_core::fs::recents::list_recents;
-use dae_core::fs::sidebar::{self, PlaceKind};
+use dae_core::fs::sidebar::{self, PlaceKind, WslDistro};
 
 use crate::format;
 use crate::runtime;
@@ -23,6 +23,7 @@ use crate::runtime;
 const SECTION_PLACES: &str = "位置";
 const SECTION_FAVORITES: &str = "收藏";
 const SECTION_VOLUMES: &str = "磁盘";
+const SECTION_WSL: &str = "WSL";
 const SECTION_NETWORK: &str = "网络存储";
 const SECTION_CLOUD: &str = "云存储";
 const SECTION_RECENTS: &str = "最近";
@@ -206,6 +207,10 @@ impl qobject::SidebarModel {
         let thread = self.as_mut().qt_thread();
         runtime::spawn(async move {
             let volumes = sidebar::list_disks().await.unwrap_or_default();
+            // Empty everywhere but Windows, which also makes the section
+            // disappear on the other platforms: a section header only exists
+            // while it has at least one row.
+            let distros = sidebar::list_wsl_distros().await.unwrap_or_default();
             let mut rows = base;
             for volume in volumes {
                 let name = volume_name(&volume.name, &volume.mount_point);
@@ -222,6 +227,9 @@ impl qobject::SidebarModel {
                     icon: "disk".to_owned(),
                     is_dir: true,
                 });
+            }
+            for distro in distros {
+                rows.push(distro_row(distro));
             }
             rows.extend(network);
             rows.extend(cloud);
@@ -275,6 +283,20 @@ fn volume_name(label: &str, mount_point: &str) -> String {
             .unwrap_or_else(|| mount_point.to_owned())
     } else {
         label.to_owned()
+    }
+}
+
+/// Each distro is reachable at its `\\wsl$\<name>` share. Accessing that path
+/// starts a stopped distro, so the row needs no separate "start" action.
+fn distro_row(distro: WslDistro) -> SidebarRow {
+    SidebarRow {
+        section: SECTION_WSL.to_owned(),
+        name: distro.name,
+        path: distro.path,
+        kind: "wsl".to_owned(),
+        detail: String::new(),
+        icon: "wsl".to_owned(),
+        is_dir: true,
     }
 }
 
@@ -363,6 +385,21 @@ mod tests {
     fn an_unlabelled_volume_falls_back_to_its_mount_point() {
         assert_eq!(volume_name("  ", "D:/"), "D:/");
         assert_eq!(volume_name("Data", "D:/"), "Data");
+    }
+
+    #[test]
+    fn a_wsl_distro_becomes_a_navigable_row() {
+        let row = distro_row(WslDistro {
+            name: "Ubuntu".into(),
+            path: r"\\wsl$\Ubuntu".into(),
+        });
+
+        assert_eq!(row.section, SECTION_WSL);
+        assert_eq!(row.name, "Ubuntu");
+        assert_eq!(row.path, r"\\wsl$\Ubuntu");
+        assert_eq!(row.kind, "wsl");
+        assert_eq!(row.icon, "wsl");
+        assert!(row.is_dir);
     }
 
     #[test]

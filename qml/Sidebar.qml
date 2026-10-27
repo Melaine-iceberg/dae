@@ -2,9 +2,10 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
 
-// The navigation column: system places, favourites, volumes and recents in a
-// single sectioned list. `SidebarModel` does the resolving; this file only
-// decides what a row looks like and where a click goes.
+// The navigation column: system places, favourites, volumes, WSL distros,
+// network storage, cloud accounts and recents in a single sectioned list.
+// `SidebarModel` does the resolving; this file only decides what a row looks
+// like and where a click goes.
 Item {
     id: root
 
@@ -56,6 +57,7 @@ Item {
         case "videos": return "视"
         case "star": return "★"
         case "disk": return "盘"
+        case "wsl": return "W"
         case "recent": return "近"
         case "server": return "服"
         case "cloud": return "云"
@@ -67,6 +69,7 @@ Item {
     function tint(icon) {
         switch (icon) {
         case "disk": return dark ? "#8a93a6" : "#6b7482"
+        case "wsl": return dark ? "#5b9bd5" : "#2f6fbf"
         case "star": return dark ? "#d8b45a" : "#b8892a"
         case "recent": return dark ? "#6fa0d8" : "#3f78bd"
         case "add": return root.mutedColor

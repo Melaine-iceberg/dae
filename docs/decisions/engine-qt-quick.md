@@ -376,7 +376,8 @@ ghost 一样按抓取点跟随光标，而不是居中。平台循环在指针�
   `operationFinished` / `operationFailed`。
 
 **视图**：`qml/Sidebar.qml` + `sidebar_model.rs` 用一个带 section 的
-`QAbstractListModel` 画位置/收藏/磁盘/最近，并在固定位置提供回收站入口；
+`QAbstractListModel` 画位置/收藏/磁盘/WSL/网络/云盘/最近，并在固定位置提供
+回收站入口；
 `TrashView.qml` 画回收站（名称/原位置/删除时间/大小、多选、右键菜单、
 恢复/永久删除/清空）；`FileList` 支持 Ctrl/Shift 多选、
 F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
@@ -398,6 +399,10 @@ F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
 
 **§4.6 之后已经补齐的**（代码已落地，不再算待办）：
 
+- **WSL**：`SidebarModel.refresh()` 在磁盘之后的同一后台任务里读取
+  `dae_core::fs::sidebar::list_wsl_distros()`，有发行版时在「磁盘」之后插入
+  `WSL` 分组，每行导航到 `\\wsl$\<name>`（访问即启动已停止的发行版）；
+  没有发行版时不插入任何行，分组头随之消失，非 Windows 平台因此不出现。
 - **搜索**：`qml/SearchBar.qml` + `crates/dae-qt/src/search_model.rs`，文件名
   与内容搜索各一个模型，结果复用同一个 `FileList` 委托。
 - **预览**：`qml/PreviewPanel.qml` + `crates/dae-qt/src/preview.rs`；图片由
