@@ -57,6 +57,60 @@ Item {
         return "\u25b1"
     }
 
+    function sectionLabel(value) {
+        switch (value) {
+        case "项目": return qsTr("项目")
+        case "收藏": return qsTr("收藏")
+        case "最近": return qsTr("最近")
+        case "空间": return qsTr("空间")
+        default: return value
+        }
+    }
+
+    function placeLabel(icon) {
+        switch (icon) {
+        case "home": return qsTr("主目录")
+        case "desktop": return qsTr("桌面")
+        case "documents": return qsTr("文档")
+        case "downloads": return qsTr("下载")
+        case "pictures": return qsTr("图片")
+        case "music": return qsTr("音乐")
+        case "videos": return qsTr("视频")
+        default: return ""
+        }
+    }
+
+    function detailLabel(value) {
+        if (value === "空空间")
+            return qsTr("空空间")
+        const count = /^(\d+) 项$/.exec(value)
+        if (count)
+            return qsTr("%1 项").arg(count[1])
+        return value
+    }
+
+    function changeLabel(value) {
+        if (value === "干净")
+            return qsTr("干净")
+        if (value === "未跟踪")
+            return qsTr("未跟踪")
+        const count = /^(\d+) 项变更$/.exec(value)
+        if (count)
+            return qsTr("%1 项变更").arg(count[1])
+        return value
+    }
+
+    function timeLabel(value) {
+        if (value === "今天")
+            return qsTr("今天")
+        if (value === "昨天")
+            return qsTr("昨天")
+        const days = /^(\d+) 天前$/.exec(value)
+        if (days)
+            return qsTr("%1 天前").arg(days[1])
+        return value
+    }
+
     Rectangle {
         anchors.fill: parent
         color: root.contentColor
@@ -82,7 +136,7 @@ Item {
                 x: 24
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 8
-                text: section
+                text: root.sectionLabel(section)
                 color: root.mutedColor
                 font.pixelSize: 11
                 font.weight: Font.DemiBold
@@ -104,7 +158,7 @@ Item {
                 spacing: 6
 
                 Text {
-                    text: "概览"
+                    text: qsTr("概览")
                     color: root.textColor
                     font.pixelSize: 24
                     font.weight: Font.DemiBold
@@ -112,7 +166,7 @@ Item {
 
                 Text {
                     width: parent.width
-                    text: "从收藏、最近访问与空间继续。"
+                    text: qsTr("从收藏、最近访问与空间继续。")
                     color: root.mutedColor
                     font.pixelSize: 12
                     wrapMode: Text.Wrap
@@ -147,7 +201,7 @@ Item {
                     anchors.left: parent.left
                     anchors.leftMargin: 34
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "搜索文件、空间或命令"
+                    text: qsTr("搜索文件、空间或命令")
                     color: root.mutedColor
                     font.pixelSize: 12
                 }
@@ -187,7 +241,7 @@ Item {
                 anchors.top: launcher.bottom
                 anchors.topMargin: 8
                 visible: root.model !== null && root.model.projectBusy
-                text: "正在查找最近的项目…"
+                text: qsTr("正在查找最近的项目…")
                 color: root.mutedColor
                 font.pixelSize: 11
             }
@@ -243,7 +297,8 @@ Item {
 
                 Text {
                     width: parent.width
-                    text: row.name
+                    text: row.kind === "place"
+                        ? root.placeLabel(row.icon) : row.name
                     color: root.textColor
                     font.pixelSize: 13
                     elide: Text.ElideRight
@@ -251,7 +306,7 @@ Item {
 
                 Text {
                     width: parent.width
-                    text: row.detail
+                    text: root.detailLabel(row.detail)
                     color: root.mutedColor
                     font.pixelSize: 11
                     elide: Text.ElideMiddle
@@ -284,7 +339,7 @@ Item {
 
                 Text {
                     visible: row.kind === "project" && row.changeText !== ""
-                    text: row.changeText
+                    text: root.changeLabel(row.changeText)
                     color: row.changeText === "干净" ? root.mutedColor
                         : (row.changeText === "未跟踪" ? "#c98b2e" : root.accent)
                     font.pixelSize: 10
@@ -292,7 +347,7 @@ Item {
 
                 Text {
                     visible: row.timeText !== ""
-                    text: row.timeText
+                    text: root.timeLabel(row.timeText)
                     color: root.mutedColor
                     font.pixelSize: 10
                 }

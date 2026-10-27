@@ -65,7 +65,7 @@ FocusScope {
 
     function showError(message) {
         root.opening = false
-        root.errorText = message || "无法打开这个项目"
+        root.errorText = message || qsTr("无法打开这个项目")
     }
 
     function choose(appId) {
@@ -157,7 +157,7 @@ FocusScope {
 
             Text {
                 width: parent.width
-                text: "选择打开方式"
+                text: qsTr("选择打开方式")
                 color: root.textColor
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
@@ -167,7 +167,7 @@ FocusScope {
 
             Text {
                 width: parent.width
-                text: "用哪个应用打开“" + root.fileName + "”？"
+                text: qsTr("用哪个应用打开“%1”？").arg(root.fileName)
                 color: root.mutedColor
                 font.pixelSize: 12
                 elide: Text.ElideMiddle
@@ -193,7 +193,7 @@ FocusScope {
                     anchors.leftMargin: 9
                     anchors.verticalCenter: parent.verticalCenter
                     visible: filterInput.text.length === 0
-                    text: "筛选应用…"
+                    text: qsTr("筛选应用…")
                     color: root.mutedColor
                     font.pixelSize: 12
                 }
@@ -345,7 +345,7 @@ FocusScope {
                             anchors.right: parent.right
                             anchors.rightMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "默认"
+                            text: qsTr("默认")
                             color: root.mutedColor
                             font.pixelSize: 10
                         }
@@ -375,7 +375,7 @@ FocusScope {
 
                     Text {
                         width: parent.width
-                        text: "正在查找可用的应用…"
+                        text: qsTr("正在查找可用的应用…")
                         color: root.mutedColor
                         font.pixelSize: 12
                         horizontalAlignment: Text.AlignHCenter
@@ -399,7 +399,7 @@ FocusScope {
 
                     Text {
                         width: parent.width
-                        text: "重试"
+                        text: qsTr("重试")
                         color: root.accent
                         font.pixelSize: 12
                         font.underline: true
@@ -417,7 +417,7 @@ FocusScope {
                     anchors.centerIn: parent
                     width: parent.width
                     visible: apps.loaded && apps.error === "" && appList.count === 0
-                    text: "没有匹配的应用"
+                    text: qsTr("没有匹配的应用")
                     color: root.mutedColor
                     font.pixelSize: 12
                     horizontalAlignment: Text.AlignHCenter
@@ -481,7 +481,7 @@ FocusScope {
 
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "设为默认打开方式"
+                            text: qsTr("设为默认打开方式")
                             color: root.mutedColor
                             font.pixelSize: 11
                         }
@@ -511,7 +511,7 @@ FocusScope {
 
                         Text {
                             anchors.centerIn: parent
-                            text: "取消"
+                            text: qsTr("取消")
                             color: root.mutedColor
                             font.pixelSize: 12
                         }
@@ -533,7 +533,7 @@ FocusScope {
 
                         Text {
                             anchors.centerIn: parent
-                            text: root.opening ? "正在打开…" : "打开"
+                            text: root.opening ? qsTr("正在打开…") : qsTr("打开")
                             color: "#ffffff"
                             font.pixelSize: 12
                             font.weight: Font.DemiBold

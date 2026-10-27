@@ -116,6 +116,13 @@ pub mod qobject {
         #[qproperty(i32, terminal_font_size, cxx_name = "terminalFontSize")]
         #[qproperty(f64, terminal_line_height, cxx_name = "terminalLineHeight")]
         #[qproperty(QString, terminal_font_family, cxx_name = "terminalFontFamily")]
+        /// The editable key bindings as a JSON object (`{"app.openSettings":
+        /// "Mod+,", …}`). QML parses it once per change and turns each value
+        /// into a `Shortcut.sequence`; an empty value means "unbound".
+        #[qproperty(QString, shortcuts_json, cxx_name = "shortcutsJson")]
+        /// The directory the log page opens. Shared with the Tauri shell's
+        /// `appLogDir` convention so a user has one place to look.
+        #[qproperty(QString, log_directory, cxx_name = "logDirectory")]
         /// True where the in-app picker is the only way to choose an
         /// application (macOS and Linux). Windows keeps the native
         /// `SHOpenWithDialog`, which the `openWith` command invokes.
@@ -381,6 +388,27 @@ pub mod qobject {
             family: &QString,
         );
 
+        /// Persists one binding for an id from `default_shortcuts()`. An empty
+        /// string unbinds the action, which is how a user disables a key that
+        /// collides with a shell or IME shortcut.
+        #[qinvokable]
+        #[cxx_name = "setShortcut"]
+        fn set_shortcut(self: Pin<&mut Workspace>, id: &QString, binding: &QString);
+
+        #[qinvokable]
+        #[cxx_name = "resetShortcut"]
+        fn reset_shortcut(self: Pin<&mut Workspace>, id: &QString);
+
+        /// Restores every binding without touching the terminal or file-manager
+        /// preferences that live in the same document.
+        #[qinvokable]
+        #[cxx_name = "resetShortcuts"]
+        fn reset_shortcuts(self: Pin<&mut Workspace>);
+
+        #[qinvokable]
+        #[cxx_name = "openLogDirectory"]
+        fn open_log_directory(self: Pin<&mut Workspace>);
+
         #[qinvokable]
         #[cxx_name = "refreshDefaultManager"]
         fn refresh_default_manager(self: Pin<&mut Workspace>);
@@ -545,6 +573,8 @@ pub struct WorkspaceRust {
     terminal_font_size: i32,
     terminal_line_height: f64,
     terminal_font_family: QString,
+    shortcuts_json: QString,
+    log_directory: QString,
     open_with_picker_supported: bool,
     default_manager_supported: bool,
     default_manager_is_default: bool,
@@ -599,6 +629,8 @@ impl Default for WorkspaceRust {
             terminal_font_family: QString::from(
                 settings.terminal.font_family.as_deref().unwrap_or(""),
             ),
+            shortcuts_json: QString::from(shortcuts_json(&settings.shortcuts).as_str()),
+            log_directory: QString::from(app_log_directory().to_string_lossy().as_ref()),
             open_with_picker_supported: cfg!(any(target_os = "macos", target_os = "linux")),
             default_manager_supported: cfg!(any(
                 target_os = "macos",
@@ -2171,6 +2203,83 @@ impl qobject::Workspace {
         self.as_mut().start_default_manager(None);
     }
 
+    fn set_shortcut(mut self: Pin<&mut Self>, id: &QString, binding: &QString) {
+        let id = id.to_string();
+        if !dae_core::settings::default_shortcuts().contains_key(&id) {
+            self.as_mut()
+                .set_last_error(QString::from("未知的快捷键操作"));
+            return;
+        }
+        let binding = binding.to_string().trim().to_owned();
+        if binding.len() > 64 || binding.chars().any(char::is_control) {
+            self.as_mut()
+                .set_last_error(QString::from("快捷键格式无效"));
+            return;
+        }
+        self.as_mut().apply_shortcut_change(move |shortcuts| {
+            shortcuts.insert(id, binding);
+        });
+    }
+
+    fn reset_shortcut(mut self: Pin<&mut Self>, id: &QString) {
+        let id = id.to_string();
+        let Some(binding) = dae_core::settings::default_shortcuts().get(&id).cloned() else {
+            self.as_mut()
+                .set_last_error(QString::from("未知的快捷键操作"));
+            return;
+        };
+        self.as_mut().apply_shortcut_change(move |shortcuts| {
+            shortcuts.insert(id, binding);
+        });
+    }
+
+    fn reset_shortcuts(mut self: Pin<&mut Self>) {
+        self.as_mut().apply_shortcut_change(|shortcuts| {
+            *shortcuts = dae_core::settings::default_shortcuts();
+        });
+    }
+
+    /// Saves only the shortcut map. Loading first preserves the terminal
+    /// typography and the cached file-manager flag that share the document.
+    fn apply_shortcut_change(
+        mut self: Pin<&mut Self>,
+        change: impl FnOnce(&mut HashMap<String, String>),
+    ) {
+        let mut settings = dae_core::settings::load_settings().unwrap_or_default();
+        change(&mut settings.shortcuts);
+        match dae_core::settings::save_settings(settings) {
+            Ok(saved) => {
+                self.as_mut().set_shortcuts_json(QString::from(
+                    shortcuts_json(&saved.shortcuts).as_str(),
+                ));
+                self.as_mut()
+                    .set_status(QString::from("快捷键已保存"));
+                self.as_mut().set_last_error(QString::default());
+            }
+            Err(error) => {
+                let message = friendly_error(&error.to_string());
+                self.as_mut()
+                    .set_last_error(QString::from(message.as_str()));
+            }
+        }
+    }
+
+    fn open_log_directory(mut self: Pin<&mut Self>) {
+        let directory = app_log_directory();
+        if let Err(error) = std::fs::create_dir_all(&directory) {
+            self.as_mut().set_last_error(QString::from(
+                format!("无法创建日志目录：{error}").as_str(),
+            ));
+            return;
+        }
+        match platform::open_path(&directory.to_string_lossy()) {
+            Ok(()) => self.as_mut().set_status(QString::from("已打开日志目录")),
+            Err(message) => self
+                .as_mut()
+                .set_last_error(QString::from(message.as_str())),
+        }
+    }
+
     fn set_default_file_manager(mut self: Pin<&mut Self>) {
         self.as_mut().start_default_manager(Some(true));
     }
@@ -2475,6 +2584,84 @@ fn operation_label(operation: dae_core::progress::FileOperationKind) -> &'static
     }
 }
 
+/// Serializes the bindings for QML. Ids are sorted so the text is stable, and
+/// empty bindings are kept: they tell the panel that an action is deliberately
+/// unbound rather than missing from the document.
+fn shortcuts_json(shortcuts: &HashMap<String, String>) -> String {
+    let mut ids: Vec<&str> = shortcuts.keys().map(String::as_str).collect();
+    ids.sort_unstable();
+
+    let mut json = String::from("{");
+    for (index, id) in ids.into_iter().enumerate() {
+        if index > 0 {
+            json.push(',');
+        }
+        push_json_string(&mut json, id);
+        json.push(':');
+        push_json_string(&mut json, shortcuts.get(id).map(String::as_str).unwrap_or(""));
+    }
+    json.push('}');
+    json
+}
+
+fn push_json_string(out: &mut String, value: &str) {
+    out.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            character if character.is_control() => {
+                out.push_str(&format!("\\u{:04x}", character as u32));
+            }
+            character => out.push(character),
+        }
+    }
+    out.push('"');
+}
+
+/// The directory the log page opens. It follows the Tauri shell's
+/// `appLogDir` convention (identifier-scoped, one `logs` folder) so both
+/// shells point at the same place.
+fn app_log_directory() -> std::path::PathBuf {
+    #[cfg(target_os = "windows")]
+    if let Some(base) = std::env::var_os("LOCALAPPDATA") {
+        return std::path::PathBuf::from(base)
+            .join(dae_core::paths::APP_IDENTIFIER)
+            .join("logs");
+    }
+
+    #[cfg(target_os = "macos")]
+    if let Some(home) = std::env::var_os("HOME") {
+        return std::path::PathBuf::from(home)
+            .join("Library")
+            .join("Logs")
+            .join(dae_core::paths::APP_IDENTIFIER);
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let base = std::env::var_os("XDG_DATA_HOME")
+            .filter(|value| !value.is_empty())
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(|home| std::path::PathBuf::from(home).join(".local").join("share"))
+            });
+        if let Some(base) = base {
+            return base
+                .join(dae_core::paths::APP_IDENTIFIER)
+                .join("logs");
+        }
+    }
+
+    dae_core::paths::config_dir()
+        .map(|directory| directory.join("logs"))
+        .unwrap_or_else(|_| std::env::temp_dir().join("dae-logs"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2738,5 +2925,34 @@ mod tests {
         )
         .expect_err("unknown protocol");
         assert!(unknown.starts_with("不支持的连接协议"));
+    }
+
+    #[test]
+    fn shortcut_json_is_sorted_and_keeps_empty_bindings() {
+        let mut shortcuts = HashMap::new();
+        shortcuts.insert("explorer.copy".to_string(), String::new());
+        shortcuts.insert("app.openSettings".to_string(), "Mod+,".to_string());
+        shortcuts.insert("a.key".to_string(), "Mod+\"x".to_string());
+
+        // Sorted so the QML text is stable, escaped so a recorded key cannot
+        // break the JSON, and empty is kept rather than treated as missing.
+        assert_eq!(
+            shortcuts_json(&shortcuts),
+            r#"{"a.key":"Mod+\"x","app.openSettings":"Mod+,","explorer.copy":""}"#
+        );
+    }
+
+    #[test]
+    fn the_default_shortcut_document_round_trips_through_the_qml_json() {
+        let defaults = dae_core::settings::default_shortcuts();
+        let json = shortcuts_json(&defaults);
+        assert!(json.starts_with('{') && json.ends_with('}'));
+        for id in defaults.keys() {
+            assert!(
+                json.contains(&format!("\"{id}\":")),
+                "missing {id} in {json}"
+            );
+        }
+        assert!(json.contains("\"app.pathJump\":\"Mod+P\""));
     }
 }

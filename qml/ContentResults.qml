@@ -52,7 +52,7 @@ Item {
         Text {
             x: 16
             anchors.verticalCenter: parent.verticalCenter
-            text: "内容匹配"
+            text: qsTr("内容匹配")
             color: root.mutedColor
             font.pixelSize: 12
         }
@@ -71,7 +71,7 @@ Item {
         anchors.centerIn: parent
         visible: root.model !== null && root.model.finished && root.model.loaded === 0
         text: root.model !== null && root.model.status !== ""
-            ? root.model.status : "没有匹配内容"
+            ? root.model.status : qsTr("没有匹配内容")
         color: root.mutedColor
         font.pixelSize: 13
     }
@@ -139,7 +139,7 @@ Item {
                 anchors.right: revealButton.left
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                text: row.matchCount + " 处"
+                text: row.matchCount + qsTr(" 处")
                 color: root.mutedColor
                 font.pixelSize: 11
             }
@@ -156,7 +156,7 @@ Item {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "定位"
+                    text: qsTr("定位")
                     color: root.mutedColor
                     font.pixelSize: 10
                 }

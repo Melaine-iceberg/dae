@@ -25,7 +25,7 @@ FocusScope {
     z: 1003
     focus: visible
 
-    readonly property string verb: Workspace.conflictCut ? "移动" : "复制"
+    readonly property string verb: Workspace.conflictCut ? qsTr("移动") : qsTr("复制")
     readonly property int remaining: Workspace.conflictTotal - Workspace.conflictIndex
     readonly property color panelColor: dark ? "#202329" : "#ffffff"
     readonly property color panelBorder: dark ? "#33ffffff" : "#18000000"
@@ -89,7 +89,7 @@ FocusScope {
 
             Text {
                 width: parent.width
-                text: "替换或跳过文件"
+                text: qsTr("替换或跳过文件")
                 color: root.headingColor
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
@@ -103,8 +103,8 @@ FocusScope {
                 Text {
                     width: parent.width
                     visible: Workspace.conflictTotal > 1
-                    text: "第 " + Workspace.conflictIndex + " / "
-                        + Workspace.conflictTotal + " 个冲突"
+                    text: qsTr("第 %1 / %2 个冲突")
+                        .arg(Workspace.conflictIndex).arg(Workspace.conflictTotal)
                     color: root.headingColor
                     font.pixelSize: 11
                     elide: Text.ElideRight
@@ -112,8 +112,8 @@ FocusScope {
 
                 Text {
                     width: parent.width
-                    text: "目标文件夹中已存在“" + Workspace.conflictName + "”，请选择"
-                        + root.verb + "方式。"
+                    text: qsTr("“%1”已存在于目标文件夹，请选择%2方式。")
+                        .arg(Workspace.conflictName).arg(root.verb)
                     color: root.bodyColor
                     font.pixelSize: 12
                     lineHeight: 1.25
@@ -129,7 +129,7 @@ FocusScope {
                     width: (parent.width - parent.spacing) / 2
                     dark: root.dark
                     accent: root.accent
-                    heading: "准备" + root.verb + "的项目"
+                    heading: qsTr("准备%1的项目").arg(root.verb)
                     name: Workspace.conflictName
                     category: Workspace.conflictSourceCategory
                     detail: Workspace.conflictSourceDetail
@@ -140,7 +140,7 @@ FocusScope {
                     dark: root.dark
                     accent: root.accent
                     highlight: true
-                    heading: "目标文件夹中的现有项目"
+                    heading: qsTr("目标文件夹中的现有项目")
                     name: Workspace.conflictName
                     category: Workspace.conflictTargetCategory
                     detail: Workspace.conflictTargetDetail
@@ -183,7 +183,7 @@ FocusScope {
                     anchors.leftMargin: 7
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "应用到剩余全部（" + root.remaining + " 个冲突）"
+                    text: qsTr("应用到剩余全部（") + root.remaining + qsTr(" 个冲突）")
                     color: root.bodyColor
                     font.pixelSize: 12
                     elide: Text.ElideRight
@@ -220,7 +220,7 @@ FocusScope {
                     Text {
                         id: cancelLabel
                         anchors.centerIn: parent
-                        text: "取消" + root.verb
+                        text: qsTr("取消%1").arg(root.verb)
                         color: root.dark ? "#c9cfd9" : "#3a4048"
                         font.pixelSize: 12
                     }
@@ -269,7 +269,7 @@ FocusScope {
                             Text {
                                 id: skipLabel
                                 anchors.centerIn: parent
-                                text: "跳过"
+                                text: qsTr("跳过")
                                 color: root.dark ? "#c9cfd9" : "#3a4048"
                                 font.pixelSize: 12
                             }
@@ -298,7 +298,7 @@ FocusScope {
                             Text {
                                 id: keepLabel
                                 anchors.centerIn: parent
-                                text: "两者保留"
+                                text: qsTr("两者保留")
                                 color: root.dark ? "#c9cfd9" : "#3a4048"
                                 font.pixelSize: 12
                             }
@@ -328,7 +328,7 @@ FocusScope {
                             Text {
                                 id: replaceLabel
                                 anchors.centerIn: parent
-                                text: "替换"
+                                text: qsTr("替换")
                                 color: "#ffffff"
                                 font.pixelSize: 12
                             }

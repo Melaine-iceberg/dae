@@ -55,7 +55,7 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                text: root.mode === "content" ? "文" : "名"
+                text: root.mode === "content" ? qsTr("文") : qsTr("名")
                 color: !root.contentEnabled ? root.mutedColor
                     : (root.mode === "content" ? root.accent : root.mutedColor)
                 opacity: root.contentEnabled ? 1 : 0.55
@@ -77,7 +77,7 @@ Item {
             anchors.rightMargin: 4
             anchors.verticalCenter: parent.verticalCenter
             visible: input.text.length === 0
-            text: root.mode === "content" ? "搜索文件内容" : "搜索名称"
+            text: root.mode === "content" ? qsTr("搜索文件内容") : qsTr("搜索名称")
             color: root.mutedColor
             font.pixelSize: 12
             elide: Text.ElideRight

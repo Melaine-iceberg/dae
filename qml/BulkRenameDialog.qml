@@ -194,7 +194,7 @@ FocusScope {
             let errorKey = ""
 
             if (newName === null) {
-                globalError = "正则表达式无效"
+                globalError = qsTr("正则表达式无效")
                 status = "error"
                 errorKey = "invalid"
             } else if (newName === "") {
@@ -237,11 +237,11 @@ FocusScope {
 
     function errorTextFor(item) {
         if (item.errorKey === "empty")
-            return "名称不能为空"
+            return qsTr("名称不能为空")
         if (item.errorKey === "invalid")
-            return "名称包含无效字符"
+            return qsTr("名称包含无效字符")
         if (item.errorKey === "duplicate")
-            return "与本次的另一项重名"
+            return qsTr("与本次的另一项重名")
         return ""
     }
 
@@ -281,7 +281,7 @@ FocusScope {
 
             Text {
                 width: parent.width
-                text: "批量重命名"
+                text: qsTr("批量重命名")
                 color: root.textColor
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
@@ -291,7 +291,7 @@ FocusScope {
 
             Text {
                 width: parent.width
-                text: "为选中的 " + root.entries.length + " 项生成新名称。"
+                text: qsTr("为选中的 ") + root.entries.length + qsTr(" 项生成新名称。")
                 color: root.mutedColor
                 font.pixelSize: 12
             }
@@ -306,9 +306,9 @@ FocusScope {
 
                 Repeater {
                     model: [
-                        { key: "sequence", label: "按序号" },
-                        { key: "replace", label: "替换" },
-                        { key: "case", label: "大小写" }
+                        { key: "sequence", label: qsTr("按序号") },
+                        { key: "replace", label: qsTr("替换") },
+                        { key: "case", label: qsTr("大小写") }
                     ]
 
                     delegate: Item {
@@ -373,7 +373,7 @@ FocusScope {
                     Field {
                         id: baseField
                         width: 190
-                        placeholder: "基础名称"
+                        placeholder: qsTr("基础名称")
                         onEdited: function (value) {
                             root.baseName = value
                             root.recompute()
@@ -383,7 +383,7 @@ FocusScope {
                     NumberField {
                         id: startField
                         width: 64
-                        label: "起始"
+                        label: qsTr("起始")
                         value: root.start
                         onEdited: function (value) {
                             root.start = value
@@ -394,7 +394,7 @@ FocusScope {
                     NumberField {
                         id: stepField
                         width: 64
-                        label: "步长"
+                        label: qsTr("步长")
                         value: Math.max(1, root.step)
                         onEdited: function (value) {
                             root.step = Math.max(1, value)
@@ -405,7 +405,7 @@ FocusScope {
                     NumberField {
                         id: paddingField
                         width: 74
-                        label: "位数"
+                        label: qsTr("位数")
                         value: root.padding
                         onEdited: function (value) {
                             root.padding = Math.max(0, Math.min(8, value))
@@ -427,7 +427,7 @@ FocusScope {
                         Field {
                             id: findField
                             width: 190
-                            placeholder: "查找"
+                            placeholder: qsTr("查找")
                             onEdited: function (value) {
                                 root.find = value
                                 root.recompute()
@@ -437,7 +437,7 @@ FocusScope {
                         Field {
                             id: replacementField
                             width: 190
-                            placeholder: "替换为"
+                            placeholder: qsTr("替换为")
                             onEdited: function (value) {
                                 root.replacement = value
                                 root.recompute()
@@ -451,7 +451,7 @@ FocusScope {
                         spacing: 18
 
                         Toggle {
-                            label: "区分大小写"
+                            label: qsTr("区分大小写")
                             checked: root.caseSensitive
                             onToggled: {
                                 root.caseSensitive = !root.caseSensitive
@@ -460,7 +460,7 @@ FocusScope {
                         }
 
                         Toggle {
-                            label: "正则表达式"
+                            label: qsTr("正则表达式")
                             checked: root.useRegex
                             onToggled: {
                                 root.useRegex = !root.useRegex
@@ -478,10 +478,10 @@ FocusScope {
 
                     Repeater {
                         model: [
-                            { key: "lower", label: "全部小写" },
-                            { key: "upper", label: "全部大写" },
-                            { key: "title", label: "每词首字母大写" },
-                            { key: "sentence", label: "句首大写" }
+                            { key: "lower", label: qsTr("全部小写") },
+                            { key: "upper", label: qsTr("全部大写") },
+                            { key: "title", label: qsTr("每词首字母大写") },
+                            { key: "sentence", label: qsTr("句首大写") }
                         ]
 
                         delegate: Rectangle {
@@ -529,8 +529,10 @@ FocusScope {
                 height: 16
                 text: root.globalError !== ""
                     ? root.globalError
-                    : (root.renameCount + " 项将被重命名"
-                       + (root.errorCount > 0 ? "，" + root.errorCount + " 项有问题" : ""))
+                    : (root.errorCount > 0
+                        ? qsTr("%1 项将被重命名，%2 项有问题")
+                            .arg(root.renameCount).arg(root.errorCount)
+                        : qsTr("%1 项将被重命名").arg(root.renameCount))
                 color: root.globalError !== "" || root.errorCount > 0
                     ? root.dangerColor : root.mutedColor
                 font.pixelSize: 11
@@ -588,7 +590,7 @@ FocusScope {
                             width: parent.width * 0.56 - 20
                             anchors.verticalCenter: parent.verticalCenter
                             text: planRow.modelData.status === "unchanged"
-                                ? planRow.modelData.name + "（不变）"
+                                ? planRow.modelData.name + qsTr("（不变）")
                                 : (planRow.modelData.status === "error"
                                     ? root.errorTextFor(planRow.modelData)
                                     : planRow.modelData.newName)
@@ -627,7 +629,7 @@ FocusScope {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "取消"
+                        text: qsTr("取消")
                         color: root.dark ? "#c9cfd9" : "#3a4048"
                         font.pixelSize: 12
                     }
@@ -650,7 +652,7 @@ FocusScope {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "重命名"
+                        text: qsTr("重命名")
                         color: root.canApply ? "#ffffff" : root.mutedColor
                         font.pixelSize: 12
                     }

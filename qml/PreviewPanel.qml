@@ -65,7 +65,7 @@ Item {
         Text {
             x: 14
             anchors.verticalCenter: parent.verticalCenter
-            text: "预览"
+            text: qsTr("预览")
             color: root.mutedColor
             font.pixelSize: 11
             font.bold: true
@@ -113,8 +113,8 @@ Item {
                 x: 14
                 visible: !root.single
                 width: content.width - 28
-                text: root.paths.length === 0 ? "未选择文件"
-                    : root.paths.length + " 项已选择"
+                text: root.paths.length === 0 ? qsTr("未选择文件")
+                    : root.paths.length + qsTr(" 项已选择")
                 color: root.textColor
                 font.pixelSize: 14
                 font.bold: true
@@ -125,7 +125,7 @@ Item {
                 x: 14
                 visible: !root.single && root.paths.length > 1
                 width: content.width - 28
-                text: "多选时不展开内容预览"
+                text: qsTr("多选时不展开内容预览")
                 color: root.mutedColor
                 font.pixelSize: 11
                 wrapMode: Text.Wrap
@@ -182,7 +182,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     visible: thumbnail.status !== Image.Ready
-                    text: thumbnail.status === Image.Error ? "无法生成缩略图" : "正在加载…"
+                    text: thumbnail.status === Image.Error ? qsTr("无法生成缩略图") : qsTr("正在加载…")
                     color: root.mutedColor
                     font.pixelSize: 11
                 }
@@ -215,7 +215,7 @@ Item {
                         height: Math.max(contentHeight, parent.height - 16)
                         readOnly: true
                         selectByMouse: true
-                        text: controller.content !== "" ? controller.content : "（空文件）"
+                        text: controller.content !== "" ? controller.content : qsTr("（空文件）")
                         color: root.textColor
                         selectionColor: root.accent
                         selectedTextColor: "#ffffff"
@@ -231,7 +231,7 @@ Item {
                     anchors.bottom: parent.bottom
                     anchors.margins: 6
                     visible: controller.truncated
-                    text: "仅显示前 64 KB"
+                    text: qsTr("仅显示前 64 KB")
                     color: root.mutedColor
                     font.pixelSize: 10
                 }
@@ -253,7 +253,7 @@ Item {
                 visible: root.single && controller.remote && !controller.loading
                        && controller.error === ""
                 width: content.width - 28
-                text: "远程项目：可预览文本；缩略图和媒体信息仅支持本地文件。"
+                text: qsTr("远程项目：可预览文本；缩略图和媒体信息仅支持本地文件。")
                 color: root.mutedColor
                 font.pixelSize: 11
                 wrapMode: Text.Wrap
@@ -263,7 +263,7 @@ Item {
                 x: 14
                 visible: root.single && controller.loading
                 width: content.width - 28
-                text: "读取中…"
+                text: qsTr("读取中…")
                 color: root.mutedColor
                 font.pixelSize: 11
             }
@@ -284,9 +284,9 @@ Item {
 
                 Repeater {
                     model: [
-                        ["类型", controller.kindText],
-                        ["大小", controller.sizeText],
-                        ["修改时间", controller.modifiedText]
+                        [qsTr("类型"), controller.kindText],
+                        [qsTr("大小"), controller.sizeText],
+                        [qsTr("修改时间"), controller.modifiedText]
                     ]
 
                     Item {
@@ -351,8 +351,8 @@ Item {
 
                     Text {
                         anchors.centerIn: parent
-                        text: controller.isDirectory ? "打开文件夹"
-                            : (root.remote ? "远程文件" : "打开")
+                        text: controller.isDirectory ? qsTr("打开文件夹")
+                            : (root.remote ? qsTr("远程文件") : qsTr("打开"))
                         color: "#ffffff"
                         font.pixelSize: 11
                         font.bold: true
@@ -378,7 +378,7 @@ Item {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "定位"
+                        text: qsTr("定位")
                         color: root.textColor
                         font.pixelSize: 11
                     }

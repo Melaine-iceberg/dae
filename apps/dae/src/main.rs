@@ -46,6 +46,12 @@ fn main() {
 
     let mut engine = QQmlApplicationEngine::new();
     let engine_ptr = engine.as_mut_ptr();
+    // The persisted language has to be installed before `Main.qml` is loaded,
+    // otherwise the first window paints its source strings once and only
+    // retranslates on the next switch. The engine is attached so a change from
+    // the settings panel can retranslate live.
+    dae_qt::i18n::attach_engine(engine_ptr as usize);
+    dae_qt::i18n::apply_stored();
     if let Some(mut engine) = engine.as_mut() {
         dae_qt::preview::register_image_providers(engine_ptr);
         engine

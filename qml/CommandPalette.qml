@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
+import "Shortcut.js" as Shortcut
 
 // The Mod+K palette: commands, spaces, favorites, recents, projects and a
 // progressive filename search in one keyboard-first surface.
@@ -24,6 +25,11 @@ Item {
     property color headerColor: dark ? "#14161a" : "#f4f6f8"
     property string commandShortcut: "Ctrl+K"
     property string pathShortcut: "Ctrl+P"
+    /// The bindings from `settings.toml`, so a hint in the list is the key the
+    /// user actually has to press. Commands without an entry keep their
+    /// built-in hint because those keys are not part of the shared registry.
+    property var shortcutMap: ({})
+    property bool isMac: false
 
     readonly property color panelColor: dark ? "#1c1f24" : "#ffffff"
     readonly property color activeColor: Qt.rgba(accent.r, accent.g, accent.b,
@@ -157,6 +163,11 @@ Item {
         return { score: score, indices: indices }
     }
 
+    function shortcutHint(id, fallback) {
+        const binding = root.shortcutMap ? root.shortcutMap[id] : undefined
+        return binding === undefined ? fallback : Shortcut.display(binding, root.isMac)
+    }
+
     function command(id, label, hint, icon, group) {
         return {
             group: group,
@@ -174,52 +185,66 @@ Item {
     /// no-ops on the overview, a space or the recycle bin.
     function navigationCommands() {
         const items = [
-            root.command("overview", "概览", "", "\u2302", "导航"),
-            root.command("trash", "回收站", "", "\u232b", "导航"),
-            root.command("new-tab", "新建标签页", "Ctrl+T", "+", "导航"),
-            root.command("close-tab", "关闭标签页", "Ctrl+W", "\u00d7", "导航"),
-            root.command("new-space", "新建空间…", "", "\u25c8", "导航"),
-            root.command("settings", "设置", "Ctrl+,", "\u2699", "导航")
+            root.command("overview", qsTr("概览"), "", "\u2302", qsTr("导航")),
+            root.command("trash", qsTr("回收站"), "", "\u232b", qsTr("导航")),
+            root.command("new-tab", qsTr("新建标签页"), "Ctrl+T", "+", qsTr("导航")),
+            root.command("close-tab", qsTr("关闭标签页"), "Ctrl+W", "\u00d7", qsTr("导航")),
+            root.command("new-space", qsTr("新建空间…"), "", "\u25c8", qsTr("导航")),
+            root.command("settings", qsTr("设置"), root.shortcutHint("app.openSettings", "Ctrl+,"),
+                         "\u2699", qsTr("导航"))
         ]
         if (root.folderActive)
-            items.push(root.command("path-jump", "跳到路径…", root.pathShortcut, "\u2192", "导航"))
+            items.push(root.command("path-jump", qsTr("跳到路径…"), root.pathShortcut, "\u2192", qsTr("导航")))
         return items
     }
 
     function fileCommands() {
         return [
-            root.command("new-folder", "新建文件夹", "Ctrl+Shift+N", "\u25a3", "文件"),
-            root.command("new-file", "新建文件", "", "\u25a4", "文件"),
-            root.command("rename", "重命名", "F2", "\u270e", "文件"),
-            root.command("trash-selection", "移到回收站", "Delete", "\u232b", "文件"),
-            root.command("copy", "复制", "Ctrl+C", "\u29c9", "文件"),
-            root.command("cut", "剪切", "Ctrl+X", "\u2702", "文件"),
-            root.command("paste", "粘贴", "Ctrl+V", "\u2398", "文件"),
-            root.command("copy-path", "复制路径", "", "\u2310", "文件"),
-            root.command("select-all", "全选", "Ctrl+A", "\u2713", "文件"),
-            root.command("refresh", "刷新", "F5", "\u21bb", "文件"),
-            root.command("go-up", "上一级", "Alt+Up", "\u2191", "文件"),
-            root.command("open-terminal", "在终端中打开", "Ctrl+J", ">_", "文件"),
-            root.command("toggle-favorite", "加入收藏", "", "\u2605", "文件"),
-            root.command("toggle-split", "切换分栏", "", "\u25a5", "文件"),
-            root.command("toggle-preview", "切换预览", "Space", "\u25eb", "文件"),
-            root.command("toggle-sidebar", "切换侧栏", "Ctrl+B", "\u25e7", "文件")
+            root.command("new-folder", qsTr("新建文件夹"), "Ctrl+Shift+N", "\u25a3", qsTr("文件")),
+            root.command("new-file", qsTr("新建文件"), "", "\u25a4", qsTr("文件")),
+            root.command("rename", qsTr("重命名"), root.shortcutHint("explorer.rename", "F2"),
+                         "\u270e", qsTr("文件")),
+            root.command("trash-selection", qsTr("移到回收站"),
+                         root.shortcutHint("explorer.trash", "Delete"), "\u232b", qsTr("文件")),
+            root.command("copy", qsTr("复制"), root.shortcutHint("explorer.copy", "Ctrl+C"),
+                         "\u29c9", qsTr("文件")),
+            root.command("cut", qsTr("剪切"), root.shortcutHint("explorer.cut", "Ctrl+X"),
+                         "\u2702", qsTr("文件")),
+            root.command("paste", qsTr("粘贴"), root.shortcutHint("explorer.paste", "Ctrl+V"),
+                         "\u2398", qsTr("文件")),
+            root.command("copy-path", qsTr("复制路径"), "", "\u2310", qsTr("文件")),
+            root.command("select-all", qsTr("全选"),
+                         root.shortcutHint("explorer.selectAll", "Ctrl+A"),
+                         "\u2713", qsTr("文件")),
+            root.command("refresh", qsTr("刷新"), "F5", "\u21bb", qsTr("文件")),
+            root.command("go-up", qsTr("上一级"), "Alt+Up", "\u2191", qsTr("文件")),
+            root.command("open-terminal", qsTr("在终端中打开"),
+                         root.shortcutHint("explorer.openSystemTerminal", "Ctrl+`"),
+                         ">_", qsTr("文件")),
+            root.command("toggle-favorite", qsTr("加入收藏"), "", "\u2605", qsTr("文件")),
+            root.command("toggle-split", qsTr("切换分栏"), "", "\u25a5", qsTr("文件")),
+            root.command("toggle-preview", qsTr("切换预览"),
+                         root.shortcutHint("explorer.preview", "Space"),
+                         "\u25eb", qsTr("文件")),
+            root.command("toggle-sidebar", qsTr("切换侧栏"), "Ctrl+B", "\u25e7", qsTr("文件"))
         ]
     }
 
     function viewCommands() {
         return [
-            root.command("view-list", "列表视图", "", "\u2630", "视图"),
-            root.command("view-grid", "网格视图", "", "\u229e", "视图"),
-            root.command("view-column", "分栏视图", "", "\u25a5", "视图"),
-            root.command("sort-name", "按名称排序", "", "\u21c5", "视图"),
-            root.command("sort-modified", "按修改时间排序", "", "\u21c5", "视图"),
-            root.command("sort-type", "按类型排序", "", "\u21c5", "视图"),
-            root.command("sort-size", "按大小排序", "", "\u21c5", "视图"),
-            root.command("sort-order", "切换升降序", "", "\u21f5", "视图"),
-            root.command("folders-first", "文件夹优先", "", "\u25a4", "视图"),
-            root.command("hidden-files", "显示隐藏文件", "", "\u25c9", "视图"),
-            root.command("filters-reset", "清除过滤", "", "\u2a2f", "视图")
+            root.command("view-list", qsTr("列表视图"), "", "\u2630", qsTr("视图")),
+            root.command("view-grid", qsTr("网格视图"), "", "\u229e", qsTr("视图")),
+            root.command("view-column", qsTr("分栏视图"), "", "\u25a5", qsTr("视图")),
+            root.command("sort-name", qsTr("按名称排序"), "", "\u21c5", qsTr("视图")),
+            root.command("sort-modified", qsTr("按修改时间排序"), "", "\u21c5", qsTr("视图")),
+            root.command("sort-type", qsTr("按类型排序"), "", "\u21c5", qsTr("视图")),
+            root.command("sort-size", qsTr("按大小排序"), "", "\u21c5", qsTr("视图")),
+            root.command("sort-order", qsTr("切换升降序"), "", "\u21f5", qsTr("视图")),
+            root.command("folders-first", qsTr("文件夹优先"), "", "\u25a4", qsTr("视图")),
+            root.command("hidden-files", qsTr("显示隐藏文件"),
+                         root.shortcutHint("explorer.toggleHidden", "Ctrl+H"),
+                         "\u25c9", qsTr("视图")),
+            root.command("filters-reset", qsTr("清除过滤"), "", "\u2a2f", qsTr("视图"))
         ]
     }
 
@@ -229,13 +254,13 @@ Item {
             const name = Spaces.nameAt(index)
             const count = Spaces.itemCountAt(index)
             items.push({
-                group: "空间",
-                label: "打开空间 “" + name + "”",
-                hint: count > 0 ? count + " 项" : "空",
+                group: qsTr("空间"),
+                label: qsTr("打开空间 “") + name + "”",
+                hint: count > 0 ? count + qsTr(" 项") : qsTr("空"),
                 icon: "\u25c8",
                 kind: "space",
                 value: Spaces.idAt(index),
-                keywords: "空间 space workspace " + name
+                keywords: qsTr("空间 space workspace ") + name
             })
         }
         return items
@@ -257,33 +282,33 @@ Item {
             const isDir = root.overviewModel.isDirAt(index)
             if (kind === "favorite") {
                 items.push({
-                    group: "收藏",
+                    group: qsTr("收藏"),
                     label: name,
                     hint: path,
                     icon: "\u2605",
                     kind: "navigate",
                     value: path,
-                    keywords: "收藏 favorite " + path
+                    keywords: qsTr("收藏 favorite ") + path
                 })
             } else if (kind === "recent") {
                 items.push({
-                    group: "最近",
+                    group: qsTr("最近"),
                     label: name,
                     hint: path,
                     icon: isDir ? "\u25b1" : "\u25a1",
                     kind: isDir ? "navigate" : "file",
                     value: path,
-                    keywords: "最近 recent " + path
+                    keywords: qsTr("最近 recent ") + path
                 })
             } else if (kind === "project") {
                 items.push({
-                    group: "项目",
+                    group: qsTr("项目"),
                     label: name,
                     hint: path,
                     icon: "\u2325",
                     kind: "navigate",
                     value: path,
-                    keywords: "项目 project " + detail
+                    keywords: qsTr("项目 project ") + detail
                 })
             }
         }
@@ -301,13 +326,13 @@ Item {
             const isDir = paletteSearchModel.isDirectoryAt(index)
             const path = paletteSearchModel.pathAt(index)
             items.push({
-                group: "文件",
+                group: qsTr("文件"),
                 label: paletteSearchModel.nameAt(index),
                 hint: paletteSearchModel.relativePathAt(index),
                 icon: isDir ? "\u25b1" : "\u25a1",
                 kind: isDir ? "navigate" : "file",
                 value: path,
-                keywords: "文件 file search " + path
+                keywords: qsTr("文件 file search ") + path
             })
         }
         return items
@@ -318,13 +343,13 @@ Item {
             return null
         const target = root.trimmedQuery
         return {
-            group: "跳转",
-            label: "跳转到 “" + target + "”",
+            group: qsTr("跳转"),
+            label: qsTr("跳转到 “") + target + "”",
             hint: target,
             icon: "\u2192",
             kind: "path",
             value: target,
-            keywords: "跳转 path jump " + target
+            keywords: qsTr("跳转 path jump ") + target
         }
     }
 
@@ -617,7 +642,7 @@ Item {
                 anchors.leftMargin: 46
                 anchors.verticalCenter: parent.verticalCenter
                 visible: input.text.length === 0
-                text: root.pathLike ? "跳到路径…" : "搜索文件、空间或命令"
+                text: root.pathLike ? qsTr("跳到路径…") : qsTr("搜索文件、空间或命令")
                 color: root.mutedColor
                 font.pixelSize: 15
             }
@@ -785,10 +810,10 @@ Item {
             anchors.rightMargin: 24
             visible: results.count === 0
             text: root.searchingFiles
-                ? "正在搜索文件…"
+                ? qsTr("正在搜索文件…")
                 : (root.trimmedQuery.length === 0
-                    ? "没有可用的入口"
-                    : "没有匹配 “" + root.trimmedQuery + "”")
+                    ? qsTr("没有可用的入口")
+                    : qsTr("没有匹配 “") + root.trimmedQuery + "”")
             color: root.mutedColor
             font.pixelSize: 12
             horizontalAlignment: Text.AlignHCenter
@@ -817,10 +842,10 @@ Item {
                 x: 16
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.searchingFiles
-                    ? "搜索文件…"
+                    ? qsTr("搜索文件…")
                     : (root.resultCount > 0
-                        ? root.resultCount + " 个结果 · ↑↓ 选择 · ↵ 执行"
-                        : "↑↓ 选择 · ↵ 执行 · Esc 关闭")
+                        ? root.resultCount + qsTr(" 个结果 · ↑↓ 选择 · ↵ 执行")
+                        : qsTr("↑↓ 选择 · ↵ 执行 · Esc 关闭"))
                 color: root.mutedColor
                 font.pixelSize: 10
             }

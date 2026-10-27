@@ -82,16 +82,16 @@ Item {
     function guideText() {
         switch (root.provider) {
         case "onedrive":
-            return "在 Azure 门户的「应用注册」中创建应用（支持任何组织目录和个人账户），并在「移动和桌面应用程序」平台下添加重定向 URI。"
+            return qsTr("在 Azure 门户的「应用注册」中创建应用（支持任何组织目录和个人账户），并在「移动和桌面应用程序」平台下添加重定向 URI。")
         case "dropbox":
-            return "在 Dropbox App Console 中创建应用，并在 OAuth 2 设置中逐字添加下方重定向 URI。"
+            return qsTr("在 Dropbox App Console 中创建应用，并在 OAuth 2 设置中逐字添加下方重定向 URI。")
         default:
-            return "在 Google Cloud 控制台中启用 Google Drive API，并在「API 和服务 → 凭据」中创建「桌面应用」类型的 OAuth 客户端。"
+            return qsTr("在 Google Cloud 控制台中启用 Google Drive API，并在「API 和服务 → 凭据」中创建「桌面应用」类型的 OAuth 客户端。")
         }
     }
 
     function secretLabel() {
-        return root.provider === "onedrive" ? "Client Secret" : "Client Secret（可选）"
+        return root.provider === "onedrive" ? "Client Secret" : qsTr("Client Secret（可选）")
     }
 
     function submit() {
@@ -99,7 +99,7 @@ Item {
             return
         const clientId = clientIdField.value.trim()
         if (clientId === "") {
-            root.errorText = "请输入 Client ID"
+            root.errorText = qsTr("请输入 Client ID")
             return
         }
         root.setAuthorizing(true)
@@ -159,7 +159,7 @@ Item {
         Text {
             x: 20
             y: 18
-            text: "连接云存储"
+            text: qsTr("连接云存储")
             color: root.textColor
             font.pixelSize: 14
             font.weight: Font.DemiBold
@@ -169,7 +169,7 @@ Item {
             x: 20
             y: 42
             width: parent.width - 40
-            text: "使用你自己创建的 OAuth 应用凭据，在浏览器中完成登录授权。"
+            text: qsTr("使用你自己创建的 OAuth 应用凭据，在浏览器中完成登录授权。")
             color: root.mutedColor
             font.pixelSize: 11
             elide: Text.ElideRight
@@ -178,7 +178,7 @@ Item {
         Text {
             x: 20
             y: 76
-            text: "网盘"
+            text: qsTr("网盘")
             color: root.dark ? "#aeb5c0" : "#565e68"
             font.pixelSize: 12
         }
@@ -216,7 +216,7 @@ Item {
             y: 180
             width: card.width - 40
             label: "Client ID"
-            placeholder: "来自服务商控制台的 OAuth 客户端 ID"
+            placeholder: qsTr("来自服务商控制台的 OAuth 客户端 ID")
             enabled: !root.authorizing
             onEdited: root.errorText = ""
         }
@@ -264,7 +264,7 @@ Item {
                 Text {
                     x: 0
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "重定向 URI"
+                    text: qsTr("重定向 URI")
                     color: root.mutedColor
                     font.pixelSize: 10
                 }
@@ -332,7 +332,7 @@ Item {
             width: card.width - 40
             height: 24
             text: root.authorizing
-                ? "请在刚刚打开的浏览器窗口中完成登录，成功后本窗口会自动关闭。"
+                ? qsTr("请在刚刚打开的浏览器窗口中完成登录，成功后本窗口会自动关闭。")
                 : root.errorText
             color: root.authorizing ? root.mutedColor : root.dangerColor
             font.pixelSize: 10
@@ -356,7 +356,7 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                text: root.authorizing ? "等待授权中…" : "在浏览器中授权…"
+                text: root.authorizing ? qsTr("等待授权中…") : qsTr("在浏览器中授权…")
                 color: "#ffffff"
                 font.pixelSize: 12
             }
@@ -385,7 +385,7 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                text: "取消"
+                text: qsTr("取消")
                 color: root.dark ? "#c9cfd9" : "#3a4048"
                 font.pixelSize: 12
             }

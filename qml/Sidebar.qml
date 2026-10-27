@@ -79,21 +79,61 @@ Item {
         volumeRevision += 1
     }
 
+    function sectionLabel(value) {
+        switch (value) {
+        case "位置": return qsTr("位置")
+        case "收藏": return qsTr("收藏")
+        case "空间": return qsTr("空间")
+        case "磁盘": return qsTr("磁盘")
+        case "网络存储": return qsTr("网络存储")
+        case "云存储": return qsTr("云存储")
+        case "最近": return qsTr("最近")
+        default: return value
+        }
+    }
+
+    /// `name` comes from `SidebarModel`; translating only the built-in places
+    /// and action rows keeps a favourite or recent entry named "文档" intact.
+    function rowLabel(name) {
+        switch (name) {
+        case "主目录": return qsTr("主目录")
+        case "桌面": return qsTr("桌面")
+        case "文档": return qsTr("文档")
+        case "下载": return qsTr("下载")
+        case "图片": return qsTr("图片")
+        case "音乐": return qsTr("音乐")
+        case "视频": return qsTr("视频")
+        case "新建空间…": return qsTr("新建空间…")
+        case "连接网络存储…": return qsTr("连接网络存储…")
+        case "添加网盘账户…": return qsTr("添加网盘账户…")
+        default: return name
+        }
+    }
+
+    function detailLabel(value) {
+        if (value === "空")
+            return qsTr("空")
+        const count = /^(\d+) 项$/.exec(value)
+        if (count)
+            return qsTr("%1 项").arg(count[1])
+        return value
+    }
+
     function glyph(icon) {
         switch (icon) {
-        case "home": return "主"
-        case "desktop": return "桌"
-        case "documents": return "文"
-        case "downloads": return "下"
-        case "pictures": return "图"
-        case "music": return "音"
-        case "videos": return "视"
+        case "home": return qsTr("主")
+        case "desktop": return qsTr("桌")
+        case "documents": return qsTr("文")
+        case "downloads": return qsTr("下")
+        case "pictures": return qsTr("图")
+        case "music": return qsTr("音")
+        case "videos": return qsTr("视")
         case "star": return "★"
-        case "disk": return "盘"
+        case "disk": return qsTr("盘")
         case "wsl": return "W"
-        case "recent": return "近"
-        case "server": return "服"
-        case "cloud": return "云"
+        case "recent": return qsTr("近")
+        case "server": return qsTr("服")
+        case "cloud": return qsTr("云")
         case "space": return "◇"
         case "add": return "+"
         default: return "•"
@@ -158,7 +198,7 @@ Item {
         visible: root.showHeader
         x: 14
         y: 10
-        text: "导航"
+        text: qsTr("导航")
         color: root.mutedColor
         font.pixelSize: 11
         font.letterSpacing: 1
@@ -179,7 +219,7 @@ Item {
             : (overviewMouse.containsMouse ? root.hoverColor : "transparent")
 
         Accessible.role: Accessible.Button
-        Accessible.name: "概览"
+        Accessible.name: qsTr("概览")
         Accessible.onPressAction: root.overviewRequested()
 
         Rectangle {
@@ -204,7 +244,7 @@ Item {
             anchors.right: parent.right
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            text: "概览"
+            text: qsTr("概览")
             color: root.overviewActive ? root.textColor
                 : (root.dark ? "#cfd5df" : "#333940")
             font.pixelSize: 12
@@ -233,7 +273,7 @@ Item {
             : (trashMouse.containsMouse ? root.hoverColor : "transparent")
 
         Accessible.role: Accessible.Button
-        Accessible.name: "回收站"
+        Accessible.name: qsTr("回收站")
         Accessible.onPressAction: root.trashRequested()
 
         Rectangle {
@@ -246,7 +286,7 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                text: "回"
+                text: qsTr("回")
                 color: root.accent
                 font.pixelSize: 10
             }
@@ -258,7 +298,7 @@ Item {
             anchors.right: parent.right
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            text: "回收站"
+            text: qsTr("回收站")
             color: root.trashActive ? root.textColor
                 : (root.dark ? "#cfd5df" : "#333940")
             font.pixelSize: 12
@@ -295,7 +335,7 @@ Item {
             Text {
                 x: 14
                 anchors.verticalCenter: parent.verticalCenter
-                text: section
+                text: root.sectionLabel(section)
                 color: root.mutedColor
                 font.pixelSize: 10
                 font.letterSpacing: 0.6
@@ -323,6 +363,11 @@ Item {
                 && row.kind === "space" && row.path === root.activeSpaceId
             readonly property bool isAction: row.kind === "addConnection"
                 || row.kind === "addCloud" || row.kind === "addSpace"
+            readonly property bool builtInName: row.isAction
+                || row.icon === "home" || row.icon === "desktop"
+                || row.icon === "documents" || row.icon === "downloads"
+                || row.icon === "pictures" || row.icon === "music"
+                || row.icon === "videos"
 
             /// The visible row is only the first 27px; an expanded volume's
             /// tree hangs below it. Keeping that distinction explicit means the
@@ -366,7 +411,7 @@ Item {
                     anchors.right: detailText.left
                     anchors.rightMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
-                    text: row.name
+                    text: row.builtInName ? root.rowLabel(row.name) : row.name
                     color: (row.current || row.spaceCurrent) ? root.textColor
                         : (row.isAction ? root.mutedColor
                             : (root.dark ? "#cfd5df" : "#333940"))
@@ -380,7 +425,7 @@ Item {
                     anchors.right: parent.right
                     anchors.rightMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
-                    text: row.detail
+                    text: root.detailLabel(row.detail)
                     color: root.mutedColor
                     font.pixelSize: 9
                     elide: Text.ElideRight

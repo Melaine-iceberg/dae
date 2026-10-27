@@ -785,6 +785,49 @@ changeText/timeText`，QML 侧一个 `ListView` 加 `section.property` 即可。
 交互未做自动化点击，只核对了模型单测（展开后的深度优先顺序、隐藏目录过滤）与
 `Loader` 的绑定路径。
 
+### 4.13 设置页与国际化（2026-10-27）
+
+**设置面板分五页。** `qml/SettingsPanel.qml` 现在是
+`appearance / shortcuts / terminal / defaultManager / logs`：外观页选
+`system|light|dark` 与 `system|brand` 强调色，语言页选
+`system|zh-CN|en`；快捷键页按 Rust 动作目录分三组列出 20 个动作，可录制、
+清空、单条重置或全部重置，并在提交前检测同表冲突；终端页保留原来的字号/
+行高/字体族与保存按钮；默认文件管理器页沿用平台注册命令；日志页显示
+`appLogDir` 并提供“打开目录”。
+
+**共享与壳内偏好分开。** 快捷键与终端排版继续写
+`%APPDATA%\com.melaine.dae\settings.toml`（`dae_core::settings` 的 20 个
+action id 与默认值），Tauri 壳读同一份；主题/强调色/语言只属于 Qt 壳，写
+`appearance-qt.ini`（`crates/dae-qt/src/appearance.rs`），默认全为
+`system`。`ShellWindow` 把 `dark`/`accent` 传给所有窗口与自绘控件，
+`Main.qml` 与撕出窗口不各自读偏好。
+
+**快捷键是注册表，不是散落的 `Keys` 处理器。** `qml/Shortcut.js` 负责
+`Mod+...` 与 Qt 键名的双向转换、录制、显示与匹配（Qt 序列要求单字母大写，
+例如 `Ctrl+K`）；`ShellWindow` 暴露
+`shortcutBinding/shortcutDisplay/shortcutSequence/shortcutMatches`，全局
+动作、`FileList`、右键菜单、`CommandPalette`、`FilterMenu`、`OverviewView`
+都从 `Workspace.shortcutsJson` 取当前绑定。录制时 `SettingsPanel.capturing`
+让 ShellWindow 的 Escape 暂时失效，Esc 只取消录制、不关闭面板。
+
+**翻译不经过 lrelease。** `qml/i18n/dae_en.ts` 与 `dae_zh_CN.ts` 由
+`lupdate` 生成/更新并打进 QRC（`/i18n`）；`crates/dae-qt/cpp/translator.cpp`
+用 `QXmlStreamReader` 直接解析 TS 的 `<context>/<message>`，安装后调用
+`QQmlEngine::retranslate()`。中文是源语言，运行时不装 translator；
+`system` 跟随 `QLocale::system()`，`zh*` 用中文，其余用英文。32 个 QML
+文件的可见文案全部改为 `qsTr()`（686 条 message，英文全部填充），
+`Sidebar`/`Overview`/状态栏把共享后端返回的常见固定串（`N 项`、`今天`、
+操作 toast、进度词等）在显示层映射；用户数据（收藏名、空间名、文件名）不译。
+
+**验证（2026-10-27，本机 debug）**：`cargo test -p dae-qt` 119 项全过；
+`cargo check -p dae-app --all-targets` 与 `cargo build -p dae-app` 通过；
+`qmllint` 无新增告警（仅既有的 unqualified access 提示）。实跑切换到
+English 后截图核对：设置五页、侧栏、列表表头（Name/Type/Size/Modified）、
+状态栏（`199 items`）、命令面板快捷键提示均为英文；录制快捷键写回
+`settings.toml`，冲突提示、清空与重置生效；`Ctrl+K` 打开命令面板，
+录制中按 Esc 只退出录制。仍已知：`friendly_error()` 产生的具体错误句
+和部分 Rust 侧状态仍为中文，不在本轮 QML 本地化范围内。
+
 ## 5. 定案前必须量出来的四组数字
 
 | # | 待验证 | 门槛 | 不达标怎么办 |

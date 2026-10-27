@@ -20,6 +20,7 @@ Item {
     property int activeIndex: 0
     property var hostWindow: null
     property bool dark: true
+    property color accent: dark ? "#6ea8fe" : "#2f6fdf"
     property string material: "none"
 
     /// A pressed tab that could still become a drag. Cleared before the native
@@ -61,7 +62,6 @@ Item {
     readonly property color textColor: dark ? "#e7e9ee" : "#1c1f24"
     readonly property color mutedColor: dark ? "#8d94a2" : "#657080"
     readonly property color hairline: dark ? "#26ffffff" : "#16000000"
-    readonly property color accent: dark ? "#6ea8fe" : "#2f6fdf"
 
     function tabX(index) {
         return tabLeft + index * (tabWidthValue + tabGap)
@@ -319,7 +319,7 @@ Item {
 
         Text {
             anchors.centerIn: parent
-            text: "新窗口"
+            text: qsTr("新窗口")
             color: root.mutedColor
             font.pixelSize: 11
         }

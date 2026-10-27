@@ -26,11 +26,11 @@ QtObject {
     }
     property string title: {
         if (surface === "trash")
-            return "回收站"
+            return qsTr("回收站")
         if (surface === "overview")
-            return "概览"
+            return qsTr("概览")
         if (surface === "space")
-            return spaceTitle.length > 0 ? spaceTitle : "空间"
+            return spaceTitle.length > 0 ? spaceTitle : qsTr("空间")
         return listing.path !== "" ? listing.path : "dae"
     }
     property DirectoryListModel listing: DirectoryListModel {}

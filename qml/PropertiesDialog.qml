@@ -149,7 +149,7 @@ FocusScope {
 
             Text {
                 width: parent.width
-                text: "属性"
+                text: qsTr("属性")
                 color: root.textColor
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
@@ -159,7 +159,7 @@ FocusScope {
 
             Text {
                 width: parent.width
-                text: controller.loading ? "正在读取…" : controller.name
+                text: controller.loading ? qsTr("正在读取…") : controller.name
                 color: root.mutedColor
                 font.pixelSize: 12
                 elide: Text.ElideMiddle
@@ -178,13 +178,13 @@ FocusScope {
 
                 Repeater {
                     model: {
-                        const tabs = [{ key: "general", label: "常规" }]
+                        const tabs = [{ key: "general", label: qsTr("常规") }]
                         if (controller.platformKind === "unix" && controller.editable)
-                            tabs.push({ key: "permissions", label: "权限" })
+                            tabs.push({ key: "permissions", label: qsTr("权限") })
                         if (controller.platformKind === "windows" && controller.editable)
-                            tabs.push({ key: "attributes", label: "属性" })
+                            tabs.push({ key: "attributes", label: qsTr("属性") })
                         if (!controller.isDirectory && !controller.remote)
-                            tabs.push({ key: "checksum", label: "校验和" })
+                            tabs.push({ key: "checksum", label: qsTr("校验和") })
                         return tabs
                     }
 
@@ -246,11 +246,11 @@ FocusScope {
                     visible: root.tab === "general"
                     spacing: 0
 
-                    InfoRow { label: "名称"; value: controller.name }
-                    InfoRow { label: "类型"; value: controller.kindText }
-                    InfoRow { label: "位置"; value: controller.location }
+                    InfoRow { label: qsTr("名称"); value: controller.name }
+                    InfoRow { label: qsTr("类型"); value: controller.kindText }
+                    InfoRow { label: qsTr("位置"); value: controller.location }
                     InfoRow {
-                        label: "大小"
+                        label: qsTr("大小")
                         value: controller.isDirectory
                             ? (controller.sizeScanText === "" ? "—" : controller.sizeScanText)
                             : controller.sizeText
@@ -275,7 +275,7 @@ FocusScope {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: controller.sizeScanning ? "取消计算" : "计算大小"
+                                text: controller.sizeScanning ? qsTr("取消计算") : qsTr("计算大小")
                                 color: root.textColor
                                 font.pixelSize: 11
                             }
@@ -293,8 +293,8 @@ FocusScope {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: controller.sizeScanning
-                                ? "计算中… " + controller.sizeScanText
-                                : (controller.sizeScanDone ? "已统计 " + controller.sizeScanText : "")
+                                ? qsTr("计算中… ") + controller.sizeScanText
+                                : (controller.sizeScanDone ? qsTr("已统计 ") + controller.sizeScanText : "")
                             color: root.mutedColor
                             font.pixelSize: 11
                         }
@@ -302,11 +302,11 @@ FocusScope {
 
                     Item { width: 1; height: controller.isDirectory && !controller.remote ? 4 : 0 }
 
-                    InfoRow { label: "创建时间"; value: controller.createdText }
-                    InfoRow { label: "修改时间"; value: controller.modifiedText }
-                    InfoRow { label: "访问时间"; value: controller.accessedText }
+                    InfoRow { label: qsTr("创建时间"); value: controller.createdText }
+                    InfoRow { label: qsTr("修改时间"); value: controller.modifiedText }
+                    InfoRow { label: qsTr("访问时间"); value: controller.accessedText }
                     InfoRow {
-                        label: "链接目标"
+                        label: qsTr("链接目标")
                         value: controller.targetText
                         visible: controller.isSymlink && controller.targetText !== ""
                     }
@@ -323,21 +323,21 @@ FocusScope {
                         height: 22
 
                         Item { width: 70; height: 1 }
-                        Text { width: 90; text: "用户"; color: root.mutedColor; font.pixelSize: 11 }
-                        Text { width: 90; text: "组"; color: root.mutedColor; font.pixelSize: 11 }
-                        Text { width: 90; text: "其他"; color: root.mutedColor; font.pixelSize: 11 }
+                        Text { width: 90; text: qsTr("用户"); color: root.mutedColor; font.pixelSize: 11 }
+                        Text { width: 90; text: qsTr("组"); color: root.mutedColor; font.pixelSize: 11 }
+                        Text { width: 90; text: qsTr("其他"); color: root.mutedColor; font.pixelSize: 11 }
                     }
 
                     PermissionRow {
-                        label: "读取"
+                        label: qsTr("读取")
                         bit: 0o400
                     }
                     PermissionRow {
-                        label: "写入"
+                        label: qsTr("写入")
                         bit: 0o200
                     }
                     PermissionRow {
-                        label: "执行"
+                        label: qsTr("执行")
                         bit: 0o100
                     }
 
@@ -375,7 +375,7 @@ FocusScope {
                         Text {
                             width: 70
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "所有者"
+                            text: qsTr("所有者")
                             color: root.mutedColor
                             font.pixelSize: 11
                         }
@@ -383,14 +383,14 @@ FocusScope {
                         Field {
                             id: userField
                             width: 150
-                            placeholder: "用户名或 uid"
+                            placeholder: qsTr("用户名或 uid")
                             onEdited: function (value) { root.draftUser = value }
                         }
 
                         Field {
                             id: groupField
                             width: 150
-                            placeholder: "组名或 gid"
+                            placeholder: qsTr("组名或 gid")
                             onEdited: function (value) { root.draftGroup = value }
                         }
                     }
@@ -403,22 +403,22 @@ FocusScope {
                     spacing: 8
 
                     Toggle {
-                        label: "只读"
+                        label: qsTr("只读")
                         checked: root.draftReadOnly
                         onToggled: root.draftReadOnly = !root.draftReadOnly
                     }
                     Toggle {
-                        label: "隐藏"
+                        label: qsTr("隐藏")
                         checked: root.draftHidden
                         onToggled: root.draftHidden = !root.draftHidden
                     }
                     Toggle {
-                        label: "存档"
+                        label: qsTr("存档")
                         checked: root.draftArchive
                         onToggled: root.draftArchive = !root.draftArchive
                     }
                     Toggle {
-                        label: "系统"
+                        label: qsTr("系统")
                         checked: root.draftSystem
                         onToggled: root.draftSystem = !root.draftSystem
                     }
@@ -433,8 +433,8 @@ FocusScope {
                     Text {
                         width: parent.width
                         text: controller.hashDone
-                            ? "校验值已计算完成。"
-                            : (controller.hashing ? "正在计算校验值…" : "一次读取文件，同时给出三种校验值。")
+                            ? qsTr("校验值已计算完成。")
+                            : (controller.hashing ? qsTr("正在计算校验值…") : qsTr("一次读取文件，同时给出三种校验值。"))
                         color: root.mutedColor
                         font.pixelSize: 11
                         wrapMode: Text.WordWrap
@@ -490,7 +490,7 @@ FocusScope {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: controller.hashing ? "取消" : "开始校验"
+                                text: controller.hashing ? qsTr("取消") : qsTr("开始校验")
                                 color: "#ffffff"
                                 font.pixelSize: 12
                             }
@@ -507,7 +507,7 @@ FocusScope {
 
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: root.copiedAlgorithm !== "" ? "已复制" : ""
+                            text: root.copiedAlgorithm !== "" ? qsTr("已复制") : ""
                             color: root.mutedColor
                             font.pixelSize: 11
                         }
@@ -524,7 +524,7 @@ FocusScope {
                 Toggle {
                     width: 180
                     height: parent.height
-                    label: "应用于所有子项目"
+                    label: qsTr("应用于所有子项目")
                     checked: root.recursive
                     visible: controller.isDirectory && controller.editable
                     enabled: visible
@@ -550,7 +550,7 @@ FocusScope {
                         anchors.centerIn: parent
                         // A read-only entry has nothing to write, so the button
                         // that is always available is a plain close.
-                        text: controller.editable ? "取消" : "关闭"
+                        text: controller.editable ? qsTr("取消") : qsTr("关闭")
                         color: root.dark ? "#c9cfd9" : "#3a4048"
                         font.pixelSize: 12
                     }
@@ -574,7 +574,7 @@ FocusScope {
 
                     Text {
                         anchors.centerIn: parent
-                        text: controller.saving ? "保存中…" : "确定"
+                        text: controller.saving ? qsTr("保存中…") : qsTr("确定")
                         color: root.canSave ? "#ffffff" : root.mutedColor
                         font.pixelSize: 12
                     }
@@ -847,7 +847,7 @@ FocusScope {
 
             Text {
                 anchors.centerIn: parent
-                text: "复制"
+                text: qsTr("复制")
                 color: root.textColor
                 font.pixelSize: 11
             }

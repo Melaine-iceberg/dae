@@ -46,11 +46,11 @@ Item {
         if (!hasRepo)
             return ""
         if (repo.gitDetached)
-            return "分离 HEAD"
+            return qsTr("分离 HEAD")
         if (repo.gitRemotes.length === 0)
-            return "无远程"
+            return qsTr("无远程")
         if (!repo.gitHasUpstream)
-            return "未配置上游"
+            return qsTr("未配置上游")
         const parts = []
         if (repo.gitAhead > 0)
             parts.push("↑" + repo.gitAhead)
@@ -66,10 +66,10 @@ Item {
         const rows = []
         if (!hasRepo)
             return rows
-        rows.push({"kind": "section", "key": "local-section", "text": "本地分支"})
+        rows.push({"kind": "section", "key": "local-section", "text": qsTr("本地分支")})
         const local = repo.gitLocalBranches
         if (local.length === 0) {
-            rows.push({"kind": "empty", "key": "local-empty", "text": "没有本地分支"})
+            rows.push({"kind": "empty", "key": "local-empty", "text": qsTr("没有本地分支")})
         } else {
             for (let index = 0; index < local.length; index += 1) {
                 const name = local[index]
@@ -84,7 +84,7 @@ Item {
         }
         const remote = repo.gitRemoteBranches
         if (remote.length > 0) {
-            rows.push({"kind": "section", "key": "remote-section", "text": "远程分支"})
+            rows.push({"kind": "section", "key": "remote-section", "text": qsTr("远程分支")})
             for (let index = 0; index < remote.length; index += 1) {
                 const name = remote[index]
                 rows.push({
@@ -141,7 +141,7 @@ Item {
             return
         const name = branchInput.text.trim()
         if (name === "") {
-            root.createError = "请输入分支名"
+            root.createError = qsTr("请输入分支名")
             return
         }
         root.createError = ""
@@ -294,11 +294,11 @@ Item {
 
                 Repeater {
                     model: [
-                        {"label": "新建", "action": "create"},
-                        {"label": "获取", "action": "fetch"},
-                        {"label": "拉取", "action": "pull"},
-                        {"label": "推送", "action": "push"},
-                        {"label": "同步", "action": "sync"}
+                        {"label": qsTr("新建"), "action": "create"},
+                        {"label": qsTr("获取"), "action": "fetch"},
+                        {"label": qsTr("拉取"), "action": "pull"},
+                        {"label": qsTr("推送"), "action": "push"},
+                        {"label": qsTr("同步"), "action": "sync"}
                     ]
 
                     delegate: Rectangle {
@@ -368,7 +368,7 @@ Item {
                         anchors.leftMargin: 7
                         anchors.verticalCenter: parent.verticalCenter
                         visible: branchInput.text === ""
-                        text: "分支名称"
+                        text: qsTr("分支名称")
                         color: root.mutedColor
                         font.pixelSize: 10
                         textFormat: Text.PlainText
@@ -412,7 +412,7 @@ Item {
 
                     Text {
                         anchors.centerIn: parent
-                        text: root.createPending ? "创建中…" : "创建"
+                        text: root.createPending ? qsTr("创建中…") : qsTr("创建")
                         color: root.textColor
                         font.pixelSize: 10
                         textFormat: Text.PlainText
@@ -456,7 +456,7 @@ Item {
                     Text {
                         x: 18
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "创建后切换"
+                        text: qsTr("创建后切换")
                         color: root.mutedColor
                         font.pixelSize: 10
                         textFormat: Text.PlainText

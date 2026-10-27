@@ -117,7 +117,7 @@ Item {
             return ""
         const port = parseInt(raw, 10)
         if (!Number.isInteger(port) || port < 1 || port > 65535) {
-            root.errorText = "端口必须是 1-65535"
+            root.errorText = qsTr("端口必须是 1-65535")
             return null
         }
         return raw
@@ -129,7 +129,7 @@ Item {
         root.clearStatus()
         const host = hostField.value.trim()
         if (host === "") {
-            root.errorText = "请输入服务器地址"
+            root.errorText = qsTr("请输入服务器地址")
             return
         }
         const port = root.validatedPort()
@@ -145,7 +145,7 @@ Item {
         root.clearStatus()
         const host = hostField.value.trim()
         if (host === "") {
-            root.errorText = "请输入服务器地址"
+            root.errorText = qsTr("请输入服务器地址")
             return
         }
         const port = root.validatedPort()
@@ -190,7 +190,7 @@ Item {
         Text {
             x: 20
             y: 18
-            text: "连接网络存储"
+            text: qsTr("连接网络存储")
             color: root.textColor
             font.pixelSize: 14
             font.weight: Font.DemiBold
@@ -200,7 +200,7 @@ Item {
             x: 20
             y: 42
             width: parent.width - 40
-            text: "连接 SMB 服务器（NAS、Windows 共享）或 SFTP 服务器（Linux、NAS）。"
+            text: qsTr("连接 SMB 服务器（NAS、Windows 共享）或 SFTP 服务器（Linux、NAS）。")
             color: root.mutedColor
             font.pixelSize: 11
             elide: Text.ElideRight
@@ -209,7 +209,7 @@ Item {
         Text {
             x: 20
             y: 72
-            text: "协议"
+            text: qsTr("协议")
             color: root.dark ? "#aeb5c0" : "#565e68"
             font.pixelSize: 12
         }
@@ -221,7 +221,7 @@ Item {
 
             ProtocolButton {
                 protocol: "smb"
-                label: "SMB / Windows 共享"
+                label: qsTr("SMB / Windows 共享")
             }
 
             ProtocolButton {
@@ -236,7 +236,7 @@ Item {
                 Text {
                     id: note
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "FTP / WebDAV 即将支持"
+                    text: qsTr("FTP / WebDAV 即将支持")
                     color: root.mutedColor
                     font.pixelSize: 10
                 }
@@ -248,8 +248,8 @@ Item {
             x: 20
             y: 138
             width: card.width - 40 - 104 - 12
-            label: "服务器地址"
-            placeholder: "例如 nas.local 或 192.168.1.10"
+            label: qsTr("服务器地址")
+            placeholder: qsTr("例如 nas.local 或 192.168.1.10")
             onEdited: root.clearStatus()
         }
 
@@ -258,7 +258,7 @@ Item {
             x: hostField.x + hostField.width + 12
             y: 138
             width: 104
-            label: "端口"
+            label: qsTr("端口")
             placeholder: root.defaultPort()
             inputHints: Qt.ImhDigitsOnly
             onEdited: root.clearStatus()
@@ -269,7 +269,7 @@ Item {
             x: 20
             y: 202
             width: (card.width - 40 - 12) / 2
-            label: "账号（可选）"
+            label: qsTr("账号（可选）")
             onEdited: root.clearStatus()
         }
 
@@ -278,7 +278,7 @@ Item {
             x: userField.x + userField.width + 12
             y: 202
             width: userField.width
-            label: "密码（可选）"
+            label: qsTr("密码（可选）")
             password: true
             onEdited: root.clearStatus()
         }
@@ -313,7 +313,7 @@ Item {
                 anchors.left: checkBox.right
                 anchors.leftMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
-                text: "记住密码（保存在系统钥匙串中）"
+                text: qsTr("记住密码（保存在系统钥匙串中）")
                 color: root.mutedColor
                 font.pixelSize: 11
             }
@@ -356,7 +356,7 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                text: root.testing ? "测试中…" : "测试连接"
+                text: root.testing ? qsTr("测试中…") : qsTr("测试连接")
                 color: testButton.enabled ? (root.dark ? "#c9cfd9" : "#3a4048") : root.mutedColor
                 font.pixelSize: 12
             }
@@ -384,7 +384,7 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                text: root.saving ? "保存中…" : "连接"
+                text: root.saving ? qsTr("保存中…") : qsTr("连接")
                 color: "#ffffff"
                 font.pixelSize: 12
             }
@@ -413,7 +413,7 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                text: "取消"
+                text: qsTr("取消")
                 color: root.dark ? "#c9cfd9" : "#3a4048"
                 font.pixelSize: 12
             }

@@ -55,6 +55,7 @@ const QML_FILES: &[(&str, &str)] = &[
     ),
     ("../../qml/TearOffWindow.qml", "qml/TearOffWindow.qml"),
     ("../../qml/Shell.js", "qml/Shell.js"),
+    ("../../qml/Shortcut.js", "qml/Shortcut.js"),
 ];
 
 fn main() {
@@ -63,8 +64,15 @@ fn main() {
         .map(|(path, alias)| QResourceFile::new(path).alias((*alias).to_owned()));
     let qml = QResource::new().prefix("/qt/qml/dae").files(files);
 
+    // The translator reads these XML documents directly (see
+    // `crates/dae-qt/cpp/translator.cpp`), so no `lrelease` step is needed.
+    let translations = QResource::new().prefix("/i18n").files([
+        QResourceFile::new("../../qml/i18n/dae_en.ts").alias("dae_en.ts".to_owned()),
+        QResourceFile::new("../../qml/i18n/dae_zh_CN.ts").alias("dae_zh_CN.ts".to_owned()),
+    ]);
+
     CxxQtBuilder::new()
         .qt_module("Quick")
-        .qrc_resources(QResources::new().resource(qml))
+        .qrc_resources(QResources::new().resource(qml).resource(translations))
         .build();
 }

@@ -90,7 +90,7 @@ FocusScope {
 
                 Text {
                     width: parent.width
-                    text: "软件更新"
+                    text: qsTr("软件更新")
                     color: root.textColor
                     font.pixelSize: 14
                     font.weight: Font.DemiBold
@@ -100,7 +100,7 @@ FocusScope {
 
                 Text {
                     width: parent.width
-                    text: "当前版本 v" + Updater.currentVersion
+                    text: qsTr("当前版本 v") + Updater.currentVersion
                     color: root.mutedColor
                     font.pixelSize: 11
                 }
@@ -110,7 +110,7 @@ FocusScope {
                 Text {
                     width: parent.width
                     visible: Updater.checking
-                    text: "正在检查更新…"
+                    text: qsTr("正在检查更新…")
                     color: root.textColor
                     font.pixelSize: 12
                 }
@@ -118,7 +118,7 @@ FocusScope {
                 Text {
                     width: parent.width
                     visible: !Updater.checking && Updater.restarting
-                    text: "正在安装更新，应用即将重启…"
+                    text: qsTr("正在安装更新，应用即将重启…")
                     color: root.textColor
                     font.pixelSize: 12
                 }
@@ -127,7 +127,7 @@ FocusScope {
                     width: parent.width
                     visible: !Updater.checking && !Updater.restarting && Updater.available
                         && !Updater.downloading
-                    text: "发现新版本 v" + Updater.latestVersion
+                    text: qsTr("发现新版本 v") + Updater.latestVersion
                     color: root.textColor
                     font.pixelSize: 13
                     font.weight: Font.DemiBold
@@ -155,7 +155,7 @@ FocusScope {
                         width: notesArea.width
                         text: Updater.notes !== ""
                             ? Updater.notes
-                            : "新版本已经准备好。下载完成后会自动校验更新包，确认无误后安装并重启。"
+                            : qsTr("新版本已经准备好。下载完成后会自动校验更新包，确认无误后安装并重启。")
                         color: root.mutedColor
                         font.pixelSize: 11
                         lineHeight: 1.35
@@ -172,7 +172,7 @@ FocusScope {
                 Text {
                     width: parent.width
                     visible: Updater.downloading
-                    text: "正在下载并校验更新… " + Updater.installProgress + "%"
+                    text: qsTr("正在下载并校验更新… ") + Updater.installProgress + "%"
                     color: root.textColor
                     font.pixelSize: 12
                 }
@@ -207,7 +207,7 @@ FocusScope {
                     width: parent.width
                     visible: !Updater.checking && !Updater.available && !Updater.downloading
                         && !Updater.restarting && Updater.error === "" && Updater.checked
-                    text: "已是最新版本"
+                    text: qsTr("已是最新版本")
                     color: root.mutedColor
                     font.pixelSize: 12
                 }
@@ -244,7 +244,7 @@ FocusScope {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "关闭"
+                        text: qsTr("关闭")
                         color: root.mutedColor
                         font.pixelSize: 12
                     }
@@ -271,7 +271,7 @@ FocusScope {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "重新检查"
+                        text: qsTr("重新检查")
                         color: root.mutedColor
                         font.pixelSize: 12
                     }
@@ -295,7 +295,7 @@ FocusScope {
 
                     Text {
                         anchors.centerIn: parent
-                        text: Updater.downloading ? "下载中…" : "下载并安装"
+                        text: Updater.downloading ? qsTr("下载中…") : qsTr("下载并安装")
                         color: "#ffffff"
                         font.pixelSize: 12
                         font.weight: Font.DemiBold

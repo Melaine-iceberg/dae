@@ -27,9 +27,12 @@ fn main() {
             "cpp/qml_debug.cpp",
             "cpp/terminal_item.cpp",
             "cpp/terminal_item.h",
+            "cpp/translator.cpp",
+            "cpp/translator.h",
         ])
         .files([
             "src/activation.rs",
+            "src/appearance.rs",
             "src/config.rs",
             "src/icons.rs",
             "src/ime.rs",

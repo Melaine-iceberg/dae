@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
 import dae 1.0
+import "Shortcut.js" as Shortcut
 
 // The explorer listing. Three presentations over one model: the detail list,
 // the card grid and Miller columns. Only the list has a header; the other two
@@ -11,6 +12,10 @@ Item {
     id: root
 
     property var tab: null
+    /// Action id -> canonical binding, supplied by the shell from
+    /// `settings.toml`. The keys below consult it instead of hardcoding
+    /// modifiers; an empty value means the action is deliberately unbound.
+    property var shortcutMap: ({})
     /// Set while a filename search is showing. The same delegate and selection
     /// code then work for search rows, which expose the listing's roles plus
     /// `relativePath`. Search always uses the list: sorting and drilling are
@@ -90,6 +95,9 @@ Item {
     signal selectionChanged()
     signal remoteDeleteRequested(var paths)
     signal remoteOpenRequested(string path)
+    /// Open the OS terminal at the current directory; the shell owns the
+    /// command and the per-location gate.
+    signal openTerminalRequested(string path)
     /// Toggle the preview panel for `path` (Space). The panel is the window's,
     /// but the key belongs to the focused list.
     signal previewRequested(string path)
@@ -103,6 +111,14 @@ Item {
                 paths.push(key)
         }
         return paths
+    }
+
+    function binding(id) {
+        return root.shortcutMap && root.shortcutMap[id] ? root.shortcutMap[id] : ""
+    }
+
+    function matches(id, event) {
+        return Shortcut.matches(event, root.binding(id))
     }
 
     /// Pushes the display preferences into the tab's model. Ordering is
@@ -500,20 +516,76 @@ Item {
     }
 
     function handleKey(event) {
-        const ctrl = (event.modifiers & Qt.ControlModifier) !== 0
-        const shift = (event.modifiers & Qt.ShiftModifier) !== 0
         const index = root.cursorIndex()
 
-        if (event.key === Qt.Key_Delete) {
-            root.deleteSelection(shift)
+        // The file operations below are the actions the settings panel edits.
+        // Matching parses the stored binding, so a user can move Delete to
+        // another key, or unbind it, without another hardcoded branch.
+        if (root.matches("explorer.deletePermanent", event)) {
+            root.deleteSelection(true)
             return true
         }
-        if (event.key === Qt.Key_F2) {
+        if (root.matches("explorer.trash", event)) {
+            root.deleteSelection(false)
+            return true
+        }
+        if (root.matches("explorer.rename", event)) {
             const path = root.currentPath()
             if (path !== "")
                 root.renameRequested(path, path.split(/[\\/]/).pop())
             return true
         }
+        if (root.matches("explorer.preview", event)) {
+            const path = root.currentPath()
+            if (path !== "")
+                root.previewRequested(path)
+            return true
+        }
+        if (root.matches("explorer.clearSelection", event)) {
+            if (root.tab !== null) {
+                const hadSelection = root.selectionCount > 0
+                root.tab.clearSelection()
+                if (hadSelection)
+                    root.selectionChanged()
+            }
+            return true
+        }
+        if (root.matches("explorer.selectAll", event)) {
+            root.selectAll()
+            return true
+        }
+        if (root.matches("explorer.copy", event)) {
+            root.copySelection(false)
+            return true
+        }
+        if (root.matches("explorer.cut", event)) {
+            root.copySelection(true)
+            return true
+        }
+        if (root.matches("explorer.paste", event)) {
+            if (root.model !== null)
+                Workspace.pasteInto(root.model.path)
+            return true
+        }
+        if (root.matches("explorer.toggleHidden", event)) {
+            root.toggleHiddenFiles()
+            return true
+        }
+        if (root.matches("explorer.redo", event) || root.matches("explorer.redoAlt", event)) {
+            Workspace.redo()
+            return true
+        }
+        if (root.matches("explorer.undo", event)) {
+            Workspace.undo()
+            return true
+        }
+        if (root.matches("explorer.openSystemTerminal", event)) {
+            root.openTerminalRequested(root.model !== null ? root.model.path : "")
+            return true
+        }
+
+        // Navigation is intrinsic to the focused view, not part of the shared
+        // action catalogue, so it keeps its own keys.
         if (event.key === Qt.Key_F5) {
             if (root.model !== null)
                 root.model.reload()
@@ -523,57 +595,15 @@ Item {
             root.upRequested()
             return true
         }
-        if (event.key === Qt.Key_Space) {
-            const path = root.currentPath()
-            if (path !== "")
-                root.previewRequested(path)
-            return true
-        }
-        if (event.key === Qt.Key_Escape) {
-            if (root.tab !== null) {
-                const hadSelection = root.selectionCount > 0
-                root.tab.clearSelection()
-                if (hadSelection)
-                    root.selectionChanged()
-            }
-            return true
-        }
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             if (index >= 0)
                 root.handleActivate(index)
             return true
         }
-        if (ctrl && shift && event.key === Qt.Key_N) {
+        if ((event.modifiers & Qt.ControlModifier) !== 0
+                && (event.modifiers & Qt.ShiftModifier) !== 0
+                && event.key === Qt.Key_N) {
             root.createFolderRequested()
-            return true
-        }
-        if (ctrl && event.key === Qt.Key_A) {
-            root.selectAll()
-            return true
-        }
-        if (ctrl && event.key === Qt.Key_C) {
-            root.copySelection(false)
-            return true
-        }
-        if (ctrl && event.key === Qt.Key_X) {
-            root.copySelection(true)
-            return true
-        }
-        if (ctrl && event.key === Qt.Key_V) {
-            if (root.model !== null)
-                Workspace.pasteInto(root.model.path)
-            return true
-        }
-        if (ctrl && event.key === Qt.Key_H) {
-            root.toggleHiddenFiles()
-            return true
-        }
-        if (ctrl && shift && event.key === Qt.Key_Z) {
-            Workspace.redo()
-            return true
-        }
-        if (ctrl && event.key === Qt.Key_Z) {
-            Workspace.undo()
             return true
         }
         return false
@@ -643,7 +673,7 @@ Item {
             width: Math.max(0, (root.showType ? typeHeader.x
                 : root.showSize ? sizeHeader.x
                 : root.showModified ? modifiedHeader.x : parent.width) - 8 - x)
-            label: "名称"
+            label: qsTr("名称")
             sortKey: "name"
             onClicked: root.applySort("name")
         }
@@ -657,7 +687,7 @@ Item {
             anchors.bottom: parent.bottom
             width: 58
             visible: root.showType
-            label: "类型"
+            label: qsTr("类型")
             sortKey: "type"
             onClicked: root.applySort("type")
         }
@@ -670,7 +700,7 @@ Item {
             anchors.bottom: parent.bottom
             width: 90
             visible: root.showSize
-            label: "大小"
+            label: qsTr("大小")
             sortKey: "size"
             alignRight: true
             onClicked: root.applySort("size")
@@ -684,7 +714,7 @@ Item {
             anchors.bottom: parent.bottom
             width: 140
             visible: root.showModified
-            label: "修改时间"
+            label: qsTr("修改时间")
             sortKey: "modified"
             alignRight: true
             onClicked: root.applySort("modified")
@@ -711,9 +741,9 @@ Item {
             anchors.centerIn: parent
             visible: root.model !== null && root.model.finished && root.model.loaded === 0
             text: root.searchModel !== null
-                ? (root.searchModel.status !== "" ? root.searchModel.status : "没有匹配项")
+                ? (root.searchModel.status !== "" ? root.searchModel.status : qsTr("没有匹配项"))
                 : (root.model !== null && root.model.status !== "0 项"
-                    ? root.model.status : "空目录")
+                    ? root.model.status : qsTr("空目录"))
             color: root.mutedColor
             font.pixelSize: 13
         }
@@ -923,8 +953,8 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 58
                     visible: root.showType
-                    text: row.isDir ? "文件夹"
-                        : (row.extension !== "" ? row.extension.toUpperCase() : "文件")
+                    text: row.isDir ? qsTr("文件夹")
+                        : (row.extension !== "" ? row.extension.toUpperCase() : qsTr("文件"))
                     color: root.mutedColor
                     font.pixelSize: 11
                     textFormat: Text.PlainText
@@ -1227,11 +1257,15 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                text: (root.dropAction === "move" ? "移动到 "
-                      : root.dropAction === "link" ? "创建快捷方式到 " : "复制到 ")
-                      + ((root.model !== null && root.dropTargetPath === root.model.path)
-                         ? "此文件夹"
-                         : String(root.dropTargetPath).split(/[\\/]/).pop())
+                readonly property string target:
+                    (root.model !== null && root.dropTargetPath === root.model.path)
+                        ? qsTr("此文件夹")
+                        : String(root.dropTargetPath).split(/[\\/]/).pop()
+                text: root.dropAction === "move"
+                    ? qsTr("移动到 %1").arg(target)
+                    : root.dropAction === "link"
+                        ? qsTr("创建快捷方式到 %1").arg(target)
+                        : qsTr("复制到 %1").arg(target)
                 color: root.textColor
                 font.pixelSize: 13
             }

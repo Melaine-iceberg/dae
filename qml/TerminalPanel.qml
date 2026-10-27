@@ -80,8 +80,8 @@ Item {
             x: 10
             anchors.verticalCenter: parent.verticalCenter
             text: session.running
-                ? (root.cwd !== "" ? "终端 · " + root.cwd : "终端")
-                : ("终端 · 已退出 " + session.exitCode)
+                ? (root.cwd !== "" ? qsTr("终端 · ") + root.cwd : qsTr("终端"))
+                : (qsTr("终端 · 已退出 ") + session.exitCode)
             color: session.running ? root.textColor : root.mutedColor
             font.pixelSize: 11
             elide: Text.ElideMiddle
@@ -102,7 +102,7 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                text: "重新启动"
+                text: qsTr("重新启动")
                 color: root.mutedColor
                 font.pixelSize: 10
             }

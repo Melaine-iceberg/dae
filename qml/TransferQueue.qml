@@ -71,7 +71,7 @@ Item {
                 Text {
                     x: 10
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "传输队列 · " + Workspace.queuedTransfers.length + " 项等待"
+                    text: qsTr("传输队列 · ") + Workspace.queuedTransfers.length + qsTr(" 项等待")
                     color: root.mutedColor
                     font.pixelSize: 10
                 }
@@ -80,7 +80,7 @@ Item {
                     anchors.right: parent.right
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "全部取消"
+                    text: qsTr("全部取消")
                     color: cancelAllMouse.containsMouse ? root.textColor : root.mutedColor
                     font.pixelSize: 10
                 }
@@ -134,7 +134,7 @@ Item {
                         height: parent.height
                         hoverEnabled: true
                         Accessible.role: Accessible.Button
-                        Accessible.name: "取消 " + row.modelData
+                        Accessible.name: qsTr("取消 ") + row.modelData
                         onClicked: Workspace.cancelQueuedTransfer(row.index)
                     }
                 }
@@ -147,7 +147,7 @@ Item {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "没有排队中的传输"
+                    text: qsTr("没有排队中的传输")
                     color: root.mutedColor
                     font.pixelSize: 11
                 }

@@ -9,7 +9,7 @@ Item {
     property bool dark: true
     property string heading: ""
     property string hint: ""
-    property string submitLabel: "确定"
+    property string submitLabel: qsTr("确定")
 
     signal accepted(string text)
     signal canceled()
@@ -35,7 +35,7 @@ Item {
     function submit() {
         const value = input.text.trim()
         if (value.length === 0) {
-            errorText.text = "名称不能为空"
+            errorText.text = qsTr("名称不能为空")
             return
         }
         const valueToUse = value
@@ -149,7 +149,7 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                text: "取消"
+                text: qsTr("取消")
                 color: root.dark ? "#c9cfd9" : "#3a4048"
                 font.pixelSize: 12
             }

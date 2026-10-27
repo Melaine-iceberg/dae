@@ -138,7 +138,7 @@ FocusScope {
 
             Text {
                 width: parent.width
-                text: "移动到"
+                text: qsTr("移动到")
                 color: root.textColor
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
@@ -148,7 +148,7 @@ FocusScope {
 
             Text {
                 width: parent.width
-                text: root.paths.length + " 项将移动到下面的文件夹。"
+                text: root.paths.length + qsTr(" 项将移动到下面的文件夹。")
                 color: root.mutedColor
                 font.pixelSize: 12
             }
@@ -220,12 +220,12 @@ FocusScope {
                 spacing: 8
 
                 QuickButton {
-                    label: "主目录"
+                    label: qsTr("主目录")
                     path: Workspace.homeDirectory
                 }
 
                 QuickButton {
-                    label: "当前文件夹"
+                    label: qsTr("当前文件夹")
                     path: root.origin
                 }
             }
@@ -244,7 +244,7 @@ FocusScope {
                 Text {
                     anchors.centerIn: parent
                     visible: !browser.finished
-                    text: "读取中…"
+                    text: qsTr("读取中…")
                     color: root.mutedColor
                     font.pixelSize: 12
                 }
@@ -331,7 +331,7 @@ FocusScope {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "取消"
+                        text: qsTr("取消")
                         color: root.dark ? "#c9cfd9" : "#3a4048"
                         font.pixelSize: 12
                     }
@@ -353,7 +353,7 @@ FocusScope {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "移动"
+                        text: qsTr("移动")
                         color: "#ffffff"
                         font.pixelSize: 12
                     }

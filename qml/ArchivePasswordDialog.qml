@@ -13,11 +13,11 @@ FocusScope {
 
     readonly property bool compressMode: root.mode === "compress"
     readonly property string heading: root.compressMode
-        ? "设置压缩包密码"
-        : "解压加密压缩包"
+        ? qsTr("设置压缩包密码")
+        : qsTr("解压加密压缩包")
     readonly property string description: root.compressMode
-        ? "为新的 7Z 压缩包设置打开密码。"
-        : "“" + root.archiveName + "”已加密，请输入密码后解压。"
+        ? qsTr("为新的 7Z 压缩包设置打开密码。")
+        : "“" + root.archiveName + qsTr("”已加密，请输入密码后解压。")
 
     signal accepted(string password)
     signal canceled()
@@ -49,11 +49,11 @@ FocusScope {
 
     function submit() {
         if (passwordInput.text.length === 0) {
-            errorText.text = "请输入密码"
+            errorText.text = qsTr("请输入密码")
             return
         }
         if (root.compressMode && passwordInput.text !== confirmInput.text) {
-            errorText.text = "两次输入的密码不一致"
+            errorText.text = qsTr("两次输入的密码不一致")
             return
         }
         errorText.text = ""
@@ -120,7 +120,7 @@ FocusScope {
 
             Text {
                 width: contentColumn.width
-                text: "密码"
+                text: qsTr("密码")
                 color: root.dark ? "#8d94a2" : "#657080"
                 font.pixelSize: 11
             }
@@ -163,7 +163,7 @@ FocusScope {
             Text {
                 visible: root.compressMode
                 width: contentColumn.width
-                text: "确认密码"
+                text: qsTr("确认密码")
                 color: root.dark ? "#8d94a2" : "#657080"
                 font.pixelSize: 11
             }
@@ -224,7 +224,7 @@ FocusScope {
             border.color: root.dark ? "#26ffffff" : "#18000000"
 
             Accessible.role: Accessible.Button
-            Accessible.name: "取消"
+            Accessible.name: qsTr("取消")
             Accessible.onPressAction: {
                 root.close()
                 root.canceled()
@@ -232,7 +232,7 @@ FocusScope {
 
             Text {
                 anchors.centerIn: parent
-                text: "取消"
+                text: qsTr("取消")
                 color: root.dark ? "#c9cfd9" : "#3a4048"
                 font.pixelSize: 12
             }
@@ -266,7 +266,7 @@ FocusScope {
             Text {
                 id: submitLabel
                 anchors.centerIn: parent
-                text: root.compressMode ? "压缩" : "解压"
+                text: root.compressMode ? qsTr("压缩") : qsTr("解压")
                 color: "#ffffff"
                 font.pixelSize: 12
             }

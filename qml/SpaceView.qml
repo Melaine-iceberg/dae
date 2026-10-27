@@ -51,7 +51,7 @@ Item {
 
     function remove(path) {
         if (!Spaces.removeItem(root.spaceId, path))
-            root.errorReported(Spaces.error !== "" ? Spaces.error : "无法从空间移除")
+            root.errorReported(Spaces.error !== "" ? Spaces.error : qsTr("无法从空间移除"))
     }
 
     onSpaceIdChanged: root.reload()
@@ -95,7 +95,7 @@ Item {
             spacing: 4
 
             Text {
-                text: root.spaceName !== "" ? root.spaceName : "空间"
+                text: root.spaceName !== "" ? root.spaceName : qsTr("空间")
                 color: root.textColor
                 font.pixelSize: 22
                 font.weight: Font.DemiBold
@@ -103,8 +103,8 @@ Item {
 
             Text {
                 text: root.itemCount === 0
-                    ? "还没有固定项目"
-                    : root.itemCount + " 个固定项目"
+                    ? qsTr("还没有固定项目")
+                    : root.itemCount + qsTr(" 个固定项目")
                 color: root.mutedColor
                 font.pixelSize: 11
             }
@@ -117,14 +117,14 @@ Item {
             spacing: 6
 
             ActionButton {
-                label: "重命名"
+                label: qsTr("重命名")
                 enabled: root.spaceId !== ""
                 onClicked: root.renameRequested(root.spaceId, root.spaceName)
             }
 
             ActionButton {
                 visible: !root.preset
-                label: "删除空间"
+                label: qsTr("删除空间")
                 danger: true
                 enabled: root.spaceId !== ""
                 onClicked: root.deleteRequested(root.spaceId, root.spaceName)
@@ -218,7 +218,7 @@ Item {
                 anchors.right: parent.right
                 anchors.rightMargin: 18
                 anchors.verticalCenter: parent.verticalCenter
-                label: "移除"
+                label: qsTr("移除")
                 onClicked: root.remove(row.path)
             }
 
@@ -242,7 +242,7 @@ Item {
 
         Text {
             width: parent.width
-            text: "空间还是空的"
+            text: qsTr("空间还是空的")
             color: root.textColor
             font.pixelSize: 14
             horizontalAlignment: Text.AlignHCenter
@@ -250,7 +250,7 @@ Item {
 
         Text {
             width: parent.width
-            text: "在文件上右键，选择“添加到空间”，把常用位置固定到这里。"
+            text: qsTr("在文件上右键，选择“添加到空间”，把常用位置固定到这里。")
             color: root.mutedColor
             font.pixelSize: 11
             wrapMode: Text.Wrap

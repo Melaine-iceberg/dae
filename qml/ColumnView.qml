@@ -512,7 +512,7 @@ Item {
             anchors.centerIn: parent
             visible: pane.listing.finished && pane.listing.loaded === 0
                 && pane.listing.status !== ""
-            text: pane.listing.status === "0 项" ? "空文件夹" : pane.listing.status
+            text: pane.listing.status === "0 项" ? qsTr("空文件夹") : pane.listing.status
             color: pane.mutedColor
             font.pixelSize: 11
         }

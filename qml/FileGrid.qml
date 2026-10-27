@@ -371,7 +371,7 @@ Item {
                 anchors.rightMargin: 8
                 anchors.top: parent.top
                 anchors.topMargin: root.cellHeight - 24
-                text: cell.isDir ? "文件夹" : cell.sizeText
+                text: cell.isDir ? qsTr("文件夹") : cell.sizeText
                 color: root.mutedColor
                 font.pixelSize: 10
                 font.family: "Cascadia Mono"

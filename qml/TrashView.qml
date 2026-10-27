@@ -219,7 +219,7 @@ Item {
             id: heading
             x: 16
             anchors.verticalCenter: parent.verticalCenter
-            text: "回收站"
+            text: qsTr("回收站")
             color: root.textColor
             font.pixelSize: 13
             font.weight: Font.DemiBold
@@ -232,7 +232,7 @@ Item {
             anchors.rightMargin: 10
             anchors.verticalCenter: parent.verticalCenter
             text: root.model === null ? ""
-                : (root.model.loaded ? root.model.status : "读取回收站…")
+                : (root.model.loaded ? root.model.status : qsTr("读取回收站…"))
             color: root.mutedColor
             font.pixelSize: 11
             elide: Text.ElideRight
@@ -247,14 +247,14 @@ Item {
 
             ActionButton {
                 visible: root.selectionCount > 0
-                label: "恢复 (" + root.selectionCount + ")"
+                label: qsTr("恢复 (") + root.selectionCount + ")"
                 enabled: !Workspace.busy
                 onClicked: root.restoreRequested(root.selectedIdList())
             }
 
             ActionButton {
                 visible: root.selectionCount > 0
-                label: "永久删除 (" + root.selectionCount + ")"
+                label: qsTr("永久删除 (") + root.selectionCount + ")"
                 danger: true
                 enabled: !Workspace.busy
                 onClicked: root.purgeRequested(root.selectedIdList())
@@ -262,13 +262,13 @@ Item {
 
             ActionButton {
                 visible: root.model !== null && root.model.count > 0
-                label: "清空回收站"
+                label: qsTr("清空回收站")
                 enabled: !Workspace.busy
                 onClicked: root.emptyRequested()
             }
 
             ActionButton {
-                label: "刷新"
+                label: qsTr("刷新")
                 enabled: !Workspace.busy
                 onClicked: {
                     if (root.model !== null)
@@ -334,7 +334,7 @@ Item {
             x: 54
             width: Math.round(parent.width * 0.32)
             anchors.verticalCenter: parent.verticalCenter
-            text: "名称"
+            text: qsTr("名称")
             color: root.mutedColor
             font.pixelSize: 11
             elide: Text.ElideRight
@@ -346,7 +346,7 @@ Item {
             anchors.right: deletedHeader.left
             anchors.rightMargin: 14
             anchors.verticalCenter: parent.verticalCenter
-            text: "原位置"
+            text: qsTr("原位置")
             color: root.mutedColor
             font.pixelSize: 11
             elide: Text.ElideRight
@@ -359,7 +359,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: 118
             horizontalAlignment: Text.AlignRight
-            text: "删除时间"
+            text: qsTr("删除时间")
             color: root.mutedColor
             font.pixelSize: 11
         }
@@ -371,7 +371,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: 68
             horizontalAlignment: Text.AlignRight
-            text: "大小"
+            text: qsTr("大小")
             color: root.mutedColor
             font.pixelSize: 11
         }
@@ -385,14 +385,14 @@ Item {
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "回收站是空的"
+            text: qsTr("回收站是空的")
             color: root.mutedColor
             font.pixelSize: 13
         }
 
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
-            text: "删除的文件会先出现在这里"
+            text: qsTr("删除的文件会先出现在这里")
             color: root.mutedColor
             font.pixelSize: 11
         }
@@ -505,7 +505,7 @@ Item {
                 anchors.right: deletedTextItem.left
                 anchors.rightMargin: 14
                 anchors.verticalCenter: parent.verticalCenter
-                text: row.originalParent !== "" ? row.originalParent : "原位置未知"
+                text: row.originalParent !== "" ? row.originalParent : qsTr("原位置未知")
                 color: root.mutedColor
                 font.pixelSize: 11
                 elide: Text.ElideMiddle
@@ -575,7 +575,7 @@ Item {
         Text {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
-            text: "无法读取回收站"
+            text: qsTr("无法读取回收站")
             color: root.dark ? "#f08a8a" : "#b42323"
             font.pixelSize: 13
         }
@@ -593,7 +593,7 @@ Item {
 
         ActionButton {
             anchors.horizontalCenter: parent.horizontalCenter
-            label: "重试"
+            label: qsTr("重试")
             onClicked: {
                 if (root.model !== null)
                     root.model.refresh()

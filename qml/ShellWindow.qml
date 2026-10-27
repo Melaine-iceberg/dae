@@ -3,6 +3,7 @@ import QtQuick.Window
 import dae 1.0
 import dae.activation 1.0
 import "Shell.js" as ShellState
+import "Shortcut.js" as Shortcut
 
 // One top-level window and its tabs.
 //
@@ -23,10 +24,14 @@ Window {
     property string startupPath: ""
     property var initialTabs: []
     property int initialActive: 0
-    // Follows the OS preference live; the native watcher updates
-    // `Workspace.systemDark`, which re-tints every window's backdrop below.
-    property bool dark: Workspace.systemDark
+    // Theme follows the appearance preference first and the OS only when the
+    // preference asks for it. `dark` stays a binding so a change in the panel
+    // repaints every window, not just the one that made the change.
+    property bool dark: Appearance.theme === "dark"
+        || (Appearance.theme === "system" && Workspace.systemDark)
     property string material: "none"
+    /// Cmd on macOS, Ctrl elsewhere; also how a recorded binding is written.
+    readonly property bool isMac: Qt.platform.os === "osx"
 
     objectName: token
     width: 1180
@@ -97,11 +102,11 @@ Window {
     /// using the breadcrumb trail or the path editor.
     readonly property string surfaceTitle: {
         if (trashActive)
-            return "回收站"
+            return qsTr("回收站")
         if (overviewActive)
-            return "概览"
+            return qsTr("概览")
         if (spaceActive)
-            return activeTab.spaceTitle.length > 0 ? activeTab.spaceTitle : "空间"
+            return activeTab.spaceTitle.length > 0 ? activeTab.spaceTitle : qsTr("空间")
         return ""
     }
     readonly property bool gitVisible: folderActive && gitListing !== null
@@ -122,15 +127,139 @@ Window {
     readonly property bool searchBusy: activeTab === null ? false
         : (searchMode === "content" ? activeTab.contentSearch.busy : activeTab.nameSearch.busy)
     readonly property string mod: Qt.platform.os === "osx" ? "Meta" : "Ctrl"
-    readonly property color accent: Workspace.accent
+    /// System accent follows the OS; the brand accent is the app's own blue
+    /// pair, one shade per theme. `accent` is the only colour views consume,
+    /// so switching the preference retints the whole shell.
+    readonly property color accent: Appearance.accent === "brand"
+        ? (root.dark ? "#55c5ff" : "#1f63cc")
+        : Workspace.accent
+    /// `settings.toml` arrives as JSON because QML has no typed map property.
+    /// Empty values are deliberate unbinds and therefore stay empty.
+    readonly property var shortcutMap: {
+        try {
+            return JSON.parse(Workspace.shortcutsJson)
+        } catch (error) {
+            return ({})
+        }
+    }
+    function shortcutBinding(id) {
+        return root.shortcutMap && root.shortcutMap[id] ? root.shortcutMap[id] : ""
+    }
+    function shortcutDisplay(id) {
+        return Shortcut.display(root.shortcutBinding(id), root.isMac)
+    }
+    function shortcutSequence(id) {
+        return Shortcut.qtSequence(root.shortcutBinding(id), root.isMac)
+    }
+    function shortcutMatches(event, id) {
+        return Shortcut.matches(event, root.shortcutBinding(id))
+    }
+
+    /// A few status lines are formatted in Rust, where the shared model code
+    /// also feeds the Tauri shell. Translate the fixed shapes here rather than
+    /// making the backend pick a language; anything unrecognised is passed
+    /// through untouched.
+    function localizeBackend(text) {
+        if (!text)
+            return text
+        let match = /^(\d+) 项 · (.+)$/.exec(text)
+        if (match)
+            return qsTr("%1 项 · %2").arg(match[1]).arg(match[2])
+        match = /^(\d+) 项$/.exec(text)
+        if (match)
+            return qsTr("%1 项").arg(match[1])
+        match = /^(\d+) 项结果$/.exec(text)
+        if (match)
+            return qsTr("%1 项结果").arg(match[1])
+        match = /^(\d+) 项变更$/.exec(text)
+        if (match)
+            return qsTr("%1 项变更").arg(match[1])
+        match = /^(复制|移动) (\d+) 项 → (.+)$/.exec(text)
+        if (match)
+            return qsTr("%1 %2 项 → %3")
+                .arg(match[1] === "复制" ? qsTr("复制") : qsTr("移动"))
+                .arg(match[2]).arg(match[3])
+        match = /^已切换到分支 (.+)$/.exec(text)
+        if (match)
+            return qsTr("已切换到分支 %1").arg(match[1])
+        match = /^已创建分支 (.+)$/.exec(text)
+        if (match)
+            return qsTr("已创建分支 %1").arg(match[1])
+        match = /^无法创建日志目录：(.+)$/.exec(text)
+        if (match)
+            return qsTr("无法创建日志目录：%1").arg(match[1])
+        // Workspace status and progress lines are built in shared Rust code.
+        // Their fixed vocabulary is translated here; a current file name in a
+        // progress label is user data and falls through unchanged.
+        switch (text) {
+        case "没有匹配项": return qsTr("没有匹配项")
+        case "没有匹配内容": return qsTr("没有匹配内容")
+        case "搜索表达式无效": return qsTr("搜索表达式无效")
+        case "读取中…": return qsTr("读取中…")
+        case "读取回收站…": return qsTr("读取回收站…")
+        case "读取文件夹…": return qsTr("读取文件夹…")
+        case "搜索中…": return qsTr("搜索中…")
+        case "搜索文件内容…": return qsTr("搜索文件内容…")
+        case "回收站是空的": return qsTr("回收站是空的")
+        case "新建中…": return qsTr("新建中…")
+        case "重命名中…": return qsTr("重命名中…")
+        case "移到回收站…": return qsTr("移到回收站…")
+        case "删除中…": return qsTr("删除中…")
+        case "创建副本…": return qsTr("创建副本…")
+        case "创建快捷方式…": return qsTr("创建快捷方式…")
+        case "复制中…": return qsTr("复制中…")
+        case "移动中…": return qsTr("移动中…")
+        case "压缩中…": return qsTr("压缩中…")
+        case "解压中…": return qsTr("解压中…")
+        case "撤销中…": return qsTr("撤销中…")
+        case "重做中…": return qsTr("重做中…")
+        case "恢复中…": return qsTr("恢复中…")
+        case "永久删除中…": return qsTr("永久删除中…")
+        case "清空回收站…": return qsTr("清空回收站…")
+        case "正在打开…": return qsTr("正在打开…")
+        case "正在设为默认打开方式…": return qsTr("正在设为默认打开方式…")
+        case "计算中…": return qsTr("计算中…")
+        case "已创建": return qsTr("已创建")
+        case "已重命名": return qsTr("已重命名")
+        case "已移到回收站": return qsTr("已移到回收站")
+        case "已永久删除": return qsTr("已永久删除")
+        case "已创建副本": return qsTr("已创建副本")
+        case "已创建快捷方式": return qsTr("已创建快捷方式")
+        case "已复制": return qsTr("已复制")
+        case "已移动": return qsTr("已移动")
+        case "已压缩": return qsTr("已压缩")
+        case "已解压": return qsTr("已解压")
+        case "已撤销": return qsTr("已撤销")
+        case "已重做": return qsTr("已重做")
+        case "已打开": return qsTr("已打开")
+        case "已恢复": return qsTr("已恢复")
+        case "已清空回收站": return qsTr("已清空回收站")
+        case "完成": return qsTr("完成")
+        case "已在系统终端中打开": return qsTr("已在系统终端中打开")
+        case "已加入收藏": return qsTr("已加入收藏")
+        case "已从收藏移除": return qsTr("已从收藏移除")
+        case "已移除连接": return qsTr("已移除连接")
+        case "已移除云盘账户": return qsTr("已移除云盘账户")
+        case "连接测试成功": return qsTr("连接测试成功")
+        case "已同步远程仓库": return qsTr("已同步远程仓库")
+        case "已拉取远程更新": return qsTr("已拉取远程更新")
+        case "已推送到远程": return qsTr("已推送到远程")
+        case "已获取远程更新": return qsTr("已获取远程更新")
+        case "已关闭": return qsTr("已关闭")
+        case "快捷键已保存": return qsTr("快捷键已保存")
+        case "终端设置已保存": return qsTr("终端设置已保存")
+        case "已打开日志目录": return qsTr("已打开日志目录")
+        default: return text
+        }
+    }
     readonly property string sourceLabel: config === null ? ""
-        : config.startupSource === "deepLink" ? "深链"
-        : config.startupSource === "recent" ? "最近访问"
-        : config.startupSource === "commandLine" ? "命令行" : "主目录"
+        : config.startupSource === "deepLink" ? qsTr("深链")
+        : config.startupSource === "recent" ? qsTr("最近访问")
+        : config.startupSource === "commandLine" ? qsTr("命令行") : qsTr("主目录")
     readonly property string profileText: config === null ? ""
-        : "启动: " + sourceLabel
-          + " · " + (config.settingsFound ? "settings.toml" : "默认设置")
-          + " · " + (config.configDir !== "" ? config.configDir : "配置目录不可用")
+        : qsTr("启动: ") + sourceLabel
+          + " · " + (config.settingsFound ? "settings.toml" : qsTr("默认设置"))
+          + " · " + (config.configDir !== "" ? config.configDir : qsTr("配置目录不可用"))
 
     readonly property color chromeTint: dark
         ? Qt.rgba(0.055, 0.063, 0.075, 0.38)
@@ -644,9 +773,9 @@ Window {
             return
         root.confirmMode = "purge"
         root.confirmTrashIds = ids
-        confirmDialog.open("永久删除这些项目？",
-                           ids.length + " 个项目将被永久删除，无法恢复。",
-                           "永久删除", true)
+        confirmDialog.open(qsTr("永久删除这些项目？"),
+                           ids.length + qsTr(" 个项目将被永久删除，无法恢复。"),
+                           qsTr("永久删除"), true)
     }
 
     /// A network entry has no path through the local recycle bin, so Delete
@@ -656,9 +785,9 @@ Window {
             return
         root.confirmMode = "remoteDelete"
         root.confirmTrashIds = paths
-        confirmDialog.open("永久删除这些项目？",
-                           paths.length + " 个远程项目无法移入回收站，将被永久删除。",
-                           "永久删除", true)
+        confirmDialog.open(qsTr("永久删除这些项目？"),
+                           paths.length + qsTr(" 个远程项目无法移入回收站，将被永久删除。"),
+                           qsTr("永久删除"), true)
     }
 
     function requestEmptyTrash() {
@@ -666,9 +795,9 @@ Window {
             return
         root.confirmMode = "empty"
         root.confirmTrashIds = []
-        confirmDialog.open("清空回收站？",
-                           "回收站中的 " + trashModel.count + " 个项目将被永久删除，无法恢复。",
-                           "清空回收站", true)
+        confirmDialog.open(qsTr("清空回收站？"),
+                           qsTr("回收站中的 ") + trashModel.count + qsTr(" 个项目将被永久删除，无法恢复。"),
+                           qsTr("清空回收站"), true)
     }
 
     function acceptConfirm() {
@@ -687,9 +816,9 @@ Window {
         } else if (mode === "deleteSpace") {
             const spaceId = ids.length > 0 ? ids[0] : ""
             if (!Spaces.deleteSpace(spaceId))
-                toast.show(Spaces.error !== "" ? Spaces.error : "无法删除空间", true)
+                toast.show(Spaces.error !== "" ? Spaces.error : qsTr("无法删除空间"), true)
             else
-                toast.show("空间已删除", false)
+                toast.show(qsTr("空间已删除"), false)
         }
         root.modalClosed()
     }
@@ -722,7 +851,7 @@ Window {
 
     function toggleSearchMode() {
         if (root.remoteLocation) {
-            toast.show("内容搜索只支持本地目录", false)
+            toast.show(qsTr("内容搜索只支持本地目录"), false)
             return
         }
         root.searchMode = root.searchMode === "name" ? "content" : "name"
@@ -763,7 +892,7 @@ Window {
     function acceptRemotePreview(path) {
         root.previewVisible = true
         previewPanel.showPaths([path])
-        toast.show("远程文件可预览；用本地应用打开前请先复制到本地", false)
+        toast.show(qsTr("远程文件可预览；用本地应用打开前请先复制到本地"), false)
     }
 
     function openConnectDialog() {
@@ -915,8 +1044,8 @@ Window {
         root.promptMode = folder ? "folder" : "file"
         root.promptPath = root.contextTab !== null
             ? root.contextTab.listing.path : root.activePath
-        namePrompt.open(folder ? "新建文件夹" : "新建文件",
-                        folder ? "新建文件夹" : "新建文件.txt", "")
+        namePrompt.open(folder ? qsTr("新建文件夹") : qsTr("新建文件"),
+                        folder ? qsTr("新建文件夹") : qsTr("新建文件.txt"), "")
     }
 
     function promptCreateIn(path, folder) {
@@ -924,8 +1053,8 @@ Window {
             return
         root.promptMode = folder ? "folder" : "file"
         root.promptPath = path
-        namePrompt.open(folder ? "新建文件夹" : "新建文件",
-                        folder ? "新建文件夹" : "新建文件.txt", "")
+        namePrompt.open(folder ? qsTr("新建文件夹") : qsTr("新建文件"),
+                        folder ? qsTr("新建文件夹") : qsTr("新建文件.txt"), "")
     }
 
     function promptRename(path, name) {
@@ -933,7 +1062,7 @@ Window {
             return
         root.promptMode = "rename"
         root.promptPath = path
-        namePrompt.open("重命名", name, "")
+        namePrompt.open(qsTr("重命名"), name, "")
     }
 
     function promptSpaceCreate(addPath) {
@@ -941,7 +1070,7 @@ Window {
             return
         root.promptMode = "spaceCreate"
         root.promptPath = addPath !== undefined ? addPath : ""
-        namePrompt.open("新建空间", "新空间", "")
+        namePrompt.open(qsTr("新建空间"), qsTr("新空间"), "")
     }
 
     function promptSpaceRename(id, name) {
@@ -949,7 +1078,7 @@ Window {
             return
         root.promptMode = "spaceRename"
         root.promptPath = id
-        namePrompt.open("重命名空间", name, "")
+        namePrompt.open(qsTr("重命名空间"), name, "")
     }
 
     /// One entry point for the palette. It closes first, then the surface
@@ -1077,23 +1206,23 @@ Window {
         if (root.modalOpen || !id)
             return
         if (Spaces.isPresetOfId(id)) {
-            toast.show("预设空间不能删除", true)
+            toast.show(qsTr("预设空间不能删除"), true)
             return
         }
         root.confirmMode = "deleteSpace"
         root.confirmTrashIds = [id]
-        confirmDialog.open("删除空间？",
-                           "空间 “" + name + "” 将被删除，其中的项目不会从磁盘移除。",
-                           "删除", true)
+        confirmDialog.open(qsTr("删除空间？"),
+                           qsTr("空间 “") + name + qsTr("” 将被删除，其中的项目不会从磁盘移除。"),
+                           qsTr("删除"), true)
     }
 
     function addPathToSpace(spaceId, path) {
         if (!spaceId || !path)
             return
         if (!Spaces.addItem(spaceId, path))
-            toast.show(Spaces.error !== "" ? Spaces.error : "无法添加到空间", true)
+            toast.show(Spaces.error !== "" ? Spaces.error : qsTr("无法添加到空间"), true)
         else
-            toast.show("已添加到“" + Spaces.nameOfId(spaceId) + "”", false)
+            toast.show(qsTr("已添加到“") + Spaces.nameOfId(spaceId) + "”", false)
     }
 
     function acceptName(text) {
@@ -1109,16 +1238,16 @@ Window {
         else if (mode === "spaceCreate") {
             const id = Spaces.createSpace(text)
             if (id === "")
-                toast.show(Spaces.error !== "" ? Spaces.error : "无法创建空间", true)
+                toast.show(Spaces.error !== "" ? Spaces.error : qsTr("无法创建空间"), true)
             else {
                 if (path !== "")
                     Spaces.addItem(id, path)
                 root.openSpace(id)
-                toast.show("已创建空间", false)
+                toast.show(qsTr("已创建空间"), false)
             }
         } else if (mode === "spaceRename") {
             if (!Spaces.renameSpace(path, text))
-                toast.show(Spaces.error !== "" ? Spaces.error : "无法重命名空间", true)
+                toast.show(Spaces.error !== "" ? Spaces.error : qsTr("无法重命名空间"), true)
         }
     }
 
@@ -1131,7 +1260,7 @@ Window {
             entries.push({ id: "addSpace:" + Spaces.idAt(index),
                            label: Spaces.nameAt(index) })
         entries.push({ separator: true })
-        entries.push({ id: "newSpaceAdd", label: "新建空间并添加…" })
+        entries.push({ id: "newSpaceAdd", label: qsTr("新建空间并添加…") })
         return entries
     }
 
@@ -1173,58 +1302,63 @@ Window {
         // sources may be remote but the destination (here) may not.
         const canExtract = hasPath && !isDir && !remote && root.isArchivePath(path)
         const items = [
-            { id: "open", label: isDir ? "打开" : "用默认应用打开",
+            { id: "open", label: isDir ? qsTr("打开") : qsTr("用默认应用打开"),
               enabled: hasPath && (!remote || isDir), shortcut: "Enter" },
-            { id: "openTab", label: "在新标签页打开", enabled: hasPath && isDir },
-            { id: "openWindow", label: "在新窗口打开", enabled: hasPath && isDir },
+            { id: "openTab", label: qsTr("在新标签页打开"), enabled: hasPath && isDir },
+            { id: "openWindow", label: qsTr("在新窗口打开"), enabled: hasPath && isDir },
             { separator: true },
-            { id: "reveal", label: "在资源管理器中显示", enabled: hasPath && !remote },
-            { id: "openWith", label: "选择打开方式…", enabled: hasPath && !remote },
-            { id: "terminal", label: "在终端中打开", enabled: hasPath && isDir && !remote },
+            { id: "reveal", label: qsTr("在资源管理器中显示"), enabled: hasPath && !remote },
+            { id: "openWith", label: qsTr("选择打开方式…"), enabled: hasPath && !remote },
+            { id: "terminal", label: qsTr("在终端中打开"), enabled: hasPath && isDir && !remote },
             { separator: true },
-            { id: "preview", label: root.previewShows(path) ? "隐藏预览" : "预览",
-              enabled: hasPath && !many, shortcut: "Space" },
-            { id: "copyPath", label: "复制路径", enabled: hasPath }
+            { id: "preview", label: root.previewShows(path) ? qsTr("隐藏预览") : qsTr("预览"),
+              enabled: hasPath && !many, shortcut: root.shortcutDisplay("explorer.preview") },
+            { id: "copyPath", label: qsTr("复制路径"), enabled: hasPath }
         ]
 
         const extensions = root.shellCommandSubmenu()
         if (extensions.length > 0) {
             items.push({ separator: true })
-            items.push({ id: "shellCommands", label: "应用扩展", submenu: extensions })
+            items.push({ id: "shellCommands", label: qsTr("应用扩展"), submenu: extensions })
         }
 
         items.push({ separator: true })
-        items.push({ id: "copy", label: "复制", shortcut: "Ctrl+C", enabled: hasPath })
-        items.push({ id: "cut", label: "剪切", shortcut: "Ctrl+X", enabled: hasPath })
-        items.push({ id: "paste", label: "粘贴到此处", shortcut: "Ctrl+V",
+        items.push({ id: "copy", label: qsTr("复制"),
+                     shortcut: root.shortcutDisplay("explorer.copy"), enabled: hasPath })
+        items.push({ id: "cut", label: qsTr("剪切"),
+                     shortcut: root.shortcutDisplay("explorer.cut"), enabled: hasPath })
+        items.push({ id: "paste", label: qsTr("粘贴到此处"),
+                     shortcut: root.shortcutDisplay("explorer.paste"),
                      enabled: hasClipboard && isDir })
-        items.push({ id: "pasteShortcut", label: "粘贴快捷方式",
+        items.push({ id: "pasteShortcut", label: qsTr("粘贴快捷方式"),
                      enabled: hasClipboard && isDir && !remote })
-        items.push({ id: "duplicate", label: "创建副本", enabled: hasPath })
-        items.push({ id: "createShortcut", label: "创建快捷方式", enabled: hasPath && !remote })
-        items.push({ id: "compress", label: "压缩为…", enabled: hasPath && !remote, submenu: [
-            { id: "compressZip", label: "ZIP 压缩包" },
-            { id: "compressTar", label: "TAR 归档" },
-            { id: "compressTarGz", label: "TAR.GZ 压缩包" },
-            { id: "compress7z", label: "7Z 压缩包" },
-            { id: "compress7zEncrypted", label: "7Z 压缩包（加密）" }
+        items.push({ id: "duplicate", label: qsTr("创建副本"), enabled: hasPath })
+        items.push({ id: "createShortcut", label: qsTr("创建快捷方式"), enabled: hasPath && !remote })
+        items.push({ id: "compress", label: qsTr("压缩为…"), enabled: hasPath && !remote, submenu: [
+            { id: "compressZip", label: qsTr("ZIP 压缩包") },
+            { id: "compressTar", label: qsTr("TAR 归档") },
+            { id: "compressTarGz", label: qsTr("TAR.GZ 压缩包") },
+            { id: "compress7z", label: qsTr("7Z 压缩包") },
+            { id: "compress7zEncrypted", label: qsTr("7Z 压缩包（加密）") }
         ] })
-        items.push({ id: "extractHere", label: "解压到此处", enabled: canExtract })
-        items.push({ id: "moveTo", label: "移动到…", enabled: hasPath })
+        items.push({ id: "extractHere", label: qsTr("解压到此处"), enabled: canExtract })
+        items.push({ id: "moveTo", label: qsTr("移动到…"), enabled: hasPath })
         items.push({ id: many ? "bulkRename" : "rename",
-                     label: many ? "批量重命名…" : "重命名",
+                     label: many ? qsTr("批量重命名…") : qsTr("重命名"),
                      enabled: hasPath,
-                     shortcut: many ? "" : "F2" })
+                     shortcut: many ? "" : root.shortcutDisplay("explorer.rename") })
         items.push({ separator: true })
-        items.push({ id: "favorite", label: "加入收藏", enabled: hasPath && isDir })
-        items.push({ id: "addToSpace", label: "添加到空间", enabled: hasPath,
+        items.push({ id: "favorite", label: qsTr("加入收藏"), enabled: hasPath && isDir })
+        items.push({ id: "addToSpace", label: qsTr("添加到空间"), enabled: hasPath,
                      submenu: root.spaceSubmenu() })
-        items.push({ id: "trash", label: "移到回收站", shortcut: "Delete",
+        items.push({ id: "trash", label: qsTr("移到回收站"),
+                     shortcut: root.shortcutDisplay("explorer.trash"),
                      enabled: hasPath && !remote, danger: true })
-        items.push({ id: "delete", label: "永久删除", shortcut: "Shift+Delete",
+        items.push({ id: "delete", label: qsTr("永久删除"),
+                     shortcut: root.shortcutDisplay("explorer.deletePermanent"),
                      enabled: hasPath, danger: true })
         items.push({ separator: true })
-        items.push({ id: "properties", label: "属性", shortcut: "Alt+Enter",
+        items.push({ id: "properties", label: qsTr("属性"), shortcut: "Alt+Enter",
                      enabled: hasPath && !many })
         return items
     }
@@ -1297,11 +1431,11 @@ Window {
         root.contextTrashId = id
         root.contextTrashParent = originalParent
         menu.openAt(x, y, [
-            { id: "trashRestore", label: "恢复", shortcut: "Enter" },
-            { id: "trashOpenOriginal", label: "打开原位置",
+            { id: "trashRestore", label: qsTr("恢复"), shortcut: "Enter" },
+            { id: "trashOpenOriginal", label: qsTr("打开原位置"),
               enabled: originalParent !== "" },
             { separator: true },
-            { id: "trashPurge", label: "永久删除", shortcut: "Delete", danger: true }
+            { id: "trashPurge", label: qsTr("永久删除"), shortcut: "Delete", danger: true }
         ])
     }
 
@@ -1323,16 +1457,19 @@ Window {
             ? (paneTab.listing.remote || root.isRemotePath(paneTab.listing.path))
             : root.remoteLocation
         menu.openAt(x, y, [
-            { id: "newFolder", label: "新建文件夹", shortcut: root.mod + "+Shift+N" },
-            { id: "newFile", label: "新建文件" },
+            { id: "newFolder", label: qsTr("新建文件夹"), shortcut: root.mod + "+Shift+N" },
+            { id: "newFile", label: qsTr("新建文件") },
             { separator: true },
-            { id: "paste", label: "粘贴", shortcut: "Ctrl+V", enabled: Workspace.clipboardMode !== "" },
-            { id: "pasteShortcut", label: "粘贴快捷方式",
+            { id: "paste", label: qsTr("粘贴"),
+              shortcut: root.shortcutDisplay("explorer.paste"),
+              enabled: Workspace.clipboardMode !== "" },
+            { id: "pasteShortcut", label: qsTr("粘贴快捷方式"),
               enabled: Workspace.clipboardMode !== "" && !remote },
-            { id: "selectAll", label: "全选", shortcut: "Ctrl+A" },
-            { id: "refresh", label: "刷新", shortcut: "F5" },
+            { id: "selectAll", label: qsTr("全选"),
+              shortcut: root.shortcutDisplay("explorer.selectAll") },
+            { id: "refresh", label: qsTr("刷新"), shortcut: "F5" },
             { separator: true },
-            { id: "terminal", label: "在终端中打开", enabled: !remote }
+            { id: "terminal", label: qsTr("在终端中打开"), enabled: !remote }
         ])
     }
 
@@ -1344,12 +1481,12 @@ Window {
         root.contextIsDir = true
         if (kind === "connection" || kind === "cloud") {
             menu.openAt(x, y, [
-                { id: "open", label: "打开" },
-                { id: "openTab", label: "在新标签页打开" },
-                { id: "openWindow", label: "在新窗口打开" },
+                { id: "open", label: qsTr("打开") },
+                { id: "openTab", label: qsTr("在新标签页打开") },
+                { id: "openWindow", label: qsTr("在新窗口打开") },
                 { separator: true },
                 { id: kind === "connection" ? "removeConnection" : "removeCloud",
-                  label: kind === "connection" ? "移除连接" : "移除云盘账户",
+                  label: kind === "connection" ? qsTr("移除连接") : qsTr("移除云盘账户"),
                   danger: true }
             ])
             return
@@ -1357,23 +1494,23 @@ Window {
         if (kind === "space") {
             const preset = Spaces.isPresetOfId(path)
             menu.openAt(x, y, [
-                { id: "spaceOpen", label: "打开空间" },
-                { id: "spaceTab", label: "在新标签页打开" },
+                { id: "spaceOpen", label: qsTr("打开空间") },
+                { id: "spaceTab", label: qsTr("在新标签页打开") },
                 { separator: true },
-                { id: "spaceRename", label: "重命名空间" },
-                { id: "spaceDelete", label: "删除空间", enabled: !preset, danger: true }
+                { id: "spaceRename", label: qsTr("重命名空间") },
+                { id: "spaceDelete", label: qsTr("删除空间"), enabled: !preset, danger: true }
             ])
             return
         }
         const items = []
         if (kind === "favorite")
-            items.push({ id: "removeFavorite", label: "从收藏移除", danger: true })
+            items.push({ id: "removeFavorite", label: qsTr("从收藏移除"), danger: true })
         if (kind === "recent" && !root.isRemotePath(path))
-            items.push({ id: "reveal", label: "在资源管理器中显示" })
-        items.push({ id: "openTab", label: "在新标签页打开" })
-        items.push({ id: "openWindow", label: "在新窗口打开" })
+            items.push({ id: "reveal", label: qsTr("在资源管理器中显示") })
+        items.push({ id: "openTab", label: qsTr("在新标签页打开") })
+        items.push({ id: "openWindow", label: qsTr("在新窗口打开") })
         if (kind !== "favorite")
-            items.push({ id: "favorite", label: "加入收藏" })
+            items.push({ id: "favorite", label: qsTr("加入收藏") })
         menu.openAt(x, y, items)
     }
 
@@ -1460,9 +1597,9 @@ Window {
             break
         case "copyPath":
             if (Workspace.copyText(path))
-                toast.show("已复制路径", false)
+                toast.show(qsTr("已复制路径"), false)
             else
-                toast.show("无法写入剪贴板", true)
+                toast.show(qsTr("无法写入剪贴板"), true)
             break
         case "moveTo":
             moveToDialog.open(root.contextDirectory(), root.currentSelection())
@@ -1600,11 +1737,21 @@ Window {
         })
     }
 
+    function openSystemTerminal(path) {
+        if (root.remoteLocation) {
+            toast.show(qsTr("终端只能打开本地目录"), false)
+            return
+        }
+        const target = path !== "" ? path : root.activePath
+        if (target !== "")
+            Workspace.openTerminal(target)
+    }
+
     function toggleTerminal() {
         if (!root.folderActive)
             return
         if (root.remoteLocation) {
-            toast.show("终端只能打开本地目录", false)
+            toast.show(qsTr("终端只能打开本地目录"), false)
             return
         }
         root.terminalActive = !root.terminalActive
@@ -1650,7 +1797,7 @@ Window {
             }
             root.reloadAfterOperation(kind, focus)
             if (Workspace.status !== "")
-                toast.show(Workspace.status, false)
+                toast.show(root.localizeBackend(Workspace.status), false)
         }
 
         function onOperationFailed(kind, message) {
@@ -1688,7 +1835,7 @@ Window {
                 connectDialog.close()
                 root.modalClosed()
             }
-            toast.show("连接已保存", false)
+            toast.show(qsTr("连接已保存"), false)
             if (id !== "")
                 root.navigate(id)
         }
@@ -1707,7 +1854,7 @@ Window {
                 cloudDialog.close()
                 root.modalClosed()
             }
-            toast.show("云盘账户已连接", false)
+            toast.show(qsTr("云盘账户已连接"), false)
             if (pending)
                 root.navigate(message)
         }
@@ -1744,6 +1891,7 @@ Window {
             activeIndex: root.activeIndex
             hostWindow: root
             dark: root.dark
+            accent: root.accent
             material: root.material
 
             onTabActivated: function (index) {
@@ -2031,7 +2179,7 @@ Window {
                         anchors.leftMargin: 7
                         anchors.verticalCenter: parent.verticalCenter
                         visible: filterInput.text.length === 0
-                        text: "类型过滤，如 *.rs"
+                        text: qsTr("类型过滤，如 *.rs")
                         color: root.mutedColor
                         font.pixelSize: 11
                     }
@@ -2057,9 +2205,9 @@ Window {
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: root.searchBusy ? "搜索中…"
+                    text: root.searchBusy ? qsTr("搜索中…")
                         : (root.activeTab !== null && root.activeTab.contentSearch.status !== ""
-                            ? root.activeTab.contentSearch.status : "遵循 .gitignore")
+                            ? root.activeTab.contentSearch.status : qsTr("遵循 .gitignore"))
                     color: root.mutedColor
                     font.pixelSize: 11
                 }
@@ -2132,6 +2280,7 @@ Window {
                         dark: root.dark
                         headerColor: root.chromeColor
                         accent: root.accent
+                        shortcutMap: root.shortcutMap
 
                         onNavigateRequested: function (path) {
                             root.navigate(path)
@@ -2155,6 +2304,9 @@ Window {
                         }
                         onRemoteOpenRequested: function (path) {
                             root.acceptRemotePreview(path)
+                        }
+                        onOpenTerminalRequested: function (path) {
+                            root.openSystemTerminal(path)
                         }
                         onPreviewRequested: function (path) {
                             root.togglePreview(path)
@@ -2265,6 +2417,7 @@ Window {
                             dark: root.dark
                             headerColor: root.chromeColor
                             accent: root.accent
+                            shortcutMap: root.shortcutMap
 
                             onNavigateRequested: function (path) {
                                 root.navigateSplit(path)
@@ -2289,6 +2442,9 @@ Window {
                             }
                             onRemoteOpenRequested: function (path) {
                                 root.acceptRemotePreview(path)
+                            }
+                            onOpenTerminalRequested: function (path) {
+                                root.openSystemTerminal(path)
                             }
                         }
                     }
@@ -2375,8 +2531,7 @@ Window {
                         mutedColor: root.mutedColor
                         hairline: root.hairline
                         headerColor: root.chromeColor
-                        commandShortcut: root.config !== null && root.config.commandBar !== ""
-                            ? root.config.commandBar : "Ctrl+K"
+                        commandShortcut: root.shortcutDisplay("app.commandBar")
 
                         onOpenRequested: function (kind, path) {
                             if (kind === "space")
@@ -2462,34 +2617,38 @@ Window {
                         return ""
                     if (root.overviewActive)
                         return overviewModel.projectBusy
-                            ? "查找项目…"
+                            ? qsTr("查找项目…")
                             : (overviewModel.loaded
-                                ? overviewModel.count + " 个入口"
-                                : "读取概览…")
+                                ? overviewModel.count + qsTr(" 个入口")
+                                : qsTr("读取概览…"))
                     if (root.spaceActive)
-                        return "空间 · " + spaceView.itemCount + " 项"
+                        return qsTr("空间 · ") + spaceView.itemCount + qsTr(" 项")
                     if (root.trashActive) {
                         if (Workspace.busy && Workspace.progressLabel !== "")
                             return Workspace.progressLabel
-                        const bin = trashModel.loaded ? trashModel.status : "读取回收站…"
+                        const bin = trashModel.loaded
+                            ? root.localizeBackend(trashModel.status)
+                            : qsTr("读取回收站…")
                         if (trashView.selectionCount > 0)
-                            return trashView.selectionCount + " 项已选择 · " + bin
+                            return trashView.selectionCount + qsTr(" 项已选择 · ") + bin
                         return bin
                     }
                     if (root.searchActive) {
                         const search = root.searchMode === "content"
                             ? root.activeTab.contentSearch : root.activeTab.nameSearch
                         if (search.busy)
-                            return root.searchMode === "content" ? "搜索文件内容…" : "搜索中…"
-                        return search.status !== "" ? search.status : "没有匹配项"
+                            return root.searchMode === "content" ? qsTr("搜索文件内容…") : qsTr("搜索中…")
+                        return search.status !== ""
+                            ? root.localizeBackend(search.status) : qsTr("没有匹配项")
                     }
                     const listing = root.activeTab.listing
-                    const base = listing.finished ? listing.status
-                        : (listing.loaded + " 项 · 读取中…")
+                    const base = listing.finished
+                        ? root.localizeBackend(listing.status)
+                        : (listing.loaded + qsTr(" 项 · 读取中…"))
                     if (fileList.selectionCount > 0)
-                        return fileList.selectionCount + " 项已选择 · " + base
+                        return fileList.selectionCount + qsTr(" 项已选择 · ") + base
                     if (Workspace.busy && Workspace.progressLabel !== "")
-                        return Workspace.progressLabel
+                        return root.localizeBackend(Workspace.progressLabel)
                     return base
                 }
                 color: root.mutedColor
@@ -2516,7 +2675,7 @@ Window {
 
                     Text {
                         anchors.centerIn: parent
-                        text: root.previewVisible ? "隐藏预览" : "预览"
+                        text: root.previewVisible ? qsTr("隐藏预览") : qsTr("预览")
                         color: root.previewVisible ? root.textColor : root.mutedColor
                         font.pixelSize: 10
                     }
@@ -2552,7 +2711,7 @@ Window {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "筛选"
+                        text: qsTr("筛选")
                         color: filterMenu.active ? root.textColor : root.mutedColor
                         font.pixelSize: 10
                     }
@@ -2598,7 +2757,7 @@ Window {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "视图"
+                        text: qsTr("视图")
                         color: root.mutedColor
                         font.pixelSize: 10
                     }
@@ -2631,10 +2790,10 @@ Window {
 
                     Text {
                         anchors.centerIn: parent
-                        text: Updater.restarting ? "重启中…"
-                            : Updater.downloading ? "更新中…"
-                            : Updater.available ? "更新可用"
-                            : Updater.checking ? "检查中…" : "检查更新"
+                        text: Updater.restarting ? qsTr("重启中…")
+                            : Updater.downloading ? qsTr("更新中…")
+                            : Updater.available ? qsTr("更新可用")
+                            : Updater.checking ? qsTr("检查中…") : qsTr("检查更新")
                         color: Updater.available ? root.accent
                             : Updater.checking || Updater.downloading ? root.textColor
                             : root.mutedColor
@@ -2667,7 +2826,7 @@ Window {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "设置"
+                        text: qsTr("设置")
                         color: root.mutedColor
                         font.pixelSize: 10
                     }
@@ -2696,7 +2855,7 @@ Window {
 
                 Text {
                     anchors.centerIn: parent
-                    text: root.terminalActive ? "隐藏终端" : "终端"
+                    text: root.terminalActive ? qsTr("隐藏终端") : qsTr("终端")
                     color: root.terminalActive ? root.textColor : root.mutedColor
                     font.pixelSize: 10
                 }
@@ -2719,7 +2878,7 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 horizontalAlignment: Text.AlignRight
                 text: root.firstWindow ? root.profileText
-                    : (root.tabs.length + " 个标签 · " + root.token)
+                    : (root.tabs.length + qsTr(" 个标签 · ") + root.token)
                 color: root.mutedColor
                 font.family: "Cascadia Mono"
                 font.pixelSize: 11
@@ -2745,9 +2904,9 @@ Window {
                 border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.42)
 
                 Accessible.role: Accessible.Button
-                Accessible.name: "Git 分支 "
+                Accessible.name: qsTr("Git 分支 ")
                     + (root.gitListing !== null ? root.gitListing.gitBranch : "")
-                    + "，打开分支面板"
+                    + qsTr("，打开分支面板")
                 Accessible.onPressAction: gitChip.openPanel()
 
                 function branchName() {
@@ -2882,13 +3041,13 @@ Window {
                 border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.45)
 
                 Accessible.role: Accessible.Button
-                Accessible.name: queueChipLabel.text + "，查看传输队列"
+                Accessible.name: queueChipLabel.text + qsTr("，查看传输队列")
                 Accessible.onPressAction: queueChip.openPanel()
 
                 Text {
                     id: queueChipLabel
                     anchors.centerIn: parent
-                    text: "队列 " + Workspace.queuedTransfers.length
+                    text: qsTr("队列 ") + Workspace.queuedTransfers.length
                     color: root.textColor
                     font.pixelSize: 10
                 }
@@ -2976,6 +3135,7 @@ Window {
         anchors.fill: parent
         dark: root.dark
         accent: root.accent
+        hiddenShortcut: root.shortcutDisplay("explorer.toggleHidden")
     }
 
     Shortcut {
@@ -2994,8 +3154,8 @@ Window {
     }
 
     Shortcut {
-        sequence: "F6"
-        enabled: root.splitActive
+        sequence: root.shortcutSequence("explorer.switchPane")
+        enabled: root.splitActive && sequence !== ""
         onActivated: {
             root.splitFocused = !root.splitFocused
             if (root.splitFocused)
@@ -3139,6 +3299,9 @@ Window {
         id: settingsPanel
         anchors.fill: parent
         dark: root.dark
+        accent: root.accent
+        isMac: root.isMac
+        shortcutMap: root.shortcutMap
 
         onClosed: root.modalClosed()
     }
@@ -3156,10 +3319,10 @@ Window {
         overviewModel: overviewModel
         folderActive: root.folderActive
         scopePath: root.folderActive ? root.activePath : Workspace.homeDirectory
-        commandShortcut: root.config !== null && root.config.commandBar !== ""
-            ? root.config.commandBar : "Ctrl+K"
-        pathShortcut: root.config !== null && root.config.pathJump !== ""
-            ? root.config.pathJump : "Ctrl+P"
+        commandShortcut: root.shortcutDisplay("app.commandBar")
+        pathShortcut: root.shortcutDisplay("app.pathJump")
+        shortcutMap: root.shortcutMap
+        isMac: root.isMac
 
         onActivated: function (kind, value) {
             commandPalette.closePalette()
@@ -3265,7 +3428,7 @@ Window {
 
         function onAvailableChanged() {
             if (Updater.available && !updateDialog.visible)
-                toast.show("发现新版本 v" + Updater.latestVersion, false)
+                toast.show(qsTr("发现新版本 v") + Updater.latestVersion, false)
         }
     }
 
@@ -3285,9 +3448,8 @@ Window {
     }
 
     Shortcut {
-        sequence: root.config !== null && root.config.commandBar !== ""
-            ? root.config.commandBar : "Ctrl+K"
-        enabled: !root.modalOpen
+        sequence: root.shortcutSequence("app.commandBar")
+        enabled: !root.modalOpen && sequence !== ""
         onActivated: commandPalette.openPalette()
     }
 
@@ -3310,21 +3472,21 @@ Window {
     }
 
     Shortcut {
-        sequence: root.config !== null && root.config.pathJump !== ""
-            ? root.config.pathJump : "Ctrl+P"
-        enabled: !root.modalOpen && root.folderActive
+        sequence: root.shortcutSequence("app.pathJump")
+        enabled: !root.modalOpen && root.folderActive && sequence !== ""
         onActivated: root.beginPathEditing()
     }
 
     Shortcut {
-        sequence: "Ctrl+J"
+        sequence: root.shortcutSequence("app.toggleTerminal")
         enabled: !root.modalOpen && root.folderActive && !root.remoteLocation
+            && sequence !== ""
         onActivated: root.toggleTerminal()
     }
 
     Shortcut {
-        sequence: "Ctrl+F"
-        enabled: !root.modalOpen && root.folderActive
+        sequence: root.shortcutSequence("explorer.focusSearch")
+        enabled: !root.modalOpen && root.folderActive && sequence !== ""
         onActivated: searchBar.focusInput()
     }
 
@@ -3335,8 +3497,8 @@ Window {
     }
 
     Shortcut {
-        sequence: "Ctrl+,"
-        enabled: !root.modalOpen
+        sequence: root.shortcutSequence("app.openSettings")
+        enabled: !root.modalOpen && sequence !== ""
         onActivated: settingsPanel.open()
     }
 
@@ -3350,7 +3512,7 @@ Window {
     /// shortcuts would race each other when two are visible.
     Shortcut {
         sequence: "Escape"
-        enabled: root.modalOpen
+        enabled: root.modalOpen && !settingsPanel.capturing
         onActivated: {
             if (menu.visible)
                 menu.close()

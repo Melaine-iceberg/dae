@@ -9,7 +9,7 @@ FocusScope {
     property bool dark: true
     property string heading: ""
     property string message: ""
-    property string confirmLabel: "确定"
+    property string confirmLabel: qsTr("确定")
     property bool danger: false
 
     signal accepted()
@@ -22,7 +22,7 @@ FocusScope {
     function open(title, text, label, isDanger) {
         root.heading = title
         root.message = text
-        root.confirmLabel = label || "确定"
+        root.confirmLabel = label || qsTr("确定")
         root.danger = isDanger === true
         root.visible = true
         root.forceActiveFocus()
@@ -121,7 +121,7 @@ FocusScope {
             border.color: root.dark ? "#26ffffff" : "#18000000"
 
             Accessible.role: Accessible.Button
-            Accessible.name: "取消"
+            Accessible.name: qsTr("取消")
             Accessible.onPressAction: {
                 root.close()
                 root.canceled()
@@ -129,7 +129,7 @@ FocusScope {
 
             Text {
                 anchors.centerIn: parent
-                text: "取消"
+                text: qsTr("取消")
                 color: root.dark ? "#c9cfd9" : "#3a4048"
                 font.pixelSize: 12
             }

@@ -12,6 +12,8 @@ Item {
 
     property bool dark: true
     property color accent: "#2f6fdf"
+    /// The binding from `settings.toml`; the view only prints it.
+    property string hiddenShortcut: "Ctrl+H"
     property real openX: 0
     property real openY: 0
 
@@ -30,26 +32,27 @@ Item {
     readonly property color textColor: dark ? "#e3e7ee" : "#24292f"
 
     readonly property var items: [
-        { kind: "label", label: "可见性" },
-        { kind: "toggle", property: "showHiddenFiles", label: "显示隐藏文件", shortcut: "Ctrl+H" },
+        { kind: "label", label: qsTr("可见性") },
+        { kind: "toggle", property: "showHiddenFiles", label: qsTr("显示隐藏文件"),
+          shortcut: root.hiddenShortcut },
         { kind: "sep" },
-        { kind: "label", label: "类型" },
-        { kind: "radio", group: "kindFilter", value: "all", label: "全部" },
-        { kind: "radio", group: "kindFilter", value: "folders", label: "仅文件夹" },
-        { kind: "radio", group: "kindFilter", value: "files", label: "仅文件" },
-        { kind: "radio", group: "kindFilter", value: "images", label: "仅图片" },
+        { kind: "label", label: qsTr("类型") },
+        { kind: "radio", group: "kindFilter", value: "all", label: qsTr("全部") },
+        { kind: "radio", group: "kindFilter", value: "folders", label: qsTr("仅文件夹") },
+        { kind: "radio", group: "kindFilter", value: "files", label: qsTr("仅文件") },
+        { kind: "radio", group: "kindFilter", value: "images", label: qsTr("仅图片") },
         { kind: "sep" },
-        { kind: "label", label: "修改时间" },
-        { kind: "radio", group: "modifiedFilter", value: "any", label: "不限" },
-        { kind: "radio", group: "modifiedFilter", value: "today", label: "今天" },
-        { kind: "radio", group: "modifiedFilter", value: "week", label: "最近 7 天" },
-        { kind: "radio", group: "modifiedFilter", value: "month", label: "最近 30 天" },
+        { kind: "label", label: qsTr("修改时间") },
+        { kind: "radio", group: "modifiedFilter", value: "any", label: qsTr("不限") },
+        { kind: "radio", group: "modifiedFilter", value: "today", label: qsTr("今天") },
+        { kind: "radio", group: "modifiedFilter", value: "week", label: qsTr("最近 7 天") },
+        { kind: "radio", group: "modifiedFilter", value: "month", label: qsTr("最近 30 天") },
         { kind: "sep" },
-        { kind: "label", label: "大小" },
-        { kind: "radio", group: "sizeFilter", value: "any", label: "不限" },
-        { kind: "radio", group: "sizeFilter", value: "small", label: "小（< 1 MB）" },
-        { kind: "radio", group: "sizeFilter", value: "medium", label: "中（1 – 100 MB）" },
-        { kind: "radio", group: "sizeFilter", value: "large", label: "大（> 100 MB）" }
+        { kind: "label", label: qsTr("大小") },
+        { kind: "radio", group: "sizeFilter", value: "any", label: qsTr("不限") },
+        { kind: "radio", group: "sizeFilter", value: "small", label: qsTr("小（< 1 MB）") },
+        { kind: "radio", group: "sizeFilter", value: "medium", label: qsTr("中（1 – 100 MB）") },
+        { kind: "radio", group: "sizeFilter", value: "large", label: qsTr("大（> 100 MB）") }
     ]
 
     function openAbove(x, y) {
@@ -203,7 +206,7 @@ Item {
 
             Text {
                 anchors.centerIn: parent
-                text: "清除筛选"
+                text: qsTr("清除筛选")
                 color: root.accent
                 font.pixelSize: 11
             }

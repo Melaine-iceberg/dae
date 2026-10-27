@@ -224,7 +224,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             Accessible.role: Accessible.Link
             Accessible.name: slot.modelData.ellipsis === true
-                ? "显示完整路径" : slot.modelData.name
+                ? qsTr("显示完整路径") : slot.modelData.name
 
             // The separator belongs to the crumb on its right: that is the only
             // crumb whose plate width the fit added a `unit` for.
