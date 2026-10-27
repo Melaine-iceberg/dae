@@ -640,6 +640,16 @@ pub fn set_duplicate_suffix(suffix: String) {
     super::transfer::set_duplicate_suffix(&suffix);
 }
 
+/// Creates a shortcut in `destination` for every path in `sources`.
+pub async fn create_shortcuts(
+    sources: Vec<String>,
+    destination: String,
+) -> Result<Vec<String>, FileSystemError> {
+    tokio::task::spawn_blocking(move || super::shortcuts::create_shortcuts(&sources, &destination))
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
 /// See `commands::get_file_properties` for the contract; this half is engine-free.
 pub async fn get_file_properties(path: String) -> Result<FileProperties, FileSystemError> {
     tokio::task::spawn_blocking(move || vfs::resolve(&path)?.properties(&path))

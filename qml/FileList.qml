@@ -51,6 +51,22 @@ Item {
     /// position `saveScroll` recorded. Cleared once the rows under it exist.
     property bool scrollPending: false
 
+    /// A pressed row that could become a drag. The gesture becomes a native
+    /// drag once it travels far enough; until then it is still a click.
+    property bool dragArmed: false
+    property bool dragStarted: false
+    property real dragStartX: 0
+    property real dragStartY: 0
+    property var dragPaths: []
+    /// A native drag ran, so the release it ended with must not select a row.
+    property bool suppressClick: false
+
+    /// A file drag is hovering the listing: where it would land, and which
+    /// action the source proposes. Empty when the drop is not allowed.
+    property var dropSourcePaths: []
+    property string dropTargetPath: ""
+    property string dropAction: ""
+
     signal navigateRequested(string path)
     signal upRequested()
     signal renameRequested(string path, string name)
@@ -223,6 +239,155 @@ Item {
         // exactly where it was inside that row.
         list.positionViewAtIndex(row, ListView.Beginning)
         list.contentY += state.y - row * root.rowHeight
+    }
+
+    /// Arms a press as a possible drag. The row being dragged is the whole
+    /// selection when it is part of it, otherwise the pressed row alone —
+    /// selecting it first unless a modifier says the gesture is extending the
+    /// selection instead.
+    function prepareDrag(index, mouse) {
+        root.suppressClick = false
+        root.dragArmed = false
+        root.dragStarted = false
+        root.dragPaths = []
+
+        if (root.tab === null || root.model === null || root.searchModel !== null
+                || root.remote || index < 0)
+            return
+
+        const path = root.model.pathAt(index)
+        if (path === "")
+            return
+
+        const selected = root.tab.isSelected(path)
+        if (!selected && (mouse.modifiers & (Qt.ControlModifier | Qt.ShiftModifier)) === 0)
+            root.handleClick(index, false, false)
+
+        root.dragPaths = selected ? root.selectedPathList() : [path]
+        root.dragStartX = mouse.x
+        root.dragStartY = mouse.y
+        root.dragArmed = true
+    }
+
+    /// Turns the armed press into a native drag once the pointer has moved
+    /// far enough. `"any"` offers copy, move and link and lets the target
+    /// choose; a held modifier pins the effect, like Explorer.
+    function continueDrag(mouse) {
+        if (!root.dragArmed || root.dragStarted)
+            return
+        if ((mouse.buttons & Qt.LeftButton) === 0) {
+            root.dragArmed = false
+            return
+        }
+        const dx = mouse.x - root.dragStartX
+        const dy = mouse.y - root.dragStartY
+        if (Math.sqrt(dx * dx + dy * dy) < 6)
+            return
+
+        root.dragArmed = false
+        root.dragStarted = true
+        root.suppressClick = true
+        const paths = root.dragPaths
+        root.dragPaths = []
+        if (paths.length > 0)
+            Workspace.startDragOut(paths, root.dragOutMode(mouse.modifiers))
+    }
+
+    function dragOutMode(modifiers) {
+        const ctrl = (modifiers & Qt.ControlModifier) !== 0
+        const shift = (modifiers & Qt.ShiftModifier) !== 0
+        if ((modifiers & Qt.AltModifier) !== 0 || (ctrl && shift))
+            return "link"
+        if (ctrl)
+            return "copy"
+        if (shift)
+            return "move"
+        return "any"
+    }
+
+    function dropUrls(drag) {
+        const urls = []
+        for (let index = 0; index < drag.urls.length; index += 1)
+            urls.push(String(drag.urls[index]))
+        return urls
+    }
+
+    function dropActionName(action) {
+        if (action & Qt.LinkAction)
+            return "link"
+        if (action & Qt.MoveAction)
+            return "move"
+        if (action & Qt.CopyAction)
+            return "copy"
+        return "copy"
+    }
+
+    function qtAction(name) {
+        return name === "move" ? Qt.MoveAction
+            : name === "link" ? Qt.LinkAction : Qt.CopyAction
+    }
+
+    function parentPath(path) {
+        const text = String(path).replace(/[\\/]+$/, "")
+        const index = Math.max(text.lastIndexOf("/"), text.lastIndexOf("\\"))
+        if (index < 0)
+            return ""
+        let parent = text.substring(0, index)
+        if (/^[a-zA-Z]:$/.test(parent))
+            parent += text.charAt(index)
+        return parent
+    }
+
+    /// A copy or move into the folder the sources already live in would only
+    /// duplicate the rows on screen; a mixed batch still has something to
+    /// transfer. A link drop into the same folder is a normal operation —
+    /// that is where shortcutting a file next to itself lands.
+    function canDrop(paths, destination, action) {
+        if (paths.length === 0 || destination === "")
+            return false
+        let allHere = true
+        for (let index = 0; index < paths.length; index += 1) {
+            if (paths[index] === destination)
+                return false
+            if (root.parentPath(paths[index]) !== destination)
+                allHere = false
+        }
+        return action === "link" || !allHere
+    }
+
+    /// The folder under `y`: a directory row is the target, anything else
+    /// (a file row, the empty area) means the directory on screen.
+    function dropTargetAt(x, y) {
+        if (root.model === null || root.model.path === "")
+            return ""
+        const index = list.indexAt(x, list.contentY + y)
+        if (index >= 0 && root.model.isDirectoryAt(index))
+            return root.model.pathAt(index)
+        return root.model.path
+    }
+
+    function updateDropTarget(drag) {
+        if (root.searchModel !== null) {
+            root.dropTargetPath = ""
+            root.dropAction = ""
+            return false
+        }
+        const target = root.dropTargetAt(drag.x, drag.y)
+        const action = root.dropActionName(drag.proposedAction)
+        if (!root.canDrop(root.dropSourcePaths, target, action)) {
+            root.dropTargetPath = ""
+            root.dropAction = ""
+            return false
+        }
+        root.dropTargetPath = target
+        root.dropAction = action
+        return true
+    }
+
+    function clearDrop() {
+        root.dropSourcePaths = []
+        root.dropTargetPath = ""
+        root.dropAction = ""
     }
 
     function copySelection(cut) {
@@ -447,7 +612,11 @@ Item {
                     ? root.selectionColor
                     : (list.currentIndex === row.index
                         ? (root.dark ? "#1d2026" : "#eef1f5")
-                        : (row.index % 2 === 0 ? root.contentColor : root.alternateColor))
+                        : (root.dropTargetPath !== "" && row.isDir
+                            && row.filePath === root.dropTargetPath
+                            ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b,
+                                      root.dark ? 0.24 : 0.14)
+                            : (row.index % 2 === 0 ? root.contentColor : root.alternateColor)))
             }
 
             Rectangle {
@@ -536,7 +705,20 @@ Item {
             MouseArea {
                 anchors.fill: parent
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onPressed: function (mouse) {
+                    if (mouse.button === Qt.LeftButton)
+                        root.prepareDrag(row.index, mouse)
+                }
+                onPositionChanged: function (mouse) {
+                    root.continueDrag(mouse)
+                }
+                onReleased: root.dragArmed = false
+                onCanceled: root.dragArmed = false
                 onClicked: function (mouse) {
+                    if (mouse.button === Qt.LeftButton && root.suppressClick) {
+                        root.suppressClick = false
+                        return
+                    }
                     if (mouse.button === Qt.RightButton) {
                         if (root.tab === null || !root.tab.isSelected(row.filePath))
                             root.handleClick(row.index, false, false)
@@ -552,6 +734,77 @@ Item {
                     if (mouse.button === Qt.LeftButton)
                         root.handleActivate(row.index)
                 }
+            }
+        }
+    }
+
+    /// Files dragged in from the OS: dropping on a folder row targets that
+    /// folder, anything else targets the directory on screen.
+    DropArea {
+        id: dropArea
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: columnHeader.bottom
+        anchors.bottom: parent.bottom
+
+        onEntered: function (drag) {
+            root.dropSourcePaths = Workspace.localDropPaths(root.dropUrls(drag))
+            if (!root.updateDropTarget(drag)) {
+                drag.accepted = false
+                return
+            }
+            drag.accept(root.qtAction(root.dropAction))
+        }
+
+        onPositionChanged: function (drag) {
+            if (!root.updateDropTarget(drag)) {
+                drag.accepted = false
+                return
+            }
+            drag.accept(root.qtAction(root.dropAction))
+        }
+
+        onExited: root.clearDrop()
+
+        onDropped: function (drop) {
+            const paths = root.dropSourcePaths
+            const target = root.dropTargetPath
+            const action = root.dropAction
+            root.clearDrop()
+            if (paths.length === 0 || target === "" || action === "") {
+                drop.accepted = false
+                return
+            }
+
+            drop.accept(root.qtAction(action))
+            if (action === "link")
+                Workspace.createShortcuts(paths, target)
+            else
+                Workspace.transferEntries(paths, target, action === "move")
+            if (root.tab !== null) {
+                root.tab.clearSelection()
+                root.selectionChanged()
+            }
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            visible: dropArea.containsDrag && root.dropTargetPath !== ""
+            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b,
+                           root.dark ? 0.10 : 0.05)
+            border.color: root.accent
+            border.width: 2
+            radius: 6
+
+            Text {
+                anchors.centerIn: parent
+                text: (root.dropAction === "move" ? "移动到 "
+                      : root.dropAction === "link" ? "创建快捷方式到 " : "复制到 ")
+                      + (root.dropTargetPath === root.model.path
+                         ? "此文件夹"
+                         : String(root.dropTargetPath).split(/[\\/]/).pop())
+                color: root.textColor
+                font.pixelSize: 13
             }
         }
     }

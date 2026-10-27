@@ -18,6 +18,8 @@ fn main() {
         .cpp_files([
             "cpp/activation.cpp",
             "cpp/activation.h",
+            "cpp/drag.cpp",
+            "cpp/drag.h",
             "cpp/image_provider.cpp",
             "cpp/image_provider.h",
             "cpp/qml_debug.cpp",

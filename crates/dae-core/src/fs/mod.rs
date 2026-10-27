@@ -38,6 +38,7 @@ pub mod recents;
 pub mod search;
 pub mod service;
 pub mod sftp;
+pub mod shortcuts;
 pub mod sidebar;
 pub mod smb;
 pub mod spaces;

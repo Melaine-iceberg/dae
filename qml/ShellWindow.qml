@@ -924,7 +924,7 @@ Window {
         if (trashKinds.indexOf(kind) >= 0 && root.trashActive)
             trashModel.refresh()
         const reloadKinds = ["create", "rename", "trash", "delete", "copy", "move",
-                             "duplicate", "compress", "extract", "undo", "redo"]
+                             "duplicate", "shortcut", "compress", "extract", "undo", "redo"]
         if (reloadKinds.indexOf(kind) < 0)
             return
         root.activeTab.listing.reload()

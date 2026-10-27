@@ -15,7 +15,7 @@ use core::pin::Pin;
 use std::sync::Arc;
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QString, QStringList};
+use cxx_qt_lib::{QString, QStringList, QUrl};
 use dae_core::error::FileSystemError;
 use dae_core::fs::archive::{self, ArchiveFormat};
 use dae_core::fs::cloud::accounts as cloud_accounts;
@@ -44,6 +44,11 @@ pub mod qobject {
 
         include!("cxx-qt-lib/qstringlist.h");
         type QStringList = cxx_qt_lib::QStringList;
+
+        include!("drag.h");
+        #[namespace = "dae_qt"]
+        #[rust_name = "start_file_drag"]
+        fn dae_qt_start_file_drag(paths: &QStringList, actions: i32) -> bool;
     }
 
     unsafe extern "RustQt" {
@@ -138,6 +143,26 @@ pub mod qobject {
             destination: &QString,
             cut: bool,
         );
+
+        /// Starts a native drag carrying `paths` out of the window. `mode` is
+        /// `"copy"`, `"move"`, `"link"` or `"any"`; `"any"` lets the drop
+        /// target choose. Blocks until the user drops or cancels.
+        #[qinvokable]
+        #[cxx_name = "startDragOut"]
+        fn start_drag_out(self: Pin<&mut Workspace>, paths: &QStringList, mode: &QString);
+
+        /// Creates a shortcut in `destination` for every path in `paths`.
+        /// This is the Alt-drop side of an Explorer drag.
+        #[qinvokable]
+        #[cxx_name = "createShortcuts"]
+        fn create_shortcuts(self: Pin<&mut Workspace>, paths: &QStringList, destination: &QString);
+
+        /// Turns the file URLs an OS drop delivered into local paths. Anything
+        /// that is not a `file:` URL (a browser URL, a remote scheme) is
+        /// dropped: only local paths can enter the transfer pipeline.
+        #[qinvokable]
+        #[cxx_name = "localDropPaths"]
+        fn local_drop_paths(self: Pin<&mut Workspace>, urls: &QStringList) -> QStringList;
 
         /// Remembers `paths` as the in-app clipboard. `mode` is `"copy"` or
         /// `"cut"`; an empty list clears it.
@@ -791,6 +816,55 @@ impl qobject::Workspace {
         }
     }
 
+    fn start_drag_out(self: Pin<&mut Self>, paths: &QStringList, mode: &QString) {
+        if paths.is_empty() {
+            return;
+        }
+
+        // Qt::CopyAction | Qt::MoveAction | Qt::LinkAction are 1, 2 and 4.
+        let actions = match mode.to_string().as_str() {
+            "copy" => 1,
+            "move" => 2,
+            "link" => 4,
+            _ => 1 | 2 | 4,
+        };
+        if !qobject::start_file_drag(paths, actions) {
+            eprintln!("dae: could not start the file drag");
+        }
+    }
+
+    fn create_shortcuts(mut self: Pin<&mut Self>, paths: &QStringList, destination: &QString) {
+        let sources = strings(paths);
+        let destination = destination.to_string();
+        if sources.is_empty() || destination.is_empty() {
+            return;
+        }
+
+        self.as_mut().begin_operation("创建快捷方式…");
+        let thread = self.as_mut().qt_thread();
+        dispatch(thread, "shortcut", async move {
+            match service::create_shortcuts(sources, destination).await {
+                Ok(created) => Outcome::ok(created.into_iter().next().unwrap_or_default()),
+                Err(error) => Outcome::failed(error),
+            }
+        });
+    }
+
+    fn local_drop_paths(self: Pin<&mut Self>, urls: &QStringList) -> QStringList {
+        let mut paths = QStringList::default();
+        for raw in urls.iter() {
+            let url = QUrl::from_user_input(&raw, &QString::default());
+            if !url.is_local_file() {
+                continue;
+            }
+            let path = url.to_local_file_or_default();
+            if !path.as_slice().is_empty() {
+                paths.append(path);
+            }
+        }
+        paths
+    }
+
     fn set_clipboard(mut self: Pin<&mut Self>, mode: &QString, paths: &QStringList) {
         let mode = mode.to_string();
         if paths.is_empty() {
@@ -1384,6 +1458,7 @@ fn success_message(kind: &str) -> &'static str {
         "trash" => "已移到回收站",
         "delete" => "已永久删除",
         "duplicate" => "已创建副本",
+        "shortcut" => "已创建快捷方式",
         "copy" => "已复制",
         "move" => "已移动",
         "compress" => "已压缩",
