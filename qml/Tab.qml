@@ -22,6 +22,12 @@ QtObject {
     property int selectionVersion: 0
     property string selectionAnchor: ""
 
+    /// path -> { y, current } for the listing viewport. Kept on the tab so a
+    /// refresh — auto or F5 — and a return to a directory restore the position
+    /// the model reset would otherwise drop. Replaced wholesale like
+    /// `selected`: the view reads it in a function call, not in a binding.
+    property var scrollState: ({})
+
     function navigate(path) {
         if (path && path.length > 0) {
             trash = false

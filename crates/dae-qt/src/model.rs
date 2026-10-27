@@ -94,6 +94,12 @@ pub mod qobject {
         #[qinvokable]
         fn reload(self: Pin<&mut DirectoryListModel>);
 
+        /// Emitted before a load clears the rows. The view reads its scroll
+        /// position here, because the reset that follows discards it.
+        #[qsignal]
+        #[cxx_name = "aboutToReload"]
+        fn about_to_reload(self: Pin<&mut DirectoryListModel>);
+
         /// The row whose full path is `path`, or -1. QML uses this to keep a
         /// renamed or newly created entry selected after the reload.
         #[qinvokable]
@@ -317,6 +323,10 @@ impl qobject::DirectoryListModel {
             self.as_mut().set_status(QString::from("无路径"));
             return;
         }
+
+        // A view can only remember where it was scrolled before the reset
+        // below; afterwards the rows — and the position with them — are gone.
+        self.as_mut().about_to_reload();
 
         let generation = self.generation.wrapping_add(1);
         if let Some(stream_id) = self.as_mut().rust_mut().stream_id.take() {

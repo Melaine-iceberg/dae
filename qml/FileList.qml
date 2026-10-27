@@ -47,6 +47,9 @@ Item {
     }
 
     property string pendingFocus: ""
+    /// A reload is in flight and the viewport still has to be returned to the
+    /// position `saveScroll` recorded. Cleared once the rows under it exist.
+    property bool scrollPending: false
 
     signal navigateRequested(string path)
     signal upRequested()
@@ -160,6 +163,66 @@ Item {
         list.positionViewAtIndex(index, ListView.Contain)
         root.tab.selectOnly(path)
         root.selectionChanged()
+    }
+
+    /// Reads the viewport position before the listing clears its rows. The
+    /// reset that follows drops both the rows and the position, so this is the
+    /// last moment it exists. Stored on the tab, keyed by the directory.
+    /// Returns whether there was a position to remember.
+    function saveScroll() {
+        if (root.tab === null || root.searchModel !== null)
+            return false
+        const path = root.tab.listing.path
+        if (path === "")
+            return false
+        const state = Object.assign({}, root.tab.scrollState)
+        state[path] = {
+            y: list.contentY,
+            current: root.tab.listing.pathAt(list.currentIndex)
+        }
+        root.tab.scrollState = state
+        return true
+    }
+
+    /// Returns the viewport to the remembered position as soon as the rows
+    /// under it have streamed in — not only when the whole listing finished,
+    /// which on a large directory would leave the list at the top for the
+    /// length of the read. Called again on every batch until it succeeds.
+    function restoreScroll() {
+        if (!root.scrollPending || root.tab === null || root.searchModel !== null
+                || root.pendingFocus !== "")
+            return
+        const state = root.tab.scrollState[root.tab.listing.path]
+        if (!state) {
+            root.scrollPending = false
+            return
+        }
+        const row = Math.floor(state.y / root.rowHeight)
+        if (row >= root.tab.listing.loaded) {
+            // The rows above the viewport are still arriving; the position
+            // does not exist yet.
+            if (!root.tab.listing.finished)
+                return
+            root.scrollPending = false
+            if (state.current !== "") {
+                const index = root.tab.listing.indexOfPath(state.current)
+                if (index >= 0)
+                    list.currentIndex = index
+            }
+            list.contentY = state.y
+            return
+        }
+
+        root.scrollPending = false
+        if (state.current !== "") {
+            const index = root.tab.listing.indexOfPath(state.current)
+            if (index >= 0)
+                list.currentIndex = index
+        }
+        // `Beginning` places the row; the pixel remainder keeps the listing
+        // exactly where it was inside that row.
+        list.positionViewAtIndex(row, ListView.Beginning)
+        list.contentY += state.y - row * root.rowHeight
     }
 
     function copySelection(cut) {
@@ -494,11 +557,34 @@ Item {
     }
 
     Connections {
+        target: root.tab !== null ? root.tab.listing : null
+
+        /// The listing is about to clear its rows; the scroll position has to
+        /// be read before the reset discards it.
+        function onAboutToReload() {
+            root.scrollPending = root.saveScroll()
+        }
+
+        /// Restore as soon as the batch holding the old viewport arrives.
+        function onLoadedChanged() {
+            root.restoreScroll()
+        }
+    }
+
+    Connections {
         target: root.model
 
         function onFinishedChanged() {
-            if (root.model !== null && root.model.finished && root.pendingFocus !== "")
+            if (root.model === null || !root.model.finished)
+                return
+            // An operation that asked to reveal a row owns the viewport; its
+            // position is where the user's new file is, not the old scroll.
+            if (root.pendingFocus !== "") {
+                root.scrollPending = false
                 root.applyFocus()
+                return
+            }
+            root.restoreScroll()
         }
     }
 }
