@@ -8,6 +8,12 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/Main.qml", "qml/Main.qml"),
     ("../../qml/ShellWindow.qml", "qml/ShellWindow.qml"),
     ("../../qml/PathBreadcrumbs.qml", "qml/PathBreadcrumbs.qml"),
+    (
+        "../../qml/TransferConflictDialog.qml",
+        "qml/TransferConflictDialog.qml",
+    ),
+    ("../../qml/ConflictSide.qml", "qml/ConflictSide.qml"),
+    ("../../qml/TransferQueue.qml", "qml/TransferQueue.qml"),
     ("../../qml/Tab.qml", "qml/Tab.qml"),
     ("../../qml/TabStrip.qml", "qml/TabStrip.qml"),
     ("../../qml/TerminalPanel.qml", "qml/TerminalPanel.qml"),

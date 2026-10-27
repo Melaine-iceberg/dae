@@ -129,7 +129,7 @@ Window {
     readonly property bool modalOpen: menu.visible || namePrompt.visible
         || passwordDialog.visible || settingsPanel.visible || confirmDialog.visible
         || connectDialog.visible || cloudDialog.visible || openWithDialog.visible
-        || updateDialog.visible
+        || updateDialog.visible || transferConflict.visible || transferQueue.visible
 
     Timer {
         id: searchTimer
@@ -2123,8 +2123,8 @@ Window {
             }
 
             Text {
-                anchors.left: statusText.right
-                anchors.leftMargin: 16
+                anchors.left: queueChip.visible ? queueChip.right : statusText.right
+                anchors.leftMargin: queueChip.visible ? 12 : 16
                 anchors.right: viewButton.left
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
@@ -2135,6 +2135,49 @@ Window {
                 font.family: "Cascadia Mono"
                 font.pixelSize: 11
                 elide: Text.ElideMiddle
+            }
+
+            // Transfers waiting behind the one on the progress row. The chip is
+            // the queue's only door: without it a second paste would look like
+            // it did nothing until the first copy finished.
+            Rectangle {
+                id: queueChip
+                anchors.left: statusText.right
+                anchors.leftMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                width: queueChipLabel.implicitWidth + 14
+                height: 16
+                radius: 8
+                visible: Workspace.queuedTransfers.length > 0
+                color: queueChipMouse.containsMouse
+                    ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24)
+                    : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.14)
+                border.width: 1
+                border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.45)
+
+                Accessible.role: Accessible.Button
+                Accessible.name: queueChipLabel.text + "，查看传输队列"
+                Accessible.onPressAction: queueChip.openPanel()
+
+                Text {
+                    id: queueChipLabel
+                    anchors.centerIn: parent
+                    text: "队列 " + Workspace.queuedTransfers.length
+                    color: root.textColor
+                    font.pixelSize: 10
+                }
+
+                function openPanel() {
+                    const point = queueChip.mapToItem(null, 0, 0)
+                    transferQueue.openAbove(point.x, point.y)
+                }
+
+                MouseArea {
+                    id: queueChipMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: queueChip.openPanel()
+                }
             }
         }
     }
@@ -2365,6 +2408,30 @@ Window {
         accent: root.accent
 
         onCanceled: root.modalClosed()
+    }
+
+    // Both are bound to `Workspace` rather than opened by a function: the
+    // pending batch and the queue live in the command surface, so a dialog that
+    // also kept its own open flag could disagree with them.
+    TransferConflictDialog {
+        id: transferConflict
+        anchors.fill: parent
+        dark: root.dark
+        accent: root.accent
+
+        onModalClosed: root.modalClosed()
+    }
+
+    TransferQueue {
+        id: transferQueue
+        anchors.fill: parent
+        dark: root.dark
+        accent: root.accent
+
+        onVisibleChanged: {
+            if (!visible)
+                root.modalClosed()
+        }
     }
 
     // The detached installer is already waiting for this process to exit; the

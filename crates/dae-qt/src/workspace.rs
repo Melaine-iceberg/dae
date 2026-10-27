@@ -12,6 +12,7 @@
 //! large copy instead of blocking on an `invoke`.
 
 use core::pin::Pin;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use cxx_qt::{CxxQtType, Threading};
@@ -31,7 +32,10 @@ use dae_core::fs::service;
 use dae_core::fs::sidebar::{self, Favorite};
 use dae_core::fs::smb;
 use dae_core::fs::trash_view;
-use dae_core::fs::types::{ConflictAction, NewEntryKind, TransferItem, display_name_from_path};
+use dae_core::fs::types::{
+    ConflictAction, EntryKind, NewEntryKind, TransferConflict, TransferItem,
+    display_name_from_path,
+};
 use dae_core::fs::vfs;
 use dae_core::host::{Event, Host};
 
@@ -72,6 +76,29 @@ pub mod qobject {
         #[qproperty(QString, progress_label, cxx_name = "progressLabel")]
         #[qproperty(i32, progress_done, cxx_name = "progressDone")]
         #[qproperty(i32, progress_total, cxx_name = "progressTotal")]
+        /// The conflict the dialog is showing, one at a time — the Tauri shell's
+        /// dialog walked its list the same way, with one "apply to all" escape
+        /// hatch, so QML never needs the whole list at once. `conflictIndex` is
+        /// 1-based and 0 when no conflict is pending, which is also what keeps
+        /// the dialog hidden.
+        #[qproperty(i32, conflict_index, cxx_name = "conflictIndex")]
+        #[qproperty(i32, conflict_total, cxx_name = "conflictTotal")]
+        #[qproperty(QString, conflict_name, cxx_name = "conflictName")]
+        /// True when the transfer behind the conflict is a move, so the dialog
+        /// can say "move" where it would otherwise say "copy".
+        #[qproperty(bool, conflict_cut, cxx_name = "conflictCut")]
+        /// `folder`, `file`, `link` or `other` — the glyph set's names, so the
+        /// dialog paints the same icon the listing does.
+        #[qproperty(QString, conflict_source_category, cxx_name = "conflictSourceCategory")]
+        /// The two caption lines of a side card (`kind · size` and `修改于 …`),
+        /// formatted here because the model side already owns that vocabulary.
+        #[qproperty(QString, conflict_source_detail, cxx_name = "conflictSourceDetail")]
+        #[qproperty(QString, conflict_target_category, cxx_name = "conflictTargetCategory")]
+        #[qproperty(QString, conflict_target_detail, cxx_name = "conflictTargetDetail")]
+        /// Transfers waiting for the slot the running copy or move holds, one
+        /// finished display line each (`复制 3 项 → dae`). The running one is
+        /// not in the list: the progress row is where it shows.
+        #[qproperty(QStringList, queued_transfers, cxx_name = "queuedTransfers")]
         #[qproperty(QString, clipboard_mode, cxx_name = "clipboardMode")]
         #[qproperty(QStringList, clipboard_paths, cxx_name = "clipboardPaths")]
         #[qproperty(QString, accent)]
@@ -146,6 +173,28 @@ pub mod qobject {
             destination: &QString,
             cut: bool,
         );
+
+        /// Answers the conflict the dialog is showing. `action` is `"replace"`,
+        /// `"skip"` or `"keepBoth"`; `applyToAll` answers every conflict left in
+        /// the batch the same way.
+        #[qinvokable]
+        #[cxx_name = "resolveConflict"]
+        fn resolve_conflict(self: Pin<&mut Workspace>, action: &QString, apply_to_all: bool);
+
+        /// Dismisses the conflict dialog and transfers nothing: not the item,
+        /// not the rest of the batch.
+        #[qinvokable]
+        #[cxx_name = "cancelConflict"]
+        fn cancel_conflict(self: Pin<&mut Workspace>);
+
+        /// Drops the transfer waiting at `index` of `queuedTransfers`.
+        #[qinvokable]
+        #[cxx_name = "cancelQueuedTransfer"]
+        fn cancel_queued_transfer(self: Pin<&mut Workspace>, index: i32);
+
+        #[qinvokable]
+        #[cxx_name = "cancelQueuedTransfers"]
+        fn cancel_queued_transfers(self: Pin<&mut Workspace>);
 
         /// Starts a native drag carrying `paths` out of the window. `mode` is
         /// `"copy"`, `"move"`, `"link"` or `"any"`; `"any"` lets the drop
@@ -394,6 +443,21 @@ pub struct WorkspaceRust {
     progress_label: QString,
     progress_done: i32,
     progress_total: i32,
+    conflict_index: i32,
+    conflict_total: i32,
+    conflict_name: QString,
+    conflict_cut: bool,
+    conflict_source_category: QString,
+    conflict_source_detail: QString,
+    conflict_target_category: QString,
+    conflict_target_detail: QString,
+    queued_transfers: QStringList,
+    /// Copies and moves waiting for the operation slot, oldest first. The one
+    /// that owns the slot is not in here.
+    queue: Vec<TransferJob>,
+    /// The transfer holding the slot, from its conflict check until its
+    /// copy/move reports back. `None` is what lets a new request start at once.
+    active_transfer: Option<ActiveTransfer>,
     clipboard_mode: QString,
     clipboard_paths: QStringList,
     /// The exact paths this shell last put on the system clipboard. A paste
@@ -435,6 +499,17 @@ impl Default for WorkspaceRust {
             progress_label: QString::default(),
             progress_done: 0,
             progress_total: 0,
+            conflict_index: 0,
+            conflict_total: 0,
+            conflict_name: QString::default(),
+            conflict_cut: false,
+            conflict_source_category: QString::default(),
+            conflict_source_detail: QString::default(),
+            conflict_target_category: QString::default(),
+            conflict_target_detail: QString::default(),
+            queued_transfers: QStringList::default(),
+            queue: Vec::new(),
+            active_transfer: None,
             clipboard_mode: QString::default(),
             clipboard_paths: QStringList::default(),
             system_clipboard_paths: Vec::new(),
@@ -512,6 +587,120 @@ where
                 .finish_operation(kind, outcome.focus.as_str(), outcome.error);
         });
     });
+}
+
+/// [`dispatch`] for a copy or a move: the job holds the operation slot until it
+/// reports back, so the queue is advanced here and nowhere else.
+fn dispatch_transfer<F>(
+    thread: cxx_qt::CxxQtThread<qobject::Workspace>,
+    kind: &'static str,
+    future: F,
+) where
+    F: std::future::Future<Output = Outcome> + Send + 'static,
+{
+    runtime::spawn(async move {
+        let outcome = future.await;
+        let _ = thread.queue(move |mut workspace| {
+            workspace
+                .as_mut()
+                .finish_operation(kind, outcome.focus.as_str(), outcome.error);
+            workspace.as_mut().end_transfer();
+        });
+    });
+}
+
+/// One copy or move, on its way through the queue.
+struct TransferJob {
+    sources: Vec<String>,
+    destination: String,
+    cut: bool,
+    /// This job spends the in-app cut clipboard, so it is cleared when the
+    /// transfer actually runs — not when it is requested. A conflict the user
+    /// cancels must leave the cut on the clipboard for another try.
+    clears_clipboard: bool,
+    /// The line the queue panel prints, built once when the job is accepted so
+    /// the panel formats nothing itself.
+    label: String,
+}
+
+impl TransferJob {
+    fn new(sources: Vec<String>, destination: String, cut: bool) -> Self {
+        let label = format!(
+            "{} {} 项 → {}",
+            if cut { "移动" } else { "复制" },
+            sources.len(),
+            display_name_from_path(&destination)
+        );
+        Self {
+            sources,
+            destination,
+            cut,
+            clears_clipboard: false,
+            label,
+        }
+    }
+
+    /// Marks this job as the one that spends the cut clipboard.
+    fn spending_clipboard(mut self) -> Self {
+        self.clears_clipboard = true;
+        self
+    }
+}
+
+/// The transfer that owns the operation slot.
+struct ActiveTransfer {
+    job: TransferJob,
+    /// Collisions found before transferring. Empty while the copy runs.
+    conflicts: Vec<TransferConflict>,
+    /// The conflict the dialog is showing; `conflicts.len()` means every
+    /// decision is in.
+    index: usize,
+    /// Source path → resolution. A source the check found nothing for keeps
+    /// `Fail`, which is the Tauri shell's rule as well: the dialog answers
+    /// collisions that were on disk when the batch was checked, and one that
+    /// appears between the check and the copy is a race, not a choice.
+    decisions: HashMap<String, ConflictAction>,
+}
+
+impl ActiveTransfer {
+    /// Records `action` for the conflict on screen and steps to the next one.
+    /// Returns true when every conflict has an answer, which is the moment the
+    /// batch can finally run.
+    ///
+    /// Kept apart from the Qt object so the decision rules — one at a time,
+    /// "apply to all", the last answer — are testable without a QObject.
+    fn answer(&mut self, action: ConflictAction, apply_to_all: bool) -> bool {
+        let Some(conflict) = self.conflicts.get(self.index) else {
+            return true;
+        };
+        self.decisions.insert(conflict.source_path.clone(), action);
+        if apply_to_all {
+            for rest in &self.conflicts[self.index + 1..] {
+                self.decisions.insert(rest.source_path.clone(), action);
+            }
+            self.index = self.conflicts.len();
+        } else {
+            self.index += 1;
+        }
+        self.index >= self.conflicts.len()
+    }
+}
+
+/// Drops the job waiting at `index`. Out-of-range is a no-op: the panel can be
+/// one frame behind a queue that already moved on.
+fn drop_queued(queue: &mut Vec<TransferJob>, index: usize) {
+    if index < queue.len() {
+        queue.remove(index);
+    }
+}
+
+/// Removes and returns the oldest waiting job.
+fn take_next_queued(queue: &mut Vec<TransferJob>) -> Option<TransferJob> {
+    if queue.is_empty() {
+        None
+    } else {
+        Some(queue.remove(0))
+    }
 }
 
 impl qobject::Workspace {
@@ -817,8 +1006,9 @@ impl qobject::Workspace {
         destination: &QString,
         cut: bool,
     ) {
-        let items = transfer_items(paths);
-        if items.is_empty() {
+        let sources = strings(paths);
+        let destination = destination.to_string();
+        if sources.is_empty() || destination.is_empty() {
             return;
         }
         // A cut is one-shot, but only for the list that was actually cut: a
@@ -826,14 +1016,242 @@ impl qobject::Workspace {
         // clipboard that happens to be unrelated.
         let clears_clipboard = cut
             && self.clipboard_mode.to_string() == "cut"
-            && strings(&self.clipboard_paths) == strings(paths);
-        let destination = destination.to_string();
+            && strings(&self.clipboard_paths) == sources;
+        let mut job = TransferJob::new(sources, destination, cut);
+        if clears_clipboard {
+            job = job.spending_clipboard();
+        }
+        self.as_mut().enqueue_transfer(job);
+    }
+
+    /// Takes a transfer into the queue, or starts it when the slot is free.
+    ///
+    /// The queue is serial because the shell reports one operation at a time on
+    /// one progress row: two copies running at once would make that row show
+    /// whichever event arrived last and neither job's total.
+    fn enqueue_transfer(mut self: Pin<&mut Self>, job: TransferJob) {
+        if self.active_transfer.is_some() {
+            self.as_mut().rust_mut().queue.push(job);
+            self.as_mut().publish_queue();
+            return;
+        }
+        self.as_mut().start_transfer(job);
+    }
+
+    fn publish_queue(mut self: Pin<&mut Self>) {
+        let labels: Vec<String> = self.queue.iter().map(|job| job.label.clone()).collect();
+        self.as_mut().set_queued_transfers(string_list(&labels));
+    }
+
+    /// The queue panel's ✕. Only a waiting job can be dropped: the core has no
+    /// cancellation seam for one already running, and pretending otherwise
+    /// would leave a half-copied folder behind.
+    fn cancel_queued_transfer(mut self: Pin<&mut Self>, index: i32) {
+        let mut queue = std::mem::take(&mut self.as_mut().rust_mut().queue);
+        if index >= 0 {
+            drop_queued(&mut queue, index as usize);
+        }
+        self.as_mut().rust_mut().queue = queue;
+        self.as_mut().publish_queue();
+    }
+
+    fn cancel_queued_transfers(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().queue.clear();
+        self.as_mut().publish_queue();
+    }
+
+    /// Gives `job` the operation slot and asks the core what would collide.
+    fn start_transfer(mut self: Pin<&mut Self>, job: TransferJob) {
+        let sources = job.sources.clone();
+        let destination = job.destination.clone();
+        self.as_mut().rust_mut().active_transfer = Some(ActiveTransfer {
+            job,
+            conflicts: Vec::new(),
+            index: 0,
+            decisions: HashMap::new(),
+        });
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let result = service::check_transfer_conflicts(sources, destination).await;
+            let _ = thread.queue(move |mut workspace| workspace.as_mut().adopt_conflicts(result));
+        });
+    }
+
+    /// Decides what the check found: copy straight away, or hand the collisions
+    /// to the dialog.
+    fn adopt_conflicts(
+        mut self: Pin<&mut Self>,
+        result: Result<Vec<TransferConflict>, FileSystemError>,
+    ) {
+        if self.active_transfer.is_none() {
+            return;
+        }
+        match result {
+            Ok(conflicts) if conflicts.is_empty() => self.as_mut().run_transfer(),
+            Ok(conflicts) => {
+                if let Some(active) = self.as_mut().rust_mut().active_transfer.as_mut() {
+                    active.conflicts = conflicts;
+                    active.index = 0;
+                }
+                self.as_mut().publish_conflict();
+            }
+            Err(error) => {
+                // Nothing was copied: report the failure the way a copy would
+                // have, but without `settle_operation` — this transfer never
+                // began one, and decrementing there would clear the progress
+                // row of whatever else is running.
+                let kind = self.as_mut().transfer_kind();
+                let message = friendly_error(&error.to_string());
+                self.as_mut().rust_mut().active_transfer = None;
+                self.as_mut().clear_conflict();
+                self.as_mut().set_last_error(QString::from(message.as_str()));
+                let kind_value = QString::from(kind);
+                let message_value = QString::from(message.as_str());
+                self.as_mut().operation_failed(&kind_value, &message_value);
+                self.as_mut().start_next_queued();
+            }
+        }
+    }
+
+    fn transfer_kind(&self) -> &'static str {
+        match self.active_transfer.as_ref() {
+            Some(active) if active.job.cut => "move",
+            _ => "copy",
+        }
+    }
+
+    /// Publishes the conflict the dialog is on. Called whenever the index moves
+    /// and by nothing else, so the dialog's eight properties always describe
+    /// one conflict.
+    fn publish_conflict(mut self: Pin<&mut Self>) {
+        let Some(active) = self.active_transfer.as_ref() else {
+            self.as_mut().clear_conflict();
+            return;
+        };
+        let total = active.conflicts.len();
+        let Some(conflict) = active.conflicts.get(active.index) else {
+            self.as_mut().clear_conflict();
+            return;
+        };
+        // Copied out before the setters run: they borrow `self` mutably.
+        let index = active.index as i32 + 1;
+        let cut = active.job.cut;
+        let name = conflict.name.clone();
+        let source_category = glyph_category(conflict.source_kind).to_owned();
+        let source_detail = conflict_detail(
+            conflict.source_kind,
+            &conflict.name,
+            conflict.source_size,
+            conflict.source_modified_at,
+        );
+        let target_category = glyph_category(conflict.target_kind).to_owned();
+        let target_detail = conflict_detail(
+            conflict.target_kind,
+            &conflict.name,
+            conflict.target_size,
+            conflict.target_modified_at,
+        );
+
+        self.as_mut().set_conflict_total(total as i32);
+        self.as_mut().set_conflict_index(index);
+        self.as_mut().set_conflict_name(QString::from(name.as_str()));
+        self.as_mut().set_conflict_cut(cut);
+        self.as_mut()
+            .set_conflict_source_category(QString::from(source_category.as_str()));
+        self.as_mut()
+            .set_conflict_source_detail(QString::from(source_detail.as_str()));
+        self.as_mut()
+            .set_conflict_target_category(QString::from(target_category.as_str()));
+        self.as_mut()
+            .set_conflict_target_detail(QString::from(target_detail.as_str()));
+    }
+
+    fn clear_conflict(mut self: Pin<&mut Self>) {
+        self.as_mut().set_conflict_index(0);
+        self.as_mut().set_conflict_total(0);
+        self.as_mut().set_conflict_name(QString::default());
+        self.as_mut().set_conflict_cut(false);
+        self.as_mut()
+            .set_conflict_source_category(QString::default());
+        self.as_mut()
+            .set_conflict_source_detail(QString::default());
+        self.as_mut()
+            .set_conflict_target_category(QString::default());
+        self.as_mut()
+            .set_conflict_target_detail(QString::default());
+    }
+
+    /// Records the answer for the conflict on screen and either moves to the
+    /// next one or runs the batch.
+    fn resolve_conflict(mut self: Pin<&mut Self>, action: &QString, apply_to_all: bool) {
+        let Some(action) = conflict_action(&action.to_string()) else {
+            return;
+        };
+        let Some(mut active) = self.as_mut().rust_mut().active_transfer.take() else {
+            return;
+        };
+        let answered = active.answer(action, apply_to_all);
+        self.as_mut().rust_mut().active_transfer = Some(active);
+        if answered {
+            self.as_mut().run_transfer();
+        } else {
+            self.as_mut().publish_conflict();
+        }
+    }
+
+    /// Closes the dialog and transfers nothing: the Tauri shell's cancel did
+    /// the same, leaving the destination untouched.
+    fn cancel_conflict(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().active_transfer = None;
+        self.as_mut().clear_conflict();
+        self.as_mut().start_next_queued();
+    }
+
+    /// Runs the batch that holds the slot with the decisions collected so far.
+    fn run_transfer(mut self: Pin<&mut Self>) {
+        let Some(active) = self.as_mut().rust_mut().active_transfer.take() else {
+            return;
+        };
+        self.as_mut().clear_conflict();
+
+        let items = active
+            .job
+            .sources
+            .iter()
+            .map(|path| TransferItem {
+                path: path.clone(),
+                on_conflict: active
+                    .decisions
+                    .get(path)
+                    .copied()
+                    .unwrap_or(ConflictAction::Fail),
+            })
+            .collect::<Vec<_>>();
+        let cut = active.job.cut;
+        let destination = active.job.destination.clone();
         let kind = if cut { "move" } else { "copy" };
+
+        // A copy clipboard stays available so the same selection can be pasted
+        // into several directories; a cut is spent here, once, as the move it
+        // was waiting for finally starts.
+        if active.job.clears_clipboard {
+            self.as_mut().clear_clipboard();
+        }
+
+        // The job keeps the slot while the copy runs, so a transfer asked for
+        // now queues behind it instead of sharing the progress row.
+        self.as_mut().rust_mut().active_transfer = Some(ActiveTransfer {
+            job: active.job,
+            conflicts: Vec::new(),
+            index: 0,
+            decisions: HashMap::new(),
+        });
         self.as_mut()
             .begin_operation(if cut { "移动中…" } else { "复制中…" });
+
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
-        dispatch(thread, kind, async move {
+        dispatch_transfer(thread, kind, async move {
             let result = if cut {
                 service::move_entries(items, destination, operation_id(), host).await
             } else {
@@ -844,10 +1262,21 @@ impl qobject::Workspace {
                 Err(error) => Outcome::failed(error),
             }
         });
-        // A copy clipboard stays available so the same selection can be
-        // pasted into several directories.
-        if clears_clipboard {
-            self.as_mut().clear_clipboard();
+    }
+
+    /// Frees the slot and starts whatever was waiting behind it.
+    fn end_transfer(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().active_transfer = None;
+        self.as_mut().start_next_queued();
+    }
+
+    fn start_next_queued(mut self: Pin<&mut Self>) {
+        let mut queue = std::mem::take(&mut self.as_mut().rust_mut().queue);
+        let next = take_next_queued(&mut queue);
+        self.as_mut().rust_mut().queue = queue;
+        self.as_mut().publish_queue();
+        if let Some(job) = next {
+            self.as_mut().start_transfer(job);
         }
     }
 
@@ -1690,13 +2119,65 @@ fn archive_format(value: &str) -> Option<ArchiveFormat> {
     }
 }
 
-fn transfer_items(list: &QStringList) -> Vec<TransferItem> {
-    list.iter()
-        .map(|path| TransferItem {
-            path: path.to_string(),
-            on_conflict: ConflictAction::KeepBoth,
-        })
-        .collect()
+/// The QML side's `"replace" | "skip" | "keepBoth"` → the core's enum. An
+/// unknown value is ignored rather than mapped to a default: the dialog is the
+/// only caller, and a typo there must not silently turn into "replace".
+fn conflict_action(value: &str) -> Option<ConflictAction> {
+    match value {
+        "replace" => Some(ConflictAction::Replace),
+        "skip" => Some(ConflictAction::Skip),
+        "keepBoth" => Some(ConflictAction::KeepBoth),
+        _ => None,
+    }
+}
+
+/// The glyph set's category name, so a conflict card draws the same icon the
+/// listing would.
+fn glyph_category(kind: EntryKind) -> &'static str {
+    match kind {
+        EntryKind::Directory => "folder",
+        EntryKind::Symlink => "link",
+        EntryKind::Other => "other",
+        EntryKind::File => "file",
+    }
+}
+
+/// The type word the listing's 类型 column shows for this entry.
+fn kind_label(kind: EntryKind, name: &str) -> String {
+    match kind {
+        EntryKind::Directory => "文件夹".to_owned(),
+        EntryKind::Symlink => "符号链接".to_owned(),
+        EntryKind::Other => "其他".to_owned(),
+        EntryKind::File => {
+            let extension = name
+                .rsplit_once('.')
+                .map(|(_, extension)| extension)
+                .unwrap_or("");
+            if extension.is_empty() {
+                "文件".to_owned()
+            } else {
+                extension.to_uppercase()
+            }
+        }
+    }
+}
+
+/// A side card's two caption lines: `kind · size`, then the date. Both sides of
+/// a conflict use the same two lines, so they are one string rather than five
+/// properties the dialog would have to glue back together.
+fn conflict_detail(
+    kind: EntryKind,
+    name: &str,
+    size: Option<u64>,
+    modified_at: Option<u64>,
+) -> String {
+    let size = size
+        .map(crate::format::size)
+        .unwrap_or_else(|| "—".to_owned());
+    let modified = modified_at
+        .map(crate::format::timestamp)
+        .unwrap_or_else(|| "—".to_owned());
+    format!("{} · {}\n修改于 {}", kind_label(kind, name), size, modified)
 }
 
 fn operation_id() -> String {
@@ -1742,6 +2223,22 @@ fn operation_label(operation: dae_core::progress::FileOperationKind) -> &'static
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A transfer conflict for `path`, with both sides looking like plain
+    /// files: the decision rules do not read the metadata.
+    fn conflict(path: &str) -> TransferConflict {
+        TransferConflict {
+            source_path: path.to_owned(),
+            target_path: path.to_owned(),
+            name: display_name_from_path(path),
+            source_kind: EntryKind::File,
+            source_size: Some(1),
+            source_modified_at: Some(1_000),
+            target_kind: EntryKind::File,
+            target_size: Some(2),
+            target_modified_at: Some(2_000),
+        }
+    }
 
     #[test]
     fn paste_prefers_files_another_app_copied() {
@@ -1812,14 +2309,102 @@ mod tests {
     }
 
     #[test]
-    fn clipboard_items_keep_both_rather_than_overwrite() {
-        let mut list = QStringList::default();
-        list.append(QString::from("C:/a.txt"));
-        list.append(QString::from("C:/b.txt"));
+    fn a_conflict_batch_waits_for_every_answer_unless_applied_to_all() {
+        let mut active = ActiveTransfer {
+            job: TransferJob::new(vec!["C:/a".into(), "C:/b".into(), "C:/c".into()], "C:/dst".into(), false),
+            conflicts: vec![conflict("C:/a"), conflict("C:/b"), conflict("C:/c")],
+            index: 0,
+            decisions: HashMap::new(),
+        };
 
-        let items = transfer_items(&list);
-        assert_eq!(items.len(), 2);
-        assert!(items.iter().all(|item| item.path.starts_with("C:/")));
+        // One answer at a time: the batch runs only after the third.
+        assert!(!active.answer(ConflictAction::Skip, false));
+        assert_eq!(active.index, 1);
+        assert_eq!(active.decisions.get("C:/a"), Some(&ConflictAction::Skip));
+        assert!(!active.answer(ConflictAction::KeepBoth, false));
+        assert!(active.answer(ConflictAction::Replace, false));
+        assert_eq!(active.decisions.len(), 3);
+        assert_eq!(active.decisions.get("C:/c"), Some(&ConflictAction::Replace));
+    }
+
+    #[test]
+    fn apply_to_all_answers_the_rest_with_the_same_action() {
+        let mut active = ActiveTransfer {
+            job: TransferJob::new(vec!["C:/a".into(), "C:/b".into()], "C:/dst".into(), false),
+            conflicts: vec![conflict("C:/a"), conflict("C:/b"), conflict("C:/c")],
+            index: 1,
+            decisions: HashMap::new(),
+        };
+        active
+            .decisions
+            .insert("C:/a".into(), ConflictAction::Skip);
+
+        assert!(active.answer(ConflictAction::Replace, true));
+        assert_eq!(active.decisions.get("C:/b"), Some(&ConflictAction::Replace));
+        assert_eq!(active.decisions.get("C:/c"), Some(&ConflictAction::Replace));
+        // The one already answered keeps its own answer.
+        assert_eq!(active.decisions.get("C:/a"), Some(&ConflictAction::Skip));
+    }
+
+    #[test]
+    fn a_queued_transfer_waits_its_turn_in_order() {
+        let mut queue = Vec::new();
+        queue.push(TransferJob::new(vec!["C:/a".into()], "C:/one".into(), false));
+        queue.push(TransferJob::new(vec!["C:/b".into()], "C:/two".into(), true));
+
+        assert_eq!(take_next_queued(&mut queue).map(|job| job.destination), Some("C:/one".to_string()));
+        assert_eq!(take_next_queued(&mut queue).map(|job| job.destination), Some("C:/two".to_string()));
+        assert!(take_next_queued(&mut queue).is_none());
+    }
+
+    #[test]
+    fn dropping_a_queued_transfer_leaves_the_rest_and_ignores_a_stale_index() {
+        let mut queue = Vec::new();
+        queue.push(TransferJob::new(vec!["C:/a".into()], "C:/one".into(), false));
+        queue.push(TransferJob::new(vec!["C:/b".into()], "C:/two".into(), false));
+
+        drop_queued(&mut queue, 7);
+        assert_eq!(queue.len(), 2);
+        drop_queued(&mut queue, 0);
+        assert_eq!(queue.len(), 1);
+        assert_eq!(queue[0].destination, "C:/two");
+    }
+
+    #[test]
+    fn a_queued_transfer_names_its_operation_and_target() {
+        let copy = TransferJob::new(vec!["C:/a".into(), "C:/b".into()], "C:/dst".into(), false);
+        assert_eq!(copy.label, "复制 2 项 → dst");
+        let cut = TransferJob::new(vec!["C:/a".into()], "C:/dst".into(), true);
+        assert_eq!(cut.label, "移动 1 项 → dst");
+    }
+
+    #[test]
+    fn the_dialog_actions_are_the_three_the_core_understands() {
+        assert_eq!(conflict_action("replace"), Some(ConflictAction::Replace));
+        assert_eq!(conflict_action("skip"), Some(ConflictAction::Skip));
+        assert_eq!(conflict_action("keepBoth"), Some(ConflictAction::KeepBoth));
+        // A string the dialog cannot produce must not quietly become a policy:
+        // a typo that turned into `replace` would delete the user's file.
+        assert_eq!(conflict_action(""), None);
+        assert_eq!(conflict_action("keep_both"), None);
+    }
+
+    #[test]
+    fn the_conflict_card_names_the_kind_the_listing_would() {
+        assert_eq!(kind_label(EntryKind::Directory, "docs"), "文件夹");
+        assert_eq!(kind_label(EntryKind::File, "notes.txt"), "TXT");
+        assert_eq!(kind_label(EntryKind::File, "README"), "文件");
+    }
+
+    #[test]
+    fn a_conflict_card_carries_both_caption_lines() {
+        let detail = conflict_detail(EntryKind::File, "a.bin", Some(2048), Some(1_792_886_400_000));
+        assert_eq!(detail, "BIN · 2.0 KB\n修改于 2026-10-25 00:00");
+
+        // A folder has no size and a remote entry may have no timestamp; both
+        // read as an em dash rather than as a zero.
+        let detail = conflict_detail(EntryKind::Directory, "docs", None, None);
+        assert_eq!(detail, "文件夹 · —\n修改于 —");
     }
 
     #[test]
