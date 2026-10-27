@@ -439,15 +439,53 @@ inline bool dae_qt_system_dark()
 inline QString dae_qt_window_at(int x, int y)
 {
     const POINT point{ x, y };
+
+    // The tab-drag preview is a click-through, topmost window sitting exactly
+    // under the cursor. It must not become the answer: the strip needs the
+    // window a click would reach, which is the one below it in z-order. The
+    // extended style is the general test; the object-name check keeps the
+    // preview skippable even if the platform drops the flag.
+    auto click_through = [](HWND root) {
+        if ((GetWindowLongPtrW(root, GWL_EXSTYLE) & WS_EX_TRANSPARENT) != 0)
+            return true;
+        for (QWindow* window : QGuiApplication::topLevelWindows()) {
+            if (window && window->objectName() == QStringLiteral("dae-tab-drag-preview")
+                && reinterpret_cast<HWND>(window->winId()) == root)
+                return true;
+        }
+        return false;
+    };
+
     HWND hwnd = WindowFromPoint(point);
-    if (!hwnd)
-        return {};
-    const HWND root = GetAncestor(hwnd, GA_ROOT);
-    if (!root)
-        return {};
-    for (auto it = window_states().cbegin(); it != window_states().cend(); ++it) {
-        if (it->hwnd == root)
-            return it->token;
+    while (hwnd) {
+        const HWND root = GetAncestor(hwnd, GA_ROOT);
+        if (!root)
+            return {};
+        if (!click_through(root)) {
+            for (auto it = window_states().cbegin(); it != window_states().cend(); ++it) {
+                if (it->hwnd == root)
+                    return it->token;
+            }
+            // The topmost window that takes input is not ours.
+            return {};
+        }
+
+        // Walk down the z-order to the next visible top-level window that
+        // covers the point. Click-through layers can stack, so this repeats
+        // until something interactive is found or the list runs out.
+        HWND next = root;
+        do {
+            next = GetWindow(next, GW_HWNDNEXT);
+            if (!next)
+                return {};
+            if (!IsWindowVisible(next))
+                continue;
+            RECT rect{};
+            if (!GetWindowRect(next, &rect) || !PtInRect(&rect, point))
+                continue;
+            break;
+        } while (next);
+        hwnd = next;
     }
     return {};
 }

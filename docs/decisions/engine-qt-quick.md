@@ -288,6 +288,11 @@ release 用 `windows_subsystem = "windows"`，没有控制台窗口；`dae.exe` 
 拖动检测不依赖 `MouseArea`：指针越过窗口边界后 QML 就收不到事件了。`TabStrip`
 在拖动期间每 16 ms 向 `Shell` 单例要三件事——物理光标、`WindowFromPoint` 下的
 本应用窗口 token、`GetAsyncKeyState(VK_LBUTTON)`——据此决定重排、合并还是撕出。
+预览在窗口内是 `TabStrip` 里的 ghost；越出窗口后换成一个 `Qt.Tool` +
+`WindowTransparentForInput` + `WindowStaysOnTop` 的透明顶层窗，继续按同一个
+光标位置绘制标签。命中检测会跳过 `WS_EX_TRANSPARENT` 的顶层窗（并按
+`dae-tab-drag-preview` 对象名兜底），沿 z 序找到它下面真正接收点击的窗口，
+因此预览窗不会遮住合并目标。
 没有预热窗口池：撕出按需创建窗口，`WindowController.attach()` 给新 HWND 写同一套
 边框、背景与命中测试（门槛 4 的路径原样复用）。
 

@@ -82,7 +82,10 @@ Item {
         dragIndex = index
         dragTargetIndex = -1
         dragTargetToken = ""
-        dragInside = false
+        // A press always starts inside this window. Keeping `dragInside` true
+        // until the first poll also keeps the floating preview hidden for that
+        // first frame instead of flashing it at the last cursor position.
+        dragInside = true
         dragLocalX = -1
     }
 
@@ -321,8 +324,9 @@ Item {
     }
 
     // The dragging tab cannot leave the window as a real item, so the ghost is
-    // drawn only while the pointer is still inside. Outside, the window under
-    // the cursor (or its absence) is the feedback.
+    // drawn only while the pointer is still inside. Outside, a click-through
+    // top-level window carries the same chip: it follows the poll, survives
+    // the crossing, and stays above the window under the cursor.
     Rectangle {
         visible: root.dragging && root.dragInside && root.dragIndex >= 0
         x: root.dragLocalX - root.tabWidthValue / 2
@@ -346,6 +350,45 @@ Item {
             color: root.textColor
             font.pixelSize: 12
             elide: Text.ElideMiddle
+        }
+    }
+
+    // The same chip once the pointer leaves this window. `WindowTransparentForInput`
+    // makes it click-through, and `dae_qt_window_at` walks past click-through
+    // windows, so the preview never becomes the window the poll reports.
+    Window {
+        id: dragPreview
+        objectName: "dae-tab-drag-preview"
+        visible: root.dragging && !root.dragInside && root.dragIndex >= 0
+        x: Math.round(root.dragGlobalX - width / 2)
+        y: Math.round(root.dragGlobalY - height / 2)
+        width: root.tabWidthValue
+        height: 30
+        color: "transparent"
+        flags: Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
+               | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
+               | Qt.WindowStaysOnTopHint
+
+        Rectangle {
+            anchors.fill: parent
+            radius: 6
+            color: root.activeColor
+            opacity: 0.78
+            border.width: 1
+            border.color: root.accent
+
+            Text {
+                anchors.left: parent.left
+                anchors.leftMargin: 12
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.dragIndex >= 0 && root.dragIndex < root.tabs.length
+                    ? root.tabs[root.dragIndex].title : ""
+                color: root.textColor
+                font.pixelSize: 12
+                elide: Text.ElideMiddle
+            }
         }
     }
 }
