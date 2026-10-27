@@ -1,37 +1,46 @@
 //! Shell-wide helpers QML cannot answer from its own event stream.
 //!
-//! Tearing a tab out is defined by the pointer crossing the window edge, and a
-//! `MouseArea` stops hearing about it at exactly that point. The tab strip
-//! therefore polls this singleton while a drag is in flight: where the physical
-//! cursor is, which of this application's windows is under it, and whether the
-//! primary button is still down. The native half lives in `cpp/window.h`; this
-//! module is the typed seam and the token allocator.
+//! Tearing a tab out is decided by the platform's own drag loop: QML hands the
+//! gesture over with `startTabDrag`, and the native half (`cpp/drag.cpp`) runs
+//! it until the drop lands or the gesture is cancelled. That loop is what makes
+//! the preview follow the grab point and what lets the pointer leave the window
+//! on OLE, NSDraggingSession and X11/Wayland alike. This module is the typed
+//! seam: the drag entry point, the logical cursor position the tear-off window
+//! is placed at, and the token allocator.
 //!
 //! The registry itself (token → QML window) stays in QML (`Shell.js`): windows
 //! are QML objects, and handing them through Rust would buy nothing.
 
+#![allow(clippy::too_many_arguments)]
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use cxx_qt_lib::QString;
+use cxx_qt_lib::{QColor, QString};
 
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
+        include!("cxx-qt-lib/qcolor.h");
+        type QColor = cxx_qt_lib::QColor;
+
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
 
-        include!("window.h");
+        include!("drag.h");
         #[namespace = "dae_qt"]
-        #[rust_name = "window_at"]
-        fn dae_qt_window_at(x: i32, y: i32) -> QString;
-
-        #[namespace = "dae_qt"]
-        #[rust_name = "cursor_physical_x"]
-        fn dae_qt_cursor_physical_x() -> i32;
-
-        #[namespace = "dae_qt"]
-        #[rust_name = "cursor_physical_y"]
-        fn dae_qt_cursor_physical_y() -> i32;
+        #[rust_name = "start_tab_drag"]
+        fn dae_qt_start_tab_drag(
+            source_token: &QString,
+            title: &QString,
+            tab_index: i32,
+            grab_x: i32,
+            grab_y: i32,
+            width: i32,
+            height: i32,
+            background: &QColor,
+            border: &QColor,
+            text: &QColor,
+        ) -> i32;
 
         #[namespace = "dae_qt"]
         #[rust_name = "cursor_logical_x"]
@@ -41,10 +50,7 @@ pub mod qobject {
         #[rust_name = "cursor_logical_y"]
         fn dae_qt_cursor_logical_y() -> i32;
 
-        #[namespace = "dae_qt"]
-        #[rust_name = "primary_button_down"]
-        fn dae_qt_primary_button_down() -> bool;
-
+        include!("window.h");
         #[namespace = "dae_qt"]
         #[rust_name = "focus_window"]
         fn dae_qt_focus_window(token: &QString) -> bool;
@@ -53,10 +59,11 @@ pub mod qobject {
     unsafe extern "RustQt" {
         /// Process-wide shell helpers, reachable from QML as `Shell`.
         ///
-        /// QML cannot mint a token that is unique across windows, cannot read
-        /// the physical cursor, and cannot see the window under the pointer.
-        /// Keeping those three here means the tab strip's drag logic has one
-        /// source of truth instead of one per window.
+        /// QML cannot mint a token that is unique across windows, cannot run
+        /// the platform's drag loop, and cannot read the logical global cursor
+        /// when a drag ends outside the window. Keeping those here means the
+        /// tab strip's drag logic has one source of truth instead of one per
+        /// window.
         #[qobject]
         #[qml_element]
         #[qml_singleton]
@@ -66,16 +73,7 @@ pub mod qobject {
         #[cxx_name = "newToken"]
         fn new_token(&self) -> QString;
 
-        /// Physical screen coordinates, the space `WindowFromPoint` speaks.
-        #[qinvokable]
-        #[cxx_name = "cursorPhysicalX"]
-        fn cursor_physical_x(&self) -> i32;
-
-        #[qinvokable]
-        #[cxx_name = "cursorPhysicalY"]
-        fn cursor_physical_y(&self) -> i32;
-
-        /// Logical screen coordinates, the space `Window.x/y` speaks.
+        /// Logical screen coordinates, the space QML `Window.x/y` speaks.
         #[qinvokable]
         #[cxx_name = "cursorLogicalX"]
         fn cursor_logical_x(&self) -> i32;
@@ -84,22 +82,30 @@ pub mod qobject {
         #[cxx_name = "cursorLogicalY"]
         fn cursor_logical_y(&self) -> i32;
 
-        /// The token of this application's window under a physical point, or
-        /// an empty string over anything else.
-        #[qinvokable]
-        #[cxx_name = "windowAt"]
-        fn window_at(&self, x: i32, y: i32) -> QString;
-
-        /// Whether the physical primary button is still down. The tab drag
-        /// ends on this going false, because the release itself may happen
-        /// outside every window QML can hear from.
-        #[qinvokable]
-        #[cxx_name = "mouseDown"]
-        fn mouse_down(&self) -> bool;
-
         #[qinvokable]
         #[cxx_name = "focusWindow"]
         fn focus_window(&self, token: &QString) -> bool;
+
+        /// Runs the platform drag loop for a tab, blocking until it ends. The
+        /// preview is the tab chip spotted at `grabX`/`grabY`, so it follows
+        /// the point the user grabbed, not the cursor-centred convention of a
+        /// plain drag image. Returns the resulting `Qt::DropAction` as an int;
+        /// `Qt::IgnoreAction` (0) means nothing took the drop.
+        #[qinvokable]
+        #[cxx_name = "startTabDrag"]
+        fn start_tab_drag(
+            &self,
+            source_token: &QString,
+            title: &QString,
+            tab_index: i32,
+            grab_x: i32,
+            grab_y: i32,
+            width: i32,
+            height: i32,
+            background: &QColor,
+            border: &QColor,
+            text: &QColor,
+        ) -> i32;
     }
 }
 
@@ -114,14 +120,6 @@ impl qobject::Shell {
         QString::from(format!("dae-window-{serial}").as_str())
     }
 
-    fn cursor_physical_x(&self) -> i32 {
-        qobject::cursor_physical_x()
-    }
-
-    fn cursor_physical_y(&self) -> i32 {
-        qobject::cursor_physical_y()
-    }
-
     fn cursor_logical_x(&self) -> i32 {
         qobject::cursor_logical_x()
     }
@@ -130,15 +128,34 @@ impl qobject::Shell {
         qobject::cursor_logical_y()
     }
 
-    fn window_at(&self, x: i32, y: i32) -> QString {
-        qobject::window_at(x, y)
-    }
-
-    fn mouse_down(&self) -> bool {
-        qobject::primary_button_down()
-    }
-
     fn focus_window(&self, token: &QString) -> bool {
         qobject::focus_window(token)
+    }
+
+    fn start_tab_drag(
+        &self,
+        source_token: &QString,
+        title: &QString,
+        tab_index: i32,
+        grab_x: i32,
+        grab_y: i32,
+        width: i32,
+        height: i32,
+        background: &QColor,
+        border: &QColor,
+        text: &QColor,
+    ) -> i32 {
+        qobject::start_tab_drag(
+            source_token,
+            title,
+            tab_index,
+            grab_x,
+            grab_y,
+            width,
+            height,
+            background,
+            border,
+            text,
+        )
     }
 }

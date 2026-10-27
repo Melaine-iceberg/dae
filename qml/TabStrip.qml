@@ -5,11 +5,14 @@ import "Shell.js" as ShellState
 
 // The tab strip, including the tear-off gesture.
 //
-// A tab drag is polled rather than driven by mouse events. QML stops receiving
-// coordinates at the window edge, which is the exact moment the gesture becomes
-// interesting: the release may land on another window or on the desktop. The
-// poll reads the physical cursor, the window under it and the button state from
-// `Shell`, so one code path covers reorder, cross-window merge and tear-off.
+// A tab drag is handed to the platform's own drag loop (`Shell.startTabDrag`).
+// That loop draws the chip with the grab point under the cursor on every
+// platform (OLE, NSDraggingSession, X11/Wayland DnD) and keeps reporting after
+// the pointer leaves the window, which a MouseArea cannot. Each window carries
+// a `DropArea` matching the tab MIME type; a drop only records where it landed
+// in `ShellState`, and this strip applies the reorder or merge once the loop
+// returns. A release that no drop target took — the desktop or another app —
+// tears the tab off at the final cursor position.
 Item {
     id: root
 
@@ -19,16 +22,19 @@ Item {
     property bool dark: true
     property string material: "none"
 
-    property int pressedIndex: -1
+    /// A pressed tab that could still become a drag. Cleared before the native
+    /// loop starts, so a stray move after the loop cannot begin a second one.
+    property bool dragArmed: false
     property bool dragging: false
     property int dragIndex: -1
-    property int dragTargetIndex: -1
-    property string dragTargetToken: ""
-    property bool dragInside: false
-    property real dragLocalX: -1
-    property real dragGlobalX: 0
-    property real dragGlobalY: 0
     property real dragStartX: 0
+    property real dragStartY: 0
+    /// A native drag ran and ended somewhere; the release it consumed must not
+    /// activate the tab it left behind.
+    property bool dragSuppressClick: false
+    /// Where a hovering tab drag would insert, in strip coordinates; -1 while
+    /// no tab drag is over this strip. Set by the window's `DropArea`.
+    property real dropX: -1
 
     signal tabActivated(int index)
     signal tabClosed(int index)
@@ -77,79 +83,77 @@ Item {
         return tabX(column) + tabWidthValue + tabGap / 2
     }
 
-    function beginDrag(index) {
-        dragging = true
-        dragIndex = index
-        dragTargetIndex = -1
-        dragTargetToken = ""
-        // A press always starts inside this window. Keeping `dragInside` true
-        // until the first poll also keeps the floating preview hidden for that
-        // first frame instead of flashing it at the last cursor position.
-        dragInside = true
-        dragLocalX = -1
+    /// Whether a logical screen point is inside the window this strip belongs
+    /// to. `hostWindow` is frameless, so its position/size are the window rect.
+    function insideWindow(x, y) {
+        return hostWindow !== null
+            && x >= hostWindow.x && x < hostWindow.x + hostWindow.width
+            && y >= hostWindow.y && y < hostWindow.y + hostWindow.height
     }
 
-    function pollDrag() {
-        const physicalX = Shell.cursorPhysicalX()
-        const physicalY = Shell.cursorPhysicalY()
-        dragGlobalX = Shell.cursorLogicalX()
-        dragGlobalY = Shell.cursorLogicalY()
-
-        const token = Shell.windowAt(physicalX, physicalY)
-        dragTargetToken = token
-        dragInside = hostWindow !== null && token === hostWindow.objectName
-        if (dragInside) {
-            dragLocalX = dragGlobalX - hostWindow.x
-            dragTargetIndex = indexAt(dragLocalX)
-        } else {
-            dragLocalX = -1
-            dragTargetIndex = -1
-        }
-
-        // The release may have happened over the desktop, where QML hears
-        // nothing. The physical button is the only reliable end-of-gesture.
-        if (!Shell.mouseDown())
-            finishDrag()
+    /// Marks where a tab drag hovering this strip would insert. The window's
+    /// `DropArea` drives this while the native loop runs.
+    function showDrop(x) {
+        dropX = x
     }
 
-    function finishDrag() {
-        if (!dragging)
+    function clearDrop() {
+        dropX = -1
+    }
+
+    function beginDrag(index, grabX, grabY) {
+        if (hostWindow === null || index < 0 || index >= tabs.length)
             return
 
-        const from = dragIndex
-        const token = dragTargetToken
-        const inside = dragInside
-        const localX = dragLocalX
-        const globalX = dragGlobalX
-        const globalY = dragGlobalY
+        const title = tabs[index] ? tabs[index].title : ""
+        const token = hostWindow.objectName
+        dragArmed = false
+        dragging = true
+        dragIndex = index
+        dragSuppressClick = true
+        dropX = -1
+        ShellState.clearTabDrop()
+
+        // Blocks in the platform's modal loop. The drag image is the tab chip
+        // with `grabX/grabY` as its hot spot, so the preview keeps the cursor
+        // on the point the user grabbed. Drops land in the window DropAreas
+        // while this runs, so the record is complete when it returns.
+        const action = Shell.startTabDrag(token, title, index,
+                                          Math.round(grabX), Math.round(grabY),
+                                          tabWidthValue, 30,
+                                          activeColor, accent, textColor)
+
+        const drop = ShellState.takeTabDrop()
+        const globalX = Shell.cursorLogicalX()
+        const globalY = Shell.cursorLogicalY()
 
         dragging = false
         dragIndex = -1
-        dragTargetIndex = -1
-        dragTargetToken = ""
-        dragInside = false
-        dragLocalX = -1
+        dropX = -1
 
-        if (inside) {
-            let to = indexAt(localX)
-            if (to > from)
-                to -= 1
-            if (to !== from && to >= 0)
-                tabMoved(from, to)
-        } else if (token !== "") {
-            const target = ShellState.windowFor(token)
-            const targetX = target ? (globalX - target.x) : 0
-            tabDroppedOnWindow(from, token, targetX)
-        } else {
-            tabTornOff(from, globalX, globalY)
+        if (drop !== null && drop.sourceToken === token
+                && drop.sourceIndex === index) {
+            if (drop.targetToken === token) {
+                if (drop.onStrip) {
+                    // The dragged tab is still in the list; the insertion index
+                    // is measured among the tabs it would land between.
+                    let to = indexAt(drop.x)
+                    if (to > index)
+                        to -= 1
+                    if (to !== index && to >= 0)
+                        tabMoved(index, to)
+                }
+            } else if (drop.targetToken !== "") {
+                tabDroppedOnWindow(index, drop.targetToken, drop.x)
+            }
+            return
         }
-    }
 
-    Timer {
-        interval: 16
-        repeat: true
-        running: root.dragging
-        onTriggered: root.pollDrag()
+        // Nothing took the drop. Outside this window that is the platform
+        // reporting a release over the desktop or another app; inside it, the
+        // loop was cancelled (Escape) and the tab stays where it was.
+        if (action === Qt.IgnoreAction && !insideWindow(globalX, globalY))
+            tabTornOff(index, globalX, globalY)
     }
 
     Rectangle {
@@ -238,22 +242,38 @@ Item {
                     hoverEnabled: true
                     acceptedButtons: Qt.LeftButton
 
-                    onPressed: {
-                        root.pressedIndex = tabItem.index
+                    onPressed: function (mouse) {
+                        root.dragArmed = true
+                        root.dragSuppressClick = false
                         root.dragStartX = mouse.x
+                        root.dragStartY = mouse.y
                     }
 
-                    onPositionChanged: {
-                        if (pressed && !root.dragging
-                                && Math.abs(mouse.x - root.dragStartX) > 5)
-                            root.beginDrag(tabItem.index)
+                    onPositionChanged: function (mouse) {
+                        if (!root.dragArmed || root.dragging
+                                || (mouse.buttons & Qt.LeftButton) === 0)
+                            return
+                        const dx = mouse.x - root.dragStartX
+                        const dy = mouse.y - root.dragStartY
+                        if (Math.sqrt(dx * dx + dy * dy) > 6)
+                            root.beginDrag(tabItem.index, root.dragStartX,
+                                           root.dragStartY)
                     }
 
                     onReleased: {
+                        root.dragArmed = false
+                        // The release that ended a native drag may arrive as a
+                        // click after the loop; it must not activate the tab.
+                        if (root.dragSuppressClick) {
+                            root.dragSuppressClick = false
+                            return
+                        }
                         if (!root.dragging)
                             root.tabActivated(tabItem.index)
-                        // A drag is finished by the poll timer: the release
-                        // that matters may be outside this window entirely.
+                    }
+
+                    onCanceled: {
+                        root.dragArmed = false
                     }
                 }
             }
@@ -312,83 +332,16 @@ Item {
         }
     }
 
-    // Where the tab would land if released inside the strip.
+    // Where the tab would land. The platform draws the dragged chip itself, so
+    // this is the only in-window feedback while a drag is over the strip; it
+    // also shows for a tab dragged in from another window.
     Rectangle {
-        visible: root.dragging && root.dragInside
-        x: root.indicatorX(root.dragTargetIndex)
+        visible: root.dropX >= 0
+        x: root.indicatorX(root.indexAt(root.dropX))
         y: 5
         width: 2
         height: 24
         radius: 1
         color: root.accent
-    }
-
-    // The dragging tab cannot leave the window as a real item, so the ghost is
-    // drawn only while the pointer is still inside. Outside, a click-through
-    // top-level window carries the same chip: it follows the poll, survives
-    // the crossing, and stays above the window under the cursor.
-    Rectangle {
-        visible: root.dragging && root.dragInside && root.dragIndex >= 0
-        x: root.dragLocalX - root.tabWidthValue / 2
-        y: 2
-        width: root.tabWidthValue
-        height: 30
-        radius: 6
-        color: root.activeColor
-        opacity: 0.78
-        border.width: 1
-        border.color: root.accent
-
-        Text {
-            anchors.left: parent.left
-            anchors.leftMargin: 12
-            anchors.right: parent.right
-            anchors.rightMargin: 12
-            anchors.verticalCenter: parent.verticalCenter
-            text: root.dragIndex >= 0 && root.dragIndex < root.tabs.length
-                ? root.tabs[root.dragIndex].title : ""
-            color: root.textColor
-            font.pixelSize: 12
-            elide: Text.ElideMiddle
-        }
-    }
-
-    // The same chip once the pointer leaves this window. `WindowTransparentForInput`
-    // makes it click-through, and `dae_qt_window_at` walks past click-through
-    // windows, so the preview never becomes the window the poll reports.
-    Window {
-        id: dragPreview
-        objectName: "dae-tab-drag-preview"
-        visible: root.dragging && !root.dragInside && root.dragIndex >= 0
-        x: Math.round(root.dragGlobalX - width / 2)
-        y: Math.round(root.dragGlobalY - height / 2)
-        width: root.tabWidthValue
-        height: 30
-        color: "transparent"
-        flags: Qt.Tool | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
-               | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
-               | Qt.WindowStaysOnTopHint
-
-        Rectangle {
-            anchors.fill: parent
-            radius: 6
-            color: root.activeColor
-            opacity: 0.78
-            border.width: 1
-            border.color: root.accent
-
-            Text {
-                anchors.left: parent.left
-                anchors.leftMargin: 12
-                anchors.right: parent.right
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.dragIndex >= 0 && root.dragIndex < root.tabs.length
-                    ? root.tabs[root.dragIndex].title : ""
-                color: root.textColor
-                font.pixelSize: 12
-                elide: Text.ElideMiddle
-            }
-        }
     }
 }

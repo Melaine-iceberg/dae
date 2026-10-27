@@ -23,6 +23,34 @@ function windowFor(token) {
     return token ? (windows[token] || null) : null
 }
 
+// The drop a running tab drag is about to become.
+//
+// A window's DropArea only records where the tab landed. The source applies
+// the move after the platform's drag loop returns, so neither tab list is
+// mutated while that modal loop is still dispatching events.
+var tabDrop = null
+
+function recordTabDrop(sourceToken, sourceIndex, targetToken, x, y, onStrip) {
+    tabDrop = {
+        "sourceToken": sourceToken,
+        "sourceIndex": sourceIndex,
+        "targetToken": targetToken,
+        "x": x,
+        "y": y,
+        "onStrip": onStrip
+    }
+}
+
+function takeTabDrop() {
+    var drop = tabDrop
+    tabDrop = null
+    return drop
+}
+
+function clearTabDrop() {
+    tabDrop = null
+}
+
 function noteActive(token, active) {
     if (active && token)
         lastActiveToken = token

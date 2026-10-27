@@ -285,20 +285,29 @@ release 用 `windows_subsystem = "windows"`，没有控制台窗口；`dae.exe` 
 只是 `ShellWindow { firstWindow: false }`。因为两者互相引用，撕出窗口按 URL
 `Qt.createComponent(..., Component.PreferSynchronous)` 加载，规避 QML 静态循环。
 
-拖动检测不依赖 `MouseArea`：指针越过窗口边界后 QML 就收不到事件了。`TabStrip`
-在拖动期间每 16 ms 向 `Shell` 单例要三件事——物理光标、`WindowFromPoint` 下的
-本应用窗口 token、`GetAsyncKeyState(VK_LBUTTON)`——据此决定重排、合并还是撕出。
-预览在窗口内是 `TabStrip` 里的 ghost；越出窗口后换成一个 `Qt.Tool` +
-`WindowTransparentForInput` + `WindowStaysOnTop` 的透明顶层窗，继续按同一个
-光标位置绘制标签。命中检测会跳过 `WS_EX_TRANSPARENT` 的顶层窗（并按
-`dae-tab-drag-preview` 对象名兜底），沿 z 序找到它下面真正接收点击的窗口，
-因此预览窗不会遮住合并目标。
+拖动交给平台自己的拖放循环：`TabStrip` 越过 6 px 阈值后调用
+`Shell.startTabDrag()`，原生侧（`cpp/drag.cpp`）用 `QDrag` 跑
+OLE `DoDragDrop` / `NSDraggingSession` / X11·Wayland DnD。拖动图是按标签
+标题与主题色绘制、并按窗口 DPR 光栅化的 chip，**热区就是按下的抓取点**
+（`setHotSpot` 使用逻辑像素，Qt 各平台后端负责换算），所以预览和 Tauri 的
+ghost 一样按抓取点跟随光标，而不是居中。平台循环在指针离开窗口后仍然有效，
+这正是 `MouseArea` 做不到的部分。
+
+每个 `ShellWindow` 有一个匹配 `application/x-dae-tab` 的窗口级 `DropArea`：
+拖动经过时只显示插入标记，落下时只把「源标签、目标窗口、落点」记进
+`Shell.js`；源标签在 `QDrag::exec()` 返回后统一执行重排 / 合并，模态循环
+运行期间不会改动任何一个窗口的标签列表。没有任何窗口接收的释放（桌面、
+其它应用）由最终光标位置判定为撕出；循环在窗口内被取消（Esc）时标签留在
+原处。旧的 16 ms 轮询（`WindowFromPoint` + `GetAsyncKeyState`）与
+`Qt.Tool` 悬浮预览窗已删除，拖动路径只依赖跨平台 Qt API。
 没有预热窗口池：撕出按需创建窗口，`WindowController.attach()` 给新 HWND 写同一套
 边框、背景与命中测试（门槛 4 的路径原样复用）。
 
-实测（2026-10-26，Windows 11 build 26340 / 150%）：`+` 新建标签 → 2 标签；
+旧轮询路径实测（2026-10-26，Windows 11 build 26340 / 150%）：`+` 新建标签 → 2 标签；
 把第二个标签拖出窗口 → **2 个 HWND**；再拖回第一个窗口 → **1 个 HWND**。
-脚本与截图在 `.perf/tab-actions.ps1`（gitignored）。
+脚本与截图在 `.perf/tab-actions.ps1`（gitignored）。改用 `QDrag` 后，构建、
+77 项单元测试与独立 exe 启动均通过；跨窗口/撕出的交互复验需在真实输入下
+重做，本机注入输入在 150% 缩放的多窗口环境里无法稳定命中目标。
 
 ### 4.5 终端：alacritty_terminal + 自绘网格（2026-10-26）
 

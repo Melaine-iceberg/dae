@@ -1683,6 +1683,62 @@ Window {
         }
     }
 
+    // A tab dragged from any window. The platform's drag loop owns the pointer
+    // and the preview; this area only records where the release landed, and the
+    // source strip applies the reorder/merge after the loop returns. Recording
+    // instead of moving keeps both tab lists untouched while the modal loop is
+    // still running. The tab MIME type is the one `cpp/drag.cpp` advertises.
+    DropArea {
+        id: tabDropArea
+        anchors.fill: parent
+        z: 1000
+        keys: ["application/x-dae-tab"]
+
+        function draggedTab(drag) {
+            const payload = drag.getDataAsString("application/x-dae-tab")
+            const split = payload.indexOf("\t")
+            if (split < 0)
+                return null
+            return {
+                "token": payload.substring(0, split),
+                "index": parseInt(payload.substring(split + 1), 10),
+                "onStrip": drag.y >= tabStrip.y
+                    && drag.y < tabStrip.y + tabStrip.height
+            }
+        }
+
+        onEntered: function (drag) {
+            const tab = draggedTab(drag)
+            if (tab === null) {
+                drag.accepted = false
+                return
+            }
+            drag.accept(Qt.MoveAction)
+            tabStrip.showDrop(tab.onStrip ? drag.x : -1)
+        }
+        onPositionChanged: function (drag) {
+            const tab = draggedTab(drag)
+            if (tab === null) {
+                drag.accepted = false
+                return
+            }
+            drag.accept(Qt.MoveAction)
+            tabStrip.showDrop(tab.onStrip ? drag.x : -1)
+        }
+        onExited: tabStrip.clearDrop()
+        onDropped: function (drop) {
+            const tab = draggedTab(drop)
+            tabStrip.clearDrop()
+            if (tab === null) {
+                drop.accepted = false
+                return
+            }
+            drop.accept(Qt.MoveAction)
+            ShellState.recordTabDrop(tab.token, tab.index, root.token,
+                                     drop.x, drop.y, tab.onStrip)
+        }
+    }
+
     ContextMenu {
         id: menu
         anchors.fill: parent

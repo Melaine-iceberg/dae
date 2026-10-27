@@ -422,106 +422,13 @@ inline bool dae_qt_system_dark()
 }
 
 // ---------------------------------------------------------------------------
-// Tab drag helpers.
+// Window focus.
 //
-// A QML MouseArea keeps receiving coordinates only while the pointer is inside
-// the window. Tearing a tab out is defined by the pointer leaving it, so the
-// tab strip polls the global cursor and the physical button instead of trusting
-// the last QML event. These are the four facts that poll needs.
+// A native drag runs in the platform's own loop (`drag.cpp`), so the strip no
+// longer polls the pointer, the window under it or the physical button. This
+// header keeps only the Windows-specific pieces the shell still asks for;
+// everything the tab drag needs lives in drag.cpp and is cross-platform.
 // ---------------------------------------------------------------------------
-
-/// The token of this application's window under a physical screen point.
-///
-/// `WindowFromPoint` returns the deepest child (a QML render surface), so the
-/// lookup walks to its root and then matches the HWND-keyed state table. A
-/// point over another application — or over the desktop — answers empty, which
-/// is exactly what "this became a new window" means.
-inline QString dae_qt_window_at(int x, int y)
-{
-    const POINT point{ x, y };
-
-    // The tab-drag preview is a click-through, topmost window sitting exactly
-    // under the cursor. It must not become the answer: the strip needs the
-    // window a click would reach, which is the one below it in z-order. The
-    // extended style is the general test; the object-name check keeps the
-    // preview skippable even if the platform drops the flag.
-    auto click_through = [](HWND root) {
-        if ((GetWindowLongPtrW(root, GWL_EXSTYLE) & WS_EX_TRANSPARENT) != 0)
-            return true;
-        for (QWindow* window : QGuiApplication::topLevelWindows()) {
-            if (window && window->objectName() == QStringLiteral("dae-tab-drag-preview")
-                && reinterpret_cast<HWND>(window->winId()) == root)
-                return true;
-        }
-        return false;
-    };
-
-    HWND hwnd = WindowFromPoint(point);
-    while (hwnd) {
-        const HWND root = GetAncestor(hwnd, GA_ROOT);
-        if (!root)
-            return {};
-        if (!click_through(root)) {
-            for (auto it = window_states().cbegin(); it != window_states().cend(); ++it) {
-                if (it->hwnd == root)
-                    return it->token;
-            }
-            // The topmost window that takes input is not ours.
-            return {};
-        }
-
-        // Walk down the z-order to the next visible top-level window that
-        // covers the point. Click-through layers can stack, so this repeats
-        // until something interactive is found or the list runs out.
-        HWND next = root;
-        do {
-            next = GetWindow(next, GW_HWNDNEXT);
-            if (!next)
-                return {};
-            if (!IsWindowVisible(next))
-                continue;
-            RECT rect{};
-            if (!GetWindowRect(next, &rect) || !PtInRect(&rect, point))
-                continue;
-            break;
-        } while (next);
-        hwnd = next;
-    }
-    return {};
-}
-
-inline int dae_qt_cursor_physical_x()
-{
-    POINT point{};
-    GetCursorPos(&point);
-    return point.x;
-}
-
-inline int dae_qt_cursor_physical_y()
-{
-    POINT point{};
-    GetCursorPos(&point);
-    return point.y;
-}
-
-/// Device-independent cursor position, the space QML `Window.x/y` uses.
-inline int dae_qt_cursor_logical_x()
-{
-    return QCursor::pos().x();
-}
-
-inline int dae_qt_cursor_logical_y()
-{
-    return QCursor::pos().y();
-}
-
-/// Whether the physical primary button is down, independent of which window
-/// currently owns mouse capture. The tab drag ends when this goes false, even
-/// if Qt stopped delivering events when the pointer crossed the frame.
-inline bool dae_qt_primary_button_down()
-{
-    return (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-}
 
 inline bool dae_qt_focus_window(const QString& token)
 {
