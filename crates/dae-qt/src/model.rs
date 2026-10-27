@@ -24,13 +24,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
+use cxx_qt_lib::{
+    QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QVariant,
+};
 use dae_core::fs::entry_codec::{self, ListingRow};
 use dae_core::fs::listing::{self, Batch, BatchTarget};
 use dae_core::fs::vfs::{self, Scheme};
 use dae_core::fs::watch;
 use dae_core::host::{Event, Host};
-use dae_core::types::{DirectoryEntry, EntryKind};
+use dae_core::types::{Breadcrumb, DirectoryEntry, EntryKind};
 
 const ROLE_NAME: i32 = 0x0100;
 const ROLE_PATH: i32 = 0x0101;
@@ -72,6 +74,9 @@ pub mod qobject {
 
         include!("cxx-qt-lib/qhash.h");
         type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
+
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
     }
 
     unsafe extern "RustQt" {
@@ -82,6 +87,21 @@ pub mod qobject {
         #[qproperty(bool, finished)]
         #[qproperty(QString, status)]
         #[qproperty(QString, path)]
+        /// The clickable path from the root to the shown directory, one entry
+        /// per ancestor, spelled by the backend that read it: `C:`, `Users`,
+        /// `Mt342`; `smb://nas.local`, `share`, `docs`; the cloud provider's
+        /// own segments. The breadcrumb bar paints them and navigating asks the
+        /// model to load the one that was clicked, so the ancestor list only
+        /// has to be right here, once, instead of in a copy of the splitting
+        /// rules per backend.
+        ///
+        /// Two parallel lists rather than one list of `{ name, path }` maps:
+        /// cxx-qt can only export a property whose value type is comparable
+        /// (`QVariant` and `QVariantList` are not), and `QStringList` is. They
+        /// are always written together from one `Vec<Breadcrumb>`, so the
+        /// pairing cannot drift.
+        #[qproperty(QStringList, breadcrumb_names, cxx_name = "breadcrumbNames")]
+        #[qproperty(QStringList, breadcrumb_paths, cxx_name = "breadcrumbPaths")]
         /// True when this model was loaded through a network backend. The
         /// shell reads it to keep local-only actions off `smb://`, `sftp://`
         /// and `cloud://` paths instead of letting them fail on click.
@@ -683,6 +703,11 @@ pub struct DirectoryListModelRust {
     finished: bool,
     status: QString,
     path: QString,
+    /// The ancestors of `path`, as the breadcrumb bar reads them. Both lists
+    /// come from the same `Vec<Breadcrumb>`, so they always pair up index for
+    /// index.
+    breadcrumb_names: QStringList,
+    breadcrumb_paths: QStringList,
     rows: Vec<StoredRow>,
     base: String,
     /// `Some` while a same-directory refresh runs; the rows above are the
@@ -715,6 +740,8 @@ impl Default for DirectoryListModelRust {
             finished: false,
             status: QString::default(),
             path: QString::default(),
+            breadcrumb_names: QStringList::default(),
+            breadcrumb_paths: QStringList::default(),
             rows: Vec::new(),
             base: String::new(),
             refresh: None,
@@ -911,7 +938,7 @@ impl qobject::DirectoryListModel {
                                     .iter()
                                     .map(|entry| StoredRow::from_entry(entry, &base))
                                     .collect();
-                                worker.deliver_head(base, view.path, rows, true);
+                                worker.deliver_head(base, view.path, view.breadcrumbs, rows, true);
                             }
                             Err(error) => {
                                 worker.fail(crate::errors::friendly_error(&error.to_string()))
@@ -938,7 +965,7 @@ impl qobject::DirectoryListModel {
                         .iter()
                         .map(|entry| StoredRow::from_entry(entry, &base))
                         .collect();
-                    worker.deliver_head(base, view.path, rows, done);
+                    worker.deliver_head(base, view.path, view.breadcrumbs, rows, done);
                 }
                 Err(error) => worker.fail(crate::errors::friendly_error(&error.to_string())),
             }
@@ -1076,17 +1103,55 @@ impl qobject::DirectoryListModel {
         self.as_mut().set_finished(true);
     }
 
+    /// Publishes the ancestors of the shown directory to the breadcrumb bar.
+    ///
+    /// Skipped when nothing changed: a refresh hands back the ancestors of the
+    /// directory already on screen, and rewriting both lists would rebind every
+    /// crumb in the bar for no reason.
+    fn adopt_breadcrumbs(mut self: Pin<&mut Self>, breadcrumbs: Vec<Breadcrumb>) {
+        let count = breadcrumbs.len();
+        let unchanged = self.breadcrumb_names.len() == count as isize
+            && self
+                .breadcrumb_names
+                .iter()
+                .zip(breadcrumbs.iter())
+                .all(|(name, crumb)| name.to_string() == crumb.name)
+            && self
+                .breadcrumb_paths
+                .iter()
+                .zip(breadcrumbs.iter())
+                .all(|(path, crumb)| path.to_string() == crumb.path);
+        if unchanged {
+            return;
+        }
+
+        let mut names = QStringList::default();
+        let mut paths = QStringList::default();
+        for crumb in &breadcrumbs {
+            names.append(QString::from(crumb.name.as_str()));
+            paths.append(QString::from(crumb.path.as_str()));
+        }
+
+        self.as_mut().set_breadcrumb_names(names);
+        self.as_mut().set_breadcrumb_paths(paths);
+    }
+
     fn append_head(
         mut self: Pin<&mut Self>,
         generation: u64,
         base: String,
         path: String,
+        breadcrumbs: Vec<Breadcrumb>,
         rows: Vec<StoredRow>,
         done: bool,
     ) {
         if self.generation != generation {
             return;
         }
+
+        // Set before the rows: the bar names the directory the rows belong to,
+        // and it is what the user sees first while a large listing streams.
+        self.as_mut().adopt_breadcrumbs(breadcrumbs);
 
         if self.refresh.is_some() {
             if let Some(stage) = self.as_mut().rust_mut().refresh.as_mut() {
@@ -1408,13 +1473,20 @@ impl QtBatchTarget {
         self.queue_rows(rows, done)
     }
 
-    fn deliver_head(&self, base: String, path: String, rows: Vec<StoredRow>, done: bool) {
+    fn deliver_head(
+        &self,
+        base: String,
+        path: String,
+        breadcrumbs: Vec<Breadcrumb>,
+        rows: Vec<StoredRow>,
+        done: bool,
+    ) {
         let mut state = self.state.lock().expect("listing target poisoned");
         let generation = self.generation;
         let _ = self.thread.queue(move |mut model| {
             model
                 .as_mut()
-                .append_head(generation, base, path, rows, done)
+                .append_head(generation, base, path, breadcrumbs, rows, done)
         });
         state.head_ready = true;
         for batch in state.pending.drain(..) {

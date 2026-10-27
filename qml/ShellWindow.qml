@@ -52,6 +52,10 @@ Window {
     property var splitTab: null
     property real splitRatio: 0.5
     property bool splitFocused: false
+    /// True while the path bar shows its editor instead of the breadcrumb
+    /// trail. Only the editor has a path to type into; the trail is the bar's
+    /// normal shape.
+    property bool pathEditing: false
     property string searchQuery: ""
     property string searchMode: "name"
     property bool searchRegex: false
@@ -423,6 +427,22 @@ Window {
         root.applyRemotePolicy()
         Workspace.recordRecent(path, true, false)
         Qt.callLater(fileList.takeFocus)
+    }
+
+    /// Opens the path editor seeded with the current path and selected, so
+    /// typing overtypes it and Enter replaces the whole thing. Shared by the
+    /// bar's own click target and the path-jump shortcut.
+    function beginPathEditing() {
+        if (root.trashActive || root.activeTab === null)
+            return
+        root.pathEditing = true
+        pathInput.text = root.activePath
+        // The field is only visible once `pathEditing` is on, and a hidden item
+        // cannot take focus: wait for the state to settle before focusing.
+        Qt.callLater(function () {
+            pathInput.forceActiveFocus()
+            pathInput.selectAll()
+        })
     }
 
     /// The split pane keeps its own trail: navigating it never moves the
@@ -863,6 +883,20 @@ Window {
         ])
     }
 
+    /// The ancestors the breadcrumb bar folded into its `…`. The bar draws the
+    /// button; the menu is the window's, the way every other menu here is.
+    /// `split` says which pane the chosen ancestor belongs to, because the two
+    /// panes keep separate trails.
+    function openBreadcrumbMenu(x, y, names, paths, split) {
+        const items = []
+        for (let index = 0; index < paths.length; index += 1)
+            items.push({ id: "crumb:" + paths[index], label: names[index] })
+        if (items.length === 0)
+            return
+        root.contextTab = split ? root.splitTab : null
+        menu.openAt(x, y, items)
+    }
+
     function showTrashRowMenu(id, originalParent, x, y) {
         root.contextTrashId = id
         root.contextTrashParent = originalParent
@@ -937,6 +971,12 @@ Window {
     function runMenuAction(id) {
         const path = root.contextPath
         const isDir = root.contextIsDir
+        // A folded ancestor carries its destination in the id: the menu is
+        // rebuilt from whatever the bar hid, so there is no state to look up.
+        if (id.indexOf("crumb:") === 0) {
+            root.navigatePane(root.contextTab, id.substring("crumb:".length))
+            return
+        }
         switch (id) {
         case "open":
             if (isDir)
@@ -1286,8 +1326,51 @@ Window {
                 radius: 7
                 color: root.dark ? "#1affffff" : "#0d000000"
                 border.width: 1
-                border.color: pathInput.activeFocus
+                border.color: root.pathEditing
                     ? (root.dark ? "#4d6ea8fe" : "#4d2f6fdf") : root.hairline
+
+                // The bar's normal shape is the trail: every ancestor is a
+                // destination, and the current folder is the one name it must
+                // keep. Typing a path is the exception, so the editor is a
+                // state of this bar rather than the bar itself.
+                MouseArea {
+                    anchors.fill: parent
+                    enabled: !root.trashActive && !root.pathEditing
+                    cursorShape: Qt.IBeamCursor
+                    onClicked: root.beginPathEditing()
+                }
+
+                PathBreadcrumbs {
+                    anchors.fill: parent
+                    anchors.leftMargin: 4
+                    anchors.rightMargin: 4
+                    visible: !root.trashActive && !root.pathEditing
+                    names: root.activeTab !== null ? root.activeTab.listing.breadcrumbNames : []
+                    paths: root.activeTab !== null ? root.activeTab.listing.breadcrumbPaths : []
+                    dark: root.dark
+                    textColor: root.textColor
+                    mutedColor: root.mutedColor
+                    accent: root.accent
+
+                    onCrumbActivated: function (path) {
+                        root.navigate(path)
+                    }
+                    onAncestorsRequested: function (x, y, names, paths) {
+                        root.openBreadcrumbMenu(x, y, names, paths, false)
+                    }
+                }
+
+                // The recycle bin is a surface, not a path: there is nothing to
+                // walk back through, and nothing to type.
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.trashActive
+                    text: "回收站"
+                    color: root.textColor
+                    font.pixelSize: 13
+                }
 
                 TextInput {
                     id: pathInput
@@ -1295,6 +1378,7 @@ Window {
                     anchors.fill: parent
                     anchors.leftMargin: 8
                     anchors.rightMargin: 8
+                    visible: root.pathEditing && !root.trashActive
                     verticalAlignment: TextInput.AlignVCenter
                     text: ""
                     color: root.textColor
@@ -1303,21 +1387,18 @@ Window {
                     font.pixelSize: 13
                     selectByMouse: true
                     clip: true
-                    readOnly: root.trashActive
 
                     // TextInput assigns to `text` while the user edits, which
-                    // permanently drops any binding on it. Keep the display in
-                    // sync explicitly instead: reset on focus loss and
-                    // whenever the tab navigates.
+                    // permanently drops any binding on it. `beginPathEditing`
+                    // seeds it instead, and the field goes back to naming the
+                    // trail once it loses focus — every way out of the editor
+                    // (Enter, Escape, a click elsewhere) ends here.
                     onActiveFocusChanged: {
-                        text = root.trashActive ? "回收站" : root.activePath
-                        if (activeFocus && !root.trashActive)
-                            selectAll()
+                        if (!activeFocus)
+                            root.pathEditing = false
                     }
 
                     onAccepted: {
-                        if (root.trashActive)
-                            return
                         let target = text.trim()
                         if (target.length >= 2
                                 && target.charAt(0) === '"'
@@ -1574,20 +1655,6 @@ Window {
                             color: root.chromeColor
 
                             Text {
-                                anchors.left: parent.left
-                                anchors.leftMargin: 12
-                                anchors.right: splitClose.left
-                                anchors.rightMargin: 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: root.splitTab !== null
-                                    ? root.splitTab.listing.path : ""
-                                color: root.mutedColor
-                                font.family: "Cascadia Mono"
-                                font.pixelSize: 11
-                                elide: Text.ElideMiddle
-                            }
-
-                            Text {
                                 id: splitClose
                                 anchors.right: parent.right
                                 anchors.rightMargin: 12
@@ -1598,6 +1665,14 @@ Window {
                                 font.pixelSize: 13
                             }
 
+                            // The second pane names its own directory the same
+                            // way the first one does; a bare path string here
+                            // would be the only place in the window where the
+                            // trail is missing.
+                            //
+                            // Declared after the bar's own click area: later
+                            // siblings paint on top, and crumbs the click
+                            // target covered would never receive their clicks.
                             MouseArea {
                                 anchors.fill: parent
                                 hoverEnabled: true
@@ -1606,6 +1681,31 @@ Window {
                                         ExplorerPrefs.setBool("splitEnabled", false)
                                     else
                                         splitList.takeFocus()
+                                }
+                            }
+
+                            PathBreadcrumbs {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 8
+                                anchors.right: splitClose.left
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                height: 22
+                                fontSize: 12
+                                names: root.splitTab !== null
+                                    ? root.splitTab.listing.breadcrumbNames : []
+                                paths: root.splitTab !== null
+                                    ? root.splitTab.listing.breadcrumbPaths : []
+                                dark: root.dark
+                                textColor: root.textColor
+                                mutedColor: root.mutedColor
+                                accent: root.accent
+
+                                onCrumbActivated: function (path) {
+                                    root.navigateSplit(path)
+                                }
+                                onAncestorsRequested: function (x, y, names, paths) {
+                                    root.openBreadcrumbMenu(x, y, names, paths, true)
                                 }
                             }
 
@@ -2320,10 +2420,7 @@ Window {
         sequence: root.config !== null && root.config.pathJump !== ""
             ? root.config.pathJump : "Ctrl+P"
         enabled: !root.modalOpen && !root.trashActive
-        onActivated: {
-            pathInput.forceActiveFocus()
-            pathInput.selectAll()
-        }
+        onActivated: root.beginPathEditing()
     }
 
     Shortcut {
@@ -2415,7 +2512,6 @@ Window {
 
         root.applyRemotePolicy()
         root.applySplitPreference()
-        pathInput.text = root.trashActive ? "回收站" : root.activePath
         root.visible = true
         root.activationReady = true
         ShellState.noteActive(root.token, root.active)
@@ -2450,14 +2546,15 @@ Window {
         target: root
 
         function onActivePathChanged() {
-            if (!pathInput.activeFocus)
-                pathInput.text = root.trashActive ? "回收站" : root.activePath
+            // A path that changed under the editor (a tab switch, a navigate
+            // from anywhere else) ends the edit: the text in it belongs to the
+            // directory the user was on, not to the one now shown.
+            root.pathEditing = false
             root.applyRemotePolicy()
         }
 
         function onTrashActiveChanged() {
-            if (!pathInput.activeFocus)
-                pathInput.text = root.trashActive ? "回收站" : root.activePath
+            root.pathEditing = false
             if (root.trashActive) {
                 root.terminalActive = false
                 trashView.takeFocus()
