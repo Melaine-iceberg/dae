@@ -39,7 +39,8 @@ use dae_core::fs::types::{
 use dae_core::fs::vfs;
 use dae_core::host::{Event, Host};
 
-use crate::errors::friendly_error;
+use crate::default_manager::{self, DefaultManagerStatus};
+use crate::errors::{default_manager_detail, friendly_error};
 use crate::platform;
 use crate::runtime;
 
@@ -119,6 +120,15 @@ pub mod qobject {
         /// application (macOS and Linux). Windows keeps the native
         /// `SHOpenWithDialog`, which the `openWith` command invokes.
         #[qproperty(bool, open_with_picker_supported, cxx_name = "openWithPickerSupported")]
+        /// Live default-file-manager state for the settings panel. The panel
+        /// reads fresh OS state on open and after every set/unset; `detail`
+        /// names the manual step a platform still requires.
+        #[qproperty(bool, default_manager_supported, cxx_name = "defaultManagerSupported")]
+        #[qproperty(bool, default_manager_is_default, cxx_name = "defaultManagerIsDefault")]
+        #[qproperty(bool, default_manager_is_registered, cxx_name = "defaultManagerIsRegistered")]
+        #[qproperty(QString, default_manager_detail, cxx_name = "defaultManagerDetail")]
+        #[qproperty(QString, default_manager_error, cxx_name = "defaultManagerError")]
+        #[qproperty(bool, default_manager_busy, cxx_name = "defaultManagerBusy")]
         type Workspace = super::WorkspaceRust;
 
         #[qinvokable]
@@ -371,6 +381,18 @@ pub mod qobject {
             family: &QString,
         );
 
+        #[qinvokable]
+        #[cxx_name = "refreshDefaultManager"]
+        fn refresh_default_manager(self: Pin<&mut Workspace>);
+
+        #[qinvokable]
+        #[cxx_name = "setDefaultFileManager"]
+        fn set_default_file_manager(self: Pin<&mut Workspace>);
+
+        #[qinvokable]
+        #[cxx_name = "unsetDefaultFileManager"]
+        fn unset_default_file_manager(self: Pin<&mut Workspace>);
+
         /// The operation succeeded; `focus` is the path to select, empty when
         /// the operation created nothing addressable.
         #[qsignal]
@@ -524,6 +546,12 @@ pub struct WorkspaceRust {
     terminal_line_height: f64,
     terminal_font_family: QString,
     open_with_picker_supported: bool,
+    default_manager_supported: bool,
+    default_manager_is_default: bool,
+    default_manager_is_registered: bool,
+    default_manager_detail: QString,
+    default_manager_error: QString,
+    default_manager_busy: bool,
     active_operations: i32,
 }
 
@@ -572,6 +600,16 @@ impl Default for WorkspaceRust {
                 settings.terminal.font_family.as_deref().unwrap_or(""),
             ),
             open_with_picker_supported: cfg!(any(target_os = "macos", target_os = "linux")),
+            default_manager_supported: cfg!(any(
+                target_os = "macos",
+                target_os = "linux",
+                windows
+            )),
+            default_manager_is_default: false,
+            default_manager_is_registered: false,
+            default_manager_detail: QString::default(),
+            default_manager_error: QString::default(),
+            default_manager_busy: false,
             active_operations: 0,
         }
     }
@@ -2125,6 +2163,86 @@ impl qobject::Workspace {
                 let message = friendly_error(&error.to_string());
                 self.as_mut()
                     .set_last_error(QString::from(message.as_str()));
+            }
+        }
+    }
+
+    fn refresh_default_manager(mut self: Pin<&mut Self>) {
+        self.as_mut().start_default_manager(None);
+    }
+
+    fn set_default_file_manager(mut self: Pin<&mut Self>) {
+        self.as_mut().start_default_manager(Some(true));
+    }
+
+    fn unset_default_file_manager(mut self: Pin<&mut Self>) {
+        self.as_mut().start_default_manager(Some(false));
+    }
+
+    /// `None` re-reads the OS state; `Some(true/false)` registers or removes
+    /// dae first. The blocking platform calls run off the Qt thread, and the
+    /// busy flag drops overlapping requests the same way the Git operations do.
+    fn start_default_manager(mut self: Pin<&mut Self>, change: Option<bool>) {
+        if self.default_manager_busy {
+            return;
+        }
+        self.as_mut().set_default_manager_busy(true);
+        self.as_mut().set_default_manager_error(QString::default());
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let result = tokio::task::spawn_blocking(move || match change {
+                Some(true) => default_manager::set(),
+                Some(false) => default_manager::unset(),
+                None => default_manager::status(),
+            })
+            .await
+            .map_err(|error| {
+                FileSystemError::Internal(format!(
+                    "default_manager.status_failed: {error}"
+                ))
+            })
+            .and_then(|result| result);
+            let _ = thread.queue(move |mut workspace| {
+                workspace.as_mut().adopt_default_manager(change, result)
+            });
+        });
+    }
+
+    fn adopt_default_manager(
+        mut self: Pin<&mut Self>,
+        change: Option<bool>,
+        result: Result<DefaultManagerStatus, FileSystemError>,
+    ) {
+        self.as_mut().set_default_manager_busy(false);
+        match result {
+            Ok(status) => {
+                self.as_mut()
+                    .set_default_manager_supported(status.supported);
+                self.as_mut()
+                    .set_default_manager_is_default(status.is_default);
+                self.as_mut()
+                    .set_default_manager_is_registered(status.is_registered);
+                let detail = status
+                    .detail
+                    .as_deref()
+                    .map(default_manager_detail)
+                    .unwrap_or("");
+                self.as_mut()
+                    .set_default_manager_detail(QString::from(detail));
+                self.as_mut()
+                    .set_default_manager_error(QString::default());
+                if change.is_some() {
+                    let _ = dae_core::settings::set_default_file_manager_cache(
+                        status.is_default,
+                    );
+                }
+            }
+            Err(error) => {
+                self.as_mut()
+                    .set_default_manager_detail(QString::default());
+                let message = friendly_error(&error.to_string());
+                self.as_mut()
+                    .set_default_manager_error(QString::from(message.as_str()));
             }
         }
     }

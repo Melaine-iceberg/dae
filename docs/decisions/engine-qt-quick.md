@@ -382,7 +382,8 @@ ghost 一样按抓取点跟随光标，而不是居中。平台循环在指针�
 恢复/永久删除/清空）；`FileList` 支持 Ctrl/Shift 多选、
 F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
 `ContextMenu.qml` 提供行菜单、空白区菜单与侧栏菜单；`NamePrompt.qml` 负责
-新建/重命名；`SettingsPanel.qml` 编辑终端排版；`Toast.qml` 显示结果。
+新建/重命名；`SettingsPanel.qml` 编辑终端排版并注册默认文件管理器；
+`Toast.qml` 显示结果。
 
 端到端实测（2026-10-26，`.perf/phase3-test.ps1`，Windows 11 build 26340）：
 
@@ -416,6 +417,18 @@ F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
   `gitOperationFailed` 转成 toast 或新建表单内联错误。
 - **打开方式选择器**：`qml/OpenWithDialog.qml` + `OpenWithModel`；macOS/Linux
   自绘，Windows 仍用原生对话框（详见 §4.10）。
+- **默认文件管理器**：`crates/dae-qt/src/default_manager.rs` 接管旧壳
+  `src-tauri/src/default_manager.rs` 的三个平台分支，经 `Workspace` 的
+  `refreshDefaultManager` / `setDefaultFileManager` / `unsetDefaultFileManager`
+  异步读写系统关联，设置面板内联显示「已是默认 / 已注册待确认 / 不是默认」、
+  平台补充说明（Windows 需在系统设置确认，macOS 不能自行取消）与失败原因。
+  Windows 注册 `dae.folder` ProgID、`Directory\OpenWithProgids`、右键
+  「Open with dae」并读 `Directory\UserChoice` 判断是否已生效；Linux 写
+  `~/.local/share/applications/dae-folder.desktop` 后调 `xdg-mime`，并只从
+  `mimeapps.list` 删自己那一行；macOS 用 LaunchServices 的
+  `LSSetDefaultRoleHandlerForContentType("public.folder")`，`unset` 交给系统。
+  `packaging/qt/Info.plist` 因此新增 `CFBundleDocumentTypes`（`public.folder`，
+  `Alternate`），否则 LaunchServices 不把 dae 认作候选。
 - **自动更新**：`dae_core::update` + `Updater` 单例 + `qml/UpdateDialog.qml`
   （详见 §4.10）。
 - **右键菜单补齐**：属性、复制路径、预览、移动到、应用扩展（已安装应用的
@@ -436,8 +449,8 @@ F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
   应用扩展里没有自带图标的命令回落到包内 `Square44x44Logo` / `Properties/Logo`
   的 PNG，分组标题也用它，因此每一行都有应用图标。
 
-**仍然没铺的**（core 已有实现，缺 Qt 视图/命令包装，或只在旧壳里）：默认文件
-管理器注册（Windows 由原生打开方式对话框承担，Linux/macOS 未做）。文件图标与
+**仍然没铺的**（core 已有实现，缺 Qt 视图/命令包装，或只在旧壳里）：暂无。
+默认文件管理器注册已随 §4.6 的补齐清单落地。文件图标与
 系统缩略图已在 §4.7 落地（Linux 的 `.thumbnailer` 除外），网络存储/云盘连接
 管理已在 §4.8 落地，`dae://` 深链与单实例已在 §4.9 落地，打开方式选择器与
 自动更新已在 §4.10 落地，右键菜单的属性/校验和/目录大小/移动/应用扩展/批量

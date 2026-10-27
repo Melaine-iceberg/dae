@@ -20,6 +20,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "time", "net", "io-util"
 toml = "0.8"
 url = "2"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10.1"
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
   "Win32_Foundation",

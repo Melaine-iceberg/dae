@@ -1,12 +1,14 @@
 import QtQuick
 import dae 1.0
 
-// The terminal typography section of the settings document.
+// The settings document.
 //
-// Theme and locale deliberately stay out: they are view preferences the shells
-// keep for themselves. Font size, line height and family are persisted in
-// `settings.toml` and shared with the Tauri shell, so they are edited here
-// through `Workspace.saveTerminalSettings`.
+// Terminal font size, line height and family are persisted in `settings.toml`
+// and shared with the Tauri shell, so they are edited here through
+// `Workspace.saveTerminalSettings`. The default-file-manager section writes
+// straight through `Workspace.setDefaultFileManager` / `unsetDefaultFileManager`
+// because it changes the OS association registry, not the settings document;
+// its status is re-read from the platform every time the panel opens.
 Item {
     id: root
 
@@ -18,12 +20,34 @@ Item {
     z: 1001
     focus: visible
 
+    readonly property bool defaultManagerCanSet:
+        Workspace.defaultManagerSupported && !Workspace.defaultManagerBusy
+        && !Workspace.defaultManagerIsDefault
+    readonly property bool defaultManagerCanUnset:
+        Workspace.defaultManagerSupported && !Workspace.defaultManagerBusy
+        && (Workspace.defaultManagerIsDefault || Workspace.defaultManagerIsRegistered)
+    readonly property string defaultManagerState: !Workspace.defaultManagerSupported
+        ? "当前平台不支持默认文件管理器注册"
+        : Workspace.defaultManagerBusy && !Workspace.defaultManagerIsDefault
+            ? "正在处理…"
+            : Workspace.defaultManagerIsDefault
+                ? "dae 已是默认文件管理器"
+                : Workspace.defaultManagerIsRegistered
+                    ? "dae 已注册，等待系统确认"
+                    : "dae 不是默认文件管理器"
+    readonly property color defaultManagerStateColor: Workspace.defaultManagerIsDefault
+        ? (root.dark ? "#7fd39a" : "#2f7d4a")
+        : Workspace.defaultManagerIsRegistered
+            ? (root.dark ? "#d8b45a" : "#9a6b10")
+            : (root.dark ? "#9aa2af" : "#6a727c")
+
     function open() {
         sizeInput.text = Workspace.terminalFontSize
         heightInput.text = Workspace.terminalLineHeight.toFixed(2)
         familyInput.text = Workspace.terminalFontFamily
         errorText.text = ""
         root.visible = true
+        Workspace.refreshDefaultManager()
         sizeInput.forceActiveFocus()
         sizeInput.selectAll()
     }
@@ -62,9 +86,11 @@ Item {
     }
 
     Rectangle {
+        id: panel
         anchors.centerIn: parent
-        width: 430
-        height: 268
+        width: 460
+        height: Math.max(382, defaultManagerSection.y
+                         + defaultManagerSection.implicitHeight + 62)
         radius: 10
         color: root.dark ? "#202329" : "#ffffff"
         border.width: 1
@@ -78,7 +104,7 @@ Item {
         Text {
             x: 20
             y: 16
-            text: "终端设置"
+            text: "设置"
             color: root.dark ? "#e7ebf2" : "#20252b"
             font.pixelSize: 14
             font.weight: Font.DemiBold
@@ -87,7 +113,7 @@ Item {
         Text {
             x: 20
             y: 40
-            text: "写入 settings.toml，两个壳共用同一份文档"
+            text: "终端设置写入 settings.toml，系统集成立即生效"
             color: root.dark ? "#7f8797" : "#8a929d"
             font.pixelSize: 11
         }
@@ -181,7 +207,7 @@ Item {
             id: familyFrame
             x: 110
             y: 152
-            width: 292
+            width: 322
             height: 28
         }
 
@@ -214,6 +240,158 @@ Item {
             text: ""
             color: root.dark ? "#f08a8a" : "#b42323"
             font.pixelSize: 11
+        }
+
+        Rectangle {
+            x: 20
+            y: 228
+            width: parent.width - 40
+            height: 1
+            color: root.dark ? "#26ffffff" : "#14000000"
+        }
+
+        Column {
+            id: defaultManagerSection
+            x: 20
+            y: 240
+            width: parent.width - 40
+            spacing: 5
+
+            Text {
+                text: "默认文件管理器"
+                color: root.dark ? "#e7ebf2" : "#20252b"
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                width: parent.width
+                text: "把 dae 注册为系统打开文件夹的应用。"
+                color: root.dark ? "#7f8797" : "#8a929d"
+                font.pixelSize: 10
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+            }
+
+            Row {
+                height: 16
+                spacing: 6
+
+                Text {
+                    visible: Workspace.defaultManagerBusy
+                    text: "↻"
+                    color: root.dark ? "#9aa2af" : "#6a727c"
+                    font.pixelSize: 11
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    RotationAnimator on rotation {
+                        running: Workspace.defaultManagerBusy
+                        loops: Animation.Infinite
+                        from: 0
+                        to: 360
+                        duration: 900
+                    }
+                }
+
+                Text {
+                    visible: !Workspace.defaultManagerBusy
+                        && Workspace.defaultManagerIsDefault
+                    text: "✓"
+                    color: root.dark ? "#7fd39a" : "#2f7d4a"
+                    font.pixelSize: 11
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Text {
+                    text: root.defaultManagerState
+                    color: root.defaultManagerStateColor
+                    font.pixelSize: 11
+                    textFormat: Text.PlainText
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+
+            Text {
+                width: parent.width
+                visible: text !== ""
+                text: Workspace.defaultManagerDetail
+                color: root.dark ? "#7f8797" : "#8a929d"
+                font.pixelSize: 10
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+            }
+
+            Row {
+                spacing: 8
+
+                Rectangle {
+                    width: 88
+                    height: 26
+                    radius: 6
+                    color: !root.defaultManagerCanSet
+                        ? (root.dark ? "#262a31" : "#e6e9ed")
+                        : (setDefaultMouse.containsMouse ? "#3f7ce0" : "#2f6fdf")
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "设为默认文件管理器"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "设为默认"
+                        color: root.defaultManagerCanSet
+                            ? "#ffffff" : (root.dark ? "#6c7481" : "#98a0ab")
+                        font.pixelSize: 12
+                    }
+
+                    MouseArea {
+                        id: setDefaultMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        enabled: root.defaultManagerCanSet
+                        onClicked: Workspace.setDefaultFileManager()
+                    }
+                }
+
+                Rectangle {
+                    width: 88
+                    height: 26
+                    radius: 6
+                    color: unsetDefaultMouse.containsMouse && root.defaultManagerCanUnset
+                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                    border.width: 1
+                    border.color: root.defaultManagerCanUnset
+                        ? (root.dark ? "#26ffffff" : "#18000000")
+                        : (root.dark ? "#14ffffff" : "#0d000000")
+                    Accessible.role: Accessible.Button
+                    Accessible.name: "取消 dae 的默认文件管理器注册"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "取消默认"
+                        color: root.defaultManagerCanUnset
+                            ? (root.dark ? "#c9cfd9" : "#3a4048")
+                            : (root.dark ? "#6c7481" : "#98a0ab")
+                        font.pixelSize: 12
+                    }
+
+                    MouseArea {
+                        id: unsetDefaultMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        enabled: root.defaultManagerCanUnset
+                        onClicked: Workspace.unsetDefaultFileManager()
+                    }
+                }
+            }
+
+            Text {
+                width: parent.width
+                visible: text !== ""
+                text: Workspace.defaultManagerError
+                color: root.dark ? "#f08a8a" : "#b42323"
+                font.pixelSize: 10
+                textFormat: Text.PlainText
+                wrapMode: Text.WordWrap
+            }
         }
 
         Rectangle {

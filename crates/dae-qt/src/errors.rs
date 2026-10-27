@@ -127,14 +127,32 @@ fn friendly_code(code: &str) -> Option<&'static str> {
         Some("推送失败，请先拉取远程更新")
     } else if code.starts_with("git.git_not_found") {
         Some("未找到 git 命令，请先安装 Git")
+    } else if code.starts_with("default_manager.set_failed") {
+        Some("无法设置默认文件管理器")
+    } else if code.starts_with("default_manager.status_failed") {
+        Some("无法读取默认文件管理器状态")
     } else {
         None
     }
 }
 
+/// The manual follow-up a successful platform call may leave the user with.
+/// Returns an empty string for unknown codes so the panel hides that line.
+pub(crate) fn default_manager_detail(code: &str) -> &'static str {
+    match code {
+        "default_manager.finish_in_system_settings" => {
+            "Windows 需要你在系统设置的「默认应用」页确认 dae。"
+        }
+        "default_manager.cannot_unset_macos" => {
+            "macOS 不允许应用自行取消默认身份，请在访达的设置中选择其他应用。"
+        }
+        _ => "",
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::friendly_error;
+    use super::{default_manager_detail, friendly_error};
 
     #[test]
     fn known_core_codes_become_sentences_and_others_pass_through() {
@@ -191,6 +209,21 @@ mod tests {
             friendly_error("The directory operation could not complete: git.fetch_failed: timeout"),
             "获取远程更新失败，请检查网络和远程地址"
         );
+    }
+
+    #[test]
+    fn default_manager_codes_and_details_are_translated() {
+        assert_eq!(
+            friendly_error(
+                "The directory operation could not complete: default_manager.set_failed: 5"
+            ),
+            "无法设置默认文件管理器"
+        );
+        assert_eq!(
+            default_manager_detail("default_manager.finish_in_system_settings"),
+            "Windows 需要你在系统设置的「默认应用」页确认 dae。"
+        );
+        assert_eq!(default_manager_detail("unknown"), "");
     }
 
     #[test]

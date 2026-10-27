@@ -33,6 +33,28 @@
 			</array>
 		</dict>
 	</array>
+	<!--
+		Advertise dae as a handler for folders so LaunchServices accepts
+		LSSetDefaultRoleHandlerForContentType(public.folder, com.melaine.dae).
+		Without this document type the OS rejects dae as a candidate and the
+		"set as default file manager" action fails. "Alternate" keeps dae a
+		candidate without claiming to own the type; Finder remains the owner.
+	-->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Folder</string>
+			<key>CFBundleTypeRole</key>
+			<string>Shell</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.folder</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>

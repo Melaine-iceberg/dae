@@ -1059,6 +1059,7 @@ name = "dae-qt"
 version = "0.5.0"
 dependencies = [
  "chrono",
+ "core-foundation",
  "cxx",
  "cxx-qt",
  "cxx-qt-build",

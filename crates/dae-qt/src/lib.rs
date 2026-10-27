@@ -22,6 +22,7 @@
 
 pub mod activation;
 pub mod config;
+mod default_manager;
 mod errors;
 pub mod format;
 pub mod icons;
