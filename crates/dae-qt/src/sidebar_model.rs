@@ -16,12 +16,14 @@ use dae_core::fs::cloud::provider::CloudProviderKind;
 use dae_core::fs::connections::{self, Protocol, StoredConnection};
 use dae_core::fs::recents::list_recents;
 use dae_core::fs::sidebar::{self, PlaceKind, WslDistro};
+use dae_core::fs::spaces::list_spaces;
 
 use crate::format;
 use crate::runtime;
 
 const SECTION_PLACES: &str = "位置";
 const SECTION_FAVORITES: &str = "收藏";
+const SECTION_SPACES: &str = "空间";
 const SECTION_VOLUMES: &str = "磁盘";
 const SECTION_WSL: &str = "WSL";
 const SECTION_NETWORK: &str = "网络存储";
@@ -172,6 +174,27 @@ impl qobject::SidebarModel {
                 is_dir: true,
             });
         }
+
+        // Spaces are first-class destinations, not folders: the `path` field
+        // carries the space id and the shell opens the space surface instead of
+        // navigating. The action row stays below the list so the section is
+        // still discoverable before the user has anything pinned.
+        for space in list_spaces().unwrap_or_default() {
+            base.push(SidebarRow {
+                section: SECTION_SPACES.to_owned(),
+                name: space.name,
+                path: space.id,
+                kind: "space".to_owned(),
+                detail: if space.items.is_empty() {
+                    "空".to_owned()
+                } else {
+                    format!("{} 项", space.items.len())
+                },
+                icon: "space".to_owned(),
+                is_dir: true,
+            });
+        }
+        base.push(action_row(SECTION_SPACES, "新建空间…", "addSpace"));
 
         let mut network = Vec::new();
         for connection in connections::list_connections().unwrap_or_default() {

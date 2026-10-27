@@ -739,6 +739,52 @@ QT_INSTALL_PREFIX` 拿到头文件与库路径，然后交给 `cc` crate 去调 
 后端；仓库里也没有任何 `CMakeLists.txt`。`moc` / `rcc` / `qmltyperegistrar` /
 `qmlcachegen` 同样是被直接当 exe 调用，不经过 CMake 或 qmake 生成的 Makefile。
 
+### 4.12 空间、概览、命令面板与侧栏目录树（2026-10-27）
+
+**空间是单例，不是每窗快照。** `crates/dae-core/src/fs/spaces.rs:35` 的
+`list_spaces` / `create_space` / `add_item` 等已经是完整实现，Qt 侧只补
+`crates/dae-qt/src/spaces_model.rs`：`#[qml_singleton]` + `QAbstractListModel`，
+`count` / `revision` / `error` 三个属性，`changed()` 信号。空间文档只有几 KB，
+创建空间后还要在同一事件里拿到 id 打开视图，因此读写是同步的；异步化只会让
+"新建空间并添加"多一次时序分支。`revision` 让 `Tab.qml` 的标题这类"调用
+invokable 的绑定"在重命名后重新求值。
+
+**概览是扁平的分段行。** `overview_model.rs` 把收藏、最近、空间、项目四个来源
+摊平成一张表，角色是 `section/kind/name/path/detail/icon/isDir/branch/
+changeText/timeText`，QML 侧一个 `ListView` 加 `section.property` 即可。
+基本面（收藏/最近/空间）同步构建，页面同一事件可用；最近目录背后的 git 项目
+异步扫描，`generation` 防止旧扫描覆盖新刷新。项目按仓库根去重，最多四个，变更
+数只统计 `Added/Modified/Untracked`。
+
+**表面（surface）取代单布尔。** `Tab.qml` 的 `trash: bool` 换成
+`surface: "folder" | "trash" | "overview" | "space"` + `spaceId`，并保留
+`readonly property bool trash` 等高阶布尔供旧绑定读取。窗口的路径栏、搜索、
+终端、预览、分栏统一以 `folderActive` 为门槛；非文件夹表面只显示
+`surfaceTitle`。从概览/空间/回收站新建标签页会继承当前表面（`addTabHere`），
+外部 `dae://` 激活只复用 `folder` 标签（`Shell.js`），不会把概览悄悄替换成目录。
+
+**命令面板复用模型，不另建数据源。** `CommandPalette.qml` 每次重建都从
+`Spaces`、本窗口的 `OverviewModel`、静态命令表和自己的 `SearchModel` 取候选；
+输入非空时做有序子序列 fuzzy 排序（词首、连续命中加权），再按分组装回
+`section`，保证标题不会浮在无关行上。文件搜索在 220 ms 防抖后异步跑，结果按
+`SearchModel.query` 与当前输入对齐后才并入，避免旧查询的回包串台。命令 id 是
+动作名而不是菜单项名；"移到回收站"与"打开回收站"因此是
+`trash-selection` 和 `trash` 两个 id。
+
+**侧栏目录树按卷懒加载。** `sidebar_tree_model.rs` 每个卷一个模型：根目录只在
+展开时读，子目录只在点击 chevron 时读，展开集合与缓存都在模型里，delegate 被
+`ListView` 回收不会丢状态。`SidebarTree.qml` 用 `Repeater` 渲染模型已经摊平的
+`depth` 行；不嵌套第二个 `ListView`，滚轮只属于侧栏本身。`Sidebar.qml` 增加
+固定的"概览"行、空间 section 行（`kind === "space"`）、新建空间行，以及卷行
+的 chevron；展开状态存在 `Sidebar` 根对象，`Loader` 折叠时释放该卷的树。
+
+**验证（2026-10-27，本机 debug）**：`cargo test -p dae-qt` 114 项全过；
+`cargo build -p dae-app` 通过；在 Windows 平台实跑应用做 QML 冒烟：分别以
+`query = "doc"` 打开命令面板、打开概览面、打开预设空间面，并实例化
+`rootPath = C:\` 的 `SidebarTree`，均无 QML 运行时错误。侧栏 chevron 的鼠标
+交互未做自动化点击，只核对了模型单测（展开后的深度优先顺序、隐藏目录过滤）与
+`Loader` 的绑定路径。
+
 ## 5. 定案前必须量出来的四组数字
 
 | # | 待验证 | 门槛 | 不达标怎么办 |

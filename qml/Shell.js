@@ -96,7 +96,10 @@ function findOpenTab(path) {
         var window = windows[token]
         var tabs = window.tabs || []
         for (var index = 0; index < tabs.length; index += 1) {
-            if (!tabs[index].trash && isSamePath(tabs[index].listing.path, path))
+            // Overview, space and trash tabs keep the last folder path in
+            // their listing, but they are not showing it; only a folder
+            // surface may satisfy an external activation.
+            if (tabs[index].folder && isSamePath(tabs[index].listing.path, path))
                 return { "token": token, "index": index }
         }
     }

@@ -15,12 +15,27 @@ Item {
     property color accent: "#2f6fdf"
     property bool showHeader: true
     property bool trashActive: false
+    property bool overviewActive: false
+    property bool spaceActive: false
+    property string activeSpaceId: ""
+
+    /// The volume tree expansion lives on the sidebar, not in the delegate:
+    /// ListView recycles delegates, and a collapsed-then-restored volume must
+    /// come back expanded. `volumeRevision` exists only to make the delegate's
+    /// binding re-evaluate when the map is replaced.
+    property var expandedVolumes: ({})
+    property int volumeRevision: 0
 
     signal navigateRequested(string path)
     signal trashRequested()
+    signal overviewRequested()
+    signal spaceRequested(string id)
+    signal createSpaceRequested()
     signal addRequested(string kind)
     signal contextRequested(string kind, string path, real x, real y)
     signal remoteOpenRequested(string path)
+
+    readonly property bool surfaceActive: trashActive || overviewActive || spaceActive
 
     readonly property color panelColor: material === "none"
         ? (dark ? "#121418" : "#eef1f5")
@@ -46,6 +61,24 @@ Item {
         return a === b
     }
 
+    function volumeExpanded(path) {
+        return volumeRevision >= 0 && expandedVolumes[path] === true
+    }
+
+    function toggleVolume(path) {
+        if (path === "")
+            return
+        const next = ({})
+        for (const key in expandedVolumes)
+            next[key] = expandedVolumes[key]
+        if (next[path])
+            delete next[path]
+        else
+            next[path] = true
+        expandedVolumes = next
+        volumeRevision += 1
+    }
+
     function glyph(icon) {
         switch (icon) {
         case "home": return "主"
@@ -61,6 +94,7 @@ Item {
         case "recent": return "近"
         case "server": return "服"
         case "cloud": return "云"
+        case "space": return "◇"
         case "add": return "+"
         default: return "•"
         }
@@ -72,12 +106,24 @@ Item {
         case "wsl": return dark ? "#5b9bd5" : "#2f6fbf"
         case "star": return dark ? "#d8b45a" : "#b8892a"
         case "recent": return dark ? "#6fa0d8" : "#3f78bd"
+        case "space": return root.accent
         case "add": return root.mutedColor
         default: return root.accent
         }
     }
 
-    Component.onCompleted: model.refresh()
+    Component.onCompleted: {
+        Spaces.refresh()
+        model.refresh()
+    }
+
+    Connections {
+        target: Spaces
+
+        function onChanged() {
+            model.refresh()
+        }
+    }
 
     Connections {
         target: Workspace
@@ -118,12 +164,67 @@ Item {
         font.letterSpacing: 1
     }
 
+    /// The landing page is a fixed destination too; it sits above the bin so
+    /// the two shell surfaces stay adjacent however long the model gets.
+    Rectangle {
+        id: overviewRow
+
+        x: 6
+        y: root.showHeader ? heading.bottom + 6 : 4
+        width: parent.width - 12
+        height: 27
+        radius: 5
+        color: root.overviewActive
+            ? root.activeColor
+            : (overviewMouse.containsMouse ? root.hoverColor : "transparent")
+
+        Accessible.role: Accessible.Button
+        Accessible.name: "概览"
+        Accessible.onPressAction: root.overviewRequested()
+
+        Rectangle {
+            x: 6
+            anchors.verticalCenter: parent.verticalCenter
+            width: 16
+            height: 16
+            radius: 4
+            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+
+            Text {
+                anchors.centerIn: parent
+                text: "◫"
+                color: root.accent
+                font.pixelSize: 10
+            }
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.leftMargin: 30
+            anchors.right: parent.right
+            anchors.rightMargin: 8
+            anchors.verticalCenter: parent.verticalCenter
+            text: "概览"
+            color: root.overviewActive ? root.textColor
+                : (root.dark ? "#cfd5df" : "#333940")
+            font.pixelSize: 12
+            elide: Text.ElideRight
+        }
+
+        MouseArea {
+            id: overviewMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: root.overviewRequested()
+        }
+    }
+
     /// The bin is a fixed destination above the sectioned list, not a path the
     /// model resolves.
     Rectangle {
         id: trashRow
         x: 6
-        y: root.showHeader ? heading.bottom + 6 : 4
+        y: overviewRow.bottom + 1
         width: parent.width - 12
         height: 27
         radius: 5
@@ -212,97 +313,181 @@ Item {
             required property bool isDir
 
             width: ListView.view.width
-            height: 27
+            height: 27 + (treeLoader.active ? treeLoader.height : 0)
 
-            readonly property bool current: !root.trashActive
+            readonly property bool isVolume: row.kind === "volume"
+            readonly property bool treeOpen: row.isVolume && root.volumeExpanded(row.path)
+            readonly property bool current: !root.surfaceActive
                 && root.pathEquals(row.path, root.activePath)
+            readonly property bool spaceCurrent: root.spaceActive
+                && row.kind === "space" && row.path === root.activeSpaceId
             readonly property bool isAction: row.kind === "addConnection"
-                || row.kind === "addCloud"
+                || row.kind === "addCloud" || row.kind === "addSpace"
 
-            Rectangle {
-                anchors.fill: parent
-                anchors.leftMargin: 6
-                anchors.rightMargin: 6
-                radius: 5
-                color: row.current
-                    ? root.activeColor
-                    : (mouse.containsMouse ? root.hoverColor : "transparent")
-            }
+            /// The visible row is only the first 27px; an expanded volume's
+            /// tree hangs below it. Keeping that distinction explicit means the
+            /// icon and label still centre on the row, not on the whole subtree.
+            Item {
+                id: rowBody
 
-            Rectangle {
-                x: 12
-                anchors.verticalCenter: parent.verticalCenter
-                width: 16
-                height: 16
-                radius: 4
-                color: Qt.rgba(root.tint(row.icon).r, root.tint(row.icon).g,
-                               root.tint(row.icon).b, 0.18)
+                width: parent.width
+                height: 27
+
+                Rectangle {
+                    x: 6
+                    width: rowBody.width - 12
+                    height: rowBody.height
+                    radius: 5
+                    color: (row.current || row.spaceCurrent)
+                        ? root.activeColor
+                        : (mouse.containsMouse ? root.hoverColor : "transparent")
+                }
+
+                Rectangle {
+                    x: row.isVolume ? 24 : 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 16
+                    height: 16
+                    radius: 4
+                    color: Qt.rgba(root.tint(row.icon).r, root.tint(row.icon).g,
+                                   root.tint(row.icon).b, 0.18)
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.glyph(row.icon)
+                        color: root.tint(row.icon)
+                        font.pixelSize: 10
+                    }
+                }
 
                 Text {
-                    anchors.centerIn: parent
-                    text: root.glyph(row.icon)
-                    color: root.tint(row.icon)
-                    font.pixelSize: 10
+                    anchors.left: parent.left
+                    anchors.leftMargin: row.isVolume ? 46 : 36
+                    anchors.right: detailText.left
+                    anchors.rightMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: row.name
+                    color: (row.current || row.spaceCurrent) ? root.textColor
+                        : (row.isAction ? root.mutedColor
+                            : (root.dark ? "#cfd5df" : "#333940"))
+                    font.pixelSize: 12
+                    elide: Text.ElideRight
+                    textFormat: Text.PlainText
+                }
+
+                Text {
+                    id: detailText
+                    anchors.right: parent.right
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: row.detail
+                    color: root.mutedColor
+                    font.pixelSize: 9
+                    elide: Text.ElideRight
+                    width: Math.min(74, implicitWidth)
+                    horizontalAlignment: Text.AlignRight
+                }
+
+                MouseArea {
+                    id: mouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onClicked: function (event) {
+                        if (event.button === Qt.RightButton) {
+                            if (row.isAction)
+                                return
+                            const point = row.mapToItem(null, event.x, event.y)
+                            root.contextRequested(row.kind, row.path, point.x, point.y)
+                            return
+                        }
+                        if (row.kind === "addConnection") {
+                            root.addRequested("network")
+                            return
+                        }
+                        if (row.kind === "addCloud") {
+                            root.addRequested("cloud")
+                            return
+                        }
+                        if (row.kind === "addSpace") {
+                            root.createSpaceRequested()
+                            return
+                        }
+                        if (row.kind === "space") {
+                            root.spaceRequested(row.path)
+                            return
+                        }
+                        if (row.kind === "recent" && !row.isDir) {
+                            if (/^(smb|sftp|ftp|webdav|webdavs|cloud):\/\//i.test(row.path))
+                                root.remoteOpenRequested(row.path)
+                            else
+                                Workspace.openPath(row.path)
+                        } else {
+                            root.navigateRequested(row.path)
+                        }
+                    }
+                }
+
+                // A volume's chevron is a separate hit target from the row
+                // itself: the label still navigates to the drive, only the
+                // glyph toggles the subtree.
+                Item {
+                    visible: row.isVolume
+                    x: 0
+                    width: 22
+                    height: 27
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: row.treeOpen ? "▾" : "▸"
+                        color: row.treeOpen ? root.textColor : root.mutedColor
+                        font.pixelSize: 9
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleVolume(row.path)
+                    }
                 }
             }
 
-            Text {
+            // One lazily loaded tree per expanded volume. Collapsing deactivates
+            // the loader, which releases that volume's children again; the
+            // expansion flags above make reopening it cheap and predictable.
+            Loader {
+                id: treeLoader
+
                 anchors.left: parent.left
-                anchors.leftMargin: 36
-                anchors.right: detailText.left
-                anchors.rightMargin: 6
-                anchors.verticalCenter: parent.verticalCenter
-                text: row.name
-                color: row.current ? root.textColor
-                    : (row.isAction ? root.mutedColor
-                        : (root.dark ? "#cfd5df" : "#333940"))
-                font.pixelSize: 12
-                elide: Text.ElideRight
-                textFormat: Text.PlainText
-            }
-
-            Text {
-                id: detailText
                 anchors.right: parent.right
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                text: row.detail
-                color: root.mutedColor
-                font.pixelSize: 9
-                elide: Text.ElideRight
-                width: Math.min(74, implicitWidth)
-                horizontalAlignment: Text.AlignRight
-            }
+                y: 27
+                height: active && status === Loader.Ready && item !== null
+                    ? item.implicitHeight : 0
+                active: row.treeOpen
+                visible: active
 
-            MouseArea {
-                id: mouse
-                anchors.fill: parent
-                hoverEnabled: true
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                onClicked: function (event) {
-                    if (event.button === Qt.RightButton) {
-                        if (row.isAction)
-                            return
-                        const point = row.mapToItem(null, event.x, event.y)
-                        root.contextRequested(row.kind, row.path, point.x, point.y)
-                        return
+                sourceComponent: Component {
+                    SidebarTree {
+                        width: treeLoader.width
+                        dark: root.dark
+                        material: root.material
+                        accent: root.accent
+                        activePath: root.activePath
+                        showHidden: ExplorerPrefs.showHiddenFiles
+
+                        onNavigateRequested: function (path) {
+                            root.navigateRequested(path)
+                        }
+                        onContextRequested: function (path, x, y) {
+                            root.contextRequested("tree", path, x, y)
+                        }
                     }
-                    if (row.kind === "addConnection") {
-                        root.addRequested("network")
-                        return
-                    }
-                    if (row.kind === "addCloud") {
-                        root.addRequested("cloud")
-                        return
-                    }
-                    if (row.kind === "recent" && !row.isDir) {
-                        if (/^(smb|sftp|ftp|webdav|webdavs|cloud):\/\//i.test(row.path))
-                            root.remoteOpenRequested(row.path)
-                        else
-                            Workspace.openPath(row.path)
-                    } else {
-                        root.navigateRequested(row.path)
-                    }
+                }
+
+                onLoaded: {
+                    if (item !== null)
+                        item.rootPath = row.path
                 }
             }
         }

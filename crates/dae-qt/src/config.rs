@@ -3,7 +3,7 @@
 //! The skeleton opened `QStandardPaths::HomeLocation`, which proved the QML →
 //! Rust → listing path but skipped every document the Tauri shell already
 //! writes. This module reads the same profile directory
-//! ([`dae_core::paths::config_dir`]) and answers the three questions the shell
+//! ([`dae_core::paths::config_dir`]) and answers the questions the shell
 //! needs before its first listing:
 //!
 //! * **Where to start.** A directory passed on the command line or as a
@@ -13,6 +13,8 @@
 //! * **How to jump to the path bar.** `settings.toml` carries the same
 //!   `app.pathJump` binding the React shell uses (`Mod+P` by default). `Mod`
 //!   is translated to Qt's `Ctrl` spelling; Qt maps `Ctrl` to Command on macOS.
+//! * **How to open the command palette.** The same table's `app.commandBar`
+//!   (`Mod+K` by default), behind the same `Mod` translation.
 //!
 //! Reading stays small on purpose: the files are a few hundred bytes and this
 //! runs once, before the first frame. Writing recents and settings belongs to
@@ -24,9 +26,11 @@ use cxx_qt_lib::QString;
 
 use dae_core::types::EntryKind;
 
-/// The shortcut id the Tauri shell and the React settings panel use.
+/// The shortcut ids the Tauri shell and the React settings panel use.
 const PATH_JUMP_ID: &str = "app.pathJump";
+const COMMAND_BAR_ID: &str = "app.commandBar";
 const DEFAULT_PATH_JUMP: &str = "Mod+P";
+const DEFAULT_COMMAND_BAR: &str = "Mod+K";
 const SETTINGS_FILE_NAME: &str = "settings.toml";
 
 #[cxx_qt::bridge]
@@ -52,6 +56,7 @@ pub mod qobject {
         #[qproperty(QString, startup_path, cxx_name = "startupPath")]
         #[qproperty(QString, startup_source, cxx_name = "startupSource")]
         #[qproperty(QString, path_jump, cxx_name = "pathJump")]
+        #[qproperty(QString, command_bar, cxx_name = "commandBar")]
         #[qproperty(bool, settings_found, cxx_name = "settingsFound")]
         type AppConfig = super::AppConfigRust;
     }
@@ -89,6 +94,7 @@ pub struct Snapshot {
     pub recent_count: usize,
     pub settings_found: bool,
     pub path_jump: String,
+    pub command_bar: String,
 }
 
 /// Reads the real profile once.
@@ -102,9 +108,13 @@ pub fn snapshot() -> Snapshot {
     let settings_path = config_dir
         .as_deref()
         .map(|dir| dir.join(SETTINGS_FILE_NAME));
-    let (settings_found, path_jump) = match settings_path {
-        Some(path) => read_path_jump(&path),
-        None => (false, qt_sequence(DEFAULT_PATH_JUMP)),
+    let (settings_found, path_jump, command_bar) = match settings_path {
+        Some(path) => read_shortcuts(&path),
+        None => (
+            false,
+            qt_sequence(DEFAULT_PATH_JUMP),
+            qt_sequence(DEFAULT_COMMAND_BAR),
+        ),
     };
 
     let recents = dae_core::fs::recents::list_recents().unwrap_or_default();
@@ -142,6 +152,7 @@ pub fn snapshot() -> Snapshot {
         recent_count: recents.len(),
         settings_found,
         path_jump,
+        command_bar,
     }
 }
 
@@ -161,24 +172,48 @@ fn home_dir() -> Option<PathBuf> {
         .filter(|path| path.is_dir())
 }
 
-/// Reads the `app.pathJump` binding, or the default when the file or key is
-/// absent. A malformed hand edit falls back to the default rather than
-/// blocking startup, matching the Tauri settings loader's fallback.
-fn read_path_jump(path: &Path) -> (bool, String) {
+/// Reads both shell shortcuts from one pass over `settings.toml`. A missing
+/// file or key falls back to the product default rather than blocking startup,
+/// matching the Tauri settings loader's fallback.
+fn read_shortcuts(path: &Path) -> (bool, String, String) {
     let Ok(contents) = std::fs::read_to_string(path) else {
-        return (false, qt_sequence(DEFAULT_PATH_JUMP));
+        return (
+            false,
+            qt_sequence(DEFAULT_PATH_JUMP),
+            qt_sequence(DEFAULT_COMMAND_BAR),
+        );
     };
-    let binding = parse_path_jump(&contents).unwrap_or_else(|| DEFAULT_PATH_JUMP.to_owned());
-    (true, qt_sequence(&binding))
+    (
+        true,
+        qt_sequence(
+            &parse_binding(&contents, PATH_JUMP_ID)
+                .unwrap_or_else(|| DEFAULT_PATH_JUMP.to_owned()),
+        ),
+        qt_sequence(
+            &parse_binding(&contents, COMMAND_BAR_ID)
+                .unwrap_or_else(|| DEFAULT_COMMAND_BAR.to_owned()),
+        ),
+    )
 }
 
-fn parse_path_jump(contents: &str) -> Option<String> {
+fn parse_binding(contents: &str, id: &str) -> Option<String> {
     let document: toml::Value = contents.parse().ok()?;
     document
         .get("shortcuts")?
-        .get(PATH_JUMP_ID)?
+        .get(id)?
         .as_str()
         .map(str::to_owned)
+}
+
+#[cfg(test)]
+fn read_path_jump(path: &Path) -> (bool, String) {
+    let (found, path_jump, _) = read_shortcuts(path);
+    (found, path_jump)
+}
+
+#[cfg(test)]
+fn parse_path_jump(contents: &str) -> Option<String> {
+    parse_binding(contents, PATH_JUMP_ID)
 }
 
 /// TanStack Hotkeys spell the platform modifier as `Mod`; Qt wants `Ctrl`.
@@ -212,6 +247,7 @@ pub struct AppConfigRust {
     startup_path: QString,
     startup_source: QString,
     path_jump: QString,
+    command_bar: QString,
     settings_found: bool,
 }
 
@@ -253,12 +289,14 @@ impl Default for AppConfigRust {
             snapshot.recent_count
         ));
         log(format!("dae: path-jump {}", snapshot.path_jump));
+        log(format!("dae: command-bar {}", snapshot.command_bar));
 
         Self {
             config_dir: QString::from(config_dir.as_str()),
             startup_path: QString::from(start_path.as_str()),
             startup_source: QString::from(snapshot.source.as_str()),
             path_jump: QString::from(snapshot.path_jump.as_str()),
+            command_bar: QString::from(snapshot.command_bar.as_str()),
             settings_found: snapshot.settings_found,
         }
     }
@@ -306,6 +344,29 @@ mod tests {
             parse_path_jump("[shortcuts]\n\"app.pathJump\" = \"\"\n").as_deref(),
             Some("")
         );
+    }
+
+    #[test]
+    fn the_command_bar_binding_is_read_independently() {
+        let contents = r#"
+            [shortcuts]
+            "app.pathJump" = "Mod+Shift+P"
+            "app.commandBar" = "Mod+Shift+K"
+        "#;
+        assert_eq!(
+            parse_binding(contents, COMMAND_BAR_ID).as_deref(),
+            Some("Mod+Shift+K")
+        );
+        assert_eq!(qt_sequence("Mod+Shift+K"), "Ctrl+Shift+K");
+    }
+
+    #[test]
+    fn a_missing_command_bar_binding_uses_the_default() {
+        let missing = std::env::temp_dir().join("dae-qt-settings-command-bar-missing.toml");
+        let _ = std::fs::remove_file(&missing);
+        let (found, _, command_bar) = read_shortcuts(&missing);
+        assert!(!found);
+        assert_eq!(command_bar, "Ctrl+K");
     }
 
     #[test]

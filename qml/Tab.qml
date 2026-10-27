@@ -8,13 +8,34 @@ import dae 1.0
 QtObject {
     id: tab
 
-    property string title: trash ? "回收站" : (listing.path !== "" ? listing.path : "dae")
+    /// What this tab is showing. A folder tab owns `listing`; the trash,
+    /// overview and space surfaces reuse the same tab so the tab strip keeps
+    /// one stable identity while the body swaps.
+    property string surface: "folder"
+    property string spaceId: ""
+    readonly property bool folder: surface === "folder"
+    readonly property bool trash: surface === "trash"
+    readonly property bool overview: surface === "overview"
+    readonly property bool space: surface === "space"
+    readonly property string spaceTitle: {
+        // Reading `revision` is what makes a rename in another window update
+        // this tab's title.
+        if (surface !== "space" || spaceId === "" || Spaces.revision < 0)
+            return ""
+        return Spaces.nameOfId(spaceId)
+    }
+    property string title: {
+        if (surface === "trash")
+            return "回收站"
+        if (surface === "overview")
+            return "概览"
+        if (surface === "space")
+            return spaceTitle.length > 0 ? spaceTitle : "空间"
+        return listing.path !== "" ? listing.path : "dae"
+    }
     property DirectoryListModel listing: DirectoryListModel {}
     property SearchModel nameSearch: SearchModel {}
     property ContentSearchModel contentSearch: ContentSearchModel {}
-    /// The recycle bin is a surface of the tab, not a path. Navigating to a
-    /// folder clears this flag; the window then shows `listing` again.
-    property bool trash: false
 
     /// path -> true. Replaced wholesale so QML bindings re-evaluate; mutating
     /// an object in place would not notify the delegates.
@@ -30,7 +51,8 @@ QtObject {
 
     function navigate(path) {
         if (path && path.length > 0) {
-            trash = false
+            surface = "folder"
+            spaceId = ""
             cancelSearch()
             listing.load(path)
             clearSelection()
@@ -42,7 +64,27 @@ QtObject {
     function openTrash() {
         cancelSearch()
         clearSelection()
-        trash = true
+        surface = "trash"
+        spaceId = ""
+    }
+
+    /// Shows the landing page. Its data lives in the window's OverviewModel.
+    function openOverview() {
+        cancelSearch()
+        clearSelection()
+        surface = "overview"
+        spaceId = ""
+    }
+
+    /// Shows a space by id. The space view owns its item list; a rename keeps
+    /// the id stable, and deleting the space closes this surface.
+    function openSpace(id) {
+        if (!id)
+            return
+        cancelSearch()
+        clearSelection()
+        surface = "space"
+        spaceId = id
     }
 
     function cancelSearch() {

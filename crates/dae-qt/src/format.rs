@@ -34,6 +34,35 @@ pub fn timestamp(epoch_millis: u64) -> String {
     format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}")
 }
 
+/// A compact label for an overview row: "今天", "昨天", "N 天前", or the
+/// calendar date once it falls outside the last week. Stamps are milliseconds
+/// since the Unix epoch, matching `recents.json`.
+pub fn day_label(epoch_millis: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0);
+    day_label_at(now, epoch_millis)
+}
+
+fn day_label_at(now_millis: u64, epoch_millis: u64) -> String {
+    if epoch_millis == 0 {
+        return "-".to_owned();
+    }
+    let now_days = (now_millis / 86_400_000) as i64;
+    let then_days = (epoch_millis / 86_400_000) as i64;
+    match now_days - then_days {
+        0 => "今天".to_owned(),
+        1 => "昨天".to_owned(),
+        days @ 2..=6 => format!("{days} 天前"),
+        _ => timestamp(epoch_millis)
+            .split(' ')
+            .next()
+            .unwrap_or("-")
+            .to_owned(),
+    }
+}
+
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
@@ -68,5 +97,17 @@ mod tests {
         assert_eq!(size(1023), "1023 B");
         assert_eq!(size(1024), "1.0 KB");
         assert_eq!(size(1024 * 1024 * 3 / 2), "1.5 MB");
+    }
+
+    #[test]
+    fn labels_recent_days_and_falls_back_to_a_date() {
+        let now = 1_792_929_600_000; // 2026-10-25T12:00:00Z
+        let day = 86_400_000;
+
+        assert_eq!(day_label_at(now, now - 10 * 3_600_000), "今天");
+        assert_eq!(day_label_at(now, now - day), "昨天");
+        assert_eq!(day_label_at(now, now - 3 * day), "3 天前");
+        assert_eq!(day_label_at(now, now - 30 * day), "2026-09-25");
+        assert_eq!(day_label_at(now, 0), "-");
     }
 }

@@ -89,17 +89,32 @@ Window {
     /// listing model because that model owns the repository the pane shows.
     readonly property var gitListing: activeTab !== null ? activeTab.listing : null
     readonly property bool trashActive: activeTab !== null && activeTab.trash
-    readonly property bool gitVisible: !trashActive && gitListing !== null
+    readonly property bool overviewActive: activeTab !== null && activeTab.overview
+    readonly property bool spaceActive: activeTab !== null && activeTab.space
+    readonly property bool folderActive: activeTab !== null && activeTab.folder
+    readonly property string activeSpaceId: spaceActive ? activeTab.spaceId : ""
+    /// The bar's label for the three non-folder surfaces. A folder tab keeps
+    /// using the breadcrumb trail or the path editor.
+    readonly property string surfaceTitle: {
+        if (trashActive)
+            return "回收站"
+        if (overviewActive)
+            return "概览"
+        if (spaceActive)
+            return activeTab.spaceTitle.length > 0 ? activeTab.spaceTitle : "空间"
+        return ""
+    }
+    readonly property bool gitVisible: folderActive && gitListing !== null
         && gitListing.gitRoot !== "" && gitListing.gitBranch !== ""
     /// True while the tab is browsing a network backend. Local-only actions
     /// (terminal, recycle bin, content search, OS open/reveal) are gated on
     /// this instead of failing after the click.
-    readonly property bool remoteLocation: activeTab !== null && !trashActive
+    readonly property bool remoteLocation: folderActive
         && (activeTab.listing.remote || root.isRemotePath(activeTab.listing.path))
-    readonly property bool searchActive: searchQuery.trim().length > 0
+    readonly property bool searchActive: folderActive && searchQuery.trim().length > 0
     readonly property bool contentSearchActive: searchActive && searchMode === "content"
     readonly property bool splitActive: ExplorerPrefs.splitEnabled
-        && !trashActive && !searchActive && activeTab !== null
+        && folderActive && !searchActive
     /// The tab and list a context menu was opened from. `null` means the
     /// primary pane, which is also the only pane when split view is off.
     property var contextTab: null
@@ -136,6 +151,7 @@ Window {
 
     readonly property var config: configLoader.item
     readonly property bool modalOpen: menu.visible || namePrompt.visible
+        || commandPalette.visible
         || passwordDialog.visible || settingsPanel.visible || confirmDialog.visible
         || connectDialog.visible || cloudDialog.visible || openWithDialog.visible
         || updateDialog.visible || transferConflict.visible || transferQueue.visible
@@ -166,6 +182,10 @@ Window {
         root.applyRemotePolicy()
         if (root.trashActive)
             trashModel.refresh()
+        else if (root.overviewActive)
+            // The landing page's recents change as folders are visited; an
+            // already-open overview tab must re-read them when it comes back.
+            overviewModel.refresh()
     }
 
     onActiveChanged: {
@@ -191,6 +211,11 @@ Window {
     /// across windows.
     TrashModel {
         id: trashModel
+    }
+    /// The landing page is per-window so its git scan and refresh lifetime
+    /// follow the window; the command palette reads the same instance.
+    OverviewModel {
+        id: overviewModel
     }
 
     Component {
@@ -223,17 +248,57 @@ Window {
         return tab
     }
 
-    function addTab(path) {
-        const tab = createTab(path !== undefined ? path : root.activePath)
-        if (tab === null)
-            return
+    function insertTab(tab) {
         const next = root.tabs.slice()
         const at = Math.max(0, Math.min(root.activeIndex + 1, next.length))
         next.splice(at, 0, tab)
         root.tabs = next
         root.activeIndex = at
         root.applyRemotePolicy()
-        Qt.callLater(fileList.takeFocus)
+        root.focusActiveSurface()
+    }
+
+    function focusActiveSurface() {
+        if (root.folderActive)
+            Qt.callLater(fileList.takeFocus)
+        else if (root.overviewActive)
+            Qt.callLater(overviewView.takeFocus)
+        else if (root.spaceActive)
+            Qt.callLater(spaceView.takeFocus)
+    }
+
+    function addTab(path) {
+        const tab = createTab(path !== undefined ? path : root.activePath)
+        if (tab !== null)
+            root.insertTab(tab)
+    }
+
+    /// A new tab inherits the current surface rather than always landing on a
+    /// folder. From Overview, a space or the recycle bin, the new tab shows
+    /// the same surface again.
+    function addTabHere() {
+        if (root.overviewActive) {
+            root.addSurfaceTab("overview", "")
+        } else if (root.spaceActive) {
+            root.addSurfaceTab("space", root.activeSpaceId)
+        } else if (root.trashActive) {
+            root.addSurfaceTab("trash", "")
+        } else {
+            root.addTab(root.activePath)
+        }
+    }
+
+    function addSurfaceTab(kind, id) {
+        const tab = createTab("")
+        if (tab === null)
+            return
+        if (kind === "overview")
+            tab.openOverview()
+        else if (kind === "space")
+            tab.openSpace(id)
+        else if (kind === "trash")
+            tab.openTrash()
+        root.insertTab(tab)
     }
 
     /// Handles an external `dae://` open (or a second launch with paths).
@@ -443,7 +508,7 @@ Window {
     /// typing overtypes it and Enter replaces the whole thing. Shared by the
     /// bar's own click target and the path-jump shortcut.
     function beginPathEditing() {
-        if (root.trashActive || root.activeTab === null)
+        if (!root.folderActive || root.activeTab === null)
             return
         root.pathEditing = true
         pathInput.text = root.activePath
@@ -513,11 +578,51 @@ Window {
     function openTrash() {
         if (root.activeTab === null || root.modalOpen)
             return
+        root.pathEditing = false
         root.resetSearchState()
         previewPanel.showPaths([])
         root.activeTab.openTrash()
         trashModel.refresh()
         Qt.callLater(trashView.takeFocus)
+    }
+
+    /// Opens the landing page. The model's cheap sections rebuild synchronously
+    /// so the page is usable in the same event; the project scan fills in later.
+    function openOverview() {
+        if (root.activeTab === null || root.modalOpen)
+            return
+        root.pathEditing = false
+        root.resetSearchState()
+        previewPanel.showPaths([])
+        root.activeTab.openOverview()
+        overviewModel.refresh()
+        Qt.callLater(overviewView.takeFocus)
+    }
+
+    /// Opens a space surface. `SpaceView` binds to the active tab's space id and
+    /// reloads its items when the shared `Spaces` revision changes.
+    function openSpace(id) {
+        if (root.activeTab === null || root.modalOpen || !id || id.length === 0)
+            return
+        root.pathEditing = false
+        root.resetSearchState()
+        previewPanel.showPaths([])
+        root.activeTab.openSpace(id)
+        Qt.callLater(spaceView.takeFocus)
+    }
+
+    /// A space deleted in another window must not leave a tab pointing at a
+    /// missing id. Any such tab falls back to the overview, the closest safe
+    /// surface; the active one is re-focused by `openOverview` only if the user
+    /// was already on another tab.
+    function reconcileSpaces() {
+        for (let index = 0; index < root.tabs.length; index += 1) {
+            const tab = root.tabs[index]
+            if (tab.space && Spaces.nameOfId(tab.spaceId) === "")
+                tab.openOverview()
+        }
+        if (root.overviewActive)
+            overviewModel.refresh()
     }
 
     function trashTargetIds() {
@@ -579,6 +684,12 @@ Window {
             Workspace.emptyTrash()
         } else if (mode === "remoteDelete") {
             Workspace.deleteEntries(ids)
+        } else if (mode === "deleteSpace") {
+            const spaceId = ids.length > 0 ? ids[0] : ""
+            if (!Spaces.deleteSpace(spaceId))
+                toast.show(Spaces.error !== "" ? Spaces.error : "无法删除空间", true)
+            else
+                toast.show("空间已删除", false)
         }
         root.modalClosed()
     }
@@ -825,6 +936,166 @@ Window {
         namePrompt.open("重命名", name, "")
     }
 
+    function promptSpaceCreate(addPath) {
+        if (root.modalOpen)
+            return
+        root.promptMode = "spaceCreate"
+        root.promptPath = addPath !== undefined ? addPath : ""
+        namePrompt.open("新建空间", "新空间", "")
+    }
+
+    function promptSpaceRename(id, name) {
+        if (root.modalOpen || !id)
+            return
+        root.promptMode = "spaceRename"
+        root.promptPath = id
+        namePrompt.open("重命名空间", name, "")
+    }
+
+    /// One entry point for the palette. It closes first, then the surface
+    /// switch runs against a clean modal state (the palette itself is part of
+    /// `modalOpen`).
+    function handlePaletteActivation(kind, value) {
+        if (kind === "command") {
+            root.runPaletteCommand(value)
+            return
+        }
+        if (kind === "overview") {
+            root.openOverview()
+            return
+        }
+        if (kind === "trash") {
+            root.openTrash()
+            return
+        }
+        if (kind === "space") {
+            root.openSpace(value)
+            return
+        }
+        if (kind === "navigate") {
+            root.navigate(value)
+            return
+        }
+        if (kind === "file" || kind === "recent-file") {
+            Workspace.openPath(value)
+            return
+        }
+        if (kind === "path") {
+            root.navigate(value)
+        }
+    }
+
+    /// The palette's command ids are deliberately action-shaped, not menu ids:
+    /// they describe what the user asked for, so the same id keeps working if
+    /// the menu grows another entry or moves a shortcut.
+    function runPaletteCommand(id) {
+        if (id === "overview")
+            root.openOverview()
+        else if (id === "trash")
+            root.openTrash()
+        else if (id === "new-tab")
+            root.addTabHere()
+        else if (id === "close-tab")
+            root.closeTab(root.activeIndex)
+        else if (id === "settings")
+            settingsPanel.open()
+        else if (id === "new-space")
+            root.promptSpaceCreate()
+        else if (id === "path-jump") {
+            if (root.folderActive)
+                root.beginPathEditing()
+        } else if (!root.folderActive) {
+            return
+        } else if (id === "new-folder") {
+            root.promptCreateIn(root.activePath, true)
+        } else if (id === "new-file") {
+            root.promptCreateIn(root.activePath, false)
+        } else if (id === "rename") {
+            const path = fileList.currentPath()
+            if (path !== "")
+                root.promptRename(path, root.activeTab.listing.nameOf(path))
+        } else if (id === "trash-selection") {
+            if (!root.remoteLocation)
+                Workspace.trashEntries(root.currentSelection())
+        } else if (id === "copy") {
+            Workspace.setClipboard("copy", root.currentSelection())
+        } else if (id === "cut") {
+            Workspace.setClipboard("cut", root.currentSelection())
+        } else if (id === "paste") {
+            Workspace.pasteInto(root.activePath)
+        } else if (id === "copy-path") {
+            Workspace.copyText(root.currentSelection().join("\n"))
+        } else if (id === "select-all") {
+            fileList.selectAll()
+        } else if (id === "refresh") {
+            root.activeTab.listing.reload()
+        } else if (id === "go-up") {
+            root.goUp()
+        } else if (id === "open-terminal") {
+            root.toggleTerminal()
+        } else if (id === "toggle-favorite") {
+            if (root.activePath !== "")
+                Workspace.addFavorite(root.activePath)
+        } else if (id === "toggle-split") {
+            ExplorerPrefs.setBool("splitEnabled", !ExplorerPrefs.splitEnabled)
+        } else if (id === "toggle-preview") {
+            root.togglePreview()
+        } else if (id === "toggle-sidebar") {
+            root.sidebarVisible = !root.sidebarVisible
+        } else if (id === "view-list") {
+            ExplorerPrefs.setString("viewMode", "list")
+        } else if (id === "view-grid") {
+            ExplorerPrefs.setString("viewMode", "grid")
+        } else if (id === "view-column") {
+            ExplorerPrefs.setString("viewMode", "column")
+        } else if (id === "sort-name") {
+            ExplorerPrefs.setString("sortKey", "name")
+            ExplorerPrefs.setString("sortOrder", "asc")
+        } else if (id === "sort-modified") {
+            ExplorerPrefs.setString("sortKey", "modified")
+            ExplorerPrefs.setString("sortOrder", "desc")
+        } else if (id === "sort-type") {
+            ExplorerPrefs.setString("sortKey", "type")
+            ExplorerPrefs.setString("sortOrder", "asc")
+        } else if (id === "sort-size") {
+            ExplorerPrefs.setString("sortKey", "size")
+            ExplorerPrefs.setString("sortOrder", "desc")
+        } else if (id === "sort-order") {
+            ExplorerPrefs.setString("sortOrder",
+                                    ExplorerPrefs.sortOrder === "asc" ? "desc" : "asc")
+        } else if (id === "folders-first") {
+            ExplorerPrefs.setBool("foldersFirst", !ExplorerPrefs.foldersFirst)
+        } else if (id === "hidden-files") {
+            ExplorerPrefs.setBool("showHiddenFiles", !ExplorerPrefs.showHiddenFiles)
+        } else if (id === "filters-reset") {
+            ExplorerPrefs.resetFilters()
+        }
+    }
+
+
+    function requestSpaceDelete(id, name) {
+        if (root.modalOpen || !id)
+            return
+        if (Spaces.isPresetOfId(id)) {
+            toast.show("预设空间不能删除", true)
+            return
+        }
+        root.confirmMode = "deleteSpace"
+        root.confirmTrashIds = [id]
+        confirmDialog.open("删除空间？",
+                           "空间 “" + name + "” 将被删除，其中的项目不会从磁盘移除。",
+                           "删除", true)
+    }
+
+    function addPathToSpace(spaceId, path) {
+        if (!spaceId || !path)
+            return
+        if (!Spaces.addItem(spaceId, path))
+            toast.show(Spaces.error !== "" ? Spaces.error : "无法添加到空间", true)
+        else
+            toast.show("已添加到“" + Spaces.nameOfId(spaceId) + "”", false)
+    }
+
     function acceptName(text) {
         const mode = root.promptMode
         const path = root.promptPath
@@ -835,6 +1106,33 @@ Window {
             Workspace.createFile(path, text)
         else if (mode === "rename")
             Workspace.renameEntry(path, text)
+        else if (mode === "spaceCreate") {
+            const id = Spaces.createSpace(text)
+            if (id === "")
+                toast.show(Spaces.error !== "" ? Spaces.error : "无法创建空间", true)
+            else {
+                if (path !== "")
+                    Spaces.addItem(id, path)
+                root.openSpace(id)
+                toast.show("已创建空间", false)
+            }
+        } else if (mode === "spaceRename") {
+            if (!Spaces.renameSpace(path, text))
+                toast.show(Spaces.error !== "" ? Spaces.error : "无法重命名空间", true)
+        }
+    }
+
+    /// The row menu's space submenu is built from the shared singleton, so it
+    /// never lists a stale rename. The final entry creates a space and pins the
+    /// row in one prompt.
+    function spaceSubmenu() {
+        const entries = []
+        for (let index = 0; index < Spaces.count; index += 1)
+            entries.push({ id: "addSpace:" + Spaces.idAt(index),
+                           label: Spaces.nameAt(index) })
+        entries.push({ separator: true })
+        entries.push({ id: "newSpaceAdd", label: "新建空间并添加…" })
+        return entries
     }
 
     function showRowMenu(path, isDir, x, y) {
@@ -919,6 +1217,8 @@ Window {
                      shortcut: many ? "" : "F2" })
         items.push({ separator: true })
         items.push({ id: "favorite", label: "加入收藏", enabled: hasPath && isDir })
+        items.push({ id: "addToSpace", label: "添加到空间", enabled: hasPath,
+                     submenu: root.spaceSubmenu() })
         items.push({ id: "trash", label: "移到回收站", shortcut: "Delete",
                      enabled: hasPath && !remote, danger: true })
         items.push({ id: "delete", label: "永久删除", shortcut: "Shift+Delete",
@@ -1054,6 +1354,17 @@ Window {
             ])
             return
         }
+        if (kind === "space") {
+            const preset = Spaces.isPresetOfId(path)
+            menu.openAt(x, y, [
+                { id: "spaceOpen", label: "打开空间" },
+                { id: "spaceTab", label: "在新标签页打开" },
+                { separator: true },
+                { id: "spaceRename", label: "重命名空间" },
+                { id: "spaceDelete", label: "删除空间", enabled: !preset, danger: true }
+            ])
+            return
+        }
         const items = []
         if (kind === "favorite")
             items.push({ id: "removeFavorite", label: "从收藏移除", danger: true })
@@ -1093,7 +1404,31 @@ Window {
             root.clearContext()
             return
         }
+        // The row menu's space submenu also encodes its destination, because
+        // the menu itself has no per-item state once it opens.
+        if (id.indexOf("addSpace:") === 0) {
+            root.addPathToSpace(id.substring("addSpace:".length), path)
+            root.clearContext()
+            return
+        }
+        if (id === "newSpaceAdd") {
+            root.promptSpaceCreate(path)
+            root.clearContext()
+            return
+        }
         switch (id) {
+        case "spaceOpen":
+            root.openSpace(path)
+            break
+        case "spaceTab":
+            root.addSurfaceTab("space", path)
+            break
+        case "spaceRename":
+            root.promptSpaceRename(path, Spaces.nameOfId(path))
+            break
+        case "spaceDelete":
+            root.requestSpaceDelete(path, Spaces.nameOfId(path))
+            break
         case "open":
             if (isDir)
                 root.navigatePane(root.contextTab, path)
@@ -1252,7 +1587,11 @@ Window {
         Qt.callLater(function () {
             if (root.modalOpen)
                 return
-            if (root.trashActive)
+            if (root.overviewActive)
+                overviewView.takeFocus()
+            else if (root.spaceActive)
+                spaceView.takeFocus()
+            else if (root.trashActive)
                 trashView.takeFocus()
             else if (root.splitActive && root.splitFocused)
                 splitList.takeFocus()
@@ -1262,6 +1601,8 @@ Window {
     }
 
     function toggleTerminal() {
+        if (!root.folderActive)
+            return
         if (root.remoteLocation) {
             toast.show("终端只能打开本地目录", false)
             return
@@ -1276,7 +1617,24 @@ Window {
     }
 
     Connections {
+        target: Spaces
+
+        function onChanged() {
+            root.reconcileSpaces()
+            // The landing page lists spaces too; refresh it in place so a
+            // rename or a new space is not a stale row.
+            overviewModel.refresh()
+            if (commandPalette.visible)
+                commandPalette.rebuild()
+        }
+    }
+
+    Connections {
         target: Workspace
+
+        function onFavoritesChanged() {
+            overviewModel.refresh()
+        }
 
         function onOperationFinished(kind, focus) {
             if (kind === "openWith" && openWithDialog.visible) {
@@ -1394,7 +1752,7 @@ Window {
             onTabClosed: function (index) {
                 root.closeTab(index)
             }
-            onNewTabRequested: root.addTab(root.activePath)
+            onNewTabRequested: root.addTabHere()
             onNewWindowRequested: root.newWindowAt(root.activePath)
             onTabMoved: function (from, to) {
                 root.moveTab(from, to)
@@ -1446,13 +1804,13 @@ Window {
                 width: 24
                 height: 24
                 radius: 5
-                color: !root.trashActive && upMouse.containsMouse
+                color: root.folderActive && upMouse.containsMouse
                     ? (root.dark ? "#24ffffff" : "#12000000") : "transparent"
 
                 Text {
                     anchors.centerIn: parent
                     text: "\u2191"
-                    color: root.trashActive ? root.hairline : root.mutedColor
+                    color: root.folderActive ? root.mutedColor : root.hairline
                     font.pixelSize: 13
                 }
 
@@ -1460,7 +1818,7 @@ Window {
                     id: upMouse
                     anchors.fill: parent
                     hoverEnabled: true
-                    enabled: !root.trashActive
+                    enabled: root.folderActive
                     onClicked: root.goUp()
                 }
             }
@@ -1469,8 +1827,8 @@ Window {
                 id: pathField
                 anchors.left: upButton.right
                 anchors.leftMargin: 6
-                anchors.right: root.trashActive ? parent.right : searchBar.left
-                anchors.rightMargin: root.trashActive ? 12 : 6
+                anchors.right: root.folderActive ? searchBar.left : parent.right
+                anchors.rightMargin: root.folderActive ? 6 : 12
                 anchors.verticalCenter: parent.verticalCenter
                 height: 26
                 radius: 7
@@ -1485,7 +1843,7 @@ Window {
                 // state of this bar rather than the bar itself.
                 MouseArea {
                     anchors.fill: parent
-                    enabled: !root.trashActive && !root.pathEditing
+                    enabled: root.folderActive && !root.pathEditing
                     cursorShape: Qt.IBeamCursor
                     onClicked: root.beginPathEditing()
                 }
@@ -1494,7 +1852,7 @@ Window {
                     anchors.fill: parent
                     anchors.leftMargin: 4
                     anchors.rightMargin: 4
-                    visible: !root.trashActive && !root.pathEditing
+                    visible: root.folderActive && !root.pathEditing
                     names: root.activeTab !== null ? root.activeTab.listing.breadcrumbNames : []
                     paths: root.activeTab !== null ? root.activeTab.listing.breadcrumbPaths : []
                     dark: root.dark
@@ -1510,16 +1868,21 @@ Window {
                     }
                 }
 
-                // The recycle bin is a surface, not a path: there is nothing to
-                // walk back through, and nothing to type.
+                // Overview, spaces and the recycle bin are surfaces, not paths:
+                // there is nothing to walk back through, and nothing to type.
+                // One label serves all three, so the bar does not grow a branch
+                // per surface.
                 Text {
                     anchors.left: parent.left
                     anchors.leftMargin: 8
+                    anchors.right: parent.right
+                    anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: root.trashActive
-                    text: "回收站"
+                    visible: !root.folderActive
+                    text: root.surfaceTitle
                     color: root.textColor
                     font.pixelSize: 13
+                    elide: Text.ElideRight
                 }
 
                 TextInput {
@@ -1528,7 +1891,7 @@ Window {
                     anchors.fill: parent
                     anchors.leftMargin: 8
                     anchors.rightMargin: 8
-                    visible: root.pathEditing && !root.trashActive
+                    visible: root.pathEditing && root.folderActive
                     verticalAlignment: TextInput.AlignVCenter
                     text: ""
                     color: root.textColor
@@ -1565,7 +1928,7 @@ Window {
 
             SearchBar {
                 id: searchBar
-                visible: !root.trashActive
+                visible: root.folderActive
                 anchors.right: parent.right
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
@@ -1719,14 +2082,23 @@ Window {
                 accent: root.accent
                 showHeader: true
                 trashActive: root.trashActive
-
+                overviewActive: root.overviewActive
+                spaceActive: root.spaceActive
+                activeSpaceId: root.activeSpaceId
                 onNavigateRequested: function (path) {
                     root.navigate(path)
                 }
                 onTrashRequested: root.openTrash()
+                onOverviewRequested: root.openOverview()
+                onSpaceRequested: function (id) {
+                    root.openSpace(id)
+                }
+                onCreateSpaceRequested: root.promptSpaceCreate()
                 onAddRequested: function (kind) {
                     if (kind === "cloud")
                         root.openCloudDialog()
+                    else if (kind === "space")
+                        root.promptSpaceCreate()
                     else
                         root.openConnectDialog()
                 }
@@ -1752,7 +2124,7 @@ Window {
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
                         anchors.right: root.splitActive ? splitDivider.left : parent.right
-                        visible: !root.trashActive && !root.contentSearchActive
+                        visible: root.folderActive && !root.contentSearchActive
                         tab: root.activeTab
                         searchModel: root.searchActive && root.activeTab !== null
                                      && root.searchMode === "name"
@@ -1961,7 +2333,7 @@ Window {
 
                     ContentResults {
                         anchors.fill: parent
-                        visible: !root.trashActive && root.contentSearchActive
+                        visible: root.folderActive && root.contentSearchActive
                         model: root.activeTab !== null ? root.activeTab.contentSearch : null
                         dark: root.dark
                         accent: root.accent
@@ -1991,12 +2363,63 @@ Window {
                             root.showTrashRowMenu(id, originalParent, x, y)
                         }
                     }
+
+                    OverviewView {
+                        id: overviewView
+                        anchors.fill: parent
+                        visible: root.overviewActive
+                        model: overviewModel
+                        dark: root.dark
+                        accent: root.accent
+                        textColor: root.textColor
+                        mutedColor: root.mutedColor
+                        hairline: root.hairline
+                        headerColor: root.chromeColor
+                        commandShortcut: root.config !== null && root.config.commandBar !== ""
+                            ? root.config.commandBar : "Ctrl+K"
+
+                        onOpenRequested: function (kind, path) {
+                            if (kind === "space")
+                                root.openSpace(path)
+                            else if (kind === "file")
+                                Workspace.openPath(path)
+                            else
+                                root.navigate(path)
+                        }
+                        onCommandPaletteRequested: commandPalette.openPalette()
+                    }
+
+                    SpaceView {
+                        id: spaceView
+                        anchors.fill: parent
+                        visible: root.spaceActive
+                        spaceId: root.activeSpaceId
+                        dark: root.dark
+                        accent: root.accent
+                        textColor: root.textColor
+                        mutedColor: root.mutedColor
+                        hairline: root.hairline
+                        headerColor: root.chromeColor
+
+                        onOpenRequested: function (path) {
+                            root.navigate(path)
+                        }
+                        onRenameRequested: function (id, name) {
+                            root.promptSpaceRename(id, name)
+                        }
+                        onDeleteRequested: function (id, name) {
+                            root.requestSpaceDelete(id, name)
+                        }
+                        onErrorReported: function (message) {
+                            toast.show(message, true)
+                        }
+                    }
                 }
 
                 TerminalPanel {
                     id: terminalPanel
                     width: parent.width
-                    active: root.terminalActive
+                    active: root.folderActive && root.terminalActive
                     cwd: root.activePath
                     dark: root.dark
                     material: root.material
@@ -2008,7 +2431,7 @@ Window {
 
             PreviewPanel {
                 id: previewPanel
-                width: root.previewVisible && !root.trashActive ? 300 : 0
+                width: root.previewVisible && root.folderActive ? 300 : 0
                 height: parent.height
                 visible: width > 0
                 dark: root.dark
@@ -2037,6 +2460,14 @@ Window {
                 text: {
                     if (root.activeTab === null)
                         return ""
+                    if (root.overviewActive)
+                        return overviewModel.projectBusy
+                            ? "查找项目…"
+                            : (overviewModel.loaded
+                                ? overviewModel.count + " 个入口"
+                                : "读取概览…")
+                    if (root.spaceActive)
+                        return "空间 · " + spaceView.itemCount + " 项"
                     if (root.trashActive) {
                         if (Workspace.busy && Workspace.progressLabel !== "")
                             return Workspace.progressLabel
@@ -2074,6 +2505,7 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 58
                 height: 18
+                visible: root.folderActive
                 opacity: root.trashActive ? 0.35 : 1
 
                 Rectangle {
@@ -2110,6 +2542,7 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 46
                 height: 18
+                visible: root.folderActive
 
                 Rectangle {
                     anchors.fill: parent
@@ -2155,6 +2588,7 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 46
                 height: 18
+                visible: root.folderActive
 
                 Rectangle {
                     anchors.fill: parent
@@ -2254,6 +2688,7 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 62
                 height: 18
+                visible: root.folderActive
                 radius: 4
                 opacity: root.remoteLocation ? 0.35 : 1
                 color: !root.remoteLocation && terminalMouse.containsMouse
@@ -2708,6 +3143,31 @@ Window {
         onClosed: root.modalClosed()
     }
 
+    CommandPalette {
+        id: commandPalette
+        anchors.fill: parent
+        z: 1200
+        dark: root.dark
+        accent: root.accent
+        textColor: root.textColor
+        mutedColor: root.mutedColor
+        hairline: root.hairline
+        headerColor: root.chromeColor
+        overviewModel: overviewModel
+        folderActive: root.folderActive
+        scopePath: root.folderActive ? root.activePath : Workspace.homeDirectory
+        commandShortcut: root.config !== null && root.config.commandBar !== ""
+            ? root.config.commandBar : "Ctrl+K"
+        pathShortcut: root.config !== null && root.config.pathJump !== ""
+            ? root.config.pathJump : "Ctrl+P"
+
+        onActivated: function (kind, value) {
+            commandPalette.closePalette()
+            root.handlePaletteActivation(kind, value)
+        }
+        onClosed: root.modalClosed()
+    }
+
     ConnectDialog {
         id: connectDialog
         anchors.fill: parent
@@ -2821,7 +3281,14 @@ Window {
     Shortcut {
         sequence: root.mod + "+T"
         enabled: !root.modalOpen
-        onActivated: root.addTab(root.activePath)
+        onActivated: root.addTabHere()
+    }
+
+    Shortcut {
+        sequence: root.config !== null && root.config.commandBar !== ""
+            ? root.config.commandBar : "Ctrl+K"
+        enabled: !root.modalOpen
+        onActivated: commandPalette.openPalette()
     }
 
     Shortcut {
@@ -2845,19 +3312,19 @@ Window {
     Shortcut {
         sequence: root.config !== null && root.config.pathJump !== ""
             ? root.config.pathJump : "Ctrl+P"
-        enabled: !root.modalOpen && !root.trashActive
+        enabled: !root.modalOpen && root.folderActive
         onActivated: root.beginPathEditing()
     }
 
     Shortcut {
         sequence: "Ctrl+J"
-        enabled: !root.modalOpen && !root.remoteLocation
+        enabled: !root.modalOpen && root.folderActive && !root.remoteLocation
         onActivated: root.toggleTerminal()
     }
 
     Shortcut {
         sequence: "Ctrl+F"
-        enabled: !root.modalOpen && !root.trashActive
+        enabled: !root.modalOpen && root.folderActive
         onActivated: searchBar.focusInput()
     }
 
@@ -2875,7 +3342,7 @@ Window {
 
     Shortcut {
         sequence: root.mod + "+Shift+N"
-        enabled: !root.modalOpen
+        enabled: !root.modalOpen && root.folderActive
         onActivated: root.promptCreate(true)
     }
 
@@ -2887,6 +3354,8 @@ Window {
         onActivated: {
             if (menu.visible)
                 menu.close()
+            else if (commandPalette.visible)
+                commandPalette.closePalette()
             else if (updateDialog.visible)
                 updateDialog.dismiss()
             else if (namePrompt.visible)

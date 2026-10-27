@@ -107,6 +107,14 @@ pub mod qobject {
         fn path_at(&self, row: i32) -> QString;
 
         #[qinvokable]
+        #[cxx_name = "nameAt"]
+        fn name_at(&self, row: i32) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "relativePathAt"]
+        fn relative_path_at(&self, row: i32) -> QString;
+
+        #[qinvokable]
         #[cxx_name = "isDirectoryAt"]
         fn is_directory_at(&self, row: i32) -> bool;
 
@@ -368,6 +376,20 @@ impl qobject::SearchModel {
         self.rows
             .get(row as usize)
             .map(|entry| QString::from(entry.path.as_str()))
+            .unwrap_or_default()
+    }
+
+    fn name_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|entry| QString::from(entry.name.as_str()))
+            .unwrap_or_default()
+    }
+
+    fn relative_path_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|entry| QString::from(entry.relative_path.as_str()))
             .unwrap_or_default()
     }
 
