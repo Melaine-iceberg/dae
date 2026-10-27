@@ -650,6 +650,24 @@ pub async fn create_shortcuts(
         .map_err(|error| FileSystemError::Internal(error.to_string()))?
 }
 
+/// Places `paths` on the system clipboard as a file list carrying `effect`.
+pub async fn write_files_to_clipboard(
+    paths: Vec<String>,
+    effect: super::clipboard::ClipboardEffect,
+) -> Result<(), FileSystemError> {
+    tokio::task::spawn_blocking(move || super::clipboard::write_files_to_clipboard(&paths, effect))
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+/// Reads the file list the system clipboard holds, if it holds one.
+pub async fn read_files_from_clipboard()
+-> Result<Option<super::clipboard::SystemClipboardFiles>, FileSystemError> {
+    tokio::task::spawn_blocking(super::clipboard::read_files_from_clipboard)
+        .await
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
 /// See `commands::get_file_properties` for the contract; this half is engine-free.
 pub async fn get_file_properties(path: String) -> Result<FileProperties, FileSystemError> {
     tokio::task::spawn_blocking(move || vfs::resolve(&path)?.properties(&path))

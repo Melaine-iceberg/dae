@@ -335,8 +335,12 @@ release 用 `windows_subsystem = "windows"`，没有控制台窗口；`dae.exe` 
 - 文件：新建文件夹/文件、重命名、移到回收站、永久删除、创建副本、复制/剪切/
   粘贴、撤销/重做。全部直接调用 `dae_core::fs::service`；冲突默认 `KeepBoth`
   （同目录粘贴不会互相覆盖）。
-- 剪贴板：应用内剪切板（`copy`/`cut` + 路径列表）；剪切是一次性的，复制可以
-  连续粘贴到多个目录。
+- 剪贴板：应用内镜像（`copy`/`cut`/`link` + 路径列表）与系统文件剪贴板同步。
+  复制/剪切时本地路径以 `CF_HDROP` + `Preferred DropEffect` 写入系统剪贴板，
+  资源管理器、聊天窗口可直接粘贴；粘贴优先读取系统剪贴板（另一应用复制的内容
+  覆盖应用内镜像，应用自己写入的列表仍用镜像以保留远程路径），
+  `DROPEFFECT_LINK` 与“粘贴快捷方式”都走 `create_shortcuts`。剪切是一次性的，
+  复制可以连续粘贴到多个目录。
 - 位置：收藏读写、最近访问记录；侧栏模型在收藏变化时刷新。
 - 回收站：`TrashModel` 异步列出系统回收站（Windows 直接解析 `$I` 元数据），
   `restoreTrashEntries` / `deleteTrashEntries` / `emptyTrash` 三个命令走

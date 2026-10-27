@@ -143,7 +143,13 @@ Window {
             trashModel.refresh()
     }
 
-    onActiveChanged: ShellState.noteActive(root.token, active)
+    onActiveChanged: {
+        ShellState.noteActive(root.token, active)
+        // Files may have been copied in Explorer while this window was in the
+        // background; make the paste affordances follow the system clipboard.
+        if (active)
+            Workspace.refreshClipboard()
+    }
 
     onDarkChanged: {
         if (chrome && chrome.attached)
@@ -738,7 +744,10 @@ Window {
             { id: "copy", label: "复制", shortcut: "Ctrl+C", enabled: hasPath },
             { id: "cut", label: "剪切", shortcut: "Ctrl+X", enabled: hasPath },
             { id: "paste", label: "粘贴到此处", shortcut: "Ctrl+V", enabled: hasClipboard && isDir },
+            { id: "pasteShortcut", label: "粘贴快捷方式",
+              enabled: hasClipboard && isDir && !remote },
             { id: "duplicate", label: "创建副本", enabled: hasPath },
+            { id: "createShortcut", label: "创建快捷方式", enabled: hasPath && !remote },
             { id: "compress", label: "压缩为…", enabled: hasPath && !remote, submenu: [
                 { id: "compressZip", label: "ZIP 压缩包" },
                 { id: "compressTar", label: "TAR 归档" },
@@ -776,6 +785,8 @@ Window {
             { id: "newFile", label: "新建文件" },
             { separator: true },
             { id: "paste", label: "粘贴", shortcut: "Ctrl+V", enabled: Workspace.clipboardMode !== "" },
+            { id: "pasteShortcut", label: "粘贴快捷方式",
+              enabled: Workspace.clipboardMode !== "" && !root.remoteLocation },
             { id: "selectAll", label: "全选", shortcut: "Ctrl+A" },
             { id: "refresh", label: "刷新", shortcut: "F5" },
             { separator: true },
@@ -848,6 +859,12 @@ Window {
             break
         case "paste":
             Workspace.pasteInto(isDir && path !== "" ? path : root.activePath)
+            break
+        case "pasteShortcut":
+            Workspace.pasteShortcutInto(isDir && path !== "" ? path : root.activePath)
+            break
+        case "createShortcut":
+            Workspace.createShortcuts(root.currentSelection(), root.activePath)
             break
         case "duplicate":
             Workspace.duplicateEntries(root.currentSelection())
@@ -1927,6 +1944,7 @@ Window {
         root.visible = true
         root.activationReady = true
         ShellState.noteActive(root.token, root.active)
+        Workspace.refreshClipboard()
         // A second launch that arrived while this window was being built has
         // been waiting in the native list; apply it now that the starting tab
         // exists, so the first target reuses that tab instead of duplicating it.

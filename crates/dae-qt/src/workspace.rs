@@ -4,8 +4,8 @@
 //! three shell-only things around them: it owns the Tokio runtime, it turns
 //! the core's `Host` events into queued Qt property updates, and it holds the
 //! bits of state that belong to a *shell* rather than to the file system —
-//! the in-app clipboard, the last accent reading, and the cached terminal
-//! typography.
+//! the in-app clipboard and its system mirror, the last accent reading, and
+//! the cached terminal typography.
 //!
 //! Calls return immediately. The outcome arrives as `operationFinished` or
 //! `operationFailed`, which is what lets the QML side keep painting during a
@@ -18,6 +18,9 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList, QUrl};
 use dae_core::error::FileSystemError;
 use dae_core::fs::archive::{self, ArchiveFormat};
+use dae_core::fs::clipboard::{
+    ClipboardEffect, SystemClipboardFiles, clipboard_sequence as system_clipboard_sequence,
+};
 use dae_core::fs::cloud::accounts as cloud_accounts;
 use dae_core::fs::cloud::oauth::{self as cloud_oauth, AuthorizeCloudAccountInput};
 use dae_core::fs::cloud::provider::CloudProviderKind;
@@ -164,8 +167,10 @@ pub mod qobject {
         #[cxx_name = "localDropPaths"]
         fn local_drop_paths(self: Pin<&mut Workspace>, urls: &QStringList) -> QStringList;
 
-        /// Remembers `paths` as the in-app clipboard. `mode` is `"copy"` or
-        /// `"cut"`; an empty list clears it.
+        /// Remembers `paths` as the in-app clipboard and, for the local
+        /// subset, places them on the system clipboard so Explorer can paste
+        /// them. `mode` is `"copy"` or `"cut"`; an empty list clears the
+        /// in-app half.
         #[qinvokable]
         #[cxx_name = "setClipboard"]
         fn set_clipboard(self: Pin<&mut Workspace>, mode: &QString, paths: &QStringList);
@@ -177,6 +182,18 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "pasteInto"]
         fn paste_into(self: Pin<&mut Workspace>, destination: &QString);
+
+        /// Creates shortcuts in `destination` for the clipboard's files,
+        /// whatever effect the source asked for.
+        #[qinvokable]
+        #[cxx_name = "pasteShortcutInto"]
+        fn paste_shortcut_into(self: Pin<&mut Workspace>, destination: &QString);
+
+        /// Re-reads the system clipboard so the paste affordances follow
+        /// files another app copied. Called when a window becomes active.
+        #[qinvokable]
+        #[cxx_name = "refreshClipboard"]
+        fn refresh_clipboard(self: Pin<&mut Workspace>);
 
         #[qinvokable]
         fn undo(self: Pin<&mut Workspace>);
@@ -379,6 +396,15 @@ pub struct WorkspaceRust {
     progress_total: i32,
     clipboard_mode: QString,
     clipboard_paths: QStringList,
+    /// The exact paths this shell last put on the system clipboard. A paste
+    /// compares against it to tell its own list from files another app copied.
+    system_clipboard_paths: Vec<String>,
+    /// The system's clipboard counter when the mirror was last written or
+    /// refreshed; a different counter means another app changed it since.
+    system_clipboard_sequence: u32,
+    /// Bumped whenever the clipboard changes, so a refresh that was already
+    /// in flight cannot overwrite a newer copy.
+    clipboard_generation: u64,
     accent: QString,
     system_dark: bool,
     home_directory: QString,
@@ -411,6 +437,9 @@ impl Default for WorkspaceRust {
             progress_total: 0,
             clipboard_mode: QString::default(),
             clipboard_paths: QStringList::default(),
+            system_clipboard_paths: Vec::new(),
+            system_clipboard_sequence: 0,
+            clipboard_generation: 0,
             accent: QString::from(platform::accent_hex().as_str()),
             system_dark: crate::config::system_dark(),
             home_directory: QString::from(home.as_str()),
@@ -792,6 +821,12 @@ impl qobject::Workspace {
         if items.is_empty() {
             return;
         }
+        // A cut is one-shot, but only for the list that was actually cut: a
+        // move dragged in from Explorer must not discard an in-app cut
+        // clipboard that happens to be unrelated.
+        let clears_clipboard = cut
+            && self.clipboard_mode.to_string() == "cut"
+            && strings(&self.clipboard_paths) == strings(paths);
         let destination = destination.to_string();
         let kind = if cut { "move" } else { "copy" };
         self.as_mut()
@@ -809,9 +844,9 @@ impl qobject::Workspace {
                 Err(error) => Outcome::failed(error),
             }
         });
-        // The cut clipboard is one-shot; a copy clipboard stays available so
-        // the same selection can be pasted into several directories.
-        if cut {
+        // A copy clipboard stays available so the same selection can be
+        // pasted into several directories.
+        if clears_clipboard {
             self.as_mut().clear_clipboard();
         }
     }
@@ -834,9 +869,35 @@ impl qobject::Workspace {
     }
 
     fn create_shortcuts(mut self: Pin<&mut Self>, paths: &QStringList, destination: &QString) {
-        let sources = strings(paths);
-        let destination = destination.to_string();
-        if sources.is_empty() || destination.is_empty() {
+        self.as_mut()
+            .create_shortcuts_paths(strings(paths), destination.to_string());
+    }
+
+    fn create_shortcuts_paths(mut self: Pin<&mut Self>, paths: Vec<String>, destination: String) {
+        if destination.is_empty() {
+            return;
+        }
+        if !vfs::is_local_path(&destination) {
+            self.as_mut().finish_operation(
+                "shortcut",
+                "",
+                Some("只能在本地文件夹创建快捷方式".to_owned()),
+            );
+            return;
+        }
+
+        // Shortcuts are a local-only operation; a remote source would be
+        // written into a .lnk that cannot resolve.
+        let sources: Vec<String> = paths
+            .into_iter()
+            .filter(|path| vfs::is_local_path(path))
+            .collect();
+        if sources.is_empty() {
+            self.as_mut().finish_operation(
+                "shortcut",
+                "",
+                Some("只能为本地文件创建快捷方式".to_owned()),
+            );
             return;
         }
 
@@ -871,25 +932,161 @@ impl qobject::Workspace {
             self.as_mut().clear_clipboard();
             return;
         }
-        self.as_mut().rust_mut().clipboard_mode = QString::from(mode.as_str());
-        self.as_mut().rust_mut().clipboard_paths = paths.clone();
+        let paths = strings(paths);
+        self.as_mut().set_clipboard_state(&mode, &paths);
+        self.as_mut().rust_mut().system_clipboard_sequence = system_clipboard_sequence();
+
+        // Only local paths mean anything to Explorer; remote entries stay in
+        // the in-app mirror and are pasted by this shell alone.
+        let local: Vec<String> = paths
+            .into_iter()
+            .filter(|path| vfs::is_local_path(path))
+            .collect();
+        self.as_mut().rust_mut().system_clipboard_paths = local.clone();
+        if local.is_empty() {
+            return;
+        }
+
+        let effect = if mode == "cut" {
+            ClipboardEffect::Move
+        } else {
+            ClipboardEffect::Copy
+        };
+        runtime::spawn(async move {
+            if let Err(error) = service::write_files_to_clipboard(local, effect).await {
+                eprintln!("dae: could not place the selection on the system clipboard: {error}");
+            }
+        });
     }
 
     fn clear_clipboard(mut self: Pin<&mut Self>) {
         self.as_mut().rust_mut().clipboard_mode = QString::default();
         self.as_mut().rust_mut().clipboard_paths = QStringList::default();
+        self.as_mut().rust_mut().clipboard_generation += 1;
+    }
+
+    /// Writes the mirror without touching the system clipboard.
+    fn set_clipboard_state(mut self: Pin<&mut Self>, mode: &str, paths: &[String]) {
+        self.as_mut().rust_mut().clipboard_mode = QString::from(mode);
+        self.as_mut().rust_mut().clipboard_paths = string_list(paths);
+        self.as_mut().rust_mut().clipboard_generation += 1;
     }
 
     fn paste_into(mut self: Pin<&mut Self>, destination: &QString) {
-        let mode = self.clipboard_mode.to_string();
-        if mode.is_empty() {
-            self.as_mut()
-                .finish_operation("copy", "", Some("剪贴板是空的".to_owned()));
+        let destination = destination.to_string();
+        let own = self.system_clipboard_paths.clone();
+        let sequence = self.system_clipboard_sequence;
+        let mirror = strings(&self.clipboard_paths);
+        let mirror_mode = self.clipboard_mode.to_string();
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let (system, current) = system_clipboard_snapshot().await;
+            let contents =
+                clipboard_contents(system, &own, &mirror, &mirror_mode, current == sequence);
+            let _ = thread
+                .queue(move |mut workspace| workspace.as_mut().apply_paste(contents, destination));
+        });
+    }
+
+    fn apply_paste(mut self: Pin<&mut Self>, contents: ClipboardContents, destination: String) {
+        match contents {
+            ClipboardContents::Empty => {
+                self.as_mut()
+                    .finish_operation("copy", "", Some("剪贴板是空的".to_owned()))
+            }
+            ClipboardContents::Files {
+                paths,
+                effect: ClipboardEffect::Link,
+            } => self.as_mut().create_shortcuts_paths(paths, destination),
+            ClipboardContents::Files { paths, effect } => {
+                let list = string_list(&paths);
+                self.as_mut().transfer_entries(
+                    &list,
+                    &QString::from(destination),
+                    effect == ClipboardEffect::Move,
+                );
+            }
+        }
+    }
+
+    fn paste_shortcut_into(mut self: Pin<&mut Self>, destination: &QString) {
+        let destination = destination.to_string();
+        if destination.is_empty() {
             return;
         }
-        let paths = self.clipboard_paths.clone();
-        self.as_mut()
-            .transfer_entries(&paths, destination, mode == "cut");
+        let own = self.system_clipboard_paths.clone();
+        let sequence = self.system_clipboard_sequence;
+        let mirror = strings(&self.clipboard_paths);
+        let mirror_mode = self.clipboard_mode.to_string();
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let (system, current) = system_clipboard_snapshot().await;
+            let contents =
+                clipboard_contents(system, &own, &mirror, &mirror_mode, current == sequence);
+            let _ = thread.queue(move |mut workspace| match contents {
+                ClipboardContents::Empty => workspace.as_mut().finish_operation(
+                    "shortcut",
+                    "",
+                    Some("剪贴板是空的".to_owned()),
+                ),
+                ClipboardContents::Files { paths, .. } => workspace
+                    .as_mut()
+                    .create_shortcuts_paths(paths, destination),
+            });
+        });
+    }
+
+    fn refresh_clipboard(mut self: Pin<&mut Self>) {
+        let generation = self.clipboard_generation;
+        let own = self.system_clipboard_paths.clone();
+        let thread = self.as_mut().qt_thread();
+        runtime::spawn(async move {
+            let (system, sequence) = match service::read_files_from_clipboard().await {
+                Ok(system) => (system, system_clipboard_sequence()),
+                Err(_) => return,
+            };
+            let _ = thread.queue(move |mut workspace| {
+                // An in-app copy that happened after the read wins.
+                if workspace.clipboard_generation != generation {
+                    return;
+                }
+                workspace
+                    .as_mut()
+                    .apply_clipboard_refresh(system, sequence, &own);
+            });
+        });
+    }
+
+    fn apply_clipboard_refresh(
+        mut self: Pin<&mut Self>,
+        system: Option<SystemClipboardFiles>,
+        sequence: u32,
+        own: &[String],
+    ) {
+        match system {
+            Some(files) if !files.paths.is_empty() => {
+                // Our own list may include remote paths the system clipboard
+                // never saw, so only an outside list replaces the mirror.
+                if files.paths != own {
+                    let mode = match files.effect {
+                        ClipboardEffect::Move => "cut",
+                        ClipboardEffect::Link => "link",
+                        ClipboardEffect::Copy => "copy",
+                    };
+                    self.as_mut().set_clipboard_state(mode, &files.paths);
+                    self.as_mut().rust_mut().system_clipboard_sequence = sequence;
+                }
+            }
+            _ => {
+                if !own.is_empty() {
+                    // The file list this shell placed was replaced by
+                    // something else (text, another app's data).
+                    self.as_mut().clear_clipboard();
+                    self.as_mut().rust_mut().system_clipboard_paths.clear();
+                    self.as_mut().rust_mut().system_clipboard_sequence = sequence;
+                }
+            }
+        }
     }
 
     fn undo(mut self: Pin<&mut Self>) {
@@ -1371,6 +1568,63 @@ fn strings(list: &QStringList) -> Vec<String> {
     list.iter().map(ToString::to_string).collect()
 }
 
+fn string_list(paths: &[String]) -> QStringList {
+    let mut list = QStringList::default();
+    for path in paths {
+        list.append(QString::from(path.as_str()));
+    }
+    list
+}
+
+/// The system clipboard's files (`None` when it holds no file list) and the
+/// change counter read alongside them.
+async fn system_clipboard_snapshot() -> (Option<SystemClipboardFiles>, u32) {
+    let files = service::read_files_from_clipboard().await.ok().flatten();
+    (files, system_clipboard_sequence())
+}
+
+/// Where a paste's files come from, once the system clipboard and the in-app
+/// mirror have been reconciled.
+enum ClipboardContents {
+    Empty,
+    Files {
+        paths: Vec<String>,
+        effect: ClipboardEffect,
+    },
+}
+
+/// The system clipboard wins when it holds a file list other than the one this
+/// shell placed there and another app has changed it since; otherwise the
+/// in-app mirror keeps remote entries (and failed system writes) alive.
+fn clipboard_contents(
+    system: Option<SystemClipboardFiles>,
+    own: &[String],
+    mirror: &[String],
+    mirror_mode: &str,
+    system_unchanged: bool,
+) -> ClipboardContents {
+    if let Some(files) = system {
+        if !files.paths.is_empty() && files.paths != own && !system_unchanged {
+            return ClipboardContents::Files {
+                paths: files.paths,
+                effect: files.effect,
+            };
+        }
+    }
+    if mirror.is_empty() {
+        return ClipboardContents::Empty;
+    }
+    let effect = match mirror_mode {
+        "cut" => ClipboardEffect::Move,
+        "link" => ClipboardEffect::Link,
+        _ => ClipboardEffect::Copy,
+    };
+    ClipboardContents::Files {
+        paths: mirror.to_vec(),
+        effect,
+    }
+}
+
 /// QML passes empty strings where the bridge means `None`.
 fn optional_string(value: &QString) -> Option<String> {
     let value = value.to_string();
@@ -1488,6 +1742,74 @@ fn operation_label(operation: dae_core::progress::FileOperationKind) -> &'static
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paste_prefers_files_another_app_copied() {
+        let external = SystemClipboardFiles {
+            paths: vec!["C:/x".to_string()],
+            effect: ClipboardEffect::Move,
+        };
+        match clipboard_contents(
+            Some(external),
+            &["C:/own".to_string()],
+            &["C:/own".to_string()],
+            "copy",
+            false,
+        ) {
+            ClipboardContents::Files { paths, effect } => {
+                assert_eq!(paths, vec!["C:/x".to_string()]);
+                assert_eq!(effect, ClipboardEffect::Move);
+            }
+            ClipboardContents::Empty => panic!("expected the system files"),
+        }
+    }
+
+    #[test]
+    fn paste_keeps_the_mirror_when_the_system_list_is_ours() {
+        let own = vec!["C:/local".to_string()];
+        let mirror = vec!["C:/local".to_string(), "smb://host/share/file".to_string()];
+        let system = SystemClipboardFiles {
+            paths: own.clone(),
+            effect: ClipboardEffect::Copy,
+        };
+        match clipboard_contents(Some(system), &own, &mirror, "copy", false) {
+            ClipboardContents::Files { paths, effect } => {
+                assert_eq!(paths, mirror);
+                assert_eq!(effect, ClipboardEffect::Copy);
+            }
+            ClipboardContents::Empty => panic!("expected the mirrored list"),
+        }
+    }
+
+    #[test]
+    fn paste_without_any_clipboard_is_empty() {
+        assert!(matches!(
+            clipboard_contents(None, &[], &[], "", true),
+            ClipboardContents::Empty
+        ));
+    }
+
+    #[test]
+    fn an_unchanged_system_list_does_not_override_a_newer_internal_copy() {
+        // Copying remote files cannot reach the system clipboard, so it still
+        // holds whatever was there before even though the user copied since.
+        let stale = SystemClipboardFiles {
+            paths: vec!["C:/older".to_string()],
+            effect: ClipboardEffect::Copy,
+        };
+        match clipboard_contents(
+            Some(stale),
+            &[],
+            &["smb://host/share/file".to_string()],
+            "copy",
+            true,
+        ) {
+            ClipboardContents::Files { paths, .. } => {
+                assert_eq!(paths, vec!["smb://host/share/file".to_string()]);
+            }
+            ClipboardContents::Empty => panic!("expected the internal list"),
+        }
+    }
 
     #[test]
     fn clipboard_items_keep_both_rather_than_overwrite() {
