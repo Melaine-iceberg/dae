@@ -32,6 +32,10 @@ const SEARCH_IS_DIR: i32 = 0x0205;
 const SEARCH_HIDDEN: i32 = 0x0206;
 const SEARCH_READ_ONLY: i32 = 0x0207;
 const SEARCH_ICON: i32 = 0x0208;
+/// Search rows share `FileList.qml`'s delegate, which requires the Git role.
+/// A result can sit several levels below the search root, so it never carries
+/// a badge; the role exists to keep the delegate's contract uniform.
+const SEARCH_GIT: i32 = 0x0209;
 
 const CONTENT_IS_HEADER: i32 = 0x0300;
 const CONTENT_NAME: i32 = 0x0301;
@@ -252,6 +256,7 @@ impl qobject::SearchModel {
             SEARCH_IS_DIR => QVariant::from(&(row.kind == EntryKind::Directory)),
             SEARCH_HIDDEN => QVariant::from(&row.hidden),
             SEARCH_READ_ONLY => QVariant::from(&row.read_only),
+            SEARCH_GIT => QVariant::from(&QString::default()),
             SEARCH_ICON => {
                 let version = format!("{}-{}", row.modified_at.unwrap_or(0), row.size.unwrap_or(0));
                 // Network rows only carry a usable extension in their name;
@@ -287,6 +292,7 @@ impl qobject::SearchModel {
             (SEARCH_HIDDEN, "hidden"),
             (SEARCH_READ_ONLY, "readOnly"),
             (SEARCH_ICON, "iconSource"),
+            (SEARCH_GIT, "gitStatus"),
         ])
     }
 

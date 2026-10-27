@@ -85,7 +85,12 @@ Window {
     readonly property var activeTab: (activeIndex >= 0 && activeIndex < tabs.length)
         ? tabs[activeIndex] : null
     readonly property string activePath: activeTab !== null ? activeTab.listing.path : ""
+    /// The primary pane's Git view. The status bar and branch panel bind to the
+    /// listing model because that model owns the repository the pane shows.
+    readonly property var gitListing: activeTab !== null ? activeTab.listing : null
     readonly property bool trashActive: activeTab !== null && activeTab.trash
+    readonly property bool gitVisible: !trashActive && gitListing !== null
+        && gitListing.gitRoot !== "" && gitListing.gitBranch !== ""
     /// True while the tab is browsing a network backend. Local-only actions
     /// (terminal, recycle bin, content search, OS open/reveal) are gated on
     /// this instead of failing after the click.
@@ -1350,6 +1355,19 @@ Window {
         }
     }
 
+    // Branch commands belong to the active pane's repository. The create form
+    // shows its own inline error, so it keeps that failure instead of also
+    // raising a toast behind the panel.
+    Connections {
+        target: root.gitListing
+
+        function onGitOperationFailed(operation, message) {
+            if (operation === "create" && gitPanel.visible && gitPanel.creating)
+                return
+            toast.show(message, true)
+        }
+    }
+
     Column {
         anchors.fill: parent
 
@@ -2014,7 +2032,7 @@ Window {
             Text {
                 id: statusText
                 x: 12
-                width: parent.width * 0.46
+                width: parent.width * (gitChip.visible ? 0.32 : 0.46)
                 anchors.verticalCenter: parent.verticalCenter
                 text: {
                     if (root.activeTab === null)
@@ -2258,8 +2276,9 @@ Window {
             }
 
             Text {
-                anchors.left: queueChip.visible ? queueChip.right : statusText.right
-                anchors.leftMargin: queueChip.visible ? 12 : 16
+                anchors.left: queueChip.visible ? queueChip.right
+                    : (gitChip.visible ? gitChip.right : statusText.right)
+                anchors.leftMargin: queueChip.visible || gitChip.visible ? 12 : 16
                 anchors.right: viewButton.left
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
@@ -2272,12 +2291,149 @@ Window {
                 elide: Text.ElideMiddle
             }
 
+            // The repository the pane is inside. Branch, divergence and a
+            // one-click sync live here; the whole chip opens the branch panel.
+            Rectangle {
+                id: gitChip
+                anchors.left: statusText.right
+                anchors.leftMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                width: gitChipContent.implicitWidth + 14
+                    + (gitSyncButton.visible ? gitSyncButton.width : 0)
+                height: 16
+                radius: 8
+                visible: root.gitVisible
+                color: gitChipMouse.containsMouse || gitPanel.visible
+                    ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24)
+                    : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.12)
+                border.width: 1
+                border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.42)
+
+                Accessible.role: Accessible.Button
+                Accessible.name: "Git 分支 "
+                    + (root.gitListing !== null ? root.gitListing.gitBranch : "")
+                    + "，打开分支面板"
+                Accessible.onPressAction: gitChip.openPanel()
+
+                function branchName() {
+                    return root.gitListing !== null ? root.gitListing.gitBranch : ""
+                }
+
+                function ahead() {
+                    return root.gitListing !== null ? root.gitListing.gitAhead : 0
+                }
+
+                function behind() {
+                    return root.gitListing !== null ? root.gitListing.gitBehind : 0
+                }
+
+                function openPanel() {
+                    const point = gitChip.mapToItem(null, 0, 0)
+                    gitPanel.openAbove(point.x, point.y)
+                }
+
+                Row {
+                    id: gitChipContent
+                    anchors.left: parent.left
+                    anchors.leftMargin: 7
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 4
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Git"
+                        color: root.accent
+                        font.pixelSize: 9
+                        font.weight: Font.DemiBold
+                        textFormat: Text.PlainText
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Math.min(implicitWidth, 112)
+                        text: gitChip.branchName()
+                        color: root.gitListing !== null && root.gitListing.gitDetached
+                            ? root.mutedColor : root.textColor
+                        font.family: "Cascadia Mono"
+                        font.pixelSize: 10
+                        textFormat: Text.PlainText
+                        elide: Text.ElideMiddle
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: gitChip.ahead() > 0
+                        text: "↑" + gitChip.ahead()
+                        color: root.dark ? "#7fc98a" : "#1a7f37"
+                        font.pixelSize: 10
+                        textFormat: Text.PlainText
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: gitChip.behind() > 0
+                        text: "↓" + gitChip.behind()
+                        color: root.dark ? "#6cb6ff" : "#0969da"
+                        font.pixelSize: 10
+                        textFormat: Text.PlainText
+                    }
+                }
+
+                Item {
+                    id: gitSyncButton
+                    anchors.right: parent.right
+                    anchors.rightMargin: 2
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: visible ? 16 : 0
+                    height: 16
+                    visible: root.gitListing !== null
+                        && root.gitListing.gitRemotes.length > 0
+
+                    Text {
+                        id: gitSyncGlyph
+                        anchors.centerIn: parent
+                        text: "↻"
+                        color: root.gitListing !== null && root.gitListing.gitBusy
+                            ? root.accent : root.mutedColor
+                        font.pixelSize: 11
+                        textFormat: Text.PlainText
+                        transformOrigin: Item.Center
+
+                        RotationAnimator on rotation {
+                            from: 0
+                            to: 360
+                            duration: 900
+                            loops: Animation.Infinite
+                            running: root.gitListing !== null && root.gitListing.gitBusy
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        enabled: root.gitListing !== null && !root.gitListing.gitBusy
+                        onClicked: {
+                            if (root.gitListing !== null)
+                                root.gitListing.gitSync()
+                        }
+                    }
+                }
+
+                MouseArea {
+                    id: gitChipMouse
+                    anchors.fill: parent
+                    anchors.rightMargin: gitSyncButton.width
+                    hoverEnabled: true
+                    onClicked: gitChip.openPanel()
+                }
+            }
+
             // Transfers waiting behind the one on the progress row. The chip is
             // the queue's only door: without it a second paste would look like
             // it did nothing until the first copy finished.
             Rectangle {
                 id: queueChip
-                anchors.left: statusText.right
+                anchors.left: gitChip.visible ? gitChip.right : statusText.right
                 anchors.leftMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 width: queueChipLabel.implicitWidth + 14
@@ -2615,6 +2771,19 @@ Window {
     TransferQueue {
         id: transferQueue
         anchors.fill: parent
+        dark: root.dark
+        accent: root.accent
+
+        onVisibleChanged: {
+            if (!visible)
+                root.modalClosed()
+        }
+    }
+
+    GitPanel {
+        id: gitPanel
+        anchors.fill: parent
+        repo: root.gitListing
         dark: root.dark
         accent: root.accent
 

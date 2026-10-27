@@ -16,6 +16,7 @@
 //! a reload instead of waiting for F5.
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -25,9 +26,10 @@ use std::time::Duration;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{
-    QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QVariant,
+    QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QStringList, QVariant,
 };
 use dae_core::fs::entry_codec::{self, ListingRow};
+use dae_core::fs::git::{self, GitBranches, GitDirectoryStatus, GitEntryStatusKind};
 use dae_core::fs::listing::{self, Batch, BatchTarget};
 use dae_core::fs::vfs::{self, Scheme};
 use dae_core::fs::watch;
@@ -56,6 +58,11 @@ const ROLE_EXTENSION: i32 = 0x010A;
 /// The `image://thumbnail/...` URL for this row's first frame, or empty when
 /// the row has none the desktop can draw.
 const ROLE_THUMBNAIL: i32 = 0x010B;
+/// This row's working-tree state: `added`, `modified`, `untracked`, or empty
+/// when the row is clean or the directory is not inside a worktree. The
+/// delegate paints the letter; keeping the coarse kind here means the shell
+/// does not need a second map keyed by file name.
+const ROLE_GIT: i32 = 0x010C;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -77,6 +84,9 @@ pub mod qobject {
 
         include!("cxx-qt-lib/qstringlist.h");
         type QStringList = cxx_qt_lib::QStringList;
+
+        include!("cxx-qt-lib/core/qlist/qlist_i32.h");
+        type QList_i32 = cxx_qt_lib::QList<i32>;
     }
 
     unsafe extern "RustQt" {
@@ -106,6 +116,23 @@ pub mod qobject {
         /// shell reads it to keep local-only actions off `smb://`, `sftp://`
         /// and `cloud://` paths instead of letting them fail on click.
         #[qproperty(bool, remote)]
+        /// The worktree root above the shown directory, or empty when the
+        /// directory is not inside a Git worktree.
+        #[qproperty(QString, git_root, cxx_name = "gitRoot")]
+        #[qproperty(QString, git_branch, cxx_name = "gitBranch")]
+        #[qproperty(bool, git_detached, cxx_name = "gitDetached")]
+        #[qproperty(bool, git_has_upstream, cxx_name = "gitHasUpstream")]
+        #[qproperty(i32, git_ahead, cxx_name = "gitAhead")]
+        #[qproperty(i32, git_behind, cxx_name = "gitBehind")]
+        /// True while a checkout/create/fetch/pull/push/sync command runs. The
+        /// status-bar chip spins and the branch panel disables its actions.
+        #[qproperty(bool, git_busy, cxx_name = "gitBusy")]
+        #[qproperty(QStringList, git_remotes, cxx_name = "gitRemotes")]
+        #[qproperty(QStringList, git_local_branches, cxx_name = "gitLocalBranches")]
+        #[qproperty(QStringList, git_remote_branches, cxx_name = "gitRemoteBranches")]
+        /// The current local branch, empty on a detached HEAD. The panel marks
+        /// this row rather than comparing names itself.
+        #[qproperty(QString, git_current_branch, cxx_name = "gitCurrentBranch")]
         type DirectoryListModel = super::DirectoryListModelRust;
 
         #[cxx_override]
@@ -175,6 +202,56 @@ pub mod qobject {
         #[cxx_name = "isDirectoryAt"]
         fn is_directory_at(&self, row: i32) -> bool;
 
+        /// Re-reads this directory's Git state, branches included. The branch
+        /// panel calls it when it opens so a checkout made in a terminal shows
+        /// up even when no file in this directory changed.
+        #[qinvokable]
+        #[cxx_name = "refreshGit"]
+        fn refresh_git(self: Pin<&mut DirectoryListModel>);
+
+        #[qinvokable]
+        #[cxx_name = "gitCheckoutBranch"]
+        fn git_checkout_branch(self: Pin<&mut DirectoryListModel>, name: &QString, remote: bool);
+
+        #[qinvokable]
+        #[cxx_name = "gitCreateBranch"]
+        fn git_create_branch(self: Pin<&mut DirectoryListModel>, name: &QString, checkout: bool);
+
+        #[qinvokable]
+        #[cxx_name = "gitFetch"]
+        fn git_fetch(self: Pin<&mut DirectoryListModel>);
+
+        #[qinvokable]
+        #[cxx_name = "gitPull"]
+        fn git_pull(self: Pin<&mut DirectoryListModel>);
+
+        #[qinvokable]
+        #[cxx_name = "gitPush"]
+        fn git_push(self: Pin<&mut DirectoryListModel>);
+
+        #[qinvokable]
+        #[cxx_name = "gitSync"]
+        fn git_sync(self: Pin<&mut DirectoryListModel>);
+
+        /// A branch command succeeded. `operation` is `checkout`, `create`,
+        /// `fetch`, `pull`, `push` or `sync`; the create form uses it to close
+        /// only after its own command landed.
+        #[qsignal]
+        #[cxx_name = "gitOperationFinished"]
+        fn git_operation_finished(
+            self: Pin<&mut DirectoryListModel>,
+            operation: &QString,
+            message: &QString,
+        );
+
+        #[qsignal]
+        #[cxx_name = "gitOperationFailed"]
+        fn git_operation_failed(
+            self: Pin<&mut DirectoryListModel>,
+            operation: &QString,
+            message: &QString,
+        );
+
         /// Stops the stream and drops every row. A closed tab calls this
         /// before it is released, so a 120k-row directory is not kept alive by
         /// a model nobody shows.
@@ -214,6 +291,22 @@ pub mod qobject {
         #[inherit]
         #[rust_name = "end_reset_model"]
         unsafe fn endResetModel(self: Pin<&mut DirectoryListModel>);
+
+        #[inherit]
+        #[rust_name = "model_index"]
+        unsafe fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
+
+        /// Repaints the Git column without rebuilding the rows, so a status
+        /// refresh landing after the listing keeps the scroll position and the
+        /// current row.
+        #[inherit]
+        #[rust_name = "data_changed"]
+        unsafe fn dataChanged(
+            self: Pin<&mut DirectoryListModel>,
+            top_left: &QModelIndex,
+            bottom_right: &QModelIndex,
+            roles: &QList_i32,
+        );
     }
 
     impl cxx_qt::Threading for DirectoryListModel {}
@@ -698,6 +791,41 @@ struct RefreshStage {
     path: String,
 }
 
+/// A Git command the branch panel or status chip can start. Kept as one enum
+/// so the busy flag, failure relay and post-success refresh live in one place.
+enum GitOperation {
+    Checkout { name: String, remote: bool },
+    Create { name: String, checkout: bool },
+    Fetch,
+    Pull,
+    Push,
+    Sync,
+}
+
+impl GitOperation {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::Checkout { .. } => "checkout",
+            Self::Create { .. } => "create",
+            Self::Fetch => "fetch",
+            Self::Pull => "pull",
+            Self::Push => "push",
+            Self::Sync => "sync",
+        }
+    }
+
+    fn success_message(&self) -> String {
+        match self {
+            Self::Checkout { name, .. } => format!("已切换到分支 {name}"),
+            Self::Create { name, .. } => format!("已创建分支 {name}"),
+            Self::Fetch => "已获取远程更新".to_owned(),
+            Self::Pull => "已拉取远程更新".to_owned(),
+            Self::Push => "已推送到远程".to_owned(),
+            Self::Sync => "已同步远程仓库".to_owned(),
+        }
+    }
+}
+
 pub struct DirectoryListModelRust {
     loaded: i32,
     finished: bool,
@@ -731,6 +859,31 @@ pub struct DirectoryListModelRust {
     closed: bool,
     order: ViewOrder,
     filter: RowFilter,
+    /// The worktree root and the branch facts the status bar paints. Written
+    /// together from one branch listing; the status-only refresh leaves the
+    /// branch lists alone so a 1000-branch repository is not re-enumerated on
+    /// every directory reload.
+    git_root: QString,
+    git_branch: QString,
+    git_detached: bool,
+    git_has_upstream: bool,
+    git_ahead: i32,
+    git_behind: i32,
+    git_busy: bool,
+    git_remotes: QStringList,
+    git_local_branches: QStringList,
+    git_remote_branches: QStringList,
+    git_current_branch: QString,
+    /// Direct children with a working-tree change, keyed by name. Kept beside
+    /// the rows rather than inside `StoredRow`: a status refresh must not make
+    /// the row diff treat the whole directory as changed.
+    git_entries: HashMap<String, GitEntryStatusKind>,
+    /// The shown directory is entirely untracked; every child gets the `U`
+    /// badge without an entry per file.
+    git_directory_untracked: bool,
+    /// Drops a Git read that lands after the user navigated away or a newer
+    /// request replaced it.
+    git_generation: u64,
 }
 
 impl Default for DirectoryListModelRust {
@@ -753,6 +906,20 @@ impl Default for DirectoryListModelRust {
             closed: false,
             order: ViewOrder::default(),
             filter: RowFilter::default(),
+            git_root: QString::default(),
+            git_branch: QString::default(),
+            git_detached: false,
+            git_has_upstream: false,
+            git_ahead: 0,
+            git_behind: 0,
+            git_busy: false,
+            git_remotes: QStringList::default(),
+            git_local_branches: QStringList::default(),
+            git_remote_branches: QStringList::default(),
+            git_current_branch: QString::default(),
+            git_entries: HashMap::new(),
+            git_directory_untracked: false,
+            git_generation: 0,
         }
     }
 }
@@ -818,6 +985,11 @@ impl qobject::DirectoryListModel {
                 let path = row.full_path(&self.base);
                 QVariant::from(&QString::from(thumbnail_url(self.remote, &path, &row.name, row)))
             }
+            ROLE_GIT => QVariant::from(&QString::from(git_badge(
+                &self.git_entries,
+                self.git_directory_untracked,
+                &row.name,
+            ))),
             _ => QVariant::default(),
         }
     }
@@ -836,6 +1008,7 @@ impl qobject::DirectoryListModel {
         roles.insert(ROLE_CATEGORY, QByteArray::from("category"));
         roles.insert(ROLE_EXTENSION, QByteArray::from("extension"));
         roles.insert(ROLE_THUMBNAIL, QByteArray::from("thumbnailSource"));
+        roles.insert(ROLE_GIT, QByteArray::from("gitStatus"));
         roles
     }
 
@@ -896,6 +1069,12 @@ impl qobject::DirectoryListModel {
             self.as_mut().set_path(QString::from(requested.as_str()));
             self.as_mut().set_status(QString::from("读取中…"));
         }
+
+        // Navigation asks for branches too, because the status bar's
+        // ahead/behind numbers come from them. A same-directory reload only
+        // refreshes the working-tree scan: enumerating 1000 branches on every
+        // watcher trip would cost more than the listing itself.
+        self.as_mut().begin_git_load(!refreshing);
 
         // An unknown scheme is a failure of this path, not of the previous
         // directory: the model has already adopted `requested` above.
@@ -977,6 +1156,315 @@ impl qobject::DirectoryListModel {
         if !path.as_slice().is_empty() {
             self.as_mut().load(&path);
         }
+    }
+
+    /// Starts the Git read that belongs to the load above. Navigation clears
+    /// the previous repository's badges and branch facts synchronously, so a
+    /// slow read can never paint them onto the new directory.
+    fn begin_git_load(mut self: Pin<&mut Self>, navigating: bool) {
+        let path = self.path.to_string();
+        let local = !path.is_empty() && matches!(vfs::scheme_of(&path), Ok(Scheme::Local));
+        let generation = self.git_generation.wrapping_add(1);
+        self.as_mut().rust_mut().git_generation = generation;
+        if navigating {
+            self.as_mut().clear_git_state();
+        }
+        if !local || self.closed {
+            return;
+        }
+        self.as_mut().spawn_git_read(generation, navigating);
+    }
+
+    fn refresh_git(mut self: Pin<&mut Self>) {
+        if self.git_busy || self.closed {
+            return;
+        }
+        let path = self.path.to_string();
+        let local = !path.is_empty() && matches!(vfs::scheme_of(&path), Ok(Scheme::Local));
+        let generation = self.git_generation.wrapping_add(1);
+        self.as_mut().rust_mut().git_generation = generation;
+        if !local {
+            self.as_mut().clear_git_state();
+            return;
+        }
+        self.as_mut().spawn_git_read(generation, true);
+    }
+
+    fn spawn_git_read(mut self: Pin<&mut Self>, generation: u64, with_branches: bool) {
+        let path = self.path.to_string();
+        let thread = self.as_mut().qt_thread();
+        crate::runtime::spawn(async move {
+            let status = git::get_git_status(path.clone()).await;
+            let branches = if with_branches && matches!(&status, Ok(Some(_))) {
+                git::list_git_branches(path).await.ok().flatten()
+            } else {
+                None
+            };
+            let _ = thread.queue(move |mut model| {
+                model
+                    .as_mut()
+                    .adopt_git(generation, with_branches, status, branches)
+            });
+        });
+    }
+
+    fn adopt_git(
+        mut self: Pin<&mut Self>,
+        generation: u64,
+        with_branches: bool,
+        status: Result<Option<GitDirectoryStatus>, dae_core::error::FileSystemError>,
+        branches: Option<GitBranches>,
+    ) {
+        if self.closed || self.git_generation != generation {
+            return;
+        }
+        // A failed read leaves the last good state in place; only a
+        // successful "not a worktree" answer clears the chip.
+        let Ok(status) = status else {
+            return;
+        };
+        let Some(status) = status else {
+            self.as_mut().clear_git_state();
+            return;
+        };
+
+        let GitDirectoryStatus {
+            root,
+            branch,
+            entries,
+            directory_untracked,
+        } = status;
+        let branch_changed = self.git_branch.to_string() != branch;
+        let entries: HashMap<String, GitEntryStatusKind> = entries
+            .into_iter()
+            .map(|entry| (entry.name, entry.kind))
+            .collect();
+        let badges_changed =
+            self.git_entries != entries || self.git_directory_untracked != directory_untracked;
+
+        self.as_mut().set_git_root(QString::from(root.as_str()));
+        self.as_mut().set_git_branch(QString::from(branch.as_str()));
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.git_entries = entries;
+            rust.git_directory_untracked = directory_untracked;
+        }
+        if badges_changed {
+            self.as_mut().emit_git_badges_changed();
+        }
+
+        if with_branches {
+            if let Some(branches) = branches {
+                self.as_mut().adopt_git_branches(branches);
+            }
+        } else if branch_changed {
+            // HEAD moved outside this shell (a terminal checkout). The status
+            // scan already knows the new name; fetch the branch lists so the
+            // panel and ahead/behind agree with it.
+            self.as_mut().refresh_git();
+        }
+    }
+
+    fn adopt_git_branches(mut self: Pin<&mut Self>, branches: GitBranches) {
+        let mut local = QStringList::default();
+        let mut current = QString::default();
+        for branch in &branches.local {
+            if branch.is_current {
+                current = QString::from(branch.name.as_str());
+            }
+            local.append(QString::from(branch.name.as_str()));
+        }
+        let mut remote = QStringList::default();
+        for branch in &branches.remote {
+            remote.append(QString::from(branch.name.as_str()));
+        }
+        let mut remotes = QStringList::default();
+        for name in &branches.remotes {
+            remotes.append(QString::from(name.as_str()));
+        }
+
+        self.as_mut()
+            .set_git_root(QString::from(branches.root.as_str()));
+        self.as_mut()
+            .set_git_branch(QString::from(branches.branch.as_str()));
+        self.as_mut().set_git_detached(branches.detached);
+        self.as_mut().set_git_has_upstream(branches.has_upstream);
+        self.as_mut()
+            .set_git_ahead(branches.ahead.min(i32::MAX as u32) as i32);
+        self.as_mut()
+            .set_git_behind(branches.behind.min(i32::MAX as u32) as i32);
+        self.as_mut().set_git_remotes(remotes);
+        self.as_mut().set_git_local_branches(local);
+        self.as_mut().set_git_remote_branches(remote);
+        self.as_mut().set_git_current_branch(current);
+    }
+
+    /// Drops the badge map and every branch property. The qproperty setters
+    /// are skipped when the value is already empty, because each write emits a
+    /// change signal and would rebind the status bar for nothing.
+    fn clear_git_state(mut self: Pin<&mut Self>) {
+        let had_badges = !self.git_entries.is_empty() || self.git_directory_untracked;
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.git_entries.clear();
+            rust.git_directory_untracked = false;
+        }
+        if !self.git_root.as_slice().is_empty() {
+            self.as_mut().set_git_root(QString::default());
+        }
+        if !self.git_branch.as_slice().is_empty() {
+            self.as_mut().set_git_branch(QString::default());
+        }
+        if self.git_detached {
+            self.as_mut().set_git_detached(false);
+        }
+        if self.git_has_upstream {
+            self.as_mut().set_git_has_upstream(false);
+        }
+        if self.git_ahead != 0 {
+            self.as_mut().set_git_ahead(0);
+        }
+        if self.git_behind != 0 {
+            self.as_mut().set_git_behind(0);
+        }
+        if self.git_remotes.len() != 0 {
+            self.as_mut().set_git_remotes(QStringList::default());
+        }
+        if self.git_local_branches.len() != 0 {
+            self.as_mut().set_git_local_branches(QStringList::default());
+        }
+        if self.git_remote_branches.len() != 0 {
+            self.as_mut()
+                .set_git_remote_branches(QStringList::default());
+        }
+        if !self.git_current_branch.as_slice().is_empty() {
+            self.as_mut().set_git_current_branch(QString::default());
+        }
+        if had_badges {
+            self.as_mut().emit_git_badges_changed();
+        }
+    }
+
+    /// Repaints only the Git role for every row. The whole range in one signal
+    /// keeps this O(1) in the model; the view only re-reads its visible
+    /// delegates.
+    fn emit_git_badges_changed(mut self: Pin<&mut Self>) {
+        let count = self.rows.len();
+        if count == 0 {
+            return;
+        }
+        unsafe {
+            let parent = QModelIndex::default();
+            let top = self.as_mut().model_index(0, 0, &parent);
+            let bottom = self.as_mut().model_index(count as i32 - 1, 0, &parent);
+            let mut roles = QList::<i32>::default();
+            roles.append(ROLE_GIT);
+            self.as_mut().data_changed(&top, &bottom, &roles);
+        }
+    }
+
+    fn git_checkout_branch(mut self: Pin<&mut Self>, name: &QString, remote: bool) {
+        let name = name.to_string();
+        if name.trim().is_empty() {
+            self.as_mut()
+                .fail_git_operation("checkout", "分支名不能为空");
+            return;
+        }
+        self.as_mut()
+            .start_git_operation(GitOperation::Checkout { name, remote });
+    }
+
+    fn git_create_branch(mut self: Pin<&mut Self>, name: &QString, checkout: bool) {
+        let name = name.to_string().trim().to_owned();
+        if name.is_empty() {
+            self.as_mut().fail_git_operation("create", "分支名不能为空");
+            return;
+        }
+        self.as_mut()
+            .start_git_operation(GitOperation::Create { name, checkout });
+    }
+
+    fn git_fetch(mut self: Pin<&mut Self>) {
+        self.as_mut().start_git_operation(GitOperation::Fetch);
+    }
+
+    fn git_pull(mut self: Pin<&mut Self>) {
+        self.as_mut().start_git_operation(GitOperation::Pull);
+    }
+
+    fn git_push(mut self: Pin<&mut Self>) {
+        self.as_mut().start_git_operation(GitOperation::Push);
+    }
+
+    fn git_sync(mut self: Pin<&mut Self>) {
+        self.as_mut().start_git_operation(GitOperation::Sync);
+    }
+
+    fn start_git_operation(mut self: Pin<&mut Self>, operation: GitOperation) {
+        if self.git_busy || self.closed {
+            return;
+        }
+        let path = self.path.to_string();
+        if path.is_empty() || !matches!(vfs::scheme_of(&path), Ok(Scheme::Local)) {
+            let kind = operation.kind();
+            self.as_mut()
+                .fail_git_operation(kind, "此目录不支持 Git 操作");
+            return;
+        }
+
+        let kind = operation.kind().to_owned();
+        let success = operation.success_message();
+        self.as_mut().set_git_busy(true);
+        let thread = self.as_mut().qt_thread();
+        crate::runtime::spawn(async move {
+            let result = match operation {
+                GitOperation::Checkout { name, remote } => {
+                    git::git_checkout_branch(path, name, remote).await
+                }
+                GitOperation::Create { name, checkout } => {
+                    git::git_create_branch(path, name, checkout).await
+                }
+                GitOperation::Fetch => git::git_fetch(path).await,
+                GitOperation::Pull => git::git_pull(path).await,
+                GitOperation::Push => git::git_push(path).await,
+                GitOperation::Sync => git::git_sync(path).await,
+            };
+            let _ = thread
+                .queue(move |mut model| model.as_mut().finish_git_operation(kind, success, result));
+        });
+    }
+
+    fn finish_git_operation(
+        mut self: Pin<&mut Self>,
+        kind: String,
+        success: String,
+        result: Result<(), dae_core::error::FileSystemError>,
+    ) {
+        if self.closed {
+            return;
+        }
+        self.as_mut().set_git_busy(false);
+        match result {
+            Ok(()) => {
+                self.as_mut().git_operation_finished(
+                    &QString::from(kind.as_str()),
+                    &QString::from(success.as_str()),
+                );
+                self.as_mut().refresh_git();
+            }
+            Err(error) => {
+                let message = crate::errors::friendly_error(&error.to_string());
+                self.as_mut().git_operation_failed(
+                    &QString::from(kind.as_str()),
+                    &QString::from(message.as_str()),
+                );
+            }
+        }
+    }
+
+    fn fail_git_operation(mut self: Pin<&mut Self>, kind: &str, message: &str) {
+        self.as_mut()
+            .git_operation_failed(&QString::from(kind), &QString::from(message));
     }
 
     fn set_order(
@@ -1087,13 +1575,17 @@ impl qobject::DirectoryListModel {
         // A batch already queued on the Qt thread carries the old generation
         // and is dropped instead of appending to a model its window let go.
         let generation = self.generation.wrapping_add(1);
+        let git_generation = self.git_generation.wrapping_add(1);
         unsafe {
             self.as_mut().begin_reset_model();
             {
                 let mut rust = self.as_mut().rust_mut();
                 rust.generation = generation;
+                rust.git_generation = git_generation;
                 rust.rows.clear();
                 rust.base.clear();
+                rust.git_entries.clear();
+                rust.git_directory_untracked = false;
             }
             self.as_mut().end_reset_model();
         }
@@ -1101,6 +1593,8 @@ impl qobject::DirectoryListModel {
         self.as_mut().set_loaded(0);
         self.as_mut().set_status(QString::from("已关闭"));
         self.as_mut().set_finished(true);
+        self.as_mut().set_git_busy(false);
+        self.as_mut().clear_git_state();
     }
 
     /// Publishes the ancestors of the shown directory to the breadcrumb bar.
@@ -1557,6 +2051,33 @@ fn row_edit(old: &[StoredRow], new: &[StoredRow]) -> (usize, usize, usize) {
     )
 }
 
+/// The coarse Git state QML paints for one direct child.
+///
+/// The core keys entries by the spelling Git reported. On a case-insensitive
+/// filesystem the directory listing can disagree about case, so fall back to
+/// an ASCII-insensitive lookup before treating the row as clean.
+fn git_badge(
+    entries: &HashMap<String, GitEntryStatusKind>,
+    directory_untracked: bool,
+    name: &str,
+) -> &'static str {
+    if directory_untracked {
+        return "untracked";
+    }
+    let kind = entries.get(name).copied().or_else(|| {
+        entries
+            .iter()
+            .find(|(entry, _)| entry.eq_ignore_ascii_case(name))
+            .map(|(_, kind)| *kind)
+    });
+    match kind {
+        Some(GitEntryStatusKind::Added) => "added",
+        Some(GitEntryStatusKind::Modified) => "modified",
+        Some(GitEntryStatusKind::Untracked) => "untracked",
+        None => "",
+    }
+}
+
 /// The listing's `mtime-size`, used to version a per-file icon URL. Type icons
 /// are shared and deliberately not versioned.
 fn icon_version(row: &StoredRow) -> String {
@@ -1610,6 +2131,18 @@ mod tests {
     fn rows_outside_the_base_keep_their_spelling() {
         let row = StoredRow::from_entry(&entry("K:/elsewhere/file.txt"), "K:/dae/");
         assert_eq!(row.path.as_deref(), Some("K:/elsewhere/file.txt"));
+    }
+
+    #[test]
+    fn git_badges_map_core_kinds_and_ignore_file_name_case() {
+        let mut entries = HashMap::new();
+        entries.insert("Readme.md".to_owned(), GitEntryStatusKind::Modified);
+        entries.insert("logo.svg".to_owned(), GitEntryStatusKind::Added);
+        assert_eq!(git_badge(&entries, false, "Readme.md"), "modified");
+        assert_eq!(git_badge(&entries, false, "readme.md"), "modified");
+        assert_eq!(git_badge(&entries, false, "logo.svg"), "added");
+        assert_eq!(git_badge(&entries, false, "clean.txt"), "");
+        assert_eq!(git_badge(&entries, true, "clean.txt"), "untracked");
     }
 
     fn rows(names: &[&str]) -> Vec<StoredRow> {

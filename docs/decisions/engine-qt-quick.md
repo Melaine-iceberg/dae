@@ -404,7 +404,11 @@ F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
   `thumbnail://` provider 解码并缓存。
 - **压缩包**：`qml/ArchivePasswordDialog.qml` +
   `Workspace.compressEntries` / `extractArchive`，加密包走同一套密码重试。
-- **回收站**：§4.6 的 `TrashView.qml` 与三个回收站命令。
+- **Git**：`DirectoryListModel` 在导航/刷新后读取 `get_git_status`（导航时同时
+  读 `list_git_branches`），新增 `gitStatus` 角色画列表的 A/M/U 徽标；状态栏分支
+  chip 显示当前分支与 ↑/↓ 差值并提供同步按钮，`qml/GitPanel.qml` 提供本地/远程
+  分支切换、新建（可选创建后切换）与获取/拉取/推送/同步；失败经
+  `gitOperationFailed` 转成 toast 或新建表单内联错误。
 - **打开方式选择器**：`qml/OpenWithDialog.qml` + `OpenWithModel`；macOS/Linux
   自绘，Windows 仍用原生对话框（详见 §4.10）。
 - **自动更新**：`dae_core::update` + `Updater` 单例 + `qml/UpdateDialog.qml`

@@ -771,12 +771,26 @@ Item {
                 required property string category
                 required property string extension
                 required property string thumbnailSource
+                /// `added`, `modified`, `untracked`, or empty when the file is
+                /// clean. The search model answers empty for every row.
+                required property string gitStatus
 
                 width: ListView.view.width
                 height: root.rowHeight
 
                 readonly property bool showThumbnail: ExplorerPrefs.rowThumbnails
                     && !row.isDir && row.thumbnailSource !== ""
+                readonly property bool hasGitStatus: row.gitStatus !== ""
+                readonly property string gitLetter: row.gitStatus === "added" ? "A"
+                    : (row.gitStatus === "modified" ? "M"
+                        : (row.gitStatus === "untracked" ? "U" : ""))
+                readonly property color gitBadgeColor: row.gitStatus === "modified"
+                    ? (root.dark ? "#d6a44a" : "#9a6700")
+                    : (row.gitStatus === "added"
+                        ? (root.dark ? "#62c073" : "#1a7f37")
+                        : (root.dark ? "#5aa9e6" : "#0969da"))
+                readonly property color gitBadgeBackground: Qt.rgba(gitBadgeColor.r,
+                    gitBadgeColor.g, gitBadgeColor.b, root.dark ? 0.16 : 0.12)
 
                 Rectangle {
                     anchors.fill: parent
@@ -858,7 +872,8 @@ Item {
 
                     Text {
                         id: fileNameText
-                        width: Math.min(implicitWidth, parent.width * 0.62)
+                        width: Math.min(implicitWidth,
+                            Math.max(0, parent.width * 0.62 - (row.hasGitStatus ? 25 : 0)))
                         height: parent.height
                         verticalAlignment: Text.AlignVCenter
                         text: row.fileName
@@ -868,8 +883,27 @@ Item {
                         elide: Text.ElideRight
                     }
 
+                    Rectangle {
+                        width: 15
+                        height: 14
+                        radius: 3
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: row.hasGitStatus
+                        color: row.gitBadgeBackground
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: row.gitLetter
+                            color: row.gitBadgeColor
+                            font.pixelSize: 9
+                            font.weight: Font.DemiBold
+                            textFormat: Text.PlainText
+                        }
+                    }
+
                     Text {
-                        width: Math.max(0, parent.width - fileNameText.width - parent.spacing)
+                        width: Math.max(0, parent.width - fileNameText.width - parent.spacing
+                            - (row.hasGitStatus ? 25 : 0))
                         height: parent.height
                         verticalAlignment: Text.AlignVCenter
                         visible: row.relativePath !== row.fileName && row.relativePath !== ""

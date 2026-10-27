@@ -34,6 +34,18 @@ pub(crate) fn friendly_error(message: &str) -> String {
         }
         return format!("操作失败：{detail}");
     }
+    // Git codes arrive wrapped in `NotFound`/`AlreadyExists` too. Only known
+    // codes are translated; an unrecognized path stays in the core's words.
+    if let Some(detail) = message.strip_prefix("The requested path was not found: ")
+        && let Some(text) = friendly_code(detail)
+    {
+        return text.to_owned();
+    }
+    if let Some(detail) = message.strip_prefix("An item already exists at the destination: ")
+        && let Some(text) = friendly_code(detail)
+    {
+        return text.to_owned();
+    }
     if let Some(detail) = message.strip_prefix("Permission was denied: ") {
         if message.contains("rejected the connection") {
             return "服务器拒绝了连接，请填写账号和密码后重试".to_owned();
@@ -87,6 +99,34 @@ fn friendly_code(code: &str) -> Option<&'static str> {
         Some("所选项目已不在回收站")
     } else if code.starts_with("fs.trash_restore_no_origin") {
         Some("无法确定该项目的原位置")
+    } else if code.starts_with("git.not_a_worktree") {
+        Some("这个目录不在 Git 仓库中")
+    } else if code.starts_with("git.branch_not_found") {
+        Some("找不到这个分支")
+    } else if code.starts_with("git.branch_exists") {
+        Some("同名分支已经存在")
+    } else if code.starts_with("git.invalid_branch_name") {
+        Some("分支名不合法")
+    } else if code.starts_with("git.empty_repo") {
+        Some("仓库还没有提交，无法创建分支")
+    } else if code.starts_with("git.no_remote") {
+        Some("仓库没有配置远程地址")
+    } else if code.starts_with("git.no_upstream") {
+        Some("当前分支还没有上游分支")
+    } else if code.starts_with("git.detached_head") {
+        Some("当前处于分离 HEAD 状态，请先切换到一个分支")
+    } else if code.starts_with("git.checkout_failed") {
+        Some("切换分支失败，请先提交或暂存本地改动")
+    } else if code.starts_with("git.create_branch_failed") {
+        Some("创建分支失败")
+    } else if code.starts_with("git.fetch_failed") {
+        Some("获取远程更新失败，请检查网络和远程地址")
+    } else if code.starts_with("git.pull_failed") {
+        Some("拉取失败，请先处理本地改动或冲突")
+    } else if code.starts_with("git.push_failed") {
+        Some("推送失败，请先拉取远程更新")
+    } else if code.starts_with("git.git_not_found") {
+        Some("未找到 git 命令，请先安装 Git")
     } else {
         None
     }
@@ -124,6 +164,32 @@ mod tests {
         assert_eq!(
             friendly_error("The requested operation has invalid input: fs.something_new"),
             "输入无效：fs.something_new"
+        );
+    }
+
+    #[test]
+    fn git_codes_are_translated_in_every_wrapper() {
+        assert_eq!(
+            friendly_error("The requested path was not found: git.not_a_worktree"),
+            "这个目录不在 Git 仓库中"
+        );
+        assert_eq!(
+            friendly_error("An item already exists at the destination: git.branch_exists"),
+            "同名分支已经存在"
+        );
+        assert_eq!(
+            friendly_error("The requested operation has invalid input: git.no_upstream"),
+            "当前分支还没有上游分支"
+        );
+        assert_eq!(
+            friendly_error(
+                "The directory operation could not complete: git.checkout_failed: local changes"
+            ),
+            "切换分支失败，请先提交或暂存本地改动"
+        );
+        assert_eq!(
+            friendly_error("The directory operation could not complete: git.fetch_failed: timeout"),
+            "获取远程更新失败，请检查网络和远程地址"
         );
     }
 
