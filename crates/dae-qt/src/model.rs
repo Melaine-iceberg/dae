@@ -10,17 +10,24 @@
 //! from the old directory that was already queued is dropped instead of being
 //! appended to the new one (which would show the wrong files under the right
 //! path).
+//!
+//! The core also arms a watcher for the displayed directory, so a change made
+//! outside the shell (Explorer, a terminal, another app) reaches this model as
+//! a reload instead of waiting for F5.
 
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use dae_core::fs::entry_codec::{self, ListingRow};
 use dae_core::fs::listing::{self, Batch, BatchTarget};
 use dae_core::fs::vfs::{self, Scheme};
+use dae_core::fs::watch;
 use dae_core::host::{Event, Host};
 use dae_core::types::{DirectoryEntry, EntryKind};
 
@@ -187,7 +194,6 @@ impl StoredRow {
     }
 }
 
-#[derive(Default)]
 pub struct DirectoryListModelRust {
     loaded: i32,
     finished: bool,
@@ -201,6 +207,43 @@ pub struct DirectoryListModelRust {
     /// carries a file extension, so the icon URL is built from it rather than
     /// from the full path. Exposed to QML so local-only actions can be gated.
     remote: bool,
+    /// This model's identity in the core watcher registry. One id for the
+    /// model's whole life: navigation re-targets the observation rather than
+    /// minting a new one, so a slow arm cannot leave a stale watcher behind.
+    watcher_id: String,
+    /// A change arrived while a read was in flight. Re-reading now would cancel
+    /// that read, so the reload waits for it to finish instead.
+    reload_pending: bool,
+    /// `dispose` ran and released the watcher; a reload already queued on the
+    /// Qt thread must not revive a closed model.
+    closed: bool,
+}
+
+impl Default for DirectoryListModelRust {
+    fn default() -> Self {
+        Self {
+            loaded: 0,
+            finished: false,
+            status: QString::default(),
+            path: QString::default(),
+            rows: Vec::new(),
+            base: String::new(),
+            stream_id: None,
+            generation: 0,
+            remote: false,
+            watcher_id: next_watcher_id(),
+            reload_pending: false,
+            closed: false,
+        }
+    }
+}
+
+impl Drop for DirectoryListModelRust {
+    fn drop(&mut self) {
+        // `dispose` normally released this already; a model the shell let go
+        // without disposing must not leave an OS watcher running.
+        watch::unwatch_directory(self.watcher_id.clone());
+    }
 }
 
 impl qobject::DirectoryListModel {
@@ -292,6 +335,8 @@ impl qobject::DirectoryListModel {
                 rust.generation = generation;
                 rust.rows.clear();
                 rust.base.clear();
+                rust.reload_pending = false;
+                rust.closed = false;
             }
             self.as_mut().end_reset_model();
         }
@@ -315,35 +360,50 @@ impl qobject::DirectoryListModel {
         self.as_mut().rust_mut().stream_id = Some(stream_id.clone());
 
         let thread = self.as_mut().qt_thread();
-        let target = Arc::new(QtBatchTarget::new(thread, generation));
+        let target = Arc::new(QtBatchTarget::new(thread.clone(), generation));
+        let watch_host: Arc<dyn Host> = Arc::new(ListingHost::new(thread));
         let worker = Arc::clone(&target);
         let requested_path = requested.clone();
+        let watcher_id = self.watcher_id.clone();
 
         std::thread::spawn(move || {
             if remote {
-                match vfs::resolve(&requested_path)
-                    .and_then(|backend| backend.read_dir(&requested_path))
-                {
-                    Ok(view) => {
-                        let base = entry_codec::base_of(&view.path);
-                        let rows = view
-                            .entries
-                            .iter()
-                            .map(|entry| StoredRow::from_entry(entry, &base))
-                            .collect();
-                        worker.deliver_head(base, view.path, rows, true);
+                match vfs::resolve(&requested_path) {
+                    Ok(backend) => {
+                        // Armed before the read, like the local arm: a change
+                        // landing during enumeration is either in the view or
+                        // reported as an event.
+                        watch::arm_polling_watcher(
+                            Arc::clone(&watch_host),
+                            &requested_path,
+                            backend.clone(),
+                            &watcher_id,
+                        );
+                        match backend.read_dir(&requested_path) {
+                            Ok(view) => {
+                                let base = entry_codec::base_of(&view.path);
+                                let rows = view
+                                    .entries
+                                    .iter()
+                                    .map(|entry| StoredRow::from_entry(entry, &base))
+                                    .collect();
+                                worker.deliver_head(base, view.path, rows, true);
+                            }
+                            Err(error) => {
+                                worker.fail(crate::errors::friendly_error(&error.to_string()))
+                            }
+                        }
                     }
                     Err(error) => worker.fail(crate::errors::friendly_error(&error.to_string())),
                 }
                 return;
             }
 
-            let host: Arc<dyn Host> = Arc::new(ListingHost);
             match listing::open_streamed_listing(
-                host,
+                watch_host,
                 PathBuf::from(&requested_path),
                 stream_id,
-                None,
+                Some(watcher_id),
                 worker.clone(),
             ) {
                 Ok(view) => {
@@ -392,6 +452,9 @@ impl qobject::DirectoryListModel {
     }
 
     fn dispose(mut self: Pin<&mut Self>) {
+        watch::unwatch_directory(self.watcher_id.clone());
+        self.as_mut().rust_mut().closed = true;
+        self.as_mut().rust_mut().reload_pending = false;
         if let Some(stream_id) = self.as_mut().rust_mut().stream_id.take() {
             listing::cancel_directory_listing(stream_id);
         }
@@ -449,14 +512,43 @@ impl qobject::DirectoryListModel {
         }
 
         if done {
+            let pending = self.reload_pending;
             self.as_mut().rust_mut().stream_id = None;
+            if pending {
+                self.as_mut().rust_mut().reload_pending = false;
+            }
             let total = first + added;
             // Status before `finished`: QML reads the status in
             // `onFinishedChanged`, which is emitted synchronously.
             self.as_mut()
                 .set_status(QString::from(format!("{total} 项")));
             self.as_mut().set_finished(true);
+            // A change arrived during this read, so the rows just shown may
+            // already be stale. Re-read now that the stream is over instead of
+            // cancelling it mid-flight.
+            if pending {
+                self.as_mut().reload();
+            }
         }
+    }
+
+    /// A watcher reported a change in `changed`. `changed` is re-checked
+    /// because an arm that lost a navigation can still have an event in flight.
+    fn reload_after_change(mut self: Pin<&mut Self>, changed: &str) {
+        if self.closed {
+            return;
+        }
+        if self.stream_id.is_some() {
+            // The displayed path may still be the requested spelling while the
+            // head is in flight; the reload waits for it to adopt the
+            // canonical one instead of being dropped by the comparison below.
+            self.as_mut().rust_mut().reload_pending = true;
+            return;
+        }
+        if self.path.to_string() != changed {
+            return;
+        }
+        self.as_mut().reload();
     }
 
     fn mark_failed(mut self: Pin<&mut Self>, generation: u64, message: String) {
@@ -464,21 +556,80 @@ impl qobject::DirectoryListModel {
             return;
         }
         self.as_mut().rust_mut().stream_id = None;
+        self.as_mut().rust_mut().reload_pending = false;
         self.as_mut().set_status(QString::from(message));
         self.as_mut().set_finished(true);
     }
 }
 
-/// The event seam for this listing.
+/// Forwards the directory watcher's events into the model's Qt thread.
 ///
-/// The model passes `watcher_id = None`, so the core does not arm a directory
-/// watcher and this sink is never called. Watcher-to-QML delivery arrives with
-/// the browsing slice; until then this stays an explicit no-op rather than a
-/// background thread that pretends to listen.
-struct ListingHost;
+/// The core arms a watcher for the directory this listing displays (see
+/// `dae_core::fs::listing::open_streamed_listing`), and the watcher reports
+/// changes here. A burst — a copy, an extraction — is coalesced: the reload is
+/// delivered once the burst has been quiet for [`CHANGE_DEBOUNCE`], so a
+/// directory being written into is not reset once per file.
+struct ListingHost {
+    thread: cxx_qt::CxxQtThread<qobject::DirectoryListModel>,
+    /// Created on the first event, so a load whose watcher was already armed
+    /// (the steady-state refresh) costs nothing.
+    changes: Mutex<Option<mpsc::Sender<String>>>,
+}
+
+impl ListingHost {
+    fn new(thread: cxx_qt::CxxQtThread<qobject::DirectoryListModel>) -> Self {
+        Self {
+            thread,
+            changes: Mutex::new(None),
+        }
+    }
+}
 
 impl Host for ListingHost {
-    fn emit(&self, _event: Event) {}
+    fn emit(&self, event: Event) {
+        let Event::DirectoryChanged { path, .. } = event else {
+            return;
+        };
+
+        let mut changes = self.changes.lock().expect("listing host lock poisoned");
+        let sender = changes.get_or_insert_with(|| {
+            let (sender, receiver) = mpsc::channel();
+            let thread = self.thread.clone();
+            std::thread::spawn(move || forward_changes(receiver, thread));
+            sender
+        });
+        let _ = sender.send(path);
+    }
+}
+
+/// How long a watcher burst has to go quiet before its reload is delivered.
+/// Matches the web shell's debounce, and stays below the interval at which a
+/// person notices the list is stale.
+const CHANGE_DEBOUNCE: Duration = Duration::from_millis(150);
+
+fn forward_changes(
+    changes: mpsc::Receiver<String>,
+    thread: cxx_qt::CxxQtThread<qobject::DirectoryListModel>,
+) {
+    let mut pending = match changes.recv() {
+        Ok(path) => path,
+        Err(_) => return,
+    };
+
+    loop {
+        match changes.recv_timeout(CHANGE_DEBOUNCE) {
+            Ok(path) => pending = path,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let changed = pending;
+                let _ = thread.queue(move |mut model| model.as_mut().reload_after_change(&changed));
+                pending = match changes.recv() {
+                    Ok(path) => path,
+                    Err(_) => return,
+                };
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        }
+    }
 }
 
 /// The shell end of `dae_core::fs::listing::BatchTarget`.
@@ -562,6 +713,13 @@ impl BatchTarget for QtBatchTarget {
 fn next_stream_id() -> String {
     static NEXT: AtomicU64 = AtomicU64::new(1);
     format!("qt-{}", NEXT.fetch_add(1, Ordering::Relaxed))
+}
+
+/// A distinct registry key per model, so two tabs showing the same directory
+/// each keep their own observation (one arm must not steal the other's).
+fn next_watcher_id() -> String {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    format!("qt-view-{}", NEXT.fetch_add(1, Ordering::Relaxed))
 }
 
 /// The listing's `mtime-size`, used to version a per-file icon URL. Type icons
