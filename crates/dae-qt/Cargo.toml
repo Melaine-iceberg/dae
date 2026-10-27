@@ -10,6 +10,7 @@ publish = false
 # `dae-core`; a `QObject`, `QQuickWindow` or `cxx_qt::` import must not appear
 # there. See docs/decisions/engine-qt-quick.md §4.
 [dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 cxx = "1"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["full"] }

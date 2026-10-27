@@ -3,16 +3,18 @@ import QtQuick
 import QtQuick.Window
 import dae 1.0
 
-// The explorer listing. Delegates stay at 26 dp, recycle, and read nothing but
-// finished strings from the model. Selection lives on the tab object so it
-// survives a tab switch and travels with a torn-off tab.
+// The explorer listing. Three presentations over one model: the detail list,
+// the card grid and Miller columns. Only the list has a header; the other two
+// describe the same rows with their own geometry. Selection lives on the tab
+// object so it survives a tab switch, a view change and a torn-off tab.
 Item {
     id: root
 
     property var tab: null
     /// Set while a filename search is showing. The same delegate and selection
     /// code then work for search rows, which expose the listing's roles plus
-    /// `relativePath`.
+    /// `relativePath`. Search always uses the list: sorting and drilling are
+    /// listing operations, not result operations.
     property var searchModel: null
     property bool dark: true
     property color headerColor: dark ? "#14161a" : "#f4f6f8"
@@ -21,11 +23,23 @@ Item {
     readonly property var model: searchModel !== null ? searchModel
         : (tab !== null ? tab.listing : null)
     /// The tab is browsing a network backend, so local-only actions (OS open,
-    /// recycle bin) are routed through the window instead of failing.
+    /// recycle bin, thumbnail extraction) are routed through the window.
     readonly property bool remote: tab !== null
         && (tab.listing.remote
             || /^(smb|sftp|ftp|webdav|webdavs|cloud):\/\//i.test(tab.listing.path))
-    readonly property int rowHeight: 26
+    readonly property string viewMode: searchModel !== null ? "list" : ExplorerPrefs.viewMode
+    readonly property string density: ExplorerPrefs.density
+    readonly property int rowHeight: density === "compact" ? 28
+        : density === "spacious" ? 44 : 34
+    readonly property int headerHeight: 32
+    readonly property bool listHeaderVisible: viewMode === "list" && searchModel === null
+    /// Detail columns are dropped, not squeezed, when the pane is narrow: a
+    /// split pane at half of a 1180px window has room for the name and the
+    /// timestamp, not for four columns of ellipses.
+    readonly property bool showModified: width >= 360
+    readonly property bool showSize: width >= 470
+    readonly property bool showType: width >= 550
+    readonly property int listingTop: listHeaderVisible ? headerHeight : 0
     readonly property color contentColor: dark ? "#191b1f" : "#ffffff"
     readonly property color alternateColor: dark ? "#15181e" : "#f7f8fa"
     readonly property color textColor: dark ? "#e6e9ef" : "#1c1f24"
@@ -88,23 +102,84 @@ Item {
         return paths
     }
 
-    /// Keyboard focus lives on the inner ListView, not on this container.
+    /// Pushes the display preferences into the tab's model. Ordering is
+    /// applied in place; a filter change re-reads the directory, because the
+    /// rows that survive the predicate are a different listing.
+    function applyViewPreferences() {
+        if (root.tab === null)
+            return
+        root.tab.listing.setOrder(ExplorerPrefs.sortKey, ExplorerPrefs.sortOrder,
+                                  ExplorerPrefs.foldersFirst)
+        root.tab.listing.setFilters(ExplorerPrefs.showHiddenFiles, ExplorerPrefs.kindFilter,
+                                    ExplorerPrefs.modifiedFilter, ExplorerPrefs.sizeFilter)
+    }
+
+    onTabChanged: applyViewPreferences()
+    Component.onCompleted: applyViewPreferences()
+
+    Connections {
+        target: ExplorerPrefs
+        function onSortKeyChanged() { root.applyViewPreferences() }
+        function onSortOrderChanged() { root.applyViewPreferences() }
+        function onFoldersFirstChanged() { root.applyViewPreferences() }
+        function onShowHiddenFilesChanged() { root.applyViewPreferences() }
+        function onKindFilterChanged() { root.applyViewPreferences() }
+        function onModifiedFilterChanged() { root.applyViewPreferences() }
+        function onSizeFilterChanged() { root.applyViewPreferences() }
+    }
+
+    /// Keyboard focus lives on the view that is showing, not on this container.
     function takeFocus() {
-        list.forceActiveFocus()
+        if (viewMode === "grid")
+            gridView.takeFocus()
+        else if (viewMode === "column")
+            columnView.takeFocus()
+        else
+            list.forceActiveFocus()
+    }
+
+    function cursorIndex() {
+        if (viewMode === "grid")
+            return gridView.cursorIndex()
+        return list.currentIndex
     }
 
     function currentPath() {
-        if (root.model === null || list.currentIndex < 0)
+        return root.pathAtIndex(root.cursorIndex())
+    }
+
+    function pathAtIndex(index) {
+        if (root.model === null || index < 0)
             return ""
-        return root.model.pathAt(list.currentIndex)
+        return root.model.pathAt(index)
+    }
+
+    /// Clicking the active column toggles direction; a new column starts at
+    /// its conventional direction, matching the detail view in the old shell.
+    function applySort(key) {
+        if (ExplorerPrefs.sortKey === key) {
+            ExplorerPrefs.setString("sortOrder",
+                                    ExplorerPrefs.sortOrder === "asc" ? "desc" : "asc")
+            return
+        }
+        ExplorerPrefs.setString("sortKey", key)
+        ExplorerPrefs.setString("sortOrder",
+                                (key === "modified" || key === "size") ? "desc" : "asc")
+    }
+
+    function toggleHiddenFiles() {
+        ExplorerPrefs.setBool("showHiddenFiles", !ExplorerPrefs.showHiddenFiles)
     }
 
     function handleClick(index, ctrl, shift) {
         if (root.tab === null || root.model === null)
             return
-        list.forceActiveFocus()
-        list.currentIndex = index
-        const path = root.model.pathAt(index)
+        root.takeFocus()
+        if (viewMode === "grid")
+            gridView.setCursor(index)
+        else
+            list.currentIndex = index
+        const path = root.pathAtIndex(index)
         if (path === "")
             return
 
@@ -133,12 +208,14 @@ Item {
     }
 
     function handleActivate(index) {
-        if (root.model === null)
-            return
-        const path = root.model.pathAt(index)
+        const path = root.pathAtIndex(index)
         if (path === "")
             return
-        if (root.model.isDirectoryAt(index))
+        root.activatePath(path, root.model.isDirectoryAt(index))
+    }
+
+    function activatePath(path, isDir) {
+        if (isDir)
             root.navigateRequested(path)
         else if (root.remote)
             root.remoteOpenRequested(path)
@@ -175,8 +252,10 @@ Item {
         root.pendingFocus = ""
         if (index < 0)
             return
-        list.currentIndex = index
-        list.positionViewAtIndex(index, ListView.Contain)
+        if (viewMode === "grid")
+            gridView.setCursor(index)
+        else
+            list.currentIndex = index
         root.tab.selectOnly(path)
         root.selectionChanged()
     }
@@ -186,7 +265,7 @@ Item {
     /// last moment it exists. Stored on the tab, keyed by the directory.
     /// Returns whether there was a position to remember.
     function saveScroll() {
-        if (root.tab === null || root.searchModel !== null)
+        if (root.tab === null || root.searchModel !== null || viewMode !== "list")
             return false
         const path = root.tab.listing.path
         if (path === "")
@@ -206,7 +285,7 @@ Item {
     /// length of the read. Called again on every batch until it succeeds.
     function restoreScroll() {
         if (!root.scrollPending || root.tab === null || root.searchModel !== null
-                || root.pendingFocus !== "")
+                || root.pendingFocus !== "" || viewMode !== "list")
             return
         const state = root.tab.scrollState[root.tab.listing.path]
         if (!state) {
@@ -255,7 +334,7 @@ Item {
                 || root.remote || index < 0)
             return
 
-        const path = root.model.pathAt(index)
+        const path = root.pathAtIndex(index)
         if (path === "")
             return
 
@@ -355,11 +434,15 @@ Item {
         return action === "link" || !allHere
     }
 
-    /// The folder under `y`: a directory row is the target, anything else
+    /// The folder under `x`,`y`: a directory row is the target, anything else
     /// (a file row, the empty area) means the directory on screen.
     function dropTargetAt(x, y) {
         if (root.model === null || root.model.path === "")
             return ""
+        if (root.viewMode === "grid")
+            return gridView.dropDirectoryAt(x, y)
+        if (root.viewMode === "column")
+            return root.model.path
         const index = list.indexAt(x, list.contentY + y)
         if (index >= 0 && root.model.isDirectoryAt(index))
             return root.model.pathAt(index)
@@ -416,6 +499,7 @@ Item {
     function handleKey(event) {
         const ctrl = (event.modifiers & Qt.ControlModifier) !== 0
         const shift = (event.modifiers & Qt.ShiftModifier) !== 0
+        const index = root.cursorIndex()
 
         if (event.key === Qt.Key_Delete) {
             root.deleteSelection(shift)
@@ -446,8 +530,8 @@ Item {
             return true
         }
         if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            if (list.currentIndex >= 0)
-                root.handleActivate(list.currentIndex)
+            if (index >= 0)
+                root.handleActivate(index)
             return true
         }
         if (ctrl && shift && event.key === Qt.Key_N) {
@@ -471,6 +555,10 @@ Item {
                 Workspace.pasteInto(root.model.path)
             return true
         }
+        if (ctrl && event.key === Qt.Key_H) {
+            root.toggleHiddenFiles()
+            return true
+        }
         if (ctrl && shift && event.key === Qt.Key_Z) {
             Workspace.redo()
             return true
@@ -480,6 +568,47 @@ Item {
             return true
         }
         return false
+    }
+
+    Connections {
+        target: ExplorerPrefs
+        function onViewModeChanged() {
+            Qt.callLater(root.takeFocus)
+        }
+    }
+
+    component SortHeader: Item {
+        id: cell
+
+        property string label: ""
+        property string sortKey: ""
+        property bool alignRight: false
+        readonly property bool active: ExplorerPrefs.sortKey === cell.sortKey
+
+        signal clicked()
+
+        Text {
+            anchors.left: cell.alignRight ? undefined : parent.left
+            anchors.right: cell.alignRight ? parent.right : undefined
+            anchors.leftMargin: cell.alignRight ? 0 : 8
+            anchors.rightMargin: cell.alignRight ? 8 : 0
+            anchors.verticalCenter: parent.verticalCenter
+            text: cell.label + (cell.active
+                ? (ExplorerPrefs.sortOrder === "asc" ? "  \u25B2" : "  \u25BC")
+                : "")
+            horizontalAlignment: cell.alignRight ? Text.AlignRight : Text.AlignLeft
+            color: cell.active ? root.textColor : root.mutedColor
+            font.pixelSize: 11
+            font.weight: Font.DemiBold
+            elide: Text.ElideRight
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: cell.clicked()
+        }
     }
 
     Rectangle {
@@ -492,248 +621,504 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: 34
+        height: root.headerHeight
+        visible: root.listHeaderVisible
         color: root.headerColor
 
-        Text {
-            x: 36
-            anchors.verticalCenter: parent.verticalCenter
-            text: "名称"
-            color: root.mutedColor
-            font.pixelSize: 12
+        SortHeader {
+            id: nameHeader
+            anchors.left: parent.left
+            anchors.leftMargin: 36
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: Math.max(0, (root.showType ? typeHeader.x
+                : root.showSize ? sizeHeader.x
+                : root.showModified ? modifiedHeader.x : parent.width) - 8 - x)
+            label: "名称"
+            sortKey: "name"
+            onClicked: root.applySort("name")
         }
 
-        Text {
-            anchors.right: modifiedLeft.left
+        SortHeader {
+            id: typeHeader
+            anchors.right: root.showSize ? sizeHeader.left
+                : (root.showModified ? modifiedHeader.left : parent.right)
+            anchors.rightMargin: 16
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: 58
+            visible: root.showType
+            label: "类型"
+            sortKey: "type"
+            onClicked: root.applySort("type")
+        }
+
+        SortHeader {
+            id: sizeHeader
+            anchors.right: root.showModified ? modifiedHeader.left : parent.right
             anchors.rightMargin: 24
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
             width: 90
-            horizontalAlignment: Text.AlignRight
-            text: "大小"
-            color: root.mutedColor
-            font.pixelSize: 12
+            visible: root.showSize
+            label: "大小"
+            sortKey: "size"
+            alignRight: true
+            onClicked: root.applySort("size")
         }
 
-        Item {
-            id: modifiedLeft
-            anchors.right: parent.right
-            anchors.rightMargin: 156
-            width: 1
-            height: 1
-        }
-
-        Text {
+        SortHeader {
+            id: modifiedHeader
             anchors.right: parent.right
             anchors.rightMargin: 16
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
             width: 140
-            horizontalAlignment: Text.AlignRight
-            text: "修改时间"
+            visible: root.showModified
+            label: "修改时间"
+            sortKey: "modified"
+            alignRight: true
+            onClicked: root.applySort("modified")
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            color: root.hairline
+        }
+    }
+
+    Item {
+        id: viewport
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.topMargin: root.listingTop
+        anchors.bottom: parent.bottom
+
+        Text {
+            anchors.centerIn: parent
+            visible: root.model !== null && root.model.finished && root.model.loaded === 0
+            text: root.searchModel !== null
+                ? (root.searchModel.status !== "" ? root.searchModel.status : "没有匹配项")
+                : (root.model !== null && root.model.status !== "0 项"
+                    ? root.model.status : "空目录")
             color: root.mutedColor
-            font.pixelSize: 12
-        }
-    }
-
-    Text {
-        anchors.centerIn: parent
-        visible: root.model !== null && root.model.finished && root.model.loaded === 0
-        text: root.searchModel !== null
-            ? (root.searchModel.status !== "" ? root.searchModel.status : "没有匹配项")
-            : (root.model !== null && root.model.status !== "0 项"
-                ? root.model.status : "空目录")
-        color: root.mutedColor
-        font.pixelSize: 13
-    }
-
-    /// The space under the last row is part of the listing to a user, so a
-    /// right-click there has to open the empty-area menu. It sits behind the
-    /// ListView: the delegates' own right-clicks are above it, and the
-    /// Flickable only claims the left button.
-    MouseArea {
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: columnHeader.bottom
-        anchors.bottom: parent.bottom
-        acceptedButtons: Qt.RightButton
-        onPressed: function (mouse) {
-            const point = mapToItem(null, mouse.x, mouse.y)
-            root.emptyContextRequested(point.x, point.y)
-        }
-    }
-
-    ListView {
-        id: list
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: columnHeader.bottom
-        anchors.bottom: parent.bottom
-        model: root.model
-        reuseItems: true
-        cacheBuffer: 2600
-        clip: true
-        focus: true
-        boundsBehavior: Flickable.StopAtBounds
-        spacing: 0
-        currentIndex: -1
-
-        /// A tap anywhere in the viewport — including the empty space below
-        /// the last row — moves keyboard focus here, so an input that lost
-        /// its composition (the path bar) also loses focus.
-        TapHandler {
-            acceptedButtons: Qt.LeftButton
-            onTapped: root.takeFocus()
+            font.pixelSize: 13
         }
 
-        Keys.onPressed: function (event) {
-            if (root.handleKey(event))
-                event.accepted = true
+        /// The space under the last row is part of the listing to a user, so
+        /// a right-click there has to open the empty-area menu. It sits
+        /// behind the views: the delegates' own right-clicks are above it.
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.RightButton
+            onPressed: function (mouse) {
+                const point = mapToItem(null, mouse.x, mouse.y)
+                root.emptyContextRequested(point.x, point.y)
+            }
         }
 
-        delegate: Item {
-            id: row
+        ListView {
+            id: list
+            anchors.fill: parent
+            visible: root.viewMode === "list"
+            model: root.model
+            reuseItems: true
+            cacheBuffer: 2600
+            clip: true
+            focus: true
+            boundsBehavior: Flickable.StopAtBounds
+            spacing: 0
+            currentIndex: -1
 
-            required property int index
-            required property string fileName
-            required property string filePath
-            required property string relativePath
-            required property string sizeText
-            required property string modifiedText
-            required property bool isDir
-            required property bool hidden
-            required property bool readOnly
-            required property string iconSource
-
-            width: ListView.view.width
-            height: root.rowHeight
-
-            Rectangle {
-                anchors.fill: parent
-                color: (root.tab !== null && root.tab.isSelected(row.filePath))
-                    ? root.selectionColor
-                    : (list.currentIndex === row.index
-                        ? (root.dark ? "#1d2026" : "#eef1f5")
-                        : (root.dropTargetPath !== "" && row.isDir
-                            && row.filePath === root.dropTargetPath
-                            ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b,
-                                      root.dark ? 0.24 : 0.14)
-                            : (row.index % 2 === 0 ? root.contentColor : root.alternateColor)))
+            /// A tap anywhere in the viewport — including the empty space
+            /// below the last row — moves keyboard focus here.
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onTapped: root.takeFocus()
             }
 
-            Rectangle {
-                x: 12
-                y: 6
-                width: 14
-                height: 14
-                radius: 3
-                color: row.isDir ? root.accent : (row.readOnly ? "#59606e" : "#3b4250")
-                visible: rowIcon.status !== Image.Ready
+            Keys.onPressed: function (event) {
+                if (root.handleKey(event))
+                    event.accepted = true
             }
 
-            Image {
-                id: rowIcon
-                x: 9
-                y: 4
-                width: 18
-                height: 18
-                source: row.iconSource
-                sourceSize.width: Math.round(18 * Screen.devicePixelRatio)
-                sourceSize.height: Math.round(18 * Screen.devicePixelRatio)
-                fillMode: Image.PreserveAspectFit
-                smooth: true
-                visible: status === Image.Ready
-                Accessible.ignored: true
-            }
+            delegate: Item {
+                id: row
 
-            Row {
-                x: 36
-                width: Math.max(0, row.width - 36 - 340)
-                height: parent.height
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 10
+                required property int index
+                required property string fileName
+                required property string filePath
+                required property string relativePath
+                required property string sizeText
+                required property string modifiedText
+                required property bool isDir
+                required property bool hidden
+                required property bool readOnly
+                required property string iconSource
+                required property string category
+                required property string extension
+                required property string thumbnailSource
+
+                width: ListView.view.width
+                height: root.rowHeight
+
+                readonly property bool showThumbnail: ExplorerPrefs.rowThumbnails
+                    && !row.isDir && row.thumbnailSource !== ""
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: (root.tab !== null && root.tab.isSelected(row.filePath))
+                        ? root.selectionColor
+                        : (list.currentIndex === row.index
+                            ? (root.dark ? "#1d2026" : "#eef1f5")
+                            : (root.dropTargetPath !== "" && row.isDir
+                                && row.filePath === root.dropTargetPath
+                                ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b,
+                                          root.dark ? 0.24 : 0.14)
+                                : (row.index % 2 === 0 ? root.contentColor : root.alternateColor)))
+                }
+
+                Rectangle {
+                    x: 11
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 16
+                    height: 16
+                    radius: 3
+                    color: row.isDir ? root.accent : (row.readOnly ? "#59606e" : "#3b4250")
+                    visible: !row.showThumbnail && ExplorerPrefs.iconStyle === "system"
+                        && rowIcon.status !== Image.Ready
+                }
+
+                Image {
+                    id: rowIcon
+                    x: 9
+                    width: 20
+                    height: 20
+                    anchors.verticalCenter: parent.verticalCenter
+                    source: row.showThumbnail || ExplorerPrefs.iconStyle !== "system"
+                        ? "" : row.iconSource
+                    sourceSize.width: Math.round(20 * Screen.devicePixelRatio)
+                    sourceSize.height: Math.round(20 * Screen.devicePixelRatio)
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    visible: !row.showThumbnail && ExplorerPrefs.iconStyle === "system"
+                        && status === Image.Ready
+                    Accessible.ignored: true
+                }
+
+                Image {
+                    x: 8
+                    width: 22
+                    height: 22
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: row.showThumbnail
+                    source: row.showThumbnail ? row.thumbnailSource : ""
+                    sourceSize.width: Math.round(44 * Screen.devicePixelRatio)
+                    sourceSize.height: Math.round(44 * Screen.devicePixelRatio)
+                    fillMode: Image.PreserveAspectFit
+                    asynchronous: true
+                    smooth: true
+                    Accessible.ignored: true
+                }
+
+                ThemedIcon {
+                    x: 9
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: !row.showThumbnail && ExplorerPrefs.iconStyle === "themed"
+                    category: row.category
+                    extension: row.extension
+                    isDir: row.isDir
+                    size: 18
+                    dark: root.dark
+                    accent: root.accent
+                }
+
+                Row {
+                    id: nameCell
+                    x: 36
+                    width: Math.max(0, (root.showType ? typeTextItem.x
+                        : root.showSize ? sizeTextItem.x
+                        : root.showModified ? modifiedTextItem.x : row.width) - 8 - x)
+                    height: parent.height
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 10
+
+                    Text {
+                        id: fileNameText
+                        width: Math.min(implicitWidth, parent.width * 0.62)
+                        height: parent.height
+                        verticalAlignment: Text.AlignVCenter
+                        text: row.fileName
+                        color: row.hidden ? (root.dark ? "#6b7280" : "#9aa1ad") : root.textColor
+                        font.pixelSize: 13
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        width: Math.max(0, parent.width - fileNameText.width - parent.spacing)
+                        height: parent.height
+                        verticalAlignment: Text.AlignVCenter
+                        visible: row.relativePath !== row.fileName && row.relativePath !== ""
+                        text: row.relativePath !== row.fileName ? row.relativePath : ""
+                        color: root.mutedColor
+                        font.pixelSize: 11
+                        textFormat: Text.PlainText
+                        elide: Text.ElideMiddle
+                    }
+                }
 
                 Text {
-                    id: fileNameText
-                    width: Math.min(implicitWidth, parent.width * 0.6)
-                    height: parent.height
-                    verticalAlignment: Text.AlignVCenter
-                    text: row.fileName
-                    color: row.hidden ? (root.dark ? "#6b7280" : "#9aa1ad") : root.textColor
-                    font.pixelSize: 13
+                    id: typeTextItem
+                    anchors.right: root.showSize ? sizeTextItem.left
+                        : (root.showModified ? modifiedTextItem.left : parent.right)
+                    anchors.rightMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 58
+                    visible: root.showType
+                    text: row.isDir ? "文件夹"
+                        : (row.extension !== "" ? row.extension.toUpperCase() : "文件")
+                    color: root.mutedColor
+                    font.pixelSize: 11
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                 }
 
                 Text {
-                    width: Math.max(0, parent.width - fileNameText.width - parent.spacing)
-                    height: parent.height
-                    verticalAlignment: Text.AlignVCenter
-                    visible: row.relativePath !== row.fileName && row.relativePath !== ""
-                    text: row.relativePath !== row.fileName ? row.relativePath : ""
+                    id: sizeTextItem
+                    anchors.right: root.showModified ? modifiedTextItem.left : parent.right
+                    anchors.rightMargin: 24
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 90
+                    visible: root.showSize
+                    horizontalAlignment: Text.AlignRight
+                    text: row.sizeText
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: 12
                     textFormat: Text.PlainText
-                    elide: Text.ElideMiddle
                 }
-            }
 
-            Text {
-                id: sizeTextItem
-                anchors.right: modifiedTextItem.left
-                anchors.rightMargin: 24
-                anchors.verticalCenter: parent.verticalCenter
-                width: 90
-                horizontalAlignment: Text.AlignRight
-                text: row.sizeText
-                color: root.mutedColor
-                font.pixelSize: 12
-                textFormat: Text.PlainText
-            }
-
-            Text {
-                id: modifiedTextItem
-                anchors.right: parent.right
-                anchors.rightMargin: 16
-                anchors.verticalCenter: parent.verticalCenter
-                width: 140
-                horizontalAlignment: Text.AlignRight
-                text: row.modifiedText
-                color: root.mutedColor
-                font.pixelSize: 12
-                textFormat: Text.PlainText
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                onPressed: function (mouse) {
-                    if (mouse.button === Qt.LeftButton)
-                        root.prepareDrag(row.index, mouse)
+                Text {
+                    id: modifiedTextItem
+                    anchors.right: parent.right
+                    anchors.rightMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 140
+                    visible: root.showModified
+                    horizontalAlignment: Text.AlignRight
+                    text: row.modifiedText
+                    color: root.mutedColor
+                    font.pixelSize: 12
+                    textFormat: Text.PlainText
                 }
-                onPositionChanged: function (mouse) {
-                    root.continueDrag(mouse)
-                }
-                onReleased: root.dragArmed = false
-                onCanceled: root.dragArmed = false
-                onClicked: function (mouse) {
-                    if (mouse.button === Qt.LeftButton && root.suppressClick) {
-                        root.suppressClick = false
-                        return
+
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    onPressed: function (mouse) {
+                        if (mouse.button === Qt.LeftButton)
+                            root.prepareDrag(row.index, mouse)
                     }
-                    if (mouse.button === Qt.RightButton) {
-                        if (root.tab === null || !root.tab.isSelected(row.filePath))
-                            root.handleClick(row.index, false, false)
-                        const point = row.mapToItem(null, mouse.x, mouse.y)
-                        root.contextRequested(row.filePath, row.isDir, point.x, point.y)
-                        return
+                    onPositionChanged: function (mouse) {
+                        root.continueDrag(mouse)
                     }
-                    root.handleClick(row.index,
-                                     (mouse.modifiers & Qt.ControlModifier) !== 0,
-                                     (mouse.modifiers & Qt.ShiftModifier) !== 0)
+                    onReleased: root.dragArmed = false
+                    onCanceled: root.dragArmed = false
+                    onClicked: function (mouse) {
+                        if (mouse.button === Qt.LeftButton && root.suppressClick) {
+                            root.suppressClick = false
+                            return
+                        }
+                        if (mouse.button === Qt.RightButton) {
+                            if (root.tab === null || !root.tab.isSelected(row.filePath))
+                                root.handleClick(row.index, false, false)
+                            const point = row.mapToItem(null, mouse.x, mouse.y)
+                            root.contextRequested(row.filePath, row.isDir, point.x, point.y)
+                            return
+                        }
+                        root.handleClick(row.index,
+                                         (mouse.modifiers & Qt.ControlModifier) !== 0,
+                                         (mouse.modifiers & Qt.ShiftModifier) !== 0)
+                    }
+                    onDoubleClicked: function (mouse) {
+                        if (mouse.button === Qt.LeftButton)
+                            root.handleActivate(row.index)
+                    }
                 }
-                onDoubleClicked: function (mouse) {
-                    if (mouse.button === Qt.LeftButton)
-                        root.handleActivate(row.index)
+            }
+        }
+
+        FileGrid {
+            id: gridView
+            anchors.fill: parent
+            visible: root.viewMode === "grid"
+            tab: root.tab
+            model: root.model
+            dark: root.dark
+            accent: root.accent
+            contentColor: root.contentColor
+            textColor: root.textColor
+            mutedColor: root.mutedColor
+            hairline: root.hairline
+            selectionColor: root.selectionColor
+            dropTargetPath: root.dropTargetPath
+            keyHandler: root.handleKey
+
+            onActivateRequested: function (path, isDir) {
+                root.activatePath(path, isDir)
+            }
+            onContextRequested: function (path, isDir, x, y) {
+                root.contextRequested(path, isDir, x, y)
+            }
+            onEmptyContextRequested: function (x, y) {
+                root.emptyContextRequested(x, y)
+            }
+            onSelectionChanged: root.selectionChanged()
+            onDragOutRequested: function (paths, mode) {
+                Workspace.startDragOut(paths, mode)
+            }
+        }
+
+        ColumnView {
+            id: columnView
+            anchors.fill: parent
+            visible: root.viewMode === "column"
+            tab: root.tab
+            dark: root.dark
+            accent: root.accent
+            contentColor: root.contentColor
+            textColor: root.textColor
+            mutedColor: root.mutedColor
+            hairline: root.hairline
+            selectionColor: root.selectionColor
+
+            onActivateRequested: function (path, isDir) {
+                root.activatePath(path, isDir)
+            }
+            onContextRequested: function (path, isDir, x, y) {
+                root.contextRequested(path, isDir, x, y)
+            }
+            onEmptyContextRequested: function (x, y) {
+                root.emptyContextRequested(x, y)
+            }
+            onSelectionChanged: root.selectionChanged()
+            onDragOutRequested: function (paths, mode) {
+                Workspace.startDragOut(paths, mode)
+            }
+        }
+
+        /// Rubber-band selection over the detail list. The overlay sits above
+        /// the rows so a drag that began on empty space keeps receiving moves
+        /// over them; a press that began on a row is handed down instead.
+        MouseArea {
+            id: listMarquee
+            anchors.fill: parent
+            z: 20
+            acceptedButtons: Qt.LeftButton
+            visible: root.viewMode === "list"
+            preventStealing: true
+
+            property bool active: false
+            property real startY: 0
+            property real startContentY: 0
+            property real pointerY: 0
+            property var baseSelection: []
+
+            Timer {
+                interval: 16
+                repeat: true
+                running: listMarquee.active
+                onTriggered: {
+                    const margin = 28
+                    if (listMarquee.pointerY < margin)
+                        list.contentY = Math.max(0, list.contentY - 12)
+                    else if (listMarquee.pointerY > list.height - margin)
+                        list.contentY = Math.max(0, Math.min(
+                            list.contentHeight - list.height, list.contentY + 12))
+                    else
+                        return
+                    listMarquee.apply()
                 }
+            }
+
+            function apply() {
+                if (!active || root.tab === null || root.model === null)
+                    return
+                const currentContent = list.contentY + pointerY
+                const first = Math.floor(Math.min(startContentY, currentContent) / root.rowHeight)
+                const last = Math.floor(Math.max(startContentY, currentContent) / root.rowHeight)
+                const paths = []
+                for (let row = Math.max(0, first);
+                     row <= Math.min(root.model.loaded - 1, last); row += 1) {
+                    const path = root.model.pathAt(row)
+                    if (path !== "")
+                        paths.push(path)
+                }
+                const next = baseSelection.length > 0
+                    ? Array.from(new Set(baseSelection.concat(paths))) : paths
+                root.tab.selectMany(next)
+                root.selectionChanged()
+            }
+
+            onPressed: function (mouse) {
+                if (root.model === null || root.searchModel !== null) {
+                    mouse.accepted = false
+                    return
+                }
+                const index = list.indexAt(mouse.x, list.contentY + mouse.y)
+                if (index >= 0) {
+                    mouse.accepted = false
+                    return
+                }
+                list.forceActiveFocus()
+                baseSelection = (mouse.modifiers & Qt.ControlModifier) !== 0
+                    ? root.selectedPathList() : []
+                startY = mouse.y
+                startContentY = list.contentY + mouse.y
+                pointerY = mouse.y
+                active = true
+                if (baseSelection.length === 0 && root.tab !== null) {
+                    root.tab.clearSelection()
+                    root.selectionChanged()
+                }
+                mouse.accepted = true
+            }
+
+            onPositionChanged: function (mouse) {
+                if (!active)
+                    return
+                pointerY = mouse.y
+                apply()
+            }
+
+            onReleased: {
+                if (!active)
+                    return
+                const height = Math.abs(list.contentY + pointerY - startContentY)
+                active = false
+                if (height < 4 && baseSelection.length === 0 && root.tab !== null) {
+                    root.tab.clearSelection()
+                    root.selectionChanged()
+                }
+            }
+
+            onCanceled: active = false
+
+            Rectangle {
+                visible: listMarquee.active
+                x: 0
+                y: Math.max(0, Math.min(listMarquee.startContentY,
+                                         list.contentY + listMarquee.pointerY) - list.contentY)
+                width: list.width
+                height: Math.max(0, Math.abs(list.contentY + listMarquee.pointerY
+                                             - listMarquee.startContentY))
+                color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.12)
+                border.width: 1
+                border.color: root.accent
             }
         }
     }
@@ -744,7 +1129,8 @@ Item {
         id: dropArea
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: columnHeader.bottom
+        anchors.top: parent.top
+        anchors.topMargin: root.listingTop
         anchors.bottom: parent.bottom
 
         onEntered: function (drag) {
@@ -800,7 +1186,7 @@ Item {
                 anchors.centerIn: parent
                 text: (root.dropAction === "move" ? "移动到 "
                       : root.dropAction === "link" ? "创建快捷方式到 " : "复制到 ")
-                      + (root.dropTargetPath === root.model.path
+                      + ((root.model !== null && root.dropTargetPath === root.model.path)
                          ? "此文件夹"
                          : String(root.dropTargetPath).split(/[\\/]/).pop())
                 color: root.textColor

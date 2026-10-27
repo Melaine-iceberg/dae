@@ -15,9 +15,10 @@
 //! outside the shell (Explorer, a terminal, another app) reaches this model as
 //! a reload instead of waiting for F5.
 
+use std::cmp::Ordering;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -43,6 +44,16 @@ const ROLE_READ_ONLY: i32 = 0x0106;
 const ROLE_RELATIVE: i32 = 0x0107;
 /// The `image://fileicon/...` URL for this row's OS icon.
 const ROLE_ICON: i32 = 0x0108;
+/// A coarse kind (`folder`, `image`, `video`, `code`, …) for the built-in
+/// glyph set. The OS icon provider has no such notion, so the themed style
+/// needs the model to answer it.
+const ROLE_CATEGORY: i32 = 0x0109;
+/// The file's extension without the dot, empty for directories. The themed
+/// tile prints it and the type sort orders by it.
+const ROLE_EXTENSION: i32 = 0x010A;
+/// The `image://thumbnail/...` URL for this row's first frame, or empty when
+/// the row has none the desktop can draw.
+const ROLE_THUMBNAIL: i32 = 0x010B;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -93,6 +104,32 @@ pub mod qobject {
 
         #[qinvokable]
         fn reload(self: Pin<&mut DirectoryListModel>);
+
+        /// Sets the display order. Re-sorts the rows already loaded and
+        /// returns immediately; batches that arrive later are appended in
+        /// stream order and the completed listing is sorted once more.
+        #[qinvokable]
+        #[cxx_name = "setOrder"]
+        fn set_order(
+            self: Pin<&mut DirectoryListModel>,
+            sort_key: &QString,
+            sort_order: &QString,
+            folders_first: bool,
+        );
+
+        /// Sets the visibility filter. A filter change re-reads the directory:
+        /// a listing that changed which rows exist has to be rebuilt, and the
+        /// streamed reader is the one place that already knows how to do that
+        /// without blocking the GUI thread.
+        #[qinvokable]
+        #[cxx_name = "setFilters"]
+        fn set_filters(
+            self: Pin<&mut DirectoryListModel>,
+            show_hidden: bool,
+            kind: &QString,
+            modified: &QString,
+            size: &QString,
+        );
 
         /// Emitted before a load clears the rows. The view reads its scroll
         /// position here, because the reset that follows discards it.
@@ -217,6 +254,420 @@ impl StoredRow {
     }
 }
 
+/// The ordering the explorer shows. Mirrors the Tauri shell's
+/// `ExplorerSortKey`/`ExplorerSortOrder` pair (see
+/// `src/features/explorer/entry-order.ts`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SortKey {
+    Name,
+    Modified,
+    Type,
+    Size,
+}
+
+impl SortKey {
+    fn parse(value: &str) -> Self {
+        match value {
+            "modified" => Self::Modified,
+            "type" => Self::Type,
+            "size" => Self::Size,
+            _ => Self::Name,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SortOrder {
+    Asc,
+    Desc,
+}
+
+impl SortOrder {
+    fn parse(value: &str) -> Self {
+        if value == "desc" {
+            Self::Desc
+        } else {
+            Self::Asc
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ViewOrder {
+    key: SortKey,
+    order: SortOrder,
+    folders_first: bool,
+}
+
+impl Default for ViewOrder {
+    fn default() -> Self {
+        Self {
+            key: SortKey::Name,
+            order: SortOrder::Asc,
+            folders_first: true,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum KindFilter {
+    All,
+    Folders,
+    Files,
+    Images,
+}
+
+impl KindFilter {
+    fn parse(value: &str) -> Self {
+        match value {
+            "folders" => Self::Folders,
+            "files" => Self::Files,
+            "images" => Self::Images,
+            _ => Self::All,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ModifiedFilter {
+    Any,
+    Today,
+    Week,
+    Month,
+}
+
+impl ModifiedFilter {
+    fn parse(value: &str) -> Self {
+        match value {
+            "today" => Self::Today,
+            "week" => Self::Week,
+            "month" => Self::Month,
+            _ => Self::Any,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SizeFilter {
+    Any,
+    Small,
+    Medium,
+    Large,
+}
+
+impl SizeFilter {
+    fn parse(value: &str) -> Self {
+        match value {
+            "small" => Self::Small,
+            "medium" => Self::Medium,
+            "large" => Self::Large,
+            _ => Self::Any,
+        }
+    }
+}
+
+/// Which rows a listing shows. Kept as a value so a batch can be filtered
+/// against one snapshot of the preferences rather than re-reading the model
+/// settings per row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RowFilter {
+    show_hidden: bool,
+    kind: KindFilter,
+    modified: ModifiedFilter,
+    size: SizeFilter,
+}
+
+impl Default for RowFilter {
+    fn default() -> Self {
+        Self {
+            show_hidden: true,
+            kind: KindFilter::All,
+            modified: ModifiedFilter::Any,
+            size: SizeFilter::Any,
+        }
+    }
+}
+
+impl RowFilter {
+    fn keeps(&self, row: &StoredRow, modified_cutoff: u64) -> bool {
+        if !self.show_hidden && row.hidden {
+            return false;
+        }
+
+        match self.kind {
+            KindFilter::All => {}
+            KindFilter::Folders => {
+                if row.kind != EntryKind::Directory {
+                    return false;
+                }
+            }
+            KindFilter::Files => {
+                if row.kind != EntryKind::File {
+                    return false;
+                }
+            }
+            KindFilter::Images => {
+                if row.kind != EntryKind::File || category_of(row.kind, &row.name) != "image" {
+                    return false;
+                }
+            }
+        }
+
+        if modified_cutoff > 0 && row.modified_at.unwrap_or(0) < modified_cutoff {
+            return false;
+        }
+
+        if let Some((low, high)) = self.size_range()
+            && row.kind == EntryKind::File
+        {
+            let size = row.size.unwrap_or(0);
+            if size < low || size >= high {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn size_range(&self) -> Option<(u64, u64)> {
+        const MIB: u64 = 1024 * 1024;
+        match self.size {
+            SizeFilter::Any => None,
+            SizeFilter::Small => Some((0, MIB)),
+            SizeFilter::Medium => Some((MIB, 100 * MIB)),
+            SizeFilter::Large => Some((100 * MIB, u64::MAX)),
+        }
+    }
+
+    /// Milliseconds before which an entry is outside the modified bucket.
+    /// Computed once per batch; `None` maps to `0`, which disables the test.
+    fn modified_cutoff(&self) -> u64 {
+        let now = chrono::Local::now();
+        let millis = match self.modified {
+            ModifiedFilter::Any => 0,
+            ModifiedFilter::Today => now
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .and_then(|midnight| {
+                    use chrono::TimeZone;
+                    chrono::Local
+                        .from_local_datetime(&midnight)
+                        .earliest()
+                })
+                .map(|midnight| midnight.timestamp_millis().max(0) as u64)
+                .unwrap_or(0),
+            ModifiedFilter::Week => {
+                (now - chrono::Duration::days(7)).timestamp_millis().max(0) as u64
+            }
+            ModifiedFilter::Month => {
+                (now - chrono::Duration::days(30)).timestamp_millis().max(0) as u64
+            }
+        };
+        millis
+    }
+}
+
+/// Orders two rows for display.
+///
+/// The rules reproduce the Tauri shell's comparator: folders lead in both
+/// directions when `foldersFirst` is on, the active key is scaled by the
+/// direction, and the name breaks ties ascending so equal sizes/timestamps
+/// still have one order.
+fn compare_rows(left: &StoredRow, right: &StoredRow, order: &ViewOrder) -> Ordering {
+    if order.folders_first {
+        let left_folder = u8::from(left.kind == EntryKind::Directory);
+        let right_folder = u8::from(right.kind == EntryKind::Directory);
+        let folders = right_folder.cmp(&left_folder);
+        if folders != Ordering::Equal {
+            return folders;
+        }
+    }
+
+    let primary = match order.key {
+        SortKey::Name => natural_cmp(&left.name, &right.name),
+        SortKey::Modified => left
+            .modified_at
+            .unwrap_or(0)
+            .cmp(&right.modified_at.unwrap_or(0)),
+        SortKey::Size => left.size.unwrap_or(0).cmp(&right.size.unwrap_or(0)),
+        SortKey::Type => {
+            let left_category = category_of(left.kind, &left.name);
+            let right_category = category_of(right.kind, &right.name);
+            category_rank(left_category)
+                .cmp(&category_rank(right_category))
+                .then_with(|| {
+                    natural_cmp(
+                        extension_of(&left.name),
+                        extension_of(&right.name),
+                    )
+                })
+        }
+    };
+    let primary = match order.order {
+        SortOrder::Asc => primary,
+        SortOrder::Desc => primary.reverse(),
+    };
+    if primary != Ordering::Equal {
+        return primary;
+    }
+
+    natural_cmp(&left.name, &right.name)
+}
+
+fn sort_rows(rows: &mut [StoredRow], order: &ViewOrder) {
+    rows.sort_by(|left, right| compare_rows(left, right, order));
+}
+
+fn rows_are_sorted(rows: &[StoredRow], order: &ViewOrder) -> bool {
+    rows.windows(2)
+        .all(|pair| compare_rows(&pair[0], &pair[1], order) != Ordering::Greater)
+}
+
+/// Case-insensitive natural ordering: `file2` sorts before `file10`.
+///
+/// `Intl.Collator` with `{numeric: true, sensitivity: "base"}` also folds
+/// accents; Rust has no built-in collator here, so this covers the parts that
+/// matter for file names (case, digits) and leaves diacritics compared by code
+/// point.
+fn natural_cmp(left: &str, right: &str) -> Ordering {
+    let mut left_chars = left.chars().flat_map(char::to_lowercase).peekable();
+    let mut right_chars = right.chars().flat_map(char::to_lowercase).peekable();
+
+    loop {
+        match (left_chars.next(), right_chars.next()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some(left_char), Some(right_char)) => {
+                if left_char.is_ascii_digit() && right_char.is_ascii_digit() {
+                    let left_run = digit_run(left_char, &mut left_chars);
+                    let right_run = digit_run(right_char, &mut right_chars);
+                    let left_trimmed = left_run.trim_start_matches('0');
+                    let right_trimmed = right_run.trim_start_matches('0');
+                    let numbers = left_trimmed
+                        .len()
+                        .cmp(&right_trimmed.len())
+                        .then_with(|| left_trimmed.cmp(right_trimmed));
+                    if numbers != Ordering::Equal {
+                        return numbers;
+                    }
+                    // Numerically equal ("file01" vs "file1"): fewer leading
+                    // zeros first, like the collator's tie-break followed by
+                    // the exact name comparison.
+                    let zeros = left_run.len().cmp(&right_run.len());
+                    if zeros != Ordering::Equal {
+                        return zeros;
+                    }
+                } else {
+                    let ordering = left_char.cmp(&right_char);
+                    if ordering != Ordering::Equal {
+                        return ordering;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn digit_run<I: Iterator<Item = char>>(
+    first: char,
+    chars: &mut std::iter::Peekable<I>,
+) -> String {
+    let mut run = String::new();
+    run.push(first);
+    while let Some(&next) = chars.peek() {
+        if next.is_ascii_digit() {
+            run.push(next);
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    run
+}
+
+fn extension_of(name: &str) -> &str {
+    name.rsplit_once('.')
+        .map(|(_, extension)| extension)
+        .filter(|extension| !extension.is_empty())
+        .unwrap_or("")
+}
+
+/// The coarse kind the built-in glyph set paints.
+fn category_of(kind: EntryKind, name: &str) -> &'static str {
+    match kind {
+        EntryKind::Directory => "folder",
+        EntryKind::Symlink => "link",
+        EntryKind::Other => "other",
+        EntryKind::File => category_for_extension(extension_of(name)),
+    }
+}
+
+fn category_for_extension(extension: &str) -> &'static str {
+    const IMAGE: &[&str] = &[
+        "jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "ico", "tif", "tiff", "heic", "avif",
+    ];
+    const VIDEO: &[&str] = &[
+        "mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "m4v", "mpg", "mpeg",
+    ];
+    const AUDIO: &[&str] = &["mp3", "wav", "flac", "aac", "ogg", "m4a", "wma", "opus"];
+    const ARCHIVE: &[&str] = &["zip", "7z", "rar", "tar", "gz", "bz2", "xz", "zst", "iso"];
+    const CODE: &[&str] = &[
+        "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "go", "java", "c", "h", "cpp",
+        "hpp", "cc", "cs", "rb", "php", "swift", "kt", "kts", "lua", "sh", "bash", "zsh",
+        "ps1", "bat", "cmd", "sql", "html", "htm", "css", "scss", "less", "json", "yaml",
+        "yml", "toml", "xml",
+    ];
+    const TEXT: &[&str] = &["txt", "md", "markdown", "log", "csv", "tsv", "ini", "conf", "cfg"];
+    const DOCUMENT: &[&str] = &["doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "odt", "ods"];
+    const FONT: &[&str] = &["ttf", "otf", "woff", "woff2"];
+    const EXECUTABLE: &[&str] = &["exe", "msi", "appref-ms"];
+
+    let contains = |set: &[&str]| {
+        set.iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(extension))
+    };
+    if contains(IMAGE) {
+        "image"
+    } else if contains(VIDEO) {
+        "video"
+    } else if contains(AUDIO) {
+        "audio"
+    } else if contains(ARCHIVE) {
+        "archive"
+    } else if contains(CODE) {
+        "code"
+    } else if contains(TEXT) {
+        "text"
+    } else if contains(DOCUMENT) {
+        "document"
+    } else if contains(FONT) {
+        "font"
+    } else if contains(EXECUTABLE) {
+        "executable"
+    } else {
+        "file"
+    }
+}
+
+fn category_rank(category: &str) -> u8 {
+    match category {
+        "folder" => 0,
+        "link" => 1,
+        "image" => 2,
+        "video" => 3,
+        "audio" => 4,
+        "document" => 5,
+        "text" => 6,
+        "code" => 7,
+        "archive" => 8,
+        "font" => 9,
+        "executable" => 10,
+        "other" => 12,
+        _ => 11,
+    }
+}
+
 /// Rows collected while the directory already on screen is re-read. The old
 /// rows stay visible until this is complete, so the view never shows an empty
 /// model between the two listings.
@@ -253,6 +704,8 @@ pub struct DirectoryListModelRust {
     /// `dispose` ran and released the watcher; a reload already queued on the
     /// Qt thread must not revive a closed model.
     closed: bool,
+    order: ViewOrder,
+    filter: RowFilter,
 }
 
 impl Default for DirectoryListModelRust {
@@ -271,6 +724,8 @@ impl Default for DirectoryListModelRust {
             watcher_id: next_watcher_id(),
             reload_pending: false,
             closed: false,
+            order: ViewOrder::default(),
+            filter: RowFilter::default(),
         }
     }
 }
@@ -330,6 +785,12 @@ impl qobject::DirectoryListModel {
                         .as_str(),
                 ))
             }
+            ROLE_CATEGORY => QVariant::from(&QString::from(category_of(row.kind, &row.name))),
+            ROLE_EXTENSION => QVariant::from(&QString::from(extension_of(&row.name))),
+            ROLE_THUMBNAIL => {
+                let path = row.full_path(&self.base);
+                QVariant::from(&QString::from(thumbnail_url(self.remote, &path, &row.name, row)))
+            }
             _ => QVariant::default(),
         }
     }
@@ -345,6 +806,9 @@ impl qobject::DirectoryListModel {
         roles.insert(ROLE_HIDDEN, QByteArray::from("hidden"));
         roles.insert(ROLE_READ_ONLY, QByteArray::from("readOnly"));
         roles.insert(ROLE_ICON, QByteArray::from("iconSource"));
+        roles.insert(ROLE_CATEGORY, QByteArray::from("category"));
+        roles.insert(ROLE_EXTENSION, QByteArray::from("extension"));
+        roles.insert(ROLE_THUMBNAIL, QByteArray::from("thumbnailSource"));
         roles
     }
 
@@ -488,6 +952,80 @@ impl qobject::DirectoryListModel {
         }
     }
 
+    fn set_order(
+        mut self: Pin<&mut Self>,
+        sort_key: &QString,
+        sort_order: &QString,
+        folders_first: bool,
+    ) {
+        let next = ViewOrder {
+            key: SortKey::parse(&sort_key.to_string()),
+            order: SortOrder::parse(&sort_order.to_string()),
+            folders_first,
+        };
+        if self.order == next {
+            return;
+        }
+        self.as_mut().rust_mut().order = next;
+        if self.rows.len() < 2 || rows_are_sorted(&self.rows, &next) {
+            return;
+        }
+        self.as_mut().resort_rows();
+    }
+
+    fn set_filters(
+        mut self: Pin<&mut Self>,
+        show_hidden: bool,
+        kind: &QString,
+        modified: &QString,
+        size: &QString,
+    ) {
+        let next = RowFilter {
+            show_hidden,
+            kind: KindFilter::parse(&kind.to_string()),
+            modified: ModifiedFilter::parse(&modified.to_string()),
+            size: SizeFilter::parse(&size.to_string()),
+        };
+        if self.filter == next {
+            return;
+        }
+        self.as_mut().rust_mut().filter = next;
+        if !self.path.as_slice().is_empty() {
+            self.as_mut().reload();
+        }
+    }
+
+    /// Re-sorts the rows already in the model. The viewport is told to
+    /// remember its position first: a reset drops both the rows and the
+    /// position, and `FileList` restores the latter once the rows are back.
+    fn resort_rows(mut self: Pin<&mut Self>) {
+        let order = self.order;
+        let mut rows = std::mem::take(&mut self.as_mut().rust_mut().rows);
+        self.as_mut().about_to_reload();
+        sort_rows(&mut rows, &order);
+        let total = rows.len() as i32;
+        unsafe {
+            self.as_mut().begin_reset_model();
+            self.as_mut().rust_mut().rows = rows;
+            self.as_mut().end_reset_model();
+        }
+        self.as_mut().set_loaded(total);
+    }
+
+    /// Applies the visibility filter to a batch that is about to be appended.
+    /// A refresh stage is left unfiltered: it is filtered once, at the swap,
+    /// so a filter that changed during the read is honoured too.
+    fn keep_visible(&self, rows: Vec<StoredRow>) -> Vec<StoredRow> {
+        if self.filter == RowFilter::default() {
+            return rows;
+        }
+        let filter = self.filter;
+        let cutoff = filter.modified_cutoff();
+        rows.into_iter()
+            .filter(|row| filter.keeps(row, cutoff))
+            .collect()
+    }
+
     fn index_of_path(&self, path: &QString) -> i32 {
         let path = path.to_string();
         self.rows
@@ -582,6 +1120,7 @@ impl qobject::DirectoryListModel {
             return;
         }
 
+        let rows = self.as_mut().keep_visible(rows);
         let added = rows.len() as i32;
         let first = self.loaded;
         if added > 0 {
@@ -596,12 +1135,18 @@ impl qobject::DirectoryListModel {
         }
 
         if done {
+            // Streamed chunks arrive in enumeration order, so each one is
+            // sorted on its own but the sequence as a whole is not. Sorting
+            // once here is what makes the finished listing obey the chosen
+            // order without paying a reset per batch. `aboutToReload` inside
+            // `resortRows` lets the view keep its scroll position.
+            self.as_mut().sort_at_completion();
             let pending = self.reload_pending;
             self.as_mut().rust_mut().stream_id = None;
             if pending {
                 self.as_mut().rust_mut().reload_pending = false;
             }
-            let total = first + added;
+            let total = self.rows.len() as i32;
             // Status before `finished`: QML reads the status in
             // `onFinishedChanged`, which is emitted synchronously.
             self.as_mut()
@@ -614,6 +1159,13 @@ impl qobject::DirectoryListModel {
                 self.as_mut().reload();
             }
         }
+    }
+
+    fn sort_at_completion(mut self: Pin<&mut Self>) {
+        if self.rows.len() < 2 || rows_are_sorted(&self.rows, &self.order) {
+            return;
+        }
+        self.as_mut().resort_rows();
     }
 
     /// Applies a completed refresh. The new rows are already in hand, so the
@@ -629,32 +1181,38 @@ impl qobject::DirectoryListModel {
         let Some(stage) = self.as_mut().rust_mut().refresh.take() else {
             return;
         };
+        let RefreshStage { rows, base, path } = stage;
+        // The stage holds the raw listing: filter and order it the same way a
+        // first read would, so a refresh neither resurrects a hidden row nor
+        // changes the order under the user.
+        let mut fresh = self.as_mut().keep_visible(rows);
+        sort_rows(&mut fresh, &self.order);
 
         let pending = self.reload_pending;
-        let total = stage.rows.len() as i32;
-        let path_changed = self.path.to_string() != stage.path;
-        let base_changed = self.base != stage.base;
+        let total = fresh.len() as i32;
+        let path_changed = self.path.to_string() != path;
+        let base_changed = self.base != base;
 
         self.as_mut().rust_mut().stream_id = None;
         self.as_mut().rust_mut().reload_pending = false;
 
         if path_changed || base_changed {
             if path_changed {
-                self.as_mut().set_path(QString::from(stage.path.as_str()));
+                self.as_mut().set_path(QString::from(path.as_str()));
             }
             self.as_mut().about_to_reload();
             unsafe {
                 self.as_mut().begin_reset_model();
                 {
                     let mut rust = self.as_mut().rust_mut();
-                    rust.rows = stage.rows;
-                    rust.base = stage.base;
+                    rust.rows = fresh;
+                    rust.base = base;
                 }
                 self.as_mut().end_reset_model();
             }
             self.as_mut().set_loaded(total);
         } else {
-            self.as_mut().apply_refreshed_rows(stage.rows);
+            self.as_mut().apply_refreshed_rows(fresh);
         }
 
         self.as_mut()
@@ -885,14 +1443,14 @@ impl BatchTarget for QtBatchTarget {
 
 fn next_stream_id() -> String {
     static NEXT: AtomicU64 = AtomicU64::new(1);
-    format!("qt-{}", NEXT.fetch_add(1, Ordering::Relaxed))
+    format!("qt-{}", NEXT.fetch_add(1, AtomicOrdering::Relaxed))
 }
 
 /// A distinct registry key per model, so two tabs showing the same directory
 /// each keep their own observation (one arm must not steal the other's).
 fn next_watcher_id() -> String {
     static NEXT: AtomicU64 = AtomicU64::new(1);
-    format!("qt-view-{}", NEXT.fetch_add(1, Ordering::Relaxed))
+    format!("qt-view-{}", NEXT.fetch_add(1, AtomicOrdering::Relaxed))
 }
 
 /// The smallest single block of rows that has to change to turn `old` into
@@ -931,6 +1489,26 @@ fn row_edit(old: &[StoredRow], new: &[StoredRow]) -> (usize, usize, usize) {
 /// are shared and deliberately not versioned.
 fn icon_version(row: &StoredRow) -> String {
     format!("{}-{}", row.modified_at.unwrap_or(0), row.size.unwrap_or(0))
+}
+
+/// The thumbnail URL for a row, or empty when the desktop cannot draw one.
+///
+/// Network entries and directories have no first frame; the extension check is
+/// the same one the preview pane uses, so a row's thumbnail slot and the
+/// preview's image slot agree about what is renderable.
+fn thumbnail_url(remote: bool, path: &str, name: &str, row: &StoredRow) -> String {
+    if remote || row.kind != EntryKind::File {
+        return String::new();
+    }
+    if !(dae_core::fs::preview::is_thumbnail_path(path)
+        || dae_core::fs::thumbnails::is_supported_path(path))
+    {
+        return String::new();
+    }
+    if extension_of(name).is_empty() {
+        return String::new();
+    }
+    crate::icons::thumbnail_source(path, &icon_version(row))
 }
 
 #[cfg(test)]
@@ -1005,5 +1583,200 @@ mod tests {
         let old = rows(&["a.txt", "b.txt"]);
         let new = rows(&["a.txt"]);
         assert_eq!(row_edit(&old, &new), (1, 1, 0));
+    }
+
+    fn stored(name: &str, kind: EntryKind, size: u64, modified: u64, hidden: bool) -> StoredRow {
+        StoredRow {
+            name: name.to_owned(),
+            path: None,
+            kind,
+            size: (kind == EntryKind::File).then_some(size),
+            modified_at: Some(modified),
+            hidden,
+            read_only: false,
+        }
+    }
+
+    fn names(rows: &[StoredRow]) -> Vec<&str> {
+        rows.iter().map(|row| row.name.as_str()).collect()
+    }
+
+    #[test]
+    fn natural_order_puts_file2_before_file10_and_ignores_case() {
+        let mut values = ["file10", "File2", "file1", "folder"];
+        values.sort_by(|left, right| natural_cmp(left, right));
+        assert_eq!(values, ["file1", "File2", "file10", "folder"]);
+        assert_eq!(natural_cmp("File", "file"), Ordering::Equal);
+        assert_eq!(natural_cmp("file01", "file1"), Ordering::Greater);
+    }
+
+    #[test]
+    fn folders_lead_in_both_directions() {
+        let mut rows = vec![
+            stored("b.txt", EntryKind::File, 10, 1, false),
+            stored("a", EntryKind::Directory, 0, 9, false),
+            stored("c.txt", EntryKind::File, 20, 2, false),
+        ];
+        let ascending = ViewOrder::default();
+        sort_rows(&mut rows, &ascending);
+        assert_eq!(names(&rows), ["a", "b.txt", "c.txt"]);
+
+        let descending = ViewOrder {
+            order: SortOrder::Desc,
+            ..ascending
+        };
+        sort_rows(&mut rows, &descending);
+        assert_eq!(
+            names(&rows),
+            ["a", "c.txt", "b.txt"],
+            "a folder stays ahead even when the key is reversed"
+        );
+    }
+
+    #[test]
+    fn folders_interleave_when_the_preference_is_off() {
+        let mut rows = vec![
+            stored("b.txt", EntryKind::File, 10, 1, false),
+            stored("a", EntryKind::Directory, 0, 9, false),
+        ];
+        let order = ViewOrder {
+            folders_first: false,
+            ..ViewOrder::default()
+        };
+        sort_rows(&mut rows, &order);
+        assert_eq!(names(&rows), ["a", "b.txt"]);
+    }
+
+    #[test]
+    fn size_and_timestamp_orders_are_directional_and_name_broken() {
+        let mut rows = vec![
+            stored("small.txt", EntryKind::File, 10, 30, false),
+            stored("large.txt", EntryKind::File, 30, 10, false),
+            stored("middle.txt", EntryKind::File, 20, 20, false),
+        ];
+        let by_size = ViewOrder {
+            key: SortKey::Size,
+            order: SortOrder::Desc,
+            folders_first: true,
+        };
+        sort_rows(&mut rows, &by_size);
+        assert_eq!(names(&rows), ["large.txt", "middle.txt", "small.txt"]);
+
+        let by_modified = ViewOrder {
+            key: SortKey::Modified,
+            ..by_size
+        };
+        sort_rows(&mut rows, &by_modified);
+        assert_eq!(names(&rows), ["small.txt", "middle.txt", "large.txt"]);
+    }
+
+    #[test]
+    fn type_order_groups_categories_and_orders_by_extension() {
+        let mut rows = vec![
+            stored("main.rs", EntryKind::File, 1, 1, false),
+            stored("photo.png", EntryKind::File, 1, 1, false),
+            stored("archive.zip", EntryKind::File, 1, 1, false),
+            stored("notes.txt", EntryKind::File, 1, 1, false),
+        ];
+        let order = ViewOrder {
+            key: SortKey::Type,
+            ..ViewOrder::default()
+        };
+        sort_rows(&mut rows, &order);
+        assert_eq!(
+            names(&rows),
+            ["photo.png", "notes.txt", "main.rs", "archive.zip"]
+        );
+    }
+
+    #[test]
+    fn hidden_kind_modified_and_size_filters_are_applied() {
+        let now = 1_800_000_000_000u64;
+        let rows = vec![
+            stored("hidden.txt", EntryKind::File, 10, now, true),
+            stored("photo.png", EntryKind::File, 2 * 1024 * 1024, now, false),
+            stored("folder", EntryKind::Directory, 0, now, false),
+            stored("old.txt", EntryKind::File, 10, now - 40 * 86_400_000, false),
+            stored("huge.iso", EntryKind::File, 200 * 1024 * 1024, now, false),
+        ];
+
+        let without_hidden = RowFilter {
+            show_hidden: false,
+            ..RowFilter::default()
+        };
+        let kept: Vec<&str> = rows
+            .iter()
+            .filter(|row| without_hidden.keeps(row, 0))
+            .map(|row| row.name.as_str())
+            .collect();
+        assert_eq!(kept, ["photo.png", "folder", "old.txt", "huge.iso"]);
+
+        let folders = RowFilter {
+            kind: KindFilter::Folders,
+            ..RowFilter::default()
+        };
+        assert_eq!(
+            names(
+                &rows
+                    .iter()
+                    .filter(|row| folders.keeps(row, 0))
+                    .cloned()
+                    .collect::<Vec<_>>()
+            ),
+            ["folder"]
+        );
+
+        let images = RowFilter {
+            kind: KindFilter::Images,
+            ..RowFilter::default()
+        };
+        assert_eq!(
+            names(
+                &rows
+                    .iter()
+                    .filter(|row| images.keeps(row, 0))
+                    .cloned()
+                    .collect::<Vec<_>>()
+            ),
+            ["photo.png"]
+        );
+
+        let small = RowFilter {
+            size: SizeFilter::Small,
+            ..RowFilter::default()
+        };
+        let kept: Vec<&str> = rows
+            .iter()
+            .filter(|row| small.keeps(row, 0))
+            .map(|row| row.name.as_str())
+            .collect();
+        assert_eq!(
+            kept,
+            ["hidden.txt", "folder", "old.txt"],
+            "a directory is not sized out of the listing"
+        );
+
+        let this_month = RowFilter {
+            modified: ModifiedFilter::Month,
+            ..RowFilter::default()
+        };
+        let kept: Vec<&str> = rows
+            .iter()
+            .filter(|row| this_month.keeps(row, now - 30 * 86_400_000))
+            .map(|row| row.name.as_str())
+            .collect();
+        assert_eq!(kept, ["hidden.txt", "photo.png", "folder", "huge.iso"]);
+    }
+
+    #[test]
+    fn categories_cover_the_files_the_glyphs_paint() {
+        assert_eq!(category_of(EntryKind::Directory, "docs"), "folder");
+        assert_eq!(category_of(EntryKind::File, "photo.PNG"), "image");
+        assert_eq!(category_of(EntryKind::File, "main.rs"), "code");
+        assert_eq!(category_of(EntryKind::File, "song.flac"), "audio");
+        assert_eq!(category_of(EntryKind::File, "bundle.7z"), "archive");
+        assert_eq!(category_of(EntryKind::File, "README"), "file");
+        assert_eq!(extension_of("README"), "");
+        assert_eq!(extension_of("a.tar.gz"), "gz");
     }
 }

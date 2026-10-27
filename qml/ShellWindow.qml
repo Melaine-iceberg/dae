@@ -47,6 +47,11 @@ Window {
     property bool terminalActive: false
     property bool sidebarVisible: true
     property bool previewVisible: true
+    /// The second pane's tab. Created the first time split view is enabled and
+    /// disposed when it is turned off, so an unused pane never holds a watcher.
+    property var splitTab: null
+    property real splitRatio: 0.5
+    property bool splitFocused: false
     property string searchQuery: ""
     property string searchMode: "name"
     property bool searchRegex: false
@@ -80,6 +85,12 @@ Window {
         && (activeTab.listing.remote || root.isRemotePath(activeTab.listing.path))
     readonly property bool searchActive: searchQuery.trim().length > 0
     readonly property bool contentSearchActive: searchActive && searchMode === "content"
+    readonly property bool splitActive: ExplorerPrefs.splitEnabled
+        && !trashActive && !searchActive && activeTab !== null
+    /// The tab and list a context menu was opened from. `null` means the
+    /// primary pane, which is also the only pane when split view is off.
+    property var contextTab: null
+    property var contextList: null
     readonly property bool searchBusy: activeTab === null ? false
         : (searchMode === "content" ? activeTab.contentSearch.busy : activeTab.nameSearch.busy)
     readonly property string mod: Qt.platform.os === "osx" ? "Meta" : "Ctrl"
@@ -414,6 +425,61 @@ Window {
         Qt.callLater(fileList.takeFocus)
     }
 
+    /// The split pane keeps its own trail: navigating it never moves the
+    /// primary tab, and vice versa.
+    function navigateSplit(path) {
+        if (root.splitTab === null || !path || path.length === 0)
+            return
+        root.splitTab.navigate(path)
+        Workspace.recordRecent(path, true, false)
+        Qt.callLater(splitList.takeFocus)
+    }
+
+    function goUpSplit() {
+        if (root.splitTab === null)
+            return
+        const parent = root.parentOf(root.splitTab.listing.path)
+        if (parent !== "")
+            root.navigateSplit(parent)
+    }
+
+    function ensureSplitTab() {
+        if (root.splitTab === null) {
+            const tab = root.createTab(root.activePath)
+            if (tab === null)
+                return
+            root.splitTab = tab
+        } else if (root.splitTab.listing.path === "" && root.activePath !== "") {
+            root.splitTab.navigate(root.activePath)
+        }
+    }
+
+    function applySplitPreference() {
+        if (ExplorerPrefs.splitEnabled) {
+            root.ensureSplitTab()
+            return
+        }
+        if (root.splitTab !== null) {
+            root.splitTab.dispose()
+            root.splitTab = null
+        }
+        root.splitFocused = false
+    }
+
+    function navigatePane(tab, path) {
+        if (tab === null)
+            root.navigate(path)
+        else
+            root.navigateSplit(path)
+    }
+
+    Connections {
+        target: ExplorerPrefs
+        function onSplitEnabledChanged() {
+            root.applySplitPreference()
+        }
+    }
+
     function openTrash() {
         if (root.activeTab === null || root.modalOpen)
             return
@@ -623,15 +689,24 @@ Window {
             if (root.tabs[index])
                 root.tabs[index].dispose()
         }
+        if (root.splitTab !== null) {
+            root.splitTab.dispose()
+            root.splitTab = null
+        }
         root.tabs = []
     }
 
     function currentSelection() {
-        const paths = fileList.selectedPathList()
+        const list = root.contextList !== null ? root.contextList : fileList
+        const paths = list.selectedPathList()
         if (paths.length > 0)
             return paths
-        const path = root.contextPath !== "" ? root.contextPath : fileList.currentPath()
+        const path = root.contextPath !== "" ? root.contextPath : list.currentPath()
         return path !== "" ? [path] : []
+    }
+
+    function contextDirectory() {
+        return root.contextTab !== null ? root.contextTab.listing.path : root.activePath
     }
 
     function isArchivePath(path) {
@@ -645,17 +720,18 @@ Window {
 
     function startCompress(format, encrypted) {
         const paths = root.currentSelection()
-        if (paths.length === 0 || root.activePath === "")
+        const destination = root.contextDirectory()
+        if (paths.length === 0 || destination === "")
             return
         if (encrypted) {
             root.archiveMode = "compress"
             root.archivePaths = paths
             root.archiveTarget = ""
-            root.archiveDestination = root.activePath
+            root.archiveDestination = destination
             passwordDialog.open("compress", "", "")
             return
         }
-        Workspace.compressEntries(paths, root.activePath, format, "")
+        Workspace.compressEntries(paths, destination, format, "")
     }
 
     function startExtract(path) {
@@ -696,7 +772,17 @@ Window {
         if (root.modalOpen)
             return
         root.promptMode = folder ? "folder" : "file"
-        root.promptPath = root.activePath
+        root.promptPath = root.contextTab !== null
+            ? root.contextTab.listing.path : root.activePath
+        namePrompt.open(folder ? "新建文件夹" : "新建文件",
+                        folder ? "新建文件夹" : "新建文件.txt", "")
+    }
+
+    function promptCreateIn(path, folder) {
+        if (root.modalOpen || path === "")
+            return
+        root.promptMode = folder ? "folder" : "file"
+        root.promptPath = path
         namePrompt.open(folder ? "新建文件夹" : "新建文件",
                         folder ? "新建文件夹" : "新建文件.txt", "")
     }
@@ -722,12 +808,24 @@ Window {
     }
 
     function showRowMenu(path, isDir, x, y) {
+        root.openRowMenu(null, null, path, isDir, x, y)
+    }
+
+    function showSplitRowMenu(path, isDir, x, y) {
+        root.openRowMenu(root.splitTab, splitList, path, isDir, x, y)
+    }
+
+    function openRowMenu(paneTab, paneList, path, isDir, x, y) {
+        root.contextTab = paneTab
+        root.contextList = paneList
         root.contextPath = path
         root.contextIsDir = isDir
-        const many = fileList.selectionCount > 1
+        const many = (paneList !== null ? paneList.selectionCount : fileList.selectionCount) > 1
         const hasPath = path !== ""
         const hasClipboard = Workspace.clipboardMode !== ""
-        const remote = root.remoteLocation
+        const remote = paneTab !== null
+            ? (paneTab.listing.remote || root.isRemotePath(paneTab.listing.path))
+            : root.remoteLocation
         // Archiving streams remote sources into a local container, so the
         // sources may be remote but the destination (here) may not.
         const canExtract = hasPath && !isDir && !remote && root.isArchivePath(path)
@@ -778,23 +876,38 @@ Window {
     }
 
     function showEmptyMenu(x, y) {
+        root.openEmptyMenu(null, null, x, y)
+    }
+
+    function showSplitEmptyMenu(x, y) {
+        root.openEmptyMenu(root.splitTab, splitList, x, y)
+    }
+
+    function openEmptyMenu(paneTab, paneList, x, y) {
+        root.contextTab = paneTab
+        root.contextList = paneList
         root.contextPath = ""
         root.contextIsDir = true
+        const remote = paneTab !== null
+            ? (paneTab.listing.remote || root.isRemotePath(paneTab.listing.path))
+            : root.remoteLocation
         menu.openAt(x, y, [
             { id: "newFolder", label: "新建文件夹", shortcut: root.mod + "+Shift+N" },
             { id: "newFile", label: "新建文件" },
             { separator: true },
             { id: "paste", label: "粘贴", shortcut: "Ctrl+V", enabled: Workspace.clipboardMode !== "" },
             { id: "pasteShortcut", label: "粘贴快捷方式",
-              enabled: Workspace.clipboardMode !== "" && !root.remoteLocation },
+              enabled: Workspace.clipboardMode !== "" && !remote },
             { id: "selectAll", label: "全选", shortcut: "Ctrl+A" },
             { id: "refresh", label: "刷新", shortcut: "F5" },
             { separator: true },
-            { id: "terminal", label: "在终端中打开", enabled: !root.remoteLocation }
+            { id: "terminal", label: "在终端中打开", enabled: !remote }
         ])
     }
 
     function showSidebarMenu(kind, path, x, y) {
+        root.contextTab = null
+        root.contextList = null
         root.contextPath = path
         root.contextIsDir = true
         if (kind === "connection" || kind === "cloud") {
@@ -827,7 +940,7 @@ Window {
         switch (id) {
         case "open":
             if (isDir)
-                root.navigate(path)
+                root.navigatePane(root.contextTab, path)
             else
                 Workspace.openPath(path)
             break
@@ -849,7 +962,7 @@ Window {
             }
             break
         case "terminal":
-            Workspace.openTerminal(path !== "" ? path : root.activePath)
+            Workspace.openTerminal(path !== "" ? path : root.contextDirectory())
             break
         case "copy":
             Workspace.setClipboard("copy", root.currentSelection())
@@ -858,13 +971,13 @@ Window {
             Workspace.setClipboard("cut", root.currentSelection())
             break
         case "paste":
-            Workspace.pasteInto(isDir && path !== "" ? path : root.activePath)
+            Workspace.pasteInto(isDir && path !== "" ? path : root.contextDirectory())
             break
         case "pasteShortcut":
-            Workspace.pasteShortcutInto(isDir && path !== "" ? path : root.activePath)
+            Workspace.pasteShortcutInto(isDir && path !== "" ? path : root.contextDirectory())
             break
         case "createShortcut":
-            Workspace.createShortcuts(root.currentSelection(), root.activePath)
+            Workspace.createShortcuts(root.currentSelection(), root.contextDirectory())
             break
         case "duplicate":
             Workspace.duplicateEntries(root.currentSelection())
@@ -915,10 +1028,15 @@ Window {
             root.promptCreate(false)
             break
         case "selectAll":
-            fileList.selectAll()
+            if (root.contextList !== null)
+                root.contextList.selectAll()
+            else
+                fileList.selectAll()
             break
         case "refresh":
-            if (root.activeTab !== null)
+            if (root.contextTab !== null)
+                root.contextTab.listing.reload()
+            else if (root.activeTab !== null)
                 root.activeTab.listing.reload()
             break
         case "trashRestore":
@@ -932,6 +1050,8 @@ Window {
             root.requestTrashPurge(root.trashTargetIds())
             break
         }
+        root.contextTab = null
+        root.contextList = null
     }
 
     function reloadAfterOperation(kind, focus) {
@@ -945,6 +1065,8 @@ Window {
         if (reloadKinds.indexOf(kind) < 0)
             return
         root.activeTab.listing.reload()
+        if (root.splitTab !== null)
+            root.splitTab.listing.reload()
         if (focus !== "")
             fileList.focusPath(focus)
     }
@@ -955,6 +1077,8 @@ Window {
                 return
             if (root.trashActive)
                 trashView.takeFocus()
+            else if (root.splitActive && root.splitFocused)
+                splitList.takeFocus()
             else
                 fileList.takeFocus()
         })
@@ -1393,7 +1517,10 @@ Window {
 
                     FileList {
                         id: fileList
-                        anchors.fill: parent
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        anchors.right: root.splitActive ? splitDivider.left : parent.right
                         visible: !root.trashActive && !root.contentSearchActive
                         tab: root.activeTab
                         searchModel: root.searchActive && root.activeTab !== null
@@ -1425,6 +1552,157 @@ Window {
                         }
                         onRemoteOpenRequested: function (path) {
                             root.acceptRemotePreview(path)
+                        }
+                    }
+
+                    /// The second pane. Its tab is independent down to the
+                    /// listing and the selection; the only shared state is the
+                    /// display preferences, which a file manager should not
+                    /// ask twice.
+                    Item {
+                        id: splitPane
+                        anchors.left: splitDivider.right
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        visible: root.splitActive
+
+                        Rectangle {
+                            id: splitPathBar
+                            width: parent.width
+                            height: 32
+                            color: root.chromeColor
+
+                            Text {
+                                anchors.left: parent.left
+                                anchors.leftMargin: 12
+                                anchors.right: splitClose.left
+                                anchors.rightMargin: 8
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: root.splitTab !== null
+                                    ? root.splitTab.listing.path : ""
+                                color: root.mutedColor
+                                font.family: "Cascadia Mono"
+                                font.pixelSize: 11
+                                elide: Text.ElideMiddle
+                            }
+
+                            Text {
+                                id: splitClose
+                                anchors.right: parent.right
+                                anchors.rightMargin: 12
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "\u00D7"
+                                color: splitCloseMouse.containsMouse
+                                    ? root.textColor : root.mutedColor
+                                font.pixelSize: 13
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                onClicked: {
+                                    if (splitCloseMouse.containsMouse)
+                                        ExplorerPrefs.setBool("splitEnabled", false)
+                                    else
+                                        splitList.takeFocus()
+                                }
+                            }
+
+                            MouseArea {
+                                id: splitCloseMouse
+                                x: splitClose.x - 6
+                                y: splitClose.y - 6
+                                width: splitClose.width + 12
+                                height: splitClose.height + 12
+                                hoverEnabled: true
+                                acceptedButtons: Qt.LeftButton
+                                onClicked: ExplorerPrefs.setBool("splitEnabled", false)
+                            }
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                height: 1
+                                color: root.hairline
+                            }
+                        }
+
+                        FileList {
+                            id: splitList
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.top: splitPathBar.bottom
+                            anchors.bottom: parent.bottom
+                            visible: root.splitTab !== null
+                            tab: root.splitTab
+                            dark: root.dark
+                            headerColor: root.chromeColor
+                            accent: root.accent
+
+                            onNavigateRequested: function (path) {
+                                root.navigateSplit(path)
+                            }
+                            onUpRequested: root.goUpSplit()
+                            onRenameRequested: function (path, name) {
+                                root.promptRename(path, name)
+                            }
+                            onCreateFolderRequested: root.promptCreateIn(
+                                root.splitTab !== null ? root.splitTab.listing.path : "", true)
+                            onContextRequested: function (path, isDir, x, y) {
+                                root.showSplitRowMenu(path, isDir, x, y)
+                            }
+                            onEmptyContextRequested: function (x, y) {
+                                root.showSplitEmptyMenu(x, y)
+                            }
+                            onSelectionChanged: {
+                                previewPanel.showPaths(splitList.selectedPathList())
+                            }
+                            onRemoteDeleteRequested: function (paths) {
+                                root.requestRemoteDelete(paths)
+                            }
+                            onRemoteOpenRequested: function (path) {
+                                root.acceptRemotePreview(path)
+                            }
+                        }
+                    }
+
+                    Item {
+                        id: splitDivider
+                        visible: root.splitActive
+                        width: 6
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        x: Math.round((parent.width - width) * root.splitRatio)
+
+                        Rectangle {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            width: 1
+                            height: parent.height
+                            color: root.hairline
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.SplitHCursor
+                            property real startPointerX: 0
+                            property real startRatio: 0
+
+                            onPressed: function (mouse) {
+                                startPointerX = mapToItem(null, mouse.x, 0).x
+                                startRatio = root.splitRatio
+                            }
+                            onPositionChanged: function (mouse) {
+                                if (!pressed)
+                                    return
+                                const now = mapToItem(null, mouse.x, 0).x
+                                const space = splitDivider.parent.width
+                                if (space <= 0)
+                                    return
+                                root.splitRatio = Math.max(0.25, Math.min(0.75,
+                                    startRatio + (now - startPointerX) / space))
+                            }
                         }
                     }
 
@@ -1573,6 +1851,84 @@ Window {
             }
 
             Item {
+                id: filterButton
+                anchors.right: updateButton.left
+                anchors.rightMargin: 4
+                anchors.verticalCenter: parent.verticalCenter
+                width: 46
+                height: 18
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 4
+                    color: filterMouse.containsMouse || filterMenu.visible
+                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "筛选"
+                        color: filterMenu.active ? root.textColor : root.mutedColor
+                        font.pixelSize: 10
+                    }
+
+                    Rectangle {
+                        visible: filterMenu.active
+                        anchors.right: parent.right
+                        anchors.rightMargin: 6
+                        anchors.top: parent.top
+                        anchors.topMargin: 3
+                        width: 5
+                        height: 5
+                        radius: 2.5
+                        color: root.accent
+                    }
+                }
+
+                MouseArea {
+                    id: filterMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: {
+                        const point = filterButton.mapToItem(null, 0, 0)
+                        filterMenu.openAbove(point.x + filterButton.width - 252, point.y)
+                    }
+                }
+            }
+
+            Item {
+                id: viewButton
+                anchors.right: filterButton.left
+                anchors.rightMargin: 4
+                anchors.verticalCenter: parent.verticalCenter
+                width: 46
+                height: 18
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 4
+                    color: viewMouse.containsMouse || displayMenu.visible
+                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "视图"
+                        color: root.mutedColor
+                        font.pixelSize: 10
+                    }
+                }
+
+                MouseArea {
+                    id: viewMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: {
+                        const point = viewButton.mapToItem(null, 0, 0)
+                        displayMenu.openAbove(point.x + viewButton.width - 252, point.y)
+                    }
+                }
+            }
+
+            Item {
                 id: updateButton
                 anchors.right: settingsButton.left
                 anchors.rightMargin: Updater.supported ? 4 : 0
@@ -1669,7 +2025,7 @@ Window {
             Text {
                 anchors.left: statusText.right
                 anchors.leftMargin: 16
-                anchors.right: updateButton.left
+                anchors.right: viewButton.left
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 horizontalAlignment: Text.AlignRight
@@ -1737,6 +2093,68 @@ Window {
             ShellState.recordTabDrop(tab.token, tab.index, root.token,
                                      drop.x, drop.y, tab.onStrip)
         }
+    }
+
+    DisplayMenu {
+        id: displayMenu
+        anchors.fill: parent
+        dark: root.dark
+        accent: root.accent
+    }
+
+    FilterMenu {
+        id: filterMenu
+        anchors.fill: parent
+        dark: root.dark
+        accent: root.accent
+    }
+
+    Shortcut {
+        sequence: "Ctrl+1"
+        onActivated: ExplorerPrefs.setString("viewMode", "list")
+    }
+
+    Shortcut {
+        sequence: "Ctrl+2"
+        onActivated: ExplorerPrefs.setString("viewMode", "grid")
+    }
+
+    Shortcut {
+        sequence: "Ctrl+3"
+        onActivated: ExplorerPrefs.setString("viewMode", "column")
+    }
+
+    Shortcut {
+        sequence: "F6"
+        enabled: root.splitActive
+        onActivated: {
+            root.splitFocused = !root.splitFocused
+            if (root.splitFocused)
+                splitList.takeFocus()
+            else
+                fileList.takeFocus()
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Alt+V"
+        onActivated: {
+            const point = viewButton.mapToItem(null, 0, 0)
+            displayMenu.openAbove(point.x + viewButton.width - 252, point.y)
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Alt+F"
+        onActivated: {
+            const point = filterButton.mapToItem(null, 0, 0)
+            filterMenu.openAbove(point.x + filterButton.width - 252, point.y)
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+Alt+S"
+        onActivated: ExplorerPrefs.setBool("splitEnabled", !ExplorerPrefs.splitEnabled)
     }
 
     ContextMenu {
@@ -1996,6 +2414,7 @@ Window {
             Workspace.recordRecent(root.activePath, true, false)
 
         root.applyRemotePolicy()
+        root.applySplitPreference()
         pathInput.text = root.trashActive ? "回收站" : root.activePath
         root.visible = true
         root.activationReady = true

@@ -30,6 +30,7 @@ pub mod material;
 pub mod model;
 pub mod open_with_model;
 pub mod platform;
+pub mod preferences;
 pub mod preview;
 mod runtime;
 pub mod search_model;

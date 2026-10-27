@@ -90,6 +90,19 @@ pub(crate) fn source_for(path: &str, is_dir: bool, version: &str) -> String {
     }
 }
 
+/// The `image://thumbnail/...` URL for a listing row's first frame.
+///
+/// The provider caches by the revision it is given, so the listing's
+/// `mtime-size` doubles as the cache key: a file edited on disk is not served
+/// from the frame decoded before the edit.
+pub(crate) fn thumbnail_source(path: &str, version: &str) -> String {
+    format!(
+        "image://thumbnail/{}?size=96&v={}",
+        encode(path),
+        encode(version)
+    )
+}
+
 fn dae_qt_render_file_icon(path: &str, is_dir: bool, size: i32, version: &str) -> Vec<u8> {
     let size = clamp_edge(size);
     let key = format!("path|{path}|{is_dir}|{version}|{size}");

@@ -33,6 +33,7 @@ fn main() {
             "src/ime.rs",
             "src/model.rs",
             "src/open_with_model.rs",
+            "src/preferences.rs",
             "src/preview.rs",
             "src/search_model.rs",
             "src/shell.rs",
