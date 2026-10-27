@@ -123,6 +123,16 @@ impl Host for TauriHost {
             }
         }
     }
+
+    /// `run_on_main_thread`, not `run_on_ui_thread`'s inline default: the macOS
+    /// services call behind `fs::shell_commands` has to happen on the thread
+    /// that owns `NSApplication`, and a blocking task never is. Queued rather
+    /// than awaited, so a slow service cannot hold up its caller.
+    fn run_on_ui_thread(&self, job: Box<dyn FnOnce() + Send + 'static>) {
+        if let Err(error) = self.app.run_on_main_thread(job) {
+            log::warn!("dae: could not queue work on the main thread: {error}");
+        }
+    }
 }
 
 /// Test doubles live in the core so moved modules can keep using them; this

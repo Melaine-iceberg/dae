@@ -25,7 +25,6 @@ pub use dae_core::fs::spaces;
 pub mod system_files;
 pub use dae_core::fs::trash_view;
 pub use dae_core::fs::undo;
-pub use dae_core::fs::vfs;
 pub mod volume_monitor;
 pub use dae_core::fs::watch;
 

@@ -67,11 +67,11 @@
 //!   deadlocks the provider, so the thread pumps between jobs.
 
 use super::{Selection, SelectionKind, ShellCommand, assign_groups};
-use crate::file_system::error::FileSystemError;
+use crate::error::FileSystemError;
 use base64::Engine as _;
 use std::collections::{HashMap, VecDeque};
 use std::ffi::c_void;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -118,6 +118,10 @@ struct Registration {
     clsid: String,
     /// Owning app's display name, for the grouped-flyout decision.
     app: String,
+    /// The owning package's own logo, as a `data:` URL. A verb that declares
+    /// no icon of its own falls back to it, and it is what the menu draws on
+    /// the app's group heading.
+    app_icon: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -134,14 +138,17 @@ struct Registration {
 fn scan() -> Vec<Registration> {
     let mut registrations = Vec::new();
     for package in packaged_apps() {
-        let Some(xml) = read_manifest(&package.full_name) else {
+        let Some((install_dir, xml)) = read_manifest(&package.full_name) else {
             continue;
         };
+        // One read per package: every verb it declares shares the logo.
+        let app_icon = read_app_icon(&install_dir, &xml);
         for ManifestVerb { item_type, clsid } in parse_manifest_verbs(&xml) {
             registrations.push(Registration {
                 item_type,
                 clsid,
                 app: package.display_name.clone(),
+                app_icon: app_icon.clone(),
             });
         }
     }
@@ -303,12 +310,19 @@ fn install_roots() -> &'static [PathBuf] {
     &ROOTS
 }
 
-fn read_manifest(full_name: &str) -> Option<String> {
+/// The install directory and manifest text of one package.
+///
+/// The directory travels with the text because the manifest's logo paths are
+/// relative to it, and `WindowsApps` cannot be enumerated to find them later.
+fn read_manifest(full_name: &str) -> Option<(PathBuf, String)> {
     install_roots()
         .iter()
-        .map(|root| root.join(full_name).join("AppxManifest.xml"))
-        .find(|path| path.is_file())
-        .and_then(|path| std::fs::read_to_string(path).ok())
+        .map(|root| root.join(full_name))
+        .find(|directory| directory.join("AppxManifest.xml").is_file())
+        .and_then(|directory| {
+            let xml = std::fs::read_to_string(directory.join("AppxManifest.xml")).ok()?;
+            Some((directory, xml))
+        })
 }
 
 /// The scan, cached. A right-click must not re-read every manifest, and a
@@ -590,6 +604,116 @@ fn parse_manifest_verbs(xml: &str) -> Vec<ManifestVerb> {
     verbs
 }
 
+/// The logo paths a manifest declares for the app itself, best first.
+///
+/// `Square44x44Logo` is the asset the Start menu and the taskbar use at this
+/// size; `Properties/Logo` is the package's store logo and the fallback when
+/// the tile asset is not shipped.
+fn parse_manifest_icon_paths(xml: &str) -> Vec<String> {
+    use quick_xml::events::{BytesStart, Event};
+    use quick_xml::{Reader, XmlVersion};
+
+    fn attribute(element: &BytesStart<'_>, wanted: &str) -> Option<String> {
+        element
+            .attributes()
+            .flatten()
+            .find(|attribute| attribute.key.local_name().as_ref() == wanted)
+            .and_then(|attribute| attribute.normalized_value(XmlVersion::default()).ok())
+            .map(|value| value.into_owned())
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    let mut reader = Reader::from_str(xml);
+    let mut square: Option<String> = None;
+    let mut logo: Option<String> = None;
+    let mut in_logo = false;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(element)) => {
+                if element.local_name().as_ref() == "VisualElements" && square.is_none() {
+                    square = attribute(&element, "Square44x44Logo");
+                }
+                if element.local_name().as_ref() == "Logo" {
+                    in_logo = true;
+                }
+            }
+            // A self-closing `VisualElements` still declares its logo path.
+            Ok(Event::Empty(element)) => {
+                if element.local_name().as_ref() == "VisualElements" && square.is_none() {
+                    square = attribute(&element, "Square44x44Logo");
+                }
+            }
+            Ok(Event::Text(text)) if in_logo => {
+                // Element text here is a file path; entities are not used, and
+                // the value only has to be resolvable, not byte-perfect.
+                let value = text.trim().to_owned();
+                if !value.is_empty() {
+                    logo = Some(value);
+                }
+            }
+            Ok(Event::End(element)) if element.local_name().as_ref() == "Logo" => in_logo = false,
+            Ok(Event::Eof) => break,
+            Err(_) => break,
+            Ok(_) => {}
+        }
+    }
+
+    [square, logo].into_iter().flatten().collect()
+}
+
+/// Largest app logo accepted into the menu. A 44 px tile is a few kilobytes;
+/// anything past this is store artwork the menu has no use for.
+const MAX_APP_ICON_BYTES: u64 = 256 * 1024;
+
+/// Reads the app's own logo out of its install directory, as a `data:` URL.
+fn read_app_icon(install_dir: &Path, xml: &str) -> Option<String> {
+    for relative in parse_manifest_icon_paths(xml) {
+        for candidate in logo_candidates(install_dir, &relative) {
+            let Ok(metadata) = std::fs::metadata(&candidate) else {
+                continue;
+            };
+            if !metadata.is_file() || metadata.len() > MAX_APP_ICON_BYTES {
+                continue;
+            }
+            let Ok(bytes) = std::fs::read(&candidate) else {
+                continue;
+            };
+            if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+                continue;
+            }
+            return Some(format!(
+                "data:image/png;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            ));
+        }
+    }
+    None
+}
+
+/// The file a manifest's logo path names, plus the resource-qualified variants
+/// packages ship instead of a base file (`Square44x44Logo.scale-200.png`).
+fn logo_candidates(install_dir: &Path, relative: &str) -> Vec<PathBuf> {
+    let path = install_dir.join(relative.replace('/', "\\"));
+    let mut candidates = vec![path.clone()];
+    let (Some(stem), Some(extension)) = (
+        path.file_stem().and_then(|value| value.to_str()),
+        path.extension().and_then(|value| value.to_str()),
+    ) else {
+        return candidates;
+    };
+    for qualifier in [
+        "scale-100",
+        "scale-125",
+        "scale-150",
+        "scale-200",
+        "targetsize-44",
+    ] {
+        candidates.push(path.with_file_name(format!("{stem}.{qualifier}.{extension}")));
+    }
+    candidates
+}
+
 /// Whether one `desktop5:ItemType/@Type` value covers the current selection.
 ///
 /// The grammar is the shell's static-verb grammar. The forms below are the ones
@@ -685,7 +809,7 @@ fn split_icon_spec(spec: &str) -> (&str, i32) {
 pub(super) async fn warm() -> Result<(), FileSystemError> {
     // The scan answers for every selection and is pure I/O, so it stays off
     // the COM apartment the way `list` keeps it.
-    let _ = tauri::async_runtime::spawn_blocking(registrations).await;
+    let _ = tokio::task::spawn_blocking(registrations).await;
 
     // Started by the first `list` below, but named here so the thread's
     // cost is not accidentally read as part of a menu.
@@ -709,7 +833,7 @@ pub(super) async fn list(
     primary: String,
 ) -> Result<Vec<ShellCommand>, FileSystemError> {
     let selection_paths = paths.clone();
-    let candidates = tauri::async_runtime::spawn_blocking(move || {
+    let candidates = tokio::task::spawn_blocking(move || {
         let selection = Selection::for_paths(&primary, &selection_paths)?;
         // The scan reads the registry and a dozen manifests: real I/O, kept
         // off both the webview's command thread and the COM apartment.
@@ -725,10 +849,10 @@ pub(super) async fn list(
     // Collapse the per-item-type hits: one row per (command, app), so a
     // provider registered for forty extensions is activated once.
     let mut seen = std::collections::HashSet::new();
-    let candidates: Vec<(String, String)> = candidates
+    let candidates: Vec<(String, String, Option<String>)> = candidates
         .into_iter()
         .filter(|registration| seen.insert(registration.clsid.clone()))
-        .map(|registration| (registration.clsid, registration.app))
+        .map(|registration| (registration.clsid, registration.app, registration.app_icon))
         .collect();
 
     if candidates.is_empty() {
@@ -741,7 +865,7 @@ pub(super) async fn list(
 }
 
 pub(super) async fn invoke(
-    _app: &tauri::AppHandle,
+    _host: std::sync::Arc<dyn crate::host::Host>,
     clsid: String,
     paths: Vec<String>,
 ) -> Result<(), FileSystemError> {
@@ -766,7 +890,7 @@ pub(super) async fn invoke(
 /// selection cannot show. Runs on the apartment thread.
 fn build_menu(
     cache: &mut CommandCache,
-    candidates: &[(String, String)],
+    candidates: &[(String, String, Option<String>)],
     paths: &[String],
 ) -> Vec<ShellCommand> {
     let array = match shell_item_array(paths) {
@@ -778,7 +902,7 @@ fn build_menu(
     };
 
     let mut rows = Vec::new();
-    for (clsid, app) in candidates {
+    for (clsid, app, app_icon) in candidates {
         let Some(command) = cache.command(clsid) else {
             continue;
         };
@@ -810,7 +934,11 @@ fn build_menu(
         }
 
         let icon_data_url =
-            take_pwstr(unsafe { command.GetIcon(&array) }.ok()).and_then(|spec| cache.icon(&spec));
+            take_pwstr(unsafe { command.GetIcon(&array) }.ok()).and_then(|spec| cache.icon(&spec))
+                // A verb may declare no icon at all. The app's own logo is a
+                // better answer than an anonymous row, and it is what Explorer
+                // shows for a packaged command that has none.
+                .or_else(|| app_icon.clone());
 
         rows.push((
             app.clone(),
@@ -913,7 +1041,7 @@ fn take_pwstr(value: Option<PWSTR>) -> Option<String> {
 fn resolve_icon(spec: &str) -> Option<String> {
     let (path, index) = split_icon_spec(spec);
     let bytes = if index == 0 {
-        dae_core::fs::icons::extract(path, ICON_SIZE, false).map(|icon| icon.bytes)
+        crate::fs::icons::extract(path, ICON_SIZE, false).map(|icon| icon.bytes)
     } else {
         icon_from_resource(path, index)
     }?;
@@ -958,7 +1086,7 @@ fn icon_to_png(icon: HICON) -> Option<Vec<u8>> {
     // SAFETY: `icon` is a live icon handle and `info` a valid out-pointer.
     unsafe { GetIconInfo(icon, &mut info) }.ok()?;
 
-    let png = dae_core::fs::windows_image::bitmap_to_png(info.hbmColor);
+    let png = crate::fs::windows_image::bitmap_to_png(info.hbmColor);
     // SAFETY: `GetIconInfo` hands over two bitmaps that the caller owns.
     unsafe {
         let _ = DeleteObject(HGDIOBJ(info.hbmColor.0));
@@ -974,6 +1102,16 @@ fn wide(value: &str) -> Vec<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The moved tests used Tauri's runtime; a current-thread runtime is all a
+    /// blocking call needs and keeps the module free of a shell dependency.
+    fn block_on<F: std::future::Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime")
+            .block_on(future)
+    }
 
     fn selection(kind: SelectionKind, extension: &str) -> Selection {
         Selection {
@@ -1185,7 +1323,7 @@ mod tests {
             .iter()
             .filter(|app| {
                 read_manifest(&app.full_name)
-                    .is_some_and(|xml| !parse_manifest_verbs(&xml).is_empty())
+                    .is_some_and(|(_, xml)| !parse_manifest_verbs(&xml).is_empty())
             })
             .count();
         println!(
@@ -1211,7 +1349,7 @@ mod tests {
 
         for (what, primary) in [("file", file), ("directory", directory)] {
             let paths = vec![primary.clone()];
-            let items = tauri::async_runtime::block_on(list(paths, primary))
+            let items = block_on(list(paths, primary))
                 .expect("listing shell commands");
             println!("\n{what}: {} commands", items.len());
             for item in items {
@@ -1241,13 +1379,13 @@ mod tests {
             .into_owned();
 
         let started = std::time::Instant::now();
-        tauri::async_runtime::block_on(warm()).expect("warming shell commands");
+        block_on(warm()).expect("warming shell commands");
         let warming = started.elapsed();
 
         let paths = vec![primary.clone()];
         let started = std::time::Instant::now();
         let items =
-            tauri::async_runtime::block_on(list(paths, primary)).expect("listing shell commands");
+            block_on(list(paths, primary)).expect("listing shell commands");
         let first_list = started.elapsed();
 
         println!(

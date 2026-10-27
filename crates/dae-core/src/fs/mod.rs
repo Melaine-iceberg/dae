@@ -38,6 +38,7 @@ pub mod progress;
 pub mod recents;
 pub mod search;
 pub mod service;
+pub mod shell_commands;
 pub mod sftp;
 pub mod shortcuts;
 pub mod sidebar;

@@ -90,6 +90,9 @@ Item {
     signal selectionChanged()
     signal remoteDeleteRequested(var paths)
     signal remoteOpenRequested(string path)
+    /// Toggle the preview panel for `path` (Space). The panel is the window's,
+    /// but the key belongs to the focused list.
+    signal previewRequested(string path)
 
     function selectedPathList() {
         const paths = []
@@ -518,6 +521,12 @@ Item {
         }
         if (event.key === Qt.Key_Backspace) {
             root.upRequested()
+            return true
+        }
+        if (event.key === Qt.Key_Space) {
+            const path = root.currentPath()
+            if (path !== "")
+                root.previewRequested(path)
             return true
         }
         if (event.key === Qt.Key_Escape) {

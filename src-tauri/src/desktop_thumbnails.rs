@@ -42,7 +42,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
-use crate::shell_commands::desktop_entry;
+use dae_core::fs::shell_commands::desktop_entry;
 use crate::xdg::{cache_home, data_roots};
 
 /// A thumbnail a producer rendered, labelled with the type its bytes have.

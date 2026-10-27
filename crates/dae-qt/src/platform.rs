@@ -8,6 +8,62 @@
 
 use std::path::Path;
 
+/// Shows the operating system's own properties sheet for `path`.
+///
+/// Windows has one, and there it is the truthful answer: the same sheet
+/// Explorer and the Save dialogs show, including the Security, Details and
+/// Previous Versions pages dae would otherwise have to reimplement. Every
+/// other platform answers `false`, and the caller keeps the in-app dialog.
+///
+/// The sheet is shown modeless, so this returns before the user closes it. A
+/// failure — a path the shell has no property handler for, or a remote one
+/// that slipped through — returns `false` and the caller falls back to the
+/// in-app dialog.
+pub fn show_properties(path: &str) -> bool {
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
+        use windows::Win32::UI::Shell::{
+            SEE_MASK_FLAG_NO_UI, SEE_MASK_INVOKEIDLIST, SHELLEXECUTEINFOW, ShellExecuteExW,
+        };
+        use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SW_SHOWNORMAL};
+        use windows::core::{HSTRING, PCWSTR};
+
+        // The sheet is a shell COM object and the "properties" verb is
+        // dispatched through the context-menu handler, both of which need an
+        // STA on the calling thread. Qt initializes OLE for drag-and-drop, but
+        // not necessarily before the first properties call.
+        let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+
+        let verb = HSTRING::from("properties");
+        let file = HSTRING::from(path);
+        // The sheet is owned by the window the command came from. This runs on
+        // the GUI thread right after the user picked the menu row, so the
+        // foreground window is that window.
+        let hwnd = unsafe { GetForegroundWindow() };
+        let mut info = SHELLEXECUTEINFOW {
+            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+            // `INVOKEIDLIST` is what routes the verb through the shell's own
+            // context menu, which is where the modeless property sheet lives.
+            fMask: SEE_MASK_INVOKEIDLIST | SEE_MASK_FLAG_NO_UI,
+            hwnd,
+            lpVerb: PCWSTR(verb.as_ptr()),
+            lpFile: PCWSTR(file.as_ptr()),
+            nShow: SW_SHOWNORMAL.0,
+            ..Default::default()
+        };
+        // SAFETY: `info` is fully initialized, the strings outlive the call,
+        // and the shell copies what it keeps.
+        unsafe { ShellExecuteExW(&mut info) }.is_ok()
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        false
+    }
+}
+
 /// Opens `path` with the handler the OS would use for its type.
 pub fn open_path(path: &str) -> Result<(), String> {
     let target = Path::new(path);

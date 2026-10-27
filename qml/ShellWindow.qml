@@ -65,6 +65,10 @@ Window {
     property string promptPath: ""
     property string contextPath: ""
     property bool contextIsDir: false
+    /// Which menu is open: `row`, `empty`, `trash` or `sidebar`. The shell
+    /// commands answer asynchronously, and only the row menu is rebuilt when
+    /// they arrive.
+    property string contextKind: ""
     property string contextTrashId: ""
     property string contextTrashParent: ""
     property string confirmMode: ""
@@ -130,6 +134,7 @@ Window {
         || passwordDialog.visible || settingsPanel.visible || confirmDialog.visible
         || connectDialog.visible || cloudDialog.visible || openWithDialog.visible
         || updateDialog.visible || transferConflict.visible || transferQueue.visible
+        || propertiesDialog.visible || bulkRenameDialog.visible || moveToDialog.visible
 
     Timer {
         id: searchTimer
@@ -840,16 +845,31 @@ Window {
         root.contextList = paneList
         root.contextPath = path
         root.contextIsDir = isDir
-        const many = (paneList !== null ? paneList.selectionCount : fileList.selectionCount) > 1
+        root.contextKind = "row"
+        // Discovery runs off the Qt thread. The rows already in the model are
+        // drawn at once, and `onShellCommandRevisionChanged` swaps in the fresh
+        // answer without moving the panel.
+        shellCommands.load(root.currentSelection(), path)
+        menu.openAt(x, y, root.rowMenuItems())
+    }
+
+    /// The row menu's rows. Split out from `openRowMenu` because the installed
+    /// apps' commands arrive after the menu is already on screen and the same
+    /// list has to be rebuilt in place.
+    function rowMenuItems() {
+        const path = root.contextPath
+        const isDir = root.contextIsDir
+        const many = (root.contextList !== null
+            ? root.contextList.selectionCount : fileList.selectionCount) > 1
         const hasPath = path !== ""
         const hasClipboard = Workspace.clipboardMode !== ""
-        const remote = paneTab !== null
-            ? (paneTab.listing.remote || root.isRemotePath(paneTab.listing.path))
+        const remote = root.contextTab !== null
+            ? (root.contextTab.listing.remote || root.isRemotePath(root.contextTab.listing.path))
             : root.remoteLocation
         // Archiving streams remote sources into a local container, so the
         // sources may be remote but the destination (here) may not.
         const canExtract = hasPath && !isDir && !remote && root.isArchivePath(path)
-        menu.openAt(x, y, [
+        const items = [
             { id: "open", label: isDir ? "打开" : "用默认应用打开",
               enabled: hasPath && (!remote || isDir), shortcut: "Enter" },
             { id: "openTab", label: "在新标签页打开", enabled: hasPath && isDir },
@@ -859,28 +879,97 @@ Window {
             { id: "openWith", label: "选择打开方式…", enabled: hasPath && !remote },
             { id: "terminal", label: "在终端中打开", enabled: hasPath && isDir && !remote },
             { separator: true },
-            { id: "copy", label: "复制", shortcut: "Ctrl+C", enabled: hasPath },
-            { id: "cut", label: "剪切", shortcut: "Ctrl+X", enabled: hasPath },
-            { id: "paste", label: "粘贴到此处", shortcut: "Ctrl+V", enabled: hasClipboard && isDir },
-            { id: "pasteShortcut", label: "粘贴快捷方式",
-              enabled: hasClipboard && isDir && !remote },
-            { id: "duplicate", label: "创建副本", enabled: hasPath },
-            { id: "createShortcut", label: "创建快捷方式", enabled: hasPath && !remote },
-            { id: "compress", label: "压缩为…", enabled: hasPath && !remote, submenu: [
-                { id: "compressZip", label: "ZIP 压缩包" },
-                { id: "compressTar", label: "TAR 归档" },
-                { id: "compressTarGz", label: "TAR.GZ 压缩包" },
-                { id: "compress7z", label: "7Z 压缩包" },
-                { id: "compress7zEncrypted", label: "7Z 压缩包（加密）" }
-            ] },
-            { id: "extractHere", label: "解压到此处", enabled: canExtract },
-            { id: "rename", label: "重命名", shortcut: "F2", enabled: hasPath && !many },
-            { separator: true },
-            { id: "favorite", label: "加入收藏", enabled: hasPath && isDir },
-            { id: "trash", label: "移到回收站", shortcut: "Delete",
-              enabled: hasPath && !remote, danger: true },
-            { id: "delete", label: "永久删除", shortcut: "Shift+Delete", enabled: hasPath, danger: true }
-        ])
+            { id: "preview", label: root.previewShows(path) ? "隐藏预览" : "预览",
+              enabled: hasPath && !many, shortcut: "Space" },
+            { id: "copyPath", label: "复制路径", enabled: hasPath }
+        ]
+
+        const extensions = root.shellCommandSubmenu()
+        if (extensions.length > 0) {
+            items.push({ separator: true })
+            items.push({ id: "shellCommands", label: "应用扩展", submenu: extensions })
+        }
+
+        items.push({ separator: true })
+        items.push({ id: "copy", label: "复制", shortcut: "Ctrl+C", enabled: hasPath })
+        items.push({ id: "cut", label: "剪切", shortcut: "Ctrl+X", enabled: hasPath })
+        items.push({ id: "paste", label: "粘贴到此处", shortcut: "Ctrl+V",
+                     enabled: hasClipboard && isDir })
+        items.push({ id: "pasteShortcut", label: "粘贴快捷方式",
+                     enabled: hasClipboard && isDir && !remote })
+        items.push({ id: "duplicate", label: "创建副本", enabled: hasPath })
+        items.push({ id: "createShortcut", label: "创建快捷方式", enabled: hasPath && !remote })
+        items.push({ id: "compress", label: "压缩为…", enabled: hasPath && !remote, submenu: [
+            { id: "compressZip", label: "ZIP 压缩包" },
+            { id: "compressTar", label: "TAR 归档" },
+            { id: "compressTarGz", label: "TAR.GZ 压缩包" },
+            { id: "compress7z", label: "7Z 压缩包" },
+            { id: "compress7zEncrypted", label: "7Z 压缩包（加密）" }
+        ] })
+        items.push({ id: "extractHere", label: "解压到此处", enabled: canExtract })
+        items.push({ id: "moveTo", label: "移动到…", enabled: hasPath })
+        items.push({ id: many ? "bulkRename" : "rename",
+                     label: many ? "批量重命名…" : "重命名",
+                     enabled: hasPath,
+                     shortcut: many ? "" : "F2" })
+        items.push({ separator: true })
+        items.push({ id: "favorite", label: "加入收藏", enabled: hasPath && isDir })
+        items.push({ id: "trash", label: "移到回收站", shortcut: "Delete",
+                     enabled: hasPath && !remote, danger: true })
+        items.push({ id: "delete", label: "永久删除", shortcut: "Shift+Delete",
+                     enabled: hasPath, danger: true })
+        items.push({ separator: true })
+        items.push({ id: "properties", label: "属性", shortcut: "Alt+Enter",
+                     enabled: hasPath && !many })
+        return items
+    }
+
+    /// The installed apps' commands as a submenu: inline rows first, then one
+    /// header per app that contributed more than one command.
+    ///
+    /// A header carries the app's own icon — the first command in the group
+    /// that has one, which is always after the backend's app-logo fallback.
+    function shellCommandSubmenu() {
+        const items = []
+        const groupIcons = ({})
+        for (let index = 0; index < shellCommands.count; index += 1) {
+            const name = shellCommands.groupAt(index)
+            if (name === "" || groupIcons[name] !== undefined)
+                continue
+            groupIcons[name] = shellCommands.iconAt(index)
+        }
+        let group = ""
+        for (let index = 0; index < shellCommands.count; index += 1) {
+            const next = shellCommands.groupAt(index)
+            if (next !== group) {
+                group = next
+                if (group !== "")
+                    items.push({ header: true, label: group, icon: groupIcons[group] || "" })
+            }
+            items.push({
+                id: "shell:" + shellCommands.idAt(index),
+                label: shellCommands.labelAt(index),
+                icon: shellCommands.iconAt(index),
+                enabled: !shellCommands.disabledAt(index)
+            })
+        }
+        return items
+    }
+
+    /// True when the preview panel is already showing exactly this entry.
+    function previewShows(path) {
+        return root.previewVisible && previewPanel.paths.length === 1
+            && previewPanel.paths[0] === path
+    }
+
+    function togglePreview(path) {
+        if (root.previewShows(path)) {
+            root.previewVisible = false
+            previewPanel.showPaths([])
+            return
+        }
+        root.previewVisible = true
+        previewPanel.showPaths([path])
     }
 
     /// The ancestors the breadcrumb bar folded into its `…`. The bar draws the
@@ -888,6 +977,7 @@ Window {
     /// `split` says which pane the chosen ancestor belongs to, because the two
     /// panes keep separate trails.
     function openBreadcrumbMenu(x, y, names, paths, split) {
+        root.contextKind = "breadcrumb"
         const items = []
         for (let index = 0; index < paths.length; index += 1)
             items.push({ id: "crumb:" + paths[index], label: names[index] })
@@ -898,6 +988,7 @@ Window {
     }
 
     function showTrashRowMenu(id, originalParent, x, y) {
+        root.contextKind = "trash"
         root.contextTrashId = id
         root.contextTrashParent = originalParent
         menu.openAt(x, y, [
@@ -918,6 +1009,7 @@ Window {
     }
 
     function openEmptyMenu(paneTab, paneList, x, y) {
+        root.contextKind = "empty"
         root.contextTab = paneTab
         root.contextList = paneList
         root.contextPath = ""
@@ -940,6 +1032,7 @@ Window {
     }
 
     function showSidebarMenu(kind, path, x, y) {
+        root.contextKind = "sidebar"
         root.contextTab = null
         root.contextList = null
         root.contextPath = path
@@ -968,6 +1061,15 @@ Window {
         menu.openAt(x, y, items)
     }
 
+    /// Forgets which entry the menu was opened on. Every action that reaches
+    /// the window through the menu ends here, including the ones that only
+    /// needed the path for a moment.
+    function clearContext() {
+        root.contextTab = null
+        root.contextList = null
+        root.contextKind = ""
+    }
+
     function runMenuAction(id) {
         const path = root.contextPath
         const isDir = root.contextIsDir
@@ -975,6 +1077,15 @@ Window {
         // rebuilt from whatever the bar hid, so there is no state to look up.
         if (id.indexOf("crumb:") === 0) {
             root.navigatePane(root.contextTab, id.substring("crumb:".length))
+            root.clearContext()
+            return
+        }
+        // The installed apps' commands carry their own id after the prefix;
+        // the selection captured by the menu is what they run on.
+        if (id.indexOf("shell:") === 0) {
+            Workspace.invokeShellCommand(id.substring("shell:".length),
+                                         root.currentSelection())
+            root.clearContext()
             return
         }
         switch (id) {
@@ -1003,6 +1114,27 @@ Window {
             break
         case "terminal":
             Workspace.openTerminal(path !== "" ? path : root.contextDirectory())
+            break
+        case "preview":
+            root.togglePreview(path)
+            break
+        case "copyPath":
+            if (Workspace.copyText(path))
+                toast.show("已复制路径", false)
+            else
+                toast.show("无法写入剪贴板", true)
+            break
+        case "moveTo":
+            moveToDialog.open(root.contextDirectory(), root.currentSelection())
+            break
+        case "bulkRename":
+            bulkRenameDialog.open(root.currentSelection())
+            break
+        case "properties":
+            // Windows has the real sheet; elsewhere the in-app dialog is the
+            // only one there is.
+            if (!Workspace.showNativeProperties(path))
+                propertiesDialog.open(path)
             break
         case "copy":
             Workspace.setClipboard("copy", root.currentSelection())
@@ -1090,8 +1222,7 @@ Window {
             root.requestTrashPurge(root.trashTargetIds())
             break
         }
-        root.contextTab = null
-        root.contextList = null
+        root.clearContext()
     }
 
     function reloadAfterOperation(kind, focus) {
@@ -1101,7 +1232,8 @@ Window {
         if (trashKinds.indexOf(kind) >= 0 && root.trashActive)
             trashModel.refresh()
         const reloadKinds = ["create", "rename", "trash", "delete", "copy", "move",
-                             "duplicate", "shortcut", "compress", "extract", "undo", "redo"]
+                             "duplicate", "shortcut", "compress", "extract", "undo", "redo",
+                             "properties"]
         if (reloadKinds.indexOf(kind) < 0)
             return
         root.activeTab.listing.reload()
@@ -1633,6 +1765,9 @@ Window {
                         }
                         onRemoteOpenRequested: function (path) {
                             root.acceptRemotePreview(path)
+                        }
+                        onPreviewRequested: function (path) {
+                            root.togglePreview(path)
                         }
                     }
 
@@ -2300,6 +2435,27 @@ Window {
         onActivated: ExplorerPrefs.setBool("splitEnabled", !ExplorerPrefs.splitEnabled)
     }
 
+    Shortcut {
+        sequence: "Alt+Return"
+        enabled: !root.modalOpen && !root.pathEditing && !root.trashActive
+        onActivated: {
+            const list = root.splitActive && root.splitFocused ? splitList : fileList
+            const path = list.currentPath()
+            if (path !== "" && !Workspace.showNativeProperties(path))
+                propertiesDialog.open(path)
+        }
+    }
+
+    /// Bumped by every shell-command answer. The row menu is rebuilt in place
+    /// when it lands, so the applications' rows appear under the pointer
+    /// instead of on the next right-click.
+    readonly property int shellCommandRevision: shellCommands.revision
+
+    onShellCommandRevisionChanged: {
+        if (menu.visible && root.contextKind === "row" && root.contextPath !== "")
+            menu.replaceActions(root.rowMenuItems())
+    }
+
     ContextMenu {
         id: menu
         anchors.fill: parent
@@ -2313,6 +2469,40 @@ Window {
             if (!menu.visible)
                 root.modalClosed()
         }
+    }
+
+    /// The installed apps' right-click commands. One model per window: the
+    /// rows follow this window's selection, and a second window has its own.
+    ShellCommandModel {
+        id: shellCommands
+    }
+
+    PropertiesDialog {
+        id: propertiesDialog
+        anchors.fill: parent
+        dark: root.dark
+        accent: root.accent
+
+        onChanged: root.reloadAfterOperation("properties", "")
+        onClosed: root.modalClosed()
+    }
+
+    BulkRenameDialog {
+        id: bulkRenameDialog
+        anchors.fill: parent
+        dark: root.dark
+        accent: root.accent
+
+        onClosed: root.modalClosed()
+    }
+
+    MoveToDialog {
+        id: moveToDialog
+        anchors.fill: parent
+        dark: root.dark
+        accent: root.accent
+
+        onClosed: root.modalClosed()
     }
 
     NamePrompt {
@@ -2557,6 +2747,9 @@ Window {
 
         if (root.firstWindow) {
             Workspace.startSystemWatch()
+            // One process-wide warm-up, so the first right-click already has
+            // the installed apps' verbs instead of waiting on a COM surrogate.
+            Workspace.warmShellCommands()
             root.material = chrome.startupMaterial()
             if (root.config !== null)
                 root.startupPath = root.config.startupPath

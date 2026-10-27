@@ -49,9 +49,9 @@ use super::desktop_entry::{
     ANY_FILE, ServiceMenu, expand_exec, mime_matches, parse_service_menu, split_id, user_language,
 };
 use super::{Selection, SelectionKind, ShellCommand, assign_groups};
-use crate::file_system::error::FileSystemError;
+use crate::error::FileSystemError;
 use crate::xdg::data_roots;
-use dae_core::fs::icons::named_icon_data_url;
+use crate::fs::icons::named_icon_data_url;
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
@@ -173,7 +173,7 @@ fn mime_of(path: &str, kind: SelectionKind) -> String {
 /// no surrogate processes to keep alive, so the only cold cost is reading the
 /// service-menu directories.
 pub(super) async fn warm() -> Result<(), FileSystemError> {
-    let _ = tauri::async_runtime::spawn_blocking(service_menus).await;
+    let _ = tokio::task::spawn_blocking(service_menus).await;
     Ok(())
 }
 
@@ -183,7 +183,7 @@ pub(super) async fn list(
 ) -> Result<Vec<ShellCommand>, FileSystemError> {
     // Discovery, MIME matching, icon lookup and grouping are all synchronous
     // file-system work; only the reply crosses back to the async thread.
-    let rows = tauri::async_runtime::spawn_blocking(move || {
+    let rows = tokio::task::spawn_blocking(move || {
         let selection = Selection::for_paths(&primary, &paths)?;
         let mime = mime_of(&primary, selection.kind);
 
@@ -231,7 +231,7 @@ pub(super) async fn list(
 }
 
 pub(super) async fn invoke(
-    _app: &tauri::AppHandle,
+    _host: std::sync::Arc<dyn crate::host::Host>,
     id: String,
     paths: Vec<String>,
 ) -> Result<(), FileSystemError> {
@@ -252,7 +252,7 @@ pub(super) async fn invoke(
     let unknown = move || {
         FileSystemError::InvalidInput(format!("fs.shell_command_unknown: {unknown_message}"))
     };
-    let (name, exec) = tauri::async_runtime::spawn_blocking(move || {
+    let (name, exec) = tokio::task::spawn_blocking(move || {
         let path = PathBuf::from(&desktop_file);
         // A menu that vanished between listing and invoking is an ordinary
         // race, not an internal error.

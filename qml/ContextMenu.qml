@@ -41,6 +41,12 @@ Item {
         root.closeSubmenu()
     }
 
+    /// Swaps the rows without moving the panel: the installed apps' commands
+    /// arrive asynchronously, and the menu they belong to is already open.
+    function replaceActions(items) {
+        root.actions = items
+    }
+
     function closeSubmenu() {
         root.submenuActions = []
     }
@@ -105,7 +111,13 @@ Item {
                     required property var modelData
 
                     width: column.width
-                    height: entry.modelData.separator ? 9 : (entry.modelData.enabled === false ? 24 : 27)
+                    height: {
+                        if (entry.modelData.separator === true)
+                            return 9
+                        if (entry.modelData.header === true)
+                            return 20
+                        return entry.modelData.enabled === false ? 24 : 27
+                    }
 
                     Rectangle {
                         visible: entry.modelData.separator === true
@@ -118,6 +130,7 @@ Item {
 
                     Rectangle {
                         visible: entry.modelData.separator !== true
+                            && entry.modelData.header !== true
                         anchors.fill: parent
                         anchors.leftMargin: 4
                         anchors.rightMargin: 4
@@ -127,24 +140,45 @@ Item {
                             : "transparent"
                     }
 
+                    Image {
+                        visible: entry.modelData.separator !== true
+                            && !!entry.modelData.icon
+                            && status === Image.Ready
+                        x: 12
+                        width: 16
+                        height: 16
+                        anchors.verticalCenter: parent.verticalCenter
+                        source: entry.modelData.icon || ""
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        cache: true
+                    }
+
                     Text {
                         visible: entry.modelData.separator !== true
                         anchors.left: parent.left
-                        anchors.leftMargin: 12
+                        anchors.leftMargin: entry.modelData.icon ? 34 : 12
+                        anchors.right: parent.right
+                        anchors.rightMargin: 30
                         anchors.verticalCenter: parent.verticalCenter
                         text: entry.modelData.label || ""
+                        elide: Text.ElideRight
                         color: {
+                            if (entry.modelData.header === true)
+                                return root.dark ? "#7f8797" : "#8a929d"
                             if (entry.modelData.enabled === false)
                                 return root.dark ? "#5c6370" : "#a5acb6"
                             if (entry.modelData.danger === true)
                                 return root.dark ? "#f08a8a" : "#b42323"
                             return root.dark ? "#e3e7ee" : "#24292f"
                         }
-                        font.pixelSize: 12
+                        font.pixelSize: entry.modelData.header === true ? 10 : 12
+                        font.weight: entry.modelData.header === true ? Font.DemiBold : Font.Normal
                     }
 
                     Text {
                         visible: entry.modelData.separator !== true
+                            && entry.modelData.header !== true
                             && !entry.modelData.submenu
                             && !!entry.modelData.shortcut
                         anchors.right: parent.right
@@ -157,6 +191,7 @@ Item {
 
                     Text {
                         visible: entry.modelData.separator !== true
+                            && entry.modelData.header !== true
                             && entry.modelData.submenu !== undefined
                         anchors.right: parent.right
                         anchors.rightMargin: 10
@@ -170,6 +205,7 @@ Item {
                         id: hover
                         anchors.fill: parent
                         enabled: entry.modelData.separator !== true
+                            && entry.modelData.header !== true
                             && entry.modelData.enabled !== false
                         hoverEnabled: true
                         onEntered: {
@@ -223,7 +259,8 @@ Item {
                     required property var modelData
 
                     width: submenuColumn.width
-                    height: 27
+                    height: submenuEntry.modelData.separator === true
+                        ? 9 : (submenuEntry.modelData.header === true ? 20 : 27)
 
                     Rectangle {
                         anchors.fill: parent
@@ -235,18 +272,44 @@ Item {
                             : "transparent"
                     }
 
+                    Image {
+                        visible: submenuEntry.modelData.separator !== true
+                            && !!submenuEntry.modelData.icon
+                            && status === Image.Ready
+                        x: 12
+                        width: 16
+                        height: 16
+                        anchors.verticalCenter: parent.verticalCenter
+                        source: submenuEntry.modelData.icon || ""
+                        fillMode: Image.PreserveAspectFit
+                        asynchronous: true
+                        cache: true
+                    }
+
                     Text {
                         anchors.left: parent.left
-                        anchors.leftMargin: 12
+                        anchors.leftMargin: submenuEntry.modelData.icon ? 34 : 12
+                        anchors.right: parent.right
+                        anchors.rightMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
                         text: submenuEntry.modelData.label || ""
-                        color: root.dark ? "#e3e7ee" : "#24292f"
-                        font.pixelSize: 12
+                        elide: Text.ElideRight
+                        color: submenuEntry.modelData.header === true
+                            ? (root.dark ? "#7f8797" : "#8a929d")
+                            : (submenuEntry.modelData.enabled === false
+                                ? (root.dark ? "#5c6370" : "#a5acb6")
+                                : (root.dark ? "#e3e7ee" : "#24292f"))
+                        font.pixelSize: submenuEntry.modelData.header === true ? 10 : 12
+                        font.weight: submenuEntry.modelData.header === true
+                            ? Font.DemiBold : Font.Normal
                     }
 
                     MouseArea {
                         id: submenuHover
                         anchors.fill: parent
+                        enabled: submenuEntry.modelData.separator !== true
+                            && submenuEntry.modelData.header !== true
+                            && submenuEntry.modelData.enabled !== false
                         hoverEnabled: true
                         onClicked: {
                             const id = submenuEntry.modelData.id

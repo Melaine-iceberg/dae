@@ -56,6 +56,11 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         #[rust_name = "start_file_drag"]
         fn dae_qt_start_file_drag(paths: &QStringList, actions: i32) -> bool;
+
+        include!("clipboard.h");
+        #[namespace = "dae_qt"]
+        #[rust_name = "set_clipboard_text"]
+        fn dae_qt_set_clipboard_text(text: &QString);
     }
 
     unsafe extern "RustQt" {
@@ -227,6 +232,49 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "clearClipboard"]
         fn clear_clipboard(self: Pin<&mut Workspace>);
+
+        /// Replaces the system clipboard's text. The context menu's "复制路径"
+        /// and the checksum rows' copy buttons use it; the file-list clipboard
+        /// above is a separate format. Returns false when the platform has no
+        /// clipboard to write to, so the caller can say so.
+        #[qinvokable]
+        #[cxx_name = "copyText"]
+        fn copy_text(self: Pin<&mut Workspace>, text: &QString) -> bool;
+
+        /// Renames a whole batch in one operation. The dialog computes the new
+        /// names and sends them paired with their paths, so the swap/staging
+        /// rules stay in `dae_core::fs::service` where the undo record is.
+        #[qinvokable]
+        #[cxx_name = "renameEntriesBatch"]
+        fn rename_entries_batch(
+            self: Pin<&mut Workspace>,
+            paths: &QStringList,
+            names: &QStringList,
+        );
+
+        /// Runs one of the installed apps' context-menu commands against
+        /// `paths`. The rows themselves come from `ShellCommandModel`.
+        #[qinvokable]
+        #[cxx_name = "invokeShellCommand"]
+        fn invoke_shell_command(
+            self: Pin<&mut Workspace>,
+            id: &QString,
+            paths: &QStringList,
+        );
+
+        /// Primes the platform's discovery so the first right-click does not
+        /// pay for it. Called once per process by the first window.
+        #[qinvokable]
+        #[cxx_name = "warmShellCommands"]
+        fn warm_shell_commands(self: Pin<&mut Workspace>);
+
+        /// Opens the platform's own properties sheet for `path`, if it has
+        /// one. Returns false when it does not (every non-Windows platform)
+        /// or when the path is remote, so QML can fall back to the in-app
+        /// dialog.
+        #[qinvokable]
+        #[cxx_name = "showNativeProperties"]
+        fn show_native_properties(self: Pin<&mut Self>, path: &QString) -> bool;
 
         #[qinvokable]
         #[cxx_name = "pasteInto"]
@@ -1353,6 +1401,95 @@ impl qobject::Workspace {
             }
         }
         paths
+    }
+
+    fn copy_text(self: Pin<&mut Self>, text: &QString) -> bool {
+        let text = text.to_string();
+        if text.is_empty() {
+            return false;
+        }
+        // Deliberately quiet: "复制路径" and the checksum rows word their own
+        // confirmation, and a toast from here would say the wrong one.
+        qobject::set_clipboard_text(&QString::from(text.as_str()));
+        true
+    }
+
+    fn rename_entries_batch(
+        mut self: Pin<&mut Self>,
+        paths: &QStringList,
+        names: &QStringList,
+    ) {
+        let paths = strings(paths);
+        let names = strings(names);
+        if paths.is_empty() || paths.len() != names.len() {
+            return;
+        }
+        let requests = paths
+            .into_iter()
+            .zip(names)
+            .map(|(path, new_name)| dae_core::types::RenameRequest { path, new_name })
+            .collect::<Vec<_>>();
+
+        self.as_mut().begin_operation("重命名中…");
+        let thread = self.as_mut().qt_thread();
+        let host = host_for(&thread);
+        dispatch(thread, "rename", async move {
+            match service::rename_entries_batch(requests, operation_id(), host).await {
+                Ok(renamed) => Outcome::ok(renamed.into_iter().next().unwrap_or_default()),
+                Err(error) => Outcome::failed(error),
+            }
+        });
+    }
+
+    fn show_native_properties(self: Pin<&mut Self>, path: &QString) -> bool {
+        let path = path.to_string();
+        // A network path has no shell object to show, and opening the OS sheet
+        // on a `smb://` string would only produce a shell error dialog.
+        if path.is_empty() || !vfs::is_local_path(&path) {
+            return false;
+        }
+        platform::show_properties(&path)
+    }
+
+    fn warm_shell_commands(self: Pin<&mut Self>) {
+        runtime::spawn(async {
+            if let Err(error) = dae_core::fs::shell_commands::warm_shell_commands().await {
+                eprintln!("dae: shell-command warm-up failed: {error}");
+            }
+        });
+    }
+
+    fn invoke_shell_command(
+        mut self: Pin<&mut Self>,
+        id: &QString,
+        paths: &QStringList,
+    ) {
+        let id = id.to_string();
+        let paths = strings(paths);
+        if id.is_empty() {
+            return;
+        }
+        let thread = self.as_mut().qt_thread();
+        let host = host_for(&thread);
+        // Not a tracked operation: the launched app owns the result from here.
+        // Only a failure to start comes back to dae, and it goes through the
+        // same error toast every other command uses.
+        runtime::spawn(async move {
+            let result = dae_core::fs::shell_commands::invoke_shell_command(host, id, paths).await;
+            if let Err(error) = result {
+                let _ = thread.queue(move |mut workspace| {
+                    let message = friendly_error(&error.to_string());
+                    let kind = QString::from("shellCommand");
+                    let message_value = QString::from(message.as_str());
+                    workspace
+                        .as_mut()
+                        .set_last_error(QString::from(message.as_str()));
+                    workspace
+                        .as_mut()
+                        .operation_failed(&kind, &message_value);
+                });
+            }
+        });
     }
 
     fn set_clipboard(mut self: Pin<&mut Self>, mode: &QString, paths: &QStringList) {

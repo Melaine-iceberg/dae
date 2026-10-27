@@ -103,6 +103,18 @@ pub trait Host: Send + Sync + 'static {
     /// Deliver `event` to the UI. Must not block: called from OS watcher
     /// threads and, later, from file-system worker threads.
     fn emit(&self, event: Event);
+
+    /// Runs `job` on the shell's UI thread.
+    ///
+    /// Only the platform integrations that talk to a UI-owned framework need
+    /// this — macOS reaches its services machinery through the application
+    /// object, which exists on the main thread alone. The default runs the job
+    /// inline, which is right for the test doubles and for any caller that is
+    /// already on that thread; a shell with a real event loop overrides it.
+    /// Must not block either: the job is queued, not awaited.
+    fn run_on_ui_thread(&self, job: Box<dyn FnOnce() + Send + 'static>) {
+        job();
+    }
 }
 
 /// Test doubles for modules that report through the seam.

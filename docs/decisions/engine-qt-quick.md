@@ -409,18 +409,37 @@ F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
   自绘，Windows 仍用原生对话框（详见 §4.10）。
 - **自动更新**：`dae_core::update` + `Updater` 单例 + `qml/UpdateDialog.qml`
   （详见 §4.10）。
+- **右键菜单补齐**：属性、复制路径、预览、移动到、应用扩展（已安装应用的
+  Shell 命令）与批量重命名。三个平台后端
+  （`dae_core::fs::shell_commands`，原 `src-tauri/src/shell_commands/`）整体
+  搬进 core，旧壳只剩两个 `#[tauri::command]` 包装；macOS 需要在主线程进入
+  services 机制，因此 `Host` 多了 `run_on_ui_thread`，Tauri 用
+  `run_on_main_thread`、Qt 用 `CxxQtThread::queue` 实现。属性对话框
+  （`qml/PropertiesDialog.qml` + `crates/dae-qt/src/properties.rs`）覆盖常规
+  信息、POSIX 权限/DOS 属性编辑、递归应用，以及 core 早已实现的校验和与目录
+  大小两条流式任务；`qml/BulkRenameDialog.qml` 把旧壳的
+  `planBulkRename`（序号/替换/大小写）原样搬成 QML 预览，
+  `Workspace.renameEntriesBatch` 复用 core 的暂存式批量改名；
+  `qml/MoveToDialog.qml` 复用 `DirectoryListModel` 选目标目录后走同一条移动
+  队列。菜单项带图标（`data:` URL）与分组标题，行菜单在异步命令到达时就地
+  刷新而不是关掉重开。Windows 的「属性」直接开系统自己的属性表
+  （`ShellExecuteExW` + `properties` verb，modeless；其余平台仍用自绘对话框），
+  应用扩展里没有自带图标的命令回落到包内 `Square44x44Logo` / `Properties/Logo`
+  的 PNG，分组标题也用它，因此每一行都有应用图标。
 
 **仍然没铺的**（core 已有实现，缺 Qt 视图/命令包装，或只在旧壳里）：默认文件
 管理器注册（Windows 由原生打开方式对话框承担，Linux/macOS 未做）。文件图标与
 系统缩略图已在 §4.7 落地（Linux 的 `.thumbnailer` 除外），网络存储/云盘连接
 管理已在 §4.8 落地，`dae://` 深链与单实例已在 §4.9 落地，打开方式选择器与
-自动更新已在 §4.10 落地。
+自动更新已在 §4.10 落地，右键菜单的属性/校验和/目录大小/移动/应用扩展/批量
+重命名已在 §4.6 的补齐清单里落地。
 
 ### 4.7 文件图标与系统缩略图（2026-10-26）
 
 图标抽取整体搬进 `dae-core::fs::icons`（三平台后端原样），`xdg` 一并搬进
 `dae-core::xdg`，旧壳通过薄垫片复用同一份实现：`file_system/preview.rs` 与
-`shell_commands/windows.rs` 不再自带 COM/GDI 代码。Windows 的
+`shell_commands/windows.rs` 不再自带 COM/GDI 代码（`shell_commands` 整体随后
+也搬进了 `dae-core::fs`，见 §4.6 的补齐清单）。Windows 的
 `IShellItemImageFactory` + DIB→PNG 移进 `dae_core::fs::windows_image`，系统
 缩略图入口是 `dae_core::fs::thumbnails`。
 

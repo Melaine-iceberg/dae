@@ -25,7 +25,7 @@
 //!
 //! # Threading
 //!
-//! `NSPerformService` is dispatched through `AppHandle::run_on_main_thread`:
+//! `NSPerformService` is dispatched through `Host::run_on_ui_thread`:
 //! AppKit reaches the services machinery through the application object, which
 //! exists only on the main thread, and this module will not call it on any other
 //! one.
@@ -53,7 +53,7 @@ use super::plist::{
     parse_services, split_id,
 };
 use super::{Selection, SelectionKind, ShellCommand, assign_groups};
-use crate::file_system::error::FileSystemError;
+use crate::error::FileSystemError;
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -345,7 +345,7 @@ fn perform_service(item_name: &str, paths: &[String]) -> bool {
 /// services. Unlike Windows there are no COM servers to start, so the warm-up is
 /// a single pass and nothing stays resident afterwards.
 pub(super) async fn warm() -> Result<(), FileSystemError> {
-    let _ = tauri::async_runtime::spawn_blocking(service_bundles).await;
+    let _ = tokio::task::spawn_blocking(service_bundles).await;
     Ok(())
 }
 
@@ -355,7 +355,7 @@ pub(super) async fn list(
 ) -> Result<Vec<ShellCommand>, FileSystemError> {
     // Discovery and UTI conformance are both synchronous; only the finished rows
     // cross back to the async thread.
-    let rows = tauri::async_runtime::spawn_blocking(move || {
+    let rows = tokio::task::spawn_blocking(move || {
         let selection = Selection::for_paths(&primary, &paths)?;
 
         let mut rows = Vec::new();
@@ -392,7 +392,7 @@ pub(super) async fn list(
 }
 
 pub(super) async fn invoke(
-    app: &tauri::AppHandle,
+    host: std::sync::Arc<dyn crate::host::Host>,
     id: String,
     paths: Vec<String>,
 ) -> Result<(), FileSystemError> {
@@ -412,7 +412,7 @@ pub(super) async fn invoke(
     let unknown = move || {
         FileSystemError::InvalidInput(format!("fs.shell_command_unknown: {unknown_message}"))
     };
-    let title = tauri::async_runtime::spawn_blocking(move || {
+    let title = tokio::task::spawn_blocking(move || {
         let bundle = PathBuf::from(&bundle);
         // Called through a borrow at each site rather than handed over once:
         // both failures here report the same "unknown id", and `ok_or_else`
@@ -429,12 +429,12 @@ pub(super) async fn invoke(
 
     // Queued, not awaited — see the module docs for why the result of a slow
     // service must not be waited on from dae's event loop.
-    app.run_on_main_thread(move || {
+    host.run_on_ui_thread(Box::new(move || {
         if !perform_service(&title, &paths) {
             log::warn!("The service {title} did not run");
         }
-    })
-    .map_err(|error| FileSystemError::Internal(format!("fs.shell_command_dispatch: {error}")))
+    }));
+    Ok(())
 }
 
 #[cfg(test)]
