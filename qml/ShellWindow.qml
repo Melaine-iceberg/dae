@@ -63,6 +63,9 @@ Window {
     property bool pathEditing: false
     property string searchQuery: ""
     property string searchMode: "name"
+    /// Whether the search field is out. It stays out while a query is live, so
+    /// the results and the field that produced them never separate.
+    property bool searchOpen: false
     property bool searchRegex: false
     property bool searchCase: false
     property string searchFilter: ""
@@ -135,6 +138,9 @@ Window {
         : Workspace.accent
     /// Whether the active tab has somewhere to go back or forward to. The
     /// stacks live on the tab, so a torn-off window keeps its own.
+    /// One switch for every Behavior in the shell. Qt 6 has no system-wide
+    /// reduced-motion query, so the preference lives in `explorer.ini`.
+    readonly property bool reduceMotion: ExplorerPrefs.reduceMotion
     readonly property bool canGoBack: activeTab !== null && activeTab.canGoBack
     readonly property bool canGoForward: activeTab !== null && activeTab.canGoForward
     /// `settings.toml` arrives as JSON because QML has no typed map property.
@@ -175,9 +181,10 @@ Window {
         match = /^(\d+) items?$/.exec(text)
         if (match)
             return qsTr("%1 项").arg(match[1])
-        match = /^Results: (\d+)$/.exec(text)
+        match = /^Results: (\d+)( · Truncated)?$/.exec(text)
         if (match)
             return qsTr("%1 项结果").arg(match[1])
+                + (match[2] ? " · " + qsTr("已截断") : "")
         match = /^(\d+) changes?$/.exec(text)
         if (match)
             return qsTr("%1 项变更").arg(match[1])
@@ -842,6 +849,24 @@ Window {
         root.searchFilter = ""
         if (searchBar)
             searchBar.setText("")
+    }
+
+    function openSearch() {
+        if (!root.folderActive)
+            return
+        root.searchOpen = true
+        // The field is only focusable once the expanded state has been laid
+        // out; focusing a hidden item silently does nothing.
+        Qt.callLater(searchBar.focusInput)
+    }
+
+    /// Escape, or the icon again: drop the query *and* the field, because
+    /// leaving a live query with no field would strand the results on screen.
+    function closeSearch() {
+        if (root.searchQuery !== "")
+            root.acceptSearchText("")
+        root.searchOpen = false
+        root.focusActiveSurface()
     }
 
     function acceptSearchText(value) {
@@ -2094,7 +2119,7 @@ Window {
                 id: pathField
                 anchors.left: upButton.right
                 anchors.leftMargin: 6
-                anchors.right: root.folderActive ? searchBar.left : parent.right
+                anchors.right: root.folderActive ? searchSlot.left : parent.right
                 anchors.rightMargin: root.folderActive ? 6 : 12
                 anchors.verticalCenter: parent.verticalCenter
                 height: 30
@@ -2193,27 +2218,122 @@ Window {
                 }
             }
 
-            SearchBar {
-                id: searchBar
-                visible: root.folderActive
-                anchors.right: parent.right
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                width: 224
-                mode: root.searchMode
-                busy: root.searchBusy
-                contentEnabled: !root.remoteLocation
-                dark: root.dark
-                accent: root.accent
-                textColor: root.textColor
-                mutedColor: root.mutedColor
-                hairline: root.hairline
+            // ── Search ────────────────────────────────────────────────────
+            // A 224 px field parked here for the whole session takes a quarter
+            // of the bar from the breadcrumb, to serve an action used a few
+            // times an hour. It is an icon until asked for, and it stays out
+            // while a query is live so the field and its results never part.
+            Item {
+                id: searchSlot
 
-                onQueryEdited: function (value) {
-                    root.acceptSearchText(value)
+                readonly property bool expanded: root.searchOpen
+                    || root.searchQuery.length > 0
+
+                anchors.right: viewSlot.left
+                anchors.rightMargin: 4
+                anchors.verticalCenter: parent.verticalCenter
+                height: 28
+                width: expanded ? 240 : 28
+                visible: root.folderActive
+
+                Behavior on width {
+                    enabled: !root.reduceMotion
+                    NumberAnimation {
+                        duration: 140
+                        easing.type: Easing.OutCubic
+                    }
                 }
-                onModeToggled: root.toggleSearchMode()
-                onClearRequested: root.acceptSearchText("")
+
+                Rectangle {
+                    anchors.fill: parent
+                    visible: !searchSlot.expanded
+                    radius: 6
+                    color: searchIconMouse.containsMouse ? Theme.fill : "transparent"
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        kind: "search"
+                        tint: searchIconMouse.containsMouse
+                            ? root.textColor : root.mutedColor
+                    }
+
+                    MouseArea {
+                        id: searchIconMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.openSearch()
+                    }
+                }
+
+                SearchBar {
+                    id: searchBar
+                    anchors.fill: parent
+                    visible: searchSlot.expanded
+                    mode: root.searchMode
+                    busy: root.searchBusy
+                    contentEnabled: !root.remoteLocation
+                    dark: root.dark
+                    accent: root.accent
+                    textColor: root.textColor
+                    mutedColor: root.mutedColor
+                    hairline: root.hairline
+
+                    // The field owns the focus as soon as it exists. Asking for
+                    // it from `openSearch` lands in the same frame the field is
+                    // being laid out, and the listing can still take it back.
+                    onVisibleChanged: {
+                        if (visible && root.searchOpen)
+                            focusInput()
+                    }
+                    onQueryEdited: function (value) {
+                        root.acceptSearchText(value)
+                    }
+                    onModeToggled: root.toggleSearchMode()
+                    onClearRequested: root.acceptSearchText("")
+                    onDismissRequested: root.closeSearch()
+                }
+            }
+
+            // ── View ──────────────────────────────────────────────────────
+            // One button showing the view that is on, opening the one display
+            // menu. It was a 46 px text button in the 26 px status strip — the
+            // smallest target in the window for a control that changes what
+            // the whole body shows.
+            Item {
+                id: viewSlot
+                anchors.right: parent.right
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                width: 28
+                height: 28
+                visible: root.folderActive
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 6
+                    color: viewMouse.containsMouse || displayMenu.visible
+                        ? Theme.fill : "transparent"
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        kind: ExplorerPrefs.viewMode === "grid" ? "grid"
+                            : ExplorerPrefs.viewMode === "column" ? "column" : "list"
+                        tint: viewMouse.containsMouse || displayMenu.visible
+                            ? root.textColor : root.mutedColor
+                    }
+                }
+
+                MouseArea {
+                    id: viewMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        const point = viewSlot.mapToItem(null, 0, 0)
+                        displayMenu.openAbove(point.x + viewSlot.width - 252, point.y)
+                    }
+                }
             }
         }
 
@@ -2871,40 +2991,6 @@ Window {
             }
 
             Item {
-                id: viewButton
-                anchors.right: filterButton.left
-                anchors.rightMargin: 4
-                anchors.verticalCenter: parent.verticalCenter
-                width: 46
-                height: 18
-                visible: root.folderActive
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 4
-                    color: viewMouse.containsMouse || displayMenu.visible
-                        ? Theme.fill : "transparent"
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: qsTr("视图")
-                        color: root.mutedColor
-                        font.pixelSize: 11
-                    }
-                }
-
-                MouseArea {
-                    id: viewMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: {
-                        const point = viewButton.mapToItem(null, 0, 0)
-                        displayMenu.openAbove(point.x + viewButton.width - 252, point.y)
-                    }
-                }
-            }
-
-            Item {
                 id: updateButton
                 anchors.right: settingsButton.left
                 anchors.rightMargin: Updater.supported ? 4 : 0
@@ -3003,8 +3089,8 @@ Window {
                 anchors.left: queueChip.visible ? queueChip.right
                     : (gitChip.visible ? gitChip.right : statusText.right)
                 anchors.leftMargin: queueChip.visible || gitChip.visible ? 12 : 16
-                anchors.right: viewButton.left
-                anchors.rightMargin: 8
+                anchors.right: filterButton.left
+                anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 horizontalAlignment: Text.AlignRight
                 text: root.firstWindow ? root.profileText
@@ -3314,8 +3400,8 @@ Window {
     Shortcut {
         sequence: "Ctrl+Alt+V"
         onActivated: {
-            const point = viewButton.mapToItem(null, 0, 0)
-            displayMenu.openAbove(point.x + viewButton.width - 252, point.y)
+            const point = viewSlot.mapToItem(null, 0, 0)
+            displayMenu.openAbove(point.x + viewSlot.width - 252, point.y)
         }
     }
 
@@ -3633,7 +3719,7 @@ Window {
     Shortcut {
         sequence: root.shortcutSequence("explorer.focusSearch")
         enabled: !root.modalOpen && root.folderActive && sequence !== ""
-        onActivated: searchBar.focusInput()
+        onActivated: root.openSearch()
     }
 
     Shortcut {
@@ -3719,6 +3805,7 @@ Window {
 
         if (root.activePath !== "")
             Workspace.recordRecent(root.activePath, true, false)
+
 
         root.applyRemotePolicy()
         root.applySplitPreference()

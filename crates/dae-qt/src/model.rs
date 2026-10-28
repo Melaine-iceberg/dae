@@ -689,7 +689,7 @@ fn digit_run<I: Iterator<Item = char>>(first: char, chars: &mut std::iter::Peeka
     run
 }
 
-fn extension_of(name: &str) -> &str {
+pub(crate) fn extension_of(name: &str) -> &str {
     name.rsplit_once('.')
         .map(|(_, extension)| extension)
         .filter(|extension| !extension.is_empty())
@@ -697,7 +697,7 @@ fn extension_of(name: &str) -> &str {
 }
 
 /// The coarse kind the built-in glyph set paints.
-fn category_of(kind: EntryKind, name: &str) -> &'static str {
+pub(crate) fn category_of(kind: EntryKind, name: &str) -> &'static str {
     match kind {
         EntryKind::Directory => "folder",
         EntryKind::Symlink => "link",
@@ -2087,13 +2087,16 @@ fn icon_version(row: &StoredRow) -> String {
     format!("{}-{}", row.modified_at.unwrap_or(0), row.size.unwrap_or(0))
 }
 
-/// The thumbnail URL for a row, or empty when the desktop cannot draw one.
-///
-/// Network entries and directories have no first frame; the extension check is
-/// the same one the preview pane uses, so a row's thumbnail slot and the
-/// preview's image slot agree about what is renderable.
-fn thumbnail_url(remote: bool, path: &str, name: &str, row: &StoredRow) -> String {
-    if remote || row.kind != EntryKind::File {
+/// The same stamp built from loose values, for a model whose rows are not
+/// `StoredRow` (search results keep their own struct).
+pub(crate) fn icon_version_of(modified_at: Option<u64>, size: Option<u64>) -> String {
+    format!("{}-{}", modified_at.unwrap_or(0), size.unwrap_or(0))
+}
+
+/// The thumbnail URL for a local file, or empty when the desktop cannot draw
+/// one. Directories and files without an extension have no first frame.
+pub(crate) fn thumbnail_for(path: &str, name: &str, kind: EntryKind, version: &str) -> String {
+    if kind != EntryKind::File {
         return String::new();
     }
     if !(dae_core::fs::preview::is_thumbnail_path(path)
@@ -2104,7 +2107,19 @@ fn thumbnail_url(remote: bool, path: &str, name: &str, row: &StoredRow) -> Strin
     if extension_of(name).is_empty() {
         return String::new();
     }
-    crate::icons::thumbnail_source(path, &icon_version(row))
+    crate::icons::thumbnail_source(path, version)
+}
+
+/// The thumbnail URL for a row, or empty when the desktop cannot draw one.
+///
+/// Network entries and directories have no first frame; the extension check is
+/// the same one the preview pane uses, so a row's thumbnail slot and the
+/// preview's image slot agree about what is renderable.
+fn thumbnail_url(remote: bool, path: &str, name: &str, row: &StoredRow) -> String {
+    if remote {
+        return String::new();
+    }
+    thumbnail_for(path, name, row.kind, &icon_version(row))
 }
 
 #[cfg(test)]

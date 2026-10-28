@@ -415,7 +415,7 @@ Item {
                     // The monogram is what the built-in rows used to show, and
                     // showing the label's own first character beside the label
                     // is what made those rows look like a layout collision.
-                    SidebarGlyph {
+                    Glyph {
                         anchors.centerIn: parent
                         visible: root.hasDrawnGlyph(row.icon)
                         kind: row.icon

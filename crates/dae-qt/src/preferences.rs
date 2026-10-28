@@ -57,6 +57,10 @@ pub mod qobject {
         #[qproperty(QString, modified_filter, cxx_name = "modifiedFilter")]
         #[qproperty(QString, size_filter, cxx_name = "sizeFilter")]
         #[qproperty(bool, split_enabled, cxx_name = "splitEnabled")]
+        /// Off by default: the shell animates, and this is the single switch the
+        /// spec calls for. Qt 6 has no system-wide reduced-motion query, so the
+        /// preference has to live here and QML has to ask before every Behavior.
+        #[qproperty(bool, reduce_motion, cxx_name = "reduceMotion")]
         type ExplorerPrefs = super::ExplorerPrefsRust;
 
         #[qinvokable]
@@ -90,6 +94,7 @@ struct StoredPrefs {
     modified_filter: String,
     size_filter: String,
     split_enabled: bool,
+    reduce_motion: bool,
 }
 
 impl Default for StoredPrefs {
@@ -111,6 +116,7 @@ impl Default for StoredPrefs {
             modified_filter: "any".to_owned(),
             size_filter: "any".to_owned(),
             split_enabled: false,
+            reduce_motion: false,
         }
     }
 }
@@ -165,6 +171,7 @@ impl StoredPrefs {
         string("modifiedFilter", MODIFIED_FILTERS, &mut self.modified_filter);
         string("sizeFilter", SIZE_FILTERS, &mut self.size_filter);
         boolean("splitEnabled", &mut self.split_enabled);
+        boolean("reduceMotion", &mut self.reduce_motion);
     }
 
     fn document(&self) -> String {
@@ -192,6 +199,7 @@ impl StoredPrefs {
         write(&mut out, "modifiedFilter", &self.modified_filter);
         write(&mut out, "sizeFilter", &self.size_filter);
         write(&mut out, "splitEnabled", bool_text(self.split_enabled));
+        write(&mut out, "reduceMotion", bool_text(self.reduce_motion));
         out
     }
 }
@@ -234,6 +242,7 @@ pub struct ExplorerPrefsRust {
     modified_filter: QString,
     size_filter: QString,
     split_enabled: bool,
+    reduce_motion: bool,
 }
 
 impl Default for ExplorerPrefsRust {
@@ -260,6 +269,7 @@ impl ExplorerPrefsRust {
             modified_filter: QString::from(prefs.modified_filter.as_str()),
             size_filter: QString::from(prefs.size_filter.as_str()),
             split_enabled: prefs.split_enabled,
+            reduce_motion: prefs.reduce_motion,
         }
     }
 
@@ -277,6 +287,7 @@ impl ExplorerPrefsRust {
             modified_filter: self.modified_filter.to_string(),
             size_filter: self.size_filter.to_string(),
             split_enabled: self.split_enabled,
+            reduce_motion: self.reduce_motion,
         }
     }
 }
@@ -395,6 +406,13 @@ impl qobject::ExplorerPrefs {
                     return;
                 }
                 self.as_mut().set_show_hidden_files(value);
+                true
+            }
+            "reduceMotion" => {
+                if self.reduce_motion == value {
+                    return;
+                }
+                self.as_mut().set_reduce_motion(value);
                 true
             }
             "splitEnabled" => {

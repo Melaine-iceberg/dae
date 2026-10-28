@@ -16,6 +16,8 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use dae_core::fs::search;
 use dae_core::fs::vfs;
+
+use crate::model::{category_of, extension_of, icon_version_of, thumbnail_for};
 use dae_core::types::{
     ContentSearchFile, EntryKind, SearchEntry, SearchResponse, display_name_from_path,
 };
@@ -36,6 +38,13 @@ const SEARCH_ICON: i32 = 0x0208;
 /// A result can sit several levels below the search root, so it never carries
 /// a badge; the role exists to keep the delegate's contract uniform.
 const SEARCH_GIT: i32 = 0x0209;
+/// `FileList.qml`'s delegate requires these three as well, and a delegate with
+/// one uninitialised required property is not created at all — which is how the
+/// results list used to look: a status line counting 200 matches over an empty
+/// body. They are the same values the listing model answers.
+const SEARCH_CATEGORY: i32 = 0x020A;
+const SEARCH_EXTENSION: i32 = 0x020B;
+const SEARCH_THUMBNAIL: i32 = 0x020C;
 
 const CONTENT_IS_HEADER: i32 = 0x0300;
 const CONTENT_NAME: i32 = 0x0301;
@@ -265,6 +274,22 @@ impl qobject::SearchModel {
             SEARCH_HIDDEN => QVariant::from(&row.hidden),
             SEARCH_READ_ONLY => QVariant::from(&row.read_only),
             SEARCH_GIT => QVariant::from(&QString::default()),
+            SEARCH_CATEGORY => QVariant::from(&QString::from(category_of(row.kind, &row.name))),
+            SEARCH_EXTENSION => QVariant::from(&QString::from(extension_of(&row.name))),
+            SEARCH_THUMBNAIL => {
+                // A result two levels below the root is still a local file, so
+                // the thumbnail provider can answer for it exactly as it does
+                // for a listing row.
+                let remote = !vfs::is_local_path(&row.path);
+                if remote {
+                    QVariant::from(&QString::default())
+                } else {
+                    let version = icon_version_of(row.modified_at, row.size);
+                    QVariant::from(&QString::from(
+                        thumbnail_for(&row.path, &row.name, row.kind, &version).as_str(),
+                    ))
+                }
+            }
             SEARCH_ICON => {
                 let version = format!("{}-{}", row.modified_at.unwrap_or(0), row.size.unwrap_or(0));
                 // Network rows only carry a usable extension in their name;
@@ -301,6 +326,9 @@ impl qobject::SearchModel {
             (SEARCH_READ_ONLY, "readOnly"),
             (SEARCH_ICON, "iconSource"),
             (SEARCH_GIT, "gitStatus"),
+            (SEARCH_CATEGORY, "category"),
+            (SEARCH_EXTENSION, "extension"),
+            (SEARCH_THUMBNAIL, "thumbnailSource"),
         ])
     }
 

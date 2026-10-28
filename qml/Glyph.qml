@@ -1,12 +1,15 @@
 import QtQuick
 
-// The 16 px mark inside a sidebar row.
+// A drawn 16 px mark, keyed by what it means.
 //
-// These seven destinations used to draw the first character of their own label
-// in the tile — `主` next to `主目录`, `桌` next to `桌面`. At 16 px it does not
-// read as a monogram, it reads as a rendering collision: two copies of the same
-// character, one small and tinted, one normal. The tile keeps its shape and its
-// tint; only the character is replaced by a drawn mark.
+// The sidebar's built-in destinations used to draw the first character of their
+// own label in the 16 px tile — `主` next to `主目录`, `桌` next to `桌面`. At
+// that size it does not read as a monogram, it reads as a rendering collision:
+// two copies of the same character, one small and tinted, one normal.
+//
+// The shell also had three icon sources (this tile, unicode glyphs sprinkled
+// through the views, and one Windows-only font). This file is where they
+// converge: a mark is a path in a 16-unit box, nothing else.
 //
 // Canvas rather than rectangles because a roof line and a play triangle are
 // diagonals, and stacking 1 px rectangles to fake them is how an icon set turns
@@ -16,8 +19,8 @@ Item {
     id: root
 
     /// "home", "desktop", "documents", "downloads", "pictures", "music",
-    /// "videos". Anything else draws nothing and the caller falls back to its
-    /// own monogram.
+    /// "videos", "search", "list", "grid", "column". Anything else draws
+    /// nothing and the caller falls back to its own monogram or button label.
     property string kind: "home"
     property color tint: Theme.inkMuted
 
@@ -26,9 +29,11 @@ Item {
 
     readonly property bool draws: kind === "home" || kind === "desktop"
         || kind === "documents" || kind === "downloads" || kind === "pictures"
-        || kind === "music" || kind === "videos"
+        || kind === "music" || kind === "videos" || kind === "search"
+        || kind === "list" || kind === "grid" || kind === "column"
 
     Canvas {
+        id: canvas
         anchors.fill: parent
         visible: root.draws
         renderStrategy: Canvas.Immediate
@@ -137,6 +142,43 @@ Item {
                 ctx.lineTo(6.8, 9.8)
                 ctx.closePath()
                 ctx.fill()
+                break
+            case "search":
+                ctx.beginPath()
+                ctx.arc(7, 7, 4.2, 0, Math.PI * 2)
+                ctx.stroke()
+                ctx.beginPath()
+                ctx.moveTo(10.1, 10.1)
+                ctx.lineTo(13.6, 13.6)
+                ctx.stroke()
+                break
+            case "list":
+                for (let row = 0; row < 3; row += 1) {
+                    const y = 3.4 + row * 4.4
+                    ctx.beginPath()
+                    ctx.arc(3, y + 0.6, 0.9, 0, Math.PI * 2)
+                    ctx.fill()
+                    ctx.beginPath()
+                    ctx.moveTo(6, y + 0.6)
+                    ctx.lineTo(13.4, y + 0.6)
+                    ctx.stroke()
+                }
+                break
+            case "grid":
+                for (let row = 0; row < 2; row += 1) {
+                    for (let col = 0; col < 2; col += 1) {
+                        ctx.beginPath()
+                        ctx.rect(2.4 + col * 6.4, 2.4 + row * 6.4, 4.8, 4.8)
+                        ctx.stroke()
+                    }
+                }
+                break
+            case "column":
+                for (let col = 0; col < 3; col += 1) {
+                    ctx.beginPath()
+                    ctx.rect(1.9 + col * 4.4, 2.4, 3.4, 11.2)
+                    ctx.stroke()
+                }
                 break
             }
         }

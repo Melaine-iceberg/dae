@@ -1,11 +1,15 @@
 import QtQuick
 
-// The path bar's search capsule.
+// The path bar's search field.
 //
 // It owns only the input and its two glyph buttons; the query, debounce and
 // result model live in ShellWindow because they have to be reset when the tab
 // or directory changes. `text` is assigned imperatively for the same reason:
 // letting `text` be bound would break the moment the user types.
+//
+// The shell shows it only while searching. A 224 px field parked in the
+// navigation bar for the whole session costs the breadcrumb a quarter of the
+// width it needs, to serve an action taken a few times an hour.
 
 Item {
     id: root
@@ -25,6 +29,9 @@ Item {
     signal queryEdited(string value)
     signal modeToggled()
     signal clearRequested()
+    /// Escape on an empty field. The shell answers by collapsing the field back
+    /// into its icon; the field itself does not own that state.
+    signal dismissRequested()
 
     implicitWidth: 224
     implicitHeight: 26
@@ -103,9 +110,10 @@ Item {
                 if (text.length > 0) {
                     text = ""
                     root.queryEdited("")
-                } else {
-                    focus = false
+                    return
                 }
+                focus = false
+                root.dismissRequested()
             }
         }
 
