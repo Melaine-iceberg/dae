@@ -34,6 +34,7 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/PreviewPanel.qml", "qml/PreviewPanel.qml"),
     ("../../qml/MediaPreview.qml", "qml/MediaPreview.qml"),
     ("../../qml/Sidebar.qml", "qml/Sidebar.qml"),
+    ("../../qml/SidebarGlyph.qml", "qml/SidebarGlyph.qml"),
     ("../../qml/SidebarTree.qml", "qml/SidebarTree.qml"),
     ("../../qml/OverviewView.qml", "qml/OverviewView.qml"),
     ("../../qml/SpaceView.qml", "qml/SpaceView.qml"),

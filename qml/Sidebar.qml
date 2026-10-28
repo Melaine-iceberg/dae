@@ -140,6 +140,18 @@ Item {
         }
     }
 
+    /// Which ids carry a drawn mark. Kept next to `glyph` so the two tables
+    /// cannot disagree about what a row shows.
+    function hasDrawnGlyph(icon) {
+        switch (icon) {
+        case "home": case "desktop": case "documents": case "downloads":
+        case "pictures": case "music": case "videos":
+            return true
+        default:
+            return false
+        }
+    }
+
     function tint(icon) {
         switch (icon) {
         case "disk": return dark ? "#8a93a6" : "#6b7482"
@@ -389,6 +401,8 @@ Item {
                 }
 
                 Rectangle {
+                    id: iconTile
+
                     x: row.isVolume ? 24 : 12
                     anchors.verticalCenter: parent.verticalCenter
                     width: 16
@@ -397,8 +411,20 @@ Item {
                     color: Qt.rgba(root.tint(row.icon).r, root.tint(row.icon).g,
                                    root.tint(row.icon).b, 0.18)
 
+                    // A drawn mark where there is one; a monogram otherwise.
+                    // The monogram is what the built-in rows used to show, and
+                    // showing the label's own first character beside the label
+                    // is what made those rows look like a layout collision.
+                    SidebarGlyph {
+                        anchors.centerIn: parent
+                        visible: root.hasDrawnGlyph(row.icon)
+                        kind: row.icon
+                        tint: root.tint(row.icon)
+                    }
+
                     Text {
                         anchors.centerIn: parent
+                        visible: !root.hasDrawnGlyph(row.icon)
                         text: root.glyph(row.icon)
                         color: root.tint(row.icon)
                         font.pixelSize: 11
