@@ -2069,8 +2069,8 @@
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="540" />
-            <source>外观偏好保存在 appearance-qt.ini；快捷键与终端排版保存在 settings.toml，并与 Tauri 壳共享。</source>
-            <translation>外观偏好保存在 appearance-qt.ini；快捷键与终端排版保存在 settings.toml，并与 Tauri 壳共享。</translation>
+            <source>外观、语言、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。</source>
+            <translation>外观、语言、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。</translation>
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="562" />

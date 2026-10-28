@@ -247,7 +247,8 @@ impl qobject::Spaces {
                 QString::from(space.id.as_str())
             }
             Err(error) => {
-                self.as_mut().set_error(QString::from(friendly(&error).as_str()));
+                self.as_mut()
+                    .set_error(QString::from(friendly(&error).as_str()));
                 QString::default()
             }
         }
@@ -261,7 +262,8 @@ impl qobject::Spaces {
                 true
             }
             Err(error) => {
-                self.as_mut().set_error(QString::from(friendly(&error).as_str()));
+                self.as_mut()
+                    .set_error(QString::from(friendly(&error).as_str()));
                 false
             }
         }
@@ -275,7 +277,8 @@ impl qobject::Spaces {
                 true
             }
             Err(error) => {
-                self.as_mut().set_error(QString::from(friendly(&error).as_str()));
+                self.as_mut()
+                    .set_error(QString::from(friendly(&error).as_str()));
                 false
             }
         }
@@ -289,7 +292,8 @@ impl qobject::Spaces {
                 true
             }
             Err(error) => {
-                self.as_mut().set_error(QString::from(friendly(&error).as_str()));
+                self.as_mut()
+                    .set_error(QString::from(friendly(&error).as_str()));
                 false
             }
         }
@@ -303,7 +307,8 @@ impl qobject::Spaces {
                 true
             }
             Err(error) => {
-                self.as_mut().set_error(QString::from(friendly(&error).as_str()));
+                self.as_mut()
+                    .set_error(QString::from(friendly(&error).as_str()));
                 false
             }
         }
@@ -340,7 +345,10 @@ impl qobject::Spaces {
     }
 
     fn is_preset_at(&self, row: i32) -> bool {
-        self.rows.get(row as usize).map(|row| row.is_preset).unwrap_or(false)
+        self.rows
+            .get(row as usize)
+            .map(|row| row.is_preset)
+            .unwrap_or(false)
     }
 
     fn item_count_at(&self, row: i32) -> i32 {
@@ -405,11 +413,11 @@ impl qobject::Spaces {
 fn friendly(error: &FileSystemError) -> String {
     let message = error.to_string();
     if message.contains("Space name must not be empty") {
-        "空间名称不能为空".to_owned()
+        "Space name cannot be empty".to_owned()
     } else if message.contains("Preset spaces cannot be deleted") {
-        "预设空间不能删除".to_owned()
+        "Preset spaces cannot be deleted".to_owned()
     } else if message.contains("No space with id") {
-        "空间不存在".to_owned()
+        "Space not found".to_owned()
     } else {
         message
     }
@@ -447,12 +455,12 @@ mod tests {
     #[test]
     fn the_user_correctable_errors_are_localized() {
         let empty = FileSystemError::InvalidInput("Space name must not be empty".to_owned());
-        assert_eq!(friendly(&empty), "空间名称不能为空");
+        assert_eq!(friendly(&empty), "Space name cannot be empty");
 
         let preset = FileSystemError::InvalidInput("Preset spaces cannot be deleted".to_owned());
-        assert_eq!(friendly(&preset), "预设空间不能删除");
+        assert_eq!(friendly(&preset), "Preset spaces cannot be deleted");
 
         let missing = FileSystemError::NotFound("No space with id nope".to_owned());
-        assert_eq!(friendly(&missing), "空间不存在");
+        assert_eq!(friendly(&missing), "Space not found");
     }
 }

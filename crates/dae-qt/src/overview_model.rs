@@ -21,15 +21,15 @@ use dae_core::fs::recents::{self, RecentItem};
 use dae_core::fs::sidebar::{self, PlaceKind, SystemPlace};
 use dae_core::fs::spaces;
 use dae_core::fs::vfs;
-use dae_core::types::{display_name_from_path, EntryKind};
+use dae_core::types::{EntryKind, display_name_from_path};
 
 use crate::format;
 use crate::runtime;
 
-const SECTION_PROJECTS: &str = "项目";
-const SECTION_FAVORITES: &str = "收藏";
-const SECTION_RECENTS: &str = "最近";
-const SECTION_SPACES: &str = "空间";
+const SECTION_PROJECTS: &str = "Projects";
+const SECTION_FAVORITES: &str = "Favorites";
+const SECTION_RECENTS: &str = "Recent";
+const SECTION_SPACES: &str = "Spaces";
 
 const MAX_RECENTS: usize = 8;
 const MAX_PROJECTS: usize = 4;
@@ -273,11 +273,7 @@ impl qobject::OverviewModel {
             .unwrap_or(false)
     }
 
-    fn apply_projects(
-        mut self: Pin<&mut Self>,
-        generation: u64,
-        projects: Vec<OverviewRow>,
-    ) {
+    fn apply_projects(mut self: Pin<&mut Self>, generation: u64, projects: Vec<OverviewRow>) {
         if self.generation != generation {
             return;
         }
@@ -366,9 +362,10 @@ impl qobject::OverviewModel {
                         name: space.name,
                         path: space.id,
                         detail: if space.items.is_empty() {
-                            "空空间".to_owned()
+                            "Empty space".to_owned()
                         } else {
-                            format!("{} 项", space.items.len())
+                            let count = space.items.len();
+                            format!("{count} item{}", if count == 1 { "" } else { "s" })
                         },
                         icon: "space",
                         is_directory: true,
@@ -395,11 +392,7 @@ impl qobject::OverviewModel {
     }
 }
 
-fn push_place(
-    rows: &mut Vec<OverviewRow>,
-    seen: &mut HashSet<String>,
-    place: &SystemPlace,
-) {
+fn push_place(rows: &mut Vec<OverviewRow>, seen: &mut HashSet<String>, place: &SystemPlace) {
     if !seen.insert(normalize_path(&place.path)) {
         return;
     }
@@ -468,11 +461,12 @@ async fn scan_projects(candidates: Vec<ProjectCandidate>) -> Vec<OverviewRow> {
 
         let (added, modified, untracked) = count_entries(&entries);
         let change_text = if directory_untracked {
-            "未跟踪".to_owned()
+            "Untracked".to_owned()
         } else if added + modified + untracked == 0 {
-            "干净".to_owned()
+            "Clean".to_owned()
         } else {
-            format!("{} 项变更", added + modified + untracked)
+            let count = added + modified + untracked;
+            format!("{count} change{}", if count == 1 { "" } else { "s" })
         };
 
         projects.push(OverviewRow {
@@ -516,13 +510,13 @@ fn count_entries(entries: &[dae_core::fs::git::GitEntryStatus]) -> (usize, usize
 
 fn place_name(kind: PlaceKind) -> &'static str {
     match kind {
-        PlaceKind::Home => "主目录",
-        PlaceKind::Desktop => "桌面",
-        PlaceKind::Documents => "文档",
-        PlaceKind::Downloads => "下载",
-        PlaceKind::Pictures => "图片",
-        PlaceKind::Music => "音乐",
-        PlaceKind::Videos => "视频",
+        PlaceKind::Home => "Home",
+        PlaceKind::Desktop => "Desktop",
+        PlaceKind::Documents => "Documents",
+        PlaceKind::Downloads => "Downloads",
+        PlaceKind::Pictures => "Pictures",
+        PlaceKind::Music => "Music",
+        PlaceKind::Videos => "Videos",
     }
 }
 
@@ -593,7 +587,7 @@ mod tests {
         assert_eq!(row.detail, "C:/Users/me");
         assert_eq!(row.icon, "folder");
         assert!(row.is_directory);
-        assert_eq!(row.time_text, "今天");
+        assert_eq!(row.time_text, "Today");
     }
 
     #[test]

@@ -1,11 +1,5 @@
-//! Shell appearance and language preferences.
-//!
-//! The Tauri shell keeps these in `localStorage` (see `src/lib/theme.ts` and
-//! `src/i18n/index.ts`); the Qt shell has no web storage, so the same choices
-//! live in a small document next to the other dae profile files. The document
-//! belongs to this shell only: it is named after the shell, and the shared
-//! `settings.toml` still holds the shortcuts and terminal typography both
-//! shells read.
+//! Shell appearance and language preferences, persisted in the shared
+//! `settings.toml` document with shortcuts and terminal typography.
 //!
 //! `theme` is `system` / `light` / `dark`, `accent` is `system` / `brand`, and
 //! `language` is `system` / `zh-CN` / `en`. Values are validated on load and on
@@ -94,6 +88,7 @@ impl Default for StoredAppearance {
 }
 
 impl StoredAppearance {
+    #[cfg(test)]
     fn read(path: &PathBuf) -> Self {
         let Ok(contents) = std::fs::read_to_string(path) else {
             return Self::default();
@@ -121,13 +116,6 @@ impl StoredAppearance {
         }
         stored
     }
-
-    fn document(&self) -> String {
-        format!(
-            "# dae Qt shell appearance preferences\ntheme={}\naccent={}\nlanguage={}\n",
-            self.theme, self.accent, self.language
-        )
-    }
 }
 
 fn preferences_path() -> Option<PathBuf> {
@@ -139,23 +127,66 @@ fn preferences_path() -> Option<PathBuf> {
 /// The persisted language before QML exists. `system` is returned verbatim;
 /// [`crate::i18n`] resolves it against the OS locale.
 pub fn stored_language() -> String {
-    preferences_path()
-        .map(|path| StoredAppearance::read(&path).language)
-        .unwrap_or_else(|| "system".to_owned())
+    dae_core::settings::load_settings()
+        .map(|settings| settings.language)
+        .unwrap_or_else(|_| "system".to_owned())
 }
 
-fn save(stored: &StoredAppearance) {
-    let Some(path) = preferences_path() else {
+pub(crate) fn migrate_legacy() {
+    let Some(legacy_path) = preferences_path() else {
         return;
     };
-    if let Some(parent) = path.parent()
-        && let Err(error) = std::fs::create_dir_all(parent)
-    {
-        eprintln!("dae: could not create the appearance directory: {error}");
+    let Ok(legacy_document) = std::fs::read_to_string(legacy_path) else {
         return;
+    };
+    let legacy = StoredAppearance::from_document(&legacy_document);
+    let Ok(settings_path) = dae_core::settings::settings_file() else {
+        return;
+    };
+    let settings_document = std::fs::read_to_string(settings_path).unwrap_or_default();
+    let Ok(existing) = toml::from_str::<toml::Value>(&settings_document) else {
+        return;
+    };
+    let Ok(mut settings) = dae_core::settings::load_settings() else {
+        return;
+    };
+    if import_legacy(&mut settings, &legacy, &existing)
+        && let Err(error) = dae_core::settings::save_settings(settings)
+    {
+        eprintln!("dae: could not migrate appearance preferences: {error}");
     }
-    if let Err(error) = std::fs::write(&path, stored.document()) {
-        eprintln!("dae: could not save appearance preferences: {error}");
+}
+
+fn import_legacy(
+    settings: &mut dae_core::settings::AppSettings,
+    legacy: &StoredAppearance,
+    existing: &toml::Value,
+) -> bool {
+    let mut changed = false;
+    if existing.get("theme").is_none() {
+        settings.theme = legacy.theme.clone();
+        changed = true;
+    }
+    if existing.get("accent").is_none() {
+        settings.accent = legacy.accent.clone();
+        changed = true;
+    }
+    if existing.get("language").is_none() {
+        settings.language = legacy.language.clone();
+        changed = true;
+    }
+    changed
+}
+
+fn save(change: impl FnOnce(&mut dae_core::settings::AppSettings)) {
+    match dae_core::settings::load_settings() {
+        Ok(mut settings) => {
+            change(&mut settings);
+            if let Err(error) = dae_core::settings::save_settings(settings) {
+                eprintln!("dae: could not save appearance preferences: {error}");
+            }
+        }
+        Err(error) => eprintln!("dae: could not load appearance preferences: {error}"),
     }
 }
 
@@ -167,23 +198,11 @@ pub struct AppearanceRust {
 
 impl Default for AppearanceRust {
     fn default() -> Self {
-        let stored = preferences_path()
-            .map(|path| StoredAppearance::read(&path))
-            .unwrap_or_default();
+        let stored = dae_core::settings::load_settings().unwrap_or_default();
         Self {
             theme: QString::from(stored.theme.as_str()),
             accent: QString::from(stored.accent.as_str()),
             language: QString::from(stored.language.as_str()),
-        }
-    }
-}
-
-impl AppearanceRust {
-    fn stored(&self) -> StoredAppearance {
-        StoredAppearance {
-            theme: self.theme.to_string(),
-            accent: self.accent.to_string(),
-            language: self.language.to_string(),
         }
     }
 }
@@ -195,7 +214,7 @@ impl qobject::Appearance {
             return;
         }
         self.as_mut().set_theme(QString::from(value.as_str()));
-        save(&self.stored());
+        save(|settings| settings.theme = value);
     }
 
     fn change_accent(mut self: Pin<&mut Self>, value: &QString) {
@@ -204,7 +223,7 @@ impl qobject::Appearance {
             return;
         }
         self.as_mut().set_accent(QString::from(value.as_str()));
-        save(&self.stored());
+        save(|settings| settings.accent = value);
     }
 
     fn change_language(mut self: Pin<&mut Self>, value: &QString) {
@@ -213,7 +232,7 @@ impl qobject::Appearance {
             return;
         }
         self.as_mut().set_language(QString::from(value.as_str()));
-        save(&self.stored());
+        save(|settings| settings.language = value.clone());
         crate::i18n::apply(&value);
     }
 }
@@ -231,16 +250,11 @@ mod tests {
     }
 
     #[test]
-    fn a_hand_edited_document_round_trips() {
-        let stored = StoredAppearance::from_document(
-            "theme=dark\naccent=brand\nlanguage=en\n",
-        );
+    fn a_hand_edited_document_is_read() {
+        let stored = StoredAppearance::from_document("theme=dark\naccent=brand\nlanguage=en\n");
         assert_eq!(stored.theme, "dark");
         assert_eq!(stored.accent, "brand");
         assert_eq!(stored.language, "en");
-
-        let reparsed = StoredAppearance::from_document(&stored.document());
-        assert_eq!(reparsed, stored);
     }
 
     #[test]
@@ -249,5 +263,19 @@ mod tests {
             "theme=sepia\naccent=rainbow\nlanguage=fr\nnonsense=1\n",
         );
         assert_eq!(stored, StoredAppearance::default());
+    }
+
+    #[test]
+    fn legacy_values_only_fill_missing_shared_settings() {
+        let legacy = StoredAppearance::from_document("theme=dark\naccent=brand\nlanguage=en\n");
+        let existing = toml::from_str("theme = \"system\"\n").expect("valid TOML");
+        let mut settings = dae_core::settings::AppSettings::default();
+        settings.terminal.font_size = 16;
+
+        assert!(import_legacy(&mut settings, &legacy, &existing));
+        assert_eq!(settings.theme, "system");
+        assert_eq!(settings.accent, "brand");
+        assert_eq!(settings.language, "en");
+        assert_eq!(settings.terminal.font_size, 16);
     }
 }

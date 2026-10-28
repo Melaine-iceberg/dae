@@ -209,7 +209,7 @@ impl qobject::OpenWithModel {
     fn load(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
         if path.trim().is_empty() {
-            self.as_mut().apply_error("没有可打开的项目".to_owned());
+            self.as_mut().apply_error("No item to open".to_owned());
             return;
         }
 
@@ -331,7 +331,7 @@ fn prepare_rows(choices: &OpenWithChoices, filter: &str) -> PreparedRows {
     if let Some(app) = choices.default.as_ref().filter(|app| matches(app)) {
         rows.push(OpenWithRow {
             kind: RowKind::Header,
-            label: "当前默认".to_owned(),
+            label: "Current default".to_owned(),
             app_id: String::new(),
             icon_name: String::new(),
             is_default: false,
@@ -347,7 +347,7 @@ fn prepare_rows(choices: &OpenWithChoices, filter: &str) -> PreparedRows {
     if !recommended.is_empty() {
         rows.push(OpenWithRow {
             kind: RowKind::Header,
-            label: "推荐应用".to_owned(),
+            label: "Recommended apps".to_owned(),
             app_id: String::new(),
             icon_name: String::new(),
             is_default: false,
@@ -363,7 +363,7 @@ fn prepare_rows(choices: &OpenWithChoices, filter: &str) -> PreparedRows {
     if !other.is_empty() {
         rows.push(OpenWithRow {
             kind: RowKind::Header,
-            label: "其他应用".to_owned(),
+            label: "Other apps".to_owned(),
             app_id: String::new(),
             icon_name: String::new(),
             is_default: false,
@@ -433,12 +433,12 @@ mod tests {
         assert_eq!(
             labels(&prepared),
             vec![
-                "当前默认",
+                "Current default",
                 "Text Editor",
-                "推荐应用",
+                "Recommended apps",
                 "Text Editor",
                 "Vim",
-                "其他应用",
+                "Other apps",
                 "gedit",
                 "Code",
             ]
@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn filtering_rebuilds_headers_instead_of_leaving_them_behind() {
         let prepared = prepare_rows(&choices(), "  co  ");
-        assert_eq!(labels(&prepared), vec!["其他应用", "Code"]);
+        assert_eq!(labels(&prepared), vec!["Other apps", "Code"]);
         assert_eq!(prepared.suggested_app_id, "text-editor");
         assert!(!prepared.rows.is_empty());
     }

@@ -140,7 +140,7 @@ impl qobject::TerminalSession {
             Ok(session) => {
                 self.as_mut().set_running(true);
                 self.as_mut().set_exit_code(-1);
-                self.as_mut().set_title(QString::from("终端"));
+                self.as_mut().set_title(QString::from("Terminal"));
                 self.as_mut().rust_mut().session = Some(Arc::new(session));
                 true
             }

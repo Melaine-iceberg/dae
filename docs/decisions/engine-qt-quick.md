@@ -795,11 +795,11 @@ changeText/timeText`，QML 侧一个 `ListView` 加 `section.property` 即可。
 行高/字体族与保存按钮；默认文件管理器页沿用平台注册命令；日志页显示
 `appLogDir` 并提供“打开目录”。
 
-**共享与壳内偏好分开。** 快捷键与终端排版继续写
+**外观与其他设置统一存储。** 快捷键、终端排版、主题、强调色与语言都写
 `%APPDATA%\com.melaine.dae\settings.toml`（`dae_core::settings` 的 20 个
-action id 与默认值），Tauri 壳读同一份；主题/强调色/语言只属于 Qt 壳，写
-`appearance-qt.ini`（`crates/dae-qt/src/appearance.rs`），默认全为
-`system`。`ShellWindow` 把 `dark`/`accent` 传给所有窗口与自绘控件，
+action id 与默认值），Tauri 壳读写同一份文档；旧 `appearance-qt.ini` 只在启动时
+导入 TOML 中缺失的外观字段，不再写入。三项外观默认值均为 `system`。
+`ShellWindow` 把 `dark`/`accent` 传给所有窗口与自绘控件，
 `Main.qml` 与撕出窗口不各自读偏好。
 
 **快捷键是注册表，不是散落的 `Keys` 处理器。** `qml/Shortcut.js` 负责
@@ -825,8 +825,8 @@ action id 与默认值），Tauri 壳读同一份；主题/强调色/语言只�
 English 后截图核对：设置五页、侧栏、列表表头（Name/Type/Size/Modified）、
 状态栏（`199 items`）、命令面板快捷键提示均为英文；录制快捷键写回
 `settings.toml`，冲突提示、清空与重置生效；`Ctrl+K` 打开命令面板，
-录制中按 Esc 只退出录制。仍已知：`friendly_error()` 产生的具体错误句
-和部分 Rust 侧状态仍为中文，不在本轮 QML 本地化范围内。
+录制中按 Esc 只退出录制。后续更新：外观偏好已统一写入 `settings.toml`，
+`friendly_error()` 与 Rust 侧状态、进度和操作结果均返回英文，QML 显示层再按当前语言映射。
 
 ## 5. 定案前必须量出来的四组数字
 

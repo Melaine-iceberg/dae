@@ -36,6 +36,9 @@ export const appSettingsAtom = atom<AppSettings | null>(null);
 export const CLIENT_DEFAULT_SETTINGS: AppSettings = {
   shortcuts: { ...DEFAULT_BINDINGS },
   terminal: { fontSize: 12, lineHeight: 1.75, fontFamily: null, ansiColors: null },
+  theme: "system",
+  accent: "system",
+  language: "system",
   defaultFileManager: { isDefault: false },
   warmTabPool: true,
 };
@@ -55,6 +58,9 @@ function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): AppSetti
     ...(patch.defaultFileManager
       ? { defaultFileManager: { ...base.defaultFileManager, ...patch.defaultFileManager } }
       : null),
+    ...(patch.theme === undefined ? null : { theme: patch.theme }),
+    ...(patch.accent === undefined ? null : { accent: patch.accent }),
+    ...(patch.language === undefined ? null : { language: patch.language }),
     ...(patch.warmTabPool === undefined ? null : { warmTabPool: patch.warmTabPool }),
   };
 }

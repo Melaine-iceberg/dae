@@ -293,13 +293,13 @@ fn snapshot_from(
 fn media_lines(media: media_meta::MediaPreview) -> String {
     let mut lines = Vec::new();
     if let Some(duration) = media.duration_ms {
-        lines.push(format!("时长: {}", duration_label(duration)));
+        lines.push(format!("Duration: {}", duration_label(duration)));
     }
     if let (Some(width), Some(height)) = (media.width, media.height) {
-        lines.push(format!("尺寸: {width} × {height}"));
+        lines.push(format!("Dimensions: {width} × {height}"));
     }
     if let Some(bitrate) = media.bitrate_bps {
-        lines.push(format!("码率: {}", bitrate_label(bitrate)));
+        lines.push(format!("Bitrate: {}", bitrate_label(bitrate)));
     }
     for (label, value) in media.tags {
         lines.push(format!("{label}: {value}"));
@@ -329,10 +329,10 @@ fn bitrate_label(bits_per_second: u64) -> String {
 
 fn kind_label(kind: EntryKind) -> &'static str {
     match kind {
-        EntryKind::Directory => "文件夹",
-        EntryKind::File => "文件",
-        EntryKind::Symlink => "符号链接",
-        EntryKind::Other => "其他",
+        EntryKind::Directory => "Folder",
+        EntryKind::File => "File",
+        EntryKind::Symlink => "Symbolic link",
+        EntryKind::Other => "Other",
     }
 }
 
@@ -347,7 +347,7 @@ fn is_media_path(path: &str) -> bool {
 
 fn friendly_preview_error(message: &str) -> String {
     if message.starts_with("The requested path was not found") {
-        return "该项目已不存在".to_owned();
+        return "This item no longer exists".to_owned();
     }
     message.to_owned()
 }

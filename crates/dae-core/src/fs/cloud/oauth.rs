@@ -220,15 +220,13 @@ async fn respond(
         "<!doctype html><meta charset=\"utf-8\"><title>dae</title>\
          <body style=\"font-family:system-ui,sans-serif;text-align:center;padding-top:12vh\">\
          <h3>Authorization complete</h3>\
-         <p>You can close this page and return to the app.</p>\
-         <p>授权完成，可以关闭此页面返回应用。</p></body>"
+         <p>You can close this page and return to the app.</p></body>"
             .to_owned()
     } else {
         format!(
             "<!doctype html><meta charset=\"utf-8\"><title>dae</title>\
              <body style=\"font-family:system-ui,sans-serif;text-align:center;padding-top:12vh\">\
-             <h3>Authorization failed</h3><p>{detail}</p>\
-             <p>授权失败：{detail}</p></body>"
+             <h3>Authorization failed</h3><p>{detail}</p></body>"
         )
     };
     let status = if ok { "200 OK" } else { "400 Bad Request" };

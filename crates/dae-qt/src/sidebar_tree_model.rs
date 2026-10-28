@@ -201,8 +201,7 @@ impl qobject::SidebarTreeModel {
         }
 
         self.as_mut().set_busy(true);
-        self.as_mut()
-            .set_status(QString::from("读取文件夹…"));
+        self.as_mut().set_status(QString::from("Loading folder…"));
         self.as_mut().request_children(root, generation);
     }
 
@@ -278,15 +277,20 @@ impl qobject::SidebarTreeModel {
                 self.as_mut().rust_mut().loaded_paths.insert(path.clone());
                 if is_root {
                     self.as_mut().set_loaded(true);
-                    self.as_mut().set_status(QString::from(tree_status(count).as_str()));
+                    self.as_mut()
+                        .set_status(QString::from(tree_status(count).as_str()));
                 }
             }
             Err(error) => {
-                self.as_mut().rust_mut().children.insert(path.clone(), Vec::new());
+                self.as_mut()
+                    .rust_mut()
+                    .children
+                    .insert(path.clone(), Vec::new());
                 self.as_mut().rust_mut().loaded_paths.insert(path.clone());
                 if is_root {
                     self.as_mut().set_loaded(true);
-                    self.as_mut().set_status(QString::from("无法读取文件夹"));
+                    self.as_mut()
+                        .set_status(QString::from("Could not read folder"));
                     eprintln!("dae: sidebar tree read failed: {error}");
                 }
             }
@@ -327,7 +331,10 @@ impl qobject::SidebarTreeModel {
     }
 }
 
-fn children_from(entries: Vec<dae_core::types::DirectoryEntry>, show_hidden: bool) -> Vec<TreeChild> {
+fn children_from(
+    entries: Vec<dae_core::types::DirectoryEntry>,
+    show_hidden: bool,
+) -> Vec<TreeChild> {
     let mut children: Vec<TreeChild> = entries
         .into_iter()
         .filter(|entry| entry.kind == EntryKind::Directory && (show_hidden || !entry.hidden))
@@ -342,9 +349,9 @@ fn children_from(entries: Vec<dae_core::types::DirectoryEntry>, show_hidden: boo
 
 fn tree_status(count: usize) -> String {
     if count == 0 {
-        "没有子文件夹".to_owned()
+        "No subfolders".to_owned()
     } else {
-        format!("{count} 个子文件夹")
+        format!("Subfolders: {count}")
     }
 }
 
@@ -445,10 +452,7 @@ mod tests {
             "C:/root".to_owned(),
             vec![child("a", "C:/root/a"), child("b", "C:/root/b")],
         );
-        children.insert(
-            "C:/root/a".to_owned(),
-            vec![child("a1", "C:/root/a/a1")],
-        );
+        children.insert("C:/root/a".to_owned(), vec![child("a1", "C:/root/a/a1")]);
         let mut expanded = HashSet::new();
         expanded.insert("C:/root/a".to_owned());
         let mut loaded = HashSet::new();

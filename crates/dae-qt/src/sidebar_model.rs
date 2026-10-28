@@ -21,14 +21,14 @@ use dae_core::fs::spaces::list_spaces;
 use crate::format;
 use crate::runtime;
 
-const SECTION_PLACES: &str = "位置";
-const SECTION_FAVORITES: &str = "收藏";
-const SECTION_SPACES: &str = "空间";
-const SECTION_VOLUMES: &str = "磁盘";
+const SECTION_PLACES: &str = "Places";
+const SECTION_FAVORITES: &str = "Favorites";
+const SECTION_SPACES: &str = "Spaces";
+const SECTION_VOLUMES: &str = "Disks";
 const SECTION_WSL: &str = "WSL";
-const SECTION_NETWORK: &str = "网络存储";
-const SECTION_CLOUD: &str = "云存储";
-const SECTION_RECENTS: &str = "最近";
+const SECTION_NETWORK: &str = "Network Storage";
+const SECTION_CLOUD: &str = "Cloud Storage";
+const SECTION_RECENTS: &str = "Recent";
 
 const ROLE_SECTION: i32 = 0x0200;
 const ROLE_NAME: i32 = 0x0201;
@@ -154,7 +154,7 @@ impl qobject::SidebarModel {
     }
 
     fn refresh(mut self: Pin<&mut Self>) {
-        self.as_mut().set_status(QString::from("读取中…"));
+        self.as_mut().set_status(QString::from("Loading…"));
         // A sidebar may be created before the command singleton; both stores
         // are process-wide and loading them here is idempotent.
         crate::init_stores();
@@ -186,15 +186,16 @@ impl qobject::SidebarModel {
                 path: space.id,
                 kind: "space".to_owned(),
                 detail: if space.items.is_empty() {
-                    "空".to_owned()
+                    "Empty".to_owned()
                 } else {
-                    format!("{} 项", space.items.len())
+                    let count = space.items.len();
+                    format!("{count} item{}", if count == 1 { "" } else { "s" })
                 },
                 icon: "space".to_owned(),
                 is_dir: true,
             });
         }
-        base.push(action_row(SECTION_SPACES, "新建空间…", "addSpace"));
+        base.push(action_row(SECTION_SPACES, "New space…", "addSpace"));
 
         let mut network = Vec::new();
         for connection in connections::list_connections().unwrap_or_default() {
@@ -204,7 +205,7 @@ impl qobject::SidebarModel {
         // at the end once there is something to manage.
         network.push(action_row(
             SECTION_NETWORK,
-            "连接网络存储…",
+            "Connect network storage…",
             "addConnection",
         ));
 
@@ -212,7 +213,7 @@ impl qobject::SidebarModel {
         for account in list_cloud_accounts().unwrap_or_default() {
             cloud.push(cloud_row(account));
         }
-        cloud.push(action_row(SECTION_CLOUD, "添加网盘账户…", "addCloud"));
+        cloud.push(action_row(SECTION_CLOUD, "Add cloud account…", "addCloud"));
 
         let mut recent = Vec::new();
         for item in list_recents().unwrap_or_default().into_iter().take(12) {
@@ -268,21 +269,22 @@ impl qobject::SidebarModel {
             self.as_mut().end_reset_model();
         }
         let count = self.rows.len();
-        self.as_mut()
-            .set_status(QString::from(format!("{count} 项").as_str()));
+        self.as_mut().set_status(QString::from(
+            format!("{count} item{}", if count == 1 { "" } else { "s" }).as_str(),
+        ));
         self.as_mut().set_loaded(true);
     }
 }
 
 fn place_row(kind: PlaceKind, path: &str) -> SidebarRow {
     let (name, icon) = match kind {
-        PlaceKind::Home => ("主目录", "home"),
-        PlaceKind::Desktop => ("桌面", "desktop"),
-        PlaceKind::Documents => ("文档", "documents"),
-        PlaceKind::Downloads => ("下载", "downloads"),
-        PlaceKind::Pictures => ("图片", "pictures"),
-        PlaceKind::Music => ("音乐", "music"),
-        PlaceKind::Videos => ("视频", "videos"),
+        PlaceKind::Home => ("Home", "home"),
+        PlaceKind::Desktop => ("Desktop", "desktop"),
+        PlaceKind::Documents => ("Documents", "documents"),
+        PlaceKind::Downloads => ("Downloads", "downloads"),
+        PlaceKind::Pictures => ("Pictures", "pictures"),
+        PlaceKind::Music => ("Music", "music"),
+        PlaceKind::Videos => ("Videos", "videos"),
     };
     SidebarRow {
         section: SECTION_PLACES.to_owned(),
@@ -460,7 +462,7 @@ mod tests {
 
     #[test]
     fn add_rows_are_not_paths() {
-        let row = action_row(SECTION_NETWORK, "连接网络存储…", "addConnection");
+        let row = action_row(SECTION_NETWORK, "Connect network storage…", "addConnection");
         assert_eq!(row.path, "");
         assert_eq!(row.icon, "add");
     }

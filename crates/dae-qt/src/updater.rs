@@ -104,8 +104,9 @@ impl qobject::Updater {
         }
         if !self.supported {
             if manual {
-                self.as_mut()
-                    .set_error(QString::from("当前构建不支持自动更新"));
+                self.as_mut().set_error(QString::from(
+                    "This build does not support automatic updates",
+                ));
                 self.as_mut().set_checked(true);
             }
             return;
@@ -130,7 +131,8 @@ impl qobject::Updater {
             return;
         }
         let Some(update) = self.update.clone() else {
-            self.as_mut().set_error(QString::from("没有可安装的更新"));
+            self.as_mut()
+                .set_error(QString::from("No update is available to install"));
             return;
         };
 
@@ -210,21 +212,30 @@ impl qobject::Updater {
 fn friendly_update_error(error: &UpdateError) -> String {
     match error {
         UpdateError::Feed(detail) => {
-            format!("检查更新失败：{}", short_detail(detail))
+            format!("Update check failed: {}", short_detail(detail))
         }
         UpdateError::Download(detail) => {
-            format!("下载更新失败：{}", short_detail(detail))
+            format!("Update download failed: {}", short_detail(detail))
         }
         UpdateError::InvalidFeed(detail) => {
-            format!("更新源格式无效：{}", short_detail(detail))
+            format!("Invalid update feed: {}", short_detail(detail))
         }
-        UpdateError::PlatformMissing(_) => "这个平台还没有发布更新".to_owned(),
-        UpdateError::Signature(_) => "更新包签名校验失败，已拒绝安装".to_owned(),
-        UpdateError::Archive(_) => "更新包内容不完整，已保持当前版本".to_owned(),
+        UpdateError::PlatformMissing(_) => {
+            "No update has been released for this platform".to_owned()
+        }
+        UpdateError::Signature(_) => {
+            "Update package signature verification failed. Installation was blocked.".to_owned()
+        }
+        UpdateError::Archive(_) => {
+            "The update package is incomplete. The current version was kept.".to_owned()
+        }
         UpdateError::Install(detail) => {
-            format!("无法启动更新安装：{}", short_detail(detail))
+            format!(
+                "Could not start the update installer: {}",
+                short_detail(detail)
+            )
         }
-        UpdateError::NotInstalled => "当前构建没有可更新的安装位置".to_owned(),
+        UpdateError::NotInstalled => "This build has no updatable installation location".to_owned(),
     }
 }
 
@@ -245,11 +256,14 @@ mod tests {
     #[test]
     fn network_errors_keep_the_first_line_and_stay_short() {
         let error = UpdateError::Download("timed out\nwhile reading".to_owned());
-        assert_eq!(friendly_update_error(&error), "下载更新失败：timed out");
+        assert_eq!(
+            friendly_update_error(&error),
+            "Update download failed: timed out"
+        );
         let error = UpdateError::Feed("connection reset".to_owned());
         assert_eq!(
             friendly_update_error(&error),
-            "检查更新失败：connection reset"
+            "Update check failed: connection reset"
         );
 
         let long = "x".repeat(300);
@@ -261,7 +275,7 @@ mod tests {
         let error = UpdateError::Signature("invalid base64".to_owned());
         assert_eq!(
             friendly_update_error(&error),
-            "更新包签名校验失败，已拒绝安装"
+            "Update package signature verification failed. Installation was blocked."
         );
     }
 }

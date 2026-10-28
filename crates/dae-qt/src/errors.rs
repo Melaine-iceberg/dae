@@ -14,25 +14,26 @@ pub(crate) fn friendly_error(message: &str) -> String {
         return text.to_owned();
     }
     if message.contains("has no SFTP subsystem") {
-        return "服务器未启用 SFTP 子系统".to_owned();
+        return "The server does not have the SFTP subsystem enabled".to_owned();
     }
     if let Some(detail) = message.strip_prefix("The file system operation failed: ") {
         if detail.starts_with("Could not reach the SMB server") {
-            return "无法连接服务器，请检查地址、端口和网络".to_owned();
+            return "Could not connect to the server. Check the address, port, and network connection."
+                .to_owned();
         }
         if detail.starts_with("SFTP authentication failed") {
-            return "SFTP 认证失败，请检查账号和密码".to_owned();
+            return "SFTP authentication failed. Check the username and password.".to_owned();
         }
         if let Some(text) = friendly_code(detail) {
             return text.to_owned();
         }
-        return format!("操作失败：{detail}");
+        return format!("Operation failed: {detail}");
     }
     if let Some(detail) = message.strip_prefix("The directory operation could not complete: ") {
         if let Some(text) = friendly_code(detail) {
             return text.to_owned();
         }
-        return format!("操作失败：{detail}");
+        return format!("Operation failed: {detail}");
     }
     // Git codes arrive wrapped in `NotFound`/`AlreadyExists` too. Only known
     // codes are translated; an unrecognized path stays in the core's words.
@@ -48,21 +49,22 @@ pub(crate) fn friendly_error(message: &str) -> String {
     }
     if let Some(detail) = message.strip_prefix("Permission was denied: ") {
         if message.contains("rejected the connection") {
-            return "服务器拒绝了连接，请填写账号和密码后重试".to_owned();
+            return "The server rejected the connection. Enter your username and password, then try again."
+                .to_owned();
         }
         if message.contains("rejected the account or password") {
-            return "服务器拒绝了账号或密码".to_owned();
+            return "The server rejected the username or password".to_owned();
         }
-        return format!("权限被拒绝：{detail}");
+        return format!("Permission denied: {detail}");
     }
     if let Some(detail) = message.strip_prefix("The requested operation has invalid input: ") {
         if let Some(text) = friendly_code(detail) {
             return text.to_owned();
         }
         if detail.contains("SFTP account is required") {
-            return "SFTP 需要账号，请填写后重试".to_owned();
+            return "SFTP requires a username. Enter one and try again.".to_owned();
         }
-        return format!("输入无效：{detail}");
+        return format!("Invalid input: {detail}");
     }
     if let Some(detail) =
         message.strip_prefix("The storage backend does not support this operation: ")
@@ -70,10 +72,11 @@ pub(crate) fn friendly_error(message: &str) -> String {
         if let Some(text) = friendly_code(detail) {
             return text.to_owned();
         }
-        return format!("当前平台不支持：{detail}");
+        return format!("Not supported on this platform: {detail}");
     }
     if message.contains("No cloud account is connected for:") {
-        return "尚未连接这个云盘账户，请先在侧边栏添加网盘账户并完成授权".to_owned();
+        return "No cloud account is connected. Add a cloud account in the sidebar and complete authorization first."
+            .to_owned();
     }
     message.to_owned()
 }
@@ -82,55 +85,55 @@ pub(crate) fn friendly_error(message: &str) -> String {
 /// that wrapped them.
 fn friendly_code(code: &str) -> Option<&'static str> {
     if code.starts_with("fs.undo_empty") {
-        Some("没有可撤销的操作")
+        Some("Nothing to undo")
     } else if code.starts_with("fs.redo_empty") {
-        Some("没有可重做的操作")
+        Some("Nothing to redo")
     } else if code.starts_with("fs.trash_local_only") {
-        Some("回收站只支持本地项目")
+        Some("Trash is only available for local items")
     } else if code.starts_with("fs.terminal_local_dir_only") {
-        Some("终端只能打开本地目录")
+        Some("Terminal can only open local directories")
     } else if code.starts_with("fs.open_with_local_only") {
-        Some("只有本地项目可以选择打开方式")
+        Some("Open With is only available for local items")
     } else if code.starts_with("fs.open_with_not_found") {
-        Some("这个项目已经不存在")
+        Some("This item no longer exists")
     } else if code.starts_with("fs.open_with_picker_unsupported") {
-        Some("当前系统不支持选择打开方式")
+        Some("Open With is not supported on this system")
     } else if code.starts_with("fs.trash_entries_missing") {
-        Some("所选项目已不在回收站")
+        Some("The selected items are no longer in Trash")
     } else if code.starts_with("fs.trash_restore_no_origin") {
-        Some("无法确定该项目的原位置")
+        Some("The item's original location could not be determined")
     } else if code.starts_with("git.not_a_worktree") {
-        Some("这个目录不在 Git 仓库中")
+        Some("This directory is not in a Git repository")
     } else if code.starts_with("git.branch_not_found") {
-        Some("找不到这个分支")
+        Some("Branch not found")
     } else if code.starts_with("git.branch_exists") {
-        Some("同名分支已经存在")
+        Some("A branch with this name already exists")
     } else if code.starts_with("git.invalid_branch_name") {
-        Some("分支名不合法")
+        Some("Invalid branch name")
     } else if code.starts_with("git.empty_repo") {
-        Some("仓库还没有提交，无法创建分支")
+        Some("Cannot create a branch because the repository has no commits")
     } else if code.starts_with("git.no_remote") {
-        Some("仓库没有配置远程地址")
+        Some("No remote is configured for this repository")
     } else if code.starts_with("git.no_upstream") {
-        Some("当前分支还没有上游分支")
+        Some("The current branch has no upstream branch")
     } else if code.starts_with("git.detached_head") {
-        Some("当前处于分离 HEAD 状态，请先切换到一个分支")
+        Some("HEAD is detached. Switch to a branch first.")
     } else if code.starts_with("git.checkout_failed") {
-        Some("切换分支失败，请先提交或暂存本地改动")
+        Some("Could not switch branches. Commit or stash your local changes first.")
     } else if code.starts_with("git.create_branch_failed") {
-        Some("创建分支失败")
+        Some("Could not create branch")
     } else if code.starts_with("git.fetch_failed") {
-        Some("获取远程更新失败，请检查网络和远程地址")
+        Some("Could not fetch remote updates. Check the network connection and remote URL.")
     } else if code.starts_with("git.pull_failed") {
-        Some("拉取失败，请先处理本地改动或冲突")
+        Some("Could not pull. Resolve local changes or conflicts first.")
     } else if code.starts_with("git.push_failed") {
-        Some("推送失败，请先拉取远程更新")
+        Some("Could not push. Pull remote updates first.")
     } else if code.starts_with("git.git_not_found") {
-        Some("未找到 git 命令，请先安装 Git")
+        Some("Git was not found. Install Git first.")
     } else if code.starts_with("default_manager.set_failed") {
-        Some("无法设置默认文件管理器")
+        Some("Could not set the default file manager")
     } else if code.starts_with("default_manager.status_failed") {
-        Some("无法读取默认文件管理器状态")
+        Some("Could not read the default file manager status")
     } else {
         None
     }
@@ -141,10 +144,10 @@ fn friendly_code(code: &str) -> Option<&'static str> {
 pub(crate) fn default_manager_detail(code: &str) -> &'static str {
     match code {
         "default_manager.finish_in_system_settings" => {
-            "Windows 需要你在系统设置的「默认应用」页确认 dae。"
+            "Confirm dae on the Default apps page in Windows Settings."
         }
         "default_manager.cannot_unset_macos" => {
-            "macOS 不允许应用自行取消默认身份，请在访达的设置中选择其他应用。"
+            "macOS does not allow apps to remove their default status. Choose another app in Finder settings."
         }
         _ => "",
     }
@@ -156,7 +159,7 @@ mod tests {
 
     #[test]
     fn known_core_codes_become_sentences_and_others_pass_through() {
-        assert_eq!(friendly_error("fs.undo_empty"), "没有可撤销的操作");
+        assert_eq!(friendly_error("fs.undo_empty"), "Nothing to undo");
         assert_eq!(
             friendly_error("The requested path was not found: C:/x"),
             "The requested path was not found: C:/x"
@@ -167,21 +170,21 @@ mod tests {
     fn wrapped_core_codes_are_translated() {
         assert_eq!(
             friendly_error("The requested operation has invalid input: fs.open_with_not_found"),
-            "这个项目已经不存在"
+            "This item no longer exists"
         );
         assert_eq!(
             friendly_error(
                 "The storage backend does not support this operation: fs.open_with_picker_unsupported"
             ),
-            "当前系统不支持选择打开方式"
+            "Open With is not supported on this system"
         );
         assert_eq!(
             friendly_error("The requested operation has invalid input: fs.undo_empty"),
-            "没有可撤销的操作"
+            "Nothing to undo"
         );
         assert_eq!(
             friendly_error("The requested operation has invalid input: fs.something_new"),
-            "输入无效：fs.something_new"
+            "Invalid input: fs.something_new"
         );
     }
 
@@ -189,25 +192,25 @@ mod tests {
     fn git_codes_are_translated_in_every_wrapper() {
         assert_eq!(
             friendly_error("The requested path was not found: git.not_a_worktree"),
-            "这个目录不在 Git 仓库中"
+            "This directory is not in a Git repository"
         );
         assert_eq!(
             friendly_error("An item already exists at the destination: git.branch_exists"),
-            "同名分支已经存在"
+            "A branch with this name already exists"
         );
         assert_eq!(
             friendly_error("The requested operation has invalid input: git.no_upstream"),
-            "当前分支还没有上游分支"
+            "The current branch has no upstream branch"
         );
         assert_eq!(
             friendly_error(
                 "The directory operation could not complete: git.checkout_failed: local changes"
             ),
-            "切换分支失败，请先提交或暂存本地改动"
+            "Could not switch branches. Commit or stash your local changes first."
         );
         assert_eq!(
             friendly_error("The directory operation could not complete: git.fetch_failed: timeout"),
-            "获取远程更新失败，请检查网络和远程地址"
+            "Could not fetch remote updates. Check the network connection and remote URL."
         );
     }
 
@@ -217,48 +220,48 @@ mod tests {
             friendly_error(
                 "The directory operation could not complete: default_manager.set_failed: 5"
             ),
-            "无法设置默认文件管理器"
+            "Could not set the default file manager"
         );
         assert_eq!(
             default_manager_detail("default_manager.finish_in_system_settings"),
-            "Windows 需要你在系统设置的「默认应用」页确认 dae。"
+            "Confirm dae on the Default apps page in Windows Settings."
         );
         assert_eq!(default_manager_detail("unknown"), "");
     }
 
     #[test]
-    fn connection_failures_get_actionable_chinese_copy() {
+    fn connection_failures_get_actionable_english_copy() {
         assert_eq!(
             friendly_error(
                 "The file system operation failed: Could not reach the SMB server: refused"
             ),
-            "无法连接服务器，请检查地址、端口和网络"
+            "Could not connect to the server. Check the address, port, and network connection."
         );
         assert_eq!(
             friendly_error(
                 "Permission was denied: The server rejected the account or password. Check the credentials."
             ),
-            "服务器拒绝了账号或密码"
+            "The server rejected the username or password"
         );
         assert_eq!(
             friendly_error(
                 "The requested operation has invalid input: An SFTP account is required."
             ),
-            "SFTP 需要账号，请填写后重试"
+            "SFTP requires a username. Enter one and try again."
         );
         assert_eq!(
             friendly_error("The file system operation failed: The server has no SFTP subsystem"),
-            "服务器未启用 SFTP 子系统"
+            "The server does not have the SFTP subsystem enabled"
         );
         assert_eq!(
             friendly_error(
                 "The requested path was not found: No cloud account is connected for: cloud://google_drive:me@example.com"
             ),
-            "尚未连接这个云盘账户，请先在侧边栏添加网盘账户并完成授权"
+            "No cloud account is connected. Add a cloud account in the sidebar and complete authorization first."
         );
         assert_eq!(
             friendly_error("The directory operation could not complete: disk full"),
-            "操作失败：disk full"
+            "Operation failed: disk full"
         );
     }
 }

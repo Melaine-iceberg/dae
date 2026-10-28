@@ -52,9 +52,9 @@ fn day_label_at(now_millis: u64, epoch_millis: u64) -> String {
     let now_days = (now_millis / 86_400_000) as i64;
     let then_days = (epoch_millis / 86_400_000) as i64;
     match now_days - then_days {
-        0 => "今天".to_owned(),
-        1 => "昨天".to_owned(),
-        days @ 2..=6 => format!("{days} 天前"),
+        0 => "Today".to_owned(),
+        1 => "Yesterday".to_owned(),
+        days @ 2..=6 => format!("{days} days ago"),
         _ => timestamp(epoch_millis)
             .split(' ')
             .next()
@@ -104,9 +104,9 @@ mod tests {
         let now = 1_792_929_600_000; // 2026-10-25T12:00:00Z
         let day = 86_400_000;
 
-        assert_eq!(day_label_at(now, now - 10 * 3_600_000), "今天");
-        assert_eq!(day_label_at(now, now - day), "昨天");
-        assert_eq!(day_label_at(now, now - 3 * day), "3 天前");
+        assert_eq!(day_label_at(now, now - 10 * 3_600_000), "Today");
+        assert_eq!(day_label_at(now, now - day), "Yesterday");
+        assert_eq!(day_label_at(now, now - 3 * day), "3 days ago");
         assert_eq!(day_label_at(now, now - 30 * day), "2026-09-25");
         assert_eq!(day_label_at(now, 0), "-");
     }

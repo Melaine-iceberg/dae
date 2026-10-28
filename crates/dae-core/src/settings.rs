@@ -1,11 +1,10 @@
 //! User settings persisted as a human-editable `settings.toml` in the app
 //! config directory.
 //!
-//! Only the settings introduced by the settings panel live here: keyboard
-//! shortcuts, integrated-terminal appearance, and the cached "default file
-//! manager" state. The explorer view preferences (sort/density/filters),
-//! theme, and locale intentionally stay in the frontend's own storage and are
-//! *not* mirrored into this file.
+//! Settings introduced by the settings panel live here: keyboard shortcuts,
+//! integrated-terminal appearance, shell appearance and language, and the
+//! cached "default file manager" state. Explorer view preferences
+//! (sort/density/filters) stay in the frontend's own storage.
 //!
 //! The module follows the same registry pattern as
 //! [`crate::fs::cloud::accounts`]: a process-wide `LazyLock<Mutex<_>>`
@@ -46,6 +45,9 @@ pub struct AppSettings {
     /// added actions appear with their defaults and stale ids are dropped.
     pub shortcuts: HashMap<String, String>,
     pub terminal: TerminalSettings,
+    pub theme: String,
+    pub accent: String,
+    pub language: String,
     pub default_file_manager: DefaultFileManagerState,
     /// Kept for compatibility with the Tauri shell's setting. The Qt shell
     /// never pre-builds a window (tear-off creates one on demand), so it reads
@@ -81,6 +83,9 @@ impl Default for AppSettings {
         Self {
             shortcuts: default_shortcuts(),
             terminal: TerminalSettings::default(),
+            theme: "system".to_string(),
+            accent: "system".to_string(),
+            language: "system".to_string(),
             default_file_manager: DefaultFileManagerState::default(),
             warm_tab_pool: true,
         }
@@ -245,6 +250,15 @@ fn read_settings_file(path: &Path) -> Result<AppSettings, FileSystemError> {
 fn normalize(mut settings: AppSettings) -> AppSettings {
     settings.shortcuts = normalize_shortcuts(settings.shortcuts);
     settings.terminal = normalize_terminal(settings.terminal);
+    if !["system", "light", "dark"].contains(&settings.theme.as_str()) {
+        settings.theme = "system".to_string();
+    }
+    if !["system", "brand"].contains(&settings.accent.as_str()) {
+        settings.accent = "system".to_string();
+    }
+    if !["system", "zh-CN", "en"].contains(&settings.language.as_str()) {
+        settings.language = "system".to_string();
+    }
     settings
 }
 
@@ -355,9 +369,15 @@ mod tests {
             .insert("explorer.copy".to_string(), "Mod+Shift+C".to_string());
         settings.terminal.font_size = 16;
         settings.terminal.font_family = Some("JetBrains Mono".to_string());
+        settings.theme = "dark".to_string();
+        settings.accent = "brand".to_string();
+        settings.language = "en".to_string();
 
         let saved = save_settings(settings.clone()).expect("save");
         assert_eq!(saved.terminal.font_size, 16);
+        assert_eq!(saved.theme, "dark");
+        assert_eq!(saved.accent, "brand");
+        assert_eq!(saved.language, "en");
         assert!(settings_path(&dir).exists(), "settings.toml written");
 
         use_config_dir_for_tests(dir.clone()).expect("reload");
@@ -391,6 +411,28 @@ mod tests {
         assert_eq!(loaded.terminal.font_size, 15);
         assert_eq!(loaded.terminal.line_height, 1.75);
         assert_eq!(loaded.terminal.font_family, None);
+        assert_eq!(loaded.theme, "system");
+        assert_eq!(loaded.accent, "system");
+        assert_eq!(loaded.language, "system");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn invalid_appearance_values_fall_back_independently() {
+        let _guard = lock();
+        let dir = temp_config_dir();
+        fs::write(
+            settings_path(&dir),
+            "theme = \"sepia\"\naccent = \"brand\"\nlanguage = \"fr\"\n",
+        )
+        .expect("write appearance settings");
+
+        use_config_dir_for_tests(dir.clone()).expect("init");
+        let loaded = load_settings().expect("load");
+        assert_eq!(loaded.theme, "system");
+        assert_eq!(loaded.accent, "brand");
+        assert_eq!(loaded.language, "system");
 
         fs::remove_dir_all(&dir).ok();
     }

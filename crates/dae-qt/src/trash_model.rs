@@ -179,7 +179,7 @@ impl qobject::TrashModel {
         self.as_mut().rust_mut().generation = generation;
         self.as_mut().set_loaded(false);
         self.as_mut().set_error(QString::default());
-        self.as_mut().set_status(QString::from("读取回收站…"));
+        self.as_mut().set_status(QString::from("Loading Trash…"));
 
         let thread = self.as_mut().qt_thread();
         runtime::spawn(async move {
@@ -219,7 +219,8 @@ impl qobject::TrashModel {
             Err(error) => {
                 self.as_mut().replace_rows(Vec::new());
                 self.as_mut().set_count(0);
-                self.as_mut().set_status(QString::from("无法读取回收站"));
+                self.as_mut()
+                    .set_status(QString::from("Could not read Trash"));
                 self.as_mut()
                     .set_error(QString::from(error.to_string().as_str()));
             }
@@ -238,12 +239,12 @@ impl qobject::TrashModel {
 
 fn summary(count: usize, total_bytes: u64) -> String {
     if count == 0 {
-        return "回收站是空的".to_owned();
+        return "Trash is empty".to_owned();
     }
     if total_bytes > 0 {
-        format!("{count} 项 · {}", format::size(total_bytes))
+        format!("Items: {count} · {}", format::size(total_bytes))
     } else {
-        format!("{count} 项")
+        format!("Items: {count}")
     }
 }
 
@@ -286,8 +287,8 @@ mod tests {
 
     #[test]
     fn the_summary_counts_entries_and_their_bytes() {
-        assert_eq!(summary(0, 0), "回收站是空的");
-        assert_eq!(summary(1, 0), "1 项");
-        assert_eq!(summary(2, 2_048), "2 项 · 2.0 KB");
+        assert_eq!(summary(0, 0), "Trash is empty");
+        assert_eq!(summary(1, 0), "Items: 1");
+        assert_eq!(summary(2, 2_048), "Items: 2 · 2.0 KB");
     }
 }

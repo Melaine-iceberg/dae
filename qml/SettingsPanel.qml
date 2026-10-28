@@ -8,10 +8,9 @@ import "Shortcut.js" as Shortcut
 // The panel intentionally has no global "save" step: appearance, language and
 // shortcuts apply immediately, while the terminal typography page keeps its
 // own save button because a half-typed font size should not resize the live
-// terminal. Terminal typography and shortcuts live in `settings.toml` and are
-// shared with the Tauri shell; the appearance choices are local to this shell
-// (`appearance-qt.ini`, see crates/dae-qt/src/appearance.rs). The
-// default-file-manager page changes an OS association, so its buttons call the
+// terminal. Appearance, language, terminal typography and shortcuts live in
+// the shared `settings.toml`. The default-file-manager page changes an OS
+// association, so its buttons call the
 // platform immediately and its state is re-read whenever the page opens.
 Item {
     id: root
@@ -189,29 +188,27 @@ Item {
         return binding ? Shortcut.display(binding, root.isMac) : qsTr("未绑定")
     }
 
-    /// The workspace reports a handful of settings failures as ready-made
-    /// Chinese strings. Recognise the fixed ones so the English panel does not
-    /// mix languages; a save error with a path suffix is kept verbatim.
+    /// Recognise fixed backend messages so the panel can translate them; a
+    /// save error with a path suffix is kept verbatim.
     function backendError(text) {
         switch (text) {
-        case "未知的快捷键操作": return qsTr("未知的快捷键操作")
-        case "快捷键格式无效": return qsTr("快捷键格式无效")
-        case "无法设置默认文件管理器": return qsTr("无法设置默认文件管理器")
-        case "无法读取默认文件管理器状态": return qsTr("无法读取默认文件管理器状态")
+        case "Unknown shortcut action": return qsTr("未知的快捷键操作")
+        case "Invalid shortcut format": return qsTr("快捷键格式无效")
+        case "Could not set the default file manager": return qsTr("无法设置默认文件管理器")
+        case "Could not read the default file manager status": return qsTr("无法读取默认文件管理器状态")
         }
-        const log = /^无法创建日志目录：(.+)$/.exec(text)
+        const log = /^Could not create log directory: (.+)$/.exec(text)
         if (log)
             return qsTr("无法创建日志目录：%1").arg(log[1])
         return text
     }
 
     /// The platform layer reports the manual follow-up as a fixed sentence.
-    /// Translate those two codes so the English settings page stays English.
     function localizeDetail(text) {
         switch (text) {
-        case "Windows 需要你在系统设置的「默认应用」页确认 dae。":
+        case "Confirm dae on the Default apps page in Windows Settings.":
             return qsTr("Windows 需要你在系统设置的「默认应用」页确认 dae。")
-        case "macOS 不允许应用自行取消默认身份，请在访达的设置中选择其他应用。":
+        case "macOS does not allow apps to remove their default status. Choose another app in Finder settings.":
             return qsTr("macOS 不允许应用自行取消默认身份，请在访达的设置中选择其他应用。")
         default: return text
         }
@@ -537,7 +534,7 @@ Item {
                 Text {
                     x: 24; y: 420
                     width: content.width - 48
-                    text: qsTr("外观偏好保存在 appearance-qt.ini；快捷键与终端排版保存在 settings.toml，并与 Tauri 壳共享。")
+                    text: qsTr("外观、语言、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。")
                     color: root.faintColor
                     font.pixelSize: 10
                     wrapMode: Text.WordWrap

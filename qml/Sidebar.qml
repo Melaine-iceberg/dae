@@ -81,13 +81,13 @@ Item {
 
     function sectionLabel(value) {
         switch (value) {
-        case "位置": return qsTr("位置")
-        case "收藏": return qsTr("收藏")
-        case "空间": return qsTr("空间")
-        case "磁盘": return qsTr("磁盘")
-        case "网络存储": return qsTr("网络存储")
-        case "云存储": return qsTr("云存储")
-        case "最近": return qsTr("最近")
+        case "Places": return qsTr("位置")
+        case "Favorites": return qsTr("收藏")
+        case "Spaces": return qsTr("空间")
+        case "Disks": return qsTr("磁盘")
+        case "Network Storage": return qsTr("网络存储")
+        case "Cloud Storage": return qsTr("云存储")
+        case "Recent": return qsTr("最近")
         default: return value
         }
     }
@@ -96,24 +96,24 @@ Item {
     /// and action rows keeps a favourite or recent entry named "文档" intact.
     function rowLabel(name) {
         switch (name) {
-        case "主目录": return qsTr("主目录")
-        case "桌面": return qsTr("桌面")
-        case "文档": return qsTr("文档")
-        case "下载": return qsTr("下载")
-        case "图片": return qsTr("图片")
-        case "音乐": return qsTr("音乐")
-        case "视频": return qsTr("视频")
-        case "新建空间…": return qsTr("新建空间…")
-        case "连接网络存储…": return qsTr("连接网络存储…")
-        case "添加网盘账户…": return qsTr("添加网盘账户…")
+        case "Home": return qsTr("主目录")
+        case "Desktop": return qsTr("桌面")
+        case "Documents": return qsTr("文档")
+        case "Downloads": return qsTr("下载")
+        case "Pictures": return qsTr("图片")
+        case "Music": return qsTr("音乐")
+        case "Videos": return qsTr("视频")
+        case "New space…": return qsTr("新建空间…")
+        case "Connect network storage…": return qsTr("连接网络存储…")
+        case "Add cloud account…": return qsTr("添加网盘账户…")
         default: return name
         }
     }
 
     function detailLabel(value) {
-        if (value === "空")
+        if (value === "Empty")
             return qsTr("空")
-        const count = /^(\d+) 项$/.exec(value)
+        const count = /^(\d+) items?$/.exec(value)
         if (count)
             return qsTr("%1 项").arg(count[1])
         return value

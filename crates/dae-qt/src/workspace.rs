@@ -33,8 +33,7 @@ use dae_core::fs::sidebar::{self, Favorite};
 use dae_core::fs::smb;
 use dae_core::fs::trash_view;
 use dae_core::fs::types::{
-    ConflictAction, EntryKind, NewEntryKind, TransferConflict, TransferItem,
-    display_name_from_path,
+    ConflictAction, EntryKind, NewEntryKind, TransferConflict, TransferItem, display_name_from_path,
 };
 use dae_core::fs::vfs;
 use dae_core::host::{Event, Host};
@@ -132,7 +131,11 @@ pub mod qobject {
         /// names the manual step a platform still requires.
         #[qproperty(bool, default_manager_supported, cxx_name = "defaultManagerSupported")]
         #[qproperty(bool, default_manager_is_default, cxx_name = "defaultManagerIsDefault")]
-        #[qproperty(bool, default_manager_is_registered, cxx_name = "defaultManagerIsRegistered")]
+        #[qproperty(
+            bool,
+            default_manager_is_registered,
+            cxx_name = "defaultManagerIsRegistered"
+        )]
         #[qproperty(QString, default_manager_detail, cxx_name = "defaultManagerDetail")]
         #[qproperty(QString, default_manager_error, cxx_name = "defaultManagerError")]
         #[qproperty(bool, default_manager_busy, cxx_name = "defaultManagerBusy")]
@@ -273,11 +276,7 @@ pub mod qobject {
         /// `paths`. The rows themselves come from `ShellCommandModel`.
         #[qinvokable]
         #[cxx_name = "invokeShellCommand"]
-        fn invoke_shell_command(
-            self: Pin<&mut Workspace>,
-            id: &QString,
-            paths: &QStringList,
-        );
+        fn invoke_shell_command(self: Pin<&mut Workspace>, id: &QString, paths: &QStringList);
 
         /// Primes the platform's discovery so the first right-click does not
         /// pay for it. Called once per process by the first window.
@@ -587,9 +586,6 @@ pub struct WorkspaceRust {
 
 impl Default for WorkspaceRust {
     fn default() -> Self {
-        // Settings are a process-wide registry; initializing here means the
-        // first QML window and every later one read the same document.
-        let _ = dae_core::settings::init();
         // The connection and cloud registries are file/keychain backed; the
         // sidebar and the connect dialogs read them through this same store.
         crate::init_stores();
@@ -632,11 +628,7 @@ impl Default for WorkspaceRust {
             shortcuts_json: QString::from(shortcuts_json(&settings.shortcuts).as_str()),
             log_directory: QString::from(app_log_directory().to_string_lossy().as_ref()),
             open_with_picker_supported: cfg!(any(target_os = "macos", target_os = "linux")),
-            default_manager_supported: cfg!(any(
-                target_os = "macos",
-                target_os = "linux",
-                windows
-            )),
+            default_manager_supported: cfg!(any(target_os = "macos", target_os = "linux", windows)),
             default_manager_is_default: false,
             default_manager_is_registered: false,
             default_manager_detail: QString::default(),
@@ -744,9 +736,10 @@ struct TransferJob {
 impl TransferJob {
     fn new(sources: Vec<String>, destination: String, cut: bool) -> Self {
         let label = format!(
-            "{} {} 项 → {}",
-            if cut { "移动" } else { "复制" },
+            "{} {} {} → {}",
+            if cut { "Move" } else { "Copy" },
             sources.len(),
+            if sources.len() == 1 { "item" } else { "items" },
             display_name_from_path(&destination)
         );
         Self {
@@ -928,12 +921,15 @@ impl qobject::Workspace {
         let directory = directory.to_string();
         let name = name.to_string();
         if name.trim().is_empty() {
-            self.as_mut()
-                .finish_operation(operation_kind, "", Some("名称不能为空".to_owned()));
+            self.as_mut().finish_operation(
+                operation_kind,
+                "",
+                Some("Name cannot be empty".to_owned()),
+            );
             return;
         }
 
-        self.as_mut().begin_operation("新建中…");
+        self.as_mut().begin_operation("Creating…");
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         dispatch(thread, operation_kind, async move {
@@ -949,11 +945,11 @@ impl qobject::Workspace {
         let new_name = new_name.to_string();
         if new_name.trim().is_empty() {
             self.as_mut()
-                .finish_operation("rename", "", Some("名称不能为空".to_owned()));
+                .finish_operation("rename", "", Some("Name cannot be empty".to_owned()));
             return;
         }
 
-        self.as_mut().begin_operation("重命名中…");
+        self.as_mut().begin_operation("Renaming…");
         let focus = dae_core::fs::undo::renamed_path(&path, &new_name).unwrap_or_default();
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
@@ -970,7 +966,7 @@ impl qobject::Workspace {
         if paths.is_empty() {
             return;
         }
-        self.as_mut().begin_operation("移到回收站…");
+        self.as_mut().begin_operation("Moving to Trash…");
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         dispatch(thread, "trash", async move {
@@ -986,7 +982,7 @@ impl qobject::Workspace {
         if paths.is_empty() {
             return;
         }
-        self.as_mut().begin_operation("删除中…");
+        self.as_mut().begin_operation("Deleting…");
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         dispatch(thread, "delete", async move {
@@ -1002,7 +998,7 @@ impl qobject::Workspace {
         if paths.is_empty() {
             return;
         }
-        self.as_mut().begin_operation("创建副本…");
+        self.as_mut().begin_operation("Duplicating…");
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         dispatch(thread, "duplicate", async move {
@@ -1022,8 +1018,11 @@ impl qobject::Workspace {
     ) {
         let sources = strings(sources);
         if sources.is_empty() {
-            self.as_mut()
-                .finish_operation("compress", "", Some("请选择要压缩的项目".to_owned()));
+            self.as_mut().finish_operation(
+                "compress",
+                "",
+                Some("Select items to compress".to_owned()),
+            );
             return;
         }
 
@@ -1032,19 +1031,22 @@ impl qobject::Workspace {
             self.as_mut().finish_operation(
                 "compress",
                 "",
-                Some("无法确定压缩包保存位置".to_owned()),
+                Some("Cannot determine archive destination".to_owned()),
             );
             return;
         }
 
         let Some(format) = archive_format(&format.to_string()) else {
-            self.as_mut()
-                .finish_operation("compress", "", Some("不支持的压缩格式".to_owned()));
+            self.as_mut().finish_operation(
+                "compress",
+                "",
+                Some("Unsupported archive format".to_owned()),
+            );
             return;
         };
 
         let password = optional_string(password);
-        self.as_mut().begin_operation("压缩中…");
+        self.as_mut().begin_operation("Compressing…");
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         dispatch(thread, "compress", async move {
@@ -1078,7 +1080,7 @@ impl qobject::Workspace {
         let destination_dir = optional_string(destination_dir);
         let password = optional_string(password);
         let password_supplied = password.is_some();
-        self.as_mut().begin_operation("解压中…");
+        self.as_mut().begin_operation("Extracting…");
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         let signal_target = archive_path.clone();
@@ -1100,9 +1102,9 @@ impl qobject::Workspace {
                 }
                 Err(FileSystemError::WrongPassword(_)) => {
                     let message = if password_supplied {
-                        "密码不正确，请重新输入"
+                        "Incorrect password. Try again."
                     } else {
-                        "压缩包已加密，请输入密码"
+                        "This archive is encrypted. Enter a password."
                     };
                     workspace.as_mut().settle_operation();
                     workspace
@@ -1222,7 +1224,8 @@ impl qobject::Workspace {
                 let message = friendly_error(&error.to_string());
                 self.as_mut().rust_mut().active_transfer = None;
                 self.as_mut().clear_conflict();
-                self.as_mut().set_last_error(QString::from(message.as_str()));
+                self.as_mut()
+                    .set_last_error(QString::from(message.as_str()));
                 let kind_value = QString::from(kind);
                 let message_value = QString::from(message.as_str());
                 self.as_mut().operation_failed(&kind_value, &message_value);
@@ -1272,7 +1275,8 @@ impl qobject::Workspace {
 
         self.as_mut().set_conflict_total(total as i32);
         self.as_mut().set_conflict_index(index);
-        self.as_mut().set_conflict_name(QString::from(name.as_str()));
+        self.as_mut()
+            .set_conflict_name(QString::from(name.as_str()));
         self.as_mut().set_conflict_cut(cut);
         self.as_mut()
             .set_conflict_source_category(QString::from(source_category.as_str()));
@@ -1291,12 +1295,10 @@ impl qobject::Workspace {
         self.as_mut().set_conflict_cut(false);
         self.as_mut()
             .set_conflict_source_category(QString::default());
-        self.as_mut()
-            .set_conflict_source_detail(QString::default());
+        self.as_mut().set_conflict_source_detail(QString::default());
         self.as_mut()
             .set_conflict_target_category(QString::default());
-        self.as_mut()
-            .set_conflict_target_detail(QString::default());
+        self.as_mut().set_conflict_target_detail(QString::default());
     }
 
     /// Records the answer for the conflict on screen and either moves to the
@@ -1365,7 +1367,7 @@ impl qobject::Workspace {
             decisions: HashMap::new(),
         });
         self.as_mut()
-            .begin_operation(if cut { "移动中…" } else { "复制中…" });
+            .begin_operation(if cut { "Moving…" } else { "Copying…" });
 
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
@@ -1428,7 +1430,7 @@ impl qobject::Workspace {
             self.as_mut().finish_operation(
                 "shortcut",
                 "",
-                Some("只能在本地文件夹创建快捷方式".to_owned()),
+                Some("Shortcuts can only be created in local folders".to_owned()),
             );
             return;
         }
@@ -1443,12 +1445,12 @@ impl qobject::Workspace {
             self.as_mut().finish_operation(
                 "shortcut",
                 "",
-                Some("只能为本地文件创建快捷方式".to_owned()),
+                Some("Shortcuts can only be created for local files".to_owned()),
             );
             return;
         }
 
-        self.as_mut().begin_operation("创建快捷方式…");
+        self.as_mut().begin_operation("Creating shortcut…");
         let thread = self.as_mut().qt_thread();
         dispatch(thread, "shortcut", async move {
             match service::create_shortcuts(sources, destination).await {
@@ -1484,11 +1486,7 @@ impl qobject::Workspace {
         true
     }
 
-    fn rename_entries_batch(
-        mut self: Pin<&mut Self>,
-        paths: &QStringList,
-        names: &QStringList,
-    ) {
+    fn rename_entries_batch(mut self: Pin<&mut Self>, paths: &QStringList, names: &QStringList) {
         let paths = strings(paths);
         let names = strings(names);
         if paths.is_empty() || paths.len() != names.len() {
@@ -1500,7 +1498,7 @@ impl qobject::Workspace {
             .map(|(path, new_name)| dae_core::types::RenameRequest { path, new_name })
             .collect::<Vec<_>>();
 
-        self.as_mut().begin_operation("重命名中…");
+        self.as_mut().begin_operation("Renaming…");
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         dispatch(thread, "rename", async move {
@@ -1529,11 +1527,7 @@ impl qobject::Workspace {
         });
     }
 
-    fn invoke_shell_command(
-        mut self: Pin<&mut Self>,
-        id: &QString,
-        paths: &QStringList,
-    ) {
+    fn invoke_shell_command(mut self: Pin<&mut Self>, id: &QString, paths: &QStringList) {
         let id = id.to_string();
         let paths = strings(paths);
         if id.is_empty() {
@@ -1554,9 +1548,7 @@ impl qobject::Workspace {
                     workspace
                         .as_mut()
                         .set_last_error(QString::from(message.as_str()));
-                    workspace
-                        .as_mut()
-                        .operation_failed(&kind, &message_value);
+                    workspace.as_mut().operation_failed(&kind, &message_value);
                 });
             }
         });
@@ -1628,7 +1620,7 @@ impl qobject::Workspace {
         match contents {
             ClipboardContents::Empty => {
                 self.as_mut()
-                    .finish_operation("copy", "", Some("剪贴板是空的".to_owned()))
+                    .finish_operation("copy", "", Some("Clipboard is empty".to_owned()))
             }
             ClipboardContents::Files {
                 paths,
@@ -1663,7 +1655,7 @@ impl qobject::Workspace {
                 ClipboardContents::Empty => workspace.as_mut().finish_operation(
                     "shortcut",
                     "",
-                    Some("剪贴板是空的".to_owned()),
+                    Some("Clipboard is empty".to_owned()),
                 ),
                 ClipboardContents::Files { paths, .. } => workspace
                     .as_mut()
@@ -1726,7 +1718,7 @@ impl qobject::Workspace {
     }
 
     fn undo(mut self: Pin<&mut Self>) {
-        self.as_mut().begin_operation("撤销中…");
+        self.as_mut().begin_operation("Undoing…");
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         dispatch(thread, "undo", async move {
@@ -1738,7 +1730,7 @@ impl qobject::Workspace {
     }
 
     fn redo(mut self: Pin<&mut Self>) {
-        self.as_mut().begin_operation("重做中…");
+        self.as_mut().begin_operation("Redoing…");
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         dispatch(thread, "redo", async move {
@@ -1786,7 +1778,7 @@ impl qobject::Workspace {
         if ids.is_empty() {
             return;
         }
-        self.as_mut().begin_operation("恢复中…");
+        self.as_mut().begin_operation("Restoring…");
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         dispatch(thread, "restore_trash", async move {
@@ -1802,7 +1794,7 @@ impl qobject::Workspace {
         if ids.is_empty() {
             return;
         }
-        self.as_mut().begin_operation("永久删除中…");
+        self.as_mut().begin_operation("Deleting permanently…");
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         dispatch(thread, "purge_trash", async move {
@@ -1814,7 +1806,7 @@ impl qobject::Workspace {
     }
 
     fn empty_trash(mut self: Pin<&mut Self>) {
-        self.as_mut().begin_operation("清空回收站…");
+        self.as_mut().begin_operation("Emptying Trash…");
         let thread = self.as_mut().qt_thread();
         let host = host_for(&thread);
         dispatch(thread, "empty_trash", async move {
@@ -1831,7 +1823,10 @@ impl qobject::Workspace {
             self.as_mut().finish_operation(
                 "open",
                 "",
-                Some("远程文件需要用本地应用打开前，请先复制到本地文件夹".to_owned()),
+                Some(
+                    "Copy remote files to a local folder before opening them with a local app"
+                        .to_owned(),
+                ),
             );
             return;
         }
@@ -1845,7 +1840,7 @@ impl qobject::Workspace {
 
     fn open_with(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
-        self.as_mut().begin_operation("正在打开…");
+        self.as_mut().begin_operation("Opening…");
         let thread = self.as_mut().qt_thread();
         dispatch(thread, "openWith", async move {
             match service::open_with(path).await {
@@ -1864,15 +1859,18 @@ impl qobject::Workspace {
         let path = path.to_string();
         let app_id = app_id.to_string();
         if path.trim().is_empty() || app_id.trim().is_empty() {
-            self.as_mut()
-                .finish_operation("openWith", "", Some("请选择一个应用".to_owned()));
+            self.as_mut().finish_operation(
+                "openWith",
+                "",
+                Some("Select an application".to_owned()),
+            );
             return;
         }
 
         self.as_mut().begin_operation(if set_default {
-            "正在设为默认打开方式…"
+            "Setting as default…"
         } else {
-            "正在打开…"
+            "Opening…"
         });
         let thread = self.as_mut().qt_thread();
         dispatch(thread, "openWith", async move {
@@ -1886,14 +1884,17 @@ impl qobject::Workspace {
     fn open_terminal(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
         if !vfs::is_local_path(&path) {
-            self.as_mut()
-                .finish_operation("terminal", "", Some("终端只能打开本地目录".to_owned()));
+            self.as_mut().finish_operation(
+                "terminal",
+                "",
+                Some("Only local directories can be opened in Terminal".to_owned()),
+            );
             return;
         }
         match service::open_terminal(path) {
             Ok(()) => self
                 .as_mut()
-                .set_status(QString::from("已在系统终端中打开")),
+                .set_status(QString::from("Opened in system terminal")),
             Err(error) => {
                 let message = friendly_error(&error.to_string());
                 self.as_mut()
@@ -1908,7 +1909,7 @@ impl qobject::Workspace {
             self.as_mut().finish_operation(
                 "reveal",
                 "",
-                Some("远程项目无法在系统资源管理器中定位".to_owned()),
+                Some("Remote items cannot be revealed in the system file manager".to_owned()),
             );
             return;
         }
@@ -1952,7 +1953,8 @@ impl qobject::Workspace {
         });
         match sidebar::save_favorites(favorites) {
             Ok(()) => {
-                self.as_mut().set_status(QString::from("已加入收藏"));
+                self.as_mut()
+                    .set_status(QString::from("Added to favorites"));
                 self.as_mut().favorites_changed();
             }
             Err(error) => {
@@ -1972,7 +1974,8 @@ impl qobject::Workspace {
             .collect();
         match sidebar::save_favorites(favorites) {
             Ok(()) => {
-                self.as_mut().set_status(QString::from("已从收藏移除"));
+                self.as_mut()
+                    .set_status(QString::from("Removed from favorites"));
                 self.as_mut().favorites_changed();
             }
             Err(error) => {
@@ -2006,7 +2009,7 @@ impl qobject::Workspace {
             let _ = thread.queue(move |mut workspace| match result {
                 Ok(()) => workspace
                     .as_mut()
-                    .connection_test_finished(true, &QString::from("连接测试成功")),
+                    .connection_test_finished(true, &QString::from("Connection test succeeded")),
                 Err(error) => {
                     let message = friendly_error(&error.to_string());
                     workspace
@@ -2079,7 +2082,8 @@ impl qobject::Workspace {
         }
         match connections::delete_connection(id) {
             Ok(()) => {
-                self.as_mut().set_status(QString::from("已移除连接"));
+                self.as_mut()
+                    .set_status(QString::from("Connection removed"));
                 self.as_mut().connections_changed();
                 let kind = QString::from("connection_delete");
                 self.as_mut().operation_finished(&kind, &QString::default());
@@ -2113,7 +2117,7 @@ impl qobject::Workspace {
         let client_id = client_id.to_string().trim().to_owned();
         if client_id.is_empty() {
             self.as_mut()
-                .cloud_authorize_finished(false, &QString::from("请输入 Client ID"));
+                .cloud_authorize_finished(false, &QString::from("Enter a Client ID"));
             return;
         }
 
@@ -2152,7 +2156,8 @@ impl qobject::Workspace {
         }
         match cloud_accounts::delete_cloud_account(id) {
             Ok(()) => {
-                self.as_mut().set_status(QString::from("已移除云盘账户"));
+                self.as_mut()
+                    .set_status(QString::from("Cloud account removed"));
                 self.as_mut().connections_changed();
                 let kind = QString::from("cloud_delete");
                 self.as_mut().operation_finished(&kind, &QString::default());
@@ -2189,7 +2194,8 @@ impl qobject::Workspace {
                 self.as_mut().set_terminal_font_family(QString::from(
                     saved.terminal.font_family.as_deref().unwrap_or(""),
                 ));
-                self.as_mut().set_status(QString::from("终端设置已保存"));
+                self.as_mut()
+                    .set_status(QString::from("Terminal settings saved"));
             }
             Err(error) => {
                 let message = friendly_error(&error.to_string());
@@ -2207,13 +2213,13 @@ impl qobject::Workspace {
         let id = id.to_string();
         if !dae_core::settings::default_shortcuts().contains_key(&id) {
             self.as_mut()
-                .set_last_error(QString::from("未知的快捷键操作"));
+                .set_last_error(QString::from("Unknown shortcut action"));
             return;
         }
         let binding = binding.to_string().trim().to_owned();
         if binding.len() > 64 || binding.chars().any(char::is_control) {
             self.as_mut()
-                .set_last_error(QString::from("快捷键格式无效"));
+                .set_last_error(QString::from("Invalid shortcut format"));
             return;
         }
         self.as_mut().apply_shortcut_change(move |shortcuts| {
@@ -2225,7 +2231,7 @@ impl qobject::Workspace {
         let id = id.to_string();
         let Some(binding) = dae_core::settings::default_shortcuts().get(&id).cloned() else {
             self.as_mut()
-                .set_last_error(QString::from("未知的快捷键操作"));
+                .set_last_error(QString::from("Unknown shortcut action"));
             return;
         };
         self.as_mut().apply_shortcut_change(move |shortcuts| {
@@ -2249,11 +2255,9 @@ impl qobject::Workspace {
         change(&mut settings.shortcuts);
         match dae_core::settings::save_settings(settings) {
             Ok(saved) => {
-                self.as_mut().set_shortcuts_json(QString::from(
-                    shortcuts_json(&saved.shortcuts).as_str(),
-                ));
                 self.as_mut()
-                    .set_status(QString::from("快捷键已保存"));
+                    .set_shortcuts_json(QString::from(shortcuts_json(&saved.shortcuts).as_str()));
+                self.as_mut().set_status(QString::from("Shortcuts saved"));
                 self.as_mut().set_last_error(QString::default());
             }
             Err(error) => {
@@ -2268,12 +2272,14 @@ impl qobject::Workspace {
         let directory = app_log_directory();
         if let Err(error) = std::fs::create_dir_all(&directory) {
             self.as_mut().set_last_error(QString::from(
-                format!("无法创建日志目录：{error}").as_str(),
+                format!("Could not create log directory: {error}").as_str(),
             ));
             return;
         }
         match platform::open_path(&directory.to_string_lossy()) {
-            Ok(()) => self.as_mut().set_status(QString::from("已打开日志目录")),
+            Ok(()) => self
+                .as_mut()
+                .set_status(QString::from("Opened log directory")),
             Err(message) => self
                 .as_mut()
                 .set_last_error(QString::from(message.as_str())),
@@ -2306,9 +2312,7 @@ impl qobject::Workspace {
             })
             .await
             .map_err(|error| {
-                FileSystemError::Internal(format!(
-                    "default_manager.status_failed: {error}"
-                ))
+                FileSystemError::Internal(format!("default_manager.status_failed: {error}"))
             })
             .and_then(|result| result);
             let _ = thread.queue(move |mut workspace| {
@@ -2338,17 +2342,13 @@ impl qobject::Workspace {
                     .unwrap_or("");
                 self.as_mut()
                     .set_default_manager_detail(QString::from(detail));
-                self.as_mut()
-                    .set_default_manager_error(QString::default());
+                self.as_mut().set_default_manager_error(QString::default());
                 if change.is_some() {
-                    let _ = dae_core::settings::set_default_file_manager_cache(
-                        status.is_default,
-                    );
+                    let _ = dae_core::settings::set_default_file_manager_cache(status.is_default);
                 }
             }
             Err(error) => {
-                self.as_mut()
-                    .set_default_manager_detail(QString::default());
+                self.as_mut().set_default_manager_detail(QString::default());
                 let message = friendly_error(&error.to_string());
                 self.as_mut()
                     .set_default_manager_error(QString::from(message.as_str()));
@@ -2438,7 +2438,7 @@ fn connection_input(
     let protocol = protocol_from(&protocol.to_string())?;
     let host = host.to_string().trim().to_owned();
     if host.is_empty() {
-        return Err("请输入服务器地址".into());
+        return Err("Enter a server address".into());
     }
     let username = username.to_string().trim().to_owned();
 
@@ -2458,7 +2458,7 @@ fn protocol_from(value: &str) -> Result<Protocol, String> {
         "sftp" => Ok(Protocol::Sftp),
         "ftp" => Ok(Protocol::Ftp),
         "webdav" => Ok(Protocol::WebDav),
-        other => Err(format!("不支持的连接协议：{other}")),
+        other => Err(format!("Unsupported connection protocol: {other}")),
     }
 }
 
@@ -2469,7 +2469,7 @@ fn parse_port(value: &str) -> Result<Option<u16>, String> {
     }
     match value.parse::<u16>() {
         Ok(port) if port > 0 => Ok(Some(port)),
-        _ => Err("端口必须是 1-65535".into()),
+        _ => Err("Port must be between 1 and 65535".into()),
     }
 }
 
@@ -2509,16 +2509,16 @@ fn glyph_category(kind: EntryKind) -> &'static str {
 /// The type word the listing's 类型 column shows for this entry.
 fn kind_label(kind: EntryKind, name: &str) -> String {
     match kind {
-        EntryKind::Directory => "文件夹".to_owned(),
-        EntryKind::Symlink => "符号链接".to_owned(),
-        EntryKind::Other => "其他".to_owned(),
+        EntryKind::Directory => "Folder".to_owned(),
+        EntryKind::Symlink => "Symlink".to_owned(),
+        EntryKind::Other => "Other".to_owned(),
         EntryKind::File => {
             let extension = name
                 .rsplit_once('.')
                 .map(|(_, extension)| extension)
                 .unwrap_or("");
             if extension.is_empty() {
-                "文件".to_owned()
+                "File".to_owned()
             } else {
                 extension.to_uppercase()
             }
@@ -2541,7 +2541,12 @@ fn conflict_detail(
     let modified = modified_at
         .map(crate::format::timestamp)
         .unwrap_or_else(|| "—".to_owned());
-    format!("{} · {}\n修改于 {}", kind_label(kind, name), size, modified)
+    format!(
+        "{} · {}\nModified {}",
+        kind_label(kind, name),
+        size,
+        modified
+    )
 }
 
 fn operation_id() -> String {
@@ -2552,35 +2557,35 @@ fn operation_id() -> String {
 
 fn success_message(kind: &str) -> &'static str {
     match kind {
-        "create" => "已创建",
-        "rename" => "已重命名",
-        "trash" => "已移到回收站",
-        "delete" => "已永久删除",
-        "duplicate" => "已创建副本",
-        "shortcut" => "已创建快捷方式",
-        "copy" => "已复制",
-        "move" => "已移动",
-        "compress" => "已压缩",
-        "extract" => "已解压",
-        "undo" => "已撤销",
-        "redo" => "已重做",
-        "openWith" => "已打开",
-        "restore_trash" => "已恢复",
-        "purge_trash" => "已永久删除",
-        "empty_trash" => "已清空回收站",
-        _ => "完成",
+        "create" => "Created",
+        "rename" => "Renamed",
+        "trash" => "Moved to Trash",
+        "delete" => "Permanently deleted",
+        "duplicate" => "Duplicated",
+        "shortcut" => "Shortcut created",
+        "copy" => "Copied",
+        "move" => "Moved",
+        "compress" => "Compressed",
+        "extract" => "Extracted",
+        "undo" => "Undone",
+        "redo" => "Redone",
+        "openWith" => "Opened",
+        "restore_trash" => "Restored",
+        "purge_trash" => "Permanently deleted",
+        "empty_trash" => "Trash emptied",
+        _ => "Done",
     }
 }
 
 fn operation_label(operation: dae_core::progress::FileOperationKind) -> &'static str {
     use dae_core::progress::FileOperationKind;
     match operation {
-        FileOperationKind::Copy => "复制中…",
-        FileOperationKind::Move => "移动中…",
-        FileOperationKind::Delete => "删除中…",
-        FileOperationKind::Compress => "压缩中…",
-        FileOperationKind::Extract => "解压中…",
-        FileOperationKind::Properties => "计算中…",
+        FileOperationKind::Copy => "Copying…",
+        FileOperationKind::Move => "Moving…",
+        FileOperationKind::Delete => "Deleting…",
+        FileOperationKind::Compress => "Compressing…",
+        FileOperationKind::Extract => "Extracting…",
+        FileOperationKind::Properties => "Calculating…",
     }
 }
 
@@ -2598,7 +2603,10 @@ fn shortcuts_json(shortcuts: &HashMap<String, String>) -> String {
         }
         push_json_string(&mut json, id);
         json.push(':');
-        push_json_string(&mut json, shortcuts.get(id).map(String::as_str).unwrap_or(""));
+        push_json_string(
+            &mut json,
+            shortcuts.get(id).map(String::as_str).unwrap_or(""),
+        );
     }
     json.push('}');
     json
@@ -2651,9 +2659,7 @@ fn app_log_directory() -> std::path::PathBuf {
                     .map(|home| std::path::PathBuf::from(home).join(".local").join("share"))
             });
         if let Some(base) = base {
-            return base
-                .join(dae_core::paths::APP_IDENTIFIER)
-                .join("logs");
+            return base.join(dae_core::paths::APP_IDENTIFIER).join("logs");
         }
     }
 
@@ -2753,7 +2759,11 @@ mod tests {
     #[test]
     fn a_conflict_batch_waits_for_every_answer_unless_applied_to_all() {
         let mut active = ActiveTransfer {
-            job: TransferJob::new(vec!["C:/a".into(), "C:/b".into(), "C:/c".into()], "C:/dst".into(), false),
+            job: TransferJob::new(
+                vec!["C:/a".into(), "C:/b".into(), "C:/c".into()],
+                "C:/dst".into(),
+                false,
+            ),
             conflicts: vec![conflict("C:/a"), conflict("C:/b"), conflict("C:/c")],
             index: 0,
             decisions: HashMap::new(),
@@ -2777,9 +2787,7 @@ mod tests {
             index: 1,
             decisions: HashMap::new(),
         };
-        active
-            .decisions
-            .insert("C:/a".into(), ConflictAction::Skip);
+        active.decisions.insert("C:/a".into(), ConflictAction::Skip);
 
         assert!(active.answer(ConflictAction::Replace, true));
         assert_eq!(active.decisions.get("C:/b"), Some(&ConflictAction::Replace));
@@ -2791,19 +2799,37 @@ mod tests {
     #[test]
     fn a_queued_transfer_waits_its_turn_in_order() {
         let mut queue = Vec::new();
-        queue.push(TransferJob::new(vec!["C:/a".into()], "C:/one".into(), false));
+        queue.push(TransferJob::new(
+            vec!["C:/a".into()],
+            "C:/one".into(),
+            false,
+        ));
         queue.push(TransferJob::new(vec!["C:/b".into()], "C:/two".into(), true));
 
-        assert_eq!(take_next_queued(&mut queue).map(|job| job.destination), Some("C:/one".to_string()));
-        assert_eq!(take_next_queued(&mut queue).map(|job| job.destination), Some("C:/two".to_string()));
+        assert_eq!(
+            take_next_queued(&mut queue).map(|job| job.destination),
+            Some("C:/one".to_string())
+        );
+        assert_eq!(
+            take_next_queued(&mut queue).map(|job| job.destination),
+            Some("C:/two".to_string())
+        );
         assert!(take_next_queued(&mut queue).is_none());
     }
 
     #[test]
     fn dropping_a_queued_transfer_leaves_the_rest_and_ignores_a_stale_index() {
         let mut queue = Vec::new();
-        queue.push(TransferJob::new(vec!["C:/a".into()], "C:/one".into(), false));
-        queue.push(TransferJob::new(vec!["C:/b".into()], "C:/two".into(), false));
+        queue.push(TransferJob::new(
+            vec!["C:/a".into()],
+            "C:/one".into(),
+            false,
+        ));
+        queue.push(TransferJob::new(
+            vec!["C:/b".into()],
+            "C:/two".into(),
+            false,
+        ));
 
         drop_queued(&mut queue, 7);
         assert_eq!(queue.len(), 2);
@@ -2815,9 +2841,9 @@ mod tests {
     #[test]
     fn a_queued_transfer_names_its_operation_and_target() {
         let copy = TransferJob::new(vec!["C:/a".into(), "C:/b".into()], "C:/dst".into(), false);
-        assert_eq!(copy.label, "复制 2 项 → dst");
+        assert_eq!(copy.label, "Copy 2 items → dst");
         let cut = TransferJob::new(vec!["C:/a".into()], "C:/dst".into(), true);
-        assert_eq!(cut.label, "移动 1 项 → dst");
+        assert_eq!(cut.label, "Move 1 item → dst");
     }
 
     #[test]
@@ -2833,20 +2859,25 @@ mod tests {
 
     #[test]
     fn the_conflict_card_names_the_kind_the_listing_would() {
-        assert_eq!(kind_label(EntryKind::Directory, "docs"), "文件夹");
+        assert_eq!(kind_label(EntryKind::Directory, "docs"), "Folder");
         assert_eq!(kind_label(EntryKind::File, "notes.txt"), "TXT");
-        assert_eq!(kind_label(EntryKind::File, "README"), "文件");
+        assert_eq!(kind_label(EntryKind::File, "README"), "File");
     }
 
     #[test]
     fn a_conflict_card_carries_both_caption_lines() {
-        let detail = conflict_detail(EntryKind::File, "a.bin", Some(2048), Some(1_792_886_400_000));
-        assert_eq!(detail, "BIN · 2.0 KB\n修改于 2026-10-25 00:00");
+        let detail = conflict_detail(
+            EntryKind::File,
+            "a.bin",
+            Some(2048),
+            Some(1_792_886_400_000),
+        );
+        assert_eq!(detail, "BIN · 2.0 KB\nModified 2026-10-25 00:00");
 
         // A folder has no size and a remote entry may have no timestamp; both
         // read as an em dash rather than as a zero.
         let detail = conflict_detail(EntryKind::Directory, "docs", None, None);
-        assert_eq!(detail, "文件夹 · —\n修改于 —");
+        assert_eq!(detail, "Folder · —\nModified —");
     }
 
     #[test]
@@ -2902,7 +2933,7 @@ mod tests {
             false,
         )
         .expect_err("host is required");
-        assert_eq!(missing_host, "请输入服务器地址");
+        assert_eq!(missing_host, "Enter a server address");
 
         let bad_port = connection_input(
             &QString::from("smb"),
@@ -2913,7 +2944,7 @@ mod tests {
             false,
         )
         .expect_err("port is out of range");
-        assert_eq!(bad_port, "端口必须是 1-65535");
+        assert_eq!(bad_port, "Port must be between 1 and 65535");
 
         let unknown = connection_input(
             &QString::from("s3"),
@@ -2924,7 +2955,7 @@ mod tests {
             false,
         )
         .expect_err("unknown protocol");
-        assert!(unknown.starts_with("不支持的连接协议"));
+        assert!(unknown.starts_with("Unsupported connection protocol"));
     }
 
     #[test]

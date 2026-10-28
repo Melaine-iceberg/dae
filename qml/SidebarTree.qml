@@ -159,7 +159,7 @@ Item {
 
     // Empty and error states live under the rows, at the first indent level,
     // so they do not masquerade as a folder. The status string is owned by the
-    // model ("没有子文件夹" / "无法读取文件夹" / "读取文件夹…").
+    // model ("No subfolders" / "Could not read folder" / "Loading folder…").
     Text {
         id: notice
 

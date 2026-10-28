@@ -331,7 +331,7 @@ impl qobject::SearchModel {
         self.as_mut().set_busy(true);
         self.as_mut().set_finished(false);
         self.as_mut().set_truncated(false);
-        self.as_mut().set_status(QString::from("搜索中…"));
+        self.as_mut().set_status(QString::from("Searching…"));
 
         let thread = self.as_mut().qt_thread();
         runtime::spawn(async move {
@@ -402,7 +402,7 @@ impl qobject::SearchModel {
 
     fn dispose(mut self: Pin<&mut Self>) {
         self.as_mut().cancel();
-        self.as_mut().set_status(QString::from("已关闭"));
+        self.as_mut().set_status(QString::from("Closed"));
     }
 
     fn reset_rows(mut self: Pin<&mut Self>) {
@@ -439,12 +439,12 @@ impl qobject::SearchModel {
                 self.as_mut().set_loaded(count);
                 self.as_mut().set_truncated(response.truncated);
                 let mut status = if count == 0 {
-                    "没有匹配项".to_owned()
+                    "No matches".to_owned()
                 } else {
-                    format!("{count} 项结果")
+                    format!("Results: {count}")
                 };
                 if response.truncated {
-                    status.push_str(" · 已截断");
+                    status.push_str(" · Truncated");
                 }
                 self.as_mut().set_status(QString::from(status.as_str()));
             }
@@ -611,7 +611,8 @@ impl qobject::ContentSearchModel {
         self.as_mut().set_truncated(false);
         self.as_mut().set_file_count(0);
         self.as_mut().set_match_count(0);
-        self.as_mut().set_status(QString::from("搜索文件内容…"));
+        self.as_mut()
+            .set_status(QString::from("Searching file contents…"));
 
         let thread = self.as_mut().qt_thread();
         runtime::spawn(async move {
@@ -671,7 +672,7 @@ impl qobject::ContentSearchModel {
 
     fn dispose(mut self: Pin<&mut Self>) {
         self.as_mut().cancel();
-        self.as_mut().set_status(QString::from("已关闭"));
+        self.as_mut().set_status(QString::from("Closed"));
     }
 
     fn reset_rows(mut self: Pin<&mut Self>) {
@@ -705,11 +706,11 @@ impl qobject::ContentSearchModel {
                 self.as_mut().set_file_count(files);
                 self.as_mut().set_match_count(matches);
                 self.as_mut().set_truncated(response.truncated);
-                let mut status = format!("{files} 个文件 · {matches} 处匹配");
+                let mut status = format!("Files: {files} · Matches: {matches}");
                 if files == 0 {
-                    status = "没有匹配内容".to_owned();
+                    status = "No matching content".to_owned();
                 } else if response.truncated {
-                    status.push_str(" · 已截断");
+                    status.push_str(" · Truncated");
                 }
                 self.as_mut().set_status(QString::from(status.as_str()));
             }
@@ -819,10 +820,10 @@ fn parent_directory(path: &str) -> String {
 
 fn friendly_search_error(message: &str) -> String {
     if message.starts_with("fs.invalid_search_query") {
-        return "搜索表达式无效".to_owned();
+        return "Invalid search expression".to_owned();
     }
     if message.starts_with("fs.content_search_local_only") {
-        return "内容搜索只支持本地目录".to_owned();
+        return "Content search is only available in local directories".to_owned();
     }
     message.to_owned()
 }

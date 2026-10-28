@@ -68,7 +68,7 @@ pub fn show_properties(path: &str) -> bool {
 pub fn open_path(path: &str) -> Result<(), String> {
     let target = Path::new(path);
     if !target.exists() {
-        return Err("找不到该项目".to_owned());
+        return Err("Item not found".to_owned());
     }
 
     #[cfg(windows)]
@@ -93,7 +93,7 @@ pub fn open_path(path: &str) -> Result<(), String> {
         };
         // ShellExecuteW reports success as a value greater than 32.
         if result.0 as isize <= 32 {
-            return Err(format!("系统无法打开 {path}"));
+            return Err(format!("The system could not open {path}"));
         }
         Ok(())
     }
@@ -127,7 +127,7 @@ pub fn open_path(path: &str) -> Result<(), String> {
 pub fn reveal_path(path: &str) -> Result<(), String> {
     let target = Path::new(path);
     if !target.exists() {
-        return Err("找不到该项目".to_owned());
+        return Err("Item not found".to_owned());
     }
 
     #[cfg(windows)]

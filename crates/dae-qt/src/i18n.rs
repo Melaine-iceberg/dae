@@ -24,8 +24,8 @@ pub fn attach_engine(engine: usize) {
     crate::appearance::qobject::dae_qt_i18n_attach_engine(engine);
 }
 
-/// Applies the language saved in `appearance-qt.ini`. `system` resolves to the
-/// OS UI language: Chinese keeps the source strings, everything else loads the
+/// Applies the language saved in `settings.toml`. `system` resolves to the OS
+/// UI language: Chinese keeps the source strings, everything else loads the
 /// English translation.
 pub fn apply_stored() {
     let language = crate::appearance::stored_language();

@@ -59,10 +59,10 @@ Item {
 
     function sectionLabel(value) {
         switch (value) {
-        case "项目": return qsTr("项目")
-        case "收藏": return qsTr("收藏")
-        case "最近": return qsTr("最近")
-        case "空间": return qsTr("空间")
+        case "Projects": return qsTr("项目")
+        case "Favorites": return qsTr("收藏")
+        case "Recent": return qsTr("最近")
+        case "Spaces": return qsTr("空间")
         default: return value
         }
     }
@@ -81,31 +81,31 @@ Item {
     }
 
     function detailLabel(value) {
-        if (value === "空空间")
+        if (value === "Empty space")
             return qsTr("空空间")
-        const count = /^(\d+) 项$/.exec(value)
+        const count = /^(\d+) items?$/.exec(value)
         if (count)
             return qsTr("%1 项").arg(count[1])
         return value
     }
 
     function changeLabel(value) {
-        if (value === "干净")
+        if (value === "Clean")
             return qsTr("干净")
-        if (value === "未跟踪")
+        if (value === "Untracked")
             return qsTr("未跟踪")
-        const count = /^(\d+) 项变更$/.exec(value)
+        const count = /^(\d+) changes?$/.exec(value)
         if (count)
             return qsTr("%1 项变更").arg(count[1])
         return value
     }
 
     function timeLabel(value) {
-        if (value === "今天")
+        if (value === "Today")
             return qsTr("今天")
-        if (value === "昨天")
+        if (value === "Yesterday")
             return qsTr("昨天")
-        const days = /^(\d+) 天前$/.exec(value)
+        const days = /^(\d+) days ago$/.exec(value)
         if (days)
             return qsTr("%1 天前").arg(days[1])
         return value
@@ -340,8 +340,8 @@ Item {
                 Text {
                     visible: row.kind === "project" && row.changeText !== ""
                     text: root.changeLabel(row.changeText)
-                    color: row.changeText === "干净" ? root.mutedColor
-                        : (row.changeText === "未跟踪" ? "#c98b2e" : root.accent)
+                    color: row.changeText === "Clean" ? root.mutedColor
+                        : (row.changeText === "Untracked" ? "#c98b2e" : root.accent)
                     font.pixelSize: 10
                 }
 

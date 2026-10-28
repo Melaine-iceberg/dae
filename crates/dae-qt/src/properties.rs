@@ -223,10 +223,10 @@ fn parent_of(path: &str) -> String {
 
 fn kind_label(kind: EntryKind) -> &'static str {
     match kind {
-        EntryKind::Directory => "文件夹",
-        EntryKind::File => "文件",
-        EntryKind::Symlink => "符号链接",
-        EntryKind::Other => "其他",
+        EntryKind::Directory => "Folder",
+        EntryKind::File => "File",
+        EntryKind::Symlink => "Symbolic link",
+        EntryKind::Other => "Other",
     }
 }
 

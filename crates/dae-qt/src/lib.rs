@@ -43,8 +43,8 @@ pub mod shell;
 pub mod shell_command_model;
 pub mod sidebar_model;
 pub mod sidebar_tree_model;
-mod system_watch;
 pub mod spaces_model;
+mod system_watch;
 pub mod terminal;
 pub mod trash_model;
 pub mod updater;
@@ -55,6 +55,11 @@ pub mod workspace;
 pub fn init() {
     window::enable_diagnostics();
     window::enable_alpha();
+    if let Err(error) = dae_core::settings::init() {
+        eprintln!("dae: settings initialization failed: {error}");
+    } else {
+        appearance::migrate_legacy();
+    }
     terminal::register_item();
 }
 

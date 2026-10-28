@@ -563,9 +563,7 @@ impl RowFilter {
                 .and_hms_opt(0, 0, 0)
                 .and_then(|midnight| {
                     use chrono::TimeZone;
-                    chrono::Local
-                        .from_local_datetime(&midnight)
-                        .earliest()
+                    chrono::Local.from_local_datetime(&midnight).earliest()
                 })
                 .map(|midnight| midnight.timestamp_millis().max(0) as u64)
                 .unwrap_or(0),
@@ -608,12 +606,7 @@ fn compare_rows(left: &StoredRow, right: &StoredRow, order: &ViewOrder) -> Order
             let right_category = category_of(right.kind, &right.name);
             category_rank(left_category)
                 .cmp(&category_rank(right_category))
-                .then_with(|| {
-                    natural_cmp(
-                        extension_of(&left.name),
-                        extension_of(&right.name),
-                    )
-                })
+                .then_with(|| natural_cmp(extension_of(&left.name), extension_of(&right.name)))
         }
     };
     let primary = match order.order {
@@ -682,10 +675,7 @@ fn natural_cmp(left: &str, right: &str) -> Ordering {
     }
 }
 
-fn digit_run<I: Iterator<Item = char>>(
-    first: char,
-    chars: &mut std::iter::Peekable<I>,
-) -> String {
+fn digit_run<I: Iterator<Item = char>>(first: char, chars: &mut std::iter::Peekable<I>) -> String {
     let mut run = String::new();
     run.push(first);
     while let Some(&next) = chars.peek() {
@@ -726,13 +716,16 @@ fn category_for_extension(extension: &str) -> &'static str {
     const AUDIO: &[&str] = &["mp3", "wav", "flac", "aac", "ogg", "m4a", "wma", "opus"];
     const ARCHIVE: &[&str] = &["zip", "7z", "rar", "tar", "gz", "bz2", "xz", "zst", "iso"];
     const CODE: &[&str] = &[
-        "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "go", "java", "c", "h", "cpp",
-        "hpp", "cc", "cs", "rb", "php", "swift", "kt", "kts", "lua", "sh", "bash", "zsh",
-        "ps1", "bat", "cmd", "sql", "html", "htm", "css", "scss", "less", "json", "yaml",
-        "yml", "toml", "xml",
+        "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "go", "java", "c", "h", "cpp", "hpp",
+        "cc", "cs", "rb", "php", "swift", "kt", "kts", "lua", "sh", "bash", "zsh", "ps1", "bat",
+        "cmd", "sql", "html", "htm", "css", "scss", "less", "json", "yaml", "yml", "toml", "xml",
     ];
-    const TEXT: &[&str] = &["txt", "md", "markdown", "log", "csv", "tsv", "ini", "conf", "cfg"];
-    const DOCUMENT: &[&str] = &["doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "odt", "ods"];
+    const TEXT: &[&str] = &[
+        "txt", "md", "markdown", "log", "csv", "tsv", "ini", "conf", "cfg",
+    ];
+    const DOCUMENT: &[&str] = &[
+        "doc", "docx", "xls", "xlsx", "ppt", "pptx", "rtf", "odt", "ods",
+    ];
     const FONT: &[&str] = &["ttf", "otf", "woff", "woff2"];
     const EXECUTABLE: &[&str] = &["exe", "msi", "appref-ms"];
 
@@ -816,12 +809,12 @@ impl GitOperation {
 
     fn success_message(&self) -> String {
         match self {
-            Self::Checkout { name, .. } => format!("已切换到分支 {name}"),
-            Self::Create { name, .. } => format!("已创建分支 {name}"),
-            Self::Fetch => "已获取远程更新".to_owned(),
-            Self::Pull => "已拉取远程更新".to_owned(),
-            Self::Push => "已推送到远程".to_owned(),
-            Self::Sync => "已同步远程仓库".to_owned(),
+            Self::Checkout { name, .. } => format!("Switched to branch {name}"),
+            Self::Create { name, .. } => format!("Created branch {name}"),
+            Self::Fetch => "Fetched remote updates".to_owned(),
+            Self::Pull => "Pulled remote updates".to_owned(),
+            Self::Push => "Pushed to remote".to_owned(),
+            Self::Sync => "Synced with remote".to_owned(),
         }
     }
 }
@@ -983,7 +976,12 @@ impl qobject::DirectoryListModel {
             ROLE_EXTENSION => QVariant::from(&QString::from(extension_of(&row.name))),
             ROLE_THUMBNAIL => {
                 let path = row.full_path(&self.base);
-                QVariant::from(&QString::from(thumbnail_url(self.remote, &path, &row.name, row)))
+                QVariant::from(&QString::from(thumbnail_url(
+                    self.remote,
+                    &path,
+                    &row.name,
+                    row,
+                )))
             }
             ROLE_GIT => QVariant::from(&QString::from(git_badge(
                 &self.git_entries,
@@ -1015,7 +1013,7 @@ impl qobject::DirectoryListModel {
     fn load(mut self: Pin<&mut Self>, path: &QString) {
         let requested = path.to_string();
         if requested.trim().is_empty() {
-            self.as_mut().set_status(QString::from("无路径"));
+            self.as_mut().set_status(QString::from("No path"));
             return;
         }
 
@@ -1067,7 +1065,7 @@ impl qobject::DirectoryListModel {
         if !refreshing {
             self.as_mut().set_loaded(0);
             self.as_mut().set_path(QString::from(requested.as_str()));
-            self.as_mut().set_status(QString::from("读取中…"));
+            self.as_mut().set_status(QString::from("Loading…"));
         }
 
         // Navigation asks for branches too, because the status bar's
@@ -1367,7 +1365,7 @@ impl qobject::DirectoryListModel {
         let name = name.to_string();
         if name.trim().is_empty() {
             self.as_mut()
-                .fail_git_operation("checkout", "分支名不能为空");
+                .fail_git_operation("checkout", "Branch name cannot be empty");
             return;
         }
         self.as_mut()
@@ -1377,7 +1375,8 @@ impl qobject::DirectoryListModel {
     fn git_create_branch(mut self: Pin<&mut Self>, name: &QString, checkout: bool) {
         let name = name.to_string().trim().to_owned();
         if name.is_empty() {
-            self.as_mut().fail_git_operation("create", "分支名不能为空");
+            self.as_mut()
+                .fail_git_operation("create", "Branch name cannot be empty");
             return;
         }
         self.as_mut()
@@ -1408,7 +1407,7 @@ impl qobject::DirectoryListModel {
         if path.is_empty() || !matches!(vfs::scheme_of(&path), Ok(Scheme::Local)) {
             let kind = operation.kind();
             self.as_mut()
-                .fail_git_operation(kind, "此目录不支持 Git 操作");
+                .fail_git_operation(kind, "Git operations are not supported in this directory");
             return;
         }
 
@@ -1591,7 +1590,7 @@ impl qobject::DirectoryListModel {
         }
         self.as_mut().set_remote(false);
         self.as_mut().set_loaded(0);
-        self.as_mut().set_status(QString::from("已关闭"));
+        self.as_mut().set_status(QString::from("Closed"));
         self.as_mut().set_finished(true);
         self.as_mut().set_git_busy(false);
         self.as_mut().clear_git_state();
@@ -1708,8 +1707,10 @@ impl qobject::DirectoryListModel {
             let total = self.rows.len() as i32;
             // Status before `finished`: QML reads the status in
             // `onFinishedChanged`, which is emitted synchronously.
-            self.as_mut()
-                .set_status(QString::from(format!("{total} 项")));
+            self.as_mut().set_status(QString::from(format!(
+                "{total} item{}",
+                if total == 1 { "" } else { "s" }
+            )));
             self.as_mut().set_finished(true);
             // A change arrived during this read, so the rows just shown may
             // already be stale. Re-read now that the stream is over instead of
@@ -1774,8 +1775,10 @@ impl qobject::DirectoryListModel {
             self.as_mut().apply_refreshed_rows(fresh);
         }
 
-        self.as_mut()
-            .set_status(QString::from(format!("{total} 项")));
+        self.as_mut().set_status(QString::from(format!(
+            "{total} item{}",
+            if total == 1 { "" } else { "s" }
+        )));
         self.as_mut().set_finished(true);
         // A change arrived during this read; re-read now that the stream is
         // over instead of having shown a mix of the two listings.
