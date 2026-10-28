@@ -25,7 +25,7 @@ Item {
     readonly property color borderColor: Theme.hairlineStrong
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
-    readonly property int rowHeight: 26
+    readonly property int rowHeight: 28
 
     function openAbove(x, y) {
         root.openX = x
@@ -54,7 +54,7 @@ Item {
         height: Math.min(280, column.implicitHeight + 12)
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
         y: Math.max(8, root.openY - height - 6)
-        radius: 9
+        radius: 12
         color: root.panelColor
         border.width: 1
         border.color: root.borderColor
@@ -73,7 +73,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("传输队列 · ") + Workspace.queuedTransfers.length + qsTr(" 项等待")
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
 
                 Text {
@@ -82,7 +82,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("全部取消")
                     color: cancelAllMouse.containsMouse ? root.textColor : root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
 
                 MouseArea {

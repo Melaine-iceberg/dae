@@ -81,7 +81,7 @@ Item {
             id: surface
             width: parent.width
             height: root.video ? Math.round(width * 9 / 16) : 76
-            radius: 9
+            radius: 12
             color: root.sectionColor
             border.width: 1
             border.color: root.hairline
@@ -121,7 +121,7 @@ Item {
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: 26
+                    radius: width / 2
                     color: root.accent
                     opacity: 0.92
                 }
@@ -176,7 +176,7 @@ Item {
                 visible: root.video && root.started && root.playing
                 text: root.durationLabel(player.position)
                 color: Theme.onInteractive
-                font.pixelSize: 10
+                font.pixelSize: 11
             }
         }
 
@@ -189,7 +189,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width
                 height: 4
-                radius: 2
+                radius: 4
                 color: root.dark ? "#3a414c" : "#d5dbe3"
             }
 
@@ -197,7 +197,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.round(track.width * root.progress)
                 height: 4
-                radius: 2
+                radius: 4
                 color: root.accent
             }
 
@@ -206,7 +206,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 10
                 height: 10
-                radius: 5
+                radius: 6
                 color: root.accent
                 visible: player.seekable
             }
@@ -235,7 +235,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 26
                 height: 26
-                radius: 13
+                radius: 12
                 color: root.accent
                 opacity: root.failed ? 0.4 : 1
 
@@ -266,14 +266,14 @@ Item {
                     Rectangle {
                         width: 3
                         height: 11
-                        radius: 1
+                        radius: 4
                         color: Theme.onInteractive
                     }
 
                     Rectangle {
                         width: 3
                         height: 11
-                        radius: 1
+                        radius: 4
                         color: Theme.onInteractive
                     }
                 }
@@ -293,7 +293,7 @@ Item {
                 text: root.durationLabel(player.position) + " / "
                     + (player.duration > 0 ? root.durationLabel(player.duration) : "--:--")
                 color: root.mutedColor
-                font.pixelSize: 10
+                font.pixelSize: 11
                 font.family: Theme.monoFamily
             }
 
@@ -302,7 +302,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.muted ? qsTr("取消静音") : qsTr("静音")
                 color: root.mutedColor
-                font.pixelSize: 10
+                font.pixelSize: 11
 
                 MouseArea {
                     anchors.fill: parent

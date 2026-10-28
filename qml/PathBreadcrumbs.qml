@@ -241,7 +241,7 @@ Item {
             Rectangle {
                 id: plate
                 anchors.fill: parent
-                radius: 5
+                radius: 6
                 color: slot.modelData.current !== true && plateMouse.containsMouse
                     ? Theme.fill : "transparent"
 

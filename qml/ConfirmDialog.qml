@@ -70,7 +70,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(440, root.width - 48)
         height: messageText.implicitHeight + 128
-        radius: 10
+        radius: 16
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong

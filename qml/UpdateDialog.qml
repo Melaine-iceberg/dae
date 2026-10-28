@@ -65,7 +65,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(470, root.width - 40)
         height: Math.min(410, root.height - 48)
-        radius: 10
+        radius: 16
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -185,14 +185,14 @@ FocusScope {
                 Rectangle {
                     width: parent.width
                     height: 4
-                    radius: 2
+                    radius: 4
                     visible: Updater.downloading
                     color: Theme.fill
 
                     Rectangle {
                         width: parent.width * Math.max(0, Math.min(100, Updater.installProgress)) / 100
                         height: parent.height
-                        radius: 2
+                        radius: 4
                         color: root.accent
                     }
                 }

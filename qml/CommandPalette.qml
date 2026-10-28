@@ -707,7 +707,7 @@ Item {
                     anchors.bottomMargin: 5
                     text: section
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     font.weight: Font.DemiBold
                     font.letterSpacing: 0.6
                 }
@@ -733,7 +733,7 @@ Item {
                     anchors.fill: parent
                     anchors.leftMargin: 6
                     anchors.rightMargin: 6
-                    radius: 7
+                    radius: 6
                     color: row.current ? root.activeColor
                         : (rowMouse.containsMouse ? root.hoverColor : "transparent")
 
@@ -746,7 +746,7 @@ Item {
                         anchors.topMargin: 8
                         anchors.bottomMargin: 8
                         width: 2
-                        radius: 1
+                        radius: 4
                         color: root.accent
                     }
                 }
@@ -756,7 +756,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 22
                     height: 22
-                    radius: 5
+                    radius: 6
                     color: Theme.canvasAlt
 
                     Text {
@@ -789,7 +789,7 @@ Item {
                     width: Math.min(220, implicitWidth)
                     text: row.hint
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     elide: Text.ElideMiddle
                     horizontalAlignment: Text.AlignRight
                 }
@@ -857,7 +857,7 @@ Item {
                         ? root.resultCount + qsTr(" 个结果 · ↑↓ 选择 · ↵ 执行")
                         : qsTr("↑↓ 选择 · ↵ 执行 · Esc 关闭"))
                 color: root.mutedColor
-                font.pixelSize: 10
+                font.pixelSize: 11
             }
 
             Text {
@@ -866,7 +866,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Esc"
                 color: root.mutedColor
-                font.pixelSize: 10
+                font.pixelSize: 11
             }
         }
     }

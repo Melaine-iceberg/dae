@@ -40,7 +40,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: 7
+        radius: 6
         color: Theme.hover
         border.width: 1
         border.color: input.activeFocus

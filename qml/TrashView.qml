@@ -21,7 +21,7 @@ Item {
     property int selectionVersion: 0
     property int anchorIndex: -1
 
-    readonly property int rowHeight: 30
+    readonly property int rowHeight: 32
     readonly property color contentColor: Theme.canvas
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
@@ -304,7 +304,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: 14
             height: 14
-            radius: 3
+            radius: 4
             border.width: 1
             border.color: root.allSelected ? root.accent
                 : Theme.hairlineStrong
@@ -315,7 +315,7 @@ Item {
                 visible: root.allSelected
                 text: "\u2713"
                 color: Theme.onInteractive
-                font.pixelSize: 9
+                font.pixelSize: 11
             }
 
             MouseArea {
@@ -463,7 +463,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 14
                 height: 14
-                radius: 3
+                radius: 4
                 border.width: 1
                 border.color: row.selected ? root.accent
                     : Theme.hairlineStrong
@@ -474,7 +474,7 @@ Item {
                     visible: row.selected
                     text: "\u2713"
                     color: Theme.onInteractive
-                    font.pixelSize: 9
+                    font.pixelSize: 11
                 }
             }
 
@@ -483,7 +483,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 14
                 height: 14
-                radius: 3
+                radius: 4
                 color: row.isDir ? root.accent : (root.dark ? "#3b4250" : "#c6ccd5")
             }
 
@@ -611,7 +611,7 @@ Item {
 
         width: Math.max(58, buttonLabel.implicitWidth + 22)
         height: 24
-        radius: 5
+        radius: 6
         opacity: enabled ? 1 : 0.45
         color: danger
             ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)

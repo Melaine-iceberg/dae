@@ -183,7 +183,7 @@ Item {
                 anchors.leftMargin: 24
                 anchors.rightMargin: 24
                 height: 40
-                radius: 8
+                radius: 12
                 color: Theme.canvasAlt
                 border.width: 1
                 border.color: launcherMouse.containsMouse ? root.accent : root.hairline
@@ -222,7 +222,7 @@ Item {
                         anchors.centerIn: parent
                         text: root.commandShortcut
                         color: root.mutedColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                     }
                 }
 
@@ -267,7 +267,7 @@ Item {
                 anchors.fill: parent
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
-                radius: 7
+                radius: 6
                 color: rowMouse.containsMouse ? root.hoverColor : "transparent"
             }
 
@@ -276,7 +276,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 30
                 height: 30
-                radius: 8
+                radius: 12
                 color: Theme.canvasAlt
 
                 Text {
@@ -324,7 +324,7 @@ Item {
                 Rectangle {
                     visible: row.kind === "project" && row.branch !== ""
                     height: 19
-                    radius: 5
+                    radius: 6
                     color: Theme.canvasAlt
                     width: branchText.width + 14
 
@@ -333,7 +333,7 @@ Item {
                         anchors.centerIn: parent
                         text: "\u2325 " + row.branch
                         color: root.mutedColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                     }
                 }
 
@@ -342,14 +342,14 @@ Item {
                     text: root.changeLabel(row.changeText)
                     color: row.changeText === "Clean" ? root.mutedColor
                         : (row.changeText === "Untracked" ? "#c98b2e" : root.accent)
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
 
                 Text {
                     visible: row.timeText !== ""
                     text: root.timeLabel(row.timeText)
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
             }
 

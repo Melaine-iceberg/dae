@@ -123,7 +123,7 @@ Item {
                             : "\uE921"
                     color: button.isClose && button.hovered ? Theme.onSolid : root.textColor
                     font.family: "Segoe Fluent Icons"
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
 
                 Item {

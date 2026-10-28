@@ -68,7 +68,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(520, root.width - 48)
         height: content.implicitHeight + 36
-        radius: 10
+        radius: 16
         color: root.panelColor
         border.width: 1
         border.color: root.panelBorder
@@ -162,7 +162,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 14
                     height: 14
-                    radius: 3
+                    radius: 4
                     color: root.applyToAll ? root.accent : "transparent"
                     border.width: 1
                     border.color: root.applyToAll ? root.accent
@@ -173,7 +173,7 @@ FocusScope {
                         visible: root.applyToAll
                         text: "\u2713"
                         color: Theme.onInteractive
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                     }
                 }
 

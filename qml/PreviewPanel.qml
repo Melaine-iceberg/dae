@@ -166,7 +166,7 @@ Item {
                 width: content.width - 24
                 x: 12
                 height: 200
-                radius: 9
+                radius: 12
                 color: root.sectionColor
                 border.width: 1
                 border.color: root.hairline
@@ -230,7 +230,7 @@ Item {
                 x: 12
                 height: Math.min(controller.isMarkdown ? 360 : 300,
                                  Math.max(120, root.height * (controller.isMarkdown ? 0.46 : 0.34)))
-                radius: 9
+                radius: 12
                 color: root.sectionColor
                 border.width: 1
                 border.color: root.hairline
@@ -281,7 +281,7 @@ Item {
                     visible: controller.truncated
                     text: qsTr("仅显示前 64 KB")
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
             }
 

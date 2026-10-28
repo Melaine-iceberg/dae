@@ -112,7 +112,7 @@ Item {
                 anchors.centerIn: parent
                 text: qsTr("重新启动")
                 color: root.mutedColor
-                font.pixelSize: 10
+                font.pixelSize: 11
             }
 
             MouseArea {
@@ -136,7 +136,7 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                radius: 3
+                radius: 4
                 color: closeMouse.containsMouse ? Theme.fill
                                                 : "transparent"
             }

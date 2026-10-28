@@ -119,7 +119,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(520, root.width - 40)
         height: Math.min(480, root.height - 48)
-        radius: 10
+        radius: 16
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -272,7 +272,7 @@ FocusScope {
 
                         Rectangle {
                             anchors.fill: parent
-                            radius: 5
+                            radius: 6
                             color: root.picked === folderRow.filePath
                                 ? Theme.selection
                                 : (folderMouse.containsMouse

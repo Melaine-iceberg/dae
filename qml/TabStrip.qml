@@ -314,7 +314,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         width: 2
         height: parent.height - 10
-        radius: 1
+        radius: 4
         color: root.accent
     }
 }

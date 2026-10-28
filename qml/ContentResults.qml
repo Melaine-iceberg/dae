@@ -158,7 +158,7 @@ Item {
                     anchors.centerIn: parent
                     text: qsTr("定位")
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
 
                 MouseArea {

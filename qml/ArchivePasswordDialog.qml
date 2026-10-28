@@ -83,7 +83,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(420, root.width - 48)
         height: Math.max(236, contentColumn.implicitHeight + 78)
-        radius: 10
+        radius: 16
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong

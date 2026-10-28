@@ -38,7 +38,7 @@ Item {
         anchors.centerIn: parent
         width: label.implicitWidth + 28
         height: 30
-        radius: 15
+        radius: 16
         color: Theme.raised
 
         Text {

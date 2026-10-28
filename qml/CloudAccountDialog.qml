@@ -145,7 +145,7 @@ Item {
         anchors.centerIn: parent
         width: Math.min(490, root.width - 48)
         height: 470
-        radius: 10
+        radius: 16
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -248,7 +248,7 @@ Item {
                 width: parent.width - 20
                 text: root.guideText()
                 color: root.mutedColor
-                font.pixelSize: 10
+                font.pixelSize: 11
                 lineHeight: 1.25
                 wrapMode: Text.Wrap
                 maximumLineCount: 3
@@ -266,7 +266,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("重定向 URI")
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
 
                 Rectangle {
@@ -290,7 +290,7 @@ Item {
                         color: Theme.inkMuted
                         selectionColor: root.accent
                         selectedTextColor: Theme.onInteractive
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                         font.family: Theme.monoFamily
                     }
                 }
@@ -335,7 +335,7 @@ Item {
                 ? qsTr("请在刚刚打开的浏览器窗口中完成登录，成功后本窗口会自动关闭。")
                 : root.errorText
             color: root.authorizing ? root.mutedColor : root.dangerColor
-            font.pixelSize: 10
+            font.pixelSize: 11
             lineHeight: 1.2
             wrapMode: Text.Wrap
             elide: Text.ElideRight
@@ -412,7 +412,7 @@ Item {
 
         width: 138
         height: 64
-        radius: 7
+        radius: 6
         color: selected
             ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.14)
             : (hovered ? Theme.fill : "transparent")
@@ -429,7 +429,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             width: 26
             height: 26
-            radius: 7
+            radius: 6
             color: providerCard.tint
 
             Text {

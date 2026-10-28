@@ -130,7 +130,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(600, root.width - 40)
         height: Math.min(620, root.height - 48)
-        radius: 10
+        radius: 16
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -210,7 +210,7 @@ FocusScope {
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
                             height: 2
-                            radius: 1
+                            radius: 4
                             color: root.accent
                             visible: root.tab === tabItem.modelData.key
                         }
@@ -456,7 +456,9 @@ FocusScope {
                     Rectangle {
                         width: parent.width
                         height: 3
-                        radius: 1.5
+                        // Capsule: half the height, not one of the four corner
+                        // steps — a bar has no corners to round.
+                        radius: height / 2
                         visible: controller.hashing
                         color: Theme.hairline
 
@@ -705,7 +707,7 @@ FocusScope {
             width: 15
             height: 15
             anchors.verticalCenter: parent.verticalCenter
-            radius: 3
+            radius: 4
             color: toggle.checked ? root.accent : "transparent"
             border.width: 1
             border.color: toggle.checked ? root.accent : Theme.scrim
@@ -715,7 +717,7 @@ FocusScope {
                 visible: toggle.checked
                 text: "\u2713"
                 color: Theme.onInteractive
-                font.pixelSize: 10
+                font.pixelSize: 11
             }
         }
 
@@ -815,7 +817,7 @@ FocusScope {
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             height: 26
-            radius: 5
+            radius: 6
             color: root.fieldColor
             border.width: 1
             border.color: root.hairline

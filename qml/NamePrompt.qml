@@ -66,7 +66,7 @@ Item {
         anchors.centerIn: parent
         width: 360
         height: 154
-        radius: 10
+        radius: 16
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong

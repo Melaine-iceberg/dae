@@ -88,7 +88,7 @@ Item {
                     x: 6
                     width: parent.width - 12
                     height: parent.height
-                    radius: 5
+                    radius: 6
                     color: node.current
                         ? root.activeColor
                         : (nodeMouse.containsMouse ? root.hoverColor : "transparent")
@@ -101,7 +101,7 @@ Item {
                     visible: node.mayHaveChildren
                     text: node.expanded ? "▾" : "▸"
                     color: node.expanded ? root.textColor : root.mutedColor
-                    font.pixelSize: 8
+                    font.pixelSize: 11
                     horizontalAlignment: Text.AlignHCenter
                     // The row's click area fills the node, so the chevron hit
                     // target has to sit above it or expanding a folder would
@@ -121,7 +121,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "▱"
                     color: root.dark ? "#8a93a6" : "#6b7482"
-                    font.pixelSize: 9
+                    font.pixelSize: 11
                 }
 
                 Text {
@@ -170,7 +170,7 @@ Item {
         visible: treeModel.count === 0 && (treeModel.busy || treeModel.loaded)
         text: treeModel.status
         color: root.mutedColor
-        font.pixelSize: 10
+        font.pixelSize: 11
         elide: Text.ElideRight
         verticalAlignment: Text.AlignVCenter
     }

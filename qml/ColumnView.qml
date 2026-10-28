@@ -36,7 +36,7 @@ Item {
 
     readonly property string density: ExplorerPrefs.density
     readonly property int rowHeight: density === "compact" ? 28
-        : density === "spacious" ? 44 : 34
+        : density === "spacious" ? 40 : 32
     readonly property int columnWidth: 236
 
     Connections {
@@ -153,7 +153,7 @@ Item {
         property color mutedColor: Theme.inkMuted
         property color hairline: Theme.hairline
         property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b, dark ? 0.30 : 0.18)
-        property int rowHeight: 34
+        property int rowHeight: 32
 
         signal drillRequested(string path, int depth)
         signal popRequested(int depth)
@@ -332,7 +332,7 @@ Item {
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: 5
+                    radius: 6
                     color: row.selected ? pane.selectionColor
                         : row.expanded ? Qt.rgba(pane.accent.r, pane.accent.g, pane.accent.b,
                                                  pane.dark ? 0.18 : 0.1)

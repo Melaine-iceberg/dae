@@ -34,8 +34,10 @@ Item {
             || /^(smb|sftp|ftp|webdav|webdavs|cloud):\/\//i.test(tab.listing.path))
     readonly property string viewMode: searchModel !== null ? "list" : ExplorerPrefs.viewMode
     readonly property string density: ExplorerPrefs.density
+    /// Three steps on the 2 px grid, so a row and the 32 px header above it
+    /// cannot disagree by a half pixel while scrolling. 34 and 44 were neither.
     readonly property int rowHeight: density === "compact" ? 28
-        : density === "spacious" ? 44 : 34
+        : density === "spacious" ? 40 : 32
     readonly property int headerHeight: 32
     readonly property bool listHeaderVisible: viewMode === "list" && searchModel === null
     /// Detail columns are dropped, not squeezed, when the pane is narrow: a
@@ -840,7 +842,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 16
                     height: 16
-                    radius: 3
+                    radius: 4
                     color: row.isDir ? root.accent : (row.readOnly ? "#59606e" : "#3b4250")
                     visible: !row.showThumbnail && ExplorerPrefs.iconStyle === "system"
                         && rowIcon.status !== Image.Ready
@@ -916,7 +918,7 @@ Item {
                     Rectangle {
                         width: 15
                         height: 14
-                        radius: 3
+                        radius: 4
                         anchors.verticalCenter: parent.verticalCenter
                         visible: row.hasGitStatus
                         color: row.gitBadgeBackground
@@ -925,7 +927,7 @@ Item {
                             anchors.centerIn: parent
                             text: row.gitLetter
                             color: row.gitBadgeColor
-                            font.pixelSize: 9
+                            font.pixelSize: 11
                             font.weight: Font.DemiBold
                             textFormat: Text.PlainText
                         }

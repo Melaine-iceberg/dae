@@ -176,7 +176,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 26
                 height: 26
-                radius: 7
+                radius: 6
                 color: Theme.canvasAlt
 
                 Text {
@@ -207,7 +207,7 @@ Item {
                     width: parent.width
                     text: row.path
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     elide: Text.ElideMiddle
                 }
             }
@@ -271,7 +271,7 @@ Item {
 
         width: Math.max(58, buttonLabel.implicitWidth + 22)
         height: 24
-        radius: 5
+        radius: 6
         opacity: enabled ? 1 : 0.45
         color: danger
             ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)

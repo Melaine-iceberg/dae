@@ -224,7 +224,7 @@ Item {
         height: Math.min(root.height - 16, content.implicitHeight + 12)
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
         y: Math.max(8, root.openY - height - 6)
-        radius: 9
+        radius: 12
         color: root.panelColor
         border.width: 1
         border.color: root.borderColor
@@ -265,7 +265,7 @@ Item {
                     y: 6
                     text: root.branchHint()
                     color: root.mutedColor
-                    font.pixelSize: 9
+                    font.pixelSize: 11
                     textFormat: Text.PlainText
                 }
 
@@ -276,7 +276,7 @@ Item {
                     text: root.hasRepo ? root.repo.gitRoot : ""
                     color: root.mutedColor
                     font.family: Theme.monoFamily
-                    font.pixelSize: 9
+                    font.pixelSize: 11
                     textFormat: Text.PlainText
                     elide: Text.ElideMiddle
                 }
@@ -328,7 +328,7 @@ Item {
                             anchors.centerIn: parent
                             text: modelData.label
                             color: root.textColor
-                            font.pixelSize: 10
+                            font.pixelSize: 11
                             textFormat: Text.PlainText
                             opacity: actionButton.actionEnabled ? 1 : 0.35
                         }
@@ -370,7 +370,7 @@ Item {
                         visible: branchInput.text === ""
                         text: qsTr("分支名称")
                         color: root.mutedColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                         textFormat: Text.PlainText
                     }
 
@@ -414,7 +414,7 @@ Item {
                         anchors.centerIn: parent
                         text: root.createPending ? qsTr("创建中…") : qsTr("创建")
                         color: root.textColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                         textFormat: Text.PlainText
                     }
 
@@ -435,7 +435,7 @@ Item {
                         x: 0
                         width: 12
                         height: 12
-                        radius: 3
+                        radius: 4
                         anchors.verticalCenter: parent.verticalCenter
                         color: root.createCheckout
                             ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
@@ -447,7 +447,7 @@ Item {
                             anchors.centerIn: parent
                             width: 6
                             height: 6
-                            radius: 1
+                            radius: 4
                             visible: root.createCheckout
                             color: root.accent
                         }
@@ -458,7 +458,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("创建后切换")
                         color: root.mutedColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                         textFormat: Text.PlainText
                     }
 
@@ -476,7 +476,7 @@ Item {
                     visible: root.createError !== ""
                     text: root.createError
                     color: Theme.danger
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                 }
@@ -510,7 +510,7 @@ Item {
                         text: branchRow.modelData.kind === "section"
                             ? branchRow.modelData.text : ""
                         color: root.mutedColor
-                        font.pixelSize: 9
+                        font.pixelSize: 11
                         font.weight: Font.DemiBold
                         textFormat: Text.PlainText
                     }
@@ -522,7 +522,7 @@ Item {
                         text: branchRow.modelData.kind === "empty"
                             ? branchRow.modelData.text : ""
                         color: root.mutedColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                         textFormat: Text.PlainText
                     }
 
@@ -547,7 +547,7 @@ Item {
                             ? branchRow.modelData.name : ""
                         color: branchRow.modelData.current ? root.accent : root.textColor
                         font.family: Theme.monoFamily
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                         font.weight: branchRow.modelData.current ? Font.DemiBold : Font.Normal
                         textFormat: Text.PlainText
                         elide: Text.ElideMiddle

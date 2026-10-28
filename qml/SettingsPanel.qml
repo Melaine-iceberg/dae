@@ -337,7 +337,7 @@ Item {
         anchors.centerIn: parent
         width: Math.min(820, parent.width - 64)
         height: Math.min(580, parent.height - 64)
-        radius: 10
+        radius: 16
         color: root.panelColor
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -354,7 +354,7 @@ Item {
             width: 176
             height: parent.height
             color: root.sidebarColor
-            radius: 10
+            radius: 16
 
             // Square off the inner edge so the sidebar reads as a column, not
             // as a floating card.
@@ -388,7 +388,7 @@ Item {
                 y: 38
                 text: qsTr("dae · Qt 桌面壳")
                 color: root.faintColor
-                font.pixelSize: 10
+                font.pixelSize: 11
             }
 
             Column {
@@ -444,7 +444,7 @@ Item {
                     width: content.width - 48
                     text: qsTr("跟随系统时，系统切换深浅色会同步更新窗口、标题栏与面板。")
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     wrapMode: Text.WordWrap
                 }
 
@@ -475,7 +475,7 @@ Item {
                     width: content.width - 48
                     text: qsTr("“系统”读取桌面强调色，“dae 蓝”使用应用自带的品牌色。")
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     wrapMode: Text.WordWrap
                 }
 
@@ -509,7 +509,7 @@ Item {
                     width: content.width - 48
                     text: qsTr("切换后整个窗口立即重新翻译。菜单、对话框和本面板共用同一份词条。")
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     wrapMode: Text.WordWrap
                 }
 
@@ -540,7 +540,7 @@ Item {
                     width: content.width - 48
                     text: qsTr("外观、语言、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。")
                     color: root.faintColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     wrapMode: Text.WordWrap
                 }
             }
@@ -582,7 +582,7 @@ Item {
                     visible: text !== ""
                     text: root.shortcutError
                     color: root.dark ? "#f0a15a" : "#a85a0a"
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     wrapMode: Text.WordWrap
                 }
 
@@ -618,7 +618,7 @@ Item {
                                     anchors.bottomMargin: 8
                                     text: modelData.header ? modelData.title : ""
                                     color: root.faintColor
-                                    font.pixelSize: 10
+                                    font.pixelSize: 11
                                     font.weight: Font.DemiBold
                                 }
 
@@ -642,7 +642,7 @@ Item {
                                         anchors.verticalCenter: parent.verticalCenter
                                         text: modelData.header ? "" : modelData.detail
                                         color: root.faintColor
-                                        font.pixelSize: 10
+                                        font.pixelSize: 11
                                         elide: Text.ElideRight
                                     }
 
@@ -653,7 +653,7 @@ Item {
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: 100
                                         height: 24
-                                        radius: 5
+                                        radius: 6
                                         color: keyMouse.containsMouse ? root.selectedFill : root.fieldColor
                                         border.width: 1
                                         border.color: keyMouse.containsMouse ? root.accent : root.hairline
@@ -664,7 +664,7 @@ Item {
                                                 : root.bindingText(root.bindingFor(modelData.id))
                                             color: root.bindingFor(modelData.id)
                                                 ? root.textColor : root.faintColor
-                                            font.pixelSize: 10
+                                            font.pixelSize: 11
                                             font.family: Theme.monoFamily
                                             elide: Text.ElideRight
                                         }
@@ -684,7 +684,7 @@ Item {
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: 28
                                         height: 24
-                                        radius: 5
+                                        radius: 6
                                         visible: !modelData.header
                                         color: resetMouse.containsMouse ? root.hoverFill : "transparent"
 
@@ -727,7 +727,7 @@ Item {
                     visible: shortcutFlick.contentHeight > shortcutFlick.height
                     x: shortcutFlick.x + shortcutFlick.width + 4
                     width: 3
-                    radius: 1.5
+                    radius: width / 2
                     height: Math.max(20, shortcutFlick.height
                         * shortcutFlick.height / shortcutFlick.contentHeight)
                     y: shortcutFlick.y + (shortcutFlick.contentHeight
@@ -857,14 +857,14 @@ Item {
                     x: 130; y: 222
                     text: qsTr("留空使用 Cascadia Mono / Consolas")
                     color: root.faintColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
 
                 Text {
                     x: 24; y: 256
                     text: qsTr("字号与行高在保存后立即应用到已打开的终端。")
                     color: root.faintColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
 
                 Text {
@@ -962,7 +962,7 @@ Item {
                     visible: text !== ""
                     text: root.localizeDetail(Workspace.defaultManagerDetail)
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     wrapMode: Text.WordWrap
                 }
 
@@ -988,7 +988,7 @@ Item {
                     visible: text !== ""
                     text: root.backendError(Workspace.defaultManagerError)
                     color: Theme.danger
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     wrapMode: Text.WordWrap
                 }
             }
@@ -1059,7 +1059,7 @@ Item {
                     width: content.width - 48
                     text: qsTr("日志页只负责定位文件，不会上传或汇总任何内容。")
                     color: root.faintColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                     wrapMode: Text.WordWrap
                 }
             }
@@ -1087,7 +1087,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("更改会立即生效")
                 color: root.faintColor
-                font.pixelSize: 10
+                font.pixelSize: 11
             }
 
             Rectangle {
@@ -1142,7 +1142,7 @@ Item {
                 anchors.centerIn: parent
                 width: Math.min(420, parent.width - 64)
                 height: 164
-                radius: 9
+                radius: 12
                 color: root.panelColor
                 border.width: 1
                 border.color: root.hairline
@@ -1161,7 +1161,7 @@ Item {
                     x: 22; y: 54
                     width: parent.width - 44
                     height: 46
-                    radius: 7
+                    radius: 6
                     color: root.fieldColor
                     border.width: 1
                     border.color: root.accent
@@ -1179,7 +1179,7 @@ Item {
                     width: parent.width - 44
                     text: qsTr("Backspace 清除绑定 · Esc 取消")
                     color: root.faintColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
             }
         }
@@ -1215,7 +1215,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: 2
             height: 16
-            radius: 1
+            radius: 4
             color: root.accent
             visible: root.page === nav.value
         }
@@ -1260,7 +1260,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: 10
             height: 10
-            radius: 5
+            radius: 6
             color: chip.swatch
             border.width: 1
             border.color: root.hairline
@@ -1351,7 +1351,7 @@ Item {
 
         width: smallText.implicitWidth + 20
         height: 24
-        radius: 5
+        radius: 6
         color: smallMouse.containsMouse ? root.hoverFill : "transparent"
         border.width: 1
         border.color: root.hairline
@@ -1361,7 +1361,7 @@ Item {
             anchors.centerIn: parent
             text: button.label
             color: root.mutedColor
-            font.pixelSize: 10
+            font.pixelSize: 11
         }
 
         MouseArea {

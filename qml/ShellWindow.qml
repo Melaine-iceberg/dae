@@ -1982,7 +1982,7 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 24
                 height: 24
-                radius: 5
+                radius: 6
                 color: sidebarMouse.containsMouse
                     ? Theme.fill : "transparent"
 
@@ -2012,7 +2012,7 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 24
                 height: 24
-                radius: 5
+                radius: 6
                 color: root.canGoBack && backMouse.containsMouse
                     ? Theme.fill : "transparent"
 
@@ -2041,7 +2041,7 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 24
                 height: 24
-                radius: 5
+                radius: 6
                 color: root.canGoForward && forwardMouse.containsMouse
                     ? Theme.fill : "transparent"
 
@@ -2070,7 +2070,7 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 24
                 height: 24
-                radius: 5
+                radius: 6
                 color: root.folderActive && upMouse.containsMouse
                     ? Theme.fill : "transparent"
 
@@ -2288,7 +2288,7 @@ Window {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 170
                     height: 22
-                    radius: 5
+                    radius: 6
                     color: Theme.hover
                     border.width: 1
                     border.color: filterInput.activeFocus ? root.accent : root.hairline
@@ -2807,7 +2807,7 @@ Window {
                         anchors.centerIn: parent
                         text: root.previewVisible ? qsTr("隐藏预览") : qsTr("预览")
                         color: root.previewVisible ? root.textColor : root.mutedColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                     }
                 }
 
@@ -2843,7 +2843,7 @@ Window {
                         anchors.centerIn: parent
                         text: qsTr("筛选")
                         color: filterMenu.active ? root.textColor : root.mutedColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                     }
 
                     Rectangle {
@@ -2854,7 +2854,7 @@ Window {
                         anchors.topMargin: 3
                         width: 5
                         height: 5
-                        radius: 2.5
+                        radius: width / 2
                         color: root.accent
                     }
                 }
@@ -2889,7 +2889,7 @@ Window {
                         anchors.centerIn: parent
                         text: qsTr("视图")
                         color: root.mutedColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                     }
                 }
 
@@ -2927,7 +2927,7 @@ Window {
                         color: Updater.available ? root.accent
                             : Updater.checking || Updater.downloading ? root.textColor
                             : root.mutedColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                     }
                 }
 
@@ -2958,7 +2958,7 @@ Window {
                         anchors.centerIn: parent
                         text: qsTr("设置")
                         color: root.mutedColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                     }
                 }
 
@@ -2987,7 +2987,7 @@ Window {
                     anchors.centerIn: parent
                     text: root.terminalActive ? qsTr("隐藏终端") : qsTr("终端")
                     color: root.terminalActive ? root.textColor : root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
 
                 MouseArea {
@@ -3025,7 +3025,7 @@ Window {
                 width: gitChipContent.implicitWidth + 14
                     + (gitSyncButton.visible ? gitSyncButton.width : 0)
                 height: 16
-                radius: 8
+                radius: 12
                 visible: root.gitVisible
                 color: gitChipMouse.containsMouse || gitPanel.visible
                     ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24)
@@ -3067,7 +3067,7 @@ Window {
                         anchors.verticalCenter: parent.verticalCenter
                         text: "Git"
                         color: root.accent
-                        font.pixelSize: 9
+                        font.pixelSize: 11
                         font.weight: Font.DemiBold
                         textFormat: Text.PlainText
                     }
@@ -3079,7 +3079,7 @@ Window {
                         color: root.gitListing !== null && root.gitListing.gitDetached
                             ? root.mutedColor : root.textColor
                         font.family: Theme.monoFamily
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                         textFormat: Text.PlainText
                         elide: Text.ElideMiddle
                     }
@@ -3089,7 +3089,7 @@ Window {
                         visible: gitChip.ahead() > 0
                         text: "↑" + gitChip.ahead()
                         color: Theme.success
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                         textFormat: Text.PlainText
                     }
 
@@ -3098,7 +3098,7 @@ Window {
                         visible: gitChip.behind() > 0
                         text: "↓" + gitChip.behind()
                         color: Theme.link
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                         textFormat: Text.PlainText
                     }
                 }
@@ -3162,7 +3162,7 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 width: queueChipLabel.implicitWidth + 14
                 height: 16
-                radius: 8
+                radius: 12
                 visible: Workspace.queuedTransfers.length > 0
                 color: queueChipMouse.containsMouse
                     ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24)
@@ -3179,7 +3179,7 @@ Window {
                     anchors.centerIn: parent
                     text: qsTr("队列 ") + Workspace.queuedTransfers.length
                     color: root.textColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
 
                 function openPanel() {

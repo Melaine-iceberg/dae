@@ -138,7 +138,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(440, root.width - 40)
         height: Math.min(464, root.height - 48)
-        radius: 10
+        radius: 16
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -286,7 +286,7 @@ FocusScope {
                             anchors.fill: parent
                             anchors.leftMargin: 2
                             anchors.rightMargin: 2
-                            radius: 5
+                            radius: 6
                             color: root.selectedId === appId
                                 ? Theme.selection
                                 : (rowMouse.containsMouse
@@ -322,7 +322,7 @@ FocusScope {
                                 anchors.centerIn: parent
                                 text: label.length > 0 ? label.charAt(0).toUpperCase() : "?"
                                 color: root.mutedColor
-                                font.pixelSize: 10
+                                font.pixelSize: 11
                             }
                         }
 
@@ -347,7 +347,7 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("默认")
                             color: root.mutedColor
-                            font.pixelSize: 10
+                            font.pixelSize: 11
                         }
 
                         MouseArea {
@@ -462,7 +462,7 @@ FocusScope {
                         Rectangle {
                             width: 14
                             height: 14
-                            radius: 3
+                            radius: 4
                             anchors.verticalCenter: parent.verticalCenter
                             color: root.setDefault ? root.accent : "transparent"
                             border.width: 1
@@ -474,7 +474,7 @@ FocusScope {
                                 visible: root.setDefault
                                 text: "✓"
                                 color: Theme.onInteractive
-                                font.pixelSize: 10
+                                font.pixelSize: 11
                                 font.weight: Font.Bold
                             }
                         }

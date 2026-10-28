@@ -108,7 +108,7 @@ Item {
         y: root.above
             ? Math.max(8, root.openY - height - 6)
             : Math.min(root.openY, root.height - height - 8)
-        radius: 9
+        radius: 12
         color: root.panelColor
         border.width: 1
         border.color: root.borderColor
@@ -148,7 +148,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: entry.modelData.kind === "label" ? entry.modelData.label : ""
                         color: root.labelColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                         font.weight: Font.DemiBold
                     }
 
@@ -158,7 +158,7 @@ Item {
                         anchors.fill: parent
                         anchors.leftMargin: 4
                         anchors.rightMargin: 4
-                        radius: 5
+                        radius: 6
                         color: rowMouse.containsMouse ? Theme.fill
                                                       : "transparent"
                     }

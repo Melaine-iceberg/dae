@@ -212,8 +212,8 @@ Item {
         x: 6
         y: root.showHeader ? heading.bottom + 6 : 4
         width: parent.width - 12
-        height: 27
-        radius: 5
+        height: 28
+        radius: 6
         color: root.overviewActive
             ? root.activeColor
             : (overviewMouse.containsMouse ? root.hoverColor : "transparent")
@@ -234,7 +234,7 @@ Item {
                 anchors.centerIn: parent
                 text: "◫"
                 color: root.accent
-                font.pixelSize: 10
+                font.pixelSize: 11
             }
         }
 
@@ -266,8 +266,8 @@ Item {
         x: 6
         y: overviewRow.bottom + 1
         width: parent.width - 12
-        height: 27
-        radius: 5
+        height: 28
+        radius: 6
         color: root.trashActive
             ? root.activeColor
             : (trashMouse.containsMouse ? root.hoverColor : "transparent")
@@ -288,7 +288,7 @@ Item {
                 anchors.centerIn: parent
                 text: qsTr("回")
                 color: root.accent
-                font.pixelSize: 10
+                font.pixelSize: 11
             }
         }
 
@@ -337,7 +337,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.sectionLabel(section)
                 color: root.mutedColor
-                font.pixelSize: 10
+                font.pixelSize: 11
                 font.letterSpacing: 0.6
             }
         }
@@ -353,7 +353,7 @@ Item {
             required property bool isDir
 
             width: ListView.view.width
-            height: 27 + (treeLoader.active ? treeLoader.height : 0)
+            height: 28 + (treeLoader.active ? treeLoader.height : 0)
 
             readonly property bool isVolume: row.kind === "volume"
             readonly property bool treeOpen: row.isVolume && root.volumeExpanded(row.path)
@@ -376,13 +376,13 @@ Item {
                 id: rowBody
 
                 width: parent.width
-                height: 27
+                height: 28
 
                 Rectangle {
                     x: 6
                     width: rowBody.width - 12
                     height: rowBody.height
-                    radius: 5
+                    radius: 6
                     color: (row.current || row.spaceCurrent)
                         ? root.activeColor
                         : (mouse.containsMouse ? root.hoverColor : "transparent")
@@ -401,7 +401,7 @@ Item {
                         anchors.centerIn: parent
                         text: root.glyph(row.icon)
                         color: root.tint(row.icon)
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                     }
                 }
 
@@ -427,7 +427,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.detailLabel(row.detail)
                     color: root.mutedColor
-                    font.pixelSize: 9
+                    font.pixelSize: 11
                     elide: Text.ElideRight
                     width: Math.min(74, implicitWidth)
                     horizontalAlignment: Text.AlignRight
@@ -480,13 +480,13 @@ Item {
                     visible: row.isVolume
                     x: 0
                     width: 22
-                    height: 27
+                    height: 28
 
                     Text {
                         anchors.centerIn: parent
                         text: row.treeOpen ? "▾" : "▸"
                         color: row.treeOpen ? root.textColor : root.mutedColor
-                        font.pixelSize: 9
+                        font.pixelSize: 11
                     }
 
                     MouseArea {

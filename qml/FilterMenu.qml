@@ -95,7 +95,7 @@ Item {
         height: column.implicitHeight + (root.active ? 37 : 10)
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
         y: Math.max(8, root.openY - height - 6)
-        radius: 9
+        radius: 12
         color: root.panelColor
         border.width: 1
         border.color: root.borderColor
@@ -135,7 +135,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: entry.modelData.kind === "label" ? entry.modelData.label : ""
                         color: root.labelColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                         font.weight: Font.DemiBold
                     }
 
@@ -145,7 +145,7 @@ Item {
                         anchors.fill: parent
                         anchors.leftMargin: 4
                         anchors.rightMargin: 4
-                        radius: 5
+                        radius: 6
                         color: rowMouse.containsMouse ? Theme.fill
                                                       : "transparent"
                     }
@@ -169,7 +169,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: entry.modelData.shortcut || ""
                         color: root.labelColor
-                        font.pixelSize: 10
+                        font.pixelSize: 11
                     }
 
                     Text {
@@ -201,7 +201,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 27
+            height: 28
             color: "transparent"
 
             Text {

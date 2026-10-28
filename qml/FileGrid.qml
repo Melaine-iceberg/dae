@@ -286,7 +286,7 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                radius: 9
+                radius: 12
                 color: cell.selected ? root.selectionColor
                     : cell.dropTarget ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b,
                                                 root.dark ? 0.24 : 0.14)
@@ -373,7 +373,7 @@ Item {
                 anchors.topMargin: root.cellHeight - 24
                 text: cell.isDir ? qsTr("文件夹") : cell.sizeText
                 color: root.mutedColor
-                font.pixelSize: 10
+                font.pixelSize: 11
                 font.family: Theme.monoFamily
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
@@ -545,7 +545,7 @@ Item {
             color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.14)
             border.width: 1
             border.color: root.accent
-            radius: 2
+            radius: 4
         }
     }
 }

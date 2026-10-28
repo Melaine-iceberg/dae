@@ -174,7 +174,7 @@ Item {
         anchors.centerIn: parent
         width: Math.min(470, root.width - 48)
         height: 380
-        radius: 10
+        radius: 16
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -238,7 +238,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("FTP / WebDAV 即将支持")
                     color: root.mutedColor
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
             }
         }
@@ -305,7 +305,7 @@ Item {
                     visible: root.remember
                     text: "✓"
                     color: Theme.onInteractive
-                    font.pixelSize: 10
+                    font.pixelSize: 11
                 }
             }
 
