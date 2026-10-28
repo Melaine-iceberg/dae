@@ -61,6 +61,10 @@ pub mod qobject {
         /// spec calls for. Qt 6 has no system-wide reduced-motion query, so the
         /// preference has to live here and QML has to ask before every Behavior.
         #[qproperty(bool, reduce_motion, cxx_name = "reduceMotion")]
+        /// Panel widths, in dp. A drag handle writes them; the window reads
+        /// them back on the next launch so a widened preview stays widened.
+        #[qproperty(i32, preview_width, cxx_name = "previewWidth")]
+        #[qproperty(i32, sidebar_width, cxx_name = "sidebarWidth")]
         type ExplorerPrefs = super::ExplorerPrefsRust;
 
         #[qinvokable]
@@ -70,6 +74,12 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setBool"]
         fn set_bool(self: Pin<&mut ExplorerPrefs>, key: &QString, value: bool);
+
+        /// Widths are clamped on the way in, not by the caller: a preference
+        /// file edited by hand should not be able to make a panel invisible.
+        #[qinvokable]
+        #[cxx_name = "setNumber"]
+        fn set_number(self: Pin<&mut ExplorerPrefs>, key: &QString, value: i32);
 
         /// Kinds, modified-time buckets and size buckets back to "all/any/any".
         #[qinvokable]
@@ -95,6 +105,8 @@ struct StoredPrefs {
     size_filter: String,
     split_enabled: bool,
     reduce_motion: bool,
+    preview_width: i32,
+    sidebar_width: i32,
 }
 
 impl Default for StoredPrefs {
@@ -117,6 +129,8 @@ impl Default for StoredPrefs {
             size_filter: "any".to_owned(),
             split_enabled: false,
             reduce_motion: false,
+            preview_width: 300,
+            sidebar_width: 216,
         }
     }
 }
@@ -151,6 +165,13 @@ impl StoredPrefs {
                 *target = (*value).to_owned();
             }
         };
+        let number = |key: &str, target: &mut i32| {
+            if let Some(value) = fields.get(key)
+                && let Ok(parsed) = value.parse::<i32>()
+            {
+                *target = parsed;
+            }
+        };
         let boolean = |key: &str, target: &mut bool| {
             match fields.get(key).copied() {
                 Some("true") => *target = true,
@@ -172,6 +193,8 @@ impl StoredPrefs {
         string("sizeFilter", SIZE_FILTERS, &mut self.size_filter);
         boolean("splitEnabled", &mut self.split_enabled);
         boolean("reduceMotion", &mut self.reduce_motion);
+        number("previewWidth", &mut self.preview_width);
+        number("sidebarWidth", &mut self.sidebar_width);
     }
 
     fn document(&self) -> String {
@@ -200,6 +223,8 @@ impl StoredPrefs {
         write(&mut out, "sizeFilter", &self.size_filter);
         write(&mut out, "splitEnabled", bool_text(self.split_enabled));
         write(&mut out, "reduceMotion", bool_text(self.reduce_motion));
+        write(&mut out, "previewWidth", &self.preview_width.to_string());
+        write(&mut out, "sidebarWidth", &self.sidebar_width.to_string());
         out
     }
 }
@@ -243,6 +268,8 @@ pub struct ExplorerPrefsRust {
     size_filter: QString,
     split_enabled: bool,
     reduce_motion: bool,
+    preview_width: i32,
+    sidebar_width: i32,
 }
 
 impl Default for ExplorerPrefsRust {
@@ -270,6 +297,8 @@ impl ExplorerPrefsRust {
             size_filter: QString::from(prefs.size_filter.as_str()),
             split_enabled: prefs.split_enabled,
             reduce_motion: prefs.reduce_motion,
+            preview_width: prefs.preview_width,
+            sidebar_width: prefs.sidebar_width,
         }
     }
 
@@ -288,6 +317,8 @@ impl ExplorerPrefsRust {
             size_filter: self.size_filter.to_string(),
             split_enabled: self.split_enabled,
             reduce_motion: self.reduce_motion,
+            preview_width: self.preview_width,
+            sidebar_width: self.sidebar_width,
         }
     }
 }
@@ -374,6 +405,33 @@ impl qobject::ExplorerPrefs {
                     return;
                 }
                 self.as_mut().set_size_filter(next);
+                true
+            }
+            _ => false,
+        };
+
+        if changed {
+            save(&self.stored());
+        }
+    }
+
+    fn set_number(mut self: Pin<&mut Self>, key: &QString, value: i32) {
+        let key = key.to_string();
+        let changed = match key.as_str() {
+            "previewWidth" => {
+                let next = value.clamp(280, 520);
+                if self.preview_width == next {
+                    return;
+                }
+                self.as_mut().set_preview_width(next);
+                true
+            }
+            "sidebarWidth" => {
+                let next = value.clamp(180, 280);
+                if self.sidebar_width == next {
+                    return;
+                }
+                self.as_mut().set_sidebar_width(next);
                 true
             }
             _ => false,

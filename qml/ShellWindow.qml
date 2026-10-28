@@ -2237,9 +2237,9 @@ Window {
                 visible: root.folderActive
 
                 Behavior on width {
-                    enabled: !root.reduceMotion
+                    enabled: Theme.motion
                     NumberAnimation {
-                        duration: 140
+                        duration: Theme.motionPanel
                         easing.type: Easing.OutCubic
                     }
                 }
@@ -2458,9 +2458,47 @@ Window {
             width: parent.width
             height: parent.height - 44 - 46 - 26 - searchOptions.height
 
+            Item {
+                id: sidebarHandle
+
+                readonly property bool live: root.sidebarVisible
+
+                width: live ? 6 : 0
+                height: parent.height
+
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 1
+                    height: parent.height
+                    color: sidebarHandleMouse.containsMouse ? root.accent : Theme.hairline
+                }
+
+                MouseArea {
+                    id: sidebarHandleMouse
+                    anchors.fill: parent
+                    enabled: sidebarHandle.live
+                    hoverEnabled: true
+                    cursorShape: Qt.SizeHorCursor
+
+                    property real startX: 0
+                    property int startWidth: 0
+
+                    onPressed: function (mouse) {
+                        startX = mapToItem(null, mouse.x, 0).x
+                        startWidth = ExplorerPrefs.sidebarWidth
+                    }
+                    onPositionChanged: function (mouse) {
+                        if (!pressed)
+                            return
+                        const dx = mapToItem(null, mouse.x, 0).x - startX
+                        ExplorerPrefs.setNumber("sidebarWidth", Math.round(startWidth + dx))
+                    }
+                }
+            }
+
             Sidebar {
                 id: sidebar
-                width: root.sidebarVisible ? 198 : 0
+                width: root.sidebarVisible ? ExplorerPrefs.sidebarWidth : 0
                 height: parent.height
                 visible: width > 0
                 dark: root.dark
@@ -2498,7 +2536,8 @@ Window {
             }
 
             Column {
-                width: parent.width - sidebar.width - previewPanel.width
+                width: parent.width - sidebar.width - sidebarHandle.width
+                    - previewPanel.width - previewHandle.width
                 height: parent.height
 
                 Item {
@@ -2823,9 +2862,53 @@ Window {
                 }
             }
 
+            // A one-pixel seam that is eight pixels wide to the pointer. The
+            // preview is the one pane whose useful width depends on what is in
+            // it — a code file wants more, a thumbnail less — so the number is
+            // the user's, remembered in explorer.ini.
+            Item {
+                id: previewHandle
+
+                readonly property bool live: root.previewVisible && root.folderActive
+
+                width: live ? 6 : 0
+                height: parent.height
+
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: 1
+                    height: parent.height
+                    color: handleMouse.containsMouse ? root.accent : Theme.hairline
+                }
+
+                MouseArea {
+                    id: handleMouse
+                    anchors.fill: parent
+                    enabled: previewHandle.live
+                    hoverEnabled: true
+                    cursorShape: Qt.SizeHorCursor
+
+                    property real startX: 0
+                    property int startWidth: 0
+
+                    onPressed: function (mouse) {
+                        startX = mapToItem(null, mouse.x, 0).x
+                        startWidth = ExplorerPrefs.previewWidth
+                    }
+                    onPositionChanged: function (mouse) {
+                        if (!pressed)
+                            return
+                        const dx = mapToItem(null, mouse.x, 0).x - startX
+                        ExplorerPrefs.setNumber("previewWidth", Math.round(startWidth - dx))
+                    }
+                }
+            }
+
             PreviewPanel {
                 id: previewPanel
-                width: root.previewVisible && root.folderActive ? 300 : 0
+                width: root.previewVisible && root.folderActive
+                    ? Math.min(ExplorerPrefs.previewWidth, Math.max(240, parent.width * 0.5))
+                    : 0
                 height: parent.height
                 visible: width > 0
                 dark: root.dark

@@ -119,6 +119,19 @@ QtObject {
     /// a click from the listing itself.
     readonly property color link: dark ? "#6cb6ff" : "#0969da"
 
+    // ── Motion ──────────────────────────────────────────────────────────────
+    /// Qt 6 has no system-wide reduced-motion query, so `explorer.ini` carries
+    /// the switch and every `Behavior` asks this before it runs. When it is
+    /// off, transitions are replaced by instant state changes — not merely
+    /// shortened, because "faster" still animates.
+    readonly property bool motion: !ExplorerPrefs.reduceMotion
+    /// Pointer feedback.
+    readonly property int motionFast: 110
+    /// A panel or a field that changes size.
+    readonly property int motionPanel: 180
+    /// A menu, a popover, the palette.
+    readonly property int motionOverlay: 160
+
     // ── Type ────────────────────────────────────────────────────────────────
     /// Fixed-pitch for terminals, diffs, sizes and rates. Chosen per platform
     /// because QML cannot express a fallback list on `font.family`, and the

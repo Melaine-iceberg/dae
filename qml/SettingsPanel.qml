@@ -528,15 +528,52 @@ Item {
                     }
                 }
 
+                Text {
+                    x: 24; y: 396
+                    text: qsTr("动效")
+                    color: root.textColor
+                    font.pixelSize: 12
+                    font.weight: Font.DemiBold
+                }
+
+                Text {
+                    x: 24; y: 416
+                    width: content.width - 48
+                    text: qsTr("关闭后所有过渡改为瞬时切换，而不只是变快。Qt 6 没有系统级")
+                        + qsTr("的\"减少动效\"查询，所以这个开关在 dae 自己这里。")
+                    color: root.mutedColor
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                }
+
+                Row {
+                    x: 24; y: 448
+                    spacing: 8
+
+                    Repeater {
+                        model: [
+                            { value: false, label: qsTr("完整") },
+                            { value: true, label: qsTr("减少") }
+                        ]
+                        delegate: ChoiceChip {
+                            required property var modelData
+                            label: modelData.label
+                            selected: ExplorerPrefs.reduceMotion === modelData.value
+                            onClicked: ExplorerPrefs.setBool("reduceMotion",
+                                                             modelData.value)
+                        }
+                    }
+                }
+
                 Rectangle {
-                    x: 24; y: 400
+                    x: 24; y: 492
                     width: content.width - 48
                     height: 1
                     color: root.hairline
                 }
 
                 Text {
-                    x: 24; y: 420
+                    x: 24; y: 512
                     width: content.width - 48
                     text: qsTr("外观、语言、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。")
                     color: root.faintColor

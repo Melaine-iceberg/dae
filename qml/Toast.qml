@@ -13,7 +13,8 @@ Item {
     z: 900
 
     Behavior on opacity {
-        NumberAnimation { duration: 140 }
+        enabled: Theme.motion
+        NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
     }
 
     function show(message, isError) {

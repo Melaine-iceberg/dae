@@ -23,6 +23,13 @@ Item {
     signal actionTriggered(string id)
 
     visible: false
+    /// Arrives rather than appears. Hiding stays instant: a menu that fades
+    /// out is a menu that ignores the next click.
+    opacity: visible ? 1 : 0
+    Behavior on opacity {
+        enabled: Theme.motion
+        NumberAnimation { duration: Theme.motionOverlay; easing.type: Easing.OutCubic }
+    }
     focus: visible
     z: 1000
 

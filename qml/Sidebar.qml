@@ -44,6 +44,10 @@ Item {
     readonly property color mutedColor: Theme.inkFaint
     readonly property color hoverColor: Theme.fill
     readonly property color activeColor: Theme.fill
+    /// The row a file drag is hovering, by path. Empty when nothing is over the
+    /// sidebar, so a row asks one question to decide whether it is lit.
+    property string dropTargetPath: ""
+    readonly property color dropColor: Qt.rgba(accent.r, accent.g, accent.b, 0.18)
 
     SidebarModel {
         id: model
@@ -150,6 +154,12 @@ Item {
         default:
             return false
         }
+    }
+
+    /// Accepts a file drag for one destination and lights that row.
+    function armDrop(path, drag) {
+        root.dropTargetPath = path
+        drag.accept(Qt.MoveAction)
     }
 
     function tint(icon) {
@@ -363,6 +373,8 @@ Item {
             required property string detail
             required property string icon
             required property bool isDir
+            /// 0..1 for a volume, 0 for everything else.
+            required property real fill
 
             width: ListView.view.width
             height: 28 + (treeLoader.active ? treeLoader.height : 0)
@@ -395,9 +407,37 @@ Item {
                     width: rowBody.width - 12
                     height: rowBody.height
                     radius: 6
-                    color: (row.current || row.spaceCurrent)
-                        ? root.activeColor
-                        : (mouse.containsMouse ? root.hoverColor : "transparent")
+                    // `!== ""` matters: the add rows have an empty path, and
+                    // an empty target would light every one of them at once.
+                    readonly property bool armed: root.dropTargetPath !== ""
+                        && root.dropTargetPath === row.path
+                    color: armed
+                        ? root.dropColor
+                        : ((row.current || row.spaceCurrent)
+                            ? root.activeColor
+                            : (mouse.containsMouse ? root.hoverColor : "transparent"))
+                    border.width: armed ? 1 : 0
+                    border.color: root.accent
+
+                    // How full the volume is: three pixels along the bottom, and
+                    // only where there is a number behind it. An empty bar on a
+                    // home folder would be a promise the data cannot keep.
+                    Item {
+                        visible: row.fill > 0
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.margins: 1
+                        height: 3
+                        clip: true
+
+                        Rectangle {
+                            width: parent.width * Math.max(0, Math.min(1, row.fill))
+                            height: parent.height
+                            color: row.fill > 0.9 ? Theme.warn : root.accent
+                            opacity: 0.65
+                        }
+                    }
                 }
 
                 Rectangle {
@@ -457,6 +497,34 @@ Item {
                     elide: Text.ElideRight
                     width: Math.min(74, implicitWidth)
                     horizontalAlignment: Text.AlignRight
+                }
+
+                // Files dragged in from the listing or from Explorer. The row
+                // owns the area rather than the list, because the target is the
+                // row: every destination in a sidebar is a folder.
+                DropArea {
+                    anchors.fill: parent
+                    keys: ["text/uri-list"]
+                    enabled: row.isDir && !row.isAction
+
+                    onEntered: function (drag) { root.armDrop(row.path, drag) }
+                    onPositionChanged: function (drag) { root.armDrop(row.path, drag) }
+                    onExited: {
+                        if (root.dropTargetPath === row.path)
+                            root.dropTargetPath = ""
+                    }
+
+                    onDropped: function (drop) {
+                        const paths = Workspace.localDropPaths(drop.urls)
+                        const target = row.path
+                        root.dropTargetPath = ""
+                        if (paths.length === 0 || !row.isDir || row.isAction) {
+                            drop.accepted = false
+                            return
+                        }
+                        drop.accept(Qt.MoveAction)
+                        Workspace.transferEntries(paths, target, false)
+                    }
                 }
 
                 MouseArea {

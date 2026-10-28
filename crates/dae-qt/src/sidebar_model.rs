@@ -37,6 +37,7 @@ const ROLE_KIND: i32 = 0x0203;
 const ROLE_DETAIL: i32 = 0x0204;
 const ROLE_ICON: i32 = 0x0205;
 const ROLE_IS_DIR: i32 = 0x0206;
+const ROLE_FILL: i32 = 0x0106;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -104,6 +105,9 @@ struct SidebarRow {
     detail: String,
     icon: String,
     is_dir: bool,
+    /// How full a volume is, 0..1. Zero for everything that is not a volume:
+    /// the bar is drawn only when there is a number behind it.
+    fill: f64,
 }
 
 #[derive(Default)]
@@ -137,6 +141,7 @@ impl qobject::SidebarModel {
             ROLE_DETAIL => QVariant::from(&QString::from(row.detail.as_str())),
             ROLE_ICON => QVariant::from(&QString::from(row.icon.as_str())),
             ROLE_IS_DIR => QVariant::from(&row.is_dir),
+            ROLE_FILL => QVariant::from(&row.fill),
             _ => QVariant::default(),
         }
     }
@@ -150,6 +155,7 @@ impl qobject::SidebarModel {
         roles.insert(ROLE_DETAIL, QByteArray::from("detail"));
         roles.insert(ROLE_ICON, QByteArray::from("icon"));
         roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));
+        roles.insert(ROLE_FILL, QByteArray::from("fill"));
         roles
     }
 
@@ -172,6 +178,7 @@ impl qobject::SidebarModel {
                 detail: String::new(),
                 icon: "star".to_owned(),
                 is_dir: true,
+                fill: 0.0,
             });
         }
 
@@ -193,6 +200,7 @@ impl qobject::SidebarModel {
                 },
                 icon: "space".to_owned(),
                 is_dir: true,
+                fill: 0.0,
             });
         }
         base.push(action_row(SECTION_SPACES, "New space…", "addSpace"));
@@ -225,6 +233,7 @@ impl qobject::SidebarModel {
                 detail: String::new(),
                 icon: "recent".to_owned(),
                 is_dir: item.kind == dae_core::types::EntryKind::Directory,
+                fill: 0.0,
             });
         }
 
@@ -250,6 +259,13 @@ impl qobject::SidebarModel {
                     ),
                     icon: "disk".to_owned(),
                     is_dir: true,
+                    fill: if volume.total_bytes == 0 {
+                        0.0
+                    } else {
+                        ((volume.total_bytes - volume.available_bytes) as f64
+                            / volume.total_bytes as f64)
+                            .clamp(0.0, 1.0)
+                    },
                 });
             }
             for distro in distros {
@@ -294,6 +310,7 @@ fn place_row(kind: PlaceKind, path: &str) -> SidebarRow {
         detail: String::new(),
         icon: icon.to_owned(),
         is_dir: true,
+        fill: 0.0,
     }
 }
 
@@ -322,6 +339,7 @@ fn distro_row(distro: WslDistro) -> SidebarRow {
         detail: String::new(),
         icon: "wsl".to_owned(),
         is_dir: true,
+        fill: 0.0,
     }
 }
 
@@ -339,6 +357,7 @@ fn connection_row(connection: StoredConnection) -> SidebarRow {
         detail,
         icon: "server".to_owned(),
         is_dir: true,
+        fill: 0.0,
     }
 }
 
@@ -351,6 +370,7 @@ fn cloud_row(account: StoredCloudAccount) -> SidebarRow {
         detail: cloud_provider_label(account.provider).to_owned(),
         icon: "cloud".to_owned(),
         is_dir: true,
+        fill: 0.0,
     }
 }
 
@@ -363,6 +383,7 @@ fn action_row(section: &str, name: &str, kind: &str) -> SidebarRow {
         detail: String::new(),
         icon: "add".to_owned(),
         is_dir: true,
+        fill: 0.0,
     }
 }
 
