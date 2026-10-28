@@ -20,7 +20,7 @@ Item {
     property int activeIndex: 0
     property var hostWindow: null
     property bool dark: true
-    property color accent: dark ? "#6ea8fe" : "#2f6fdf"
+    property color accent: Theme.interactive
     property string material: "none"
 
     /// A pressed tab that could still become a drag. Cleared before the native
@@ -54,14 +54,14 @@ Item {
     readonly property int tabLeft: 8
 
     readonly property color chromeColor: material === "none"
-        ? (dark ? "#14161a" : "#f4f6f8")
+        ? Theme.chrome
         : (dark ? Qt.rgba(0.055, 0.063, 0.075, 0.38)
                 : Qt.rgba(0.98, 0.985, 0.99, 0.46))
-    readonly property color activeColor: dark ? "#24272d" : "#ffffff"
-    readonly property color hoverColor: dark ? "#1affffff" : "#0d000000"
-    readonly property color textColor: dark ? "#e7e9ee" : "#1c1f24"
-    readonly property color mutedColor: dark ? "#8d94a2" : "#657080"
-    readonly property color hairline: dark ? "#26ffffff" : "#16000000"
+    readonly property color activeColor: Theme.raised
+    readonly property color hoverColor: Theme.hover
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color hairline: Theme.hairline
 
     function tabX(index) {
         return tabLeft + index * (tabWidthValue + tabGap)
@@ -217,7 +217,7 @@ Item {
                         anchors.fill: parent
                         radius: 4
                         color: closeMouse.containsMouse
-                            ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                            ? Theme.fill : "transparent"
                     }
 
                     Text {
@@ -314,8 +314,8 @@ Item {
         height: 24
         radius: 6
         color: newWindowMouse.containsMouse
-            ? (root.dark ? "#26ffffff" : "#12000000")
-            : (root.dark ? "#1affffff" : "#0d000000")
+            ? Theme.fill
+            : Theme.hover
 
         Text {
             anchors.centerIn: parent

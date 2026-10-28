@@ -22,10 +22,10 @@ Item {
     readonly property color chromeTint: dark
         ? Qt.rgba(0.055, 0.063, 0.075, 0.38)
         : Qt.rgba(0.98, 0.985, 0.99, 0.46)
-    readonly property color solidChrome: dark ? "#14161a" : "#f4f6f8"
+    readonly property color solidChrome: Theme.chrome
     readonly property color chromeColor: material === "none" ? solidChrome : chromeTint
-    readonly property color textColor: dark ? "#e7e9ee" : "#1c1f24"
-    readonly property color mutedColor: dark ? "#8d94a2" : "#657080"
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
     readonly property bool maximized: window !== null
         && window.visibility === Window.Maximized
 
@@ -41,12 +41,12 @@ Item {
         width: 20
         height: 20
         radius: 6
-        color: root.dark ? "#6ea8fe" : "#2f6fdf"
+        color: Theme.interactive
 
         Text {
             anchors.centerIn: parent
             text: "D"
-            color: "#ffffff"
+            color: Theme.onInteractive
             font.pixelSize: 12
             font.weight: Font.DemiBold
         }
@@ -87,7 +87,7 @@ Item {
                     anchors.fill: parent
                     color: button.isClose
                         ? (button.hovered ? "#c42b1c" : "transparent")
-                        : (button.hovered ? (root.dark ? "#1fffffff" : "#12000000")
+                        : (button.hovered ? Theme.fill
                                           : "transparent")
                 }
 
@@ -97,7 +97,7 @@ Item {
                         : button.isMaximize
                             ? (root.maximized ? "\uE923" : "\uE922")
                             : "\uE921"
-                    color: button.isClose && button.hovered ? "#ffffff" : root.textColor
+                    color: button.isClose && button.hovered ? Theme.onSolid : root.textColor
                     font.family: "Segoe Fluent Icons"
                     font.pixelSize: 10
                 }

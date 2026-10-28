@@ -17,10 +17,10 @@ Item {
     /// filename search, so the mode toggle is disabled there.
     property bool contentEnabled: true
     property bool dark: true
-    property color accent: "#2f6fdf"
-    property color textColor: dark ? "#e7e9ee" : "#1c1f24"
-    property color mutedColor: dark ? "#8d94a2" : "#657080"
-    property color hairline: dark ? "#26ffffff" : "#16000000"
+    property color accent: Theme.interactive
+    property color textColor: Theme.ink
+    property color mutedColor: Theme.inkMuted
+    property color hairline: Theme.hairline
 
     signal queryEdited(string value)
     signal modeToggled()
@@ -41,10 +41,10 @@ Item {
     Rectangle {
         anchors.fill: parent
         radius: 7
-        color: root.dark ? "#1affffff" : "#0d000000"
+        color: Theme.hover
         border.width: 1
         border.color: input.activeFocus
-            ? (root.dark ? "#4d6ea8fe" : "#4d2f6fdf") : root.hairline
+            ? Theme.focusRing : root.hairline
 
         Item {
             id: modeButton
@@ -91,7 +91,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             color: root.textColor
             selectionColor: root.accent
-            selectedTextColor: "#ffffff"
+            selectedTextColor: Theme.onInteractive
             font.pixelSize: 13
             selectByMouse: true
             clip: true

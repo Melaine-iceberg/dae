@@ -13,7 +13,7 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
 
     /// The paths being moved.
     property var paths: []
@@ -24,10 +24,10 @@ FocusScope {
     /// The directory the menu was opened in, shown as one-click target.
     property string origin: ""
 
-    readonly property color textColor: root.dark ? "#e7ebf2" : "#20252b"
-    readonly property color mutedColor: root.dark ? "#8d94a2" : "#657080"
-    readonly property color fieldColor: root.dark ? "#16181c" : "#f4f6f9"
-    readonly property color hairline: root.dark ? "#26ffffff" : "#18000000"
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color fieldColor: Theme.field
+    readonly property color hairline: Theme.hairline
 
     signal closed()
 
@@ -106,7 +106,7 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        color: "#73000000"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
@@ -120,9 +120,9 @@ FocusScope {
         width: Math.min(520, root.width - 40)
         height: Math.min(480, root.height - 48)
         radius: 10
-        color: root.dark ? "#202329" : "#ffffff"
+        color: Theme.raised
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#18000000"
+        border.color: Theme.hairlineStrong
 
         MouseArea {
             anchors.fill: parent
@@ -165,7 +165,7 @@ FocusScope {
                     height: 28
                     radius: 6
                     color: upMouse.containsMouse
-                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                        ? Theme.fill : "transparent"
                     border.width: 1
                     border.color: root.hairline
 
@@ -191,7 +191,7 @@ FocusScope {
                     color: root.fieldColor
                     border.width: 1
                     border.color: pathInput.activeFocus
-                        ? (root.dark ? "#4d6ea8fe" : "#4d2f6fdf")
+                        ? Theme.focusRing
                         : root.hairline
 
                     TextInput {
@@ -202,7 +202,7 @@ FocusScope {
                         verticalAlignment: TextInput.AlignVCenter
                         color: root.textColor
                         selectionColor: root.accent
-                        selectedTextColor: "#ffffff"
+                        selectedTextColor: Theme.onInteractive
                         font.pixelSize: 12
                         selectByMouse: true
                         clip: true
@@ -274,9 +274,9 @@ FocusScope {
                             anchors.fill: parent
                             radius: 5
                             color: root.picked === folderRow.filePath
-                                ? (root.dark ? "#332f6fdf" : "#1a2f6fdf")
+                                ? Theme.selection
                                 : (folderMouse.containsMouse
-                                    ? (root.dark ? "#1affffff" : "#0d000000")
+                                    ? Theme.hover
                                     : "transparent")
                         }
 
@@ -325,14 +325,14 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     radius: 6
                     color: cancelMouse.containsMouse
-                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                        ? Theme.fill : "transparent"
                     border.width: 1
                     border.color: root.hairline
 
                     Text {
                         anchors.centerIn: parent
                         text: qsTr("取消")
-                        color: root.dark ? "#c9cfd9" : "#3a4048"
+                        color: Theme.inkMuted
                         font.pixelSize: 12
                     }
 
@@ -349,12 +349,12 @@ FocusScope {
                     height: 28
                     anchors.verticalCenter: parent.verticalCenter
                     radius: 6
-                    color: moveMouse.containsMouse ? "#3f7ce0" : "#2f6fdf"
+                    color: moveMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
 
                     Text {
                         anchors.centerIn: parent
                         text: qsTr("移动")
-                        color: "#ffffff"
+                        color: Theme.onInteractive
                         font.pixelSize: 12
                     }
 
@@ -379,7 +379,7 @@ FocusScope {
         height: 22
         radius: 6
         color: quickMouse.containsMouse
-            ? (root.dark ? "#1affffff" : "#0d000000") : "transparent"
+            ? Theme.hover : "transparent"
         border.width: 1
         border.color: root.hairline
         opacity: quick.path !== "" ? 1 : 0

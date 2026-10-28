@@ -13,18 +13,18 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
     property string path: ""
     property string selectedId: ""
     property bool setDefault: false
     property bool opening: false
     property string errorText: ""
 
-    readonly property color textColor: root.dark ? "#e7ebf2" : "#20252b"
-    readonly property color mutedColor: root.dark ? "#8d94a2" : "#657080"
-    readonly property color fieldColor: root.dark ? "#16181c" : "#f4f6f9"
-    readonly property color hairline: root.dark ? "#26ffffff" : "#18000000"
-    readonly property color dangerColor: root.dark ? "#f08a8a" : "#b42323"
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color fieldColor: Theme.field
+    readonly property color hairline: Theme.hairline
+    readonly property color dangerColor: Theme.danger
     readonly property string fileName: root.path.split(/[\\/]/).pop()
 
     signal canceled()
@@ -125,7 +125,7 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        color: "#73000000"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
@@ -139,9 +139,9 @@ FocusScope {
         width: Math.min(440, root.width - 40)
         height: Math.min(464, root.height - 48)
         radius: 10
-        color: root.dark ? "#202329" : "#ffffff"
+        color: Theme.raised
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#18000000"
+        border.color: Theme.hairlineStrong
 
         MouseArea {
             anchors.fill: parent
@@ -185,7 +185,7 @@ FocusScope {
                 color: root.fieldColor
                 border.width: 1
                 border.color: filterInput.activeFocus
-                    ? (root.dark ? "#4d6ea8fe" : "#4d2f6fdf")
+                    ? Theme.focusRing
                     : root.hairline
 
                 Text {
@@ -206,7 +206,7 @@ FocusScope {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: "#ffffff"
+                    selectedTextColor: Theme.onInteractive
                     font.pixelSize: 12
                     selectByMouse: true
                     clip: true
@@ -288,9 +288,9 @@ FocusScope {
                             anchors.rightMargin: 2
                             radius: 5
                             color: root.selectedId === appId
-                                ? (root.dark ? "#332f6fdf" : "#1a2f6fdf")
+                                ? Theme.selection
                                 : (rowMouse.containsMouse
-                                    ? (root.dark ? "#1affffff" : "#0d000000")
+                                    ? Theme.hover
                                     : "transparent")
                         }
 
@@ -316,7 +316,7 @@ FocusScope {
                             height: 18
                             radius: 4
                             anchors.verticalCenter: parent.verticalCenter
-                            color: root.dark ? "#33ffffff" : "#14000000"
+                            color: Theme.hairlineStrong
 
                             Text {
                                 anchors.centerIn: parent
@@ -467,13 +467,13 @@ FocusScope {
                             color: root.setDefault ? root.accent : "transparent"
                             border.width: 1
                             border.color: root.setDefault ? root.accent
-                                : (root.dark ? "#55ffffff" : "#33000000")
+                                : (root.dark ? "#55ffffff" : Theme.scrim)
 
                             Text {
                                 anchors.centerIn: parent
                                 visible: root.setDefault
                                 text: "✓"
-                                color: "#ffffff"
+                                color: Theme.onInteractive
                                 font.pixelSize: 10
                                 font.weight: Font.Bold
                             }
@@ -504,7 +504,7 @@ FocusScope {
                         height: 26
                         radius: 6
                         color: cancelMouse.containsMouse
-                            ? (root.dark ? "#26ffffff" : "#12000000")
+                            ? Theme.fill
                             : "transparent"
                         border.width: 1
                         border.color: root.hairline
@@ -534,7 +534,7 @@ FocusScope {
                         Text {
                             anchors.centerIn: parent
                             text: root.opening ? qsTr("正在打开…") : qsTr("打开")
-                            color: "#ffffff"
+                            color: Theme.onInteractive
                             font.pixelSize: 12
                             font.weight: Font.DemiBold
                         }

@@ -18,9 +18,9 @@ Item {
 
     function show(message, isError) {
         label.text = message
-        label.color = isError ? "#ffffff" : (root.dark ? "#e8ecf3" : "#ffffff")
+        label.color = Theme.onSolid
         background.color = isError
-            ? "#b43636"
+            ? Theme.dangerSolid
             : (root.dark ? Qt.rgba(0.13, 0.15, 0.18, 0.94)
                          : Qt.rgba(0.15, 0.17, 0.20, 0.92))
         root.opacity = 1
@@ -39,13 +39,13 @@ Item {
         width: label.implicitWidth + 28
         height: 30
         radius: 15
-        color: "#202329"
+        color: Theme.raised
 
         Text {
             id: label
             anchors.centerIn: parent
             text: ""
-            color: "#ffffff"
+            color: Theme.onInteractive
             font.pixelSize: 12
         }
     }

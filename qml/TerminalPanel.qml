@@ -22,12 +22,12 @@ Item {
     signal exited()
 
     readonly property color chromeColor: material === "none"
-        ? (dark ? "#14161a" : "#f4f6f8")
+        ? Theme.chrome
         : (dark ? Qt.rgba(0.055, 0.063, 0.075, 0.38)
                 : Qt.rgba(0.98, 0.985, 0.99, 0.46))
-    readonly property color textColor: dark ? "#e7e9ee" : "#1c1f24"
-    readonly property color mutedColor: dark ? "#8d94a2" : "#657080"
-    readonly property color hairline: dark ? "#26ffffff" : "#16000000"
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color hairline: Theme.hairline
 
     implicitHeight: active ? panelHeight : 0
     height: implicitHeight
@@ -105,7 +105,7 @@ Item {
             height: 18
             radius: 4
             visible: !root.running
-            color: restartMouse.containsMouse ? (root.dark ? "#26ffffff" : "#12000000")
+            color: restartMouse.containsMouse ? Theme.fill
                                               : "transparent"
 
             Text {
@@ -137,7 +137,7 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 radius: 3
-                color: closeMouse.containsMouse ? (root.dark ? "#26ffffff" : "#12000000")
+                color: closeMouse.containsMouse ? Theme.fill
                                                 : "transparent"
             }
 

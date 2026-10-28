@@ -16,12 +16,12 @@ Item {
     property var tab: null
     property var model: null
     property bool dark: true
-    property color accent: "#2f6fdf"
-    property color contentColor: dark ? "#191b1f" : "#ffffff"
-    property color cardColor: dark ? "#1b1e24" : "#f7f8fa"
-    property color textColor: dark ? "#e6e9ef" : "#1c1f24"
-    property color mutedColor: dark ? "#8f98aa" : "#657080"
-    property color hairline: dark ? "#26ffffff" : "#16000000"
+    property color accent: Theme.interactive
+    property color contentColor: Theme.canvas
+    property color cardColor: Theme.canvasAlt
+    property color textColor: Theme.ink
+    property color mutedColor: Theme.inkMuted
+    property color hairline: Theme.hairline
     property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b, dark ? 0.30 : 0.18)
     property string dropTargetPath: ""
     property var keyHandler: null
@@ -290,7 +290,7 @@ Item {
                 color: cell.selected ? root.selectionColor
                     : cell.dropTarget ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b,
                                                 root.dark ? 0.24 : 0.14)
-                    : hover.containsMouse ? (root.dark ? "#22262e" : "#eef1f5")
+                    : hover.containsMouse ? Theme.canvasAlt
                     : root.cardColor
                 border.width: cell.selected || cell.dropTarget ? 1 : 0
                 border.color: cell.dropTarget ? root.accent
@@ -305,7 +305,7 @@ Item {
                 width: Math.min(parent.width - 20, root.wellHeight + 34)
                 height: root.wellHeight
                 radius: 6
-                color: root.dark ? "#14ffffff" : "#0a000000"
+                color: Theme.hover
                 clip: true
 
                 Image {
@@ -356,7 +356,7 @@ Item {
                 anchors.top: well.bottom
                 anchors.topMargin: 5
                 text: cell.fileName
-                color: cell.hidden ? (root.dark ? "#6b7280" : "#9aa1ad") : root.textColor
+                color: cell.hidden ? Theme.inkFaint : root.textColor
                 font.pixelSize: 12
                 font.weight: Font.Medium
                 textFormat: Text.PlainText
@@ -374,7 +374,7 @@ Item {
                 text: cell.isDir ? qsTr("文件夹") : cell.sizeText
                 color: root.mutedColor
                 font.pixelSize: 10
-                font.family: "Cascadia Mono"
+                font.family: Theme.monoFamily
                 textFormat: Text.PlainText
                 elide: Text.ElideRight
                 horizontalAlignment: Text.AlignLeft

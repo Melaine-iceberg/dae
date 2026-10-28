@@ -13,13 +13,13 @@ Item {
 
     property var paths: []
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
 
-    readonly property color panelColor: dark ? "#17191e" : "#fbfcfd"
-    readonly property color sectionColor: dark ? "#1f2229" : "#f1f4f7"
-    readonly property color textColor: dark ? "#e6e9ef" : "#1c1f24"
-    readonly property color mutedColor: dark ? "#8f98aa" : "#657080"
-    readonly property color hairline: dark ? "#26ffffff" : "#16000000"
+    readonly property color panelColor: Theme.raised
+    readonly property color sectionColor: Theme.raised
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color hairline: Theme.hairline
     readonly property bool single: paths.length === 1
     /// The entry was read through a network backend. Text previews work, but
     /// thumbnails, media tags, and OS open/reveal do not.
@@ -256,9 +256,9 @@ Item {
                             : (controller.content !== "" ? controller.content : qsTr("（空文件）"))
                         color: root.textColor
                         selectionColor: root.accent
-                        selectedTextColor: "#ffffff"
+                        selectedTextColor: Theme.onInteractive
                         font.pixelSize: 11
-                        font.family: controller.isMarkdown ? "" : "Cascadia Mono"
+                        font.family: controller.isMarkdown ? "" : Theme.monoFamily
                         textFormat: controller.contentHtml !== "" ? TextEdit.RichText
                             : TextEdit.PlainText
                         wrapMode: TextEdit.Wrap
@@ -401,7 +401,7 @@ Item {
                         anchors.centerIn: parent
                         text: controller.isDirectory ? qsTr("打开文件夹")
                             : (root.remote ? qsTr("远程文件") : qsTr("打开"))
-                        color: "#ffffff"
+                        color: Theme.onInteractive
                         font.pixelSize: 11
                         font.bold: true
                     }

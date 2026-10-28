@@ -18,11 +18,11 @@ Item {
     property bool folderActive: false
     property string scopePath: ""
     property bool dark: true
-    property color accent: "#2f6fdf"
-    property color textColor: dark ? "#e6e9ef" : "#1c1f24"
-    property color mutedColor: dark ? "#8f98aa" : "#657080"
-    property color hairline: dark ? "#26ffffff" : "#16000000"
-    property color headerColor: dark ? "#14161a" : "#f4f6f8"
+    property color accent: Theme.interactive
+    property color textColor: Theme.ink
+    property color mutedColor: Theme.inkMuted
+    property color hairline: Theme.hairline
+    property color headerColor: Theme.chrome
     property string commandShortcut: "Ctrl+K"
     property string pathShortcut: "Ctrl+P"
     /// The bindings from `settings.toml`, so a hint in the list is the key the
@@ -31,11 +31,11 @@ Item {
     property var shortcutMap: ({})
     property bool isMac: false
 
-    readonly property color panelColor: dark ? "#1c1f24" : "#ffffff"
+    readonly property color panelColor: Theme.raised
     readonly property color activeColor: Qt.rgba(accent.r, accent.g, accent.b,
                                                  dark ? 0.26 : 0.14)
-    readonly property color hoverColor: dark ? "#14ffffff" : "#0a000000"
-    readonly property color plateColor: dark ? "#14161b" : "#f7f8fa"
+    readonly property color hoverColor: Theme.hover
+    readonly property color plateColor: Theme.canvasAlt
 
     readonly property string trimmedQuery: query.trim()
     readonly property bool pathLike: root.isPathLike(root.trimmedQuery)
@@ -536,7 +536,7 @@ Item {
     // space, like every other modal in this shell.
     Rectangle {
         anchors.fill: parent
-        color: "#73000000"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
@@ -557,7 +557,7 @@ Item {
         radius: 12
         color: root.panelColor
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#1a000000"
+        border.color: Theme.hairlineStrong
 
         MouseArea {
             anchors.fill: parent
@@ -594,7 +594,7 @@ Item {
                 height: 26
                 color: root.textColor
                 selectionColor: root.accent
-                selectedTextColor: "#ffffff"
+                selectedTextColor: Theme.onInteractive
                 font.pixelSize: 16
                 verticalAlignment: TextInput.AlignVCenter
                 focus: true
@@ -747,7 +747,7 @@ Item {
                     width: 22
                     height: 22
                     radius: 5
-                    color: root.dark ? "#1b1f26" : "#eef1f5"
+                    color: Theme.canvasAlt
 
                     Text {
                         anchors.centerIn: parent

@@ -54,7 +54,7 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        color: "#73000000"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
@@ -71,9 +71,9 @@ FocusScope {
         width: Math.min(440, root.width - 48)
         height: messageText.implicitHeight + 128
         radius: 10
-        color: root.dark ? "#202329" : "#ffffff"
+        color: Theme.raised
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#18000000"
+        border.color: Theme.hairlineStrong
 
         // Wheel events must not scroll the list behind the dialog; a NoButton
         // guard cannot steal presses from the buttons below it.
@@ -88,7 +88,7 @@ FocusScope {
             y: 18
             width: parent.width - 36
             text: root.heading
-            color: root.dark ? "#e7ebf2" : "#20252b"
+            color: Theme.ink
             font.pixelSize: 14
             font.weight: Font.DemiBold
             elide: Text.ElideRight
@@ -100,7 +100,7 @@ FocusScope {
             y: 48
             width: parent.width - 36
             text: root.message
-            color: root.dark ? "#aeb6c2" : "#4c545e"
+            color: Theme.inkMuted
             font.pixelSize: 12
             lineHeight: 1.25
             wrapMode: Text.Wrap
@@ -116,9 +116,9 @@ FocusScope {
             height: 26
             radius: 6
             color: cancelMouse.containsMouse
-                ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                ? Theme.fill : "transparent"
             border.width: 1
-            border.color: root.dark ? "#26ffffff" : "#18000000"
+            border.color: Theme.hairline
 
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("取消")
@@ -130,7 +130,7 @@ FocusScope {
             Text {
                 anchors.centerIn: parent
                 text: qsTr("取消")
-                color: root.dark ? "#c9cfd9" : "#3a4048"
+                color: Theme.inkMuted
                 font.pixelSize: 12
             }
 
@@ -155,8 +155,8 @@ FocusScope {
             height: 26
             radius: 6
             color: root.danger
-                ? (submitMouse.containsMouse ? "#a33232" : "#8f2d2d")
-                : (submitMouse.containsMouse ? "#3f7ce0" : "#2f6fdf")
+                ? (submitMouse.containsMouse ? Theme.dangerSolidHover : Theme.dangerSolid)
+                : (submitMouse.containsMouse ? Theme.interactiveHover : Theme.interactive)
 
             Accessible.role: Accessible.Button
             Accessible.name: root.confirmLabel
@@ -166,7 +166,7 @@ FocusScope {
                 id: submitLabel
                 anchors.centerIn: parent
                 text: root.confirmLabel
-                color: "#ffffff"
+                color: Theme.onInteractive
                 font.pixelSize: 12
             }
 

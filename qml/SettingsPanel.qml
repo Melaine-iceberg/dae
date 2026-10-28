@@ -16,7 +16,7 @@ Item {
     id: root
 
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
     property bool isMac: false
     property var shortcutMap: ({})
 
@@ -33,15 +33,15 @@ Item {
     property string terminalError: ""
     property string terminalStatus: ""
 
-    readonly property color textColor: dark ? "#e7ebf2" : "#20252b"
-    readonly property color mutedColor: dark ? "#8a92a0" : "#6b7480"
-    readonly property color faintColor: dark ? "#5f6875" : "#939ba6"
-    readonly property color hairline: dark ? "#24ffffff" : "#14000000"
-    readonly property color fieldColor: dark ? "#14161a" : "#f4f6f9"
-    readonly property color panelColor: dark ? "#1c1f24" : "#ffffff"
-    readonly property color sidebarColor: dark ? "#17191d" : "#f5f6f8"
-    readonly property color hoverFill: dark ? "#1affffff" : "#0e000000"
-    readonly property color selectedFill: dark ? "#26ffffff" : "#12000000"
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color faintColor: Theme.inkFaint
+    readonly property color hairline: Theme.hairline
+    readonly property color fieldColor: Theme.field
+    readonly property color panelColor: Theme.raised
+    readonly property color sidebarColor: Theme.chrome
+    readonly property color hoverFill: Theme.hover
+    readonly property color selectedFill: Theme.fill
 
     readonly property bool defaultManagerCanSet:
         Workspace.defaultManagerSupported && !Workspace.defaultManagerBusy
@@ -59,7 +59,7 @@ Item {
                     ? qsTr("dae 已注册，等待系统确认")
                     : qsTr("dae 不是默认文件管理器")
     readonly property color defaultManagerStateColor: Workspace.defaultManagerIsDefault
-        ? (root.dark ? "#7fd39a" : "#2f7d4a")
+        ? Theme.success
         : Workspace.defaultManagerIsRegistered
             ? (root.dark ? "#d8b45a" : "#9a6b10")
             : (root.dark ? "#9aa2af" : "#6a727c")
@@ -314,7 +314,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#73000000"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
@@ -336,7 +336,7 @@ Item {
         radius: 10
         color: root.panelColor
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#18000000"
+        border.color: Theme.hairlineStrong
         clip: true
 
         MouseArea {
@@ -486,7 +486,7 @@ Item {
                             label: modelData.label
                             selected: Appearance.accent === modelData.value
                             swatch: modelData.value === "brand"
-                                ? (root.dark ? "#55c5ff" : "#1f63cc")
+                                ? Theme.brand
                                 : Workspace.accent
                             onClicked: Appearance.chooseAccent(modelData.value)
                         }
@@ -661,7 +661,7 @@ Item {
                                             color: root.bindingFor(modelData.id)
                                                 ? root.textColor : root.faintColor
                                             font.pixelSize: 10
-                                            font.family: "Cascadia Mono"
+                                            font.family: Theme.monoFamily
                                             elide: Text.ElideRight
                                         }
 
@@ -731,7 +731,7 @@ Item {
                         ? shortcutFlick.contentY / (shortcutFlick.contentHeight
                             - shortcutFlick.height) * (shortcutFlick.height - height)
                         : 0)
-                    color: root.dark ? "#3affffff" : "#33000000"
+                    color: Theme.hairlineStrong
                 }
             }
 
@@ -776,7 +776,7 @@ Item {
                     inputMethodHints: Qt.ImhDigitsOnly
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: "#ffffff"
+                    selectedTextColor: Theme.onInteractive
                     font.pixelSize: 12
                     selectByMouse: true
                     clip: true
@@ -809,7 +809,7 @@ Item {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: "#ffffff"
+                    selectedTextColor: Theme.onInteractive
                     font.pixelSize: 12
                     selectByMouse: true
                     clip: true
@@ -843,7 +843,7 @@ Item {
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: "#ffffff"
+                    selectedTextColor: Theme.onInteractive
                     font.pixelSize: 12
                     selectByMouse: true
                     clip: true
@@ -869,7 +869,7 @@ Item {
                     width: content.width - 48
                     visible: text !== ""
                     text: root.terminalError
-                    color: root.dark ? "#f08a8a" : "#b42323"
+                    color: Theme.danger
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap
                 }
@@ -888,7 +888,7 @@ Item {
                         id: terminalStatusText
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.terminalStatus
-                        color: root.dark ? "#7fd39a" : "#2f7d4a"
+                        color: Theme.success
                         font.pixelSize: 11
                     }
                 }
@@ -940,7 +940,7 @@ Item {
                         visible: !Workspace.defaultManagerBusy && Workspace.defaultManagerIsDefault
                         anchors.verticalCenter: parent.verticalCenter
                         text: "✓"
-                        color: root.dark ? "#7fd39a" : "#2f7d4a"
+                        color: Theme.success
                         font.pixelSize: 12
                     }
 
@@ -983,7 +983,7 @@ Item {
                     width: content.width - 48
                     visible: text !== ""
                     text: root.backendError(Workspace.defaultManagerError)
-                    color: root.dark ? "#f08a8a" : "#b42323"
+                    color: Theme.danger
                     font.pixelSize: 10
                     wrapMode: Text.WordWrap
                 }
@@ -1035,7 +1035,7 @@ Item {
                         text: Workspace.logDirectory
                         color: root.textColor
                         font.pixelSize: 11
-                        font.family: "Cascadia Mono"
+                        font.family: Theme.monoFamily
                         elide: Text.ElideMiddle
                     }
                 }
@@ -1099,7 +1099,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: qsTr("完成")
-                    color: "#ffffff"
+                    color: Theme.onInteractive
                     font.pixelSize: 12
                 }
 
@@ -1299,7 +1299,7 @@ Item {
             id: buttonText
             anchors.centerIn: parent
             text: button.label
-            color: "#ffffff"
+            color: Theme.onInteractive
             font.pixelSize: 11
         }
 

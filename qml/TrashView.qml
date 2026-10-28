@@ -12,8 +12,8 @@ Item {
 
     property var model: null
     property bool dark: true
-    property color accent: "#2f6fdf"
-    property color headerColor: dark ? "#14161a" : "#f4f6f8"
+    property color accent: Theme.interactive
+    property color headerColor: Theme.chrome
 
     /// id -> true. Ids are the system trash ids; a restored entry no longer
     /// exists, so selection is never allowed to outlive a reload.
@@ -22,13 +22,13 @@ Item {
     property int anchorIndex: -1
 
     readonly property int rowHeight: 30
-    readonly property color contentColor: dark ? "#191b1f" : "#ffffff"
-    readonly property color textColor: dark ? "#e6e9ef" : "#1c1f24"
-    readonly property color mutedColor: dark ? "#8f98aa" : "#657080"
-    readonly property color hairline: dark ? "#26ffffff" : "#16000000"
+    readonly property color contentColor: Theme.canvas
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color hairline: Theme.hairline
     readonly property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b,
                                                    dark ? 0.30 : 0.18)
-    readonly property color cursorColor: dark ? "#1d2026" : "#eef1f5"
+    readonly property color cursorColor: Theme.canvasAlt
 
     readonly property int selectionCount: {
         const version = root.selectionVersion
@@ -307,14 +307,14 @@ Item {
             radius: 3
             border.width: 1
             border.color: root.allSelected ? root.accent
-                : (root.dark ? "#4a515e" : "#b9c0ca")
+                : Theme.hairlineStrong
             color: root.allSelected ? root.accent : "transparent"
 
             Text {
                 anchors.centerIn: parent
                 visible: root.allSelected
                 text: "\u2713"
-                color: "#ffffff"
+                color: Theme.onInteractive
                 font.pixelSize: 9
             }
 
@@ -455,7 +455,7 @@ Item {
                     ? root.selectionColor
                     : (list.currentIndex === row.index ? root.cursorColor
                         : (rowMouse.containsMouse
-                            ? (root.dark ? "#161a1f" : "#f2f4f7") : "transparent"))
+                            ? Theme.chrome : "transparent"))
             }
 
             Rectangle {
@@ -466,14 +466,14 @@ Item {
                 radius: 3
                 border.width: 1
                 border.color: row.selected ? root.accent
-                    : (root.dark ? "#4a515e" : "#b9c0ca")
+                    : Theme.hairlineStrong
                 color: row.selected ? root.accent : "transparent"
 
                 Text {
                     anchors.centerIn: parent
                     visible: row.selected
                     text: "\u2713"
-                    color: "#ffffff"
+                    color: Theme.onInteractive
                     font.pixelSize: 9
                 }
             }
@@ -576,7 +576,7 @@ Item {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
             text: qsTr("无法读取回收站")
-            color: root.dark ? "#f08a8a" : "#b42323"
+            color: Theme.danger
             font.pixelSize: 13
         }
 
@@ -614,9 +614,9 @@ Item {
         radius: 5
         opacity: enabled ? 1 : 0.45
         color: danger
-            ? (buttonMouse.containsMouse && enabled ? "#a33232" : "#8f2d2d")
+            ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)
             : (buttonMouse.containsMouse && enabled
-                ? (root.dark ? "#2b3038" : "#e9edf2") : "transparent")
+                ? Theme.canvasAlt : "transparent")
         border.width: danger ? 0 : 1
         border.color: root.hairline
 
@@ -624,7 +624,7 @@ Item {
             id: buttonLabel
             anchors.centerIn: parent
             text: button.label
-            color: button.danger ? "#ffffff"
+            color: button.danger ? Theme.onSolid
                 : (button.enabled ? root.textColor : root.mutedColor)
             font.pixelSize: 11
         }

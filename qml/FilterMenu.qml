@@ -11,7 +11,7 @@ Item {
     id: root
 
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
     /// The binding from `settings.toml`; the view only prints it.
     property string hiddenShortcut: "Ctrl+H"
     property real openX: 0
@@ -26,10 +26,10 @@ Item {
         || ExplorerPrefs.sizeFilter !== "any"
         || !ExplorerPrefs.showHiddenFiles
 
-    readonly property color panelColor: dark ? "#202329" : "#ffffff"
-    readonly property color borderColor: dark ? "#33ffffff" : "#18000000"
-    readonly property color labelColor: dark ? "#7f8797" : "#8a929d"
-    readonly property color textColor: dark ? "#e3e7ee" : "#24292f"
+    readonly property color panelColor: Theme.raised
+    readonly property color borderColor: Theme.hairlineStrong
+    readonly property color labelColor: Theme.inkFaint
+    readonly property color textColor: Theme.ink
 
     readonly property var items: [
         { kind: "label", label: qsTr("可见性") },
@@ -125,7 +125,7 @@ Item {
                         x: 10
                         width: parent.width - 20
                         height: 1
-                        color: root.dark ? "#1affffff" : "#12000000"
+                        color: Theme.fill
                     }
 
                     Text {
@@ -146,7 +146,7 @@ Item {
                         anchors.leftMargin: 4
                         anchors.rightMargin: 4
                         radius: 5
-                        color: rowMouse.containsMouse ? (root.dark ? "#22ffffff" : "#0f000000")
+                        color: rowMouse.containsMouse ? Theme.fill
                                                       : "transparent"
                     }
 

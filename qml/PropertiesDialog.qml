@@ -13,7 +13,7 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
 
     /// `general`, `permissions` (unix), `attributes` (windows) or `checksum`.
     property string tab: "general"
@@ -32,11 +32,11 @@ FocusScope {
     /// Which checksum row was copied last, for the one-line confirmation.
     property string copiedAlgorithm: ""
 
-    readonly property color textColor: root.dark ? "#e7ebf2" : "#20252b"
-    readonly property color mutedColor: root.dark ? "#8d94a2" : "#657080"
-    readonly property color fieldColor: root.dark ? "#16181c" : "#f4f6f9"
-    readonly property color hairline: root.dark ? "#26ffffff" : "#18000000"
-    readonly property color dangerColor: root.dark ? "#f08a8a" : "#b42323"
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color fieldColor: Theme.field
+    readonly property color hairline: Theme.hairline
+    readonly property color dangerColor: Theme.danger
     readonly property bool canSave: controller.editable && !controller.saving
                                      && controller.error === ""
 
@@ -117,7 +117,7 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        color: "#73000000"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
@@ -131,9 +131,9 @@ FocusScope {
         width: Math.min(600, root.width - 40)
         height: Math.min(620, root.height - 48)
         radius: 10
-        color: root.dark ? "#202329" : "#ffffff"
+        color: Theme.raised
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#18000000"
+        border.color: Theme.hairlineStrong
 
         MouseArea {
             anchors.fill: parent
@@ -269,7 +269,7 @@ FocusScope {
                             height: 24
                             radius: 6
                             color: scanMouse.containsMouse
-                                ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                                ? Theme.fill : "transparent"
                             border.width: 1
                             border.color: root.hairline
 
@@ -458,7 +458,7 @@ FocusScope {
                         height: 3
                         radius: 1.5
                         visible: controller.hashing
-                        color: root.dark ? "#26ffffff" : "#14000000"
+                        color: Theme.hairline
 
                         Rectangle {
                             height: parent.height
@@ -486,12 +486,12 @@ FocusScope {
                             width: 96
                             height: 26
                             radius: 6
-                            color: hashMouse.containsMouse ? "#3f7ce0" : "#2f6fdf"
+                            color: hashMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
 
                             Text {
                                 anchors.centerIn: parent
                                 text: controller.hashing ? qsTr("取消") : qsTr("开始校验")
-                                color: "#ffffff"
+                                color: Theme.onInteractive
                                 font.pixelSize: 12
                             }
 
@@ -542,7 +542,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     radius: 6
                     color: cancelMouse.containsMouse
-                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                        ? Theme.fill : "transparent"
                     border.width: 1
                     border.color: root.hairline
 
@@ -551,7 +551,7 @@ FocusScope {
                         // A read-only entry has nothing to write, so the button
                         // that is always available is a plain close.
                         text: controller.editable ? qsTr("取消") : qsTr("关闭")
-                        color: root.dark ? "#c9cfd9" : "#3a4048"
+                        color: Theme.inkMuted
                         font.pixelSize: 12
                     }
 
@@ -569,13 +569,13 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: controller.editable
                     radius: 6
-                    color: !root.canSave ? (root.dark ? "#2a3038" : "#e3e7ec")
-                        : (saveMouse.containsMouse ? "#3f7ce0" : "#2f6fdf")
+                    color: !root.canSave ? Theme.canvasAlt
+                        : (saveMouse.containsMouse ? Theme.interactiveHover : Theme.interactive)
 
                     Text {
                         anchors.centerIn: parent
                         text: controller.saving ? qsTr("保存中…") : qsTr("确定")
-                        color: root.canSave ? "#ffffff" : root.mutedColor
+                        color: root.canSave ? Theme.onInteractive : root.mutedColor
                         font.pixelSize: 12
                     }
 
@@ -708,13 +708,13 @@ FocusScope {
             radius: 3
             color: toggle.checked ? root.accent : "transparent"
             border.width: 1
-            border.color: toggle.checked ? root.accent : (root.dark ? "#4dffffff" : "#33000000")
+            border.color: toggle.checked ? root.accent : Theme.scrim
 
             Text {
                 anchors.centerIn: parent
                 visible: toggle.checked
                 text: "\u2713"
-                color: "#ffffff"
+                color: Theme.onInteractive
                 font.pixelSize: 10
             }
         }
@@ -759,7 +759,7 @@ FocusScope {
         color: root.fieldColor
         border.width: 1
         border.color: fieldInput.activeFocus
-            ? (root.dark ? "#4d6ea8fe" : "#4d2f6fdf")
+            ? Theme.focusRing
             : root.hairline
 
         TextInput {
@@ -770,7 +770,7 @@ FocusScope {
             verticalAlignment: TextInput.AlignVCenter
             color: root.textColor
             selectionColor: root.accent
-            selectedTextColor: "#ffffff"
+            selectedTextColor: Theme.onInteractive
             font.pixelSize: 12
             selectByMouse: true
             clip: true
@@ -840,7 +840,7 @@ FocusScope {
             height: 26
             radius: 6
             color: copyMouse.containsMouse
-                ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                ? Theme.fill : "transparent"
             border.width: 1
             border.color: root.hairline
             visible: checksum.value !== ""

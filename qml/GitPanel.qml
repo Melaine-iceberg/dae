@@ -13,7 +13,7 @@ Item {
 
     property var repo: null
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
     property real openX: 0
     property real openY: 0
 
@@ -26,12 +26,12 @@ Item {
     focus: visible
     z: 1002
 
-    readonly property color panelColor: dark ? "#202329" : "#ffffff"
-    readonly property color borderColor: dark ? "#33ffffff" : "#18000000"
-    readonly property color textColor: dark ? "#e3e7ee" : "#24292f"
-    readonly property color mutedColor: dark ? "#8d94a2" : "#657080"
-    readonly property color fieldColor: dark ? "#171a1f" : "#f3f5f8"
-    readonly property color hoverColor: dark ? "#1affffff" : "#0d000000"
+    readonly property color panelColor: Theme.raised
+    readonly property color borderColor: Theme.hairlineStrong
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color fieldColor: Theme.field
+    readonly property color hoverColor: Theme.hover
     readonly property bool hasRepo: repo !== null && repo.gitRoot !== ""
     readonly property bool canNetwork: hasRepo && repo.gitRemotes.length > 0
         && !repo.gitBusy
@@ -275,7 +275,7 @@ Item {
                     width: parent.width - 20
                     text: root.hasRepo ? root.repo.gitRoot : ""
                     color: root.mutedColor
-                    font.family: "Cascadia Mono"
+                    font.family: Theme.monoFamily
                     font.pixelSize: 9
                     textFormat: Text.PlainText
                     elide: Text.ElideMiddle
@@ -381,7 +381,7 @@ Item {
                         anchors.rightMargin: 7
                         verticalAlignment: TextInput.AlignVCenter
                         color: root.textColor
-                        font.family: "Cascadia Mono"
+                        font.family: Theme.monoFamily
                         font.pixelSize: 11
                         selectByMouse: true
                         focus: root.creating
@@ -475,7 +475,7 @@ Item {
                     width: parent.width - 16
                     visible: root.createError !== ""
                     text: root.createError
-                    color: root.dark ? "#f07f78" : "#c0392b"
+                    color: Theme.danger
                     font.pixelSize: 10
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
@@ -546,7 +546,7 @@ Item {
                         text: branchRow.modelData.kind === "branch"
                             ? branchRow.modelData.name : ""
                         color: branchRow.modelData.current ? root.accent : root.textColor
-                        font.family: "Cascadia Mono"
+                        font.family: Theme.monoFamily
                         font.pixelSize: 10
                         font.weight: branchRow.modelData.current ? Font.DemiBold : Font.Normal
                         textFormat: Text.PlainText

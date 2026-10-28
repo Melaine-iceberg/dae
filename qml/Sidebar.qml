@@ -12,7 +12,7 @@ Item {
     property bool dark: true
     property string material: "none"
     property string activePath: ""
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
     property bool showHeader: true
     property bool trashActive: false
     property bool overviewActive: false
@@ -38,12 +38,12 @@ Item {
     readonly property bool surfaceActive: trashActive || overviewActive || spaceActive
 
     readonly property color panelColor: material === "none"
-        ? (dark ? "#121418" : "#eef1f5")
+        ? Theme.chrome
         : (dark ? Qt.rgba(0.05, 0.06, 0.07, 0.30) : Qt.rgba(0.95, 0.96, 0.97, 0.34))
-    readonly property color textColor: dark ? "#dfe3ea" : "#252a31"
-    readonly property color mutedColor: dark ? "#7f8797" : "#7a8492"
-    readonly property color hoverColor: dark ? "#18ffffff" : "#0d000000"
-    readonly property color activeColor: dark ? "#22ffffff" : "#12000000"
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkFaint
+    readonly property color hoverColor: Theme.fill
+    readonly property color activeColor: Theme.fill
 
     SidebarModel {
         id: model
@@ -189,7 +189,7 @@ Item {
             anchors.right: parent.right
             width: 1
             height: parent.height
-            color: root.dark ? "#1affffff" : "#12000000"
+            color: Theme.fill
         }
     }
 
@@ -246,7 +246,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("概览")
             color: root.overviewActive ? root.textColor
-                : (root.dark ? "#cfd5df" : "#333940")
+                : Theme.inkFaint
             font.pixelSize: 12
             elide: Text.ElideRight
         }
@@ -300,7 +300,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("回收站")
             color: root.trashActive ? root.textColor
-                : (root.dark ? "#cfd5df" : "#333940")
+                : Theme.inkFaint
             font.pixelSize: 12
             elide: Text.ElideRight
         }
@@ -414,7 +414,7 @@ Item {
                     text: row.builtInName ? root.rowLabel(row.name) : row.name
                     color: (row.current || row.spaceCurrent) ? root.textColor
                         : (row.isAction ? root.mutedColor
-                            : (root.dark ? "#cfd5df" : "#333940"))
+                            : Theme.inkFaint)
                     font.pixelSize: 12
                     elide: Text.ElideRight
                     textFormat: Text.PlainText

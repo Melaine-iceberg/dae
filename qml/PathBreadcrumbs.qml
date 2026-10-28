@@ -22,9 +22,9 @@ Item {
     property var paths: []
 
     property bool dark: true
-    property color textColor: "#e7e9ee"
-    property color mutedColor: "#8d94a2"
-    property color accent: "#2f6fdf"
+    property color textColor: Theme.ink
+    property color mutedColor: Theme.inkMuted
+    property color accent: Theme.interactive
 
     /// The path of the ancestor that was clicked.
     signal crumbActivated(string path)
@@ -243,7 +243,7 @@ Item {
                 anchors.fill: parent
                 radius: 5
                 color: slot.modelData.current !== true && plateMouse.containsMouse
-                    ? (bar.dark ? "#1fffffff" : "#0f000000") : "transparent"
+                    ? Theme.fill : "transparent"
 
                 ThemedIcon {
                     id: glyph

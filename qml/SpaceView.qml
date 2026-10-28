@@ -13,14 +13,14 @@ Item {
 
     property string spaceId: ""
     property bool dark: true
-    property color accent: "#2f6fdf"
-    property color headerColor: dark ? "#14161a" : "#f4f6f8"
-    property color textColor: dark ? "#e6e9ef" : "#1c1f24"
-    property color mutedColor: dark ? "#8f98aa" : "#657080"
-    property color hairline: dark ? "#26ffffff" : "#16000000"
+    property color accent: Theme.interactive
+    property color headerColor: Theme.chrome
+    property color textColor: Theme.ink
+    property color mutedColor: Theme.inkMuted
+    property color hairline: Theme.hairline
 
-    readonly property color contentColor: dark ? "#191b1f" : "#ffffff"
-    readonly property color hoverColor: dark ? "#14ffffff" : "#0b000000"
+    readonly property color contentColor: Theme.canvas
+    readonly property color hoverColor: Theme.hover
     readonly property string spaceName: {
         if (spaceId === "" || Spaces.revision < 0)
             return ""
@@ -177,7 +177,7 @@ Item {
                 width: 26
                 height: 26
                 radius: 7
-                color: root.dark ? "#1b1f26" : "#eef1f5"
+                color: Theme.canvasAlt
 
                 Text {
                     anchors.centerIn: parent
@@ -274,9 +274,9 @@ Item {
         radius: 5
         opacity: enabled ? 1 : 0.45
         color: danger
-            ? (buttonMouse.containsMouse && enabled ? "#a33232" : "#8f2d2d")
+            ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)
             : (buttonMouse.containsMouse && enabled
-                ? (root.dark ? "#2b3038" : "#e9edf2") : "transparent")
+                ? Theme.canvasAlt : "transparent")
         border.width: danger ? 0 : 1
         border.color: root.hairline
 
@@ -284,7 +284,7 @@ Item {
             id: buttonLabel
             anchors.centerIn: parent
             text: button.label
-            color: button.danger ? "#ffffff"
+            color: button.danger ? Theme.onSolid
                 : (button.enabled ? root.textColor : root.mutedColor)
             font.pixelSize: 11
         }

@@ -50,7 +50,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#73000000"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
@@ -67,9 +67,9 @@ Item {
         width: 360
         height: 154
         radius: 10
-        color: root.dark ? "#202329" : "#ffffff"
+        color: Theme.raised
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#18000000"
+        border.color: Theme.hairlineStrong
 
         MouseArea {
             anchors.fill: parent
@@ -81,7 +81,7 @@ Item {
             x: 18
             y: 16
             text: root.heading
-            color: root.dark ? "#e7ebf2" : "#20252b"
+            color: Theme.ink
             font.pixelSize: 14
             font.weight: Font.DemiBold
         }
@@ -93,11 +93,11 @@ Item {
             width: parent.width - 36
             height: 30
             radius: 6
-            color: root.dark ? "#16181c" : "#f4f6f9"
+            color: Theme.field
             border.width: 1
             border.color: input.activeFocus
-                ? (root.dark ? "#4d6ea8fe" : "#4d2f6fdf")
-                : (root.dark ? "#26ffffff" : "#18000000")
+                ? Theme.focusRing
+                : Theme.hairline
 
             TextInput {
                 id: input
@@ -105,9 +105,9 @@ Item {
                 anchors.leftMargin: 9
                 anchors.rightMargin: 9
                 verticalAlignment: TextInput.AlignVCenter
-                color: root.dark ? "#e7ebf2" : "#20252b"
-                selectionColor: "#2f6fdf"
-                selectedTextColor: "#ffffff"
+                color: Theme.ink
+                selectionColor: Theme.interactive
+                selectedTextColor: Theme.onInteractive
                 font.pixelSize: 13
                 selectByMouse: true
                 clip: true
@@ -121,7 +121,7 @@ Item {
             x: 18
             y: 80
             text: ""
-            color: root.dark ? "#f08a8a" : "#b42323"
+            color: Theme.danger
             font.pixelSize: 11
         }
 
@@ -129,7 +129,7 @@ Item {
             x: 18
             anchors.baseline: errorText.baseline
             text: errorText.text === "" ? root.hint : ""
-            color: root.dark ? "#7f8797" : "#8a929d"
+            color: Theme.inkFaint
             font.pixelSize: 11
         }
 
@@ -143,14 +143,14 @@ Item {
             height: 26
             radius: 6
             color: cancelMouse.containsMouse
-                ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                ? Theme.fill : "transparent"
             border.width: 1
-            border.color: root.dark ? "#26ffffff" : "#18000000"
+            border.color: Theme.hairline
 
             Text {
                 anchors.centerIn: parent
                 text: qsTr("取消")
-                color: root.dark ? "#c9cfd9" : "#3a4048"
+                color: Theme.inkMuted
                 font.pixelSize: 12
             }
 
@@ -174,12 +174,12 @@ Item {
             width: 78
             height: 26
             radius: 6
-            color: submitMouse.containsMouse ? "#3f7ce0" : "#2f6fdf"
+            color: submitMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
 
             Text {
                 anchors.centerIn: parent
                 text: root.submitLabel
-                color: "#ffffff"
+                color: Theme.onInteractive
                 font.pixelSize: 12
             }
 

@@ -11,7 +11,7 @@ Item {
     id: root
 
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
     property string provider: "google_drive"
     property bool authorizing: false
     property bool copied: false
@@ -26,11 +26,11 @@ Item {
     z: 1005
     focus: visible
 
-    readonly property color textColor: root.dark ? "#e7ebf2" : "#20252b"
-    readonly property color mutedColor: root.dark ? "#8d94a2" : "#657080"
-    readonly property color fieldColor: root.dark ? "#16181c" : "#f4f6f9"
-    readonly property color hairline: root.dark ? "#26ffffff" : "#18000000"
-    readonly property color dangerColor: root.dark ? "#f08a8a" : "#b42323"
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color fieldColor: Theme.field
+    readonly property color hairline: Theme.hairline
+    readonly property color dangerColor: Theme.danger
 
     function open() {
         root.provider = "google_drive"
@@ -131,7 +131,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#73000000"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
@@ -146,9 +146,9 @@ Item {
         width: Math.min(490, root.width - 48)
         height: 470
         radius: 10
-        color: root.dark ? "#202329" : "#ffffff"
+        color: Theme.raised
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#18000000"
+        border.color: Theme.hairlineStrong
 
         MouseArea {
             anchors.fill: parent
@@ -179,7 +179,7 @@ Item {
             x: 20
             y: 76
             text: qsTr("网盘")
-            color: root.dark ? "#aeb5c0" : "#565e68"
+            color: Theme.inkMuted
             font.pixelSize: 12
         }
 
@@ -238,7 +238,7 @@ Item {
             width: card.width - 40
             height: 86
             radius: 6
-            color: root.dark ? "#1a1d22" : "#f4f6f9"
+            color: Theme.canvasAlt
             border.width: 1
             border.color: root.hairline
 
@@ -275,7 +275,7 @@ Item {
                     width: parent.width - 68 - 26
                     height: 22
                     radius: 4
-                    color: root.dark ? "#0f1114" : "#ffffff"
+                    color: Theme.canvas
                     border.width: 1
                     border.color: root.hairline
 
@@ -287,11 +287,11 @@ Item {
                         readOnly: true
                         selectByMouse: true
                         text: root.redirectUri
-                        color: root.dark ? "#c9cfd9" : "#3a4048"
+                        color: Theme.inkMuted
                         selectionColor: root.accent
-                        selectedTextColor: "#ffffff"
+                        selectedTextColor: Theme.onInteractive
                         font.pixelSize: 10
-                        font.family: "Cascadia Mono"
+                        font.family: Theme.monoFamily
                     }
                 }
 
@@ -305,7 +305,7 @@ Item {
                         anchors.fill: parent
                         radius: 4
                         color: copyMouse.containsMouse
-                            ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                            ? Theme.fill : "transparent"
 
                         Text {
                             anchors.centerIn: parent
@@ -351,13 +351,13 @@ Item {
             height: 26
             radius: 6
             color: root.authorizing
-                ? (root.dark ? "#2b2f36" : "#e2e6eb")
-                : (authorizeMouse.containsMouse ? "#3f7ce0" : root.accent)
+                ? Theme.canvasAlt
+                : (authorizeMouse.containsMouse ? Theme.interactiveHover : root.accent)
 
             Text {
                 anchors.centerIn: parent
                 text: root.authorizing ? qsTr("等待授权中…") : qsTr("在浏览器中授权…")
-                color: "#ffffff"
+                color: Theme.onInteractive
                 font.pixelSize: 12
             }
 
@@ -379,14 +379,14 @@ Item {
             height: 26
             radius: 6
             color: cancelMouse.containsMouse
-                ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                ? Theme.fill : "transparent"
             border.width: 1
             border.color: root.hairline
 
             Text {
                 anchors.centerIn: parent
                 text: qsTr("取消")
-                color: root.dark ? "#c9cfd9" : "#3a4048"
+                color: Theme.inkMuted
                 font.pixelSize: 12
             }
 
@@ -415,7 +415,7 @@ Item {
         radius: 7
         color: selected
             ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.14)
-            : (hovered ? (root.dark ? "#26ffffff" : "#12000000") : "transparent")
+            : (hovered ? Theme.fill : "transparent")
         border.width: 1
         border.color: selected ? root.accent : root.hairline
 
@@ -435,7 +435,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: providerCard.glyph
-                color: "#ffffff"
+                color: Theme.onSolid
                 font.pixelSize: 13
                 font.weight: Font.DemiBold
             }
@@ -446,7 +446,7 @@ Item {
             anchors.bottomMargin: 8
             anchors.horizontalCenter: parent.horizontalCenter
             text: providerCard.label
-            color: providerCard.selected ? root.textColor : (root.dark ? "#c3cad5" : "#3a4048")
+            color: providerCard.selected ? root.textColor : Theme.inkMuted
             font.pixelSize: 11
         }
 
@@ -477,7 +477,7 @@ Item {
             x: 0
             y: 0
             text: field.label
-            color: root.dark ? "#aeb5c0" : "#565e68"
+            color: Theme.inkMuted
             font.pixelSize: 12
         }
 
@@ -510,7 +510,7 @@ Item {
                 verticalAlignment: TextInput.AlignVCenter
                 color: root.textColor
                 selectionColor: root.accent
-                selectedTextColor: "#ffffff"
+                selectedTextColor: Theme.onInteractive
                 font.pixelSize: 12
                 echoMode: field.password ? TextInput.Password : TextInput.Normal
                 selectByMouse: true

@@ -67,7 +67,7 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        color: "#73000000"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
@@ -84,9 +84,9 @@ FocusScope {
         width: Math.min(420, root.width - 48)
         height: Math.max(236, contentColumn.implicitHeight + 78)
         radius: 10
-        color: root.dark ? "#202329" : "#ffffff"
+        color: Theme.raised
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#18000000"
+        border.color: Theme.hairlineStrong
 
         MouseArea {
             anchors.fill: parent
@@ -104,7 +104,7 @@ FocusScope {
             Text {
                 width: contentColumn.width
                 text: root.heading
-                color: root.dark ? "#e7ebf2" : "#20252b"
+                color: Theme.ink
                 font.pixelSize: 14
                 font.weight: Font.DemiBold
             }
@@ -112,7 +112,7 @@ FocusScope {
             Text {
                 width: contentColumn.width
                 text: root.description
-                color: root.dark ? "#aeb6c2" : "#4c545e"
+                color: Theme.inkMuted
                 font.pixelSize: 12
                 lineHeight: 1.2
                 wrapMode: Text.Wrap
@@ -121,7 +121,7 @@ FocusScope {
             Text {
                 width: contentColumn.width
                 text: qsTr("密码")
-                color: root.dark ? "#8d94a2" : "#657080"
+                color: Theme.inkMuted
                 font.pixelSize: 11
             }
 
@@ -129,11 +129,11 @@ FocusScope {
                 width: contentColumn.width
                 height: 30
                 radius: 6
-                color: root.dark ? "#16181c" : "#f4f6f9"
+                color: Theme.field
                 border.width: 1
                 border.color: passwordInput.activeFocus
-                    ? (root.dark ? "#4d6ea8fe" : "#4d2f6fdf")
-                    : (root.dark ? "#26ffffff" : "#18000000")
+                    ? Theme.focusRing
+                    : Theme.hairline
 
                 TextInput {
                     id: passwordInput
@@ -141,9 +141,9 @@ FocusScope {
                     anchors.leftMargin: 9
                     anchors.rightMargin: 9
                     verticalAlignment: TextInput.AlignVCenter
-                    color: root.dark ? "#e7ebf2" : "#20252b"
-                    selectionColor: "#2f6fdf"
-                    selectedTextColor: "#ffffff"
+                    color: Theme.ink
+                    selectionColor: Theme.interactive
+                    selectedTextColor: Theme.onInteractive
                     font.pixelSize: 13
                     echoMode: TextInput.Password
                     selectByMouse: true
@@ -164,7 +164,7 @@ FocusScope {
                 visible: root.compressMode
                 width: contentColumn.width
                 text: qsTr("确认密码")
-                color: root.dark ? "#8d94a2" : "#657080"
+                color: Theme.inkMuted
                 font.pixelSize: 11
             }
 
@@ -173,11 +173,11 @@ FocusScope {
                 width: contentColumn.width
                 height: 30
                 radius: 6
-                color: root.dark ? "#16181c" : "#f4f6f9"
+                color: Theme.field
                 border.width: 1
                 border.color: confirmInput.activeFocus
-                    ? (root.dark ? "#4d6ea8fe" : "#4d2f6fdf")
-                    : (root.dark ? "#26ffffff" : "#18000000")
+                    ? Theme.focusRing
+                    : Theme.hairline
 
                 TextInput {
                     id: confirmInput
@@ -185,9 +185,9 @@ FocusScope {
                     anchors.leftMargin: 9
                     anchors.rightMargin: 9
                     verticalAlignment: TextInput.AlignVCenter
-                    color: root.dark ? "#e7ebf2" : "#20252b"
-                    selectionColor: "#2f6fdf"
-                    selectedTextColor: "#ffffff"
+                    color: Theme.ink
+                    selectionColor: Theme.interactive
+                    selectedTextColor: Theme.onInteractive
                     font.pixelSize: 13
                     echoMode: TextInput.Password
                     selectByMouse: true
@@ -203,7 +203,7 @@ FocusScope {
                 width: contentColumn.width
                 height: Math.max(16, implicitHeight)
                 text: ""
-                color: root.dark ? "#f08a8a" : "#b42323"
+                color: Theme.danger
                 font.pixelSize: 11
                 wrapMode: Text.Wrap
             }
@@ -219,9 +219,9 @@ FocusScope {
             height: 26
             radius: 6
             color: cancelMouse.containsMouse
-                ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                ? Theme.fill : "transparent"
             border.width: 1
-            border.color: root.dark ? "#26ffffff" : "#18000000"
+            border.color: Theme.hairline
 
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("取消")
@@ -233,7 +233,7 @@ FocusScope {
             Text {
                 anchors.centerIn: parent
                 text: qsTr("取消")
-                color: root.dark ? "#c9cfd9" : "#3a4048"
+                color: Theme.inkMuted
                 font.pixelSize: 12
             }
 
@@ -257,7 +257,7 @@ FocusScope {
             width: 78
             height: 26
             radius: 6
-            color: submitMouse.containsMouse ? "#3f7ce0" : "#2f6fdf"
+            color: submitMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
 
             Accessible.role: Accessible.Button
             Accessible.name: submitLabel.text
@@ -267,7 +267,7 @@ FocusScope {
                 id: submitLabel
                 anchors.centerIn: parent
                 text: root.compressMode ? qsTr("压缩") : qsTr("解压")
-                color: "#ffffff"
+                color: Theme.onInteractive
                 font.pixelSize: 12
             }
 

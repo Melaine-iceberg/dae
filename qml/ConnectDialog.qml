@@ -10,7 +10,7 @@ Item {
     id: root
 
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
     property string protocol: "smb"
     property bool remember: true
     property bool testing: false
@@ -28,12 +28,12 @@ Item {
     z: 1001
     focus: visible
 
-    readonly property color textColor: root.dark ? "#e7ebf2" : "#20252b"
-    readonly property color mutedColor: root.dark ? "#8d94a2" : "#657080"
-    readonly property color fieldColor: root.dark ? "#16181c" : "#f4f6f9"
-    readonly property color hairline: root.dark ? "#26ffffff" : "#18000000"
-    readonly property color dangerColor: root.dark ? "#f08a8a" : "#b42323"
-    readonly property color okColor: root.dark ? "#8fd18f" : "#2c7a2c"
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color fieldColor: Theme.field
+    readonly property color hairline: Theme.hairline
+    readonly property color dangerColor: Theme.danger
+    readonly property color okColor: Theme.success
 
     function defaultPort() {
         return root.protocol === "sftp" ? "22" : "445"
@@ -160,7 +160,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#73000000"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
@@ -175,9 +175,9 @@ Item {
         width: Math.min(470, root.width - 48)
         height: 380
         radius: 10
-        color: root.dark ? "#202329" : "#ffffff"
+        color: Theme.raised
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#18000000"
+        border.color: Theme.hairlineStrong
 
         // The dimmed backdrop must not scroll the list behind the dialog, and
         // clicks inside the card must never reach that backdrop.
@@ -210,7 +210,7 @@ Item {
             x: 20
             y: 72
             text: qsTr("协议")
-            color: root.dark ? "#aeb5c0" : "#565e68"
+            color: Theme.inkMuted
             font.pixelSize: 12
         }
 
@@ -304,7 +304,7 @@ Item {
                     anchors.centerIn: parent
                     visible: root.remember
                     text: "✓"
-                    color: "#ffffff"
+                    color: Theme.onInteractive
                     font.pixelSize: 10
                 }
             }
@@ -349,7 +349,7 @@ Item {
             height: 26
             radius: 6
             color: testMouse.containsMouse && testButton.enabled
-                ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                ? Theme.fill : "transparent"
             border.width: 1
             border.color: root.hairline
             enabled: !root.testing && !root.saving
@@ -357,7 +357,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: root.testing ? qsTr("测试中…") : qsTr("测试连接")
-                color: testButton.enabled ? (root.dark ? "#c9cfd9" : "#3a4048") : root.mutedColor
+                color: testButton.enabled ? Theme.inkMuted : root.mutedColor
                 font.pixelSize: 12
             }
 
@@ -379,13 +379,13 @@ Item {
             height: 26
             radius: 6
             color: submitButton.enabled
-                ? (submitMouse.containsMouse ? "#3f7ce0" : root.accent)
-                : (root.dark ? "#2b2f36" : "#e2e6eb")
+                ? (submitMouse.containsMouse ? Theme.interactiveHover : root.accent)
+                : Theme.canvasAlt
 
             Text {
                 anchors.centerIn: parent
                 text: root.saving ? qsTr("保存中…") : qsTr("连接")
-                color: "#ffffff"
+                color: Theme.onInteractive
                 font.pixelSize: 12
             }
 
@@ -407,14 +407,14 @@ Item {
             height: 26
             radius: 6
             color: cancelMouse.containsMouse
-                ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                ? Theme.fill : "transparent"
             border.width: 1
             border.color: root.hairline
 
             Text {
                 anchors.centerIn: parent
                 text: qsTr("取消")
-                color: root.dark ? "#c9cfd9" : "#3a4048"
+                color: Theme.inkMuted
                 font.pixelSize: 12
             }
 
@@ -441,7 +441,7 @@ Item {
         radius: 6
         color: selected
             ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.20)
-            : (hovered ? (root.dark ? "#26ffffff" : "#12000000") : "transparent")
+            : (hovered ? Theme.fill : "transparent")
         border.width: 1
         border.color: selected ? root.accent : root.hairline
 
@@ -453,7 +453,7 @@ Item {
             id: labelText
             anchors.centerIn: parent
             text: button.label
-            color: button.selected ? root.textColor : (root.dark ? "#c3cad5" : "#3a4048")
+            color: button.selected ? root.textColor : Theme.inkMuted
             font.pixelSize: 11
         }
 
@@ -484,7 +484,7 @@ Item {
             x: 0
             y: 0
             text: field.label
-            color: root.dark ? "#aeb5c0" : "#565e68"
+            color: Theme.inkMuted
             font.pixelSize: 12
         }
 
@@ -518,7 +518,7 @@ Item {
                 verticalAlignment: TextInput.AlignVCenter
                 color: root.textColor
                 selectionColor: root.accent
-                selectedTextColor: "#ffffff"
+                selectedTextColor: Theme.onInteractive
                 font.pixelSize: 12
                 echoMode: field.password ? TextInput.Password : TextInput.Normal
                 inputMethodHints: field.inputHints

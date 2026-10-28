@@ -10,15 +10,15 @@ Item {
 
     property var model: null
     property bool dark: true
-    property color accent: "#2f6fdf"
-    property color headerColor: dark ? "#14161a" : "#f4f6f8"
+    property color accent: Theme.interactive
+    property color headerColor: Theme.chrome
     property int currentIndex: -1
 
-    readonly property color contentColor: dark ? "#191b1f" : "#ffffff"
-    readonly property color alternateColor: dark ? "#15181e" : "#f7f8fa"
-    readonly property color textColor: dark ? "#e6e9ef" : "#1c1f24"
-    readonly property color mutedColor: dark ? "#8f98aa" : "#657080"
-    readonly property color hairline: dark ? "#26ffffff" : "#16000000"
+    readonly property color contentColor: Theme.canvas
+    readonly property color alternateColor: Theme.canvasAlt
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color hairline: Theme.hairline
     readonly property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b,
                                                    dark ? 0.30 : 0.18)
 
@@ -117,7 +117,7 @@ Item {
                 anchors.fill: parent
                 color: row.index === list.currentIndex ? root.selectionColor
                     : (row.isHeader
-                        ? (root.dark ? "#1d2633" : "#eef3fb")
+                        ? Theme.canvasAlt
                         : (row.index % 2 === 0 ? root.contentColor : root.alternateColor))
             }
 
@@ -178,7 +178,7 @@ Item {
                 text: row.isHeader ? "" : row.lineNumber
                 color: root.mutedColor
                 font.pixelSize: 11
-                font.family: "Cascadia Mono"
+                font.family: Theme.monoFamily
             }
 
             Text {
@@ -191,7 +191,7 @@ Item {
                 text: row.isHeader ? "" : row.lineHtml
                 color: root.textColor
                 font.pixelSize: 12
-                font.family: "Cascadia Mono"
+                font.family: Theme.monoFamily
                 textFormat: Text.StyledText
                 elide: Text.ElideRight
                 clip: true

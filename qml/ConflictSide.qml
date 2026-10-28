@@ -10,7 +10,7 @@ Rectangle {
     id: root
 
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
     property bool highlight: false
     property string heading: ""
     property string name: ""
@@ -23,11 +23,11 @@ Rectangle {
     radius: 9
     color: root.highlight
         ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.dark ? 0.16 : 0.07)
-        : (root.dark ? "#1affffff" : "#f4f6f8")
+        : (root.dark ? Theme.hover : Theme.chrome)
     border.width: 1
     border.color: root.highlight
         ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.45)
-        : (root.dark ? "#26ffffff" : "#18000000")
+        : Theme.hairline
 
     Column {
         id: column
@@ -39,7 +39,7 @@ Rectangle {
         Text {
             width: parent.width
             text: root.heading
-            color: root.dark ? "#8d94a2" : "#657080"
+            color: Theme.inkMuted
             font.pixelSize: 11
             elide: Text.ElideRight
         }
@@ -64,7 +64,7 @@ Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(implicitWidth, parent.width - 22)
                 text: root.name
-                color: root.dark ? "#e7ebf2" : "#20252b"
+                color: Theme.ink
                 font.pixelSize: 12
                 font.weight: Font.DemiBold
                 elide: Text.ElideMiddle
@@ -74,7 +74,7 @@ Rectangle {
         Text {
             width: parent.width
             text: root.detail
-            color: root.dark ? "#8d94a2" : "#657080"
+            color: Theme.inkMuted
             font.pixelSize: 11
             lineHeight: 1.3
             wrapMode: Text.WordWrap

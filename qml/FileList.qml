@@ -22,8 +22,8 @@ Item {
     /// listing operations, not result operations.
     property var searchModel: null
     property bool dark: true
-    property color headerColor: dark ? "#14161a" : "#f4f6f8"
-    property color accent: "#2f6fdf"
+    property color headerColor: Theme.chrome
+    property color accent: Theme.interactive
 
     readonly property var model: searchModel !== null ? searchModel
         : (tab !== null ? tab.listing : null)
@@ -45,11 +45,11 @@ Item {
     readonly property bool showSize: width >= 470
     readonly property bool showType: width >= 550
     readonly property int listingTop: listHeaderVisible ? headerHeight : 0
-    readonly property color contentColor: dark ? "#191b1f" : "#ffffff"
-    readonly property color alternateColor: dark ? "#15181e" : "#f7f8fa"
-    readonly property color textColor: dark ? "#e6e9ef" : "#1c1f24"
-    readonly property color mutedColor: dark ? "#8f98aa" : "#657080"
-    readonly property color hairline: dark ? "#26ffffff" : "#16000000"
+    readonly property color contentColor: Theme.canvas
+    readonly property color alternateColor: Theme.canvasAlt
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color hairline: Theme.hairline
     readonly property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b,
                                                    dark ? 0.30 : 0.18)
 
@@ -815,10 +815,10 @@ Item {
                     : (row.gitStatus === "modified" ? "M"
                         : (row.gitStatus === "untracked" ? "U" : ""))
                 readonly property color gitBadgeColor: row.gitStatus === "modified"
-                    ? (root.dark ? "#d6a44a" : "#9a6700")
+                    ? Theme.warn
                     : (row.gitStatus === "added"
-                        ? (root.dark ? "#62c073" : "#1a7f37")
-                        : (root.dark ? "#5aa9e6" : "#0969da"))
+                        ? Theme.success
+                        : Theme.link)
                 readonly property color gitBadgeBackground: Qt.rgba(gitBadgeColor.r,
                     gitBadgeColor.g, gitBadgeColor.b, root.dark ? 0.16 : 0.12)
 
@@ -827,7 +827,7 @@ Item {
                     color: (root.tab !== null && root.tab.isSelected(row.filePath))
                         ? root.selectionColor
                         : (list.currentIndex === row.index
-                            ? (root.dark ? "#1d2026" : "#eef1f5")
+                            ? Theme.canvasAlt
                             : (root.dropTargetPath !== "" && row.isDir
                                 && row.filePath === root.dropTargetPath
                                 ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b,
@@ -907,7 +907,7 @@ Item {
                         height: parent.height
                         verticalAlignment: Text.AlignVCenter
                         text: row.fileName
-                        color: row.hidden ? (root.dark ? "#6b7280" : "#9aa1ad") : root.textColor
+                        color: row.hidden ? Theme.inkFaint : root.textColor
                         font.pixelSize: 13
                         textFormat: Text.PlainText
                         elide: Text.ElideRight

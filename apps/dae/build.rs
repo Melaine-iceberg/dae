@@ -5,6 +5,10 @@ use qt_build_utils::QResourceFile;
 /// next to the decision docs. The resource aliases keep the import paths
 /// relative to `qml/` even though the files come from `../../qml/`.
 const QML_FILES: &[(&str, &str)] = &[
+    // The colour singleton is declared in `qmldir`; without the declaration
+    // the engine reads `pragma Singleton` and then refuses to expose the type.
+    ("../../qml/Theme.qml", "qml/Theme.qml"),
+    ("../../qml/qmldir", "qml/qmldir"),
     ("../../qml/Main.qml", "qml/Main.qml"),
     ("../../qml/ShellWindow.qml", "qml/ShellWindow.qml"),
     ("../../qml/PathBreadcrumbs.qml", "qml/PathBreadcrumbs.qml"),

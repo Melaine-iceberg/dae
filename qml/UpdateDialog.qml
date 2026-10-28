@@ -8,12 +8,12 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
 
-    readonly property color textColor: root.dark ? "#e7ebf2" : "#20252b"
-    readonly property color mutedColor: root.dark ? "#8d94a2" : "#657080"
-    readonly property color hairline: root.dark ? "#26ffffff" : "#18000000"
-    readonly property color dangerColor: root.dark ? "#f08a8a" : "#b42323"
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color hairline: Theme.hairline
+    readonly property color dangerColor: Theme.danger
     readonly property bool busy: Updater.checking || Updater.downloading
         || Updater.restarting
 
@@ -52,7 +52,7 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        color: "#73000000"
+        color: Theme.scrim
 
         MouseArea {
             anchors.fill: parent
@@ -66,9 +66,9 @@ FocusScope {
         width: Math.min(470, root.width - 40)
         height: Math.min(410, root.height - 48)
         radius: 10
-        color: root.dark ? "#202329" : "#ffffff"
+        color: Theme.raised
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#18000000"
+        border.color: Theme.hairlineStrong
 
         MouseArea {
             anchors.fill: parent
@@ -187,7 +187,7 @@ FocusScope {
                     height: 4
                     radius: 2
                     visible: Updater.downloading
-                    color: root.dark ? "#26ffffff" : "#12000000"
+                    color: Theme.fill
 
                     Rectangle {
                         width: parent.width * Math.max(0, Math.min(100, Updater.installProgress)) / 100
@@ -237,7 +237,7 @@ FocusScope {
                     height: 26
                     radius: 6
                     color: closeMouse.containsMouse
-                        ? (root.dark ? "#26ffffff" : "#12000000")
+                        ? Theme.fill
                         : "transparent"
                     border.width: 1
                     border.color: root.hairline
@@ -264,7 +264,7 @@ FocusScope {
                     radius: 6
                     visible: !Updater.downloading && !Updater.restarting
                     color: checkMouse.containsMouse
-                        ? (root.dark ? "#26ffffff" : "#12000000")
+                        ? Theme.fill
                         : "transparent"
                     border.width: 1
                     border.color: root.hairline
@@ -296,7 +296,7 @@ FocusScope {
                     Text {
                         anchors.centerIn: parent
                         text: Updater.downloading ? qsTr("下载中…") : qsTr("下载并安装")
-                        color: "#ffffff"
+                        color: Theme.onInteractive
                         font.pixelSize: 12
                         font.weight: Font.DemiBold
                     }

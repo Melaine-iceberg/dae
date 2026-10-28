@@ -13,11 +13,11 @@ Item {
     property string mediaKind: "video"
     property string posterSource: ""
     property bool dark: true
-    property color accent: "#2f6fdf"
-    property color textColor: "#e6e9ef"
+    property color accent: Theme.interactive
+    property color textColor: Theme.ink
     property color mutedColor: "#8f98aa"
     property color sectionColor: "#1f2229"
-    property color hairline: "#26ffffff"
+    property color hairline: Theme.hairline
 
     property bool muted: false
     /// True once playback has started, so the poster steps aside for the
@@ -175,7 +175,7 @@ Item {
                 anchors.margins: 8
                 visible: root.video && root.started && root.playing
                 text: root.durationLabel(player.position)
-                color: "#ffffff"
+                color: Theme.onInteractive
                 font.pixelSize: 10
             }
         }
@@ -267,14 +267,14 @@ Item {
                         width: 3
                         height: 11
                         radius: 1
-                        color: "#ffffff"
+                        color: Theme.onInteractive
                     }
 
                     Rectangle {
                         width: 3
                         height: 11
                         radius: 1
-                        color: "#ffffff"
+                        color: Theme.onInteractive
                     }
                 }
 
@@ -294,7 +294,7 @@ Item {
                     + (player.duration > 0 ? root.durationLabel(player.duration) : "--:--")
                 color: root.mutedColor
                 font.pixelSize: 10
-                font.family: "Cascadia Mono"
+                font.family: Theme.monoFamily
             }
 
             Text {

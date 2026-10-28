@@ -131,7 +131,7 @@ Window {
     /// pair, one shade per theme. `accent` is the only colour views consume,
     /// so switching the preference retints the whole shell.
     readonly property color accent: Appearance.accent === "brand"
-        ? (root.dark ? "#55c5ff" : "#1f63cc")
+        ? Theme.brand
         : Workspace.accent
     /// `settings.toml` arrives as JSON because QML has no typed map property.
     /// Empty values are deliberate unbinds and therefore stay empty.
@@ -267,11 +267,11 @@ Window {
     readonly property color chromeTint: dark
         ? Qt.rgba(0.055, 0.063, 0.075, 0.38)
         : Qt.rgba(0.98, 0.985, 0.99, 0.46)
-    readonly property color solidChrome: dark ? "#14161a" : "#f4f6f8"
+    readonly property color solidChrome: Theme.chrome
     readonly property color chromeColor: material === "none" ? solidChrome : chromeTint
-    readonly property color textColor: dark ? "#e7e9ee" : "#1c1f24"
-    readonly property color mutedColor: dark ? "#8d94a2" : "#657080"
-    readonly property color hairline: dark ? "#26ffffff" : "#16000000"
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
+    readonly property color hairline: Theme.hairline
 
     Loader {
         id: configLoader
@@ -1930,7 +1930,7 @@ Window {
                 height: 24
                 radius: 5
                 color: sidebarMouse.containsMouse
-                    ? (root.dark ? "#24ffffff" : "#12000000") : "transparent"
+                    ? Theme.fill : "transparent"
 
                 Text {
                     anchors.centerIn: parent
@@ -1956,7 +1956,7 @@ Window {
                 height: 24
                 radius: 5
                 color: root.folderActive && upMouse.containsMouse
-                    ? (root.dark ? "#24ffffff" : "#12000000") : "transparent"
+                    ? Theme.fill : "transparent"
 
                 Text {
                     anchors.centerIn: parent
@@ -1983,10 +1983,10 @@ Window {
                 anchors.verticalCenter: parent.verticalCenter
                 height: 26
                 radius: 7
-                color: root.dark ? "#1affffff" : "#0d000000"
+                color: Theme.hover
                 border.width: 1
                 border.color: root.pathEditing
-                    ? (root.dark ? "#4d6ea8fe" : "#4d2f6fdf") : root.hairline
+                    ? Theme.focusRing : root.hairline
 
                 // The bar's normal shape is the trail: every ancestor is a
                 // destination, and the current folder is the one name it must
@@ -2047,7 +2047,7 @@ Window {
                     text: ""
                     color: root.textColor
                     selectionColor: root.accent
-                    selectedTextColor: "#ffffff"
+                    selectedTextColor: Theme.onInteractive
                     font.pixelSize: 13
                     selectByMouse: true
                     clip: true
@@ -2173,7 +2173,7 @@ Window {
                     width: 170
                     height: 22
                     radius: 5
-                    color: root.dark ? "#1affffff" : "#0d000000"
+                    color: Theme.hover
                     border.width: 1
                     border.color: filterInput.activeFocus ? root.accent : root.hairline
 
@@ -2195,7 +2195,7 @@ Window {
                         verticalAlignment: TextInput.AlignVCenter
                         color: root.textColor
                         selectionColor: root.accent
-                        selectedTextColor: "#ffffff"
+                        selectedTextColor: Theme.onInteractive
                         font.pixelSize: 11
                         clip: true
 
@@ -2655,7 +2655,7 @@ Window {
                     return base
                 }
                 color: root.mutedColor
-                font.family: "Cascadia Mono"
+                font.family: Theme.monoFamily
                 font.pixelSize: 11
                 elide: Text.ElideRight
             }
@@ -2674,7 +2674,7 @@ Window {
                     anchors.fill: parent
                     radius: 4
                     color: previewMouse.containsMouse
-                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                        ? Theme.fill : "transparent"
 
                     Text {
                         anchors.centerIn: parent
@@ -2710,7 +2710,7 @@ Window {
                     anchors.fill: parent
                     radius: 4
                     color: filterMouse.containsMouse || filterMenu.visible
-                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                        ? Theme.fill : "transparent"
 
                     Text {
                         anchors.centerIn: parent
@@ -2756,7 +2756,7 @@ Window {
                     anchors.fill: parent
                     radius: 4
                     color: viewMouse.containsMouse || displayMenu.visible
-                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                        ? Theme.fill : "transparent"
 
                     Text {
                         anchors.centerIn: parent
@@ -2789,7 +2789,7 @@ Window {
                     anchors.fill: parent
                     radius: 4
                     color: updateMouse.containsMouse
-                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                        ? Theme.fill : "transparent"
 
                     Text {
                         anchors.centerIn: parent
@@ -2825,7 +2825,7 @@ Window {
                     anchors.fill: parent
                     radius: 4
                     color: settingsMouse.containsMouse
-                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                        ? Theme.fill : "transparent"
 
                     Text {
                         anchors.centerIn: parent
@@ -2854,7 +2854,7 @@ Window {
                 radius: 4
                 opacity: root.remoteLocation ? 0.35 : 1
                 color: !root.remoteLocation && terminalMouse.containsMouse
-                    ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                    ? Theme.fill : "transparent"
 
                 Text {
                     anchors.centerIn: parent
@@ -2883,7 +2883,7 @@ Window {
                 text: root.firstWindow ? root.profileText
                     : (root.tabs.length + qsTr(" 个标签 · ") + root.token)
                 color: root.mutedColor
-                font.family: "Cascadia Mono"
+                font.family: Theme.monoFamily
                 font.pixelSize: 11
                 elide: Text.ElideMiddle
             }
@@ -2951,7 +2951,7 @@ Window {
                         text: gitChip.branchName()
                         color: root.gitListing !== null && root.gitListing.gitDetached
                             ? root.mutedColor : root.textColor
-                        font.family: "Cascadia Mono"
+                        font.family: Theme.monoFamily
                         font.pixelSize: 10
                         textFormat: Text.PlainText
                         elide: Text.ElideMiddle
@@ -2961,7 +2961,7 @@ Window {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: gitChip.ahead() > 0
                         text: "↑" + gitChip.ahead()
-                        color: root.dark ? "#7fc98a" : "#1a7f37"
+                        color: Theme.success
                         font.pixelSize: 10
                         textFormat: Text.PlainText
                     }
@@ -2970,7 +2970,7 @@ Window {
                         anchors.verticalCenter: parent.verticalCenter
                         visible: gitChip.behind() > 0
                         text: "↓" + gitChip.behind()
-                        color: root.dark ? "#6cb6ff" : "#0969da"
+                        color: Theme.link
                         font.pixelSize: 10
                         textFormat: Text.PlainText
                     }

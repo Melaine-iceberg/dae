@@ -16,19 +16,19 @@ Item {
     property string activePath: ""
     property bool showHidden: true
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
     property string material: "none"
 
     signal navigateRequested(string path)
     signal contextRequested(string path, real x, real y)
 
     readonly property color panelColor: material === "none"
-        ? (dark ? "#121418" : "#eef1f5")
+        ? Theme.chrome
         : (dark ? Qt.rgba(0.05, 0.06, 0.07, 0.30) : Qt.rgba(0.95, 0.96, 0.97, 0.34))
-    readonly property color textColor: dark ? "#cfd5df" : "#333940"
-    readonly property color mutedColor: dark ? "#7f8797" : "#7a8492"
-    readonly property color hoverColor: dark ? "#18ffffff" : "#0d000000"
-    readonly property color activeColor: dark ? "#22ffffff" : "#12000000"
+    readonly property color textColor: Theme.inkFaint
+    readonly property color mutedColor: Theme.inkFaint
+    readonly property color hoverColor: Theme.fill
+    readonly property color activeColor: Theme.fill
 
     implicitHeight: content.implicitHeight + notice.height
 

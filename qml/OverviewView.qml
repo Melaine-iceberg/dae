@@ -14,18 +14,18 @@ Item {
 
     property var model: null
     property bool dark: true
-    property color accent: "#2f6fdf"
-    property color headerColor: dark ? "#14161a" : "#f4f6f8"
-    property color textColor: dark ? "#e6e9ef" : "#1c1f24"
-    property color mutedColor: dark ? "#8f98aa" : "#657080"
-    property color hairline: dark ? "#26ffffff" : "#16000000"
+    property color accent: Theme.interactive
+    property color headerColor: Theme.chrome
+    property color textColor: Theme.ink
+    property color mutedColor: Theme.inkMuted
+    property color hairline: Theme.hairline
     property string commandShortcut: "Ctrl+K"
 
     signal openRequested(string kind, string path)
     signal commandPaletteRequested()
 
-    readonly property color contentColor: dark ? "#191b1f" : "#ffffff"
-    readonly property color hoverColor: dark ? "#14ffffff" : "#0b000000"
+    readonly property color contentColor: Theme.canvas
+    readonly property color hoverColor: Theme.hover
 
     function takeFocus() {
         list.forceActiveFocus()
@@ -184,7 +184,7 @@ Item {
                 anchors.rightMargin: 24
                 height: 40
                 radius: 8
-                color: root.dark ? "#121419" : "#f7f8fa"
+                color: Theme.canvasAlt
                 border.width: 1
                 border.color: launcherMouse.containsMouse ? root.accent : root.hairline
 
@@ -215,7 +215,7 @@ Item {
                     width: shortcutText.width + 12
                     height: 18
                     radius: 4
-                    color: root.dark ? "#20ffffff" : "#10000000"
+                    color: Theme.hover
 
                     Text {
                         id: shortcutText
@@ -277,7 +277,7 @@ Item {
                 width: 30
                 height: 30
                 radius: 8
-                color: root.dark ? "#1b1f26" : "#eef1f5"
+                color: Theme.canvasAlt
 
                 Text {
                     anchors.centerIn: parent
@@ -325,7 +325,7 @@ Item {
                     visible: row.kind === "project" && row.branch !== ""
                     height: 19
                     radius: 5
-                    color: root.dark ? "#1d222b" : "#eef1f5"
+                    color: Theme.canvasAlt
                     width: branchText.width + 14
 
                     Text {

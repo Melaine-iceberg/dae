@@ -16,7 +16,7 @@ Item {
     property bool isDir: false
     property int size: 18
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
 
     implicitWidth: size
     implicitHeight: size

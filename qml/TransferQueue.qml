@@ -13,7 +13,7 @@ Item {
     id: root
 
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
     property real openX: 0
     property real openY: 0
 
@@ -21,10 +21,10 @@ Item {
     focus: visible
     z: 1002
 
-    readonly property color panelColor: dark ? "#202329" : "#ffffff"
-    readonly property color borderColor: dark ? "#33ffffff" : "#18000000"
-    readonly property color textColor: dark ? "#e3e7ee" : "#24292f"
-    readonly property color mutedColor: dark ? "#8d94a2" : "#657080"
+    readonly property color panelColor: Theme.raised
+    readonly property color borderColor: Theme.hairlineStrong
+    readonly property color textColor: Theme.ink
+    readonly property color mutedColor: Theme.inkMuted
     readonly property int rowHeight: 26
 
     function openAbove(x, y) {

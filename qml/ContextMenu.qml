@@ -83,9 +83,9 @@ Item {
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
         y: Math.max(8, Math.min(root.openY, root.height - height - 8))
         radius: 8
-        color: root.dark ? "#202329" : "#ffffff"
+        color: Theme.raised
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#18000000"
+        border.color: Theme.hairlineStrong
 
         Rectangle {
             anchors.fill: parent
@@ -125,7 +125,7 @@ Item {
                         x: 10
                         width: parent.width - 20
                         height: 1
-                        color: root.dark ? "#1affffff" : "#12000000"
+                        color: Theme.fill
                     }
 
                     Rectangle {
@@ -136,7 +136,7 @@ Item {
                         anchors.rightMargin: 4
                         radius: 5
                         color: hover.containsMouse && entry.modelData.enabled !== false
-                            ? (root.dark ? "#22ffffff" : "#0f000000")
+                            ? Theme.fill
                             : "transparent"
                     }
 
@@ -165,12 +165,12 @@ Item {
                         elide: Text.ElideRight
                         color: {
                             if (entry.modelData.header === true)
-                                return root.dark ? "#7f8797" : "#8a929d"
+                                return Theme.inkFaint
                             if (entry.modelData.enabled === false)
-                                return root.dark ? "#5c6370" : "#a5acb6"
+                                return Theme.inkFaint
                             if (entry.modelData.danger === true)
-                                return root.dark ? "#f08a8a" : "#b42323"
-                            return root.dark ? "#e3e7ee" : "#24292f"
+                                return Theme.danger
+                            return Theme.ink
                         }
                         font.pixelSize: entry.modelData.header === true ? 10 : 12
                         font.weight: entry.modelData.header === true ? Font.DemiBold : Font.Normal
@@ -185,7 +185,7 @@ Item {
                         anchors.rightMargin: 12
                         anchors.verticalCenter: parent.verticalCenter
                         text: entry.modelData.shortcut || ""
-                        color: root.dark ? "#6e7684" : "#98a0ab"
+                        color: Theme.inkFaint
                         font.pixelSize: 10
                     }
 
@@ -197,7 +197,7 @@ Item {
                         anchors.rightMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
                         text: "\u203a"
-                        color: root.dark ? "#8d94a2" : "#657080"
+                        color: Theme.inkMuted
                         font.pixelSize: 13
                     }
 
@@ -239,9 +239,9 @@ Item {
         x: Math.max(8, Math.min(root.submenuX, root.width - width - 8))
         y: Math.max(8, Math.min(root.submenuY, root.height - height - 8))
         radius: 8
-        color: root.dark ? "#202329" : "#ffffff"
+        color: Theme.raised
         border.width: 1
-        border.color: root.dark ? "#33ffffff" : "#18000000"
+        border.color: Theme.hairlineStrong
 
         Column {
             id: submenuColumn
@@ -268,7 +268,7 @@ Item {
                         anchors.rightMargin: 4
                         radius: 5
                         color: submenuHover.containsMouse
-                            ? (root.dark ? "#22ffffff" : "#0f000000")
+                            ? Theme.fill
                             : "transparent"
                     }
 
@@ -295,10 +295,10 @@ Item {
                         text: submenuEntry.modelData.label || ""
                         elide: Text.ElideRight
                         color: submenuEntry.modelData.header === true
-                            ? (root.dark ? "#7f8797" : "#8a929d")
+                            ? Theme.inkFaint
                             : (submenuEntry.modelData.enabled === false
-                                ? (root.dark ? "#5c6370" : "#a5acb6")
-                                : (root.dark ? "#e3e7ee" : "#24292f"))
+                                ? Theme.inkFaint
+                                : Theme.ink)
                         font.pixelSize: submenuEntry.modelData.header === true ? 10 : 12
                         font.weight: submenuEntry.modelData.header === true
                             ? Font.DemiBold : Font.Normal

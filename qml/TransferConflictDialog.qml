@@ -15,7 +15,7 @@ FocusScope {
     id: root
 
     property bool dark: true
-    property color accent: "#2f6fdf"
+    property color accent: Theme.interactive
 
     /// The tick belongs to the question on screen, not to the transfer: it is
     /// cleared whenever the dialog goes away, so a later batch starts fresh.
@@ -27,11 +27,11 @@ FocusScope {
 
     readonly property string verb: Workspace.conflictCut ? qsTr("移动") : qsTr("复制")
     readonly property int remaining: Workspace.conflictTotal - Workspace.conflictIndex
-    readonly property color panelColor: dark ? "#202329" : "#ffffff"
-    readonly property color panelBorder: dark ? "#33ffffff" : "#18000000"
-    readonly property color headingColor: dark ? "#e7ebf2" : "#20252b"
-    readonly property color bodyColor: dark ? "#aeb6c2" : "#4c545e"
-    readonly property color mutedColor: dark ? "#8d94a2" : "#657080"
+    readonly property color panelColor: Theme.raised
+    readonly property color panelBorder: Theme.hairlineStrong
+    readonly property color headingColor: Theme.ink
+    readonly property color bodyColor: Theme.inkMuted
+    readonly property color mutedColor: Theme.inkMuted
 
     onVisibleChanged: {
         if (visible) {
@@ -52,7 +52,7 @@ FocusScope {
 
     Rectangle {
         anchors.fill: parent
-        color: "#73000000"
+        color: Theme.scrim
 
         // Dismissing the scrim cancels the whole batch, which is what the Tauri
         // shell's dialog did when it was closed: nothing is transferred.
@@ -166,13 +166,13 @@ FocusScope {
                     color: root.applyToAll ? root.accent : "transparent"
                     border.width: 1
                     border.color: root.applyToAll ? root.accent
-                        : (root.dark ? "#4dffffff" : "#33000000")
+                        : Theme.scrim
 
                     Text {
                         anchors.centerIn: parent
                         visible: root.applyToAll
                         text: "\u2713"
-                        color: "#ffffff"
+                        color: Theme.onInteractive
                         font.pixelSize: 10
                     }
                 }
@@ -209,9 +209,9 @@ FocusScope {
                     height: 26
                     radius: 6
                     color: cancelMouse.containsMouse
-                        ? (root.dark ? "#26ffffff" : "#12000000") : "transparent"
+                        ? Theme.fill : "transparent"
                     border.width: 1
-                    border.color: root.dark ? "#26ffffff" : "#18000000"
+                    border.color: Theme.hairline
 
                     Accessible.role: Accessible.Button
                     Accessible.name: cancelLabel.text
@@ -221,7 +221,7 @@ FocusScope {
                         id: cancelLabel
                         anchors.centerIn: parent
                         text: qsTr("取消%1").arg(root.verb)
-                        color: root.dark ? "#c9cfd9" : "#3a4048"
+                        color: Theme.inkMuted
                         font.pixelSize: 12
                     }
 
@@ -247,7 +247,7 @@ FocusScope {
                     radius: 6
                     color: "transparent"
                     border.width: 1
-                    border.color: root.dark ? "#26ffffff" : "#18000000"
+                    border.color: Theme.hairline
                     clip: true
 
                     Row {
@@ -258,9 +258,9 @@ FocusScope {
                             width: skipLabel.implicitWidth + 26
                             height: parent.height
                             color: skipMouse.containsMouse
-                                ? (root.dark ? "#1affffff" : "#0d000000") : "transparent"
+                                ? Theme.hover : "transparent"
                             border.width: 1
-                            border.color: root.dark ? "#26ffffff" : "#18000000"
+                            border.color: Theme.hairline
 
                             Accessible.role: Accessible.Button
                             Accessible.name: skipLabel.text
@@ -270,7 +270,7 @@ FocusScope {
                                 id: skipLabel
                                 anchors.centerIn: parent
                                 text: qsTr("跳过")
-                                color: root.dark ? "#c9cfd9" : "#3a4048"
+                                color: Theme.inkMuted
                                 font.pixelSize: 12
                             }
 
@@ -287,9 +287,9 @@ FocusScope {
                             width: keepLabel.implicitWidth + 26
                             height: parent.height
                             color: keepMouse.containsMouse
-                                ? (root.dark ? "#1affffff" : "#0d000000") : "transparent"
+                                ? Theme.hover : "transparent"
                             border.width: 1
-                            border.color: root.dark ? "#26ffffff" : "#18000000"
+                            border.color: Theme.hairline
 
                             Accessible.role: Accessible.Button
                             Accessible.name: keepLabel.text
@@ -299,7 +299,7 @@ FocusScope {
                                 id: keepLabel
                                 anchors.centerIn: parent
                                 text: qsTr("两者保留")
-                                color: root.dark ? "#c9cfd9" : "#3a4048"
+                                color: Theme.inkMuted
                                 font.pixelSize: 12
                             }
 
@@ -317,8 +317,8 @@ FocusScope {
                             height: parent.height
                             color: {
                                 if (root.applyToAll)
-                                    return replaceMouse.containsMouse ? "#a33232" : "#8f2d2d"
-                                return replaceMouse.containsMouse ? "#3f7ce0" : root.accent
+                                    return replaceMouse.containsMouse ? Theme.dangerSolidHover : Theme.dangerSolid
+                                return replaceMouse.containsMouse ? Theme.interactiveHover : root.accent
                             }
 
                             Accessible.role: Accessible.Button
@@ -329,7 +329,7 @@ FocusScope {
                                 id: replaceLabel
                                 anchors.centerIn: parent
                                 text: qsTr("替换")
-                                color: "#ffffff"
+                                color: Theme.onInteractive
                                 font.pixelSize: 12
                             }
 

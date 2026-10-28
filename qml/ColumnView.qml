@@ -15,11 +15,11 @@ Item {
 
     property var tab: null
     property bool dark: true
-    property color accent: "#2f6fdf"
-    property color contentColor: dark ? "#191b1f" : "#ffffff"
-    property color textColor: dark ? "#e6e9ef" : "#1c1f24"
-    property color mutedColor: dark ? "#8f98aa" : "#657080"
-    property color hairline: dark ? "#26ffffff" : "#16000000"
+    property color accent: Theme.interactive
+    property color contentColor: Theme.canvas
+    property color textColor: Theme.ink
+    property color mutedColor: Theme.inkMuted
+    property color hairline: Theme.hairline
     property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b, dark ? 0.30 : 0.18)
     property var keyHandler: null
 
@@ -147,11 +147,11 @@ Item {
         required property string activeChildPath
         property var tab: null
         property bool dark: true
-        property color accent: "#2f6fdf"
-        property color contentColor: dark ? "#191b1f" : "#ffffff"
-        property color textColor: dark ? "#e6e9ef" : "#1c1f24"
-        property color mutedColor: dark ? "#8f98aa" : "#657080"
-        property color hairline: dark ? "#26ffffff" : "#16000000"
+        property color accent: Theme.interactive
+        property color contentColor: Theme.canvas
+        property color textColor: Theme.ink
+        property color mutedColor: Theme.inkMuted
+        property color hairline: Theme.hairline
         property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b, dark ? 0.30 : 0.18)
         property int rowHeight: 34
 
@@ -260,7 +260,7 @@ Item {
         Rectangle {
             anchors.fill: parent
             color: pane.depth % 2 === 0
-                ? pane.contentColor : (pane.dark ? "#171a1f" : "#fafbfc")
+                ? pane.contentColor : Theme.canvasAlt
         }
 
         Rectangle {
@@ -336,7 +336,7 @@ Item {
                     color: row.selected ? pane.selectionColor
                         : row.expanded ? Qt.rgba(pane.accent.r, pane.accent.g, pane.accent.b,
                                                  pane.dark ? 0.18 : 0.1)
-                        : (hover.containsMouse ? (pane.dark ? "#1e2229" : "#eef1f5")
+                        : (hover.containsMouse ? Theme.canvasAlt
                                                : "transparent")
                     border.width: row.selected ? 1 : 0
                     border.color: Qt.rgba(pane.accent.r, pane.accent.g, pane.accent.b, 0.5)
@@ -392,7 +392,7 @@ Item {
                     anchors.rightMargin: chevron.visible ? 4 : 8
                     anchors.verticalCenter: parent.verticalCenter
                     text: row.fileName
-                    color: row.hidden ? (pane.dark ? "#6b7280" : "#9aa1ad") : pane.textColor
+                    color: row.hidden ? Theme.inkFaint : pane.textColor
                     font.pixelSize: 12
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
