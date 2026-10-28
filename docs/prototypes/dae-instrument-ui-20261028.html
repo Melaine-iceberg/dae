@@ -1,0 +1,2018 @@
+<style>
+#dae-root{
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI Variable Text","Segoe UI","SF Pro Text","PingFang SC","Microsoft YaHei UI","Noto Sans CJK SC",sans-serif;
+  --mono:"SF Mono","Cascadia Mono",Consolas,"JetBrains Mono","DejaVu Sans Mono",monospace;
+  --canvas:light-dark(#fbfbf9,#151619);
+  --canvas-alt:light-dark(#f4f4f1,#1b1c20);
+  --chrome:light-dark(#efefec,#101114);
+  --raised:light-dark(#ffffff,#202125);
+  --field:light-dark(#e9e9e5,#17181b);
+  --ink:light-dark(#161719,#ecedef);
+  --ink-muted:light-dark(#5c6066,#9ba0a8);
+  --ink-faint:light-dark(#646970,#8b9098);
+  --hairline:light-dark(rgba(0,0,0,.08),rgba(255,255,255,.085));
+  --hairline-strong:light-dark(rgba(0,0,0,.145),rgba(255,255,255,.145));
+  --hover:light-dark(rgba(0,0,0,.045),rgba(255,255,255,.05));
+  --fill:light-dark(rgba(0,0,0,.07),rgba(255,255,255,.08));
+  --row-rule:light-dark(rgba(0,0,0,.035),rgba(255,255,255,.045));
+  --signal:light-dark(#b45309,#f0a24a);
+  --signal-soft:light-dark(rgba(180,83,9,.10),rgba(240,162,74,.10));
+  --signal-soft-2:light-dark(rgba(180,83,9,.18),rgba(240,162,74,.16));
+  --signal-ink:light-dark(#ffffff,#1b1306);
+  --danger:light-dark(#b42318,#f0918a);
+  --danger-solid:light-dark(#c62c26,#c6403a);
+  --warn:light-dark(#9a6700,#e0a340);
+  --success:light-dark(#2f7d32,#8fd18f);
+  --link:light-dark(#0969da,#6cb6ff);
+  --scrim:light-dark(rgba(24,24,22,.10),rgba(0,0,0,.38));
+  --window-shadow:0 18px 48px light-dark(rgba(24,24,22,.16),rgba(0,0,0,.52));
+  --overlay-shadow:0 14px 36px light-dark(rgba(24,24,22,.18),rgba(0,0,0,.55));
+  --radius-xs:2px;--radius-sm:4px;--radius-md:8px;--radius-lg:12px;
+  --row-h:32px;--head-h:32px;
+  --preview-w:300px;--sidebar-w:216px;
+  color-scheme:light dark;
+  color:var(--ink);
+  background:transparent;
+  font-family:var(--sans);
+  font-size:13px;
+  line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+#dae-root[data-theme="light"]{color-scheme:light}
+#dae-root[data-theme="dark"]{color-scheme:dark}
+#dae-root[data-density="compact"]{--row-h:28px;--head-h:28px}
+#dae-root[data-density="spacious"]{--row-h:40px;--head-h:36px}
+#dae-root[data-accent="teal"]{--signal:light-dark(#1f7a72,#6bbcb6);--signal-soft:light-dark(rgba(31,122,114,.10),rgba(107,188,182,.10));--signal-soft-2:light-dark(rgba(31,122,114,.18),rgba(107,188,182,.16));--signal-ink:light-dark(#ffffff,#071512)}
+#dae-root[data-accent="blue"]{--signal:light-dark(#1f63cc,#55c5ff);--signal-soft:light-dark(rgba(31,99,204,.10),rgba(85,197,255,.10));--signal-soft-2:light-dark(rgba(31,99,204,.18),rgba(85,197,255,.16));--signal-ink:light-dark(#ffffff,#07121c)}
+#dae-root[data-motion="off"] *,#dae-root[data-motion="off"] *::before,#dae-root[data-motion="off"] *::after{transition:none!important;animation:none!important}
+#dae-root *{box-sizing:border-box}
+#dae-root button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:default}
+#dae-root button:focus-visible,#dae-root [tabindex]:focus-visible{outline:1px solid var(--signal);outline-offset:-2px}
+#dae-root ::selection{background:var(--signal-soft-2)}
+#dae-root .sprite{position:absolute;width:0;height:0;overflow:hidden}
+#dae-root .ic{width:16px;height:16px;flex:none;display:block}
+#dae-root .ic12{width:12px;height:12px}
+#dae-root .ic14{width:14px;height:14px}
+#dae-root .ic28{width:28px;height:28px}
+#dae-root .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+#dae-root .tnum{font-variant-numeric:tabular-nums}
+#dae-root .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+#dae-root .workspace{padding:16px 16px 0}
+#dae-root .app-window{
+  position:relative;width:100%;max-width:1320px;margin:0 auto;height:720px;
+  background:var(--canvas);border:1px solid var(--hairline-strong);border-radius:10px;
+  overflow:hidden;display:grid;grid-template-rows:44px 44px minmax(0,1fr) 28px;
+  box-shadow:var(--window-shadow);
+}
+#dae-root .titlebar{display:flex;align-items:center;min-width:0;background:var(--chrome);border-bottom:1px solid var(--hairline);padding-left:10px;gap:2px;position:relative}
+#dae-root[data-platform="mac"] .titlebar{padding-left:78px}
+#dae-root .app-mark{width:22px;height:22px;display:flex;align-items:center;justify-content:center;flex:none;margin-right:4px}
+#dae-root .app-mark img{width:17px;height:17px;border-radius:3px;display:block}
+#dae-root[data-platform="mac"] .app-mark{display:none}
+#dae-root .tabs{display:flex;align-items:flex-start;height:44px;gap:2px;min-width:0;flex:0 1 auto;overflow:hidden}
+#dae-root .tab{
+  position:relative;display:flex;align-items:center;gap:7px;height:32px;margin-top:6px;
+  padding:0 8px 0 10px;min-width:118px;max-width:210px;flex:0 1 210px;border-radius:var(--radius-sm) var(--radius-sm) 0 0;
+  color:var(--ink-muted);transition:background .09s ease-out,color .09s ease-out;
+}
+#dae-root .tab:hover{background:var(--hover);color:var(--ink)}
+#dae-root .tab.active{background:var(--fill);color:var(--ink)}
+#dae-root .tab.active::after{content:"";position:absolute;left:8px;right:8px;bottom:-6px;height:2px;background:var(--signal);border-radius:1px}
+#dae-root .tab .label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+#dae-root .tab .glyph{color:var(--ink-faint)}
+#dae-root .tab.active .glyph{color:var(--ink-muted)}
+#dae-root .tab .close{display:none;width:16px;height:16px;margin-left:auto;border-radius:3px;align-items:center;justify-content:center;flex:none;color:var(--ink-faint)}
+#dae-root .tab:hover .close,#dae-root .tab.active .close{display:flex}
+#dae-root .tab .close:hover{background:var(--fill);color:var(--ink)}
+#dae-root .newtab{width:26px;height:26px;margin-top:9px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:var(--ink-muted);flex:none}
+#dae-root .newtab:hover{background:var(--hover);color:var(--ink)}
+#dae-root .title-spacer{flex:1;min-width:8px;height:44px}
+#dae-root .wincontrols{display:flex;height:44px;flex:none;margin-left:auto}
+#dae-root .winbtn{width:46px;height:44px;display:flex;align-items:center;justify-content:center;color:var(--ink-muted)}
+#dae-root .winbtn:hover{background:var(--hover);color:var(--ink)}
+#dae-root .winbtn.close:hover{background:#c42b1c;color:#fff}
+#dae-root[data-platform="linux"] .winbtn{width:40px}
+#dae-root .traffic{display:none}
+#dae-root[data-platform="mac"] .wincontrols{display:none}
+#dae-root[data-platform="mac"] .traffic{display:flex;position:absolute;left:14px;top:16px;gap:8px;align-items:center}
+#dae-root .light{width:12px;height:12px;border-radius:50%;border:1px solid rgba(0,0,0,.14)}
+#dae-root .light.red{background:#ff5f57}#dae-root .light.yellow{background:#febc2e}#dae-root .light.green{background:#28c840}
+#dae-root .navbar{display:flex;align-items:center;gap:4px;padding:0 8px;min-width:0;background:var(--chrome);border-bottom:1px solid var(--hairline)}
+#dae-root .navbtn{width:28px;height:28px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;flex:none;color:var(--ink-muted);transition:background .09s ease-out,color .09s ease-out}
+#dae-root .navbtn:hover{background:var(--hover);color:var(--ink)}
+#dae-root .navbtn[disabled]{opacity:.32}
+#dae-root .navbtn[disabled]:hover{background:none;color:var(--ink-muted)}
+#dae-root .navsep{width:1px;height:16px;background:var(--hairline);margin:0 4px;flex:none}
+#dae-root .navtext{height:24px;padding:0 9px;border:1px solid var(--hairline);border-radius:var(--radius-xs);font-size:11.5px;color:var(--ink-muted);flex:none;transition:background .09s ease-out,color .09s ease-out}
+#dae-root .navtext:hover{background:var(--hover);color:var(--ink)}
+#dae-root .navtext.danger:hover{border-color:var(--danger);color:var(--danger);background:none}
+#dae-root .crumbs{display:flex;align-items:center;min-width:0;flex:1;height:28px;padding:0 2px;border-radius:var(--radius-sm);overflow:hidden;cursor:text}
+#dae-root .crumb{display:flex;align-items:center;gap:4px;height:24px;padding:0 5px;border-radius:3px;color:var(--ink-muted);font-size:12.5px;white-space:nowrap;flex:none}
+#dae-root .crumb:hover{background:var(--hover);color:var(--ink)}
+#dae-root .crumb.current{color:var(--ink);font-weight:500}
+#dae-root .crumb-sep{color:var(--ink-faint);flex:none;margin:0 1px}
+#dae-root .pathedit{display:flex;align-items:center;height:28px;flex:1;min-width:0;background:var(--field);border:1px solid var(--signal);border-radius:var(--radius-sm);padding:0 8px}
+#dae-root .pathedit input{width:100%;border:0;outline:0;background:none;color:var(--ink);font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+#dae-root .nav-right{display:flex;align-items:center;gap:4px;flex:none}
+#dae-root .searchfield{display:flex;align-items:center;gap:6px;height:28px;width:210px;padding:0 8px;background:var(--field);border:1px solid var(--hairline-strong);border-radius:var(--radius-sm)}
+#dae-root .searchfield:focus-within{border-color:var(--signal);box-shadow:0 0 0 1px var(--signal-soft-2)}
+#dae-root .searchfield input{flex:1;min-width:0;border:0;outline:0;background:none;color:var(--ink);font-size:12.5px}
+#dae-root .searchfield input::placeholder{color:var(--ink-faint)}
+#dae-root .searchclear{width:16px;height:16px;border-radius:3px;display:flex;align-items:center;justify-content:center;color:var(--ink-faint);flex:none}
+#dae-root .searchclear:hover{background:var(--fill);color:var(--ink)}
+#dae-root .filterbar{display:flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-bottom:1px solid var(--hairline);background:var(--canvas);flex:none;overflow:hidden}
+#dae-root .filterlabel{font-size:11px;font-weight:500;letter-spacing:.06em;color:var(--ink-faint);flex:none}
+#dae-root .chip{height:22px;padding:0 7px;border:1px solid var(--hairline);border-radius:var(--radius-xs);display:flex;align-items:center;gap:4px;font-size:11px;color:var(--ink-muted);flex:none}
+#dae-root .chip:hover{background:var(--hover);color:var(--ink)}
+#dae-root .chip.on{background:var(--fill);border-color:var(--hairline-strong);color:var(--ink)}
+#dae-root .chip select{border:0;background:none;color:inherit;font:inherit;outline:0;cursor:default;max-width:92px}
+#dae-root .filter-count{margin-left:auto;font-size:11px;color:var(--ink-faint);white-space:nowrap;flex:none;font-variant-numeric:tabular-nums}
+</style>
+<style>
+#dae-root .main{display:grid;grid-template-columns:var(--sidebar-w) minmax(0,1fr) 6px var(--preview-w);min-height:0;background:var(--canvas)}
+#dae-root .sidebar{grid-column:1;display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--chrome);border-right:1px solid var(--hairline);padding:8px;overflow:hidden}
+#dae-root .side-group{min-width:0;margin-top:4px}
+#dae-root .side-group:first-child{margin-top:0}
+#dae-root .side-label{height:20px;padding:0 10px;display:flex;align-items:center;font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--ink-faint);white-space:nowrap}
+#dae-root .side-row{position:relative;display:flex;align-items:center;gap:8px;width:100%;height:28px;padding:0 10px;border-radius:var(--radius-sm);color:var(--ink-muted);font-size:12.5px;text-align:left;flex:none;transition:background .09s ease-out,color .09s ease-out}
+#dae-root .side-row:hover{background:var(--hover);color:var(--ink)}
+#dae-root .side-row.active{background:var(--fill);color:var(--ink)}
+#dae-root .side-row.active::before{content:"";position:absolute;left:-8px;top:6px;bottom:6px;width:2px;background:var(--signal);border-radius:1px}
+#dae-root .side-row .sname{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dae-root .side-row .smeta{font-size:11px;color:var(--ink-faint);font-variant-numeric:tabular-nums;white-space:nowrap;flex:none}
+#dae-root .side-row .sicon{color:var(--ink-faint);flex:none}
+#dae-root .side-row:hover .sicon,#dae-root .side-row.active .sicon{color:var(--ink-muted)}
+#dae-root .side-row.drop-target{background:var(--signal-soft);box-shadow:inset 0 0 0 1px var(--hairline-strong);color:var(--ink)}
+#dae-root .side-vol{height:38px;flex-direction:column;align-items:stretch;justify-content:center;gap:0;padding:3px 10px}
+#dae-root .vol-top{display:flex;align-items:center;gap:8px;height:18px;min-width:0}
+#dae-root .vol-top .sname{flex:1;min-width:0}
+#dae-root .vol-top .smeta{flex:none}
+#dae-root .smeta-pct{display:none}
+#dae-root .vol-track{height:2px;margin-top:3px;border-radius:1px;background:var(--hairline-strong);overflow:hidden}
+#dae-root .vol-fill{height:100%;border-radius:1px;background:var(--signal);opacity:.5}
+#dae-root .vol-fill.warn{background:var(--warn);opacity:.9}
+#dae-root .side-trash{margin-top:auto;padding-top:6px;border-top:1px solid var(--hairline)}
+#dae-root .side-hint{font-size:11px;color:var(--ink-faint);padding:4px 10px 0;line-height:1.4}
+#dae-root .content{grid-column:2;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--canvas)}
+#dae-root .grip{grid-column:3;position:relative;cursor:col-resize;background:var(--canvas)}
+#dae-root .grip::after{content:"";position:absolute;top:0;bottom:0;left:2px;width:1px;background:transparent;transition:background .1s ease-out}
+#dae-root .grip:hover::after{background:var(--signal)}
+#dae-root .listing{display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden}
+#dae-root .list-head{display:grid;grid-template-columns:minmax(210px,1fr) 108px 92px 142px;align-items:center;height:var(--head-h);padding:0 12px;border-bottom:1px solid var(--hairline);flex:none;background:var(--canvas)}
+#dae-root .col{display:flex;align-items:center;gap:4px;height:100%;min-width:0;font-size:11px;font-weight:500;letter-spacing:.05em;color:var(--ink-faint);white-space:nowrap}
+#dae-root .col:hover{color:var(--ink-muted)}
+#dae-root .col.active{color:var(--ink)}
+#dae-root .col.r{justify-content:flex-end}
+#dae-root .caret{width:0;height:0;border-left:3px solid transparent;border-right:3px solid transparent;border-top:4px solid currentColor;margin-left:1px}
+#dae-root .caret.asc{border-top:0;border-bottom:4px solid currentColor}
+#dae-root .rows{flex:1;min-height:0;overflow:hidden;outline:0}
+#dae-root .row{position:relative;display:grid;grid-template-columns:minmax(210px,1fr) 108px 92px 142px;align-items:center;height:var(--row-h);padding:0 12px;border-bottom:1px solid var(--row-rule);font-size:13px;color:var(--ink);user-select:none;transition:background .09s ease-out}
+#dae-root .row:hover{background:var(--hover)}
+#dae-root .row.sel{background:var(--signal-soft);box-shadow:inset 2px 0 0 var(--signal)}
+#dae-root .row.sel:hover{background:var(--signal-soft-2)}
+#dae-root .row.focuskb{outline:1px solid var(--signal);outline-offset:-1px}
+#dae-root .row.drop-target{background:var(--signal-soft);box-shadow:inset 0 0 0 1px var(--hairline-strong)}
+#dae-root .namecell{display:flex;align-items:center;gap:8px;min-width:0}
+#dae-root .fname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dae-root .ficon{color:var(--ink-faint);flex:none}
+#dae-root .row:hover .ficon,#dae-root .row.sel .ficon{color:var(--ink-muted)}
+#dae-root .c-type,#dae-root .c-mod,#dae-root .c-size{font-size:12px;color:var(--ink-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dae-root .c-size,#dae-root .c-mod{text-align:right;justify-self:end;font-variant-numeric:tabular-nums}
+#dae-root .gitmark{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1px solid var(--hairline-strong);border-radius:2px;font-family:var(--mono);font-size:11px;line-height:1;flex:none;color:var(--ink-faint)}
+#dae-root .gitmark.m{color:var(--warn)}
+#dae-root .gitmark.u{color:var(--link)}
+#dae-root .rename{width:100%;height:24px;padding:0 5px;border:1px solid var(--signal);border-radius:3px;background:var(--field);color:var(--ink);font:inherit;outline:0}
+#dae-root .empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:22px 16px;font-size:13px;color:var(--ink-muted);text-align:center}
+#dae-root .empty-icon{color:var(--ink-faint);margin-bottom:10px}
+#dae-root .empty-title{font-size:13px;color:var(--ink)}
+#dae-root .empty-hint{font-size:11.5px;color:var(--ink-faint);max-width:34em;line-height:1.5;margin-top:2px}
+#dae-root .empty .actions{display:flex;gap:14px;margin-top:12px}
+#dae-root .textbtn{display:inline-flex;align-items:center;gap:4px;height:24px;font-size:12px;color:var(--signal)}
+#dae-root .textbtn:hover{text-decoration:underline;text-underline-offset:2px}
+#dae-root .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:14px 12px;align-content:start;justify-content:start;flex:1;min-height:0;overflow:hidden;padding:16px}
+#dae-root .tile{position:relative;display:flex;flex-direction:column;align-items:center;gap:7px;min-width:0;padding:8px 4px 9px;border-radius:var(--radius-sm);transition:background .09s ease-out}
+#dae-root .tile:hover{background:var(--hover)}
+#dae-root .tile.sel{background:var(--signal-soft);box-shadow:inset 0 0 0 1px var(--signal)}
+#dae-root .tile.focuskb{outline:1px solid var(--signal);outline-offset:-1px}
+#dae-root .tile.drop-target{background:var(--signal-soft);box-shadow:inset 0 0 0 1px var(--hairline-strong)}
+#dae-root .thumb{width:100%;height:76px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:transparent;border:0;border-radius:3px;color:var(--ink-muted)}
+#dae-root .thumb.has-image{background:var(--canvas-alt);border:1px solid var(--hairline)}
+#dae-root .thumb img{display:block;max-width:100%;max-height:100%;padding:10px;object-fit:contain}
+#dae-root .tname{display:-webkit-box;max-width:100%;overflow:hidden;color:var(--ink);font-size:12.5px;line-height:1.35;text-align:center;word-break:break-word;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+#dae-root .cols{display:flex;flex:1;min-height:0;overflow:hidden}
+#dae-root .mcol{display:flex;flex-direction:column;flex:0 0 238px;min-height:0;border-right:1px solid var(--hairline);overflow:hidden}
+#dae-root .mcol:last-child{border-right:0;flex:1}
+#dae-root .mcol-head{display:flex;align-items:center;gap:7px;height:30px;padding:0 10px;border-bottom:1px solid var(--hairline);font-size:11.5px;font-weight:500;color:var(--ink-muted);flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dae-root .mcol-rows{flex:1;min-height:0;overflow:hidden}
+#dae-root .mcol-row{position:relative;display:flex;align-items:center;gap:7px;height:28px;padding:0 10px;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden}
+#dae-root .mcol-row:hover{background:var(--hover)}
+#dae-root .mcol-row.sel{background:var(--signal-soft);box-shadow:inset 2px 0 0 var(--signal)}
+#dae-root .mcol-row .fname{flex:1}
+#dae-root .mcol-row .chev{color:var(--ink-faint);flex:none}
+#dae-root .mcol-empty{padding:16px 10px;font-size:12px;color:var(--ink-faint)}
+#dae-root .preview{grid-column:4;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--canvas);border-left:1px solid var(--hairline)}
+#dae-root .pv-head{display:flex;align-items:center;justify-content:space-between;height:32px;padding:0 8px 0 14px;border-bottom:1px solid var(--hairline);flex:none}
+#dae-root .pv-label{font-size:11px;font-weight:500;letter-spacing:.08em;color:var(--ink-faint)}
+#dae-root .pv-close{width:22px;height:22px;border-radius:3px;display:flex;align-items:center;justify-content:center;color:var(--ink-faint)}
+#dae-root .pv-close:hover{background:var(--hover);color:var(--ink)}
+#dae-root .pv-body{flex:1;min-height:0;overflow:hidden;padding:14px}
+#dae-root .pv-thumb{height:176px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:12px;background:var(--canvas-alt);border:1px solid var(--hairline);border-radius:var(--radius-sm)}
+#dae-root .pv-thumb img{display:block;max-width:84%;max-height:84%;object-fit:contain}
+#dae-root .pv-thumb .ic{width:34px;height:34px;color:var(--ink-faint)}
+#dae-root .pv-pre{display:flex;gap:8px;height:176px;margin:0 0 12px;padding:10px 10px 10px 6px;overflow:hidden;background:var(--canvas-alt);border:1px solid var(--hairline);border-radius:var(--radius-sm);font-family:var(--mono);font-size:11px;line-height:1.55;color:var(--ink-muted)}
+#dae-root .pv-pre .ln{width:18px;flex:none;text-align:right;color:var(--ink-faint);user-select:none}
+#dae-root .pv-pre .code{min-width:0;overflow:hidden;white-space:pre;text-overflow:ellipsis}
+#dae-root .pv-name{font-size:13.5px;font-weight:500;line-height:1.35;color:var(--ink);word-break:break-word;margin-bottom:3px}
+#dae-root .pv-sub{font-family:var(--mono);font-size:11px;line-height:1.4;color:var(--ink-faint);word-break:break-all;margin-bottom:12px}
+#dae-root .pv-meta{border-top:1px solid var(--hairline)}
+#dae-root .pv-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:26px;border-bottom:1px solid var(--row-rule);font-size:11px}
+#dae-root .pv-key{flex:none;color:var(--ink-faint)}
+#dae-root .pv-val{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-muted)}
+#dae-root .pv-action{display:flex;align-items:center;gap:4px;height:26px;padding:0 2px;margin-top:8px;font-size:12px;color:var(--ink)}
+#dae-root .pv-action:hover{color:var(--signal)}
+#dae-root .pv-empty{font-size:13px;color:var(--ink-muted);padding:4px 0}
+#dae-root .pv-hint{font-size:11px;color:var(--ink-faint);margin-top:4px}
+#dae-root .pv-big{font-size:22px;font-weight:500;line-height:1.15;letter-spacing:-.01em;color:var(--ink);margin-bottom:4px}
+#dae-root .pv-types{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:10px;font-size:11px;color:var(--ink-muted)}
+#dae-root .statusbar{position:relative;display:flex;align-items:center;gap:10px;min-width:0;padding:0 10px;background:var(--chrome);border-top:1px solid var(--hairline);font-size:11.5px;color:var(--ink-muted);white-space:nowrap}
+#dae-root .status-left{display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden;font-variant-numeric:tabular-nums}
+#dae-root .status-sep{width:1px;height:12px;background:var(--hairline);flex:none}
+#dae-root .status-center{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center}
+#dae-root .transferbtn{display:flex;align-items:center;gap:6px;height:22px;padding:0 7px;border:1px solid var(--hairline);border-radius:var(--radius-xs);background:var(--canvas);font-size:11px;color:var(--ink-muted);font-variant-numeric:tabular-nums}
+#dae-root .transferbtn:hover{background:var(--hover);color:var(--ink)}
+#dae-root .transfer-track{width:32px;height:2px;background:var(--hairline-strong);overflow:hidden}
+#dae-root .transfer-fill{height:100%;background:var(--signal)}
+#dae-root .status-right{display:flex;align-items:center;gap:2px;margin-left:auto;flex:none}
+#dae-root .gitstatus{display:flex;align-items:center;gap:4px;height:22px;padding:0 7px 0 4px;margin-right:4px;border-right:1px solid var(--hairline);font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+#dae-root .toggle{display:flex;align-items:center;gap:4px;height:22px;padding:0 6px;border-radius:3px;font-size:11px;color:var(--ink-faint)}
+#dae-root .toggle:hover{background:var(--hover);color:var(--ink)}
+#dae-root .toggle.on{color:var(--ink)}
+#dae-root .terminal{display:flex;flex-direction:column;flex:none;height:132px;border-top:1px solid var(--hairline);background:#0e0f11;color:#d7dae0;overflow:hidden}
+#dae-root .terminal[hidden]{display:none}
+#dae-root .term-head{display:flex;align-items:center;justify-content:space-between;height:28px;padding:0 8px 0 12px;background:#141518;border-bottom:1px solid rgba(255,255,255,.07);flex:none}
+#dae-root .term-title{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:#8b9099}
+#dae-root .term-close{width:20px;height:20px;border-radius:3px;display:flex;align-items:center;justify-content:center;color:#8b9099}
+#dae-root .term-close:hover{background:rgba(255,255,255,.08);color:#e8eaf0}
+#dae-root .term-body{flex:1;min-height:0;overflow:hidden;padding:7px 12px;font-family:var(--mono);font-size:12px;line-height:1.5;color:#c9cdd4}
+#dae-root .term-line{white-space:pre;overflow:hidden;text-overflow:clip}
+#dae-root .term-prompt{color:#8fd18f}
+#dae-root .term-cmd{color:#e8eaf0}
+#dae-root .term-dim{color:#7f8797}
+#dae-root .caret-blink{display:inline-block;width:6px;height:13px;background:#c9cdd4;vertical-align:-2px;animation:caret 1.1s steps(1) infinite}
+@keyframes caret{50%{opacity:0}}
+</style>
+<style>
+#dae-root .overlay-layer{position:absolute;inset:0;z-index:60;pointer-events:none}
+#dae-root .overlay-layer>*{pointer-events:auto}
+#dae-root .scrim{position:absolute;inset:0;background:var(--scrim);animation:fadeIn .14s ease-out}
+#dae-root .menu{position:absolute;min-width:212px;max-width:286px;padding:4px;background:var(--raised);border:1px solid var(--hairline-strong);border-radius:var(--radius-md);box-shadow:var(--overlay-shadow);z-index:70;animation:overlayIn .14s ease-out}
+#dae-root .menu-item{display:flex;align-items:center;gap:8px;width:100%;height:28px;padding:0 8px;border-radius:var(--radius-sm);font-size:12.5px;color:var(--ink);text-align:left;white-space:nowrap}
+#dae-root .menu-item:hover,#dae-root .menu-item:focus{background:var(--fill);outline:0}
+#dae-root .menu-item[aria-disabled="true"]{opacity:.4}
+#dae-root .menu-item .mic{color:var(--ink-muted);flex:none}
+#dae-root .menu-item .mcheck{width:16px;height:16px;flex:none;color:var(--ink)}
+#dae-root .menu-item .mlabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+#dae-root .menu-item .mchord{padding-left:18px;font-family:var(--mono);font-size:11px;color:var(--ink-faint);flex:none}
+#dae-root .menu-item.danger{color:var(--danger)}
+#dae-root .menu-item.danger .mic{color:var(--danger)}
+#dae-root .menu-sep{height:1px;margin:4px;background:var(--hairline)}
+#dae-root .dialog-overlay{position:absolute;inset:0;z-index:80;display:flex;flex-direction:column;align-items:center;padding-top:64px;background:var(--scrim)}
+#dae-root .palette{display:flex;flex-direction:column;width:min(560px,calc(100% - 32px));overflow:hidden;background:var(--raised);border:1px solid var(--hairline-strong);border-radius:var(--radius-md);box-shadow:var(--overlay-shadow);animation:overlayIn .16s ease-out}
+#dae-root .palette-input{display:flex;align-items:center;gap:9px;height:44px;padding:0 12px;border-bottom:1px solid var(--hairline);flex:none}
+#dae-root .palette-input .ic{color:var(--ink-faint)}
+#dae-root .palette-input input{flex:1;min-width:0;border:0;outline:0;background:none;color:var(--ink);font-size:13.5px}
+#dae-root .palette-input input::placeholder{color:var(--ink-faint)}
+#dae-root .escchip{display:flex;align-items:center;height:18px;padding:0 5px;border:1px solid var(--hairline);border-radius:3px;font-family:var(--mono);font-size:11px;color:var(--ink-faint);flex:none}
+#dae-root .palette-list{padding:4px 4px 6px;overflow:hidden}
+#dae-root .pgroup-label{display:flex;align-items:center;height:22px;padding:0 10px;font-size:11px;font-weight:500;letter-spacing:.06em;color:var(--ink-faint)}
+#dae-root .pitem{display:flex;align-items:center;gap:9px;width:100%;height:30px;padding:0 9px;border-radius:var(--radius-sm);font-size:12.5px;color:var(--ink);text-align:left}
+#dae-root .pitem:hover,#dae-root .pitem.active{background:var(--fill)}
+#dae-root .pitem.active{box-shadow:inset 2px 0 0 var(--signal)}
+#dae-root .pitem .picon{color:var(--ink-muted);flex:none}
+#dae-root .pitem .plabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dae-root .pitem .pchord{font-family:var(--mono);font-size:11px;color:var(--ink-faint);flex:none}
+#dae-root .palette-foot{display:flex;align-items:center;gap:12px;height:28px;padding:0 12px;border-top:1px solid var(--hairline);font-size:11px;color:var(--ink-faint);font-variant-numeric:tabular-nums;flex:none}
+#dae-root .palette-empty{display:flex;flex-direction:column;gap:6px;padding:18px 12px;font-size:12.5px;color:var(--ink-muted)}
+#dae-root .dialog{width:min(440px,calc(100% - 32px));overflow:hidden;background:var(--raised);border:1px solid var(--hairline-strong);border-radius:var(--radius-lg);box-shadow:var(--overlay-shadow);animation:overlayIn .16s ease-out}
+#dae-root .dialog-head{display:flex;align-items:center;justify-content:space-between;height:44px;padding:0 8px 0 16px;border-bottom:1px solid var(--hairline)}
+#dae-root .dialog-title{font-size:14px;font-weight:500;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dae-root .dialog-body{padding:12px 16px}
+#dae-root .dialog-row{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:28px;border-bottom:1px solid var(--row-rule);font-size:11.5px}
+#dae-root .dialog-key{color:var(--ink-faint);flex:none}
+#dae-root .dialog-val{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;font-family:var(--mono);font-size:11.5px;color:var(--ink-muted);font-variant-numeric:tabular-nums}
+#dae-root .dialog-foot{display:flex;justify-content:flex-end;gap:8px;padding:10px 16px;border-top:1px solid var(--hairline)}
+#dae-root .btn{height:28px;padding:0 12px;border:1px solid var(--hairline-strong);border-radius:var(--radius-sm);background:var(--canvas);font-size:12px;color:var(--ink)}
+#dae-root .btn:hover{background:var(--hover)}
+#dae-root .btn.primary{background:var(--signal);border-color:transparent;color:var(--signal-ink)}
+#dae-root .btn.danger{background:var(--danger-solid);border-color:transparent;color:#fff}
+#dae-root .transfer-pop{position:absolute;left:50%;bottom:32px;transform:translateX(-50%);width:326px;padding:4px;background:var(--raised);border:1px solid var(--hairline-strong);border-radius:var(--radius-md);box-shadow:var(--overlay-shadow);z-index:70;animation:fadeIn .14s ease-out}
+#dae-root .transfer-head{display:flex;align-items:center;justify-content:space-between;height:26px;padding:0 8px;font-size:11px;font-weight:500;letter-spacing:.05em;color:var(--ink-faint)}
+#dae-root .transfer-row{display:flex;flex-direction:column;gap:3px;padding:5px 8px;border-radius:var(--radius-sm)}
+#dae-root .transfer-row:hover{background:var(--hover)}
+#dae-root .transfer-top{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink)}
+#dae-root .transfer-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dae-root .transfer-meta{flex:none;font-family:var(--mono);font-size:11px;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+#dae-root .transfer-row>.transfer-meta:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#dae-root .transfer-line{height:2px;background:var(--hairline-strong);overflow:hidden}
+#dae-root .transfer-fill{height:100%;background:var(--signal)}
+#dae-root .toast-layer{position:absolute;left:0;right:0;bottom:38px;z-index:90;display:flex;justify-content:center;pointer-events:none}
+#dae-root .toast{display:flex;align-items:center;gap:9px;height:34px;padding:0 8px 0 12px;pointer-events:auto;background:var(--raised);border:1px solid var(--hairline-strong);border-radius:var(--radius-sm);box-shadow:var(--overlay-shadow);font-size:12px;color:var(--ink);animation:toastIn .18s ease-out}
+#dae-root .toast .ticon{color:var(--ink-muted)}
+#dae-root .toast .tmsg{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px}
+#dae-root .toast .taction{height:24px;padding:0 6px;border-radius:3px;font-size:12px;color:var(--signal)}
+#dae-root .toast .taction:hover{background:var(--signal-soft)}
+#dae-root .toast .tclose{width:20px;height:20px;border-radius:3px;display:flex;align-items:center;justify-content:center;color:var(--ink-faint)}
+#dae-root .toast .tclose:hover{background:var(--hover);color:var(--ink)}
+#dae-root .meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;width:100%;max-width:1320px;margin:8px auto 16px;padding:7px 10px;background:var(--chrome);border:1px solid var(--hairline);border-radius:var(--radius-md);font-size:11px;color:var(--ink-faint)}
+#dae-root .meta-title{font-weight:500;letter-spacing:.08em;color:var(--ink-faint)}
+#dae-root .mgroup{display:flex;align-items:center;gap:4px}
+#dae-root .mgroup-label{font-size:11px;color:var(--ink-faint);margin-right:2px}
+#dae-root .mseg{display:flex;overflow:hidden;border:1px solid var(--hairline);border-radius:3px}
+#dae-root .mseg button{height:22px;padding:0 7px;background:var(--canvas);font-size:11px;color:var(--ink-muted)}
+#dae-root .mseg button+button{border-left:1px solid var(--hairline)}
+#dae-root .mseg button:hover{background:var(--hover);color:var(--ink)}
+#dae-root .mseg button.on{background:var(--fill);color:var(--ink)}
+#dae-root .mhint{margin-left:auto;font-size:11px;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+#dae-root .mreset{height:22px;padding:0 6px;border-radius:3px;font-size:11px;color:var(--ink-muted)}
+#dae-root .mreset:hover{background:var(--hover);color:var(--ink)}
+#dae-root .drop-ghost{opacity:.55}
+@keyframes overlayIn{from{opacity:0;transform:translateY(-3px) scale(.996)}to{opacity:1;transform:none}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes toastIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){#dae-root *,#dae-root *::before,#dae-root *::after{transition:none!important;animation:none!important}}
+@media (max-width:1180px){
+  #dae-root .preview,#dae-root .grip{display:none}
+  #dae-root .main{grid-template-columns:var(--sidebar-w) minmax(0,1fr)}
+  #dae-root .toggle.preview-toggle{display:none}
+}
+@media (max-width:920px){
+  #dae-root .main{grid-template-columns:184px minmax(0,1fr)}
+  #dae-root .list-head,#dae-root .row{grid-template-columns:minmax(180px,1fr) 104px 90px 132px}
+  #dae-root .vol-top .smeta-full{display:none}
+  #dae-root .vol-top .smeta-pct{display:inline}
+}
+@media (max-width:760px){
+  #dae-root .c-type{display:none}
+  #dae-root .list-head,#dae-root .row{grid-template-columns:minmax(160px,1fr) 84px 124px}
+  #dae-root .status-center{display:none}
+  #dae-root .searchfield{width:150px}
+  #dae-root .status-left .optional{display:none}
+  #dae-root .mhint{display:none}
+}
+@media (max-width:640px){
+  #dae-root .sidebar{display:none}
+  #dae-root .main{grid-template-columns:minmax(0,1fr)}
+  #dae-root .content{grid-column:1}
+}
+@media (max-width:560px){
+  #dae-root .workspace{padding:8px 8px 0}
+  #dae-root .app-window{height:680px}
+  #dae-root .c-size,#dae-root .c-mod{display:none}
+  #dae-root .list-head,#dae-root .row{grid-template-columns:minmax(0,1fr)}
+  #dae-root .tab{min-width:96px;max-width:150px;flex-basis:150px}
+  #dae-root .app-mark{display:none}
+  #dae-root .toggle span{display:none}
+  #dae-root .gitstatus{display:none}
+  #dae-root .filter-count{display:none}
+  #dae-root .mgroup-label{display:none}
+}
+</style>
+<div id="dae-root" data-theme="auto" data-platform="win" data-density="default" data-accent="amber" data-motion="on">
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-chev-l" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></symbol>
+    <symbol id="i-chev-r" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></symbol>
+    <symbol id="i-chev-u" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 10 8 5.5l4.5 4.5"/></symbol>
+    <symbol id="i-chev-d" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 6 8 10.5 12.5 6"/></symbol>
+    <symbol id="i-arrow-l" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 8H3.5M7 4 3 8l4 4"/></symbol>
+    <symbol id="i-arrow-r" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8h9M9 4l4 4-4 4"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3.5M4 7l4-4 4 4"/></symbol>
+    <symbol id="i-search" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"><circle cx="7" cy="7" r="4.1"/><path d="m10.2 10.2 3.2 3.2"/></symbol>
+    <symbol id="i-x" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></symbol>
+    <symbol id="i-list" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx=".8"/><rect x="9" y="2.5" width="4.5" height="4.5" rx=".8"/><rect x="2.5" y="9" width="4.5" height="4.5" rx=".8"/><rect x="9" y="9" width="4.5" height="4.5" rx=".8"/></symbol>
+    <symbol id="i-cols" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25"><rect x="2" y="2.5" width="3.4" height="11" rx=".8"/><rect x="6.3" y="2.5" width="3.4" height="11" rx=".8"/><rect x="10.6" y="2.5" width="3.4" height="11" rx=".8"/></symbol>
+    <symbol id="i-more" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.2" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="12.8" cy="8" r="1"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 16 16" fill="currentColor"><path d="M2 5.1c0-.7.6-1.3 1.3-1.3h3.1l1.4 1.5h5c.7 0 1.3.6 1.3 1.3v6.8c0 .7-.6 1.3-1.3 1.3H3.3c-.7 0-1.3-.6-1.3-1.3V5.1Z" opacity=".9"/></symbol>
+    <symbol id="i-file" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M4.2 2.6h4.6L11.8 6v7.4H4.2z"/><path d="M8.8 2.6V6h3"/></symbol>
+    <symbol id="i-file-code" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M4.2 2.6h4.6L11.8 6v7.4H4.2z"/><path d="M8.8 2.6V6h3"/><path d="M6.4 8.1 5.2 9.4l1.2 1.3M9.6 8.1l1.2 1.3-1.2 1.3" stroke-linecap="round"/></symbol>
+    <symbol id="i-file-text" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M4.2 2.6h4.6L11.8 6v7.4H4.2z"/><path d="M8.8 2.6V6h3"/><path d="M6 8.2h4M6 10.5h3" stroke-linecap="round"/></symbol>
+    <symbol id="i-file-image" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M4.2 2.6h4.6L11.8 6v7.4H4.2z"/><path d="M8.8 2.6V6h3"/><circle cx="9.7" cy="7.8" r=".8" fill="currentColor" stroke="none"/><path d="m5.7 11.6 1.6-1.8 1.1 1.2.8-.8 1.1 1.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-file-archive" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M4.2 2.6h4.6L11.8 6v7.4H4.2z"/><path d="M8.8 2.6V6h3"/><path d="M6.5 7.8h2M6.5 9.4h2M6.5 11h2" stroke-linecap="round"/></symbol>
+    <symbol id="i-file-exe" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M4.2 2.6h4.6L11.8 6v7.4H4.2z"/><path d="M8.8 2.6V6h3"/><path d="m7.2 8.4 2.3 1.3-2.3 1.3z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-drive" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><rect x="2.2" y="4.8" width="11.6" height="6.4" rx="1.2"/><path d="M4.2 8.9h3" stroke-linecap="round"/><circle cx="11.6" cy="8.9" r=".65" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-home" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="m2.6 7.4 5.4-4.5 5.4 4.5V13H9.8V9.8H6.2V13H2.6Z"/></symbol>
+    <symbol id="i-desktop" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><rect x="2.4" y="3.2" width="11.2" height="7.2" rx="1"/><path d="M8 10.4V13M5.6 13h4.8" stroke-linecap="round"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M4.4 2.6h5l2.2 2.2v8.6H4.4z"/><path d="M6.3 8h3.4M6.3 10.2h3.4M6.3 12.1h2.2" stroke-linecap="round"/></symbol>
+    <symbol id="i-download" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v7M5 8.5l3 3 3-3M3 12.8h10"/></symbol>
+    <symbol id="i-image" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><rect x="2.4" y="3" width="11.2" height="10" rx="1"/><circle cx="9.8" cy="6.2" r=".9" fill="currentColor" stroke="none"/><path d="m4.2 11.6 2.7-3 1.9 2.1 1.4-1.4 1.8 2.3" stroke-linecap="round"/></symbol>
+    <symbol id="i-music" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.2 3.2v6.3"/><path d="M10.2 3.2 5.8 4.3v5.5"/><ellipse cx="8.6" cy="10.2" rx="1.6" ry="1.2"/><ellipse cx="4.2" cy="11.1" rx="1.6" ry="1.2"/></symbol>
+    <symbol id="i-video" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><rect x="2.4" y="3.4" width="11.2" height="9.2" rx="1"/><path d="m6.8 6.2 3 1.8-3 1.8z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-diamond" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M8 2.6 13.4 8 8 13.4 2.6 8Z"/></symbol>
+    <symbol id="i-network" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="8" cy="3.4" r="1.5"/><circle cx="3.8" cy="12" r="1.5"/><circle cx="12.2" cy="12" r="1.5"/><path d="M7.2 4.8 4.5 10.6M8.8 4.8l2.7 5.8M5.3 12h5.4" stroke-linecap="round"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M4.9 11.8h6.2a2.5 2.5 0 0 0 .2-5 3.5 3.5 0 0 0-6.4-1.4 2.8 2.8 0 0 0 0 6.4Z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 4.8h9.6M6 4.8V3.2h4v1.6M4.8 4.8l.6 8.2h5.2l.6-8.2M6.8 7.2v3.6M9.2 7.2v3.6"/></symbol>
+    <symbol id="i-branch" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><circle cx="4.2" cy="12" r="1.5"/><circle cx="11.8" cy="4" r="1.5"/><circle cx="11.8" cy="10" r="1.5"/><path d="M4.2 10.5V6.2c0-1.2 1-2.2 2.2-2.2h3.9M11.8 5.5v3"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><rect x="2.2" y="3" width="11.6" height="10" rx="1"/><path d="M10 3v10"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.2" y="3" width="11.6" height="10" rx="1"/><path d="m4.6 6.2 2 1.8-2 1.8M8.2 10.2h3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8.3 3.3 3.3L13 4.8"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M3 5h10M3 11h10"/><circle cx="6" cy="5" r="1.4" fill="var(--canvas)"/><circle cx="10" cy="11" r="1.4" fill="var(--canvas)"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.6-3.7"/><path d="M13 3v3h-3"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M1.8 8s2.2-3.8 6.2-3.8S14.2 8 14.2 8 12 11.8 8 11.8 1.8 8 1.8 8Z"/><circle cx="8" cy="8" r="1.7"/></symbol>
+    <symbol id="i-info" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><circle cx="8" cy="8" r="5.4"/><path d="M8 7.2v4M8 5.2h.01"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><rect x="5.4" y="5.4" width="7.2" height="7.2" rx="1"/><path d="M10.6 5.4V3.4H3.4v7.2h2"/></symbol>
+    <symbol id="i-cut" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><circle cx="4.4" cy="11.4" r="1.6"/><circle cx="11.6" cy="11.4" r="1.6"/><path d="M5.6 10.2 12.6 2.8M10.4 10.2 3.4 2.8"/></symbol>
+    <symbol id="i-paste" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="M5.4 3.2H4.2v10.2h7.6V3.2h-1.2"/><rect x="6" y="2.2" width="4" height="2.2" rx=".6"/><path d="M6.2 7.2h3.6M6.2 9.4h3.6" stroke-linecap="round"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"><path d="m3 13 .8-2.6 6.8-6.8 1.8 1.8-6.8 6.8z"/><path d="m9.8 4.4 1.8 1.8"/></symbol>
+    <symbol id="i-external" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h4v4M13 3 7.6 8.4"/><path d="M12 9.4V13H3V4h3.6"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5h6.2a3.2 3.2 0 1 1 0 6.4H6"/><path d="M5.4 4 3 6.5l2.4 2.5"/></symbol>
+    <symbol id="i-win-min" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1"><path d="M4 8h8"/></symbol>
+    <symbol id="i-win-max" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1"><rect x="4.2" y="4.2" width="7.6" height="7.6"/></symbol>
+    <symbol id="i-win-close" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><circle cx="8" cy="8" r="5.2"/><path d="M8 5.2V8l2 1.2"/></symbol>
+    <symbol id="i-link" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"><path d="M6.6 9.4 9.4 6.6M6.2 4.4l1-1a2.6 2.6 0 0 1 3.7 3.7l-1 1M9.8 11.6l-1 1a2.6 2.6 0 0 1-3.7-3.7l1-1"/></symbol>
+    <symbol id="i-goose" viewBox="0 0 64 64">
+      <rect width="64" height="64" rx="14" fill="#2c2f34"/>
+      <path d="M13 51 51 13" stroke="#d24a3c" stroke-width="2.6" stroke-linecap="round"/>
+      <path d="M40 13.5c-6.1 0-10.6 4.6-10.6 10.3 0 4.6-1.2 7.7-4 10.5-2.4 2.4-3.2 5.1-1.4 6.9 1.8 1.8 4.7.7 6.4-1.6 2.7-3.6 3.2-7.7 4.4-10.9.9-2.4 2.5-3.9 5.2-3.9 5 0 8.7-3.4 8.7-7.5s-3.8-7.8-8.7-7.8Z" fill="#f3f0e8"/>
+      <path d="M48.6 18.8 57 22l-8.4 3.4Z" fill="#e7892e"/>
+      <circle cx="42.5" cy="20.5" r="1.6" fill="#2c2f34"/>
+    </symbol>
+    <symbol id="i-specimen" viewBox="0 0 160 100">
+      <rect width="160" height="100" fill="#1b1c20"/>
+      <rect x="7" y="7" width="146" height="86" rx="4" fill="#fbfbf9"/>
+      <rect x="7" y="7" width="146" height="13" rx="4" fill="#efefec"/>
+      <rect x="7" y="20" width="36" height="73" fill="#efefec"/>
+      <rect x="50" y="27" width="96" height="7" fill="#d8d8d3"/>
+      <rect x="50" y="40" width="96" height="1" fill="#e2e2dd"/>
+      <rect x="50" y="47" width="72" height="4" fill="#c9c9c4"/>
+      <rect x="50" y="58" width="86" height="4" fill="#dedbd5"/>
+      <rect x="50" y="70" width="64" height="4" fill="#dedbd5"/>
+      <rect x="50" y="82" width="78" height="4" fill="#dedbd5"/>
+      <rect x="132" y="26" width="14" height="2" fill="#b45309"/>
+    </symbol>
+  </svg>
+  <div class="workspace">
+    <div class="app-window" id="dae-window" tabindex="-1">
+      <header class="titlebar" id="dae-titlebar"></header>
+      <nav class="navbar" id="dae-navbar" aria-label="地址栏"></nav>
+      <div class="main">
+        <aside class="sidebar" id="dae-sidebar" aria-label="位置"></aside>
+        <section class="content" id="dae-content" aria-label="文件列表">
+          <div class="filterbar" id="dae-filterbar" hidden></div>
+          <div class="listing" id="dae-listing"></div>
+          <div class="terminal" id="dae-terminal" hidden></div>
+        </section>
+        <div class="grip" id="dae-grip" role="separator" aria-orientation="vertical" aria-label="调整预览宽度" title="拖动调整预览宽度"></div>
+        <aside class="preview" id="dae-preview" aria-label="预览"></aside>
+      </div>
+      <footer class="statusbar" id="dae-statusbar" aria-live="polite"></footer>
+      <div class="overlay-layer" id="dae-overlays"></div>
+      <div class="toast-layer" id="dae-toasts" aria-live="polite"></div>
+    </div>
+    <div class="meta" id="dae-meta" aria-label="原型控制"></div>
+  </div>
+</div>
+<script>
+const F=(name,type,size,modified,extra={})=>({name,kind:'file',type,size,modified,...extra});
+const D=(name,modified,extra={})=>({name,kind:'folder',type:'文件夹',size:null,modified,...extra});
+
+const FS={
+  '~':[
+    D('桌面','2026-10-28 08:42'),D('文稿','2026-10-27 21:18'),D('下载','2026-10-28 09:01'),
+    D('图片','2026-10-26 18:40'),D('音乐','2026-10-20 14:12'),D('视频','2026-10-22 19:05'),
+    D('Projects','2026-10-28 09:07',{git:'M'}),F('.zshrc','Zsh 脚本',2840,'2026-10-19 22:31',{hidden:true})
+  ],
+  '~/桌面':[
+    D('工作台','2026-10-28 08:20'),F('速记.md','Markdown',1840,'2026-10-28 08:42'),
+    F('截图 2026-10-28.png','PNG 图像',842000,'2026-10-28 08:40',{image:'specimen'})
+  ],
+  '~/文稿':[
+    F('发布说明.md','Markdown',6420,'2026-10-27 21:18'),F('设计笔记.md','Markdown',12600,'2026-10-25 17:02'),
+    F('预算.csv','CSV',18240,'2026-10-22 11:30')
+  ],
+  '~/下载':[
+    F('dae-0.4.11-win64.msi','Windows 安装包',67318579,'2026-10-28 09:01'),
+    F('设计参考.pdf','PDF 文档',8810240,'2026-10-27 16:44'),
+    F('screenshots.zip','ZIP 压缩包',12689408,'2026-10-26 13:22'),
+    F('goose.png','PNG 图像',50066,'2026-10-25 10:08',{image:'goose'})
+  ],
+  '~/图片':[
+    F('goose.png','PNG 图像',50066,'2026-10-25 10:08',{image:'goose'}),
+    F('board-01.png','PNG 图像',412000,'2026-10-24 15:10',{image:'specimen'}),
+    F('board-02.png','PNG 图像',388000,'2026-10-24 15:12',{image:'specimen'})
+  ],
+  '~/音乐':[
+    F('focus-loop.mp3','MP3 音频',8421376,'2026-10-20 14:12'),
+    F('ambient-take.flac','FLAC 音频',42189320,'2026-10-18 09:33')
+  ],
+  '~/视频':[F('design-review.mp4','MP4 视频',184320000,'2026-10-22 19:05')],
+  '~/Projects':[D('dae','2026-10-28 09:07',{git:'M'}),D('notes','2026-10-21 11:40'),D('archive','2026-10-12 16:20')],
+  '~/Projects/dae':[
+    D('Assets','2026-10-28 09:12'),D('apps','2026-10-25 13:31'),D('bench','2026-10-25 10:16'),
+    D('crates','2026-10-25 13:28',{git:'M'}),D('docs','2026-10-28 07:56',{git:'U'}),
+    D('packaging','2026-10-26 14:56'),D('qml','2026-10-28 09:07'),D('scripts','2026-10-26 20:02'),
+    D('src','2026-10-28 08:31'),F('Cargo.toml','TOML',1240,'2026-10-27 14:15'),
+    F('README.md','Markdown',11866,'2026-10-28 20:09')
+  ],
+  '~/Projects/dae/qml':[
+    F('CommandPalette.qml','QML 源文件',12480,'2026-10-28 08:52'),F('FileList.qml','QML 源文件',38420,'2026-10-27 18:04'),
+    F('Main.qml','QML 源文件',4620,'2026-10-28 09:07'),F('PreviewPanel.qml','QML 源文件',20180,'2026-10-28 08:40'),
+    F('SearchBar.qml','QML 源文件',9860,'2026-10-28 08:21'),F('ShellWindow.qml','QML 源文件',96240,'2026-10-28 09:03'),
+    F('Sidebar.qml','QML 源文件',24380,'2026-10-27 20:11'),F('TabStrip.qml','QML 源文件',15920,'2026-10-27 22:06'),
+    F('Theme.qml','QML 源文件',8140,'2026-10-27 19:14'),F('TitleBar.qml','QML 源文件',10240,'2026-10-27 23:41'),
+    F('qmldir','配置文件',920,'2026-10-27 19:02')
+  ],
+  '~/Projects/dae/docs':[
+    D('decisions','2026-10-26 22:56'),D('release-notes','2026-10-24 10:12'),
+    F('ui-ux-2026.md','Markdown',19240,'2026-10-28 07:56'),F('performance-opportunities.md','Markdown',26180,'2026-10-26 19:33'),
+    F('pgo-bolt.md','Markdown',9840,'2026-10-25 11:20')
+  ],
+  '~/Projects/dae/Assets':[
+    F('app-icon.png','PNG 图像',50066,'2026-10-23 09:34',{image:'goose'}),
+    F('wsl.png','PNG 图像',19038,'2026-10-14 21:36',{image:'specimen'}),
+    F('goose-source.jpg','JPEG 图像',1514025,'2026-10-23 09:33',{image:'goose'})
+  ],
+  'vol:C':[D('Users','2026-10-28 09:01'),D('Windows','2026-10-14 08:12'),D('Program Files','2026-09-30 12:40'),D('code','2026-10-28 09:07')],
+  'vol:C/code':[D('dae','2026-10-28 09:07'),D('notes','2026-10-21 11:40'),D('sandbox','2026-10-26 15:20')],
+  'vol:D':[D('Projects','2026-10-28 09:07'),D('Media','2026-10-20 18:22'),D('Archive','2026-09-18 10:05')],
+  'wsl:fedora':[D('home','2026-10-28 08:51'),D('etc','2026-10-14 07:33'),D('var','2026-10-28 06:02')],
+  'wsl:fedora/home':[D('mt342','2026-10-28 08:51'),D('shared','2026-10-22 10:14')],
+  'space:work':[],'space:personal':[],'space:shared':[],'space:archive':[]
+};
+
+const PREVIEW_TEXT={
+  'README.md':'# dae\n\nAn aesthetic desktop file manager with an\nintegrated terminal. The shell is Rust and\nthe interface is Qt Quick.\n\n- Tabs and windows. Tabs drag between\n  windows and tear off into their own.\n- More than the local disk. Volumes, WSL,\n  the trash, SSH/SFTP/SMB and archives.\n- A terminal in the frame.\n- System-native chrome. The OS accent\n  retints the shell.',
+  'Theme.qml':'pragma Singleton\nimport QtQuick\nimport dae\n\nQtObject {\n    id: theme\n    readonly property bool dark: Appearance.theme === "dark"\n    readonly property color canvas: dark ? "#17191d" : "#ffffff"\n    readonly property color ink: dark ? "#e8eaf0" : "#191c21"\n    readonly property color interactive: Workspace.accent\n    readonly property int motionFast: 110\n}',
+  'ui-ux-2026.md':'# dae 界面规范（Qt 版，2026）\n\n设计对象是 qml/ 下的 41 个文件、19652 行，\n以及它要取代的 React 版视觉遗产。\n\n本文的取舍只有一条判据：\n文件管理器的每一次操作都有明确的下一步，\n界面不该让人找下一步在哪。\n\n外壳 44 + 44 + 28 = 116 px。\n内容占满窗口，外壳只在被需要时出现。',
+  'Cargo.toml':'[package]\nname = "dae"\nversion = "0.4.11"\nedition = "2024"\n\n[dependencies]\ntauri = { version = "2", features = [] }\nserde = { version = "1", features = ["derive"] }\ntokio = { version = "1", features = ["full"] }\n',
+  '设计笔记.md':'# 界面演进\n\n1. 四段外壳收成三段。\n2. 行高落到 28 / 32 / 40。\n3. 字号地板 11 px。\n4. 圆角归一 4 / 6 / 12 / 16。\n5. 一个窗口只有一种饱和色。\n\n装饰必须能回答它传达了什么状态，\n答不上就删。',
+  '发布说明.md':'# dae 0.4.11\n\n- 标签页可以拖到另一个窗口。\n- 导航历史挂在标签上。\n- 侧栏宽度可拖，并记住。\n- 预览面板 280–520。\n- 搜索按需展开。\n\n已知问题：Windows 上的 Mica 在部分\n远程桌面会话里会退成纯色。'
+};
+
+const seedTrash=[
+  {...F('旧版设计稿.png','PNG 图像',384000,'2026-10-24 15:10',{image:'specimen'}),origin:'~/图片',trashed:'2026-10-27 09:22'},
+  {...F('tmp.txt','文本',120,'2026-10-21 10:02'),origin:'~/桌面',trashed:'2026-10-26 18:40'}
+];
+
+const state={
+  platform:'win',theme:'auto',density:'default',accent:'amber',motion:'on',
+  tabs:[
+    {id:1,path:'~/Projects/dae',view:'list',sort:{key:'name',dir:1},selection:['README.md'],focusIndex:0,anchorName:'README.md',history:[{path:'~/Projects/dae',selection:['README.md'],focus:'README.md'}],hIndex:0,columnSel:'qml'},
+    {id:2,path:'~/下载',view:'list',sort:{key:'modified',dir:-1},selection:[],focusIndex:0,anchorName:null,history:[{path:'~/下载',selection:[],focus:null}],hIndex:0,columnSel:null},
+    {id:3,path:'~/Projects/dae/docs',view:'list',sort:{key:'name',dir:1},selection:[],focusIndex:0,anchorName:null,history:[{path:'~/Projects/dae/docs',selection:[],focus:null}],hIndex:0,columnSel:null}
+  ],
+  activeTab:0,nextTabId:4,
+  search:{open:false,query:'',case:false,type:'all'},
+  hiddenFiles:false,previewOpen:true,terminalOpen:false,transferOpen:false,
+  menu:null,palette:null,dialog:null,
+  clipboard:null,trash:structuredClone(seedTrash),undo:null,
+  focuskb:false,rename:null,pathEdit:null,
+  drag:null,toast:null,previewW:300,
+  typeahead:{buf:'',at:0}
+};
+
+const $=s=>document.querySelector(s);
+const root=$('#dae-root'),win=$('#dae-window');
+const tabsEl=$('#dae-titlebar'),navEl=$('#dae-navbar'),sideEl=$('#dae-sidebar'),contentEl=$('#dae-content'),
+      listingEl=$('#dae-listing'),filterEl=$('#dae-filterbar'),prevEl=$('#dae-preview'),statusEl=$('#dae-statusbar'),
+      termEl=$('#dae-terminal'),ovEl=$('#dae-overlays'),toastEl=$('#dae-toasts'),metaEl=$('#dae-meta'),gripEl=$('#dae-grip');
+const tab=()=>state.tabs[state.activeTab];
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ic=(n,c='')=>`<svg class="ic ${c}" aria-hidden="true" focusable="false"><use href="#i-${n}"/></svg>`;
+const isMac=()=>state.platform==='mac';
+const chord=s=>{
+  if(!isMac())return s;
+  return s.replace(/Ctrl\+Shift\+/g,'Shift+Ctrl+').replace(/Ctrl\+/g,'⌘').replace(/Alt\+/g,'⌥').replace(/Shift\+/g,'⇧').replace(/Left/g,'←').replace(/Right/g,'→').replace(/Up/g,'↑').replace(/Down/g,'↓').replace(/Delete$/,'⌫').replace(/Del$/,'⌫').replace(/Enter$/,'↩').replace(/Return$/,'↩').replace(/\+/g,'');
+};
+const homeName=()=>isMac()?'mt342':'Mt342';
+const homePath=()=>isMac()?'/Users/mt342':state.platform==='linux'?'/home/mt342':'C:\\Users\\Mt342';
+const displayPath=p=>{
+  if(p==='trash:')return 'dae://trash';
+  if(p.startsWith('space:'))return 'dae://space/'+p.slice(6);
+  if(p==='vol:C'||p==='vol:D')return volRoot(p);
+  if(p.startsWith('vol:C/')||p.startsWith('vol:D/')){
+    const root=p.slice(0,5),rp=volRoot(root),sep=state.platform==='win'?'\\':'/';
+    const rest=p.slice(6).split('/').join(sep);
+    return (rp.endsWith('/')||rp.endsWith('\\'))?rp+rest:rp+sep+rest;
+  }
+  if(p==='wsl:fedora')return '\\\\wsl$\\FedoraLinux-44';
+  if(p.startsWith('wsl:fedora/'))return '\\\\wsl$\\FedoraLinux-44\\'+p.slice(12).split('/').join('\\');
+  if(p==='~')return homePath();
+  if(p.startsWith('~/'))return homePath()+p.slice(1).split('/').join(state.platform==='win'?'\\':'/');
+  return p;
+};
+const baseName=p=>{
+  if(p==='trash:')return trashName();
+  if(p.startsWith('space:')){const rest=p.slice(6).split('/');return rest.length>1?rest[rest.length-1]:(SPACE_NAMES[rest[0]]||'空间');}
+  if(p==='vol:C'||p==='vol:D')return volLabel(p);
+  if(p.startsWith('vol:C/')||p.startsWith('vol:D/'))return p.split('/').pop();
+  if(p==='wsl:fedora')return 'FedoraLinux-44';
+  const s=p.split('/').filter(Boolean);return s[s.length-1]||homeName();
+};
+const parentPath=p=>{
+  if(p==='~'||p==='trash:'||p.startsWith('space:')||p==='vol:C'||p==='vol:D'||p==='wsl:fedora')return null;
+  const i=p.lastIndexOf('/');return i<0?null:(p.slice(0,i)||'~');
+};
+const childPath=(p,n)=>p.endsWith('/')?p+n:p+'/'+n;
+const itemsAt=p=>p==='trash:'?state.trash:(FS[p]||[]);
+const bytes=n=>{
+  if(n==null)return '—';
+  if(n>=1073741824)return (n/1073741824).toFixed(n>=10737418240?0:1)+' GB';
+  if(n>=1048576)return (n/1048576).toFixed(n>=10485760?0:1)+' MB';
+  if(n>=1024)return (n/1024).toFixed(n>=10240?0:1)+' KB';
+  return n+' B';
+};
+const typeCat=it=>{
+  if(it.kind==='folder')return 'folder';
+  if(/\.(md|txt|pdf|csv|docx?|rtf)$/i.test(it.name))return 'doc';
+  if(/\.(png|jpe?g|webp|svg|gif)$/i.test(it.name))return 'image';
+  if(/\.(zip|7z|tar|gz|rar)$/i.test(it.name))return 'archive';
+  if(/\.(mp3|flac|wav|m4a|mp4|mov|mkv)$/i.test(it.name))return 'media';
+  return 'code';
+};
+const TYPE_LABELS={all:'全部',folder:'文件夹',doc:'文档',image:'图片',code:'代码',archive:'压缩包',media:'媒体'};
+const SPACE_NAMES={work:'工作',personal:'个人',shared:'共享',archive:'归档'};
+const trashName=()=>state.platform==='mac'?'废纸篓':'回收站';
+const trashVerb=()=>state.platform==='mac'?'移到废纸篓':'移到回收站';
+const VOLUME_META={
+  win:{group:'磁盘',vols:[{label:'系统 (C:)',path:'vol:C',root:'C:\\',used:286.4,total:476.9},{label:'Develop (D:)',path:'vol:D',root:'D:\\',used:712.0,total:953.8}]},
+  mac:{group:'宗卷',vols:[{label:'Macintosh HD',path:'vol:C',root:'/',used:494.4,total:994.7},{label:'外置磁盘',path:'vol:D',root:'/Volumes/External',used:212.8,total:500.0}]},
+  linux:{group:'磁盘',vols:[{label:'文件系统',path:'vol:C',root:'/',used:48.2,total:512.0},{label:'数据',path:'vol:D',root:'/data',used:712.0,total:953.8}]}
+};
+const volInfo=p=>VOLUME_META[state.platform].vols.find(v=>v.path===(p.startsWith('vol:C')?'vol:C':'vol:D'));
+const volLabel=p=>{const v=volInfo(p);return v?v.label:p;};
+const volRoot=p=>{const v=volInfo(p);return v?v.root:(state.platform==='win'?'C:\\':'/');};
+const PLATFORM_VOLUME_CHILDREN={
+  win:{
+    'vol:C':[D('Users','2026-10-28 09:01'),D('Windows','2026-10-14 08:12'),D('Program Files','2026-09-30 12:40'),D('code','2026-10-28 09:07')],
+    'vol:C/code':[D('dae','2026-10-28 09:07'),D('notes','2026-10-21 11:40'),D('sandbox','2026-10-26 15:20')],
+    'vol:D':[D('Projects','2026-10-28 09:07'),D('Media','2026-10-20 18:22'),D('Archive','2026-09-18 10:05')]
+  },
+  mac:{
+    'vol:C':[D('Applications','2026-10-26 14:18'),D('Library','2026-10-14 08:02'),D('System','2026-09-30 12:40'),D('Users','2026-10-28 09:01')],
+    'vol:D':[D('Projects','2026-10-28 09:07'),D('Media','2026-10-20 18:22'),D('Archive','2026-09-18 10:05')]
+  },
+  linux:{
+    'vol:C':[D('bin','2026-10-14 08:02'),D('etc','2026-10-25 19:33'),D('home','2026-10-28 09:01'),D('usr','2026-09-30 12:40')],
+    'vol:D':[D('projects','2026-10-28 09:07'),D('backups','2026-10-20 18:22'),D('shared','2026-10-22 10:14')]
+  }
+};
+const applyPlatformVolumes=()=>{
+  const v=PLATFORM_VOLUME_CHILDREN[state.platform];
+  FS['vol:C']=structuredClone(v['vol:C']);
+  FS['vol:D']=structuredClone(v['vol:D']);
+  if(v['vol:C/code'])FS['vol:C/code']=structuredClone(v['vol:C/code']);else delete FS['vol:C/code'];
+};
+const fileIcon=it=>{
+  if(it.kind==='folder')return 'folder';
+  if(it.image)return 'file-image';
+  const c=typeCat(it);
+  if(c==='image')return 'file-image';if(c==='archive')return 'file-archive';if(c==='doc')return 'file-text';
+  if(/\.(exe|msi|dmg|appimage)$/i.test(it.name))return 'file-exe';
+  return 'file-code';
+};
+const visibleItems=()=>{
+  let arr=itemsAt(tab().path).filter(it=>it.hidden?state.hiddenFiles:true);
+  const s=state.search;
+  if(s.open){
+    arr=arr.filter(it=>s.type==='all'||typeCat(it)===s.type);
+    if(s.query){
+      const q=s.case?s.query:s.query.toLowerCase();
+      arr=arr.filter(it=>{
+        const n=s.case?it.name:it.name.toLowerCase();
+        return n.includes(q);
+      });
+    }
+  }
+  const {key,dir}=tab().sort;
+  arr=arr.slice().sort((a,b)=>{
+    if(a.kind!==b.kind)return a.kind==='folder'?-1:1;
+    let r=0;
+    if(key==='name')r=a.name.localeCompare(b.name,'zh-Hans-CN',{numeric:true});
+    else if(key==='size')r=(a.size||0)-(b.size||0);
+    else if(key==='type')r=(a.type||'').localeCompare(b.type||'','zh-Hans-CN')||a.name.localeCompare(b.name,'zh-Hans-CN',{numeric:true});
+    else r=String(a.modified).localeCompare(String(b.modified));
+    return r*dir;
+  });
+  return arr;
+};
+const selectedItems=()=>{
+  const names=new Set(tab().selection);
+  return itemsAt(tab().path).filter(it=>names.has(it.name));
+};
+const findItem=n=>itemsAt(tab().path).find(it=>it.name===n);
+const selectedSize=()=>selectedItems().reduce((s,it)=>s+(it.size||0),0);
+const beginUndo=()=>{state.undo={fs:structuredClone(FS),trash:structuredClone(state.trash),tabs:structuredClone(state.tabs),activeTab:state.activeTab};};
+const undoLast=()=>{
+  if(!state.undo)return;
+  const u=state.undo;
+  Object.keys(FS).forEach(k=>delete FS[k]);Object.assign(FS,u.fs);
+  state.trash=u.trash;state.tabs=u.tabs;state.activeTab=Math.min(u.activeTab,state.tabs.length-1);
+  state.undo=null;state.rename=null;state.menu=null;state.dialog=null;
+  renderAll();showToast('已撤销','undo');
+};
+const showToast=(msg,icon='info',action=null)=>{
+  if(state._toastTimer)clearTimeout(state._toastTimer);
+  state.toast={msg,icon,action};
+  renderToast();
+  state._toastTimer=setTimeout(()=>{state.toast=null;renderToast();},4800);
+};
+const renderToast=()=>{
+  if(!state.toast){toastEl.innerHTML='';return;}
+  const t=state.toast;
+  toastEl.innerHTML=`<div class="toast" role="status">
+    <span class="ticon">${ic(t.icon,'ic14')}</span>
+    <span class="tmsg">${esc(t.msg)}</span>
+    ${t.action?`<button class="taction" data-action="toast-undo">${ic('undo','ic12')} ${esc(t.action)}</button>`:''}
+    <button class="tclose" data-action="toast-close" aria-label="关闭提示">${ic('x','ic12')}</button>
+  </div>`;
+};
+const setPlatform=p=>{state.platform=p;root.dataset.platform=p;applyPlatformVolumes();renderAll();};
+const setTheme=t=>{state.theme=t;root.dataset.theme=t;renderAll();};
+const setDensity=d=>{state.density=d;root.dataset.density=d;renderAll();};
+const setAccent=a=>{state.accent=a;root.dataset.accent=a;renderAll();};
+const setMotion=m=>{state.motion=m;root.dataset.motion=m==='on'?'on':'off';renderAll();};
+const syncChrome=()=>{
+  root.dataset.platform=state.platform;root.dataset.theme=state.theme;root.dataset.density=state.density;
+  root.dataset.accent=state.accent;root.dataset.motion=state.motion==='on'?'on':'off';
+  const main=win.querySelector('.main');if(main)main.classList.toggle('no-preview',!state.previewOpen);
+  prevEl.classList.toggle('closed',!state.previewOpen);
+};
+</script>
+<script>
+const crumbSegs=p=>{
+  if(p==='trash:')return [{label:trashName(),path:p,icon:'trash'}];
+  if(p.startsWith('space:')){
+    const rest=p.slice(6).split('/'),base='space:'+rest[0];
+    const segs=[{label:SPACE_NAMES[rest[0]]||'空间',path:base,icon:'diamond'}];
+    rest.slice(1).forEach((n,i)=>segs.push({label:n,path:base+'/'+rest.slice(1,i+2).join('/')}));
+    return segs;
+  }
+  if(p==='vol:C'||p==='vol:D')return [{label:volLabel(p),path:p,icon:'drive'}];
+  if(p==='wsl:fedora')return [{label:'FedoraLinux-44',path:p,icon:'network'}];
+  if(p.startsWith('vol:')||p.startsWith('wsl:')){
+    const root=p.startsWith('vol:')?p.split('/')[0]:'wsl:fedora';
+    const label=root.startsWith('vol')?volLabel(root):'FedoraLinux-44';
+    const segs=[{label,path:root,icon:root.startsWith('vol')?'drive':'network'}];
+    if(p!==root){
+      const rest=p.slice(root.length+1).split('/');
+      rest.forEach((n,i)=>segs.push({label:n,path:root+'/'+rest.slice(0,i+1).join('/')}));
+    }
+    return segs;
+  }
+  const segs=[{label:homeName(),path:'~',icon:'home'}];
+  if(p!=='~'){
+    const parts=p.slice(2).split('/');
+    parts.forEach((n,i)=>segs.push({label:n,path:'~/'+parts.slice(0,i+1).join('/')}));
+  }
+  return segs;
+};
+const renderTitlebar=()=>{
+  let h='';
+  if(state.platform==='mac')h+=`<div class="traffic" aria-hidden="true"><span class="light red"></span><span class="light yellow"></span><span class="light green"></span></div>`;
+  else h+=`<span class="app-mark" aria-hidden="true"><svg width="17" height="17"><use href="#i-goose"/></svg></span>`;
+  h+=`<div class="tabs" role="tablist" aria-label="标签页">`;
+  state.tabs.forEach((t,i)=>{
+    h+=`<div class="tab ${i===state.activeTab?'active':''}" role="tab" aria-selected="${i===state.activeTab}" tabindex="${i===state.activeTab?0:-1}" data-action="tab" data-id="${t.id}" title="${esc(displayPath(t.path))}">
+      <span class="glyph">${ic('folder','ic14')}</span><span class="label">${esc(baseName(t.path))}</span>
+      <button class="close" data-action="tab-close" data-id="${t.id}" aria-label="关闭标签页" title="关闭标签页">${ic('x','ic12')}</button>
+    </div>`;
+  });
+  h+=`</div><button class="newtab" data-action="tab-new" aria-label="新建标签页" title="新建标签页 (${chord('Ctrl+T')})">${ic('plus','ic14')}</button><div class="title-spacer"></div>`;
+  if(state.platform!=='mac'){
+    h+=`<div class="wincontrols">
+      <button class="winbtn" data-action="win" data-value="min" aria-label="最小化">${ic('win-min','ic12')}</button>
+      <button class="winbtn" data-action="win" data-value="max" aria-label="最大化">${ic('win-max','ic12')}</button>
+      <button class="winbtn close" data-action="win" data-value="close" aria-label="关闭">${ic('win-close','ic12')}</button>
+    </div>`;
+  }
+  tabsEl.innerHTML=h;
+};
+const renderNavbar=()=>{
+  const t=tab(),canBack=t.hIndex>0,canFwd=t.hIndex<t.history.length-1,up=parentPath(t.path);
+  let h=`<button class="navbtn" data-action="back" ${canBack?'':'disabled'} aria-label="后退" title="后退 (${chord('Alt+Left')})">${ic('arrow-l')}</button>
+    <button class="navbtn" data-action="forward" ${canFwd?'':'disabled'} aria-label="前进" title="前进 (${chord('Alt+Right')})">${ic('arrow-r')}</button>
+    <button class="navbtn" data-action="up" ${up?'':'disabled'} aria-label="上一级" title="上一级 (${chord('Alt+Up')})">${ic('arrow-up')}</button>
+    <div class="navsep"></div>`;
+  if(state.pathEdit){
+    h+=`<div class="pathedit"><input id="path-input" value="${esc(displayPath(t.path))}" aria-label="编辑路径" spellcheck="false"></div>`;
+  }else{
+    h+=`<div class="crumbs" data-action="pathedit" title="单击编辑路径 (${chord('Ctrl+L')})">`;
+    const segs=crumbSegs(t.path);
+    segs.forEach((s,i)=>{
+      h+=`<button class="crumb ${i===segs.length-1?'current':''}" data-action="crumb" data-path="${s.path}">${s.icon?ic(s.icon,'ic12'):''}${esc(s.label)}</button>`;
+      if(i<segs.length-1)h+=`<span class="crumb-sep">${ic('chev-r','ic12')}</span>`;
+    });
+    h+=`</div>`;
+  }
+  h+=`<div class="nav-right">`;
+  if(t.path==='trash:'&&state.trash.length){
+    h+=`<button class="navtext danger" data-action="empty-trash" title="清空${trashName()}">清空</button>`;
+  }
+  if(state.search.open){
+    h+=`<div class="searchfield">${ic('search','ic14')}<input id="search-input" value="${esc(state.search.query)}" placeholder="搜索名称" aria-label="搜索名称" spellcheck="false"><button class="searchclear" data-action="search-close" aria-label="关闭搜索">${ic('x','ic12')}</button></div>`;
+  }else{
+    h+=`<button class="navbtn" data-action="search-open" aria-label="搜索" title="搜索 (${chord('Ctrl+F')})">${ic('search')}</button>`;
+  }
+  h+=`<button class="navbtn" data-action="view-menu" aria-haspopup="menu" aria-label="切换视图" title="切换视图">${ic(t.view==='list'?'list':t.view==='grid'?'grid':'cols')}</button>
+    <button class="navbtn" data-action="more-menu" aria-haspopup="menu" aria-label="更多" title="更多">${ic('more')}</button>
+    </div>`;
+  navEl.innerHTML=h;
+  if(state._focus==='path'){const el=$('#path-input');if(el){el.focus();el.select();}state._focus=null;}
+  if(state._focus==='search'){const el=$('#search-input');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}state._focus=null;}
+};
+const isPathActive=p=>{
+  const cur=tab().path;
+  if(p==='~')return cur==='~';
+  if(p.startsWith('space:'))return cur===p||cur.startsWith(p+'/');
+  if(p==='trash:')return cur===p;
+  if(p==='vol:C'||p==='vol:D'||p==='wsl:fedora')return cur===p||cur.startsWith(p+'/');
+  return cur===p;
+};
+const sideRow=(label,path,icon,meta='',classes='')=>`<button class="side-row ${classes} ${isPathActive(path)?'active':''}" data-action="nav" data-path="${path}" data-drop-path="${path}" title="${esc(displayPath(path))}">
+  <span class="sicon">${ic(icon,'ic14')}</span><span class="sname">${esc(label)}</span>${meta?`<span class="smeta">${meta}</span>`:''}
+</button>`;
+const renderSidebar=()=>{
+  const places=[['主目录','~','home'],['桌面','~/桌面','desktop'],['下载','~/下载','download'],['文稿','~/文稿','doc'],['图片','~/图片','image']];
+  const spaces=[['工作','space:work'],['个人','space:personal'],['共享','space:shared'],['归档','space:archive']];
+  const vm=VOLUME_META[state.platform];
+  let h=`<div class="side-group"><div class="side-label">位置</div>`;
+  places.forEach(([l,p,i])=>h+=sideRow(l,p,i));
+  h+=`</div><div class="side-group"><div class="side-label">${vm.group}</div>`;
+  vm.vols.forEach(v=>{
+    const pct=Math.min(100,v.used/v.total*100);
+    h+=`<button class="side-row side-vol ${isPathActive(v.path)?'active':''}" data-action="nav" data-path="${v.path}" data-drop-path="${v.path}" title="${v.used} GB / ${v.total} GB">
+      <span class="vol-top"><span class="sicon">${ic('drive','ic14')}</span><span class="sname">${esc(v.label)}</span><span class="smeta smeta-full">${Math.round(v.used)} / ${Math.round(v.total)} GB</span><span class="smeta smeta-pct">${Math.round(pct)}%</span></span>
+      <span class="vol-track"><span class="vol-fill ${pct>90?'warn':''}" style="width:${pct.toFixed(1)}%"></span></span>
+    </button>`;
+  });
+  h+=`</div><div class="side-group"><div class="side-label">空间</div>`;
+  spaces.forEach(([l,p])=>h+=sideRow(l,p,'diamond','空'));
+  h+=`</div><div class="side-group"><div class="side-label">网络</div>`;
+  if(state.platform==='win')h+=sideRow('FedoraLinux-44','wsl:fedora','network');
+  h+=`<button class="side-row" data-action="connect">${ic('plus','ic14')}<span class="sname">${state.platform==='win'?'连接网络存储…':'连接服务器…'}</span></button>`;
+  h+=`</div><div class="side-group"><div class="side-label">云存储</div>`;
+  h+=`<button class="side-row" data-action="connect">${ic('cloud','ic14')}<span class="sname">添加网盘账户…</span></button>`;
+  h+=`</div><div class="side-trash">`;
+  h+=sideRow(trashName(),'trash:','trash',state.trash.length?`${state.trash.length} 项`:'');
+  h+=`</div>`;
+  sideEl.innerHTML=h;
+};
+const renderFilterbar=()=>{
+  filterEl.hidden=!state.search.open;
+  if(!state.search.open){filterEl.innerHTML='';return;}
+  const total=visibleItems().length;
+  filterEl.innerHTML=`<span class="filterlabel">文件名</span>
+    <button class="chip ${state.search.case?'on':''}" data-action="search-case" aria-pressed="${state.search.case}" title="区分大小写">Aa</button>
+    <label class="chip" title="按类型筛选">${ic('file','ic12')}<select data-action="search-type" aria-label="按类型筛选">${Object.entries(TYPE_LABELS).map(([k,v])=>`<option value="${k}" ${state.search.type===k?'selected':''}>${v}</option>`).join('')}</select></label>
+    <span class="filter-count">${state.search.query||state.search.type!=='all'?`${total} 项匹配`:'输入以筛选名称'}</span>`;
+};
+</script>
+<script>
+const emptyState=()=>{
+  const p=tab().path;
+  if(state.search.open&&state.search.query)return {icon:'search',title:'没有匹配项',hint:'试试其他关键词，或检查大小写与类型筛选。',actions:[['清除搜索','clear-search']]};
+  if(p==='trash:')return {icon:'trash',title:`${trashName()}为空`,hint:'删除的文件会先放在这里，可以随时还原。',actions:[]};
+  if(p.startsWith('space:'))return {icon:'diamond',title:'这个空间是空的',hint:'把文件拖进来，或在这里新建文件夹。',actions:[['新建文件夹','new-folder']]};
+  return {icon:'folder',title:'这个文件夹是空的',hint:'拖入文件，或在这里新建文件夹。',actions:[['新建文件夹','new-folder'],['粘贴','paste']]};
+};
+const emptyHTML=()=>{
+  const e=emptyState();
+  return `<div class="empty"><span class="empty-icon">${ic(e.icon,'ic28')}</span><span class="empty-title">${e.title}</span><span class="empty-hint">${e.hint}</span>${e.actions.length?`<span class="actions">${e.actions.map(([l,a])=>`<button class="textbtn" data-action="${a}">${l}</button>`).join('')}</span>`:''}</div>`;
+};
+const sortHead=(key,label,extra='')=>{
+  const t=tab(),on=t.sort.key===key;
+  const aria=on?(t.sort.dir===1?'ascending':'descending'):'none';
+  return `<button class="col ${extra} ${on?'active':''}" data-action="sort" data-key="${key}" aria-sort="${aria}">${label}${on?`<span class="caret ${t.sort.dir===1?'asc':''}"></span>`:''}</button>`;
+};
+const rowHTML=(it,i)=>{
+  const t=tab(),sel=t.selection.includes(it.name),focus=t.focusIndex===i&&state.focuskb;
+  const ren=state.rename&&state.rename.name===it.name;
+  const folder=it.kind==='folder';
+  const drop=folder?`data-drop-path="${esc(childPath(t.path,it.name))}"`:'';
+  return `<div class="row ${sel?'sel':''} ${focus?'focuskb':''}" id="row-${i}" role="option" aria-selected="${sel}" data-index="${i}" data-name="${esc(it.name)}" data-kind="${it.kind}" ${drop} draggable="true" title="${esc(it.name)}">
+    <span class="namecell"><span class="ficon">${ic(fileIcon(it),'ic16')}</span>
+      ${ren?`<input class="rename" id="rename-input" value="${esc(it.name)}" aria-label="重命名" spellcheck="false">`:`<span class="fname">${esc(it.name)}</span>`}
+      ${it.git?`<span class="gitmark ${it.git.toLowerCase()}" title="Git 状态 ${it.git}">${it.git}</span>`:''}
+    </span>
+    <span class="c-type">${esc(it.type)}</span>
+    <span class="c-size">${folder?'—':bytes(it.size)}</span>
+    <span class="c-mod">${esc(t.path==='trash:'?it.trashed:it.modified)}</span>
+  </div>`;
+};
+const tileHTML=(it,i)=>{
+  const t=tab(),sel=t.selection.includes(it.name),focus=t.focusIndex===i&&state.focuskb;
+  const drop=it.kind==='folder'?`data-drop-path="${esc(childPath(t.path,it.name))}"`:'';
+  let thumb;
+  if(it.image==='goose')thumb=`<svg viewBox="0 0 64 64" aria-hidden="true"><use href="#i-goose"/></svg>`;
+  else if(it.image==='specimen')thumb=`<svg viewBox="0 0 160 100" aria-hidden="true"><use href="#i-specimen"/></svg>`;
+  else thumb=ic(fileIcon(it),'');
+  return `<div class="tile ${sel?'sel':''} ${focus?'focuskb':''}" id="tile-${i}" role="option" aria-selected="${sel}" data-index="${i}" data-name="${esc(it.name)}" data-kind="${it.kind}" ${drop} draggable="true" title="${esc(it.name)}">
+    <span class="thumb ${it.image?'has-image':''}">${thumb}</span><span class="tname">${esc(it.name)}</span>
+  </div>`;
+};
+const renderList=items=>{
+  const t=tab(),p=t.path;
+  let h=`<div class="list-head">
+    ${sortHead('name','名称','c-name')}
+    ${sortHead('type','类型','c-type')}
+    ${sortHead('size','大小','c-size r')}
+    ${sortHead('modified',p==='trash:'?'删除时间':'修改时间','c-mod r')}
+  </div>`;
+  if(!items.length){h+=emptyHTML();}
+  else{
+    h+=`<div class="rows" role="listbox" aria-label="文件" aria-multiselectable="true" tabindex="0" aria-activedescendant="row-${t.focusIndex}">${items.map(rowHTML).join('')}</div>`;
+  }
+  listingEl.innerHTML=h;
+};
+const renderGrid=items=>{
+  if(!items.length){listingEl.innerHTML=emptyHTML();return;}
+  const t=tab();
+  listingEl.innerHTML=`<div class="grid" role="listbox" aria-label="文件" aria-multiselectable="true" tabindex="0" aria-activedescendant="tile-${t.focusIndex}">${items.map(tileHTML).join('')}</div>`;
+};
+const renderColumns=()=>{
+  const t=tab(),cur=t.path,par=parentPath(cur);
+  const curItems=visibleItems();
+  if(!curItems.length){listingEl.innerHTML=emptyHTML();return;}
+  const sels=selectedItems();
+  const selFolder=sels.length?sels.find(it=>it.kind==='folder'):(curItems.find(it=>it.kind==='folder'&&it.name===t.columnSel)||curItems.find(it=>it.kind==='folder'));
+  const selName=selFolder?selFolder.name:null;
+  const childBase=selName?childPath(cur,selName):null;
+  const childItems=childBase?itemsAt(childBase):[];
+  let h=`<div class="cols">`;
+  if(par){
+    const parItems=itemsAt(par).filter(it=>it.kind==='folder');
+    h+=`<div class="mcol"><div class="mcol-head">${ic('folder','ic14')}${esc(baseName(par))}</div><div class="mcol-rows" role="listbox" aria-label="${esc(baseName(par))}">
+      ${parItems.map(it=>`<div class="mcol-row ${it.name===baseName(cur)?'sel':''}" role="option" aria-selected="${it.name===baseName(cur)}" data-col="parent" data-name="${esc(it.name)}" data-action="column-nav" data-path="${esc(childPath(par,it.name))}"><span class="ficon">${ic('folder','ic14')}</span><span class="fname">${esc(it.name)}</span>${ic('chev-r','ic12')}</div>`).join('')}
+    </div></div>`;
+  }
+  h+=`<div class="mcol"><div class="mcol-head">${ic('folder','ic14')}${esc(baseName(cur))}</div><div class="mcol-rows" role="listbox" aria-label="${esc(baseName(cur))}" aria-multiselectable="true">
+    ${curItems.map(it=>`<div class="mcol-row ${t.selection.includes(it.name)?'sel':''}" role="option" aria-selected="${t.selection.includes(it.name)}" data-col="current" data-action="column-row" data-name="${esc(it.name)}" data-kind="${it.kind}" data-path="${esc(childPath(cur,it.name))}">
+      <span class="ficon">${ic(fileIcon(it),'ic14')}</span><span class="fname">${esc(it.name)}</span>${it.kind==='folder'?ic('chev-r','ic12'):''}
+    </div>`).join('')}
+  </div></div>`;
+  if(childBase){
+    h+=`<div class="mcol"><div class="mcol-head">${ic('folder','ic14')}${esc(baseName(childBase))}</div><div class="mcol-rows" role="listbox" aria-label="${esc(baseName(childBase))}">
+      ${childItems.length?childItems.map(it=>`<div class="mcol-row" role="option" aria-selected="false" data-col="child" data-action="column-child" data-name="${esc(it.name)}" data-kind="${it.kind}" data-base="${esc(childBase)}" data-path="${esc(childPath(childBase,it.name))}">
+        <span class="ficon">${ic(fileIcon(it),'ic14')}</span><span class="fname">${esc(it.name)}</span>${it.kind==='folder'?ic('chev-r','ic12'):''}
+      </div>`).join(''):`<div class="mcol-empty">空文件夹</div>`}
+    </div></div>`;
+  }
+  h+=`</div>`;
+  listingEl.innerHTML=h;
+};
+const renderListing=()=>{
+  const t=tab(),items=visibleItems();
+  const hadFocus=!!(document.activeElement&&document.activeElement.closest('.rows,.grid'));
+  if(t.view==='grid')renderGrid(items);
+  else if(t.view==='columns')renderColumns();
+  else renderList(items);
+  if(state.rename){
+    const el=$('#rename-input');
+    if(el){
+      el.focus();
+      const v=el.value,dot=v.lastIndexOf('.');
+      const end=dot>0?dot:v.length;
+      el.setSelectionRange(0,end);
+    }
+  }else if(hadFocus||state._refocusList){
+    const box=listingEl.querySelector('.rows,.grid');
+    if(box)box.focus({preventScroll:true});
+  }
+  state._refocusList=false;
+};
+</script>
+<style>
+#dae-root .main.no-preview{grid-template-columns:var(--sidebar-w) minmax(0,1fr)}
+#dae-root .main.no-preview .grip{display:none}
+#dae-root .preview.closed{display:none}
+#dae-root .pv-pre{display:block}
+#dae-root .pv-line{display:flex;gap:8px}
+#dae-root .pv-thumb svg{display:block;max-width:84%;max-height:84%}
+#dae-root .thumb svg{display:block;width:100%;height:100%}
+#dae-root .thumb .ic{width:38px;height:38px}
+#dae-root .textbtn.danger{color:var(--danger)}
+#dae-root .pv-previewlist{display:flex;flex-direction:column;gap:1px;margin:8px 0 10px}
+#dae-root .pv-previewitem{display:flex;align-items:center;gap:6px;height:22px;font-size:11.5px;color:var(--ink-muted);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#dae-root .pv-previewitem .ficon{color:var(--ink-faint)}
+</style>
+<script>
+const pvRow=(k,v)=>`<div class="pv-row"><span class="pv-key">${esc(k)}</span><span class="pv-val" title="${esc(v)}">${esc(v)}</span></div>`;
+const pvAction=(label,action)=>`<button class="pv-action" data-action="${action}">${ic('info','ic14')}<span>${label}</span>${ic('chev-r','ic12')}</button>`;
+const renderPreview=()=>{
+  if(!state.previewOpen){prevEl.innerHTML='';return;}
+  const t=tab(),sels=selectedItems();
+  let body='';
+  if(!sels.length){
+    body=`<div class="pv-empty">未选择文件</div><div class="pv-hint">${t.path==='trash:'?'选中项目查看原位置':'单击文件查看详情'}</div>`;
+  }else if(sels.length>1){
+    const counts={};sels.forEach(it=>{const k=it.kind==='folder'?'文件夹':it.type;counts[k]=(counts[k]||0)+1;});
+    body=`<div class="pv-big">${sels.length} 项</div><div class="pv-sub">共 ${bytes(selectedSize())}</div>
+      <div class="pv-meta">${Object.entries(counts).slice(0,4).map(([k,v])=>pvRow(k,v+' 项')).join('')}</div>
+      <div class="pv-types">${sels.slice(0,4).map(it=>`<span>${esc(it.name)}</span>`).join('')}${sels.length>4?`<span>…</span>`:''}</div>`;
+  }else{
+    const it=sels[0];
+    const isFolder=it.kind==='folder';
+    const cp=isFolder?childPath(t.path,it.name):'';
+    const count=isFolder?itemsAt(cp).length:0;
+    let thumb='';
+    if(it.image==='goose')thumb=`<div class="pv-thumb"><svg viewBox="0 0 64 64" aria-hidden="true"><use href="#i-goose"/></svg></div>`;
+    else if(it.image==='specimen')thumb=`<div class="pv-thumb"><svg viewBox="0 0 160 100" aria-hidden="true"><use href="#i-specimen"/></svg></div>`;
+    else if(isFolder)thumb=`<div class="pv-thumb">${ic('folder')}</div>`;
+    else if(PREVIEW_TEXT[it.name]){
+      const lines=PREVIEW_TEXT[it.name].split('\n').slice(0,9);
+      thumb=`<div class="pv-pre">${lines.map((l,i)=>`<div class="pv-line"><span class="ln">${i+1}</span><span class="code">${esc(l.length>40?l.slice(0,39)+'…':l)}</span></div>`).join('')}</div>`;
+    }else thumb=`<div class="pv-thumb">${ic(fileIcon(it))}</div>`;
+    const loc=t.path;
+    const subPath=t.path==='trash:'?(it.origin||it.name):childPath(t.path,it.name);
+    let rows=`${pvRow(isFolder?'项目':'大小',isFolder?count+' 项':bytes(it.size))}${pvRow('类型',it.type)}${pvRow(isFolder?'修改':'修改',it.modified)}${pvRow('位置',displayPath(loc))}`;
+    if(t.path==='trash:')rows+=pvRow('原位置',it.origin)+pvRow('删除时间',it.trashed);
+    if(isFolder){
+      const kids=itemsAt(cp).slice(0,4);
+      if(kids.length)rows=`<div class="pv-previewlist">${kids.map(k=>`<div class="pv-previewitem"><span class="ficon">${ic(fileIcon(k),'ic12')}</span>${esc(k.name)}</div>`).join('')}</div>`+rows;
+    }
+    body=`${thumb}<div class="pv-name">${esc(it.name)}</div><div class="pv-sub">${esc(displayPath(subPath))}</div>
+      <div class="pv-meta">${rows}</div>${pvAction('全部属性','properties')}`;
+    if(!isFolder&&!it.image&&!PREVIEW_TEXT[it.name])body+=`<div class="pv-hint">此类型暂无内联预览，双击使用默认应用打开。</div>`;
+  }
+  prevEl.innerHTML=`<div class="pv-head"><span class="pv-label">预览</span><button class="pv-close" data-action="preview-close" aria-label="关闭预览">${ic('x','ic14')}</button></div><div class="pv-body">${body}</div>`;
+};
+const renderStatus=()=>{
+  const t=tab(),items=visibleItems(),sels=selectedItems();
+  let left=`<span>${items.length} 项</span>`;
+  if(sels.length)left+=`<span class="status-sep"></span><span>已选 ${sels.length} 项${selectedSize()?' · '+bytes(selectedSize()):''}</span>`;
+  if(state.search.open)left+=`<span class="status-sep optional"></span><span class="optional">搜索 “${esc(state.search.query||'…')}”</span>`;
+  if(t.path==='trash:')left+=`<span class="status-sep"></span><span>${state.trash.length} 项在${trashName()}</span>`;
+  if(t.path.startsWith('space:'))left+=`<span class="status-sep optional"></span><span class="optional">空间</span>`;
+  const transfer=`<button class="transferbtn" data-action="transfer-toggle" aria-expanded="${state.transferOpen}" title="传输队列"><span>2 项传输</span><span class="transfer-track"><span class="transfer-fill" style="width:68%"></span></span><span>68%</span></button>`;
+  let right='';
+  if(t.path.startsWith('~/Projects/dae'))right+=`<span class="gitstatus">${ic('branch','ic12')}main</span>`;
+  right+=`<button class="toggle preview-toggle ${state.previewOpen?'on':''}" data-action="preview-toggle" aria-pressed="${state.previewOpen}" title="显示/隐藏预览">${ic('panel','ic14')}<span>预览</span></button>`;
+  right+=`<button class="toggle ${state.terminalOpen?'on':''}" data-action="terminal-toggle" aria-pressed="${state.terminalOpen}" title="显示/隐藏终端">${ic('terminal','ic14')}<span>终端</span></button>`;
+  statusEl.innerHTML=`<div class="status-left">${left}</div><div class="status-center">${transfer}</div><div class="status-right">${right}</div>`;
+};
+const renderTerminal=()=>{
+  termEl.hidden=!state.terminalOpen;
+  if(!state.terminalOpen){termEl.innerHTML='';return;}
+  const p=displayPath(tab().path);
+  const shell=state.platform==='win'?'PowerShell':state.platform==='mac'?'zsh':'bash';
+  const prompt=state.platform==='win'
+    ? `<span class="term-prompt">PS</span> <span class="term-dim">${esc(p)}</span><span class="term-cmd">&gt; git status --short</span>`
+    : `<span class="term-prompt">dae</span> <span class="term-dim">${esc(p)}</span> <span class="term-cmd">${state.platform==='mac'?'%':'$'} git status --short</span>`;
+  const promptIdle=state.platform==='win'
+    ? `<span class="term-prompt">PS</span> <span class="term-dim">${esc(p)}</span><span class="term-cmd">&gt;</span> <span class="caret-blink"></span>`
+    : `<span class="term-prompt">dae</span> <span class="term-dim">${esc(p)}</span> <span class="term-cmd">${state.platform==='mac'?'%':'$'}</span> <span class="caret-blink"></span>`;
+  termEl.innerHTML=`<div class="term-head"><span class="term-title">${ic('terminal','ic12')} 终端 · ${shell}</span><button class="term-close" data-action="terminal-close" aria-label="关闭终端">${ic('x','ic12')}</button></div>
+    <div class="term-body" aria-label="终端（只读预览）">
+      <div class="term-line">${prompt}</div>
+      <div class="term-line"> M crates/</div>
+      <div class="term-line">?? docs/</div>
+      <div class="term-line">${promptIdle}</div>
+    </div>`;
+};
+const renderMeta=()=>{
+  const seg=(key,cur,items)=>`<span class="mseg">${items.map(([v,l])=>`<button class="${cur===v?'on':''}" data-action="meta" data-key="${key}" data-value="${v}">${l}</button>`).join('')}</span>`;
+  metaEl.innerHTML=`<span class="meta-title">原型控制</span>
+    <span class="mgroup"><span class="mgroup-label">主题</span>${seg('theme',state.theme,[['auto','跟随'],['light','浅'],['dark','深']])}</span>
+    <span class="mgroup"><span class="mgroup-label">平台</span>${seg('platform',state.platform,[['win','Windows'],['mac','macOS'],['linux','Linux']])}</span>
+    <span class="mgroup"><span class="mgroup-label">密度</span>${seg('density',state.density,[['compact','紧凑'],['default','默认'],['spacious','宽松']])}</span>
+    <span class="mgroup"><span class="mgroup-label">强调</span>${seg('accent',state.accent,[['amber','信号橙'],['teal','青'],['blue','蓝']])}</span>
+    <span class="mgroup"><span class="mgroup-label">动效</span>${seg('motion',state.motion,[['on','完整'],['off','减少']])}</span>
+    <span class="mhint">点击选择 · 右键菜单 · ${chord('Ctrl+K')} 命令面板 · 拖到侧栏移动</span>
+    <button class="mreset" data-action="meta-reset">重置</button>`;
+};
+</script>
+<style>
+#dae-root .dialog-input{width:100%;height:26px;padding:0 7px;border:1px solid var(--hairline-strong);border-radius:3px;background:var(--field);color:var(--ink);font:inherit;font-size:12px;outline:0}
+#dae-root .dialog-input:focus{border-color:var(--signal)}
+#dae-root .dialog-field{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+#dae-root .dialog-field label{font-size:11px;color:var(--ink-faint)}
+#dae-root .dialog-note{font-size:11px;color:var(--ink-faint);margin-top:2px}
+</style>
+<script>
+const menuItem=(label,action,opt={})=>{
+  const {icon,c='',checked,disabled=false,danger=false}=opt;
+  const lead=checked!==undefined?`<span class="mcheck">${checked?ic('check','ic14'):''}</span>`:`<span class="mic">${ic(icon||'file','ic14')}</span>`;
+  return `<button class="menu-item ${danger?'danger':''}" role="menuitem" data-action="menu-run" data-value="${action}" ${disabled?'aria-disabled="true"':''}>${lead}<span class="mlabel">${label}</span>${c?`<span class="mchord">${chord(c)}</span>`:''}</button>`;
+};
+const menuSep=()=>`<div class="menu-sep"></div>`;
+const menuHTML=()=>{
+  const t=tab(),sels=selectedItems(),m=state.menu;
+  if(!m)return '';
+  let items='';
+  if(m.type==='view'){
+    items+=menuItem('列表视图','view-list',{icon:'list',c:'Ctrl+1',checked:t.view==='list'});
+    items+=menuItem('网格视图','view-grid',{icon:'grid',c:'Ctrl+2',checked:t.view==='grid'});
+    items+=menuItem('分栏视图','view-columns',{icon:'cols',c:'Ctrl+3',checked:t.view==='columns'});
+    items+=menuSep();
+    items+=menuItem('显示预览','preview-toggle',{icon:'panel',checked:state.previewOpen});
+    items+=menuItem('显示终端','terminal-toggle',{icon:'terminal',checked:state.terminalOpen});
+  }else if(m.type==='more'){
+    items+=menuItem('刷新','refresh',{icon:'refresh',c:'F5'});
+    items+=menuItem('显示隐藏文件','hidden-toggle',{icon:'eye',c:isMac()?'Ctrl+Shift+.':'Ctrl+H',checked:state.hiddenFiles});
+    items+=menuSep();
+    items+=menuItem('按名称排序','sort-name',{checked:t.sort.key==='name'});
+    items+=menuItem('按大小排序','sort-size',{checked:t.sort.key==='size'});
+    items+=menuItem('按类型排序','sort-type',{checked:t.sort.key==='type'});
+    items+=menuItem('按修改时间排序','sort-modified',{checked:t.sort.key==='modified'});
+    items+=menuSep();
+    items+=menuItem('在终端中打开','terminal-open',{icon:'terminal'});
+    items+=menuItem('设置','settings',{icon:'gear'});
+  }else if(m.type==='row'){
+    const it=findItem(m.name);
+    if(!it)return '';
+    const isFolder=it.kind==='folder';
+    items+=menuItem('打开','open',{icon:isFolder?'folder':'external',c:isMac()?'Ctrl+Down':'Enter'});
+    items+=menuItem('在新标签页中打开','open-tab',{icon:'plus'});
+    if(isFolder)items+=menuItem('在终端中打开','terminal-open',{icon:'terminal'});
+    items+=menuSep();
+    items+=menuItem('复制','copy',{icon:'copy',c:'Ctrl+C'});
+    items+=menuItem('剪切','cut',{icon:'cut',c:'Ctrl+X'});
+    items+=menuItem('重命名','rename',{icon:'pencil',c:isMac()?'Enter':'F2'});
+    items+=menuSep();
+    if(t.path==='trash:'){
+      items+=menuItem('还原','restore',{icon:'undo'});
+      items+=menuItem('永久删除','delete-forever',{icon:'trash',danger:true});
+    }else{
+      items+=menuItem(trashVerb(),'trash',{icon:'trash',c:isMac()?'Ctrl+Delete':'Delete',danger:true});
+    }
+    items+=menuItem('属性','properties',{icon:'info',c:'Alt+Enter'});
+  }else if(m.type==='empty'){
+    items+=menuItem('新建文件夹','new-folder',{icon:'folder',c:'Ctrl+Shift+N'});
+    items+=menuItem('新建文件','new-file',{icon:'file'});
+    items+=menuSep();
+    items+=menuItem('粘贴','paste',{icon:'paste',c:'Ctrl+V',disabled:!state.clipboard});
+    items+=menuItem('全选','select-all',{icon:'check',c:'Ctrl+A'});
+    items+=menuSep();
+    items+=menuItem('刷新','refresh',{icon:'refresh',c:'F5'});
+    items+=menuItem('显示隐藏文件','hidden-toggle',{icon:'eye',c:isMac()?'Ctrl+Shift+.':'Ctrl+H',checked:state.hiddenFiles});
+  }
+  return items;
+};
+const openMenu=(type,anchor,ev,name=null)=>{
+  const wr=win.getBoundingClientRect();
+  let x,y;
+  if(ev){x=ev.clientX-wr.left;y=ev.clientY-wr.top;}
+  else{x=anchor.left-wr.left;y=anchor.bottom-wr.top+4;}
+  state.menu={type,x,y,name:name||(ev&&ev.target.closest('[data-name]')?ev.target.closest('[data-name]').dataset.name:null)};
+  state.palette=null;state.dialog=null;state.transferOpen=false;
+  renderOverlays();
+  const el=$('#dae-menu');
+  if(el){
+    const maxX=win.clientWidth-el.offsetWidth-8,maxY=win.clientHeight-el.offsetHeight-8;
+    el.style.left=Math.max(8,Math.min(x,maxX))+'px';
+    el.style.top=Math.max(8,Math.min(y,maxY))+'px';
+    el.querySelector('.menu-item:not([aria-disabled="true"])')?.focus();
+  }
+};
+const PALETTE=[
+  {group:'导航',icon:'arrow-l',label:'后退',c:'Alt+Left',action:'back'},
+  {group:'导航',icon:'arrow-up',label:'上一级',c:'Alt+Up',action:'up'},
+  {group:'导航',icon:'search',label:'搜索名称',c:'Ctrl+F',action:'search-open'},
+  {group:'文件',icon:'folder',label:'新建文件夹',c:'Ctrl+Shift+N',action:'new-folder'},
+  {group:'文件',icon:'pencil',label:'重命名',c:'F2',action:'rename'},
+  {group:'文件',icon:'trash',label:'移到回收站',c:'Delete',action:'trash'},
+  {group:'文件',icon:'copy',label:'复制',c:'Ctrl+C',action:'copy'},
+  {group:'文件',icon:'paste',label:'粘贴',c:'Ctrl+V',action:'paste'},
+  {group:'视图',icon:'list',label:'列表视图',c:'Ctrl+1',action:'view-list'},
+  {group:'视图',icon:'grid',label:'网格视图',c:'Ctrl+2',action:'view-grid'},
+  {group:'视图',icon:'cols',label:'分栏视图',c:'Ctrl+3',action:'view-columns'},
+  {group:'视图',icon:'panel',label:'切换预览',c:'',action:'preview-toggle'},
+  {group:'视图',icon:'terminal',label:'切换终端',c:'Ctrl+`',action:'terminal-toggle'}
+];
+const paletteFiltered=()=>{
+  const q=(state.palette?.query||'').trim().toLowerCase();
+  if(!q)return PALETTE;
+  return PALETTE.filter(a=>(a.label+' '+a.group+' '+a.action).toLowerCase().includes(q));
+};
+function paletteListHTML(){
+  const arr=paletteFiltered();
+  if(!arr.length)return `<div class="palette-empty"><span>没有匹配的操作</span><span>试试“新建”“视图”“终端”。</span></div>`;
+  let h='',last='';
+  arr.forEach((a,i)=>{
+    if(a.group!==last){last=a.group;h+=`<div class="pgroup-label">${a.group}</div>`;}
+    let cc=a.c;
+    if(isMac()){
+      if(a.action==='back')cc='Ctrl+[';
+      else if(a.action==='up')cc='Ctrl+Up';
+      else if(a.action==='trash')cc='Ctrl+Delete';
+      else if(a.action==='rename')cc='Enter';
+    }
+    h+=`<button class="pitem ${i===state.palette.index?'active':''}" data-action="palette-run" data-index="${i}">
+      <span class="picon">${ic(a.icon,'ic14')}</span><span class="plabel">${a.action==='trash'?trashVerb():a.label}</span>${cc?`<span class="pchord">${chord(cc)}</span>`:''}
+    </button>`;
+  });
+  return h;
+}
+const renderPaletteList=()=>{
+  const el=$('#dae-palette-list');if(el)el.innerHTML=paletteListHTML();
+  const c=$('#dae-palette-count');if(c)c.textContent=paletteFiltered().length+' 项';
+};
+const dRow=(k,v)=>`<div class="dialog-row"><span class="dialog-key">${esc(k)}</span><span class="dialog-val" title="${esc(v)}">${esc(v)}</span></div>`;
+const dialogHTML=()=>{
+  if(!state.dialog)return '';
+  const d=state.dialog;
+  if(d.type==='properties'){
+    const it=d.item;
+    const isFolder=it.kind==='folder';
+    const cp=isFolder?childPath(tab().path,it.name):'';
+    const rows=`${dRow('名称',it.name)}${dRow('类型',it.type)}${dRow(isFolder?'包含':'大小',isFolder?itemsAt(cp).length+' 项':bytes(it.size))}${dRow('位置',displayPath(tab().path))}${dRow('修改时间',it.modified)}${dRow('创建时间',it.modified.replace(/\d{2}:\d{2}$/,'09:12'))}${dRow('权限',isFolder?'drwxr-xr-x':'‑rw-r--r--')}${tab().path==='trash:'?dRow('原位置',it.origin||'—'):''}`;
+    return `<div class="dialog-overlay" data-action="dialog-scrim"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+      <div class="dialog-head"><span class="dialog-title" id="dlg-title">${esc(it.name)} 属性</span><button class="pv-close" data-action="close-dialog" aria-label="关闭">${ic('x','ic14')}</button></div>
+      <div class="dialog-body">${rows}</div>
+      <div class="dialog-foot"><button class="btn" data-action="close-dialog">关闭</button></div>
+    </div></div>`;
+  }
+  if(d.type==='connect'){
+    return `<div class="dialog-overlay" data-action="dialog-scrim"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+      <div class="dialog-head"><span class="dialog-title" id="dlg-title">连接服务器</span><button class="pv-close" data-action="close-dialog" aria-label="关闭">${ic('x','ic14')}</button></div>
+      <div class="dialog-body">
+        <div class="dialog-field"><label for="conn-host">服务器地址</label><input class="dialog-input" id="conn-host" placeholder="sftp://host 或 smb://host/share" spellcheck="false"></div>
+        <div class="dialog-field"><label for="conn-user">用户名</label><input class="dialog-input" id="conn-user" placeholder="可选" spellcheck="false"></div>
+        <div class="dialog-note">密码保存在系统钥匙串中，不写入 settings.toml。</div>
+      </div>
+      <div class="dialog-foot"><button class="btn" data-action="close-dialog">取消</button><button class="btn primary" data-action="connect-submit">连接</button></div>
+    </div></div>`;
+  }
+  return '';
+};
+const transferHTML=()=>{
+  if(!state.transferOpen)return '';
+  const pkg=state.platform==='win'?'dae-0.4.11-win64.msi':state.platform==='mac'?'dae-0.4.11-mac-arm64.dmg':'dae-0.4.11-x86_64.AppImage';
+  const dest=esc(displayPath('~/下载'));
+  return `<div class="scrim" style="background:transparent" data-action="transfer-close"></div>
+    <div class="transfer-pop" role="dialog" aria-label="传输队列">
+      <div class="transfer-head"><span>传输队列</span><button class="pv-close" data-action="transfer-close" aria-label="关闭">${ic('x','ic12')}</button></div>
+      <div class="transfer-row"><div class="transfer-top"><span class="transfer-name">${pkg}</span><span class="transfer-meta">68% · 4 秒</span></div><div class="transfer-line"><div class="transfer-fill" style="width:68%"></div></div><div class="transfer-meta">写入 ${dest} · 12.4 MB/s</div></div>
+      <div class="transfer-row"><div class="transfer-top"><span class="transfer-name">screenshots.zip</span><span class="transfer-meta">完成</span></div><div class="transfer-line"><div class="transfer-fill" style="width:100%"></div></div><div class="transfer-meta">写入 ${dest} · 12.1 MB</div></div>
+    </div>`;
+};
+const renderOverlays=()=>{
+  let h='';
+  if(state.menu){
+    h+=`<div class="scrim" style="background:transparent" data-action="close-overlays"></div><div class="menu" id="dae-menu" role="menu" style="left:${state.menu.x}px;top:${state.menu.y}px">${menuHTML()}</div>`;
+  }
+  if(state.dialog){
+    if(state.dialog.type==='confirm-delete'){
+      const n=state.dialog.names.length,et=!!state.dialog.emptyTrash;
+      h+=`<div class="dialog-overlay" data-action="dialog-scrim"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-title">
+        <div class="dialog-head"><span class="dialog-title" id="dlg-title">${et?`清空${trashName()}`:'永久删除'}</span><button class="pv-close" data-action="close-dialog" aria-label="关闭">${ic('x','ic14')}</button></div>
+        <div class="dialog-body"><div class="pv-empty">永久删除 ${n} 项？</div><div class="pv-hint">${et?`${trashName()}中的项目将被永久删除，此操作不可撤销。`:'此操作不可撤销，也不会进入回收站。'}</div></div>
+        <div class="dialog-foot"><button class="btn" data-action="close-dialog">取消</button><button class="btn danger" data-action="delete-forever-confirm">${et?'清空':'永久删除'}</button></div>
+      </div></div>`;
+    }else h+=dialogHTML();
+  }
+  if(state.palette){
+    h+=`<div class="dialog-overlay" data-action="palette-scrim"><div class="palette" role="dialog" aria-modal="true" aria-label="命令面板">
+      <div class="palette-input">${ic('search','ic14')}<input id="palette-input" value="${esc(state.palette.query)}" placeholder="搜索操作、文件或路径…" aria-label="搜索操作" spellcheck="false"><span class="escchip">Esc</span></div>
+      <div class="palette-list" id="dae-palette-list">${paletteListHTML()}</div>
+      <div class="palette-foot"><span>↑↓ 选择</span><span>↵ 执行</span><span>Esc 关闭</span><span id="dae-palette-count" style="margin-left:auto">${paletteFiltered().length} 项</span></div>
+    </div></div>`;
+  }
+  if(state.transferOpen)h+=transferHTML();
+  ovEl.innerHTML=h;
+  if(state.menu){const el=$('#dae-menu');if(el){const maxX=win.clientWidth-el.offsetWidth-8,maxY=win.clientHeight-el.offsetHeight-8;el.style.left=Math.max(8,Math.min(state.menu.x,maxX))+'px';el.style.top=Math.max(8,Math.min(state.menu.y,maxY))+'px';}}
+  if(state.palette){const el=$('#palette-input');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}}
+  if(state.dialog){const el=ovEl.querySelector('.dialog .btn.primary,.dialog .btn.danger,.dialog .btn');if(el)el.focus();}
+};
+</script>
+<script>
+const stamp=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;};
+const renderAll=()=>{
+  syncChrome();
+  renderTitlebar();renderNavbar();renderSidebar();renderFilterbar();renderListing();renderPreview();
+  renderStatus();renderTerminal();renderOverlays();renderMeta();renderToast();
+};
+const normalizePath=input=>{
+  let s=String(input||'').trim();
+  if(!s)return null;
+  if(s==='dae://trash')return 'trash:';
+  if(s.startsWith('dae://space/'))return 'space:'+s.slice(13);
+  s=s.replace(/\\/g,'/');
+  const hp=homePath().replace(/\\/g,'/');
+  if(s===hp)return '~';
+  if(s.startsWith(hp+'/'))s='~'+s.slice(hp.length);
+  if(/^[A-Za-z]:\//.test(s)){
+    const d=s[0].toUpperCase(),rest=s.slice(3).replace(/^\/+/,'').replace(/\/+$/,'');
+    if(d==='C'||d==='D')return rest?`vol:${d}/${rest}`:`vol:${d}`;
+  }
+  if(s==='~')return '~';
+  if(s.startsWith('~/'))return s.replace(/\/+$/,'');
+  if(s.startsWith('vol:')||s.startsWith('wsl:')||s.startsWith('space:'))return s.replace(/\/+$/,'');
+  return null;
+};
+const navigate=(path,opt={})=>{
+  const t=tab();
+  if(!(path in FS)&&path!=='trash:'&&!path.startsWith('space:')){
+    showToast('路径不存在','info');return;
+  }
+  const push=opt.push!==false,restore=opt.restore||null;
+  state.search.open=false;state.search.query='';
+  state.rename=null;state.pathEdit=null;state.menu=null;state.palette=null;state.dialog=null;state.transferOpen=false;
+  t.path=path;t.columnSel=null;
+  t.selection=restore?restore.selection.filter(n=>itemsAt(path).some(i=>i.name===n)):[];
+  t.anchorName=t.selection[0]||null;
+  const idx=t.anchorName?visibleItems().findIndex(i=>i.name===t.anchorName):-1;
+  t.focusIndex=idx>=0?idx:0;
+  if(push){
+    t.history=t.history.slice(0,t.hIndex+1);
+    t.history.push({path,selection:[...t.selection],focus:t.selection[0]||null});
+    t.hIndex=t.history.length-1;
+    if(t.history.length>64){t.history.shift();t.hIndex--;}
+  }
+  renderAll();
+};
+const goBack=()=>{
+  const t=tab();if(t.hIndex<=0)return;
+  t.hIndex--;const e=t.history[t.hIndex];
+  navigate(e.path,{push:false,restore:e});
+};
+const goForward=()=>{
+  const t=tab();if(t.hIndex>=t.history.length-1)return;
+  t.hIndex++;const e=t.history[t.hIndex];
+  navigate(e.path,{push:false,restore:e});
+};
+const goUp=()=>{const p=parentPath(tab().path);if(p)navigate(p);};
+const switchTab=id=>{const i=state.tabs.findIndex(t=>t.id===id);if(i<0)return;state.activeTab=i;state.menu=null;state.palette=null;state.dialog=null;state.transferOpen=false;renderAll();};
+const newTab=(path='~')=>{
+  const id=state.nextTabId++;
+  const t={id,path,view:'list',sort:{key:'name',dir:1},selection:[],focusIndex:0,anchorName:null,history:[{path,selection:[],focus:null}],hIndex:0,columnSel:null};
+  state.tabs.push(t);state.activeTab=state.tabs.length-1;
+  state.menu=null;state.palette=null;state.dialog=null;state.transferOpen=false;
+  renderAll();
+};
+const closeTab=id=>{
+  const i=state.tabs.findIndex(t=>t.id===id);if(i<0)return;
+  if(state.tabs.length===1){showToast('至少保留一个标签页','info');return;}
+  const was=state.activeTab;
+  state.tabs.splice(i,1);
+  if(i===was)state.activeTab=Math.min(i,state.tabs.length-1);
+  else if(i<was)state.activeTab--;
+  renderAll();
+};
+const setView=v=>{
+  const t=tab();t.view=v;
+  if(v==='columns'){
+    const items=visibleItems();
+    const selFolder=selectedItems().find(i=>i.kind==='folder');
+    if(selFolder)t.columnSel=selFolder.name;
+    else{
+      const preferred=t.columnSel?items.find(i=>i.kind==='folder'&&i.name===t.columnSel):null;
+      const first=preferred||items.find(i=>i.kind==='folder');
+      if(first){t.selection=[first.name];t.anchorName=first.name;t.focusIndex=items.indexOf(first);t.columnSel=first.name;}
+    }
+  }
+  state.menu=null;renderAll();
+};
+const setSort=(key,dir=null)=>{
+  const t=tab();
+  if(dir==null){if(t.sort.key===key)t.sort.dir*=-1;else{t.sort.key=key;t.sort.dir=1;}}
+  else{t.sort.key=key;t.sort.dir=dir;}
+  const arr=visibleItems();
+  t.focusIndex=Math.max(0,arr.findIndex(i=>t.selection.includes(i.name)));
+  state.menu=null;renderListing();renderStatus();renderFilterbar();
+};
+const selectAt=(idx,opt={})=>{
+  const t=tab(),items=visibleItems();if(!items.length)return;
+  idx=Math.max(0,Math.min(items.length-1,idx));
+  const name=items[idx].name;
+  if(opt.range){
+    const a=t.anchorName?items.findIndex(i=>i.name===t.anchorName):idx;
+    const lo=Math.min(a<0?idx:a,idx),hi=Math.max(a<0?idx:a,idx);
+    t.selection=items.slice(lo,hi+1).map(i=>i.name);
+  }else if(opt.toggle){
+    if(t.selection.includes(name))t.selection=t.selection.filter(n=>n!==name);
+    else t.selection=t.selection.concat(name);
+    t.anchorName=name;
+  }else if(opt.focusOnly){
+    if(!t.selection.includes(name))t.selection=[name];
+  }else{
+    t.selection=[name];t.anchorName=name;
+  }
+  t.focusIndex=idx;
+  if(t.view==='columns'){
+    const sel=selectedItems().find(i=>i.kind==='folder');
+    if(sel)t.columnSel=sel.name;
+  }
+  state._refocusList=true;
+  renderListing();renderPreview();renderStatus();renderFilterbar();
+};
+const focusStep=(delta,opt={})=>{
+  const items=visibleItems();if(!items.length)return;
+  let i=tab().focusIndex;
+  if(i<0||i>=items.length)i=0;
+  selectAt(i+delta,opt);
+};
+const ensureSelectionVisible=()=>{
+  const t=tab(),items=visibleItems(),vis=new Set(items.map(i=>i.name));
+  if(t.selection.some(n=>!vis.has(n))){
+    t.selection=items.length?[items[0].name]:[];
+    t.anchorName=t.selection[0]||null;t.focusIndex=0;
+  }else{
+    const i=items.findIndex(x=>x.name===t.selection[0]);
+    if(i>=0)t.focusIndex=i;
+  }
+};
+const openItem=name=>{
+  const it=findItem(name);if(!it)return;
+  const t=tab();
+  if(t.path==='trash:'){restoreNames([name]);return;}
+  if(it.kind==='folder'){
+    const cp=childPath(t.path,it.name);
+    if(!(cp in FS))FS[cp]=[];
+    navigate(cp);
+  }else{
+    showToast(`正在用默认应用打开 ${it.name}`,'external');
+  }
+};
+const openInNewTab=name=>{
+  const it=findItem(name);if(!it)return;
+  const t=tab();
+  if(it.kind==='folder'){
+    const cp=childPath(t.path,it.name);if(!(cp in FS))FS[cp]=[];
+    newTab(cp);
+  }else{
+    const path=t.path;newTab(path);
+    const nt=tab();nt.selection=[name];nt.anchorName=name;
+    nt.focusIndex=visibleItems().findIndex(i=>i.name===name);
+    renderAll();
+  }
+};
+const newFolder=()=>{
+  const t=tab();
+  if(t.path==='trash:'){showToast(`${trashName()}中不能新建文件夹`,'info');return;}
+  beginUndo();
+  const arr=itemsAt(t.path);
+  let name='新建文件夹',n=2;while(arr.some(i=>i.name===name))name=`新建文件夹 ${n++}`;
+  arr.push(D(name,stamp()));FS[childPath(t.path,name)]=[];
+  t.selection=[name];t.anchorName=name;
+  t.focusIndex=visibleItems().findIndex(i=>i.name===name);
+  state.rename={name};state.menu=null;
+  renderAll();
+};
+const newFile=()=>{
+  const t=tab();
+  if(t.path==='trash:'){showToast(`${trashName()}中不能新建文件`,'info');return;}
+  beginUndo();
+  const arr=itemsAt(t.path);
+  let name='未命名.md',n=2;while(arr.some(i=>i.name===name))name=`未命名 ${n++}.md`;
+  arr.push(F(name,'Markdown',0,stamp()));
+  t.selection=[name];t.anchorName=name;
+  t.focusIndex=visibleItems().findIndex(i=>i.name===name);
+  state.rename={name};state.menu=null;
+  renderAll();
+};
+const startRename=name=>{
+  const it=findItem(name||tab().selection[0]);if(!it)return;
+  state.rename={name:it.name};state.menu=null;
+  renderListing();
+};
+const cancelRename=()=>{if(!state.rename)return;state.rename=null;renderListing();};
+const remapPaths=(oldP,newP)=>{
+  Object.keys(FS).forEach(k=>{
+    if(k.startsWith(oldP+'/')){const nk=newP+k.slice(oldP.length);FS[nk]=FS[k];delete FS[k];}
+  });
+  state.tabs.forEach(t=>{
+    const map=p=>p===oldP?newP:p.startsWith(oldP+'/')?newP+p.slice(oldP.length):p;
+    t.path=map(t.path);
+    t.history.forEach(h=>{h.path=map(h.path);});
+  });
+};
+const commitRename=()=>{
+  if(!state.rename)return;
+  const el=$('#rename-input');
+  if(!el){state.rename=null;return;}
+  const oldName=state.rename.name,newName=el.value.trim();
+  state.rename=null;
+  if(!newName||newName===oldName){renderListing();return;}
+  const t=tab(),arr=itemsAt(t.path);
+  if(arr.some(i=>i.name===newName&&i.name!==oldName)){showToast('同名项目已存在','info');renderListing();return;}
+  beginUndo();
+  const it=arr.find(i=>i.name===oldName);if(!it){renderListing();return;}
+  it.name=newName;
+  if(it.kind==='folder'){
+    const oldP=childPath(t.path,oldName),newP=childPath(t.path,newName);
+    if(FS[oldP]){FS[newP]=FS[oldP];delete FS[oldP];}
+    remapPaths(oldP,newP);
+  }
+  t.selection=t.selection.map(n=>n===oldName?newName:n);
+  t.anchorName=t.anchorName===oldName?newName:t.anchorName;
+  t.focusIndex=visibleItems().findIndex(i=>i.name===newName);
+  renderAll();showToast(`已重命名为 ${newName}`,'check');
+};
+const trashNames=names=>{
+  const t=tab();
+  if(!names.length)return;
+  if(t.path==='trash:'){openDialog({type:'confirm-delete',names});return;}
+  beginUndo();
+  const arr=itemsAt(t.path);
+  names.forEach(n=>{
+    const i=arr.findIndex(it=>it.name===n);if(i<0)return;
+    const it=arr.splice(i,1)[0];
+    const entry={...it,origin:t.path,trashed:stamp()};
+    if(it.kind==='folder'){
+      const cp=childPath(t.path,it.name);
+      if(FS[cp]){entry.subtree=structuredClone(FS[cp]);delete FS[cp];}
+    }
+    state.trash.push(entry);
+  });
+  t.selection=[];t.focusIndex=0;
+  state.menu=null;renderAll();
+  showToast(`${names.length} 项已移到${trashName()}`,'trash','撤销');
+};
+const restoreNames=names=>{
+  if(!names.length)return;
+  beginUndo();
+  names.forEach(n=>{
+    const i=state.trash.findIndex(it=>it.name===n);if(i<0)return;
+    const it=state.trash.splice(i,1)[0];
+    const target=it.origin||'~';
+    if(!(target in FS))FS[target]=[];
+    const restored={...it};delete restored.origin;delete restored.trashed;delete restored.subtree;
+    FS[target].push(restored);
+    if(it.kind==='folder'){} // subtree restored below
+    if(it.kind==='folder'&&it.subtree!==undefined)FS[childPath(target,it.name)]=it.subtree;
+    else if(it.kind==='folder'&&!(childPath(target,it.name) in FS))FS[childPath(target,it.name)]=[];
+  });
+  if(tab().path==='trash:'){tab().selection=[];tab().focusIndex=0;}
+  renderAll();showToast(`已还原 ${names.length} 项`,'undo');
+};
+const deleteForever=(names,emptyTrash=false)=>{
+  if(!names.length)return;
+  names.forEach(n=>{
+    const i=state.trash.findIndex(it=>it.name===n);if(i>=0)state.trash.splice(i,1);
+  });
+  if(tab().path==='trash:'){tab().selection=[];tab().focusIndex=0;}
+  state.dialog=null;renderAll();showToast(emptyTrash?`已清空${trashName()} · ${names.length} 项`:`已永久删除 ${names.length} 项`,'trash');
+};
+const copySelected=mode=>{
+  const sels=selectedItems();if(!sels.length)return;
+  state.clipboard={mode,from:tab().path,items:sels.map(it=>structuredClone(it))};
+  state.menu=null;renderStatus();
+  showToast(`已${mode==='cut'?'剪切':'复制'} ${sels.length} 项`,'copy');
+};
+const pasteClipboard=()=>{
+  if(!state.clipboard){showToast('剪贴板为空','info');return;}
+  const t=tab();
+  if(t.path==='trash:'){showToast(`不能粘贴到${trashName()}`,'info');return;}
+  beginUndo();
+  const src=state.clipboard,dst=itemsAt(t.path);
+  src.items.forEach(it=>{
+    let name=it.name;
+    if(dst.some(x=>x.name===name)){
+      const dot=name.lastIndexOf('.');
+      const base=dot>0?name.slice(0,dot):name,ext=dot>0?name.slice(dot):'';
+      name=base+' 副本'+ext;let n=2;while(dst.some(x=>x.name===name))name=base+' 副本 '+n+++ext;
+    }
+    dst.push({...it,name});
+    if(it.kind==='folder'){
+      const oldP=childPath(src.from,it.name),newP=childPath(t.path,name);
+      if(FS[oldP]){FS[newP]=structuredClone(FS[oldP]);if(src.mode==='cut')delete FS[oldP];}
+      else FS[newP]=[];
+    }
+    if(src.mode==='cut'){
+      const sa=itemsAt(src.from),i=sa.findIndex(x=>x.name===it.name);
+      if(i>=0)sa.splice(i,1);
+    }
+  });
+  if(src.mode==='cut')state.clipboard=null;
+  state.menu=null;renderAll();showToast(`已粘贴 ${src.items.length} 项`,'paste');
+};
+const moveNamesTo=(names,target)=>{
+  const t=tab();
+  if(!names.length)return;
+  if(target==='trash:'){trashNames(names);return;}
+  if(target===t.path)return;
+  if(names.some(n=>target===childPath(t.path,n)||target.startsWith(childPath(t.path,n)+'/'))){showToast('不能移动到自身','info');return;}
+  beginUndo();
+  const src=itemsAt(t.path);
+  if(!(target in FS))FS[target]=[];
+  const dst=FS[target];
+  names.forEach(n=>{
+    const i=src.findIndex(it=>it.name===n);if(i<0)return;
+    const it=src.splice(i,1)[0];
+    let name=it.name;
+    if(dst.some(x=>x.name===name)){const dot=name.lastIndexOf('.');const base=dot>0?name.slice(0,dot):name,ext=dot>0?name.slice(dot):'';name=base+' 副本'+ext;let k=2;while(dst.some(x=>x.name===name))name=base+' 副本 '+k+++ext;}
+    dst.push({...it,name});
+    if(it.kind==='folder'){
+      const oldP=childPath(t.path,it.name),newP=childPath(target,name);
+      if(FS[oldP]){FS[newP]=FS[oldP];delete FS[oldP];}else FS[newP]=[];
+    }
+  });
+  t.selection=[];t.focusIndex=0;
+  state.menu=null;renderAll();showToast(`已移动到「${baseName(target)}」`,'folder','撤销');
+};
+const openProperties=name=>{
+  const it=findItem(name||tab().selection[0]);if(!it)return;
+  openDialog({type:'properties',item:it});
+};
+const openDialog=d=>{state.dialog=d;state.menu=null;state.palette=null;state.transferOpen=false;renderOverlays();};
+const closeOverlays=()=>{state.menu=null;state.palette=null;state.dialog=null;state.transferOpen=false;renderOverlays();};
+const openPalette=()=>{state.palette={query:'',index:0};state.menu=null;state.dialog=null;state.transferOpen=false;renderOverlays();};
+const openSearch=()=>{state.search.open=true;state.search.query='';state._focus='search';state.menu=null;state.palette=null;state.dialog=null;renderAll();};
+const closeSearch=()=>{state.search.open=false;state.search.query='';renderAll();};
+const startPathEdit=()=>{state.pathEdit=true;state._focus='path';state.menu=null;renderNavbar();};
+const commitPathEdit=()=>{
+  const el=$('#path-input');if(!el){state.pathEdit=null;renderNavbar();return;}
+  const p=normalizePath(el.value);
+  if(p&&(p in FS||p==='trash:'||p.startsWith('space:'))){state.pathEdit=null;navigate(p);}
+  else{showToast('路径不存在','info');el.focus();}
+};
+const togglePreview=()=>{state.previewOpen=!state.previewOpen;renderAll();};
+const toggleTerminal=()=>{state.terminalOpen=!state.terminalOpen;renderAll();};
+const toggleHidden=()=>{state.hiddenFiles=!state.hiddenFiles;state.menu=null;renderAll();showToast(state.hiddenFiles?'已显示隐藏文件':'已隐藏隐藏文件','eye');};
+const runAction=(action,ctx={})=>{
+  const t=tab();
+  if(action==='back')goBack();
+  else if(action==='forward')goForward();
+  else if(action==='up')goUp();
+  else if(action==='search-open')openSearch();
+  else if(action==='new-folder')newFolder();
+  else if(action==='new-file')newFile();
+  else if(action==='rename')startRename(ctx.name||t.selection[0]);
+  else if(action==='trash')trashNames(ctx.name?[ctx.name]:[...t.selection]);
+  else if(action==='restore')restoreNames(ctx.name?[ctx.name]:[...t.selection]);
+  else if(action==='delete-forever')openDialog({type:'confirm-delete',names:ctx.name?[ctx.name]:[...t.selection]});
+  else if(action==='copy')copySelected('copy');
+  else if(action==='cut')copySelected('cut');
+  else if(action==='paste')pasteClipboard();
+  else if(action==='select-all'){t.selection=visibleItems().map(i=>i.name);t.anchorName=t.selection[0]||null;t.focusIndex=0;renderListing();renderPreview();renderStatus();}
+  else if(action==='view-list')setView('list');
+  else if(action==='view-grid')setView('grid');
+  else if(action==='view-columns')setView('columns');
+  else if(action==='preview-toggle')togglePreview();
+  else if(action==='terminal-toggle'||action==='terminal-open'){state.terminalOpen=true;renderAll();}
+  else if(action==='sort-name')setSort('name',1);
+  else if(action==='sort-size')setSort('size',1);
+  else if(action==='sort-type')setSort('type',1);
+  else if(action==='sort-modified')setSort('modified',-1);
+  else if(action==='hidden-toggle')toggleHidden();
+  else if(action==='refresh'){state.menu=null;renderAll();showToast('已刷新','refresh');}
+  else if(action==='settings'){state.menu=null;renderOverlays();showToast('设置面板由 ShellWindow 承载，未在此原型展开','gear');}
+  else if(action==='connect'){openDialog({type:'connect'});}
+  else if(action==='connect-submit'){state.dialog=null;renderOverlays();showToast('已连接服务器（原型）','check');}
+  else if(action==='open')openItem(ctx.name||t.selection[0]);
+  else if(action==='open-tab')openInNewTab(ctx.name||t.selection[0]);
+  else if(action==='properties')openProperties(ctx.name||t.selection[0]);
+  else if(action==='clear-search'){state.search.query='';renderAll();}
+};
+</script>
+<style>
+#dae-root .rows:focus-visible,#dae-root .grid:focus-visible{outline:1px solid var(--signal);outline-offset:-1px}
+#dae-root .app-mark svg{display:block;border-radius:3px}
+#dae-root .filterbar[hidden]{display:none}
+@media (max-width:920px){#dae-root .main.no-preview{grid-template-columns:184px minmax(0,1fr)}}
+@media (max-width:640px){#dae-root .main.no-preview{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:560px){
+  #dae-root .tab:not(.active){display:none}
+  #dae-root .navbtn{width:26px}
+  #dae-root .searchfield{width:100px}
+  #dae-root .nav-right .navbtn[data-action="more-menu"]{display:none}
+}
+</style>
+<script>
+root.addEventListener('click',e=>{
+  const el=e.target.closest('[data-action]');
+  if(!el)return;
+  if(el.getAttribute('aria-disabled')==='true')return;
+  const a=el.dataset.action;
+  switch(a){
+    case 'tab': switchTab(Number(el.dataset.id)); break;
+    case 'tab-close': e.stopPropagation(); closeTab(Number(el.dataset.id)); break;
+    case 'tab-new': newTab(tab().path); break;
+    case 'win': showToast('窗口控制由宿主系统接管','info'); break;
+    case 'back': goBack(); break;
+    case 'forward': goForward(); break;
+    case 'up': goUp(); break;
+    case 'crumb': navigate(el.dataset.path); break;
+    case 'pathedit': startPathEdit(); break;
+    case 'search-open': openSearch(); break;
+    case 'search-close': closeSearch(); break;
+    case 'search-case': state.search.case=!state.search.case; ensureSelectionVisible(); renderFilterbar();renderListing();renderPreview();renderStatus(); break;
+    case 'view-menu': openMenu('view',el.getBoundingClientRect()); break;
+    case 'more-menu': openMenu('more',el.getBoundingClientRect()); break;
+    case 'nav': navigate(el.dataset.path); break;
+    case 'connect': openDialog({type:'connect'}); break;
+    case 'empty-trash': if(state.trash.length)openDialog({type:'confirm-delete',names:state.trash.map(t=>t.name),emptyTrash:true}); break;
+    case 'sort': setSort(el.dataset.key); break;
+    case 'preview-toggle': togglePreview(); break;
+    case 'preview-close': state.previewOpen=false; renderAll(); break;
+    case 'terminal-toggle': toggleTerminal(); break;
+    case 'terminal-close': state.terminalOpen=false; renderAll(); break;
+    case 'transfer-toggle': state.transferOpen=!state.transferOpen;state.menu=null;state.palette=null;state.dialog=null;renderOverlays(); break;
+    case 'transfer-close': state.transferOpen=false; renderOverlays(); break;
+    case 'properties': openProperties(); break;
+    case 'toast-undo': undoLast(); break;
+    case 'toast-close': state.toast=null; renderToast(); break;
+    case 'menu-run': { const name=state.menu?.name; closeOverlays(); runAction(el.dataset.value,{name}); break; }
+    case 'palette-run': { const arr=paletteFiltered(),item=arr[Number(el.dataset.index)]; closeOverlays(); if(item)runAction(item.action); break; }
+    case 'close-dialog': closeOverlays(); break;
+    case 'dialog-scrim': if(!e.target.closest('.dialog'))closeOverlays(); break;
+    case 'palette-scrim': if(!e.target.closest('.palette'))closeOverlays(); break;
+    case 'close-overlays': closeOverlays(); break;
+    case 'delete-forever-confirm': deleteForever(state.dialog?.names||[],!!state.dialog?.emptyTrash); break;
+    case 'connect-submit': runAction('connect-submit'); break;
+    case 'column-row': { const idx=visibleItems().findIndex(i=>i.name===el.dataset.name);if(idx>=0){state.focuskb=false;selectAt(idx);} break; }
+    case 'column-nav': navigate(el.dataset.path); break;
+    case 'column-child': {
+      const kind=el.dataset.kind,path=el.dataset.path,base=el.dataset.base,name=el.dataset.name;
+      if(kind==='folder')navigate(path);
+      else{navigate(base);const i=visibleItems().findIndex(x=>x.name===name);if(i>=0)selectAt(i);}
+      break;
+    }
+    case 'new-folder': case 'paste': case 'clear-search': runAction(a); break;
+    case 'meta': { const k=el.dataset.key,v=el.dataset.value; state[k]=v; renderAll(); break; }
+    case 'meta-reset': {
+      state.platform='win';state.theme='auto';state.density='default';state.accent='amber';state.motion='on';
+      state.hiddenFiles=false;state.previewOpen=true;state.terminalOpen=false;state.previewW=300;
+      root.style.setProperty('--preview-w','300px');renderAll();break;
+    }
+    default: break;
+  }
+});
+listingEl.addEventListener('click',e=>{
+  if(e.target.closest('input,button'))return;
+  if(e.target.closest('.mcol-row'))return;
+  const row=e.target.closest('.row,.tile');
+  if(row){
+    const idx=Number(row.dataset.index);if(Number.isNaN(idx))return;
+    state.focuskb=false;
+    selectAt(idx,{toggle:e.metaKey||e.ctrlKey,range:e.shiftKey});
+    return;
+  }
+  if(e.target.closest('.rows,.grid')){
+    tab().selection=[];tab().anchorName=null;
+    renderListing();renderPreview();renderStatus();
+  }
+});
+listingEl.addEventListener('dblclick',e=>{
+  if(e.target.closest('input,button'))return;
+  const mr=e.target.closest('.mcol-row');
+  if(mr){
+    const col=mr.dataset.col;
+    if(col==='parent')navigate(mr.dataset.path);
+    else if(col==='current')openItem(mr.dataset.name);
+    else{
+      const kind=mr.dataset.kind,path=mr.dataset.path,base=mr.dataset.base,name=mr.dataset.name;
+      if(kind==='folder')navigate(path);
+      else{navigate(base);const i=visibleItems().findIndex(x=>x.name===name);if(i>=0){selectAt(i);openItem(name);}}
+    }
+    return;
+  }
+  const row=e.target.closest('.row,.tile');
+  if(row)openItem(row.dataset.name);
+});
+listingEl.addEventListener('contextmenu',e=>{
+  const row=e.target.closest('.row,.tile,.mcol-row');
+  e.preventDefault();
+  if(!row){openMenu('empty',null,e);return;}
+  if(row.dataset.col==='parent'||row.dataset.col==='child')return;
+  const name=row.dataset.name;
+  if(!tab().selection.includes(name)){
+    const idx=visibleItems().findIndex(i=>i.name===name);
+    if(idx>=0){state.focuskb=false;selectAt(idx);}
+  }
+  openMenu('row',null,e);
+});
+root.addEventListener('input',e=>{
+  const t=e.target;
+  if(t.id==='search-input'){
+    state.search.query=t.value;ensureSelectionVisible();
+    renderFilterbar();renderListing();renderPreview();renderStatus();
+  }else if(t.id==='palette-input'){
+    state.palette.query=t.value;state.palette.index=0;
+    renderPaletteList();
+  }
+});
+root.addEventListener('change',e=>{
+  if(e.target.matches('select[data-action="search-type"]')){
+    state.search.type=e.target.value;ensureSelectionVisible();
+    renderFilterbar();renderListing();renderStatus();
+  }
+});
+root.addEventListener('focusout',e=>{
+  const t=e.target;
+  if(t.id==='rename-input')setTimeout(()=>{if(state.rename)commitRename();},0);
+  else if(t.id==='path-input')setTimeout(()=>{if(state.pathEdit){state.pathEdit=null;renderNavbar();}},0);
+});
+const paletteMove=d=>{
+  const arr=paletteFiltered();if(!arr.length)return;
+  state.palette.index=(state.palette.index+d+arr.length)%arr.length;
+  renderPaletteList();
+  const el=$('#palette-input');if(el){el.focus();el.setSelectionRange(el.value.length,el.value.length);}
+};
+const paletteRun=()=>{const arr=paletteFiltered(),item=arr[state.palette.index];if(!item)return;closeOverlays();runAction(item.action);};
+const menuMove=where=>{
+  const items=[...ovEl.querySelectorAll('.menu-item:not([aria-disabled="true"])')];if(!items.length)return;
+  let i=items.indexOf(document.activeElement),n;
+  if(where==='home')n=0;else if(where==='end')n=items.length-1;
+  else n=i<0?(where>0?0:items.length-1):(i+where+items.length)%items.length;
+  items[n].focus();
+};
+const gridCols=()=>{const g=listingEl.querySelector('.grid');if(!g)return 4;return Math.max(1,Math.floor((g.clientWidth-32+10)/126));};
+document.addEventListener('keydown',e=>{
+  const t=e.target,key=e.key,lower=key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
+  if(state.palette){
+    if(key==='Escape'){e.preventDefault();closeOverlays();return;}
+    if(key==='ArrowDown'){e.preventDefault();paletteMove(1);return;}
+    if(key==='ArrowUp'){e.preventDefault();paletteMove(-1);return;}
+    if(key==='Enter'){e.preventDefault();paletteRun();return;}
+    if(t.id!=='palette-input'&&key.length===1){const el=$('#palette-input');if(el)el.focus();}
+    return;
+  }
+  if(state.menu){
+    if(key==='Escape'){e.preventDefault();closeOverlays();return;}
+    if(key==='ArrowDown'){e.preventDefault();menuMove(1);return;}
+    if(key==='ArrowUp'){e.preventDefault();menuMove(-1);return;}
+    if(key==='Home'){e.preventDefault();menuMove('home');return;}
+    if(key==='End'){e.preventDefault();menuMove('end');return;}
+    if(key==='Tab'){closeOverlays();return;}
+    return;
+  }
+  if(state.dialog){
+    if(key==='Escape'){e.preventDefault();closeOverlays();return;}
+    if((t.id==='conn-host'||t.id==='conn-user')&&key==='Enter'){e.preventDefault();runAction('connect-submit');}
+    return;
+  }
+  if(t.id==='search-input'){
+    if(key==='Escape'){
+      e.preventDefault();
+      if(state.search.query){state.search.query='';t.value='';renderFilterbar();renderListing();renderPreview();renderStatus();}
+      else closeSearch();
+      return;
+    }
+    if(key==='Enter'||key==='ArrowDown'){
+      e.preventDefault();const items=visibleItems();
+      if(items.length){state.focuskb=true;selectAt(0);listingEl.querySelector('.rows,.grid')?.focus();}
+      return;
+    }
+    return;
+  }
+  if(t.id==='path-input'){
+    if(key==='Enter'){e.preventDefault();commitPathEdit();}
+    else if(key==='Escape'){e.preventDefault();state.pathEdit=null;renderNavbar();}
+    return;
+  }
+  if(t.id==='rename-input'){
+    if(key==='Enter'){e.preventDefault();commitRename();}
+    else if(key==='Escape'){e.preventDefault();cancelRename();}
+    return;
+  }
+  if(t.matches('input,textarea,select')||t.isContentEditable)return;
+
+  if(key==='Escape'){
+    if(state.search.open){closeSearch();return;}
+    if(tab().selection.length){tab().selection=[];renderListing();renderPreview();renderStatus();}
+    return;
+  }
+  if(mod&&e.shiftKey&&lower==='n'){e.preventDefault();newFolder();return;}
+  if(mod&&e.shiftKey&&lower==='p'){e.preventDefault();openPalette();return;}
+  if(isMac()&&mod&&e.shiftKey&&(key==='.'||e.code==='Period')){e.preventDefault();toggleHidden();return;}
+  if(mod&&!e.shiftKey){
+    if(lower==='a'){e.preventDefault();runAction('select-all');return;}
+    if(lower==='c'){e.preventDefault();copySelected('copy');return;}
+    if(lower==='x'){e.preventDefault();copySelected('cut');return;}
+    if(lower==='v'){e.preventDefault();pasteClipboard();return;}
+    if(lower==='z'){e.preventDefault();undoLast();return;}
+    if(lower==='f'){e.preventDefault();openSearch();return;}
+    if(lower==='k'){e.preventDefault();openPalette();return;}
+    if(lower==='l'){e.preventDefault();startPathEdit();return;}
+    if(lower==='h'&&!isMac()){e.preventDefault();toggleHidden();return;}
+    if(lower==='t'){e.preventDefault();newTab(tab().path);return;}
+    if(lower==='w'){e.preventDefault();closeTab(tab().id);return;}
+    if(lower==='1'){e.preventDefault();setView('list');return;}
+    if(lower==='2'){e.preventDefault();setView('grid');return;}
+    if(lower==='3'){e.preventDefault();setView('columns');return;}
+    if(e.code==='Backquote'||key==='`'){e.preventDefault();toggleTerminal();return;}
+    if(isMac()&&key==='['){e.preventDefault();goBack();return;}
+    if(isMac()&&key===']'){e.preventDefault();goForward();return;}
+    if(isMac()&&key==='ArrowUp'){e.preventDefault();goUp();return;}
+    if(isMac()&&key==='Backspace'){e.preventDefault();trashNames([...tab().selection]);return;}
+  }
+  if(e.altKey&&key==='ArrowLeft'){e.preventDefault();goBack();return;}
+  if(e.altKey&&key==='ArrowRight'){e.preventDefault();goForward();return;}
+  if(e.altKey&&key==='ArrowUp'){e.preventDefault();goUp();return;}
+  if(key==='Delete'){e.preventDefault();trashNames([...tab().selection]);return;}
+  if(key==='Backspace'){if(!isMac()){e.preventDefault();goUp();}return;}
+  if(key==='F2'){e.preventDefault();if(tab().selection[0])startRename(tab().selection[0]);return;}
+  if(key==='F5'){e.preventDefault();renderAll();showToast('已刷新','refresh');return;}
+  if(e.altKey&&key==='Enter'){e.preventDefault();if(tab().selection[0])openProperties(tab().selection[0]);return;}
+  if(key==='Enter'){
+    e.preventDefault();
+    if(isMac()){
+      const n=tab().selection[0]||(visibleItems()[tab().focusIndex]||{}).name;
+      if(n)startRename(n);
+      return;
+    }
+    const it=selectedItems()[0]||visibleItems()[tab().focusIndex];
+    if(it)openItem(it.name);return;
+  }
+  if(isMac()&&mod&&key==='ArrowDown'){
+    e.preventDefault();
+    const it=selectedItems()[0]||visibleItems()[tab().focusIndex];
+    if(it)openItem(it.name);return;
+  }
+  if(key===' '){e.preventDefault();togglePreview();return;}
+  if((e.shiftKey&&key==='F10')||key==='ContextMenu'){
+    e.preventDefault();
+    const row=listingEl.querySelector(`.row[data-index="${tab().focusIndex}"],.tile[data-index="${tab().focusIndex}"]`);
+    if(row)openMenu('row',row.getBoundingClientRect(),null,row.dataset.name);
+    else openMenu('empty',null,e);
+    return;
+  }
+  if(['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End','PageUp','PageDown'].includes(key)){
+    e.preventDefault();state.focuskb=true;
+    const items=visibleItems();if(!items.length)return;
+    if(key==='Home'){selectAt(0,{range:e.shiftKey});return;}
+    if(key==='End'){selectAt(items.length-1,{range:e.shiftKey});return;}
+    if(key==='PageUp'){focusStep(-10,{range:e.shiftKey});return;}
+    if(key==='PageDown'){focusStep(10,{range:e.shiftKey});return;}
+    const grid=tab().view==='grid';
+    if(grid){
+      if(key==='ArrowLeft')focusStep(-1,{range:e.shiftKey});
+      else if(key==='ArrowRight')focusStep(1,{range:e.shiftKey});
+      else if(key==='ArrowUp')focusStep(-gridCols(),{range:e.shiftKey});
+      else focusStep(gridCols(),{range:e.shiftKey});
+    }else{
+      if(key==='ArrowUp')focusStep(-1,{range:e.shiftKey});
+      else if(key==='ArrowDown')focusStep(1,{range:e.shiftKey});
+      else if(key==='ArrowRight'){const it=selectedItems()[0];if(it&&it.kind==='folder')openItem(it.name);}
+      else if(key==='ArrowLeft')goUp();
+    }
+    return;
+  }
+  if(key.length===1&&!mod&&!e.altKey){
+    const now=Date.now();
+    if(now-state.typeahead.at>800)state.typeahead.buf='';
+    state.typeahead.buf+=lower;state.typeahead.at=now;
+    const idx=visibleItems().findIndex(i=>i.name.toLowerCase().startsWith(state.typeahead.buf));
+    if(idx>=0){e.preventDefault();state.focuskb=true;selectAt(idx);}
+  }
+});
+
+
+</script>
+<script>
+listingEl.addEventListener('dragstart',e=>{
+  if(e.target.closest('input,button'))return;
+  const el=e.target.closest('.row,.tile');if(!el)return;
+  const name=el.dataset.name,t=tab();
+  state.drag={names:t.selection.includes(name)?[...t.selection]:[name],from:t.path};
+  e.dataTransfer.effectAllowed='move';
+  e.dataTransfer.setData('text/plain',state.drag.names.join('\n'));
+  el.classList.add('drop-ghost');
+});
+listingEl.addEventListener('dragend',()=>{
+  state.drag=null;
+  document.querySelectorAll('.drop-ghost,.drop-target').forEach(el=>el.classList.remove('drop-ghost','drop-target'));
+});
+root.addEventListener('dragover',e=>{
+  const target=e.target.closest('[data-drop-path]');
+  if(!target||!state.drag)return;
+  e.preventDefault();e.dataTransfer.dropEffect='move';
+  document.querySelectorAll('.drop-target').forEach(el=>{if(el!==target)el.classList.remove('drop-target');});
+  target.classList.add('drop-target');
+});
+root.addEventListener('dragleave',e=>{
+  const target=e.target.closest('[data-drop-path]');
+  if(target&&!target.contains(e.relatedTarget))target.classList.remove('drop-target');
+});
+root.addEventListener('drop',e=>{
+  const target=e.target.closest('[data-drop-path]');
+  if(!target||!state.drag)return;
+  e.preventDefault();
+  const names=state.drag.names,to=target.dataset.dropPath;
+  document.querySelectorAll('.drop-target').forEach(el=>el.classList.remove('drop-target'));
+  state.drag=null;
+  if(to)moveNamesTo(names,to);
+});
+let resize=null;
+gripEl.tabIndex=0;
+gripEl.addEventListener('pointerdown',e=>{
+  if(!state.previewOpen)return;
+  resize={x:e.clientX,w:state.previewW};
+  try{gripEl.setPointerCapture(e.pointerId);}catch(_){}
+  e.preventDefault();
+});
+gripEl.addEventListener('pointermove',e=>{
+  if(!resize)return;
+  const w=Math.max(260,Math.min(420,resize.w-(e.clientX-resize.x)));
+  state.previewW=w;root.style.setProperty('--preview-w',w+'px');
+});
+gripEl.addEventListener('pointerup',e=>{
+  resize=null;try{gripEl.releasePointerCapture(e.pointerId);}catch(_){}
+});
+gripEl.addEventListener('dblclick',()=>{state.previewW=300;root.style.setProperty('--preview-w','300px');});
+gripEl.addEventListener('keydown',e=>{
+  if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight')return;
+  e.preventDefault();e.stopPropagation();
+  const w=Math.max(260,Math.min(420,state.previewW+(e.key==='ArrowLeft'?16:-16)));
+  state.previewW=w;root.style.setProperty('--preview-w',w+'px');
+});
+state.tabs.forEach(t=>{const i=itemsAt(t.path).findIndex(x=>t.selection.includes(x.name));t.focusIndex=Math.max(0,i);});
+root.style.setProperty('--preview-w',state.previewW+'px');
+renderAll();
+</script>
+
