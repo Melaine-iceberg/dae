@@ -100,6 +100,10 @@ Item {
             actions: [
                 { id: "explorer.clearSelection", label: qsTr("清除选择"),
                   detail: qsTr("取消当前所有选中项") },
+                { id: "explorer.goBack", label: qsTr("后退"),
+                  detail: qsTr("回到上一个访问过的文件夹") },
+                { id: "explorer.goForward", label: qsTr("前进"),
+                  detail: qsTr("回到后退之前所在的文件夹") },
                 { id: "explorer.focusSearch", label: qsTr("搜索"),
                   detail: qsTr("把焦点移到搜索框") },
                 { id: "explorer.selectAll", label: qsTr("全选"),

@@ -133,6 +133,10 @@ Window {
     readonly property color accent: Appearance.accent === "brand"
         ? Theme.brand
         : Workspace.accent
+    /// Whether the active tab has somewhere to go back or forward to. The
+    /// stacks live on the tab, so a torn-off window keeps its own.
+    readonly property bool canGoBack: activeTab !== null && activeTab.canGoBack
+    readonly property bool canGoForward: activeTab !== null && activeTab.canGoForward
     /// `settings.toml` arrives as JSON because QML has no typed map property.
     /// Empty values are deliberate unbinds and therefore stay empty.
     readonly property var shortcutMap: {
@@ -952,6 +956,30 @@ Window {
         const parent = root.parentOf(root.activePath)
         if (parent !== "")
             root.navigate(parent)
+    }
+
+    /// A history move is not a new place, so it does not feed the recents list
+    /// the way `navigate` does; everything else around it is the same teardown.
+    function goBack() {
+        if (root.activeTab === null || !root.activeTab.canGoBack)
+            return
+        root.pathEditing = false
+        root.resetSearchState()
+        previewPanel.showPaths([])
+        root.activeTab.goBack()
+        root.applyRemotePolicy()
+        Qt.callLater(fileList.takeFocus)
+    }
+
+    function goForward() {
+        if (root.activeTab === null || !root.activeTab.canGoForward)
+            return
+        root.pathEditing = false
+        root.resetSearchState()
+        previewPanel.showPaths([])
+        root.activeTab.goForward()
+        root.applyRemotePolicy()
+        Qt.callLater(fileList.takeFocus)
     }
 
     function disposeTabs() {
@@ -1973,9 +2001,71 @@ Window {
                 }
             }
 
+            // Back and forward keep their place when the stack is empty: a
+            // button that disappears moves every control to its right, and the
+            // one after it is the address bar, which is the wrong thing to
+            // move under the pointer.
+            Rectangle {
+                id: backButton
+                anchors.left: sidebarButton.right
+                anchors.leftMargin: 6
+                anchors.verticalCenter: parent.verticalCenter
+                width: 24
+                height: 24
+                radius: 5
+                color: root.canGoBack && backMouse.containsMouse
+                    ? Theme.fill : "transparent"
+
+                readonly property bool enabled: root.canGoBack
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "←"
+                    color: backButton.enabled ? root.mutedColor : root.hairline
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: backMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: backButton.enabled
+                    onClicked: root.goBack()
+                }
+            }
+
+            Rectangle {
+                id: forwardButton
+                anchors.left: backButton.right
+                anchors.leftMargin: 2
+                anchors.verticalCenter: parent.verticalCenter
+                width: 24
+                height: 24
+                radius: 5
+                color: root.canGoForward && forwardMouse.containsMouse
+                    ? Theme.fill : "transparent"
+
+                readonly property bool enabled: root.canGoForward
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "→"
+                    color: forwardButton.enabled ? root.mutedColor : root.hairline
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: forwardMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: forwardButton.enabled
+                    onClicked: root.goForward()
+                }
+            }
+
             Rectangle {
                 id: upButton
-                anchors.left: sidebarButton.right
+                anchors.left: forwardButton.right
                 anchors.leftMargin: 2
                 anchors.verticalCenter: parent.verticalCenter
                 width: 24
@@ -3191,6 +3281,22 @@ Window {
     Shortcut {
         sequence: "Ctrl+3"
         onActivated: ExplorerPrefs.setString("viewMode", "column")
+    }
+
+    // History comes before the pane switch: it is the gesture a file manager
+    // is used most, and it has to work from the listing, the split pane and the
+    // path bar alike, so it is a window-level Shortcut rather than a Key
+    // handler inside one of them.
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.goBack")
+        enabled: sequence !== "" && root.canGoBack
+        onActivated: root.goBack()
+    }
+
+    Shortcut {
+        sequence: root.shortcutSequence("explorer.goForward")
+        enabled: sequence !== "" && root.canGoForward
+        onActivated: root.goForward()
     }
 
     Shortcut {

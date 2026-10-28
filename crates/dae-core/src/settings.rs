@@ -118,7 +118,15 @@ fn default_line_height() -> f32 {
 /// below asserts the id set so the two cannot silently drift. Binding strings
 /// use TanStack Hotkeys' canonical form (`Mod` = Cmd on macOS, Ctrl elsewhere).
 pub fn default_shortcuts() -> HashMap<String, String> {
-    let entries: [(&str, &str); 20] = [
+    // History takes the platform's own gesture rather than one Mod-based pair:
+    // Alt+Left is what every Windows and Linux file manager does, and on macOS
+    // it is Cmd+[ that Finder and every browser trained people to use.
+    let (go_back, go_forward) = if cfg!(target_os = "macos") {
+        ("Mod+[", "Mod+]")
+    } else {
+        ("Alt+Left", "Alt+Right")
+    };
+    let entries: [(&str, &str); 22] = [
         // Global (App.tsx)
         ("app.commandBar", "Mod+K"),
         ("app.pathJump", "Mod+P"),
@@ -140,6 +148,8 @@ pub fn default_shortcuts() -> HashMap<String, String> {
         ("explorer.deletePermanent", "Shift+Delete"),
         ("explorer.openSystemTerminal", "Mod+`"),
         // View / navigation
+        ("explorer.goBack", go_back),
+        ("explorer.goForward", go_forward),
         ("explorer.focusSearch", "Mod+F"),
         ("explorer.switchPane", "F6"),
     ];
@@ -348,6 +358,8 @@ mod tests {
             "explorer.trash",
             "explorer.deletePermanent",
             "explorer.openSystemTerminal",
+            "explorer.goBack",
+            "explorer.goForward",
             "explorer.focusSearch",
             "explorer.switchPane",
         ];

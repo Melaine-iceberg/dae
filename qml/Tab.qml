@@ -53,14 +53,82 @@ QtObject {
     /// `selected`: the view reads it in a function call, not in a binding.
     property var scrollState: ({})
 
-    function navigate(path) {
-        if (path && path.length > 0) {
-            surface = "folder"
-            spaceId = ""
-            cancelSearch()
-            listing.load(path)
+    // ── Navigation history ──────────────────────────────────────────────────
+    //
+    // Two stacks of `{ path, selected, anchor }`, oldest first, the newest move
+    // last. On the tab and not on the window, because the tab is the browsing
+    // session: tearing one off into its own window has to keep its back button
+    // working. The cap is a memory guard, not a feature — a file manager with
+    // 64 steps back is already past what anyone walks.
+    property var backStack: []
+    property var forwardStack: []
+    readonly property int historyLimit: 64
+    readonly property bool canGoBack: backStack.length > 0
+    readonly property bool canGoForward: forwardStack.length > 0
+
+    function historyEntry() {
+        return { path: listing.path, selected: selected, anchor: selectionAnchor }
+    }
+
+    function pushHistory(stack, entry) {
+        const next = stack.slice()
+        next.push(entry)
+        while (next.length > historyLimit)
+            next.shift()
+        return next
+    }
+
+    /// The one place that puts a folder on screen. `keepSelection` is how a
+    /// history move restores what was selected there rather than arriving with
+    /// an empty selection the way a fresh navigation does.
+    function loadFolder(path, keepSelection) {
+        surface = "folder"
+        spaceId = ""
+        cancelSearch()
+        listing.load(path)
+        if (!keepSelection)
             clearSelection()
-        }
+    }
+
+    function loadHistoryEntry(entry) {
+        loadFolder(entry.path, true)
+        // The entry was captured in another visit, so the paths in it may have
+        // been renamed or deleted since. A stale key is inert: `isSelected`
+        // only ever runs from a delegate over rows that exist now.
+        selected = entry.selected ? entry.selected : ({})
+        selectionAnchor = entry.anchor ? entry.anchor : ""
+        selectionVersion += 1
+    }
+
+    function navigate(path) {
+        if (!path || path.length === 0)
+            return
+        // Only a step away from a folder is worth remembering. Arriving here
+        // from the recycle bin, a space or the overview would otherwise push a
+        // `listing.path` that no longer describes what the user was looking at.
+        if (surface === "folder" && listing.path !== "" && listing.path !== path)
+            backStack = pushHistory(backStack, historyEntry())
+        // A new branch invalidates the forward one, exactly as in a browser.
+        forwardStack = []
+        loadFolder(path, false)
+    }
+
+    function goBack() {
+        if (backStack.length === 0)
+            return
+        const target = backStack[backStack.length - 1]
+        backStack = backStack.slice(0, backStack.length - 1)
+        forwardStack = pushHistory(forwardStack, historyEntry())
+        loadHistoryEntry(target)
+    }
+
+    function goForward() {
+        if (forwardStack.length === 0)
+            return
+        const target = forwardStack[forwardStack.length - 1]
+        forwardStack = forwardStack.slice(0, forwardStack.length - 1)
+        backStack = pushHistory(backStack, historyEntry())
+        loadHistoryEntry(target)
     }
 
     /// Shows the system recycle bin in this tab. The window owns the model and
