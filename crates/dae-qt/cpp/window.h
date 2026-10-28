@@ -58,10 +58,14 @@ constexpr int kDwmsbtNone = 1;
 constexpr int kDwmsbtMainWindow = 2; // Mica
 constexpr int kDwmsbtTransientWindow = 3; // Acrylic
 
-// The QML title bar is 40 dp tall and each window button 46 dp wide. These are
+// The QML chrome bar is 44 dp tall and each window button 46 dp wide. These are
 // physical pixels on this side because WM_NCHITTEST speaks client pixels,
 // which Qt does not scale for us in a native filter.
-constexpr double kTitleBarDp = 40.0;
+//
+// 44 is not cosmetic: the tab strip lives inside the bar now, so the bar has to
+// be tall enough to hold a 34 dp tab with 5 dp above and below it. The height
+// and `TitleBar.implicitHeight` are the same number and both are load-bearing.
+constexpr double kTitleBarDp = 44.0;
 constexpr double kButtonDp = 46.0;
 
 /// Everything the native half needs to know about one window.
@@ -78,6 +82,16 @@ struct WindowState
     qreal dpr = 1.0;
     int material = 2; // 0 mica, 1 acrylic, 2 none
     bool dark = false;
+    /// The part of the bar that must stay a client area, in dp from the client's
+    /// left edge: where the tabs and their `+` are. Everything else in the bar
+    /// is caption, so the empty strip and the mark at the left both drag the
+    /// window natively and keep Aero Snap and double-click maximise.
+    ///
+    /// QML owns these numbers because only QML knows how wide the tabs are; the
+    /// right edge moves as tabs are opened and closed. `left == right` means
+    /// "no client band", which is what a window with no tabs gets.
+    double client_left_dp = 0.0;
+    double client_right_dp = 0.0;
 };
 
 inline QHash<quintptr, WindowState>& window_states()
@@ -124,9 +138,13 @@ inline int resize_border_px_for(HWND hwnd)
 /// Resize edges win over the caption because the QML frame is drawn inside
 /// them; while maximized there is no resize edge, exactly as on a native
 /// window. The button strip is the three rightmost `kButtonDp` columns of the
-/// title bar, so the layout is defined once (here) and QML draws to it.
-inline LRESULT hit_test_for(HWND hwnd, qreal dpr, POINT screen)
+/// bar, so the layout is defined once (here) and QML draws to it. Between them
+/// sits the tab band, which is the one region of the bar that has to reach
+/// QML: a tab that hit-tested as caption could not be clicked, only dragged.
+inline LRESULT hit_test_for(const WindowState& state, POINT screen)
 {
+    HWND hwnd = state.hwnd;
+    const qreal dpr = state.dpr;
     RECT window_rect;
     GetWindowRect(hwnd, &window_rect);
     const bool zoomed = IsZoomed(hwnd) != FALSE;
@@ -172,6 +190,10 @@ inline LRESULT hit_test_for(HWND hwnd, qreal dpr, POINT screen)
         if (client.x >= right - 2 * button && client.x < right - button)
             return HTMAXBUTTON;
         if (client.x >= right - 3 * button && client.x < right)
+            return HTCLIENT;
+        const int band_left = qRound(state.client_left_dp * dpr);
+        const int band_right = qRound(state.client_right_dp * dpr);
+        if (band_right > band_left && client.x >= band_left && client.x < band_right)
             return HTCLIENT;
         return HTCAPTION;
     }
@@ -319,7 +341,7 @@ public:
         switch (msg->message) {
         case WM_NCHITTEST: {
             const POINT screen{ GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam) };
-            *result = hit_test_for(msg->hwnd, state->dpr, screen);
+            *result = hit_test_for(*state, screen);
             return true;
         }
         case WM_NCLBUTTONDOWN:
@@ -403,6 +425,22 @@ inline bool dae_qt_apply_backdrop(const QString& token, int material, bool dark)
     state->material = material;
     state->dark = dark;
     return apply_backdrop_to(hwnd, material, dark);
+}
+
+/// Records which horizontal slice of the 44 dp bar must hit-test as client, in
+/// dp from the client's left edge. Called by the tab strip whenever the number
+/// or the width of the tabs changes.
+inline bool dae_qt_set_caption_client(const QString& token, double left, double right)
+{
+    QQuickWindow* window = find_window_by_token(token);
+    if (!window)
+        return false;
+    WindowState* state = state_for(reinterpret_cast<HWND>(window->winId()));
+    if (!state)
+        return false;
+    state->client_left_dp = left;
+    state->client_right_dp = right;
+    return true;
 }
 
 /// A translucent QQuickWindow needs its default alpha buffer switched on

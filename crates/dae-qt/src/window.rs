@@ -38,6 +38,10 @@ pub mod qobject {
         fn dae_qt_apply_backdrop(token: &QString, material: i32, dark: bool) -> bool;
 
         #[namespace = "dae_qt"]
+        #[rust_name = "set_window_caption_client"]
+        fn dae_qt_set_caption_client(token: &QString, left: f64, right: f64) -> bool;
+
+        #[namespace = "dae_qt"]
         fn dae_qt_enable_alpha();
 
         #[namespace = "dae_qt"]
@@ -62,6 +66,12 @@ pub mod qobject {
         #[cxx_name = "applyMaterial"]
         fn apply_material(self: Pin<&mut WindowController>, material: &QString, dark: bool)
         -> bool;
+
+        /// The horizontal slice of the chrome bar that carries the tabs, in dp
+        /// from the client's left edge. The rest of the bar drags the window.
+        #[qinvokable]
+        #[cxx_name = "setCaptionClient"]
+        fn set_caption_client(self: Pin<&mut WindowController>, left: f64, right: f64) -> bool;
 
         #[qinvokable]
         #[cxx_name = "startupMaterial"]
@@ -97,6 +107,11 @@ impl qobject::WindowController {
 
     pub fn startup_material(&self) -> QString {
         QString::from(crate::material::startup().as_str())
+    }
+
+    pub fn set_caption_client(self: Pin<&mut Self>, left: f64, right: f64) -> bool {
+        let token = self.token.clone();
+        qobject::set_window_caption_client(&token, left, right)
     }
 }
 

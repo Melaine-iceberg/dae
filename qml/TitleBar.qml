@@ -2,22 +2,39 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
 
-// The custom title bar from gate 3. Its geometry is not free: the native hit
-// test in crates/dae-qt/cpp/window.h assumes a 40 dp bar and three 46 dp
-// button columns at the right. The left part is HTCAPTION, so drag, Aero Snap
-// and double-click maximize are handled by DefWindowProc. Only minimize and
-// close are client areas; maximize is HTMAXBUTTON so Snap Layouts opens on
-// hover and is never touched by QML.
+// The chrome bar: the window's mark on the left, the tab strip in the middle,
+// the three native buttons on the right, all in 44 dp.
+//
+// The title used to have a row of its own. It was showing the current path,
+// which the breadcrumb directly below already shows, in a font that could not
+// match it — 40 dp of a name nobody needed to read twice. Merging it into the
+// tab strip is what buys the tab chips their 34 dp without making the shell
+// taller than it is now.
+//
+// The bar is also the window's drag handle, and that is a native decision, not
+// a QML one: `crates/dae-qt/cpp/window.h` returns HTCAPTION for the bar minus
+// the three button columns minus `captionClientRight`, the band the tabs
+// occupy. DefWindowProc then runs the move loop, which is the only way drag,
+// Aero Snap, the Snap Layouts hover on maximise and double-click maximise all
+// stay native. `implicitHeight` here and `kTitleBarDp` there are the same
+// number; changing one without the other puts the button hit zones off by the
+// difference.
 Item {
     id: root
 
     property var window: null
     property bool dark: true
     property string material: "none"
+    /// For the OS: `Window.title` comes from the same property. Nothing on the
+    /// bar renders it any more.
     property string title: "dae"
 
-    implicitHeight: 40
-    height: 40
+    implicitHeight: 44
+    height: 44
+
+    /// Where the tab strip ends and the window buttons begin. The shell anchors
+    /// its strip to this instead of repeating the button width in QML.
+    readonly property real buttonsWidth: 46 * 3
 
     readonly property color chromeTint: dark
         ? Qt.rgba(0.055, 0.063, 0.075, 0.38)
@@ -32,6 +49,14 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: root.chromeColor
+    }
+
+    Rectangle {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: 1
+        color: Theme.hairline
     }
 
     Rectangle {
@@ -52,21 +77,11 @@ Item {
         }
     }
 
-    Text {
-        anchors.left: logo.right
-        anchors.leftMargin: 10
-        anchors.verticalCenter: parent.verticalCenter
-        text: root.title
-        color: root.textColor
-        font.pixelSize: 13
-        font.weight: Font.DemiBold
-    }
-
     Item {
         id: windowButtons
         anchors.right: parent.right
         height: parent.height
-        width: 46 * 3
+        width: root.buttonsWidth
 
         Repeater {
             model: 3
@@ -76,23 +91,32 @@ Item {
                 required property int index
 
                 width: 46
-                height: 40
+                height: root.height
                 x: index * 46
 
                 readonly property bool isClose: index === 2
                 readonly property bool isMaximize: index === 1
                 readonly property bool hovered: mouse.containsMouse
+                /// Native only on Windows: there DefWindowProc owns the
+                /// maximise button so Snap Layouts opens on hover, and the NC
+                /// hit test means a QML click would never arrive anyway.
+                readonly property bool nativeMaximize: button.isMaximize
+                    && Qt.platform.os === "windows"
 
                 Rectangle {
                     anchors.fill: parent
                     color: button.isClose
                         ? (button.hovered ? "#c42b1c" : "transparent")
-                        : (button.hovered ? Theme.fill
-                                          : "transparent")
+                        : (button.hovered ? Theme.fill : "transparent")
                 }
 
+                // Windows keeps its own glyph font. The other two platforms
+                // have no font that carries these code points — naming
+                // "Segoe Fluent Icons" there is how the buttons used to render
+                // as empty boxes — so they get drawn shapes instead.
                 Text {
                     anchors.centerIn: parent
+                    visible: Qt.platform.os === "windows"
                     text: button.isClose ? "\uE8BB"
                         : button.isMaximize
                             ? (root.maximized ? "\uE923" : "\uE922")
@@ -102,14 +126,98 @@ Item {
                     font.pixelSize: 10
                 }
 
+                Item {
+                    id: drawnGlyph
+                    anchors.centerIn: parent
+                    width: 14
+                    height: 14
+                    visible: Qt.platform.os !== "windows"
+
+                    readonly property color ink: button.isClose && button.hovered
+                        ? Theme.onSolid : root.textColor
+
+                    Rectangle {
+                        visible: button.index === 0
+                        anchors.centerIn: parent
+                        width: 10
+                        height: 1
+                        color: drawnGlyph.ink
+                    }
+
+                    Rectangle {
+                        visible: button.isMaximize && !root.maximized
+                        anchors.centerIn: parent
+                        width: 9
+                        height: 9
+                        color: "transparent"
+                        border.width: 1
+                        border.color: drawnGlyph.ink
+                    }
+
+                    // Restore: the back plate is offset up and right, the front
+                    // plate is filled with the bar so the overlap reads as two.
+                    Item {
+                        visible: button.isMaximize && root.maximized
+                        anchors.centerIn: parent
+                        width: 10
+                        height: 10
+
+                        Rectangle {
+                            x: 2
+                            y: 0
+                            width: 8
+                            height: 8
+                            color: "transparent"
+                            border.width: 1
+                            border.color: drawnGlyph.ink
+                        }
+
+                        Rectangle {
+                            x: 0
+                            y: 2
+                            width: 8
+                            height: 8
+                            color: root.chromeColor
+                            border.width: 1
+                            border.color: drawnGlyph.ink
+                        }
+                    }
+
+                    Item {
+                        visible: button.isClose
+                        anchors.centerIn: parent
+                        width: 10
+                        height: 10
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 12
+                            height: 1
+                            color: drawnGlyph.ink
+                            rotation: 45
+                        }
+
+                        Rectangle {
+                            anchors.centerIn: parent
+                            width: 12
+                            height: 1
+                            color: drawnGlyph.ink
+                            rotation: -45
+                        }
+                    }
+                }
+
                 MouseArea {
                     id: mouse
                     anchors.fill: parent
-                    enabled: !button.isMaximize
-                    hoverEnabled: !button.isMaximize
+                    enabled: !button.nativeMaximize
+                    hoverEnabled: !button.nativeMaximize
                     onClicked: {
                         if (button.isClose)
                             root.window.close()
+                        else if (button.isMaximize)
+                            root.maximized ? root.window.showNormal()
+                                           : root.window.showMaximized()
                         else
                             root.window.showMinimized()
                     }

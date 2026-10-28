@@ -188,6 +188,10 @@ Item {
             root.command("overview", qsTr("概览"), "", "\u2302", qsTr("导航")),
             root.command("trash", qsTr("回收站"), "", "\u232b", qsTr("导航")),
             root.command("new-tab", qsTr("新建标签页"), "Ctrl+T", "+", qsTr("导航")),
+            // This one lost its button when the chrome bar became one row: the
+            // strip is the window's drag handle now, so a permanent button in it
+            // costs the only empty space there is.
+            root.command("new-window", qsTr("新建窗口"), "", "▢", qsTr("导航")),
             root.command("close-tab", qsTr("关闭标签页"), "Ctrl+W", "\u00d7", qsTr("导航")),
             root.command("new-space", qsTr("新建空间…"), "", "\u25c8", qsTr("导航")),
             root.command("settings", qsTr("设置"), root.shortcutHint("app.openSettings", "Ctrl+,"),

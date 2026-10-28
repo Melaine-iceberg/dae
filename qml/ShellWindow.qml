@@ -1127,6 +1127,8 @@ Window {
             root.openTrash()
         else if (id === "new-tab")
             root.addTabHere()
+        else if (id === "new-window")
+            root.newWindowAt(root.activePath)
         else if (id === "close-tab")
             root.closeTab(root.activeIndex)
         else if (id === "settings")
@@ -1879,47 +1881,71 @@ Window {
     Column {
         anchors.fill: parent
 
-        TitleBar {
+        // The chrome bar is one row now: mark, tabs, window buttons. 44 dp is the
+        // number `kTitleBarDp` in crates/dae-qt/cpp/window.h hard-codes for the
+        // native hit test, so the two move together.
+        Item {
+            id: chromeBar
             width: parent.width
-            window: root
-            dark: root.dark
-            material: root.material
-            title: root.title
-        }
+            height: 44
 
-        TabStrip {
-            id: tabStrip
-            width: parent.width
-            tabs: root.tabs
-            activeIndex: root.activeIndex
-            hostWindow: root
-            dark: root.dark
-            accent: root.accent
-            material: root.material
+            TitleBar {
+                id: titleBar
+                anchors.fill: parent
+                window: root
+                dark: root.dark
+                material: root.material
+                title: root.title
+            }
 
-            onTabActivated: function (index) {
-                root.activeIndex = index
-            }
-            onTabClosed: function (index) {
-                root.closeTab(index)
-            }
-            onNewTabRequested: root.addTabHere()
-            onNewWindowRequested: root.newWindowAt(root.activePath)
-            onTabMoved: function (from, to) {
-                root.moveTab(from, to)
-            }
-            onTabDroppedOnWindow: function (index, token, localX) {
-                root.dropTabOnWindow(index, token, localX)
-            }
-            onTabTornOff: function (index, globalX, globalY) {
-                root.detachTab(index, globalX, globalY)
+            TabStrip {
+                id: tabStrip
+                anchors.left: parent.left
+                anchors.leftMargin: 44
+                anchors.right: parent.right
+                // Three 46 dp buttons; `buttonsWidth` keeps that number in one
+                // place rather than repeating it in two files.
+                anchors.rightMargin: titleBar.buttonsWidth + 8
+                anchors.verticalCenter: parent.verticalCenter
+                height: 34
+                tabs: root.tabs
+                activeIndex: root.activeIndex
+                hostWindow: root
+                accent: root.accent
+
+                // Native hit test input. Without this the chips sit inside the
+                // caption and a click on a tab starts a window drag instead of
+                // activating it. `leftMargin` is the band's origin in window
+                // coordinates; the strip's own numbers are strip-local.
+                function pushCaptionBand() {
+                    if (chrome.attached)
+                        chrome.setCaptionClient(44 + clientLeft, 44 + clientRight)
+                }
+                onClientRightChanged: pushCaptionBand()
+
+                onTabActivated: function (index) {
+                    root.activeIndex = index
+                }
+                onTabClosed: function (index) {
+                    root.closeTab(index)
+                }
+                onNewTabRequested: root.addTabHere()
+                onTabMoved: function (from, to) {
+                    root.moveTab(from, to)
+                }
+                onTabDroppedOnWindow: function (index, token, localX) {
+                    root.dropTabOnWindow(index, token, localX)
+                }
+                onTabTornOff: function (index, globalX, globalY) {
+                    root.detachTab(index, globalX, globalY)
+                }
             }
         }
 
         Rectangle {
             id: pathBar
             width: parent.width
-            height: 40
+            height: 46
             color: root.chromeColor
 
             Rectangle {
@@ -1981,8 +2007,8 @@ Window {
                 anchors.right: root.folderActive ? searchBar.left : parent.right
                 anchors.rightMargin: root.folderActive ? 6 : 12
                 anchors.verticalCenter: parent.verticalCenter
-                height: 26
-                radius: 7
+                height: 30
+                radius: 6
                 color: Theme.hover
                 border.width: 1
                 border.color: root.pathEditing
@@ -2220,7 +2246,7 @@ Window {
         Row {
             id: body
             width: parent.width
-            height: parent.height - 40 - 34 - 40 - 22 - searchOptions.height
+            height: parent.height - 44 - 46 - 26 - searchOptions.height
 
             Sidebar {
                 id: sidebar
@@ -2607,8 +2633,19 @@ Window {
 
         Rectangle {
             width: parent.width
-            height: 22
+            height: 26
             color: root.chromeColor
+
+            // A hairline instead of a colour step: the strip is the same surface
+            // as the path bar above, and two shades of chrome would read as a
+            // third region rather than as the bottom of the window.
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: 1
+                color: Theme.hairline
+            }
 
             Text {
                 id: statusText
@@ -3547,6 +3584,10 @@ Window {
 
         if (!chrome.attach())
             console.warn("dae: native window attach failed")
+        // The tab band is a client area of the caption. It can only be declared
+        // once the window exists natively, so this runs after `attach` rather
+        // than from the strip's own completion.
+        tabStrip.pushCaptionBand()
 
         if (root.firstWindow) {
             Workspace.startSystemWatch()

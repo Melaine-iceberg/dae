@@ -3,7 +3,14 @@ import QtQuick
 import dae 1.0
 import "Shell.js" as ShellState
 
-// The tab strip, including the tear-off gesture.
+// The tab strip: a transparent band inside the chrome bar, holding the chips,
+// the `+`, and the tear-off gesture.
+//
+// It has no background of its own any more. The bar draws the fill and the
+// hairline, because the strip is no longer the full width of the window — the
+// mark on the left and the window buttons on the right share that row, and
+// three rectangles painting the same surface would only disagree about where
+// it ends.
 //
 // A tab drag is handed to the platform's own drag loop (`Shell.startTabDrag`).
 // That loop draws the chip with the grab point under the cursor on every
@@ -19,9 +26,7 @@ Item {
     property var tabs: []
     property int activeIndex: 0
     property var hostWindow: null
-    property bool dark: true
     property color accent: Theme.interactive
-    property string material: "none"
 
     /// A pressed tab that could still become a drag. Cleared before the native
     /// loop starts, so a stray move after the loop cannot begin a second one.
@@ -40,23 +45,31 @@ Item {
     signal tabActivated(int index)
     signal tabClosed(int index)
     signal newTabRequested()
-    signal newWindowRequested()
     signal tabMoved(int from, int to)
     signal tabDroppedOnWindow(int index, string token, real localX)
     signal tabTornOff(int index, real globalX, real globalY)
 
     implicitHeight: 34
     height: 34
+    // Still clipped: past the width of the bar the chips would otherwise paint
+    // over the window buttons.
     clip: true
+
+    /// The horizontal slice of the bar that the tabs occupy, in the strip's own
+    /// coordinates. The shell forwards it to the native hit test so a tab click
+    /// reaches QML instead of starting a window drag; the empty space to the
+    /// right of `+` stays caption and remains the window's grab handle.
+    readonly property real clientLeft: 0
+    readonly property real clientRight: tabX(tabs.length) + plusWidth
 
     readonly property int tabWidthValue: 184
     readonly property int tabGap: 2
-    readonly property int tabLeft: 8
+    /// The strip starts where the mark ends. The bar's own left inset is 14 + 20
+    /// + 10; the strip is anchored to 44 by the shell and lays its first chip at
+    /// 0 so a drop indicator and a chip agree on where "the first tab" is.
+    readonly property int tabLeft: 0
+    readonly property int plusWidth: 30
 
-    readonly property color chromeColor: material === "none"
-        ? Theme.chrome
-        : (dark ? Qt.rgba(0.055, 0.063, 0.075, 0.38)
-                : Qt.rgba(0.98, 0.985, 0.99, 0.46))
     readonly property color activeColor: Theme.raised
     readonly property color hoverColor: Theme.hover
     readonly property color textColor: Theme.ink
@@ -78,7 +91,7 @@ Item {
 
     function indicatorX(index) {
         if (index <= 0)
-            return tabLeft
+            return root.tabLeft
         const column = Math.min(index, tabs.length) - 1
         return tabX(column) + tabWidthValue + tabGap / 2
     }
@@ -120,7 +133,7 @@ Item {
         // while this runs, so the record is complete when it returns.
         const action = Shell.startTabDrag(token, title, index,
                                           Math.round(grabX), Math.round(grabY),
-                                          tabWidthValue, 30,
+                                          tabWidthValue, height,
                                           activeColor, accent, textColor)
 
         const drop = ShellState.takeTabDrop()
@@ -156,23 +169,10 @@ Item {
             tabTornOff(index, globalX, globalY)
     }
 
-    Rectangle {
-        anchors.fill: parent
-        color: root.chromeColor
-    }
-
-    Rectangle {
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        height: 1
-        color: root.hairline
-    }
-
     Row {
         x: root.tabLeft
-        y: 2
-        height: 30
+        anchors.verticalCenter: parent.verticalCenter
+        height: parent.height
         spacing: root.tabGap
 
         Repeater {
@@ -184,7 +184,7 @@ Item {
                 required property var modelData
 
                 width: root.tabWidthValue
-                height: 30
+                height: parent.height
                 radius: 6
                 color: root.activeIndex === index
                     ? root.activeColor
@@ -280,8 +280,8 @@ Item {
         }
 
         Item {
-            width: 30
-            height: 30
+            width: root.plusWidth
+            height: parent.height
 
             Rectangle {
                 anchors.fill: parent
@@ -305,42 +305,15 @@ Item {
         }
     }
 
-    Rectangle {
-        id: newWindowButton
-        anchors.right: parent.right
-        anchors.rightMargin: 10
-        anchors.verticalCenter: parent.verticalCenter
-        width: 84
-        height: 24
-        radius: 6
-        color: newWindowMouse.containsMouse
-            ? Theme.fill
-            : Theme.hover
-
-        Text {
-            anchors.centerIn: parent
-            text: qsTr("新窗口")
-            color: root.mutedColor
-            font.pixelSize: 11
-        }
-
-        MouseArea {
-            id: newWindowMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: root.newWindowRequested()
-        }
-    }
-
     // Where the tab would land. The platform draws the dragged chip itself, so
     // this is the only in-window feedback while a drag is over the strip; it
     // also shows for a tab dragged in from another window.
     Rectangle {
         visible: root.dropX >= 0
         x: root.indicatorX(root.indexAt(root.dropX))
-        y: 5
+        anchors.verticalCenter: parent.verticalCenter
         width: 2
-        height: 24
+        height: parent.height - 10
         radius: 1
         color: root.accent
     }
