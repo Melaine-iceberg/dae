@@ -19,10 +19,10 @@
 //! queued onto the Qt thread before touching `Workspace`, so the watcher
 //! threads never see a QObject directly.
 //!
-//! The native half is Windows-first (Win32 + the registry), matching
-//! `window.h` and `platform.rs`. Other platforms keep the single startup
-//! reading and are wired up with their own measured gate rather than an
-//! untested guess.
+//! The watchers are Windows-only (Win32 + the registry), matching the native
+//! chrome in `window.h`. Other platforms keep the single startup reading and
+//! `start()` is a no-op there; each watcher needs its own measured gate rather
+//! than an untested guess.
 
 #[cfg(not(windows))]
 use cxx_qt::CxxQtThread;

@@ -23,6 +23,7 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/TabStrip.qml", "qml/TabStrip.qml"),
     ("../../qml/TerminalPanel.qml", "qml/TerminalPanel.qml"),
     ("../../qml/TitleBar.qml", "qml/TitleBar.qml"),
+    ("../../qml/ResizeHandles.qml", "qml/ResizeHandles.qml"),
     ("../../qml/FileList.qml", "qml/FileList.qml"),
     ("../../qml/FileGrid.qml", "qml/FileGrid.qml"),
     ("../../qml/ColumnView.qml", "qml/ColumnView.qml"),

@@ -3366,6 +3366,13 @@ Window {
         }
     }
 
+    // The native resize border Windows gets from its hit test. Invisible there,
+    // and only the six-pixel frame is interactive elsewhere.
+    ResizeHandles {
+        anchors.fill: parent
+        window: root
+    }
+
     // A tab dragged from any window. The platform's drag loop owns the pointer
     // and the preview; this area only records where the release landed, and the
     // source strip applies the reorder/merge after the loop returns. Recording

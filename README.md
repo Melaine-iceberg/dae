@@ -80,7 +80,11 @@ otherwise. Besides the Tauri installers, the workflow deploys the Qt runtime,
 attaches `dae-<version>-<platform>.zip` files and a signed `latest-qt.json`
 feed, then leaves the release as a draft for manual publishing. `main` is
 additionally type-checked for macOS on every push, since
-`#[cfg(target_os = "macos")]` code is invisible on the other platforms.
+`#[cfg(target_os = "macos")]` code is invisible on the other platforms. The Qt
+workspace (`apps/dae`, `crates/dae-qt`) is compiled with Qt 6.12 on Linux and
+macOS by `qt-check.yml`, so the release matrix is not the first compiler those
+platforms see; the Windows-only native chrome and its portable fallbacks are
+listed in [the engine decision](docs/decisions/engine-qt-quick.md).
 
 ## Where things live
 

@@ -59,6 +59,29 @@ Item {
         color: Theme.hairline
     }
 
+    // Windows drags the bar through the native hit test described above. The
+    // other platforms have no WM_NCHITTEST, so the empty parts of the bar ask
+    // the window manager for its own move loop instead. The tab strip and the
+    // buttons are declared later, so they keep their clicks.
+    DragHandler {
+        id: systemMove
+        target: null
+        enabled: Qt.platform.os !== "windows"
+        onActiveChanged: {
+            if (systemMove.active && root.window !== null)
+                root.window.startSystemMove()
+        }
+    }
+
+    TapHandler {
+        enabled: Qt.platform.os !== "windows"
+        onDoubleTapped: {
+            if (root.window === null)
+                return
+            root.maximized ? root.window.showNormal() : root.window.showMaximized()
+        }
+    }
+
     Rectangle {
         id: logo
         x: 14

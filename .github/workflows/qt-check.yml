@@ -1,0 +1,94 @@
+# Compiles the Qt Quick shell on Linux and macOS on every push to main.
+#
+# Why this exists: the native half of `crates/dae-qt` is Windows-first, but the
+# C++ seam has portable fallbacks for the other platforms and the release
+# workflow ships Qt artifacts there. Until this job existed, the first compiler
+# those platforms saw was the release tag itself — a missing `windows.h` guard
+# or a platform-specific `cfg` would only fail after Windows had already
+# published its installers.
+#
+# This is a real `cargo build`, not `cargo check`: `cxx-qt-build` compiles the
+# C++ bridge from the build script either way, but only the build proves the
+# generated objects link against the deployed Qt. It needs no display server,
+# signing identity or bundling tool, so all of that stays in release.yml.
+name: Qt shell check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qt-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-26.04
+            qt_arch: linux_gcc_64
+            target: ""
+          # Matches the release legs: Apple Silicon only.
+          - platform: macos-latest
+            qt_arch: clang_64
+            target: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Qt's Linux binaries need both the runtime XCB/Wayland packages and the
+      # development headers used by cxx-qt.
+      - name: Install Linux Qt build dependencies
+        if: matrix.platform == 'ubuntu-26.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential curl wget file pkg-config cmake ninja-build \
+            libgl1-mesa-dev libglu1-mesa-dev libegl1-mesa-dev \
+            libx11-xcb-dev libxrender-dev libxext-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libxcb1-dev libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
+            libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-sync1 \
+            libxcb-util1 libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1 \
+            libgtk-3-dev libgdk-pixbuf-2.0-dev librsvg2-dev \
+            libdbus-1-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
+            libsecret-1-dev
+
+      # The same Qt minor as the release and the local development
+      # instructions. cxx-qt picks qmake up from PATH.
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.12.0"
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+          cache-key-prefix: qt-check-6.12-${{ matrix.platform }}
+          modules: qtmultimedia
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: qt-check-${{ matrix.platform }}
+          cache-on-failure: true
+
+      - name: Build the Qt shell
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            cargo build --package dae-app --target ${{ matrix.target }}
+          else
+            cargo build --package dae-app
+          fi

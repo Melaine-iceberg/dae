@@ -1,9 +1,10 @@
 //! QML-facing window controller.
 //!
-//! One instance per window. It only carries the window's token; the native
-//! state lives in `cpp/window.h`, keyed by HWND, so a second window uses the
-//! same style/backdrop/hit-test path as the first (gate 4) instead of a
-//! parallel one.
+//! One instance per window. It only carries the window's token; on Windows the
+//! native state lives in `cpp/window.h`, keyed by HWND, so a second window uses
+//! the same style/backdrop/hit-test path as the first (gate 4) instead of a
+//! parallel one. Linux and macOS keep the same entry points as portable
+//! fallbacks: there is no DWM or caption hit test to feed there.
 //!
 //! QML usage:
 //!
@@ -57,7 +58,8 @@ pub mod qobject {
         type WindowController = super::WindowControllerRust;
 
         /// Applies the native frame, installs the IME focus guard and records
-        /// the HWND. The QML window must be hidden until this returns.
+        /// the window (and, on Windows, its HWND). The QML window must be
+        /// hidden until this returns.
         #[qinvokable]
         fn attach(self: Pin<&mut WindowController>) -> bool;
 

@@ -1,11 +1,11 @@
 // Native window state for the Qt Quick shell (gates 3 and 4).
 //
 // The spike kept one `State` for "the" window and a second map bolted on for
-// gate 4's torn-off window. That split is gone: every window is an entry in
-// one HWND-keyed map, and the same code paths (style, backdrop, hit test,
-// WM_NCCALCSIZE) run for the first window and the nth.
+// gate 4's torn-off window. That split is gone: on Windows every window is an
+// entry in one HWND-keyed map, and the same code paths (style, backdrop, hit
+// test, WM_NCCALCSIZE) run for the first window and the nth.
 //
-// What stays native, and why:
+// What stays native on Windows, and why:
 //
 //   * **The frame.** A frameless QQuickWindow has no native frame. The window
 //     gets WS_THICKFRAME / WS_MAXIMIZEBOX back after creation, and
@@ -18,9 +18,18 @@
 //     *decision* (which build, whether transparency is allowed) stays in Rust
 //     (`src/material.rs`), which is also the Tauri module's rule.
 //   * **The cancel guard.** See cpp/ime.h.
+//
+// Linux and macOS have neither a DWM nor a WM_NCHITTEST hook. The entry points
+// below keep the same signatures there and do only the portable part (confirm
+// the token names a window, force the platform window to exist); QML drives
+// `startSystemMove` / `startSystemResize` instead of a caption hit test. The
+// backdrop is `Material::None` on those platforms, so an apply call is a no-op.
 
 #pragma once
 
+#include <QtGlobal>
+
+#if defined(Q_OS_WIN)
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -30,23 +39,24 @@
 
 #include <QAbstractNativeEventFilter>
 #include <QCoreApplication>
-#include <QCursor>
-#include <QDir>
-#include <QGuiApplication>
 #include <QHash>
 #include <QPointer>
+#include <QTimer>
+#endif
+
+#include <QGuiApplication>
 #include <QQuickWindow>
 #include <QString>
 #include <QStyleHints>
-#include <QTimer>
 #include <QWindow>
 
 #include <cstdio>
 
-#include "ime.h"
 #include "lookup.h"
 
 namespace dae_qt {
+
+#if defined(Q_OS_WIN)
 
 // Raw DWM attribute numbers. The SDK spells some of them under
 // DWMWINDOWATTRIBUTE, but naming the values here keeps them next to the code
@@ -443,6 +453,37 @@ inline bool dae_qt_set_caption_client(const QString& token, double left, double 
     return true;
 }
 
+#else // !Q_OS_WIN
+
+// There is no native frame to style and no hit test to feed. Keep the contract
+// the Rust bridge and QML rely on: false means "no such window", true means the
+// request was accepted. Attach still forces the platform window to exist so the
+// hidden-window ordering in QML (`attach`, then show) is the same everywhere.
+inline bool dae_qt_attach(const QString& token)
+{
+    QQuickWindow* window = find_window_by_token(token);
+    if (!window)
+        return false;
+    window->winId();
+    return true;
+}
+
+/// No backdrop implementation outside Windows; `Material::None` is what
+/// `src/material.rs` answers there, and a forced material is only a tint.
+inline bool dae_qt_apply_backdrop(const QString& token, int, bool)
+{
+    return find_window_by_token(token) != nullptr;
+}
+
+/// The caption band is a Windows hit-test input. QML's drag and resize
+/// handlers are the portable equivalent, so this is accepted and ignored.
+inline bool dae_qt_set_caption_client(const QString& token, double, double)
+{
+    return find_window_by_token(token) != nullptr;
+}
+
+#endif // Q_OS_WIN
+
 /// A translucent QQuickWindow needs its default alpha buffer switched on
 /// before the first window is created. Called from `main` before the engine
 /// loads QML.
@@ -451,9 +492,10 @@ inline void dae_qt_enable_alpha()
     QQuickWindow::setDefaultAlphaBuffer(true);
 }
 
-/// The OS light/dark preference. Qt reads the same Windows setting the Tauri
-/// shell's `prefers-color-scheme` resolves to, so the Mica/Acrylic tint agrees
-/// with the rest of the desktop instead of being fixed at dark.
+/// The OS light/dark preference. Qt reads the platform's setting, so the
+/// Mica/Acrylic tint on Windows agrees with the rest of the desktop instead of
+/// being fixed at dark; the same query is what the QML theme follows
+/// everywhere else.
 inline bool dae_qt_system_dark()
 {
     return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
@@ -463,9 +505,8 @@ inline bool dae_qt_system_dark()
 // Window focus.
 //
 // A native drag runs in the platform's own loop (`drag.cpp`), so the strip no
-// longer polls the pointer, the window under it or the physical button. This
-// header keeps only the Windows-specific pieces the shell still asks for;
-// everything the tab drag needs lives in drag.cpp and is cross-platform.
+// longer polls the pointer, the window under it or the physical button.
+// Everything the tab drag needs lives in drag.cpp and is cross-platform.
 // ---------------------------------------------------------------------------
 
 inline bool dae_qt_focus_window(const QString& token)
@@ -477,15 +518,22 @@ inline bool dae_qt_focus_window(const QString& token)
     if (!window->isVisible())
         window->show();
 
+#if defined(Q_OS_WIN)
     const auto hwnd = reinterpret_cast<HWND>(window->winId());
     // SW_RESTORE also brings back the placement a minimized window had before
     // (maximized often), where showNormal() would always shrink it.
     if (hwnd && IsIconic(hwnd))
         ShowWindow(hwnd, SW_RESTORE);
+#endif
+    // Qt maps these to the platform's own raise/activate calls. On macOS a
+    // background application still needs the dock/menu activation a launch
+    // goes through, which is a measured gate of its own.
     window->raise();
     window->requestActivate();
+#if defined(Q_OS_WIN)
     if (hwnd)
         SetForegroundWindow(hwnd);
+#endif
     return true;
 }
 

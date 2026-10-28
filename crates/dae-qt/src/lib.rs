@@ -16,9 +16,25 @@
 //! Nothing here is a benchmark harness: the spike clocks, JSON result writers,
 //! synthetic scroll workload and scripted input live in `bench/qt-*` only.
 //!
-//! The native half is Windows-first (Win32, DWM, IMM32), because all four gates
-//! were measured there. The Linux/macOS chrome and input backends land with
-//! their own measured gates rather than as an untested guess.
+//! # Platforms
+//!
+//! The crate compiles on Windows, Linux and macOS. The *implementation* of the
+//! native chrome is still Windows-only, because all four gates were measured
+//! there, but the C++ seam no longer is: `cpp/window.h` and `cpp/ime.h` keep
+//! the same entry points on every platform and do only the portable part
+//! elsewhere.
+//!
+//! | | Windows | Linux / macOS |
+//! |---|---|---|
+//! | frame, move, resize | Win32 hit test (`WM_NCHITTEST`) | frameless Qt window; QML `startSystemMove` / `startSystemResize` |
+//! | backdrop | DWM Mica/Acrylic | `Material::None` (solid chrome) |
+//! | IME focus cancel | `CPS_CANCEL` guard (gate 2) | not installed; no measured equivalent |
+//! | `dae://` registration | registry write | not implemented yet; the single-instance socket still works |
+//!
+//! A Linux/macOS release artifact is therefore a working shell with the
+//! platform's own chrome, not a pixel-for-pixel copy of the Windows one. Each
+//! native behaviour above lands on those platforms with its own measured gate
+//! rather than as an untested guess.
 
 pub mod activation;
 pub mod appearance;

@@ -1,7 +1,8 @@
 // The CPS_CANCEL guard from gate 2 of docs/decisions/engine-qt-quick.md §5.
 //
-// Qt 6.12's QWindowsInputContext::reset() sends the stored composition string
-// to the old focus object as a commit when the focus changes:
+// This is a Windows workaround: it exists because Qt 6.12's
+// QWindowsInputContext::reset() sends the stored composition string to the old
+// focus object as a commit when the focus changes:
 //
 //     if (m_compositionContext.isComposing && !focusObject.isNull()) {
 //         QInputMethodEvent event;
@@ -16,9 +17,16 @@
 //
 // This is control-agnostic: a QTextEdit would receive the same event, so
 // swapping the text layer does not fix it.
+//
+// macOS and Linux have their own input contexts; gate 2 measured only the
+// Windows one, so elsewhere this header exposes the same entry point as a
+// no-op instead of guessing at their composition policy.
 
 #pragma once
 
+#include <QtGlobal>
+
+#if defined(Q_OS_WIN)
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -32,10 +40,15 @@
 #include <QPointer>
 #include <QQuickItem>
 #include <QQuickWindow>
+#endif
+
+#include <QString>
 
 #include "lookup.h"
 
 namespace dae_qt {
+
+#if defined(Q_OS_WIN)
 
 /// Cancels the IME composition of one window, if it has one.
 inline bool cancel_composition(HWND hwnd)
@@ -111,5 +124,17 @@ inline bool dae_qt_install_focus_cancel_guard(const QString& token)
 {
     return install_ime_guard(find_window_by_token(token));
 }
+
+#else // !Q_OS_WIN
+
+/// No guard is installed where Qt does not use the input context this
+/// workaround targets. The result still says whether the token named a live
+/// window, which is what `WindowController.attach` reports to QML.
+inline bool dae_qt_install_focus_cancel_guard(const QString& token)
+{
+    return find_window_by_token(token) != nullptr;
+}
+
+#endif // Q_OS_WIN
 
 } // namespace dae_qt

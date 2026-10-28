@@ -3,7 +3,7 @@ name = "dae-qt"
 version = "0.5.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
-description = "Qt Quick shell bridge for dae: directory model, HWND-keyed window state and the IME focus guard"
+description = "Qt Quick shell bridge for dae: directory model, native window state (Win32, with portable fallbacks) and the IME focus guard"
 publish = false
 
 # This crate is the only place allowed to know Qt. Domain code stays in

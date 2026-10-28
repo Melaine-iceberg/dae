@@ -23,6 +23,11 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 
 fn main() {
+    // Windows pins D3D11, which is the backend gates 1–4 were measured on.
+    // macOS and Linux keep Qt's own choice (Metal and OpenGL respectively);
+    // the gated native paths there are Qt's platform integration, not a
+    // renderer this shell chose.
+    #[cfg(windows)]
     if std::env::var_os("QSG_RHI_BACKEND").is_none() {
         // No other thread exists yet; this is the same single-threaded setup
         // the spike did before creating QGuiApplication.

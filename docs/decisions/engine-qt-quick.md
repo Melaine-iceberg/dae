@@ -213,9 +213,25 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
   不含脚本化栅门、合成滚动负载或假目录。
 
 构建需要 Qt 6.12 的 `qmake`：`QMAKE="K:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"`，
-并把 Qt 的 `bin/` 放进 `PATH`，然后 `cargo run -p dae-app`。原生那半目前是
-Windows-first（Win32 / DWM / IMM32）；Linux 与 macOS 的 chrome/输入后端各自
-另立门槛，不拿未实测的移植冒充产品代码。
+并把 Qt 的 `bin/` 放进 `PATH`，然后 `cargo run -p dae-app`。
+
+**平台边界（2026-10-28）**：`crates/dae-qt` 在 Windows、Linux、macOS 都能通过
+编译，但原生实现首先只在 Windows 实测过。`cpp/window.h`、`cpp/ime.h` 的入口点
+现已按 `Q_OS_WIN` 分支：Windows 走 Win32 / DWM / IMM32（原实现不变），其余平台
+保留同名空实现（校验 token、强制创建平台窗口），由 QML 的
+`startSystemMove` / `startSystemResize` 接管无边框窗口的移动与缩放。
+
+| | Windows | Linux / macOS |
+|---|---|---|
+| 边框、移动、缩放 | `WM_NCHITTEST` 原生命中测试 | Qt 无边框窗口 + QML system move/resize |
+| 背景材质 | Mica / Acrylic（DWM） | `Material::None`（实色 chrome） |
+| 输入法换焦点守卫 | `CPS_CANCEL`（门槛 2） | 不安装；尚无实测等价物 |
+| `dae://` 注册 | 注册表写入 | 未实现；单实例 socket 仍可用 |
+
+因此 Linux/macOS 的发行物是「能启动、能移动缩放的 Qt 壳」，而不是 Windows 观感的
+逐像素复制；上表每一项仍需各自的门槛，不以未实测的移植冒充产品代码。CI 的
+`qt-check.yml` 在 Linux/macOS 上编译 `dae-app`，让 release 矩阵不再是这两个平台
+的第一位编译器。
 
 ### 4.3 真路径已打通：配置 → 目录 → 导航（2026-10-25）
 
