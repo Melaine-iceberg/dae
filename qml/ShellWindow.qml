@@ -2578,7 +2578,7 @@ Window {
                     id: terminalPanel
                     width: parent.width
                     active: root.folderActive && root.terminalActive
-                    cwd: root.activePath
+                    tab: root.activeTab
                     dark: root.dark
                     material: root.material
                     onExited: {

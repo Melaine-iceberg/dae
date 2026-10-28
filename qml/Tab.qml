@@ -36,6 +36,10 @@ QtObject {
     property DirectoryListModel listing: DirectoryListModel {}
     property SearchModel nameSearch: SearchModel {}
     property ContentSearchModel contentSearch: ContentSearchModel {}
+    /// The shell shown in this tab's terminal panel. One session per tab, so
+    /// hiding the panel or switching tabs keeps it running, and a torn-off tab
+    /// carries its shell along. `TerminalPanel` starts it on first use.
+    property TerminalSession terminal: TerminalSession {}
 
     /// path -> true. Replaced wholesale so QML bindings re-evaluate; mutating
     /// an object in place would not notify the delegates.
@@ -85,6 +89,16 @@ QtObject {
         clearSelection()
         surface = "space"
         spaceId = id
+    }
+
+    /// Starts this tab's shell at its current folder. The panel calls this
+    /// instead of reaching through `terminal` itself: on a tab switch the
+    /// panel's derived `session` binding may not have re-evaluated yet, and
+    /// starting the previous tab's shell twice would leave this one dead.
+    function startTerminal() {
+        if (terminal.running)
+            return
+        terminal.start(folder ? listing.path : "", 80, 24)
     }
 
     function cancelSearch() {
@@ -140,5 +154,6 @@ QtObject {
         listing.dispose()
         nameSearch.dispose()
         contentSearch.dispose()
+        terminal.kill()
     }
 }

@@ -21,8 +21,8 @@ pub fn register_item() {
 }
 
 const FRAME_MAGIC: &[u8; 4] = b"DAET";
-const FRAME_VERSION: u8 = 1;
-const HEADER_LEN: usize = 4 + 1 + 2 + 2 + 2 + 2 + 1 + 1 + 4;
+const FRAME_VERSION: u8 = 2;
+const HEADER_LEN: usize = 4 + 1 + 2 + 2 + 2 + 2 + 1 + 1 + 4 + 4;
 const CELL_LEN: usize = 4 + 4 + 4 + 1;
 
 #[cxx_qt::bridge]
@@ -72,6 +72,11 @@ pub mod qobject {
 
         #[qinvokable]
         fn scroll(self: Pin<&mut TerminalSession>, lines: i32);
+
+        /// Scrolls to an absolute history offset, 0 being the live bottom.
+        #[qinvokable]
+        #[cxx_name = "scrollTo"]
+        fn scroll_to(self: Pin<&mut TerminalSession>, offset: i32);
 
         #[qinvokable]
         fn kill(self: Pin<&mut TerminalSession>);
@@ -138,10 +143,13 @@ impl qobject::TerminalSession {
         let cwd = directory.is_dir().then_some(directory);
         match CoreSession::spawn(cwd, cols, rows, notify) {
             Ok(session) => {
+                // Publish the session before `running` flips: the painter
+                // resizes when it sees `runningChanged`, and that resize must
+                // find a live PTY or the shell keeps the placeholder 80x24.
+                self.as_mut().rust_mut().session = Some(Arc::new(session));
                 self.as_mut().set_running(true);
                 self.as_mut().set_exit_code(-1);
                 self.as_mut().set_title(QString::from("Terminal"));
-                self.as_mut().rust_mut().session = Some(Arc::new(session));
                 true
             }
             Err(error) => {
@@ -173,10 +181,20 @@ impl qobject::TerminalSession {
         }
     }
 
-    fn scroll(self: Pin<&mut Self>, lines: i32) {
+    fn scroll(mut self: Pin<&mut Self>, lines: i32) {
         if let Some(session) = self.session.as_ref() {
             session.scroll(lines);
         }
+        // Scrolling changes the grid without new output, so the painter would
+        // otherwise keep showing the frame it last pulled.
+        self.as_mut().updated();
+    }
+
+    fn scroll_to(mut self: Pin<&mut Self>, offset: i32) {
+        if let Some(session) = self.session.as_ref() {
+            session.scroll_to(offset.max(0) as usize);
+        }
+        self.as_mut().updated();
     }
 
     fn kill(self: Pin<&mut Self>) {
@@ -207,7 +225,7 @@ impl qobject::TerminalSession {
 }
 
 /// `DAET` | version | cols | rows | cursor col | cursor row | visible | shape |
-/// display offset | cells.
+/// display offset | history size | cells.
 ///
 /// Little endian, one 13-byte record per cell: Unicode scalar, fg ARGB, bg
 /// ARGB, attribute bits. The painter decodes exactly this; keeping the format
@@ -223,6 +241,7 @@ fn encode_frame(snapshot: &TerminalSnapshot) -> Vec<u8> {
     frame.push(u8::from(snapshot.cursor_visible));
     frame.push(snapshot.cursor_shape);
     frame.extend_from_slice(&(snapshot.display_offset as u32).to_le_bytes());
+    frame.extend_from_slice(&(snapshot.history_size as u32).to_le_bytes());
     for cell in &snapshot.cells {
         frame.extend_from_slice(&(cell.ch as u32).to_le_bytes());
         frame.extend_from_slice(&cell.fg.to_le_bytes());
@@ -246,6 +265,7 @@ mod tests {
             cursor_visible: true,
             cursor_shape: 0,
             display_offset: 0,
+            history_size: 0,
             cells: vec![Default::default(); 2],
         };
         let frame = encode_frame(&snapshot);

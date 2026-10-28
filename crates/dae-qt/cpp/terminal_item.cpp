@@ -1,6 +1,7 @@
 #include "terminal_item.h"
 
 #include <QClipboard>
+#include <QFontDatabase>
 #include <QFontMetricsF>
 #include <QGuiApplication>
 #include <QInputMethod>
@@ -16,8 +17,11 @@ namespace dae_qt {
 
 namespace {
 
-constexpr int FrameHeader = 4 + 1 + 2 + 2 + 2 + 2 + 1 + 1 + 4;
+constexpr int FrameHeader = 4 + 1 + 2 + 2 + 2 + 2 + 1 + 1 + 4 + 4;
 constexpr int FrameCell = 4 + 4 + 4 + 1;
+constexpr qreal ScrollbarWidth = 6.0;
+constexpr qreal ScrollbarMargin = 3.0;
+constexpr qreal ScrollbarMinThumb = 24.0;
 
 quint16 readU16(const uchar* data)
 {
@@ -38,6 +42,13 @@ QString character(quint32 codepoint)
     if (codepoint <= 0xffff)
         return QString(QChar(ushort(codepoint)));
     return QString::fromUcs4(&codepoint, 1);
+}
+
+bool wordCharacter(quint32 codepoint)
+{
+    return QChar::isLetterOrNumber(codepoint) || codepoint == '_' || codepoint == '-'
+        || codepoint == '.' || codepoint == '/' || codepoint == '\\' || codepoint == ':'
+        || codepoint == '~';
 }
 
 } // namespace
@@ -83,11 +94,22 @@ void TerminalItem::setSession(QObject* session)
 
     if (m_updateConnection)
         QObject::disconnect(m_updateConnection);
+    if (m_runningConnection)
+        QObject::disconnect(m_runningConnection);
     m_session = session;
     if (m_session) {
         m_updateConnection = connect(m_session.data(), SIGNAL(updated()), this, SLOT(refresh()));
+        // A tab's shell starts after the panel has already sized the item, so
+        // the resize sent before `start()` had no PTY to reach.
+        m_runningConnection = connect(m_session.data(), SIGNAL(runningChanged()), this,
+                                      SLOT(resetSize()));
     }
     emit sessionChanged();
+    // The previous session's grid size says nothing about this one; a shell
+    // started in another window may still be 80x24.
+    m_lastCols = -1;
+    m_lastRows = -1;
+    clearSelection();
     applySizeToSession();
     refresh();
 }
@@ -107,6 +129,8 @@ void TerminalItem::setFontSize(int size)
     if (m_font.pixelSize() == clamped)
         return;
     m_font.setPixelSize(clamped);
+    m_fallbackFamilies.clear();
+    m_fallbackCandidates.clear();
     measureCells();
     applySizeToSession();
     emit fontChanged();
@@ -137,6 +161,8 @@ void TerminalItem::setFontFamily(const QString& family)
     } else {
         m_font.setFamilies({ trimmed });
     }
+    m_fallbackFamilies.clear();
+    m_fallbackCandidates.clear();
     measureCells();
     applySizeToSession();
     emit fontChanged();
@@ -145,10 +171,18 @@ void TerminalItem::setFontFamily(const QString& family)
 
 void TerminalItem::measureCells()
 {
-    const QFontMetricsF metrics(m_font);
+    m_primaryMetrics = QFontMetricsF(m_font);
+    const QFontMetricsF& metrics = m_primaryMetrics;
     m_cellWidth = qMax(1.0, metrics.horizontalAdvance(QLatin1Char('M')));
     m_cellHeight = qMax(1.0, metrics.lineSpacing() * m_lineHeight);
     m_ascent = metrics.ascent();
+}
+
+void TerminalItem::resetSize()
+{
+    m_lastCols = -1;
+    m_lastRows = -1;
+    applySizeToSession();
 }
 
 void TerminalItem::applySizeToSession()
@@ -173,32 +207,46 @@ void TerminalItem::refresh()
         m_cells.clear();
         m_cols = 0;
         m_rows = 0;
+        m_historySize = 0;
+        m_displayOffset = 0;
+        clearSelection();
         update();
         return;
     }
     QByteArray frame;
-    if (QMetaObject::invokeMethod(m_session.data(), "snapshot",
-                                  Q_RETURN_ARG(QByteArray, frame))) {
-        decodeFrame(frame);
+    const bool pulled = QMetaObject::invokeMethod(m_session.data(), "snapshot",
+                                                  Q_RETURN_ARG(QByteArray, frame));
+    // A session that has not produced a frame yet (starting, or just switched
+    // to) must not keep showing the previous tab's grid.
+    if (!pulled || !decodeFrame(frame)) {
+        m_hasFrame = false;
+        m_cells.clear();
+        m_cols = 0;
+        m_rows = 0;
+        m_historySize = 0;
+        m_displayOffset = 0;
+        m_cursorVisible = false;
     }
     update();
 }
 
-void TerminalItem::decodeFrame(const QByteArray& frame)
+bool TerminalItem::decodeFrame(const QByteArray& frame)
 {
     if (frame.size() < FrameHeader)
-        return;
+        return false;
     const auto* data = reinterpret_cast<const uchar*>(frame.constData());
-    if (std::memcmp(data, "DAET", 4) != 0 || data[4] != 1)
-        return;
+    if (std::memcmp(data, "DAET", 4) != 0 || data[4] != 2)
+        return false;
 
     const int cols = readU16(data + 5);
     const int rows = readU16(data + 7);
     if (cols <= 0 || rows <= 0 || cols > 4096 || rows > 4096)
-        return;
+        return false;
     if (frame.size() < FrameHeader + cols * rows * FrameCell)
-        return;
+        return false;
 
+    if (cols != m_cols || rows != m_rows)
+        clearSelection();
     m_cols = cols;
     m_rows = rows;
     m_cursorCol = readU16(data + 9);
@@ -206,6 +254,7 @@ void TerminalItem::decodeFrame(const QByteArray& frame)
     m_cursorVisible = data[13] != 0;
     m_cursorShape = data[14];
     m_displayOffset = readU32(data + 15);
+    m_historySize = readU32(data + 19);
 
     m_cells.resize(cols * rows);
     const uchar* cell = data + FrameHeader;
@@ -218,6 +267,7 @@ void TerminalItem::decodeFrame(const QByteArray& frame)
         cell += FrameCell;
     }
     m_hasFrame = true;
+    return true;
 }
 
 void TerminalItem::paint(QPainter* painter)
@@ -246,7 +296,23 @@ void TerminalItem::paint(QPainter* painter)
         }
     }
 
-    // Then text, one drawText per style/colour run.
+    if (hasSelection()) {
+        int firstRow, firstColumn, lastRow, lastColumn;
+        selectionBounds(firstRow, firstColumn, lastRow, lastColumn);
+        QColor highlight(0x6e, 0xa8, 0xfe);
+        highlight.setAlpha(70);
+        for (int row = firstRow; row <= lastRow && row < m_rows; ++row) {
+            if (row < 0)
+                continue;
+            const int start = row == firstRow ? firstColumn : 0;
+            const int end = row == lastRow ? lastColumn : m_cols - 1;
+            painter->fillRect(QRectF(start * m_cellWidth, row * m_cellHeight,
+                                     (end - start + 1) * m_cellWidth, m_cellHeight),
+                              highlight);
+        }
+    }
+
+    // Then text, one drawText per style/colour/font run.
     const quint8 styleMask = FlagBold | FlagItalic | FlagUnderline | FlagStrikeout | FlagHidden;
     for (int row = 0; row < m_rows; ++row) {
         const qreal y = row * m_cellHeight;
@@ -257,8 +323,9 @@ void TerminalItem::paint(QPainter* painter)
                 ++column;
                 continue;
             }
+            const QString firstFamily = fallbackFamily(first.ch);
             if (first.flags & FlagWide) {
-                painter->setFont(styleFont(first.flags));
+                painter->setFont(cellFont(first.flags, firstFamily));
                 painter->setPen(colour(first.fg));
                 painter->drawText(QRectF(column * m_cellWidth, y, m_cellWidth * 2.0, m_cellHeight),
                                   Qt::TextSingleLine | Qt::AlignLeft | Qt::AlignVCenter,
@@ -277,6 +344,8 @@ void TerminalItem::paint(QPainter* painter)
                     break;
                 if ((cell.flags & styleMask) != style || cell.fg != foreground)
                     break;
+                if (fallbackFamily(cell.ch) != firstFamily)
+                    break;
                 text.append(character(cell.ch));
                 ++column;
             }
@@ -284,7 +353,7 @@ void TerminalItem::paint(QPainter* painter)
                 ++column;
                 continue;
             }
-            painter->setFont(styleFont(style));
+            painter->setFont(cellFont(style, firstFamily));
             painter->setPen(colour(foreground));
             painter->drawText(QRectF(start * m_cellWidth, y, (column - start) * m_cellWidth,
                                      m_cellHeight),
@@ -323,6 +392,14 @@ void TerminalItem::paint(QPainter* painter)
         }
         }
     }
+
+    if (scrollbarVisible()) {
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(QColor(0x8d, 0x94, 0xa2, 45));
+        painter->drawRoundedRect(scrollbarTrack(), ScrollbarWidth / 2.0, ScrollbarWidth / 2.0);
+        painter->setBrush(QColor(0x8d, 0x94, 0xa2, m_scrollbarDrag ? 200 : 130));
+        painter->drawRoundedRect(scrollbarThumb(), ScrollbarWidth / 2.0, ScrollbarWidth / 2.0);
+    }
 }
 
 void TerminalItem::keyPressEvent(QKeyEvent* event)
@@ -339,10 +416,32 @@ void TerminalItem::keyPressEvent(QKeyEvent* event)
     const bool alt = modifiers.testFlag(Qt::AltModifier);
     const bool shift = modifiers.testFlag(Qt::ShiftModifier);
 
-    if (((control || meta) && key == Qt::Key_V) || (control && shift && key == Qt::Key_V)) {
+    // A selection turns Ctrl+C into copy, the way Windows Terminal behaves;
+    // without one it stays the interrupt byte below.
+    if ((control && !alt && key == Qt::Key_C) || (meta && key == Qt::Key_C)
+        || (control && key == Qt::Key_Insert)) {
+        if (hasSelection()) {
+            copySelection();
+            event->accept();
+            return;
+        }
+    }
+    if (((control || meta) && key == Qt::Key_V) || (control && shift && key == Qt::Key_V)
+        || (shift && key == Qt::Key_Insert)) {
         paste();
         event->accept();
         return;
+    }
+    // Any other key starts a fresh command; a highlight left from copying
+    // would otherwise keep painting over the output that follows. Modifier
+    // presses arrive as their own key events, and clearing on the Ctrl of
+    // Ctrl+C would eat the selection before the C that copies it.
+    const bool modifierKey = key == Qt::Key_Shift || key == Qt::Key_Control
+        || key == Qt::Key_Alt || key == Qt::Key_Meta || key == Qt::Key_AltGr
+        || key == Qt::Key_CapsLock || key == Qt::Key_NumLock;
+    if (!modifierKey && hasSelection()) {
+        clearSelection();
+        update();
     }
     if ((control || meta) && key >= Qt::Key_A && key <= Qt::Key_Z) {
         const char byte = char(key - Qt::Key_A + 1);
@@ -463,7 +562,80 @@ void TerminalItem::wheelEvent(QWheelEvent* event)
 void TerminalItem::mousePressEvent(QMouseEvent* event)
 {
     forceActiveFocus();
+    if (event->button() != Qt::LeftButton || !m_hasFrame) {
+        event->accept();
+        return;
+    }
+
+    const QPointF position = event->position();
+    if (scrollbarVisible()
+        && scrollbarTrack().adjusted(-ScrollbarMargin, 0.0, ScrollbarMargin, 0.0)
+               .contains(position)) {
+        const QRectF thumb = scrollbarThumb();
+        m_scrollbarDrag = true;
+        m_scrollbarGrabOffset = thumb.contains(position) ? position.y() - thumb.top()
+                                                         : thumb.height() / 2.0;
+        updateScrollbarDrag(position);
+        event->accept();
+        return;
+    }
+
+    m_selecting = true;
+    m_hasSelection = false;
+    m_selAnchorRow = qBound(0, int(position.y() / m_cellHeight), m_rows - 1);
+    m_selAnchorColumn = qBound(0, int(position.x() / m_cellWidth), m_cols - 1);
+    m_selHeadRow = m_selAnchorRow;
+    m_selHeadColumn = m_selAnchorColumn;
+    update();
     event->accept();
+}
+
+void TerminalItem::mouseMoveEvent(QMouseEvent* event)
+{
+    if (m_scrollbarDrag) {
+        updateScrollbarDrag(event->position());
+        event->accept();
+        return;
+    }
+    if (m_selecting) {
+        extendSelection(qBound(0, int(event->position().y() / m_cellHeight), m_rows - 1),
+                        qBound(0, int(event->position().x() / m_cellWidth), m_cols - 1));
+        event->accept();
+        return;
+    }
+    QQuickPaintedItem::mouseMoveEvent(event);
+}
+
+void TerminalItem::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (m_scrollbarDrag) {
+        m_scrollbarDrag = false;
+        update();
+        event->accept();
+        return;
+    }
+    if (m_selecting) {
+        m_selecting = false;
+        // A click that never moved is not a selection; it is the gesture that
+        // dismisses the previous one.
+        if (m_selAnchorRow == m_selHeadRow && m_selAnchorColumn == m_selHeadColumn)
+            clearSelection();
+        update();
+        event->accept();
+        return;
+    }
+    QQuickPaintedItem::mouseReleaseEvent(event);
+}
+
+void TerminalItem::mouseDoubleClickEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton && m_hasFrame) {
+        selectWordAt(qBound(0, int(event->position().y() / m_cellHeight), m_rows - 1),
+                     qBound(0, int(event->position().x() / m_cellWidth), m_cols - 1));
+        event->accept();
+        return;
+    }
+    QQuickPaintedItem::mouseDoubleClickEvent(event);
 }
 
 void TerminalItem::geometryChange(const QRectF& newGeometry, const QRectF& oldGeometry)
@@ -515,9 +687,198 @@ void TerminalItem::paste()
     sendText(normalized);
 }
 
+void TerminalItem::selectionBounds(int& firstRow, int& firstColumn, int& lastRow,
+                                   int& lastColumn) const
+{
+    if (m_selAnchorRow < m_selHeadRow
+        || (m_selAnchorRow == m_selHeadRow && m_selAnchorColumn <= m_selHeadColumn)) {
+        firstRow = m_selAnchorRow;
+        firstColumn = m_selAnchorColumn;
+        lastRow = m_selHeadRow;
+        lastColumn = m_selHeadColumn;
+    } else {
+        firstRow = m_selHeadRow;
+        firstColumn = m_selHeadColumn;
+        lastRow = m_selAnchorRow;
+        lastColumn = m_selAnchorColumn;
+    }
+}
+
+void TerminalItem::clearSelection()
+{
+    m_hasSelection = false;
+    m_selecting = false;
+}
+
+void TerminalItem::extendSelection(int row, int column)
+{
+    m_selHeadRow = row;
+    m_selHeadColumn = column;
+    m_hasSelection = true;
+    update();
+}
+
+void TerminalItem::selectWordAt(int row, int column)
+{
+    int start = column;
+    int end = column;
+    if (wordCharacter(cellAt(row, column).ch)) {
+        while (start > 0 && wordCharacter(cellAt(row, start - 1).ch))
+            --start;
+        while (end + 1 < m_cols && wordCharacter(cellAt(row, end + 1).ch))
+            ++end;
+    }
+    m_selAnchorRow = row;
+    m_selAnchorColumn = start;
+    m_selHeadRow = row;
+    m_selHeadColumn = end;
+    m_hasSelection = true;
+    update();
+}
+
+QString TerminalItem::selectedText() const
+{
+    if (!m_hasSelection)
+        return QString();
+    int firstRow, firstColumn, lastRow, lastColumn;
+    selectionBounds(firstRow, firstColumn, lastRow, lastColumn);
+    firstRow = qMax(0, firstRow);
+    lastRow = qMin(lastRow, m_rows - 1);
+    if (lastRow < firstRow)
+        return QString();
+    firstColumn = qBound(0, firstColumn, m_cols - 1);
+    lastColumn = qBound(0, lastColumn, m_cols - 1);
+
+    QStringList lines;
+    for (int row = firstRow; row <= lastRow; ++row) {
+        const int start = row == firstRow ? firstColumn : 0;
+        const int end = row == lastRow ? lastColumn : m_cols - 1;
+        QString line;
+        for (int column = start; column <= end; ++column) {
+            const TerminalCell& cell = cellAt(row, column);
+            if (cell.flags & FlagSpacer)
+                continue;
+            line.append(character(cell.ch));
+        }
+        while (line.endsWith(QLatin1Char(' ')))
+            line.chop(1);
+        lines.append(line);
+    }
+    return lines.join(QLatin1Char('\n'));
+}
+
+void TerminalItem::copySelection()
+{
+    const QString text = selectedText();
+    if (!text.isEmpty())
+        QGuiApplication::clipboard()->setText(text);
+}
+
+bool TerminalItem::scrollbarVisible() const
+{
+    return m_historySize > 0 && m_rows > 0 && m_cols > 0;
+}
+
+QRectF TerminalItem::scrollbarTrack() const
+{
+    return QRectF(width() - ScrollbarWidth - ScrollbarMargin, ScrollbarMargin, ScrollbarWidth,
+                  qMax(0.0, height() - 2.0 * ScrollbarMargin));
+}
+
+QRectF TerminalItem::scrollbarThumb() const
+{
+    const QRectF track = scrollbarTrack();
+    if (m_historySize == 0 || m_rows <= 0 || track.height() <= 0.0)
+        return QRectF();
+    const qreal total = qreal(m_historySize) + qreal(m_rows);
+    const qreal lower = qMin(ScrollbarMinThumb, track.height());
+    const qreal height = qBound(lower, track.height() * qreal(m_rows) / total, track.height());
+    const qreal maxTop = qMax(0.0, track.height() - height);
+    const quint32 offset = qMin<quint32>(m_displayOffset, m_historySize);
+    const qreal fraction = qreal(m_historySize - offset) / qreal(m_historySize);
+    return QRectF(track.left(), track.top() + maxTop * fraction, track.width(), height);
+}
+
+void TerminalItem::scrollToOffset(int offset)
+{
+    if (!m_session)
+        return;
+    QMetaObject::invokeMethod(m_session.data(), "scrollTo", Q_ARG(int, offset));
+}
+
+void TerminalItem::updateScrollbarDrag(const QPointF& position)
+{
+    if (m_historySize == 0)
+        return;
+    const QRectF track = scrollbarTrack();
+    const qreal height = scrollbarThumb().height();
+    const qreal maxTop = qMax(0.0, track.height() - height);
+    if (maxTop <= 0.0) {
+        scrollToOffset(int(m_historySize));
+        return;
+    }
+    const qreal top = qBound(track.top(), position.y() - m_scrollbarGrabOffset,
+                             track.top() + maxTop);
+    const qreal fraction = (top - track.top()) / maxTop;
+    scrollToOffset(int(qRound((1.0 - fraction) * qreal(m_historySize))));
+}
+
+bool TerminalItem::privateUse(quint32 codepoint)
+{
+    return (codepoint >= 0xe000 && codepoint <= 0xf8ff)
+        || (codepoint >= 0xf0000 && codepoint <= 0xffffd)
+        || (codepoint >= 0x100000 && codepoint <= 0x10fffd);
+}
+
+QString TerminalItem::fallbackFamily(quint32 codepoint)
+{
+    if (!privateUse(codepoint))
+        return QString();
+    const auto cached = m_fallbackFamilies.constFind(codepoint);
+    if (cached != m_fallbackFamilies.constEnd())
+        return *cached;
+
+    QString family;
+    if (!m_primaryMetrics.inFontUcs4(codepoint)) {
+        if (m_fallbackCandidates.isEmpty()) {
+            const QStringList installed = QFontDatabase::families();
+            QStringList nerd;
+            QStringList rest;
+            for (const QString& name : installed) {
+                if (name.contains(QLatin1String("Nerd"), Qt::CaseInsensitive))
+                    nerd.append(name);
+                else
+                    rest.append(name);
+            }
+            m_fallbackCandidates = nerd + rest;
+        }
+        const QStringList primary = m_font.families();
+        for (const QString& name : m_fallbackCandidates) {
+            if (primary.contains(name))
+                continue;
+            QFont candidate(m_font);
+            candidate.setFamilies({name});
+            if (QFontMetricsF(candidate).inFontUcs4(codepoint)) {
+                family = name;
+                break;
+            }
+        }
+    }
+    m_fallbackFamilies.insert(codepoint, family);
+    return family;
+}
+
 QColor TerminalItem::colour(QRgb argb) const
 {
     return QColor::fromRgba(argb);
+}
+
+QFont TerminalItem::cellFont(quint8 flags, const QString& family) const
+{
+    QFont font = styleFont(flags);
+    if (!family.isEmpty())
+        font.setFamilies({family});
+    return font;
 }
 
 QFont TerminalItem::styleFont(quint8 flags) const

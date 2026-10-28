@@ -317,21 +317,39 @@ ghost 一样按抓取点跟随光标，而不是居中。平台循环在指针�
   `TextAreaSizeRequest`——缺了这一步 PowerShell/Starship 的 prompt 不会出现。
   调色板覆盖 16 色、256 色立方与灰阶、命名色。
 - `crates/dae-qt/src/terminal.rs` — `TerminalSession` QObject 把快照压成
-  `DAET` v1 帧（13 字节/单元格），输出用 `AtomicBool` 合并，一帧一次
-  `updated()`，不会让一次 `ls` 排满 Qt 事件队列。
+  `DAET` v2 帧（21 字节帧头 + 13 字节/单元格，帧头带历史行数），输出用
+  `AtomicBool` 合并，一帧一次 `updated()`，不会让一次 `ls` 排满 Qt 事件队列。
 - `cpp/terminal_item.{h,cpp}` — `QQuickPaintedItem` 自绘：背景按行合并成 run，
   文本按样式/颜色合并成 run；宽字符、astral codepoint（`QString::fromUcs4`）、
   粗/斜/下划线/删除线、块/下划线/竖线光标与闪烁、IME 预编辑与提交、滚轮、
   按键转义序列。字号、行高、字体族作为属性，来自 `settings.toml`。
-- `qml/TerminalPanel.qml` — 每个窗口一个会话；隐藏面板只是改变高度，shell
-  继续运行，再打开同一个会话，历史仍在。
+- `qml/Tab.qml` — **每个标签一个会话**（`TerminalSession` 随 `Tab` 对象走，
+  不挂在窗口上）。面板第一次在这个标签里打开时才 `start()`；切标签只换绑定，
+  隐藏面板只改高度，shell 都继续运行。撕出标签时会话跟着标签对象进新窗口，
+  不重启；`dispose()` 关闭标签时才 `kill()`。
+- `qml/TerminalPanel.qml` — 只绑定 `tab`，由它派生 `session` 与 `cwd`；切换
+  标签时若面板打开，新标签的 shell 按该标签当前路径启动。
+- 选区与复制：鼠标拖选、双击选词；`Ctrl+Shift+C`、`Ctrl+Insert`（macOS
+  `Cmd+C`）复制，有选区时 `Ctrl+C` 也复制（Windows Terminal 的行为），
+  否则仍是中断字节。任意非修饰键清除高亮。选区只覆盖当前视口，滚到哪就能
+  选到哪。
+- 滚动条：`DAET` v2 帧头新增历史行数，painter 在右侧画 6 px 轨道与滑块，
+  拖动按绝对偏移调用 `scrollTo`（滚轮也走同一条 `updated()` 重绘路径，
+  修掉了此前滚轮不动画面只在下次输出时才刷新的问题）。
+- Nerd Font 私有区：主字体缺字时（`inFontUcs4` 为假）在已安装字体里查找
+  含该码点的家族，优先名字带 `Nerd` 的字体，按码点缓存结果，命中的单元格
+  用回退字体绘制；没有任何字体包含该字形时仍是方框，那是字体确实缺失。
 
 实测（2026-10-25/26）：真实 PowerShell + Starship prompt 正常显示；`echo hello`、
 `echo 你好` 回显与配色正确；隐藏再打开后 `echo survived` 仍接在同一会话上；
 把字号保存为 14 后新终端按 14 号绘制。
 
-已知未做：会话是每窗口而不是每标签；没有选区/复制、滚动条；Nerd Font 私有区
-字形缺字时仍显示方框。
+2026-10-28 复验（Windows 11 build 26340）：打开终端后新建标签，进程枚举到
+两个 `pwsh` + 两个 `OpenConsole`，即每标签一个会话，切回第一个标签内容仍在；
+拖选高亮正常，`Ctrl+C` 把选区写入系统剪贴板（粘贴到路径栏核对）。本机
+`[terminal]` 未配置 fontFamily（主字体 Cascadia Mono），Starship prompt 的
+Nerd Font 图标正常显示，回退字体路径生效。滚动条在历史为空时不出现；有真实
+历史后的拖动尚未在自动化输入下复验。
 
 ### 4.6 命令与平台模块：设置、位置、文件操作（2026-10-26）
 

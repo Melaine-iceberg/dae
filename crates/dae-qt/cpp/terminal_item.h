@@ -15,11 +15,14 @@
 #include <QByteArray>
 #include <QColor>
 #include <QFont>
+#include <QFontMetricsF>
+#include <QHash>
 #include <QMetaObject>
 #include <QObject>
 #include <QPointer>
 #include <QQuickPaintedItem>
 #include <QString>
+#include <QStringList>
 #include <QTimer>
 #include <QVector>
 
@@ -68,6 +71,8 @@ public slots:
     /// Pulls a new frame. The session's `updated` signal is connected here.
     void refresh();
     void focusTerminal() { forceActiveFocus(); }
+    /// Copies the highlighted cells, if any, to the system clipboard.
+    void copySelection();
 
 signals:
     void sessionChanged();
@@ -80,9 +85,17 @@ protected:
     QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
     void wheelEvent(QWheelEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void mouseDoubleClickEvent(QMouseEvent* event) override;
     void geometryChange(const QRectF& newGeometry, const QRectF& oldGeometry) override;
     void focusInEvent(QFocusEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
+
+private slots:
+    /// Re-sends the grid size after the shell starts; the resize attempted
+    /// before `start()` had no PTY behind it.
+    void resetSize();
 
 private:
     static constexpr quint8 FlagBold = 1 << 0;
@@ -94,7 +107,7 @@ private:
     static constexpr quint8 FlagWide = 1 << 6;
     static constexpr quint8 FlagSpacer = 1 << 7;
 
-    void decodeFrame(const QByteArray& frame);
+    bool decodeFrame(const QByteArray& frame);
     void measureCells();
     void applySizeToSession();
     void sendBytes(const QByteArray& bytes);
@@ -102,13 +115,38 @@ private:
     void paste();
     QColor colour(QRgb argb) const;
     QFont styleFont(quint8 flags) const;
+    QFont cellFont(quint8 flags, const QString& family) const;
     const TerminalCell& cellAt(int row, int column) const;
+
+    void selectionBounds(int& firstRow, int& firstColumn, int& lastRow,
+                         int& lastColumn) const;
+    bool hasSelection() const { return m_hasSelection; }
+    void clearSelection();
+    void extendSelection(int row, int column);
+    void selectWordAt(int row, int column);
+    QString selectedText() const;
+
+    bool scrollbarVisible() const;
+    QRectF scrollbarTrack() const;
+    QRectF scrollbarThumb() const;
+    void scrollToOffset(int offset);
+    void updateScrollbarDrag(const QPointF& position);
+
+    /// PUA codepoints are not part of the OS font-fallback chain, so a glyph
+    /// missing from the primary font has to be looked up across installed
+    /// families (Nerd Fonts first) and cached.
+    static bool privateUse(quint32 codepoint);
+    QString fallbackFamily(quint32 codepoint);
 
     QPointer<QObject> m_session;
     QMetaObject::Connection m_updateConnection;
+    QMetaObject::Connection m_runningConnection;
     bool m_dark = true;
     QFont m_font;
+    QFontMetricsF m_primaryMetrics{m_font};
     QString m_fontFamily;
+    QStringList m_fallbackCandidates;
+    QHash<quint32, QString> m_fallbackFamilies;
     qreal m_lineHeight = 1.75;
     qreal m_cellWidth = 0.0;
     qreal m_cellHeight = 0.0;
@@ -122,6 +160,15 @@ private:
     bool m_cursorVisible = false;
     quint8 m_cursorShape = 0;
     quint32 m_displayOffset = 0;
+    quint32 m_historySize = 0;
+    bool m_selecting = false;
+    bool m_hasSelection = false;
+    int m_selAnchorRow = 0;
+    int m_selAnchorColumn = 0;
+    int m_selHeadRow = 0;
+    int m_selHeadColumn = 0;
+    bool m_scrollbarDrag = false;
+    qreal m_scrollbarGrabOffset = 0.0;
     QVector<TerminalCell> m_cells;
     QString m_preedit;
     bool m_hasFrame = false;

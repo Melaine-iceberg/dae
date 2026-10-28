@@ -69,6 +69,9 @@ pub struct TerminalSnapshot {
     /// 0 block, 1 underline, 2 beam, 3 hollow block.
     pub cursor_shape: u8,
     pub display_offset: usize,
+    /// Lines kept above the viewport. Together with `rows` this is what the
+    /// scrollbar needs to size its thumb; `display_offset` places it.
+    pub history_size: usize,
     pub cells: Vec<CellSnapshot>,
 }
 
@@ -333,6 +336,17 @@ impl TerminalSession {
         }
     }
 
+    /// Moves the viewport to an absolute scrollback offset, 0 being the live
+    /// bottom. A scrollbar drag cannot be expressed as a fixed delta because
+    /// output may land between two pointer events and shift the history.
+    pub fn scroll_to(&self, offset: usize) {
+        if let Ok(mut state) = self.inner.lock() {
+            let current = state.term.grid().display_offset() as i64;
+            let delta = (offset as i64 - current).clamp(i64::from(i32::MIN), i64::from(i32::MAX));
+            state.term.scroll_display(Scroll::Delta(delta as i32));
+        }
+    }
+
     pub fn snapshot(&self) -> Option<TerminalSnapshot> {
         let state = self.inner.lock().ok()?;
         let content = state.term.renderable_content();
@@ -365,6 +379,7 @@ impl TerminalSession {
             cursor_visible: in_view,
             cursor_shape: cursor_shape_code(cursor.shape),
             display_offset: content.display_offset,
+            history_size: state.term.history_size(),
             cells,
         })
     }

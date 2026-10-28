@@ -8,7 +8,12 @@ import dae.terminal 1.0
 Item {
     id: root
 
-    property string cwd: ""
+    /// The tab whose shell this panel shows. The session belongs to the tab,
+    /// so switching tabs swaps the whole shell instead of reusing one process.
+    property var tab: null
+    readonly property var session: tab !== null ? tab.terminal : null
+    readonly property string cwd: tab !== null && tab.listing ? tab.listing.path : ""
+    readonly property bool running: session !== null && session.running
     property bool dark: true
     property string material: "none"
     property bool active: false
@@ -28,24 +33,19 @@ Item {
     height: implicitHeight
     clip: true
 
-    TerminalSession {
-        id: session
-    }
-
     function start() {
-        if (session.running)
-            return
-        session.start(root.cwd, 80, 24)
+        if (tab !== null)
+            tab.startTerminal()
     }
 
     function focusTerminal() {
-        if (!session.running)
-            start()
+        start()
         view.focusTerminal()
     }
 
     function stop() {
-        session.kill()
+        if (session !== null)
+            session.kill()
     }
 
     onActiveChanged: {
@@ -53,6 +53,14 @@ Item {
             start()
             Qt.callLater(root.focusTerminal)
         }
+    }
+
+    // The panel stays open across folder tabs; the new tab's shell starts the
+    // first time it becomes visible, and an already running one is only
+    // re-bound.
+    onTabChanged: {
+        if (active)
+            start()
     }
 
     Rectangle {
@@ -79,10 +87,10 @@ Item {
         Text {
             x: 10
             anchors.verticalCenter: parent.verticalCenter
-            text: session.running
+            text: root.running
                 ? (root.cwd !== "" ? qsTr("终端 · ") + root.cwd : qsTr("终端"))
-                : (qsTr("终端 · 已退出 ") + session.exitCode)
-            color: session.running ? root.textColor : root.mutedColor
+                : (session !== null ? qsTr("终端 · 已退出 ") + session.exitCode : qsTr("终端"))
+            color: root.running ? root.textColor : root.mutedColor
             font.pixelSize: 11
             elide: Text.ElideMiddle
             width: parent.width - 180
@@ -96,7 +104,7 @@ Item {
             width: 52
             height: 18
             radius: 4
-            visible: !session.running
+            visible: !root.running
             color: restartMouse.containsMouse ? (root.dark ? "#26ffffff" : "#12000000")
                                               : "transparent"
 
@@ -112,7 +120,7 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 onClicked: {
-                    session.start(root.cwd, 80, 24)
+                    root.start()
                     Qt.callLater(root.focusTerminal)
                 }
             }
@@ -156,7 +164,7 @@ Item {
         anchors.top: header.bottom
         anchors.bottom: parent.bottom
         anchors.margins: 6
-        session: session
+        session: root.session
         dark: root.dark
         fontSize: Workspace.terminalFontSize
         lineHeight: Workspace.terminalLineHeight
