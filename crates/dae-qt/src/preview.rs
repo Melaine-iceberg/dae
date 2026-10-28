@@ -19,6 +19,7 @@ use dae_core::fs::{preview, service};
 use dae_core::types::{EntryKind, FileProperties, display_name_from_path};
 
 use crate::format;
+use crate::preview_markup::{self, SourceKind};
 use crate::runtime;
 
 const PREVIEW_READ_BYTES: u32 = 64 * 1024;
@@ -51,11 +52,21 @@ pub mod qobject {
         #[qproperty(QString, modified_text, cxx_name = "modifiedText")]
         #[qproperty(QString, kind_text, cxx_name = "kindText")]
         #[qproperty(QString, content)]
+        /// The rendered HTML for Markdown and highlighted code, empty for a
+        /// plain-text peek. `content` always keeps the raw text so the panel
+        /// can fall back to it.
+        #[qproperty(QString, content_html, cxx_name = "contentHtml")]
+        #[qproperty(bool, is_markdown, cxx_name = "isMarkdown")]
         #[qproperty(bool, truncated)]
         #[qproperty(bool, has_text, cxx_name = "hasText")]
         #[qproperty(bool, has_thumbnail, cxx_name = "hasThumbnail")]
         #[qproperty(QString, thumbnail_revision, cxx_name = "thumbnailRevision")]
         #[qproperty(QString, media_text, cxx_name = "mediaText")]
+        /// `audio` or `video` when this entry can be played in place; empty
+        /// for everything else and for remote entries (their bytes live behind
+        /// a VFS the media backend cannot open).
+        #[qproperty(QString, media_kind, cxx_name = "mediaKind")]
+        #[qproperty(QString, media_url, cxx_name = "mediaUrl")]
         #[qproperty(bool, loading)]
         #[qproperty(QString, error)]
         /// True for `smb://`, `sftp://` and `cloud://` entries. Their text is
@@ -69,6 +80,12 @@ pub mod qobject {
 
         #[qinvokable]
         fn clear(self: Pin<&mut PreviewController>);
+
+        /// The panel's light/dark choice. Markdown and highlighted code carry
+        /// concrete colours, so a theme change re-renders the cached source.
+        #[qinvokable]
+        #[cxx_name = "setDark"]
+        fn set_dark(self: Pin<&mut PreviewController>, dark: bool);
     }
 
     impl cxx_qt::Threading for PreviewController {}
@@ -101,15 +118,23 @@ pub struct PreviewControllerRust {
     modified_text: QString,
     kind_text: QString,
     content: QString,
+    content_html: QString,
+    is_markdown: bool,
     truncated: bool,
     has_text: bool,
     has_thumbnail: bool,
     thumbnail_revision: QString,
     media_text: QString,
+    media_kind: QString,
+    media_url: QString,
     loading: bool,
     error: QString,
     remote: bool,
     generation: u64,
+    source_text: String,
+    source_kind: SourceKind,
+    source_path: String,
+    dark: bool,
 }
 
 struct Snapshot {
@@ -119,11 +144,17 @@ struct Snapshot {
     modified_text: String,
     kind_text: String,
     content: String,
+    content_html: String,
+    source_kind: SourceKind,
+    source_path: String,
+    dark: bool,
     truncated: bool,
     has_text: bool,
     has_thumbnail: bool,
     thumbnail_revision: String,
     media_text: String,
+    media_kind: String,
+    media_url: String,
     remote: bool,
 }
 
@@ -141,18 +172,26 @@ impl qobject::PreviewController {
         self.as_mut().set_modified_text(QString::default());
         self.as_mut().set_kind_text(QString::default());
         self.as_mut().set_content(QString::default());
+        self.as_mut().set_content_html(QString::default());
+        self.as_mut().set_is_markdown(false);
         self.as_mut().set_truncated(false);
         self.as_mut().set_has_text(false);
         self.as_mut().set_has_thumbnail(has_thumbnail(&path));
         self.as_mut().set_thumbnail_revision(QString::default());
         self.as_mut().set_media_text(QString::default());
+        self.as_mut().set_media_kind(QString::default());
+        self.as_mut().set_media_url(QString::default());
         self.as_mut().set_error(QString::default());
         self.as_mut().set_remote(!vfs::is_local_path(&path));
         self.as_mut().set_loading(true);
+        self.as_mut().rust_mut().source_text.clear();
+        self.as_mut().rust_mut().source_kind = SourceKind::Plain;
+        self.as_mut().rust_mut().source_path.clear();
 
+        let dark = self.dark;
         let thread = self.as_mut().qt_thread();
         runtime::spawn(async move {
-            let result = load_snapshot(&path).await;
+            let result = load_snapshot(&path, dark).await;
             let _ =
                 thread.queue(move |mut preview| preview.as_mut().apply(generation, path, result));
         });
@@ -169,14 +208,21 @@ impl qobject::PreviewController {
         self.as_mut().set_modified_text(QString::default());
         self.as_mut().set_kind_text(QString::default());
         self.as_mut().set_content(QString::default());
+        self.as_mut().set_content_html(QString::default());
+        self.as_mut().set_is_markdown(false);
         self.as_mut().set_truncated(false);
         self.as_mut().set_has_text(false);
         self.as_mut().set_has_thumbnail(false);
         self.as_mut().set_thumbnail_revision(QString::default());
         self.as_mut().set_media_text(QString::default());
+        self.as_mut().set_media_kind(QString::default());
+        self.as_mut().set_media_url(QString::default());
         self.as_mut().set_loading(false);
         self.as_mut().set_error(QString::default());
         self.as_mut().set_remote(false);
+        self.as_mut().rust_mut().source_text.clear();
+        self.as_mut().rust_mut().source_kind = SourceKind::Plain;
+        self.as_mut().rust_mut().source_path.clear();
     }
 
     fn apply(
@@ -191,6 +237,16 @@ impl qobject::PreviewController {
 
         match result {
             Ok(snapshot) => {
+                let html = if snapshot.dark == self.dark {
+                    snapshot.content_html.clone()
+                } else {
+                    preview_markup::render(
+                        &snapshot.content,
+                        &snapshot.source_path,
+                        &snapshot.source_kind,
+                        self.dark,
+                    )
+                };
                 self.as_mut().set_path(QString::from(path.as_str()));
                 self.as_mut()
                     .set_name(QString::from(snapshot.name.as_str()));
@@ -203,6 +259,9 @@ impl qobject::PreviewController {
                     .set_kind_text(QString::from(snapshot.kind_text.as_str()));
                 self.as_mut()
                     .set_content(QString::from(snapshot.content.as_str()));
+                self.as_mut().set_content_html(QString::from(html.as_str()));
+                self.as_mut()
+                    .set_is_markdown(snapshot.source_kind.is_markdown());
                 self.as_mut().set_truncated(snapshot.truncated);
                 self.as_mut().set_has_text(snapshot.has_text);
                 self.as_mut().set_has_thumbnail(snapshot.has_thumbnail);
@@ -210,8 +269,17 @@ impl qobject::PreviewController {
                     .set_thumbnail_revision(QString::from(snapshot.thumbnail_revision.as_str()));
                 self.as_mut()
                     .set_media_text(QString::from(snapshot.media_text.as_str()));
+                self.as_mut()
+                    .set_media_kind(QString::from(snapshot.media_kind.as_str()));
+                self.as_mut()
+                    .set_media_url(QString::from(snapshot.media_url.as_str()));
                 self.as_mut().set_remote(snapshot.remote);
                 self.as_mut().set_error(QString::default());
+
+                let mut rust = self.as_mut().rust_mut();
+                rust.source_text = snapshot.content;
+                rust.source_kind = snapshot.source_kind;
+                rust.source_path = snapshot.source_path;
             }
             Err(message) => {
                 self.as_mut().set_error(QString::from(message.as_str()));
@@ -221,9 +289,32 @@ impl qobject::PreviewController {
         // snapshot instead of an intermediate state.
         self.as_mut().set_loading(false);
     }
+
+    fn set_dark(mut self: Pin<&mut Self>, dark: bool) {
+        if self.dark == dark {
+            return;
+        }
+        self.as_mut().rust_mut().dark = dark;
+        let (source, path, kind) = {
+            let this = self.as_ref();
+            let rust = this.rust();
+            (
+                rust.source_text.clone(),
+                rust.source_path.clone(),
+                rust.source_kind.clone(),
+            )
+        };
+        if kind == SourceKind::Plain {
+            return;
+        }
+        let html = preview_markup::render(&source, &path, &kind, dark);
+        if html != self.content_html.to_string() {
+            self.as_mut().set_content_html(QString::from(html.as_str()));
+        }
+    }
 }
 
-async fn load_snapshot(path: &str) -> Result<Snapshot, String> {
+async fn load_snapshot(path: &str, dark: bool) -> Result<Snapshot, String> {
     let properties = service::get_file_properties(path.to_owned())
         .await
         .map_err(|error| friendly_preview_error(&error.to_string()))?;
@@ -252,21 +343,45 @@ async fn load_snapshot(path: &str) -> Result<Snapshot, String> {
         (text, media)
     };
 
-    Ok(snapshot_from(properties, text, media))
+    Ok(snapshot_from(properties, text, media, dark))
 }
 
 fn snapshot_from(
     properties: FileProperties,
     text: Option<preview::TextPreview>,
     media: Option<media_meta::MediaPreview>,
+    dark: bool,
 ) -> Snapshot {
-    let (content, truncated, has_text) = match text {
-        Some(text) => (text.content, text.truncated, true),
-        None => (String::new(), false, false),
+    let is_directory = properties.kind == EntryKind::Directory;
+    let (content, truncated, has_text, source_kind, content_html) = match text {
+        Some(text) => {
+            let kind = preview_markup::classify(&properties.name);
+            let html = preview_markup::render(&text.content, &properties.path, &kind, dark);
+            (text.content, text.truncated, true, kind, html)
+        }
+        None => (
+            String::new(),
+            false,
+            false,
+            SourceKind::Plain,
+            String::new(),
+        ),
+    };
+    // The media player still uses Qt's file backend, so a remote entry keeps
+    // its metadata slot but gets no in-pane player.
+    let media_kind = if !is_directory && vfs::is_local_path(&properties.path) {
+        media_kind_of(&properties.name).to_owned()
+    } else {
+        String::new()
+    };
+    let media_url = if media_kind.is_empty() {
+        String::new()
+    } else {
+        preview_markup::file_url(&properties.path).unwrap_or_default()
     };
     Snapshot {
         name: properties.name,
-        is_directory: properties.kind == EntryKind::Directory,
+        is_directory,
         size_text: properties
             .size
             .map(format::size)
@@ -277,6 +392,10 @@ fn snapshot_from(
             .unwrap_or_else(|| "—".to_owned()),
         kind_text: kind_label(properties.kind).to_owned(),
         content,
+        content_html,
+        source_kind,
+        source_path: properties.path.clone(),
+        dark,
         truncated,
         has_text,
         has_thumbnail: has_thumbnail(&properties.path),
@@ -286,7 +405,24 @@ fn snapshot_from(
             properties.size.unwrap_or(0)
         ),
         media_text: media.map(media_lines).unwrap_or_default(),
+        media_kind,
+        media_url,
         remote: !vfs::is_local_path(&properties.path),
+    }
+}
+
+fn media_kind_of(name: &str) -> &'static str {
+    let extension = std::path::Path::new(name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if media_meta::is_video_extension(&extension) {
+        "video"
+    } else if media_meta::is_audio_extension(&extension) {
+        "audio"
+    } else {
+        ""
     }
 }
 

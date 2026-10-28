@@ -1425,6 +1425,29 @@
             <source>定位</source>
             <translation>定位</translation>
         </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="300" />
+            <source>当前构建不支持媒体播放</source>
+            <translation>当前构建不支持媒体播放</translation>
+        </message>
+    </context>
+    <context>
+        <name>MediaPreview</name>
+        <message>
+            <location filename="../MediaPreview.qml" line="159" />
+            <source>无法播放此文件</source>
+            <translation>无法播放此文件</translation>
+        </message>
+        <message>
+            <location filename="../MediaPreview.qml" line="266" />
+            <source>静音</source>
+            <translation>静音</translation>
+        </message>
+        <message>
+            <location filename="../MediaPreview.qml" line="266" />
+            <source>取消静音</source>
+            <translation>取消静音</translation>
+        </message>
     </context>
     <context>
         <name>PropertiesDialog</name>

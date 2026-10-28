@@ -24,11 +24,19 @@ Item {
     /// The entry was read through a network backend. Text previews work, but
     /// thumbnails, media tags, and OS open/reveal do not.
     readonly property bool remote: controller.remote
+    readonly property string thumbnailSource: root.single && controller.hasThumbnail
+        && controller.thumbnailRevision !== ""
+        ? "image://thumbnail/" + encodeURIComponent(controller.path)
+          + "?size=384&v=" + encodeURIComponent(controller.thumbnailRevision)
+        : ""
 
     implicitWidth: 300
 
     signal closeRequested()
     signal openRequested(string path, bool isDir)
+
+    onDarkChanged: controller.setDark(root.dark)
+    Component.onCompleted: controller.setDark(root.dark)
 
     function showPaths(next) {
         paths = (next || []).slice()
@@ -154,7 +162,7 @@ Item {
             }
 
             Rectangle {
-                visible: root.single && controller.hasThumbnail
+                visible: root.single && controller.hasThumbnail && controller.mediaKind === ""
                 width: content.width - 24
                 x: 12
                 height: 200
@@ -168,11 +176,7 @@ Item {
                     id: thumbnail
                     anchors.fill: parent
                     anchors.margins: 10
-                    source: root.single && controller.hasThumbnail
-                        && controller.thumbnailRevision !== ""
-                        ? "image://thumbnail/" + encodeURIComponent(controller.path)
-                          + "?size=384&v=" + encodeURIComponent(controller.thumbnailRevision)
-                        : ""
+                    source: root.thumbnailSource
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     cache: false
@@ -188,11 +192,44 @@ Item {
                 }
             }
 
+            Loader {
+                id: mediaLoader
+                x: 12
+                width: content.width - 24
+                height: active && item ? item.implicitHeight : 0
+                active: root.single && controller.mediaKind !== ""
+                    && controller.mediaUrl !== "" && root.visible
+                source: active ? "MediaPreview.qml" : ""
+
+                onLoaded: {
+                    item.mediaUrl = Qt.binding(function () { return controller.mediaUrl })
+                    item.mediaKind = Qt.binding(function () { return controller.mediaKind })
+                    item.posterSource = Qt.binding(function () { return root.thumbnailSource })
+                    item.dark = Qt.binding(function () { return root.dark })
+                    item.accent = Qt.binding(function () { return root.accent })
+                    item.textColor = Qt.binding(function () { return root.textColor })
+                    item.mutedColor = Qt.binding(function () { return root.mutedColor })
+                    item.sectionColor = Qt.binding(function () { return root.sectionColor })
+                    item.hairline = Qt.binding(function () { return root.hairline })
+                }
+            }
+
+            Text {
+                x: 14
+                visible: mediaLoader.active && mediaLoader.status === Loader.Error
+                width: content.width - 28
+                text: qsTr("当前构建不支持媒体播放")
+                color: root.mutedColor
+                font.pixelSize: 11
+                wrapMode: Text.Wrap
+            }
+
             Rectangle {
                 visible: root.single && controller.hasText
                 width: content.width - 24
                 x: 12
-                height: Math.min(300, Math.max(100, root.height * 0.34))
+                height: Math.min(controller.isMarkdown ? 360 : 300,
+                                 Math.max(120, root.height * (controller.isMarkdown ? 0.46 : 0.34)))
                 radius: 9
                 color: root.sectionColor
                 border.width: 1
@@ -215,14 +252,25 @@ Item {
                         height: Math.max(contentHeight, parent.height - 16)
                         readOnly: true
                         selectByMouse: true
-                        text: controller.content !== "" ? controller.content : qsTr("（空文件）")
+                        text: controller.contentHtml !== "" ? controller.contentHtml
+                            : (controller.content !== "" ? controller.content : qsTr("（空文件）"))
                         color: root.textColor
                         selectionColor: root.accent
                         selectedTextColor: "#ffffff"
                         font.pixelSize: 11
-                        font.family: "Cascadia Mono"
-                        textFormat: TextEdit.PlainText
+                        font.family: controller.isMarkdown ? "" : "Cascadia Mono"
+                        textFormat: controller.contentHtml !== "" ? TextEdit.RichText
+                            : TextEdit.PlainText
                         wrapMode: TextEdit.Wrap
+
+                        onLinkActivated: function (link) {
+                            if (!link || link.charAt(0) === "#")
+                                return
+                            if (/^[a-zA-Z][a-zA-Z0-9+.-]+:/.test(link))
+                                Qt.openUrlExternally(link)
+                            else
+                                Workspace.openPath(link)
+                        }
                     }
                 }
 

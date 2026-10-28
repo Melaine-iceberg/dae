@@ -828,6 +828,47 @@ English 后截图核对：设置五页、侧栏、列表表头（Name/Type/Size/
 录制中按 Esc 只退出录制。后续更新：外观偏好已统一写入 `settings.toml`，
 `friendly_error()` 与 Rust 侧状态、进度和操作结果均返回英文，QML 显示层再按当前语言映射。
 
+### 4.14 预览深度：Markdown、代码高亮与内嵌媒体（2026-10-28）
+
+**文本渲染在后端做，QML 只负责显示。** `crates/dae-qt/src/preview_markup.rs` 把
+Markdown 译成 `QTextDocument` 支持的 HTML 子集（pulldown-cmark：表格、删除线、
+任务列表、脚注、定义列表），把源码交给 syntect 着色（`default-fancy`，纯 Rust，
+不引入 onig）。主题切换不需要重读文件：`PreviewController` 缓存源文本与
+`SourceKind`，QML 的 `setDark()` 只重跑渲染。原始 HTML、远程图片与非
+`http/https/mailto` 链接一律降级为文本；相对链接和图片按源文档路径解析成绝对
+路径/`file://` URL，点击本地链接走 `Workspace.openPath`，网页链接走
+`Qt.openUrlExternally`。
+
+**代码高亮限制在 64 KB 读取窗口内**，与旧壳一致；普通文本仍是可选择的
+`PlainText`，Markdown/代码用只读 `RichText`。Markdown 里的围栏代码块走同一个
+syntect 渲染器，未识别的语言退化为等宽纯文本。
+
+**媒体在面板内播放。** `qml/MediaPreview.qml` 用 Qt Multimedia 的
+`MediaPlayer` + `VideoOutput`/`AudioOutput`：视频以缩略图作海报，点击后播放；
+音频显示图标；两者共享播放/暂停、拖动进度、时间与静音控件。不做自动播放，
+切换选中项即 `stop()`；远程条目不进入播放器，仍只显示元数据。组件通过
+`Loader` 按 `mediaKind/mediaUrl` 懒加载，模块缺失时显示「当前构建不支持媒体播放」
+而不是让整个预览面板加载失败。
+
+**QtMultimedia 成为构建/部署依赖。** 本机 Qt 6.12 已通过 MaintenanceTool 装
+`qt.qt6.6120.addons.qtmultimedia`；`release.yml` 的 `install-qt-action` 增加
+`modules: qtmultimedia`，三种部署步骤都校验 `qml/QtMultimedia` 存在。
+若 `target/debug` 里已有一份旧的 `windeployqt` 部署（本机曾如此），QML 导入路径会
+固定到 `target/debug/qml` 而缺少 QtMultimedia；重新跑一次
+`windeployqt --release --qmldir qml target/debug/dae.exe` 即可，临时也可用
+`QML_IMPORT_PATH` / `QT_PLUGIN_PATH` 指向 Qt 安装目录。release 由
+`windeployqt` / `macdeployqt` / `linuxdeploy` 自动带入。Qt 富文本表格只有在
+`border="1"` 且
+`cellspacing ≥ 1` 时才画网格，`border-collapse:collapse` 反而会让边框消失，
+这是 §4.14 实测后写进渲染器的约束。
+
+**验证（2026-10-28，Windows 11 build 26340 / 150%）**：`dae-qt` 129 项单测通过
+（新增 Markdown 结构/转义、相对链接、代码着色、文件 URL 与媒体分类）；
+`qmllint` 对两个新视图无语法告警（`dae` 模块与 `Loader.item` 的动态成员除外）；
+真机选中 `README.md` 看到标题/粗斜体/列表/表格/链接/本地图片/围栏代码高亮，
+选中 `.rs` 看到注释与关键字着色；`fire.mp4` 播放出画面、进度与时间推进，
+3 秒 WAV 播放时进度条推进、按钮切到暂停。
+
 ## 5. 定案前必须量出来的四组数字
 
 | # | 待验证 | 门槛 | 不达标怎么办 |

@@ -28,6 +28,7 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/ContentResults.qml", "qml/ContentResults.qml"),
     ("../../qml/SearchBar.qml", "qml/SearchBar.qml"),
     ("../../qml/PreviewPanel.qml", "qml/PreviewPanel.qml"),
+    ("../../qml/MediaPreview.qml", "qml/MediaPreview.qml"),
     ("../../qml/Sidebar.qml", "qml/Sidebar.qml"),
     ("../../qml/SidebarTree.qml", "qml/SidebarTree.qml"),
     ("../../qml/OverviewView.qml", "qml/OverviewView.qml"),

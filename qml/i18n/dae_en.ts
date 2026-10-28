@@ -1425,6 +1425,29 @@
             <source>定位</source>
             <translation>Reveal</translation>
         </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="300" />
+            <source>当前构建不支持媒体播放</source>
+            <translation>This build cannot play media in the preview</translation>
+        </message>
+    </context>
+    <context>
+        <name>MediaPreview</name>
+        <message>
+            <location filename="../MediaPreview.qml" line="159" />
+            <source>无法播放此文件</source>
+            <translation>Could not play this file</translation>
+        </message>
+        <message>
+            <location filename="../MediaPreview.qml" line="266" />
+            <source>静音</source>
+            <translation>Mute</translation>
+        </message>
+        <message>
+            <location filename="../MediaPreview.qml" line="266" />
+            <source>取消静音</source>
+            <translation>Unmute</translation>
+        </message>
     </context>
     <context>
         <name>PropertiesDialog</name>

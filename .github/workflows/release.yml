@@ -303,6 +303,8 @@ jobs:
           arch: ${{ matrix.qt_arch }}
           cache: true
           cache-key-prefix: qt-6.12-${{ matrix.platform_key }}
+          # The preview pane's in-place player imports QtMultimedia.
+          modules: qtmultimedia
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -354,7 +356,7 @@ jobs:
             throw "windeployqt failed with exit code $LASTEXITCODE"
           }
 
-          foreach ($required in @('dae.exe', 'platforms\qwindows.dll', 'qml\QtQuick')) {
+          foreach ($required in @('dae.exe', 'platforms\qwindows.dll', 'qml\QtQuick', 'qml\QtMultimedia', 'multimedia')) {
             if (-not (Test-Path (Join-Path $staging $required))) {
               throw "windeployqt did not produce $required"
             }
@@ -431,6 +433,8 @@ jobs:
 
           test -f "$appdir/usr/plugins/platforms/libqxcb.so"
           test -d "$appdir/usr/qml/QtQuick"
+          test -d "$appdir/usr/qml/QtMultimedia"
+          test -d "$appdir/usr/plugins/multimedia"
 
           # Start from linuxdeploy's AppDir, then fold `usr/` into the
           # install-directory shape §4.10 requires: executable at the root,
@@ -514,6 +518,8 @@ jobs:
           test -d "$app/Contents/Frameworks"
           test -f "$app/Contents/PlugIns/platforms/libqcocoa.dylib"
           test -d "$app/Contents/Resources/qml/QtQuick"
+          test -d "$app/Contents/Resources/qml/QtMultimedia"
+          test -d "$app/Contents/PlugIns/multimedia"
 
           # Ad-hoc signing keeps the bundle internally consistent. A Developer
           # ID signature and notarization would need Apple credentials this
