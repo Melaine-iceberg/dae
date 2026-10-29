@@ -2117,8 +2117,13 @@
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="98" />
-            <source>macOS 暂不支持窗口背景模糊，窗口会保持实色背景。</source>
-            <translation>macOS does not support window background blur yet; the window keeps a solid background.</translation>
+            <source>macOS 使用系统毛玻璃效果，跟随窗口的深浅色。</source>
+            <translation>macOS uses the system frosted-glass effect and follows the window's light or dark appearance.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="99" />
+            <source>当前系统不支持窗口背景模糊。</source>
+            <translation>This system does not support window background blur.</translation>
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="602" />

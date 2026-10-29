@@ -94,7 +94,9 @@ Item {
                 ? qsTr("当前 Wayland 合成器支持 ext-background-effect-v1，背景模糊可用。")
                 : qsTr("当前 Wayland 合成器未提供 ext-background-effect-v1；窗口会保持实色背景。")
         if (Qt.platform.os === "osx")
-            return qsTr("macOS 暂不支持窗口背景模糊，窗口会保持实色背景。")
+            return root.blurSupported
+                ? qsTr("macOS 使用系统毛玻璃效果，跟随窗口的深浅色。")
+                : qsTr("当前系统不支持窗口背景模糊。")
         return ""
     }
 

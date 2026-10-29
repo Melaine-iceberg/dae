@@ -6,10 +6,11 @@
 //! the requested Windows material, what can this machine actually composite?
 //! On Windows the answer is Mica (the default), Acrylic, or `None` when the
 //! build, the OS transparency setting, or the user says no. On Wayland it is
-//! `Blur` when the compositor advertises `ext-background-effect-v1`, and
-//! `None` everywhere else. The registry keys, the build thresholds and the
-//! "an unread build gets nothing" rule match the Tauri module, so the two
-//! shells cannot disagree about a machine.
+//! `Blur` when the compositor advertises `ext-background-effect-v1`, and on
+//! macOS it is `Blur` through `NSVisualEffectView`; other platforms answer
+//! `None`. The registry keys, the build thresholds and the "an unread build
+//! gets nothing" rule match the Tauri module, so the two shells cannot
+//! disagree about a machine.
 //!
 //! `window-vibrancy` reaches for `RtlGetVersion` and applies Acrylic through
 //! `DWMWA_SYSTEMBACKDROP_TYPE` from build 22523. The Tauri module reads
@@ -31,9 +32,9 @@ const ACRYLIC_MIN_BUILD: u32 = 22523;
 pub enum Material {
     Mica,
     Acrylic,
-    /// Wayland's `ext-background-effect-v1` blur. Windows has no equivalent
-    /// name for it; the native call only draws a blur there when the platform
-    /// reports the protocol, so the two shells never confuse the two.
+    /// A live background blur: Wayland's `ext-background-effect-v1` or
+    /// macOS's `NSVisualEffectView`. Windows has no equivalent name; the
+    /// native call only draws a blur there when the platform reports it.
     Blur,
     None,
 }
@@ -122,16 +123,16 @@ pub fn resolve(blur_enabled: bool, requested: &str) -> Material {
             .unwrap_or(Material::None);
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
         let _ = requested;
-        if crate::window::wayland_blur_supported() {
+        if crate::window::blur_supported() {
             return Material::Blur;
         }
         return Material::None;
     }
 
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         let _ = requested;
         Material::None

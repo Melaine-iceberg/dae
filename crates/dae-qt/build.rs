@@ -110,4 +110,17 @@ fn main() {
     }
 
     builder.build();
+
+    // The macOS backdrop is Objective-C++ and is compiled separately so ARC
+    // applies to that one file without leaking the flag into the C++ bridge.
+    // It is built after the bridge so the archive appears after the objects
+    // that reference `dae_qt_macos_apply_blur` on the linker line.
+    #[cfg(target_os = "macos")]
+    {
+        println!("cargo:rustc-link-lib=framework=AppKit");
+        cc::Build::new()
+            .file("cpp/macos_backdrop.mm")
+            .flag("-fobjc-arc")
+            .compile("dae_macos_backdrop");
+    }
 }

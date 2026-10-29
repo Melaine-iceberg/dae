@@ -45,10 +45,11 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         fn dae_qt_enable_alpha();
 
-        /// True when the compositor advertises `ext-background-effect-v1` and
-        /// the platform plugin is Wayland. Always false on Windows and macOS.
+        /// True when this platform can blur a window behind it: Wayland with
+        /// `ext-background-effect-v1`, or macOS with `NSVisualEffectView`.
+        /// Always false on Windows, where Mica/Acrylic are resolved separately.
         #[namespace = "dae_qt"]
-        fn dae_qt_wayland_blur_supported() -> bool;
+        fn dae_qt_blur_supported() -> bool;
 
         /// Selects the platform's UI face for the whole application. Only the
         /// Windows variant does anything; the other platforms already default
@@ -130,8 +131,7 @@ impl qobject::WindowController {
         let attached =
             qobject::attach_window(&token) && crate::ime::install_focus_cancel_guard(&token);
         self.as_mut().set_attached(attached);
-        self.as_mut()
-            .set_blur_supported(wayland_blur_supported());
+        self.as_mut().set_blur_supported(blur_supported());
         attached
     }
 
@@ -170,10 +170,10 @@ pub fn enable_alpha() {
     qobject::dae_qt_enable_alpha();
 }
 
-/// Whether this session can blur a window behind it. Only Wayland compositors
-/// that advertise `ext-background-effect-v1` answer true.
-pub fn wayland_blur_supported() -> bool {
-    qobject::dae_qt_wayland_blur_supported()
+/// Whether this session can blur a window behind it: Wayland with
+/// `ext-background-effect-v1`, or macOS with `NSVisualEffectView`.
+pub fn blur_supported() -> bool {
+    qobject::dae_qt_blur_supported()
 }
 
 pub fn apply_system_font() {

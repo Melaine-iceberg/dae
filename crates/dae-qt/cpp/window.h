@@ -26,8 +26,8 @@
 //
 // Linux additionally implements Wayland's `ext-background-effect-v1`: the
 // generated protocol code extends Qt's own `wl_surface`, and a compositor that
-// does not advertise the global simply answers "no blur". macOS has no
-// implementation yet, so it reports `Material::None`.
+// does not advertise the global simply answers "no blur". macOS puts an
+// `NSVisualEffectView` behind the Qt view instead (cpp/macos_backdrop.mm).
 
 #pragma once
 
@@ -72,6 +72,10 @@
 #endif
 
 #include "lookup.h"
+
+#if defined(Q_OS_MACOS)
+#include "macos_backdrop.h"
+#endif
 
 namespace dae_qt {
 
@@ -484,9 +488,9 @@ inline bool dae_qt_set_caption_client(const QString& token, double left, double 
     return true;
 }
 
-/// The background-effect protocol is a Wayland surface extension; there is
-/// nothing to advertise on Windows.
-inline bool dae_qt_wayland_blur_supported()
+/// Windows composites Mica/Acrylic itself; the generic blur capability is the
+/// Wayland/macOS path and has nothing to advertise here.
+inline bool dae_qt_blur_supported()
 {
     return false;
 }
@@ -704,12 +708,12 @@ inline bool set_wayland_blur(QQuickWindow* window, bool enabled)
     return true;
 }
 
-inline bool dae_qt_wayland_blur_supported()
+inline bool dae_qt_blur_supported()
 {
     return wayland_background_effect().supported();
 }
 
-inline bool dae_qt_apply_blur(const QString& token, bool enabled)
+inline bool dae_qt_apply_blur(const QString& token, bool enabled, bool)
 {
     QQuickWindow* window = find_window_by_token(token);
     if (!window)
@@ -717,19 +721,37 @@ inline bool dae_qt_apply_blur(const QString& token, bool enabled)
     return set_wayland_blur(window, enabled);
 }
 
-#else // !Q_OS_LINUX or no Wayland feature in this Qt build
+#elif defined(Q_OS_MACOS)
 
-inline bool dae_qt_wayland_blur_supported()
+/// `NSVisualEffectView` exists on every macOS release Qt 6 supports, so the
+/// only question is whether the user wants it.
+inline bool dae_qt_blur_supported()
+{
+    return true;
+}
+
+inline bool dae_qt_apply_blur(const QString& token, bool enabled, bool dark)
+{
+    QQuickWindow* window = find_window_by_token(token);
+    if (!window)
+        return false;
+    // On macOS Qt's WId is the window's NSView.
+    return ::dae_qt_macos_apply_blur(reinterpret_cast<void*>(window->winId()), enabled, dark);
+}
+
+#else // neither Wayland nor macOS
+
+inline bool dae_qt_blur_supported()
 {
     return false;
 }
 
-inline bool dae_qt_apply_blur(const QString&, bool)
+inline bool dae_qt_apply_blur(const QString&, bool, bool)
 {
     return false;
 }
 
-#endif // Q_OS_LINUX && QT_CONFIG(wayland)
+#endif // platform blur support
 
 // There is no native frame to style and no hit test to feed. Keep the contract
 // the Rust bridge and QML rely on: false means "no such window", true means the
@@ -744,17 +766,17 @@ inline bool dae_qt_attach(const QString& token)
     return true;
 }
 
-/// Windows draws Mica/Acrylic; Wayland may draw a background blur. Everything
-/// else keeps the solid chrome, and a material force is only a tint there.
-inline bool dae_qt_apply_backdrop(const QString& token, int material, bool)
+/// Windows draws Mica/Acrylic; Wayland and macOS may draw a background blur.
+/// Everything else keeps the solid chrome.
+inline bool dae_qt_apply_backdrop(const QString& token, int material, bool dark)
 {
     QQuickWindow* window = find_window_by_token(token);
     if (!window)
         return false;
     if (material == 3) // blur
-        return dae_qt_apply_blur(token, true);
+        return dae_qt_apply_blur(token, true, dark);
     if (material == 2) { // none
-        dae_qt_apply_blur(token, false);
+        dae_qt_apply_blur(token, false, dark);
         return true;
     }
     return false;

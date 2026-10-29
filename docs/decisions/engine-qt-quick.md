@@ -224,7 +224,7 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
 | | Windows | Linux / macOS |
 |---|---|---|
 | 边框、移动、缩放 | `WM_NCHITTEST` 原生命中测试 | Qt 无边框窗口 + QML system move/resize |
-| 背景材质 | Mica / Acrylic（DWM，用户可选） | Linux Wayland：`ext-background-effect-v1` 模糊；不支持时实色。macOS：实色 chrome |
+| 背景材质 | Mica / Acrylic（DWM，用户可选） | Linux Wayland：`ext-background-effect-v1`；macOS：`NSVisualEffectView`；不支持时实色 |
 | 输入法换焦点守卫 | `CPS_CANCEL`（门槛 2） | 不安装；尚无实测等价物 |
 | `dae://` 注册 | 注册表写入 | 未实现；单实例 socket 仍可用 |
 
@@ -262,7 +262,8 @@ Mica 后 read-back 为 **2**。无边框窗口、原生 move/size loop、`HTMAXB
 （`blur` + `windowMaterial`，默认 `true` / `mica`）。机器判定只决定所选材质能否
 合成：Acrylic 在 22000–22522 回退 Mica，低于 22000 或系统关闭透明效果时回退实色。
 Linux Wayland 新增 `ext-background-effect-v1` 背景模糊；合成器未提供该协议时保持
-实色。`DAE_WINDOW_MATERIAL` 仍是 A/B 覆写入口。
+实色。macOS 在 Qt 视图后方插入 `NSVisualEffectView`（behind-window 混合），深浅色
+跟随窗口主题。`DAE_WINDOW_MATERIAL` 仍是 A/B 覆写入口。
 
 **独立 exe 的构建与部署**（Windows-first）：
 

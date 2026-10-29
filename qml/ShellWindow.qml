@@ -355,6 +355,14 @@ Window {
             root.applyBackdrop()
     }
 
+    // A hidden window may not have its native view yet (and macOS needs the
+    // window to exist before the effect view can be inserted), so apply once
+    // more when the window first becomes visible.
+    onVisibleChanged: {
+        if (visible && chrome && chrome.attached)
+            root.applyBackdrop()
+    }
+
     Connections {
         target: Appearance
         function onBlurEnabledChanged() {
@@ -2037,14 +2045,14 @@ Window {
         }
     }
 
-    // The frameless window keeps an alpha buffer for the native frame, but no
-    // material is composited under the content this round. Anything the shell
-    // does not paint — the six-pixel pane seams above all — would show the
-    // window behind it, so the canvas is laid down first and every pane paints
-    // over it.
+    // The frameless window keeps an alpha buffer for the native frame. When a
+    // material is active, the canvas must stay transparent or it would paint
+    // over the backdrop; every pane and chrome band paints its own colour, so
+    // only the seams and chrome tints let the backdrop through. With no
+    // material the canvas is the solid fill the regular shell expects.
     Rectangle {
         anchors.fill: parent
-        color: Theme.canvas
+        color: root.material === "none" ? Theme.canvas : "transparent"
     }
 
     Column {
