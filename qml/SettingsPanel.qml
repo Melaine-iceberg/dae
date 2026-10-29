@@ -19,6 +19,9 @@ Item {
     property color accent: Theme.interactive
     property bool isMac: false
     property var shortcutMap: ({})
+    /// Whether this session can blur a window behind it (Wayland only). The
+    /// Windows materials are resolved per build by the native side.
+    property bool blurSupported: true
 
     signal closed()
 
@@ -78,6 +81,22 @@ Item {
         { value: "zh-CN", label: qsTr("简体中文") },
         { value: "en", label: "English" }
     ]
+    readonly property var materialOptions: [
+        { value: "mica", label: qsTr("云母 (Mica)") },
+        { value: "acrylic", label: qsTr("亚克力 (Acrylic)") }
+    ]
+    /// The material choice is a Windows concept; other platforms either have
+    /// a single effect or none, so the section would only mislead.
+    readonly property bool showMaterialChoices: Qt.platform.os === "windows"
+    readonly property string backgroundNote: {
+        if (Qt.platform.os === "linux")
+            return root.blurSupported
+                ? qsTr("当前 Wayland 合成器支持 ext-background-effect-v1，背景模糊可用。")
+                : qsTr("当前 Wayland 合成器未提供 ext-background-effect-v1；窗口会保持实色背景。")
+        if (Qt.platform.os === "osx")
+            return qsTr("macOS 暂不支持窗口背景模糊，窗口会保持实色背景。")
+        return ""
+    }
 
     /// Grouping mirrors the Rust action catalogue. Everything here is edited
     /// by id, so a missing translation never changes the stored key.
@@ -414,9 +433,16 @@ Item {
 
             // Each page positions its own content from the top, so pages with
             // different heights share one frame without a layout dependency.
-            Item {
+            // Appearance outgrew the frame once background effects joined it,
+            // so this page is the one that scrolls.
+            Flickable {
                 anchors.fill: parent
                 visible: root.page === "appearance"
+                contentWidth: width
+                contentHeight: appearanceFooterNote.y + appearanceFooterNote.height + 24
+                clip: true
+                flickableDirection: Flickable.VerticalFlick
+                boundsBehavior: Flickable.StopAtBounds
 
                 Text {
                     x: 24; y: 22
@@ -427,7 +453,7 @@ Item {
                 }
                 Text {
                     x: 24; y: 48
-                    text: qsTr("主题、强调色和界面语言对本 shell 立即生效。")
+                    text: qsTr("主题、强调色、界面语言和背景效果对本 shell 立即生效。")
                     color: root.mutedColor
                     font.pixelSize: 11
                 }
@@ -565,17 +591,103 @@ Item {
                     }
                 }
 
+                Text {
+                    x: 24; y: 496
+                    text: qsTr("背景效果")
+                    color: root.textColor
+                    font.pixelSize: 12
+                    font.weight: Font.DemiBold
+                }
+
+                Text {
+                    x: 24; y: 516
+                    width: content.width - 48
+                    text: qsTr("开启后窗口使用系统合成的半透明背景；关闭则使用实色，适合低性能或远程桌面环境。")
+                    color: root.mutedColor
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                }
+
+                Row {
+                    x: 24; y: 540
+                    spacing: 8
+
+                    Repeater {
+                        model: [
+                            { value: true, label: qsTr("开启") },
+                            { value: false, label: qsTr("关闭") }
+                        ]
+                        delegate: ChoiceChip {
+                            required property var modelData
+                            label: modelData.label
+                            selected: Appearance.blurEnabled === modelData.value
+                            onClicked: Appearance.chooseBlur(modelData.value)
+                        }
+                    }
+                }
+
+                Text {
+                    x: 24; y: 584
+                    visible: root.showMaterialChoices
+                    text: qsTr("窗口材质")
+                    color: root.textColor
+                    font.pixelSize: 12
+                    font.weight: Font.DemiBold
+                }
+
+                Text {
+                    x: 24; y: 604
+                    visible: root.showMaterialChoices
+                    width: content.width - 48
+                    text: qsTr("Mica 从桌面壁纸取色，Acrylic 实时模糊身后的窗口。默认 Mica；系统不支持或关闭透明效果时窗口回退为实色。")
+                    color: root.mutedColor
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                }
+
+                Row {
+                    x: 24; y: 648
+                    visible: root.showMaterialChoices
+                    spacing: 8
+
+                    Repeater {
+                        model: root.materialOptions
+                        delegate: ChoiceChip {
+                            required property var modelData
+                            label: modelData.label
+                            selected: Appearance.windowMaterial === modelData.value
+                            onClicked: Appearance.chooseWindowMaterial(modelData.value)
+                        }
+                    }
+                }
+
+                Text {
+                    id: platformNote
+                    x: 24
+                    y: root.showMaterialChoices ? 672 : 584
+                    width: content.width - 48
+                    visible: text !== ""
+                    text: root.backgroundNote
+                    color: root.faintColor
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                }
+
                 Rectangle {
-                    x: 24; y: 492
+                    id: appearanceHairline
+                    x: 24
+                    y: root.showMaterialChoices ? 700 : (platformNote.visible ? 624 : 584)
                     width: content.width - 48
                     height: 1
                     color: root.hairline
                 }
 
                 Text {
-                    x: 24; y: 512
+                    id: appearanceFooterNote
+                    x: 24
+                    y: appearanceHairline.y + 20
                     width: content.width - 48
-                    text: qsTr("外观、语言、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。")
+                    text: qsTr("外观、语言、背景效果、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。")
                     color: root.faintColor
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap

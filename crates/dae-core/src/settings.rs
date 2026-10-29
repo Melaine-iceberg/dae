@@ -48,6 +48,13 @@ pub struct AppSettings {
     pub theme: String,
     pub accent: String,
     pub language: String,
+    /// Whether the window may composite a backdrop (Mica/Acrylic on Windows,
+    /// a Wayland background effect on Linux). When off the shell paints the
+    /// solid chrome colour instead.
+    pub blur: bool,
+    /// The Windows backdrop the user asked for: `mica`, `acrylic` or `none`.
+    /// Other platforms ignore it; they either have one effect or none.
+    pub window_material: String,
     pub default_file_manager: DefaultFileManagerState,
     /// Kept for compatibility with the Tauri shell's setting. The Qt shell
     /// never pre-builds a window (tear-off creates one on demand), so it reads
@@ -86,6 +93,8 @@ impl Default for AppSettings {
             theme: "system".to_string(),
             accent: "brand".to_string(),
             language: "system".to_string(),
+            blur: true,
+            window_material: "mica".to_string(),
             default_file_manager: DefaultFileManagerState::default(),
             warm_tab_pool: true,
         }
@@ -269,6 +278,9 @@ fn normalize(mut settings: AppSettings) -> AppSettings {
     if !["system", "zh-CN", "en"].contains(&settings.language.as_str()) {
         settings.language = "system".to_string();
     }
+    if !["mica", "acrylic", "none"].contains(&settings.window_material.as_str()) {
+        settings.window_material = "mica".to_string();
+    }
     settings
 }
 
@@ -384,12 +396,16 @@ mod tests {
         settings.theme = "dark".to_string();
         settings.accent = "brand".to_string();
         settings.language = "en".to_string();
+        settings.blur = false;
+        settings.window_material = "acrylic".to_string();
 
         let saved = save_settings(settings.clone()).expect("save");
         assert_eq!(saved.terminal.font_size, 16);
         assert_eq!(saved.theme, "dark");
         assert_eq!(saved.accent, "brand");
         assert_eq!(saved.language, "en");
+        assert!(!saved.blur);
+        assert_eq!(saved.window_material, "acrylic");
         assert!(settings_path(&dir).exists(), "settings.toml written");
 
         use_config_dir_for_tests(dir.clone()).expect("reload");
@@ -426,6 +442,8 @@ mod tests {
         assert_eq!(loaded.theme, "system");
         assert_eq!(loaded.accent, "brand");
         assert_eq!(loaded.language, "system");
+        assert!(loaded.blur);
+        assert_eq!(loaded.window_material, "mica");
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -436,7 +454,7 @@ mod tests {
         let dir = temp_config_dir();
         fs::write(
             settings_path(&dir),
-            "theme = \"sepia\"\naccent = \"brand\"\nlanguage = \"fr\"\n",
+            "theme = \"sepia\"\naccent = \"brand\"\nlanguage = \"fr\"\nwindowMaterial = \"vibrancy\"\n",
         )
         .expect("write appearance settings");
 
@@ -445,6 +463,7 @@ mod tests {
         assert_eq!(loaded.theme, "system");
         assert_eq!(loaded.accent, "brand");
         assert_eq!(loaded.language, "system");
+        assert_eq!(loaded.window_material, "mica");
 
         fs::remove_dir_all(&dir).ok();
     }

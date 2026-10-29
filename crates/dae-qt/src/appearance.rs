@@ -17,6 +17,7 @@ const FILE_NAME: &str = "appearance-qt.ini";
 const THEMES: &[&str] = &["system", "light", "dark"];
 const ACCENTS: &[&str] = &["system", "brand"];
 const LANGUAGES: &[&str] = &["system", "zh-CN", "en"];
+const MATERIALS: &[&str] = &["mica", "acrylic", "none"];
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -52,6 +53,8 @@ pub mod qobject {
         #[qproperty(QString, theme)]
         #[qproperty(QString, accent)]
         #[qproperty(QString, language)]
+        #[qproperty(bool, blur_enabled, cxx_name = "blurEnabled")]
+        #[qproperty(QString, window_material, cxx_name = "windowMaterial")]
         type Appearance = super::AppearanceRust;
 
         #[qinvokable]
@@ -65,6 +68,14 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "chooseLanguage"]
         fn change_language(self: Pin<&mut Appearance>, value: &QString);
+
+        #[qinvokable]
+        #[cxx_name = "chooseBlur"]
+        fn change_blur(self: Pin<&mut Appearance>, enabled: bool);
+
+        #[qinvokable]
+        #[cxx_name = "chooseWindowMaterial"]
+        fn change_window_material(self: Pin<&mut Appearance>, value: &QString);
     }
 }
 
@@ -194,6 +205,8 @@ pub struct AppearanceRust {
     theme: QString,
     accent: QString,
     language: QString,
+    blur_enabled: bool,
+    window_material: QString,
 }
 
 impl Default for AppearanceRust {
@@ -203,6 +216,8 @@ impl Default for AppearanceRust {
             theme: QString::from(stored.theme.as_str()),
             accent: QString::from(stored.accent.as_str()),
             language: QString::from(stored.language.as_str()),
+            blur_enabled: stored.blur,
+            window_material: QString::from(stored.window_material.as_str()),
         }
     }
 }
@@ -234,6 +249,24 @@ impl qobject::Appearance {
         self.as_mut().set_language(QString::from(value.as_str()));
         save(|settings| settings.language = value.clone());
         crate::i18n::apply(&value);
+    }
+
+    fn change_blur(mut self: Pin<&mut Self>, enabled: bool) {
+        if self.blur_enabled == enabled {
+            return;
+        }
+        self.as_mut().set_blur_enabled(enabled);
+        save(|settings| settings.blur = enabled);
+    }
+
+    fn change_window_material(mut self: Pin<&mut Self>, value: &QString) {
+        let value = value.to_string();
+        if !MATERIALS.contains(&value.as_str()) || self.window_material.to_string() == value {
+            return;
+        }
+        self.as_mut()
+            .set_window_material(QString::from(value.as_str()));
+        save(|settings| settings.window_material = value);
     }
 }
 

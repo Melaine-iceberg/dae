@@ -1,12 +1,15 @@
 //! The backdrop decision, carried over from the Tauri shell's
-//! `window_material/windows.rs`.
+//! `window_material/windows.rs` and extended with the user's own choice.
 //!
-//! The Qt side writes the DWM attributes itself, so this module answers only
-//! the two questions the Tauri module answered before touching a window:
-//! which material this build can composite, and whether the user's
-//! transparency setting lets it. The registry keys, the build thresholds and
-//! the "an unread build gets nothing" rule are the same, so the two shells
-//! cannot disagree about a machine.
+//! The Qt side writes the DWM attributes itself, so this module answers the
+//! question the settings surface asks: given the background-effects switch and
+//! the requested Windows material, what can this machine actually composite?
+//! On Windows the answer is Mica (the default), Acrylic, or `None` when the
+//! build, the OS transparency setting, or the user says no. On Wayland it is
+//! `Blur` when the compositor advertises `ext-background-effect-v1`, and
+//! `None` everywhere else. The registry keys, the build thresholds and the
+//! "an unread build gets nothing" rule match the Tauri module, so the two
+//! shells cannot disagree about a machine.
 //!
 //! `window-vibrancy` reaches for `RtlGetVersion` and applies Acrylic through
 //! `DWMWA_SYSTEMBACKDROP_TYPE` from build 22523. The Tauri module reads
@@ -15,8 +18,6 @@
 //! This port keeps the registry read rather than `QOperatingSystemVersion` for
 //! the same reason: the Qt application's manifest is not something the shell
 //! wants to depend on.
-
-use std::sync::OnceLock;
 
 /// Windows 11's first build. Below it neither DWM backdrop exists.
 const MICA_MIN_BUILD: u32 = 22000;
@@ -30,15 +31,21 @@ const ACRYLIC_MIN_BUILD: u32 = 22523;
 pub enum Material {
     Mica,
     Acrylic,
+    /// Wayland's `ext-background-effect-v1` blur. Windows has no equivalent
+    /// name for it; the native call only draws a blur there when the platform
+    /// reports the protocol, so the two shells never confuse the two.
+    Blur,
     None,
 }
 
 impl Material {
-    /// The spelling QML and the settings surface use.
+    /// The spelling QML and the settings surface use. `blur` is the effective
+    /// answer, not one of the Windows choices.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Mica => "mica",
             Self::Acrylic => "acrylic",
+            Self::Blur => "blur",
             Self::None => "none",
         }
     }
@@ -48,6 +55,7 @@ impl Material {
         match self {
             Self::Mica => 0,
             Self::Acrylic => 1,
+            Self::Blur => 3,
             Self::None => 2,
         }
     }
@@ -56,42 +64,78 @@ impl Material {
         match name {
             "mica" => Some(Self::Mica),
             "acrylic" => Some(Self::Acrylic),
+            "blur" => Some(Self::Blur),
             "none" => Some(Self::None),
             _ => None,
         }
     }
 }
 
-/// The whole decision: accessibility first, then the build band.
-fn choose(build: Option<u32>, transparency_on: bool) -> Material {
-    match build {
-        Some(_) if !transparency_on => Material::None,
-        Some(build) if build >= ACRYLIC_MIN_BUILD => Material::Acrylic,
-        Some(build) if build >= MICA_MIN_BUILD => Material::Mica,
-        _ => Material::None,
+/// The Windows decision: the accessibility setting wins, then the build band,
+/// then the user's choice. Acrylic on a build without
+/// `DWMWA_SYSTEMBACKDROP_TYPE` degrades to Mica rather than to no backdrop.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn choose(build: Option<u32>, transparency_on: bool, requested: &str) -> Material {
+    if !transparency_on {
+        return Material::None;
     }
+    let Some(build) = build else {
+        return Material::None;
+    };
+    if build < MICA_MIN_BUILD {
+        return Material::None;
+    }
+    if requested == "none" {
+        return Material::None;
+    }
+    if requested == "acrylic" && build >= ACRYLIC_MIN_BUILD {
+        return Material::Acrylic;
+    }
+    // `mica`, an old Acrylic request, and any unrecognised value all resolve
+    // to the default material.
+    Material::Mica
 }
 
-/// The decision for this machine. Frozen on first read: a window's transparent
-/// flag is fixed at creation, so the answer must not move under it.
+/// What the shell may actually draw for the user's settings on this machine.
 ///
-/// `DAE_WINDOW_MATERIAL=mica|acrylic|none` overrides the machine decision for
-/// an A/B run. Gate 3 measured Mica this way on a build whose product decision
-/// is Acrylic; the override stays because the two shells will be compared side
-/// by side and the backdrop must be the same on both sides.
-pub fn startup() -> Material {
-    static STARTUP: OnceLock<Material> = OnceLock::new();
-    *STARTUP.get_or_init(|| {
-        if let Some(material) = std::env::var("DAE_WINDOW_MATERIAL")
-            .ok()
-            .and_then(|name| Material::from_name(&name))
-        {
-            return material;
+/// Unlike the old startup answer this is not frozen: the settings panel applies
+/// a new material to the live window, and an unsupported choice has to collapse
+/// to `None` there rather than leave the chrome transparent over a black client.
+pub fn resolve(blur_enabled: bool, requested: &str) -> Material {
+    if !blur_enabled {
+        return Material::None;
+    }
+
+    #[cfg(windows)]
+    {
+        // A/B override, same spelling as before: `mica`, `acrylic` or `none`.
+        let requested =
+            std::env::var("DAE_WINDOW_MATERIAL").unwrap_or_else(|_| requested.to_owned());
+        // A Wayland-only name in the override is not a Windows material.
+        let requested = if requested == "blur" {
+            "mica".to_owned()
+        } else {
+            requested
+        };
+        return read()
+            .map(|(build, on)| choose(build, on, &requested))
+            .unwrap_or(Material::None);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let _ = requested;
+        if crate::window::wayland_blur_supported() {
+            return Material::Blur;
         }
-        read()
-            .map(|(build, on)| choose(build, on))
-            .unwrap_or(Material::None)
-    })
+        return Material::None;
+    }
+
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        let _ = requested;
+        Material::None
+    }
 }
 
 #[cfg(windows)]
@@ -230,11 +274,6 @@ fn read() -> Option<(Option<u32>, bool)> {
     registry::read()
 }
 
-#[cfg(not(windows))]
-fn read() -> Option<(Option<u32>, bool)> {
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,34 +281,57 @@ mod tests {
     /// Acrylic starts where `DWMWA_SYSTEMBACKDROP_TYPE` starts.
     #[test]
     fn acrylic_starts_with_the_backdrop_attribute() {
-        assert_eq!(choose(Some(ACRYLIC_MIN_BUILD), true), Material::Acrylic);
-        assert_eq!(choose(Some(22621), true), Material::Acrylic);
-        assert_eq!(choose(Some(26100), true), Material::Acrylic);
+        assert_eq!(
+            choose(Some(ACRYLIC_MIN_BUILD), true, "acrylic"),
+            Material::Acrylic
+        );
+        assert_eq!(choose(Some(22621), true, "acrylic"), Material::Acrylic);
+        assert_eq!(choose(Some(26100), true, "acrylic"), Material::Acrylic);
     }
 
     /// 21996 is the last Windows 10 insider build in this numbering; treating
     /// it as Windows 11 would put a transparent window with no backdrop on it.
     #[test]
     fn mica_covers_the_builds_that_precede_it() {
-        assert_eq!(choose(Some(21996), true), Material::None);
-        assert_eq!(choose(Some(MICA_MIN_BUILD), true), Material::Mica);
-        assert_eq!(choose(Some(ACRYLIC_MIN_BUILD - 1), true), Material::Mica);
+        assert_eq!(choose(Some(21996), true, "mica"), Material::None);
+        assert_eq!(choose(Some(MICA_MIN_BUILD), true, "mica"), Material::Mica);
+        assert_eq!(
+            choose(Some(ACRYLIC_MIN_BUILD - 1), true, "acrylic"),
+            Material::Mica,
+            "an early Windows 11 build falls back to Mica for Acrylic"
+        );
     }
 
-    /// The accessibility setting beats either material.
+    /// The user's choice is honored inside the band the build supports.
+    #[test]
+    fn the_requested_material_wins_within_the_build_band() {
+        assert_eq!(choose(Some(26100), true, "mica"), Material::Mica);
+        assert_eq!(choose(Some(26100), true, "acrylic"), Material::Acrylic);
+        assert_eq!(choose(Some(26100), true, "none"), Material::None);
+    }
+
+    /// The accessibility setting beats the user's choice.
     #[test]
     fn transparency_effects_off_wins() {
-        assert_eq!(choose(Some(26100), false), Material::None);
-        assert_eq!(choose(Some(ACRYLIC_MIN_BUILD), false), Material::None);
-        assert_eq!(choose(Some(MICA_MIN_BUILD), false), Material::None);
+        assert_eq!(choose(Some(26100), false, "acrylic"), Material::None);
+        assert_eq!(choose(Some(ACRYLIC_MIN_BUILD), false, "mica"), Material::None);
+        assert_eq!(choose(Some(MICA_MIN_BUILD), false, "none"), Material::None);
     }
 
     /// A build that could not be read gets no backdrop: the other way round
     /// would put a transparent window on a machine this module failed to see.
     #[test]
     fn an_unread_build_gets_no_backdrop() {
-        assert_eq!(choose(None, true), Material::None);
-        assert_eq!(choose(None, false), Material::None);
+        assert_eq!(choose(None, true, "mica"), Material::None);
+        assert_eq!(choose(None, false, "acrylic"), Material::None);
+    }
+
+    /// Turning the setting off is decisive on every platform, before any
+    /// capability query runs.
+    #[test]
+    fn a_disabled_setting_resolves_to_none() {
+        assert_eq!(resolve(false, "mica"), Material::None);
+        assert_eq!(resolve(false, "acrylic"), Material::None);
     }
 
     #[cfg(windows)]
@@ -290,21 +352,20 @@ mod tests {
         assert_eq!(registry::parse_build_for_test(None), None);
     }
 
-    /// The startup answer is what the window's transparency was built from, so
-    /// a second read that disagreed would silently repaint it.
-    #[test]
-    fn the_startup_answer_never_moves() {
-        assert_eq!(startup(), startup());
-    }
-
     #[test]
     fn names_and_codes_round_trip() {
-        for material in [Material::Mica, Material::Acrylic, Material::None] {
+        for material in [
+            Material::Mica,
+            Material::Acrylic,
+            Material::Blur,
+            Material::None,
+        ] {
             assert_eq!(Material::from_name(material.as_str()), Some(material));
         }
         assert_eq!(Material::Mica.code(), 0);
         assert_eq!(Material::Acrylic.code(), 1);
         assert_eq!(Material::None.code(), 2);
+        assert_eq!(Material::Blur.code(), 3);
         assert_eq!(Material::from_name("vibrancy"), None);
     }
 }

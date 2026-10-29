@@ -93,7 +93,7 @@ cargo build -p dae-app        # 三平台 CI 使用的真实构建
 - 一屏内信号色最多 3 处：当前行左轨、焦点环、一个主按钮/激活 chip。不要给图标、卡片、分组标题上色。
 - 左侧当前行是 `signalSoft` 底 + 2px `signal` 左轨；不要用整行饱和填充。
 - 文件类型图标全部单色化；颜色只留给 git 状态小徽章（M 用 `warn`，U 用 `link`）、容量告警和危险操作。
-- **材质**：原型是实色磨砂面。Windows 的 Mica/Acrylic 能力可以保留，但 chrome 合成色必须落在 `Theme.chrome` 的 ±2% 内；做不到就在本轮把 `material` 默认设为 `"none"`，不允许半透明叠出第二层色。
+- **材质**：设置里的「背景效果」默认开启。Windows 默认 Mica，可切换 Acrylic；系统关闭透明效果或版本不支持时自动回退为实色。Linux Wayland 通过 `ext-background-effect-v1` 模糊背景，合成器未提供该协议时保持实色。半透明 chrome 使用 `chromeTint`，实色回退仍用 `Theme.chrome`。
 
 ### 3.2 字号
 

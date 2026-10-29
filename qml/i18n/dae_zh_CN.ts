@@ -2062,8 +2062,8 @@
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="429" />
-            <source>主题、强调色和界面语言对本 shell 立即生效。</source>
-            <translation>主题、强调色和界面语言对本 shell 立即生效。</translation>
+            <source>主题、强调色、界面语言和背景效果对本 shell 立即生效。</source>
+            <translation>主题、强调色、界面语言和背景效果对本 shell 立即生效。</translation>
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="436" />
@@ -2096,9 +2096,64 @@
             <translation>切换后整个窗口立即重新翻译。菜单、对话框和本面板共用同一份词条。</translation>
         </message>
         <message>
-            <location filename="../SettingsPanel.qml" line="540" />
-            <source>外观、语言、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。</source>
-            <translation>外观、语言、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。</translation>
+            <location filename="../SettingsPanel.qml" line="86" />
+            <source>云母 (Mica)</source>
+            <translation>云母 (Mica)</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="87" />
+            <source>亚克力 (Acrylic)</source>
+            <translation>亚克力 (Acrylic)</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="95" />
+            <source>当前 Wayland 合成器支持 ext-background-effect-v1，背景模糊可用。</source>
+            <translation>当前 Wayland 合成器支持 ext-background-effect-v1，背景模糊可用。</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="96" />
+            <source>当前 Wayland 合成器未提供 ext-background-effect-v1；窗口会保持实色背景。</source>
+            <translation>当前 Wayland 合成器未提供 ext-background-effect-v1；窗口会保持实色背景。</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="98" />
+            <source>macOS 暂不支持窗口背景模糊，窗口会保持实色背景。</source>
+            <translation>macOS 暂不支持窗口背景模糊，窗口会保持实色背景。</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="602" />
+            <source>背景效果</source>
+            <translation>背景效果</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="611" />
+            <source>开启后窗口使用系统合成的半透明背景；关闭则使用实色，适合低性能或远程桌面环境。</source>
+            <translation>开启后窗口使用系统合成的半透明背景；关闭则使用实色，适合低性能或远程桌面环境。</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="623" />
+            <source>开启</source>
+            <translation>开启</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="624" />
+            <source>关闭</source>
+            <translation>关闭</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="638" />
+            <source>窗口材质</source>
+            <translation>窗口材质</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="648" />
+            <source>Mica 从桌面壁纸取色，Acrylic 实时模糊身后的窗口。默认 Mica；系统不支持或关闭透明效果时窗口回退为实色。</source>
+            <translation>Mica 从桌面壁纸取色，Acrylic 实时模糊身后的窗口。默认 Mica；系统不支持或关闭透明效果时窗口回退为实色。</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="696" />
+            <source>外观、语言、背景效果、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。</source>
+            <translation>外观、语言、背景效果、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。</translation>
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="562" />

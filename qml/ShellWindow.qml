@@ -29,7 +29,10 @@ Window {
     // repaints every window, not just the one that made the change.
     property bool dark: Appearance.theme === "dark"
         || (Appearance.theme === "system" && Workspace.systemDark)
-    property string material: "none"
+    /// The material the native window actually drew, which may be `none` even
+    /// when the user asked for a material this machine cannot composite.
+    /// Children read this to choose solid or translucent chrome.
+    readonly property string material: chrome.appliedMaterial
     /// Cmd on macOS, Ctrl elsewhere; also how a recorded binding is written.
     readonly property bool isMac: Qt.platform.os === "osx"
     /// Where the tab strip starts in the title bar: after the traffic lights on
@@ -343,9 +346,25 @@ Window {
             Workspace.refreshClipboard()
     }
 
+    function applyBackdrop() {
+        chrome.applyMaterial(Appearance.windowMaterial, Appearance.blurEnabled, root.dark)
+    }
+
     onDarkChanged: {
         if (chrome && chrome.attached)
-            chrome.applyMaterial(root.material, root.dark)
+            root.applyBackdrop()
+    }
+
+    Connections {
+        target: Appearance
+        function onBlurEnabledChanged() {
+            if (chrome && chrome.attached)
+                root.applyBackdrop()
+        }
+        function onWindowMaterialChanged() {
+            if (chrome && chrome.attached)
+                root.applyBackdrop()
+        }
     }
 
     WindowController {
@@ -3725,6 +3744,7 @@ Window {
         accent: root.accent
         isMac: root.isMac
         shortcutMap: root.shortcutMap
+        blurSupported: chrome.blurSupported
 
         onClosed: root.modalClosed()
     }
@@ -3977,16 +3997,10 @@ Window {
             // One process-wide warm-up, so the first right-click already has
             // the installed apps' verbs instead of waiting on a COM surrogate.
             Workspace.warmShellCommands()
-            // The instrument shell paints solid chrome from `Theme.chrome`.
-            // A Mica/Acrylic backdrop would composite a second colour under
-            // it and the ±2 % rule in the migration doc cannot be met, so this
-            // round asks for no material. `applyMaterial` keeps the capability
-            // for a later pass.
-            root.material = "none"
             if (root.config !== null)
                 root.startupPath = root.config.startupPath
         }
-        chrome.applyMaterial(root.material, root.dark)
+        root.applyBackdrop()
 
         // The sidebar shows the bin's count, so the scan has to run before the
         // trash surface is ever opened.

@@ -14,7 +14,7 @@
 //!     WindowController { id: chrome; token: parent.objectName }
 //!     Component.onCompleted: {
 //!         chrome.attach()
-//!         chrome.applyMaterial(chrome.startupMaterial(), true)
+//!         chrome.applyMaterial(Appearance.windowMaterial, Appearance.blurEnabled, true)
 //!     }
 //! }
 //! ```
@@ -45,6 +45,11 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         fn dae_qt_enable_alpha();
 
+        /// True when the compositor advertises `ext-background-effect-v1` and
+        /// the platform plugin is Wayland. Always false on Windows and macOS.
+        #[namespace = "dae_qt"]
+        fn dae_qt_wayland_blur_supported() -> bool;
+
         /// Selects the platform's UI face for the whole application. Only the
         /// Windows variant does anything; the other platforms already default
         /// to their system font.
@@ -61,6 +66,15 @@ pub mod qobject {
         #[qml_element]
         #[qproperty(QString, token)]
         #[qproperty(bool, attached)]
+        /// The material the platform actually drew last: `mica`, `acrylic`,
+        /// `blur` or `none`. QML paints translucent chrome for anything but
+        /// `none`, so an unavailable choice must report `none` here even
+        /// though the requested value stays in settings.
+        #[qproperty(QString, applied_material, cxx_name = "appliedMaterial")]
+        /// Whether this session can blur a window at all (Wayland only; the
+        /// Windows materials are resolved separately). The settings panel
+        /// reads it to say why blur is unavailable.
+        #[qproperty(bool, blur_supported, cxx_name = "blurSupported")]
         type WindowController = super::WindowControllerRust;
 
         /// Applies the native frame, installs the IME focus guard and records
@@ -69,28 +83,42 @@ pub mod qobject {
         #[qinvokable]
         fn attach(self: Pin<&mut WindowController>) -> bool;
 
-        /// `material` is "mica", "acrylic" or "none".
+        /// Resolves the user's settings against this machine and applies the
+        /// result. `requested` is "mica", "acrylic" or "none" (Windows only);
+        /// `blur` is the background-effects switch.
         #[qinvokable]
         #[cxx_name = "applyMaterial"]
-        fn apply_material(self: Pin<&mut WindowController>, material: &QString, dark: bool)
-        -> bool;
+        fn apply_material(
+            self: Pin<&mut WindowController>,
+            requested: &QString,
+            blur: bool,
+            dark: bool,
+        ) -> bool;
 
         /// The horizontal slice of the chrome bar that carries the tabs, in dp
         /// from the client's left edge. The rest of the bar drags the window.
         #[qinvokable]
         #[cxx_name = "setCaptionClient"]
         fn set_caption_client(self: Pin<&mut WindowController>, left: f64, right: f64) -> bool;
-
-        #[qinvokable]
-        #[cxx_name = "startupMaterial"]
-        fn startup_material(&self) -> QString;
     }
 }
 
-#[derive(Default)]
 pub struct WindowControllerRust {
     token: QString,
     attached: bool,
+    applied_material: QString,
+    blur_supported: bool,
+}
+
+impl Default for WindowControllerRust {
+    fn default() -> Self {
+        Self {
+            token: QString::default(),
+            attached: false,
+            applied_material: QString::from("none"),
+            blur_supported: false,
+        }
+    }
 }
 
 impl qobject::WindowController {
@@ -102,19 +130,34 @@ impl qobject::WindowController {
         let attached =
             qobject::attach_window(&token) && crate::ime::install_focus_cancel_guard(&token);
         self.as_mut().set_attached(attached);
+        self.as_mut()
+            .set_blur_supported(wayland_blur_supported());
         attached
     }
 
-    pub fn apply_material(self: Pin<&mut Self>, material: &QString, dark: bool) -> bool {
-        let Some(material) = crate::material::Material::from_name(&material.to_string()) else {
-            return false;
-        };
+    pub fn apply_material(
+        mut self: Pin<&mut Self>,
+        requested: &QString,
+        blur: bool,
+        dark: bool,
+    ) -> bool {
+        let material = crate::material::resolve(blur, &requested.to_string());
         let token = self.token.clone();
-        qobject::apply_window_backdrop(&token, material.code(), dark)
-    }
-
-    pub fn startup_material(&self) -> QString {
-        QString::from(crate::material::startup().as_str())
+        let applied = qobject::apply_window_backdrop(&token, material.code(), dark);
+        // An apply call for a window that is not attached yet is not a
+        // material answer; keep the previous value rather than paint chrome
+        // solid and then translucent again on the next call.
+        if applied {
+            let drawn = if material == crate::material::Material::None {
+                "none"
+            } else {
+                material.as_str()
+            };
+            self.as_mut().set_applied_material(QString::from(drawn));
+        } else if material != crate::material::Material::None {
+            self.as_mut().set_applied_material(QString::from("none"));
+        }
+        applied
     }
 
     pub fn set_caption_client(self: Pin<&mut Self>, left: f64, right: f64) -> bool {
@@ -125,6 +168,12 @@ impl qobject::WindowController {
 
 pub fn enable_alpha() {
     qobject::dae_qt_enable_alpha();
+}
+
+/// Whether this session can blur a window behind it. Only Wayland compositors
+/// that advertise `ext-background-effect-v1` answer true.
+pub fn wayland_blur_supported() -> bool {
+    qobject::dae_qt_wayland_blur_supported()
 }
 
 pub fn apply_system_font() {

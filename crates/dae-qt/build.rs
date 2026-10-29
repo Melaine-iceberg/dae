@@ -1,5 +1,29 @@
 use cxx_qt_build::{CxxQtBuilder, QmlModule};
 
+/// The QPA header under `include/QtGui/<version>/QtGui`. Qt ships it in every
+/// install but does not have a `Qt6GuiPrivate` link target in aqt builds, so
+/// the path is resolved rather than requested as a Qt module.
+#[cfg(target_os = "linux")]
+fn qt_private_gui_include() -> Option<std::path::PathBuf> {
+    let qmake = std::env::var("QMAKE").unwrap_or_else(|_| "qmake".to_owned());
+    let output = std::process::Command::new(qmake)
+        .args(["-query", "QT_INSTALL_HEADERS"])
+        .output()
+        .ok()?;
+    let headers = std::path::PathBuf::from(String::from_utf8(output.stdout).ok()?.trim());
+    let gui = headers.join("QtGui");
+    if gui.join("qpa/qplatformnativeinterface.h").exists() {
+        return Some(gui);
+    }
+    for entry in std::fs::read_dir(&gui).ok()? {
+        let candidate = entry.ok()?.path().join("QtGui");
+        if candidate.join("qpa/qplatformnativeinterface.h").exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 fn main() {
     // The native half talks to DWM, IMM32 and the window metrics API directly.
     // cxx-qt only links Qt.
@@ -10,6 +34,11 @@ fn main() {
         println!("cargo:rustc-link-lib=dwmapi");
         println!("cargo:rustc-link-lib=imm32");
     }
+
+    // Wayland blur binds a protocol on Qt's own `wl_display`; the generated
+    // protocol code and the client library are only needed on Linux.
+    #[cfg(target_os = "linux")]
+    println!("cargo:rustc-link-lib=wayland-client");
 
     let mut builder = CxxQtBuilder::new_qml_module(QmlModule::new("dae"))
         .qt_module("Quick")
@@ -54,6 +83,20 @@ fn main() {
             "src/window.rs",
             "src/workspace.rs",
         ]);
+
+    #[cfg(target_os = "linux")]
+    {
+        let private_include = qt_private_gui_include()
+            .expect("Qt private QPA headers are required for Wayland background blur");
+        // SAFETY: only an include path is added.
+        builder = unsafe {
+            builder
+                .cpp_files(["cpp/wayland/ext-background-effect-v1-protocol.c"])
+                .cc_builder(|cc| {
+                    cc.include(&private_include);
+                })
+        };
+    }
 
     if std::env::var("PROFILE").as_deref() == Ok("debug") {
         // SAFETY: the only change is one compile definition. QT_QML_DEBUG

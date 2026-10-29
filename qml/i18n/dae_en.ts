@@ -2062,8 +2062,8 @@
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="429" />
-            <source>主题、强调色和界面语言对本 shell 立即生效。</source>
-            <translation>Theme, accent, and language apply immediately to this shell.</translation>
+            <source>主题、强调色、界面语言和背景效果对本 shell 立即生效。</source>
+            <translation>Theme, accent, language, and background effects apply immediately to this shell.</translation>
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="436" />
@@ -2096,9 +2096,64 @@
             <translation>The entire window is retranslated immediately. Menus, dialogs, and this panel share the same strings.</translation>
         </message>
         <message>
-            <location filename="../SettingsPanel.qml" line="540" />
-            <source>外观、语言、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。</source>
-            <translation>Appearance, language, shortcuts, and terminal typography are stored together in settings.toml and shared with the Tauri shell.</translation>
+            <location filename="../SettingsPanel.qml" line="86" />
+            <source>云母 (Mica)</source>
+            <translation>Mica</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="87" />
+            <source>亚克力 (Acrylic)</source>
+            <translation>Acrylic</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="95" />
+            <source>当前 Wayland 合成器支持 ext-background-effect-v1，背景模糊可用。</source>
+            <translation>This Wayland compositor supports ext-background-effect-v1; background blur is available.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="96" />
+            <source>当前 Wayland 合成器未提供 ext-background-effect-v1；窗口会保持实色背景。</source>
+            <translation>This Wayland compositor does not provide ext-background-effect-v1; the window keeps a solid background.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="98" />
+            <source>macOS 暂不支持窗口背景模糊，窗口会保持实色背景。</source>
+            <translation>macOS does not support window background blur yet; the window keeps a solid background.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="602" />
+            <source>背景效果</source>
+            <translation>Background effects</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="611" />
+            <source>开启后窗口使用系统合成的半透明背景；关闭则使用实色，适合低性能或远程桌面环境。</source>
+            <translation>When enabled, the window uses a system-composited translucent background; when disabled it uses a solid fill, which suits low-end or remote desktop sessions.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="623" />
+            <source>开启</source>
+            <translation>On</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="624" />
+            <source>关闭</source>
+            <translation>Off</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="638" />
+            <source>窗口材质</source>
+            <translation>Window material</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="648" />
+            <source>Mica 从桌面壁纸取色，Acrylic 实时模糊身后的窗口。默认 Mica；系统不支持或关闭透明效果时窗口回退为实色。</source>
+            <translation>Mica samples a tint from the desktop wallpaper, while Acrylic blurs the windows behind in real time. Mica is the default; the window falls back to a solid fill when the system does not support it or transparency is off.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="696" />
+            <source>外观、语言、背景效果、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。</source>
+            <translation>Appearance, language, background effects, shortcuts, and terminal typography are stored together in settings.toml and shared with the Tauri shell.</translation>
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="562" />

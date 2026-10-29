@@ -22,8 +22,12 @@
 // Linux and macOS have neither a DWM nor a WM_NCHITTEST hook. The entry points
 // below keep the same signatures there and do only the portable part (confirm
 // the token names a window, force the platform window to exist); QML drives
-// `startSystemMove` / `startSystemResize` instead of a caption hit test. The
-// backdrop is `Material::None` on those platforms, so an apply call is a no-op.
+// `startSystemMove` / `startSystemResize` instead of a caption hit test.
+//
+// Linux additionally implements Wayland's `ext-background-effect-v1`: the
+// generated protocol code extends Qt's own `wl_surface`, and a compositor that
+// does not advertise the global simply answers "no blur". macOS has no
+// implementation yet, so it reports `Material::None`.
 
 #pragma once
 
@@ -55,6 +59,18 @@
 
 #include <cstdio>
 
+#if defined(Q_OS_LINUX) && QT_CONFIG(wayland)
+#include <wayland-client.h>
+
+#include <cstring>
+
+#include <QHash>
+#include <qguiapplication_platform.h>
+#include <qpa/qplatformnativeinterface.h>
+
+#include "wayland/ext-background-effect-v1-client-protocol.h"
+#endif
+
 #include "lookup.h"
 
 namespace dae_qt {
@@ -65,11 +81,13 @@ namespace dae_qt {
 // DWMWINDOWATTRIBUTE, but naming the values here keeps them next to the code
 // that uses them and matches the Tauri module's `windows` crate.
 constexpr DWORD kDwmwaUseImmersiveDarkMode = 20;
+constexpr DWORD kDwmwaWindowCornerPreference = 33;
 constexpr DWORD kDwmwaSystemBackdropType = 38;
 constexpr DWORD kDwmwaMicaEffect = 1029; // undocumented, builds 22000-22522
 constexpr int kDwmsbtNone = 1;
 constexpr int kDwmsbtMainWindow = 2; // Mica
 constexpr int kDwmsbtTransientWindow = 3; // Acrylic
+constexpr int kDwmcprRound = 2;
 
 // The QML chrome bar is 44 dp tall and each window button 46 dp wide. These are
 // physical pixels on this side because WM_NCHITTEST speaks client pixels,
@@ -253,6 +271,13 @@ inline void style_window(HWND hwnd)
     SetWindowLongPtrW(hwnd, GWL_STYLE, style);
     SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+
+    // Windows 11 only rounds windows it recognises as standard frames. This
+    // one answers WM_NCCALCSIZE with 0 (the QML client covers the whole
+    // window), and it is translucent, so DWM leaves it square unless asked.
+    // Unknown on Windows 10, where the call simply fails.
+    int corner = kDwmcprRound;
+    DwmSetWindowAttribute(hwnd, kDwmwaWindowCornerPreference, &corner, sizeof(corner));
 }
 
 inline bool apply_backdrop_to(HWND hwnd, int material, bool dark)
@@ -271,6 +296,9 @@ inline bool apply_backdrop_to(HWND hwnd, int material, bool dark)
         disable_blur_behind(hwnd);
         return true;
     }
+
+    if (material == 3) // Wayland-only effect
+        return false;
 
     enable_blur_behind(hwnd);
 
@@ -456,7 +484,252 @@ inline bool dae_qt_set_caption_client(const QString& token, double left, double 
     return true;
 }
 
+/// The background-effect protocol is a Wayland surface extension; there is
+/// nothing to advertise on Windows.
+inline bool dae_qt_wayland_blur_supported()
+{
+    return false;
+}
+
 #else // !Q_OS_WIN
+
+#if defined(Q_OS_LINUX) && QT_CONFIG(wayland)
+
+// Wayland background blur through `ext-background-effect-v1`. Qt does not
+// expose the effect, but it owns the `wl_display` and the `wl_surface` this
+// code has to extend: the public native interface hands over both, and the
+// generated protocol bindings (wayland-scanner 1.26) are compiled into this
+// file. On X11 there is no such surface and the effect is unavailable.
+
+/// The extension is bound once per process: the registry and the manager do
+/// not belong to a window, and binding a second manager for every window would
+/// just add roundtrips.
+struct WaylandBackgroundEffect
+{
+    wl_display* display = nullptr;
+    wl_compositor* compositor = nullptr;
+    ext_background_effect_manager_v1* manager = nullptr;
+    bool blur = false;
+    bool initialized = false;
+
+    bool supported() const { return manager && blur; }
+};
+
+struct WaylandRegistryState
+{
+    WaylandBackgroundEffect* effect;
+};
+
+inline void wayland_global(void* data, wl_registry* registry, uint32_t name,
+                           const char* interface, uint32_t version)
+{
+    auto* state = static_cast<WaylandRegistryState*>(data);
+    if (std::strcmp(interface, ext_background_effect_manager_v1_interface.name) != 0)
+        return;
+    if (state->effect->manager)
+        return;
+    state->effect->manager = static_cast<ext_background_effect_manager_v1*>(
+        wl_registry_bind(registry, name, &ext_background_effect_manager_v1_interface,
+                         qMin(version, 1u)));
+}
+
+inline void wayland_global_remove(void*, wl_registry*, uint32_t) {}
+
+/// The capability is the compositor's answer to "can you blur". It is sent
+/// when the global is bound and again whenever it changes, so the listener
+/// has to stay alive for the lifetime of the manager.
+inline void wayland_capabilities(void* data, ext_background_effect_manager_v1*, uint32_t flags)
+{
+    static_cast<WaylandBackgroundEffect*>(data)->blur =
+        (flags & EXT_BACKGROUND_EFFECT_MANAGER_V1_CAPABILITY_BLUR) != 0;
+}
+
+inline WaylandBackgroundEffect& wayland_background_effect()
+{
+    static WaylandBackgroundEffect effect;
+    if (effect.initialized)
+        return effect;
+    effect.initialized = true;
+
+    // `wayland-egl` was the Qt 5 name; Qt 6 reports plain "wayland" for every
+    // Wayland integration, but the prefix keeps this from missing a variant.
+    if (!QGuiApplication::platformName().startsWith(QStringLiteral("wayland")))
+        return effect;
+
+    auto* app = QGuiApplication::nativeInterface<QNativeInterface::QWaylandApplication>();
+    if (!app)
+        return effect;
+    effect.display = app->display();
+    effect.compositor = app->compositor();
+    if (!effect.display || !effect.compositor)
+        return effect;
+
+    WaylandRegistryState state{ &effect };
+    static const wl_registry_listener registry_listener{ wayland_global,
+                                                         wayland_global_remove };
+    static const ext_background_effect_manager_v1_listener manager_listener{
+        wayland_capabilities
+    };
+
+    // A private queue means the blocking roundtrips below dispatch only these
+    // bindings. Qt's own queue keeps whatever it already had pending, which is
+    // the same split `linux_graphics.rs` used for its startup probe.
+    wl_event_queue* queue = wl_display_create_queue(effect.display);
+    wl_registry* registry = wl_display_get_registry(effect.display);
+    if (queue && registry) {
+        wl_proxy_set_queue(reinterpret_cast<wl_proxy*>(registry), queue);
+        wl_registry_add_listener(registry, &registry_listener, &state);
+        wl_display_roundtrip_queue(effect.display, queue);
+
+        if (effect.manager) {
+            wl_proxy_set_queue(reinterpret_cast<wl_proxy*>(effect.manager), queue);
+            ext_background_effect_manager_v1_add_listener(effect.manager, &manager_listener,
+                                                          &effect);
+            // The capabilities event is sent on bind; one more roundtrip
+            // settles it before the first window asks for a material.
+            wl_display_roundtrip_queue(effect.display, queue);
+            // Capability changes are rare but not one-shot; they have to reach
+            // the listener through Qt's own dispatch once this queue is gone.
+            wl_proxy_set_queue(reinterpret_cast<wl_proxy*>(effect.manager), nullptr);
+        }
+    }
+    if (registry)
+        wl_registry_destroy(registry);
+    if (queue)
+        wl_event_queue_destroy(queue);
+    return effect;
+}
+
+struct WaylandBlurSurface
+{
+    ext_background_effect_surface_v1* effect = nullptr;
+};
+
+inline QHash<quintptr, WaylandBlurSurface>& wayland_blur_surfaces()
+{
+    static QHash<quintptr, WaylandBlurSurface> surfaces;
+    return surfaces;
+}
+
+inline wl_surface* wayland_surface_for(QQuickWindow* window)
+{
+    auto* native = QGuiApplication::platformNativeInterface();
+    if (!native)
+        return nullptr;
+    return static_cast<wl_surface*>(native->nativeResourceForWindow("surface", window));
+}
+
+inline void update_blur_region(QQuickWindow* window)
+{
+    auto& surfaces = wayland_blur_surfaces();
+    auto it = surfaces.find(reinterpret_cast<quintptr>(window));
+    if (it == surfaces.end() || !it->effect)
+        return;
+    auto& effect = wayland_background_effect();
+    if (!effect.compositor)
+        return;
+
+    wl_region* region = wl_compositor_create_region(effect.compositor);
+    if (!region)
+        return;
+    // Surface-local coordinates are logical pixels, which is what QWindow
+    // reports. The compositor clips the region to the surface, so a resize
+    // only needs a fresh region at the new size.
+    wl_region_add(region, 0, 0, qMax(1, window->width()), qMax(1, window->height()));
+    ext_background_effect_surface_v1_set_blur_region(it->effect, region);
+    wl_region_destroy(region);
+}
+
+inline bool set_wayland_blur(QQuickWindow* window, bool enabled)
+{
+    auto& effect = wayland_background_effect();
+
+    const quintptr key = reinterpret_cast<quintptr>(window);
+    auto& surfaces = wayland_blur_surfaces();
+    auto it = surfaces.find(key);
+
+    if (!enabled) {
+        if (it != surfaces.end() && it->effect) {
+            // Destroying the object removes the effect on the next commit;
+            // there is no need to send a null region first.
+            ext_background_effect_surface_v1_destroy(it->effect);
+            it->effect = nullptr;
+            // Both the destroy and a new region are double-buffered, so a
+            // quiet window needs one frame to show either change.
+            window->update();
+        }
+        return true;
+    }
+
+    if (!effect.supported())
+        return false;
+
+    if (it == surfaces.end() || !it->effect) {
+        wl_surface* surface = wayland_surface_for(window);
+        if (!surface)
+            return false;
+        auto* proxy =
+            ext_background_effect_manager_v1_get_background_effect(effect.manager, surface);
+        if (!proxy)
+            return false;
+
+        if (it == surfaces.end()) {
+            surfaces.insert(key, WaylandBlurSurface{ proxy });
+            // The key is the window address, which the allocator may reuse. It
+            // has to go away with the window so a torn-off one never inherits
+            // the previous effect.
+            QObject::connect(window, &QObject::destroyed, qApp, [key](QObject*) {
+                auto& surfaces = wayland_blur_surfaces();
+                auto it = surfaces.find(key);
+                if (it == surfaces.end())
+                    return;
+                if (it->effect)
+                    ext_background_effect_surface_v1_destroy(it->effect);
+                surfaces.erase(it);
+            });
+            QObject::connect(window, &QWindow::widthChanged, window,
+                             [window](int) { update_blur_region(window); });
+            QObject::connect(window, &QWindow::heightChanged, window,
+                             [window](int) { update_blur_region(window); });
+        } else {
+            it->effect = proxy;
+        }
+    }
+
+    update_blur_region(window);
+    // The region is double-buffered state. Without a commit the compositor
+    // would not see it until the window happens to redraw, which a settings
+    // change with no animation might never trigger.
+    window->update();
+    return true;
+}
+
+inline bool dae_qt_wayland_blur_supported()
+{
+    return wayland_background_effect().supported();
+}
+
+inline bool dae_qt_apply_blur(const QString& token, bool enabled)
+{
+    QQuickWindow* window = find_window_by_token(token);
+    if (!window)
+        return false;
+    return set_wayland_blur(window, enabled);
+}
+
+#else // !Q_OS_LINUX or no Wayland feature in this Qt build
+
+inline bool dae_qt_wayland_blur_supported()
+{
+    return false;
+}
+
+inline bool dae_qt_apply_blur(const QString&, bool)
+{
+    return false;
+}
+
+#endif // Q_OS_LINUX && QT_CONFIG(wayland)
 
 // There is no native frame to style and no hit test to feed. Keep the contract
 // the Rust bridge and QML rely on: false means "no such window", true means the
@@ -471,11 +744,20 @@ inline bool dae_qt_attach(const QString& token)
     return true;
 }
 
-/// No backdrop implementation outside Windows; `Material::None` is what
-/// `src/material.rs` answers there, and a forced material is only a tint.
-inline bool dae_qt_apply_backdrop(const QString& token, int, bool)
+/// Windows draws Mica/Acrylic; Wayland may draw a background blur. Everything
+/// else keeps the solid chrome, and a material force is only a tint there.
+inline bool dae_qt_apply_backdrop(const QString& token, int material, bool)
 {
-    return find_window_by_token(token) != nullptr;
+    QQuickWindow* window = find_window_by_token(token);
+    if (!window)
+        return false;
+    if (material == 3) // blur
+        return dae_qt_apply_blur(token, true);
+    if (material == 2) { // none
+        dae_qt_apply_blur(token, false);
+        return true;
+    }
+    return false;
 }
 
 /// The caption band is a Windows hit-test input. QML's drag and resize
@@ -509,7 +791,8 @@ inline void dae_qt_enable_alpha()
 ///
 /// The non-client message font is not enough on its own: Windows 11 reports
 /// plain "Segoe UI" there even on a Chinese system, so the UI language id is
-/// the authoritative source. A Latin display language keeps the Windows 11
+/// the authoritative source. A message font the user has actually changed is
+/// still honoured first. A Latin display language keeps the Windows 11
 /// Variable Text cut (/ Segoe UI on Windows 10).
 ///
 /// macOS and Linux already default to their platform UI face (SF Pro, the
@@ -521,33 +804,40 @@ inline void dae_qt_apply_system_font()
     QFont font = QGuiApplication::font();
 
     // The face Windows' own UI uses for the current display language. The
-    // Traditional Chinese variants share the language id but not the face.
-    QString uiFace;
+    // Traditional Chinese variants share the language id but not the face. The
+    // non-UI names follow as a safety net for installs that ship only the
+    // older family name.
+    QStringList preferred;
     const LANGID language = GetUserDefaultUILanguage();
     switch (PRIMARYLANGID(language)) {
     case LANG_CHINESE:
         switch (SUBLANGID(language)) {
         case SUBLANG_CHINESE_SIMPLIFIED:
         case SUBLANG_CHINESE_SINGAPORE:
-            uiFace = QStringLiteral("Microsoft YaHei UI");
+            preferred << QStringLiteral("Microsoft YaHei UI")
+                      << QStringLiteral("Microsoft YaHei");
             break;
         default:
-            uiFace = QStringLiteral("Microsoft JhengHei UI");
+            preferred << QStringLiteral("Microsoft JhengHei UI")
+                      << QStringLiteral("Microsoft JhengHei");
             break;
         }
         break;
     case LANG_JAPANESE:
-        uiFace = QStringLiteral("Yu Gothic UI");
+        preferred << QStringLiteral("Yu Gothic UI")
+                  << QStringLiteral("Yu Gothic");
         break;
     case LANG_KOREAN:
-        uiFace = QStringLiteral("Malgun Gothic");
+        preferred << QStringLiteral("Malgun Gothic");
         break;
     default:
         break;
     }
 
-    // A user-customised message face is still a better answer than Segoe on a
-    // non-Latin display language.
+    // The message face is what the user's own desktop uses. On Windows 11 it
+    // is still "Segoe UI" even on a Chinese system, so only a customised or
+    // non-Latin face is worth putting ahead of the language face; plain
+    // "Segoe UI" is just the legacy Latin default.
     QString messageFace;
     NONCLIENTMETRICSW metrics{};
     metrics.cbSize = sizeof(metrics);
@@ -555,11 +845,9 @@ inline void dae_qt_apply_system_font()
                               &metrics, 0)) {
         messageFace = QString::fromWCharArray(metrics.lfMessageFont.lfFaceName);
     }
-    const bool latinLocale = messageFace.isEmpty()
-        || messageFace.compare(QStringLiteral("Segoe UI"),
-                               Qt::CaseInsensitive) == 0;
-    if (uiFace.isEmpty() && !latinLocale)
-        uiFace = messageFace;
+    const bool customMessageFace = !messageFace.isEmpty()
+        && messageFace.compare(QStringLiteral("Segoe UI"),
+                               Qt::CaseInsensitive) != 0;
 
     const QStringList installed = QFontDatabase::families();
     const QString latinFace = installed.contains(
@@ -568,8 +856,12 @@ inline void dae_qt_apply_system_font()
         : QStringLiteral("Segoe UI");
 
     QStringList families;
-    if (!uiFace.isEmpty() && installed.contains(uiFace))
-        families << uiFace;
+    if (customMessageFace && installed.contains(messageFace))
+        families << messageFace;
+    for (const QString& face : preferred) {
+        if (installed.contains(face) && !families.contains(face))
+            families << face;
+    }
     families << latinFace;
 
     font.setFamilies(families);
