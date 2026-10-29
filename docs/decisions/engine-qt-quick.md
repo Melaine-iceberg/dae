@@ -492,7 +492,7 @@ F2、Delete、Shift+Delete、Ctrl+C/X/V、Ctrl+A、F5、Backspace、Enter；
 
 **仍然没铺的**（core 已有实现，缺 Qt 视图/命令包装，或只在旧壳里）：暂无。
 默认文件管理器注册已随 §4.6 的补齐清单落地。文件图标与
-系统缩略图已在 §4.7 落地（Linux 的 `.thumbnailer` 除外），网络存储/云盘连接
+系统缩略图已在 §4.7 落地（含 Linux 的 `.thumbnailer`），网络存储/云盘连接
 管理已在 §4.8 落地，`dae://` 深链与单实例已在 §4.9 落地，打开方式选择器与
 自动更新已在 §4.10 落地，右键菜单的属性/校验和/目录大小/移动/应用扩展/批量
 重命名已在 §4.6 的补齐清单里落地。
@@ -530,6 +530,19 @@ build 26340 上它对任何扩展名都返回 `E_FAIL`（实测 json/txt/rs/exe/
   缩略图就返回空，预览面板显示「无法生成缩略图」，而不是把 384 px 的图标当成
   首页缩略图。`PreviewController.hasThumbnail` 相应加入桌面可渲染扩展名。
 
+**Linux 的 `.thumbnailer` 也进了 core（2026-10-29）。** 旧壳的
+`src-tauri/src/desktop_thumbnails.rs` `git mv` 到
+`crates/dae-core/src/fs/thumbnails/linux.rs`，与 Windows 后端共用同一个
+`dae_core::fs::thumbnails` 入口。API 从「平台各自返回 `Vec<u8>`」统一成
+`extract(path, size, modified) -> Option<Thumbnail>`：`Thumbnail` 带 mime，
+`modified` 是调用方已有的源文件 mtime——Linux 的共享缓存
+（`$XDG_CACHE_HOME/thumbnails/`）按「缓存文件不旧于源文件」判新鲜度，失败记录
+同理，因此不必在渲染线程上再 `stat` 一次；Windows 的
+`IShellItemImageFactory` 忽略该值。旧壳的 `mod desktop_thumbnails` 已删除，
+`preview.rs` 的 Windows/Linux 两个分支并成一个；Qt 侧
+`dae_qt_render_system_thumbnail(path, size, modifiedMs)` 把 `QFileInfo`
+已经读到的 mtime 传进来。
+
 **实测（2026-10-26，Windows 11 build 26340 / 150%）**：
 
 - `dae-core` **223 通过 / 8 忽略**（新增 notepad.exe 图标、`.json` 类型图标、
@@ -544,8 +557,11 @@ build 26340 上它对任何扩展名都返回 `E_FAIL`（实测 json/txt/rs/exe/
 
 **遗留与复测**：
 
-- Linux 的 `.thumbnailer` 仍在旧壳（`desktop_thumbnails`，还依赖未搬的 XDG
-  desktop-entry 解析），随 Qt 的 Linux 门槛一起搬。
+- Linux 的 `.thumbnailer` 已不再留壳：19 个模块测试随文件进了 `dae-core`，
+  其中 15 个在 Windows 主机上以 `cfg(test)` 编译运行（`/bin/sh` 进程、`PATH`
+  查找和真实生产者的 4 个仍按 `cfg(unix)` gated）。旧壳 `cargo check` 通过，
+  `cargo test -p dae-core --lib` 全量 299 passed（`fs::transfer` 的并发峰值用例
+  在本机首次偶发失败，复跑通过，与本次改动无关）。
 - 图标接入后的 12 万行复测已通过：见 §5.1.1。work p95 1.60–1.66 ms，与无图标的
   1.64–1.82 ms 在噪声内；PSS +3–4 MB。
 

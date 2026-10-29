@@ -181,9 +181,9 @@ fn localized<'a>(
 /// Values are otherwise kept verbatim, including the backslash escapes an
 /// `Exec` line relies on — expansion happens later, in [`expand_exec`].
 ///
-/// Also what `dae::desktop_thumbnails` reads a `.thumbnailer` file with: the
-/// two formats are the same INI dialect, so one parser is kept correct rather
-/// than two.
+/// Also what `fs::thumbnails::linux` reads a `.thumbnailer` file with: the two
+/// formats are the same INI dialect, so one parser is kept correct rather than
+/// two.
 pub fn parse_groups(text: &str) -> HashMap<String, HashMap<String, String>> {
     let mut groups: HashMap<String, HashMap<String, String>> = HashMap::new();
     let mut current: Option<String> = None;
@@ -388,8 +388,8 @@ fn expand_word(
 /// A quoted empty argument is kept, because `Exec="" --flag` genuinely passes
 /// an empty first argument.
 ///
-/// Shared with `dae::desktop_thumbnails`, which splits a `.thumbnailer`
-/// `Exec=` line — the same grammar, and the same reason no shell may see it.
+/// Shared with `fs::thumbnails::linux`, which splits a `.thumbnailer` `Exec=`
+/// line — the same grammar, and the same reason no shell may see it.
 pub fn split_exec(exec: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut current = String::new();

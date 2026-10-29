@@ -1,6 +1,10 @@
 //! Linux: the desktop's own thumbnailers, run for the formats the `image` crate
 //! cannot decode — video first frames, PDF pages, HEIC and AVIF photos.
 //!
+//! This is the Linux backend behind [`super::extract`], and the reason that
+//! entry point takes the source's mtime: freshness here is a file comparison
+//! against the shared cache, not a cache key.
+//!
 //! Why a spec and not an API. Nothing on this platform answers "give me a
 //! thumbnail of this file" the way `IShellItemImageFactory` does on Windows or
 //! `NSWorkspace` does on macOS. What it has instead is the freedesktop
@@ -8,18 +12,18 @@
 //! `$XDG_DATA_DIRS/thumbnailers/` naming the MIME types they render and an
 //! `Exec=` line with `%i`/`%o`/`%s` holes to fill, and the agreed output is
 //! cached in `$XDG_CACHE_HOME/thumbnails/`. So this module is a reader of those
-//! two things plus a process spawner — the same shape as [`dae_core::fs::icons`]
+//! two things plus a process spawner — the same shape as [`crate::fs::icons`]
 //! and for the same reason: no GTK, no D-Bus, no display connection, nothing
-//! that has to hop to the main thread. It runs on the render pool
-//! ([`crate::file_system::preview`]), and a producer that needed a realized
-//! display would undo the one thing that pool exists to avoid.
+//! that has to hop to the main thread. Both shells call it from their render
+//! pools, and a producer that needed a realized display would undo the one thing
+//! those pools exist to avoid.
 //!
 //! Why writing into the shared cache is worth a directory outside the app's own
 //! tree: every file manager and image viewer on the desktop reads and writes it,
 //! so a clip another application already thumbnailed is served here without
 //! spawning anything, a thumbnail made here is free for the next viewer, and
-//! both survive this app's restarts — which the in-memory cache in `preview.rs`
-//! does not.
+//! both survive this app's restarts — which the shells' in-memory render caches
+//! do not.
 //!
 //! Key compatibility is best-effort. The spec fixes the layout and the name
 //! (`MD5` of the file's URI, plus the basename above the smallest bucket) but
@@ -42,19 +46,14 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
-use dae_core::fs::shell_commands::desktop_entry;
+use super::Thumbnail;
+use crate::fs::shell_commands::desktop_entry;
 use crate::xdg::{cache_home, data_roots};
 
-/// A thumbnail a producer rendered, labelled with the type its bytes have.
-///
-/// The mime travels with the bytes as it does for [`dae_core::fs::icons::FileIcon`]
-/// — the label belongs to whatever made them, and the caller answers a protocol
-/// request with it verbatim. Here it is always PNG: a producer is asked for a
-/// `.png` output name, and [`collect`] refuses anything else.
-pub(crate) struct Produced {
-    pub mime: &'static str,
-    pub bytes: Vec<u8>,
-}
+// The labelled result this module produces is [`super::Thumbnail`]: the mime
+// travels with the bytes as it does for [`crate::fs::icons::FileIcon`], and here
+// it is always PNG — a producer is asked for a `.png` output name, and [`collect`]
+// refuses anything else.
 
 /// Where every application's thumbnails are kept, under the cache home.
 const THUMBNAIL_DIR: &str = "thumbnails";
@@ -338,7 +337,7 @@ fn is_executable(path: &Path) -> bool {
 ///
 /// Cached for the life of the process. Installing a package adds a thumbnailer,
 /// and the alternative is re-reading a directory of small INI files per request;
-/// the same trade [`dae_core::fs::icons::linux`] makes for the icon theme chain,
+/// the same trade [`crate::fs::icons::linux`] makes for the icon theme chain,
 /// with the same consequence — a thumbnailer installed while this app runs is
 /// picked up on the next launch.
 fn thumbnailers() -> &'static Vec<Thumbnailer> {
@@ -665,13 +664,13 @@ enum Rendered {
 /// reasons answer it, and the caller has no use for the distinction: nothing on
 /// this machine renders this type, the producer failed, or the producer wrote
 /// something that is not a PNG.
-pub(crate) fn extract(path: &str, size: u32, modified: Option<SystemTime>) -> Option<Produced> {
+pub(super) fn extract(path: &str, size: u32, modified: Option<SystemTime>) -> Option<Thumbnail> {
     let root = cache_home()?.join(THUMBNAIL_DIR);
     let entry = CacheEntry::for_path(path, size);
 
     // Up to date, so nothing is spawned and no decoder is paid for.
     if let Some(bytes) = read_fresh(&root.join(&entry.thumbnail), modified) {
-        return Some(Produced {
+        return Some(Thumbnail {
             mime: "image/png",
             bytes,
         });
@@ -826,12 +825,12 @@ fn collect(staged: &Path) -> Option<Vec<u8>> {
 /// all — a viewer reading the same directory concurrently never sees half a PNG.
 /// Failing to publish is not a failure to thumbnail: the cache directory may be
 /// unwritable, and the bytes in hand are still the answer the request wants.
-fn publish(root: &Path, entry: &CacheEntry, staged: PathBuf, bytes: Vec<u8>) -> Produced {
+fn publish(root: &Path, entry: &CacheEntry, staged: PathBuf, bytes: Vec<u8>) -> Thumbnail {
     if std::fs::rename(&staged, root.join(&entry.thumbnail)).is_err() {
         let _ = std::fs::remove_file(&staged);
     }
 
-    Produced {
+    Thumbnail {
         mime: "image/png",
         bytes,
     }

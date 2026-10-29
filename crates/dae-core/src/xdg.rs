@@ -1,9 +1,10 @@
 //! XDG base-directory resolution, shared by every consumer that reads data
 //! dropped outside the app's own directory tree.
 //!
-//! The callers today are `fs::icons::linux` (the icon themes), the shell's
-//! `shell_commands::linux` (the `.desktop` service menus a packaged application
-//! installed) and its `desktop_thumbnails` (the freedesktop thumbnailer spec).
+//! The callers today are `fs::icons::linux` (the icon themes),
+//! `fs::shell_commands::linux` (the `.desktop` service menus a packaged
+//! application installed) and `fs::thumbnails::linux` (the freedesktop
+//! thumbnailer spec).
 //! They all need the same spec rules, and the rules are the sort that fail
 //! quietly — an unset `XDG_DATA_HOME` that reads as the empty path turns a theme
 //! lookup into a scan of the working directory and yields *nothing* rather than

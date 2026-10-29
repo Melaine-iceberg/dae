@@ -104,8 +104,8 @@ QImage ThumbnailImageProvider::requestImage(const QString& id, QSize* size,
 
     // PDF first pages, video frames and formats Qt has no image plugin for.
     if (image.isNull()) {
-        const rust::Vec<uint8_t> bytes =
-            dae_qt_render_system_thumbnail(path.toStdString(), dimension);
+        const rust::Vec<uint8_t> bytes = dae_qt_render_system_thumbnail(
+            path.toStdString(), dimension, info.lastModified().toMSecsSinceEpoch());
         if (!bytes.empty()) {
             image = QImage::fromData(reinterpret_cast<const uchar*>(bytes.data()),
                                      int(bytes.size()));

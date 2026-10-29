@@ -113,7 +113,7 @@ const IN_PROCESS_IMAGE_EXTENSIONS: &[&str] = &[
 /// seven times slower to save code, so the list is for the formats that would
 /// otherwise be a type icon forever, not for the formats that already work.
 ///
-/// Membership is a *possibility*, not a promise: [`crate::desktop_thumbnails`]
+/// Membership is a *possibility*, not a promise: [`dae_core::fs::thumbnails`]
 /// answers 404 when nothing installed claims the type, and so does macOS for
 /// everything on this list.
 const DESKTOP_RENDERED_EXTENSIONS: &[&str] = &[
@@ -891,40 +891,25 @@ fn render_named_icon(name: &str, size: u16) -> Option<Arc<RenderedThumbnail>> {
 ///
 /// The answer carries its own mime rather than being labelled `image/png` here,
 /// because what it takes to make one of these is whichever producer the desktop
-/// declares: Windows' shell hands back a bitmap this file encodes, and on Linux
-/// [`crate::desktop_thumbnails`] runs the `.thumbnailer` files somebody else
-/// shipped, which are only checked for being PNG.
+/// declares: Windows' shell hands back a bitmap [`dae_core::fs::windows_image`]
+/// encodes, and on Linux [`dae_core::fs::thumbnails`] runs the `.thumbnailer`
+/// files somebody else shipped, which are only checked for being PNG.
 ///
 /// `metadata` is the caller's, already read for the size cap and the cache key:
 /// Linux needs the source's mtime to decide whether a shared-cache thumbnail is
 /// still current, and re-`stat`ing it here would be a second read of the same
 /// inode on the thread this module exists to keep free of blocking work.
-#[cfg(windows)]
-fn produce_shell_thumbnail(
-    path: &str,
-    size: u16,
-    _metadata: &fs::Metadata,
-) -> Result<Option<RenderedThumbnail>, FileSystemError> {
-    Ok(
-        dae_core::fs::thumbnails::extract(path, u32::from(size)).map(|bytes| RenderedThumbnail {
-            mime: "image/png",
-            bytes,
-        }),
-    )
-}
-
-/// The freedesktop thumbnailers, run and cached by [`crate::desktop_thumbnails`].
-#[cfg(target_os = "linux")]
+#[cfg(any(windows, target_os = "linux"))]
 fn produce_shell_thumbnail(
     path: &str,
     size: u16,
     metadata: &fs::Metadata,
 ) -> Result<Option<RenderedThumbnail>, FileSystemError> {
     Ok(
-        crate::desktop_thumbnails::extract(path, u32::from(size), metadata.modified().ok()).map(
-            |produced| RenderedThumbnail {
-                mime: produced.mime,
-                bytes: produced.bytes,
+        dae_core::fs::thumbnails::extract(path, u32::from(size), metadata.modified().ok()).map(
+            |thumbnail| RenderedThumbnail {
+                mime: thumbnail.mime,
+                bytes: thumbnail.bytes,
             },
         ),
     )
@@ -940,24 +925,6 @@ fn produce_shell_thumbnail(
     _metadata: &fs::Metadata,
 ) -> Result<Option<RenderedThumbnail>, FileSystemError> {
     Ok(None)
-}
-
-#[cfg(all(test, windows))]
-mod tests {
-    use super::extract_file_icon_png;
-
-    #[test]
-    fn extracts_png_icon_for_executable() {
-        let bytes = extract_file_icon_png("C:\\Windows\\System32\\notepad.exe", 64)
-            .expect("notepad.exe exposes a shell icon");
-        assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
-        assert!(bytes.len() > 100);
-    }
-
-    #[test]
-    fn missing_path_yields_none() {
-        assert!(extract_file_icon_png("C:\\does-not-exist.lnk", 64).is_none());
-    }
 }
 
 /// Tests for the parts of the render pool that do not need a webview.

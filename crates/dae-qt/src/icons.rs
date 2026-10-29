@@ -15,6 +15,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Icons kept before the oldest answer is dropped. A listing shows a few dozen
 /// distinct types; the path-shaped entries (folders with custom icons,
@@ -55,9 +56,12 @@ pub mod qobject {
         fn dae_qt_render_named_icon(names: &str, size: i32) -> Vec<u8>;
 
         /// A desktop-produced thumbnail (PDF page, video frame, HEIC photo).
-        /// The image provider's own cache version-tags these, so they are not
-        /// kept a second time here.
-        fn dae_qt_render_system_thumbnail(path: &str, size: i32) -> Vec<u8>;
+        /// `modified_ms` is the source's mtime as the provider's `QFileInfo`
+        /// read it: Linux's shared thumbnail cache is invalidated by comparing
+        /// the cached file with the source, and the provider already paid for
+        /// that stat. The image provider's own cache version-tags these, so
+        /// they are not kept a second time here.
+        fn dae_qt_render_system_thumbnail(path: &str, size: i32, modified_ms: i64) -> Vec<u8>;
     }
 }
 
@@ -131,8 +135,20 @@ fn dae_qt_render_named_icon(names: &str, size: i32) -> Vec<u8> {
     .unwrap_or_default()
 }
 
-fn dae_qt_render_system_thumbnail(path: &str, size: i32) -> Vec<u8> {
-    dae_core::fs::thumbnails::extract(path, clamp_edge(size)).unwrap_or_default()
+fn dae_qt_render_system_thumbnail(path: &str, size: i32, modified_ms: i64) -> Vec<u8> {
+    dae_core::fs::thumbnails::extract(path, clamp_edge(size), modified_from_ms(modified_ms))
+        .map(|thumbnail| thumbnail.bytes)
+        .unwrap_or_default()
+}
+
+/// The mtime `QFileInfo` reports, as the `SystemTime` the freshness rule
+/// compares against. A negative stamp cannot name a time on this side of the
+/// epoch, and a value no clock can represent is treated as absent rather than
+/// guessed at — a corrupt timestamp must not panic the image-loading thread.
+fn modified_from_ms(milliseconds: i64) -> Option<SystemTime> {
+    u64::try_from(milliseconds)
+        .ok()
+        .and_then(|milliseconds| UNIX_EPOCH.checked_add(Duration::from_millis(milliseconds)))
 }
 
 fn clamp_edge(size: i32) -> u32 {

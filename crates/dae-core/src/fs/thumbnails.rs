@@ -7,11 +7,25 @@
 //! and the view keeps its type icon or drawn glyph.
 //!
 //! Windows asks the shell's registered thumbnail handler through
-//! [`crate::fs::windows_image`]. Linux's freedesktop `.thumbnailer` runner still
-//! lives in the Tauri shell (`desktop_thumbnails`) because it also needs the XDG
-//! desktop-entry parser, which has not moved yet; it arrives with the Qt shell's
-//! Linux gate. macOS has no producer in either shell — the `image` crate covers
-//! the formats the current views show.
+//! `crate::fs::windows_image`. Linux reads the freedesktop Thumbnailing spec in
+//! `linux`: the `.thumbnailer` files packages install, the `Exec=` line they
+//! declare, and the shared cache under `$XDG_CACHE_HOME/thumbnails/` that every
+//! viewer on the desktop reads and writes. macOS has no producer in either shell
+//! — the `image` crate covers the formats the current views show.
+
+use std::time::SystemTime;
+
+/// One thumbnail a desktop produced, labelled with the type its bytes carry.
+///
+/// The label travels with the bytes because the producer decides the format: the
+/// Windows shell hands back a bitmap this crate encodes as PNG, and a Linux
+/// `.thumbnailer` is asked for a `.png` output name and checked against its
+/// signature. A caller answers its protocol request with the pair verbatim
+/// rather than assuming one.
+pub struct Thumbnail {
+    pub mime: &'static str,
+    pub bytes: Vec<u8>,
+}
 
 /// Extensions with no in-process decoder that some desktop does render.
 ///
@@ -35,25 +49,75 @@ pub fn is_supported_path(path: &str) -> bool {
     DESKTOP_RENDERED_EXTENSIONS.contains(&extension.as_str())
 }
 
-/// PNG bytes for a desktop-produced thumbnail at `size`, or `None` when this
-/// platform or this machine has no producer for the type.
-pub fn extract(path: &str, size: u32) -> Option<Vec<u8>> {
-    if !is_supported_path(path) {
-        return None;
-    }
+/// A thumbnail of `path` at `size`, or `None` when this platform or this
+/// machine has no producer for the type.
+///
+/// Callers choose what is worth asking for with [`is_supported_path`]: a listing
+/// uses it to decide whether an entry gets an image slot at all. This function
+/// deliberately does not repeat that filter — the views also come here for an
+/// in-process format too large to decode (a 100 MP JPEG or TIFF), where the
+/// desktop's own producer can still make one, and a type nothing claims is
+/// declined quietly by every backend.
+///
+/// `modified` is the source's mtime, where the caller already has it. Linux's
+/// shared cache is invalidated by comparing a cached file with its source, and a
+/// producer that ran and produced nothing is remembered the same way; re-`stat`ing
+/// here would be a second read of the same inode on the thread this pipeline
+/// exists to keep free of blocking work. Windows answers from
+/// `IShellItemImageFactory`'s own cache and ignores the value, so a caller that
+/// cannot date the source passes `None`.
+pub fn extract(path: &str, size: u32, modified: Option<SystemTime>) -> Option<Thumbnail> {
+    backend::extract(path, size, modified)
+}
 
-    #[cfg(windows)]
-    {
-        return crate::fs::windows_image::shell_image_png(
+// Compiled under `cfg(test)` as well as on Linux, the same arrangement as
+// `icons::linux`: the spec parsing and key arithmetic are where the quiet bugs
+// live, and they can be tested on a host that cannot build a Linux app at all.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(test, allow(dead_code))]
+mod linux;
+
+#[cfg(target_os = "linux")]
+use linux as backend;
+
+#[cfg(windows)]
+mod backend {
+    //! The shell's registered thumbnail handler, through `windows_image`.
+    //! `SIIGBF_THUMBNAILONLY` makes a file with no handler a miss rather than an
+    //! icon scaled up to thumbnail size.
+
+    use std::time::SystemTime;
+
+    use super::Thumbnail;
+
+    pub(super) fn extract(
+        path: &str,
+        size: u32,
+        _modified: Option<SystemTime>,
+    ) -> Option<Thumbnail> {
+        crate::fs::windows_image::shell_image_png(
             path,
             size,
             crate::fs::windows_image::ShellImage::Thumbnail,
-        );
+        )
+        .map(|bytes| Thumbnail {
+            mime: "image/png",
+            bytes,
+        })
     }
+}
 
-    #[cfg(not(windows))]
-    {
-        let _ = (path, size);
+/// No producer is written for this platform. Saying so is the difference between
+/// a view that falls back to its type glyph and one that fails to build.
+#[cfg(not(any(windows, target_os = "linux")))]
+mod backend {
+    use std::time::SystemTime;
+
+    pub(super) fn extract(
+        _path: &str,
+        _size: u32,
+        _modified: Option<SystemTime>,
+    ) -> Option<super::Thumbnail> {
         None
     }
 }

@@ -42,10 +42,10 @@ use serde::Serialize;
 use specta::Type;
 
 // The `.desktop` / `.thumbnailer` INI dialect. Linux's shell-command backend
-// uses all of it; `dae`'s thumbnailer reader compiles its Linux module on
-// macOS under `cfg(test)` as well and only needs the parser, so the module is
-// visible there too. Only the Linux backend calls the rest of it, hence the
-// `dead_code` allowance off Linux.
+// uses all of it; `fs::thumbnails::linux` compiles on other hosts under
+// `cfg(test)` as well and only needs the parser, so the module is visible there
+// too. Only the Linux backends call the rest of it, hence the `dead_code`
+// allowance off Linux.
 #[cfg(any(target_os = "linux", target_os = "macos", test))]
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub mod desktop_entry;
