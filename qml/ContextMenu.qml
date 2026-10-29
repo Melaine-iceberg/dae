@@ -84,6 +84,10 @@ Item {
                 label: entry.label || "",
                 image: entry.icon || "",
                 checked: entry.checked === true,
+                // A caller that never says `checked` is offering an action, not
+                // a switch; carrying the distinction lets the row be announced
+                // as checkable only when it really is.
+                checkable: entry.checked !== undefined,
                 danger: entry.danger === true,
                 disabled: entry.enabled === false,
                 shortcut: entry.shortcut || "",

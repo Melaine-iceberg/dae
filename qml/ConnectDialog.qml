@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import "DialogFocus.js" as DialogFocus
 
 // The add/edit dialog for SMB and SFTP servers.
 //
@@ -27,6 +28,9 @@ Item {
     visible: false
     z: 1001
     focus: visible
+
+    Accessible.role: Accessible.Dialog
+    Accessible.name: qsTr("连接网络存储")
 
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
@@ -157,6 +161,12 @@ Item {
     }
 
     Keys.onEscapePressed: root.dismiss()
+    Keys.onTabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, true)
+    }
+    Keys.onBacktabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, false)
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -515,6 +525,9 @@ Item {
                 echoMode: field.password ? TextInput.Password : TextInput.Normal
                 inputMethodHints: field.inputHints
                 selectByMouse: true
+
+                Accessible.role: Accessible.EditableText
+                Accessible.name: field.label
                 clip: true
 
                 onTextEdited: field.edited()

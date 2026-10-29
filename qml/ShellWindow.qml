@@ -2248,6 +2248,21 @@ Window {
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("后退")
 
+                /// A nav button is a tab stop, and Enter is its click. The ring
+                /// is drawn inside the 28 px box so the button does not move
+                /// when it takes focus.
+                activeFocusOnTab: backButton.canGo
+                border.width: backButton.activeFocus ? 1 : 0
+                border.color: Theme.signal
+                Keys.onReturnPressed: {
+                    if (backButton.canGo)
+                        root.goBack()
+                }
+                Keys.onSpacePressed: {
+                    if (backButton.canGo)
+                        root.goBack()
+                }
+
                 MouseArea {
                     id: backMouse
                     anchors.fill: parent
@@ -2281,6 +2296,18 @@ Window {
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("前进")
 
+                activeFocusOnTab: forwardButton.canGo
+                border.width: forwardButton.activeFocus ? 1 : 0
+                border.color: Theme.signal
+                Keys.onReturnPressed: {
+                    if (forwardButton.canGo)
+                        root.goForward()
+                }
+                Keys.onSpacePressed: {
+                    if (forwardButton.canGo)
+                        root.goForward()
+                }
+
                 MouseArea {
                     id: forwardMouse
                     anchors.fill: parent
@@ -2311,6 +2338,18 @@ Window {
 
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("上一级")
+
+                activeFocusOnTab: root.folderActive
+                border.width: upButton.activeFocus ? 1 : 0
+                border.color: Theme.signal
+                Keys.onReturnPressed: {
+                    if (root.folderActive)
+                        root.goUp()
+                }
+                Keys.onSpacePressed: {
+                    if (root.folderActive)
+                        root.goUp()
+                }
 
                 MouseArea {
                     id: upMouse
@@ -2461,6 +2500,12 @@ Window {
                 width: expanded ? 210 : 28
                 visible: root.folderActive
 
+                /// The collapsed icon is a button; the expanded field is the
+                /// tab stop instead, so the two states never both claim focus.
+                activeFocusOnTab: !searchSlot.expanded
+                Keys.onReturnPressed: root.openSearch()
+                Keys.onSpacePressed: root.openSearch()
+
                 Behavior on width {
                     enabled: Theme.motion
                     NumberAnimation {
@@ -2474,6 +2519,8 @@ Window {
                     visible: !searchSlot.expanded
                     radius: Theme.radiusSm
                     color: searchIconMouse.containsMouse ? Theme.fill : "transparent"
+                    border.width: searchSlot.activeFocus ? 1 : 0
+                    border.color: Theme.signal
 
                     Glyph {
                         anchors.centerIn: parent
@@ -2546,6 +2593,12 @@ Window {
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("清空回收站")
 
+                activeFocusOnTab: trashClear.visible
+                border.width: trashClear.activeFocus ? 1 : 0
+                border.color: Theme.signal
+                Keys.onReturnPressed: root.requestEmptyTrash()
+                Keys.onSpacePressed: root.requestEmptyTrash()
+
                 MouseArea {
                     id: trashClearMouse
                     anchors.fill: parent
@@ -2566,11 +2619,25 @@ Window {
                 height: 28
                 visible: root.folderActive
 
+                /// The slot takes focus, the plate inside draws the ring: the
+                /// 28 px box is the button even though the visible plate is
+                /// one rectangle deeper.
+                activeFocusOnTab: root.folderActive
+                Keys.onReturnPressed: viewSlot.openMenu()
+                Keys.onSpacePressed: viewSlot.openMenu()
+
+                function openMenu() {
+                    const point = viewSlot.mapToItem(null, 0, 0)
+                    displayMenu.openAbove(point.x + viewSlot.width - 252, point.y)
+                }
+
                 Rectangle {
                     anchors.fill: parent
                     radius: Theme.radiusSm
                     color: viewMouse.containsMouse || displayMenu.visible
                         ? Theme.fill : "transparent"
+                    border.width: viewSlot.activeFocus ? 1 : 0
+                    border.color: Theme.signal
 
                     Glyph {
                         anchors.centerIn: parent
@@ -2589,10 +2656,7 @@ Window {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        const point = viewSlot.mapToItem(null, 0, 0)
-                        displayMenu.openAbove(point.x + viewSlot.width - 252, point.y)
-                    }
+                    onClicked: viewSlot.openMenu()
                 }
             }
 
@@ -2608,11 +2672,25 @@ Window {
                 width: 28
                 height: 28
 
+                /// Same split as the view button: the slot is the tab stop, the
+                /// plate draws the ring.
+                activeFocusOnTab: true
+                Keys.onReturnPressed: moreSlot.openMenu()
+                Keys.onSpacePressed: moreSlot.openMenu()
+
+                function openMenu() {
+                    const point = moreSlot.mapToItem(null, 0, 0)
+                    moreMenu.openAt(point.x + moreSlot.width - 226, point.y,
+                                    root.moreMenuItems())
+                }
+
                 Rectangle {
                     anchors.fill: parent
                     radius: Theme.radiusSm
                     color: moreMouse.containsMouse || moreMenu.visible
                         ? Theme.fill : "transparent"
+                    border.width: moreSlot.activeFocus ? 1 : 0
+                    border.color: Theme.signal
 
                     Glyph {
                         anchors.centerIn: parent
@@ -2630,11 +2708,7 @@ Window {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        const point = moreSlot.mapToItem(null, 0, 0)
-                        moreMenu.openAt(point.x + moreSlot.width - 226, point.y,
-                                        root.moreMenuItems())
-                    }
+                    onClicked: moreSlot.openMenu()
                 }
             }
         }
@@ -2895,6 +2969,9 @@ Window {
                                 hoverEnabled: true
                                 acceptedButtons: Qt.LeftButton
                                 onClicked: ExplorerPrefs.setBool("splitEnabled", false)
+
+                                Accessible.role: Accessible.Button
+                                Accessible.name: qsTr("关闭分屏")
                             }
 
                             Rectangle {
@@ -3094,6 +3171,7 @@ Window {
 
                 readonly property bool live: root.previewVisible
                     && (root.folderActive || root.trashActive)
+                    && root.width >= 840
 
                 width: live ? 6 : 0
                 height: parent.height
@@ -3132,6 +3210,7 @@ Window {
             PreviewPanel {
                 id: previewPanel
                 width: root.previewVisible && (root.folderActive || root.trashActive)
+                    && root.width >= 840
                     ? Math.min(ExplorerPrefs.previewWidth, Math.max(260, parent.width * 0.5))
                     : 0
                 height: parent.height
@@ -3239,7 +3318,6 @@ Window {
                 visible: transferChip.count > 0
                 color: transferMouse.containsMouse ? Theme.raised : Theme.canvas
                 border.width: 1
-                border.color: Theme.hairline
 
                 readonly property int count: Workspace.queuedTransfers.length
                     + (Workspace.busy ? 1 : 0)
@@ -3256,6 +3334,15 @@ Window {
                 Accessible.name: qsTr("%1 项传输，%2%").arg(count).arg(percent)
                     + qsTr("，查看传输队列")
                 Accessible.onPressAction: transferChip.openPanel()
+
+                /// The chip is a tab stop only while it exists: an empty queue
+                /// has nothing to show in its panel. The border it already
+                /// carries turns into the focus ring rather than gaining a
+                /// second one.
+                activeFocusOnTab: transferChip.visible
+                border.color: transferChip.activeFocus ? Theme.signal : Theme.hairline
+                Keys.onReturnPressed: transferChip.openPanel()
+                Keys.onSpacePressed: transferChip.openPanel()
 
                 Row {
                     id: transferRow
@@ -3318,6 +3405,19 @@ Window {
                     Accessible.name: qsTr("分支 %1，打开分支面板")
                         .arg(root.gitListing !== null ? root.gitListing.gitBranch : "")
                     Accessible.onPressAction: gitStatus.openPanel()
+
+                    activeFocusOnTab: gitStatus.visible
+                    Keys.onReturnPressed: gitStatus.openPanel()
+                    Keys.onSpacePressed: gitStatus.openPanel()
+
+                    Rectangle {
+                        anchors.fill: parent
+                        visible: gitStatus.activeFocus
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Theme.signal
+                        radius: Theme.radiusXs
+                    }
 
                     function openPanel() {
                         const point = gitStatus.mapToItem(null, 0, 0)
@@ -3382,6 +3482,32 @@ Window {
                     Accessible.role: Accessible.Button
                     Accessible.name: root.previewVisible ? qsTr("隐藏预览") : qsTr("显示预览")
 
+                    /// The status bar closes the tab chain, so its two pane
+                    /// switches are the last stops: Enter flips them the way a
+                    /// click does.
+                    activeFocusOnTab: previewToggle.visible
+                    Keys.onReturnPressed: previewToggle.flip()
+                    Keys.onSpacePressed: previewToggle.flip()
+
+                    function flip() {
+                        root.previewVisible = !root.previewVisible
+                        if (root.previewVisible)
+                            return
+                        if (root.trashActive)
+                            trashView.takeFocus()
+                        else
+                            fileList.takeFocus()
+                    }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        visible: previewToggle.activeFocus
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Theme.signal
+                        radius: Theme.radiusXs
+                    }
+
                     Rectangle {
                         anchors.fill: parent
                         radius: Theme.radiusXs
@@ -3414,15 +3540,7 @@ Window {
                         id: previewToggleMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        onClicked: {
-                            root.previewVisible = !root.previewVisible
-                            if (root.previewVisible)
-                                return
-                            if (root.trashActive)
-                                trashView.takeFocus()
-                            else
-                                fileList.takeFocus()
-                        }
+                        onClicked: previewToggle.flip()
                     }
                 }
 
@@ -3435,6 +3553,19 @@ Window {
 
                     Accessible.role: Accessible.Button
                     Accessible.name: root.terminalActive ? qsTr("隐藏终端") : qsTr("显示终端")
+
+                    activeFocusOnTab: terminalToggle.visible && !root.remoteLocation
+                    Keys.onReturnPressed: root.toggleTerminal()
+                    Keys.onSpacePressed: root.toggleTerminal()
+
+                    Rectangle {
+                        anchors.fill: parent
+                        visible: terminalToggle.activeFocus
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Theme.signal
+                        radius: Theme.radiusXs
+                    }
 
                     Rectangle {
                         anchors.fill: parent

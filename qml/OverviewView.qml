@@ -122,6 +122,7 @@ Item {
         anchors.fill: parent
         clip: true
         focus: true
+        activeFocusOnTab: true
         boundsBehavior: Flickable.StopAtBounds
         model: root.model
         cacheBuffer: 400
@@ -160,8 +161,8 @@ Item {
                 Text {
                     text: qsTr("概览")
                     color: root.textColor
-                    font.pixelSize: 24
-                    font.weight: Font.DemiBold
+                    font.pixelSize: Theme.typeTitle
+                    font.weight: Font.Medium
                 }
 
                 Text {
@@ -263,6 +264,23 @@ Item {
             width: list.width
             height: 58
 
+            /// A landing-page row opens something. The kind decides what, so it
+            /// goes in the description: "space" and "folder" look the same in a
+            /// row but lead to different places.
+            Accessible.role: Accessible.ListItem
+            Accessible.name: row.name
+            Accessible.description: row.detail
+            Accessible.selectable: true
+            Accessible.selected: list.currentIndex === row.index
+            Accessible.onPressAction: {
+                if (row.kind === "space")
+                    root.openRequested("space", row.path)
+                else if (row.kind === "recent" && !row.isDir)
+                    root.openRequested("file", row.path)
+                else
+                    root.openRequested("navigate", row.path)
+            }
+
             Rectangle {
                 anchors.fill: parent
                 anchors.leftMargin: 12
@@ -341,7 +359,7 @@ Item {
                     visible: row.kind === "project" && row.changeText !== ""
                     text: root.changeLabel(row.changeText)
                     color: row.changeText === "Clean" ? root.mutedColor
-                        : (row.changeText === "Untracked" ? "#c98b2e" : root.accent)
+                        : (row.changeText === "Untracked" ? Theme.warn : root.accent)
                     font.pixelSize: 11
                 }
 

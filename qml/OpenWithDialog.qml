@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
+import "DialogFocus.js" as DialogFocus
 
 // The macOS/Linux "Open With" picker. The model owns the three groups and the
 // filter, so headers disappear with their last row; this file only draws the
@@ -32,6 +33,9 @@ FocusScope {
     visible: false
     z: 1004
     focus: visible
+
+    Accessible.role: Accessible.Dialog
+    Accessible.name: qsTr("打开方式")
 
     function open(targetPath) {
         root.path = targetPath
@@ -122,6 +126,12 @@ FocusScope {
     }
 
     Keys.onEscapePressed: root.dismiss()
+    Keys.onTabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, true)
+    }
+    Keys.onBacktabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, false)
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -198,6 +208,9 @@ FocusScope {
                     font.pixelSize: 12
                     selectByMouse: true
                     clip: true
+
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: qsTr("筛选应用")
 
                     onTextChanged: {
                         apps.setFilter(text)
@@ -455,7 +468,7 @@ FocusScope {
                             color: root.setDefault ? root.accent : "transparent"
                             border.width: 1
                             border.color: root.setDefault ? root.accent
-                                : (root.dark ? "#55ffffff" : Theme.scrim)
+                                : Theme.hairlineStrong
 
                             Text {
                                 anchors.centerIn: parent

@@ -66,6 +66,7 @@ const QML_FILES: &[(&str, &str)] = &[
         "qml/ArchivePasswordDialog.qml",
     ),
     ("../../qml/TearOffWindow.qml", "qml/TearOffWindow.qml"),
+    ("../../qml/DialogFocus.js", "qml/DialogFocus.js"),
     ("../../qml/Shell.js", "qml/Shell.js"),
     ("../../qml/Shortcut.js", "qml/Shortcut.js"),
 ];

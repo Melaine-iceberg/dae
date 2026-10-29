@@ -1,5 +1,6 @@
 import QtQuick
 import dae 1.0
+import "DialogFocus.js" as DialogFocus
 
 // Update status and the single "download and install" action. The startup
 // check is silent; this dialog is the place where a failure becomes visible
@@ -20,6 +21,9 @@ FocusScope {
     visible: false
     z: 1005
     focus: visible
+
+    Accessible.role: Accessible.Dialog
+    Accessible.name: qsTr("软件更新")
 
     signal canceled()
 
@@ -55,6 +59,12 @@ FocusScope {
     }
 
     Keys.onEscapePressed: root.dismiss()
+    Keys.onTabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, true)
+    }
+    Keys.onBacktabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, false)
+    }
 
     Rectangle {
         anchors.fill: parent

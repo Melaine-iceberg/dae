@@ -1,4 +1,5 @@
 import QtQuick
+import "DialogFocus.js" as DialogFocus
 
 // The one-line name dialog used by "new folder", "new file" and rename.
 // A real modal is overkill for a single input, and the frameless window has no
@@ -22,6 +23,9 @@ Item {
     visible: false
     z: 1001
     focus: visible
+
+    Accessible.role: Accessible.Dialog
+    Accessible.name: root.heading
 
     function open(title, initial, placeholder) {
         root.heading = title
@@ -63,6 +67,12 @@ Item {
     }
 
     Keys.onEscapePressed: root.cancel()
+    Keys.onTabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, true)
+    }
+    Keys.onBacktabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, false)
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -184,13 +194,10 @@ Item {
                 selectByMouse: true
                 clip: true
 
-                onAccepted: root.submit()
+                Accessible.role: Accessible.EditableText
+                Accessible.name: root.heading
 
-                // The dialog has one field and no focusable button, so Tab
-                // stays here rather than walking into the list behind the
-                // scrim.
-                Keys.onTabPressed: function (event) { event.accepted = true }
-                Keys.onBacktabPressed: function (event) { event.accepted = true }
+                onAccepted: root.submit()
             }
         }
 

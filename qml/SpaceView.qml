@@ -149,6 +149,7 @@ Item {
         anchors.bottom: parent.bottom
         clip: true
         focus: true
+        activeFocusOnTab: true
         model: items
         boundsBehavior: Flickable.StopAtBounds
         cacheBuffer: 300
@@ -162,6 +163,15 @@ Item {
 
             width: list.width
             height: 48
+
+            /// A file inside the space. The remove cross is a separate button,
+            /// so pressing the row opens rather than deletes.
+            Accessible.role: Accessible.ListItem
+            Accessible.name: row.name
+            Accessible.description: row.path
+            Accessible.selectable: true
+            Accessible.selected: list.currentIndex === row.index
+            Accessible.onPressAction: root.openRequested(row.path)
 
             Rectangle {
                 anchors.fill: parent
@@ -263,6 +273,16 @@ Item {
                 ? Theme.canvasAlt : "transparent")
         border.width: danger ? 0 : 1
         border.color: root.hairline
+
+        /// The label is the button's name; a destructive button says so in its
+        /// description instead of relying on the colour.
+        Accessible.role: Accessible.Button
+        Accessible.name: button.label
+        Accessible.description: button.danger ? qsTr("不可撤销") : ""
+        Accessible.onPressAction: {
+            if (button.enabled)
+                button.clicked()
+        }
 
         Text {
             id: buttonLabel

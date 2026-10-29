@@ -89,6 +89,14 @@ Item {
             font.pixelSize: Theme.typeBody
             selectByMouse: true
             clip: true
+            activeFocusOnTab: true
+
+            /// The placeholder above is drawn, not declared: without these the
+            /// field is announced as an unnamed text box.
+            Accessible.role: Accessible.EditableText
+            Accessible.name: qsTr("搜索")
+            Accessible.description: root.mode === "content"
+                ? qsTr("搜索文件内容") : qsTr("搜索名称")
 
             onTextEdited: root.queryEdited(text)
             onAccepted: root.queryEdited(text)
@@ -110,6 +118,16 @@ Item {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             width: 24
+
+            /// The cross is a picture; this strip is the button, and it only
+            /// exists as one when there is something to clear.
+            enabled: !root.busy && input.text.length > 0
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("清除搜索")
+            Accessible.onPressAction: {
+                input.text = ""
+                root.clearRequested()
+            }
 
             Text {
                 anchors.centerIn: parent

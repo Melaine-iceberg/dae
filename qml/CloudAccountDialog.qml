@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import "DialogFocus.js" as DialogFocus
 
 // The OAuth dialog for Google Drive, OneDrive and Dropbox.
 //
@@ -25,6 +26,9 @@ Item {
     visible: false
     z: 1005
     focus: visible
+
+    Accessible.role: Accessible.Dialog
+    Accessible.name: qsTr("云盘账户")
 
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
@@ -115,6 +119,12 @@ Item {
     }
 
     Keys.onEscapePressed: root.dismiss()
+    Keys.onTabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, true)
+    }
+    Keys.onBacktabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, false)
+    }
 
     Timer {
         id: copyReset
@@ -281,6 +291,9 @@ Item {
                         selectedTextColor: Theme.onInteractive
                         font.pixelSize: 11
                         font.family: Theme.monoFamily
+
+                        Accessible.role: Accessible.EditableText
+                        Accessible.name: qsTr("重定向地址")
                     }
                 }
 
@@ -504,6 +517,9 @@ Item {
                 echoMode: field.password ? TextInput.Password : TextInput.Normal
                 selectByMouse: true
                 clip: true
+
+                Accessible.role: Accessible.EditableText
+                Accessible.name: field.label
 
                 onTextEdited: field.edited()
                 onAccepted: root.submit()

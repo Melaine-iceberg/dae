@@ -15,8 +15,8 @@ Item {
     property bool dark: true
     property color accent: Theme.interactive
     property color textColor: Theme.ink
-    property color mutedColor: "#8f98aa"
-    property color sectionColor: "#1f2229"
+    property color mutedColor: Theme.inkMuted
+    property color sectionColor: Theme.canvasAlt
     property color hairline: Theme.hairline
 
     property bool muted: false
@@ -146,6 +146,10 @@ Item {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.togglePlayback()
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("播放")
+                    Accessible.onPressAction: root.togglePlayback()
                 }
             }
 
@@ -154,6 +158,10 @@ Item {
                 enabled: !root.video || (root.started && !root.failed)
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.togglePlayback()
+
+                /// The surface behind the disc is the same action again, so it
+                /// is a pointer convenience and not a second control.
+                Accessible.ignored: true
             }
 
             Text {
@@ -188,7 +196,7 @@ Item {
                 width: parent.width
                 height: 4
                 radius: Theme.radiusSm
-                color: root.dark ? "#3a414c" : "#d5dbe3"
+                color: Theme.hairlineStrong
             }
 
             Rectangle {
@@ -213,6 +221,13 @@ Item {
                 anchors.fill: parent
                 enabled: player.seekable
                 cursorShape: Qt.PointingHandCursor
+
+                /// Dragging is the pointer's way to seek; the name is what a
+                /// reader gets, and the position is already in the clock beside
+                /// the transport.
+                Accessible.role: Accessible.Slider
+                Accessible.name: qsTr("播放进度")
+
                 onPressed: function (mouse) {
                     root.seekTo(mouse.x, width)
                 }
@@ -281,6 +296,10 @@ Item {
                     enabled: !root.failed
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.togglePlayback()
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: root.playing ? qsTr("暂停") : qsTr("播放")
+                    Accessible.onPressAction: root.togglePlayback()
                 }
             }
 
@@ -306,6 +325,11 @@ Item {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.muted = !root.muted
+
+                    /// The word is the label; pressing it is the action.
+                    Accessible.role: Accessible.Button
+                    Accessible.name: root.muted ? qsTr("取消静音") : qsTr("静音")
+                    Accessible.onPressAction: root.muted = !root.muted
                 }
             }
         }

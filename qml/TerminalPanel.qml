@@ -189,6 +189,11 @@ Item {
         anchors.rightMargin: 8
         anchors.topMargin: 6
         anchors.bottomMargin: 6
+        /// The native terminal consumes Tab — it has to, Tab is completion
+        /// inside a shell — so it may only be part of the focus chain while the
+        /// panel is on screen. Hidden, it would be a stop that swallows the key
+        /// and leaves focus nowhere.
+        activeFocusOnTab: root.active
         session: root.session
         dark: root.dark
         fontSize: Workspace.terminalFontSize

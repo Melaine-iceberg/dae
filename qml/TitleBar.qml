@@ -137,6 +137,15 @@ Item {
 
                 Accessible.role: Accessible.Button
                 Accessible.name: lightItem.lightName
+                Accessible.onPressAction: {
+                    if (lightItem.index === 0)
+                        root.window.close()
+                    else if (lightItem.index === 1)
+                        root.window.showMinimized()
+                    else
+                        root.maximized ? root.window.showNormal()
+                                       : root.window.showMaximized()
+                }
 
                 MouseArea {
                     anchors.fill: parent
@@ -185,6 +194,15 @@ Item {
                 Accessible.name: button.isClose ? qsTr("关闭")
                     : button.isMaximize ? (root.maximized ? qsTr("向下还原") : qsTr("最大化"))
                     : qsTr("最小化")
+                Accessible.onPressAction: {
+                    if (button.isClose)
+                        root.window.close()
+                    else if (button.isMaximize)
+                        root.maximized ? root.window.showNormal()
+                                       : root.window.showMaximized()
+                    else
+                        root.window.showMinimized()
+                }
 
                 Rectangle {
                     anchors.fill: parent

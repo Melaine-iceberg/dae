@@ -470,6 +470,7 @@ Item {
         cacheBuffer: 1600
         clip: true
         focus: true
+        activeFocusOnTab: true
         boundsBehavior: Flickable.StopAtBounds
         spacing: 0
         currentIndex: -1
@@ -499,6 +500,16 @@ Item {
             height: root.rowHeight
 
             readonly property bool selected: root.isSelected(row.entryId)
+
+            /// A trashed item is one row, and its "open" gesture is restore —
+            /// the same thing a double click does, because the only thing that
+            /// can happen to it here is coming back.
+            Accessible.role: Accessible.ListItem
+            Accessible.name: row.fileName
+            Accessible.description: row.isDir ? qsTr("文件夹") : qsTr("文件")
+            Accessible.selectable: true
+            Accessible.selected: row.selected
+            Accessible.onPressAction: root.restoreRequested([row.entryId])
 
             Rectangle {
                 anchors.fill: parent
@@ -535,7 +546,7 @@ Item {
                 width: 14
                 height: 14
                 radius: Theme.radiusSm
-                color: row.isDir ? root.accent : (root.dark ? "#3b4250" : "#c6ccd5")
+                color: Theme.inkFaint
             }
 
             Text {
@@ -672,6 +683,16 @@ Item {
                 ? Theme.canvasAlt : "transparent")
         border.width: danger ? 0 : 1
         border.color: root.hairline
+
+        /// The label is the button's name; `danger` is the reason it exists in
+        /// red, so it belongs in the description rather than the name.
+        Accessible.role: Accessible.Button
+        Accessible.name: button.label
+        Accessible.description: button.danger ? qsTr("不可撤销") : ""
+        Accessible.onPressAction: {
+            if (button.enabled)
+                button.clicked()
+        }
 
         Text {
             id: buttonLabel

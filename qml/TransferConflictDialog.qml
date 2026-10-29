@@ -1,5 +1,6 @@
 import QtQuick
 import dae 1.0
+import "DialogFocus.js" as DialogFocus
 
 // The transfer-conflict dialog: one collision at a time, with the Tauri shell's
 // three answers and its "apply to all" escape hatch.
@@ -25,6 +26,9 @@ FocusScope {
     z: 1003
     focus: visible
 
+    Accessible.role: Accessible.Dialog
+    Accessible.name: qsTr("文件已存在")
+
     readonly property string verb: Workspace.conflictCut ? qsTr("移动") : qsTr("复制")
     readonly property int remaining: Workspace.conflictTotal - Workspace.conflictIndex
     readonly property color panelColor: Theme.raised
@@ -45,6 +49,12 @@ FocusScope {
     signal modalClosed()
 
     Keys.onEscapePressed: Workspace.cancelConflict()
+    Keys.onTabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, true)
+    }
+    Keys.onBacktabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, false)
+    }
 
     function answer(action) {
         Workspace.resolveConflict(action, root.applyToAll)

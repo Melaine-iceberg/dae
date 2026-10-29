@@ -203,6 +203,11 @@ FocusScope {
 
     focus: true
 
+    /// The panel is announced as a menu, so the rows below are read as its
+    /// items rather than as loose text on the window.
+    Accessible.role: Accessible.PopupMenu
+    Accessible.name: qsTr("菜单")
+
     Keys.onUpPressed: function (event) {
         root.moveCurrent(-1)
         event.accepted = true
@@ -289,6 +294,30 @@ FocusScope {
 
                     width: column.width
                     height: separator ? 9 : (header ? 22 : root.rowHeight)
+
+                    // The row is the accessible element, not the label inside
+                    // it: a screen reader has to be able to say which verb is
+                    // highlighted, which one is ticked and which one is barred,
+                    // and only the row knows all three. A separator is a
+                    // drawing, not a thing to read.
+                    //
+                    // `enabled` is the "unavailable" state Qt exposes to
+                    // assistive technology, and it is also what stops a pointer
+                    // from arming a row it cannot run — the two agree because
+                    // they are one property.
+                    enabled: entry.header || entry.separator || entry.selectable
+                    Accessible.ignored: entry.separator
+                    Accessible.role: entry.header ? Accessible.StaticText
+                                                  : Accessible.MenuItem
+                    Accessible.name: entry.modelData.label || ""
+                    Accessible.selectable: entry.selectable
+                    Accessible.selected: entry.current
+                    Accessible.checkable: entry.modelData.checkable === true
+                    Accessible.checked: entry.modelData.checked === true
+                    Accessible.onPressAction: {
+                        if (entry.selectable)
+                            root.triggered(entry.index)
+                    }
 
                     // The rule that splits groups: 1 px of hairline with 4 px of
                     // air on each side, inset from the panel's own padding.

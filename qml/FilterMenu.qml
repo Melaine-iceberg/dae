@@ -97,6 +97,8 @@ Item {
                 kind: kind,
                 label: entry.label,
                 checked: kind === "item" && root.checked(entry),
+                checkable: kind === "item" && (entry.kind === "toggle"
+                    || entry.kind === "radio"),
                 shortcut: entry.shortcut || ""
             })
         }

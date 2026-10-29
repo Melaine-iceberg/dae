@@ -28,6 +28,9 @@ FocusScope {
     z: 1002
     focus: visible
 
+    Accessible.role: Accessible.Dialog
+    Accessible.name: root.heading
+
     readonly property bool closeOnScrim: !root.danger
 
     function open(title, text, label, isDanger) {

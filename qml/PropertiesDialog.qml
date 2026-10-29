@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
+import "DialogFocus.js" as DialogFocus
 
 // One entry's metadata: identity and timestamps, the platform's permission
 // editor, and an on-demand checksum pass.
@@ -48,6 +49,9 @@ FocusScope {
     visible: false
     z: 1005
     focus: visible
+
+    Accessible.role: Accessible.Dialog
+    Accessible.name: qsTr("属性")
 
     function open(path) {
         root.tab = "general"
@@ -122,6 +126,12 @@ FocusScope {
     }
 
     Keys.onEscapePressed: root.close()
+    Keys.onTabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, true)
+    }
+    Keys.onBacktabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, false)
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -776,6 +786,9 @@ FocusScope {
             font.pixelSize: 12
             selectByMouse: true
             clip: true
+
+            Accessible.role: Accessible.EditableText
+            Accessible.name: field.placeholder
 
             onTextEdited: field.edited(text)
         }

@@ -698,6 +698,25 @@ Item {
         Accessible.role: Accessible.Button
         Accessible.name: action.label
 
+        /// The preview's links are the only things in the panel that can be
+        /// pressed, so they are the panel's tab stop. A transparent ring is
+        /// drawn outside the text because the text is only 26 px tall and a
+        /// border inside it would touch the glyphs.
+        activeFocusOnTab: action.available
+        Keys.onReturnPressed: action.clicked()
+        Keys.onEnterPressed: action.clicked()
+        Keys.onSpacePressed: action.clicked()
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.margins: -4
+            visible: action.activeFocus
+            color: "transparent"
+            radius: Theme.radiusSm
+            border.width: 1
+            border.color: Theme.signal
+        }
+
         Row {
             id: actionRowText
             anchors.verticalCenter: parent.verticalCenter

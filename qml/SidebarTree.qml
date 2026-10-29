@@ -79,6 +79,18 @@ Item {
                 readonly property bool current: root.pathEquals(node.treePath, root.activePath)
                 readonly property int indent: 16 + node.depth * 13
 
+                /// A row stands for a folder. The tree view's own chevron is a
+                /// separate control, so the row says what it is and where it
+                /// leads rather than swallowing the expand action with it.
+                Accessible.role: Accessible.TreeItem
+                Accessible.name: node.treeName
+                Accessible.description: node.treePath
+                Accessible.selectable: true
+                Accessible.selected: node.current
+                Accessible.expandable: node.mayHaveChildren
+                Accessible.expanded: node.expanded
+                Accessible.onPressAction: root.navigateRequested(node.treePath)
+
                 Rectangle {
                     x: 8
                     width: parent.width - 16
@@ -108,6 +120,14 @@ Item {
                     // target has to sit above it or expanding a folder would
                     // always navigate instead.
                     z: 1
+
+                    /// The disclosure triangle is its own button: left and right
+                    /// on a tree row are open and close in every tree control,
+                    /// and a pointer that presses the chevron expects only the
+                    /// branch to react.
+                    Accessible.role: Accessible.Button
+                    Accessible.name: node.expanded ? qsTr("折叠") : qsTr("展开")
+                    Accessible.onPressAction: treeModel.toggle(node.treePath)
 
                     Glyph {
                         anchors.centerIn: parent

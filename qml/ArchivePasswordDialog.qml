@@ -1,4 +1,5 @@
 import QtQuick
+import "DialogFocus.js" as DialogFocus
 
 // Asks for an archive password. `compress` mode protects a new 7Z archive and
 // asks twice; `extract` mode retries a protected archive after the core
@@ -25,6 +26,9 @@ FocusScope {
     visible: false
     z: 1003
     focus: visible
+
+    Accessible.role: Accessible.Dialog
+    Accessible.name: root.heading
 
     function open(mode, archiveName, error) {
         root.mode = mode
@@ -63,6 +67,12 @@ FocusScope {
     Keys.onEscapePressed: {
         root.close()
         root.canceled()
+    }
+    Keys.onTabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, true)
+    }
+    Keys.onBacktabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, false)
     }
 
     Rectangle {
@@ -151,6 +161,9 @@ FocusScope {
                     clip: true
                     KeyNavigation.tab: confirmInput
 
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: qsTr("压缩包密码")
+
                     onAccepted: {
                         if (root.compressMode && confirmInput.text.length === 0) {
                             confirmInput.forceActiveFocus()
@@ -194,6 +207,9 @@ FocusScope {
                     selectByMouse: true
                     clip: true
                     KeyNavigation.tab: passwordInput
+
+                    Accessible.role: Accessible.EditableText
+                    Accessible.name: qsTr("确认密码")
 
                     onAccepted: root.submit()
                 }

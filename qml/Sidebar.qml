@@ -82,6 +82,38 @@ Item {
         volumeRevision += 1
     }
 
+    /// Moves the keyboard cursor by one row. A negative index means "nothing is
+    /// under the cursor yet", which is why the first ↓ starts at 0 rather than
+    /// at 1 — otherwise the first press after tabbing in would skip a row.
+    function moveCursor(delta) {
+        if (list.count === 0)
+            return
+        let index = list.currentIndex
+        if (index < 0)
+            index = delta > 0 ? -1 : list.count
+        index = Math.max(0, Math.min(list.count - 1, index + delta))
+        list.currentIndex = index
+        list.positionViewAtIndex(index, ListView.Contain)
+    }
+
+    /// Runs the row under the cursor through the same branch the pointer uses.
+    function activateCursor() {
+        const item = list.currentItem
+        if (item !== null && item.activate !== undefined)
+            item.activate()
+    }
+
+    /// → opens a volume's tree, ← closes it. On any other row the key does
+    /// nothing: a sidebar has no depth to walk into.
+    function unfoldCursor(open) {
+        const item = list.currentItem
+        if (item === null || item.isVolume !== true)
+            return
+        if (root.volumeExpanded(item.path) === open)
+            return
+        root.toggleVolume(item.path)
+    }
+
     function sectionLabel(value) {
         switch (value) {
         case "Places": return qsTr("位置")
@@ -208,6 +240,55 @@ Item {
         spacing: 0
         section.property: "section"
         section.criteria: ViewSection.FullString
+
+        /// The sidebar is a list of destinations, so the keyboard walks it the
+        /// way the pointer does: ↑↓ move the cursor, ↵ opens, → and ← unfold
+        /// and fold a volume. Until now the column answered only to a mouse,
+        /// which left every place it offers out of reach of the keyboard.
+        activeFocusOnTab: true
+        currentIndex: -1
+
+        Keys.onUpPressed: function (event) {
+            root.moveCursor(-1)
+            event.accepted = true
+        }
+        Keys.onDownPressed: function (event) {
+            root.moveCursor(1)
+            event.accepted = true
+        }
+        Keys.onReturnPressed: function (event) {
+            root.activateCursor()
+            event.accepted = true
+        }
+        Keys.onEnterPressed: function (event) {
+            root.activateCursor()
+            event.accepted = true
+        }
+        Keys.onRightPressed: function (event) {
+            root.unfoldCursor(true)
+            event.accepted = true
+        }
+        Keys.onLeftPressed: function (event) {
+            root.unfoldCursor(false)
+            event.accepted = true
+        }
+
+        /// Focus lands on the row the pointer last used, not on the first one:
+        /// a keyboard user who tabbed in from the listing wants to keep their
+        /// place, and the selected row is that place.
+        onActiveFocusChanged: {
+            if (!activeFocus || currentIndex >= 0 || count === 0)
+                return
+            for (let index = 0; index < count; index += 1) {
+                const item = itemAtIndex(index)
+                if (item !== null && item.focused === true) {
+                    currentIndex = index
+                    return
+                }
+            }
+            currentIndex = 0
+        }
+
         section.delegate: Item {
             required property string section
 
@@ -256,6 +337,10 @@ Item {
             readonly property bool armed: root.dropTargetPath !== ""
                 && root.dropTargetPath === row.path
             readonly property bool focused: row.current || row.spaceCurrent
+            /// The keyboard cursor, drawn only while the column holds focus:
+            /// an always-visible ring would claim focus the sidebar does not have.
+            readonly property bool cursor: list.activeFocus
+                && list.currentIndex === row.index
             readonly property bool lit: row.focused || row.armed
                 || rowMouse.containsMouse
             readonly property int rowHeight: row.isVolume ? 38 : 28
@@ -264,6 +349,45 @@ Item {
 
             width: ListView.view.width
             height: rowHeight + (treeLoader.active ? treeLoader.height : 0)
+
+            /// A sidebar row is a destination: the name is what the reader says,
+            /// the kind is where it goes, and the current row is the selected
+            /// one. The volume's tree below it is a separate list of rows.
+            Accessible.role: row.isAction ? Accessible.Button : Accessible.ListItem
+            Accessible.name: row.name
+            Accessible.description: row.detail
+            Accessible.selectable: !row.isAction
+            Accessible.selected: row.focused
+            Accessible.onPressAction: row.activate()
+
+            /// The one place a row turns into a destination, so the pointer and
+            /// a reader's press cannot disagree about what it opens.
+            function activate() {
+                if (row.kind === "addConnection") {
+                    root.addRequested("network")
+                    return
+                }
+                if (row.kind === "addCloud") {
+                    root.addRequested("cloud")
+                    return
+                }
+                if (row.kind === "addSpace") {
+                    root.createSpaceRequested()
+                    return
+                }
+                if (row.kind === "space") {
+                    root.spaceRequested(row.path)
+                    return
+                }
+                if (row.kind === "recent" && !row.isDir) {
+                    if (/^(smb|sftp|ftp|webdav|webdavs|cloud):\/\//i.test(row.path))
+                        root.remoteOpenRequested(row.path)
+                    else
+                        Workspace.openPath(row.path)
+                    return
+                }
+                root.navigateRequested(row.path)
+            }
 
             /// The visible row is only the 28 / 38 px band; an expanded volume's
             /// tree hangs below it. Keeping that distinction explicit means the
@@ -286,8 +410,8 @@ Item {
                         : (row.focused
                             ? Theme.fill
                             : (rowMouse.containsMouse ? Theme.hover : "transparent"))
-                    border.width: row.armed ? 1 : 0
-                    border.color: Theme.hairlineStrong
+                    border.width: row.armed || row.cursor ? 1 : 0
+                    border.color: row.cursor ? Theme.signal : Theme.hairlineStrong
 
                     // How full the volume is: two pixels along the bottom, and
                     // only where there is a number behind it. An empty bar on a
@@ -340,6 +464,12 @@ Item {
                     width: 16
                     height: 20
                     z: 2
+
+                    /// Same split as the tree below: the row goes to the drive,
+                    /// this 16 px strip opens the subtree.
+                    Accessible.role: Accessible.Button
+                    Accessible.name: row.treeOpen ? qsTr("折叠") : qsTr("展开")
+                    Accessible.onPressAction: root.toggleVolume(row.path)
 
                     Glyph {
                         anchors.centerIn: parent
@@ -440,6 +570,9 @@ Item {
                     hoverEnabled: true
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: function (event) {
+                        // The keyboard cursor follows the pointer, so tabbing
+                        // back into the column resumes where the mouse left it.
+                        list.currentIndex = row.index
                         if (event.button === Qt.RightButton) {
                             if (row.isAction)
                                 return
@@ -447,30 +580,7 @@ Item {
                             root.contextRequested(row.kind, row.path, point.x, point.y)
                             return
                         }
-                        if (row.kind === "addConnection") {
-                            root.addRequested("network")
-                            return
-                        }
-                        if (row.kind === "addCloud") {
-                            root.addRequested("cloud")
-                            return
-                        }
-                        if (row.kind === "addSpace") {
-                            root.createSpaceRequested()
-                            return
-                        }
-                        if (row.kind === "space") {
-                            root.spaceRequested(row.path)
-                            return
-                        }
-                        if (row.kind === "recent" && !row.isDir) {
-                            if (/^(smb|sftp|ftp|webdav|webdavs|cloud):\/\//i.test(row.path))
-                                root.remoteOpenRequested(row.path)
-                            else
-                                Workspace.openPath(row.path)
-                        } else {
-                            root.navigateRequested(row.path)
-                        }
+                        row.activate()
                     }
                 }
             }

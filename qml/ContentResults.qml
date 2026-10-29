@@ -87,6 +87,7 @@ Item {
         cacheBuffer: 1200
         clip: true
         focus: true
+        activeFocusOnTab: true
         boundsBehavior: Flickable.StopAtBounds
         currentIndex: -1
 
@@ -112,6 +113,25 @@ Item {
 
             width: ListView.view.width
             height: isHeader ? 30 : 24
+
+            /// A hit is read as "file, line, text"; a group header is a label
+            /// over the hits, and the only thing to press in it is 定位, which
+            /// is its own button below.
+            Accessible.role: row.isHeader ? Accessible.StaticText : Accessible.ListItem
+            Accessible.name: row.isHeader
+                ? (row.relativePath || row.fileName)
+                : row.fileName + " · " + qsTr("%1 行").arg(row.lineNumber)
+            Accessible.description: row.isHeader ? "" : row.lineText
+            Accessible.selectable: !row.isHeader
+            Accessible.selected: !row.isHeader && row.index === list.currentIndex
+            Accessible.onPressAction: {
+                if (row.isHeader)
+                    return
+                list.forceActiveFocus()
+                list.currentIndex = row.index
+                root.currentIndex = row.index
+                root.previewRequested(row.filePath)
+            }
 
             Rectangle {
                 anchors.fill: parent
@@ -153,6 +173,12 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 34
                 height: 20
+
+                /// "定位" is drawn as text inside a strip; the strip is the
+                /// control, and it reveals the file in the listing.
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("定位")
+                Accessible.onPressAction: Workspace.reveal(row.filePath)
 
                 Text {
                     anchors.centerIn: parent

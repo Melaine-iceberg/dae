@@ -17,6 +17,11 @@ Rectangle {
 
     signal clicked()
 
+    activeFocusOnTab: true
+    Keys.onReturnPressed: root.clicked()
+    Keys.onEnterPressed: root.clicked()
+    Keys.onSpacePressed: root.clicked()
+
     implicitWidth: Math.max(64, labelText.implicitWidth + 24)
     implicitHeight: 28
     radius: Theme.radiusSm
@@ -29,7 +34,7 @@ Rectangle {
     }
     border.width: 1
     border.color: {
-        if (root.focused)
+        if (root.focused || root.activeFocus)
             return root.tone === "quiet" ? Theme.signal : Theme.onInteractive
         return root.tone === "quiet" ? Theme.hairlineStrong : "transparent"
     }

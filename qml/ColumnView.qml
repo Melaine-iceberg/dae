@@ -363,6 +363,7 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             currentIndex: -1
             focus: true
+            activeFocusOnTab: true
 
             Keys.onPressed: function (event) {
                 pane.keyboardCursor = true
@@ -387,6 +388,7 @@ Item {
                         }
                     }
                 } else if (event.text.length === 1 && event.text !== " "
+                           && event.text.charCodeAt(0) >= 0x20
                            && (event.modifiers & (Qt.ControlModifier | Qt.AltModifier
                                                   | Qt.MetaModifier)) === 0) {
                     pane.typeAhead(event.text)
@@ -419,6 +421,18 @@ Item {
                     && pane.keyboardCursor && row.current
                 readonly property bool showThumbnail: ExplorerPrefs.rowThumbnails
                     && row.thumbnailSource !== ""
+
+                /// One row per folder entry. `expanded` is the column view's
+                /// "this folder is open in the next column", which is the same
+                /// idea a tree states, so it is announced the same way.
+                Accessible.role: Accessible.ListItem
+                Accessible.name: row.fileName
+                Accessible.description: row.isDir ? qsTr("文件夹") : qsTr("文件")
+                Accessible.selectable: true
+                Accessible.selected: row.selected
+                Accessible.expandable: row.isDir
+                Accessible.expanded: row.expanded
+                Accessible.onPressAction: pane.activateRequested(row.filePath, row.isDir)
 
                 Rectangle {
                     anchors.fill: parent

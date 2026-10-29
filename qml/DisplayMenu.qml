@@ -118,7 +118,9 @@ Item {
             mapped.push({
                 kind: kind,
                 label: entry.label,
-                checked: kind === "item" && root.checked(entry)
+                checked: kind === "item" && root.checked(entry),
+                checkable: kind === "item" && (entry.kind === "radio"
+                    || entry.kind === "toggle" || entry.kind === "shellToggle")
             })
         }
         return mapped

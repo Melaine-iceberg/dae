@@ -195,6 +195,20 @@ Item {
                     : (tabMouse.containsMouse ? root.hoverColor : "transparent")
                 opacity: root.dragging && root.dragIndex === index ? 0.45 : 1.0
 
+                /// A tab is the first thing Tab should reach, and Enter is the
+                /// keyboard's click: the strip is where a keyboard user starts
+                /// a session, and until now it was pointer-only.
+                activeFocusOnTab: true
+                border.width: tabItem.activeFocus ? 1 : 0
+                border.color: Theme.signal
+                Accessible.role: Accessible.PageTab
+                Accessible.name: tabItem.modelData ? tabItem.modelData.title : ""
+                Accessible.selectable: true
+                Accessible.selected: root.activeIndex === tabItem.index
+                Keys.onReturnPressed: root.tabActivated(tabItem.index)
+                Keys.onEnterPressed: root.tabActivated(tabItem.index)
+                Keys.onSpacePressed: root.tabActivated(tabItem.index)
+
                 // The active tab's 2 dp signal underline sits at the bottom of
                 // the bar, not the bottom of the chip: the 6 dp below the chip
                 // is what makes the two read as one piece.
@@ -248,6 +262,7 @@ Item {
 
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("关闭标签页")
+                    Accessible.onPressAction: root.tabClosed(tabItem.index)
 
                     MouseArea {
                         id: closeMouse
@@ -324,6 +339,7 @@ Item {
 
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("新建标签页")
+            Accessible.onPressAction: root.newTabRequested()
 
             MouseArea {
                 id: plusMouse

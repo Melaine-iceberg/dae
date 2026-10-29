@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
 import "Shortcut.js" as Shortcut
+import "DialogFocus.js" as DialogFocus
 
 // The settings document.
 //
@@ -12,7 +13,7 @@ import "Shortcut.js" as Shortcut
 // the shared `settings.toml`. The default-file-manager page changes an OS
 // association, so its buttons call the
 // platform immediately and its state is re-read whenever the page opens.
-Item {
+FocusScope {
     id: root
 
     property bool dark: true
@@ -25,9 +26,19 @@ Item {
 
     signal closed()
 
+    Keys.onTabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, true)
+    }
+    Keys.onBacktabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, false)
+    }
+
     visible: false
     z: 1001
     focus: visible
+
+    Accessible.role: Accessible.Dialog
+    Accessible.name: qsTr("设置")
 
     property string page: "appearance"
     property string captureId: ""
@@ -64,8 +75,8 @@ Item {
     readonly property color defaultManagerStateColor: Workspace.defaultManagerIsDefault
         ? Theme.success
         : Workspace.defaultManagerIsRegistered
-            ? (root.dark ? "#d8b45a" : "#9a6b10")
-            : (root.dark ? "#9aa2af" : "#6a727c")
+            ? Theme.warn
+            : Theme.inkMuted
 
     readonly property var themeOptions: [
         { value: "system", label: qsTr("跟随系统") },
@@ -404,7 +415,7 @@ Item {
                 y: 18
                 text: qsTr("设置")
                 color: root.textColor
-                font.pixelSize: 15
+                font.pixelSize: Theme.typeTitle
                 font.weight: Font.DemiBold
             }
 
@@ -454,8 +465,8 @@ Item {
                     x: 24; y: 22
                     text: qsTr("外观与语言")
                     color: root.textColor
-                    font.pixelSize: 16
-                    font.weight: Font.DemiBold
+                    font.pixelSize: Theme.typeTitle
+                    font.weight: Font.Medium
                 }
                 Text {
                     x: 24; y: 48
@@ -711,8 +722,8 @@ Item {
                     x: 24; y: 22
                     text: qsTr("快捷键")
                     color: root.textColor
-                    font.pixelSize: 16
-                    font.weight: Font.DemiBold
+                    font.pixelSize: Theme.typeTitle
+                    font.weight: Font.Medium
                 }
                 Text {
                     x: 24; y: 48
@@ -738,7 +749,7 @@ Item {
                     width: content.width - 48
                     visible: text !== ""
                     text: root.shortcutError
-                    color: root.dark ? "#f0a15a" : "#a85a0a"
+                    color: Theme.warn
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap
                 }
@@ -845,6 +856,15 @@ Item {
                                         visible: !modelData.header
                                         color: resetMouse.containsMouse ? root.hoverFill : "transparent"
 
+                                        /// A glyph-only button: the arrow is the
+                                        /// picture, the name is the meaning.
+                                        Accessible.role: Accessible.Button
+                                        Accessible.name: qsTr("恢复默认快捷键")
+                                        Accessible.onPressAction: {
+                                            root.shortcutError = ""
+                                            Workspace.resetShortcut(modelData.id)
+                                        }
+
                                         Text {
                                             anchors.centerIn: parent
                                             text: "↺"
@@ -905,8 +925,8 @@ Item {
                     x: 24; y: 22
                     text: qsTr("终端排版")
                     color: root.textColor
-                    font.pixelSize: 16
-                    font.weight: Font.DemiBold
+                    font.pixelSize: Theme.typeTitle
+                    font.weight: Font.Medium
                 }
                 Text {
                     x: 24; y: 48
@@ -1064,8 +1084,8 @@ Item {
                     x: 24; y: 22
                     text: qsTr("默认文件管理器")
                     color: root.textColor
-                    font.pixelSize: 16
-                    font.weight: Font.DemiBold
+                    font.pixelSize: Theme.typeTitle
+                    font.weight: Font.Medium
                 }
                 Text {
                     x: 24; y: 48
@@ -1159,8 +1179,8 @@ Item {
                     x: 24; y: 22
                     text: qsTr("日志")
                     color: root.textColor
-                    font.pixelSize: 16
-                    font.weight: Font.DemiBold
+                    font.pixelSize: Theme.typeTitle
+                    font.weight: Font.Medium
                 }
                 Text {
                     x: 24; y: 48
@@ -1292,7 +1312,7 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                color: "#99000000"
+                color: Theme.scrim
             }
 
             Rectangle {
@@ -1355,6 +1375,21 @@ Item {
             ? root.selectedFill
             : (navMouse.containsMouse ? root.hoverFill : "transparent")
 
+        /// The settings pages are a tab list: the label is the name and the
+        /// current page is the selection.
+        Accessible.role: Accessible.PageTab
+        Accessible.name: nav.label
+        Accessible.selectable: true
+        Accessible.selected: root.page === nav.value
+        Accessible.onPressAction: {
+            root.page = nav.value
+            root.shortcutError = ""
+            if (nav.value === "terminal")
+                root.syncTerminalFields()
+            else if (nav.value === "defaultManager")
+                Workspace.refreshDefaultManager()
+        }
+
         Text {
             anchors.left: parent.left
             anchors.leftMargin: 10
@@ -1411,6 +1446,14 @@ Item {
         border.width: 1
         border.color: chip.selected ? root.accent : root.hairline
 
+        /// A chip is one choice in a mutually exclusive set, which is a radio
+        /// button however it is drawn.
+        Accessible.role: Accessible.RadioButton
+        Accessible.name: chip.label
+        Accessible.checkable: true
+        Accessible.checked: chip.selected
+        Accessible.onPressAction: chip.clicked()
+
         Rectangle {
             visible: chip.swatch.a > 0
             x: 8
@@ -1456,6 +1499,13 @@ Item {
         color: button.enabled && buttonMouse.containsMouse
             ? Qt.lighter(root.accent, 1.08) : root.accent
 
+        Accessible.role: Accessible.Button
+        Accessible.name: button.label
+        Accessible.onPressAction: {
+            if (button.enabled)
+                button.clicked()
+        }
+
         Text {
             id: buttonText
             anchors.centerIn: parent
@@ -1484,6 +1534,13 @@ Item {
         color: button.enabled && buttonMouse.containsMouse ? root.hoverFill : "transparent"
         border.width: 1
         border.color: root.hairline
+
+        Accessible.role: Accessible.Button
+        Accessible.name: button.label
+        Accessible.onPressAction: {
+            if (button.enabled)
+                button.clicked()
+        }
 
         Text {
             id: buttonText

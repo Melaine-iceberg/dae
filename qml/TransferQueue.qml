@@ -102,6 +102,7 @@ Item {
 
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("全部取消")
+                    Accessible.onPressAction: Workspace.cancelQueuedTransfers()
 
                     Text {
                         anchors.centerIn: parent
@@ -126,6 +127,7 @@ Item {
 
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("关闭传输队列")
+                    Accessible.onPressAction: root.close()
 
                     Rectangle {
                         anchors.fill: parent
@@ -280,6 +282,7 @@ Item {
 
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("取消 ") + row.name
+                    Accessible.onPressAction: row.cancelRequested()
 
                     Glyph {
                         anchors.centerIn: parent

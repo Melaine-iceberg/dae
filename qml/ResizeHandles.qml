@@ -17,6 +17,11 @@ Item {
 
     visible: Qt.platform.os !== "windows"
 
+    /// Eight anonymous strips are the frame, not content. Keyboard users resize
+    /// a window through the window manager's own commands; announcing the
+    /// handles would only pad the tree with targets that have no keyboard path.
+    Accessible.ignored: true
+
     function begin(edges) {
         if (root.window !== null)
             root.window.startSystemResize(edges)

@@ -700,8 +700,11 @@ Item {
         }
         // Type-ahead comes last so every rebindable action and the navigation
         // keys get first refusal. Space is excluded: it is preview, and a
-        // name that starts with a space is not worth stealing it for.
+        // name that starts with a space is not worth stealing it for. Anything
+        // below a space is excluded too: Tab arrives with a one-character text
+        // of "\t", and swallowing it here would trap focus in the listing.
         if (event.text.length === 1 && event.text !== " "
+                && event.text.charCodeAt(0) >= 0x20
                 && (event.modifiers & (Qt.ControlModifier | Qt.AltModifier
                                        | Qt.MetaModifier)) === 0) {
             root.typeAhead(event.text)
@@ -901,9 +904,19 @@ Item {
             cacheBuffer: 2600
             clip: true
             focus: true
+            /// Tab reaches the listing from the sidebar and leaves it for the
+            /// next region. Qt walks tab stops in scene order, so the three
+            /// panes come out in the order the window is laid out.
+            activeFocusOnTab: true
             boundsBehavior: Flickable.StopAtBounds
             spacing: 0
             currentIndex: -1
+
+            /// The listing announces itself as a list of rows; the empty space
+            /// under the last row is part of it, which is why the tap handler
+            /// below belongs to this element and not to a rectangle.
+            Accessible.role: Accessible.List
+            Accessible.name: qsTr("文件列表")
 
             /// A tap anywhere in the viewport — including the empty space
             /// below the last row — moves keyboard focus here.
@@ -961,6 +974,17 @@ Item {
                     : (row.gitStatus === "added"
                         ? Theme.success
                         : Theme.link)
+
+                /// The row, not the four cells inside it: a listing read cell
+                /// by cell is unlistenable, and the selection state lives on
+                /// the row. Press is the double click, so a reader has the same
+                /// one gesture a pointer does.
+                Accessible.role: Accessible.ListItem
+                Accessible.name: row.fileName
+                Accessible.description: row.isDir ? qsTr("文件夹") : qsTr("文件")
+                Accessible.selectable: true
+                Accessible.selected: row.selected
+                Accessible.onPressAction: root.handleActivate(row.index)
 
                 Rectangle {
                     anchors.fill: parent
@@ -1085,7 +1109,7 @@ Item {
                             anchors.centerIn: parent
                             text: row.gitLetter
                             color: row.gitBadgeColor
-                            font.pixelSize: 9
+                            font.pixelSize: Theme.typeMicro
                             font.family: Theme.monoFamily
                             font.weight: Font.Medium
                             textFormat: Text.PlainText

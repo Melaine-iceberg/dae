@@ -246,6 +246,7 @@ Item {
         model: root.model
         clip: true
         focus: true
+        activeFocusOnTab: true
         reuseItems: true
         cacheBuffer: 1800
         boundsBehavior: Flickable.StopAtBounds
@@ -282,6 +283,16 @@ Item {
             readonly property bool hasThumbnail: cell.thumbnailSource !== ""
             readonly property bool showImage: cell.hasThumbnail
                 && thumbImage.status === Image.Ready
+
+            /// A tile is one row of the grid to a reader, even though it has
+            /// two lines of its own: the name is the name, and press opens the
+            /// item the way a double click does.
+            Accessible.role: Accessible.ListItem
+            Accessible.name: cell.fileName
+            Accessible.description: cell.isDir ? qsTr("文件夹") : qsTr("文件")
+            Accessible.selectable: true
+            Accessible.selected: cell.selected
+            Accessible.onPressAction: root.activate(cell.index)
 
             Rectangle {
                 anchors.fill: parent

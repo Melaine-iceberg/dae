@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
+import "DialogFocus.js" as DialogFocus
 
 // Renames a whole selection from one rule: a numbered sequence, a find and
 // replace, or a case change.
@@ -51,6 +52,9 @@ FocusScope {
     visible: false
     z: 1006
     focus: visible
+
+    Accessible.role: Accessible.Dialog
+    Accessible.name: qsTr("批量重命名")
 
     function open(paths) {
         const next = []
@@ -250,6 +254,12 @@ FocusScope {
     }
 
     Keys.onEscapePressed: root.close()
+    Keys.onTabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, true)
+    }
+    Keys.onBacktabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, false)
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -703,6 +713,9 @@ FocusScope {
             selectByMouse: true
             clip: true
 
+            Accessible.role: Accessible.EditableText
+            Accessible.name: field.placeholder
+
             onTextEdited: field.edited(text)
         }
 
@@ -759,6 +772,9 @@ FocusScope {
                 clip: true
                 text: String(number.value)
                 validator: IntValidator { bottom: 0; top: 99999 }
+
+                Accessible.role: Accessible.EditableText
+                Accessible.name: number.label
 
                 onTextEdited: number.edited(parseInt(text, 10) || 0)
             }

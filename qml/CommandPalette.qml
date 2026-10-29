@@ -52,6 +52,12 @@ Item {
     focus: visible
     z: 1200
 
+    /// One dialog, one name: everything inside it is announced relative to the
+    /// surface, so the scrim's click target and the keycaps never turn up as
+    /// controls of their own.
+    Accessible.role: Accessible.Dialog
+    Accessible.name: qsTr("命令面板")
+
     signal activated(string kind, string value)
     signal closed()
 
@@ -650,6 +656,13 @@ Item {
                 focus: true
                 clip: true
 
+                // The palette's field is its only text input, and it has no
+                // visible label: the name and the hint have to come from here
+                // or the field is announced as "text".
+                Accessible.role: Accessible.EditableText
+                Accessible.name: qsTr("命令面板搜索")
+                Accessible.description: qsTr("搜索文件、空间或命令")
+
                 // `textEdited` covers keystrokes only: a paste, or any other
                 // programmatic write into the field, leaves the query at its
                 // old value and the list unfiltered while the text sits in
@@ -758,6 +771,12 @@ Item {
             model: results
             boundsBehavior: Flickable.StopAtBounds
             cacheBuffer: 200
+
+            /// The rows are the palette's answer to the query; the section
+            /// headers painted between them are labels on a list, not entries.
+            Accessible.role: Accessible.List
+            Accessible.name: qsTr("命令面板结果")
+
             section.property: "groupLabel"
             section.criteria: ViewSection.FullString
             section.delegate: Item {
@@ -793,6 +812,19 @@ Item {
                 height: 30
 
                 readonly property bool current: list.currentIndex === row.index
+
+                /// The chord is already drawn in the row, but it is text; the
+                /// description carries it to a reader that never sees the plate.
+                Accessible.role: Accessible.ListItem
+                Accessible.name: row.label
+                Accessible.description: row.hint
+                Accessible.selectable: true
+                Accessible.selected: row.current
+                Accessible.onPressAction: {
+                    list.currentIndex = row.index
+                    root.activeIndex = row.index
+                    root.activateCurrent()
+                }
 
                 // The active row is the shell's selection wash plus a 2 px
                 // rail, the same pair the listing uses: hover alone is too

@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
+import "DialogFocus.js" as DialogFocus
 
 // "移动到": pick a destination folder, then hand the selection to the same
 // transfer queue a paste uses.
@@ -34,6 +35,9 @@ FocusScope {
     visible: false
     z: 1007
     focus: visible
+
+    Accessible.role: Accessible.Dialog
+    Accessible.name: qsTr("移动到")
 
     function open(destination, moving) {
         root.paths = (moving || []).slice()
@@ -99,6 +103,12 @@ FocusScope {
     }
 
     Keys.onEscapePressed: root.close()
+    Keys.onTabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, true)
+    }
+    Keys.onBacktabPressed: function (event) {
+        event.accepted = DialogFocus.cycle(root, false)
+    }
 
     DirectoryListModel {
         id: browser
@@ -171,6 +181,9 @@ FocusScope {
                         anchors.fill: parent
                         hoverEnabled: true
                         onClicked: root.browse(root.parentOf(root.current))
+
+                        Accessible.role: Accessible.Button
+                        Accessible.name: qsTr("上一级")
                     }
                 }
 
@@ -196,6 +209,9 @@ FocusScope {
                         font.pixelSize: 12
                         selectByMouse: true
                         clip: true
+
+                        Accessible.role: Accessible.EditableText
+                        Accessible.name: qsTr("目标路径")
 
                         onAccepted: root.browse(text)
                     }
