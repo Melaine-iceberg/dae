@@ -1,5 +1,6 @@
-//! Search commands for the explorer: recursive name search on any backend
-//! and ripgrep-backed content search on local paths. A generation counter in
+//! Search commands for the explorer: recursive name search and ripgrep-backed
+//! content search. Both are local-only; a network backend has no search index
+//! and walking it would issue unbounded round trips. A generation counter in
 //! [`FileSearchState`] cancels stale traversals when a newer query arrives.
 
 use super::error::FileSystemError;
@@ -7,8 +8,8 @@ use super::local;
 use super::types::{ContentSearchResponse, SearchResponse};
 use super::vfs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 #[derive(Default)]
 pub struct FileSearchState {
@@ -37,7 +38,14 @@ impl FileSearchState {
 }
 
 /// See `commands::search_directory` for the contract; this half is engine-free.
-pub async fn search_directory(path: String, query: String) -> Result<SearchResponse, FileSystemError> {
+pub async fn search_directory(
+    path: String,
+    query: String,
+) -> Result<SearchResponse, FileSystemError> {
+    if !vfs::is_local_path(&path) {
+        return Err(FileSystemError::InvalidInput("fs.search_local_only".into()));
+    }
+
     let generation = state().begin();
 
     tokio::task::spawn_blocking(move || {
@@ -85,4 +93,53 @@ pub async fn search_file_contents(
     })
     .await
     .map_err(|error| FileSystemError::Internal(error.to_string()))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn name_search_rejects_network_paths() {
+        for path in [
+            "smb://nas/media",
+            "sftp://user@nas:22/home",
+            "cloud://google_drive:me@example.com/folder-id",
+            "ftp://nas/share",
+            "webdavs://cloud.example/dav",
+        ] {
+            let error = search_directory(path.to_owned(), "resize".to_owned())
+                .await
+                .expect_err("remote name search must be rejected");
+            assert!(
+                matches!(
+                    &error,
+                    FileSystemError::InvalidInput(message)
+                        if message == "fs.search_local_only"
+                ),
+                "{path}: {error}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn content_search_keeps_its_own_rejection() {
+        let error = search_file_contents(
+            "smb://nas/media".to_owned(),
+            "resize".to_owned(),
+            false,
+            false,
+            None,
+        )
+        .await
+        .expect_err("remote content search must be rejected");
+        assert!(
+            matches!(
+                &error,
+                FileSystemError::InvalidInput(message)
+                    if message == "fs.content_search_local_only"
+            ),
+            "{error}"
+        );
+    }
 }

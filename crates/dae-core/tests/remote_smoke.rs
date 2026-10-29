@@ -2,8 +2,9 @@
 //!
 //! They are ignored by default because they need a server (or an account)
 //! that CI does not have. Each test connects through the same `vfs` entry
-//! point the shell uses, then browses, writes, reads, name-searches, copies
-//! and deletes a uniquely named fixture. Run one with:
+//! point the shell uses, then browses, writes, reads, previews, copies and
+//! deletes a uniquely named fixture. Search is local-only, so this flow also
+//! asserts that a network name search is rejected. Run one with:
 //!
 //! ```text
 //! DAE_SMB_HOST=localhost DAE_SMB_PORT=445 \
@@ -171,12 +172,15 @@ fn exercise(backend_kind: Backend) {
         "{label}: preview"
     );
 
-    let search = resolved
-        .search(&source_dir, "hello", &|| true)
-        .expect("name search");
+    let search_error = runtime
+        .block_on(dae_core::fs::search::search_directory(
+            source_dir.clone(),
+            "hello".to_owned(),
+        ))
+        .expect_err("name search is local-only");
     assert!(
-        search.entries.iter().any(|entry| entry.name == "hello.txt"),
-        "{label}: search found the fixture"
+        search_error.to_string().contains("fs.search_local_only"),
+        "{label}: remote name search rejected: {search_error}"
     );
 
     runtime
@@ -227,7 +231,7 @@ fn exercise(backend_kind: Backend) {
         ))
         .expect("delete the fixtures");
 
-    println!("{label}: connect, browse, preview, search, copy, rename and delete passed");
+    println!("{label}: connect, browse, preview, reject-search, copy, rename and delete passed");
 }
 
 #[test]

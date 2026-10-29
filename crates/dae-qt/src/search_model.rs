@@ -860,6 +860,9 @@ fn friendly_search_error(message: &str) -> String {
     if message.starts_with("fs.content_search_local_only") {
         return "Content search is only available in local directories".to_owned();
     }
+    if message.starts_with("fs.search_local_only") {
+        return "Search is only available in local directories".to_owned();
+    }
     message.to_owned()
 }
 
@@ -912,6 +915,18 @@ mod tests {
         assert!(matches!(rows[0], ContentRow::Header { match_count: 2, .. }));
         assert_eq!(rows[1].path(), "C:/tree/src/main.rs");
         assert_eq!(rows[2].path(), "C:/tree/src/main.rs");
+    }
+
+    #[test]
+    fn local_only_search_errors_are_friendly() {
+        assert_eq!(
+            friendly_search_error("fs.search_local_only"),
+            "Search is only available in local directories"
+        );
+        assert_eq!(
+            friendly_search_error("fs.content_search_local_only"),
+            "Content search is only available in local directories"
+        );
     }
 
     #[test]

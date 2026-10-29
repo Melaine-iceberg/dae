@@ -4,7 +4,9 @@ import dae 1.0
 import "Shortcut.js" as Shortcut
 
 // The Mod+K palette: commands, spaces, favorites, recents, projects and a
-// progressive filename search in one keyboard-first surface.
+// progressive filename search in one keyboard-first surface. Filename and
+// content search are local-only, so a network scope keeps commands and jumps
+// but never starts a search walk.
 //
 // The row list is rebuilt from the shared models rather than kept in a second
 // store: `Spaces` owns the space list, `OverviewModel` owns the landing page's
@@ -21,6 +23,7 @@ Item {
 
     property var overviewModel: null
     property bool folderActive: false
+    property bool remoteLocation: false
     property string scopePath: ""
     property bool dark: true
     property color accent: Theme.interactive
@@ -37,7 +40,7 @@ Item {
 
     readonly property string trimmedQuery: query.trim()
     readonly property bool pathLike: root.isPathLike(root.trimmedQuery)
-    readonly property bool searchingFiles: visible
+    readonly property bool searchingFiles: visible && !root.remoteLocation
         && root.trimmedQuery.length >= 2 && !root.pathLike
         && paletteSearchModel.busy
 
@@ -228,7 +231,7 @@ Item {
     }
 
     function fileCommands() {
-        return [
+        const items = [
             root.command("new-folder", qsTr("新建文件夹"), root.chord("Mod+Shift+N"), "folder", qsTr("文件")),
             root.command("new-file", qsTr("新建文件"), "", "file", qsTr("文件")),
             root.command("rename", qsTr("重命名"), root.shortcutHint("explorer.rename", "F2"),
@@ -263,6 +266,13 @@ Item {
                          "panel", qsTr("文件")),
             root.command("toggle-sidebar", qsTr("切换侧栏"), root.chord("Mod+B"), "panel", qsTr("文件"))
         ]
+        // Trash and terminal have no remote implementation, so neither row
+        // should be offered on a network tab.
+        return root.remoteLocation
+            ? items.filter(function (item) {
+                return item.value !== "trash-selection" && item.value !== "open-terminal"
+            })
+            : items
     }
 
     function viewCommands() {
@@ -352,7 +362,7 @@ Item {
 
     function fileCandidates() {
         const items = []
-        if (root.trimmedQuery.length < 2 || root.pathLike)
+        if (root.remoteLocation || root.trimmedQuery.length < 2 || root.pathLike)
             return items
         if (paletteSearchModel.query !== root.trimmedQuery)
             return items
@@ -392,7 +402,8 @@ Item {
     /// "no such name"; this offers the one cheaper question left, which is
     /// whether the text is inside a file rather than in its name.
     function contentSearchCandidate() {
-        if (root.trimmedQuery.length < 2 || root.pathLike || !root.folderActive)
+        if (root.remoteLocation || root.trimmedQuery.length < 2
+                || root.pathLike || !root.folderActive)
             return null
         return {
             group: qsTr("搜索"),
@@ -497,7 +508,7 @@ Item {
     function scheduleUpdate() {
         root.rebuild()
         const q = root.trimmedQuery
-        if (q.length >= 2 && !root.pathLike) {
+        if (!root.remoteLocation && q.length >= 2 && !root.pathLike) {
             searchTimer.restart()
         } else {
             searchTimer.stop()
@@ -506,7 +517,7 @@ Item {
     }
 
     function runFileSearch() {
-        if (!root.visible)
+        if (!root.visible || root.remoteLocation)
             return
         const q = root.trimmedQuery
         if (q.length < 2 || root.pathLike)

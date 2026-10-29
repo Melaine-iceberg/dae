@@ -6,8 +6,7 @@
 use super::connections::{self, Protocol, SaveConnectionInput};
 use super::error::FileSystemError;
 use super::types::{
-    Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, NewEntryKind, SearchEntry,
-    SearchResponse, entry_sort_key,
+    Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, NewEntryKind, entry_sort_key,
 };
 use super::vfs::{FileSystemBackend, SharedBackend};
 use smb2::{ErrorKind as SmbErrorKind, FileReader, FileWriter, SmbClient, Tree};
@@ -18,7 +17,6 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 
 const DEFAULT_PORT: u16 = 445;
 const READ_CHUNK: u64 = 256 * 1024;
-const MAX_SEARCH_RESULTS: usize = 200;
 
 /// Sessions one backend keeps open at a time.
 ///
@@ -664,35 +662,6 @@ impl FileSystemBackend for SmbBackend {
         })
     }
 
-    fn search(
-        &self,
-        root: &str,
-        query: &str,
-        is_current: &(dyn Fn() -> bool + Send + Sync),
-    ) -> Result<SearchResponse, FileSystemError> {
-        let query = query.trim().to_lowercase();
-        if query.is_empty() {
-            return Ok(SearchResponse {
-                entries: Vec::new(),
-                truncated: false,
-            });
-        }
-
-        let parsed = parse_dir(root)?;
-        let mut walker = SearchWalker {
-            backend: self,
-            query,
-            entries: Vec::new(),
-            truncated: false,
-        };
-        walker.walk(&parsed, "", is_current)?;
-
-        Ok(SearchResponse {
-            entries: walker.entries,
-            truncated: walker.truncated,
-        })
-    }
-
     fn stat(&self, path: &str) -> Result<EntryStat, FileSystemError> {
         let parsed = parse_dir(path)?;
 
@@ -881,108 +850,6 @@ fn smb_breadcrumbs(path: &SmbPath) -> Vec<Breadcrumb> {
     }
 
     breadcrumbs
-}
-
-struct SearchWalker<'a> {
-    backend: &'a SmbBackend,
-    query: String,
-    entries: Vec<SearchEntry>,
-    truncated: bool,
-}
-
-impl SearchWalker<'_> {
-    fn walk(
-        &mut self,
-        directory: &SmbPath,
-        relative_prefix: &str,
-        is_current: &dyn Fn() -> bool,
-    ) -> Result<(), FileSystemError> {
-        if self.truncated || !is_current() {
-            return Ok(());
-        }
-
-        let children = if directory.share.is_empty() {
-            self.backend
-                .share_names()?
-                .into_iter()
-                .filter(|name| !name.ends_with('$'))
-                .map(|name| DirectoryEntry {
-                    path: format!("smb://{}/{}", directory.authority(), name),
-                    name,
-                    kind: EntryKind::Directory,
-                    modified_at: None,
-                    size: None,
-                    hidden: false,
-                    read_only: false,
-                })
-                .collect::<Vec<_>>()
-        } else {
-            let listed = smb_tree_op!(self.backend, &directory.share, (client, tree) => {
-                client.list_directory(tree, &directory.sub_path).await
-            })?;
-            listed
-                .into_iter()
-                .filter(|entry| entry.name != "." && entry.name != "..")
-                .map(|entry| DirectoryEntry {
-                    path: directory.join(&entry.name),
-                    name: entry.name,
-                    kind: if entry.is_directory {
-                        EntryKind::Directory
-                    } else {
-                        EntryKind::File
-                    },
-                    modified_at: modified_millis(entry.modified),
-                    size: if entry.is_directory {
-                        None
-                    } else {
-                        Some(entry.size)
-                    },
-                    hidden: false,
-                    read_only: false,
-                })
-                .collect::<Vec<_>>()
-        };
-
-        for child in children {
-            if self.entries.len() >= MAX_SEARCH_RESULTS {
-                self.truncated = true;
-                return Ok(());
-            }
-            if !is_current() {
-                return Ok(());
-            }
-
-            if child.name.to_lowercase().contains(&self.query) {
-                let relative = if relative_prefix.is_empty() {
-                    child.name.clone()
-                } else {
-                    format!("{relative_prefix}/{}", child.name)
-                };
-                self.entries.push(SearchEntry {
-                    name: child.name.clone(),
-                    path: child.path.clone(),
-                    relative_path: relative,
-                    kind: child.kind,
-                    modified_at: child.modified_at,
-                    size: child.size,
-                    hidden: child.hidden,
-                    read_only: child.read_only,
-                });
-            }
-
-            if child.kind == EntryKind::Directory {
-                let child_path = parse_dir(&child.path)?;
-                let child_relative = if relative_prefix.is_empty() {
-                    child.name.clone()
-                } else {
-                    format!("{relative_prefix}/{}", child.name)
-                };
-                self.walk(&child_path, &child_relative, is_current)?;
-            }
-        }
-
-        Ok(())
-    }
 }
 
 /// Adapts the positioned async `FileReader` to a byte-stream `Read`.

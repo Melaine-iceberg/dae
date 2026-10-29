@@ -11,8 +11,7 @@ pub mod provider;
 
 use crate::fs::error::FileSystemError;
 use crate::fs::types::{
-    Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, NewEntryKind, SearchEntry,
-    SearchResponse, entry_sort_key,
+    Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, NewEntryKind, entry_sort_key,
 };
 use crate::fs::vfs::{FileSystemBackend, SharedBackend};
 use provider::{CloudMeta, CloudProviderKind};
@@ -27,7 +26,6 @@ use std::time::{Duration, Instant};
 /// Listings stay fresh long enough that the directory watcher's 4-second
 /// poll sees the same snapshot instead of hitting the API every tick.
 const LIST_TTL: Duration = Duration::from_secs(5);
-const MAX_SEARCH_RESULTS: usize = 200;
 /// A breadcrumb crumb costs one metadata request on a cold cache; cap the
 /// chain so a pathological depth cannot stack requests unboundedly.
 const MAX_BREADCRUMB_DEPTH: usize = 64;
@@ -528,37 +526,6 @@ impl FileSystemBackend for CloudBackend {
         Ok(())
     }
 
-    fn search(
-        &self,
-        root: &str,
-        query: &str,
-        is_current: &(dyn Fn() -> bool + Send + Sync),
-    ) -> Result<SearchResponse, FileSystemError> {
-        let query = query.trim().to_lowercase();
-        if query.is_empty() {
-            return Ok(SearchResponse {
-                entries: Vec::new(),
-                truncated: false,
-            });
-        }
-
-        let parsed = self.0.parse_and_verify(root)?;
-        let folder_id = parsed.segments.last().cloned().unwrap_or_default();
-
-        let mut walker = SearchWalker {
-            inner: &self.0,
-            query,
-            entries: Vec::new(),
-            truncated: false,
-        };
-        walker.walk(&folder_id, &canonical_path(&parsed), "", is_current)?;
-
-        Ok(SearchResponse {
-            entries: walker.entries,
-            truncated: walker.truncated,
-        })
-    }
-
     fn stat(&self, path: &str) -> Result<EntryStat, FileSystemError> {
         let meta = self.0.resolve_entry(path)?;
         Ok(EntryStat {
@@ -720,64 +687,6 @@ fn staged_upload_path() -> PathBuf {
         std::process::id(),
         STAGED_COUNTER.fetch_add(1, Ordering::Relaxed)
     ))
-}
-
-struct SearchWalker<'a> {
-    inner: &'a CloudInner,
-    query: String,
-    entries: Vec<SearchEntry>,
-    truncated: bool,
-}
-
-impl SearchWalker<'_> {
-    fn walk(
-        &mut self,
-        folder_id: &str,
-        path_prefix: &str,
-        relative_prefix: &str,
-        is_current: &dyn Fn() -> bool,
-    ) -> Result<(), FileSystemError> {
-        if self.truncated || !is_current() {
-            return Ok(());
-        }
-
-        let children = self.inner.list_folder(folder_id)?;
-        for child in children.iter() {
-            if self.entries.len() >= MAX_SEARCH_RESULTS {
-                self.truncated = true;
-                return Ok(());
-            }
-            if !is_current() {
-                return Ok(());
-            }
-
-            let child_path = format!("{path_prefix}/{}", child.id);
-            let child_relative = if relative_prefix.is_empty() {
-                child.name.clone()
-            } else {
-                format!("{relative_prefix}/{}", child.name)
-            };
-
-            if child.name.to_lowercase().contains(&self.query) {
-                self.entries.push(SearchEntry {
-                    name: child.name.clone(),
-                    path: child_path.clone(),
-                    relative_path: child_relative.clone(),
-                    kind: child.kind,
-                    modified_at: child.modified_at,
-                    size: (child.kind == EntryKind::File).then_some(child.size),
-                    hidden: false,
-                    read_only: false,
-                });
-            }
-
-            if child.kind == EntryKind::Directory {
-                self.walk(&child.id, &child_path, &child_relative, is_current)?;
-            }
-        }
-
-        Ok(())
-    }
 }
 
 /// Streams an authenticated download as a blocking `Read`, buffering one

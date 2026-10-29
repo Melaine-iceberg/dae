@@ -131,12 +131,18 @@ pub trait FileSystemBackend: Send + Sync {
 
     fn rename_entry(&self, path: &str, new_name: &str) -> Result<(), FileSystemError>;
 
+    /// Recursive name search is a local-disk feature. A network backend has
+    /// no index to answer it, and walking the tree would issue unbounded
+    /// round trips, so every non-local backend inherits this rejection.
     fn search(
         &self,
         root: &str,
         query: &str,
         is_current: &(dyn Fn() -> bool + Send + Sync),
-    ) -> Result<SearchResponse, FileSystemError>;
+    ) -> Result<SearchResponse, FileSystemError> {
+        let _ = (root, query, is_current);
+        Err(FileSystemError::InvalidInput("fs.search_local_only".into()))
+    }
 
     // -- Primitive operations for the generic cross-backend transfer engine --
 

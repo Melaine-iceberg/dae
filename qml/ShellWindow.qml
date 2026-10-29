@@ -127,8 +127,8 @@ Window {
     readonly property bool gitVisible: folderActive && gitListing !== null
         && gitListing.gitRoot !== "" && gitListing.gitBranch !== ""
     /// True while the tab is browsing a network backend. Local-only actions
-    /// (terminal, recycle bin, content search, OS open/reveal) are gated on
-    /// this instead of failing after the click.
+    /// (terminal, recycle bin, name/content search, OS open/reveal) are gated
+    /// on this instead of failing after the click.
     readonly property bool remoteLocation: folderActive
         && (activeTab.listing.remote || root.isRemotePath(activeTab.listing.path))
     readonly property bool searchActive: folderActive && searchQuery.trim().length > 0
@@ -684,8 +684,9 @@ Window {
         if (!root.remoteLocation)
             return
         root.terminalActive = false
-        if (root.searchMode === "content")
-            root.searchMode = "name"
+        root.searchOpen = false
+        root.resetSearchState()
+        root.searchMode = "name"
     }
 
     function navigate(path) {
@@ -905,7 +906,7 @@ Window {
     }
 
     function openSearch() {
-        if (!root.folderActive)
+        if (!root.folderActive || root.remoteLocation)
             return
         root.searchOpen = true
         // The field is only focusable once the expanded state has been laid
@@ -997,7 +998,9 @@ Window {
         const query = root.searchQuery.trim()
         tab.nameSearch.cancel()
         tab.contentSearch.cancel()
-        if (query === "")
+        // Both modes walk the local disk; a network backend only answers the
+        // directory listing it already has.
+        if (query === "" || root.remoteLocation)
             return
         tab.clearSelection()
         previewPanel.showPaths([])
@@ -2500,9 +2503,14 @@ Window {
                 width: expanded ? 210 : 28
                 visible: root.folderActive
 
+                /// Search walks the local disk only. Keep the affordance in
+                /// place so it does not flicker in and out while crossing
+                /// locations, but dim and disable it on network paths.
+                opacity: root.remoteLocation ? 0.35 : 1
+
                 /// The collapsed icon is a button; the expanded field is the
                 /// tab stop instead, so the two states never both claim focus.
-                activeFocusOnTab: !searchSlot.expanded
+                activeFocusOnTab: !searchSlot.expanded && !root.remoteLocation
                 Keys.onReturnPressed: root.openSearch()
                 Keys.onSpacePressed: root.openSearch()
 
@@ -2518,14 +2526,15 @@ Window {
                     anchors.fill: parent
                     visible: !searchSlot.expanded
                     radius: Theme.radiusSm
-                    color: searchIconMouse.containsMouse ? Theme.fill : "transparent"
+                    color: searchIconMouse.containsMouse && !root.remoteLocation
+                        ? Theme.fill : "transparent"
                     border.width: searchSlot.activeFocus ? 1 : 0
                     border.color: Theme.signal
 
                     Glyph {
                         anchors.centerIn: parent
                         kind: "search"
-                        tint: searchIconMouse.containsMouse
+                        tint: searchIconMouse.containsMouse && !root.remoteLocation
                             ? root.textColor : root.mutedColor
                     }
 
@@ -2535,8 +2544,9 @@ Window {
                     MouseArea {
                         id: searchIconMouse
                         anchors.fill: parent
+                        enabled: !root.remoteLocation
                         hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                         onClicked: root.openSearch()
                     }
                 }
@@ -2722,7 +2732,7 @@ Window {
 
             width: parent.width
             height: visible ? 32 : 0
-            visible: root.folderActive
+            visible: root.folderActive && !root.remoteLocation
                 && (root.searchOpen || root.searchQuery.length > 0)
 
             mode: root.searchMode
@@ -3928,6 +3938,7 @@ Window {
         hairline: root.hairline
         overviewModel: overviewModel
         folderActive: root.folderActive
+        remoteLocation: root.remoteLocation
         scopePath: root.folderActive ? root.activePath : Workspace.homeDirectory
         shortcutMap: root.shortcutMap
         isMac: root.isMac
@@ -4095,7 +4106,8 @@ Window {
 
     Shortcut {
         sequence: root.shortcutSequence("explorer.focusSearch")
-        enabled: !root.modalOpen && root.folderActive && sequence !== ""
+        enabled: !root.modalOpen && root.folderActive
+            && !root.remoteLocation && sequence !== ""
         onActivated: root.openSearch()
     }
 

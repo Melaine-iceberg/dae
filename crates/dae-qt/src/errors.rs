@@ -88,6 +88,10 @@ fn friendly_code(code: &str) -> Option<&'static str> {
         Some("Nothing to undo")
     } else if code.starts_with("fs.redo_empty") {
         Some("Nothing to redo")
+    } else if code.starts_with("fs.search_local_only") {
+        Some("Search is only available in local directories")
+    } else if code.starts_with("fs.content_search_local_only") {
+        Some("Content search is only available in local directories")
     } else if code.starts_with("fs.trash_local_only") {
         Some("Trash is only available for local items")
     } else if code.starts_with("fs.terminal_local_dir_only") {
@@ -160,6 +164,14 @@ mod tests {
     #[test]
     fn known_core_codes_become_sentences_and_others_pass_through() {
         assert_eq!(friendly_error("fs.undo_empty"), "Nothing to undo");
+        assert_eq!(
+            friendly_error("fs.search_local_only"),
+            "Search is only available in local directories"
+        );
+        assert_eq!(
+            friendly_error("fs.content_search_local_only"),
+            "Content search is only available in local directories"
+        );
         assert_eq!(
             friendly_error("The requested path was not found: C:/x"),
             "The requested path was not found: C:/x"

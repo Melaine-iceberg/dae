@@ -14,8 +14,7 @@ use super::known_hosts::{HostKeyVerdict, verify_host_key};
 use super::smb::{parse_authority, split_authority};
 use super::types::{
     Breadcrumb, DirectoryEntry, DirectoryView, EntryKind, EntryStat, FileProperties, NewEntryKind,
-    PlatformProperties, PropertyChanges, SearchEntry, SearchResponse, UnixProperties,
-    entry_sort_key,
+    PlatformProperties, PropertyChanges, UnixProperties, entry_sort_key,
 };
 use super::vfs::{FileSystemBackend, SharedBackend};
 use russh_sftp::client::SftpSession;
@@ -32,7 +31,6 @@ const DEFAULT_PORT: u16 = 22;
 /// requests, so this only bounds each one, not the whole stream.
 const SESSION_TIMEOUT_SECS: u64 = 30;
 const READ_CHUNK: usize = 256 * 1024;
-const MAX_SEARCH_RESULTS: usize = 200;
 
 pub struct SftpBackend {
     runtime: Arc<tokio::runtime::Runtime>,
@@ -435,35 +433,6 @@ impl FileSystemBackend for SftpBackend {
             .map_err(map_sftp_error)
     }
 
-    fn search(
-        &self,
-        root: &str,
-        query: &str,
-        is_current: &(dyn Fn() -> bool + Send + Sync),
-    ) -> Result<SearchResponse, FileSystemError> {
-        let query = query.trim().to_lowercase();
-        if query.is_empty() {
-            return Ok(SearchResponse {
-                entries: Vec::new(),
-                truncated: false,
-            });
-        }
-
-        let parsed = parse_dir(root)?;
-        let mut walker = SearchWalker {
-            backend: self,
-            query,
-            entries: Vec::new(),
-            truncated: false,
-        };
-        walker.walk(&parsed, "", is_current)?;
-
-        Ok(SearchResponse {
-            entries: walker.entries,
-            truncated: walker.truncated,
-        })
-    }
-
     fn stat(&self, path: &str) -> Result<EntryStat, FileSystemError> {
         let parsed = parse_dir(path)?;
         let attrs = self
@@ -768,68 +737,6 @@ fn sftp_breadcrumbs(path: &SftpPath) -> Vec<Breadcrumb> {
     }
 
     breadcrumbs
-}
-
-struct SearchWalker<'a> {
-    backend: &'a SftpBackend,
-    query: String,
-    entries: Vec<SearchEntry>,
-    truncated: bool,
-}
-
-impl SearchWalker<'_> {
-    fn walk(
-        &mut self,
-        directory: &SftpPath,
-        relative_prefix: &str,
-        is_current: &dyn Fn() -> bool,
-    ) -> Result<(), FileSystemError> {
-        if self.truncated || !is_current() {
-            return Ok(());
-        }
-
-        let children = self.backend.read_dir_entries(directory)?;
-
-        for child in children {
-            if self.entries.len() >= MAX_SEARCH_RESULTS {
-                self.truncated = true;
-                return Ok(());
-            }
-            if !is_current() {
-                return Ok(());
-            }
-
-            if child.name.to_lowercase().contains(&self.query) {
-                let relative = if relative_prefix.is_empty() {
-                    child.name.clone()
-                } else {
-                    format!("{relative_prefix}/{}", child.name)
-                };
-                self.entries.push(SearchEntry {
-                    name: child.name.clone(),
-                    path: child.path.clone(),
-                    relative_path: relative,
-                    kind: child.kind,
-                    modified_at: child.modified_at,
-                    size: child.size,
-                    hidden: child.hidden,
-                    read_only: child.read_only,
-                });
-            }
-
-            if child.kind == EntryKind::Directory {
-                let child_path = parse_dir(&child.path)?;
-                let child_relative = if relative_prefix.is_empty() {
-                    child.name.clone()
-                } else {
-                    format!("{relative_prefix}/{}", child.name)
-                };
-                self.walk(&child_path, &child_relative, is_current)?;
-            }
-        }
-
-        Ok(())
-    }
 }
 
 /// Adapts the async sequential `File` reader to a byte-stream `Read`,

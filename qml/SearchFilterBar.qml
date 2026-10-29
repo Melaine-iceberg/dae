@@ -20,9 +20,9 @@ Item {
 
     /// "name" or "content".
     property string mode: "name"
-    /// Content search is a local ripgrep walk; a network listing can only
-    /// answer a filename query, so the content chip goes inert there instead
-    /// of failing after the click.
+    /// Content search is a local ripgrep walk. Name search is local-only too,
+    /// so the shell hides this row on network paths; keeping the content chip
+    /// inert here is a second guard rather than the only one.
     property bool contentEnabled: true
     property bool caseSensitive: false
     property bool regex: false

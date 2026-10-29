@@ -617,11 +617,33 @@ build 26340 上它对任何扩展名都返回 `E_FAIL`（实测 json/txt/rs/exe/
 | 云盘对话框切 OneDrive | Client Secret 标签与引导文案同步切换；空 Client ID 报错 |
 | 复制重定向 URI → 粘贴 | Client ID 字段得到 `http://127.0.0.1:51888` |
 
-`dae-qt` **49 通过**（新增连接字段解析、校验文案、侧栏行映射与错误翻译）。
+`dae-qt` **133 通过**（当前全量：连接字段解析、校验文案、侧栏行映射、错误翻译与搜索错误映射）。
 
-**已知边界**：远程后端的搜索、预览、回收站、终端仍是本地语义；FTP/WebDAV
-在协议表中保留但未接后端。真实 SMB/SFTP/云盘登录需要可达服务器与 OAuth
-凭据，本次只验证了失败路径、保存/删除与本地 UI 状态。
+**远程语义（2026-10-29 补全）**：
+
+- 名称搜索与内容搜索都只走本地磁盘：`fs::search::search_directory()` 在
+  `vfs::is_local_path()` 为假时直接返回 `fs.search_local_only`，内容搜索继续
+  返回 `fs.content_search_local_only`；SMB/SFTP/云盘后端不再覆盖
+  `FileSystemBackend::search()`，默认实现统一拒绝。Qt 壳在远程标签页禁用搜索
+  图标与 `explorer.focusSearch`，进入远程路径时收起搜索栏并清空查询；命令
+  面板不启动文件名搜索，也不提供「在文件内容中搜索」兜底。
+- 远程预览只走文本：`preview::read_text_preview()` 通过 VFS 读取至多
+  256 KiB；缩略图、媒体标签、Qt 媒体播放，以及「用本地应用打开 / 在文件
+  管理器中显示」仍按 `is_local_path()` 关闭，回车提示先复制到本地。
+- 回收站与终端对远程禁用：右键菜单和命令面板不再提供「移到回收站」和
+  「在终端中打开」；Delete 在远程改走永久删除确认；终端按钮与快捷键在远程
+  变灰，核心 `trash_entries()` / `open_terminal()` 仍以 `fs.trash_local_only` /
+  `fs.terminal_local_dir_only` 兜底。
+- 验证：`fs::search` 的单元测试覆盖名称/内容搜索的远程拒绝；远程冒烟测试
+  删除后端 `search()` 调用并断言 `fs.search_local_only`。回归
+  `cargo test -p dae-core --lib` **301 passed / 10 ignored**，
+  `cargo test -p dae-qt --lib` **133 passed**；改动 QML 通过 `qmllint`
+  （只有既有的 unqualified-access / incompatible-type 警告）。
+
+**已知边界**：FTP/WebDAV 仍在 `vfs::Scheme` 与连接对话框协议表中保留，
+`vfs::resolve()` 返回不支持、没有后端实现（`ConnectDialog` 标注「即将支持」）。
+真实 SMB/SFTP/云盘登录需要可达服务器与 OAuth 凭据，本次只验证了失败路径、
+保存/删除与本地 UI 状态。
 
 ### 4.9 `dae://` 深链与单实例（2026-10-26）
 
