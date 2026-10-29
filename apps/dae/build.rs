@@ -27,6 +27,7 @@ const QML_FILES: &[(&str, &str)] = &[
     ("../../qml/FileList.qml", "qml/FileList.qml"),
     ("../../qml/FileGrid.qml", "qml/FileGrid.qml"),
     ("../../qml/ColumnView.qml", "qml/ColumnView.qml"),
+    ("../../qml/EmptyState.qml", "qml/EmptyState.qml"),
     ("../../qml/ThemedIcon.qml", "qml/ThemedIcon.qml"),
     ("../../qml/DisplayMenu.qml", "qml/DisplayMenu.qml"),
     ("../../qml/FilterMenu.qml", "qml/FilterMenu.qml"),

@@ -377,25 +377,16 @@ Item {
         }
     }
 
-    Column {
-        anchors.centerIn: parent
-        spacing: 7
+    EmptyState {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: columnHeader.bottom
+        anchors.bottom: parent.bottom
         visible: root.model !== null && root.model.loaded
                  && root.model.error === "" && root.model.count === 0
-
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: qsTr("回收站是空的")
-            color: root.mutedColor
-            font.pixelSize: 13
-        }
-
-        Text {
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: qsTr("删除的文件会先出现在这里")
-            color: root.mutedColor
-            font.pixelSize: 11
-        }
+        glyph: "trash"
+        title: qsTr("回收站为空")
+        hint: qsTr("删除的文件会先放在这里，可以随时还原。")
     }
 
     MouseArea {

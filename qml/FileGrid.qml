@@ -3,28 +3,28 @@ import QtQuick
 import QtQuick.Window
 import dae 1.0
 
-// Card grid over the same listing model the detail list uses.
+// The grid is the same listing with its rows laid out as tiles.
 //
-// Geometry follows the density preference: a compact cell is 120x126, a
-// comfortable one 148x142, a spacious one 172x150, and the number of columns
-// is whatever fits the pane. The cell is a plate rather than a bare label so a
-// folder of forty files reads as a field of objects (the same grammar the
-// Tauri shell's `file-grid-view.tsx` uses).
+// It used to be a field of cards: a plate per file, a well for the glyph and a
+// second line of metadata. The card carried no information the name did not,
+// and forty of them read as forty buttons. A tile is now a glyph and a name on
+// the canvas, the way an instrument's channel strip is a label rather than a
+// box; selection supplies the only plate.
+//
+// QML has no CSS `auto-fill`, so the column count is computed from the pane
+// width: `floor((width - 32 + 12) / (100 + 12))`, then the remainder is split
+// evenly. A resize therefore changes the column count instead of stretching
+// five fixed columns.
 Item {
     id: root
 
     property var tab: null
     property var model: null
-    property bool dark: true
-    property color accent: Theme.interactive
-    property color contentColor: Theme.canvas
-    property color cardColor: Theme.canvasAlt
-    property color textColor: Theme.ink
-    property color mutedColor: Theme.inkMuted
-    property color hairline: Theme.hairline
-    property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b, dark ? 0.30 : 0.18)
     property string dropTargetPath: ""
     property var keyHandler: null
+    /// True while a key press owns the cursor. The focus ring is drawn only
+    /// for keyboard movement, never for a click.
+    property bool keyboardCursor: false
 
     signal activateRequested(string path, bool isDir)
     signal contextRequested(string path, bool isDir, real x, real y)
@@ -32,23 +32,20 @@ Item {
     signal selectionChanged()
     signal dragOutRequested(var paths, string mode)
 
-    readonly property string density: ExplorerPrefs.density
-    readonly property int gap: 12
-    readonly property int padding: 12
-    readonly property int minCellWidth: density === "compact" ? 120
-        : density === "spacious" ? 172 : 148
-    readonly property int cellHeight: density === "compact" ? 126
-        : density === "spacious" ? 150 : 142
-    readonly property int wellHeight: density === "compact" ? 40
-        : density === "spacious" ? 64 : 56
-    readonly property int glyphSize: density === "compact" ? 28
-        : density === "spacious" ? 34 : 30
+    readonly property int padding: 16
+    readonly property int gapX: 12
+    readonly property int gapY: 14
+    readonly property int minCellWidth: 100
+    readonly property int tileHeight: 132
+    readonly property int thumbHeight: 76
+    readonly property int glyphSize: 38
+
     readonly property int columns: {
         const available = Math.max(0, width - padding * 2)
-        return Math.max(1, Math.floor((available + gap) / (minCellWidth + gap)))
+        return Math.max(1, Math.floor((available + gapX) / (minCellWidth + gapX)))
     }
-    readonly property real cardWidth: {
-        const available = Math.max(0, width - padding * 2 - gap * (columns - 1))
+    readonly property real tileWidth: {
+        const available = Math.max(0, width - padding * 2 - gapX * (columns - 1))
         return Math.max(72, available / Math.max(1, columns))
     }
 
@@ -123,12 +120,12 @@ Item {
         grid.forceActiveFocus()
     }
 
-    /// The folder under a drop point: a directory cell is the target,
+    /// The folder under a drop point: a directory tile is the target,
     /// anything else means the directory on screen.
     function dropDirectoryAt(x, y) {
         if (model === null || model.path === "")
             return ""
-        const index = grid.indexAt(x, grid.contentY + y)
+        const index = grid.indexAt(x - padding, grid.contentY + y - padding)
         if (index >= 0 && model.isDirectoryAt(index))
             return model.pathAt(index)
         return model.path
@@ -142,6 +139,9 @@ Item {
     }
 
     // ---- marquee ---------------------------------------------------------
+    // All coordinates below are content coordinates: the pointer position plus
+    // the scroll offset, minus the inner padding. Keeping one coordinate space
+    // is what makes the band agree with the tiles while the view auto-scrolls.
     property bool marqueeActive: false
     property real marqueeStartX: 0
     property real marqueeStartY: 0
@@ -163,14 +163,12 @@ Item {
         if (model === null)
             return []
         const rect = marqueeRect()
-        const firstRow = Math.max(0, Math.floor(
-            (grid.contentY + rect.top - padding) / (cellHeight + gap)))
-        const lastRow = Math.max(0, Math.ceil(
-            (grid.contentY + rect.bottom - padding) / (cellHeight + gap)) - 1)
-        const firstColumn = Math.max(0, Math.floor(
-            (grid.contentX + rect.left - padding) / (cardWidth + gap)))
-        const lastColumn = Math.min(columns - 1, Math.max(0, Math.ceil(
-            (grid.contentX + rect.right - padding) / (cardWidth + gap)) - 1))
+        const stepX = tileWidth + gapX
+        const stepY = tileHeight + gapY
+        const firstRow = Math.max(0, Math.floor(rect.top / stepY))
+        const lastRow = Math.max(0, Math.floor(rect.bottom / stepY))
+        const firstColumn = Math.max(0, Math.floor(rect.left / stepX))
+        const lastColumn = Math.min(columns - 1, Math.max(0, Math.floor(rect.right / stepX)))
 
         const paths = []
         for (let row = firstRow; row <= lastRow; row += 1) {
@@ -179,14 +177,12 @@ Item {
                 const path = model.pathAt(index)
                 if (path === "")
                     continue
-                const cellLeft = padding + column * (cardWidth + gap)
-                const cellTop = row * (cellHeight + gap)
-                const cellRight = cellLeft + cardWidth
-                const cellBottom = cellTop + cellHeight
-                if (cellRight >= grid.contentX + rect.left
-                        && cellLeft <= grid.contentX + rect.right
-                        && cellBottom >= grid.contentY + rect.top
-                        && cellTop <= grid.contentY + rect.bottom)
+                const cellLeft = column * stepX
+                const cellTop = row * stepY
+                const cellRight = cellLeft + tileWidth
+                const cellBottom = cellTop + tileHeight
+                if (cellRight >= rect.left && cellLeft <= rect.right
+                        && cellBottom >= rect.top && cellTop <= rect.bottom)
                     paths.push(path)
             }
         }
@@ -216,13 +212,14 @@ Item {
                                                      grid.contentY + 12))
             else
                 return
+            root.marqueeY = root.marqueePointerY - root.padding + grid.contentY
             root.applyMarquee()
         }
     }
 
     Rectangle {
         anchors.fill: parent
-        color: root.contentColor
+        color: Theme.canvas
     }
 
     MouseArea {
@@ -242,8 +239,8 @@ Item {
         anchors.topMargin: root.padding
         anchors.rightMargin: root.padding
         anchors.bottomMargin: root.padding
-        cellWidth: root.cardWidth + root.gap
-        cellHeight: root.cellHeight + root.gap
+        cellWidth: root.tileWidth + root.gapX
+        cellHeight: root.tileHeight + root.gapY
         leftMargin: 0
         topMargin: 0
         model: root.model
@@ -255,6 +252,7 @@ Item {
         currentIndex: -1
 
         Keys.onPressed: function (event) {
+            root.keyboardCursor = true
             if (root.keyHandler !== null && root.keyHandler(event))
                 event.accepted = true
         }
@@ -265,117 +263,98 @@ Item {
             required property int index
             required property string fileName
             required property string filePath
-            required property string sizeText
-            required property string modifiedText
             required property bool isDir
             required property bool hidden
-            required property bool readOnly
             required property string iconSource
             required property string category
             required property string extension
             required property string thumbnailSource
 
-            width: grid.cellWidth - root.gap
-            height: grid.cellHeight - root.gap
+            width: grid.cellWidth - root.gapX
+            height: grid.cellHeight - root.gapY
 
             readonly property bool selected: root.tab !== null && root.tab.isSelected(cell.filePath)
             readonly property bool dropTarget: root.dropTargetPath !== "" && cell.isDir
                 && cell.filePath === root.dropTargetPath
-            readonly property bool showThumbnail: ExplorerPrefs.rowThumbnails
-                && cell.thumbnailSource !== ""
+            readonly property bool current: grid.currentIndex === cell.index
+            readonly property bool focusedCursor: grid.activeFocus
+                && root.keyboardCursor && cell.current
+            readonly property bool hasThumbnail: cell.thumbnailSource !== ""
+            readonly property bool showImage: cell.hasThumbnail
+                && thumbImage.status === Image.Ready
 
             Rectangle {
                 anchors.fill: parent
-                radius: 12
-                color: cell.selected ? root.selectionColor
-                    : cell.dropTarget ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b,
-                                                root.dark ? 0.24 : 0.14)
-                    : hover.containsMouse ? Theme.canvasAlt
-                    : root.cardColor
-                border.width: cell.selected || cell.dropTarget ? 1 : 0
-                border.color: cell.dropTarget ? root.accent
-                    : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.55)
+                radius: Theme.radiusSm
+                color: cell.selected
+                    ? (hover.containsMouse ? Theme.signalSoft2 : Theme.signalSoft)
+                    : cell.dropTarget ? Theme.signalSoft
+                    : (hover.containsMouse ? Theme.hover : "transparent")
+                border.width: cell.selected || cell.dropTarget || cell.focusedCursor ? 1 : 0
+                border.color: Theme.signal
             }
 
-            Rectangle {
-                id: well
+            Item {
+                id: thumb
+
                 anchors.top: parent.top
                 anchors.topMargin: 8
                 anchors.horizontalCenter: parent.horizontalCenter
-                width: Math.min(parent.width - 20, root.wellHeight + 34)
-                height: root.wellHeight
-                radius: 6
-                color: Theme.hover
-                clip: true
+                width: Math.min(parent.width - 8, root.tileWidth - 8)
+                height: root.thumbHeight
+
+                Rectangle {
+                    anchors.fill: parent
+                    visible: cell.hasThumbnail
+                    radius: Theme.radiusXs
+                    color: Theme.canvasAlt
+                    border.width: 1
+                    border.color: Theme.hairline
+                }
 
                 Image {
+                    id: thumbImage
                     anchors.fill: parent
-                    anchors.margins: 4
-                    visible: cell.showThumbnail
-                    source: cell.showThumbnail ? cell.thumbnailSource : ""
+                    anchors.margins: 8
+                    visible: cell.showImage
+                    source: cell.hasThumbnail ? cell.thumbnailSource : ""
                     sourceSize.width: Math.round(128 * Screen.devicePixelRatio)
                     sourceSize.height: Math.round(128 * Screen.devicePixelRatio)
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     smooth: true
                     cache: true
-                }
-
-                Image {
-                    anchors.centerIn: parent
-                    visible: !cell.showThumbnail && ExplorerPrefs.iconStyle === "system"
-                        && status === Image.Ready
-                    source: cell.showThumbnail || ExplorerPrefs.iconStyle !== "system"
-                        ? "" : cell.iconSource
-                    width: root.glyphSize
-                    height: root.glyphSize
-                    sourceSize.width: Math.round(root.glyphSize * Screen.devicePixelRatio)
-                    sourceSize.height: Math.round(root.glyphSize * Screen.devicePixelRatio)
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                    asynchronous: true
+                    Accessible.ignored: true
                 }
 
                 ThemedIcon {
                     anchors.centerIn: parent
-                    visible: !cell.showThumbnail && ExplorerPrefs.iconStyle === "themed"
+                    visible: !cell.showImage
                     category: cell.category
                     extension: cell.extension
                     isDir: cell.isDir
                     size: root.glyphSize
+                    tint: cell.selected || hover.containsMouse
+                        ? Theme.inkMuted : Theme.inkFaint
                 }
             }
 
             Text {
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                anchors.top: well.bottom
-                anchors.topMargin: 5
+                anchors.leftMargin: 4
+                anchors.rightMargin: 4
+                anchors.top: thumb.bottom
+                anchors.topMargin: 7
                 text: cell.fileName
-                color: cell.hidden ? Theme.inkFaint : root.textColor
-                font.pixelSize: 12
-                font.weight: Font.Medium
+                color: cell.hidden ? Theme.inkFaint : Theme.ink
+                font.pixelSize: Theme.typeBody
+                lineHeight: 1.25
+                horizontalAlignment: Text.AlignHCenter
                 textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                maximumLineCount: 2
                 elide: Text.ElideRight
-                horizontalAlignment: Text.AlignLeft
-            }
-
-            Text {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                anchors.top: parent.top
-                anchors.topMargin: root.cellHeight - 24
-                text: cell.isDir ? qsTr("文件夹") : cell.sizeText
-                color: root.mutedColor
-                font.pixelSize: 11
-                font.family: Theme.monoFamily
-                textFormat: Text.PlainText
-                elide: Text.ElideRight
-                horizontalAlignment: Text.AlignLeft
             }
 
             MouseArea {
@@ -442,6 +421,7 @@ Item {
                 }
 
                 onPressed: function (mouse) {
+                    root.keyboardCursor = false
                     if (mouse.button === Qt.LeftButton)
                         prepareDrag(mouse)
                 }
@@ -474,9 +454,9 @@ Item {
         }
     }
 
-    /// Rubber-band selection. The overlay sits above the rows so a drag that
-    /// began on empty space keeps receiving move events over them; a press
-    /// that began on a cell is handed down instead.
+    /// Rubber-band selection. The overlay sits above the tiles so a drag that
+    /// began on empty space keeps receiving moves over them; a press that
+    /// began on a tile is handed down instead.
     MouseArea {
         id: marquee
         anchors.fill: parent
@@ -489,16 +469,18 @@ Item {
                 mouse.accepted = false
                 return
             }
-            const index = grid.indexAt(mouse.x, grid.contentY + mouse.y)
+            const index = grid.indexAt(mouse.x - root.padding,
+                                       grid.contentY + mouse.y - root.padding)
             if (index >= 0) {
                 mouse.accepted = false
                 return
             }
+            root.keyboardCursor = false
             grid.forceActiveFocus()
             root.marqueeBase = (mouse.modifiers & Qt.ControlModifier) !== 0
                 ? root.selectedPathList() : []
-            root.marqueeStartX = mouse.x + grid.contentX
-            root.marqueeStartY = mouse.y + grid.contentY
+            root.marqueeStartX = mouse.x - root.padding + grid.contentX
+            root.marqueeStartY = mouse.y - root.padding + grid.contentY
             root.marqueeX = root.marqueeStartX
             root.marqueeY = root.marqueeStartY
             root.marqueePointerY = mouse.y
@@ -513,8 +495,8 @@ Item {
         onPositionChanged: function (mouse) {
             if (!root.marqueeActive)
                 return
-            root.marqueeX = mouse.x + grid.contentX
-            root.marqueeY = mouse.y + grid.contentY
+            root.marqueeX = mouse.x - root.padding + grid.contentX
+            root.marqueeY = mouse.y - root.padding + grid.contentY
             root.marqueePointerY = mouse.y
             root.applyMarquee()
         }
@@ -536,14 +518,14 @@ Item {
 
         Rectangle {
             visible: root.marqueeActive
-            x: Math.min(root.marqueeStartX, root.marqueeX) - grid.contentX
-            y: Math.min(root.marqueeStartY, root.marqueeY) - grid.contentY
+            x: Math.min(root.marqueeStartX, root.marqueeX) - grid.contentX + root.padding
+            y: Math.min(root.marqueeStartY, root.marqueeY) - grid.contentY + root.padding
             width: Math.abs(root.marqueeX - root.marqueeStartX)
             height: Math.abs(root.marqueeY - root.marqueeStartY)
-            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.14)
+            color: Theme.signalSoft
             border.width: 1
-            border.color: root.accent
-            radius: 4
+            border.color: Theme.signal
+            radius: Theme.radiusXs
         }
     }
 }

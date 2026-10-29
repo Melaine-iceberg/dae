@@ -197,6 +197,12 @@ pub mod qobject {
         #[cxx_name = "pathAt"]
         fn path_at(&self, row: i32) -> QString;
 
+        /// The display name of `row`. Type-ahead matches on this rather than
+        /// rebuilding each full path just to split its last segment again.
+        #[qinvokable]
+        #[cxx_name = "nameAt"]
+        fn name_at(&self, row: i32) -> QString;
+
         /// Whether `row` is a directory, for Enter/activation.
         #[qinvokable]
         #[cxx_name = "isDirectoryAt"]
@@ -946,7 +952,16 @@ impl qobject::DirectoryListModel {
             ROLE_NAME => QVariant::from(&QString::from(row.name.as_str())),
             ROLE_PATH => QVariant::from(&QString::from(row.full_path(&self.base))),
             ROLE_RELATIVE => QVariant::from(&QString::from(row.name.as_str())),
-            ROLE_SIZE => QVariant::from(&QString::from(crate::format::size(row.size.unwrap_or(0)))),
+            // A folder's byte total is not known without walking it, so the
+            // detail view shows an em dash instead of a made-up "0 B".
+            ROLE_SIZE => {
+                let text = if row.kind == EntryKind::Directory {
+                    "—".to_owned()
+                } else {
+                    crate::format::size(row.size.unwrap_or(0))
+                };
+                QVariant::from(&QString::from(text))
+            }
             ROLE_MODIFIED => QVariant::from(&QString::from(crate::format::timestamp(
                 row.modified_at.unwrap_or(0),
             ))),
@@ -1553,6 +1568,13 @@ impl qobject::DirectoryListModel {
         self.rows
             .get(row as usize)
             .map(|entry| QString::from(entry.full_path(&self.base).as_str()))
+            .unwrap_or_default()
+    }
+
+    fn name_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|entry| QString::from(entry.name.as_str()))
             .unwrap_or_default()
     }
 

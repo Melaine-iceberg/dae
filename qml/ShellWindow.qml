@@ -2774,9 +2774,6 @@ Window {
                         searchModel: root.searchActive && root.activeTab !== null
                                      && root.searchMode === "name"
                                      ? root.activeTab.nameSearch : null
-                        dark: root.dark
-                        headerColor: root.chromeColor
-                        accent: root.accent
                         shortcutMap: root.shortcutMap
 
                         onNavigateRequested: function (path) {
@@ -2787,6 +2784,7 @@ Window {
                             root.promptRename(path, name)
                         }
                         onCreateFolderRequested: root.promptCreate(true)
+                        onClearSearchRequested: root.closeSearch()
                         onContextRequested: function (path, isDir, x, y) {
                             root.showRowMenu(path, isDir, x, y)
                         }
@@ -2911,9 +2909,6 @@ Window {
                             anchors.bottom: parent.bottom
                             visible: root.splitTab !== null
                             tab: root.splitTab
-                            dark: root.dark
-                            headerColor: root.chromeColor
-                            accent: root.accent
                             shortcutMap: root.shortcutMap
 
                             onNavigateRequested: function (path) {

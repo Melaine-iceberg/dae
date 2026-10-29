@@ -233,29 +233,13 @@ Item {
         }
     }
 
-    Column {
-        anchors.centerIn: parent
-        width: parent.width - 80
-        spacing: 6
+    EmptyState {
+        anchors.fill: parent
         visible: items.count === 0
         opacity: root.spaceId === "" ? 0 : 1
-
-        Text {
-            width: parent.width
-            text: qsTr("空间还是空的")
-            color: root.textColor
-            font.pixelSize: 14
-            horizontalAlignment: Text.AlignHCenter
-        }
-
-        Text {
-            width: parent.width
-            text: qsTr("在文件上右键，选择“添加到空间”，把常用位置固定到这里。")
-            color: root.mutedColor
-            font.pixelSize: 11
-            wrapMode: Text.Wrap
-            horizontalAlignment: Text.AlignHCenter
-        }
+        glyph: "diamond"
+        title: qsTr("这个空间是空的")
+        hint: qsTr("在文件上右键，选择“添加到空间”，把常用位置固定到这里。")
     }
 
     // The same small action button the recycle bin uses. It is local because

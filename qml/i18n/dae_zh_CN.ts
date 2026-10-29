@@ -278,6 +278,16 @@
             <source>空文件夹</source>
             <translation>空文件夹</translation>
         </message>
+        <message>
+            <location filename="../ColumnView.qml" line="638" />
+            <source>无法打开此文件夹</source>
+            <translation>无法打开此文件夹</translation>
+        </message>
+        <message>
+            <location filename="../ColumnView.qml" line="638" />
+            <source>这个文件夹是空的</source>
+            <translation>这个文件夹是空的</translation>
+        </message>
     </context>
     <context>
         <name>CommandPalette</name>
@@ -924,6 +934,38 @@
             <location filename="../FileList.qml" line="1268" />
             <source>复制到 %1</source>
             <translation>复制到 %1</translation>
+        </message>
+        <message>
+            <source>无法完成搜索</source>
+            <translation>无法完成搜索</translation>
+        </message>
+        <message>
+            <source>无法打开此文件夹</source>
+            <translation>无法打开此文件夹</translation>
+        </message>
+        <message>
+            <source>这个文件夹是空的</source>
+            <translation>这个文件夹是空的</translation>
+        </message>
+        <message>
+            <source>试试其他关键词，或检查大小写与类型筛选。</source>
+            <translation>试试其他关键词，或检查大小写与类型筛选。</translation>
+        </message>
+        <message>
+            <source>拖入文件，或在这里新建文件夹。</source>
+            <translation>拖入文件，或在这里新建文件夹。</translation>
+        </message>
+        <message>
+            <source>清除搜索</source>
+            <translation>清除搜索</translation>
+        </message>
+        <message>
+            <source>新建文件夹</source>
+            <translation>新建文件夹</translation>
+        </message>
+        <message>
+            <source>粘贴</source>
+            <translation>粘贴</translation>
         </message>
     </context>
     <context>
@@ -3349,6 +3391,10 @@
             <source>在文件上右键，选择“添加到空间”，把常用位置固定到这里。</source>
             <translation>在文件上右键，选择“添加到空间”，把常用位置固定到这里。</translation>
         </message>
+        <message>
+            <source>这个空间是空的</source>
+            <translation>这个空间是空的</translation>
+        </message>
     </context>
     <context>
         <name>Tab</name>
@@ -3556,6 +3602,14 @@
             <location filename="../TrashView.qml" line="395" />
             <source>删除的文件会先出现在这里</source>
             <translation>删除的文件会先出现在这里</translation>
+        </message>
+        <message>
+            <source>回收站为空</source>
+            <translation>回收站为空</translation>
+        </message>
+        <message>
+            <source>删除的文件会先放在这里，可以随时还原。</source>
+            <translation>删除的文件会先放在这里，可以随时还原。</translation>
         </message>
         <message>
             <location filename="../TrashView.qml" line="508" />

@@ -10,18 +10,14 @@ import dae 1.0
 // column mode keeps the same rows, selection and stream. Every deeper column
 // owns a `DirectoryListModel`; drilling replaces the chain from the clicked
 // depth, which is what makes clicking an earlier column truncate the trail.
+//
+// The row grammar is the detail list's, narrowed: 32 px rows on the canvas,
+// the same signalSoft track for selection, a `fill` plate for the folder whose
+// children are open, and the chevron the prototype draws for drillable rows.
 Item {
     id: root
 
     property var tab: null
-    property bool dark: true
-    property color accent: Theme.interactive
-    property color contentColor: Theme.canvas
-    property color textColor: Theme.ink
-    property color mutedColor: Theme.inkMuted
-    property color hairline: Theme.hairline
-    property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b, dark ? 0.30 : 0.18)
-    property var keyHandler: null
 
     /// Directories opened by each column, left to right: `chain[0]` is the
     /// folder the first column drilled into. The number of columns is
@@ -35,9 +31,10 @@ Item {
     signal dragOutRequested(var paths, string mode)
 
     readonly property string density: ExplorerPrefs.density
-    readonly property int rowHeight: density === "compact" ? 28
-        : density === "spacious" ? 40 : 32
-    readonly property int columnWidth: 236
+    readonly property int rowHeight: density === "compact" ? Theme.rowCompact
+        : density === "spacious" ? Theme.rowSpacious : Theme.rowDefault
+    readonly property int headerHeight: 32
+    readonly property int columnWidth: 248
 
     Connections {
         target: root.tab !== null ? root.tab.listing : null
@@ -70,9 +67,15 @@ Item {
             pane.takeFocus()
     }
 
+    function nameOf(path) {
+        const text = String(path).replace(/[\\/]+$/, "")
+        const parts = text.split(/[\\/]/)
+        return parts.length > 0 ? parts[parts.length - 1] : text
+    }
+
     Rectangle {
         anchors.fill: parent
-        color: root.contentColor
+        color: Theme.canvas
     }
 
     MouseArea {
@@ -104,17 +107,16 @@ Item {
                     required property int index
 
                     height: columns.height
-                    width: root.columnWidth
+                    /// The last column takes the space left over, so a single
+                    /// column does not leave a bare half-pane; earlier columns
+                    /// keep the 248 px step and scroll when the trail outgrows
+                    /// the pane.
+                    width: index === panes.count - 1
+                        ? Math.max(root.columnWidth, flick.width - root.columnWidth * index)
+                        : root.columnWidth
                     depth: index
                     path: index === 0 ? "" : root.chain[index - 1]
                     activeChildPath: index < root.chain.length ? root.chain[index] : ""
-                    dark: root.dark
-                    accent: root.accent
-                    contentColor: root.contentColor
-                    textColor: root.textColor
-                    mutedColor: root.mutedColor
-                    hairline: root.hairline
-                    selectionColor: root.selectionColor
                     rowHeight: root.rowHeight
                     tab: root.tab
 
@@ -146,14 +148,9 @@ Item {
         required property string path
         required property string activeChildPath
         property var tab: null
-        property bool dark: true
-        property color accent: Theme.interactive
-        property color contentColor: Theme.canvas
-        property color textColor: Theme.ink
-        property color mutedColor: Theme.inkMuted
-        property color hairline: Theme.hairline
-        property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b, dark ? 0.30 : 0.18)
         property int rowHeight: 32
+        property bool keyboardCursor: false
+        property string typeAheadBuffer: ""
 
         signal drillRequested(string path, int depth)
         signal popRequested(int depth)
@@ -183,6 +180,12 @@ Item {
 
         readonly property var listing: pane.depth === 0 && pane.tab !== null
             ? pane.tab.listing : ownModel
+
+        readonly property string title: root.nameOf(pane.depth === 0 && pane.tab !== null
+            ? pane.tab.listing.path : pane.path)
+        readonly property bool empty: pane.listing.finished && pane.listing.loaded === 0
+        readonly property bool emptyError: pane.empty && pane.listing.status !== ""
+            && !/^\d+ items?$/.test(pane.listing.status)
 
         function applyPreferences() {
             if (pane.depth === 0)
@@ -240,9 +243,9 @@ Item {
                     const last = Math.max(anchor, index)
                     const paths = []
                     for (let row = first; row <= last; row += 1) {
-                        const path = listing.pathAt(row)
-                        if (path !== "")
-                            paths.push(path)
+                        const value = listing.pathAt(row)
+                        if (value !== "")
+                            paths.push(value)
                     }
                     tab.selectMany(paths)
                     pane.selectionChanged()
@@ -257,10 +260,44 @@ Item {
             pane.selectionChanged()
         }
 
+        function nameAt(index) {
+            return listing.nameAt(index)
+        }
+
+        Timer {
+            id: typeAheadTimer
+            interval: 800
+            repeat: false
+            onTriggered: pane.typeAheadBuffer = ""
+        }
+
+        /// The same prefix match the detail list uses: one letter cycles from
+        /// the row after the cursor, a longer buffer refines from the cursor.
+        function typeAhead(text) {
+            if (text.length !== 1)
+                return
+            pane.typeAheadBuffer += text
+            typeAheadTimer.restart()
+
+            const count = listing.loaded
+            if (count <= 0)
+                return
+            const needle = pane.typeAheadBuffer.toLowerCase()
+            const current = list.currentIndex
+            const start = current < 0 ? 0 : needle.length === 1 ? current + 1 : current
+            for (let offset = 0; offset < count; offset += 1) {
+                const index = (start + offset) % count
+                if (!pane.nameAt(index).toLowerCase().startsWith(needle))
+                    continue
+                pane.handleClick(index, false, false)
+                list.positionViewAtIndex(index, ListView.Contain)
+                return
+            }
+        }
+
         Rectangle {
             anchors.fill: parent
-            color: pane.depth % 2 === 0
-                ? pane.contentColor : Theme.canvasAlt
+            color: Theme.canvas
         }
 
         Rectangle {
@@ -268,13 +305,57 @@ Item {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             width: 1
-            color: pane.hairline
+            color: Theme.hairline
+        }
+
+        Item {
+            id: header
+
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: root.headerHeight
+
+            Row {
+                anchors.left: parent.left
+                anchors.leftMargin: 10
+                anchors.right: parent.right
+                anchors.rightMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 7
+
+                Glyph {
+                    width: 14
+                    height: 14
+                    kind: "folder"
+                    tint: Theme.inkFaint
+                }
+
+                Text {
+                    width: Math.max(0, parent.width - 21)
+                    text: pane.title
+                    color: Theme.inkMuted
+                    font.pixelSize: Theme.typeCaption
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
+                }
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 1
+                color: Theme.hairline
+            }
         }
 
         ListView {
             id: list
-            anchors.fill: parent
-            anchors.margins: 6
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: header.bottom
+            anchors.bottom: parent.bottom
             model: pane.listing
             clip: true
             reuseItems: true
@@ -284,6 +365,7 @@ Item {
             focus: true
 
             Keys.onPressed: function (event) {
+                pane.keyboardCursor = true
                 if (event.key === Qt.Key_Right) {
                     const path = list.currentIndex >= 0
                         ? pane.listing.pathAt(list.currentIndex) : ""
@@ -304,6 +386,11 @@ Item {
                             event.accepted = true
                         }
                     }
+                } else if (event.text.length === 1 && event.text !== " "
+                           && (event.modifiers & (Qt.ControlModifier | Qt.AltModifier
+                                                  | Qt.MetaModifier)) === 0) {
+                    pane.typeAhead(event.text)
+                    event.accepted = true
                 }
             }
 
@@ -327,40 +414,57 @@ Item {
                     && pane.tab.isSelected(row.filePath)
                 readonly property bool expanded: pane.activeChildPath !== ""
                     && pane.activeChildPath === row.filePath
+                readonly property bool current: list.currentIndex === row.index
+                readonly property bool focusedCursor: list.activeFocus
+                    && pane.keyboardCursor && row.current
                 readonly property bool showThumbnail: ExplorerPrefs.rowThumbnails
                     && row.thumbnailSource !== ""
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: 6
-                    color: row.selected ? pane.selectionColor
-                        : row.expanded ? Qt.rgba(pane.accent.r, pane.accent.g, pane.accent.b,
-                                                 pane.dark ? 0.18 : 0.1)
-                        : (hover.containsMouse ? Theme.canvasAlt
-                                               : "transparent")
-                    border.width: row.selected ? 1 : 0
-                    border.color: Qt.rgba(pane.accent.r, pane.accent.g, pane.accent.b, 0.5)
+                    color: row.selected
+                        ? (hover.containsMouse ? Theme.signalSoft2 : Theme.signalSoft)
+                        : row.expanded ? Theme.fill
+                        : (hover.containsMouse ? Theme.hover : "transparent")
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 2
+                    color: Theme.signal
+                    visible: row.selected
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    visible: row.focusedCursor
+                    color: "transparent"
+                    border.width: 1
+                    border.color: Theme.signal
                 }
 
                 Image {
                     id: systemIcon
-                    x: 6
+                    x: 10
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 18
-                    height: 18
+                    width: 16
+                    height: 16
                     visible: !row.showThumbnail && ExplorerPrefs.iconStyle === "system"
                         && status === Image.Ready
                     source: row.showThumbnail || ExplorerPrefs.iconStyle !== "system"
                         ? "" : row.iconSource
-                    sourceSize.width: Math.round(18 * Screen.devicePixelRatio)
-                    sourceSize.height: Math.round(18 * Screen.devicePixelRatio)
+                    sourceSize.width: Math.round(16 * Screen.devicePixelRatio)
+                    sourceSize.height: Math.round(16 * Screen.devicePixelRatio)
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     asynchronous: true
+                    Accessible.ignored: true
                 }
 
                 Image {
-                    x: 5
+                    x: 8
                     anchors.verticalCenter: parent.verticalCenter
                     width: 20
                     height: 20
@@ -371,40 +475,45 @@ Item {
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     smooth: true
+                    Accessible.ignored: true
                 }
 
                 ThemedIcon {
-                    x: 6
+                    x: 10
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: !row.showThumbnail && ExplorerPrefs.iconStyle === "themed"
+                    visible: !row.showThumbnail && (ExplorerPrefs.iconStyle !== "system"
+                        || systemIcon.status !== Image.Ready)
                     category: row.category
                     extension: row.extension
                     isDir: row.isDir
-                    size: 18
+                    size: 16
+                    tint: row.selected || row.expanded || hover.containsMouse
+                        ? Theme.inkMuted : Theme.inkFaint
                 }
 
                 Text {
                     anchors.left: parent.left
-                    anchors.leftMargin: 30
+                    anchors.leftMargin: 34
                     anchors.right: chevron.visible ? chevron.left : parent.right
-                    anchors.rightMargin: chevron.visible ? 4 : 8
+                    anchors.rightMargin: chevron.visible ? 4 : 10
                     anchors.verticalCenter: parent.verticalCenter
                     text: row.fileName
-                    color: row.hidden ? Theme.inkFaint : pane.textColor
-                    font.pixelSize: 12
+                    color: row.hidden ? Theme.inkFaint : Theme.ink
+                    font.pixelSize: Theme.typeBody
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                 }
 
-                Text {
+                Glyph {
                     id: chevron
                     anchors.right: parent.right
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
+                    width: 12
+                    height: 12
                     visible: row.isDir
-                    text: "\u203a"
-                    color: pane.mutedColor
-                    font.pixelSize: 13
+                    kind: "chevron"
+                    tint: Theme.inkFaint
                 }
 
                 MouseArea {
@@ -471,6 +580,7 @@ Item {
                     }
 
                     onPressed: function (mouse) {
+                        pane.keyboardCursor = false
                         if (mouse.button === Qt.LeftButton)
                             prepareDrag(mouse)
                     }
@@ -506,13 +616,45 @@ Item {
             }
         }
 
-        Text {
+        /// Only deeper columns show this: the first column's empty state is
+        /// the shell's full-size one with its new-folder and paste actions.
+        Column {
             anchors.centerIn: parent
-            visible: pane.listing.finished && pane.listing.loaded === 0
-                && pane.listing.status !== ""
-            text: pane.listing.status === "0 items" ? qsTr("空文件夹") : pane.listing.status
-            color: pane.mutedColor
-            font.pixelSize: 11
+            anchors.verticalCenterOffset: root.headerHeight / 2
+            width: Math.min(parent.width - 32, 200)
+            spacing: 6
+            visible: pane.depth > 0 && pane.empty
+
+            Glyph {
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: 28
+                height: 28
+                kind: pane.emptyError ? "file" : "folder"
+                tint: Theme.inkFaint
+            }
+
+            Text {
+                width: parent.width
+                text: pane.emptyError ? qsTr("无法打开此文件夹") : qsTr("这个文件夹是空的")
+                color: Theme.ink
+                font.pixelSize: Theme.typeBody
+                horizontalAlignment: Text.AlignHCenter
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                width: parent.width
+                visible: pane.emptyError
+                text: pane.emptyError ? pane.listing.status : ""
+                color: Theme.inkFaint
+                font.pixelSize: Theme.typeCaption
+                horizontalAlignment: Text.AlignHCenter
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                maximumLineCount: 3
+                elide: Text.ElideRight
+            }
         }
     }
 }

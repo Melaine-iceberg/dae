@@ -21,9 +21,6 @@ Item {
     /// `relativePath`. Search always uses the list: sorting and drilling are
     /// listing operations, not result operations.
     property var searchModel: null
-    property bool dark: true
-    property color headerColor: Theme.chrome
-    property color accent: Theme.interactive
 
     readonly property var model: searchModel !== null ? searchModel
         : (tab !== null ? tab.listing : null)
@@ -34,11 +31,16 @@ Item {
             || /^(smb|sftp|ftp|webdav|webdavs|cloud):\/\//i.test(tab.listing.path))
     readonly property string viewMode: searchModel !== null ? "list" : ExplorerPrefs.viewMode
     readonly property string density: ExplorerPrefs.density
-    /// Three steps on the 2 px grid, so a row and the 32 px header above it
-    /// cannot disagree by a half pixel while scrolling. 34 and 44 were neither.
-    readonly property int rowHeight: density === "compact" ? 28
-        : density === "spacious" ? 40 : 32
-    readonly property int headerHeight: 32
+    /// Three steps on the 2 px grid. The header takes its paired value below
+    /// so a row and the header above it cannot disagree by a half pixel while
+    /// scrolling.
+    readonly property int rowHeight: density === "compact" ? Theme.rowCompact
+        : density === "spacious" ? Theme.rowSpacious : Theme.rowDefault
+    /// The header is the row's paired step, the way the prototype pairs them:
+    /// 28 / 32 / 36. A header that kept its own height would drift a pixel off
+    /// the rows every time the density changed.
+    readonly property int headerHeight: density === "compact" ? 28
+        : density === "spacious" ? 36 : 32
     readonly property bool listHeaderVisible: viewMode === "list" && searchModel === null
     /// Detail columns are dropped, not squeezed, when the pane is narrow: a
     /// split pane at half of a 1180px window has room for the name and the
@@ -48,12 +50,41 @@ Item {
     readonly property bool showType: width >= 550
     readonly property int listingTop: listHeaderVisible ? headerHeight : 0
     readonly property color contentColor: Theme.canvas
-    readonly property color alternateColor: Theme.canvasAlt
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
     readonly property color hairline: Theme.hairline
-    readonly property color selectionColor: Qt.rgba(accent.r, accent.g, accent.b,
-                                                   dark ? 0.30 : 0.18)
+
+    /// What the centred empty state says. A listing status of "N items" is
+    /// the model's success message, anything else that arrives with zero rows
+    /// is an error worth showing instead of pretending the folder is empty.
+    readonly property bool emptyVisible: model !== null && model.finished
+        && model.loaded === 0
+    readonly property bool emptyIsSearch: searchModel !== null
+    readonly property bool emptyIsError: {
+        if (!emptyVisible || model === null || model.status === "")
+            return false
+        if (emptyIsSearch && model.status === "No matches")
+            return false
+        return !/^\d+ items?$/.test(model.status)
+    }
+    readonly property string emptyTitle: emptyIsSearch
+        ? (emptyIsError ? qsTr("无法完成搜索") : qsTr("没有匹配项"))
+        : (emptyIsError ? qsTr("无法打开此文件夹") : qsTr("这个文件夹是空的"))
+    readonly property string emptyHint: emptyIsError ? model.status
+        : emptyIsSearch ? qsTr("试试其他关键词，或检查大小写与类型筛选。")
+        : qsTr("拖入文件，或在这里新建文件夹。")
+    readonly property string emptyPrimaryLabel: emptyIsError ? ""
+        : emptyIsSearch ? qsTr("清除搜索")
+        : (remote ? "" : qsTr("新建文件夹"))
+    readonly property string emptySecondaryLabel: !emptyIsSearch && !emptyIsError
+        && !remote ? qsTr("粘贴") : ""
+
+    /// Set while a key press owns the cursor, so the focus ring never paints
+    /// over a row the user just clicked. The prototype's `focuskb` class is
+    /// the same distinction: keyboard movement shows the 1 px signal ring,
+    /// the pointer does not.
+    property bool keyboardCursor: false
+    property string typeAheadBuffer: ""
 
     readonly property int selectionCount: {
         const version = tab !== null ? tab.selectionVersion : 0
@@ -92,6 +123,9 @@ Item {
     signal upRequested()
     signal renameRequested(string path, string name)
     signal createFolderRequested()
+    /// The empty search state's "clear search" action. The query and the field
+    /// belong to the shell, so the view only asks.
+    signal clearSearchRequested()
     signal contextRequested(string path, bool isDir, real x, real y)
     signal emptyContextRequested(real x, real y)
     signal selectionChanged()
@@ -173,6 +207,58 @@ Item {
         if (root.model === null || index < 0)
             return ""
         return root.model.pathAt(index)
+    }
+
+    function nameAt(index) {
+        return root.model !== null && index >= 0 ? root.model.nameAt(index) : ""
+    }
+
+    Timer {
+        id: typeAheadTimer
+        interval: 800
+        repeat: false
+        onTriggered: root.typeAheadBuffer = ""
+    }
+
+    /// Windows-style type-ahead: a prefix match over the visible names,
+    /// starting one row past the cursor for a single repeated letter so that
+    /// "f", "f", "f" cycles, and on the cursor for a longer buffer so typing
+    /// refines the current match. Matching wraps and ignores case.
+    function typeAhead(text) {
+        if (text.length !== 1 || root.model === null || root.tab === null)
+            return
+        root.typeAheadBuffer += text
+        typeAheadTimer.restart()
+
+        const count = root.model.loaded
+        if (count <= 0)
+            return
+        const needle = root.typeAheadBuffer.toLowerCase()
+        const current = root.cursorIndex()
+        const start = current < 0 ? 0 : needle.length === 1 ? current + 1 : current
+        for (let offset = 0; offset < count; offset += 1) {
+            const index = (start + offset) % count
+            if (!root.nameAt(index).toLowerCase().startsWith(needle))
+                continue
+            const path = root.pathAtIndex(index)
+            if (path === "")
+                continue
+            if (root.viewMode === "grid") {
+                gridView.setCursor(index)
+                gridView.positionCursor(index)
+            } else {
+                list.currentIndex = index
+                list.positionViewAtIndex(index, ListView.Contain)
+            }
+            root.tab.selectOnly(path)
+            root.selectionChanged()
+            return
+        }
+    }
+
+    function pasteIntoCurrent() {
+        if (root.model !== null && root.model.path !== "")
+            Workspace.pasteInto(root.model.path)
     }
 
     /// Clicking the active column toggles direction; a new column starts at
@@ -565,8 +651,7 @@ Item {
             return true
         }
         if (root.matches("explorer.paste", event)) {
-            if (root.model !== null)
-                Workspace.pasteInto(root.model.path)
+            root.pasteIntoCurrent()
             return true
         }
         if (root.matches("explorer.toggleHidden", event)) {
@@ -608,6 +693,15 @@ Item {
             root.createFolderRequested()
             return true
         }
+        // Type-ahead comes last so every rebindable action and the navigation
+        // keys get first refusal. Space is excluded: it is preview, and a
+        // name that starts with a space is not worth stealing it for.
+        if (event.text.length === 1 && event.text !== " "
+                && (event.modifiers & (Qt.ControlModifier | Qt.AltModifier
+                                       | Qt.MetaModifier)) === 0) {
+            root.typeAhead(event.text)
+            return true
+        }
         return false
     }
 
@@ -616,6 +710,37 @@ Item {
         function onViewModeChanged() {
             Qt.callLater(root.takeFocus)
         }
+    }
+
+    component SortCaret: Canvas {
+        id: caret
+
+        property bool ascending: true
+        property color tint: Theme.ink
+
+        width: 7
+        height: 4
+
+        onPaint: {
+            const ctx = getContext("2d")
+            ctx.reset()
+            ctx.fillStyle = caret.tint
+            ctx.beginPath()
+            if (caret.ascending) {
+                ctx.moveTo(0, 4)
+                ctx.lineTo(7, 4)
+                ctx.lineTo(3.5, 0)
+            } else {
+                ctx.moveTo(0, 0)
+                ctx.lineTo(7, 0)
+                ctx.lineTo(3.5, 4)
+            }
+            ctx.closePath()
+            ctx.fill()
+        }
+
+        onAscendingChanged: requestPaint()
+        onTintChanged: requestPaint()
     }
 
     component SortHeader: Item {
@@ -628,23 +753,34 @@ Item {
 
         signal clicked()
 
-        Text {
+        Row {
             anchors.left: cell.alignRight ? undefined : parent.left
             anchors.right: cell.alignRight ? parent.right : undefined
-            anchors.leftMargin: cell.alignRight ? 0 : 8
-            anchors.rightMargin: cell.alignRight ? 8 : 0
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            text: cell.label + (cell.active
-                ? (ExplorerPrefs.sortOrder === "asc" ? "  \u25B2" : "  \u25BC")
-                : "")
-            horizontalAlignment: cell.alignRight ? Text.AlignRight : Text.AlignLeft
-            color: cell.active ? root.textColor : root.mutedColor
-            font.pixelSize: 11
-            font.weight: Font.DemiBold
-            elide: Text.ElideRight
+            spacing: 5
+
+            Text {
+                text: cell.label
+                color: cell.active ? Theme.ink
+                    : (headerMouse.containsMouse ? Theme.inkMuted : Theme.inkFaint)
+                font.pixelSize: Theme.typeMicro
+                font.weight: Font.Medium
+                font.letterSpacing: 0.55
+                elide: Text.ElideRight
+            }
+
+            SortCaret {
+                anchors.verticalCenter: parent.verticalCenter
+                visible: cell.active
+                ascending: ExplorerPrefs.sortOrder === "asc"
+                tint: Theme.ink
+            }
         }
 
         MouseArea {
+            id: headerMouse
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
@@ -664,7 +800,7 @@ Item {
         anchors.top: parent.top
         height: root.headerHeight
         visible: root.listHeaderVisible
-        color: root.headerColor
+        color: root.contentColor
 
         SortHeader {
             id: nameHeader
@@ -687,7 +823,7 @@ Item {
             anchors.rightMargin: 16
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 58
+            width: 108
             visible: root.showType
             label: qsTr("类型")
             sortKey: "type"
@@ -697,10 +833,10 @@ Item {
         SortHeader {
             id: sizeHeader
             anchors.right: root.showModified ? modifiedHeader.left : parent.right
-            anchors.rightMargin: 24
+            anchors.rightMargin: root.showModified ? 24 : 16
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 90
+            width: 92
             visible: root.showSize
             label: qsTr("大小")
             sortKey: "size"
@@ -714,7 +850,7 @@ Item {
             anchors.rightMargin: 16
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: 140
+            width: 142
             visible: root.showModified
             label: qsTr("修改时间")
             sortKey: "modified"
@@ -738,17 +874,6 @@ Item {
         anchors.top: parent.top
         anchors.topMargin: root.listingTop
         anchors.bottom: parent.bottom
-
-        Text {
-            anchors.centerIn: parent
-            visible: root.model !== null && root.model.finished && root.model.loaded === 0
-            text: root.searchModel !== null
-                ? (root.searchModel.status !== "" ? root.searchModel.status : qsTr("没有匹配项"))
-                : (root.model !== null && root.model.status !== "0 items"
-                    ? root.model.status : qsTr("空目录"))
-            color: root.mutedColor
-            font.pixelSize: 13
-        }
 
         /// The space under the last row is part of the listing to a user, so
         /// a right-click there has to open the empty-area menu. It sits
@@ -779,10 +904,14 @@ Item {
             /// below the last row — moves keyboard focus here.
             TapHandler {
                 acceptedButtons: Qt.LeftButton
-                onTapped: root.takeFocus()
+                onTapped: {
+                    root.keyboardCursor = false
+                    root.takeFocus()
+                }
             }
 
             Keys.onPressed: function (event) {
+                root.keyboardCursor = true
                 if (root.handleKey(event))
                     event.accepted = true
             }
@@ -798,7 +927,6 @@ Item {
                 required property string modifiedText
                 required property bool isDir
                 required property bool hidden
-                required property bool readOnly
                 required property string iconSource
                 required property string category
                 required property string extension
@@ -810,6 +938,13 @@ Item {
                 width: ListView.view.width
                 height: root.rowHeight
 
+                readonly property bool selected: root.tab !== null
+                    && root.tab.isSelected(row.filePath)
+                readonly property bool dropTarget: root.dropTargetPath !== ""
+                    && row.isDir && row.filePath === root.dropTargetPath
+                readonly property bool current: list.currentIndex === row.index
+                readonly property bool focusedCursor: list.activeFocus
+                    && root.keyboardCursor && row.current
                 readonly property bool showThumbnail: ExplorerPrefs.rowThumbnails
                     && !row.isDir && row.thumbnailSource !== ""
                 readonly property bool hasGitStatus: row.gitStatus !== ""
@@ -821,43 +956,58 @@ Item {
                     : (row.gitStatus === "added"
                         ? Theme.success
                         : Theme.link)
-                readonly property color gitBadgeBackground: Qt.rgba(gitBadgeColor.r,
-                    gitBadgeColor.g, gitBadgeColor.b, root.dark ? 0.16 : 0.12)
 
                 Rectangle {
                     anchors.fill: parent
-                    color: (root.tab !== null && root.tab.isSelected(row.filePath))
-                        ? root.selectionColor
-                        : (list.currentIndex === row.index
-                            ? Theme.canvasAlt
-                            : (root.dropTargetPath !== "" && row.isDir
-                                && row.filePath === root.dropTargetPath
-                                ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b,
-                                          root.dark ? 0.24 : 0.14)
-                                : (row.index % 2 === 0 ? root.contentColor : root.alternateColor)))
+                    color: row.selected
+                        ? (rowHover.containsMouse ? Theme.signalSoft2 : Theme.signalSoft)
+                        : row.dropTarget ? Theme.signalSoft
+                        : (rowHover.containsMouse ? Theme.hover : "transparent")
                 }
 
                 Rectangle {
-                    x: 11
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 16
-                    height: 16
-                    radius: 4
-                    color: row.isDir ? root.accent : (row.readOnly ? "#59606e" : "#3b4250")
-                    visible: !row.showThumbnail && ExplorerPrefs.iconStyle === "system"
-                        && rowIcon.status !== Image.Ready
+                    anchors.left: parent.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    width: 2
+                    color: Theme.signal
+                    visible: row.selected
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    visible: row.dropTarget
+                    color: "transparent"
+                    border.width: 1
+                    border.color: Theme.signal
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    visible: row.focusedCursor
+                    color: "transparent"
+                    border.width: 1
+                    border.color: Theme.signal
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 1
+                    color: Theme.rowRule
                 }
 
                 Image {
                     id: rowIcon
-                    x: 9
-                    width: 20
-                    height: 20
+                    x: 12
+                    width: 16
+                    height: 16
                     anchors.verticalCenter: parent.verticalCenter
                     source: row.showThumbnail || ExplorerPrefs.iconStyle !== "system"
                         ? "" : row.iconSource
-                    sourceSize.width: Math.round(20 * Screen.devicePixelRatio)
-                    sourceSize.height: Math.round(20 * Screen.devicePixelRatio)
+                    sourceSize.width: Math.round(16 * Screen.devicePixelRatio)
+                    sourceSize.height: Math.round(16 * Screen.devicePixelRatio)
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     visible: !row.showThumbnail && ExplorerPrefs.iconStyle === "system"
@@ -866,14 +1016,14 @@ Item {
                 }
 
                 Image {
-                    x: 8
-                    width: 22
-                    height: 22
+                    x: 10
+                    width: 20
+                    height: 20
                     anchors.verticalCenter: parent.verticalCenter
                     visible: row.showThumbnail
                     source: row.showThumbnail ? row.thumbnailSource : ""
-                    sourceSize.width: Math.round(44 * Screen.devicePixelRatio)
-                    sourceSize.height: Math.round(44 * Screen.devicePixelRatio)
+                    sourceSize.width: Math.round(40 * Screen.devicePixelRatio)
+                    sourceSize.height: Math.round(40 * Screen.devicePixelRatio)
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     smooth: true
@@ -881,13 +1031,16 @@ Item {
                 }
 
                 ThemedIcon {
-                    x: 9
+                    x: 12
                     anchors.verticalCenter: parent.verticalCenter
-                    visible: !row.showThumbnail && ExplorerPrefs.iconStyle === "themed"
+                    visible: !row.showThumbnail && (ExplorerPrefs.iconStyle !== "system"
+                        || rowIcon.status !== Image.Ready)
                     category: row.category
                     extension: row.extension
                     isDir: row.isDir
-                    size: 18
+                    size: 16
+                    tint: row.selected || rowHover.containsMouse
+                        ? Theme.inkMuted : Theme.inkFaint
                 }
 
                 Row {
@@ -898,48 +1051,51 @@ Item {
                         : root.showModified ? modifiedTextItem.x : row.width) - 8 - x)
                     height: parent.height
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 10
+                    spacing: 8
 
                     Text {
                         id: fileNameText
                         width: Math.min(implicitWidth,
-                            Math.max(0, parent.width * 0.62 - (row.hasGitStatus ? 25 : 0)))
+                            Math.max(0, parent.width * 0.62 - (row.hasGitStatus ? 22 : 0)))
                         height: parent.height
                         verticalAlignment: Text.AlignVCenter
                         text: row.fileName
                         color: row.hidden ? Theme.inkFaint : root.textColor
-                        font.pixelSize: 13
+                        font.pixelSize: Theme.typeName
                         textFormat: Text.PlainText
                         elide: Text.ElideRight
                     }
 
                     Rectangle {
-                        width: 15
+                        width: 14
                         height: 14
-                        radius: 4
+                        radius: Theme.radiusXs
                         anchors.verticalCenter: parent.verticalCenter
                         visible: row.hasGitStatus
-                        color: row.gitBadgeBackground
+                        color: "transparent"
+                        border.width: 1
+                        border.color: Theme.hairlineStrong
 
                         Text {
                             anchors.centerIn: parent
                             text: row.gitLetter
                             color: row.gitBadgeColor
-                            font.pixelSize: 11
-                            font.weight: Font.DemiBold
+                            font.pixelSize: 9
+                            font.family: Theme.monoFamily
+                            font.weight: Font.Medium
                             textFormat: Text.PlainText
                         }
                     }
 
                     Text {
                         width: Math.max(0, parent.width - fileNameText.width - parent.spacing
-                            - (row.hasGitStatus ? 25 : 0))
+                            - (row.hasGitStatus ? 22 : 0))
                         height: parent.height
                         verticalAlignment: Text.AlignVCenter
                         visible: row.relativePath !== row.fileName && row.relativePath !== ""
                         text: row.relativePath !== row.fileName ? row.relativePath : ""
                         color: root.mutedColor
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                         textFormat: Text.PlainText
                         elide: Text.ElideMiddle
                     }
@@ -951,12 +1107,12 @@ Item {
                         : (root.showModified ? modifiedTextItem.left : parent.right)
                     anchors.rightMargin: 16
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 58
+                    width: 108
                     visible: root.showType
                     text: row.isDir ? qsTr("文件夹")
                         : (row.extension !== "" ? row.extension.toUpperCase() : qsTr("文件"))
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeSmall
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                 }
@@ -964,14 +1120,15 @@ Item {
                 Text {
                     id: sizeTextItem
                     anchors.right: root.showModified ? modifiedTextItem.left : parent.right
-                    anchors.rightMargin: 24
+                    anchors.rightMargin: root.showModified ? 24 : 16
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 90
+                    width: 92
                     visible: root.showSize
                     horizontalAlignment: Text.AlignRight
                     text: row.sizeText
                     color: root.mutedColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeSmall
+                    font.features: { "tnum": 1 }
                     textFormat: Text.PlainText
                 }
 
@@ -980,19 +1137,23 @@ Item {
                     anchors.right: parent.right
                     anchors.rightMargin: 16
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 140
+                    width: 142
                     visible: root.showModified
                     horizontalAlignment: Text.AlignRight
                     text: row.modifiedText
                     color: root.mutedColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeSmall
+                    font.features: { "tnum": 1 }
                     textFormat: Text.PlainText
                 }
 
                 MouseArea {
+                    id: rowHover
                     anchors.fill: parent
+                    hoverEnabled: true
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onPressed: function (mouse) {
+                        root.keyboardCursor = false
                         if (mouse.button === Qt.LeftButton)
                             root.prepareDrag(row.index, mouse)
                     }
@@ -1031,13 +1192,6 @@ Item {
             visible: root.viewMode === "grid"
             tab: root.tab
             model: root.model
-            dark: root.dark
-            accent: root.accent
-            contentColor: root.contentColor
-            textColor: root.textColor
-            mutedColor: root.mutedColor
-            hairline: root.hairline
-            selectionColor: root.selectionColor
             dropTargetPath: root.dropTargetPath
             keyHandler: root.handleKey
 
@@ -1061,13 +1215,6 @@ Item {
             anchors.fill: parent
             visible: root.viewMode === "column"
             tab: root.tab
-            dark: root.dark
-            accent: root.accent
-            contentColor: root.contentColor
-            textColor: root.textColor
-            mutedColor: root.mutedColor
-            hairline: root.hairline
-            selectionColor: root.selectionColor
 
             onActivateRequested: function (path, isDir) {
                 root.activatePath(path, isDir)
@@ -1147,6 +1294,7 @@ Item {
                     mouse.accepted = false
                     return
                 }
+                root.keyboardCursor = false
                 list.forceActiveFocus()
                 baseSelection = (mouse.modifiers & Qt.ControlModifier) !== 0
                     ? root.selectedPathList() : []
@@ -1189,10 +1337,29 @@ Item {
                 width: list.width
                 height: Math.max(0, Math.abs(list.contentY + listMarquee.pointerY
                                              - listMarquee.startContentY))
-                color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.12)
+                color: Theme.signalSoft
                 border.width: 1
-                border.color: root.accent
+                border.color: Theme.signal
+                radius: Theme.radiusXs
             }
+        }
+
+        EmptyState {
+            anchors.fill: parent
+            z: 30
+            visible: root.emptyVisible
+            glyph: root.emptyIsSearch ? "search" : "folder"
+            title: root.emptyTitle
+            hint: root.emptyHint
+            primaryLabel: root.emptyPrimaryLabel
+            secondaryLabel: root.emptySecondaryLabel
+            onPrimaryClicked: {
+                if (root.emptyIsSearch)
+                    root.clearSearchRequested()
+                else
+                    root.createFolderRequested()
+            }
+            onSecondaryClicked: root.pasteIntoCurrent()
         }
     }
 
@@ -1249,11 +1416,10 @@ Item {
         Rectangle {
             anchors.fill: parent
             visible: dropArea.containsDrag && root.dropTargetPath !== ""
-            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b,
-                           root.dark ? 0.10 : 0.05)
-            border.color: root.accent
-            border.width: 2
-            radius: 6
+            color: Theme.signalSoft
+            border.color: Theme.signal
+            border.width: 1
+            radius: Theme.radiusSm
 
             Text {
                 anchors.centerIn: parent

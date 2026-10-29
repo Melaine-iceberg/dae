@@ -266,7 +266,14 @@ impl qobject::SearchModel {
             SEARCH_NAME => QVariant::from(&QString::from(row.name.as_str())),
             SEARCH_PATH => QVariant::from(&QString::from(row.path.as_str())),
             SEARCH_RELATIVE => QVariant::from(&QString::from(row.relative_path.as_str())),
-            SEARCH_SIZE => QVariant::from(&QString::from(format::size(row.size.unwrap_or(0)))),
+            SEARCH_SIZE => {
+                let text = if row.kind == EntryKind::Directory {
+                    "—".to_owned()
+                } else {
+                    format::size(row.size.unwrap_or(0))
+                };
+                QVariant::from(&QString::from(text))
+            }
             SEARCH_MODIFIED => QVariant::from(&QString::from(format::timestamp(
                 row.modified_at.unwrap_or(0),
             ))),

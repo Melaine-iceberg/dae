@@ -278,6 +278,16 @@
             <source>空文件夹</source>
             <translation>Empty folder</translation>
         </message>
+        <message>
+            <location filename="../ColumnView.qml" line="638" />
+            <source>无法打开此文件夹</source>
+            <translation>Could not open this folder</translation>
+        </message>
+        <message>
+            <location filename="../ColumnView.qml" line="638" />
+            <source>这个文件夹是空的</source>
+            <translation>This folder is empty</translation>
+        </message>
     </context>
     <context>
         <name>CommandPalette</name>
@@ -924,6 +934,38 @@
             <location filename="../FileList.qml" line="1268" />
             <source>复制到 %1</source>
             <translation>Copy to %1</translation>
+        </message>
+        <message>
+            <source>无法完成搜索</source>
+            <translation>Could not complete the search</translation>
+        </message>
+        <message>
+            <source>无法打开此文件夹</source>
+            <translation>Could not open this folder</translation>
+        </message>
+        <message>
+            <source>这个文件夹是空的</source>
+            <translation>This folder is empty</translation>
+        </message>
+        <message>
+            <source>试试其他关键词，或检查大小写与类型筛选。</source>
+            <translation>Try another keyword, or check the case and type filters.</translation>
+        </message>
+        <message>
+            <source>拖入文件，或在这里新建文件夹。</source>
+            <translation>Drop files here, or create a folder.</translation>
+        </message>
+        <message>
+            <source>清除搜索</source>
+            <translation>Clear search</translation>
+        </message>
+        <message>
+            <source>新建文件夹</source>
+            <translation>New folder</translation>
+        </message>
+        <message>
+            <source>粘贴</source>
+            <translation>Paste</translation>
         </message>
     </context>
     <context>
@@ -3349,6 +3391,10 @@
             <source>在文件上右键，选择“添加到空间”，把常用位置固定到这里。</source>
             <translation>Right-click a file and choose “Add to Space” to pin frequently used locations here.</translation>
         </message>
+        <message>
+            <source>这个空间是空的</source>
+            <translation>This space is empty</translation>
+        </message>
     </context>
     <context>
         <name>Tab</name>
@@ -3556,6 +3602,14 @@
             <location filename="../TrashView.qml" line="395" />
             <source>删除的文件会先出现在这里</source>
             <translation>Deleted files appear here first</translation>
+        </message>
+        <message>
+            <source>回收站为空</source>
+            <translation>Trash is empty</translation>
+        </message>
+        <message>
+            <source>删除的文件会先放在这里，可以随时还原。</source>
+            <translation>Deleted files appear here first and can be restored at any time.</translation>
         </message>
         <message>
             <location filename="../TrashView.qml" line="508" />
