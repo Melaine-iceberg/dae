@@ -19,8 +19,9 @@ Item {
     id: root
 
     /// "home", "desktop", "documents", "downloads", "pictures", "music",
-    /// "videos", "search", "list", "grid", "column". Anything else draws
-    /// nothing and the caller falls back to its own monogram or button label.
+    /// "videos", "search", "list", "grid", "column", "more", "branch",
+    /// "panel", "terminal". Anything else draws nothing and the caller falls
+    /// back to its own monogram or button label.
     property string kind: "home"
     property color tint: Theme.inkMuted
 
@@ -31,6 +32,8 @@ Item {
         || kind === "documents" || kind === "downloads" || kind === "pictures"
         || kind === "music" || kind === "videos" || kind === "search"
         || kind === "list" || kind === "grid" || kind === "column"
+        || kind === "more" || kind === "branch" || kind === "panel"
+        || kind === "terminal"
 
     Canvas {
         id: canvas
@@ -179,6 +182,53 @@ Item {
                     ctx.rect(1.9 + col * 4.4, 2.4, 3.4, 11.2)
                     ctx.stroke()
                 }
+                break
+            case "more":
+                for (let dot = 0; dot < 3; dot += 1) {
+                    ctx.beginPath()
+                    ctx.arc(3.4 + dot * 4.6, 8, 1.1, 0, Math.PI * 2)
+                    ctx.fill()
+                }
+                break
+            case "branch":
+                ctx.beginPath()
+                ctx.arc(4.4, 4.2, 1.7, 0, Math.PI * 2)
+                ctx.stroke()
+                ctx.beginPath()
+                ctx.arc(4.4, 11.8, 1.7, 0, Math.PI * 2)
+                ctx.stroke()
+                ctx.beginPath()
+                ctx.arc(11.6, 4.9, 1.7, 0, Math.PI * 2)
+                ctx.stroke()
+                ctx.beginPath()
+                ctx.moveTo(4.4, 5.9)
+                ctx.lineTo(4.4, 10.1)
+                ctx.moveTo(11.6, 6.6)
+                ctx.lineTo(11.6, 8.4)
+                ctx.quadraticCurveTo(11.6, 10.4, 9.6, 10.4)
+                ctx.lineTo(6.1, 10.4)
+                ctx.stroke()
+                break
+            case "panel":
+                ctx.beginPath()
+                ctx.rect(2, 3, 12, 10)
+                ctx.stroke()
+                ctx.beginPath()
+                ctx.moveTo(9.6, 3)
+                ctx.lineTo(9.6, 13)
+                ctx.stroke()
+                break
+            case "terminal":
+                ctx.beginPath()
+                ctx.rect(1.9, 3.1, 12.2, 9.8)
+                ctx.stroke()
+                ctx.beginPath()
+                ctx.moveTo(4.5, 6.2)
+                ctx.lineTo(6.6, 8)
+                ctx.lineTo(4.5, 9.8)
+                ctx.moveTo(8.2, 10)
+                ctx.lineTo(11.2, 10)
+                ctx.stroke()
                 break
             }
         }

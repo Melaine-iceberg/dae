@@ -1732,8 +1732,8 @@
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="75" />
-            <source>dae 蓝</source>
-            <translation>dae 蓝</translation>
+            <source>信号橙</source>
+            <translation>信号橙</translation>
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="79" />
@@ -2077,8 +2077,8 @@
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="475" />
-            <source>“系统”读取桌面强调色，“dae 蓝”使用应用自带的品牌色。</source>
-            <translation>“系统”读取桌面强调色，“dae 蓝”使用应用自带的品牌色。</translation>
+            <source>“系统”读取桌面强调色，“信号橙”使用应用自带的信号色。</source>
+            <translation>“系统”读取桌面强调色，“信号橙”使用应用自带的信号色。</translation>
         </message>
         <message>
             <location filename="../SettingsPanel.qml" line="501" />

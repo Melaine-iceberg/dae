@@ -33,8 +33,8 @@ Item {
     /// into its icon; the field itself does not own that state.
     signal dismissRequested()
 
-    implicitWidth: 224
-    implicitHeight: 26
+    implicitWidth: 210
+    implicitHeight: 28
 
     function setText(value) {
         input.text = value
@@ -47,11 +47,11 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: 6
-        color: Theme.hover
+        radius: Theme.radiusSm
+        color: Theme.field
         border.width: 1
         border.color: input.activeFocus
-            ? Theme.focusRing : root.hairline
+            ? Theme.signal : Theme.hairlineStrong
 
         Item {
             id: modeButton
@@ -66,9 +66,13 @@ Item {
                 color: !root.contentEnabled ? root.mutedColor
                     : (root.mode === "content" ? root.accent : root.mutedColor)
                 opacity: root.contentEnabled ? 1 : 0.55
-                font.pixelSize: 12
-                font.bold: root.contentEnabled && root.mode === "content"
+                font.pixelSize: Theme.typeMicro
+                font.weight: root.contentEnabled && root.mode === "content"
+                    ? Font.Medium : Font.Normal
             }
+
+            Accessible.role: Accessible.Button
+            Accessible.name: root.mode === "content" ? qsTr("按内容搜索") : qsTr("按名称搜索")
 
             MouseArea {
                 anchors.fill: parent
@@ -85,8 +89,8 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             visible: input.text.length === 0
             text: root.mode === "content" ? qsTr("搜索文件内容") : qsTr("搜索名称")
-            color: root.mutedColor
-            font.pixelSize: 12
+            color: Theme.inkFaint
+            font.pixelSize: Theme.typeBody
             elide: Text.ElideRight
         }
 
@@ -99,7 +103,7 @@ Item {
             color: root.textColor
             selectionColor: root.accent
             selectedTextColor: Theme.onInteractive
-            font.pixelSize: 13
+            font.pixelSize: Theme.typeBody
             selectByMouse: true
             clip: true
 
@@ -129,7 +133,7 @@ Item {
                 visible: root.busy
                 text: "…"
                 color: root.mutedColor
-                font.pixelSize: 13
+                font.pixelSize: Theme.typeName
             }
 
             Text {
@@ -137,7 +141,7 @@ Item {
                 visible: !root.busy && input.text.length > 0
                 text: "×"
                 color: root.mutedColor
-                font.pixelSize: 15
+                font.pixelSize: Theme.typeTitle
             }
 
             MouseArea {

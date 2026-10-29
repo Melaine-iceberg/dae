@@ -179,8 +179,10 @@ Item {
                                 return Theme.danger
                             return Theme.ink
                         }
-                        font.pixelSize: entry.modelData.header === true ? 10 : 12
-                        font.weight: entry.modelData.header === true ? Font.DemiBold : Font.Normal
+                        font.pixelSize: entry.modelData.header === true
+                            ? Theme.typeMicro : Theme.typeSmall
+                        font.weight: entry.modelData.header === true
+                            ? Font.Medium : Font.Normal
                     }
 
                     Text {
@@ -306,9 +308,10 @@ Item {
                             : (submenuEntry.modelData.enabled === false
                                 ? Theme.inkFaint
                                 : Theme.ink)
-                        font.pixelSize: submenuEntry.modelData.header === true ? 10 : 12
+                        font.pixelSize: submenuEntry.modelData.header === true
+                            ? Theme.typeMicro : Theme.typeSmall
                         font.weight: submenuEntry.modelData.header === true
-                            ? Font.DemiBold : Font.Normal
+                            ? Font.Medium : Font.Normal
                     }
 
                     MouseArea {

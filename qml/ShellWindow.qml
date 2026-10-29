@@ -32,6 +32,10 @@ Window {
     property string material: "none"
     /// Cmd on macOS, Ctrl elsewhere; also how a recorded binding is written.
     readonly property bool isMac: Qt.platform.os === "osx"
+    /// Where the tab strip starts in the title bar: after the traffic lights on
+    /// macOS, after the 17 dp mark elsewhere. The native caption band and the
+    /// QML anchors read the same number so they cannot disagree.
+    readonly property real tabLeftInset: root.isMac ? 78 : 44
 
     objectName: token
     width: 1180
@@ -1260,6 +1264,83 @@ Window {
     }
 
 
+    /// The nav bar's overflow menu: the actions that used to sit as text in the
+    /// status strip, plus the visibility toggles the hamburger used to own and
+    /// the sort keys that kept the view menu too tall.
+    function moreMenuItems() {
+        const items = [
+            { id: "refresh", label: qsTr("刷新"), shortcut: "F5" },
+            { id: "toggleHidden",
+              label: (ExplorerPrefs.showHiddenFiles ? "\u2713 " : "") + qsTr("显示隐藏文件"),
+              shortcut: root.shortcutDisplay("explorer.toggleHidden") },
+            { id: "toggleSidebar",
+              label: (root.sidebarVisible ? "\u2713 " : "") + qsTr("侧栏") },
+            { id: "toggleSplit",
+              label: (ExplorerPrefs.splitEnabled ? "\u2713 " : "") + qsTr("分屏") },
+            { id: "sort", label: qsTr("排序"), submenu: root.sortMenuItems() },
+            { separator: true },
+            { id: "filters", label: qsTr("筛选…") },
+            { separator: true },
+            { id: "settings", label: qsTr("设置"),
+              shortcut: root.shortcutDisplay("app.openSettings") }
+        ]
+        if (Updater.supported)
+            items.push({ id: "checkUpdates",
+                         label: Updater.available ? qsTr("更新可用") : qsTr("检查更新") })
+        return items
+    }
+
+    function sortMenuItems() {
+        function key(id, label) {
+            return { id: "sort:" + id,
+                     label: (ExplorerPrefs.sortKey === id ? "\u2713 " : "") + label }
+        }
+        function order(id, label) {
+            return { id: "order:" + id,
+                     label: (ExplorerPrefs.sortOrder === id ? "\u2713 " : "") + label }
+        }
+        return [
+            key("name", qsTr("名称")),
+            key("size", qsTr("大小")),
+            key("modified", qsTr("修改时间")),
+            key("type", qsTr("类型")),
+            { separator: true },
+            order("asc", qsTr("升序")),
+            order("desc", qsTr("降序")),
+            { id: "foldersFirst",
+              label: (ExplorerPrefs.foldersFirst ? "\u2713 " : "") + qsTr("文件夹优先") }
+        ]
+    }
+
+    function runMoreAction(id) {
+        if (id === "refresh") {
+            if (root.activeTab !== null)
+                root.activeTab.listing.reload()
+        } else if (id === "toggleHidden") {
+            ExplorerPrefs.setBool("showHiddenFiles", !ExplorerPrefs.showHiddenFiles)
+        } else if (id === "toggleSidebar") {
+            root.sidebarVisible = !root.sidebarVisible
+        } else if (id === "toggleSplit") {
+            ExplorerPrefs.setBool("splitEnabled", !ExplorerPrefs.splitEnabled)
+        } else if (id === "foldersFirst") {
+            ExplorerPrefs.setBool("foldersFirst", !ExplorerPrefs.foldersFirst)
+        } else if (id.indexOf("sort:") === 0) {
+            const value = id.substring(5)
+            ExplorerPrefs.setString("sortKey", value)
+            ExplorerPrefs.setString("sortOrder",
+                                    value === "modified" || value === "size" ? "desc" : "asc")
+        } else if (id.indexOf("order:") === 0) {
+            ExplorerPrefs.setString("sortOrder", id.substring(6))
+        } else if (id === "filters") {
+            const point = moreSlot.mapToItem(null, 0, 0)
+            filterMenu.openAbove(point.x + moreSlot.width - 252, point.y)
+        } else if (id === "settings") {
+            settingsPanel.open()
+        } else if (id === "checkUpdates") {
+            updateDialog.open()
+        }
+    }
+
     function requestSpaceDelete(id, name) {
         if (root.modalOpen || !id)
             return
@@ -1931,6 +2012,16 @@ Window {
         }
     }
 
+    // The frameless window keeps an alpha buffer for the native frame, but no
+    // material is composited under the content this round. Anything the shell
+    // does not paint — the six-pixel pane seams above all — would show the
+    // window behind it, so the canvas is laid down first and every pane paints
+    // over it.
+    Rectangle {
+        anchors.fill: parent
+        color: Theme.canvas
+    }
+
     Column {
         anchors.fill: parent
 
@@ -1940,7 +2031,7 @@ Window {
         Item {
             id: chromeBar
             width: parent.width
-            height: 44
+            height: Theme.shellTitle
 
             TitleBar {
                 id: titleBar
@@ -1954,13 +2045,14 @@ Window {
             TabStrip {
                 id: tabStrip
                 anchors.left: parent.left
-                anchors.leftMargin: 44
+                anchors.leftMargin: root.tabLeftInset
                 anchors.right: parent.right
                 // Three 46 dp buttons; `buttonsWidth` keeps that number in one
-                // place rather than repeating it in two files.
+                // place rather than repeating it in two files. macOS has no
+                // buttons on this side and lets the strip run to the edge.
                 anchors.rightMargin: titleBar.buttonsWidth + 8
-                anchors.verticalCenter: parent.verticalCenter
-                height: 34
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
                 tabs: root.tabs
                 activeIndex: root.activeIndex
                 hostWindow: root
@@ -1969,10 +2061,13 @@ Window {
                 // Native hit test input. Without this the chips sit inside the
                 // caption and a click on a tab starts a window drag instead of
                 // activating it. `leftMargin` is the band's origin in window
-                // coordinates; the strip's own numbers are strip-local.
+                // coordinates; the strip's own numbers are strip-local. On
+                // macOS the band starts after the traffic lights, so it must
+                // use the same inset as the anchors above.
                 function pushCaptionBand() {
                     if (chrome.attached)
-                        chrome.setCaptionClient(44 + clientLeft, 44 + clientRight)
+                        chrome.setCaptionClient(root.tabLeftInset + clientLeft,
+                                                root.tabLeftInset + clientRight)
                 }
                 onClientRightChanged: pushCaptionBand()
 
@@ -1998,33 +2093,8 @@ Window {
         Rectangle {
             id: pathBar
             width: parent.width
-            height: 46
+            height: Theme.shellNav
             color: root.chromeColor
-
-            Rectangle {
-                id: sidebarButton
-                x: 8
-                anchors.verticalCenter: parent.verticalCenter
-                width: 24
-                height: 24
-                radius: 6
-                color: sidebarMouse.containsMouse
-                    ? Theme.fill : "transparent"
-
-                Text {
-                    anchors.centerIn: parent
-                    text: "\u2630"
-                    color: root.sidebarVisible ? root.textColor : root.mutedColor
-                    font.pixelSize: 12
-                }
-
-                MouseArea {
-                    id: sidebarMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: root.sidebarVisible = !root.sidebarVisible
-                }
-            }
 
             // Back and forward keep their place when the stack is empty: a
             // button that disappears moves every control to its right, and the
@@ -2032,29 +2102,33 @@ Window {
             // move under the pointer.
             Rectangle {
                 id: backButton
-                anchors.left: sidebarButton.right
-                anchors.leftMargin: 6
+                anchors.left: parent.left
+                anchors.leftMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
-                width: 24
-                height: 24
-                radius: 6
+                width: 28
+                height: 28
+                radius: Theme.radiusSm
                 color: root.canGoBack && backMouse.containsMouse
                     ? Theme.fill : "transparent"
+                opacity: root.canGoBack ? 1 : 0.32
 
-                readonly property bool enabled: root.canGoBack
+                readonly property bool canGo: root.canGoBack
 
                 Text {
                     anchors.centerIn: parent
                     text: "←"
-                    color: backButton.enabled ? root.mutedColor : root.hairline
-                    font.pixelSize: 13
+                    color: root.mutedColor
+                    font.pixelSize: Theme.typeName
                 }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("后退")
 
                 MouseArea {
                     id: backMouse
                     anchors.fill: parent
                     hoverEnabled: true
-                    enabled: backButton.enabled
+                    enabled: backButton.canGo
                     onClicked: root.goBack()
                 }
             }
@@ -2064,26 +2138,30 @@ Window {
                 anchors.left: backButton.right
                 anchors.leftMargin: 2
                 anchors.verticalCenter: parent.verticalCenter
-                width: 24
-                height: 24
-                radius: 6
+                width: 28
+                height: 28
+                radius: Theme.radiusSm
                 color: root.canGoForward && forwardMouse.containsMouse
                     ? Theme.fill : "transparent"
+                opacity: root.canGoForward ? 1 : 0.32
 
-                readonly property bool enabled: root.canGoForward
+                readonly property bool canGo: root.canGoForward
 
                 Text {
                     anchors.centerIn: parent
                     text: "→"
-                    color: forwardButton.enabled ? root.mutedColor : root.hairline
-                    font.pixelSize: 13
+                    color: root.mutedColor
+                    font.pixelSize: Theme.typeName
                 }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("前进")
 
                 MouseArea {
                     id: forwardMouse
                     anchors.fill: parent
                     hoverEnabled: true
-                    enabled: forwardButton.enabled
+                    enabled: forwardButton.canGo
                     onClicked: root.goForward()
                 }
             }
@@ -2093,18 +2171,22 @@ Window {
                 anchors.left: forwardButton.right
                 anchors.leftMargin: 2
                 anchors.verticalCenter: parent.verticalCenter
-                width: 24
-                height: 24
-                radius: 6
+                width: 28
+                height: 28
+                radius: Theme.radiusSm
                 color: root.folderActive && upMouse.containsMouse
                     ? Theme.fill : "transparent"
+                opacity: root.folderActive ? 1 : 0.32
 
                 Text {
                     anchors.centerIn: parent
                     text: "\u2191"
-                    color: root.folderActive ? root.mutedColor : root.hairline
-                    font.pixelSize: 13
+                    color: root.mutedColor
+                    font.pixelSize: Theme.typeName
                 }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("上一级")
 
                 MouseArea {
                     id: upMouse
@@ -2115,19 +2197,36 @@ Window {
                 }
             }
 
+            // Separates the fixed navigation from the path itself, the way the
+            // instrument's control cluster is set apart from its readout.
             Rectangle {
-                id: pathField
+                id: navSeparator
                 anchors.left: upButton.right
                 anchors.leftMargin: 6
-                anchors.right: root.folderActive ? searchSlot.left : parent.right
-                anchors.rightMargin: root.folderActive ? 6 : 12
                 anchors.verticalCenter: parent.verticalCenter
-                height: 30
-                radius: 6
-                color: Theme.hover
-                border.width: 1
-                border.color: root.pathEditing
-                    ? Theme.focusRing : root.hairline
+                width: 1
+                height: 16
+                color: Theme.hairline
+            }
+
+            Item {
+                id: pathField
+                anchors.left: navSeparator.right
+                anchors.leftMargin: 6
+                anchors.right: searchSlot.left
+                anchors.rightMargin: 6
+                anchors.verticalCenter: parent.verticalCenter
+                height: 28
+
+                // The trail is a readout, not a field: it only looks like one
+                // while it is being typed into. The plate is the editing state.
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Theme.radiusSm
+                    color: root.pathEditing ? Theme.field : "transparent"
+                    border.width: root.pathEditing ? 1 : 0
+                    border.color: Theme.signal
+                }
 
                 // The bar's normal shape is the trail: every ancestor is a
                 // destination, and the current folder is the one name it must
@@ -2142,8 +2241,9 @@ Window {
 
                 PathBreadcrumbs {
                     anchors.fill: parent
-                    anchors.leftMargin: 4
-                    anchors.rightMargin: 4
+                    anchors.leftMargin: 2
+                    anchors.rightMargin: 2
+                    fontSize: Theme.typeBody
                     visible: root.folderActive && !root.pathEditing
                     names: root.activeTab !== null ? root.activeTab.listing.breadcrumbNames : []
                     paths: root.activeTab !== null ? root.activeTab.listing.breadcrumbPaths : []
@@ -2173,7 +2273,7 @@ Window {
                     visible: !root.folderActive
                     text: root.surfaceTitle
                     color: root.textColor
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.typeName
                     elide: Text.ElideRight
                 }
 
@@ -2189,7 +2289,8 @@ Window {
                     color: root.textColor
                     selectionColor: root.accent
                     selectedTextColor: Theme.onInteractive
-                    font.pixelSize: 13
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeSmall
                     selectByMouse: true
                     clip: true
 
@@ -2233,7 +2334,7 @@ Window {
                 anchors.rightMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
                 height: 28
-                width: expanded ? 240 : 28
+                width: expanded ? 210 : 28
                 visible: root.folderActive
 
                 Behavior on width {
@@ -2247,7 +2348,7 @@ Window {
                 Rectangle {
                     anchors.fill: parent
                     visible: !searchSlot.expanded
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: searchIconMouse.containsMouse ? Theme.fill : "transparent"
 
                     Glyph {
@@ -2256,6 +2357,9 @@ Window {
                         tint: searchIconMouse.containsMouse
                             ? root.textColor : root.mutedColor
                     }
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("搜索")
 
                     MouseArea {
                         id: searchIconMouse
@@ -2295,15 +2399,46 @@ Window {
                 }
             }
 
+            // ── Trash ─────────────────────────────────────────────────────
+            // Emptying the bin is a text action that only exists here, and only
+            // while there is something to empty. The hover is the only place it
+            // turns dangerous.
+            Rectangle {
+                id: trashClear
+                anchors.right: searchSlot.left
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                width: visible ? 44 : 0
+                height: 24
+                radius: Theme.radiusXs
+                visible: root.trashActive && trashModel.count > 0
+                color: trashClearMouse.containsMouse ? Theme.hover : "transparent"
+
+                Text {
+                    anchors.centerIn: parent
+                    text: qsTr("清空")
+                    color: trashClearMouse.containsMouse ? Theme.danger : root.mutedColor
+                    font.pixelSize: Theme.typeCaption
+                }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("清空回收站")
+
+                MouseArea {
+                    id: trashClearMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: root.requestEmptyTrash()
+                }
+            }
+
             // ── View ──────────────────────────────────────────────────────
             // One button showing the view that is on, opening the one display
-            // menu. It was a 46 px text button in the 26 px status strip — the
-            // smallest target in the window for a control that changes what
-            // the whole body shows.
+            // menu.
             Item {
                 id: viewSlot
-                anchors.right: parent.right
-                anchors.rightMargin: 8
+                anchors.right: moreSlot.left
+                anchors.rightMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
                 width: 28
                 height: 28
@@ -2311,7 +2446,7 @@ Window {
 
                 Rectangle {
                     anchors.fill: parent
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: viewMouse.containsMouse || displayMenu.visible
                         ? Theme.fill : "transparent"
 
@@ -2324,6 +2459,9 @@ Window {
                     }
                 }
 
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("切换视图")
+
                 MouseArea {
                     id: viewMouse
                     anchors.fill: parent
@@ -2335,15 +2473,65 @@ Window {
                     }
                 }
             }
+
+            // ── More ──────────────────────────────────────────────────────
+            // Refresh, the visibility toggles, filters and settings live here
+            // now that the sidebar gives up its hamburger and the status bar
+            // gives up its settings text.
+            Item {
+                id: moreSlot
+                anchors.right: parent.right
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                width: 28
+                height: 28
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Theme.radiusSm
+                    color: moreMouse.containsMouse || moreMenu.visible
+                        ? Theme.fill : "transparent"
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        kind: "more"
+                        tint: moreMouse.containsMouse || moreMenu.visible
+                            ? root.textColor : root.mutedColor
+                    }
+                }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("更多")
+
+                MouseArea {
+                    id: moreMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        const point = moreSlot.mapToItem(null, 0, 0)
+                        moreMenu.openAt(point.x + moreSlot.width - 226, point.y,
+                                        root.moreMenuItems())
+                    }
+                }
+            }
         }
 
         Rectangle {
             id: searchOptions
             width: parent.width
-            height: visible ? 30 : 0
+            height: visible ? 32 : 0
             visible: root.contentSearchActive
             color: root.chromeColor
             clip: true
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: 1
+                color: Theme.hairline
+            }
 
             Row {
                 x: 12
@@ -2353,8 +2541,8 @@ Window {
                 Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 28
-                    height: 20
-                    radius: 4
+                    height: 22
+                    radius: Theme.radiusXs
                     color: root.searchRegex ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24)
                                             : "transparent"
                     border.width: 1
@@ -2380,8 +2568,8 @@ Window {
                 Rectangle {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 28
-                    height: 20
-                    radius: 4
+                    height: 22
+                    radius: Theme.radiusXs
                     color: root.searchCase ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24)
                                            : "transparent"
                     border.width: 1
@@ -2408,7 +2596,7 @@ Window {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 170
                     height: 22
-                    radius: 6
+                    radius: Theme.radiusXs
                     color: Theme.hover
                     border.width: 1
                     border.color: filterInput.activeFocus ? root.accent : root.hairline
@@ -2456,7 +2644,8 @@ Window {
         Row {
             id: body
             width: parent.width
-            height: parent.height - 44 - 46 - 26 - searchOptions.height
+            height: parent.height - Theme.shellTitle - Theme.shellNav
+                - Theme.shellStatus - searchOptions.height
 
             Item {
                 id: sidebarHandle
@@ -2925,8 +3114,9 @@ Window {
         }
 
         Rectangle {
+            id: statusBar
             width: parent.width
-            height: 26
+            height: Theme.shellStatus
             color: root.chromeColor
 
             // A hairline instead of a colour step: the strip is the same surface
@@ -2940,10 +3130,11 @@ Window {
                 color: Theme.hairline
             }
 
+            // ── Left: what the listing holds ──────────────────────────────
             Text {
                 id: statusText
-                x: 12
-                width: parent.width * (gitChip.visible ? 0.32 : 0.46)
+                x: 10
+                width: Math.min(implicitWidth, parent.width * 0.42)
                 anchors.verticalCenter: parent.verticalCenter
                 text: {
                     if (root.activeTab === null)
@@ -2957,13 +3148,11 @@ Window {
                     if (root.spaceActive)
                         return qsTr("空间 · ") + spaceView.itemCount + qsTr(" 项")
                     if (root.trashActive) {
-                        if (Workspace.busy && Workspace.progressLabel !== "")
-                            return Workspace.progressLabel
                         const bin = trashModel.loaded
                             ? root.localizeBackend(trashModel.status)
                             : qsTr("读取回收站…")
                         if (trashView.selectionCount > 0)
-                            return trashView.selectionCount + qsTr(" 项已选择 · ") + bin
+                            return bin + " · " + qsTr("已选 %1 项").arg(trashView.selectionCount)
                         return bin
                     }
                     if (root.searchActive) {
@@ -2975,392 +3164,268 @@ Window {
                             ? root.localizeBackend(search.status) : qsTr("没有匹配项")
                     }
                     const listing = root.activeTab.listing
+                    if (Workspace.busy && Workspace.progressLabel !== "")
+                        return root.localizeBackend(Workspace.progressLabel)
                     const base = listing.finished
                         ? root.localizeBackend(listing.status)
                         : (listing.loaded + qsTr(" 项 · 读取中…"))
                     if (fileList.selectionCount > 0)
-                        return fileList.selectionCount + qsTr(" 项已选择 · ") + base
-                    if (Workspace.busy && Workspace.progressLabel !== "")
-                        return root.localizeBackend(Workspace.progressLabel)
+                        return base + " · " + qsTr("已选 %1 项").arg(fileList.selectionCount)
                     return base
                 }
-                color: root.mutedColor
+                color: Theme.inkMuted
                 font.family: Theme.monoFamily
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeCaption
                 elide: Text.ElideRight
+                Accessible.role: Accessible.StaticText
+                Accessible.name: text
             }
 
-            Item {
-                id: previewButton
-                anchors.right: terminalButton.left
-                anchors.rightMargin: 4
+            // ── Centre: the running transfer ──────────────────────────────
+            // It used to be a "queue" chip bolted after the status text. The
+            // centre is where the eye looks for progress, and the chip is the
+            // queue's only door: without it a second paste looks like it did
+            // nothing until the first copy finished.
+            Rectangle {
+                id: transferChip
+                anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
-                width: 58
-                height: 18
-                visible: root.folderActive
-                opacity: root.trashActive ? 0.35 : 1
+                width: transferRow.implicitWidth + 14
+                height: 22
+                radius: Theme.radiusXs
+                visible: transferChip.count > 0
+                color: transferMouse.containsMouse ? Theme.raised : Theme.canvas
+                border.width: 1
+                border.color: Theme.hairline
 
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 4
-                    color: previewMouse.containsMouse
-                        ? Theme.fill : "transparent"
+                readonly property int count: Workspace.queuedTransfers.length
+                    + (Workspace.busy ? 1 : 0)
+                readonly property real percent: Workspace.progressTotal > 0
+                    ? Math.round(Workspace.progressDone * 100 / Workspace.progressTotal)
+                    : (Workspace.busy ? 0 : 100)
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: root.previewVisible ? qsTr("隐藏预览") : qsTr("预览")
-                        color: root.previewVisible ? root.textColor : root.mutedColor
-                        font.pixelSize: 11
-                    }
+                function openPanel() {
+                    const point = transferChip.mapToItem(null, 0, 0)
+                    transferQueue.openAbove(point.x, point.y)
                 }
 
-                MouseArea {
-                    id: previewMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    enabled: !root.trashActive
-                    onClicked: {
-                        root.previewVisible = !root.previewVisible
-                        if (!root.previewVisible)
-                            fileList.takeFocus()
-                    }
-                }
-            }
+                Accessible.role: Accessible.Button
+                Accessible.name: qsTr("%1 项传输，%2%").arg(count).arg(percent)
+                    + qsTr("，查看传输队列")
+                Accessible.onPressAction: transferChip.openPanel()
 
-            Item {
-                id: filterButton
-                anchors.right: updateButton.left
-                anchors.rightMargin: 4
-                anchors.verticalCenter: parent.verticalCenter
-                width: 46
-                height: 18
-                visible: root.folderActive
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 4
-                    color: filterMouse.containsMouse || filterMenu.visible
-                        ? Theme.fill : "transparent"
+                Row {
+                    id: transferRow
+                    anchors.centerIn: parent
+                    spacing: 6
 
                     Text {
-                        anchors.centerIn: parent
-                        text: qsTr("筛选")
-                        color: filterMenu.active ? root.textColor : root.mutedColor
-                        font.pixelSize: 11
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("%1 项传输").arg(transferChip.count)
+                        color: Theme.inkMuted
+                        font.pixelSize: Theme.typeMicro
                     }
 
                     Rectangle {
-                        visible: filterMenu.active
-                        anchors.right: parent.right
-                        anchors.rightMargin: 6
-                        anchors.top: parent.top
-                        anchors.topMargin: 3
-                        width: 5
-                        height: 5
-                        radius: width / 2
-                        color: root.accent
-                    }
-                }
-
-                MouseArea {
-                    id: filterMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: {
-                        const point = filterButton.mapToItem(null, 0, 0)
-                        filterMenu.openAbove(point.x + filterButton.width - 252, point.y)
-                    }
-                }
-            }
-
-            Item {
-                id: updateButton
-                anchors.right: settingsButton.left
-                anchors.rightMargin: Updater.supported ? 4 : 0
-                anchors.verticalCenter: parent.verticalCenter
-                width: Updater.supported ? 64 : 0
-                height: 18
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 4
-                    color: updateMouse.containsMouse
-                        ? Theme.fill : "transparent"
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: Updater.restarting ? qsTr("重启中…")
-                            : Updater.downloading ? qsTr("更新中…")
-                            : Updater.available ? qsTr("更新可用")
-                            : Updater.checking ? qsTr("检查中…") : qsTr("检查更新")
-                        color: Updater.available ? root.accent
-                            : Updater.checking || Updater.downloading ? root.textColor
-                            : root.mutedColor
-                        font.pixelSize: 11
-                    }
-                }
-
-                MouseArea {
-                    id: updateMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    enabled: Updater.supported
-                    onClicked: updateDialog.open()
-                }
-            }
-
-            Item {
-                id: settingsButton
-                anchors.right: previewButton.left
-                anchors.rightMargin: 4
-                anchors.verticalCenter: parent.verticalCenter
-                width: 52
-                height: 18
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 4
-                    color: settingsMouse.containsMouse
-                        ? Theme.fill : "transparent"
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: qsTr("设置")
-                        color: root.mutedColor
-                        font.pixelSize: 11
-                    }
-                }
-
-                MouseArea {
-                    id: settingsMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: settingsPanel.open()
-                }
-            }
-
-            Rectangle {
-                id: terminalButton
-                anchors.right: parent.right
-                anchors.rightMargin: 10
-                anchors.verticalCenter: parent.verticalCenter
-                width: 62
-                height: 18
-                visible: root.folderActive
-                radius: 4
-                opacity: root.remoteLocation ? 0.35 : 1
-                color: !root.remoteLocation && terminalMouse.containsMouse
-                    ? Theme.fill : "transparent"
-
-                Text {
-                    anchors.centerIn: parent
-                    text: root.terminalActive ? qsTr("隐藏终端") : qsTr("终端")
-                    color: root.terminalActive ? root.textColor : root.mutedColor
-                    font.pixelSize: 11
-                }
-
-                MouseArea {
-                    id: terminalMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    enabled: !root.remoteLocation
-                    onClicked: root.toggleTerminal()
-                }
-            }
-
-            Text {
-                anchors.left: queueChip.visible ? queueChip.right
-                    : (gitChip.visible ? gitChip.right : statusText.right)
-                anchors.leftMargin: queueChip.visible || gitChip.visible ? 12 : 16
-                anchors.right: filterButton.left
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                horizontalAlignment: Text.AlignRight
-                text: root.firstWindow ? root.profileText
-                    : (root.tabs.length + qsTr(" 个标签 · ") + root.token)
-                color: root.mutedColor
-                font.family: Theme.monoFamily
-                font.pixelSize: 11
-                elide: Text.ElideMiddle
-            }
-
-            // The repository the pane is inside. Branch, divergence and a
-            // one-click sync live here; the whole chip opens the branch panel.
-            Rectangle {
-                id: gitChip
-                anchors.left: statusText.right
-                anchors.leftMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                width: gitChipContent.implicitWidth + 14
-                    + (gitSyncButton.visible ? gitSyncButton.width : 0)
-                height: 16
-                radius: 12
-                visible: root.gitVisible
-                color: gitChipMouse.containsMouse || gitPanel.visible
-                    ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24)
-                    : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.12)
-                border.width: 1
-                border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.42)
-
-                Accessible.role: Accessible.Button
-                Accessible.name: qsTr("Git 分支 ")
-                    + (root.gitListing !== null ? root.gitListing.gitBranch : "")
-                    + qsTr("，打开分支面板")
-                Accessible.onPressAction: gitChip.openPanel()
-
-                function branchName() {
-                    return root.gitListing !== null ? root.gitListing.gitBranch : ""
-                }
-
-                function ahead() {
-                    return root.gitListing !== null ? root.gitListing.gitAhead : 0
-                }
-
-                function behind() {
-                    return root.gitListing !== null ? root.gitListing.gitBehind : 0
-                }
-
-                function openPanel() {
-                    const point = gitChip.mapToItem(null, 0, 0)
-                    gitPanel.openAbove(point.x, point.y)
-                }
-
-                Row {
-                    id: gitChipContent
-                    anchors.left: parent.left
-                    anchors.leftMargin: 7
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 4
-
-                    Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "Git"
-                        color: root.accent
-                        font.pixelSize: 11
-                        font.weight: Font.DemiBold
-                        textFormat: Text.PlainText
+                        width: 32
+                        height: 2
+                        color: Theme.hairlineStrong
+
+                        Rectangle {
+                            width: parent.width * transferChip.percent / 100
+                            height: parent.height
+                            color: Theme.signal
+                        }
                     }
 
                     Text {
                         anchors.verticalCenter: parent.verticalCenter
-                        width: Math.min(implicitWidth, 112)
-                        text: gitChip.branchName()
-                        color: root.gitListing !== null && root.gitListing.gitDetached
-                            ? root.mutedColor : root.textColor
+                        text: transferChip.percent + "%"
+                        color: Theme.inkMuted
+                        font.pixelSize: Theme.typeMicro
                         font.family: Theme.monoFamily
-                        font.pixelSize: 11
-                        textFormat: Text.PlainText
-                        elide: Text.ElideMiddle
-                    }
-
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: gitChip.ahead() > 0
-                        text: "↑" + gitChip.ahead()
-                        color: Theme.success
-                        font.pixelSize: 11
-                        textFormat: Text.PlainText
-                    }
-
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: gitChip.behind() > 0
-                        text: "↓" + gitChip.behind()
-                        color: Theme.link
-                        font.pixelSize: 11
-                        textFormat: Text.PlainText
                     }
                 }
 
+                MouseArea {
+                    id: transferMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    onClicked: transferChip.openPanel()
+                }
+            }
+
+            // ── Right: repository and pane switches ───────────────────────
+            Row {
+                anchors.right: parent.right
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 2
+
+                // The branch is a name, not a pill: the colour in this bar
+                // belongs to the signal and to nothing else.
                 Item {
-                    id: gitSyncButton
-                    anchors.right: parent.right
-                    anchors.rightMargin: 2
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: visible ? 16 : 0
-                    height: 16
-                    visible: root.gitListing !== null
-                        && root.gitListing.gitRemotes.length > 0
+                    id: gitStatus
+                    width: gitStatusRow.implicitWidth + 8
+                    height: 22
+                    visible: root.gitVisible
 
-                    Text {
-                        id: gitSyncGlyph
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("分支 %1，打开分支面板")
+                        .arg(root.gitListing !== null ? root.gitListing.gitBranch : "")
+                    Accessible.onPressAction: gitStatus.openPanel()
+
+                    function openPanel() {
+                        const point = gitStatus.mapToItem(null, 0, 0)
+                        gitPanel.openAbove(point.x, point.y)
+                    }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Theme.radiusXs
+                        color: gitStatusMouse.containsMouse || gitPanel.visible
+                            ? Theme.hover : "transparent"
+                    }
+
+                    Row {
+                        id: gitStatusRow
                         anchors.centerIn: parent
-                        text: "↻"
-                        color: root.gitListing !== null && root.gitListing.gitBusy
-                            ? root.accent : root.mutedColor
-                        font.pixelSize: 11
-                        textFormat: Text.PlainText
-                        transformOrigin: Item.Center
+                        spacing: 4
 
-                        RotationAnimator on rotation {
-                            from: 0
-                            to: 360
-                            duration: 900
-                            loops: Animation.Infinite
-                            running: root.gitListing !== null && root.gitListing.gitBusy
+                        Glyph {
+                            anchors.verticalCenter: parent.verticalCenter
+                            kind: "branch"
+                            implicitWidth: 12
+                            implicitHeight: 12
+                            tint: Theme.inkFaint
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Math.min(implicitWidth, 120)
+                            text: root.gitListing !== null ? root.gitListing.gitBranch : ""
+                            color: root.gitListing !== null && root.gitListing.gitDetached
+                                ? Theme.inkFaint : Theme.inkMuted
+                            font.family: Theme.monoFamily
+                            font.pixelSize: Theme.typeMicro
+                            textFormat: Text.PlainText
+                            elide: Text.ElideMiddle
                         }
                     }
 
                     MouseArea {
+                        id: gitStatusMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        enabled: root.gitListing !== null && !root.gitListing.gitBusy
+                        onClicked: gitStatus.openPanel()
+                    }
+                }
+
+                Rectangle {
+                    width: 1
+                    height: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: Theme.hairline
+                    visible: gitStatus.visible
+                }
+
+                Item {
+                    id: previewToggle
+                    width: previewToggleRow.implicitWidth + 12
+                    height: 22
+                    visible: root.folderActive
+                    opacity: root.trashActive ? 0.35 : 1
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: root.previewVisible ? qsTr("隐藏预览") : qsTr("显示预览")
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 3
+                        color: previewToggleMouse.containsMouse
+                            ? Theme.hover : "transparent"
+                    }
+
+                    Row {
+                        id: previewToggleRow
+                        anchors.centerIn: parent
+                        spacing: 4
+
+                        Glyph {
+                            anchors.verticalCenter: parent.verticalCenter
+                            kind: "panel"
+                            implicitWidth: 14
+                            implicitHeight: 14
+                            tint: root.previewVisible ? Theme.inkMuted : Theme.inkFaint
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("预览")
+                            color: root.previewVisible ? Theme.ink : Theme.inkFaint
+                            font.pixelSize: Theme.typeMicro
+                        }
+                    }
+
+                    MouseArea {
+                        id: previewToggleMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        enabled: !root.trashActive
                         onClicked: {
-                            if (root.gitListing !== null)
-                                root.gitListing.gitSync()
+                            root.previewVisible = !root.previewVisible
+                            if (!root.previewVisible)
+                                fileList.takeFocus()
                         }
                     }
                 }
 
-                MouseArea {
-                    id: gitChipMouse
-                    anchors.fill: parent
-                    anchors.rightMargin: gitSyncButton.width
-                    hoverEnabled: true
-                    onClicked: gitChip.openPanel()
-                }
-            }
+                Item {
+                    id: terminalToggle
+                    width: terminalToggleRow.implicitWidth + 12
+                    height: 22
+                    visible: root.folderActive
+                    opacity: root.remoteLocation ? 0.35 : 1
 
-            // Transfers waiting behind the one on the progress row. The chip is
-            // the queue's only door: without it a second paste would look like
-            // it did nothing until the first copy finished.
-            Rectangle {
-                id: queueChip
-                anchors.left: gitChip.visible ? gitChip.right : statusText.right
-                anchors.leftMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                width: queueChipLabel.implicitWidth + 14
-                height: 16
-                radius: 12
-                visible: Workspace.queuedTransfers.length > 0
-                color: queueChipMouse.containsMouse
-                    ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24)
-                    : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.14)
-                border.width: 1
-                border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.45)
+                    Accessible.role: Accessible.Button
+                    Accessible.name: root.terminalActive ? qsTr("隐藏终端") : qsTr("显示终端")
 
-                Accessible.role: Accessible.Button
-                Accessible.name: queueChipLabel.text + qsTr("，查看传输队列")
-                Accessible.onPressAction: queueChip.openPanel()
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 3
+                        color: terminalToggleMouse.containsMouse
+                            ? Theme.hover : "transparent"
+                    }
 
-                Text {
-                    id: queueChipLabel
-                    anchors.centerIn: parent
-                    text: qsTr("队列 ") + Workspace.queuedTransfers.length
-                    color: root.textColor
-                    font.pixelSize: 11
-                }
+                    Row {
+                        id: terminalToggleRow
+                        anchors.centerIn: parent
+                        spacing: 4
 
-                function openPanel() {
-                    const point = queueChip.mapToItem(null, 0, 0)
-                    transferQueue.openAbove(point.x, point.y)
-                }
+                        Glyph {
+                            anchors.verticalCenter: parent.verticalCenter
+                            kind: "terminal"
+                            implicitWidth: 14
+                            implicitHeight: 14
+                            tint: root.terminalActive ? Theme.inkMuted : Theme.inkFaint
+                        }
 
-                MouseArea {
-                    id: queueChipMouse
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    onClicked: queueChip.openPanel()
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: qsTr("终端")
+                            color: root.terminalActive ? Theme.ink : Theme.inkFaint
+                            font.pixelSize: Theme.typeMicro
+                        }
+                    }
+
+                    MouseArea {
+                        id: terminalToggleMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        enabled: !root.remoteLocation
+                        onClicked: root.toggleTerminal()
+                    }
                 }
             }
         }
@@ -3434,6 +3499,21 @@ Window {
         anchors.fill: parent
         dark: root.dark
         accent: root.accent
+        sidebarVisible: root.sidebarVisible
+        previewVisible: root.previewVisible
+        terminalVisible: root.terminalActive
+
+        onToggleRequested: function (property) {
+            if (property === "sidebarVisible") {
+                root.sidebarVisible = !root.sidebarVisible
+            } else if (property === "previewVisible") {
+                root.previewVisible = !root.previewVisible
+                if (!root.previewVisible)
+                    fileList.takeFocus()
+            } else if (property === "terminalVisible") {
+                root.toggleTerminal()
+            }
+        }
     }
 
     FilterMenu {
@@ -3442,6 +3522,16 @@ Window {
         dark: root.dark
         accent: root.accent
         hiddenShortcut: root.shortcutDisplay("explorer.toggleHidden")
+    }
+
+    ContextMenu {
+        id: moreMenu
+        anchors.fill: parent
+        dark: root.dark
+
+        onActionTriggered: function (id) {
+            root.runMoreAction(id)
+        }
     }
 
     Shortcut {
@@ -3498,8 +3588,11 @@ Window {
     Shortcut {
         sequence: "Ctrl+Alt+F"
         onActivated: {
-            const point = filterButton.mapToItem(null, 0, 0)
-            filterMenu.openAbove(point.x + filterButton.width - 252, point.y)
+            // The filter menu lost its status-bar button; it now opens under
+            // the nav bar's overflow button, where the rest of the listing
+            // switches live.
+            const point = moreSlot.mapToItem(null, 0, 0)
+            filterMenu.openAbove(point.x + moreSlot.width - 252, point.y)
         }
     }
 
@@ -3876,7 +3969,12 @@ Window {
             // One process-wide warm-up, so the first right-click already has
             // the installed apps' verbs instead of waiting on a COM surrogate.
             Workspace.warmShellCommands()
-            root.material = chrome.startupMaterial()
+            // The instrument shell paints solid chrome from `Theme.chrome`.
+            // A Mica/Acrylic backdrop would composite a second colour under
+            // it and the ±2 % rule in the migration doc cannot be met, so this
+            // round asks for no material. `applyMaterial` keeps the capability
+            // for a later pass.
+            root.material = "none"
             if (root.config !== null)
                 root.startupPath = root.config.startupPath
         }

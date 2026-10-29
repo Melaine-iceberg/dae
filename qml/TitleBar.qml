@@ -32,9 +32,12 @@ Item {
     implicitHeight: 44
     height: 44
 
+    readonly property bool isMac: Qt.platform.os === "osx"
     /// Where the tab strip ends and the window buttons begin. The shell anchors
     /// its strip to this instead of repeating the button width in QML.
-    readonly property real buttonsWidth: 46 * 3
+    readonly property real buttonWidth: isMac ? 0
+        : (Qt.platform.os === "linux" ? 40 : 46)
+    readonly property real buttonsWidth: buttonWidth * 3
 
     readonly property color chromeTint: dark
         ? Qt.rgba(0.055, 0.063, 0.075, 0.38)
@@ -86,17 +89,68 @@ Item {
         id: logo
         x: 14
         anchors.verticalCenter: parent.verticalCenter
-        width: 20
-        height: 20
-        radius: 6
+        width: 17
+        height: 17
+        radius: 3
         color: Theme.interactive
+        visible: !root.isMac
 
         Text {
             anchors.centerIn: parent
             text: "D"
             color: Theme.onInteractive
-            font.pixelSize: 12
-            font.weight: Font.DemiBold
+            font.pixelSize: 11
+            font.weight: Font.Medium
+        }
+    }
+
+    // A frameless window draws its own traffic lights. They sit on the left,
+    // where macOS puts them, and the strip starts after the 78 dp they claim.
+    Row {
+        id: trafficLights
+        visible: root.isMac
+        x: 14
+        y: 16
+        spacing: 8
+
+        Repeater {
+            model: 3
+
+            Item {
+                id: lightItem
+                required property int index
+                width: 12
+                height: 12
+
+                readonly property color light: index === 0 ? "#ff5f57"
+                    : index === 1 ? "#febc2e" : "#28c840"
+                readonly property string lightName: index === 0 ? qsTr("关闭")
+                    : index === 1 ? qsTr("最小化") : qsTr("最大化")
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: width / 2
+                    color: lightItem.light
+                    border.width: 1
+                    border.color: "#24000000"
+                }
+
+                Accessible.role: Accessible.Button
+                Accessible.name: lightItem.lightName
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        if (lightItem.index === 0)
+                            root.window.close()
+                        else if (lightItem.index === 1)
+                            root.window.showMinimized()
+                        else
+                            root.maximized ? root.window.showNormal()
+                                           : root.window.showMaximized()
+                    }
+                }
+            }
         }
     }
 
@@ -105,6 +159,7 @@ Item {
         anchors.right: parent.right
         height: parent.height
         width: root.buttonsWidth
+        visible: !root.isMac
 
         Repeater {
             model: 3
@@ -113,9 +168,9 @@ Item {
                 id: button
                 required property int index
 
-                width: 46
+                width: root.buttonWidth
                 height: root.height
-                x: index * 46
+                x: index * root.buttonWidth
 
                 readonly property bool isClose: index === 2
                 readonly property bool isMaximize: index === 1
@@ -125,6 +180,11 @@ Item {
                 /// hit test means a QML click would never arrive anyway.
                 readonly property bool nativeMaximize: button.isMaximize
                     && Qt.platform.os === "windows"
+
+                Accessible.role: Accessible.Button
+                Accessible.name: button.isClose ? qsTr("关闭")
+                    : button.isMaximize ? (root.maximized ? qsTr("向下还原") : qsTr("最大化"))
+                    : qsTr("最小化")
 
                 Rectangle {
                     anchors.fill: parent

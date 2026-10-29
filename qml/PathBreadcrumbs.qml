@@ -32,15 +32,15 @@ Item {
     /// at — in window coordinates, because the menu belongs to the window.
     signal ancestorsRequested(real x, real y, var names, var paths)
 
-    property int fontSize: 13
-    readonly property int iconSize: 13
+    property real fontSize: 12.5
+    readonly property int iconSize: 12
     /// Space between a crumb's glyph and its name.
     readonly property real iconGap: 4
     /// Space between a separator and the crumbs on either side of it.
     readonly property real crumbGap: 3
     /// A crumb's own padding; the plate is what hover paints.
-    readonly property real crumbPad: 4
-    readonly property real plateHeight: 22
+    readonly property real crumbPad: 5
+    readonly property real plateHeight: 24
     readonly property real ellipsisWidth: 22
 
     TextMetrics {
@@ -233,7 +233,7 @@ Item {
                 x: -bar.crumbGap - width
                 visible: slot.index > 0
                 text: "\u203A"
-                color: bar.mutedColor
+                color: Theme.inkFaint
                 font.pixelSize: bar.fontSize
                 Accessible.ignored: true
             }
@@ -241,9 +241,9 @@ Item {
             Rectangle {
                 id: plate
                 anchors.fill: parent
-                radius: 6
+                radius: 3
                 color: slot.modelData.current !== true && plateMouse.containsMouse
-                    ? Theme.fill : "transparent"
+                    ? Theme.hover : "transparent"
 
                 ThemedIcon {
                     id: glyph
@@ -255,7 +255,9 @@ Item {
                     category: "folder"
                     size: bar.iconSize
                     dark: bar.dark
-                    accent: bar.accent
+                    // The trail is structure, not a signal: a column of accent
+                    // folders would spend the window's one colour on decoration.
+                    accent: bar.mutedColor
                     opacity: slot.modelData.current === true ? 1.0 : 0.55
                     Accessible.ignored: true
                 }
@@ -272,6 +274,8 @@ Item {
                         ? bar.textColor
                         : (plateMouse.containsMouse ? bar.textColor : bar.mutedColor)
                     font.pixelSize: bar.fontSize
+                    font.weight: slot.modelData.current === true
+                        ? Font.Medium : Font.Normal
                     elide: Text.ElideMiddle
                 }
 

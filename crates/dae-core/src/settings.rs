@@ -84,7 +84,7 @@ impl Default for AppSettings {
             shortcuts: default_shortcuts(),
             terminal: TerminalSettings::default(),
             theme: "system".to_string(),
-            accent: "system".to_string(),
+            accent: "brand".to_string(),
             language: "system".to_string(),
             default_file_manager: DefaultFileManagerState::default(),
             warm_tab_pool: true,
@@ -264,7 +264,7 @@ fn normalize(mut settings: AppSettings) -> AppSettings {
         settings.theme = "system".to_string();
     }
     if !["system", "brand"].contains(&settings.accent.as_str()) {
-        settings.accent = "system".to_string();
+        settings.accent = "brand".to_string();
     }
     if !["system", "zh-CN", "en"].contains(&settings.language.as_str()) {
         settings.language = "system".to_string();
@@ -424,7 +424,7 @@ mod tests {
         assert_eq!(loaded.terminal.line_height, 1.75);
         assert_eq!(loaded.terminal.font_family, None);
         assert_eq!(loaded.theme, "system");
-        assert_eq!(loaded.accent, "system");
+        assert_eq!(loaded.accent, "brand");
         assert_eq!(loaded.language, "system");
 
         fs::remove_dir_all(&dir).ok();

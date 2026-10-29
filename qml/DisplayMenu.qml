@@ -12,9 +12,16 @@ Item {
 
     property bool dark: true
     property color accent: Theme.interactive
+    /// The shell's pane visibility. These are window state, not preferences,
+    /// so the menu asks the window to flip them instead of writing prefs.
+    property bool sidebarVisible: true
+    property bool previewVisible: true
+    property bool terminalVisible: false
     property real openX: 0
     property real openY: 0
     property bool above: true
+
+    signal toggleRequested(string property)
 
     visible: false
     /// Arrives rather than appears. Hiding stays instant: a menu that fades
@@ -38,6 +45,10 @@ Item {
         { kind: "radio", group: "viewMode", value: "grid", label: qsTr("网格") },
         { kind: "radio", group: "viewMode", value: "column", label: qsTr("分栏") },
         { kind: "sep" },
+        { kind: "shellToggle", property: "sidebarVisible", label: qsTr("侧栏") },
+        { kind: "shellToggle", property: "previewVisible", label: qsTr("预览") },
+        { kind: "shellToggle", property: "terminalVisible", label: qsTr("终端") },
+        { kind: "sep" },
         { kind: "label", label: qsTr("密度") },
         { kind: "radio", group: "density", value: "compact", label: qsTr("紧凑") },
         { kind: "radio", group: "density", value: "comfortable", label: qsTr("舒适") },
@@ -47,16 +58,6 @@ Item {
         { kind: "radio", group: "iconStyle", value: "system", label: qsTr("系统图标") },
         { kind: "radio", group: "iconStyle", value: "themed", label: qsTr("内置图标") },
         { kind: "toggle", property: "rowThumbnails", label: qsTr("行内显示缩略图") },
-        { kind: "sep" },
-        { kind: "label", label: qsTr("排序") },
-        { kind: "sortKey", value: "name", label: qsTr("名称") },
-        { kind: "sortKey", value: "size", label: qsTr("大小") },
-        { kind: "sortKey", value: "modified", label: qsTr("修改时间") },
-        { kind: "sortKey", value: "type", label: qsTr("类型") },
-        { kind: "sep" },
-        { kind: "radio", group: "sortOrder", value: "asc", label: qsTr("升序") },
-        { kind: "radio", group: "sortOrder", value: "desc", label: qsTr("降序") },
-        { kind: "toggle", property: "foldersFirst", label: qsTr("文件夹优先") },
         { kind: "sep" },
         { kind: "toggle", property: "splitEnabled", label: qsTr("分屏") }
     ]
@@ -74,25 +75,20 @@ Item {
     }
 
     function checked(item) {
+        if (item.kind === "shellToggle")
+            return root[item.property] === true
         if (item.kind === "toggle")
             return ExplorerPrefs[item.property] === true
-        if (item.kind === "sortKey")
-            return ExplorerPrefs.sortKey === item.value
         return ExplorerPrefs[item.group] === item.value
     }
 
-    function defaultOrder(key) {
-        return (key === "modified" || key === "size") ? "desc" : "asc"
-    }
-
     function choose(item) {
-        if (item.kind === "toggle") {
-            ExplorerPrefs.setBool(item.property, !ExplorerPrefs[item.property])
+        if (item.kind === "shellToggle") {
+            root.toggleRequested(item.property)
             return
         }
-        if (item.kind === "sortKey") {
-            ExplorerPrefs.setString("sortKey", item.value)
-            ExplorerPrefs.setString("sortOrder", root.defaultOrder(item.value))
+        if (item.kind === "toggle") {
+            ExplorerPrefs.setBool(item.property, !ExplorerPrefs[item.property])
             return
         }
         ExplorerPrefs.setString(item.group, item.value)

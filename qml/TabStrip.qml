@@ -49,8 +49,8 @@ Item {
     signal tabDroppedOnWindow(int index, string token, real localX)
     signal tabTornOff(int index, real globalX, real globalY)
 
-    implicitHeight: 34
-    height: 34
+    implicitHeight: 44
+    height: 44
     // Still clipped: past the width of the bar the chips would otherwise paint
     // over the window buttons.
     clip: true
@@ -63,14 +63,18 @@ Item {
     readonly property real clientRight: tabX(tabs.length) + plusWidth
 
     readonly property int tabWidthValue: 184
+    readonly property int tabHeightValue: 32
+    /// The chip sits 6 dp below the top of the 44 dp bar, so its bottom is
+    /// flush with the strip's underline after the 6 dp gap.
+    readonly property int tabTop: 6
     readonly property int tabGap: 2
-    /// The strip starts where the mark ends. The bar's own left inset is 14 + 20
-    /// + 10; the strip is anchored to 44 by the shell and lays its first chip at
+    /// The strip starts where the mark ends. The bar's own left inset is 14 + 17
+    /// + 13; the strip is anchored to 44 by the shell and lays its first chip at
     /// 0 so a drop indicator and a chip agree on where "the first tab" is.
     readonly property int tabLeft: 0
-    readonly property int plusWidth: 30
+    readonly property int plusWidth: 26
 
-    readonly property color activeColor: Theme.raised
+    readonly property color activeColor: Theme.fill
     readonly property color hoverColor: Theme.hover
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
@@ -133,7 +137,7 @@ Item {
         // while this runs, so the record is complete when it returns.
         const action = Shell.startTabDrag(token, title, index,
                                           Math.round(grabX), Math.round(grabY),
-                                          tabWidthValue, height,
+                                          tabWidthValue, tabHeightValue,
                                           activeColor, accent, textColor)
 
         const drop = ShellState.takeTabDrop()
@@ -171,8 +175,8 @@ Item {
 
     Row {
         x: root.tabLeft
-        anchors.verticalCenter: parent.verticalCenter
-        height: parent.height
+        y: root.tabTop
+        height: root.tabHeightValue
         spacing: root.tabGap
 
         Repeater {
@@ -184,24 +188,37 @@ Item {
                 required property var modelData
 
                 width: root.tabWidthValue
-                height: parent.height
-                radius: 6
+                height: root.tabHeightValue
+                radius: Theme.radiusSm
                 color: root.activeIndex === index
                     ? root.activeColor
                     : (tabMouse.containsMouse ? root.hoverColor : "transparent")
                 opacity: root.dragging && root.dragIndex === index ? 0.45 : 1.0
 
+                // The active tab's 2 dp signal underline sits at the bottom of
+                // the bar, not the bottom of the chip: the 6 dp below the chip
+                // is what makes the two read as one piece.
+                Rectangle {
+                    visible: root.activeIndex === tabItem.index
+                    x: 8
+                    width: parent.width - 16
+                    y: parent.height + 4
+                    height: 2
+                    radius: 1
+                    color: Theme.signal
+                }
+
                 Text {
                     id: tabTitle
                     anchors.left: parent.left
-                    anchors.leftMargin: 12
+                    anchors.leftMargin: 10
                     anchors.right: closeButton.left
                     anchors.rightMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
                     text: tabItem.modelData ? tabItem.modelData.title : ""
-                    color: root.activeIndex === tabItem.index
+                    color: root.activeIndex === tabItem.index || tabMouse.containsMouse
                         ? root.textColor : root.mutedColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeSmall
                     elide: Text.ElideMiddle
                 }
 
@@ -210,12 +227,13 @@ Item {
                     anchors.right: parent.right
                     anchors.rightMargin: 5
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 20
-                    height: 20
+                    width: 18
+                    height: 18
+                    visible: root.activeIndex === tabItem.index || tabMouse.containsMouse
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: 4
+                        radius: Theme.radiusXs
                         color: closeMouse.containsMouse
                             ? Theme.fill : "transparent"
                     }
@@ -224,8 +242,11 @@ Item {
                         anchors.centerIn: parent
                         text: "\u00d7"
                         color: closeMouse.containsMouse ? root.textColor : root.mutedColor
-                        font.pixelSize: 14
+                        font.pixelSize: Theme.typeName
                     }
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("关闭标签页")
 
                     MouseArea {
                         id: closeMouse
@@ -281,20 +302,26 @@ Item {
 
         Item {
             width: root.plusWidth
-            height: parent.height
+            height: root.plusWidth
+            // 9 dp from the top of the 44 dp bar: centred against the 26 dp
+            // button, not the 32 dp chip.
+            y: 9 - root.tabTop
 
             Rectangle {
                 anchors.fill: parent
-                radius: 6
+                radius: Theme.radiusSm
                 color: plusMouse.containsMouse ? root.hoverColor : "transparent"
             }
 
             Text {
                 anchors.centerIn: parent
                 text: "+"
-                color: root.mutedColor
+                color: plusMouse.containsMouse ? root.textColor : root.mutedColor
                 font.pixelSize: 16
             }
+
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("新建标签页")
 
             MouseArea {
                 id: plusMouse
@@ -311,10 +338,10 @@ Item {
     Rectangle {
         visible: root.dropX >= 0
         x: root.indicatorX(root.indexAt(root.dropX))
-        anchors.verticalCenter: parent.verticalCenter
+        y: root.tabTop
         width: 2
-        height: parent.height - 10
-        radius: 4
+        height: root.tabHeightValue
+        radius: 1
         color: root.accent
     }
 }

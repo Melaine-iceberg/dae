@@ -71,7 +71,7 @@ Item {
     ]
     readonly property var accentOptions: [
         { value: "system", label: qsTr("系统强调色") },
-        { value: "brand", label: qsTr("dae 蓝") }
+        { value: "brand", label: qsTr("信号橙") }
     ]
     readonly property var languageOptions: [
         { value: "system", label: qsTr("跟随系统") },
@@ -473,7 +473,7 @@ Item {
                 Text {
                     x: 24; y: 212
                     width: content.width - 48
-                    text: qsTr("“系统”读取桌面强调色，“dae 蓝”使用应用自带的品牌色。")
+                    text: qsTr("“系统”读取桌面强调色，“信号橙”使用应用自带的信号色。")
                     color: root.mutedColor
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap
