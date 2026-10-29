@@ -1,25 +1,25 @@
 import QtQuick
 
-// The path bar's search field.
+// The navigation bar's search field.
 //
-// It owns only the input and its two glyph buttons; the query, debounce and
-// result model live in ShellWindow because they have to be reset when the tab
-// or directory changes. `text` is assigned imperatively for the same reason:
-// letting `text` be bound would break the moment the user types.
+// It owns only the input and its two trailing states; the query, the debounce,
+// the mode and the result model live in ShellWindow because they have to be
+// reset when the tab or the directory changes. `text` is assigned imperatively
+// for the same reason: letting `text` be bound would break the moment the user
+// types.
 //
-// The shell shows it only while searching. A 224 px field parked in the
-// navigation bar for the whole session costs the breadcrumb a quarter of the
-// width it needs, to serve an action taken a few times an hour.
-
+// The mode lives in `SearchFilterBar` now. The field used to carry a 26 px
+// `名 / 文` switch of its own, which meant the current mode was stated twice —
+// once here as a character, once in the options strip as a chip — and the two
+// could disagree for a frame. One control, one statement: this field types, the
+// filter row says what is being searched.
 Item {
     id: root
 
     property string text: ""
+    /// "name" or "content". Drives the placeholder only.
     property string mode: "name"
     property bool busy: false
-    /// Content search is a local ripgrep walk; network listings only get
-    /// filename search, so the mode toggle is disabled there.
-    property bool contentEnabled: true
     property bool dark: true
     property color accent: Theme.interactive
     property color textColor: Theme.ink
@@ -27,7 +27,6 @@ Item {
     property color hairline: Theme.hairline
 
     signal queryEdited(string value)
-    signal modeToggled()
     signal clearRequested()
     /// Escape on an empty field. The shell answers by collapsing the field back
     /// into its icon; the field itself does not own that state.
@@ -53,37 +52,20 @@ Item {
         border.color: input.activeFocus
             ? Theme.signal : Theme.hairlineStrong
 
-        Item {
-            id: modeButton
-            anchors.left: parent.left
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            width: 26
+        Glyph {
+            id: leading
 
-            Text {
-                anchors.centerIn: parent
-                text: root.mode === "content" ? qsTr("文") : qsTr("名")
-                color: !root.contentEnabled ? root.mutedColor
-                    : (root.mode === "content" ? root.accent : root.mutedColor)
-                opacity: root.contentEnabled ? 1 : 0.55
-                font.pixelSize: Theme.typeMicro
-                font.weight: root.contentEnabled && root.mode === "content"
-                    ? Font.Medium : Font.Normal
-            }
-
-            Accessible.role: Accessible.Button
-            Accessible.name: root.mode === "content" ? qsTr("按内容搜索") : qsTr("按名称搜索")
-
-            MouseArea {
-                anchors.fill: parent
-                enabled: root.contentEnabled
-                cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                onClicked: root.modeToggled()
-            }
+            x: 8
+            width: 14
+            height: 14
+            anchors.verticalCenter: parent.verticalCenter
+            kind: "search"
+            tint: Theme.inkFaint
         }
 
         Text {
-            anchors.left: modeButton.right
+            anchors.left: leading.right
+            anchors.leftMargin: 6
             anchors.right: trailing.left
             anchors.rightMargin: 4
             anchors.verticalCenter: parent.verticalCenter
@@ -96,7 +78,8 @@ Item {
 
         TextInput {
             id: input
-            anchors.left: modeButton.right
+            anchors.left: leading.right
+            anchors.leftMargin: 6
             anchors.right: trailing.left
             anchors.rightMargin: 4
             anchors.verticalCenter: parent.verticalCenter
@@ -136,12 +119,13 @@ Item {
                 font.pixelSize: Theme.typeName
             }
 
-            Text {
+            Glyph {
                 anchors.centerIn: parent
                 visible: !root.busy && input.text.length > 0
-                text: "×"
-                color: root.mutedColor
-                font.pixelSize: Theme.typeTitle
+                width: 10
+                height: 10
+                kind: "close"
+                tint: root.mutedColor
             }
 
             MouseArea {

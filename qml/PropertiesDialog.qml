@@ -56,6 +56,14 @@ FocusScope {
         controller.open(path)
         root.visible = true
         root.forceActiveFocus()
+        // Opening from a click leaves the release event still to be
+        // delivered to whatever is underneath; asking once more on the next
+        // turn is what actually lands the focus here, and Escape only works
+        // when it does.
+        Qt.callLater(function () {
+            if (root.visible)
+                root.forceActiveFocus()
+        })
     }
 
     function close() {
@@ -130,7 +138,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(600, root.width - 40)
         height: Math.min(620, root.height - 48)
-        radius: 16
+        radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -147,25 +155,14 @@ FocusScope {
             anchors.margins: 18
             spacing: 0
 
-            Text {
+            DialogHeader {
                 width: parent.width
-                text: qsTr("属性")
-                color: root.textColor
-                font.pixelSize: 14
-                font.weight: Font.DemiBold
+                title: qsTr("属性")
+                subtitle: controller.loading ? qsTr("正在读取…") : controller.name
+                onCloseRequested: root.close()
             }
 
-            Item { width: 1; height: 5 }
-
-            Text {
-                width: parent.width
-                text: controller.loading ? qsTr("正在读取…") : controller.name
-                color: root.mutedColor
-                font.pixelSize: 12
-                elide: Text.ElideMiddle
-            }
-
-            Item { width: 1; height: 10 }
+            Item { width: 1; height: 12 }
 
             // Tabs. The set depends on what the entry can actually do: a file
             // has no enclosed items, a remote path has no attributes to edit,
@@ -210,7 +207,7 @@ FocusScope {
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
                             height: 2
-                            radius: 4
+                            radius: Theme.radiusSm
                             color: root.accent
                             visible: root.tab === tabItem.modelData.key
                         }
@@ -267,7 +264,7 @@ FocusScope {
                         Rectangle {
                             width: 96
                             height: 24
-                            radius: 6
+                            radius: Theme.radiusSm
                             color: scanMouse.containsMouse
                                 ? Theme.fill : "transparent"
                             border.width: 1
@@ -486,8 +483,8 @@ FocusScope {
 
                         Rectangle {
                             width: 96
-                            height: 26
-                            radius: 6
+                            height: 28
+                            radius: Theme.radiusSm
                             color: hashMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
 
                             Text {
@@ -542,7 +539,7 @@ FocusScope {
                     width: 76
                     height: 28
                     anchors.verticalCenter: parent.verticalCenter
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
                         ? Theme.fill : "transparent"
                     border.width: 1
@@ -570,7 +567,7 @@ FocusScope {
                     height: 28
                     anchors.verticalCenter: parent.verticalCenter
                     visible: controller.editable
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: !root.canSave ? Theme.canvasAlt
                         : (saveMouse.containsMouse ? Theme.interactiveHover : Theme.interactive)
 
@@ -626,8 +623,11 @@ FocusScope {
             width: 70
             anchors.verticalCenter: parent.verticalCenter
             text: row.label
-            color: root.mutedColor
-            font.pixelSize: 11
+            // Labels carry the field name only, so they sit back at `inkFaint`
+            // while the value keeps full `ink`: the pair reads as one line,
+            // scanned left to right, instead of as two competing columns.
+            color: Theme.inkFaint
+            font.pixelSize: Theme.typeMicro
         }
 
         Text {
@@ -637,7 +637,7 @@ FocusScope {
             anchors.verticalCenter: parent.verticalCenter
             text: row.value
             color: root.textColor
-            font.pixelSize: 12
+            font.pixelSize: Theme.typeBody
             elide: Text.ElideMiddle
         }
     }
@@ -707,7 +707,7 @@ FocusScope {
             width: 15
             height: 15
             anchors.verticalCenter: parent.verticalCenter
-            radius: 4
+            radius: Theme.radiusSm
             color: toggle.checked ? root.accent : "transparent"
             border.width: 1
             border.color: toggle.checked ? root.accent : Theme.scrim
@@ -757,7 +757,7 @@ FocusScope {
 
         width: 150
         height: 28
-        radius: 6
+        radius: Theme.radiusSm
         color: root.fieldColor
         border.width: 1
         border.color: fieldInput.activeFocus
@@ -816,8 +816,8 @@ FocusScope {
             anchors.right: copyButton.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            height: 26
-            radius: 6
+            height: 28
+            radius: Theme.radiusSm
             color: root.fieldColor
             border.width: 1
             border.color: root.hairline
@@ -839,8 +839,8 @@ FocusScope {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             width: 56
-            height: 26
-            radius: 6
+            height: 28
+            radius: Theme.radiusSm
             color: copyMouse.containsMouse
                 ? Theme.fill : "transparent"
             border.width: 1

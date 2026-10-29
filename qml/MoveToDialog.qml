@@ -119,7 +119,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(520, root.width - 40)
         height: Math.min(480, root.height - 48)
-        radius: 16
+        radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -136,21 +136,11 @@ FocusScope {
             anchors.margins: 18
             spacing: 0
 
-            Text {
+            DialogHeader {
                 width: parent.width
-                text: qsTr("移动到")
-                color: root.textColor
-                font.pixelSize: 14
-                font.weight: Font.DemiBold
-            }
-
-            Item { width: 1; height: 5 }
-
-            Text {
-                width: parent.width
-                text: root.paths.length + qsTr(" 项将移动到下面的文件夹。")
-                color: root.mutedColor
-                font.pixelSize: 12
+                title: qsTr("移动到")
+                subtitle: root.paths.length + qsTr(" 项将移动到下面的文件夹。")
+                onCloseRequested: root.close()
             }
 
             Item { width: 1; height: 12 }
@@ -163,7 +153,7 @@ FocusScope {
                 Rectangle {
                     width: 26
                     height: 28
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: upMouse.containsMouse
                         ? Theme.fill : "transparent"
                     border.width: 1
@@ -187,7 +177,7 @@ FocusScope {
                 Rectangle {
                     width: parent.width - 26 - 8
                     height: 28
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: root.fieldColor
                     border.width: 1
                     border.color: pathInput.activeFocus
@@ -235,7 +225,7 @@ FocusScope {
             Rectangle {
                 width: parent.width
                 height: Math.max(120, layout.height - y - 46)
-                radius: 6
+                radius: Theme.radiusSm
                 color: root.fieldColor
                 border.width: 1
                 border.color: root.hairline
@@ -272,7 +262,7 @@ FocusScope {
 
                         Rectangle {
                             anchors.fill: parent
-                            radius: 6
+                            radius: Theme.radiusSm
                             color: root.picked === folderRow.filePath
                                 ? Theme.selection
                                 : (folderMouse.containsMouse
@@ -323,7 +313,7 @@ FocusScope {
                     width: 76
                     height: 28
                     anchors.verticalCenter: parent.verticalCenter
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
                         ? Theme.fill : "transparent"
                     border.width: 1
@@ -348,7 +338,7 @@ FocusScope {
                     width: 84
                     height: 28
                     anchors.verticalCenter: parent.verticalCenter
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: moveMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
 
                     Text {
@@ -377,7 +367,7 @@ FocusScope {
 
         width: quickLabel.width + 20
         height: 22
-        radius: 6
+        radius: Theme.radiusSm
         color: quickMouse.containsMouse
             ? Theme.hover : "transparent"
         border.width: 1

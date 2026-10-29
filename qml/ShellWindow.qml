@@ -75,7 +75,12 @@ Window {
     property bool searchOpen: false
     property bool searchRegex: false
     property bool searchCase: false
+    /// The content query's file filter, as the glob list the backend takes.
     property string searchFilter: ""
+    /// Which category produced `searchFilter`. The bar paints the label; the
+    /// shell keeps the id so a language change or a mode switch cannot lose
+    /// the selection.
+    property string searchType: "all"
     property string promptMode: ""
     property string promptPath: ""
     property string contextPath: ""
@@ -136,6 +141,16 @@ Window {
     property var contextList: null
     readonly property bool searchBusy: activeTab === null ? false
         : (searchMode === "content" ? activeTab.contentSearch.busy : activeTab.nameSearch.busy)
+    /// What the filter row reports on the right. Name search counts rows;
+    /// content search counts the files that hold a match, because one file can
+    /// answer with a dozen lines and "12 项匹配" would then be a lie about the
+    /// number of files the user is about to see.
+    readonly property int searchMatchCount: {
+        if (activeTab === null || !searchActive)
+            return 0
+        return searchMode === "content" ? activeTab.contentSearch.fileCount
+                                        : activeTab.nameSearch.loaded
+    }
     readonly property string mod: Qt.platform.os === "osx" ? "Meta" : "Ctrl"
     /// System accent follows the OS; the brand accent is the app's own blue
     /// pair, one shade per theme. `accent` is the only colour views consume,
@@ -164,6 +179,12 @@ Window {
     }
     function shortcutDisplay(id) {
         return Shortcut.display(root.shortcutBinding(id), root.isMac)
+    }
+    /// A chord the shell fixes itself, with no row in `settings.toml`. It
+    /// prints through the same formatter, so `Mod+Shift+N` reads `⇧⌘N` on
+    /// macOS instead of leaking the internal `Meta` spelling into a menu.
+    function chord(binding) {
+        return Shortcut.display(binding, root.isMac)
     }
     function shortcutSequence(id) {
         return Shortcut.qtSequence(root.shortcutBinding(id), root.isMac)
@@ -878,6 +899,7 @@ Window {
         root.searchRegex = false
         root.searchCase = false
         root.searchFilter = ""
+        root.searchType = "all"
         if (searchBar)
             searchBar.setText("")
     }
@@ -900,6 +922,15 @@ Window {
         root.focusActiveSurface()
     }
 
+    /// Says what an operation did and, when it went on the undo stack, offers
+    /// to take it back. The verb is offered for anything the stack recorded;
+    /// the alternative — trusting `Workspace.canUndo` at this instant — reads
+    /// the flag before the backend's own event has landed and would show the
+    /// button only after a visible pop.
+    function announceUndoable(message) {
+        toast.show(message, false, true)
+    }
+
     function acceptSearchText(value) {
         root.searchQuery = value
         root.scheduleSearch()
@@ -912,14 +943,51 @@ Window {
             root.runSearch()
     }
 
-    function toggleSearchMode() {
-        if (root.remoteLocation) {
+    /// The filter row's mode chips are the one entry point now: the field
+    /// itself only types, so a mode cannot be switched by two different
+    /// controls that disagree about which one is lit.
+    function setSearchMode(mode) {
+        if (mode === "content" && root.remoteLocation) {
             toast.show(qsTr("内容搜索只支持本地目录"), false)
             return
         }
-        root.searchMode = root.searchMode === "name" ? "content" : "name"
+        if (root.searchMode === mode)
+            return
+        root.searchMode = mode
         if (root.searchActive)
             searchTimer.restart()
+    }
+
+    function setSearchType(id) {
+        if (root.searchType === id && root.searchFilter === searchFilterBar.typeGlob(id))
+            return
+        root.searchType = id
+        root.searchFilter = searchFilterBar.typeGlob(id)
+        if (root.searchActive)
+            searchTimer.restart()
+    }
+
+    function searchTypeMenuItems() {
+        const options = searchFilterBar.typeOptions
+        const items = []
+        for (let index = 0; index < options.length; index += 1)
+            items.push({ id: options[index].id,
+                         label: options[index].label,
+                         checked: root.searchType === options[index].id })
+        return items
+    }
+
+    /// The palette's "search inside files" fallback: the same field and the
+    /// same bar, only the mode and the query arrive already filled in, so the
+    /// user lands where the query is running instead of in a second search UI.
+    function startContentSearch(value) {
+        if (!root.folderActive || root.remoteLocation || value.length === 0)
+            return
+        root.openSearch()
+        root.searchMode = "content"
+        if (searchBar)
+            searchBar.setText(value)
+        root.acceptSearchText(value)
     }
 
     function runSearch() {
@@ -1176,6 +1244,10 @@ Window {
             root.runPaletteCommand(value)
             return
         }
+        if (kind === "content-search") {
+            root.startContentSearch(value)
+            return
+        }
         if (kind === "overview") {
             root.openOverview()
             return
@@ -1233,8 +1305,13 @@ Window {
             if (path !== "")
                 root.promptRename(path, root.activeTab.listing.nameOf(path))
         } else if (id === "trash-selection") {
-            if (!root.remoteLocation)
-                Workspace.trashEntries(root.currentSelection())
+            if (!root.remoteLocation) {
+                const selection = root.currentSelection()
+                Workspace.trashEntries(selection)
+                root.announceUndoable(selection.length > 1
+                    ? qsTr("已将 %1 项移到回收站").arg(selection.length)
+                    : qsTr("已移到回收站"))
+            }
         } else if (id === "copy") {
             Workspace.setClipboard("copy", root.currentSelection())
         } else if (id === "cut") {
@@ -1626,7 +1703,7 @@ Window {
             ? (paneTab.listing.remote || root.isRemotePath(paneTab.listing.path))
             : root.remoteLocation
         menu.openAt(x, y, [
-            { id: "newFolder", label: qsTr("新建文件夹"), shortcut: root.mod + "+Shift+N" },
+            { id: "newFolder", label: qsTr("新建文件夹"), shortcut: root.chord("Mod+Shift+N") },
             { id: "newFile", label: qsTr("新建文件") },
             { separator: true },
             { id: "paste", label: qsTr("粘贴"),
@@ -1834,7 +1911,13 @@ Window {
             Workspace.deleteCloudAccount(path)
             break
         case "trash":
-            Workspace.trashEntries(root.currentSelection())
+            {
+                const selection = root.currentSelection()
+                Workspace.trashEntries(selection)
+                root.announceUndoable(selection.length > 1
+                    ? qsTr("已将 %1 项移到回收站").arg(selection.length)
+                    : qsTr("已移到回收站"))
+            }
             break
         case "delete":
             Workspace.deleteEntries(root.currentSelection())
@@ -1968,8 +2051,16 @@ Window {
                 }
             }
             root.reloadAfterOperation(kind, focus)
+            // The completion message replaces whatever the action announced
+            // optimistically, so it has to carry the undo offer too —
+            // otherwise the verb appears and then vanishes half a second
+            // later, which reads as "too late".
+            // A reversed step does not offer to reverse itself again, even
+            // when the stack still holds older steps: "Undone — Undo" reads as
+            // a question the shell has already answered.
+            const reversible = Workspace.canUndo && kind !== "undo" && kind !== "redo"
             if (Workspace.status !== "")
-                toast.show(root.localizeBackend(Workspace.status), false)
+                toast.show(root.localizeBackend(Workspace.status), false, reversible)
         }
 
         function onOperationFailed(kind, message) {
@@ -2409,7 +2500,6 @@ Window {
                     visible: searchSlot.expanded
                     mode: root.searchMode
                     busy: root.searchBusy
-                    contentEnabled: !root.remoteLocation
                     dark: root.dark
                     accent: root.accent
                     textColor: root.textColor
@@ -2426,7 +2516,6 @@ Window {
                     onQueryEdited: function (value) {
                         root.acceptSearchText(value)
                     }
-                    onModeToggled: root.toggleSearchMode()
                     onClearRequested: root.acceptSearchText("")
                     onDismissRequested: root.closeSearch()
                 }
@@ -2550,127 +2639,38 @@ Window {
             }
         }
 
-        Rectangle {
-            id: searchOptions
+        // ── Search filters ────────────────────────────────────────────
+        // One bar for both modes, and only while the query is live. It sits
+        // on the canvas rather than the chrome because it belongs to the
+        // field that opened it, not to the window's frame.
+        SearchFilterBar {
+            id: searchFilterBar
+
             width: parent.width
             height: visible ? 32 : 0
-            visible: root.contentSearchActive
-            color: root.chromeColor
-            clip: true
+            visible: root.folderActive
+                && (root.searchOpen || root.searchQuery.length > 0)
 
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: 1
-                color: Theme.hairline
+            mode: root.searchMode
+            contentEnabled: !root.remoteLocation
+            caseSensitive: root.searchCase
+            regex: root.searchRegex
+            typeId: root.searchType
+            busy: root.searchBusy
+            matchCount: root.searchMatchCount
+            query: root.searchQuery.trim()
+
+            onModeRequested: function (mode) { root.setSearchMode(mode) }
+            onCaseToggled: {
+                root.searchCase = !root.searchCase
+                root.scheduleSearch()
             }
-
-            Row {
-                x: 12
-                height: parent.height
-                spacing: 8
-
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 28
-                    height: 22
-                    radius: Theme.radiusXs
-                    color: root.searchRegex ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24)
-                                            : "transparent"
-                    border.width: 1
-                    border.color: root.searchRegex ? root.accent : root.hairline
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: ".*"
-                        color: root.searchRegex ? root.textColor : root.mutedColor
-                        font.pixelSize: 11
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            root.searchRegex = !root.searchRegex
-                            root.scheduleSearch()
-                        }
-                    }
-                }
-
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 28
-                    height: 22
-                    radius: Theme.radiusXs
-                    color: root.searchCase ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.24)
-                                           : "transparent"
-                    border.width: 1
-                    border.color: root.searchCase ? root.accent : root.hairline
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Aa"
-                        color: root.searchCase ? root.textColor : root.mutedColor
-                        font.pixelSize: 11
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            root.searchCase = !root.searchCase
-                            root.scheduleSearch()
-                        }
-                    }
-                }
-
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 170
-                    height: 22
-                    radius: Theme.radiusXs
-                    color: Theme.hover
-                    border.width: 1
-                    border.color: filterInput.activeFocus ? root.accent : root.hairline
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 7
-                        anchors.verticalCenter: parent.verticalCenter
-                        visible: filterInput.text.length === 0
-                        text: qsTr("类型过滤，如 *.rs")
-                        color: root.mutedColor
-                        font.pixelSize: 11
-                    }
-
-                    TextInput {
-                        id: filterInput
-                        anchors.fill: parent
-                        anchors.leftMargin: 7
-                        anchors.rightMargin: 7
-                        verticalAlignment: TextInput.AlignVCenter
-                        color: root.textColor
-                        selectionColor: root.accent
-                        selectedTextColor: Theme.onInteractive
-                        font.pixelSize: 11
-                        clip: true
-
-                        onTextEdited: {
-                            root.searchFilter = text
-                            root.scheduleSearch()
-                        }
-                    }
-                }
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: root.searchBusy ? qsTr("搜索中…")
-                        : (root.activeTab !== null && root.activeTab.contentSearch.status !== ""
-                            ? root.activeTab.contentSearch.status : qsTr("遵循 .gitignore"))
-                    color: root.mutedColor
-                    font.pixelSize: 11
-                }
+            onRegexToggled: {
+                root.searchRegex = !root.searchRegex
+                root.scheduleSearch()
+            }
+            onTypeMenuRequested: function (x, y) {
+                searchTypeMenu.openAt(x, y, root.searchTypeMenuItems())
             }
         }
 
@@ -2678,7 +2678,7 @@ Window {
             id: body
             width: parent.width
             height: parent.height - Theme.shellTitle - Theme.shellNav
-                - Theme.shellStatus - searchOptions.height
+                - Theme.shellStatus - searchFilterBar.height
 
             Item {
                 id: sidebarHandle
@@ -2796,6 +2796,11 @@ Window {
                         }
                         onRemoteDeleteRequested: function (paths) {
                             root.requestRemoteDelete(paths)
+                        }
+                        onTrashed: function (count) {
+                            root.announceUndoable(count > 1
+                                ? qsTr("已将 %1 项移到回收站").arg(count)
+                                : qsTr("已移到回收站"))
                         }
                         onRemoteOpenRequested: function (path) {
                             root.acceptRemotePreview(path)
@@ -3379,7 +3384,7 @@ Window {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: 3
+                        radius: Theme.radiusXs
                         color: previewToggleMouse.containsMouse
                             ? Theme.hover : "transparent"
                     }
@@ -3433,7 +3438,7 @@ Window {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: 3
+                        radius: Theme.radiusXs
                         color: terminalToggleMouse.containsMouse
                             ? Theme.hover : "transparent"
                     }
@@ -3576,6 +3581,20 @@ Window {
 
         onActionTriggered: function (id) {
             root.runMoreAction(id)
+        }
+    }
+
+    /// The filter row's type categories. It is its own menu rather than a row
+    /// of chips because the catalogue is six entries long and the bar has to
+    /// stay one row; the entries are the categories the backend already
+    /// filters by, not a second taxonomy.
+    ContextMenu {
+        id: searchTypeMenu
+        anchors.fill: parent
+        dark: root.dark
+
+        onActionTriggered: function (id) {
+            root.setSearchType(id)
         }
     }
 
@@ -3776,12 +3795,9 @@ Window {
         textColor: root.textColor
         mutedColor: root.mutedColor
         hairline: root.hairline
-        headerColor: root.chromeColor
         overviewModel: overviewModel
         folderActive: root.folderActive
         scopePath: root.folderActive ? root.activePath : Workspace.homeDirectory
-        commandShortcut: root.shortcutDisplay("app.commandBar")
-        pathShortcut: root.shortcutDisplay("app.pathJump")
         shortcutMap: root.shortcutMap
         isMac: root.isMac
 
@@ -3895,11 +3911,12 @@ Window {
 
     Toast {
         id: toast
-        width: 360
-        height: 40
-        x: (root.width - width) / 2
-        y: root.height - 96
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom
+        anchors.bottomMargin: 38
         dark: root.dark
+
+        onUndoRequested: Workspace.undo()
     }
 
     Shortcut {

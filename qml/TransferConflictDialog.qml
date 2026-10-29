@@ -68,7 +68,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(520, root.width - 48)
         height: content.implicitHeight + 36
-        radius: 16
+        radius: Theme.radiusLg
         color: root.panelColor
         border.width: 1
         border.color: root.panelBorder
@@ -87,28 +87,22 @@ FocusScope {
             width: parent.width - 36
             spacing: 12
 
-            Text {
+            DialogHeader {
                 width: parent.width
-                text: qsTr("替换或跳过文件")
-                color: root.headingColor
-                font.pixelSize: 14
-                font.weight: Font.DemiBold
-                elide: Text.ElideRight
+                title: qsTr("替换或跳过文件")
+                subtitle: Workspace.conflictTotal > 1
+                    ? qsTr("第 %1 / %2 个冲突")
+                        .arg(Workspace.conflictIndex).arg(Workspace.conflictTotal)
+                    : qsTr("“%1”已存在").arg(Workspace.conflictName)
+                // Dismissing cancels the batch — the same answer the scrim
+                // gives, because a half-answered transfer is not a state this
+                // dialog can leave behind.
+                onCloseRequested: Workspace.cancelConflict()
             }
 
             Column {
                 width: parent.width
                 spacing: 2
-
-                Text {
-                    width: parent.width
-                    visible: Workspace.conflictTotal > 1
-                    text: qsTr("第 %1 / %2 个冲突")
-                        .arg(Workspace.conflictIndex).arg(Workspace.conflictTotal)
-                    color: root.headingColor
-                    font.pixelSize: 11
-                    elide: Text.ElideRight
-                }
 
                 Text {
                     width: parent.width
@@ -162,7 +156,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 14
                     height: 14
-                    radius: 4
+                    radius: Theme.radiusSm
                     color: root.applyToAll ? root.accent : "transparent"
                     border.width: 1
                     border.color: root.applyToAll ? root.accent
@@ -206,8 +200,8 @@ FocusScope {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     width: cancelLabel.implicitWidth + 24
-                    height: 26
-                    radius: 6
+                    height: 28
+                    radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
                         ? Theme.fill : "transparent"
                     border.width: 1
@@ -243,8 +237,8 @@ FocusScope {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     width: skipSegment.width + keepSegment.width + replaceSegment.width
-                    height: 26
-                    radius: 6
+                    height: 28
+                    radius: Theme.radiusSm
                     color: "transparent"
                     border.width: 1
                     border.color: Theme.hairline

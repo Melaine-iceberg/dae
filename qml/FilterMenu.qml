@@ -6,7 +6,8 @@ import dae 1.0
 //
 // The menu carries the hidden-files switch alongside the three buckets because
 // all four narrow the same listing, and keeps a clear-all action at the bottom
-// so an accidental combination is one click away from undo.
+// so an accidental combination is one click away from undo. The rows come from
+// `MenuList`, shared with every other menu in the shell.
 Item {
     id: root
 
@@ -32,11 +33,6 @@ Item {
         || ExplorerPrefs.modifiedFilter !== "any"
         || ExplorerPrefs.sizeFilter !== "any"
         || !ExplorerPrefs.showHiddenFiles
-
-    readonly property color panelColor: Theme.raised
-    readonly property color borderColor: Theme.hairlineStrong
-    readonly property color labelColor: Theme.inkFaint
-    readonly property color textColor: Theme.ink
 
     readonly property var items: [
         { kind: "label", label: qsTr("可见性") },
@@ -65,8 +61,9 @@ Item {
     function openAbove(x, y) {
         root.openX = x
         root.openY = y
+        list.resetScroll()
         root.visible = true
-        root.forceActiveFocus()
+        Qt.callLater(list.takeFocus)
     }
 
     function close() {
@@ -80,14 +77,31 @@ Item {
     }
 
     function choose(item) {
+        if (item === undefined)
+            return
         if (item.kind === "toggle") {
             ExplorerPrefs.setBool(item.property, !ExplorerPrefs[item.property])
             return
         }
-        ExplorerPrefs.setString(item.group, item.value)
+        if (item.kind === "radio")
+            ExplorerPrefs.setString(item.group, item.value)
     }
 
-    Keys.onEscapePressed: root.close()
+    function normalized() {
+        const mapped = []
+        for (let index = 0; index < root.items.length; index += 1) {
+            const entry = root.items[index]
+            const kind = entry.kind === "label" ? "header"
+                : (entry.kind === "sep" ? "separator" : "item")
+            mapped.push({
+                kind: kind,
+                label: entry.label,
+                checked: kind === "item" && root.checked(entry),
+                shortcut: entry.shortcut || ""
+            })
+        }
+        return mapped
+    }
 
     MouseArea {
         anchors.fill: parent
@@ -98,109 +112,31 @@ Item {
 
     Rectangle {
         id: panel
-        width: 252
-        height: column.implicitHeight + (root.active ? 37 : 10)
+        width: list.naturalWidth
+        height: Math.min(list.contentHeight + 8 + (root.active ? 29 : 0),
+                         root.height - 16)
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
         y: Math.max(8, root.openY - height - 6)
-        radius: 12
-        color: root.panelColor
+        radius: Theme.radiusMd
+        color: Theme.raised
         border.width: 1
-        border.color: root.borderColor
+        border.color: Theme.hairlineStrong
 
-        Column {
-            id: column
+        MenuList {
+            id: list
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.topMargin: 5
+            anchors.topMargin: 4
+            // The clear row keeps its place at the bottom; the rows scroll
+            // above it rather than sliding under it.
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 4 + (root.active ? 29 : 0)
+            maxHeight: height
+            items: root.normalized()
 
-            Repeater {
-                model: root.items
-
-                delegate: Item {
-                    id: entry
-
-                    required property var modelData
-
-                    width: column.width
-                    height: entry.modelData.kind === "label" ? 22
-                        : entry.modelData.kind === "sep" ? 9 : 27
-
-                    Rectangle {
-                        visible: entry.modelData.kind === "sep"
-                        anchors.verticalCenter: parent.verticalCenter
-                        x: 10
-                        width: parent.width - 20
-                        height: 1
-                        color: Theme.fill
-                    }
-
-                    Text {
-                        visible: entry.modelData.kind === "label"
-                        anchors.left: parent.left
-                        anchors.leftMargin: 13
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: entry.modelData.kind === "label" ? entry.modelData.label : ""
-                        color: root.labelColor
-                        font.pixelSize: 11
-                        font.weight: Font.DemiBold
-                    }
-
-                    Rectangle {
-                        visible: entry.modelData.kind !== "label"
-                            && entry.modelData.kind !== "sep"
-                        anchors.fill: parent
-                        anchors.leftMargin: 4
-                        anchors.rightMargin: 4
-                        radius: 6
-                        color: rowMouse.containsMouse ? Theme.fill
-                                                      : "transparent"
-                    }
-
-                    Text {
-                        visible: entry.modelData.kind !== "label"
-                            && entry.modelData.kind !== "sep"
-                        anchors.left: parent.left
-                        anchors.leftMargin: 13
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: entry.modelData.kind !== "label"
-                            && entry.modelData.kind !== "sep" ? entry.modelData.label : ""
-                        color: root.textColor
-                        font.pixelSize: 12
-                    }
-
-                    Text {
-                        visible: entry.modelData.shortcut !== undefined
-                        anchors.right: parent.right
-                        anchors.rightMargin: 34
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: entry.modelData.shortcut || ""
-                        color: root.labelColor
-                        font.pixelSize: 11
-                    }
-
-                    Glyph {
-                        visible: entry.modelData.kind !== "label"
-                            && entry.modelData.kind !== "sep" && root.checked(entry.modelData)
-                        anchors.right: parent.right
-                        anchors.rightMargin: 13
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 14
-                        height: 14
-                        kind: "check"
-                        tint: root.accent
-                    }
-
-                    MouseArea {
-                        id: rowMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        enabled: entry.modelData.kind !== "label"
-                            && entry.modelData.kind !== "sep"
-                        onClicked: root.choose(entry.modelData)
-                    }
-                }
-            }
+            onTriggered: function (index) { root.choose(root.items[index]) }
+            onEscapeRequested: root.close()
         }
 
         Rectangle {
@@ -208,19 +144,28 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 28
+            height: 29
             color: "transparent"
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: 1
+                color: Theme.hairline
+            }
 
             Text {
                 anchors.centerIn: parent
                 text: qsTr("清除筛选")
                 color: root.accent
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
             }
 
             MouseArea {
                 anchors.fill: parent
                 hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
                 onClicked: ExplorerPrefs.resetFilters()
             }
         }

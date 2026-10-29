@@ -138,7 +138,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(440, root.width - 40)
         height: Math.min(464, root.height - 48)
-        radius: 16
+        radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -155,23 +155,11 @@ FocusScope {
             anchors.margins: 18
             spacing: 0
 
-            Text {
+            DialogHeader {
                 width: parent.width
-                text: qsTr("选择打开方式")
-                color: root.textColor
-                font.pixelSize: 14
-                font.weight: Font.DemiBold
-            }
-
-            Item { width: 1; height: 5 }
-
-            Text {
-                width: parent.width
-                text: qsTr("用哪个应用打开“%1”？").arg(root.fileName)
-                color: root.mutedColor
-                font.pixelSize: 12
-                elide: Text.ElideMiddle
-                wrapMode: Text.NoWrap
+                title: qsTr("选择打开方式")
+                subtitle: qsTr("用哪个应用打开“%1”？").arg(root.fileName)
+                onCloseRequested: root.close()
             }
 
             Item { width: 1; height: 10 }
@@ -180,7 +168,7 @@ FocusScope {
                 id: filterField
                 width: parent.width
                 height: visible ? 30 : 0
-                radius: 6
+                radius: Theme.radiusSm
                 visible: apps.needsFilter
                 color: root.fieldColor
                 border.width: 1
@@ -286,7 +274,7 @@ FocusScope {
                             anchors.fill: parent
                             anchors.leftMargin: 2
                             anchors.rightMargin: 2
-                            radius: 6
+                            radius: Theme.radiusSm
                             color: root.selectedId === appId
                                 ? Theme.selection
                                 : (rowMouse.containsMouse
@@ -314,7 +302,7 @@ FocusScope {
                             x: 12
                             width: 18
                             height: 18
-                            radius: 4
+                            radius: Theme.radiusSm
                             anchors.verticalCenter: parent.verticalCenter
                             color: Theme.hairlineStrong
 
@@ -462,7 +450,7 @@ FocusScope {
                         Rectangle {
                             width: 14
                             height: 14
-                            radius: 4
+                            radius: Theme.radiusSm
                             anchors.verticalCenter: parent.verticalCenter
                             color: root.setDefault ? root.accent : "transparent"
                             border.width: 1
@@ -501,8 +489,8 @@ FocusScope {
 
                     Rectangle {
                         width: 66
-                        height: 26
-                        radius: 6
+                        height: 28
+                        radius: Theme.radiusSm
                         color: cancelMouse.containsMouse
                             ? Theme.fill
                             : "transparent"
@@ -526,8 +514,8 @@ FocusScope {
 
                     Rectangle {
                         width: 76
-                        height: 26
-                        radius: 6
+                        height: 28
+                        radius: Theme.radiusSm
                         opacity: root.selectedId === "" || root.opening ? 0.45 : 1
                         color: root.accent
 

@@ -174,7 +174,7 @@ Item {
         anchors.centerIn: parent
         width: Math.min(470, root.width - 48)
         height: 380
-        radius: 16
+        radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -187,31 +187,23 @@ Item {
             onWheel: function (wheel) { wheel.accepted = true }
         }
 
-        Text {
-            x: 20
-            y: 18
-            text: qsTr("连接网络存储")
-            color: root.textColor
-            font.pixelSize: 14
-            font.weight: Font.DemiBold
-        }
-
-        Text {
-            x: 20
-            y: 42
-            width: parent.width - 40
-            text: qsTr("连接 SMB 服务器（NAS、Windows 共享）或 SFTP 服务器（Linux、NAS）。")
-            color: root.mutedColor
-            font.pixelSize: 11
-            elide: Text.ElideRight
+        // The card positions its fields absolutely, so the head is the one
+        // element that has to agree with every other dialog: 44 tall, title
+        // and its one-line note stacked, dismiss on the right.
+        DialogHeader {
+            width: parent.width
+            inset: 20
+            title: qsTr("连接网络存储")
+            subtitle: qsTr("连接 SMB 服务器（NAS、Windows 共享）或 SFTP 服务器（Linux、NAS）。")
+            onCloseRequested: root.dismiss()
         }
 
         Text {
             x: 20
             y: 72
             text: qsTr("协议")
-            color: Theme.inkMuted
-            font.pixelSize: 12
+            color: Theme.inkFaint
+            font.pixelSize: Theme.typeMicro
         }
 
         Row {
@@ -295,7 +287,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 16
                 height: 16
-                radius: 4
+                radius: Theme.radiusSm
                 color: root.remember ? root.accent : "transparent"
                 border.width: 1
                 border.color: root.remember ? root.accent : root.hairline
@@ -346,8 +338,8 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 90
-            height: 26
-            radius: 6
+            height: 28
+            radius: Theme.radiusSm
             color: testMouse.containsMouse && testButton.enabled
                 ? Theme.fill : "transparent"
             border.width: 1
@@ -376,8 +368,8 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 82
-            height: 26
-            radius: 6
+            height: 28
+            radius: Theme.radiusSm
             color: submitButton.enabled
                 ? (submitMouse.containsMouse ? Theme.interactiveHover : root.accent)
                 : Theme.canvasAlt
@@ -404,8 +396,8 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 72
-            height: 26
-            radius: 6
+            height: 28
+            radius: Theme.radiusSm
             color: cancelMouse.containsMouse
                 ? Theme.fill : "transparent"
             border.width: 1
@@ -437,8 +429,8 @@ Item {
         readonly property bool hovered: protocolMouse.containsMouse
 
         width: Math.max(120, labelText.implicitWidth + 28)
-        height: 30
-        radius: 6
+        height: 28
+        radius: Theme.radiusSm
         color: selected
             ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.20)
             : (hovered ? Theme.fill : "transparent")
@@ -484,16 +476,16 @@ Item {
             x: 0
             y: 0
             text: field.label
-            color: Theme.inkMuted
-            font.pixelSize: 12
+            color: Theme.inkFaint
+            font.pixelSize: Theme.typeMicro
         }
 
         Rectangle {
             id: frame
             y: 20
             width: parent.width
-            height: 30
-            radius: 6
+            height: 28
+            radius: Theme.radiusSm
             color: root.fieldColor
             border.width: 1
             border.color: input.activeFocus ? root.accent : root.hairline

@@ -11,6 +11,11 @@ import "Shortcut.js" as Shortcut
 // rows, and the palette's own `SearchModel` owns the filename hits. A rebuild
 // re-reads those models, ranks the flat candidate set, then buckets the matches
 // back into sections so a section header never floats over an unrelated row.
+//
+// Geometry follows the prototype: 560 wide, 64 down from the top of the
+// window, 8 px corners, a 44 px input band and 30 px rows. The older version
+// was 680 wide with 40 px rows and a tinted plate behind every mark, which made
+// a list of sixty one-line commands read like a grid of tiles.
 Item {
     id: root
 
@@ -22,9 +27,6 @@ Item {
     property color textColor: Theme.ink
     property color mutedColor: Theme.inkMuted
     property color hairline: Theme.hairline
-    property color headerColor: Theme.chrome
-    property string commandShortcut: "Ctrl+K"
-    property string pathShortcut: "Ctrl+P"
     /// The bindings from `settings.toml`, so a hint in the list is the key the
     /// user actually has to press. Commands without an entry keep their
     /// built-in hint because those keys are not part of the shared registry.
@@ -32,10 +34,6 @@ Item {
     property bool isMac: false
 
     readonly property color panelColor: Theme.raised
-    readonly property color activeColor: Qt.rgba(accent.r, accent.g, accent.b,
-                                                 dark ? 0.26 : 0.14)
-    readonly property color hoverColor: Theme.hover
-    readonly property color plateColor: Theme.canvasAlt
 
     readonly property string trimmedQuery: query.trim()
     readonly property bool pathLike: root.isPathLike(root.trimmedQuery)
@@ -170,17 +168,28 @@ Item {
         return { score: score, indices: indices }
     }
 
+    /// Rows print the chord the user actually has, through the same formatter
+    /// the menus use, so `Mod+K` reads `⌘K` on macOS and never `Meta+K`.
     function shortcutHint(id, fallback) {
         const binding = root.shortcutMap ? root.shortcutMap[id] : undefined
-        return binding === undefined ? fallback : Shortcut.display(binding, root.isMac)
+        if (binding === undefined)
+            return fallback === "" ? "" : Shortcut.display(fallback, root.isMac)
+        return Shortcut.display(binding, root.isMac)
     }
 
-    function command(id, label, hint, icon, group) {
+    /// Chords the shell decides for itself instead of reading from
+    /// `settings.toml` — new tab, close tab, new folder — still print through
+    /// the shared formatter, so a macOS palette reads `⌘T` and not `Ctrl+T`.
+    function chord(binding) {
+        return Shortcut.display(binding, root.isMac)
+    }
+
+    function command(id, label, hint, glyph, group) {
         return {
             group: group,
             label: label,
             hint: hint,
-            icon: icon,
+            glyph: glyph,
             kind: "command",
             value: id,
             keywords: label + " " + id
@@ -192,76 +201,79 @@ Item {
     /// no-ops on the overview, a space or the recycle bin.
     function navigationCommands() {
         const items = [
-            root.command("overview", qsTr("概览"), "", "\u2302", qsTr("导航")),
-            root.command("trash", qsTr("回收站"), "", "\u232b", qsTr("导航")),
-            root.command("new-tab", qsTr("新建标签页"), "Ctrl+T", "+", qsTr("导航")),
+            root.command("overview", qsTr("概览"), "", "home", qsTr("导航")),
+            root.command("trash", qsTr("回收站"), "", "trash", qsTr("导航")),
+            root.command("new-tab", qsTr("新建标签页"), root.chord("Mod+T"), "plus", qsTr("导航")),
             // This one lost its button when the chrome bar became one row: the
             // strip is the window's drag handle now, so a permanent button in it
             // costs the only empty space there is.
-            root.command("new-window", qsTr("新建窗口"), "", "▢", qsTr("导航")),
-            root.command("close-tab", qsTr("关闭标签页"), "Ctrl+W", "\u00d7", qsTr("导航")),
-            root.command("new-space", qsTr("新建空间…"), "", "\u25c8", qsTr("导航")),
-            root.command("settings", qsTr("设置"), root.shortcutHint("app.openSettings", "Ctrl+,"),
-                         "\u2699", qsTr("导航"))
+            root.command("new-window", qsTr("新建窗口"), "", "", qsTr("导航")),
+            root.command("close-tab", qsTr("关闭标签页"), root.chord("Mod+W"), "close", qsTr("导航")),
+            root.command("new-space", qsTr("新建空间…"), "", "diamond", qsTr("导航")),
+            root.command("settings", qsTr("设置"),
+                         root.shortcutHint("app.openSettings", "Ctrl+,"),
+                         "gear", qsTr("导航"))
         ]
         if (root.folderActive)
-            items.push(root.command("path-jump", qsTr("跳到路径…"), root.pathShortcut, "\u2192", qsTr("导航")))
+            items.push(root.command("path-jump", qsTr("跳到路径…"),
+                                    root.shortcutHint("app.pathJump", "Ctrl+L"),
+                                    "chevron", qsTr("导航")))
         return items
     }
 
     function fileCommands() {
         return [
-            root.command("new-folder", qsTr("新建文件夹"), "Ctrl+Shift+N", "\u25a3", qsTr("文件")),
-            root.command("new-file", qsTr("新建文件"), "", "\u25a4", qsTr("文件")),
+            root.command("new-folder", qsTr("新建文件夹"), root.chord("Mod+Shift+N"), "folder", qsTr("文件")),
+            root.command("new-file", qsTr("新建文件"), "", "file", qsTr("文件")),
             root.command("rename", qsTr("重命名"), root.shortcutHint("explorer.rename", "F2"),
-                         "\u270e", qsTr("文件")),
+                         "", qsTr("文件")),
             root.command("trash-selection", qsTr("移到回收站"),
-                         root.shortcutHint("explorer.trash", "Delete"), "\u232b", qsTr("文件")),
+                         root.shortcutHint("explorer.trash", "Delete"), "trash", qsTr("文件")),
             root.command("copy", qsTr("复制"), root.shortcutHint("explorer.copy", "Ctrl+C"),
-                         "\u29c9", qsTr("文件")),
+                         "", qsTr("文件")),
             root.command("cut", qsTr("剪切"), root.shortcutHint("explorer.cut", "Ctrl+X"),
-                         "\u2702", qsTr("文件")),
+                         "", qsTr("文件")),
             root.command("paste", qsTr("粘贴"), root.shortcutHint("explorer.paste", "Ctrl+V"),
-                         "\u2398", qsTr("文件")),
-            root.command("copy-path", qsTr("复制路径"), "", "\u2310", qsTr("文件")),
+                         "", qsTr("文件")),
+            root.command("copy-path", qsTr("复制路径"), "", "link", qsTr("文件")),
             root.command("select-all", qsTr("全选"),
                          root.shortcutHint("explorer.selectAll", "Ctrl+A"),
-                         "\u2713", qsTr("文件")),
-            root.command("refresh", qsTr("刷新"), "F5", "\u21bb", qsTr("文件")),
+                         "check", qsTr("文件")),
+            root.command("refresh", qsTr("刷新"), "F5", "", qsTr("文件")),
             root.command("go-back", qsTr("后退"),
                          root.shortcutHint("explorer.goBack", "Alt+Left"),
-                         "\u2190", qsTr("文件")),
+                         "", qsTr("文件")),
             root.command("go-forward", qsTr("前进"),
                          root.shortcutHint("explorer.goForward", "Alt+Right"),
-                         "\u2192", qsTr("文件")),
-            root.command("go-up", qsTr("上一级"), "Alt+Up", "\u2191", qsTr("文件")),
+                         "", qsTr("文件")),
+            root.command("go-up", qsTr("上一级"), "Alt+Up", "", qsTr("文件")),
             root.command("open-terminal", qsTr("在终端中打开"),
                          root.shortcutHint("explorer.openSystemTerminal", "Ctrl+`"),
-                         ">_", qsTr("文件")),
-            root.command("toggle-favorite", qsTr("加入收藏"), "", "\u2605", qsTr("文件")),
-            root.command("toggle-split", qsTr("切换分栏"), "", "\u25a5", qsTr("文件")),
+                         "terminal", qsTr("文件")),
+            root.command("toggle-favorite", qsTr("加入收藏"), "", "star", qsTr("文件")),
+            root.command("toggle-split", qsTr("切换分栏"), "", "column", qsTr("文件")),
             root.command("toggle-preview", qsTr("切换预览"),
                          root.shortcutHint("explorer.preview", "Space"),
-                         "\u25eb", qsTr("文件")),
-            root.command("toggle-sidebar", qsTr("切换侧栏"), "Ctrl+B", "\u25e7", qsTr("文件"))
+                         "panel", qsTr("文件")),
+            root.command("toggle-sidebar", qsTr("切换侧栏"), root.chord("Mod+B"), "panel", qsTr("文件"))
         ]
     }
 
     function viewCommands() {
         return [
-            root.command("view-list", qsTr("列表视图"), "", "\u2630", qsTr("视图")),
-            root.command("view-grid", qsTr("网格视图"), "", "\u229e", qsTr("视图")),
-            root.command("view-column", qsTr("分栏视图"), "", "\u25a5", qsTr("视图")),
-            root.command("sort-name", qsTr("按名称排序"), "", "\u21c5", qsTr("视图")),
-            root.command("sort-modified", qsTr("按修改时间排序"), "", "\u21c5", qsTr("视图")),
-            root.command("sort-type", qsTr("按类型排序"), "", "\u21c5", qsTr("视图")),
-            root.command("sort-size", qsTr("按大小排序"), "", "\u21c5", qsTr("视图")),
-            root.command("sort-order", qsTr("切换升降序"), "", "\u21f5", qsTr("视图")),
-            root.command("folders-first", qsTr("文件夹优先"), "", "\u25a4", qsTr("视图")),
+            root.command("view-list", qsTr("列表视图"), "", "list", qsTr("视图")),
+            root.command("view-grid", qsTr("网格视图"), "", "grid", qsTr("视图")),
+            root.command("view-column", qsTr("分栏视图"), "", "column", qsTr("视图")),
+            root.command("sort-name", qsTr("按名称排序"), "", "", qsTr("视图")),
+            root.command("sort-modified", qsTr("按修改时间排序"), "", "", qsTr("视图")),
+            root.command("sort-type", qsTr("按类型排序"), "", "", qsTr("视图")),
+            root.command("sort-size", qsTr("按大小排序"), "", "", qsTr("视图")),
+            root.command("sort-order", qsTr("切换升降序"), "", "", qsTr("视图")),
+            root.command("folders-first", qsTr("文件夹优先"), "", "folder", qsTr("视图")),
             root.command("hidden-files", qsTr("显示隐藏文件"),
                          root.shortcutHint("explorer.toggleHidden", "Ctrl+H"),
-                         "\u25c9", qsTr("视图")),
-            root.command("filters-reset", qsTr("清除过滤"), "", "\u2a2f", qsTr("视图"))
+                         "", qsTr("视图")),
+            root.command("filters-reset", qsTr("清除过滤"), "", "close", qsTr("视图"))
         ]
     }
 
@@ -274,7 +286,7 @@ Item {
                 group: qsTr("空间"),
                 label: qsTr("打开空间 “") + name + "”",
                 hint: count > 0 ? count + qsTr(" 项") : qsTr("空"),
-                icon: "\u25c8",
+                glyph: "diamond",
                 kind: "space",
                 value: Spaces.idAt(index),
                 keywords: qsTr("空间 space workspace ") + name
@@ -302,7 +314,7 @@ Item {
                     group: qsTr("收藏"),
                     label: name,
                     hint: path,
-                    icon: "\u2605",
+                    glyph: "star",
                     kind: "navigate",
                     value: path,
                     keywords: qsTr("收藏 favorite ") + path
@@ -312,7 +324,7 @@ Item {
                     group: qsTr("最近"),
                     label: name,
                     hint: path,
-                    icon: isDir ? "\u25b1" : "\u25a1",
+                    glyph: isDir ? "folder" : "file",
                     kind: isDir ? "navigate" : "file",
                     value: path,
                     keywords: qsTr("最近 recent ") + path
@@ -322,7 +334,7 @@ Item {
                     group: qsTr("项目"),
                     label: name,
                     hint: path,
-                    icon: "\u2325",
+                    glyph: "folder",
                     kind: "navigate",
                     value: path,
                     keywords: qsTr("项目 project ") + detail
@@ -346,7 +358,7 @@ Item {
                 group: qsTr("文件"),
                 label: paletteSearchModel.nameAt(index),
                 hint: paletteSearchModel.relativePathAt(index),
-                icon: isDir ? "\u25b1" : "\u25a1",
+                glyph: isDir ? "folder" : "file",
                 kind: isDir ? "navigate" : "file",
                 value: path,
                 keywords: qsTr("文件 file search ") + path
@@ -363,10 +375,27 @@ Item {
             group: qsTr("跳转"),
             label: qsTr("跳转到 “") + target + "”",
             hint: target,
-            icon: "\u2192",
+            glyph: "chevron",
             kind: "path",
             value: target,
             keywords: qsTr("跳转 path jump ") + target
+        }
+    }
+
+    /// The last row of a query that found nothing. Filename search answers
+    /// "no such name"; this offers the one cheaper question left, which is
+    /// whether the text is inside a file rather than in its name.
+    function contentSearchCandidate() {
+        if (root.trimmedQuery.length < 2 || root.pathLike || !root.folderActive)
+            return null
+        return {
+            group: qsTr("搜索"),
+            label: qsTr("在文件内容中搜索 “") + root.trimmedQuery + "”",
+            hint: qsTr("内容搜索"),
+            glyph: "search",
+            kind: "content-search",
+            value: root.trimmedQuery,
+            keywords: qsTr("内容 content grep 搜索 ") + root.trimmedQuery
         }
     }
 
@@ -386,6 +415,9 @@ Item {
             candidates.push.apply(candidates, root.viewCommands())
         }
         candidates.push.apply(candidates, root.fileCandidates())
+        const fallback = root.contentSearchCandidate()
+        if (fallback !== null)
+            candidates.push(fallback)
 
         let ordered = []
         const q = root.trimmedQuery
@@ -427,10 +459,9 @@ Item {
             }
             for (let index = 0; index < buckets.length; index += 1) {
                 const bucket = buckets[index]
-                for (let row = 0; row < bucket.entries.length; row += 1) {
+                for (let row = 0; row < bucket.entries.length; row += 1)
                     ordered.push({ item: bucket.entries[row].item,
                                    indices: bucket.entries[row].indices })
-                }
             }
         }
 
@@ -443,7 +474,7 @@ Item {
                 label: item.label,
                 styledLabel: root.styledLabel(item.label, indices),
                 hint: item.hint,
-                icon: item.icon,
+                glyph: item.glyph,
                 kind: item.kind,
                 value: item.value
             })
@@ -568,10 +599,10 @@ Item {
         id: panel
 
         anchors.horizontalCenter: parent.horizontalCenter
-        y: Math.max(56, Math.round(root.height * 0.12))
-        width: Math.min(680, root.width - 48)
-        height: Math.min(470, root.height - y - 96)
-        radius: 12
+        y: 64
+        width: Math.min(560, root.width - 32)
+        height: Math.min(430, root.height - y - 96)
+        radius: Theme.radiusMd
         color: root.panelColor
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -582,42 +613,52 @@ Item {
             onWheel: function (wheel) { wheel.accepted = true }
         }
 
-        // Search field. The binding sits at the trailing edge as plain text,
-        // not as a keycap: the palette is a document, not a keyboard tester.
+        // Search field: a mark, the query, and the way out. The palette's own
+        // chord used to sit here as text; it is stated by the footer now, so
+        // the band belongs to the query.
         Item {
             id: field
 
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            height: 58
+            height: 44
 
-            Text {
-                x: 18
+            Glyph {
+                x: 12
+                width: 14
+                height: 14
                 anchors.verticalCenter: parent.verticalCenter
-                text: "\u2315"
-                color: root.mutedColor
-                font.pixelSize: 17
+                kind: "search"
+                tint: Theme.inkFaint
             }
 
             TextInput {
                 id: input
 
                 anchors.left: parent.left
-                anchors.leftMargin: 46
-                anchors.right: shortcutText.left
-                anchors.rightMargin: 14
+                anchors.leftMargin: 37
+                anchors.right: escChip.left
+                anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                height: 26
+                height: 24
                 color: root.textColor
                 selectionColor: root.accent
                 selectedTextColor: Theme.onInteractive
-                font.pixelSize: 16
+                font.pixelSize: Theme.typeEmphasis
                 verticalAlignment: TextInput.AlignVCenter
                 focus: true
                 clip: true
 
-                onTextEdited: root.query = text
+                // `textEdited` covers keystrokes only: a paste, or any other
+                // programmatic write into the field, leaves the query at its
+                // old value and the list unfiltered while the text sits in
+                // the box. The guard keeps the two from chasing each other
+                // when the palette clears itself on close.
+                onTextChanged: {
+                    if (root.query !== text)
+                        root.query = text
+                }
 
                 Keys.onPressed: function (event) {
                     if (event.key === Qt.Key_Down) {
@@ -656,22 +697,36 @@ Item {
 
             Text {
                 anchors.left: parent.left
-                anchors.leftMargin: 46
+                anchors.leftMargin: 37
                 anchors.verticalCenter: parent.verticalCenter
                 visible: input.text.length === 0
                 text: root.pathLike ? qsTr("跳到路径…") : qsTr("搜索文件、空间或命令")
-                color: root.mutedColor
-                font.pixelSize: 15
+                color: Theme.inkFaint
+                font.pixelSize: Theme.typeEmphasis
             }
 
-            Text {
-                id: shortcutText
+            // 20 × 18, the one keycap in the surface: there is no button to
+            // close the palette with, so the way out has to be stated.
+            Rectangle {
+                id: escChip
+
                 anchors.right: parent.right
-                anchors.rightMargin: 18
+                anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.pathLike ? root.pathShortcut : root.commandShortcut
-                color: root.mutedColor
-                font.pixelSize: 11
+                width: 24
+                height: 18
+                radius: Theme.radiusXs
+                color: "transparent"
+                border.width: 1
+                border.color: root.hairline
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "Esc"
+                    color: Theme.inkFaint
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeMicro
+                }
             }
         }
 
@@ -694,7 +749,10 @@ Item {
             anchors.right: parent.right
             anchors.top: fieldRule.bottom
             anchors.bottom: footerBar.top
-            anchors.margins: 6
+            anchors.leftMargin: 4
+            anchors.rightMargin: 4
+            anchors.topMargin: 4
+            anchors.bottomMargin: 4
             clip: true
             focus: false
             model: results
@@ -706,16 +764,16 @@ Item {
                 required property string section
 
                 width: list.width
-                height: 30
+                height: 22
 
                 Text {
-                    x: 12
+                    x: 10
                     anchors.bottom: parent.bottom
-                    anchors.bottomMargin: 5
+                    anchors.bottomMargin: 3
                     text: section
-                    color: root.mutedColor
-                    font.pixelSize: 11
-                    font.weight: Font.DemiBold
+                    color: Theme.inkFaint
+                    font.pixelSize: Theme.typeMicro
+                    font.weight: Font.Medium
                     font.letterSpacing: 0.6
                 }
             }
@@ -727,63 +785,56 @@ Item {
                 required property string label
                 required property string styledLabel
                 required property string hint
-                required property string icon
+                required property string glyph
                 required property string kind
                 required property string value
 
                 width: list.width
-                height: 40
+                height: 30
 
                 readonly property bool current: list.currentIndex === row.index
 
+                // The active row is the shell's selection wash plus a 2 px
+                // rail, the same pair the listing uses: hover alone is too
+                // weak for the row Enter is about to run.
                 Rectangle {
                     anchors.fill: parent
-                    anchors.leftMargin: 6
-                    anchors.rightMargin: 6
-                    radius: 6
-                    color: row.current ? root.activeColor
-                        : (rowMouse.containsMouse ? root.hoverColor : "transparent")
+                    radius: Theme.radiusSm
+                    color: row.current ? Theme.signalSoft
+                        : (rowMouse.containsMouse ? Theme.hover : "transparent")
 
                     Rectangle {
                         visible: row.current
                         anchors.left: parent.left
-                        anchors.leftMargin: 1
                         anchors.top: parent.top
                         anchors.bottom: parent.bottom
-                        anchors.topMargin: 8
-                        anchors.bottomMargin: 8
+                        anchors.topMargin: 6
+                        anchors.bottomMargin: 6
                         width: 2
-                        radius: 4
-                        color: root.accent
+                        radius: Theme.radiusXs
+                        color: Theme.signal
                     }
                 }
 
-                Rectangle {
-                    x: 18
+                Glyph {
+                    x: 9
+                    width: 14
+                    height: 14
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 22
-                    height: 22
-                    radius: 6
-                    color: Theme.canvasAlt
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: row.icon
-                        color: row.kind === "space" ? root.accent : root.mutedColor
-                        font.pixelSize: 12
-                    }
+                    kind: row.glyph
+                    tint: row.current ? Theme.inkMuted : Theme.inkFaint
                 }
 
                 Text {
                     anchors.left: parent.left
-                    anchors.leftMargin: 50
+                    anchors.leftMargin: 32
                     anchors.right: hintText.left
                     anchors.rightMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
                     text: row.styledLabel
                     textFormat: Text.StyledText
                     color: root.textColor
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
                 }
 
@@ -791,12 +842,13 @@ Item {
                     id: hintText
 
                     anchors.right: parent.right
-                    anchors.rightMargin: 18
+                    anchors.rightMargin: 9
                     anchors.verticalCenter: parent.verticalCenter
                     width: Math.min(220, implicitWidth)
                     text: row.hint
-                    color: root.mutedColor
-                    font.pixelSize: 11
+                    color: Theme.inkFaint
+                    font.pixelSize: Theme.typeMicro
+                    font.family: Theme.monoFamily
                     elide: Text.ElideMiddle
                     horizontalAlignment: Text.AlignRight
                 }
@@ -817,25 +869,41 @@ Item {
         }
 
         // Empty state: says whether the filename traversal is still running,
-        // because "no results" while the scan continues would be a lie.
-        Text {
+        // because "no results" while the scan continues would be a lie, and
+        // names the two things that still work when it has stopped.
+        Column {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: fieldRule.bottom
             anchors.bottom: footerBar.top
-            anchors.leftMargin: 24
-            anchors.rightMargin: 24
+            anchors.leftMargin: 16
+            anchors.rightMargin: 16
+            anchors.topMargin: 16
+            spacing: 6
             visible: results.count === 0
-            text: root.searchingFiles
-                ? qsTr("正在搜索文件…")
-                : (root.trimmedQuery.length === 0
-                    ? qsTr("没有可用的入口")
-                    : qsTr("没有匹配 “") + root.trimmedQuery + "”")
-            color: root.mutedColor
-            font.pixelSize: 12
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            wrapMode: Text.Wrap
+
+            Text {
+                width: parent.width
+                text: root.searchingFiles
+                    ? qsTr("正在搜索文件…")
+                    : (root.trimmedQuery.length === 0
+                        ? qsTr("没有可用的入口")
+                        : qsTr("没有匹配 “") + root.trimmedQuery + "”")
+                color: Theme.inkMuted
+                font.pixelSize: Theme.typeBody
+                wrapMode: Text.Wrap
+            }
+
+            Text {
+                width: parent.width
+                visible: !root.searchingFiles
+                text: root.trimmedQuery.length === 0
+                    ? qsTr("试试命令名、文件路径，或一个空间的名字。")
+                    : qsTr("试试其他关键词，或输入一个路径直接跳转。")
+                color: Theme.inkFaint
+                font.pixelSize: Theme.typeCaption
+                wrapMode: Text.Wrap
+            }
         }
 
         Rectangle {
@@ -856,24 +924,21 @@ Item {
             }
 
             Text {
-                x: 16
+                x: 12
                 anchors.verticalCenter: parent.verticalCenter
-                text: root.searchingFiles
-                    ? qsTr("搜索文件…")
-                    : (root.resultCount > 0
-                        ? root.resultCount + qsTr(" 个结果 · ↑↓ 选择 · ↵ 执行")
-                        : qsTr("↑↓ 选择 · ↵ 执行 · Esc 关闭"))
-                color: root.mutedColor
-                font.pixelSize: 11
+                text: qsTr("↑↓ 选择") + " · " + qsTr("↵ 执行") + " · " + qsTr("Esc 关闭")
+                color: Theme.inkFaint
+                font.pixelSize: Theme.typeMicro
             }
 
             Text {
                 anchors.right: parent.right
-                anchors.rightMargin: 16
+                anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Esc"
-                color: root.mutedColor
-                font.pixelSize: 11
+                text: root.searchingFiles ? qsTr("搜索文件…")
+                    : qsTr("%1 个结果").arg(root.resultCount)
+                color: Theme.inkFaint
+                font.pixelSize: Theme.typeMicro
             }
         }
     }

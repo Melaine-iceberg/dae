@@ -167,7 +167,7 @@ Item {
                 anchors.fill: parent
                 anchors.leftMargin: 14
                 anchors.rightMargin: 14
-                radius: 6
+                radius: Theme.radiusSm
                 color: rowMouse.containsMouse ? root.hoverColor : "transparent"
             }
 
@@ -176,7 +176,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 26
                 height: 26
-                radius: 6
+                radius: Theme.radiusSm
                 color: Theme.canvasAlt
 
                 Text {
@@ -255,7 +255,7 @@ Item {
 
         width: Math.max(58, buttonLabel.implicitWidth + 22)
         height: 24
-        radius: 6
+        radius: Theme.radiusSm
         opacity: enabled ? 1 : 0.45
         color: danger
             ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)

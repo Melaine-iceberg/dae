@@ -20,7 +20,7 @@ Rectangle {
     property string detail: ""
 
     height: column.implicitHeight + 20
-    radius: 12
+    radius: Theme.radiusLg
     color: root.highlight
         ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, root.dark ? 0.16 : 0.07)
         : (root.dark ? Theme.hover : Theme.chrome)

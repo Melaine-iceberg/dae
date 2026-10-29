@@ -83,7 +83,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(420, root.width - 48)
         height: Math.max(236, contentColumn.implicitHeight + 78)
-        radius: 16
+        radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -101,12 +101,13 @@ FocusScope {
             width: parent.width - 36
             spacing: 8
 
-            Text {
+            DialogHeader {
                 width: contentColumn.width
-                text: root.heading
-                color: Theme.ink
-                font.pixelSize: 14
-                font.weight: Font.DemiBold
+                title: root.heading
+                onCloseRequested: {
+                    root.close()
+                    root.canceled()
+                }
             }
 
             Text {
@@ -121,14 +122,14 @@ FocusScope {
             Text {
                 width: contentColumn.width
                 text: qsTr("密码")
-                color: Theme.inkMuted
-                font.pixelSize: 11
+                color: Theme.inkFaint
+                font.pixelSize: Theme.typeMicro
             }
 
             Rectangle {
                 width: contentColumn.width
-                height: 30
-                radius: 6
+                height: 28
+                radius: Theme.radiusSm
                 color: Theme.field
                 border.width: 1
                 border.color: passwordInput.activeFocus
@@ -164,15 +165,15 @@ FocusScope {
                 visible: root.compressMode
                 width: contentColumn.width
                 text: qsTr("确认密码")
-                color: Theme.inkMuted
-                font.pixelSize: 11
+                color: Theme.inkFaint
+                font.pixelSize: Theme.typeMicro
             }
 
             Rectangle {
                 visible: root.compressMode
                 width: contentColumn.width
-                height: 30
-                radius: 6
+                height: 28
+                radius: Theme.radiusSm
                 color: Theme.field
                 border.width: 1
                 border.color: confirmInput.activeFocus
@@ -216,8 +217,8 @@ FocusScope {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 72
-            height: 26
-            radius: 6
+            height: 28
+            radius: Theme.radiusSm
             color: cancelMouse.containsMouse
                 ? Theme.fill : "transparent"
             border.width: 1
@@ -255,8 +256,8 @@ FocusScope {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 78
-            height: 26
-            radius: 6
+            height: 28
+            radius: Theme.radiusSm
             color: submitMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
 
             Accessible.role: Accessible.Button

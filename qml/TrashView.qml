@@ -362,7 +362,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: 14
             height: 14
-            radius: 4
+            radius: Theme.radiusSm
             border.width: 1
             border.color: root.allSelected ? root.accent
                 : Theme.hairlineStrong
@@ -514,7 +514,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 14
                 height: 14
-                radius: 4
+                radius: Theme.radiusSm
                 border.width: 1
                 border.color: row.selected ? root.accent
                     : Theme.hairlineStrong
@@ -534,7 +534,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 14
                 height: 14
-                radius: 4
+                radius: Theme.radiusSm
                 color: row.isDir ? root.accent : (root.dark ? "#3b4250" : "#c6ccd5")
             }
 
@@ -664,7 +664,7 @@ Item {
 
         width: Math.max(58, buttonLabel.implicitWidth + 22)
         height: 24
-        radius: 6
+        radius: Theme.radiusSm
         opacity: enabled ? 1 : 0.45
         color: danger
             ? (buttonMouse.containsMouse && enabled ? Theme.dangerSolidHover : Theme.dangerSolid)

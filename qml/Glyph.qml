@@ -24,7 +24,7 @@ Item {
     /// "music", "videos", "search", "list", "grid", "column", "more", "branch",
     /// "panel", "terminal".
     /// Sidebar destinations: "drive", "network", "cloud", "trash", "diamond",
-    /// "star", "clock", "plus".
+    /// "star", "clock", "plus", "gear".
     /// Files: "folder", "file", "image", "code", "archive", "media", "link".
     /// Controls: "chevron", "check", "close".
     /// Anything else draws nothing and the caller falls back to its label.
@@ -45,7 +45,7 @@ Item {
         || kind === "cloud" || kind === "trash" || kind === "diamond"
         || kind === "chevron" || kind === "check" || kind === "close"
         || kind === "star" || kind === "plus" || kind === "clock"
-        || kind === "link"
+        || kind === "link" || kind === "gear"
 
     Canvas {
         id: canvas
@@ -422,6 +422,22 @@ Item {
                 ctx.lineTo(8, 8)
                 ctx.lineTo(10, 9.2)
                 ctx.stroke()
+                break
+            case "gear":
+                // A hub and eight teeth: the settings mark the palette needs
+                // and the only verb in that list with no other home. Teeth are
+                // drawn as spokes rather than a cog outline because at 14 px a
+                // toothed silhouette fills in.
+                ctx.beginPath()
+                ctx.arc(8, 8, 2.5, 0, Math.PI * 2)
+                ctx.stroke()
+                for (let tooth = 0; tooth < 8; tooth += 1) {
+                    const angle = tooth * Math.PI / 4
+                    ctx.beginPath()
+                    ctx.moveTo(8 + Math.cos(angle) * 4.6, 8 + Math.sin(angle) * 4.6)
+                    ctx.lineTo(8 + Math.cos(angle) * 6.3, 8 + Math.sin(angle) * 6.3)
+                    ctx.stroke()
+                }
                 break
             case "star":
                 ctx.beginPath()

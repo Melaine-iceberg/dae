@@ -195,6 +195,10 @@ Item {
         root.syncTerminalFields()
         Workspace.refreshDefaultManager()
         root.forceActiveFocus()
+        Qt.callLater(function () {
+            if (root.visible)
+                root.forceActiveFocus()
+        })
     }
 
     function close() {
@@ -358,7 +362,7 @@ Item {
         anchors.centerIn: parent
         width: Math.min(820, parent.width - 64)
         height: Math.min(580, parent.height - 64)
-        radius: 16
+        radius: Theme.radiusLg
         color: root.panelColor
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -375,7 +379,7 @@ Item {
             width: 176
             height: parent.height
             color: root.sidebarColor
-            radius: 16
+            radius: Theme.radiusLg
 
             // Square off the inner edge so the sidebar reads as a column, not
             // as a floating card.
@@ -567,8 +571,10 @@ Item {
                 Text {
                     x: 24; y: 416
                     width: content.width - 48
-                    text: qsTr("关闭后所有过渡改为瞬时切换，而不只是变快。Qt 6 没有系统级")
-                        + qsTr("的\"减少动效\"查询，所以这个开关在 dae 自己这里。")
+                    // One sentence, one `qsTr`: splitting it mid-clause forced
+                    // translators to translate half a sentence and hope the
+                    // other half still parsed after it.
+                    text: qsTr("关闭后所有过渡改为瞬时切换，而不只是变快。Qt 6 没有系统级“减少动效”查询，所以这个开关在 dae 自己这里。")
                     color: root.mutedColor
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap
@@ -777,7 +783,7 @@ Item {
                                     visible: !modelData.header
                                     anchors.fill: parent
                                     anchors.margins: 0
-                                    radius: 6
+                                    radius: Theme.radiusSm
                                     color: rowMouse.containsMouse ? root.hoverFill : "transparent"
 
                                     Text {
@@ -804,7 +810,7 @@ Item {
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: 100
                                         height: 24
-                                        radius: 6
+                                        radius: Theme.radiusSm
                                         color: keyMouse.containsMouse ? root.selectedFill : root.fieldColor
                                         border.width: 1
                                         border.color: keyMouse.containsMouse ? root.accent : root.hairline
@@ -835,7 +841,7 @@ Item {
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: 28
                                         height: 24
-                                        radius: 6
+                                        radius: Theme.radiusSm
                                         visible: !modelData.header
                                         color: resetMouse.containsMouse ? root.hoverFill : "transparent"
 
@@ -1177,7 +1183,7 @@ Item {
                     x: 24; y: 114
                     width: content.width - 48
                     height: 34
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: root.fieldColor
                     border.width: 1
                     border.color: root.hairline
@@ -1247,7 +1253,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 78
                 height: 28
-                radius: 6
+                radius: Theme.radiusSm
                 color: doneMouse.containsMouse
                     ? Qt.lighter(root.accent, 1.08) : root.accent
 
@@ -1293,7 +1299,7 @@ Item {
                 anchors.centerIn: parent
                 width: Math.min(420, parent.width - 64)
                 height: 164
-                radius: 12
+                radius: Theme.radiusLg
                 color: root.panelColor
                 border.width: 1
                 border.color: root.hairline
@@ -1312,7 +1318,7 @@ Item {
                     x: 22; y: 54
                     width: parent.width - 44
                     height: 46
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: root.fieldColor
                     border.width: 1
                     border.color: root.accent
@@ -1344,7 +1350,7 @@ Item {
 
         width: parent.width
         height: 32
-        radius: 6
+        radius: Theme.radiusSm
         color: root.page === nav.value
             ? root.selectedFill
             : (navMouse.containsMouse ? root.hoverFill : "transparent")
@@ -1366,7 +1372,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: 2
             height: 16
-            radius: 4
+            radius: Theme.radiusSm
             color: root.accent
             visible: root.page === nav.value
         }
@@ -1397,7 +1403,7 @@ Item {
         // last glyph never lands under the elide threshold.
         width: chipText.implicitWidth + (chip.swatch.a > 0 ? 38 : 24)
         height: 28
-        radius: 6
+        radius: Theme.radiusSm
         color: chip.selected
             ? (root.dark ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)
                          : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.12))
@@ -1411,7 +1417,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: 10
             height: 10
-            radius: 6
+            radius: Theme.radiusSm
             color: chip.swatch
             border.width: 1
             border.color: root.hairline
@@ -1445,7 +1451,7 @@ Item {
 
         width: buttonText.implicitWidth + 26
         height: 28
-        radius: 6
+        radius: Theme.radiusSm
         opacity: button.enabled ? 1 : 0.45
         color: button.enabled && buttonMouse.containsMouse
             ? Qt.lighter(root.accent, 1.08) : root.accent
@@ -1473,7 +1479,7 @@ Item {
 
         width: buttonText.implicitWidth + 26
         height: 28
-        radius: 6
+        radius: Theme.radiusSm
         opacity: button.enabled ? 1 : 0.45
         color: button.enabled && buttonMouse.containsMouse ? root.hoverFill : "transparent"
         border.width: 1
@@ -1502,7 +1508,7 @@ Item {
 
         width: smallText.implicitWidth + 20
         height: 24
-        radius: 6
+        radius: Theme.radiusSm
         color: smallMouse.containsMouse ? root.hoverFill : "transparent"
         border.width: 1
         border.color: root.hairline
@@ -1524,7 +1530,7 @@ Item {
     }
 
     component FieldFrame: Rectangle {
-        radius: 6
+        radius: Theme.radiusSm
         color: root.fieldColor
         border.width: 1
         border.color: root.hairline

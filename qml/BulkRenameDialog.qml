@@ -78,9 +78,13 @@ FocusScope {
         root.recompute()
         root.visible = true
         root.forceActiveFocus()
+        // One deferred pass covers both: the dialog keeps the keys (Escape
+        // closes it, Tab stays inside) and the first field gets the typing.
         Qt.callLater(function () {
-            if (root.visible)
-                baseField.focusInput()
+            if (!root.visible)
+                return
+            root.forceActiveFocus()
+            baseField.focusInput()
         })
     }
 
@@ -262,7 +266,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(620, root.width - 40)
         height: Math.min(600, root.height - 48)
-        radius: 16
+        radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -279,21 +283,11 @@ FocusScope {
             anchors.margins: 18
             spacing: 0
 
-            Text {
+            DialogHeader {
                 width: parent.width
-                text: qsTr("批量重命名")
-                color: root.textColor
-                font.pixelSize: 14
-                font.weight: Font.DemiBold
-            }
-
-            Item { width: 1; height: 5 }
-
-            Text {
-                width: parent.width
-                text: qsTr("为选中的 ") + root.entries.length + qsTr(" 项生成新名称。")
-                color: root.mutedColor
-                font.pixelSize: 12
+                title: qsTr("批量重命名")
+                subtitle: qsTr("为选中的 ") + root.entries.length + qsTr(" 项生成新名称。")
+                onCloseRequested: root.close()
             }
 
             Item { width: 1; height: 12 }
@@ -333,7 +327,7 @@ FocusScope {
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
                             height: 2
-                            radius: 4
+                            radius: Theme.radiusSm
                             color: root.accent
                             visible: root.mode === modeItem.modelData.key
                         }
@@ -488,8 +482,8 @@ FocusScope {
                             id: caseButton
                             required property var modelData
                             width: caseLabel.width + 20
-                            height: 26
-                            radius: 6
+                            height: 28
+                            radius: Theme.radiusSm
                             color: root.caseTransform === caseButton.modelData.key
                                 ? Theme.selection
                                 : (caseMouse.containsMouse
@@ -544,7 +538,7 @@ FocusScope {
             Rectangle {
                 width: parent.width
                 height: Math.max(120, layout.height - y - 46)
-                radius: 6
+                radius: Theme.radiusSm
                 color: root.fieldColor
                 border.width: 1
                 border.color: root.hairline
@@ -621,7 +615,7 @@ FocusScope {
                     width: 76
                     height: 28
                     anchors.verticalCenter: parent.verticalCenter
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
                         ? Theme.fill : "transparent"
                     border.width: 1
@@ -646,7 +640,7 @@ FocusScope {
                     width: 96
                     height: 28
                     anchors.verticalCenter: parent.verticalCenter
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: !root.canApply ? Theme.canvasAlt
                         : (applyMouse.containsMouse ? Theme.interactiveHover : Theme.interactive)
 
@@ -685,7 +679,7 @@ FocusScope {
         }
 
         height: 28
-        radius: 6
+        radius: Theme.radiusSm
         color: root.fieldColor
         border.width: 1
         border.color: fieldInput.activeFocus
@@ -744,7 +738,7 @@ FocusScope {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             height: 24
-            radius: 6
+            radius: Theme.radiusSm
             color: root.fieldColor
             border.width: 1
             border.color: numberInput.activeFocus
@@ -796,7 +790,7 @@ FocusScope {
             width: 15
             height: 15
             anchors.verticalCenter: parent.verticalCenter
-            radius: 4
+            radius: Theme.radiusSm
             color: toggle.checked ? root.accent : "transparent"
             border.width: 1
             border.color: toggle.checked ? root.accent : Theme.scrim

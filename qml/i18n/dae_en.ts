@@ -619,6 +619,58 @@
             <source>↑↓ 选择 · ↵ 执行 · Esc 关闭</source>
             <translation>↑↓ select · ↵ run · Esc close</translation>
         </message>
+        <message>
+            <source>%1 个结果</source>
+            <translation>%1 results</translation>
+        </message>
+        <message>
+            <source>Esc 关闭</source>
+            <translation>Esc to close</translation>
+        </message>
+        <message>
+            <source>↑↓ 选择</source>
+            <translation>↑↓ to select</translation>
+        </message>
+        <message>
+            <source>↵ 执行</source>
+            <translation>↵ to run</translation>
+        </message>
+        <message>
+            <source>内容 content grep 搜索 </source>
+            <translation>content grep search </translation>
+        </message>
+        <message>
+            <source>内容搜索</source>
+            <translation>Content search</translation>
+        </message>
+        <message>
+            <source>前进</source>
+            <translation>Forward</translation>
+        </message>
+        <message>
+            <source>后退</source>
+            <translation>Back</translation>
+        </message>
+        <message>
+            <source>在文件内容中搜索 “</source>
+            <translation>Search inside files for “</translation>
+        </message>
+        <message>
+            <source>搜索</source>
+            <translation>Search</translation>
+        </message>
+        <message>
+            <source>新建窗口</source>
+            <translation>New window</translation>
+        </message>
+        <message>
+            <source>试试其他关键词，或输入一个路径直接跳转。</source>
+            <translation>Try another word, or type a path to jump there.</translation>
+        </message>
+        <message>
+            <source>试试命令名、文件路径，或一个空间的名字。</source>
+            <translation>Try a command, a file path, or the name of a space.</translation>
+        </message>
     </context>
     <context>
         <name>ConfirmDialog</name>
@@ -633,6 +685,10 @@
             <location filename="../ConfirmDialog.qml" line="132" />
             <source>取消</source>
             <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>关闭</source>
+            <translation>Close</translation>
         </message>
     </context>
     <context>
@@ -863,6 +919,18 @@
             <location filename="../DisplayMenu.qml" line="54" />
             <source>分屏</source>
             <translation>Split view</translation>
+        </message>
+        <message>
+            <source>侧栏</source>
+            <translation>Sidebar</translation>
+        </message>
+        <message>
+            <source>终端</source>
+            <translation>Terminal</translation>
+        </message>
+        <message>
+            <source>预览</source>
+            <translation>Preview</translation>
         </message>
     </context>
     <context>
@@ -1194,6 +1262,10 @@
             <location filename="../NamePrompt.qml" line="152" />
             <source>取消</source>
             <translation>Cancel</translation>
+        </message>
+        <message>
+            <source>关闭</source>
+            <translation>Close</translation>
         </message>
     </context>
     <context>
@@ -2362,6 +2434,38 @@
             <source>Backspace 清除绑定 · Esc 取消</source>
             <translation>Backspace clears the binding · Esc cancels</translation>
         </message>
+        <message>
+            <source>动效</source>
+            <translation>Motion</translation>
+        </message>
+        <message>
+            <source>完整</source>
+            <translation>Full</translation>
+        </message>
+        <message>
+            <source>减少</source>
+            <translation>Reduced</translation>
+        </message>
+        <message>
+            <source>后退</source>
+            <translation>Back</translation>
+        </message>
+        <message>
+            <source>前进</source>
+            <translation>Forward</translation>
+        </message>
+        <message>
+            <source>回到上一个访问过的文件夹</source>
+            <translation>Return to the previously visited folder</translation>
+        </message>
+        <message>
+            <source>回到后退之前所在的文件夹</source>
+            <translation>Return to the folder you were in before going back</translation>
+        </message>
+        <message>
+            <source>关闭后所有过渡改为瞬时切换，而不只是变快。Qt 6 没有系统级“减少动效”查询，所以这个开关在 dae 自己这里。</source>
+            <translation>With this off every transition becomes instant instead of merely faster. Qt 6 has no system-wide “reduce motion” query, so dae keeps the switch to itself.</translation>
+        </message>
     </context>
     <context>
         <name>ShellWindow</name>
@@ -3274,6 +3378,114 @@
             <source>发现新版本 v</source>
             <translation>New version v</translation>
         </message>
+        <message>
+            <source>%1 项传输</source>
+            <translation>%1 transfer</translation>
+        </message>
+        <message>
+            <source>%1 项传输，%2%</source>
+            <translation>%1 transfers, %2%</translation>
+        </message>
+        <message>
+            <source>上一级</source>
+            <translation>Enclosing folder</translation>
+        </message>
+        <message>
+            <source>侧栏</source>
+            <translation>Sidebar</translation>
+        </message>
+        <message>
+            <source>修改时间</source>
+            <translation>Date modified</translation>
+        </message>
+        <message>
+            <source>分屏</source>
+            <translation>Split view</translation>
+        </message>
+        <message>
+            <source>分支 %1，打开分支面板</source>
+            <translation>Branch %1, open the branch panel</translation>
+        </message>
+        <message>
+            <source>切换视图</source>
+            <translation>Switch view</translation>
+        </message>
+        <message>
+            <source>前进</source>
+            <translation>Forward</translation>
+        </message>
+        <message>
+            <source>升序</source>
+            <translation>Ascending</translation>
+        </message>
+        <message>
+            <source>名称</source>
+            <translation>Name</translation>
+        </message>
+        <message>
+            <source>后退</source>
+            <translation>Back</translation>
+        </message>
+        <message>
+            <source>大小</source>
+            <translation>Size</translation>
+        </message>
+        <message>
+            <source>已将 %1 项移到回收站</source>
+            <translation>Moved %1 items to the recycle bin</translation>
+        </message>
+        <message>
+            <source>已截断</source>
+            <translation>Truncated</translation>
+        </message>
+        <message>
+            <source>已选 %1 项</source>
+            <translation>%1 selected</translation>
+        </message>
+        <message>
+            <source>排序</source>
+            <translation>Sort</translation>
+        </message>
+        <message>
+            <source>搜索</source>
+            <translation>Search</translation>
+        </message>
+        <message>
+            <source>文件夹优先</source>
+            <translation>Folders first</translation>
+        </message>
+        <message>
+            <source>显示终端</source>
+            <translation>Show terminal</translation>
+        </message>
+        <message>
+            <source>显示隐藏文件</source>
+            <translation>Show hidden files</translation>
+        </message>
+        <message>
+            <source>显示预览</source>
+            <translation>Show preview</translation>
+        </message>
+        <message>
+            <source>更多</source>
+            <translation>More</translation>
+        </message>
+        <message>
+            <source>清空</source>
+            <translation>Empty</translation>
+        </message>
+        <message>
+            <source>筛选…</source>
+            <translation>Filters…</translation>
+        </message>
+        <message>
+            <source>类型</source>
+            <translation>Type</translation>
+        </message>
+        <message>
+            <source>降序</source>
+            <translation>Descending</translation>
+        </message>
     </context>
     <context>
         <name>Sidebar</name>
@@ -3466,6 +3678,14 @@
             <source>新窗口</source>
             <translation>New window</translation>
         </message>
+        <message>
+            <source>关闭标签页</source>
+            <translation>Close tab</translation>
+        </message>
+        <message>
+            <source>新建标签页</source>
+            <translation>New tab</translation>
+        </message>
     </context>
     <context>
         <name>TerminalPanel</name>
@@ -3561,6 +3781,10 @@
             <location filename="../TransferConflictDialog.qml" line="331" />
             <source>替换</source>
             <translation>Replace</translation>
+        </message>
+        <message>
+            <source>“%1”已存在</source>
+            <translation>“%1” already exists</translation>
         </message>
     </context>
     <context>
@@ -3743,6 +3967,94 @@
             <location filename="../UpdateDialog.qml" line="298" />
             <source>下载并安装</source>
             <translation>Download and install</translation>
+        </message>
+    </context>
+    <context>
+        <name>SearchFilterBar</name>
+        <message>
+            <source>%1 项匹配</source>
+            <translation>%1 matches</translation>
+        </message>
+        <message>
+            <source>代码</source>
+            <translation>Code</translation>
+        </message>
+        <message>
+            <source>全部类型</source>
+            <translation>All types</translation>
+        </message>
+        <message>
+            <source>内容</source>
+            <translation>Content</translation>
+        </message>
+        <message>
+            <source>压缩包</source>
+            <translation>Archives</translation>
+        </message>
+        <message>
+            <source>图片</source>
+            <translation>Images</translation>
+        </message>
+        <message>
+            <source>媒体</source>
+            <translation>Media</translation>
+        </message>
+        <message>
+            <source>按类型筛选：%1</source>
+            <translation>Filter by type: %1</translation>
+        </message>
+        <message>
+            <source>搜索中…</source>
+            <translation>Searching…</translation>
+        </message>
+        <message>
+            <source>文件名</source>
+            <translation>Name</translation>
+        </message>
+        <message>
+            <source>文档</source>
+            <translation>Documents</translation>
+        </message>
+        <message>
+            <source>输入以筛选名称</source>
+            <translation>Type to filter by name</translation>
+        </message>
+    </context>
+    <context>
+        <name>Toast</name>
+        <message>
+            <source>关闭提示</source>
+            <translation>Dismiss</translation>
+        </message>
+        <message>
+            <source>撤销</source>
+            <translation>Undo</translation>
+        </message>
+    </context>
+    <context>
+        <name>TitleBar</name>
+        <message>
+            <source>关闭</source>
+            <translation>Close</translation>
+        </message>
+        <message>
+            <source>最小化</source>
+            <translation>Minimize</translation>
+        </message>
+        <message>
+            <source>最大化</source>
+            <translation>Maximize</translation>
+        </message>
+        <message>
+            <source>向下还原</source>
+            <translation>Restore</translation>
+        </message>
+    </context>
+    <context>
+        <name>DialogHeader</name>
+        <message>
+            <source>关闭</source>
+            <translation>Close</translation>
         </message>
     </context>
 </TS>

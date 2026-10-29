@@ -224,7 +224,7 @@ Item {
         height: Math.min(root.height - 16, content.implicitHeight + 12)
         x: Math.max(8, Math.min(root.openX, root.width - width - 8))
         y: Math.max(8, root.openY - height - 6)
-        radius: 12
+        radius: Theme.radiusLg
         color: root.panelColor
         border.width: 1
         border.color: root.borderColor
@@ -310,7 +310,7 @@ Item {
                         y: 5
                         width: 53
                         height: 24
-                        radius: 4
+                        radius: Theme.radiusSm
                         readonly property bool actionEnabled: !root.busy
                             && (modelData.action === "create" || root.canNetwork)
                         color: actionMouse.containsMouse && actionEnabled
@@ -356,7 +356,7 @@ Item {
                     y: 5
                     width: parent.width - 16 - 60
                     height: 24
-                    radius: 4
+                    radius: Theme.radiusSm
                     color: root.fieldColor
                     border.width: 1
                     border.color: branchInput.activeFocus
@@ -403,7 +403,7 @@ Item {
                     y: 5
                     width: 52
                     height: 24
-                    radius: 4
+                    radius: Theme.radiusSm
                     color: root.createPending || branchInput.text.trim() === ""
                         ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.10)
                         : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)
@@ -435,7 +435,7 @@ Item {
                         x: 0
                         width: 12
                         height: 12
-                        radius: 4
+                        radius: Theme.radiusSm
                         anchors.verticalCenter: parent.verticalCenter
                         color: root.createCheckout
                             ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
@@ -447,7 +447,7 @@ Item {
                             anchors.centerIn: parent
                             width: 6
                             height: 6
-                            radius: 4
+                            radius: Theme.radiusSm
                             visible: root.createCheckout
                             color: root.accent
                         }

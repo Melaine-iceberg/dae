@@ -145,7 +145,7 @@ Item {
         anchors.centerIn: parent
         width: Math.min(490, root.width - 48)
         height: 470
-        radius: 16
+        radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -156,31 +156,20 @@ Item {
             onWheel: function (wheel) { wheel.accepted = true }
         }
 
-        Text {
-            x: 20
-            y: 18
-            text: qsTr("连接云存储")
-            color: root.textColor
-            font.pixelSize: 14
-            font.weight: Font.DemiBold
-        }
-
-        Text {
-            x: 20
-            y: 42
-            width: parent.width - 40
-            text: qsTr("使用你自己创建的 OAuth 应用凭据，在浏览器中完成登录授权。")
-            color: root.mutedColor
-            font.pixelSize: 11
-            elide: Text.ElideRight
+        DialogHeader {
+            width: parent.width
+            inset: 20
+            title: qsTr("连接云存储")
+            subtitle: qsTr("使用你自己创建的 OAuth 应用凭据，在浏览器中完成登录授权。")
+            onCloseRequested: root.dismiss()
         }
 
         Text {
             x: 20
             y: 76
             text: qsTr("网盘")
-            color: Theme.inkMuted
-            font.pixelSize: 12
+            color: Theme.inkFaint
+            font.pixelSize: Theme.typeMicro
         }
 
         Row {
@@ -237,7 +226,7 @@ Item {
             y: 306
             width: card.width - 40
             height: 86
-            radius: 6
+            radius: Theme.radiusSm
             color: Theme.canvasAlt
             border.width: 1
             border.color: root.hairline
@@ -274,7 +263,7 @@ Item {
                     x: 68
                     width: parent.width - 68 - 26
                     height: 22
-                    radius: 4
+                    radius: Theme.radiusSm
                     color: Theme.canvas
                     border.width: 1
                     border.color: root.hairline
@@ -303,7 +292,7 @@ Item {
 
                     Rectangle {
                         anchors.fill: parent
-                        radius: 4
+                        radius: Theme.radiusSm
                         color: copyMouse.containsMouse
                             ? Theme.fill : "transparent"
 
@@ -348,8 +337,8 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 146
-            height: 26
-            radius: 6
+            height: 28
+            radius: Theme.radiusSm
             color: root.authorizing
                 ? Theme.canvasAlt
                 : (authorizeMouse.containsMouse ? Theme.interactiveHover : root.accent)
@@ -376,8 +365,8 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 72
-            height: 26
-            radius: 6
+            height: 28
+            radius: Theme.radiusSm
             color: cancelMouse.containsMouse
                 ? Theme.fill : "transparent"
             border.width: 1
@@ -412,7 +401,7 @@ Item {
 
         width: 138
         height: 64
-        radius: 6
+        radius: Theme.radiusSm
         color: selected
             ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.14)
             : (hovered ? Theme.fill : "transparent")
@@ -428,8 +417,8 @@ Item {
             anchors.topMargin: 9
             anchors.horizontalCenter: parent.horizontalCenter
             width: 26
-            height: 26
-            radius: 6
+            height: 28
+            radius: Theme.radiusSm
             color: providerCard.tint
 
             Text {
@@ -477,15 +466,15 @@ Item {
             x: 0
             y: 0
             text: field.label
-            color: Theme.inkMuted
-            font.pixelSize: 12
+            color: Theme.inkFaint
+            font.pixelSize: Theme.typeMicro
         }
 
         Rectangle {
             y: 20
             width: parent.width
-            height: 30
-            radius: 6
+            height: 28
+            radius: Theme.radiusSm
             color: root.fieldColor
             border.width: 1
             border.color: input.activeFocus ? root.accent : root.hairline

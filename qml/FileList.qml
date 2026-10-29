@@ -130,6 +130,9 @@ Item {
     signal emptyContextRequested(real x, real y)
     signal selectionChanged()
     signal remoteDeleteRequested(var paths)
+    /// The Delete key moved rows to the recycle bin. The shell answers with the
+    /// undo toast, because the undo stack is the window's, not the view's.
+    signal trashed(int count)
     signal remoteOpenRequested(string path)
     /// Open the OS terminal at the current directory; the shell owns the
     /// command and the per-location gate.
@@ -599,8 +602,10 @@ Item {
             Workspace.deleteEntries(paths)
         else if (root.remote)
             root.remoteDeleteRequested(paths)
-        else
+        else {
             Workspace.trashEntries(paths)
+            root.trashed(paths.length)
+        }
     }
 
     function handleKey(event) {

@@ -183,7 +183,7 @@ Item {
                 anchors.leftMargin: 24
                 anchors.rightMargin: 24
                 height: 40
-                radius: 12
+                radius: Theme.radiusLg
                 color: Theme.canvasAlt
                 border.width: 1
                 border.color: launcherMouse.containsMouse ? root.accent : root.hairline
@@ -214,7 +214,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: shortcutText.width + 12
                     height: 18
-                    radius: 4
+                    radius: Theme.radiusSm
                     color: Theme.hover
 
                     Text {
@@ -267,7 +267,7 @@ Item {
                 anchors.fill: parent
                 anchors.leftMargin: 12
                 anchors.rightMargin: 12
-                radius: 6
+                radius: Theme.radiusSm
                 color: rowMouse.containsMouse ? root.hoverColor : "transparent"
             }
 
@@ -276,7 +276,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 width: 30
                 height: 30
-                radius: 12
+                radius: Theme.radiusLg
                 color: Theme.canvasAlt
 
                 Text {
@@ -324,7 +324,7 @@ Item {
                 Rectangle {
                     visible: row.kind === "project" && row.branch !== ""
                     height: 19
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: Theme.canvasAlt
                     width: branchText.width + 14
 

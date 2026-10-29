@@ -91,7 +91,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         width: 17
         height: 17
-        radius: 3
+        radius: Theme.radiusXs
         color: Theme.interactive
         visible: !root.isMac
 

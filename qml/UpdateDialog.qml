@@ -29,7 +29,13 @@ FocusScope {
                 && !Updater.checked)
             Updater.check(true)
         else
-            forceActiveFocus()
+            root.forceActiveFocus()
+        // Opening from a menu: the menu is still unwinding and would take the
+        // focus back, which silently disables Escape.
+        Qt.callLater(function () {
+            if (root.visible)
+                root.forceActiveFocus()
+        })
     }
 
     function close() {
@@ -65,7 +71,7 @@ FocusScope {
         anchors.centerIn: parent
         width: Math.min(470, root.width - 40)
         height: Math.min(410, root.height - 48)
-        radius: 16
+        radius: Theme.radiusLg
         color: Theme.raised
         border.width: 1
         border.color: Theme.hairlineStrong
@@ -88,21 +94,11 @@ FocusScope {
                 anchors.top: parent.top
                 spacing: 0
 
-                Text {
+                DialogHeader {
                     width: parent.width
-                    text: qsTr("软件更新")
-                    color: root.textColor
-                    font.pixelSize: 14
-                    font.weight: Font.DemiBold
-                }
-
-                Item { width: 1; height: 4 }
-
-                Text {
-                    width: parent.width
-                    text: qsTr("当前版本 v") + Updater.currentVersion
-                    color: root.mutedColor
-                    font.pixelSize: 11
+                    title: qsTr("软件更新")
+                    subtitle: qsTr("当前版本 v") + Updater.currentVersion
+                    onCloseRequested: root.dismiss()
                 }
 
                 Item { width: 1; height: 12 }
@@ -185,14 +181,14 @@ FocusScope {
                 Rectangle {
                     width: parent.width
                     height: 4
-                    radius: 4
+                    radius: Theme.radiusSm
                     visible: Updater.downloading
                     color: Theme.fill
 
                     Rectangle {
                         width: parent.width * Math.max(0, Math.min(100, Updater.installProgress)) / 100
                         height: parent.height
-                        radius: 4
+                        radius: Theme.radiusSm
                         color: root.accent
                     }
                 }
@@ -234,8 +230,8 @@ FocusScope {
 
                 Rectangle {
                     width: 72
-                    height: 26
-                    radius: 6
+                    height: 28
+                    radius: Theme.radiusSm
                     color: closeMouse.containsMouse
                         ? Theme.fill
                         : "transparent"
@@ -260,8 +256,8 @@ FocusScope {
 
                 Rectangle {
                     width: visible ? 76 : 0
-                    height: 26
-                    radius: 6
+                    height: 28
+                    radius: Theme.radiusSm
                     visible: !Updater.downloading && !Updater.restarting
                     color: checkMouse.containsMouse
                         ? Theme.fill
@@ -287,8 +283,8 @@ FocusScope {
 
                 Rectangle {
                     width: visible ? 94 : 0
-                    height: 26
-                    radius: 6
+                    height: 28
+                    radius: Theme.radiusSm
                     visible: Updater.available && !Updater.restarting
                     opacity: Updater.downloading ? 0.55 : 1
                     color: root.accent
