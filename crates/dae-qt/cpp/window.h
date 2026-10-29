@@ -498,13 +498,19 @@ inline void dae_qt_enable_alpha()
 /// The shell's UI face.
 ///
 /// Qt asks the platform theme for an application font. On Windows that answer
-/// is still the legacy "Segoe UI", while Windows 11's own shell paints Latin
-/// with Segoe UI Variable Text and non-Latin scripts with the face Windows
-/// chose for the display language: Microsoft YaHei UI for Chinese, Yu Gothic UI
-/// for Japanese, Malgun Gothic for Korean, and so on. A QFont family list is a
-/// per-glyph fallback list, so asking the OS for its message font keeps every
-/// display language on the face the system itself uses instead of pinning one
-/// script's font.
+/// is still the legacy "Segoe UI" whatever the display language, while the OS
+/// paints its own UI with the face it chose for that language: Microsoft YaHei
+/// UI on Simplified Chinese Windows, JhengHei UI on Traditional Chinese, Yu
+/// Gothic UI on Japanese, Malgun Gothic on Korean. A QFont family list is a
+/// per-glyph fallback list, so the language face has to come first: with Segoe
+/// first, one label that mixes Latin and Chinese would paint the Latin from
+/// Segoe and the Chinese from YaHei, which is the mixed face this is meant to
+/// avoid.
+///
+/// The non-client message font is not enough on its own: Windows 11 reports
+/// plain "Segoe UI" there even on a Chinese system, so the UI language id is
+/// the authoritative source. A Latin display language keeps the Windows 11
+/// Variable Text cut (/ Segoe UI on Windows 10).
 ///
 /// macOS and Linux already default to their platform UI face (SF Pro, the
 /// fontconfig default), so this is a no-op there rather than a second opinion
@@ -514,10 +520,34 @@ inline void dae_qt_apply_system_font()
 #if defined(Q_OS_WIN)
     QFont font = QGuiApplication::font();
 
-    // The message font is the face Windows uses for its own UI text in the
-    // current display language. On an English system it is Segoe UI, which
-    // adds nothing over the base below; on Chinese/Japanese/Korean systems it
-    // is the language face those shells paint with.
+    // The face Windows' own UI uses for the current display language. The
+    // Traditional Chinese variants share the language id but not the face.
+    QString uiFace;
+    const LANGID language = GetUserDefaultUILanguage();
+    switch (PRIMARYLANGID(language)) {
+    case LANG_CHINESE:
+        switch (SUBLANGID(language)) {
+        case SUBLANG_CHINESE_SIMPLIFIED:
+        case SUBLANG_CHINESE_SINGAPORE:
+            uiFace = QStringLiteral("Microsoft YaHei UI");
+            break;
+        default:
+            uiFace = QStringLiteral("Microsoft JhengHei UI");
+            break;
+        }
+        break;
+    case LANG_JAPANESE:
+        uiFace = QStringLiteral("Yu Gothic UI");
+        break;
+    case LANG_KOREAN:
+        uiFace = QStringLiteral("Malgun Gothic");
+        break;
+    default:
+        break;
+    }
+
+    // A user-customised message face is still a better answer than Segoe on a
+    // non-Latin display language.
     QString messageFace;
     NONCLIENTMETRICSW metrics{};
     metrics.cbSize = sizeof(metrics);
@@ -525,18 +555,22 @@ inline void dae_qt_apply_system_font()
                               &metrics, 0)) {
         messageFace = QString::fromWCharArray(metrics.lfMessageFont.lfFaceName);
     }
+    const bool latinLocale = messageFace.isEmpty()
+        || messageFace.compare(QStringLiteral("Segoe UI"),
+                               Qt::CaseInsensitive) == 0;
+    if (uiFace.isEmpty() && !latinLocale)
+        uiFace = messageFace;
 
-    // The Latin/UI base is Windows 11's Variable face when present, and Segoe
-    // UI on Windows 10. The message face follows it as the script fallback.
+    const QStringList installed = QFontDatabase::families();
+    const QString latinFace = installed.contains(
+            QStringLiteral("Segoe UI Variable Text"))
+        ? QStringLiteral("Segoe UI Variable Text")
+        : QStringLiteral("Segoe UI");
+
     QStringList families;
-    if (QFontDatabase::families().contains(
-            QStringLiteral("Segoe UI Variable Text"))) {
-        families << QStringLiteral("Segoe UI Variable Text");
-    } else {
-        families << QStringLiteral("Segoe UI");
-    }
-    if (!messageFace.isEmpty() && !families.contains(messageFace))
-        families << messageFace;
+    if (!uiFace.isEmpty() && installed.contains(uiFace))
+        families << uiFace;
+    families << latinFace;
 
     font.setFamilies(families);
     QGuiApplication::setFont(font);
