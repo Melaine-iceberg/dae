@@ -585,12 +585,15 @@ readonly property color terminalCanvas: "#0b0b0c"
 | 硬编码颜色审计 | 通过 | 剩余字面量仅 Theme、品牌色、语法高亮、红绿灯、媒体井 |
 | 对比度 | 通过 | 亮/暗 `inkFaint` 对 chrome/canvas/field 均 ≥4.5:1，`ink` ≥12:1 |
 | 撕出标签 | 通过 | `.perf/phase6/tabdrag/03-torn-window.png` + 源窗口单标签 |
-| Linux/macOS 构建 | 待 CI | 工作流 `.github/workflows/qt-check.yml` 已在仓库；本机未运行 |
+| Linux/macOS 构建 | 通过 | `qt-check` [40881400232](https://github.com/Melaine-iceberg/dae/actions/runs/40881400232)：ubuntu-26.04 + macos-latest 均构建通过；`linux-check` [40881400361](https://github.com/Melaine-iceberg/dae/actions/runs/40881400361)、`macos-check` [40881400222](https://github.com/Melaine-iceberg/dae/actions/runs/40881400222) 同批通过（提交 `0f415d4`） |
 
 说明：Windows 上 `Alt+Enter` 与“全部属性”按设计交给系统属性表，因此应用内
 `PropertiesDialog` 的键盘循环由设置面板验证（两者使用同一 `DialogFocus.js`
 和 `DialogButton`）。Linux/macOS 的构建结论以 `qt-check` 为准，本记录不等价
-于替代该 CI。
+于替代该 CI。本轮 CI 还暴露出三处只在非 Windows 平台成立的缺陷，已在
+`0f415d4` 一并修好：Wayland 协议文件被当作 C++ 编译导致 `wl_interface` 表
+没有 C 链接、cxx-qt 生成的头文件副本绕过 `#pragma once` 造成类重定义、
+`desktop_entry` 的 `pub(crate)` 跨 crate 不可见。
 
 ---
 
