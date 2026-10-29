@@ -381,8 +381,6 @@ Item {
                     extension: row.extension
                     isDir: row.isDir
                     size: 18
-                    dark: pane.dark
-                    accent: pane.accent
                 }
 
                 Text {

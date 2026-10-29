@@ -54,8 +54,6 @@ Rectangle {
                 category: root.category
                 isDir: root.category === "folder"
                 size: 16
-                dark: root.dark
-                accent: root.accent
                 Accessible.ignored: true
             }
 

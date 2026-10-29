@@ -254,10 +254,9 @@ Item {
                     isDir: true
                     category: "folder"
                     size: bar.iconSize
-                    dark: bar.dark
                     // The trail is structure, not a signal: a column of accent
                     // folders would spend the window's one colour on decoration.
-                    accent: bar.mutedColor
+                    tint: bar.mutedColor
                     opacity: slot.modelData.current === true ? 1.0 : 0.55
                     Accessible.ignored: true
                 }

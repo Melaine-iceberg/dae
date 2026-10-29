@@ -179,16 +179,16 @@ Item {
                         font.pixelSize: 11
                     }
 
-                    Text {
+                    Glyph {
                         visible: entry.modelData.kind !== "label"
                             && entry.modelData.kind !== "sep" && root.checked(entry.modelData)
                         anchors.right: parent.right
                         anchors.rightMargin: 13
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "\u2713"
-                        color: root.accent
-                        font.pixelSize: 12
-                        font.weight: Font.DemiBold
+                        width: 14
+                        height: 14
+                        kind: "check"
+                        tint: root.accent
                     }
 
                     MouseArea {

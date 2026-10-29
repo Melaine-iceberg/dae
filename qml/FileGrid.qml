@@ -343,8 +343,6 @@ Item {
                     extension: cell.extension
                     isDir: cell.isDir
                     size: root.glyphSize
-                    dark: root.dark
-                    accent: root.accent
                 }
             }
 

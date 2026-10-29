@@ -5,6 +5,12 @@
 //! single `QAbstractListModel` keeps the QML side to one `ListView` and lets
 //! `section.property` draw the headers, instead of several nested views that
 //! each scroll independently.
+//!
+//! Section order is deliberate: the five primary places first, then the extra
+//! places and favourites, then volumes and spaces (a disk is closer to "where
+//! am I" than a saved space), then the network group — WSL distros are network
+//! locations too — and finally cloud accounts and recents. The trash is not a
+//! row here; the sidebar parks it at the bottom itself.
 
 use core::pin::Pin;
 use std::path::Path;
@@ -25,7 +31,6 @@ const SECTION_PLACES: &str = "Places";
 const SECTION_FAVORITES: &str = "Favorites";
 const SECTION_SPACES: &str = "Spaces";
 const SECTION_VOLUMES: &str = "Disks";
-const SECTION_WSL: &str = "WSL";
 const SECTION_NETWORK: &str = "Network Storage";
 const SECTION_CLOUD: &str = "Cloud Storage";
 const SECTION_RECENTS: &str = "Recent";
@@ -166,7 +171,13 @@ impl qobject::SidebarModel {
         crate::init_stores();
 
         let mut base = Vec::new();
-        for place in sidebar::system_places() {
+        let mut places = sidebar::system_places();
+        // `system_places` reports the OS's resolution order, which on Windows
+        // puts Documents before Downloads. The sidebar's first five rows are
+        // the destinations a user reaches for in the order they reach for
+        // them, so they are ranked here instead of trusting the probe.
+        places.sort_by_key(|place| place_rank(place.kind));
+        for place in places {
             base.push(place_row(place.kind, &place.path));
         }
         for favorite in sidebar::load_favorites().unwrap_or_default() {
@@ -186,8 +197,9 @@ impl qobject::SidebarModel {
         // carries the space id and the shell opens the space surface instead of
         // navigating. The action row stays below the list so the section is
         // still discoverable before the user has anything pinned.
+        let mut spaces = Vec::new();
         for space in list_spaces().unwrap_or_default() {
-            base.push(SidebarRow {
+            spaces.push(SidebarRow {
                 section: SECTION_SPACES.to_owned(),
                 name: space.name,
                 path: space.id,
@@ -203,14 +215,16 @@ impl qobject::SidebarModel {
                 fill: 0.0,
             });
         }
-        base.push(action_row(SECTION_SPACES, "New space…", "addSpace"));
+        spaces.push(action_row(SECTION_SPACES, "New space…", "addSpace"));
 
         let mut network = Vec::new();
         for connection in connections::list_connections().unwrap_or_default() {
             network.push(connection_row(connection));
         }
         // The add row keeps the group reachable while it is empty, and stays
-        // at the end once there is something to manage.
+        // at the end once there is something to manage. The WSL rows are
+        // inserted ahead of this list when the async probe returns, because a
+        // distro is also a network location.
         network.push(action_row(
             SECTION_NETWORK,
             "Connect network storage…",
@@ -240,9 +254,8 @@ impl qobject::SidebarModel {
         let thread = self.as_mut().qt_thread();
         runtime::spawn(async move {
             let volumes = sidebar::list_disks().await.unwrap_or_default();
-            // Empty everywhere but Windows, which also makes the section
-            // disappear on the other platforms: a section header only exists
-            // while it has at least one row.
+            // Empty everywhere but Windows, which also makes the rows
+            // disappear on the other platforms.
             let distros = sidebar::list_wsl_distros().await.unwrap_or_default();
             let mut rows = base;
             for volume in volumes {
@@ -268,6 +281,7 @@ impl qobject::SidebarModel {
                     },
                 });
             }
+            rows.extend(spaces);
             for distro in distros {
                 rows.push(distro_row(distro));
             }
@@ -289,6 +303,21 @@ impl qobject::SidebarModel {
             format!("{count} item{}", if count == 1 { "" } else { "s" }).as_str(),
         ));
         self.as_mut().set_loaded(true);
+    }
+}
+
+/// The order of the rows inside the Places section. The first five are the
+/// primary destinations; Music and Videos keep their rows but sit after them,
+/// which is also what keeps the first screen to ten rows on a fresh profile.
+fn place_rank(kind: PlaceKind) -> u8 {
+    match kind {
+        PlaceKind::Home => 0,
+        PlaceKind::Desktop => 1,
+        PlaceKind::Downloads => 2,
+        PlaceKind::Documents => 3,
+        PlaceKind::Pictures => 4,
+        PlaceKind::Music => 5,
+        PlaceKind::Videos => 6,
     }
 }
 
@@ -329,10 +358,12 @@ fn volume_name(label: &str, mount_point: &str) -> String {
 }
 
 /// Each distro is reachable at its `\\wsl$\<name>` share. Accessing that path
-/// starts a stopped distro, so the row needs no separate "start" action.
+/// starts a stopped distro, so the row needs no separate "start" action. It
+/// lives in the network section: a distro is reached over the same WSL network
+/// share as an SMB mount is reached over TCP.
 fn distro_row(distro: WslDistro) -> SidebarRow {
     SidebarRow {
-        section: SECTION_WSL.to_owned(),
+        section: SECTION_NETWORK.to_owned(),
         name: distro.name,
         path: distro.path,
         kind: "wsl".to_owned(),
@@ -434,13 +465,40 @@ mod tests {
     }
 
     #[test]
+    fn the_primary_places_keep_their_reach_order() {
+        let mut kinds = [
+            PlaceKind::Videos,
+            PlaceKind::Documents,
+            PlaceKind::Home,
+            PlaceKind::Pictures,
+            PlaceKind::Downloads,
+            PlaceKind::Music,
+            PlaceKind::Desktop,
+        ];
+        kinds.sort_by_key(|kind| place_rank(*kind));
+
+        assert_eq!(
+            kinds,
+            [
+                PlaceKind::Home,
+                PlaceKind::Desktop,
+                PlaceKind::Downloads,
+                PlaceKind::Documents,
+                PlaceKind::Pictures,
+                PlaceKind::Music,
+                PlaceKind::Videos,
+            ]
+        );
+    }
+
+    #[test]
     fn a_wsl_distro_becomes_a_navigable_row() {
         let row = distro_row(WslDistro {
             name: "Ubuntu".into(),
             path: r"\\wsl$\Ubuntu".into(),
         });
 
-        assert_eq!(row.section, SECTION_WSL);
+        assert_eq!(row.section, SECTION_NETWORK);
         assert_eq!(row.name, "Ubuntu");
         assert_eq!(row.path, r"\\wsl$\Ubuntu");
         assert_eq!(row.kind, "wsl");

@@ -888,8 +888,6 @@ Item {
                     extension: row.extension
                     isDir: row.isDir
                     size: 18
-                    dark: root.dark
-                    accent: root.accent
                 }
 
                 Row {

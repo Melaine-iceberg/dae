@@ -22,6 +22,7 @@ Item {
     property bool above: true
 
     signal toggleRequested(string property)
+    signal actionRequested(string id)
 
     visible: false
     /// Arrives rather than appears. Hiding stays instant: a menu that fades
@@ -44,6 +45,10 @@ Item {
         { kind: "radio", group: "viewMode", value: "list", label: qsTr("列表") },
         { kind: "radio", group: "viewMode", value: "grid", label: qsTr("网格") },
         { kind: "radio", group: "viewMode", value: "column", label: qsTr("分栏") },
+        { kind: "sep" },
+        // The overview lost its sidebar header row; the view menu and the
+        // command palette are now the two ways in.
+        { kind: "action", id: "overview", label: qsTr("概览") },
         { kind: "sep" },
         { kind: "shellToggle", property: "sidebarVisible", label: qsTr("侧栏") },
         { kind: "shellToggle", property: "previewVisible", label: qsTr("预览") },
@@ -79,10 +84,19 @@ Item {
             return root[item.property] === true
         if (item.kind === "toggle")
             return ExplorerPrefs[item.property] === true
-        return ExplorerPrefs[item.group] === item.value
+        if (item.kind === "radio")
+            return ExplorerPrefs[item.group] === item.value
+        // Actions and labels never carry a tick; `undefined === undefined`
+        // would otherwise mark the overview row.
+        return false
     }
 
     function choose(item) {
+        if (item.kind === "action") {
+            root.close()
+            root.actionRequested(item.id)
+            return
+        }
         if (item.kind === "shellToggle") {
             root.toggleRequested(item.property)
             return
@@ -178,16 +192,16 @@ Item {
                         font.pixelSize: 12
                     }
 
-                    Text {
+                    Glyph {
                         visible: entry.modelData.kind !== "label"
                             && entry.modelData.kind !== "sep" && root.checked(entry.modelData)
                         anchors.right: parent.right
                         anchors.rightMargin: 13
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "\u2713"
-                        color: root.accent
-                        font.pixelSize: 12
-                        font.weight: Font.DemiBold
+                        width: 14
+                        height: 14
+                        kind: "check"
+                        tint: root.accent
                     }
 
                     MouseArea {

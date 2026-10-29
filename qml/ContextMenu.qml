@@ -161,10 +161,27 @@ Item {
                         cache: true
                     }
 
+                    // A toggled row marks itself in the icon gutter, the way a
+                    // native menu does. The label shifts right either way, so
+                    // checked and unchecked rows keep one text edge.
+                    Glyph {
+                        visible: entry.modelData.separator !== true
+                            && entry.modelData.header !== true
+                            && entry.modelData.checked === true
+                            && !entry.modelData.icon
+                        x: 12
+                        width: 14
+                        height: 14
+                        anchors.verticalCenter: parent.verticalCenter
+                        kind: "check"
+                        tint: Theme.interactive
+                    }
+
                     Text {
                         visible: entry.modelData.separator !== true
                         anchors.left: parent.left
-                        anchors.leftMargin: entry.modelData.icon ? 34 : 12
+                        anchors.leftMargin: (entry.modelData.icon
+                            || entry.modelData.checked === true) ? 34 : 12
                         anchors.right: parent.right
                         anchors.rightMargin: 30
                         anchors.verticalCenter: parent.verticalCenter
@@ -198,16 +215,17 @@ Item {
                         font.pixelSize: 11
                     }
 
-                    Text {
+                    Glyph {
                         visible: entry.modelData.separator !== true
                             && entry.modelData.header !== true
                             && entry.modelData.submenu !== undefined
                         anchors.right: parent.right
                         anchors.rightMargin: 10
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "\u203a"
-                        color: Theme.inkMuted
-                        font.pixelSize: 13
+                        width: 12
+                        height: 12
+                        kind: "chevron"
+                        tint: Theme.inkMuted
                     }
 
                     MouseArea {
@@ -295,9 +313,23 @@ Item {
                         cache: true
                     }
 
+                    Glyph {
+                        visible: submenuEntry.modelData.separator !== true
+                            && submenuEntry.modelData.header !== true
+                            && submenuEntry.modelData.checked === true
+                            && !submenuEntry.modelData.icon
+                        x: 12
+                        width: 14
+                        height: 14
+                        anchors.verticalCenter: parent.verticalCenter
+                        kind: "check"
+                        tint: Theme.interactive
+                    }
+
                     Text {
                         anchors.left: parent.left
-                        anchors.leftMargin: submenuEntry.modelData.icon ? 34 : 12
+                        anchors.leftMargin: (submenuEntry.modelData.icon
+                            || submenuEntry.modelData.checked === true) ? 34 : 12
                         anchors.right: parent.right
                         anchors.rightMargin: 10
                         anchors.verticalCenter: parent.verticalCenter

@@ -238,11 +238,12 @@ Item {
                             ? Theme.fill : "transparent"
                     }
 
-                    Text {
+                    Glyph {
                         anchors.centerIn: parent
-                        text: "\u00d7"
-                        color: closeMouse.containsMouse ? root.textColor : root.mutedColor
-                        font.pixelSize: Theme.typeName
+                        width: 12
+                        height: 12
+                        kind: "close"
+                        tint: closeMouse.containsMouse ? root.textColor : root.mutedColor
                     }
 
                     Accessible.role: Accessible.Button
@@ -313,11 +314,12 @@ Item {
                 color: plusMouse.containsMouse ? root.hoverColor : "transparent"
             }
 
-            Text {
+            Glyph {
                 anchors.centerIn: parent
-                text: "+"
-                color: plusMouse.containsMouse ? root.textColor : root.mutedColor
-                font.pixelSize: 16
+                width: 14
+                height: 14
+                kind: "plus"
+                tint: plusMouse.containsMouse ? root.textColor : root.mutedColor
             }
 
             Accessible.role: Accessible.Button

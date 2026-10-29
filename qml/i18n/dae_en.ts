@@ -765,6 +765,11 @@
             <translation>Columns</translation>
         </message>
         <message>
+            <location filename="../DisplayMenu.qml" line="33" />
+            <source>概览</source>
+            <translation>Overview</translation>
+        </message>
+        <message>
             <location filename="../DisplayMenu.qml" line="34" />
             <source>密度</source>
             <translation>Density</translation>
@@ -3146,6 +3151,11 @@
             <translation>Drives</translation>
         </message>
         <message>
+            <location filename="../Sidebar.qml" line="87" />
+            <source>宗卷</source>
+            <translation>Volumes</translation>
+        </message>
+        <message>
             <location filename="../Sidebar.qml" line="88" />
             <source>网络存储</source>
             <translation>Network storage</translation>
@@ -3221,81 +3231,15 @@
             <translation>%1 items</translation>
         </message>
         <message>
-            <location filename="../Sidebar.qml" line="124" />
-            <source>主</source>
-            <translation>H</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="125" />
-            <source>桌</source>
-            <translation>D</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="126" />
-            <source>文</source>
-            <translation>C</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="127" />
-            <source>下</source>
-            <translation>↓</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="128" />
-            <source>图</source>
-            <translation>P</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="129" />
-            <source>音</source>
-            <translation>M</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="130" />
-            <source>视</source>
-            <translation>V</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="132" />
-            <source>盘</source>
-            <translation>D</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="134" />
-            <source>近</source>
-            <translation>R</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="135" />
-            <source>服</source>
-            <translation>S</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="136" />
-            <source>云</source>
-            <translation>☁</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="201" />
-            <source>导航</source>
-            <translation>Navigation</translation>
-        </message>
-        <message>
-            <location filename="../Sidebar.qml" line="222" />
-            <location filename="../Sidebar.qml" line="247" />
-            <source>概览</source>
-            <translation>Overview</translation>
-        </message>
-        <message>
             <location filename="../Sidebar.qml" line="276" />
             <location filename="../Sidebar.qml" line="301" />
             <source>回收站</source>
             <translation>Trash</translation>
         </message>
         <message>
-            <location filename="../Sidebar.qml" line="289" />
-            <source>回</source>
-            <translation>T</translation>
+            <location filename="../Sidebar.qml" line="276" />
+            <source>废纸篓</source>
+            <translation>Trash</translation>
         </message>
     </context>
     <context>

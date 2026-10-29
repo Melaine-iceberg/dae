@@ -16,7 +16,6 @@ Item {
     property string activePath: ""
     property bool showHidden: true
     property bool dark: true
-    property color accent: Theme.interactive
     property string material: "none"
 
     signal navigateRequested(string path)
@@ -25,10 +24,6 @@ Item {
     readonly property color panelColor: material === "none"
         ? Theme.chrome
         : (dark ? Qt.rgba(0.05, 0.06, 0.07, 0.30) : Qt.rgba(0.95, 0.96, 0.97, 0.34))
-    readonly property color textColor: Theme.inkFaint
-    readonly property color mutedColor: Theme.inkFaint
-    readonly property color hoverColor: Theme.fill
-    readonly property color activeColor: Theme.fill
 
     implicitHeight: content.implicitHeight + notice.height
 
@@ -79,34 +74,50 @@ Item {
                 required property bool loaded
 
                 width: content.width
-                height: 24
+                height: 28
 
                 readonly property bool current: root.pathEquals(node.treePath, root.activePath)
                 readonly property int indent: 16 + node.depth * 13
 
                 Rectangle {
-                    x: 6
-                    width: parent.width - 12
+                    x: 8
+                    width: parent.width - 16
                     height: parent.height
-                    radius: 6
+                    radius: Theme.radiusSm
                     color: node.current
-                        ? root.activeColor
-                        : (nodeMouse.containsMouse ? root.hoverColor : "transparent")
+                        ? Theme.fill
+                        : (nodeMouse.containsMouse ? Theme.hover : "transparent")
                 }
 
-                Text {
+                Rectangle {
+                    visible: node.current
+                    x: 0
+                    y: 6
+                    width: 2
+                    height: parent.height - 12
+                    radius: 1
+                    color: Theme.signal
+                }
+
+                Item {
                     x: node.indent
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 12
+                    width: 14
+                    height: parent.height
                     visible: node.mayHaveChildren
-                    text: node.expanded ? "▾" : "▸"
-                    color: node.expanded ? root.textColor : root.mutedColor
-                    font.pixelSize: 11
-                    horizontalAlignment: Text.AlignHCenter
                     // The row's click area fills the node, so the chevron hit
                     // target has to sit above it or expanding a folder would
                     // always navigate instead.
                     z: 1
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        width: 12
+                        height: 12
+                        kind: "chevron"
+                        tint: node.expanded || nodeMouse.containsMouse
+                            ? Theme.inkMuted : Theme.inkFaint
+                        rotation: node.expanded ? 90 : 0
+                    }
 
                     MouseArea {
                         anchors.fill: parent
@@ -116,23 +127,25 @@ Item {
                     }
                 }
 
-                Text {
-                    x: node.indent + 15
+                Glyph {
+                    x: node.indent + 16
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "▱"
-                    color: root.dark ? "#8a93a6" : "#6b7482"
-                    font.pixelSize: 11
+                    width: 14
+                    height: 14
+                    kind: "folder"
+                    tint: node.current || nodeMouse.containsMouse
+                        ? Theme.inkMuted : Theme.inkFaint
                 }
 
                 Text {
                     anchors.left: parent.left
-                    anchors.leftMargin: node.indent + 29
+                    anchors.leftMargin: node.indent + 36
                     anchors.right: parent.right
                     anchors.rightMargin: 10
                     anchors.verticalCenter: parent.verticalCenter
                     text: node.treeName
-                    color: root.textColor
-                    font.pixelSize: 11
+                    color: Theme.inkMuted
+                    font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
                 }
@@ -169,8 +182,8 @@ Item {
         height: visible ? 20 : 0
         visible: treeModel.count === 0 && (treeModel.busy || treeModel.loaded)
         text: treeModel.status
-        color: root.mutedColor
-        font.pixelSize: 11
+        color: Theme.inkFaint
+        font.pixelSize: Theme.typeMicro
         elide: Text.ElideRight
         verticalAlignment: Text.AlignVCenter
     }

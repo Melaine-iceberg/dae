@@ -109,8 +109,6 @@ Item {
                 anchors.centerIn: parent
                 category: "audio"
                 size: 40
-                dark: root.dark
-                accent: root.accent
             }
 
             Item {

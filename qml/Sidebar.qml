@@ -2,20 +2,19 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
 
-// The navigation column: system places, favourites, volumes, WSL distros,
-// network storage, cloud accounts and recents in a single sectioned list.
-// `SidebarModel` does the resolving; this file only decides what a row looks
-// like and where a click goes.
+// The navigation column: the five places people reach for, then extra places
+// and favourites, volumes, spaces, network storage, cloud accounts and recents.
+// The trash is parked at the bottom, where a bin belongs, instead of sharing a
+// header with the overview. `SidebarModel` decides the order and resolves the
+// rows; this file decides what a row looks like and where a click goes.
 Item {
     id: root
 
     property bool dark: true
     property string material: "none"
     property string activePath: ""
-    property color accent: Theme.interactive
-    property bool showHeader: true
     property bool trashActive: false
-    property bool overviewActive: false
+    property int trashCount: 0
     property bool spaceActive: false
     property string activeSpaceId: ""
 
@@ -28,29 +27,29 @@ Item {
 
     signal navigateRequested(string path)
     signal trashRequested()
-    signal overviewRequested()
     signal spaceRequested(string id)
     signal createSpaceRequested()
     signal addRequested(string kind)
     signal contextRequested(string kind, string path, real x, real y)
     signal remoteOpenRequested(string path)
 
-    readonly property bool surfaceActive: trashActive || overviewActive || spaceActive
+    /// Narrow columns drop the "used / total" pair for the percentage: at 184 px
+    /// the full pair is the first thing that would collide with the name.
+    readonly property bool narrow: width < 200
+    readonly property bool surfaceActive: trashActive || spaceActive
+    readonly property string trashLabel: Qt.platform.os === "osx"
+        ? qsTr("废纸篓") : qsTr("回收站")
 
     readonly property color panelColor: material === "none"
         ? Theme.chrome
         : (dark ? Qt.rgba(0.05, 0.06, 0.07, 0.30) : Qt.rgba(0.95, 0.96, 0.97, 0.34))
-    readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkFaint
-    readonly property color hoverColor: Theme.fill
-    readonly property color activeColor: Theme.fill
+
     /// The row a file drag is hovering, by path. Empty when nothing is over the
     /// sidebar, so a row asks one question to decide whether it is lit.
     property string dropTargetPath: ""
-    readonly property color dropColor: Qt.rgba(accent.r, accent.g, accent.b, 0.18)
 
     SidebarModel {
-        id: model
+        id: sidebarModel
     }
 
     function pathEquals(left, right) {
@@ -88,7 +87,7 @@ Item {
         case "Places": return qsTr("位置")
         case "Favorites": return qsTr("收藏")
         case "Spaces": return qsTr("空间")
-        case "Disks": return qsTr("磁盘")
+        case "Disks": return Qt.platform.os === "osx" ? qsTr("宗卷") : qsTr("磁盘")
         case "Network Storage": return qsTr("网络存储")
         case "Cloud Storage": return qsTr("云存储")
         case "Recent": return qsTr("最近")
@@ -123,36 +122,28 @@ Item {
         return value
     }
 
-    function glyph(icon) {
+    /// The model names a row's mark; this table is the one place that decides
+    /// which drawn glyph that name becomes. A favourite is a star, a disk is a
+    /// drive, and a WSL distro is a network location because that is how it is
+    /// reached.
+    function glyphKind(icon) {
         switch (icon) {
-        case "home": return qsTr("主")
-        case "desktop": return qsTr("桌")
-        case "documents": return qsTr("文")
-        case "downloads": return qsTr("下")
-        case "pictures": return qsTr("图")
-        case "music": return qsTr("音")
-        case "videos": return qsTr("视")
-        case "star": return "★"
-        case "disk": return qsTr("盘")
-        case "wsl": return "W"
-        case "recent": return qsTr("近")
-        case "server": return qsTr("服")
-        case "cloud": return qsTr("云")
-        case "space": return "◇"
-        case "add": return "+"
-        default: return "•"
-        }
-    }
-
-    /// Which ids carry a drawn mark. Kept next to `glyph` so the two tables
-    /// cannot disagree about what a row shows.
-    function hasDrawnGlyph(icon) {
-        switch (icon) {
-        case "home": case "desktop": case "documents": case "downloads":
-        case "pictures": case "music": case "videos":
-            return true
-        default:
-            return false
+        case "home": return "home"
+        case "desktop": return "desktop"
+        case "documents": return "documents"
+        case "downloads": return "downloads"
+        case "pictures": return "pictures"
+        case "music": return "music"
+        case "videos": return "videos"
+        case "star": return "star"
+        case "disk": return "drive"
+        case "wsl": return "network"
+        case "recent": return "clock"
+        case "server": return "network"
+        case "cloud": return "cloud"
+        case "space": return "diamond"
+        case "add": return "plus"
+        default: return "file"
         }
     }
 
@@ -162,28 +153,16 @@ Item {
         drag.accept(Qt.MoveAction)
     }
 
-    function tint(icon) {
-        switch (icon) {
-        case "disk": return dark ? "#8a93a6" : "#6b7482"
-        case "wsl": return dark ? "#5b9bd5" : "#2f6fbf"
-        case "star": return dark ? "#d8b45a" : "#b8892a"
-        case "recent": return dark ? "#6fa0d8" : "#3f78bd"
-        case "space": return root.accent
-        case "add": return root.mutedColor
-        default: return root.accent
-        }
-    }
-
     Component.onCompleted: {
         Spaces.refresh()
-        model.refresh()
+        sidebarModel.refresh()
     }
 
     Connections {
         target: Spaces
 
         function onChanged() {
-            model.refresh()
+            sidebarModel.refresh()
         }
     }
 
@@ -191,15 +170,15 @@ Item {
         target: Workspace
 
         function onFavoritesChanged() {
-            model.refresh()
+            sidebarModel.refresh()
         }
 
         function onVolumesChanged() {
-            model.refresh()
+            sidebarModel.refresh()
         }
 
         function onConnectionsChanged() {
-            model.refresh()
+            sidebarModel.refresh()
         }
     }
 
@@ -211,141 +190,22 @@ Item {
             anchors.right: parent.right
             width: 1
             height: parent.height
-            color: Theme.fill
-        }
-    }
-
-    Text {
-        id: heading
-        visible: root.showHeader
-        x: 14
-        y: 10
-        text: qsTr("导航")
-        color: root.mutedColor
-        font.pixelSize: 11
-        font.letterSpacing: 1
-    }
-
-    /// The landing page is a fixed destination too; it sits above the bin so
-    /// the two shell surfaces stay adjacent however long the model gets.
-    Rectangle {
-        id: overviewRow
-
-        x: 6
-        y: root.showHeader ? heading.bottom + 6 : 4
-        width: parent.width - 12
-        height: 28
-        radius: 6
-        color: root.overviewActive
-            ? root.activeColor
-            : (overviewMouse.containsMouse ? root.hoverColor : "transparent")
-
-        Accessible.role: Accessible.Button
-        Accessible.name: qsTr("概览")
-        Accessible.onPressAction: root.overviewRequested()
-
-        Rectangle {
-            x: 6
-            anchors.verticalCenter: parent.verticalCenter
-            width: 16
-            height: 16
-            radius: 4
-            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
-
-            Text {
-                anchors.centerIn: parent
-                text: "◫"
-                color: root.accent
-                font.pixelSize: 11
-            }
-        }
-
-        Text {
-            anchors.left: parent.left
-            anchors.leftMargin: 30
-            anchors.right: parent.right
-            anchors.rightMargin: 8
-            anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("概览")
-            color: root.overviewActive ? root.textColor
-                : Theme.inkFaint
-            font.pixelSize: 12
-            elide: Text.ElideRight
-        }
-
-        MouseArea {
-            id: overviewMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: root.overviewRequested()
-        }
-    }
-
-    /// The bin is a fixed destination above the sectioned list, not a path the
-    /// model resolves.
-    Rectangle {
-        id: trashRow
-        x: 6
-        y: overviewRow.bottom + 1
-        width: parent.width - 12
-        height: 28
-        radius: 6
-        color: root.trashActive
-            ? root.activeColor
-            : (trashMouse.containsMouse ? root.hoverColor : "transparent")
-
-        Accessible.role: Accessible.Button
-        Accessible.name: qsTr("回收站")
-        Accessible.onPressAction: root.trashRequested()
-
-        Rectangle {
-            x: 6
-            anchors.verticalCenter: parent.verticalCenter
-            width: 16
-            height: 16
-            radius: 4
-            color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
-
-            Text {
-                anchors.centerIn: parent
-                text: qsTr("回")
-                color: root.accent
-                font.pixelSize: 11
-            }
-        }
-
-        Text {
-            anchors.left: parent.left
-            anchors.leftMargin: 30
-            anchors.right: parent.right
-            anchors.rightMargin: 8
-            anchors.verticalCenter: parent.verticalCenter
-            text: qsTr("回收站")
-            color: root.trashActive ? root.textColor
-                : Theme.inkFaint
-            font.pixelSize: 12
-            elide: Text.ElideRight
-        }
-
-        MouseArea {
-            id: trashMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            onClicked: root.trashRequested()
+            color: Theme.hairline
         }
     }
 
     ListView {
         id: list
+
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: trashRow.bottom
-        anchors.bottom: parent.bottom
-        anchors.topMargin: 4
-        model: model
+        anchors.top: parent.top
+        anchors.bottom: trashArea.top
+        anchors.topMargin: 8
+        model: sidebarModel
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-        spacing: 1
+        spacing: 0
         section.property: "section"
         section.criteria: ViewSection.FullString
         section.delegate: Item {
@@ -355,12 +215,14 @@ Item {
             height: 24
 
             Text {
-                x: 14
-                anchors.verticalCenter: parent.verticalCenter
+                x: 18
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 4
                 text: root.sectionLabel(section)
-                color: root.mutedColor
-                font.pixelSize: 11
-                font.letterSpacing: 0.6
+                color: Theme.inkFaint
+                font.pixelSize: Theme.typeMicro
+                font.weight: Font.Medium
+                font.letterSpacing: 0.88
             }
         }
 
@@ -376,9 +238,6 @@ Item {
             /// 0..1 for a volume, 0 for everything else.
             required property real fill
 
-            width: ListView.view.width
-            height: 28 + (treeLoader.active ? treeLoader.height : 0)
-
             readonly property bool isVolume: row.kind === "volume"
             readonly property bool treeOpen: row.isVolume && root.volumeExpanded(row.path)
             readonly property bool current: !root.surfaceActive
@@ -392,111 +251,158 @@ Item {
                 || row.icon === "documents" || row.icon === "downloads"
                 || row.icon === "pictures" || row.icon === "music"
                 || row.icon === "videos"
+            /// `!== ""` matters: the add rows have an empty path, and an empty
+            /// target would light every one of them at once.
+            readonly property bool armed: root.dropTargetPath !== ""
+                && root.dropTargetPath === row.path
+            readonly property bool focused: row.current || row.spaceCurrent
+            readonly property bool lit: row.focused || row.armed
+                || rowMouse.containsMouse
+            readonly property int rowHeight: row.isVolume ? 38 : 28
+            readonly property int percent: Math.round(
+                Math.max(0, Math.min(1, row.fill)) * 100)
 
-            /// The visible row is only the first 27px; an expanded volume's
+            width: ListView.view.width
+            height: rowHeight + (treeLoader.active ? treeLoader.height : 0)
+
+            /// The visible row is only the 28 / 38 px band; an expanded volume's
             /// tree hangs below it. Keeping that distinction explicit means the
             /// icon and label still centre on the row, not on the whole subtree.
             Item {
                 id: rowBody
 
                 width: parent.width
-                height: 28
+                height: row.rowHeight
 
                 Rectangle {
-                    x: 6
-                    width: rowBody.width - 12
-                    height: rowBody.height
-                    radius: 6
-                    // `!== ""` matters: the add rows have an empty path, and
-                    // an empty target would light every one of them at once.
-                    readonly property bool armed: root.dropTargetPath !== ""
-                        && root.dropTargetPath === row.path
-                    color: armed
-                        ? root.dropColor
-                        : ((row.current || row.spaceCurrent)
-                            ? root.activeColor
-                            : (mouse.containsMouse ? root.hoverColor : "transparent"))
-                    border.width: armed ? 1 : 0
-                    border.color: root.accent
+                    id: plate
 
-                    // How full the volume is: three pixels along the bottom, and
+                    x: 8
+                    width: rowBody.width - 16
+                    height: rowBody.height
+                    radius: Theme.radiusSm
+                    color: row.armed
+                        ? Theme.signalSoft
+                        : (row.focused
+                            ? Theme.fill
+                            : (rowMouse.containsMouse ? Theme.hover : "transparent"))
+                    border.width: row.armed ? 1 : 0
+                    border.color: Theme.hairlineStrong
+
+                    // How full the volume is: two pixels along the bottom, and
                     // only where there is a number behind it. An empty bar on a
                     // home folder would be a promise the data cannot keep.
                     Item {
-                        visible: row.fill > 0
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        anchors.margins: 1
-                        height: 3
-                        clip: true
+                        visible: row.isVolume && row.fill > 0
+                        x: 10
+                        y: parent.height - 7
+                        width: parent.width - 20
+                        height: 2
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 1
+                            color: Theme.hairlineStrong
+                        }
 
                         Rectangle {
                             width: parent.width * Math.max(0, Math.min(1, row.fill))
                             height: parent.height
-                            color: row.fill > 0.9 ? Theme.warn : root.accent
-                            opacity: 0.65
+                            radius: 1
+                            color: row.fill > 0.9 ? Theme.warn : Theme.signal
+                            opacity: row.fill > 0.9 ? 0.9 : 0.5
                         }
                     }
                 }
 
+                // The current row's left track sits on the sidebar's own edge,
+                // not inside the plate: the 8 px inset is what makes it read as
+                // a marker rather than a border.
                 Rectangle {
-                    id: iconTile
+                    visible: row.focused
+                    x: 0
+                    y: row.isVolume ? 7 : 6
+                    width: 2
+                    height: rowBody.height - (row.isVolume ? 14 : 12)
+                    radius: 1
+                    color: Theme.signal
+                }
 
-                    x: row.isVolume ? 24 : 12
-                    anchors.verticalCenter: parent.verticalCenter
+                // A volume's chevron is a separate hit target from the row
+                // itself: the label still navigates to the drive, only the
+                // glyph toggles the subtree.
+                Item {
+                    id: chevron
+
+                    visible: row.isVolume
+                    x: 8
+                    y: 4
                     width: 16
-                    height: 16
-                    radius: 4
-                    color: Qt.rgba(root.tint(row.icon).r, root.tint(row.icon).g,
-                                   root.tint(row.icon).b, 0.18)
+                    height: 20
+                    z: 2
 
-                    // A drawn mark where there is one; a monogram otherwise.
-                    // The monogram is what the built-in rows used to show, and
-                    // showing the label's own first character beside the label
-                    // is what made those rows look like a layout collision.
                     Glyph {
                         anchors.centerIn: parent
-                        visible: root.hasDrawnGlyph(row.icon)
-                        kind: row.icon
-                        tint: root.tint(row.icon)
+                        width: 12
+                        height: 12
+                        kind: "chevron"
+                        tint: row.lit ? Theme.inkMuted : Theme.inkFaint
+                        rotation: row.treeOpen ? 90 : 0
                     }
 
-                    Text {
-                        anchors.centerIn: parent
-                        visible: !root.hasDrawnGlyph(row.icon)
-                        text: root.glyph(row.icon)
-                        color: root.tint(row.icon)
-                        font.pixelSize: 11
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleVolume(row.path)
                     }
                 }
 
+                Glyph {
+                    id: rowIcon
+
+                    x: row.isVolume ? 26 : 18
+                    y: row.isVolume ? 6 : 7
+                    width: 14
+                    height: 14
+                    kind: root.glyphKind(row.icon)
+                    tint: row.lit ? Theme.inkMuted : Theme.inkFaint
+                }
+
                 Text {
-                    anchors.left: parent.left
-                    anchors.leftMargin: row.isVolume ? 46 : 36
-                    anchors.right: detailText.left
-                    anchors.rightMargin: 6
-                    anchors.verticalCenter: parent.verticalCenter
+                    id: nameText
+
+                    x: row.isVolume ? 48 : 40
+                    y: row.isVolume ? 3 : 0
+                    height: row.isVolume ? 20 : 28
+                    width: Math.max(0, detailText.x - x - 6)
+                    verticalAlignment: Text.AlignVCenter
                     text: row.builtInName ? root.rowLabel(row.name) : row.name
-                    color: (row.current || row.spaceCurrent) ? root.textColor
-                        : (row.isAction ? root.mutedColor
-                            : Theme.inkFaint)
-                    font.pixelSize: 12
+                    color: row.lit ? Theme.ink : Theme.inkMuted
+                    font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
                 }
 
                 Text {
                     id: detailText
+
                     anchors.right: parent.right
-                    anchors.rightMargin: 12
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: root.detailLabel(row.detail)
-                    color: root.mutedColor
-                    font.pixelSize: 11
-                    elide: Text.ElideRight
-                    width: Math.min(74, implicitWidth)
+                    anchors.rightMargin: 18
+                    y: row.isVolume ? 3 : 0
+                    height: row.isVolume ? 20 : 28
+                    width: Math.min(96, implicitWidth)
+                    verticalAlignment: Text.AlignVCenter
                     horizontalAlignment: Text.AlignRight
+                    // A narrow column only has room for the percentage; the
+                    // full pair is what the tooltip carries instead.
+                    text: row.isVolume && root.narrow
+                        ? row.percent + "%" : root.detailLabel(row.detail)
+                    color: row.isVolume && row.fill > 0.9
+                        ? Theme.warn : Theme.inkFaint
+                    font.pixelSize: Theme.typeMicro
+                    font.features: { "tnum": 1 }
+                    elide: Text.ElideRight
                 }
 
                 // Files dragged in from the listing or from Explorer. The row
@@ -528,7 +434,8 @@ Item {
                 }
 
                 MouseArea {
-                    id: mouse
+                    id: rowMouse
+
                     anchors.fill: parent
                     hoverEnabled: true
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -566,30 +473,6 @@ Item {
                         }
                     }
                 }
-
-                // A volume's chevron is a separate hit target from the row
-                // itself: the label still navigates to the drive, only the
-                // glyph toggles the subtree.
-                Item {
-                    visible: row.isVolume
-                    x: 0
-                    width: 22
-                    height: 28
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: row.treeOpen ? "▾" : "▸"
-                        color: row.treeOpen ? root.textColor : root.mutedColor
-                        font.pixelSize: 11
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: root.toggleVolume(row.path)
-                    }
-                }
             }
 
             // One lazily loaded tree per expanded volume. Collapsing deactivates
@@ -600,7 +483,7 @@ Item {
 
                 anchors.left: parent.left
                 anchors.right: parent.right
-                y: 27
+                y: row.rowHeight
                 height: active && status === Loader.Ready && item !== null
                     ? item.implicitHeight : 0
                 active: row.treeOpen
@@ -611,7 +494,6 @@ Item {
                         width: treeLoader.width
                         dark: root.dark
                         material: root.material
-                        accent: root.accent
                         activePath: root.activePath
                         showHidden: ExplorerPrefs.showHiddenFiles
 
@@ -628,6 +510,92 @@ Item {
                     if (item !== null)
                         item.rootPath = row.path
                 }
+            }
+        }
+    }
+
+    /// The bin is a fixed destination at the bottom, not a path the model
+    /// resolves, and not a header item next to the overview.
+    Item {
+        id: trashArea
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: 42
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            height: 1
+            color: Theme.hairline
+        }
+
+        Rectangle {
+            id: trashRow
+
+            x: 8
+            y: 7
+            width: parent.width - 16
+            height: 28
+            radius: Theme.radiusSm
+            color: root.trashActive
+                ? Theme.fill
+                : (trashMouse.containsMouse ? Theme.hover : "transparent")
+
+            Accessible.role: Accessible.Button
+            Accessible.name: root.trashLabel
+            Accessible.onPressAction: root.trashRequested()
+
+            Rectangle {
+                visible: root.trashActive
+                // Like a list row, the track sits on the sidebar's edge, not
+                // on the plate's 8 px inset.
+                x: -8
+                y: 6
+                width: 2
+                height: 16
+                radius: 1
+                color: Theme.signal
+            }
+
+            Glyph {
+                x: 10
+                y: 7
+                width: 14
+                height: 14
+                kind: "trash"
+                tint: root.trashActive || trashMouse.containsMouse
+                    ? Theme.inkMuted : Theme.inkFaint
+            }
+
+            Text {
+                x: 32
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.trashLabel
+                color: root.trashActive || trashMouse.containsMouse
+                    ? Theme.ink : Theme.inkMuted
+                font.pixelSize: Theme.typeBody
+            }
+
+            Text {
+                anchors.right: parent.right
+                anchors.rightMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                visible: root.trashCount > 0
+                text: qsTr("%1 项").arg(root.trashCount)
+                color: Theme.inkFaint
+                font.pixelSize: Theme.typeMicro
+                font.features: { "tnum": 1 }
+            }
+
+            MouseArea {
+                id: trashMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                onClicked: root.trashRequested()
             }
         }
     }

@@ -1271,12 +1271,15 @@ Window {
         const items = [
             { id: "refresh", label: qsTr("刷新"), shortcut: "F5" },
             { id: "toggleHidden",
-              label: (ExplorerPrefs.showHiddenFiles ? "\u2713 " : "") + qsTr("显示隐藏文件"),
+              label: qsTr("显示隐藏文件"),
+              checked: ExplorerPrefs.showHiddenFiles,
               shortcut: root.shortcutDisplay("explorer.toggleHidden") },
             { id: "toggleSidebar",
-              label: (root.sidebarVisible ? "\u2713 " : "") + qsTr("侧栏") },
+              label: qsTr("侧栏"),
+              checked: root.sidebarVisible },
             { id: "toggleSplit",
-              label: (ExplorerPrefs.splitEnabled ? "\u2713 " : "") + qsTr("分屏") },
+              label: qsTr("分屏"),
+              checked: ExplorerPrefs.splitEnabled },
             { id: "sort", label: qsTr("排序"), submenu: root.sortMenuItems() },
             { separator: true },
             { id: "filters", label: qsTr("筛选…") },
@@ -1292,12 +1295,12 @@ Window {
 
     function sortMenuItems() {
         function key(id, label) {
-            return { id: "sort:" + id,
-                     label: (ExplorerPrefs.sortKey === id ? "\u2713 " : "") + label }
+            return { id: "sort:" + id, label: label,
+                     checked: ExplorerPrefs.sortKey === id }
         }
         function order(id, label) {
-            return { id: "order:" + id,
-                     label: (ExplorerPrefs.sortOrder === id ? "\u2713 " : "") + label }
+            return { id: "order:" + id, label: label,
+                     checked: ExplorerPrefs.sortOrder === id }
         }
         return [
             key("name", qsTr("名称")),
@@ -1307,8 +1310,8 @@ Window {
             { separator: true },
             order("asc", qsTr("升序")),
             order("desc", qsTr("降序")),
-            { id: "foldersFirst",
-              label: (ExplorerPrefs.foldersFirst ? "\u2713 " : "") + qsTr("文件夹优先") }
+            { id: "foldersFirst", label: qsTr("文件夹优先"),
+              checked: ExplorerPrefs.foldersFirst }
         ]
     }
 
@@ -1845,7 +1848,10 @@ Window {
         if (root.activeTab === null)
             return
         const trashKinds = ["trash", "restore_trash", "purge_trash", "empty_trash"]
-        if (trashKinds.indexOf(kind) >= 0 && root.trashActive)
+        // The sidebar shows the bin's item count too, so the model has to be
+        // re-read after a trash operation even while another folder is on
+        // screen.
+        if (trashKinds.indexOf(kind) >= 0)
             trashModel.refresh()
         const reloadKinds = ["create", "rename", "trash", "delete", "copy", "move",
                              "duplicate", "shortcut", "compress", "extract", "undo", "redo",
@@ -2693,17 +2699,14 @@ Window {
                 dark: root.dark
                 material: root.material
                 activePath: root.activePath
-                accent: root.accent
-                showHeader: true
                 trashActive: root.trashActive
-                overviewActive: root.overviewActive
+                trashCount: trashModel.count
                 spaceActive: root.spaceActive
                 activeSpaceId: root.activeSpaceId
                 onNavigateRequested: function (path) {
                     root.navigate(path)
                 }
                 onTrashRequested: root.openTrash()
-                onOverviewRequested: root.openOverview()
                 onSpaceRequested: function (id) {
                     root.openSpace(id)
                 }
@@ -3514,6 +3517,11 @@ Window {
                 root.toggleTerminal()
             }
         }
+
+        onActionRequested: function (id) {
+            if (id === "overview")
+                root.openOverview()
+        }
     }
 
     FilterMenu {
@@ -3979,6 +3987,10 @@ Window {
                 root.startupPath = root.config.startupPath
         }
         chrome.applyMaterial(root.material, root.dark)
+
+        // The sidebar shows the bin's count, so the scan has to run before the
+        // trash surface is ever opened.
+        trashModel.refresh()
 
         if (root.initialTabs && root.initialTabs.length > 0) {
             root.tabs = root.initialTabs
