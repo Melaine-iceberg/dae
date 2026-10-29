@@ -419,7 +419,8 @@ impl qobject::ExplorerPrefs {
         let key = key.to_string();
         let changed = match key.as_str() {
             "previewWidth" => {
-                let next = value.clamp(280, 520);
+                // 260–420, the range the grip and its arrow keys share.
+                let next = value.clamp(260, 420);
                 if self.preview_width == next {
                     return;
                 }

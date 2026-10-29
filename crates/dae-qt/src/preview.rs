@@ -12,7 +12,7 @@
 use std::pin::Pin;
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::QString;
+use cxx_qt_lib::{QString, QStringList};
 use dae_core::fs::media_meta;
 use dae_core::fs::vfs;
 use dae_core::fs::{preview, service};
@@ -29,6 +29,9 @@ pub mod qobject {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
 
         include!("cxx-qt-lib/qqmlapplicationengine.h");
         type QQmlApplicationEngine = cxx_qt_lib::QQmlApplicationEngine;
@@ -51,6 +54,11 @@ pub mod qobject {
         #[qproperty(QString, size_text, cxx_name = "sizeText")]
         #[qproperty(QString, modified_text, cxx_name = "modifiedText")]
         #[qproperty(QString, kind_text, cxx_name = "kindText")]
+        /// How many entries a selected folder holds, and the first few of
+        /// their names. Filled for directories only, from a bounded read that
+        /// starts no watcher: the listing itself belongs to the tab.
+        #[qproperty(i32, child_count, cxx_name = "childCount")]
+        #[qproperty(QStringList, child_names, cxx_name = "childNames")]
         #[qproperty(QString, content)]
         /// The rendered HTML for Markdown and highlighted code, empty for a
         /// plain-text peek. `content` always keeps the raw text so the panel
@@ -117,6 +125,8 @@ pub struct PreviewControllerRust {
     size_text: QString,
     modified_text: QString,
     kind_text: QString,
+    child_count: i32,
+    child_names: QStringList,
     content: QString,
     content_html: QString,
     is_markdown: bool,
@@ -143,6 +153,8 @@ struct Snapshot {
     size_text: String,
     modified_text: String,
     kind_text: String,
+    child_count: i32,
+    child_names: Vec<String>,
     content: String,
     content_html: String,
     source_kind: SourceKind,
@@ -171,6 +183,8 @@ impl qobject::PreviewController {
         self.as_mut().set_size_text(QString::default());
         self.as_mut().set_modified_text(QString::default());
         self.as_mut().set_kind_text(QString::default());
+        self.as_mut().set_child_count(0);
+        self.as_mut().set_child_names(QStringList::default());
         self.as_mut().set_content(QString::default());
         self.as_mut().set_content_html(QString::default());
         self.as_mut().set_is_markdown(false);
@@ -207,6 +221,8 @@ impl qobject::PreviewController {
         self.as_mut().set_size_text(QString::default());
         self.as_mut().set_modified_text(QString::default());
         self.as_mut().set_kind_text(QString::default());
+        self.as_mut().set_child_count(0);
+        self.as_mut().set_child_names(QStringList::default());
         self.as_mut().set_content(QString::default());
         self.as_mut().set_content_html(QString::default());
         self.as_mut().set_is_markdown(false);
@@ -257,6 +273,14 @@ impl qobject::PreviewController {
                     .set_modified_text(QString::from(snapshot.modified_text.as_str()));
                 self.as_mut()
                     .set_kind_text(QString::from(snapshot.kind_text.as_str()));
+                self.as_mut().set_child_count(snapshot.child_count);
+                self.as_mut().set_child_names(
+                    snapshot
+                        .child_names
+                        .iter()
+                        .map(|name| QString::from(name.as_str()))
+                        .collect::<QStringList>(),
+                );
                 self.as_mut()
                     .set_content(QString::from(snapshot.content.as_str()));
                 self.as_mut().set_content_html(QString::from(html.as_str()));
@@ -343,13 +367,60 @@ async fn load_snapshot(path: &str, dark: bool) -> Result<Snapshot, String> {
         (text, media)
     };
 
-    Ok(snapshot_from(properties, text, media, dark))
+    let children = if is_directory {
+        folder_children(path).await
+    } else {
+        (0, Vec::new())
+    };
+
+    Ok(snapshot_from(properties, text, media, children, dark))
+}
+
+/// The pane names the first few children of a selected folder. This is a
+/// bounded snapshot rather than a listing: no watcher, no sorting options, no
+/// git scan. A folder the backend cannot enumerate keeps a zero count.
+async fn folder_children(path: &str) -> (i32, Vec<String>) {
+    if !vfs::is_local_path(path) {
+        return (0, Vec::new());
+    }
+    let path = std::path::PathBuf::from(path);
+    tokio::task::spawn_blocking(move || read_children(&path))
+        .await
+        .unwrap_or((0, Vec::new()))
+}
+
+fn read_children(path: &std::path::Path) -> (i32, Vec<String>) {
+    const PREVIEW_NAMES: usize = 4;
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return (0, Vec::new());
+    };
+    let mut directories = Vec::new();
+    let mut files = Vec::new();
+    let mut count = 0usize;
+    for entry in entries.flatten() {
+        count += 1;
+        if directories.len() + files.len() >= PREVIEW_NAMES {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+            directories.push(name);
+        } else {
+            files.push(name);
+        }
+    }
+    directories.sort();
+    files.sort();
+    directories.extend(files);
+    directories.truncate(PREVIEW_NAMES);
+    (count.min(i32::MAX as usize) as i32, directories)
 }
 
 fn snapshot_from(
     properties: FileProperties,
     text: Option<preview::TextPreview>,
     media: Option<media_meta::MediaPreview>,
+    children: (i32, Vec<String>),
     dark: bool,
 ) -> Snapshot {
     let is_directory = properties.kind == EntryKind::Directory;
@@ -391,6 +462,8 @@ fn snapshot_from(
             .map(format::timestamp)
             .unwrap_or_else(|| "—".to_owned()),
         kind_text: kind_label(properties.kind).to_owned(),
+        child_count: children.0,
+        child_names: children.1,
         content,
         content_html,
         source_kind,
@@ -520,5 +593,21 @@ mod tests {
         assert!(!has_thumbnail(
             "cloud://google_drive:me@example.com/photo.jpg"
         ));
+    }
+
+    #[test]
+    fn a_folder_preview_counts_every_child_but_names_the_first_few() {
+        let root = std::env::temp_dir().join("dae-preview-folder-children");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("b.txt"), b"x").unwrap();
+        std::fs::write(root.join("a.txt"), b"x").unwrap();
+
+        let (count, names) = read_children(&root);
+        assert_eq!(count, 3);
+        // Folders first, then files, each alphabetically.
+        assert_eq!(names, vec!["sub", "a.txt", "b.txt"]);
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

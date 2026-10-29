@@ -3007,6 +3007,9 @@ Window {
                             root.requestTrashPurge(ids)
                         }
                         onEmptyRequested: root.requestEmptyTrash()
+                        onPreviewRequested: function (item) {
+                            previewPanel.showTrash(item)
+                        }
                         onContextRequested: function (id, originalParent, x, y) {
                             root.showTrashRowMenu(id, originalParent, x, y)
                         }
@@ -3076,14 +3079,16 @@ Window {
                 }
             }
 
-            // A one-pixel seam that is eight pixels wide to the pointer. The
+            // A one-pixel seam that is six pixels wide to the pointer. The
             // preview is the one pane whose useful width depends on what is in
             // it — a code file wants more, a thumbnail less — so the number is
-            // the user's, remembered in explorer.ini.
+            // the user's, remembered in explorer.ini. 260–420 is the range the
+            // preference clamps to; a double click restores the default.
             Item {
                 id: previewHandle
 
-                readonly property bool live: root.previewVisible && root.folderActive
+                readonly property bool live: root.previewVisible
+                    && (root.folderActive || root.trashActive)
 
                 width: live ? 6 : 0
                 height: parent.height
@@ -3092,7 +3097,7 @@ Window {
                     anchors.horizontalCenter: parent.horizontalCenter
                     width: 1
                     height: parent.height
-                    color: handleMouse.containsMouse ? root.accent : Theme.hairline
+                    color: handleMouse.containsMouse ? Theme.signal : Theme.hairline
                 }
 
                 MouseArea {
@@ -3115,25 +3120,33 @@ Window {
                         const dx = mapToItem(null, mouse.x, 0).x - startX
                         ExplorerPrefs.setNumber("previewWidth", Math.round(startWidth - dx))
                     }
+                    onDoubleClicked: ExplorerPrefs.setNumber("previewWidth", 300)
                 }
             }
 
             PreviewPanel {
                 id: previewPanel
-                width: root.previewVisible && root.folderActive
-                    ? Math.min(ExplorerPrefs.previewWidth, Math.max(240, parent.width * 0.5))
+                width: root.previewVisible && (root.folderActive || root.trashActive)
+                    ? Math.min(ExplorerPrefs.previewWidth, Math.max(260, parent.width * 0.5))
                     : 0
                 height: parent.height
                 visible: width > 0
                 dark: root.dark
                 accent: root.accent
+                inTrash: root.trashActive
 
                 onCloseRequested: {
                     root.previewVisible = false
-                    fileList.takeFocus()
+                    if (root.trashActive)
+                        trashView.takeFocus()
+                    else
+                        fileList.takeFocus()
                 }
                 onOpenRequested: function (path, isDir) {
                     root.acceptPreview(path, isDir)
+                }
+                onPropertiesRequested: function (path) {
+                    propertiesDialog.open(path)
                 }
             }
         }
@@ -3359,8 +3372,7 @@ Window {
                     id: previewToggle
                     width: previewToggleRow.implicitWidth + 12
                     height: 22
-                    visible: root.folderActive
-                    opacity: root.trashActive ? 0.35 : 1
+                    visible: root.folderActive || root.trashActive
 
                     Accessible.role: Accessible.Button
                     Accessible.name: root.previewVisible ? qsTr("隐藏预览") : qsTr("显示预览")
@@ -3397,10 +3409,13 @@ Window {
                         id: previewToggleMouse
                         anchors.fill: parent
                         hoverEnabled: true
-                        enabled: !root.trashActive
                         onClicked: {
                             root.previewVisible = !root.previewVisible
-                            if (!root.previewVisible)
+                            if (root.previewVisible)
+                                return
+                            if (root.trashActive)
+                                trashView.takeFocus()
+                            else
                                 fileList.takeFocus()
                         }
                     }

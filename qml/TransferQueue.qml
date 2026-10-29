@@ -2,20 +2,22 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
 
-// What is waiting behind the transfer that owns the progress row.
+// What is waiting behind the transfer that owns the status bar's progress row.
 //
-// The running job is deliberately not listed: it already names itself on the
-// status row, and it cannot be cancelled — the core has no seam for stopping a
-// copy mid-flight, and a queue entry that silently did nothing would be worse
-// than no entry at all. Every row here therefore means "not started yet", which
-// is exactly the set a ✕ can drop.
+// The running job leads the list because it is the one the user is watching;
+// it cannot be cancelled — the core has no seam for stopping a copy mid-flight,
+// and a queue entry that silently did nothing would be worse than no entry at
+// all. Every row that carries a ✕ therefore means "not started yet", which is
+// exactly the set a cancel can drop.
+//
+// A 326 px plate over the bottom of the window, the way the prototype stacks
+// it: it is a read-out on the status bar, not a dialog.
+// See docs/ui-instrument-migration.md §7.3.
 Item {
     id: root
 
     property bool dark: true
     property color accent: Theme.interactive
-    property real openX: 0
-    property real openY: 0
 
     visible: false
     /// Arrives rather than appears. Hiding stays instant: a menu that fades
@@ -32,11 +34,17 @@ Item {
     readonly property color borderColor: Theme.hairlineStrong
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
-    readonly property int rowHeight: 28
+    readonly property color faintColor: Theme.inkFaint
+    readonly property int queuedCount: Workspace.queuedTransfers.length
+    readonly property int runningCount: Workspace.busy ? 1 : 0
+    readonly property real percent: Workspace.progressTotal > 0
+        ? Math.max(0, Math.min(100, Math.round(Workspace.progressDone * 100 / Workspace.progressTotal)))
+        : (Workspace.busy ? 0 : 100)
 
+    /// Kept for the shell's call site. The plate is anchored to the bottom of
+    /// the window rather than to the chip: at 326 px it would otherwise jump
+    /// sideways every time the progress digits changed width.
     function openAbove(x, y) {
-        root.openX = x
-        root.openY = y
         root.visible = true
         root.forceActiveFocus()
     }
@@ -57,108 +65,268 @@ Item {
     Rectangle {
         id: panel
 
-        width: 320
-        height: Math.min(280, column.implicitHeight + 12)
-        x: Math.max(8, Math.min(root.openX, root.width - width - 8))
-        y: Math.max(8, root.openY - height - 6)
-        radius: 12
+        width: 326
+        height: Math.min(320, body.height + header.height + 8)
+        x: Math.round((root.width - width) / 2)
+        y: root.height - height - 32
+        radius: Theme.radiusMd
         color: root.panelColor
         border.width: 1
         border.color: root.borderColor
-        clip: true
 
-        Column {
-            id: column
+        Item {
+            id: header
             width: parent.width
+            height: 26
 
-            Item {
-                width: parent.width
-                height: 26
-
-                Text {
-                    x: 10
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("传输队列 · ") + Workspace.queuedTransfers.length + qsTr(" 项等待")
-                    color: root.mutedColor
-                    font.pixelSize: 11
-                }
-
-                Text {
-                    anchors.right: parent.right
-                    anchors.rightMargin: 10
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: qsTr("全部取消")
-                    color: cancelAllMouse.containsMouse ? root.textColor : root.mutedColor
-                    font.pixelSize: 11
-                }
-
-                MouseArea {
-                    id: cancelAllMouse
-                    anchors.right: parent.right
-                    width: 58
-                    height: parent.height
-                    hoverEnabled: true
-                    onClicked: Workspace.cancelQueuedTransfers()
-                }
+            Text {
+                x: 10
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("传输队列")
+                color: root.faintColor
+                font.pixelSize: Theme.typeMicro
+                font.letterSpacing: 0.55
             }
 
-            Repeater {
-                model: Workspace.queuedTransfers
+            Row {
+                anchors.right: parent.right
+                anchors.rightMargin: 8
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 8
 
                 Item {
-                    id: row
-                    required property int index
-                    required property var modelData
+                    id: cancelAll
+                    width: 52
+                    height: 22
+                    visible: root.queuedCount > 0
 
-                    width: column.width
-                    height: root.rowHeight
-
-                    Text {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 10
-                        anchors.right: dropHit.left
-                        anchors.rightMargin: 8
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: row.modelData
-                        color: root.textColor
-                        font.pixelSize: 11
-                        elide: Text.ElideMiddle
-                    }
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("全部取消")
 
                     Text {
-                        anchors.right: parent.right
-                        anchors.rightMargin: 10
-                        anchors.verticalCenter: parent.verticalCenter
-                        text: "\u00d7"
-                        color: dropHit.containsMouse ? root.textColor : root.mutedColor
-                        font.pixelSize: 13
+                        anchors.centerIn: parent
+                        text: qsTr("全部取消")
+                        color: cancelAllMouse.containsMouse ? root.textColor : root.faintColor
+                        font.pixelSize: Theme.typeMicro
+                        textFormat: Text.PlainText
                     }
 
                     MouseArea {
-                        id: dropHit
-                        anchors.right: parent.right
-                        width: 28
-                        height: parent.height
+                        id: cancelAllMouse
+                        anchors.fill: parent
                         hoverEnabled: true
-                        Accessible.role: Accessible.Button
-                        Accessible.name: qsTr("取消 ") + row.modelData
-                        onClicked: Workspace.cancelQueuedTransfer(row.index)
+                        onClicked: Workspace.cancelQueuedTransfers()
+                    }
+                }
+
+                Item {
+                    id: closeButton
+                    width: 20
+                    height: 20
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("关闭传输队列")
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: Theme.radiusXs
+                        color: closeMouse.containsMouse ? Theme.hover : "transparent"
+                    }
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        width: 12
+                        height: 12
+                        kind: "close"
+                        tint: closeMouse.containsMouse ? root.textColor : root.faintColor
+                    }
+
+                    MouseArea {
+                        id: closeMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: root.close()
+                    }
+                }
+            }
+        }
+
+        Flickable {
+            id: scroller
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: header.bottom
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 4
+            contentWidth: width
+            contentHeight: body.height
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
+            Column {
+                id: body
+                width: scroller.width
+
+                // The job that is running.
+                TransferRow {
+                    width: parent.width
+                    visible: Workspace.busy
+                    name: Workspace.progressLabel
+                    target: Workspace.transferDestination
+                    status: root.percent + "%"
+                    progress: root.percent / 100
+                    cancellable: false
+                }
+
+                // The jobs behind it, in the order the core will start them.
+                Repeater {
+                    model: Workspace.queuedTransfers
+
+                    TransferRow {
+                        required property int index
+                        required property string modelData
+                        width: body.width
+                        name: modelData
+                        target: Workspace.queuedTransferPaths.length > index
+                            ? Workspace.queuedTransferPaths[index] : ""
+                        status: qsTr("等待")
+                        progress: 0
+                        cancellable: true
+                        onCancelRequested: Workspace.cancelQueuedTransfer(index)
+                    }
+                }
+
+                Item {
+                    width: parent.width
+                    height: 34
+                    visible: !Workspace.busy && root.queuedCount === 0
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: qsTr("没有排队中的传输")
+                        color: root.mutedColor
+                        font.pixelSize: Theme.typeMicro
+                    }
+                }
+            }
+        }
+    }
+
+    component TransferRow: Item {
+        id: row
+
+        property string name: ""
+        /// Where this job is copying to. Printed under the name in the faint
+        /// ink: the title says what is moving, this says where to.
+        property string target: ""
+        property string status: ""
+        property real progress: 0
+        property bool cancellable: false
+
+        signal cancelRequested()
+
+        width: parent ? parent.width : 0
+        height: row.target !== "" ? 52 : 40
+
+        Rectangle {
+            anchors.fill: parent
+            anchors.leftMargin: 4
+            anchors.rightMargin: 4
+            radius: Theme.radiusSm
+            color: rowMouse.containsMouse ? Theme.hover : "transparent"
+        }
+
+        Column {
+            x: 8
+            y: 5
+            width: row.width - 16
+            spacing: 3
+
+            Item {
+                width: parent.width
+                height: 20
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.right: statusText.left
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: row.name
+                    color: root.textColor
+                    font.pixelSize: Theme.typeCaption
+                    elide: Text.ElideMiddle
+                    textFormat: Text.PlainText
+                }
+
+                Text {
+                    id: statusText
+                    anchors.right: row.cancellable ? cancelButton.left : parent.right
+                    anchors.rightMargin: row.cancellable ? 4 : 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: row.status
+                    color: root.faintColor
+                    font.pixelSize: Theme.typeMicro
+                    font.features: { "tnum": 1 }
+                    textFormat: Text.PlainText
+                }
+
+                Item {
+                    id: cancelButton
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: row.cancellable ? 18 : 0
+                    height: 18
+                    visible: row.cancellable
+
+                    Accessible.role: Accessible.Button
+                    Accessible.name: qsTr("取消 ") + row.name
+
+                    Glyph {
+                        anchors.centerIn: parent
+                        width: 10
+                        height: 10
+                        kind: "close"
+                        tint: cancelMouse.containsMouse ? root.textColor : root.faintColor
+                    }
+
+                    MouseArea {
+                        id: cancelMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        onClicked: row.cancelRequested()
                     }
                 }
             }
 
-            Item {
+            Text {
                 width: parent.width
-                height: Workspace.queuedTransfers.length === 0 ? 30 : 0
-                visible: Workspace.queuedTransfers.length === 0
+                height: row.target !== "" ? implicitHeight : 0
+                visible: row.target !== ""
+                text: row.target
+                color: root.faintColor
+                font.pixelSize: Theme.typeMicro
+                elide: Text.ElideMiddle
+                textFormat: Text.PlainText
+            }
 
-                Text {
-                    anchors.centerIn: parent
-                    text: qsTr("没有排队中的传输")
-                    color: root.mutedColor
-                    font.pixelSize: 11
+            Rectangle {
+                width: parent.width
+                height: 2
+                color: Theme.hairlineStrong
+
+                Rectangle {
+                    width: parent.width * Math.max(0, Math.min(1, row.progress))
+                    height: parent.height
+                    color: Theme.signal
                 }
             }
+        }
+
+        MouseArea {
+            id: rowMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            acceptedButtons: Qt.NoButton
         }
     }
 }

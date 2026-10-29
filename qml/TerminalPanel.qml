@@ -5,6 +5,10 @@ import dae.terminal 1.0
 // The bottom terminal panel. The shell is started on first use and stays alive
 // while the panel is hidden, which is the behaviour the previous shell already
 // had: hiding a terminal is not closing it.
+//
+// 132 px high and embedded in the content column, so the listing above it keeps
+// its rows and the terminal never covers them. See
+// docs/ui-instrument-migration.md §7.2.
 Item {
     id: root
 
@@ -12,22 +16,19 @@ Item {
     /// so switching tabs swaps the whole shell instead of reusing one process.
     property var tab: null
     readonly property var session: tab !== null ? tab.terminal : null
-    readonly property string cwd: tab !== null && tab.listing ? tab.listing.path : ""
     readonly property bool running: session !== null && session.running
     property bool dark: true
     property string material: "none"
     property bool active: false
-    property int panelHeight: 280
+    property int panelHeight: 132
 
     signal exited()
 
-    readonly property color chromeColor: material === "none"
-        ? Theme.chrome
-        : (dark ? Qt.rgba(0.055, 0.063, 0.075, 0.38)
-                : Qt.rgba(0.98, 0.985, 0.99, 0.46))
-    readonly property color textColor: Theme.ink
-    readonly property color mutedColor: Theme.inkMuted
-    readonly property color hairline: Theme.hairline
+    /// The shell the core starts on this platform. It is a label, not a probe:
+    /// the core picks whichever of these is installed, and the panel names the
+    /// family rather than the executable.
+    readonly property string shellName: Qt.platform.os === "windows" ? "PowerShell"
+        : Qt.platform.os === "osx" ? "zsh" : "bash"
 
     implicitHeight: active ? panelHeight : 0
     height: implicitHeight
@@ -65,7 +66,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        color: "#101216"
+        color: Theme.terminalCanvas
     }
 
     Rectangle {
@@ -73,27 +74,45 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: 26
-        color: root.chromeColor
+        height: 28
+        color: Theme.terminalHeader
 
         Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             height: 1
-            color: root.hairline
+            color: Qt.rgba(1, 1, 1, 0.07)
         }
 
-        Text {
-            x: 10
+        Row {
+            anchors.left: parent.left
+            anchors.leftMargin: 12
             anchors.verticalCenter: parent.verticalCenter
-            text: root.running
-                ? (root.cwd !== "" ? qsTr("终端 · ") + root.cwd : qsTr("终端"))
-                : (session !== null ? qsTr("终端 · 已退出 ") + session.exitCode : qsTr("终端"))
-            color: root.running ? root.textColor : root.mutedColor
-            font.pixelSize: 11
-            elide: Text.ElideMiddle
-            width: parent.width - 180
+            spacing: 6
+
+            Glyph {
+                anchors.verticalCenter: parent.verticalCenter
+                width: 12
+                height: 12
+                kind: "terminal"
+                tint: Theme.terminalInk
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.running
+                    ? qsTr("终端 · %1").arg(root.shellName)
+                    : (session !== null
+                        ? qsTr("终端 · 已退出 %1").arg(session.exitCode)
+                        : qsTr("终端"))
+                color: Theme.terminalInk
+                font.family: Theme.monoFamily
+                font.pixelSize: Theme.typeMicro
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+                width: Math.min(implicitWidth, header.width - 120)
+            }
         }
 
         Rectangle {
@@ -101,18 +120,18 @@ Item {
             anchors.right: closeButton.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            width: 52
+            width: 56
             height: 18
-            radius: 4
+            radius: Theme.radiusXs
             visible: !root.running
-            color: restartMouse.containsMouse ? Theme.fill
-                                              : "transparent"
+            color: restartMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
 
             Text {
                 anchors.centerIn: parent
                 text: qsTr("重新启动")
-                color: root.mutedColor
-                font.pixelSize: 11
+                color: restartMouse.containsMouse ? Theme.terminalInkStrong : Theme.terminalInk
+                font.pixelSize: Theme.typeMicro
+                textFormat: Text.PlainText
             }
 
             MouseArea {
@@ -129,23 +148,26 @@ Item {
         Item {
             id: closeButton
             anchors.right: parent.right
-            anchors.rightMargin: 5
+            anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             width: 20
             height: 20
 
+            Accessible.role: Accessible.Button
+            Accessible.name: qsTr("关闭终端")
+
             Rectangle {
                 anchors.fill: parent
-                radius: 4
-                color: closeMouse.containsMouse ? Theme.fill
-                                                : "transparent"
+                radius: Theme.radiusXs
+                color: closeMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
             }
 
-            Text {
+            Glyph {
                 anchors.centerIn: parent
-                text: "\u00d7"
-                color: closeMouse.containsMouse ? root.textColor : root.mutedColor
-                font.pixelSize: 13
+                width: 12
+                height: 12
+                kind: "close"
+                tint: closeMouse.containsMouse ? Theme.terminalInkStrong : Theme.terminalInk
             }
 
             MouseArea {
@@ -163,7 +185,10 @@ Item {
         anchors.right: parent.right
         anchors.top: header.bottom
         anchors.bottom: parent.bottom
-        anchors.margins: 6
+        anchors.leftMargin: 10
+        anchors.rightMargin: 8
+        anchors.topMargin: 6
+        anchors.bottomMargin: 6
         session: root.session
         dark: root.dark
         fontSize: Workspace.terminalFontSize

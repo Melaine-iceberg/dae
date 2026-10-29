@@ -104,6 +104,12 @@ pub mod qobject {
         /// finished display line each (`复制 3 项 → dae`). The running one is
         /// not in the list: the progress row is where it shows.
         #[qproperty(QStringList, queued_transfers, cxx_name = "queuedTransfers")]
+        /// Where each queued job is going, in the same order as
+        /// `queuedTransfers`. The panel prints it under the name: the row's
+        /// title says what is moving, this says where to.
+        #[qproperty(QStringList, queued_transfer_paths, cxx_name = "queuedTransferPaths")]
+        /// Where the running transfer is going. Empty when the slot is free.
+        #[qproperty(QString, transfer_destination, cxx_name = "transferDestination")]
         #[qproperty(QString, clipboard_mode, cxx_name = "clipboardMode")]
         #[qproperty(QStringList, clipboard_paths, cxx_name = "clipboardPaths")]
         #[qproperty(QString, accent)]
@@ -549,6 +555,8 @@ pub struct WorkspaceRust {
     conflict_target_category: QString,
     conflict_target_detail: QString,
     queued_transfers: QStringList,
+    queued_transfer_paths: QStringList,
+    transfer_destination: QString,
     /// Copies and moves waiting for the operation slot, oldest first. The one
     /// that owns the slot is not in here.
     queue: Vec<TransferJob>,
@@ -610,6 +618,8 @@ impl Default for WorkspaceRust {
             conflict_target_category: QString::default(),
             conflict_target_detail: QString::default(),
             queued_transfers: QStringList::default(),
+            queued_transfer_paths: QStringList::default(),
+            transfer_destination: QString::default(),
             queue: Vec::new(),
             active_transfer: None,
             clipboard_mode: QString::default(),
@@ -1160,7 +1170,13 @@ impl qobject::Workspace {
 
     fn publish_queue(mut self: Pin<&mut Self>) {
         let labels: Vec<String> = self.queue.iter().map(|job| job.label.clone()).collect();
+        let paths: Vec<String> = self
+            .queue
+            .iter()
+            .map(|job| job.destination.clone())
+            .collect();
         self.as_mut().set_queued_transfers(string_list(&labels));
+        self.as_mut().set_queued_transfer_paths(string_list(&paths));
     }
 
     /// The queue panel's ✕. Only a waiting job can be dropped: the core has no
@@ -1190,6 +1206,8 @@ impl qobject::Workspace {
             index: 0,
             decisions: HashMap::new(),
         });
+        self.as_mut()
+            .set_transfer_destination(QString::from(destination.as_str()));
         let thread = self.as_mut().qt_thread();
         runtime::spawn(async move {
             let result = service::check_transfer_conflicts(sources, destination).await;
@@ -1323,6 +1341,7 @@ impl qobject::Workspace {
     /// the same, leaving the destination untouched.
     fn cancel_conflict(mut self: Pin<&mut Self>) {
         self.as_mut().rust_mut().active_transfer = None;
+        self.as_mut().set_transfer_destination(QString::default());
         self.as_mut().clear_conflict();
         self.as_mut().start_next_queued();
     }
@@ -1387,6 +1406,7 @@ impl qobject::Workspace {
     /// Frees the slot and starts whatever was waiting behind it.
     fn end_transfer(mut self: Pin<&mut Self>) {
         self.as_mut().rust_mut().active_transfer = None;
+        self.as_mut().set_transfer_destination(QString::default());
         self.as_mut().start_next_queued();
     }
 

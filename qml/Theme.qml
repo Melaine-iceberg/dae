@@ -132,8 +132,12 @@ QtObject {
     /// a click from the listing itself.
     readonly property color link: dark ? "#6cb6ff" : "#0969da"
     /// The terminal is the one surface that keeps its own near-black in both
-    /// themes: a terminal that turns pale is no longer a terminal.
+    /// themes: a terminal that turns pale is no longer a terminal. Its header
+    /// plate, quiet ink and hovered ink are part of that same fixed palette.
     readonly property color terminalCanvas: "#0b0b0c"
+    readonly property color terminalHeader: "#141518"
+    readonly property color terminalInk: "#8b9099"
+    readonly property color terminalInkStrong: "#e8eaf0"
 
     // ── Motion ──────────────────────────────────────────────────────────────
     /// Qt 6 has no system-wide reduced-motion query, so `explorer.ini` carries

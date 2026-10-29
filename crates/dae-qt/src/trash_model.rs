@@ -79,6 +79,29 @@ pub mod qobject {
         #[cxx_name = "idAt"]
         fn id_at(&self, row: i32) -> QString;
 
+        /// The preview pane reads one row at a time and cannot reach a
+        /// delegate's `required` properties once that row has been recycled,
+        /// so the fields it paints are asked for by row instead.
+        #[qinvokable]
+        #[cxx_name = "nameAt"]
+        fn name_at(&self, row: i32) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "originalParentAt"]
+        fn original_parent_at(&self, row: i32) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "deletedTextAt"]
+        fn deleted_text_at(&self, row: i32) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "sizeTextAt"]
+        fn size_text_at(&self, row: i32) -> QString;
+
+        #[qinvokable]
+        #[cxx_name = "isDirAt"]
+        fn is_dir_at(&self, row: i32) -> bool;
+
         #[inherit]
         #[rust_name = "begin_reset_model"]
         unsafe fn beginResetModel(self: Pin<&mut TrashModel>);
@@ -195,6 +218,41 @@ impl qobject::TrashModel {
             .get(row as usize)
             .map(|entry| QString::from(entry.entry_id.as_str()))
             .unwrap_or_default()
+    }
+
+    fn name_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|entry| QString::from(entry.name.as_str()))
+            .unwrap_or_default()
+    }
+
+    fn original_parent_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|entry| QString::from(entry.original_parent.as_str()))
+            .unwrap_or_default()
+    }
+
+    fn deleted_text_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|entry| QString::from(entry.deleted_text.as_str()))
+            .unwrap_or_default()
+    }
+
+    fn size_text_at(&self, row: i32) -> QString {
+        self.rows
+            .get(row as usize)
+            .map(|entry| QString::from(entry.size_text.as_str()))
+            .unwrap_or_default()
+    }
+
+    fn is_dir_at(&self, row: i32) -> bool {
+        self.rows
+            .get(row as usize)
+            .map(|entry| entry.is_directory)
+            .unwrap_or(false)
     }
 
     fn apply_result(

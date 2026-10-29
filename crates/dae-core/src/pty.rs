@@ -53,7 +53,7 @@ impl Default for CellSnapshot {
         Self {
             ch: ' ',
             fg: 0xffd8dee9,
-            bg: 0xff14161a,
+            bg: 0xff0b0b0c,
             flags: 0,
         }
     }
@@ -561,7 +561,7 @@ fn palette() -> [Rgb; 19] {
         rgb(0x7f, 0xd6, 0xdf), // bright cyan
         rgb(0xff, 0xff, 0xff), // bright white
         rgb(0xd8, 0xde, 0xe9), // foreground
-        rgb(0x14, 0x16, 0x1a), // background
+        rgb(0x0b, 0x0b, 0x0c), // background — the same near-black as `Theme.terminalCanvas`
         rgb(0x6e, 0xa8, 0xfe), // cursor
     ]
 }

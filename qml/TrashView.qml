@@ -22,6 +22,15 @@ Item {
     property int anchorIndex: -1
 
     readonly property int rowHeight: 32
+
+    /// Below this width the four columns cannot all be read: the name column
+    /// would be squeezed under the original location and the two would paint on
+    /// top of each other. The pane is narrow whenever the preview is open, so
+    /// the location column steps out and the name takes its room.
+    readonly property bool compactColumns: width < 560
+    /// 54 for the checkbox and the name gutter, 228 for what the three trailing
+    /// columns need at their smallest.
+    readonly property int nameColumnSpan: 282
     readonly property color contentColor: Theme.canvas
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
@@ -48,6 +57,47 @@ Item {
     signal purgeRequested(var ids)
     signal emptyRequested()
     signal contextRequested(string id, string originalParent, real x, real y)
+    /// The preview pane's row, or null when nothing (or several things) is
+    /// selected. Trash entries no longer exist on disk, so the pane cannot ask
+    /// the filesystem about them; these strings are the whole description.
+    signal previewRequested(var item)
+
+    /// Pushes the cursor's row to the preview. The cursor is the row a click or
+    /// an arrow key landed on, which is the one the user means when exactly one
+    /// entry is selected.
+    function pushPreview() {
+        if (root.model === null || root.selectionCount !== 1 || list.currentIndex < 0) {
+            root.previewRequested(null)
+            return
+        }
+        const index = list.currentIndex
+        root.previewRequested({
+            "name": root.model.nameAt(index),
+            "originalParent": root.model.originalParentAt(index),
+            "deletedText": root.model.deletedTextAt(index),
+            "sizeText": root.model.sizeTextAt(index),
+            "isDir": root.model.isDirAt(index)
+        })
+    }
+
+    onSelectionVersionChanged: root.pushPreview()
+    onModelChanged: root.pushPreview()
+
+    Connections {
+        target: list
+
+        function onCurrentIndexChanged() {
+            root.pushPreview()
+        }
+    }
+
+    Connections {
+        target: root.model
+
+        function onCountChanged() {
+            root.pushPreview()
+        }
+    }
 
     function selectedIdList() {
         const ids = []
@@ -215,21 +265,29 @@ Item {
         anchors.top: parent.top
         height: 40
 
+        /// The buttons keep their size; the heading gives way. With the preview
+        /// open the pane is ~440 wide and four buttons already take most of it,
+        /// so the title can only have what is left of the row — never an
+        /// overlap, which is what anchored-and-unclipped produced.
+        readonly property real titleRoom: Math.max(0, actionRow.x - 26)
+
         Text {
             id: heading
             x: 16
+            width: Math.min(heading.implicitWidth, actions.titleRoom)
+            visible: width >= 44
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("回收站")
             color: root.textColor
             font.pixelSize: 13
             font.weight: Font.DemiBold
+            elide: Text.ElideRight
         }
 
         Text {
-            anchors.left: heading.right
-            anchors.leftMargin: 10
-            anchors.right: actionRow.left
-            anchors.rightMargin: 10
+            x: heading.visible ? heading.x + heading.width + 10 : 16
+            width: Math.max(0, actionRow.x - x - 12)
+            visible: width >= 40
             anchors.verticalCenter: parent.verticalCenter
             text: root.model === null ? ""
                 : (root.model.loaded ? root.model.status : qsTr("读取回收站…"))
@@ -332,7 +390,9 @@ Item {
         Text {
             id: nameHeader
             x: 54
-            width: Math.round(parent.width * 0.32)
+            width: root.compactColumns
+                ? Math.max(110, columnHeader.width - root.nameColumnSpan)
+                : Math.round(columnHeader.width * 0.32)
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("名称")
             color: root.mutedColor
@@ -341,10 +401,10 @@ Item {
         }
 
         Text {
-            anchors.left: nameHeader.right
-            anchors.leftMargin: 14
-            anchors.right: deletedHeader.left
-            anchors.rightMargin: 14
+            visible: !root.compactColumns
+            x: nameHeader.x + nameHeader.width + 14
+            width: Math.max(0, deletedHeader.x - 14 - nameHeader.x
+                            - nameHeader.width - 14)
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("原位置")
             color: root.mutedColor
@@ -481,7 +541,9 @@ Item {
             Text {
                 id: nameText
                 x: 54
-                width: Math.round(row.width * 0.32)
+                width: root.compactColumns
+                    ? Math.max(110, row.width - root.nameColumnSpan)
+                    : Math.round(row.width * 0.32)
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.fileName
                 color: root.textColor
@@ -491,10 +553,10 @@ Item {
             }
 
             Text {
-                anchors.left: nameText.right
-                anchors.leftMargin: 14
-                anchors.right: deletedTextItem.left
-                anchors.rightMargin: 14
+                visible: !root.compactColumns
+                x: nameText.x + nameText.width + 14
+                width: Math.max(0, deletedTextItem.x - 14 - nameText.x
+                                - nameText.width - 14)
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.originalParent !== "" ? row.originalParent : qsTr("原位置未知")
                 color: root.mutedColor

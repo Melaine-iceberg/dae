@@ -1388,94 +1388,139 @@
     <context>
         <name>PreviewPanel</name>
         <message>
-            <location filename="../PreviewPanel.qml" line="68" />
-            <source>预览</source>
-            <translation>预览</translation>
-        </message>
-        <message>
-            <location filename="../PreviewPanel.qml" line="116" />
-            <source>未选择文件</source>
-            <translation>未选择文件</translation>
-        </message>
-        <message>
-            <location filename="../PreviewPanel.qml" line="117" />
-            <source> 项已选择</source>
-            <translation> 项已选择</translation>
-        </message>
-        <message>
-            <location filename="../PreviewPanel.qml" line="128" />
-            <source>多选时不展开内容预览</source>
-            <translation>多选时不展开内容预览</translation>
-        </message>
-        <message>
-            <location filename="../PreviewPanel.qml" line="185" />
-            <source>无法生成缩略图</source>
-            <translation>无法生成缩略图</translation>
-        </message>
-        <message>
-            <location filename="../PreviewPanel.qml" line="185" />
-            <source>正在加载…</source>
-            <translation>正在加载…</translation>
-        </message>
-        <message>
-            <location filename="../PreviewPanel.qml" line="218" />
+            <location filename="../PreviewPanel.qml" line="48" />
             <source>（空文件）</source>
             <translation>（空文件）</translation>
         </message>
         <message>
-            <location filename="../PreviewPanel.qml" line="234" />
-            <source>仅显示前 64 KB</source>
-            <translation>仅显示前 64 KB</translation>
+            <location filename="../PreviewPanel.qml" line="124" />
+            <source>预览</source>
+            <translation>预览</translation>
         </message>
         <message>
-            <location filename="../PreviewPanel.qml" line="256" />
-            <source>远程项目：可预览文本；缩略图和媒体信息仅支持本地文件。</source>
-            <translation>远程项目：可预览文本；缩略图和媒体信息仅支持本地文件。</translation>
+            <location filename="../PreviewPanel.qml" line="139" />
+            <source>关闭预览</source>
+            <translation>关闭预览</translation>
         </message>
         <message>
-            <location filename="../PreviewPanel.qml" line="266" />
-            <source>读取中…</source>
-            <translation>读取中…</translation>
+            <location filename="../PreviewPanel.qml" line="187" />
+            <source>未选择文件</source>
+            <translation>未选择文件</translation>
         </message>
         <message>
-            <location filename="../PreviewPanel.qml" line="287" />
+            <location filename="../PreviewPanel.qml" line="196" />
+            <source>选中项目查看原位置</source>
+            <translation>选中项目查看原位置</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="196" />
+            <source>单击文件查看详情</source>
+            <translation>单击文件查看详情</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="236" />
             <source>类型</source>
             <translation>类型</translation>
         </message>
         <message>
-            <location filename="../PreviewPanel.qml" line="288" />
+            <location filename="../PreviewPanel.qml" line="236" />
+            <source>文件夹</source>
+            <translation>文件夹</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="236" />
+            <source>文件</source>
+            <translation>文件</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="237" />
             <source>大小</source>
             <translation>大小</translation>
         </message>
         <message>
-            <location filename="../PreviewPanel.qml" line="289" />
+            <location filename="../PreviewPanel.qml" line="238" />
+            <source>原位置</source>
+            <translation>原位置</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="239" />
+            <source>删除时间</source>
+            <translation>删除时间</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="256" />
+            <source> 项</source>
+            <translation> 项</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="265" />
+            <source>多选时不展开内容预览</source>
+            <translation>多选时不展开内容预览</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="298" />
+            <source>无法生成缩略图</source>
+            <translation>无法生成缩略图</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="298" />
+            <source>正在加载…</source>
+            <translation>正在加载…</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="360" />
+            <source>仅显示前 64 KB</source>
+            <translation>仅显示前 64 KB</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="435" />
+            <source>读取中…</source>
+            <translation>读取中…</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="437" />
+            <source>空文件夹</source>
+            <translation>空文件夹</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="505" />
+            <source>当前构建不支持媒体播放</source>
+            <translation>当前构建不支持媒体播放</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="550" />
             <source>修改时间</source>
             <translation>修改时间</translation>
         </message>
         <message>
-            <location filename="../PreviewPanel.qml" line="354" />
+            <location filename="../PreviewPanel.qml" line="583" />
+            <source>远程项目：可预览文本；缩略图和媒体信息仅支持本地文件。</source>
+            <translation>远程项目：可预览文本；缩略图和媒体信息仅支持本地文件。</translation>
+        </message>
+        <message>
+            <location filename="../PreviewPanel.qml" line="602" />
             <source>打开文件夹</source>
             <translation>打开文件夹</translation>
         </message>
         <message>
-            <location filename="../PreviewPanel.qml" line="355" />
+            <location filename="../PreviewPanel.qml" line="603" />
             <source>远程文件</source>
             <translation>远程文件</translation>
         </message>
         <message>
-            <location filename="../PreviewPanel.qml" line="355" />
+            <location filename="../PreviewPanel.qml" line="603" />
             <source>打开</source>
             <translation>打开</translation>
         </message>
         <message>
-            <location filename="../PreviewPanel.qml" line="381" />
+            <location filename="../PreviewPanel.qml" line="610" />
             <source>定位</source>
             <translation>定位</translation>
         </message>
         <message>
-            <location filename="../PreviewPanel.qml" line="300" />
-            <source>当前构建不支持媒体播放</source>
-            <translation>当前构建不支持媒体播放</translation>
+            <location filename="../PreviewPanel.qml" line="624" />
+            <source>全部属性</source>
+            <translation>全部属性</translation>
         </message>
     </context>
     <context>
@@ -3425,24 +3470,29 @@
     <context>
         <name>TerminalPanel</name>
         <message>
-            <location filename="../TerminalPanel.qml" line="83" />
-            <source>终端 · </source>
-            <translation>终端 · </translation>
+            <location filename="../TerminalPanel.qml" line="105" />
+            <source>终端 · %1</source>
+            <translation>终端 · %1</translation>
         </message>
         <message>
-            <location filename="../TerminalPanel.qml" line="83" />
+            <location filename="../TerminalPanel.qml" line="107" />
+            <source>终端 · 已退出 %1</source>
+            <translation>终端 · 已退出 %1</translation>
+        </message>
+        <message>
+            <location filename="../TerminalPanel.qml" line="108" />
             <source>终端</source>
             <translation>终端</translation>
         </message>
         <message>
-            <location filename="../TerminalPanel.qml" line="84" />
-            <source>终端 · 已退出 </source>
-            <translation>终端 · 已退出 </translation>
-        </message>
-        <message>
-            <location filename="../TerminalPanel.qml" line="105" />
+            <location filename="../TerminalPanel.qml" line="131" />
             <source>重新启动</source>
             <translation>重新启动</translation>
+        </message>
+        <message>
+            <location filename="../TerminalPanel.qml" line="157" />
+            <source>关闭终端</source>
+            <translation>关闭终端</translation>
         </message>
     </context>
     <context>
@@ -3516,29 +3566,34 @@
     <context>
         <name>TransferQueue</name>
         <message>
-            <location filename="../TransferQueue.qml" line="74" />
-            <source>传输队列 · </source>
-            <translation>传输队列 · </translation>
+            <location filename="../TransferQueue.qml" line="85" />
+            <source>传输队列</source>
+            <translation>传输队列</translation>
         </message>
         <message>
-            <location filename="../TransferQueue.qml" line="74" />
-            <source> 项等待</source>
-            <translation> 项等待</translation>
-        </message>
-        <message>
-            <location filename="../TransferQueue.qml" line="83" />
+            <location filename="../TransferQueue.qml" line="104" />
             <source>全部取消</source>
             <translation>全部取消</translation>
         </message>
         <message>
-            <location filename="../TransferQueue.qml" line="137" />
-            <source>取消 </source>
-            <translation>取消 </translation>
+            <location filename="../TransferQueue.qml" line="128" />
+            <source>关闭传输队列</source>
+            <translation>关闭传输队列</translation>
         </message>
         <message>
-            <location filename="../TransferQueue.qml" line="150" />
+            <location filename="../TransferQueue.qml" line="189" />
+            <source>等待</source>
+            <translation>等待</translation>
+        </message>
+        <message>
+            <location filename="../TransferQueue.qml" line="203" />
             <source>没有排队中的传输</source>
             <translation>没有排队中的传输</translation>
+        </message>
+        <message>
+            <location filename="../TransferQueue.qml" line="276" />
+            <source>取消 </source>
+            <translation>取消 </translation>
         </message>
     </context>
     <context>
