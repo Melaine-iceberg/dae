@@ -90,11 +90,9 @@ fn main() {
             .expect("Qt private QPA headers are required for Wayland background blur");
         // SAFETY: only an include path is added.
         builder = unsafe {
-            builder
-                .cpp_files(["cpp/wayland/ext-background-effect-v1-protocol.c"])
-                .cc_builder(|cc| {
-                    cc.include(&private_include);
-                })
+            builder.cc_builder(|cc| {
+                cc.include(&private_include);
+            })
         };
     }
 
@@ -110,6 +108,19 @@ fn main() {
     }
 
     builder.build();
+
+    // The Wayland protocol is generated C, and its `wl_interface` tables are
+    // what `window.h` binds to inside `extern "C"`. cxx-qt-build compiles every
+    // `cpp_files` entry as C++, where a namespace-scope `const` has internal
+    // linkage: the tables are emitted as private symbols and the C names stay
+    // undefined, which the linker reports as `undefined symbol:
+    // ext_background_effect_manager_v1_interface`. Compiled on its own as C,
+    // after the bridge, so the archive lands after the objects that reference
+    // it — the same ordering reason as the macOS backdrop below.
+    #[cfg(target_os = "linux")]
+    cc::Build::new()
+        .file("cpp/wayland/ext-background-effect-v1-protocol.c")
+        .compile("dae_wayland_protocol");
 
     // The macOS backdrop is Objective-C++ and is compiled separately so ARC
     // applies to that one file without leaking the flag into the C++ bridge.
