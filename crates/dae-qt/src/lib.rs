@@ -72,6 +72,10 @@ pub mod workspace;
 pub fn init() {
     window::enable_diagnostics();
     window::enable_alpha();
+    // The application font is the fallback for every Text item that does not
+    // name a family; it has to be chosen before the first QML component is
+    // created so nothing paints in the old face and then reflows.
+    window::apply_system_font();
     if let Err(error) = dae_core::settings::init() {
         eprintln!("dae: settings initialization failed: {error}");
     } else {

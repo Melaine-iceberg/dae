@@ -45,6 +45,12 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         fn dae_qt_enable_alpha();
 
+        /// Selects the platform's UI face for the whole application. Only the
+        /// Windows variant does anything; the other platforms already default
+        /// to their system font.
+        #[namespace = "dae_qt"]
+        fn dae_qt_apply_system_font();
+
         #[namespace = "dae_qt"]
         #[rust_name = "install_message_handler"]
         fn dae_qt_install_message_handler();
@@ -119,6 +125,10 @@ impl qobject::WindowController {
 
 pub fn enable_alpha() {
     qobject::dae_qt_enable_alpha();
+}
+
+pub fn apply_system_font() {
+    qobject::dae_qt_apply_system_font();
 }
 
 pub fn enable_diagnostics() {
