@@ -6,8 +6,13 @@
 // URL (`v=...`) makes QML drop its copy when the file changes; the cache key
 // re-reads mtime and size so a stale entry cannot be served even if a view
 // keeps an old URL.
+//
+// A macro guard rather than `#pragma once`, for the same reason as
+// `activation.h`: cxx-qt copies this header into the generated include tree and
+// `image_provider.cpp` includes both that copy and the local one.
 
-#pragma once
+#ifndef DAE_QT_IMAGE_PROVIDER_H
+#define DAE_QT_IMAGE_PROVIDER_H
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -57,3 +62,5 @@ void dae_qt_register_thumbnail_provider(QQmlApplicationEngine* engine);
 void dae_qt_register_file_icon_provider(QQmlApplicationEngine* engine);
 
 } // namespace dae_qt
+
+#endif // DAE_QT_IMAGE_PROVIDER_H

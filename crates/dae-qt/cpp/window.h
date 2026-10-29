@@ -560,7 +560,9 @@ inline WaylandBackgroundEffect& wayland_background_effect()
     if (!QGuiApplication::platformName().startsWith(QStringLiteral("wayland")))
         return effect;
 
-    auto* app = QGuiApplication::nativeInterface<QNativeInterface::QWaylandApplication>();
+    // `nativeInterface()` is a member, so it needs an instance; the macro is
+    // the QGuiApplication cast of the one `QCoreApplication::instance()`.
+    auto* app = qGuiApp->nativeInterface<QNativeInterface::QWaylandApplication>();
     if (!app)
         return effect;
     effect.display = app->display();

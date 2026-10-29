@@ -1,6 +1,13 @@
 // The QML face of a forwarded launch, and the single-instance claim that must
 // run before the engine is created.
-#pragma once
+//
+// A macro guard rather than `#pragma once`: cxx-qt copies every moc'd header
+// into the generated include tree, and `activation.cpp` reaches this file
+// relatively while the generated wrapper includes that copy. `#pragma once`
+// keys on the file, so it lets the second copy through and the class is
+// redefined. The macro is the same in both copies and stops it.
+#ifndef DAE_QT_ACTIVATION_H
+#define DAE_QT_ACTIVATION_H
 
 #include <QObject>
 #include <QStringList>
@@ -48,3 +55,5 @@ private:
 bool dae_qt_activation_claim();
 
 } // namespace dae_qt
+
+#endif // DAE_QT_ACTIVATION_H
