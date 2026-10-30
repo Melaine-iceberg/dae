@@ -2208,6 +2208,37 @@
             <translation>Terminal typography</translation>
         </message>
         <message>
+            <location filename="../SettingsPanel.qml" line="440" />
+            <location filename="../SettingsPanel.qml" line="928" />
+            <source>终端</source>
+            <translation>Terminal</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="936" />
+            <source>外观写入 settings.toml，两个桌面壳共用同一组值。</source>
+            <translation>Appearance is stored in settings.toml and shared by both desktop shells.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1044" />
+            <source>Shell</source>
+            <translation>Shell</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1071" />
+            <source>可执行文件名或完整路径；留空自动选择（Windows: pwsh / PowerShell，其他平台: $SHELL）</source>
+            <translation>Executable name or full path; leave empty to use the default (pwsh / PowerShell on Windows, $SHELL elsewhere).</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1079" />
+            <source>字号与行高立即应用；Shell 在下次启动终端时生效。</source>
+            <translation>Font size and line height apply immediately; the shell applies the next time a terminal starts.</translation>
+        </message>
+        <message>
+            <location filename="../SettingsPanel.qml" line="1101" />
+            <source>保存终端设置</source>
+            <translation>Save terminal settings</translation>
+        </message>
+        <message>
             <location filename="../SettingsPanel.qml" line="402" />
             <location filename="../SettingsPanel.qml" line="907" />
             <source>默认文件管理器</source>

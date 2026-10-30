@@ -168,7 +168,7 @@ readonly property real typeEmphasis: 13.5
 readonly property real typeTitle: 14
 readonly property real typeDisplay: 22
 readonly property color rowRule: dark ? "#0bffffff" : "#09000000"
-readonly property color terminalCanvas: "#0b0b0c"
+readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 ```
 
 ### 3.4 动效
@@ -344,8 +344,9 @@ readonly property color terminalCanvas: "#0b0b0c"
 
 - 高 132，内容区内嵌，不覆盖列表。
 - 头部 28：`终端 · zsh / bash / PowerShell`，右侧关闭 20×20。
-- 背景 `#0b0b0c`（进 `Theme.terminalCanvas`），文字 11 等宽，提示符用 `signal`。
-- mac 提示符 `%`，Linux `$`，Windows `PS …>`；shell 名按平台/后端显示。
+- 背景随明暗主题（`Theme.terminalCanvas`：深 `#0b0b0c` / 浅 `#fbfbf9`），网格调色板由 `dae-core::pty` 在取快照时按主题解析；文字 11 等宽，提示符用 `signal`。
+- mac 提示符 `%`，Linux `$`，Windows `PS …>`；shell 名按配置的后端/平台显示。
+- 设置页「终端」可填写 shell 可执行文件（留空按平台默认），新会话启动时生效。
 - 保留真实终端焦点、复制粘贴、滚动；不要用演示文本替换。
 
 ### 7.3 传输 `qml/TransferQueue.qml`

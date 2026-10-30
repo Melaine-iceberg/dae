@@ -222,6 +222,7 @@ FocusScope {
         sizeInput.text = Workspace.terminalFontSize
         heightInput.text = Workspace.terminalLineHeight.toFixed(2)
         familyInput.text = Workspace.terminalFontFamily
+        shellInput.text = ExplorerPrefs.terminalShell
     }
 
     function bindingText(binding) {
@@ -337,6 +338,7 @@ FocusScope {
             return
         }
         Workspace.saveTerminalSettings(size, lineHeight, familyInput.text)
+        ExplorerPrefs.setString("terminalShell", shellInput.text)
         root.terminalError = ""
         root.terminalStatus = qsTr("已保存")
         terminalStatusTimer.restart()
@@ -435,7 +437,7 @@ FocusScope {
 
                 NavItem { label: qsTr("外观与语言"); value: "appearance" }
                 NavItem { label: qsTr("快捷键"); value: "shortcuts" }
-                NavItem { label: qsTr("终端排版"); value: "terminal" }
+                NavItem { label: qsTr("终端"); value: "terminal" }
                 NavItem { label: qsTr("默认文件管理器"); value: "defaultManager" }
                 NavItem { label: qsTr("日志"); value: "logs" }
             }
@@ -923,7 +925,7 @@ FocusScope {
 
                 Text {
                     x: 24; y: 22
-                    text: qsTr("终端排版")
+                    text: qsTr("终端")
                     color: root.textColor
                     font.pixelSize: Theme.typeTitle
                     font.weight: Font.Medium
@@ -931,7 +933,7 @@ FocusScope {
                 Text {
                     x: 24; y: 48
                     width: content.width - 48
-                    text: qsTr("终端排版写入 settings.toml，两个桌面壳共用同一组值。")
+                    text: qsTr("外观写入 settings.toml，两个桌面壳共用同一组值。")
                     color: root.mutedColor
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap
@@ -1039,14 +1041,49 @@ FocusScope {
 
                 Text {
                     x: 24; y: 256
-                    text: qsTr("字号与行高在保存后立即应用到已打开的终端。")
+                    text: qsTr("Shell")
+                    color: root.textColor
+                    font.pixelSize: 12
+                }
+                FieldFrame {
+                    id: shellFrame
+                    x: 130; y: 250
+                    width: content.width - 130 - 48
+                    height: 28
+                }
+                TextInput {
+                    id: shellInput
+                    anchors.fill: shellFrame
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    verticalAlignment: TextInput.AlignVCenter
+                    color: root.textColor
+                    selectionColor: root.accent
+                    selectedTextColor: Theme.onInteractive
+                    font.pixelSize: 12
+                    selectByMouse: true
+                    clip: true
+                    onAccepted: root.saveTerminal()
+                }
+                Text {
+                    x: 130; y: 286
+                    width: content.width - 130 - 48
+                    text: qsTr("可执行文件名或完整路径；留空自动选择（Windows: pwsh / PowerShell，其他平台: $SHELL）")
+                    color: root.faintColor
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                }
+
+                Text {
+                    x: 24; y: 324
+                    text: qsTr("字号与行高立即应用；Shell 在下次启动终端时生效。")
                     color: root.faintColor
                     font.pixelSize: 11
                 }
 
                 Text {
                     id: terminalErrorText
-                    x: 24; y: 292
+                    x: 24; y: 356
                     width: content.width - 48
                     visible: text !== ""
                     text: root.terminalError
@@ -1057,11 +1094,11 @@ FocusScope {
 
                 Row {
                     x: 24
-                    y: 320
+                    y: 384
                     spacing: 10
 
                     PrimaryButton {
-                        label: qsTr("保存终端排版")
+                        label: qsTr("保存终端设置")
                         onClicked: root.saveTerminal()
                     }
 

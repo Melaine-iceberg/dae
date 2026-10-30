@@ -65,6 +65,9 @@ pub mod qobject {
         /// them back on the next launch so a widened preview stays widened.
         #[qproperty(i32, preview_width, cxx_name = "previewWidth")]
         #[qproperty(i32, sidebar_width, cxx_name = "sidebarWidth")]
+        /// The executable a new terminal starts. Empty means the shell picks
+        /// the platform default (pwsh/PowerShell, `$SHELL`, …).
+        #[qproperty(QString, terminal_shell, cxx_name = "terminalShell")]
         type ExplorerPrefs = super::ExplorerPrefsRust;
 
         #[qinvokable]
@@ -107,6 +110,7 @@ struct StoredPrefs {
     reduce_motion: bool,
     preview_width: i32,
     sidebar_width: i32,
+    terminal_shell: String,
 }
 
 impl Default for StoredPrefs {
@@ -133,6 +137,7 @@ impl Default for StoredPrefs {
             reduce_motion: false,
             preview_width: 300,
             sidebar_width: 216,
+            terminal_shell: String::new(),
         }
     }
 }
@@ -197,6 +202,11 @@ impl StoredPrefs {
         boolean("reduceMotion", &mut self.reduce_motion);
         number("previewWidth", &mut self.preview_width);
         number("sidebarWidth", &mut self.sidebar_width);
+        // Free text, unlike the enumerated preferences above: any executable
+        // name or path is valid, and an empty value means "the platform guess".
+        if let Some(value) = fields.get("terminalShell") {
+            self.terminal_shell = (*value).to_owned();
+        }
     }
 
     fn document(&self) -> String {
@@ -227,6 +237,7 @@ impl StoredPrefs {
         write(&mut out, "reduceMotion", bool_text(self.reduce_motion));
         write(&mut out, "previewWidth", &self.preview_width.to_string());
         write(&mut out, "sidebarWidth", &self.sidebar_width.to_string());
+        write(&mut out, "terminalShell", &self.terminal_shell);
         out
     }
 }
@@ -272,6 +283,7 @@ pub struct ExplorerPrefsRust {
     reduce_motion: bool,
     preview_width: i32,
     sidebar_width: i32,
+    terminal_shell: QString,
 }
 
 impl Default for ExplorerPrefsRust {
@@ -301,6 +313,7 @@ impl ExplorerPrefsRust {
             reduce_motion: prefs.reduce_motion,
             preview_width: prefs.preview_width,
             sidebar_width: prefs.sidebar_width,
+            terminal_shell: QString::from(prefs.terminal_shell.as_str()),
         }
     }
 
@@ -321,6 +334,7 @@ impl ExplorerPrefsRust {
             reduce_motion: self.reduce_motion,
             preview_width: self.preview_width,
             sidebar_width: self.sidebar_width,
+            terminal_shell: self.terminal_shell.to_string(),
         }
     }
 }
@@ -329,6 +343,18 @@ impl qobject::ExplorerPrefs {
     fn set_string(mut self: Pin<&mut Self>, key: &QString, value: &QString) {
         let key = key.to_string();
         let value = value.to_string();
+
+        // The one free-text preference: an executable name or path. Empty
+        // clears it so the platform default is used again.
+        if key == "terminalShell" {
+            let next = QString::from(value.trim());
+            if self.terminal_shell != next {
+                self.as_mut().set_terminal_shell(next);
+                save(&self.stored());
+            }
+            return;
+        }
+
         let allowed: &[&str] = match key.as_str() {
             "viewMode" => VIEW_MODES,
             "density" => DENSITIES,
@@ -544,6 +570,22 @@ mod tests {
             next
         };
         assert_eq!(reparsed, prefs);
+    }
+
+    #[test]
+    fn the_configured_shell_round_trips() {
+        let mut prefs = StoredPrefs::default();
+        assert_eq!(prefs.terminal_shell, "", "empty means the platform default");
+
+        prefs.apply_document("terminalShell=C:\\Program Files\\PowerShell\\7\\pwsh.exe\n");
+        assert_eq!(
+            prefs.terminal_shell,
+            "C:\\Program Files\\PowerShell\\7\\pwsh.exe"
+        );
+
+        let mut reparsed = StoredPrefs::default();
+        reparsed.apply_document(&prefs.document());
+        assert_eq!(reparsed.terminal_shell, prefs.terminal_shell);
     }
 
     #[test]

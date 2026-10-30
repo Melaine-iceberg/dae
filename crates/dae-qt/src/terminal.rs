@@ -52,10 +52,22 @@ pub mod qobject {
         #[qproperty(bool, running)]
         #[qproperty(i32, exit_code, cxx_name = "exitCode")]
         #[qproperty(QString, title)]
+        /// The executable this session was started with; empty means the
+        /// platform default. The panel names the running shell from this, not
+        /// from the setting, which may have changed since the spawn.
+        #[qproperty(QString, shell)]
         type TerminalSession = super::TerminalSessionRust;
 
+        /// `shell` is the executable the settings page configured; empty means
+        /// "pick the platform default".
         #[qinvokable]
-        fn start(self: Pin<&mut TerminalSession>, cwd: &QString, cols: i32, rows: i32) -> bool;
+        fn start(
+            self: Pin<&mut TerminalSession>,
+            cwd: &QString,
+            cols: i32,
+            rows: i32,
+            shell: &QString,
+        ) -> bool;
 
         /// Writes a UTF-8 string. Enter and the control keys are encoded by
         /// the painter into the bytes the shell actually receives.
@@ -81,9 +93,10 @@ pub mod qobject {
         #[qinvokable]
         fn kill(self: Pin<&mut TerminalSession>);
 
-        /// The whole visible grid as a compact frame (see `encode_frame`).
+        /// The whole visible grid as a compact frame (see `encode_frame`),
+        /// resolved against the light or dark palette.
         #[qinvokable]
-        fn snapshot(&self) -> QByteArray;
+        fn snapshot(&self, dark: bool) -> QByteArray;
 
         /// New grid content (or the shell's state) is ready to paint.
         #[qsignal]
@@ -103,10 +116,17 @@ pub struct TerminalSessionRust {
     running: bool,
     exit_code: i32,
     title: QString,
+    shell: QString,
 }
 
 impl qobject::TerminalSession {
-    fn start(mut self: Pin<&mut Self>, cwd: &QString, cols: i32, rows: i32) -> bool {
+    fn start(
+        mut self: Pin<&mut Self>,
+        cwd: &QString,
+        cols: i32,
+        rows: i32,
+        shell: &QString,
+    ) -> bool {
         if let Some(previous) = self.as_mut().rust_mut().session.take() {
             previous.kill();
         }
@@ -141,7 +161,10 @@ impl qobject::TerminalSession {
 
         let directory = PathBuf::from(cwd.to_string());
         let cwd = directory.is_dir().then_some(directory);
-        match CoreSession::spawn(cwd, cols, rows, notify) {
+        let configured = shell.to_string().trim().to_owned();
+        self.as_mut().set_shell(QString::from(configured.as_str()));
+        let program = (!configured.is_empty()).then_some(configured);
+        match CoreSession::spawn(cwd, cols, rows, notify, program) {
             Ok(session) => {
                 // Publish the session before `running` flips: the painter
                 // resizes when it sees `runningChanged`, and that resize must
@@ -203,11 +226,11 @@ impl qobject::TerminalSession {
         }
     }
 
-    fn snapshot(&self) -> QByteArray {
+    fn snapshot(&self, dark: bool) -> QByteArray {
         let Some(session) = self.session.as_ref() else {
             return QByteArray::default();
         };
-        let Some(snapshot) = session.snapshot() else {
+        let Some(snapshot) = session.snapshot(dark) else {
             return QByteArray::default();
         };
         QByteArray::from(encode_frame(&snapshot).as_slice())

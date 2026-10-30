@@ -51,6 +51,29 @@ bool wordCharacter(quint32 codepoint)
         || codepoint == '~';
 }
 
+/// The paint-side companions to the Rust palette. The grid's cells carry their
+/// own colours; these are the surface behind it, the placeholder, and the
+/// cursor/selection accent, which has to stay legible on paper as well as ink.
+QColor terminalBackground(bool dark)
+{
+    return dark ? QColor(0x14, 0x16, 0x1a) : QColor(0xfb, 0xfb, 0xf9);
+}
+
+QColor terminalPlaceholder(bool dark)
+{
+    return dark ? QColor(0x65, 0x70, 0x80) : QColor(0x64, 0x69, 0x70);
+}
+
+QColor terminalInk(bool dark)
+{
+    return dark ? QColor(0xd8, 0xde, 0xe9) : QColor(0x10, 0x12, 0x16);
+}
+
+QColor terminalAccent(bool dark)
+{
+    return dark ? QColor(0x6e, 0xa8, 0xfe) : QColor(0x1f, 0x63, 0xcc);
+}
+
 } // namespace
 
 TerminalItem::TerminalItem(QQuickItem* parent)
@@ -120,7 +143,9 @@ void TerminalItem::setDark(bool dark)
         return;
     m_dark = dark;
     emit darkChanged();
-    update();
+    // The cells carry their colours, so the light/dark palette is picked when
+    // the frame is pulled — a repaint alone would keep the old theme's cells.
+    refresh();
 }
 
 void TerminalItem::setFontSize(int size)
@@ -215,7 +240,8 @@ void TerminalItem::refresh()
     }
     QByteArray frame;
     const bool pulled = QMetaObject::invokeMethod(m_session.data(), "snapshot",
-                                                  Q_RETURN_ARG(QByteArray, frame));
+                                                  Q_RETURN_ARG(QByteArray, frame),
+                                                  Q_ARG(bool, m_dark));
     // A session that has not produced a frame yet (starting, or just switched
     // to) must not keep showing the previous tab's grid.
     if (!pulled || !decodeFrame(frame)) {
@@ -272,10 +298,10 @@ bool TerminalItem::decodeFrame(const QByteArray& frame)
 
 void TerminalItem::paint(QPainter* painter)
 {
-    painter->fillRect(boundingRect(), QColor(0x14, 0x16, 0x1a));
+    painter->fillRect(boundingRect(), terminalBackground(m_dark));
 
     if (!m_hasFrame || m_cols <= 0 || m_rows <= 0) {
-        painter->setPen(QColor(0x65, 0x70, 0x80));
+        painter->setPen(terminalPlaceholder(m_dark));
         painter->drawText(boundingRect(), Qt::AlignCenter,
                           m_session ? QStringLiteral("终端") : QStringLiteral("终端未启动"));
         return;
@@ -299,7 +325,7 @@ void TerminalItem::paint(QPainter* painter)
     if (hasSelection()) {
         int firstRow, firstColumn, lastRow, lastColumn;
         selectionBounds(firstRow, firstColumn, lastRow, lastColumn);
-        QColor highlight(0x6e, 0xa8, 0xfe);
+        QColor highlight = terminalAccent(m_dark);
         highlight.setAlpha(70);
         for (int row = firstRow; row <= lastRow && row < m_rows; ++row) {
             if (row < 0)
@@ -364,7 +390,7 @@ void TerminalItem::paint(QPainter* painter)
     if (!m_preedit.isEmpty()) {
         const QRectF at(m_cursorCol * m_cellWidth, m_cursorRow * m_cellHeight,
                         m_cellWidth * qMax(1, m_preedit.size()), m_cellHeight);
-        painter->setPen(colour(0xffd8dee9));
+        painter->setPen(terminalInk(m_dark));
         painter->drawText(at, Qt::TextSingleLine | Qt::AlignLeft | Qt::AlignVCenter, m_preedit);
         painter->drawLine(at.bottomLeft(), at.bottomRight());
     }
@@ -373,7 +399,7 @@ void TerminalItem::paint(QPainter* painter)
     if (drawCursor) {
         const QRectF cursor(m_cursorCol * m_cellWidth, m_cursorRow * m_cellHeight, m_cellWidth,
                             m_cellHeight);
-        const QColor accent(0x6e, 0xa8, 0xfe);
+        const QColor accent = terminalAccent(m_dark);
         switch (m_cursorShape) {
         case 1: // underline
             painter->fillRect(QRectF(cursor.left(), cursor.bottom() - 2.0, cursor.width(), 2.0),

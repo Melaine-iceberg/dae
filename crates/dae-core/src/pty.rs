@@ -50,10 +50,19 @@ pub struct CellSnapshot {
 
 impl Default for CellSnapshot {
     fn default() -> Self {
+        Self::blank(true)
+    }
+}
+
+impl CellSnapshot {
+    /// A blank cell in the theme's own colours, for the grid slots the
+    /// emulator never writes.
+    fn blank(dark: bool) -> Self {
+        let palette = palette(dark);
         Self {
             ch: ' ',
-            fg: 0xffd8dee9,
-            bg: 0xff0b0b0c,
+            fg: pack(palette[16]),
+            bg: pack(palette[17]),
             flags: 0,
         }
     }
@@ -169,11 +178,12 @@ impl TerminalSession {
         cols: u16,
         rows: u16,
         notify: TerminalNotifier,
+        shell: Option<String>,
     ) -> Result<Self, String> {
         let cols = cols.max(1);
         let rows = rows.max(1);
 
-        let mut command = shell_command();
+        let mut command = shell_command(shell);
         if let Some(directory) = cwd.filter(|path| path.is_dir()) {
             command.cwd(directory);
         } else if let Some(home) = home_directory() {
@@ -347,12 +357,15 @@ impl TerminalSession {
         }
     }
 
-    pub fn snapshot(&self) -> Option<TerminalSnapshot> {
+    /// The grid as the painter consumes it. `dark` picks the palette the
+    /// renderer is drawing against; the cells carry resolved colours, so a
+    /// theme flip is a fresh snapshot rather than a repaint of stale ones.
+    pub fn snapshot(&self, dark: bool) -> Option<TerminalSnapshot> {
         let state = self.inner.lock().ok()?;
         let content = state.term.renderable_content();
         let cols = state.cols;
         let rows = state.rows;
-        let mut cells = vec![CellSnapshot::default(); cols.saturating_mul(rows)];
+        let mut cells = vec![CellSnapshot::blank(dark); cols.saturating_mul(rows)];
 
         for indexed in content.display_iter {
             let row = indexed.point.line.0 + content.display_offset as i32;
@@ -360,7 +373,7 @@ impl TerminalSession {
             if row < 0 || row as usize >= rows || column >= cols {
                 continue;
             }
-            cells[row as usize * cols + column] = cell_snapshot(indexed.cell);
+            cells[row as usize * cols + column] = cell_snapshot(indexed.cell, dark);
         }
 
         let cursor = content.cursor;
@@ -411,11 +424,11 @@ impl Drop for TerminalSession {
     }
 }
 
-fn cell_snapshot(cell: &alacritty_terminal::term::cell::Cell) -> CellSnapshot {
+fn cell_snapshot(cell: &alacritty_terminal::term::cell::Cell, dark: bool) -> CellSnapshot {
     use alacritty_terminal::term::cell::Flags;
 
-    let mut fg = resolve_color(cell.fg);
-    let mut bg = resolve_color(cell.bg);
+    let mut fg = resolve_color(cell.fg, dark);
+    let mut bg = resolve_color(cell.bg, dark);
     let mut flags = 0u8;
 
     if cell.flags.contains(Flags::BOLD) {
@@ -473,16 +486,16 @@ fn cursor_shape_code(shape: CursorShape) -> u8 {
     }
 }
 
-fn resolve_color(color: Color) -> u32 {
+fn resolve_color(color: Color, dark: bool) -> u32 {
     match color {
         Color::Spec(rgb) => pack(rgb),
-        Color::Indexed(index) => pack(indexed(index)),
-        Color::Named(named) => pack(named_color(named)),
+        Color::Indexed(index) => pack(indexed(index, dark)),
+        Color::Named(named) => pack(named_color(named, dark)),
     }
 }
 
-fn named_color(color: NamedColor) -> Rgb {
-    let palette = palette();
+fn named_color(color: NamedColor, dark: bool) -> Rgb {
+    let palette = palette(dark);
     match color {
         NamedColor::Black => palette[0],
         NamedColor::Red => palette[1],
@@ -515,9 +528,9 @@ fn named_color(color: NamedColor) -> Rgb {
     }
 }
 
-fn indexed(index: u8) -> Rgb {
+fn indexed(index: u8, dark: bool) -> Rgb {
     if index < 16 {
-        return palette()[usize::from(index)];
+        return palette(dark)[usize::from(index)];
     }
     if index >= 232 {
         let level = 8 + (usize::from(index) - 232) * 10;
@@ -537,13 +550,18 @@ fn indexed(index: u8) -> Rgb {
     }
 }
 
-/// The shell palette. Chosen to sit next to the listing's dark chrome rather
-/// than to be a literal copy of any terminal's default theme.
-fn palette() -> [Rgb; 19] {
+/// The shell palette, chosen for the theme the terminal is drawn against.
+///
+/// The dark table sits next to the listing's dark chrome rather than copying a
+/// terminal's default theme. The light table is the matching daylight read:
+/// slot 0 carries the ink and slots 7/15 are fills, because white-on-white is
+/// the one thing a paper terminal cannot print. The neutral slots track
+/// `Theme.canvas` / `Theme.ink` so the grid meets the panel without a seam.
+fn palette(dark: bool) -> &'static [Rgb; 19] {
     const fn rgb(r: u8, g: u8, b: u8) -> Rgb {
         Rgb { r, g, b }
     }
-    [
+    const DARK: [Rgb; 19] = [
         rgb(0x1c, 0x1f, 0x24), // black
         rgb(0xe0, 0x6c, 0x75), // red
         rgb(0x98, 0xc3, 0x79), // green
@@ -563,7 +581,29 @@ fn palette() -> [Rgb; 19] {
         rgb(0xd8, 0xde, 0xe9), // foreground
         rgb(0x0b, 0x0b, 0x0c), // background — the same near-black as `Theme.terminalCanvas`
         rgb(0x6e, 0xa8, 0xfe), // cursor
-    ]
+    ];
+    const LIGHT: [Rgb; 19] = [
+        rgb(0x10, 0x12, 0x16), // black — the ink
+        rgb(0xc2, 0x2f, 0x2f), // red
+        rgb(0x17, 0x80, 0x4a), // green
+        rgb(0xc7, 0x86, 0x00), // yellow
+        rgb(0x3f, 0x68, 0xc8), // blue
+        rgb(0xb8, 0x43, 0x8a), // magenta
+        rgb(0x0a, 0x86, 0xb4), // cyan
+        rgb(0xd2, 0xd7, 0xde), // white — the paper step, a fill
+        rgb(0x5b, 0x61, 0x69), // bright black — dim text
+        rgb(0xc1, 0x34, 0x34), // bright red
+        rgb(0x1f, 0x9a, 0x5c), // bright green
+        rgb(0xe8, 0x9d, 0x01), // bright yellow
+        rgb(0x5b, 0x7f, 0xd6), // bright blue
+        rgb(0xcb, 0x5f, 0xa4), // bright magenta
+        rgb(0x22, 0xa3, 0xc8), // bright cyan
+        rgb(0xee, 0xf0, 0xf3), // bright white — the canvas below the card, a fill
+        rgb(0x10, 0x12, 0x16), // foreground
+        rgb(0xfb, 0xfb, 0xf9), // background — the same paper as `Theme.terminalCanvas`
+        rgb(0x1f, 0x63, 0xcc), // cursor
+    ];
+    if dark { &DARK } else { &LIGHT }
 }
 
 fn pack(rgb: Rgb) -> u32 {
@@ -591,8 +631,18 @@ fn home_directory() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// A configured shell wins over the platform guess. It is handed to the PTY as
+/// the program itself — no guessed `-NoLogo` and no argument splitting — so a
+/// path with spaces stays one path.
+fn shell_command(shell: Option<String>) -> CommandBuilder {
+    if let Some(program) = shell {
+        return CommandBuilder::new(program);
+    }
+    default_shell_command()
+}
+
 #[cfg(target_os = "windows")]
-fn shell_command() -> CommandBuilder {
+fn default_shell_command() -> CommandBuilder {
     let (program, args): (&str, &[&str]) = if is_in_path("pwsh.exe") {
         ("pwsh.exe", &["-NoLogo"])
     } else if is_in_path("powershell.exe") {
@@ -615,7 +665,7 @@ fn is_in_path(program: &str) -> bool {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn shell_command() -> CommandBuilder {
+fn default_shell_command() -> CommandBuilder {
     let shell = std::env::var("SHELL")
         .ok()
         .filter(|path| !path.is_empty() && PathBuf::from(path).exists())
@@ -640,18 +690,31 @@ mod tests {
 
     #[test]
     fn ansi_palette_covers_the_three_ranges() {
-        assert_eq!(indexed(1), palette()[1]);
-        assert_eq!(indexed(16), Rgb { r: 0, g: 0, b: 0 });
-        assert_eq!(indexed(196), Rgb { r: 255, g: 0, b: 0 });
-        assert_eq!(indexed(232), Rgb { r: 8, g: 8, b: 8 });
+        assert_eq!(indexed(1, true), palette(true)[1]);
+        assert_eq!(indexed(1, false), palette(false)[1]);
+        assert_eq!(indexed(16, true), Rgb { r: 0, g: 0, b: 0 });
+        assert_eq!(indexed(196, true), Rgb { r: 255, g: 0, b: 0 });
+        assert_eq!(indexed(232, true), Rgb { r: 8, g: 8, b: 8 });
         assert_eq!(
-            indexed(255),
+            indexed(255, true),
             Rgb {
                 r: 238,
                 g: 238,
                 b: 238
             }
         );
+    }
+
+    /// The two default cells have to meet their panel: the light grid paints
+    /// ink on paper, the dark one paints paper on ink.
+    #[test]
+    fn the_default_cell_follows_the_theme() {
+        let light = CellSnapshot::blank(false);
+        assert_eq!(light.fg, 0xff10_1216);
+        assert_eq!(light.bg, 0xfffb_fbf9);
+        let dark = CellSnapshot::blank(true);
+        assert_eq!(dark.fg, 0xffd8_dee9);
+        assert_eq!(dark.bg, 0xff0b_0b0c);
     }
 
     #[test]

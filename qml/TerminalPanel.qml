@@ -24,11 +24,17 @@ Item {
 
     signal exited()
 
-    /// The shell the core starts on this platform. It is a label, not a probe:
-    /// the core picks whichever of these is installed, and the panel names the
-    /// family rather than the executable.
-    readonly property string shellName: Qt.platform.os === "windows" ? "PowerShell"
-        : Qt.platform.os === "osx" ? "zsh" : "bash"
+    /// The shell this session is running, named by its file name. Before the
+    /// first start it shows what the setting will launch; afterwards it keeps
+    /// naming the process that is actually alive, even if the setting changed.
+    readonly property string shellName: {
+        const started = session !== null && session.title !== ""
+        const shell = (started ? session.shell : ExplorerPrefs.terminalShell).trim()
+        if (shell !== "")
+            return shell.split(/[\\/]/).pop().replace(/\.exe$/i, "")
+        return Qt.platform.os === "windows" ? "PowerShell"
+            : Qt.platform.os === "osx" ? "zsh" : "bash"
+    }
 
     implicitHeight: active ? panelHeight : 0
     height: implicitHeight
@@ -82,7 +88,7 @@ Item {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             height: 1
-            color: Qt.rgba(1, 1, 1, 0.07)
+            color: Theme.hairline
         }
 
         Row {
@@ -99,13 +105,18 @@ Item {
                 tint: Theme.terminalInk
             }
 
+            // A start failure puts its reason in `title` (a bad configured
+            // shell path, for one); name that instead of the exit code -1.
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.running
                     ? qsTr("终端 · %1").arg(root.shellName)
-                    : (session !== null
-                        ? qsTr("终端 · 已退出 %1").arg(session.exitCode)
-                        : qsTr("终端"))
+                    : (session !== null && session.title !== ""
+                            && session.title !== "Terminal"
+                        ? qsTr("终端 · %1").arg(session.title)
+                        : (session !== null
+                            ? qsTr("终端 · 已退出 %1").arg(session.exitCode)
+                            : qsTr("终端")))
                 color: Theme.terminalInk
                 font.family: Theme.monoFamily
                 font.pixelSize: Theme.typeMicro
@@ -124,7 +135,7 @@ Item {
             height: 18
             radius: Theme.radiusXs
             visible: !root.running
-            color: restartMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
+            color: restartMouse.containsMouse ? Theme.hover : "transparent"
 
             Text {
                 anchors.centerIn: parent
@@ -159,7 +170,7 @@ Item {
             Rectangle {
                 anchors.fill: parent
                 radius: Theme.radiusXs
-                color: closeMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
+                color: closeMouse.containsMouse ? Theme.hover : "transparent"
             }
 
             Glyph {

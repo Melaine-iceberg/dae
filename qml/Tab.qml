@@ -166,7 +166,7 @@ QtObject {
     function startTerminal() {
         if (terminal.running)
             return
-        terminal.start(folder ? listing.path : "", 80, 24)
+        terminal.start(folder ? listing.path : "", 80, 24, ExplorerPrefs.terminalShell)
     }
 
     function cancelSearch() {
