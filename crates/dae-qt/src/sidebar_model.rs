@@ -1,7 +1,7 @@
 //! The sidebar's rows, as one flat model with section names.
 //!
-//! Places, favourites, volumes, WSL distros and recents are different domain
-//! calls with different lifetimes, but the sidebar draws them as one list. A
+//! Places, favourites, volumes and cloud accounts are different domain calls
+//! with different lifetimes, but the sidebar draws them as one list. A
 //! single `QAbstractListModel` keeps the QML side to one `ListView` and lets
 //! `section.property` draw the headers, instead of several nested views that
 //! each scroll independently.
@@ -9,8 +9,8 @@
 //! Section order is deliberate: the five primary places first, then the extra
 //! places and favourites, then volumes and spaces (a disk is closer to "where
 //! am I" than a saved space), then the network group — WSL distros are network
-//! locations too — and finally cloud accounts and recents. The trash is not a
-//! row here; the sidebar parks it at the bottom itself.
+//! locations too — and finally cloud accounts. The trash is not a row here;
+//! the sidebar parks it at the bottom itself.
 
 use core::pin::Pin;
 use std::path::Path;
@@ -20,7 +20,6 @@ use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QStri
 use dae_core::fs::cloud::accounts::{StoredCloudAccount, list_cloud_accounts};
 use dae_core::fs::cloud::provider::CloudProviderKind;
 use dae_core::fs::connections::{self, Protocol, StoredConnection};
-use dae_core::fs::recents::list_recents;
 use dae_core::fs::sidebar::{self, PlaceKind, WslDistro};
 use dae_core::fs::spaces::list_spaces;
 
@@ -33,7 +32,6 @@ const SECTION_SPACES: &str = "Spaces";
 const SECTION_VOLUMES: &str = "Disks";
 const SECTION_NETWORK: &str = "Network Storage";
 const SECTION_CLOUD: &str = "Cloud Storage";
-const SECTION_RECENTS: &str = "Recent";
 
 const ROLE_SECTION: i32 = 0x0200;
 const ROLE_NAME: i32 = 0x0201;
@@ -42,6 +40,7 @@ const ROLE_KIND: i32 = 0x0203;
 const ROLE_DETAIL: i32 = 0x0204;
 const ROLE_ICON: i32 = 0x0205;
 const ROLE_IS_DIR: i32 = 0x0206;
+const ROLE_FILE_SYSTEM: i32 = 0x0207;
 const ROLE_FILL: i32 = 0x0106;
 
 #[cxx_qt::bridge]
@@ -113,6 +112,8 @@ struct SidebarRow {
     /// How full a volume is, 0..1. Zero for everything that is not a volume:
     /// the bar is drawn only when there is a number behind it.
     fill: f64,
+    /// NTFS, APFS, ext4… Empty for everything that is not a volume.
+    file_system: String,
 }
 
 #[derive(Default)]
@@ -146,6 +147,7 @@ impl qobject::SidebarModel {
             ROLE_DETAIL => QVariant::from(&QString::from(row.detail.as_str())),
             ROLE_ICON => QVariant::from(&QString::from(row.icon.as_str())),
             ROLE_IS_DIR => QVariant::from(&row.is_dir),
+            ROLE_FILE_SYSTEM => QVariant::from(&QString::from(row.file_system.as_str())),
             ROLE_FILL => QVariant::from(&row.fill),
             _ => QVariant::default(),
         }
@@ -160,6 +162,7 @@ impl qobject::SidebarModel {
         roles.insert(ROLE_DETAIL, QByteArray::from("detail"));
         roles.insert(ROLE_ICON, QByteArray::from("icon"));
         roles.insert(ROLE_IS_DIR, QByteArray::from("isDir"));
+        roles.insert(ROLE_FILE_SYSTEM, QByteArray::from("fileSystem"));
         roles.insert(ROLE_FILL, QByteArray::from("fill"));
         roles
     }
@@ -196,6 +199,7 @@ impl qobject::SidebarModel {
                 icon: "eye".to_owned(),
                 is_dir: false,
                 fill: 0.0,
+                file_system: String::new(),
             });
         }
         let favorites = sidebar::load_favorites().unwrap_or_default();
@@ -212,6 +216,7 @@ impl qobject::SidebarModel {
                 icon: "star".to_owned(),
                 is_dir: false,
                 fill: 0.0,
+                file_system: String::new(),
             });
         } else {
             for favorite in favorites {
@@ -224,6 +229,7 @@ impl qobject::SidebarModel {
                     icon: "star".to_owned(),
                     is_dir: true,
                     fill: 0.0,
+                    file_system: String::new(),
                 });
             }
         }
@@ -231,7 +237,9 @@ impl qobject::SidebarModel {
         // Spaces are first-class destinations, not folders: the `path` field
         // carries the space id and the shell opens the space surface instead of
         // navigating. The action row stays below the list so the section is
-        // still discoverable before the user has anything pinned.
+        // still discoverable before the user has anything pinned. An empty
+        // space carries no meta text: "空" on every row said nothing the place
+        // itself did not.
         let mut spaces = Vec::new();
         for space in list_spaces().unwrap_or_default() {
             spaces.push(SidebarRow {
@@ -240,7 +248,7 @@ impl qobject::SidebarModel {
                 path: space.id,
                 kind: "space".to_owned(),
                 detail: if space.items.is_empty() {
-                    "Empty".to_owned()
+                    String::new()
                 } else {
                     let count = space.items.len();
                     format!("{count} item{}", if count == 1 { "" } else { "s" })
@@ -248,6 +256,7 @@ impl qobject::SidebarModel {
                 icon: "space".to_owned(),
                 is_dir: true,
                 fill: 0.0,
+                file_system: String::new(),
             });
         }
         spaces.push(action_row(SECTION_SPACES, "New space…", "addSpace"));
@@ -271,20 +280,6 @@ impl qobject::SidebarModel {
             cloud.push(cloud_row(account));
         }
         cloud.push(action_row(SECTION_CLOUD, "Add cloud account…", "addCloud"));
-
-        let mut recent = Vec::new();
-        for item in list_recents().unwrap_or_default().into_iter().take(12) {
-            recent.push(SidebarRow {
-                section: SECTION_RECENTS.to_owned(),
-                name: item.name,
-                path: item.path,
-                kind: "recent".to_owned(),
-                detail: String::new(),
-                icon: "recent".to_owned(),
-                is_dir: item.kind == dae_core::types::EntryKind::Directory,
-                fill: 0.0,
-            });
-        }
 
         let thread = self.as_mut().qt_thread();
         runtime::spawn(async move {
@@ -314,6 +309,7 @@ impl qobject::SidebarModel {
                             / volume.total_bytes as f64)
                             .clamp(0.0, 1.0)
                     },
+                    file_system: volume.file_system,
                 });
             }
             rows.extend(spaces);
@@ -322,7 +318,6 @@ impl qobject::SidebarModel {
             }
             rows.extend(network);
             rows.extend(cloud);
-            rows.extend(recent);
             let _ = thread.queue(move |mut model| model.as_mut().replace_rows(rows));
         });
     }
@@ -375,6 +370,7 @@ fn place_row(kind: PlaceKind, path: &str) -> SidebarRow {
         icon: icon.to_owned(),
         is_dir: true,
         fill: 0.0,
+        file_system: String::new(),
     }
 }
 
@@ -406,6 +402,7 @@ fn distro_row(distro: WslDistro) -> SidebarRow {
         icon: "wsl".to_owned(),
         is_dir: true,
         fill: 0.0,
+        file_system: String::new(),
     }
 }
 
@@ -424,6 +421,7 @@ fn connection_row(connection: StoredConnection) -> SidebarRow {
         icon: "server".to_owned(),
         is_dir: true,
         fill: 0.0,
+        file_system: String::new(),
     }
 }
 
@@ -437,6 +435,7 @@ fn cloud_row(account: StoredCloudAccount) -> SidebarRow {
         icon: "cloud".to_owned(),
         is_dir: true,
         fill: 0.0,
+        file_system: String::new(),
     }
 }
 
@@ -450,6 +449,7 @@ fn action_row(section: &str, name: &str, kind: &str) -> SidebarRow {
         icon: "add".to_owned(),
         is_dir: true,
         fill: 0.0,
+        file_system: String::new(),
     }
 }
 

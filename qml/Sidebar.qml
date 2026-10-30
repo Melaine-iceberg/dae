@@ -3,8 +3,8 @@ import QtQuick
 import dae 1.0
 
 // The navigation column: the five places people reach for, then extra places
-// and favourites, volumes, spaces, network storage, cloud accounts and recents.
-// The trash is parked at the bottom, where a bin belongs, instead of sharing a
+// and favourites, volumes, spaces, network storage and cloud accounts. The
+// trash is parked at the bottom, where a bin belongs, instead of sharing a
 // header with the overview. `SidebarModel` decides the order and resolves the
 // rows; this file decides what a row looks like and where a click goes.
 Item {
@@ -32,7 +32,6 @@ Item {
     signal addRequested(string kind)
     signal restorePlacesRequested()
     signal contextRequested(string kind, string path, real x, real y)
-    signal remoteOpenRequested(string path)
 
     /// A folder drag is hovering the favorites group, which is the add target.
     /// Set by the section header and the empty hint row, so both light while
@@ -128,13 +127,12 @@ Item {
         case "Disks": return Qt.platform.os === "osx" ? qsTr("宗卷") : qsTr("磁盘")
         case "Network Storage": return qsTr("网络存储")
         case "Cloud Storage": return qsTr("云存储")
-        case "Recent": return qsTr("最近")
         default: return value
         }
     }
 
     /// `name` comes from `SidebarModel`; translating only the built-in places
-    /// and action rows keeps a favourite or recent entry named "文档" intact.
+    /// and action rows keeps a favourite entry named "文档" intact.
     function rowLabel(name) {
         switch (name) {
         case "Home": return qsTr("主目录")
@@ -154,8 +152,6 @@ Item {
     }
 
     function detailLabel(value) {
-        if (value === "Empty")
-            return qsTr("空")
         const count = /^(\d+) items?$/.exec(value)
         if (count)
             return qsTr("%1 项").arg(count[1])
@@ -181,7 +177,6 @@ Item {
         case "star": return "star"
         case "disk": return "drive"
         case "wsl": return "network"
-        case "recent": return "clock"
         case "server": return "network"
         case "cloud": return "cloud"
         case "space": return "diamond"
@@ -388,6 +383,8 @@ Item {
             required property string detail
             required property string icon
             required property bool isDir
+            /// NTFS, APFS, ext4… Empty for everything that is not a volume.
+            required property string fileSystem
             /// 0..1 for a volume, 0 for everything else.
             required property real fill
 
@@ -417,7 +414,9 @@ Item {
                 && list.currentIndex === row.index
             readonly property bool lit: row.focused || row.armed
                 || rowMouse.containsMouse
-            readonly property int rowHeight: row.isVolume ? 38 : 28
+            /// A volume is two lines — name, then its filesystem — because the
+            /// capacity pair already takes the whole right edge of the name line.
+            readonly property int rowHeight: row.isVolume ? 46 : 28
             readonly property int percent: Math.round(
                 Math.max(0, Math.min(1, row.fill)) * 100)
 
@@ -459,17 +458,10 @@ Item {
                     root.spaceRequested(row.path)
                     return
                 }
-                if (row.kind === "recent" && !row.isDir) {
-                    if (/^(smb|sftp|ftp|webdav|webdavs|cloud):\/\//i.test(row.path))
-                        root.remoteOpenRequested(row.path)
-                    else
-                        Workspace.openPath(row.path)
-                    return
-                }
                 root.navigateRequested(row.path)
             }
 
-            /// The visible row is only the 28 / 38 px band; an expanded volume's
+            /// The visible row is only the 28 / 46 px band; an expanded volume's
             /// tree hangs below it. Keeping that distinction explicit means the
             /// icon and label still centre on the row, not on the whole subtree.
             Item {
@@ -540,7 +532,7 @@ Item {
 
                     visible: row.isVolume
                     x: 8
-                    y: 4
+                    y: 3
                     width: 16
                     height: 20
                     z: 2
@@ -585,7 +577,12 @@ Item {
                     x: row.isVolume ? 48 : 40
                     y: row.isVolume ? 3 : 0
                     height: row.isVolume ? 20 : 28
-                    width: Math.max(0, detailText.x - x - 6)
+                    // A volume's capacity sits on the second line, so the drive
+                    // name gets the whole first line instead of eliding to make
+                    // room for the pair.
+                    width: Math.max(0, (row.isVolume
+                        ? rowBody.width - 18
+                        : detailText.x) - x - 6)
                     verticalAlignment: Text.AlignVCenter
                     text: row.builtInName ? root.rowLabel(row.name) : row.name
                     color: row.kind === "favoriteHint" && root.favoriteDropActive
@@ -601,9 +598,9 @@ Item {
 
                     anchors.right: parent.right
                     anchors.rightMargin: 18
-                    y: row.isVolume ? 3 : 0
-                    height: row.isVolume ? 20 : 28
-                    width: Math.min(96, implicitWidth)
+                    y: row.isVolume ? 21 : 0
+                    height: row.isVolume ? 16 : 28
+                    width: Math.min(112, implicitWidth)
                     verticalAlignment: Text.AlignVCenter
                     horizontalAlignment: Text.AlignRight
                     // A narrow column only has room for the percentage; the
@@ -614,6 +611,23 @@ Item {
                         ? Theme.warn : Theme.inkFaint
                     font.pixelSize: Theme.typeMicro
                     font.features: { "tnum": 1 }
+                    elide: Text.ElideRight
+                }
+
+                // The filesystem is the one thing a drive row could not say in
+                // one line; it shares that line with the capacity pair.
+                Text {
+                    id: fileSystemText
+
+                    visible: row.isVolume && row.fileSystem !== ""
+                    x: 48
+                    y: 21
+                    height: 16
+                    width: Math.max(0, detailText.x - x - 8)
+                    verticalAlignment: Text.AlignVCenter
+                    text: row.fileSystem
+                    color: Theme.inkFaint
+                    font.pixelSize: Theme.typeMicro
                     elide: Text.ElideRight
                 }
 

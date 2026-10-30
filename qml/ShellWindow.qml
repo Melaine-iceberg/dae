@@ -2903,9 +2903,6 @@ Window {
                 onContextRequested: function (kind, path, x, y) {
                     root.showSidebarMenu(kind, path, x, y)
                 }
-                onRemoteOpenRequested: function (path) {
-                    root.acceptRemotePreview(path)
-                }
             }
 
             Column {
