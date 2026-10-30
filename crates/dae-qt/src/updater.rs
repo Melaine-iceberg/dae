@@ -183,7 +183,7 @@ impl qobject::Updater {
             }
             Err(error) => {
                 if !manual {
-                    eprintln!("dae: update check failed: {error}");
+                    log::warn!(target: "dae::update", "update check failed: {error}");
                 }
                 let message = friendly_update_error(&error);
                 self.as_mut().set_error(QString::from(message.as_str()));
@@ -201,7 +201,7 @@ impl qobject::Updater {
                 self.as_mut().restart_requested();
             }
             Err(error) => {
-                eprintln!("dae: update install failed: {error}");
+                log::warn!(target: "dae::update", "update install failed: {error}");
                 let message = friendly_update_error(&error);
                 self.as_mut().set_error(QString::from(message.as_str()));
             }

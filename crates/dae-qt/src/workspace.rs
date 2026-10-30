@@ -675,7 +675,11 @@ impl Default for WorkspaceRust {
                 settings.terminal.font_family.as_deref().unwrap_or(""),
             ),
             shortcuts_json: QString::from(shortcuts_json(&settings.shortcuts).as_str()),
-            log_directory: QString::from(app_log_directory().to_string_lossy().as_ref()),
+            log_directory: QString::from(
+                crate::logging::app_log_directory()
+                    .to_string_lossy()
+                    .as_ref(),
+            ),
             open_with_picker_supported: cfg!(any(target_os = "macos", target_os = "linux")),
             default_manager_supported: cfg!(any(target_os = "macos", target_os = "linux", windows)),
             default_manager_is_default: false,
@@ -1472,7 +1476,7 @@ impl qobject::Workspace {
             _ => 1 | 2 | 4,
         };
         if !qobject::start_file_drag(paths, actions) {
-            eprintln!("dae: could not start the file drag");
+            log::warn!(target: "dae::workspace", "could not start the file drag");
         }
     }
 
@@ -1581,7 +1585,7 @@ impl qobject::Workspace {
     fn warm_shell_commands(self: Pin<&mut Self>) {
         runtime::spawn(async {
             if let Err(error) = dae_core::fs::shell_commands::warm_shell_commands().await {
-                eprintln!("dae: shell-command warm-up failed: {error}");
+                log::warn!(target: "dae::workspace", "shell-command warm-up failed: {error}");
             }
         });
     }
@@ -1641,7 +1645,7 @@ impl qobject::Workspace {
         };
         runtime::spawn(async move {
             if let Err(error) = service::write_files_to_clipboard(local, effect).await {
-                eprintln!("dae: could not place the selection on the system clipboard: {error}");
+                log::warn!(target: "dae::workspace", "could not place the selection on the system clipboard: {error}");
             }
         });
     }
@@ -2400,7 +2404,7 @@ impl qobject::Workspace {
     }
 
     fn open_log_directory(mut self: Pin<&mut Self>) {
-        let directory = app_log_directory();
+        let directory = crate::logging::app_log_directory();
         if let Err(error) = std::fs::create_dir_all(&directory) {
             self.as_mut().set_last_error(QString::from(
                 format!("Could not create log directory: {error}").as_str(),
@@ -2773,44 +2777,6 @@ fn push_json_string(out: &mut String, value: &str) {
         }
     }
     out.push('"');
-}
-
-/// The directory the log page opens. It follows the Tauri shell's
-/// `appLogDir` convention (identifier-scoped, one `logs` folder) so both
-/// shells point at the same place.
-fn app_log_directory() -> std::path::PathBuf {
-    #[cfg(target_os = "windows")]
-    if let Some(base) = std::env::var_os("LOCALAPPDATA") {
-        return std::path::PathBuf::from(base)
-            .join(dae_core::paths::APP_IDENTIFIER)
-            .join("logs");
-    }
-
-    #[cfg(target_os = "macos")]
-    if let Some(home) = std::env::var_os("HOME") {
-        return std::path::PathBuf::from(home)
-            .join("Library")
-            .join("Logs")
-            .join(dae_core::paths::APP_IDENTIFIER);
-    }
-
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let base = std::env::var_os("XDG_DATA_HOME")
-            .filter(|value| !value.is_empty())
-            .map(std::path::PathBuf::from)
-            .or_else(|| {
-                std::env::var_os("HOME")
-                    .map(|home| std::path::PathBuf::from(home).join(".local").join("share"))
-            });
-        if let Some(base) = base {
-            return base.join(dae_core::paths::APP_IDENTIFIER).join("logs");
-        }
-    }
-
-    dae_core::paths::config_dir()
-        .map(|directory| directory.join("logs"))
-        .unwrap_or_else(|_| std::env::temp_dir().join("dae-logs"))
 }
 
 #[cfg(test)]

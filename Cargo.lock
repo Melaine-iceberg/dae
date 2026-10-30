@@ -1014,6 +1014,7 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "dae-qt",
+ "log",
  "mimalloc",
  "qt-build-utils",
 ]
@@ -1090,6 +1091,7 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "dae-core",
+ "log",
  "percent-encoding",
  "pulldown-cmark",
  "syntect",

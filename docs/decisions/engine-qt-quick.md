@@ -1296,3 +1296,111 @@ Qt Online Installer 装在 `K:/Qt`：
 1. **PGO / BOLT 的 C++ 那一半** —— 见 §6，仍未动。
 
 （`window_material` 的 Mica/Acrylic 已接到 `QWindow` 的 HWND 上，见 §5.3。）
+
+## 9. P4 施工单：迁移剩余工作面（2026-10-30）
+
+> §1 的能力表全绿，指的是「代码路径已落地」。本节记的是它之外的三类欠账：
+> **发布物里能不能用**、**目标平台上有没有人跑过**、**旧壳什么时候退出**。
+> 判据只有两条：一个可执行的验收动作，和一处能指到文件与行的证据。
+> 平台相关的逐项细节仍以 [`../qt-platform-parity.md`](../qt-platform-parity.md) 为准，
+> 本节只做汇总与排序，不复制它的手测清单。
+
+### 9.1 功能层已经收口
+
+- 旧壳 `src-tauri/src/file_system/commands.rs` 的 **74** 个命令，在 `crates/dae-qt`
+  对应 **166** 个 `#[qinvokable]`；`dae-core` 容纳 **47** 个领域模块。
+- `qml/` **24.2k LOC**（旧 React 前端 36.7k LOC）。行数不是进度指标 —— QML 的
+  委托与样式比 TSX 密，这里只用来标定规模。
+- 逐个点过：WSL 发行版、分屏、云账户、SFTP/SMB、归档内浏览、终端、预览、
+  Git 面板、传输队列、回收站、空间 / 概览、命令面板、双语。**没有再发现只存在于
+  React 侧的功能。**
+
+结论：不需要补功能，需要把已有功能变成「发布物里能用 + 目标平台上跑过」。
+
+### 9.2 阻断发布（P0）
+
+| # | 项 | 现状与证据 | 验收 |
+|---|---|---|---|
+| 1 | Windows MSIX 仍打旧壳 | `release.yml:210` 把 `src-tauri\target\release\dae.exe` 复制进 `dist/` 再 `winapp pack`；Qt 作业只产出 portable zip 与 `latest-qt.json`（同文件 `qt:` 作业）。根 `Package.appxmanifest` 的 `Executable="$targetnametoken$.exe"` 由 `winapp pack` 解析，与产物无关 | MSIX 内是 `dae-app` 产物；装完 `dae://`、默认管理器、开机启动都指向 Qt 壳 |
+| 2 | macOS 未签名、未公证 | 发布矩阵只有 `darwin-aarch64`，签名是 ad-hoc（`release.yml` 的 macOS 段） | Developer ID + 公证通过；Intel Mac 可运行，或在 README 明确写不支持 |
+| 3 | Linux 只有 portable zip | 无 deb/rpm/Flatpak/AppImage；QtMultimedia 依赖 GStreamer 插件，未在安装层声明；图标只有 128px | 至少一种系统包；缺 GStreamer 时预览给出可读提示，而不是静默失败 |
+
+### 9.3 运行时与排障（P1）
+
+| # | 项 | 现状与证据 | 验收 |
+|---|---|---|---|
+| 4 | 日志与 panic 不落盘 | 旧壳 `src-tauri/src/lib.rs:350` 起配 `tauri-plugin-log`（4 MB 轮转、留 5 份、本地时区），`:429` 的 `install_panic_logger` 把 panic 写进文件。Qt 侧 `crates/dae-qt/Cargo.toml` 没有日志依赖，`config.rs:238` 的 `log()` 只写 stderr，而 release 是 GUI 子系统、没有 stderr；`workspace.rs:2781` 的 `app_log_directory()` 只服务设置页 | **已补**，见 §9.6 |
+| 5 | macOS/Linux 无运行时回归 | `qt-check.yml` 只 `cargo build` + 138 个单测；`qt-platform-parity.md` §4 的 12 项手测全部「待目标平台」 | 12 项逐条记录，回填 parity §6 |
+| 6 | 更新链路未端到端验证 | `dae-core/src/update/install.rs` 已实现 portable 目录替换与 macOS bundle 交换，`DEFAULT_FEED_URL` 指向 `latest-qt.json`；但从未在真实发布物上跑过「下载 → 校验 → 替换 → 重启」 | 在上一版发布物上完成一次真实升级 |
+| 7 | IME 失焦守卫只在 Windows | `cpp/ime.h` 的 `CPS_CANCEL` 只在 Windows 安装；macOS/Linux 失焦语义未测 | 两平台各测一次：换焦点 / 点别处不提交原始拼音 |
+| 8 | macOS 窗口 chrome 未定案 | 红绿灯由 QML 绘制，绿灯走 `showMaximized` 而非全屏；没有 hover 字形；双击标题栏不读系统偏好（parity §2.8） | 三条各自给出决定并记录，与原生文件管理器习惯不冲突 |
+
+### 9.4 收尾（P2，等 §9.2 与 §9.3 关闭后再做）
+
+| # | 项 | 现状 | 动作 |
+|---|---|---|---|
+| 9 | 旧壳与前端未退役 | 根 `Cargo.toml` 仍 `exclude = ["src-tauri"]`；`src-tauri` 105 个 `.rs` 加独立锁文件；`src/` 36.7k LOC、`bindings.ts`、`package.json` 里 15 个 `tauri:*` 脚本 | 删 `src-tauri`、`src/`、`index.html`、`vite.config.ts` 与相关脚本，重写 README |
+| 10 | 旧 CI 未下线 | `linux-check.yml`、`macos-check.yml`、`perf-check.yml` 仍编 `src-tauri`，perf 直接跑 `src-tauri/target/release/dae` | 删除或改指 `dae-app`；perf 基线换成 Qt 壳 |
+| 11 | PGO / BOLT 的 C++ 半 | `scripts/opt/pgo.mjs` 只 profile Rust，cxx-qt 生成的 C++ 没加 `-fprofile-instr-generate`（§8.6） | 量过再决定；不做也要在 §6 写明代价 |
+| 12 | 文档与注释漂移 | `crates/dae-qt/src/lib.rs:32` 仍写 `dae:// registration … not implemented yet`，而 `activation.rs:238` 已写注册表；`README.md` 仍把 Tauri 2 + React 19 当日发货壳 | 逐条对齐代码 |
+
+### 9.5 顺序
+
+1. **§9.3-4 日志与 panic 落盘** —— **已完成（§9.6）**。体量最小、与旧壳零耦合，决定后续问题能否定位；
+2. §9.2-1 MSIX 改指 Qt 产物；
+3. §9.2-2 / §9.2-3 证书与安装包（需要产品决策，尽早启动）；
+4. §9.3-5 平台手测，回填 parity §6；
+5. §9.4 退役。
+
+退役必须排在最后：平台验证完成之前，旧壳是 A/B 与 `git revert` 的唯一回退路径（§7）。
+
+### 9.6 记录：日志与 panic 落盘（2026-10-30）
+
+**做了什么。** 新增 `crates/dae-qt/src/logging.rs`：
+
+- 一个 `log::Log` 实现，写 `{appLogDir}/dae.log`；**4 MB 轮转、保留 5 份**
+  （`dae.1.log` … `dae.5.log`），与旧壳 `LOG_FILE_BYTES` / `LOG_FILES_KEPT` 同值；
+- 行格式 `[本地时间(毫秒)][级别][target] 消息`，时区取本地 —— UTC 会让人对着
+  文件时间戳怀疑自己的表；
+- `DAE_LOG` 覆盖级别（`off|error|warn|info|debug|trace`，默认 `info`），
+  debug 构建同时镜像到 stderr（测试构建不镜像，否则会绕过测试捕获、埋掉摘要）；
+- `install_panic_hook`：panic 以 `dae::panic` 为 target 写一条 error，然后**仍然调用
+  默认钩子**，保留 `RUST_BACKTRACE` 的回溯。
+
+**接线。** `apps/dae/src/main.rs` 在 `claim()` **之前**调用 `dae_qt::logging::init()`：
+实例锁与 `dae://` 注册失败正是那种「事后无法复现」的故障，要落在文件里。
+`dae_qt::init()` 里再调一次是幂等 no-op。目录解析从 `workspace.rs` 移到
+`logging::app_log_directory()`，`Workspace.logDirectory` 与设置页仍指向同一处
+（Windows `%LOCALAPPDATA%\com.melaine.dae\logs`），所以「两个壳写同一个目录」
+这句话从这一版起才是真的。
+
+**顺手关掉 20 处 stderr。** 桥里的 `eprintln!` 全部改为 `log::warn!` / `log::error!`
+（`activation`、`appearance`、`linux_desktop`、`overview_model`、`preferences`、
+`sidebar_tree_model`、`system_watch`、`updater`、`workspace`、`lib`、`main`）；
+只有 logger 自身失败仍写 stderr —— 没有落点时它没有别的去处。
+
+**副作用（这是本项真正的收益）。** `dae-core` 早已用 `log` 门面，只是 Qt 壳一直没有
+sink。首次实跑就把两条以前完全不可见的信息写了进去：
+
+```
+[2026-10-30 22:51:51.794][WARN][dae_core::fs::shell_commands::windows] Shell command AAF1E27D-… is unavailable: 拒绝访问。 (0x80070005)
+```
+
+**验证。**
+
+| 项目 | 结果 |
+|---|---|
+| `cargo test -p dae-qt --lib` | **144 passed**，其中 5 项为本节新增：行格式、轮转与保留上限、级别过滤、`DAE_LOG` 解析、目录约定 |
+| `cargo build -p dae-app` | 通过（47 s） |
+| 实跑 `target/debug/dae.exe` | 1 s 内生成 `…\com.melaine.dae\logs\dae.log`（817 B）：启动行 + 4 条 `dae::config` 启动档 + 2 条 core 的 `WARN` |
+| 轮转 | 单元测试以 200 B 上限写 40 行，断言 live ≤ 上限、`dae.1.log` 存在、没有 `dae.6.log` |
+
+**未覆盖，写在这里免得被当成已完成。**
+
+1. Qt 自身的 `qWarning` 走 `qInstallMessageHandler`，仍未落盘 —— 要在 C++ 侧再接一段；
+2. 轮转是「写满即切」，不分天、不分会话，与旧壳一致；需要按日归档是另一个决定；
+3. macOS / Linux 的目录分支只有单元测试（断言以 `logs` 结尾且带 identifier），
+   真实写入仍待 §9.3-5 的手测；
+4. panic 钩子与旧壳同构（`take_hook` → 记一条 → 调回原钩子），没有为它单独注入
+   一次 panic 做端到端验证 —— 注入点需要一个只有测试构建才有的崩溃开关，不值得
+   为验证加一条产品代码里的后门。

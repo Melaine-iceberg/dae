@@ -164,7 +164,7 @@ pub(crate) fn migrate_legacy() {
     if import_legacy(&mut settings, &legacy, &existing)
         && let Err(error) = dae_core::settings::save_settings(settings)
     {
-        eprintln!("dae: could not migrate appearance preferences: {error}");
+        log::warn!(target: "dae::appearance", "could not migrate appearance preferences: {error}");
     }
 }
 
@@ -194,10 +194,12 @@ fn save(change: impl FnOnce(&mut dae_core::settings::AppSettings)) {
         Ok(mut settings) => {
             change(&mut settings);
             if let Err(error) = dae_core::settings::save_settings(settings) {
-                eprintln!("dae: could not save appearance preferences: {error}");
+                log::warn!(target: "dae::appearance", "could not save appearance preferences: {error}");
             }
         }
-        Err(error) => eprintln!("dae: could not load appearance preferences: {error}"),
+        Err(error) => {
+            log::warn!(target: "dae::appearance", "could not load appearance preferences: {error}")
+        }
     }
 }
 

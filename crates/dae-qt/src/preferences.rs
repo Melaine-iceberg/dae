@@ -259,11 +259,11 @@ fn save(prefs: &StoredPrefs) {
     if let Some(parent) = path.parent()
         && let Err(error) = std::fs::create_dir_all(parent)
     {
-        eprintln!("dae: could not create the preferences directory: {error}");
+        log::warn!(target: "dae::preferences", "could not create the preferences directory: {error}");
         return;
     }
     if let Err(error) = std::fs::write(&path, prefs.document()) {
-        eprintln!("dae: could not save explorer preferences: {error}");
+        log::warn!(target: "dae::preferences", "could not save explorer preferences: {error}");
     }
 }
 

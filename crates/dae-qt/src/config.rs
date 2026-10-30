@@ -234,14 +234,6 @@ fn qt_sequence(binding: &str) -> String {
         .join("+")
 }
 
-/// Release builds have no console (`windows_subsystem = "windows"`), so the
-/// startup lines must not panic when stderr is absent; debug runs still print
-/// them for the end-to-end check.
-fn log(message: String) {
-    use std::io::Write;
-    let _ = writeln!(std::io::stderr(), "{message}");
-}
-
 pub struct AppConfigRust {
     config_dir: QString,
     startup_path: QString,
@@ -269,8 +261,11 @@ impl Default for AppConfigRust {
             .unwrap_or_default();
         let start_path = snapshot.start_path.to_string_lossy().into_owned();
 
-        log(format!(
-            "dae: profile {} (settings {})",
+        // The startup profile used to go to stderr, which a release build does
+        // not have. It goes to the log file now; debug builds still mirror it.
+        log::info!(
+            target: "dae::config",
+            "profile {} (settings {})",
             if config_dir.is_empty() {
                 "<unresolved>"
             } else {
@@ -281,15 +276,16 @@ impl Default for AppConfigRust {
             } else {
                 "missing"
             }
-        ));
-        log(format!(
-            "dae: start {} ({}, {} recents)",
+        );
+        log::info!(
+            target: "dae::config",
+            "start {} ({}, {} recents)",
             start_path,
             snapshot.source.as_str(),
             snapshot.recent_count
-        ));
-        log(format!("dae: path-jump {}", snapshot.path_jump));
-        log(format!("dae: command-bar {}", snapshot.command_bar));
+        );
+        log::info!(target: "dae::config", "path-jump {}", snapshot.path_jump);
+        log::info!(target: "dae::config", "command-bar {}", snapshot.command_bar);
 
         Self {
             config_dir: QString::from(config_dir.as_str()),

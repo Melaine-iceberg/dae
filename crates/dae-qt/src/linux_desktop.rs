@@ -26,11 +26,11 @@ const SCHEME: &str = "x-scheme-handler/dae";
 
 pub(crate) fn ensure_registered() {
     let Some(exe) = std::env::current_exe().ok() else {
-        eprintln!("dae: could not resolve the executable for scheme registration");
+        log::warn!(target: "dae::linux", "could not resolve the executable for scheme registration");
         return;
     };
     let Some(applications) = applications_dir() else {
-        eprintln!("dae: could not locate ~/.local/share/applications");
+        log::warn!(target: "dae::linux", "could not locate ~/.local/share/applications");
         return;
     };
 
@@ -41,7 +41,7 @@ pub(crate) fn ensure_registered() {
         .unwrap_or(true);
     if changed {
         if let Err(error) = std::fs::write(&entry, desired) {
-            eprintln!("dae: could not write {}: {error}", entry.display());
+            log::warn!(target: "dae::linux", "could not write {}: {error}", entry.display());
             return;
         }
         // The MIME cache is what desktop shells read when they resolve the
@@ -60,8 +60,8 @@ pub(crate) fn ensure_registered() {
         .status()
     {
         Ok(status) if status.success() => {}
-        Ok(status) => eprintln!("dae: xdg-mime exited with {status}"),
-        Err(error) => eprintln!("dae: could not run xdg-mime: {error}"),
+        Ok(status) => log::warn!(target: "dae::linux", "xdg-mime exited with {status}"),
+        Err(error) => log::warn!(target: "dae::linux", "could not run xdg-mime: {error}"),
     }
 }
 

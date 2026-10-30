@@ -108,7 +108,7 @@ fn start_accent_poll() {
             }
         })
     {
-        eprintln!("dae: failed to start accent watcher: {error}");
+        log::warn!(target: "dae::watch", "failed to start accent watcher: {error}");
     }
 }
 
@@ -143,13 +143,12 @@ fn start_volume_poll() {
             }
         })
     {
-        eprintln!("dae: failed to start volume watcher: {error}");
+        log::warn!(target: "dae::watch", "failed to start volume watcher: {error}");
     }
 }
 
 #[cfg(windows)]
 mod windows_backend {
-    use std::io::Write;
     use std::sync::OnceLock;
     use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -232,7 +231,7 @@ mod windows_backend {
             .name(name.to_owned())
             .spawn(body)
         {
-            log(format!("dae: failed to start {name}: {error}"));
+            log::warn!(target: "dae::watch", "failed to start {name}: {error}");
         }
     }
 
@@ -359,7 +358,7 @@ mod windows_backend {
         let instance = match unsafe { GetModuleHandleW(None) } {
             Ok(module) => HINSTANCE(module.0),
             Err(error) => {
-                log(format!("dae: volume watch has no module handle: {error}"));
+                log::warn!(target: "dae::watch", "volume watch has no module handle: {error}");
                 return;
             }
         };
@@ -375,7 +374,7 @@ mod windows_backend {
         // `class_name` which outlives the call, and the procedure is a plain
         // `extern "system"` fn. Zero means the class is already taken.
         if unsafe { RegisterClassW(&class) } == 0 {
-            log("dae: volume watch window class is already registered".to_owned());
+            log::warn!(target: "dae::watch", "volume watch window class is already registered");
             return;
         }
 
@@ -400,9 +399,10 @@ mod windows_backend {
         } {
             Ok(window) => window,
             Err(error) => {
-                log(format!(
-                    "dae: could not create the volume watch window: {error}"
-                ));
+                log::warn!(
+                    target: "dae::watch",
+                    "could not create the volume watch window: {error}"
+                );
                 return;
             }
         };
@@ -488,10 +488,6 @@ mod windows_backend {
         // as documented for `WM_DEVICECHANGE`. It is borrowed for this read.
         let header = unsafe { &*(lparam.0 as *const DEV_BROADCAST_HDR) };
         header.dbch_devicetype == DBT_DEVTYP_VOLUME
-    }
-
-    fn log(message: String) {
-        let _ = writeln!(std::io::stderr(), "{message}");
     }
 
     #[cfg(test)]

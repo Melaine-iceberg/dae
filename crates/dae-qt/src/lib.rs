@@ -26,10 +26,13 @@
 //!
 //! | | Windows | Linux / macOS |
 //! |---|---|---|
-//! | frame, move, resize | Win32 hit test (`WM_NCHITTEST`) | frameless Qt window; QML `startSystemMove` / `startSystemResize` |
-//! | backdrop | DWM Mica/Acrylic | `Material::None` (solid chrome) |
+//! | frame, move, resize | Win32 hit test (`WM_NCHITTEST`) | frameless Qt window; QML `startSystemMove`, and `startSystemResize` with a manual geometry fallback because Cocoa does not implement it |
+//! | backdrop | DWM Mica/Acrylic | Wayland `ext-background-effect-v1`; macOS `NSVisualEffectView`; solid chrome when the compositor offers neither |
 //! | IME focus cancel | `CPS_CANCEL` guard (gate 2) | not installed; no measured equivalent |
-//! | `dae://` registration | registry write | not implemented yet; the single-instance socket still works |
+//! | `dae://` registration | `HKCU` write on claim (`activation.rs`) | desktop entry + `xdg-mime` on Linux; `CFBundleURLTypes` + `QFileOpenEvent` on macOS |
+//!
+//! Logging and the panic hook are installed by [`logging::init`] — the file the
+//! settings panel opens is written by this process, not only by the Tauri shell.
 //!
 //! A Linux/macOS release artifact is therefore a working shell with the
 //! platform's own chrome, not a pixel-for-pixel copy of the Windows one. Each
@@ -46,6 +49,7 @@ pub mod i18n;
 pub mod icons;
 pub mod ime;
 mod linux_desktop;
+pub mod logging;
 pub mod material;
 pub mod model;
 pub mod open_with_model;
@@ -71,6 +75,10 @@ pub mod workspace;
 
 /// Process-wide setup that must run before the QML engine creates a window.
 pub fn init() {
+    // First, so the settings/profile lines below and every `dae-core` warning
+    // reach the file. Idempotent: the binary calls it before claiming the
+    // instance lock, and this call is then a no-op.
+    logging::init();
     window::enable_diagnostics();
     window::enable_alpha();
     // The application font is the fallback for every Text item that does not
@@ -78,7 +86,7 @@ pub fn init() {
     // created so nothing paints in the old face and then reflows.
     window::apply_system_font();
     if let Err(error) = dae_core::settings::init() {
-        eprintln!("dae: settings initialization failed: {error}");
+        log::error!(target: "dae", "settings initialization failed: {error}");
     } else {
         appearance::migrate_legacy();
     }
@@ -94,10 +102,10 @@ pub(crate) fn init_stores() {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
         if let Err(error) = dae_core::fs::connections::init() {
-            eprintln!("dae: connection store initialization failed: {error}");
+            log::error!(target: "dae", "connection store initialization failed: {error}");
         }
         if let Err(error) = dae_core::fs::cloud::accounts::init() {
-            eprintln!("dae: cloud account store initialization failed: {error}");
+            log::error!(target: "dae", "cloud account store initialization failed: {error}");
         }
     });
 }

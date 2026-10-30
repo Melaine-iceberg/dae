@@ -291,7 +291,7 @@ impl qobject::SidebarTreeModel {
                     self.as_mut().set_loaded(true);
                     self.as_mut()
                         .set_status(QString::from("Could not read folder"));
-                    eprintln!("dae: sidebar tree read failed: {error}");
+                    log::warn!(target: "dae::sidebar", "sidebar tree read failed: {error}");
                 }
             }
         }

@@ -15,6 +15,9 @@ cxx = "1"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["full"] }
 dae-qt = { path = "../../crates/dae-qt" }
+# Only for the one `log::error!` on engine-creation failure; the logger itself,
+# and every other message, belongs to `dae-qt::logging`.
+log = "0.4"
 # Same swap, same numbers as the Tauri shell (`src-tauri/Cargo.toml`): the
 # Windows process heap charges ~36 ns per small allocation and listing a large
 # directory allocates per entry — a 35,821-entry directory went 48.3 -> 32.6 ms

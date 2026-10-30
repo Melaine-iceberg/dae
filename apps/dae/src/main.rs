@@ -38,6 +38,12 @@ fn main() {
 
     let mut application = QGuiApplication::new();
 
+    // Before `claim`: a failed scheme registration or a refused instance lock
+    // is exactly the kind of failure nobody can reproduce later, and starting
+    // here means it lands in the file rather than in a stderr a release build
+    // does not have.
+    dae_qt::logging::init();
+
     // A later launch must not create a second shell. The owner receives the
     // command line over a local socket; this process exits before the engine or
     // any window exists. Claiming also registers `dae://` for this user.
@@ -63,7 +69,7 @@ fn main() {
             .as_mut()
             .load(&QUrl::from("qrc:/qt/qml/dae/qml/Main.qml"));
     } else {
-        eprintln!("dae: could not create QQmlApplicationEngine");
+        log::error!(target: "dae", "could not create QQmlApplicationEngine");
     }
 
     if let Some(application) = application.as_mut() {

@@ -434,7 +434,7 @@ fn recent_row(item: &RecentItem) -> OverviewRow {
 /// The overview keeps rendering and the failure stays in the log rather than
 /// turning the landing page into an error screen.
 fn report_aux_error(source: &str, error: &str) {
-    eprintln!("dae: overview {source} failed: {error}");
+    log::warn!(target: "dae::overview", "overview {source} failed: {error}");
 }
 
 async fn scan_projects(candidates: Vec<ProjectCandidate>) -> Vec<OverviewRow> {

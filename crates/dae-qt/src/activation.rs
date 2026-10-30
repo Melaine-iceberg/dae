@@ -69,7 +69,7 @@ pub fn claim() -> bool {
 
     #[cfg(windows)]
     if let Err(error) = register_url_scheme() {
-        eprintln!("dae: could not register dae:// URL scheme: {error}");
+        log::warn!(target: "dae::activation", "could not register dae:// URL scheme: {error}");
     }
 
     // A portable Linux build has no installer to put dae.desktop in place; the
