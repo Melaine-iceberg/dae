@@ -439,7 +439,7 @@ Item {
                 text: providerCard.glyph
                 color: Theme.onSolid
                 font.pixelSize: 13
-                font.weight: Font.DemiBold
+                font.weight: Font.Medium
             }
         }
 

@@ -280,7 +280,7 @@ Item {
             text: qsTr("回收站")
             color: root.textColor
             font.pixelSize: 13
-            font.weight: Font.DemiBold
+            font.weight: Font.Medium
             elide: Text.ElideRight
         }
 

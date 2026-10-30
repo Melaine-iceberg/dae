@@ -2363,11 +2363,13 @@ Window {
 
                 readonly property bool canGo: root.canGoBack
 
-                Text {
+                Glyph {
                     anchors.centerIn: parent
-                    text: "←"
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeName
+                    width: 14
+                    height: 14
+                    kind: "arrowLeft"
+                    tint: backMouse.containsMouse && backButton.canGo
+                        ? root.textColor : root.mutedColor
                 }
 
                 Accessible.role: Accessible.Button
@@ -2411,11 +2413,13 @@ Window {
 
                 readonly property bool canGo: root.canGoForward
 
-                Text {
+                Glyph {
                     anchors.centerIn: parent
-                    text: "→"
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeName
+                    width: 14
+                    height: 14
+                    kind: "arrowRight"
+                    tint: forwardMouse.containsMouse && forwardButton.canGo
+                        ? root.textColor : root.mutedColor
                 }
 
                 Accessible.role: Accessible.Button
@@ -2454,11 +2458,13 @@ Window {
                     ? Theme.fill : "transparent"
                 opacity: root.folderActive ? 1 : 0.32
 
-                Text {
+                Glyph {
                     anchors.centerIn: parent
-                    text: "\u2191"
-                    color: root.mutedColor
-                    font.pixelSize: Theme.typeName
+                    width: 14
+                    height: 14
+                    kind: "arrowUp"
+                    tint: upMouse.containsMouse && root.folderActive
+                        ? root.textColor : root.mutedColor
                 }
 
                 Accessible.role: Accessible.Button

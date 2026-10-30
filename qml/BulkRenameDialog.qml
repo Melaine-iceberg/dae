@@ -329,7 +329,7 @@ FocusScope {
                                 ? root.textColor : root.mutedColor
                             font.pixelSize: 12
                             font.weight: root.mode === modeItem.modelData.key
-                                ? Font.DemiBold : Font.Normal
+                                ? Font.Medium : Font.Normal
                         }
 
                         Rectangle {

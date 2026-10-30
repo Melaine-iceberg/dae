@@ -278,7 +278,7 @@ FocusScope {
                             text: kind === "header" ? label : ""
                             color: root.mutedColor
                             font.pixelSize: 11
-                            font.weight: Font.DemiBold
+                            font.weight: Font.Medium
                         }
 
                         Rectangle {
@@ -470,13 +470,13 @@ FocusScope {
                             border.color: root.setDefault ? root.accent
                                 : Theme.hairlineStrong
 
-                            Text {
+                            Glyph {
                                 anchors.centerIn: parent
                                 visible: root.setDefault
-                                text: "✓"
-                                color: Theme.onInteractive
-                                font.pixelSize: 11
-                                font.weight: Font.Bold
+                                width: 10
+                                height: 10
+                                kind: "check"
+                                tint: Theme.onInteractive
                             }
                         }
 
@@ -537,7 +537,7 @@ FocusScope {
                             text: root.opening ? qsTr("正在打开…") : qsTr("打开")
                             color: Theme.onInteractive
                             font.pixelSize: 12
-                            font.weight: Font.DemiBold
+                            font.weight: Font.Medium
                         }
 
                         MouseArea {

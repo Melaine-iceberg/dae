@@ -302,12 +302,13 @@ Item {
                 border.width: 1
                 border.color: root.remember ? root.accent : root.hairline
 
-                Text {
+                Glyph {
                     anchors.centerIn: parent
                     visible: root.remember
-                    text: "✓"
-                    color: Theme.onInteractive
-                    font.pixelSize: 11
+                    width: 10
+                    height: 10
+                    kind: "check"
+                    tint: Theme.onInteractive
                 }
             }
 

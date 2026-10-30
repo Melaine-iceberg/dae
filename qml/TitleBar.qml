@@ -92,7 +92,10 @@ Item {
         width: 17
         height: 17
         radius: Theme.radiusXs
-        color: Theme.interactive
+        // The mark is the brand, not an interactive control: keeping it on
+        // `signal` means a system accent cannot turn the window's identity a
+        // second colour while every selection track stays orange.
+        color: Theme.brand
         visible: !root.isMac
 
         Text {

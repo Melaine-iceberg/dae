@@ -31,30 +31,47 @@ Item {
         list.forceActiveFocus()
     }
 
-    function glyph(icon) {
-        if (icon === "home")
-            return "\u2302"
-        if (icon === "desktop")
-            return "\u25a3"
-        if (icon === "documents")
-            return "\u2261"
-        if (icon === "downloads")
-            return "\u2193"
-        if (icon === "pictures")
-            return "\u25a4"
-        if (icon === "music")
-            return "\u266b"
-        if (icon === "videos")
-            return "\u25b6"
-        if (icon === "star")
-            return "\u2605"
-        if (icon === "space")
-            return "\u25c8"
-        if (icon === "project")
-            return "\u2325"
-        if (icon === "file")
-            return "\u25a1"
-        return "\u25b1"
+    /// The overview model names destinations by the same keys the sidebar uses,
+    /// so the landing page draws its icons from `Glyph` too. The old text
+    /// glyphs were a second icon set: the project row's "⌥" was the macOS
+    /// Option key, not a branch, and it sat beside a real folder glyph.
+    function glyphKind(icon) {
+        switch (icon) {
+        case "home": return "home"
+        case "desktop": return "desktop"
+        case "documents": return "documents"
+        case "downloads": return "downloads"
+        case "pictures": return "pictures"
+        case "music": return "music"
+        case "videos": return "videos"
+        case "star":
+        case "favorite": return "star"
+        case "space": return "diamond"
+        case "project": return "folder"
+        case "file": return "file"
+        default: return "folder"
+        }
+    }
+
+    /// The one place a landing row turns into a destination, so the pointer,
+    /// a screen reader's press and the keyboard cursor cannot disagree.
+    function openRow(kind, path, isDir) {
+        if (kind === "space")
+            root.openRequested("space", path)
+        else if (kind === "recent" && !isDir)
+            root.openRequested("file", path)
+        else
+            root.openRequested("navigate", path)
+    }
+
+    function activateCurrent() {
+        const index = list.currentIndex
+        if (index < 0 || root.model === null)
+            return
+        // The model exposes the same three facts the delegate binds, so the
+        // keyboard does not have to reach into a live delegate.
+        root.openRow(root.model.kindAt(index), root.model.pathAt(index),
+                     root.model.isDirAt(index))
     }
 
     function sectionLabel(value) {
@@ -126,8 +143,17 @@ Item {
         boundsBehavior: Flickable.StopAtBounds
         model: root.model
         cacheBuffer: 400
+        currentIndex: -1
         section.property: "section"
         section.criteria: ViewSection.FullString
+
+        /// The list is a keyboard surface too: the arrow keys move the cursor,
+        /// Enter and Space open the row under it. Without this the landing
+        /// page was only reachable with a pointer or a screen reader.
+        Accessible.role: Accessible.List
+        Accessible.name: qsTr("概览")
+        Keys.onReturnPressed: root.activateCurrent()
+        Keys.onSpacePressed: root.activateCurrent()
 
         /// The reference caps the launcher column at a readable measure and
         /// leaves the rest of a wide window empty, rather than stretching a
@@ -138,6 +164,8 @@ Item {
         anchors.rightMargin: sideMargin
 
         section.delegate: Item {
+            id: sectionRow
+
             required property string section
             width: list.width
             height: 24
@@ -146,17 +174,17 @@ Item {
                 x: 20
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 5
-                text: root.sectionLabel(section)
-                color: root.mutedColor
-                font.pixelSize: 11
-                font.weight: Font.DemiBold
-                font.letterSpacing: 0.4
+                text: root.sectionLabel(sectionRow.section)
+                color: Theme.inkFaint
+                font.pixelSize: Theme.typeMicro
+                font.weight: Font.Medium
+                font.letterSpacing: 0.88
             }
         }
 
         header: Item {
             width: list.width
-            height: 126
+            height: 132
 
             Column {
                 anchors.left: parent.left
@@ -192,19 +220,20 @@ Item {
                 anchors.topMargin: 66
                 anchors.leftMargin: 10
                 anchors.rightMargin: 10
-                height: 38
-                radius: Theme.radiusLg
+                height: Theme.rowSpacious
+                radius: Theme.radiusMd
                 color: Theme.canvasAlt
                 border.width: 1
                 border.color: launcherMouse.containsMouse ? root.accent : root.hairline
 
-                Text {
+                Glyph {
                     anchors.left: parent.left
                     anchors.leftMargin: 12
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "\u2315"
-                    color: root.mutedColor
-                    font.pixelSize: 14
+                    width: 14
+                    height: 14
+                    kind: "search"
+                    tint: root.mutedColor
                 }
 
                 Text {
@@ -213,7 +242,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("搜索文件、空间或命令")
                     color: root.mutedColor
-                    font.pixelSize: Theme.typeSmall
+                    font.pixelSize: Theme.typeBody
                 }
 
                 Rectangle {
@@ -224,7 +253,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: shortcutText.width + 12
                     height: 18
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusXs
                     color: Theme.hover
 
                     Text {
@@ -232,7 +261,7 @@ Item {
                         anchors.centerIn: parent
                         text: root.commandShortcut
                         color: root.mutedColor
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                     }
                 }
 
@@ -253,7 +282,7 @@ Item {
                 visible: root.model !== null && root.model.projectBusy
                 text: qsTr("正在查找最近的项目…")
                 color: root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
             }
         }
 
@@ -272,49 +301,53 @@ Item {
             required property string timeText
 
             width: list.width
-            height: 36
+            height: Theme.rowDefault
 
             readonly property bool project: row.kind === "project"
             /// Places and favorites carry a path, recents their parent folder,
             /// spaces a count: one trailing fact instead of a second line.
             readonly property bool hasDetail: !row.project && row.detail !== ""
+            /// The keyboard cursor, drawn only while the list owns focus. A
+            /// pointer click opens the row immediately, so there is no clicked
+            /// selection state to confuse it with.
+            readonly property bool cursor: list.activeFocus
+                && list.currentIndex === row.index
 
             /// A landing-page row opens something. The kind decides what, so it
             /// goes in the description: "space" and "folder" look the same in a
             /// row but lead to different places.
             Accessible.role: Accessible.ListItem
-            Accessible.name: row.name
-            Accessible.description: row.detail
+            /// The reader hears what the row shows, which for a system place
+            /// is its translated label, not the model's English key.
+            Accessible.name: row.kind === "place" ? root.placeLabel(row.icon)
+                : row.name
+            Accessible.description: row.hasDetail
+                ? root.detailLabel(row.detail) : ""
             Accessible.selectable: true
-            Accessible.selected: list.currentIndex === row.index
-            Accessible.onPressAction: {
-                if (row.kind === "space")
-                    root.openRequested("space", row.path)
-                else if (row.kind === "recent" && !row.isDir)
-                    root.openRequested("file", row.path)
-                else
-                    root.openRequested("navigate", row.path)
-            }
+            Accessible.selected: row.cursor
+            Accessible.onPressAction: root.openRow(row.kind, row.path, row.isDir)
 
             Rectangle {
+                id: plate
+
                 anchors.fill: parent
                 anchors.leftMargin: 10
                 anchors.rightMargin: 10
                 radius: Theme.radiusSm
-                color: rowMouse.containsMouse ? root.hoverColor : "transparent"
+                color: row.cursor ? Theme.signalSoft
+                    : (rowMouse.containsMouse ? root.hoverColor : "transparent")
+                border.width: row.cursor ? 1 : 0
+                border.color: Theme.signal
             }
 
-            Text {
+            Glyph {
                 anchors.left: parent.left
                 anchors.leftMargin: 20
                 anchors.verticalCenter: parent.verticalCenter
                 width: 16
-                height: 18
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-                text: root.glyph(row.icon)
-                color: row.kind === "space" ? root.accent : root.mutedColor
-                font.pixelSize: 14
+                height: 16
+                kind: root.glyphKind(row.icon)
+                tint: root.mutedColor
             }
 
             Text {
@@ -349,7 +382,7 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 text: root.detailLabel(row.detail)
                 color: root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
                 font.features: { "tnum": 1 }
                 elide: Text.ElideMiddle
             }
@@ -365,16 +398,31 @@ Item {
                 Rectangle {
                     visible: row.project && row.branch !== ""
                     height: 18
-                    radius: Theme.radiusSm
+                    radius: Theme.radiusXs
                     color: Theme.canvasAlt
-                    width: branchText.width + 12
+                    width: branchRow.implicitWidth + 12
 
-                    Text {
-                        id: branchText
+                    Row {
+                        id: branchRow
+
                         anchors.centerIn: parent
-                        text: "\u2325 " + row.branch
-                        color: root.mutedColor
-                        font.pixelSize: 10
+                        spacing: 4
+
+                        Glyph {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 10
+                            height: 10
+                            kind: "branch"
+                            tint: root.mutedColor
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: row.branch
+                            color: root.mutedColor
+                            font.pixelSize: Theme.typeMicro
+                            font.family: Theme.monoFamily
+                        }
                     }
                 }
 
@@ -382,15 +430,16 @@ Item {
                     visible: row.project && row.changeText !== ""
                     text: root.changeLabel(row.changeText)
                     color: row.changeText === "Clean" ? root.mutedColor
-                        : (row.changeText === "Untracked" ? Theme.warn : root.accent)
-                    font.pixelSize: 11
+                        : (row.changeText === "Untracked" ? Theme.link : Theme.warn)
+                    font.pixelSize: Theme.typeMicro
                 }
 
                 Text {
                     visible: row.timeText !== ""
                     text: root.timeLabel(row.timeText)
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
+                    font.features: { "tnum": 1 }
                 }
             }
 
@@ -399,15 +448,20 @@ Item {
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    if (row.kind === "space")
-                        root.openRequested("space", row.path)
-                    else if (row.kind === "recent" && !row.isDir)
-                        root.openRequested("file", row.path)
-                    else
-                        root.openRequested("navigate", row.path)
-                }
+                onClicked: root.openRow(row.kind, row.path, row.isDir)
             }
         }
+    }
+
+    /// With every system place hidden and nothing favourited yet, the list is
+    /// only a header over empty canvas. This is the landing page's own empty
+    /// state, using the shared grammar rather than a second mute sentence.
+    EmptyState {
+        anchors.fill: parent
+        visible: root.model !== null && root.model.loaded
+            && root.model.count === 0
+        glyph: "folder"
+        title: qsTr("还没有可显示的位置")
+        hint: qsTr("在地址栏打开一个文件夹，它会出现在「最近」里。")
     }
 }

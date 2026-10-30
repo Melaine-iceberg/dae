@@ -129,12 +129,13 @@ Item {
                 root.clearRequested()
             }
 
-            Text {
+            Glyph {
                 anchors.centerIn: parent
                 visible: root.busy
-                text: "…"
-                color: root.mutedColor
-                font.pixelSize: Theme.typeName
+                width: 12
+                height: 12
+                kind: "more"
+                tint: root.mutedColor
             }
 
             Glyph {

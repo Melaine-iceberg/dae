@@ -149,7 +149,7 @@ Item {
                 text: row.isHeader ? row.relativePath || row.fileName : ""
                 color: root.textColor
                 font.pixelSize: 12
-                font.bold: true
+                font.weight: Font.Medium
                 textFormat: Text.PlainText
                 elide: Text.ElideMiddle
             }

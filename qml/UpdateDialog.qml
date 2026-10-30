@@ -136,7 +136,7 @@ FocusScope {
                     text: qsTr("发现新版本 v") + Updater.latestVersion
                     color: root.textColor
                     font.pixelSize: 13
-                    font.weight: Font.DemiBold
+                    font.weight: Font.Medium
                 }
 
                 Item {
@@ -304,7 +304,7 @@ FocusScope {
                         text: Updater.downloading ? qsTr("下载中…") : qsTr("下载并安装")
                         color: Theme.onInteractive
                         font.pixelSize: 12
-                        font.weight: Font.DemiBold
+                        font.weight: Font.Medium
                     }
 
                     MouseArea {

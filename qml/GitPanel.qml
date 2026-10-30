@@ -253,7 +253,7 @@ Item {
                     text: "Git · " + root.currentBranch()
                     color: root.textColor
                     font.pixelSize: 11
-                    font.weight: Font.DemiBold
+                    font.weight: Font.Medium
                     textFormat: Text.PlainText
                     elide: Text.ElideMiddle
                 }
@@ -511,7 +511,7 @@ Item {
                             ? branchRow.modelData.text : ""
                         color: root.mutedColor
                         font.pixelSize: 11
-                        font.weight: Font.DemiBold
+                        font.weight: Font.Medium
                         textFormat: Text.PlainText
                     }
 
@@ -526,15 +526,16 @@ Item {
                         textFormat: Text.PlainText
                     }
 
-                    Text {
-                        x: 9
+                    Glyph {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 9
                         anchors.verticalCenter: parent.verticalCenter
                         visible: branchRow.modelData.kind === "branch"
                             && branchRow.modelData.current
-                        text: "✓"
-                        color: root.accent
-                        font.pixelSize: 11
-                        textFormat: Text.PlainText
+                        width: 10
+                        height: 10
+                        kind: "check"
+                        tint: root.accent
                     }
 
                     Text {
@@ -548,7 +549,7 @@ Item {
                         color: branchRow.modelData.current ? root.accent : root.textColor
                         font.family: Theme.monoFamily
                         font.pixelSize: 11
-                        font.weight: branchRow.modelData.current ? Font.DemiBold : Font.Normal
+                        font.weight: branchRow.modelData.current ? Font.Medium : Font.Normal
                         textFormat: Text.PlainText
                         elide: Text.ElideMiddle
                     }

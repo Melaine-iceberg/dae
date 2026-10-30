@@ -98,7 +98,7 @@ Item {
                 text: root.spaceName !== "" ? root.spaceName : qsTr("空间")
                 color: root.textColor
                 font.pixelSize: 22
-                font.weight: Font.DemiBold
+                font.weight: Font.Medium
             }
 
             Text {

@@ -418,7 +418,7 @@ FocusScope {
                 text: qsTr("设置")
                 color: root.textColor
                 font.pixelSize: Theme.typeTitle
-                font.weight: Font.DemiBold
+                font.weight: Font.Medium
             }
 
             Text {
@@ -482,7 +482,7 @@ FocusScope {
                     text: qsTr("主题")
                     color: root.textColor
                     font.pixelSize: 12
-                    font.weight: Font.DemiBold
+                    font.weight: Font.Medium
                 }
                 Text {
                     x: 24; y: 108
@@ -513,7 +513,7 @@ FocusScope {
                     text: qsTr("强调色")
                     color: root.textColor
                     font.pixelSize: 12
-                    font.weight: Font.DemiBold
+                    font.weight: Font.Medium
                 }
                 Text {
                     x: 24; y: 212
@@ -547,7 +547,7 @@ FocusScope {
                     text: qsTr("界面语言")
                     color: root.textColor
                     font.pixelSize: 12
-                    font.weight: Font.DemiBold
+                    font.weight: Font.Medium
                 }
                 Text {
                     x: 24; y: 316
@@ -578,7 +578,7 @@ FocusScope {
                     text: qsTr("动效")
                     color: root.textColor
                     font.pixelSize: 12
-                    font.weight: Font.DemiBold
+                    font.weight: Font.Medium
                 }
 
                 Text {
@@ -617,7 +617,7 @@ FocusScope {
                     text: qsTr("背景效果")
                     color: root.textColor
                     font.pixelSize: 12
-                    font.weight: Font.DemiBold
+                    font.weight: Font.Medium
                 }
 
                 Text {
@@ -653,7 +653,7 @@ FocusScope {
                     text: qsTr("窗口材质")
                     color: root.textColor
                     font.pixelSize: 12
-                    font.weight: Font.DemiBold
+                    font.weight: Font.Medium
                 }
 
                 Text {
@@ -789,7 +789,7 @@ FocusScope {
                                     text: modelData.header ? modelData.title : ""
                                     color: root.faintColor
                                     font.pixelSize: 11
-                                    font.weight: Font.DemiBold
+                                    font.weight: Font.Medium
                                 }
 
                                 Rectangle {
@@ -1154,12 +1154,13 @@ FocusScope {
                         }
                     }
 
-                    Text {
+                    Glyph {
                         visible: !Workspace.defaultManagerBusy && Workspace.defaultManagerIsDefault
                         anchors.verticalCenter: parent.verticalCenter
-                        text: "✓"
-                        color: Theme.success
-                        font.pixelSize: 12
+                        width: 12
+                        height: 12
+                        kind: "check"
+                        tint: Theme.success
                     }
 
                     Text {
@@ -1233,7 +1234,7 @@ FocusScope {
                     text: qsTr("日志目录")
                     color: root.textColor
                     font.pixelSize: 12
-                    font.weight: Font.DemiBold
+                    font.weight: Font.Medium
                 }
 
                 Rectangle {
@@ -1367,7 +1368,7 @@ FocusScope {
                     text: qsTr("为“%1”录制快捷键").arg(root.captureLabel)
                     color: root.textColor
                     font.pixelSize: 13
-                    font.weight: Font.DemiBold
+                    font.weight: Font.Medium
                     elide: Text.ElideRight
                 }
 
@@ -1434,18 +1435,19 @@ FocusScope {
             text: nav.label
             color: root.page === nav.value ? root.textColor : root.mutedColor
             font.pixelSize: 12
-            font.weight: root.page === nav.value ? Font.DemiBold : Font.Normal
+            font.weight: root.page === nav.value ? Font.Medium : Font.Normal
         }
 
-        // A thin accent marker makes the active page readable at a glance
-        // without tinting the whole row.
+        // A thin signal-coloured marker makes the active page readable at a
+        // glance without tinting the whole row. The marker stays on `signal`:
+        // the system accent belongs to controls, not to "where am I".
         Rectangle {
             anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
             width: 2
             height: 16
             radius: Theme.radiusSm
-            color: root.accent
+            color: Theme.signal
             visible: root.page === nav.value
         }
 

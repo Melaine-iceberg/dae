@@ -209,7 +209,7 @@ FocusScope {
                                 ? root.textColor : root.mutedColor
                             font.pixelSize: 12
                             font.weight: root.tab === tabItem.modelData.key
-                                ? Font.DemiBold : Font.Normal
+                                ? Font.Medium : Font.Normal
                         }
 
                         Rectangle {
@@ -218,9 +218,20 @@ FocusScope {
                             anchors.bottom: parent.bottom
                             height: 2
                             radius: Theme.radiusSm
-                            color: root.accent
+                            // The current tab is a position, not a control: it
+                            // keeps the same signal track as the window's tabs
+                            // instead of following the system accent.
+                            color: Theme.signal
                             visible: root.tab === tabItem.modelData.key
                         }
+
+                        /// The tabs are a page list for a reader too; until
+                        /// now they were pointer-only.
+                        Accessible.role: Accessible.PageTab
+                        Accessible.name: tabItem.modelData.label
+                        Accessible.selectable: true
+                        Accessible.selected: root.tab === tabItem.modelData.key
+                        Accessible.onPressAction: root.tab = tabItem.modelData.key
 
                         MouseArea {
                             anchors.fill: parent

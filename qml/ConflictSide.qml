@@ -64,7 +64,7 @@ Rectangle {
                 text: root.name
                 color: Theme.ink
                 font.pixelSize: 12
-                font.weight: Font.DemiBold
+                font.weight: Font.Medium
                 elide: Text.ElideMiddle
             }
         }
