@@ -31,6 +31,14 @@ public:
     /// Everything collected since the last call, oldest first.
     Q_INVOKABLE QStringList takePending();
 
+    /// Feeds a target the operating system opened for us rather than argv.
+    ///
+    /// macOS delivers Finder folders, documents and `dae://` URLs through
+    /// `QFileOpenEvent`, not through the command line. The target goes through
+    /// the same resolver as a forwarded argument, so a file becomes its parent
+    /// directory and an unknown path is dropped.
+    void forwardExternal(const QString& target);
+
 signals:
     /// Emitted for every forwarded launch, including one that carried no
     /// openable path. QML then only brings the running window forward.

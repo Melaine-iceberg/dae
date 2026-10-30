@@ -175,6 +175,29 @@ pub(super) fn list_disks_sync() -> Vec<DiskVolume> {
     volumes
 }
 
+/// A comparable key for the mounted-volume set.
+///
+/// The Qt shell's non-Windows watcher asks this every couple of seconds: it
+/// must change when a device is mounted, unmounted or renamed, but must stay
+/// put when free space moves after an ordinary write. Mount point, display
+/// name, filesystem and total size answer those questions without pulling in
+/// a platform event loop just to compare two lists.
+pub fn disk_signature() -> Vec<(String, String, String, u64)> {
+    let mut signature: Vec<_> = list_disks_sync()
+        .into_iter()
+        .map(|volume| {
+            (
+                volume.mount_point,
+                volume.name,
+                volume.file_system,
+                volume.total_bytes,
+            )
+        })
+        .collect();
+    signature.sort();
+    signature
+}
+
 /// Keeps one sidebar entry per underlying filesystem.
 ///
 /// `sysinfo` builds one disk per `/proc/mounts` line and exposes the `fs_spec`

@@ -18,6 +18,11 @@ extern "C" {
 /// (not attached yet).
 bool dae_qt_macos_apply_blur(void *ns_view, bool enabled, bool dark);
 
+/// Brings the application forward when a second launch or an OS open event
+/// wants the existing window on screen. `raise()` alone does not activate a
+/// background app on macOS.
+void dae_qt_macos_activate_app(void);
+
 #ifdef __cplusplus
 }
 #endif

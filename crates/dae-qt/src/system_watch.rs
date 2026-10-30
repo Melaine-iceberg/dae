@@ -19,24 +19,133 @@
 //! queued onto the Qt thread before touching `Workspace`, so the watcher
 //! threads never see a QObject directly.
 //!
-//! The watchers are Windows-only (Win32 + the registry), matching the native
-//! chrome in `window.h`. Other platforms keep the single startup reading and
-//! `start()` is a no-op there; each watcher needs its own measured gate rather
-//! than an untested guess.
+//! The Windows watchers use Win32 + the registry. The light/dark preference is
+//! cross-platform: Qt's style hints forward the platform's own change
+//! notification, so the C++ half (`cpp/platform_watch.cpp`) reports through
+//! [`theme_changed`] and the reading lands on `Workspace` the same way the
+//! registry watcher's does. The accent readers are per-platform; on Linux the
+//! portal is polled and on macOS `NSColor` is polled, while Windows keeps the
+//! blocking registry notification.
+//!
+//! A watcher that has to be polled, joined or woken is a watcher nobody shuts
+//! down cleanly; process exit reaps the threads.
 
-#[cfg(not(windows))]
+use std::sync::OnceLock;
+
 use cxx_qt::CxxQtThread;
 
-#[cfg(not(windows))]
 use crate::workspace::qobject::Workspace;
+
+/// The Qt thread captured when the first window starts the watchers. The C++
+/// style-hint signal and the non-Windows accent poll both need a way back to
+/// the singleton, and neither owns a `Workspace` reference.
+static WORKSPACE_THREAD: OnceLock<CxxQtThread<Workspace>> = OnceLock::new();
 
 /// Starts the platform watchers once for the process. Calling it again from a
 /// later window is a no-op.
-#[cfg(not(windows))]
-pub(crate) fn start(_thread: CxxQtThread<Workspace>) {}
+pub(crate) fn start(thread: CxxQtThread<Workspace>) {
+    let _ = WORKSPACE_THREAD.set(thread.clone());
 
-#[cfg(windows)]
-pub(crate) use windows_backend::start;
+    #[cfg(windows)]
+    windows_backend::start(thread);
+
+    #[cfg(not(windows))]
+    {
+        let _ = thread;
+        // A QGuiApplication has no light/dark watcher of its own; the style
+        // hints do, and this connects `colorSchemeChanged` to `theme_changed`.
+        crate::workspace::qobject::install_theme_watcher();
+        start_accent_poll();
+        start_volume_poll();
+    }
+}
+
+/// Applies a dark/light reading delivered by Qt's `colorSchemeChanged`.
+///
+/// This is called from C++ on the GUI thread, so the value is queued rather
+/// than applied inline: a watcher path never touches the QObject directly.
+pub(crate) fn theme_changed(dark: bool) {
+    let Some(thread) = WORKSPACE_THREAD.get() else {
+        return;
+    };
+    let _ = thread.queue(move |mut workspace| {
+        workspace.as_mut().apply_system_theme(Some(dark));
+    });
+}
+
+/// Polls the platform accent where it has no change notification.
+///
+/// macOS posts nothing public when the accent moves; the freedesktop portal
+/// broadcasts `SettingChanged`, but consuming it needs a signal stream the
+/// reader does not otherwise require. Two seconds costs one cheap lookup and
+/// lands the retint while the settings window is still visible.
+#[cfg(not(windows))]
+fn start_accent_poll() {
+    let Some(thread) = WORKSPACE_THREAD.get().cloned() else {
+        return;
+    };
+    if let Err(error) = std::thread::Builder::new()
+        .name("dae-accent-watch".to_owned())
+        .spawn(move || {
+            let mut last = crate::platform::accent();
+            if let Some(accent) = last.clone() {
+                let _ = thread.queue(move |mut workspace| {
+                    workspace.as_mut().apply_system_accent(Some(accent));
+                });
+            }
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                let now = crate::platform::accent();
+                if now == last {
+                    continue;
+                }
+                last = now.clone();
+                if let Some(accent) = now {
+                    let _ = thread.queue(move |mut workspace| {
+                        workspace.as_mut().apply_system_accent(Some(accent));
+                    });
+                }
+            }
+        })
+    {
+        eprintln!("dae: failed to start accent watcher: {error}");
+    }
+}
+
+/// Watches the mounted-volume set where the OS channel is not ported.
+///
+/// The Windows backend answers `WM_DEVICECHANGE`; Linux's GIO and macOS'
+/// `NSWorkspace` monitors need a platform main loop (or AppKit blocks) that
+/// this shell does not otherwise run. A two-second signature comparison is the
+/// portable half: `sysinfo` already enumerates the same volumes the sidebar
+/// lists, and the signature ignores free space so a normal write does not
+/// trigger a refresh. The event channels remain the obvious upgrade; this
+/// keeps the sidebar truthful in the meantime.
+#[cfg(not(windows))]
+fn start_volume_poll() {
+    let Some(thread) = WORKSPACE_THREAD.get().cloned() else {
+        return;
+    };
+    if let Err(error) = std::thread::Builder::new()
+        .name("dae-volume-watch".to_owned())
+        .spawn(move || {
+            let mut last = dae_core::fs::sidebar::disk_signature();
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                let now = dae_core::fs::sidebar::disk_signature();
+                if now == last {
+                    continue;
+                }
+                last = now;
+                let _ = thread.queue(|mut workspace| {
+                    workspace.as_mut().notify_volumes_changed();
+                });
+            }
+        })
+    {
+        eprintln!("dae: failed to start volume watcher: {error}");
+    }
+}
 
 #[cfg(windows)]
 mod windows_backend {

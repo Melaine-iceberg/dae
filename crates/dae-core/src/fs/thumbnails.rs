@@ -10,8 +10,9 @@
 //! `crate::fs::windows_image`. Linux reads the freedesktop Thumbnailing spec in
 //! `linux`: the `.thumbnailer` files packages install, the `Exec=` line they
 //! declare, and the shared cache under `$XDG_CACHE_HOME/thumbnails/` that every
-//! viewer on the desktop reads and writes. macOS has no producer in either shell
-//! — the `image` crate covers the formats the current views show.
+//! viewer on the desktop reads and writes. macOS asks QuickLook through
+//! `qlmanage`, which is the same generator Finder uses for PDF, video and the
+//! image formats the `image` crate cannot decode.
 
 use std::time::SystemTime;
 
@@ -80,6 +81,12 @@ mod linux;
 #[cfg(target_os = "linux")]
 use linux as backend;
 
+#[cfg(target_os = "macos")]
+mod macos;
+
+#[cfg(target_os = "macos")]
+use macos as backend;
+
 #[cfg(windows)]
 mod backend {
     //! The shell's registered thumbnail handler, through `windows_image`.
@@ -109,7 +116,7 @@ mod backend {
 
 /// No producer is written for this platform. Saying so is the difference between
 /// a view that falls back to its type glyph and one that fails to build.
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod backend {
     use std::time::SystemTime;
 

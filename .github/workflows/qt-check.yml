@@ -92,3 +92,17 @@ jobs:
           else
             cargo build --package dae-app
           fi
+
+      # The bridge tests are platform-agnostic, but compiling and running them
+      # on the target platform is what exercises the `cfg(target_os)` modules
+      # (Linux portal, macOS readers) that Windows never sees.
+      - name: Test the Qt bridge
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            cargo test --package dae-qt --lib --target ${{ matrix.target }}
+          else
+            cargo test --package dae-qt --lib
+          fi

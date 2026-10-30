@@ -250,7 +250,125 @@ fn platform_accent() -> Option<String> {
         .or_else(|| read_dword(COLORIZATION_VALUE).and_then(from_argb))
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+unsafe extern "C" {
+    fn dae_qt_macos_accent_hex(buffer: *mut std::ffi::c_char, size: i32) -> bool;
+}
+
+/// macOS' accent is `NSColor.controlAccentColor`; the resolved colour is the
+/// right answer for every preset and for a custom accent alike.
+#[cfg(target_os = "macos")]
+fn platform_accent() -> Option<String> {
+    const SIZE: usize = 8;
+    let mut buffer = [0 as std::ffi::c_char; SIZE];
+    // SAFETY: the buffer is valid for `SIZE` bytes and the callee writes at
+    // most `SIZE` bytes, including the terminating NUL.
+    let resolved = unsafe { dae_qt_macos_accent_hex(buffer.as_mut_ptr(), SIZE as i32) };
+    if !resolved {
+        return None;
+    }
+
+    let bytes: Vec<u8> = buffer
+        .iter()
+        .take_while(|byte| **byte != 0)
+        .map(|byte| *byte as u8)
+        .collect();
+    String::from_utf8(bytes).ok()
+}
+
+/// Linux reads `org.freedesktop.appearance accent-color` from the freedesktop
+/// settings portal: GNOME 47+, KDE and the XDG-compliant shells all publish it
+/// there, while a GTK or GNOME-specific schema would answer on one desktop and
+/// fall back on the others.
+#[cfg(target_os = "linux")]
+fn platform_accent() -> Option<String> {
+    use zbus::blocking::Connection;
+    use zbus::zvariant::{OwnedValue, Value};
+
+    const DESKTOP: &str = "org.freedesktop.portal.Desktop";
+    const PORTAL_PATH: &str = "/org/freedesktop/portal/desktop";
+    const SETTINGS: &str = "org.freedesktop.portal.Settings";
+    const NAMESPACE: &str = "org.freedesktop.appearance";
+    const KEY: &str = "accent-color";
+
+    let connection = Connection::session().ok()?;
+    let reply = connection
+        .call_method(
+            Some(DESKTOP),
+            PORTAL_PATH,
+            Some(SETTINGS),
+            "Read",
+            &(NAMESPACE, KEY),
+        )
+        .ok()?;
+    let raw: OwnedValue = reply.body().deserialize().ok()?;
+
+    // `Read` returns a variant; zbus hands that wrapper through as the body.
+    // A value that is not a variant is passed through, so this is a no-op if a
+    // future zbus strips the wrapper itself.
+    let value = match Value::from(raw) {
+        Value::Value(inner) => *inner,
+        value => value,
+    };
+
+    match &value {
+        // The spec's `(ddd)`: three sRGB channels in 0…1.
+        Value::Structure(_) => {
+            let (red, green, blue) = <(f64, f64, f64)>::try_from(&value).ok()?;
+            rgb_to_hex([red, green, blue])
+        }
+        // Some early portals answered with a 1-based palette index.
+        Value::U32(index) => accent_to_hex(*index),
+        _ => None,
+    }
+}
+
+/// The fallback palette for a portal that answers with an index rather than
+/// three channels. `0` is "no preference", so the mapping is 1-based.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+const XDG_ACCENT_COLORS: [&str; 9] = [
+    "#3584e4", // 1 blue
+    "#2190a4", // 2 teal
+    "#3a944a", // 3 green
+    "#c88800", // 4 yellow
+    "#ed5b00", // 5 orange
+    "#e62d42", // 6 red
+    "#d56199", // 7 pink
+    "#9141ac", // 8 purple
+    "#986a44", // 9 brown
+];
+
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn accent_to_hex(index: u32) -> Option<String> {
+    XDG_ACCENT_COLORS
+        .get(index.checked_sub(1)? as usize)
+        .map(|hex| (*hex).to_owned())
+}
+
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn rgb_to_hex(rgb: [f64; 3]) -> Option<String> {
+    if rgb.iter().any(|channel| !(0.0..=1.0).contains(channel)) {
+        return None;
+    }
+    Some(srgb_hex(channel(rgb[0]), channel(rgb[1]), channel(rgb[2])))
+}
+
+/// One `0…1` sRGB channel as 8-bit, rounded to nearest.
+#[cfg(any(target_os = "linux", test))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn channel(value: f64) -> u8 {
+    (value.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+fn platform_accent() -> Option<String> {
+    None
+}
+
+#[cfg(not(any(windows, unix)))]
 fn platform_accent() -> Option<String> {
     None
 }
@@ -289,5 +407,27 @@ mod tests {
     fn a_zero_accent_is_no_reading() {
         assert_eq!(from_abgr(0), None);
         assert_eq!(from_argb(0), None);
+    }
+
+    /// The portal palette is 1-based and `0` means "no preference".
+    #[test]
+    fn the_portal_palette_is_one_based() {
+        assert_eq!(accent_to_hex(1).as_deref(), Some("#3584e4"));
+        assert_eq!(accent_to_hex(5).as_deref(), Some("#ed5b00"));
+        assert_eq!(accent_to_hex(0), None);
+        assert_eq!(accent_to_hex(10), None);
+    }
+
+    /// The spec's `(ddd)` accent, at the default GNOME blue.
+    #[test]
+    fn the_portal_rgb_tuple_becomes_hex() {
+        let gnome_blue = [
+            0.207_843_139_767_646_8,
+            0.517_647_087_574_005_1,
+            0.894_117_653_369_903_6,
+        ];
+        assert_eq!(rgb_to_hex(gnome_blue).as_deref(), Some("#3584e4"));
+        assert_eq!(rgb_to_hex([0.0, 0.5, 1.0]).as_deref(), Some("#0080ff"));
+        assert_eq!(rgb_to_hex([1.1, 0.0, 0.0]), None);
     }
 }

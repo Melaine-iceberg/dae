@@ -61,6 +61,17 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         #[rust_name = "set_clipboard_text"]
         fn dae_qt_set_clipboard_text(text: &QString);
+
+        include!("platform_watch.h");
+        #[namespace = "dae_qt"]
+        #[rust_name = "install_theme_watcher"]
+        fn dae_qt_install_theme_watcher();
+    }
+
+    extern "Rust" {
+        /// Called by the Qt style-hint watcher on the GUI thread.
+        #[namespace = "dae_qt"]
+        fn dae_qt_theme_changed(dark: bool);
     }
 
     unsafe extern "RustQt" {
@@ -535,6 +546,11 @@ pub mod qobject {
     }
 
     impl cxx_qt::Threading for Workspace {}
+}
+
+/// The C++ side of `QStyleHints::colorSchemeChanged`.
+fn dae_qt_theme_changed(dark: bool) {
+    crate::system_watch::theme_changed(dark);
 }
 
 pub struct WorkspaceRust {

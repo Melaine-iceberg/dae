@@ -53,6 +53,8 @@ fn main() {
             "cpp/drag.h",
             "cpp/image_provider.cpp",
             "cpp/image_provider.h",
+            "cpp/platform_watch.cpp",
+            "cpp/platform_watch.h",
             "cpp/qml_debug.cpp",
             "cpp/terminal_item.cpp",
             "cpp/terminal_item.h",
@@ -133,5 +135,20 @@ fn main() {
             .file("cpp/macos_backdrop.mm")
             .flag("-fobjc-arc")
             .compile("dae_macos_backdrop");
+        // The native menu is AppKit-only and has no C++ equivalent. It is a
+        // separate archive for the same reason as the backdrop: ARC applies to
+        // this file alone and the archive lands after the objects that
+        // reference `dae_qt_install_macos_menu`.
+        cc::Build::new()
+            .file("cpp/macos_menu.mm")
+            .flag("-fobjc-arc")
+            .compile("dae_macos_menu");
+        // The accent reader is the only AppKit-backed value Rust asks for
+        // directly; it stays a C function so the Rust side needs no objc2
+        // dependency just for one colour.
+        cc::Build::new()
+            .file("cpp/macos_platform.mm")
+            .flag("-fobjc-arc")
+            .compile("dae_macos_platform");
     }
 }

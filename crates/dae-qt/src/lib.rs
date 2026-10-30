@@ -45,6 +45,7 @@ pub mod format;
 pub mod i18n;
 pub mod icons;
 pub mod ime;
+mod linux_desktop;
 pub mod material;
 pub mod model;
 pub mod open_with_model;

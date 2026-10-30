@@ -927,8 +927,12 @@ inline bool dae_qt_focus_window(const QString& token)
         ShowWindow(hwnd, SW_RESTORE);
 #endif
     // Qt maps these to the platform's own raise/activate calls. On macOS a
-    // background application still needs the dock/menu activation a launch
-    // goes through, which is a measured gate of its own.
+    // background application still needs an explicit app activation before a
+    // window can come forward; `raise()`/`requestActivate()` alone leave the
+    // previous app in front.
+#if defined(Q_OS_MACOS)
+    ::dae_qt_macos_activate_app();
+#endif
     window->raise();
     window->requestActivate();
 #if defined(Q_OS_WIN)

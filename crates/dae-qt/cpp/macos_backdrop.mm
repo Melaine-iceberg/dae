@@ -16,6 +16,18 @@
 
 static NSMapTable<NSView *, NSVisualEffectView *> *dae_effects;
 
+extern "C" void dae_qt_macos_activate_app(void)
+{
+    @autoreleasepool {
+        // macOS 14 added `activate`; the older selector still works and is
+        // what a deployment target below 14 needs.
+        if ([NSApp respondsToSelector:@selector(activate)])
+            [NSApp activate];
+        else
+            [NSApp activateIgnoringOtherApps:YES];
+    }
+}
+
 extern "C" bool dae_qt_macos_apply_blur(void *native_view, bool enabled, bool dark)
 {
     @autoreleasepool {

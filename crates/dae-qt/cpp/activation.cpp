@@ -6,11 +6,13 @@
 #include <QCryptographicHash>
 #include <QDataStream>
 #include <QDir>
+#include <QFileOpenEvent>
 #include <QLocalServer>
 #include <QLocalSocket>
 #include <QLockFile>
 #include <QStandardPaths>
 #include <QThread>
+#include <QUrl>
 #include <QtQml/qqml.h>
 
 #include <limits>
@@ -241,6 +243,56 @@ void Activation::addPending(const QStringList& paths)
     }
 }
 
+void Activation::forwardExternal(const QString& target)
+{
+    if (target.isEmpty())
+        return;
+    // The same pipeline as a forwarded argv entry: relative targets resolve
+    // against the launching process, files become their parent directory, and
+    // anything that is not a local directory is dropped by the resolver.
+    enqueue(QStringList{ target }, QDir::currentPath());
+}
+
+#ifdef Q_OS_MACOS
+
+/// macOS sends Finder opens, document opens and `dae://` URLs as
+/// `QFileOpenEvent` on the application object. They are not argv, so the
+/// single-instance server never sees them; this filter turns the event's URL
+/// into the same activation the socket path uses.
+class FileOpenFilter final : public QObject
+{
+public:
+    explicit FileOpenFilter(Activation* sink)
+        : QObject(sink)
+        , m_sink(sink)
+    {
+    }
+
+protected:
+    bool eventFilter(QObject*, QEvent* event) override
+    {
+        if (event->type() != QEvent::FileOpen)
+            return false;
+
+        const auto* open = static_cast<QFileOpenEvent*>(event);
+        // A local file or folder becomes a plain path; a `dae://` URL keeps its
+        // scheme so the resolver can parse `?path=` and the path forms.
+        QString target = open->url().toLocalFile();
+        if (target.isEmpty())
+            target = open->file();
+        if (target.isEmpty())
+            target = open->url().toString();
+        if (!target.isEmpty())
+            m_sink->forwardExternal(target);
+        return true;
+    }
+
+private:
+    Activation* m_sink;
+};
+
+#endif // Q_OS_MACOS
+
 bool dae_qt_activation_claim()
 {
     if (g_claimed)
@@ -262,6 +314,13 @@ bool dae_qt_activation_claim()
 
     g_lock = lock;
     g_activation = new Activation;
+
+#ifdef Q_OS_MACOS
+    // Install before the event loop runs: a launch caused by `open -a dae …`
+    // or a Finder "Open With" posts the file-open event during startup, and an
+    // event with no filter is silently dropped.
+    qApp->installEventFilter(new FileOpenFilter(g_activation));
+#endif
 
     // Register before the engine exists so QML's `import dae.activation 1.0`
     // resolves the instance. The object outlives the engine.

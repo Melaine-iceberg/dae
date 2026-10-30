@@ -215,23 +215,30 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
 构建需要 Qt 6.12 的 `qmake`：`QMAKE="K:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"`，
 并把 Qt 的 `bin/` 放进 `PATH`，然后 `cargo run -p dae-app`。
 
-**平台边界（2026-10-28）**：`crates/dae-qt` 在 Windows、Linux、macOS 都能通过
-编译，但原生实现首先只在 Windows 实测过。`cpp/window.h`、`cpp/ime.h` 的入口点
-现已按 `Q_OS_WIN` 分支：Windows 走 Win32 / DWM / IMM32（原实现不变），其余平台
-保留同名空实现（校验 token、强制创建平台窗口），由 QML 的
-`startSystemMove` / `startSystemResize` 接管无边框窗口的移动与缩放。
+**平台边界（2026-10-30）**：`crates/dae-qt` 在 Windows、Linux、macOS 都能通过
+编译，原生实现首先在 Windows 实测，其余平台的路径按下面这张表逐项补齐。
+`cpp/window.h`、`cpp/ime.h` 的入口点按 `Q_OS_WIN` 分支：Windows 走
+Win32 / DWM / IMM32（原实现不变），其余平台保留同名空实现（校验 token、强制
+创建平台窗口）。移动继续由 QML 的 `startSystemMove` 接管；缩放在 Linux 走
+`startSystemResize`，macOS 因 Cocoa 后端未实现该接口而由 QML 手工改窗口几何。
+`cpp/activation.cpp` 在 macOS 上安装 `QFileOpenEvent` 过滤器，把 Finder 打开、
+文档打开和 `dae://` URL 送进与 argv 相同的 `Activation` 管线。
 
 | | Windows | Linux / macOS |
 |---|---|---|
-| 边框、移动、缩放 | `WM_NCHITTEST` 原生命中测试 | Qt 无边框窗口 + QML system move/resize |
+| 边框、移动 | `WM_NCHITTEST` 原生命中测试 | Qt 无边框窗口 + QML `startSystemMove` |
+| 缩放 | `WM_NCHITTEST` 的八向 HT* 码 | Linux X11/Wayland `startSystemResize`；macOS 的 Cocoa 后端未实现它，QML 在返回 false 时手工改窗口几何 |
+| 应用菜单 | 自绘窗口按钮；无系统菜单栏 | Linux 没有系统菜单栏契约；macOS 安装 AppKit 菜单（About/Services/Hide/Quit、Edit、Window） |
 | 背景材质 | Mica / Acrylic（DWM，用户可选） | Linux Wayland：`ext-background-effect-v1`；macOS：`NSVisualEffectView`；不支持时实色 |
-| 输入法换焦点守卫 | `CPS_CANCEL`（门槛 2） | 不安装；尚无实测等价物 |
-| `dae://` 注册 | 注册表写入 | 未实现；单实例 socket 仍可用 |
+| 输入法换焦点守卫 | `CPS_CANCEL`（门槛 2） | 仍不安装；macOS/Linux 的失焦语义尚未实测 |
+| `dae://` 注册 | 注册表写入 | Linux 启动时写 `~/.local/share/applications/dae.desktop` 并 `xdg-mime`；macOS `CFBundleURLTypes` + `QFileOpenEvent` |
+| 系统外观 / 卷变化 | 注册表 watcher + `WM_DEVICECHANGE` | 主题走 `QStyleHints::colorSchemeChanged`；强调色 macOS `NSColor` / Linux portal；卷用 2 s 挂载签名轮询 |
 
-因此 Linux/macOS 的发行物是「能启动、能移动缩放的 Qt 壳」，而不是 Windows 观感的
-逐像素复制；上表每一项仍需各自的门槛，不以未实测的移植冒充产品代码。CI 的
-`qt-check.yml` 在 Linux/macOS 上编译 `dae-app`，让 release 矩阵不再是这两个平台
-的第一位编译器。
+因此 Linux/macOS 的发行物是「能启动、能移动缩放、能接收 Finder/深链事件」的 Qt 壳，
+而不是 Windows 观感的逐像素复制。上表的代码路径已落地，但运行时结论仍以各自平台
+的手测为准：`qt-check.yml` 在 Linux/macOS 上编译 `dae-app`，只证明类型与链接，
+不替代真实输入下的 IME、窗口缩放、主题切换和卷插拔验证。逐项状态与手测清单见
+[`../qt-platform-parity.md`](../qt-platform-parity.md)。
 
 ### 4.3 真路径已打通：配置 → 目录 → 导航（2026-10-25）
 
@@ -685,9 +692,11 @@ build 26340 上它对任何扩展名都返回 `E_FAIL`（实测 json/txt/rs/exe/
 `dae-qt` **58 通过**（新增三种 URL 拼法、相对 cwd、文件→父目录、`+` 不解码、
 去重、注册命令引号与启动来源标签）。
 
-**已知边界**：协议注册在运行期由 Windows 的 HKCU 路径完成；macOS 的
-`CFBundleURLTypes`（`dae://`）与 Linux 的 `.desktop`
-`x-scheme-handler/dae` 由 §4.10 的发布包携带。深链只接受已存在的本地目录，
+**已知边界**：三个平台最终都走同一条 `Activation` 管线——Windows 在启动时写
+HKCU 注册表，Linux 写 `~/.local/share/applications/dae.desktop` 并调
+`xdg-mime default dae.desktop x-scheme-handler/dae`，macOS 由发布包的
+`CFBundleURLTypes` 交给 LaunchServices，运行中的进程通过 `QFileOpenEvent`
+接收 Finder 文件夹、文档和 `dae://` URL。深链只接受已存在的本地目录，
 远程 `smb://` / `cloud://` 目标不通过 URL 进入。单实例按用户隔离，没有
 「强制新实例」开关。
 

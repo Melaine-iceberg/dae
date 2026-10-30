@@ -432,8 +432,18 @@ jobs:
             --plugin qt
 
           test -f "$appdir/usr/plugins/platforms/libqxcb.so"
+          # The Wayland backend is what makes ext-background-effect-v1 blur
+          # reachable; without it the app silently runs through XWayland and
+          # the shell stays solid. Fail the build rather than ship that.
+          if ! compgen -G "$appdir/usr/plugins/platforms/libqwayland-*.so" >/dev/null; then
+            echo "::error::the Qt Wayland platform plugin was not deployed"
+            exit 1
+          fi
           test -d "$appdir/usr/qml/QtQuick"
           test -d "$appdir/usr/qml/QtMultimedia"
+          # QtMultimedia on Linux is a GStreamer client. This plugin is
+          # deployed; the codec plugins themselves come from the target
+          # desktop and are documented as a runtime dependency.
           test -d "$appdir/usr/plugins/multimedia"
 
           # Start from linuxdeploy's AppDir, then fold `usr/` into the
@@ -494,6 +504,7 @@ jobs:
           shopt -s dotglob nullglob
           (cd "$staging" && zip -r -y -X -q "$zip" *)
           unzip -Z1 "$zip" | grep -qx 'platforms/libqxcb.so'
+          unzip -Z1 "$zip" | grep -q '^platforms/libqwayland-.*\.so$'
           unzip -Z1 "$zip" | grep -qx 'dae'
 
       # ---- macOS: .app + macdeployqt -> ad-hoc sign -> zip the bundle ----

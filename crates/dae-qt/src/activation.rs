@@ -39,6 +39,10 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         #[rust_name = "activation_claim"]
         fn dae_qt_activation_claim() -> bool;
+
+        include!("macos_menu.h");
+        #[namespace = "dae_qt"]
+        fn dae_qt_install_macos_menu();
     }
 
     extern "Rust" {
@@ -67,6 +71,18 @@ pub fn claim() -> bool {
     if let Err(error) = register_url_scheme() {
         eprintln!("dae: could not register dae:// URL scheme: {error}");
     }
+
+    // A portable Linux build has no installer to put dae.desktop in place; the
+    // scheme handler is registered from the running executable instead, the
+    // same way Windows rewrites its registry command on every launch.
+    #[cfg(target_os = "linux")]
+    crate::linux_desktop::ensure_registered();
+
+    // QGuiApplication has no menu bar; macOS needs one for Cmd+Q, About,
+    // Services and the Window menu. Qt's own NSView answers the edit
+    // selectors through the responder chain, so this is the whole menu.
+    #[cfg(target_os = "macos")]
+    qobject::dae_qt_install_macos_menu();
 
     true
 }

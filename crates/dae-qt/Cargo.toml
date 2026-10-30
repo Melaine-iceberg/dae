@@ -25,6 +25,12 @@ url = "2"
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10.1"
 
+# The freedesktop settings portal is the only accent source that is correct on
+# every Linux desktop. The blocking API keeps the poll thread free of a second
+# async runtime.
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "5"
+
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
   "Win32_Foundation",
