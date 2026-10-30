@@ -192,8 +192,15 @@ Item {
                 radius: Theme.radiusSm
                 color: root.activeIndex === index
                     ? root.activeColor
-                    : (tabMouse.containsMouse ? root.hoverColor : "transparent")
+                    : (tabHover.hovered ? root.hoverColor : "transparent")
                 opacity: root.dragging && root.dragIndex === index ? 0.45 : 1.0
+
+                /// Hover over the whole chip, close control included. `tabMouse`
+                /// stops short of the close button so a press there cannot
+                /// activate the tab, which left the last 24 dp outside its
+                /// hover state: the close button vanished as the pointer moved
+                /// onto it, so an inactive tab had to be activated first.
+                HoverHandler { id: tabHover }
 
                 /// A tab is the first thing Tab should reach, and Enter is the
                 /// keyboard's click: the strip is where a keyboard user starts
@@ -230,7 +237,7 @@ Item {
                     anchors.rightMargin: 4
                     anchors.verticalCenter: parent.verticalCenter
                     text: tabItem.modelData ? tabItem.modelData.title : ""
-                    color: root.activeIndex === tabItem.index || tabMouse.containsMouse
+                    color: root.activeIndex === tabItem.index || tabHover.hovered
                         ? root.textColor : root.mutedColor
                     font.pixelSize: Theme.typeSmall
                     elide: Text.ElideMiddle
@@ -243,7 +250,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 18
                     height: 18
-                    visible: root.activeIndex === tabItem.index || tabMouse.containsMouse
+                    visible: root.activeIndex === tabItem.index || tabHover.hovered
 
                     Rectangle {
                         anchors.fill: parent
