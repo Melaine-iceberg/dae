@@ -84,10 +84,14 @@ Window {
     property string promptMode: ""
     property string promptPath: ""
     property string contextPath: ""
+    /// The current folder's display name, captured with the bar menu so
+    /// "copy name" copies what the crumb showed, not a re-derived basename.
+    property string contextName: ""
     property bool contextIsDir: false
-    /// Which menu is open: `row`, `empty`, `trash` or `sidebar`. The shell
-    /// commands answer asynchronously, and only the row menu is rebuilt when
-    /// they arrive.
+    /// Which menu is open: `row`, `empty`, `trash`, `sidebar`, `breadcrumb`
+    /// (the folded ancestors) or `breadcrumbBar` (a right-click on the trail).
+    /// The shell commands answer asynchronously, and only the row menu is
+    /// rebuilt when they arrive.
     property string contextKind: ""
     /// The row menu's second page is open (see `rowMoreMenuItems`). The page is
     /// part of the menu rather than a flyout, so the installed apps' commands
@@ -1711,6 +1715,38 @@ Window {
         menu.openAt(x, y, items)
     }
 
+    /// A right-click anywhere on the breadcrumb bar. The trail is the folder
+    /// itself, so the menu acts on that path rather than on an entry inside it:
+    /// copy its path or name, open a terminal there, or turn the bar into the
+    /// path editor. `split` says which pane's trail was clicked; only the
+    /// primary bar has an editor to open.
+    function openBreadcrumbBarMenu(x, y, split) {
+        const tab = split ? root.splitTab : root.activeTab
+        if (tab === null)
+            return
+        const path = tab.listing.path
+        if (path === "")
+            return
+        const names = tab.listing.breadcrumbNames
+        root.contextKind = "breadcrumbBar"
+        root.contextTab = split ? tab : null
+        root.contextList = null
+        root.contextPath = path
+        root.contextName = names.length > 0 ? names[names.length - 1] : path
+        root.contextIsDir = true
+        const remote = tab.listing.remote || root.isRemotePath(path)
+        const items = [
+            { id: "copyPath", label: qsTr("复制路径") },
+            { id: "copyName", label: qsTr("复制名称") },
+            { id: "terminal", label: qsTr("在终端中打开"), enabled: !remote }
+        ]
+        if (!split) {
+            items.push({ separator: true })
+            items.push({ id: "editPath", label: qsTr("编辑路径") })
+        }
+        menu.openAt(x, y, items)
+    }
+
     function showTrashRowMenu(id, originalParent, x, y) {
         root.contextKind = "trash"
         root.contextTrashId = id
@@ -1818,6 +1854,7 @@ Window {
         root.contextTab = null
         root.contextList = null
         root.contextKind = ""
+        root.contextName = ""
     }
 
     function runMenuAction(id) {
@@ -1914,6 +1951,15 @@ Window {
                 toast.show(qsTr("已复制路径"), false)
             else
                 toast.show(qsTr("无法写入剪贴板"), true)
+            break
+        case "copyName":
+            if (Workspace.copyText(root.contextName))
+                toast.show(qsTr("已复制名称"), false)
+            else
+                toast.show(qsTr("无法写入剪贴板"), true)
+            break
+        case "editPath":
+            root.beginPathEditing()
             break
         case "moveTo":
             moveToDialog.open(root.contextDirectory(), root.currentSelection())
@@ -2047,6 +2093,13 @@ Window {
         Qt.callLater(function () {
             if (root.modalOpen)
                 return
+            // "Edit path" opened the editor from the bar's menu. The menu is
+            // gone by now, so the field can take the caret that would otherwise
+            // fall through to the listing below.
+            if (root.pathEditing) {
+                pathInput.forceActiveFocus()
+                return
+            }
             if (root.overviewActive)
                 overviewView.takeFocus()
             else if (root.spaceActive)
@@ -2470,8 +2523,16 @@ Window {
                 MouseArea {
                     anchors.fill: parent
                     enabled: root.folderActive && !root.pathEditing
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     cursorShape: Qt.IBeamCursor
-                    onClicked: root.beginPathEditing()
+                    onClicked: function (mouse) {
+                        if (mouse.button === Qt.RightButton) {
+                            const point = mapToItem(null, mouse.x, mouse.y)
+                            root.openBreadcrumbBarMenu(point.x, point.y, false)
+                        } else {
+                            root.beginPathEditing()
+                        }
+                    }
                 }
 
                 PathBreadcrumbs {
@@ -2492,6 +2553,9 @@ Window {
                     }
                     onAncestorsRequested: function (x, y, names, paths) {
                         root.openBreadcrumbMenu(x, y, names, paths, false)
+                    }
+                    onContextMenuRequested: function (x, y) {
+                        root.openBreadcrumbBarMenu(x, y, false)
                     }
                 }
 
@@ -3004,11 +3068,16 @@ Window {
                             MouseArea {
                                 anchors.fill: parent
                                 hoverEnabled: true
-                                onClicked: {
-                                    if (splitCloseMouse.containsMouse)
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                onClicked: function (mouse) {
+                                    if (mouse.button === Qt.RightButton) {
+                                        const point = mapToItem(null, mouse.x, mouse.y)
+                                        root.openBreadcrumbBarMenu(point.x, point.y, true)
+                                    } else if (splitCloseMouse.containsMouse) {
                                         ExplorerPrefs.setBool("splitEnabled", false)
-                                    else
+                                    } else {
                                         splitList.takeFocus()
+                                    }
                                 }
                             }
 
@@ -3034,6 +3103,9 @@ Window {
                                 }
                                 onAncestorsRequested: function (x, y, names, paths) {
                                     root.openBreadcrumbMenu(x, y, names, paths, true)
+                                }
+                                onContextMenuRequested: function (x, y) {
+                                    root.openBreadcrumbBarMenu(x, y, true)
                                 }
                             }
 

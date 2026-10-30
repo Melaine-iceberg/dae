@@ -1290,10 +1290,15 @@ Item {
             acceptedButtons: Qt.LeftButton
             visible: root.viewMode === "list"
             preventStealing: true
+            // The band can be dragged past the pane's edge; the listing's own
+            // clip is the boundary it should stop at.
+            clip: true
 
             property bool active: false
+            property real startX: 0
             property real startY: 0
             property real startContentY: 0
+            property real pointerX: 0
             property real pointerY: 0
             property var baseSelection: []
 
@@ -1317,15 +1322,24 @@ Item {
             function apply() {
                 if (!active || root.tab === null || root.model === null)
                     return
-                const currentContent = list.contentY + pointerY
-                const first = Math.floor(Math.min(startContentY, currentContent) / root.rowHeight)
-                const last = Math.floor(Math.max(startContentY, currentContent) / root.rowHeight)
+                // Rows stop at the column track's edge, so the band has to
+                // cross that box horizontally as well: dragging over the blank
+                // area right of the columns selects nothing.
+                const left = Math.min(startX, pointerX)
+                const right = Math.max(startX, pointerX)
                 const paths = []
-                for (let row = Math.max(0, first);
-                     row <= Math.min(root.model.loaded - 1, last); row += 1) {
-                    const path = root.model.pathAt(row)
-                    if (path !== "")
-                        paths.push(path)
+                if (right > 0 && left < root.contentWidth) {
+                    const currentContent = list.contentY + pointerY
+                    const first = Math.floor(Math.min(startContentY, currentContent)
+                                              / root.rowHeight)
+                    const last = Math.floor(Math.max(startContentY, currentContent)
+                                            / root.rowHeight)
+                    for (let row = Math.max(0, first);
+                         row <= Math.min(root.model.loaded - 1, last); row += 1) {
+                        const path = root.model.pathAt(row)
+                        if (path !== "")
+                            paths.push(path)
+                    }
                 }
                 const next = baseSelection.length > 0
                     ? Array.from(new Set(baseSelection.concat(paths))) : paths
@@ -1347,8 +1361,10 @@ Item {
                 list.forceActiveFocus()
                 baseSelection = (mouse.modifiers & Qt.ControlModifier) !== 0
                     ? root.selectedPathList() : []
+                startX = mouse.x
                 startY = mouse.y
                 startContentY = list.contentY + mouse.y
+                pointerX = mouse.x
                 pointerY = mouse.y
                 active = true
                 if (baseSelection.length === 0 && root.tab !== null) {
@@ -1361,6 +1377,7 @@ Item {
             onPositionChanged: function (mouse) {
                 if (!active)
                     return
+                pointerX = mouse.x
                 pointerY = mouse.y
                 apply()
             }
@@ -1368,9 +1385,10 @@ Item {
             onReleased: {
                 if (!active)
                     return
+                const width = Math.abs(pointerX - startX)
                 const height = Math.abs(list.contentY + pointerY - startContentY)
                 active = false
-                if (height < 4 && baseSelection.length === 0 && root.tab !== null) {
+                if (width < 4 && height < 4 && baseSelection.length === 0 && root.tab !== null) {
                     root.tab.clearSelection()
                     root.selectionChanged()
                 }
@@ -1380,10 +1398,14 @@ Item {
 
             Rectangle {
                 visible: listMarquee.active
-                x: 0
+                // The band follows the pointer in both axes. A fixed
+                // full-width plate jumped to the columns' edge on the first
+                // pixel of the drag, which read as the bar animating on its
+                // own rather than as the rectangle the user was drawing.
+                x: Math.min(listMarquee.startX, listMarquee.pointerX)
                 y: Math.max(0, Math.min(listMarquee.startContentY,
                                          list.contentY + listMarquee.pointerY) - list.contentY)
-                width: root.contentWidth
+                width: Math.abs(listMarquee.pointerX - listMarquee.startX)
                 height: Math.max(0, Math.abs(list.contentY + listMarquee.pointerY
                                              - listMarquee.startContentY))
                 color: Theme.signalSoft

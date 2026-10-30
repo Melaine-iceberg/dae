@@ -31,6 +31,9 @@ Item {
     /// The ancestors hidden behind the `…`, with the position to open a menu
     /// at — in window coordinates, because the menu belongs to the window.
     signal ancestorsRequested(real x, real y, var names, var paths)
+    /// A right-click on the bar itself: copy path, copy name, terminal, edit
+    /// path. Window coordinates for the same reason as above.
+    signal contextMenuRequested(real x, real y)
 
     property real fontSize: 12.5
     readonly property int iconSize: 12
@@ -210,6 +213,20 @@ Item {
         bar.crumbs = placed
     }
 
+    /// The empty stretches between crumbs belong to the bar too: a right-click
+    /// there opens the same menu as one on a crumb. Declared under the
+    /// repeater, so a crumb's own press is the one that wins on its plate.
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.RightButton
+        cursorShape: Qt.IBeamCursor
+
+        onClicked: function (mouse) {
+            const point = mapToItem(null, mouse.x, mouse.y)
+            bar.contextMenuRequested(point.x, point.y)
+        }
+    }
+
     Repeater {
         model: bar.crumbs
 
@@ -281,11 +298,17 @@ Item {
                 MouseArea {
                     id: plateMouse
                     anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     hoverEnabled: true
                     cursorShape: slot.modelData.current === true
                         ? Qt.ArrowCursor : Qt.PointingHandCursor
 
-                    onClicked: {
+                    onClicked: function (mouse) {
+                        if (mouse.button === Qt.RightButton) {
+                            const point = plateMouse.mapToItem(null, mouse.x, mouse.y)
+                            bar.contextMenuRequested(point.x, point.y)
+                            return
+                        }
                         if (slot.modelData.ellipsis === true) {
                             const anchor = plate.mapToItem(null, 0, plate.height)
                             bar.ancestorsRequested(anchor.x, anchor.y,

@@ -3529,6 +3529,21 @@
             <source>‹ 返回</source>
             <translation>‹ Back</translation>
         </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="1739" />
+            <source>复制名称</source>
+            <translation>Copy name</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="1744" />
+            <source>编辑路径</source>
+            <translation>Edit path</translation>
+        </message>
+        <message>
+            <location filename="../ShellWindow.qml" line="1956" />
+            <source>已复制名称</source>
+            <translation>Name copied</translation>
+        </message>
     </context>
     <context>
         <name>Sidebar</name>
