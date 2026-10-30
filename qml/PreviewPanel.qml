@@ -42,8 +42,8 @@ Item {
 
     /// Plain text keeps its line numbers; rendered Markdown and highlighted
     /// code arrive as HTML and are shown as they are. Five hundred lines is
-    /// far past what the 176 px block shows at a time, and it keeps a 64 KB
-    /// peek from becoming a text-shaping job on a 300 px pane.
+    /// far past what the card shows at a time, and it keeps a 64 KB peek from
+    /// becoming a text-shaping job on a 300 px pane.
     readonly property string plainText: {
         const source = controller.content !== "" ? controller.content : qsTr("（空文件）")
         const lines = source.split("\n")
@@ -56,6 +56,11 @@ Item {
             out += (index === 1 ? "" : "\n") + index
         return out
     }
+    /// The content card takes whatever the pane can spare once the details
+    /// below it are laid out, so a taller window shows a taller image or text
+    /// block instead of stopping at the old fixed 176 px.
+    readonly property real previewHeight: Math.max(176,
+        scroller.height - 28 - details.height - content.spacing)
 
     implicitWidth: 300
 
@@ -125,6 +130,19 @@ Item {
             color: root.faintColor
             font.pixelSize: Theme.typeMicro
             font.letterSpacing: 0.9
+        }
+
+        /// The pane keeps the previous entry on screen while the next one
+        /// loads, so the wait is reported here instead of collapsing the
+        /// content and then expanding it again.
+        Text {
+            anchors.right: closeButton.left
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            visible: controller.loading && !root.empty
+            text: qsTr("读取中…")
+            color: root.faintColor
+            font.pixelSize: Theme.typeMicro
         }
 
         Item {
@@ -272,14 +290,21 @@ Item {
             // Image, when the provider can make one and the file is not a
             // clip that the media player will take over.
             Rectangle {
+                id: thumbnailCard
                 visible: root.single && controller.hasThumbnail && controller.mediaKind === ""
                 width: parent.width
-                height: 176
+                height: root.previewHeight
                 radius: Theme.radiusMd
                 color: root.sectionColor
                 border.width: 1
                 border.color: root.hairline
                 clip: true
+
+                /// True while the card has a frame to paint: the current
+                /// source as soon as it is ready, or the previous one while
+                /// the next is still decoding (`retainWhileLoading`).
+                readonly property bool showsImage: thumbnail.status === Image.Ready
+                    || (thumbnail.status === Image.Loading && thumbnail.hadImage)
 
                 Image {
                     id: thumbnail
@@ -289,12 +314,17 @@ Item {
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     cache: false
-                    visible: status === Image.Ready
+                    retainWhileLoading: true
+                    visible: thumbnailCard.showsImage
+
+                    property bool hadImage: false
+                    onStatusChanged: if (status === Image.Ready) hadImage = true
+                    onSourceChanged: if (source === "") hadImage = false
                 }
 
                 Text {
                     anchors.centerIn: parent
-                    visible: thumbnail.status !== Image.Ready
+                    visible: !thumbnailCard.showsImage
                     text: thumbnail.status === Image.Error ? qsTr("无法生成缩略图") : qsTr("正在加载…")
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
@@ -307,7 +337,7 @@ Item {
             Rectangle {
                 visible: root.single && controller.hasText && controller.contentHtml === ""
                 width: parent.width
-                height: 176
+                height: root.previewHeight
                 radius: Theme.radiusSm
                 color: root.sectionColor
                 border.width: 1
@@ -368,7 +398,7 @@ Item {
             Rectangle {
                 visible: root.single && controller.hasText && controller.contentHtml !== ""
                 width: parent.width
-                height: 176
+                height: root.previewHeight
                 radius: Theme.radiusSm
                 color: root.sectionColor
                 border.width: 1
@@ -496,6 +526,7 @@ Item {
                     item.mutedColor = Qt.binding(function () { return root.mutedColor })
                     item.sectionColor = Qt.binding(function () { return root.sectionColor })
                     item.hairline = Qt.binding(function () { return root.hairline })
+                    item.contentHeight = Qt.binding(function () { return root.previewHeight })
                 }
             }
 
@@ -508,123 +539,128 @@ Item {
                 wrapMode: Text.Wrap
             }
 
-            Text {
-                width: parent.width
-                visible: root.single && controller.mediaText !== ""
-                text: controller.mediaText
-                color: root.faintColor
-                font.pixelSize: Theme.typeMicro
-                lineHeight: 1.4
-                wrapMode: Text.Wrap
-            }
-
-            Text {
-                width: parent.width
-                visible: root.single
-                text: controller.name !== "" ? controller.name
-                    : (root.paths.length === 1 ? root.paths[0].split(/[\\/]/).pop() : "")
-                color: root.textColor
-                font.pixelSize: Theme.typeEmphasis
-                wrapMode: Text.Wrap
-            }
-
-            Text {
-                width: parent.width
-                visible: root.single
-                text: controller.path
-                color: root.faintColor
-                font.family: Theme.monoFamily
-                font.pixelSize: Theme.typeMicro
-                elide: Text.ElideMiddle
-                textFormat: Text.PlainText
-            }
-
+            /// Everything below the content card. Keeping it in one column is
+            /// what lets `previewHeight` measure it: the old snapshot stays
+            /// here while the next one loads, so these rows do not collapse
+            /// and re-expand between selections.
             Column {
+                id: details
                 width: parent.width
-                visible: root.single && controller.error === "" && !controller.loading
+                spacing: 12
 
-                Repeater {
-                    model: [
-                        [qsTr("类型"), controller.kindText],
-                        [qsTr("大小"), controller.sizeText],
-                        [qsTr("修改时间"), controller.modifiedText]
-                    ]
+                Text {
+                    width: parent.width
+                    visible: root.single && controller.mediaText !== ""
+                    text: controller.mediaText
+                    color: root.faintColor
+                    font.pixelSize: Theme.typeMicro
+                    lineHeight: 1.4
+                    wrapMode: Text.Wrap
+                }
 
-                    MetaRow {
-                        width: content.width
-                        required property var modelData
-                        key: modelData[0]
-                        value: modelData[1]
+                Text {
+                    width: parent.width
+                    visible: root.single
+                    text: controller.name !== "" ? controller.name
+                        : (root.paths.length === 1 ? root.paths[0].split(/[\\/]/).pop() : "")
+                    color: root.textColor
+                    font.pixelSize: Theme.typeEmphasis
+                    wrapMode: Text.Wrap
+                }
+
+                Text {
+                    width: parent.width
+                    visible: root.single
+                    text: controller.path
+                    color: root.faintColor
+                    font.family: Theme.monoFamily
+                    font.pixelSize: Theme.typeMicro
+                    elide: Text.ElideMiddle
+                    textFormat: Text.PlainText
+                }
+
+                Column {
+                    width: parent.width
+                    visible: root.single && controller.error === ""
+                        && controller.path !== ""
+
+                    Repeater {
+                        model: [
+                            [qsTr("类型"), controller.kindText],
+                            [qsTr("大小"), controller.sizeText],
+                            [qsTr("修改时间"), controller.modifiedText]
+                        ]
+
+                        MetaRow {
+                            width: details.width
+                            required property var modelData
+                            key: modelData[0]
+                            value: modelData[1]
+                        }
                     }
                 }
-            }
 
-            Text {
-                width: parent.width
-                visible: root.single && controller.loading
-                text: qsTr("读取中…")
-                color: root.faintColor
-                font.pixelSize: Theme.typeMicro
-            }
-
-            Text {
-                width: parent.width
-                visible: root.single && controller.error !== ""
-                text: controller.error
-                color: Theme.danger
-                font.pixelSize: Theme.typeMicro
-                wrapMode: Text.Wrap
-            }
-
-            Text {
-                width: parent.width
-                visible: root.single && controller.remote && !controller.loading
-                       && controller.error === ""
-                text: qsTr("远程项目：可预览文本；缩略图和媒体信息仅支持本地文件。")
-                color: root.faintColor
-                font.pixelSize: Theme.typeMicro
-                wrapMode: Text.Wrap
-                lineHeight: 1.4
-            }
-
-            // ── Actions ───────────────────────────────────────────────────
-            // Quiet text, not buttons: the pane is a read-out, and the one
-            // saturated colour in it belongs to `全部属性`.
-            Row {
-                id: actionRow
-                width: parent.width
-                height: 26
-                spacing: 16
-                visible: root.single && controller.path !== "" && !controller.loading
-
-                TextAction {
-                    id: openAction
-                    label: controller.isDirectory ? qsTr("打开文件夹")
-                        : (root.remote ? qsTr("远程文件") : qsTr("打开"))
-                    available: !root.remote || controller.isDirectory
-                    onClicked: root.openRequested(controller.path, controller.isDirectory)
+                Text {
+                    width: parent.width
+                    visible: root.single && controller.error !== ""
+                    text: controller.error
+                    color: Theme.danger
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.Wrap
                 }
 
-                TextAction {
-                    id: revealAction
-                    label: qsTr("定位")
-                    available: !root.remote
-                    onClicked: Workspace.reveal(controller.path)
+                Text {
+                    width: parent.width
+                    visible: root.single && controller.remote
+                        && controller.error === ""
+                    text: qsTr("远程项目：可预览文本；缩略图和媒体信息仅支持本地文件。")
+                    color: root.faintColor
+                    font.pixelSize: Theme.typeMicro
+                    wrapMode: Text.Wrap
+                    lineHeight: 1.4
                 }
 
-                Item {
-                    width: Math.max(0, actionRow.width - openAction.width
-                        - revealAction.width - propertiesAction.width
-                        - actionRow.spacing * 3)
-                    height: 1
-                }
+                // ── Actions ───────────────────────────────────────────────
+                // Quiet text, not buttons: the pane is a read-out, and the one
+                // saturated colour in it belongs to `全部属性`.
+                Row {
+                    id: actionRow
+                    width: parent.width
+                    height: 26
+                    spacing: 16
+                    visible: root.single && controller.path !== ""
+                    enabled: !controller.loading
+                    opacity: controller.loading ? 0.4 : 1
 
-                TextAction {
-                    id: propertiesAction
-                    label: qsTr("全部属性")
-                    accent: true
-                    chevron: true
-                    onClicked: root.propertiesRequested(controller.path)
+                    TextAction {
+                        id: openAction
+                        label: controller.isDirectory ? qsTr("打开文件夹")
+                            : (root.remote ? qsTr("远程文件") : qsTr("打开"))
+                        available: !root.remote || controller.isDirectory
+                        onClicked: root.openRequested(controller.path, controller.isDirectory)
+                    }
+
+                    TextAction {
+                        id: revealAction
+                        label: qsTr("定位")
+                        available: !root.remote
+                        onClicked: Workspace.reveal(controller.path)
+                    }
+
+                    Item {
+                        width: Math.max(0, actionRow.width - openAction.width
+                            - revealAction.width - propertiesAction.width
+                            - actionRow.spacing * 3)
+                        height: 1
+                    }
+
+                    TextAction {
+                        id: propertiesAction
+                        label: qsTr("全部属性")
+                        accent: true
+                        chevron: true
+                        onClicked: root.propertiesRequested(controller.path)
+                    }
                 }
             }
         }

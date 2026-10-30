@@ -23,6 +23,9 @@ Item {
     /// True once playback has started, so the poster steps aside for the
     /// video output (which stays black until the first frame arrives).
     property bool started: false
+    /// Height the pane has set aside for the preview. Video grows into it; an
+    /// audio clip keeps its fixed surface and centres its icon there.
+    property real contentHeight: 0
 
     readonly property bool video: mediaKind === "video"
     readonly property bool playing: player.playbackState === MediaPlayer.PlayingState
@@ -80,7 +83,9 @@ Item {
         Rectangle {
             id: surface
             width: parent.width
-            height: root.video ? Math.round(width * 9 / 16) : 76
+            // The track and the transport below the surface stay fixed; the
+            // video takes the rest of the height the pane offers.
+            height: root.video ? Math.max(76, Math.round(root.contentHeight) - 52) : 76
             radius: Theme.radiusLg
             color: root.sectionColor
             border.width: 1
@@ -95,13 +100,23 @@ Item {
             }
 
             Image {
+                id: poster
                 anchors.fill: parent
                 anchors.margins: 1
                 source: root.video ? root.posterSource : ""
                 fillMode: Image.PreserveAspectFit
                 asynchronous: true
                 cache: false
-                visible: root.video && status === Image.Ready && !root.started
+                retainWhileLoading: true
+                /// Keep the previous poster up until the new one decodes, so
+                /// changing the selection does not flash a black surface.
+                visible: root.video && !root.started
+                    && (status === Image.Ready
+                        || (status === Image.Loading && poster.hadPoster))
+
+                property bool hadPoster: false
+                onStatusChanged: if (status === Image.Ready) hadPoster = true
+                onSourceChanged: if (source === "") hadPoster = false
             }
 
             ThemedIcon {

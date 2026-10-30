@@ -176,31 +176,12 @@ impl qobject::PreviewController {
         let generation = self.as_mut().rust_mut().generation.wrapping_add(1);
         self.as_mut().rust_mut().generation = generation;
 
-        self.as_mut().set_path(QString::from(path.as_str()));
-        self.as_mut()
-            .set_name(QString::from(display_name_from_path(&path).as_str()));
-        self.as_mut().set_is_directory(false);
-        self.as_mut().set_size_text(QString::default());
-        self.as_mut().set_modified_text(QString::default());
-        self.as_mut().set_kind_text(QString::default());
-        self.as_mut().set_child_count(0);
-        self.as_mut().set_child_names(QStringList::default());
-        self.as_mut().set_content(QString::default());
-        self.as_mut().set_content_html(QString::default());
-        self.as_mut().set_is_markdown(false);
-        self.as_mut().set_truncated(false);
-        self.as_mut().set_has_text(false);
-        self.as_mut().set_has_thumbnail(has_thumbnail(&path));
-        self.as_mut().set_thumbnail_revision(QString::default());
-        self.as_mut().set_media_text(QString::default());
-        self.as_mut().set_media_kind(QString::default());
-        self.as_mut().set_media_url(QString::default());
+        // The previous snapshot stays on screen until the new one is ready.
+        // Clearing it here collapsed the pane to a placeholder for every
+        // selection, so moving through a folder flashed the whole preview.
+        // `apply` swaps every field in one batch instead.
         self.as_mut().set_error(QString::default());
-        self.as_mut().set_remote(!vfs::is_local_path(&path));
         self.as_mut().set_loading(true);
-        self.as_mut().rust_mut().source_text.clear();
-        self.as_mut().rust_mut().source_kind = SourceKind::Plain;
-        self.as_mut().rust_mut().source_path.clear();
 
         let dark = self.dark;
         let thread = self.as_mut().qt_thread();
@@ -306,7 +287,34 @@ impl qobject::PreviewController {
                 rust.source_path = snapshot.source_path;
             }
             Err(message) => {
+                // The retained snapshot belongs to the previous entry; drop it
+                // rather than pair its content with this file's name and error.
+                self.as_mut().set_path(QString::from(path.as_str()));
+                self.as_mut()
+                    .set_name(QString::from(display_name_from_path(&path).as_str()));
+                self.as_mut().set_is_directory(false);
+                self.as_mut().set_size_text(QString::default());
+                self.as_mut().set_modified_text(QString::default());
+                self.as_mut().set_kind_text(QString::default());
+                self.as_mut().set_child_count(0);
+                self.as_mut().set_child_names(QStringList::default());
+                self.as_mut().set_content(QString::default());
+                self.as_mut().set_content_html(QString::default());
+                self.as_mut().set_is_markdown(false);
+                self.as_mut().set_truncated(false);
+                self.as_mut().set_has_text(false);
+                self.as_mut().set_has_thumbnail(false);
+                self.as_mut().set_thumbnail_revision(QString::default());
+                self.as_mut().set_media_text(QString::default());
+                self.as_mut().set_media_kind(QString::default());
+                self.as_mut().set_media_url(QString::default());
+                self.as_mut().set_remote(!vfs::is_local_path(&path));
                 self.as_mut().set_error(QString::from(message.as_str()));
+
+                let mut rust = self.as_mut().rust_mut();
+                rust.source_text.clear();
+                rust.source_kind = SourceKind::Plain;
+                rust.source_path.clear();
             }
         }
         // Last: every binding that also reads `loading` then sees the complete
