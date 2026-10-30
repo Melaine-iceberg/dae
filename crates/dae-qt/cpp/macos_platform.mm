@@ -19,12 +19,12 @@ extern "C" bool dae_qt_macos_accent_hex(char* buffer, int size)
         if (rgb == nil)
             return false;
 
-        CGFloat red = 0.0;
-        CGFloat green = 0.0;
-        CGFloat blue = 0.0;
-        CGFloat alpha = 0.0;
-        if (![rgb getRed:&red green:&green blue:&blue alpha:&alpha])
-            return false;
+        // The conversion above guarantees an RGB colour, so the component
+        // getters are safe; the `getRed:...` primitive is avoided because its
+        // BOOL return is ambiguous across SDK versions.
+        const CGFloat red = rgb.redComponent;
+        const CGFloat green = rgb.greenComponent;
+        const CGFloat blue = rgb.blueComponent;
 
         const auto channel = [](CGFloat value) {
             const CGFloat clamped = value < 0.0 ? 0.0 : (value > 1.0 ? 1.0 : value);
