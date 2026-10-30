@@ -460,6 +460,12 @@ mod tests {
 
     #[test]
     fn an_unlabelled_volume_falls_back_to_its_mount_point() {
+        assert_eq!(volume_name("  ", "/media/Data"), "Data");
+        // A root has no file name, so the mount point itself is the name.
+        assert_eq!(volume_name("  ", "/"), "/");
+        // On a Windows drive root the prefix is not a file name either; only
+        // there does the raw mount point keep its spelling.
+        #[cfg(windows)]
         assert_eq!(volume_name("  ", "D:/"), "D:/");
         assert_eq!(volume_name("Data", "D:/"), "Data");
     }

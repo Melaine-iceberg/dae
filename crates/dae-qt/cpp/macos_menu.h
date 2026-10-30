@@ -9,11 +9,11 @@
 #ifndef DAE_QT_MACOS_MENU_H
 #define DAE_QT_MACOS_MENU_H
 
-#include <QtGlobal>
-
 namespace dae_qt {
 
-#if defined(Q_OS_MACOS)
+// Deliberately no Qt include: `macos_menu.mm` is compiled by a bare `cc`
+// invocation alongside the AppKit code, which has no Qt include path.
+#if defined(__APPLE__)
 void dae_qt_install_macos_menu();
 #else
 inline void dae_qt_install_macos_menu() {}

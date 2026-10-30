@@ -9,7 +9,7 @@
 
 #include "macos_menu.h"
 
-#if defined(Q_OS_MACOS)
+#if defined(__APPLE__)
 
 #import <AppKit/AppKit.h>
 
@@ -130,4 +130,4 @@ void dae_qt_install_macos_menu()
     }
 }
 
-#endif // Q_OS_MACOS
+#endif // __APPLE__
