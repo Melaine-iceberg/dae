@@ -30,8 +30,14 @@ Item {
     signal spaceRequested(string id)
     signal createSpaceRequested()
     signal addRequested(string kind)
+    signal restorePlacesRequested()
     signal contextRequested(string kind, string path, real x, real y)
     signal remoteOpenRequested(string path)
+
+    /// A folder drag is hovering the favorites group, which is the add target.
+    /// Set by the section header and the empty hint row, so both light while
+    /// the pointer is over them.
+    property bool favoriteDropActive: false
 
     /// Narrow columns drop the "used / total" pair for the percentage: at 184 px
     /// the full pair is the first thing that would collide with the name.
@@ -141,6 +147,8 @@ Item {
         case "New space…": return qsTr("新建空间…")
         case "Connect network storage…": return qsTr("连接网络存储…")
         case "Add cloud account…": return qsTr("添加网盘账户…")
+        case "Drop folders here to favorite them": return qsTr("将文件夹拖到这里加入收藏")
+        case "Restore hidden places": return qsTr("恢复隐藏的位置")
         default: return name
         }
     }
@@ -151,6 +159,9 @@ Item {
         const count = /^(\d+) items?$/.exec(value)
         if (count)
             return qsTr("%1 项").arg(count[1])
+        const hidden = /^(\d+) hidden$/.exec(value)
+        if (hidden)
+            return qsTr("已隐藏 %1 项").arg(hidden[1])
         return value
     }
 
@@ -175,8 +186,22 @@ Item {
         case "cloud": return "cloud"
         case "space": return "diamond"
         case "add": return "plus"
+        case "eye": return "eye"
         default: return "file"
         }
+    }
+
+    /// A folder drag lands here from the listing or Explorer. Only local
+    /// folders are pinned; `addFavoritePaths` drops the rest.
+    function dropFavorites(drag) {
+        const paths = Workspace.localDropPaths(drag.urls)
+        if (paths.length === 0) {
+            drag.accepted = false
+            return
+        }
+        drag.accept(Qt.CopyAction)
+        Workspace.addFavoritePaths(paths)
+        root.favoriteDropActive = false
     }
 
     /// Accepts a file drag for one destination and lights that row.
@@ -202,6 +227,10 @@ Item {
         target: Workspace
 
         function onFavoritesChanged() {
+            sidebarModel.refresh()
+        }
+
+        function onPlacesChanged() {
             sidebarModel.refresh()
         }
 
@@ -292,6 +321,9 @@ Item {
         section.delegate: Item {
             required property string section
 
+            readonly property bool favoriteSection: section === "Favorites"
+            readonly property bool lit: favoriteSection && root.favoriteDropActive
+
             width: ListView.view.width
             height: 24
 
@@ -300,16 +332,56 @@ Item {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 4
                 text: root.sectionLabel(section)
-                color: Theme.inkFaint
+                color: parent.lit ? Theme.signal : Theme.inkFaint
                 font.pixelSize: Theme.typeMicro
                 font.weight: Font.Medium
                 font.letterSpacing: 0.88
+            }
+
+            Text {
+                anchors.right: parent.right
+                anchors.rightMargin: 18
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 4
+                visible: parent.lit && parent.favoriteSection
+                text: qsTr("松开以加入收藏")
+                color: Theme.signal
+                font.pixelSize: Theme.typeMicro
+            }
+
+            /// The group header is the favorites drop target while the group
+            /// has rows; the empty hint row carries one when it does not.
+            DropArea {
+                anchors.fill: parent
+                keys: ["text/uri-list"]
+                enabled: parent.favoriteSection
+
+                onEntered: function (drag) {
+                    root.favoriteDropActive = true
+                    drag.accept(Qt.CopyAction)
+                }
+                onPositionChanged: function (drag) {
+                    root.favoriteDropActive = true
+                    drag.accept(Qt.CopyAction)
+                }
+                onExited: {
+                    if (parent.favoriteSection)
+                        root.favoriteDropActive = false
+                }
+                onDropped: function (drop) {
+                    root.dropFavorites(drop)
+                }
             }
         }
 
         delegate: Item {
             id: row
 
+            /// The click handler and the keyboard cursor both address the row
+            /// by index. Qt Quick only injects `index` into a delegate that
+            /// declares it, so without this the assignment below threw before
+            /// `activate()` ran and every row in the column was unclickable.
+            required property int index
             required property string name
             required property string path
             required property string kind
@@ -327,7 +399,9 @@ Item {
                 && row.kind === "space" && row.path === root.activeSpaceId
             readonly property bool isAction: row.kind === "addConnection"
                 || row.kind === "addCloud" || row.kind === "addSpace"
+                || row.kind === "restorePlaces"
             readonly property bool builtInName: row.isAction
+                || row.kind === "favoriteHint"
                 || row.icon === "home" || row.icon === "desktop"
                 || row.icon === "documents" || row.icon === "downloads"
                 || row.icon === "pictures" || row.icon === "music"
@@ -375,6 +449,12 @@ Item {
                     root.createSpaceRequested()
                     return
                 }
+                if (row.kind === "restorePlaces") {
+                    root.restorePlacesRequested()
+                    return
+                }
+                if (row.kind === "favoriteHint")
+                    return
                 if (row.kind === "space") {
                     root.spaceRequested(row.path)
                     return
@@ -508,7 +588,9 @@ Item {
                     width: Math.max(0, detailText.x - x - 6)
                     verticalAlignment: Text.AlignVCenter
                     text: row.builtInName ? root.rowLabel(row.name) : row.name
-                    color: row.lit ? Theme.ink : Theme.inkMuted
+                    color: row.kind === "favoriteHint" && root.favoriteDropActive
+                        ? Theme.signal
+                        : (row.lit ? Theme.ink : Theme.inkMuted)
                     font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
@@ -563,6 +645,25 @@ Item {
                     }
                 }
 
+                /// The empty favorites group pins whatever folder is dropped
+                /// on it; the header carries the same target once it has rows.
+                DropArea {
+                    anchors.fill: parent
+                    keys: ["text/uri-list"]
+                    enabled: row.kind === "favoriteHint"
+
+                    onEntered: function (drag) {
+                        root.favoriteDropActive = true
+                        drag.accept(Qt.CopyAction)
+                    }
+                    onPositionChanged: function (drag) {
+                        root.favoriteDropActive = true
+                        drag.accept(Qt.CopyAction)
+                    }
+                    onExited: root.favoriteDropActive = false
+                    onDropped: function (drop) { root.dropFavorites(drop) }
+                }
+
                 MouseArea {
                     id: rowMouse
 
@@ -574,10 +675,12 @@ Item {
                         // back into the column resumes where the mouse left it.
                         list.currentIndex = row.index
                         if (event.button === Qt.RightButton) {
-                            if (row.isAction)
+                            if (row.isAction || row.kind === "favoriteHint")
                                 return
                             const point = row.mapToItem(null, event.x, event.y)
-                            root.contextRequested(row.kind, row.path, point.x, point.y)
+                            root.contextRequested(
+                                row.kind === "place" ? "place:" + row.icon : row.kind,
+                                row.path, point.x, point.y)
                             return
                         }
                         row.activate()

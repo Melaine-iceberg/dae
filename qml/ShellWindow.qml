@@ -1733,6 +1733,7 @@ Window {
                 { id: "open", label: qsTr("打开") },
                 { id: "openTab", label: qsTr("在新标签页打开") },
                 { id: "openWindow", label: qsTr("在新窗口打开") },
+                { id: "copyPath", label: qsTr("复制路径") },
                 { separator: true },
                 { id: kind === "connection" ? "removeConnection" : "removeCloud",
                   label: kind === "connection" ? qsTr("移除连接") : qsTr("移除云盘账户"),
@@ -1751,15 +1752,26 @@ Window {
             ])
             return
         }
+        // Place rows carry their icon name after `place:`; the menu needs the
+        // kind itself so it can offer "hide" and the model can resolve it back.
+        const placeKind = kind.indexOf("place:") === 0
+            ? kind.substring("place:".length) : ""
+        const rowKind = placeKind !== "" ? "place" : kind
         const items = []
-        if (kind === "favorite")
+        if (rowKind === "favorite")
             items.push({ id: "removeFavorite", label: qsTr("从收藏移除"), danger: true })
-        if (kind === "recent" && !root.isRemotePath(path))
+        if (rowKind === "recent" && !root.isRemotePath(path))
             items.push({ id: "reveal", label: qsTr("在资源管理器中显示") })
         items.push({ id: "openTab", label: qsTr("在新标签页打开") })
         items.push({ id: "openWindow", label: qsTr("在新窗口打开") })
-        if (kind !== "favorite")
+        if (rowKind !== "favorite")
             items.push({ id: "favorite", label: qsTr("加入收藏") })
+        items.push({ separator: true })
+        items.push({ id: "copyPath", label: qsTr("复制路径") })
+        if (placeKind !== "") {
+            items.push({ separator: true })
+            items.push({ id: "hidePlace:" + placeKind, label: qsTr("从侧栏隐藏"), danger: true })
+        }
         menu.openAt(x, y, items)
     }
 
@@ -1794,6 +1806,11 @@ Window {
         // the menu itself has no per-item state once it opens.
         if (id.indexOf("addSpace:") === 0) {
             root.addPathToSpace(id.substring("addSpace:".length), path)
+            root.clearContext()
+            return
+        }
+        if (id.indexOf("hidePlace:") === 0) {
+            Workspace.hidePlace(id.substring("hidePlace:".length))
             root.clearContext()
             return
         }
@@ -2038,6 +2055,10 @@ Window {
         target: Workspace
 
         function onFavoritesChanged() {
+            overviewModel.refresh()
+        }
+
+        function onPlacesChanged() {
             overviewModel.refresh()
         }
 
@@ -2830,6 +2851,7 @@ Window {
                     else
                         root.openConnectDialog()
                 }
+                onRestorePlacesRequested: Workspace.showAllPlaces()
                 onContextRequested: function (kind, path, x, y) {
                     root.showSidebarMenu(kind, path, x, y)
                 }
@@ -4188,8 +4210,21 @@ Window {
             root.tabs = root.initialTabs
             root.activeIndex = Math.max(0, Math.min(root.initialActive, root.tabs.length - 1))
         } else {
-            const tab = root.createTab(root.startupPath)
+            // The landing surface is the overview. A deep link or an explicit
+            // command-line path is a request to open that folder, so only the
+            // "recent"/"home" fallbacks land on the overview instead.
+            const explicit = root.config !== null
+                && (root.config.startupSource === "deepLink"
+                    || root.config.startupSource === "commandLine")
+            const path = explicit ? root.startupPath : ""
+            const tab = root.createTab(path)
             if (tab !== null) {
+                if (path === "") {
+                    tab.openOverview()
+                    // `openOverview` is the shortcut that also rebuilds the
+                    // rows; the startup tab bypasses it, so refresh here too.
+                    overviewModel.refresh()
+                }
                 root.tabs = [tab]
                 root.activeIndex = 0
             }

@@ -3486,6 +3486,10 @@
             <source>降序</source>
             <translation>降序</translation>
         </message>
+        <message>
+            <source>从侧栏隐藏</source>
+            <translation>从侧栏隐藏</translation>
+        </message>
     </context>
     <context>
         <name>Sidebar</name>
@@ -3599,6 +3603,26 @@
             <location filename="../Sidebar.qml" line="276" />
             <source>废纸篓</source>
             <translation>废纸篓</translation>
+        </message>
+        <message>
+            <location filename="../Sidebar.qml" line="150" />
+            <source>Drop folders here to favorite them</source>
+            <translation>将文件夹拖到这里加入收藏</translation>
+        </message>
+        <message>
+            <location filename="../Sidebar.qml" line="151" />
+            <source>Restore hidden places</source>
+            <translation>恢复隐藏的位置</translation>
+        </message>
+        <message>
+            <location filename="../Sidebar.qml" line="158" />
+            <source>已隐藏 %1 项</source>
+            <translation>已隐藏 %1 项</translation>
+        </message>
+        <message>
+            <location filename="../Sidebar.qml" line="316" />
+            <source>松开以加入收藏</source>
+            <translation>松开以加入收藏</translation>
         </message>
     </context>
     <context>

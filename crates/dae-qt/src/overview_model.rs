@@ -292,7 +292,11 @@ impl qobject::OverviewModel {
         let mut seen_paths = HashSet::new();
 
         let places = sidebar::system_places();
+        let hidden = sidebar::load_hidden_places().unwrap_or_default();
         for place in &places {
+            if hidden.contains(&place.kind) {
+                continue;
+            }
             push_place(&mut rows, &mut seen_paths, place);
         }
 

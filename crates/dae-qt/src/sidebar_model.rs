@@ -171,6 +171,7 @@ impl qobject::SidebarModel {
         crate::init_stores();
 
         let mut base = Vec::new();
+        let hidden = sidebar::load_hidden_places().unwrap_or_default();
         let mut places = sidebar::system_places();
         // `system_places` reports the OS's resolution order, which on Windows
         // puts Documents before Downloads. The sidebar's first five rows are
@@ -178,19 +179,53 @@ impl qobject::SidebarModel {
         // them, so they are ranked here instead of trusting the probe.
         places.sort_by_key(|place| place_rank(place.kind));
         for place in places {
+            if hidden.contains(&place.kind) {
+                continue;
+            }
             base.push(place_row(place.kind, &place.path));
         }
-        for favorite in sidebar::load_favorites().unwrap_or_default() {
+        // Hiding is the one place action that removes its own row, so the way
+        // back has to be a row of its own or it would not exist anywhere.
+        if !hidden.is_empty() {
             base.push(SidebarRow {
-                section: SECTION_FAVORITES.to_owned(),
-                name: favorite.name,
-                path: favorite.path,
-                kind: "favorite".to_owned(),
-                detail: String::new(),
-                icon: "star".to_owned(),
-                is_dir: true,
+                section: SECTION_PLACES.to_owned(),
+                name: "Restore hidden places".to_owned(),
+                path: String::new(),
+                kind: "restorePlaces".to_owned(),
+                detail: format!("{} hidden", hidden.len()),
+                icon: "eye".to_owned(),
+                is_dir: false,
                 fill: 0.0,
             });
+        }
+        let favorites = sidebar::load_favorites().unwrap_or_default();
+        if favorites.is_empty() {
+            // The hint is the favorites section's drop target: a folder
+            // dragged onto it is pinned, and the section stays discoverable
+            // before anything has been pinned.
+            base.push(SidebarRow {
+                section: SECTION_FAVORITES.to_owned(),
+                name: "Drop folders here to favorite them".to_owned(),
+                path: String::new(),
+                kind: "favoriteHint".to_owned(),
+                detail: String::new(),
+                icon: "star".to_owned(),
+                is_dir: false,
+                fill: 0.0,
+            });
+        } else {
+            for favorite in favorites {
+                base.push(SidebarRow {
+                    section: SECTION_FAVORITES.to_owned(),
+                    name: favorite.name,
+                    path: favorite.path,
+                    kind: "favorite".to_owned(),
+                    detail: String::new(),
+                    icon: "star".to_owned(),
+                    is_dir: true,
+                    fill: 0.0,
+                });
+            }
         }
 
         // Spaces are first-class destinations, not folders: the `path` field

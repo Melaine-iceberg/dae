@@ -14,9 +14,10 @@ use std::path::PathBuf;
 use sysinfo::Disks;
 
 const FAVORITES_FILE_NAME: &str = "sidebar-favorites.json";
+const HIDDEN_PLACES_FILE_NAME: &str = "sidebar-hidden-places.json";
 
 /// Well-known directories that are always offered in the sidebar's places section.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaceKind {
     Home,
@@ -136,6 +137,42 @@ pub fn save_favorites(favorites: Vec<Favorite>) -> Result<(), FileSystemError> {
     }
 
     let contents = serde_json::to_string_pretty(&favorites)
+        .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+    write_atomic(&path, contents.as_bytes())
+}
+
+/// The system places the user has hidden from the sidebar.
+///
+/// The Tauri shell kept this list in the webview's localStorage; the Qt shell
+/// has no localStorage, so it lives next to the favourites file where both
+/// shells can read it. A missing file means nothing is hidden.
+pub fn load_hidden_places() -> Result<Vec<PlaceKind>, FileSystemError> {
+    let path = hidden_places_path()?;
+
+    match fs::read_to_string(&path) {
+        Ok(contents) => {
+            let places: Vec<PlaceKind> = serde_json::from_str(&contents)
+                .map_err(|error| FileSystemError::Internal(error.to_string()))?;
+            Ok(places)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+pub fn save_hidden_places(places: Vec<PlaceKind>) -> Result<(), FileSystemError> {
+    let path = hidden_places_path()?;
+    let mut seen = std::collections::HashSet::new();
+    let places: Vec<PlaceKind> = places
+        .into_iter()
+        .filter(|place| seen.insert(*place))
+        .collect();
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let contents = serde_json::to_string_pretty(&places)
         .map_err(|error| FileSystemError::Internal(error.to_string()))?;
     write_atomic(&path, contents.as_bytes())
 }
@@ -453,6 +490,12 @@ fn favorites_path() -> Result<PathBuf, FileSystemError> {
     let config_dir = crate::paths::config_dir()?;
 
     Ok(config_dir.join(FAVORITES_FILE_NAME))
+}
+
+fn hidden_places_path() -> Result<PathBuf, FileSystemError> {
+    let config_dir = crate::paths::config_dir()?;
+
+    Ok(config_dir.join(HIDDEN_PLACES_FILE_NAME))
 }
 
 #[cfg(test)]

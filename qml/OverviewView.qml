@@ -128,15 +128,24 @@ Item {
         cacheBuffer: 400
         section.property: "section"
         section.criteria: ViewSection.FullString
+
+        /// The reference caps the launcher column at a readable measure and
+        /// leaves the rest of a wide window empty, rather than stretching a
+        /// row's name and its trailing fact to opposite edges.
+        readonly property int maxContent: 832
+        readonly property int sideMargin: Math.max(24, Math.round((width - maxContent) / 2))
+        anchors.leftMargin: sideMargin
+        anchors.rightMargin: sideMargin
+
         section.delegate: Item {
             required property string section
             width: list.width
-            height: 36
+            height: 24
 
             Text {
-                x: 24
+                x: 20
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: 8
+                anchors.bottomMargin: 5
                 text: root.sectionLabel(section)
                 color: root.mutedColor
                 font.pixelSize: 11
@@ -147,16 +156,16 @@ Item {
 
         header: Item {
             width: list.width
-            height: 150
+            height: 126
 
             Column {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                anchors.leftMargin: 24
-                anchors.rightMargin: 24
-                anchors.topMargin: 24
-                spacing: 6
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
+                anchors.topMargin: 20
+                spacing: 4
 
                 Text {
                     text: qsTr("概览")
@@ -169,8 +178,8 @@ Item {
                     width: parent.width
                     text: qsTr("从收藏、最近访问与空间继续。")
                     color: root.mutedColor
-                    font.pixelSize: 12
-                    wrapMode: Text.Wrap
+                    font.pixelSize: Theme.typeCaption
+                    elide: Text.ElideRight
                 }
             }
 
@@ -180,10 +189,10 @@ Item {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
-                anchors.topMargin: 84
-                anchors.leftMargin: 24
-                anchors.rightMargin: 24
-                height: 40
+                anchors.topMargin: 66
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
+                height: 38
                 radius: Theme.radiusLg
                 color: Theme.canvasAlt
                 border.width: 1
@@ -204,7 +213,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("搜索文件、空间或命令")
                     color: root.mutedColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeSmall
                 }
 
                 Rectangle {
@@ -238,9 +247,9 @@ Item {
 
             Text {
                 anchors.left: parent.left
-                anchors.leftMargin: 24
+                anchors.leftMargin: 10
                 anchors.top: launcher.bottom
-                anchors.topMargin: 8
+                anchors.topMargin: 6
                 visible: root.model !== null && root.model.projectBusy
                 text: qsTr("正在查找最近的项目…")
                 color: root.mutedColor
@@ -251,6 +260,7 @@ Item {
         delegate: Item {
             id: row
 
+            required property int index
             required property string kind
             required property string name
             required property string path
@@ -262,7 +272,12 @@ Item {
             required property string timeText
 
             width: list.width
-            height: 58
+            height: 36
+
+            readonly property bool project: row.kind === "project"
+            /// Places and favorites carry a path, recents their parent folder,
+            /// spaces a count: one trailing fact instead of a second line.
+            readonly property bool hasDetail: !row.project && row.detail !== ""
 
             /// A landing-page row opens something. The kind decides what, so it
             /// goes in the description: "space" and "folder" look the same in a
@@ -283,80 +298,88 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                anchors.leftMargin: 12
-                anchors.rightMargin: 12
+                anchors.leftMargin: 10
+                anchors.rightMargin: 10
                 radius: Theme.radiusSm
                 color: rowMouse.containsMouse ? root.hoverColor : "transparent"
             }
 
-            Rectangle {
-                x: 22
+            Text {
+                anchors.left: parent.left
+                anchors.leftMargin: 20
                 anchors.verticalCenter: parent.verticalCenter
-                width: 30
-                height: 30
-                radius: Theme.radiusLg
-                color: Theme.canvasAlt
-
-                Text {
-                    anchors.centerIn: parent
-                    text: root.glyph(row.icon)
-                    color: row.kind === "space" ? root.accent : root.mutedColor
-                    font.pixelSize: 14
-                }
+                width: 16
+                height: 18
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                text: root.glyph(row.icon)
+                color: row.kind === "space" ? root.accent : root.mutedColor
+                font.pixelSize: 14
             }
 
-            Column {
+            Text {
+                id: nameText
+
                 anchors.left: parent.left
-                anchors.leftMargin: 64
-                anchors.right: trailing.left
-                anchors.rightMargin: 14
+                anchors.leftMargin: 44
+                anchors.right: detailText.left
+                anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 3
+                text: row.kind === "place" ? root.placeLabel(row.icon) : row.name
+                color: root.textColor
+                font.pixelSize: Theme.typeName
+                elide: Text.ElideRight
+            }
 
-                Text {
-                    width: parent.width
-                    text: row.kind === "place"
-                        ? root.placeLabel(row.icon) : row.name
-                    color: root.textColor
-                    font.pixelSize: 13
-                    elide: Text.ElideRight
-                }
+            TextMetrics {
+                id: detailMetrics
+                font: detailText.font
+                text: detailText.text
+            }
 
-                Text {
-                    width: parent.width
-                    text: root.detailLabel(row.detail)
-                    color: root.mutedColor
-                    font.pixelSize: 11
-                    elide: Text.ElideMiddle
-                }
+            Text {
+                id: detailText
+
+                anchors.right: trailing.left
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                visible: row.hasDetail
+                width: visible
+                    ? Math.min(detailMetrics.advanceWidth, row.width * 0.45) : 0
+                horizontalAlignment: Text.AlignRight
+                text: root.detailLabel(row.detail)
+                color: root.mutedColor
+                font.pixelSize: 11
+                font.features: { "tnum": 1 }
+                elide: Text.ElideMiddle
             }
 
             Row {
                 id: trailing
 
                 anchors.right: parent.right
-                anchors.rightMargin: 22
+                anchors.rightMargin: 16
                 anchors.verticalCenter: parent.verticalCenter
                 spacing: 8
 
                 Rectangle {
-                    visible: row.kind === "project" && row.branch !== ""
-                    height: 19
+                    visible: row.project && row.branch !== ""
+                    height: 18
                     radius: Theme.radiusSm
                     color: Theme.canvasAlt
-                    width: branchText.width + 14
+                    width: branchText.width + 12
 
                     Text {
                         id: branchText
                         anchors.centerIn: parent
                         text: "\u2325 " + row.branch
                         color: root.mutedColor
-                        font.pixelSize: 11
+                        font.pixelSize: 10
                     }
                 }
 
                 Text {
-                    visible: row.kind === "project" && row.changeText !== ""
+                    visible: row.project && row.changeText !== ""
                     text: root.changeLabel(row.changeText)
                     color: row.changeText === "Clean" ? root.mutedColor
                         : (row.changeText === "Untracked" ? Theme.warn : root.accent)

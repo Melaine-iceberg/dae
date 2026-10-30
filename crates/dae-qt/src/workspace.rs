@@ -29,7 +29,7 @@ use dae_core::fs::connections::{self, Protocol, SaveConnectionInput};
 use dae_core::fs::open_with;
 use dae_core::fs::recents::RecentSource;
 use dae_core::fs::service;
-use dae_core::fs::sidebar::{self, Favorite};
+use dae_core::fs::sidebar::{self, Favorite, PlaceKind};
 use dae_core::fs::smb;
 use dae_core::fs::trash_view;
 use dae_core::fs::types::{
@@ -391,9 +391,26 @@ pub mod qobject {
         #[cxx_name = "addFavorite"]
         fn add_favorite(self: Pin<&mut Workspace>, path: &QString);
 
+        /// Pins every local folder in `paths` that is not already pinned. The
+        /// favorites drop target sends whatever the drag carried, which may
+        /// include files; those are ignored rather than saved as broken rows.
+        #[qinvokable]
+        #[cxx_name = "addFavoritePaths"]
+        fn add_favorite_paths(self: Pin<&mut Workspace>, paths: &QStringList);
+
         #[qinvokable]
         #[cxx_name = "removeFavorite"]
         fn remove_favorite(self: Pin<&mut Workspace>, path: &QString);
+
+        /// Removes a system place (`home`, `desktop`, …) from the sidebar.
+        #[qinvokable]
+        #[cxx_name = "hidePlace"]
+        fn hide_place(self: Pin<&mut Workspace>, kind: &QString);
+
+        /// Brings every hidden system place back.
+        #[qinvokable]
+        #[cxx_name = "showAllPlaces"]
+        fn show_all_places(self: Pin<&mut Workspace>);
 
         #[qinvokable]
         #[cxx_name = "saveTerminalSettings"]
@@ -462,6 +479,12 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "favoritesChanged"]
         fn favorites_changed(self: Pin<&mut Workspace>);
+
+        /// A system place was hidden or restored; the rows are re-resolved by
+        /// `SidebarModel.refresh()` and the overview's list.
+        #[qsignal]
+        #[cxx_name = "placesChanged"]
+        fn places_changed(self: Pin<&mut Workspace>);
 
         /// A drive or mount arrived or left. The sidebar answers by calling
         /// `SidebarModel.refresh()`, which already re-reads the disk list off
@@ -2001,6 +2024,78 @@ impl qobject::Workspace {
         }
     }
 
+    fn add_favorite_paths(mut self: Pin<&mut Self>, paths: &QStringList) {
+        let mut favorites = sidebar::load_favorites().unwrap_or_default();
+        let mut added = 0;
+        for path in paths.iter() {
+            let path = path.to_string();
+            if path.is_empty() || !std::path::Path::new(&path).is_dir() {
+                continue;
+            }
+            if favorites.iter().any(|favorite| favorite.path == path) {
+                continue;
+            }
+            favorites.push(Favorite {
+                name: display_name_from_path(&path),
+                path,
+            });
+            added += 1;
+        }
+        if added == 0 {
+            return;
+        }
+        match sidebar::save_favorites(favorites) {
+            Ok(()) => {
+                self.as_mut()
+                    .set_status(QString::from("Added to favorites"));
+                self.as_mut().favorites_changed();
+            }
+            Err(error) => {
+                let message = friendly_error(&error.to_string());
+                self.as_mut()
+                    .set_last_error(QString::from(message.as_str()));
+            }
+        }
+    }
+
+    fn hide_place(mut self: Pin<&mut Self>, kind: &QString) {
+        let Some(place) = parse_place_kind(&kind.to_string()) else {
+            return;
+        };
+        let mut hidden = sidebar::load_hidden_places().unwrap_or_default();
+        if hidden.contains(&place) {
+            return;
+        }
+        hidden.push(place);
+        match sidebar::save_hidden_places(hidden) {
+            Ok(()) => {
+                self.as_mut()
+                    .set_status(QString::from("Hidden from sidebar"));
+                self.as_mut().places_changed();
+            }
+            Err(error) => {
+                let message = friendly_error(&error.to_string());
+                self.as_mut()
+                    .set_last_error(QString::from(message.as_str()));
+            }
+        }
+    }
+
+    fn show_all_places(mut self: Pin<&mut Self>) {
+        match sidebar::save_hidden_places(Vec::new()) {
+            Ok(()) => {
+                self.as_mut()
+                    .set_status(QString::from("Restored hidden places"));
+                self.as_mut().places_changed();
+            }
+            Err(error) => {
+                let message = friendly_error(&error.to_string());
+                self.as_mut()
+                    .set_last_error(QString::from(message.as_str()));
+            }
+        }
+    }
+
     fn remove_favorite(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
         let favorites: Vec<Favorite> = sidebar::load_favorites()
@@ -2527,6 +2622,20 @@ fn conflict_action(value: &str) -> Option<ConflictAction> {
         "replace" => Some(ConflictAction::Replace),
         "skip" => Some(ConflictAction::Skip),
         "keepBoth" => Some(ConflictAction::KeepBoth),
+        _ => None,
+    }
+}
+
+/// A place row carries its icon name; the menu sends that back when hiding.
+fn parse_place_kind(value: &str) -> Option<PlaceKind> {
+    match value {
+        "home" => Some(PlaceKind::Home),
+        "desktop" => Some(PlaceKind::Desktop),
+        "documents" => Some(PlaceKind::Documents),
+        "downloads" => Some(PlaceKind::Downloads),
+        "pictures" => Some(PlaceKind::Pictures),
+        "music" => Some(PlaceKind::Music),
+        "videos" => Some(PlaceKind::Videos),
         _ => None,
     }
 }
