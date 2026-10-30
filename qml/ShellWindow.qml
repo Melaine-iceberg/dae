@@ -89,6 +89,10 @@ Window {
     /// commands answer asynchronously, and only the row menu is rebuilt when
     /// they arrive.
     property string contextKind: ""
+    /// The row menu's second page is open (see `rowMoreMenuItems`). The page is
+    /// part of the menu rather than a flyout, so the installed apps' commands
+    /// and the archive/space submenus keep working one level deep.
+    property bool rowMenuMore: false
     property string contextTrashId: ""
     property string contextTrashParent: ""
     property string confirmMode: ""
@@ -1527,6 +1531,7 @@ Window {
         root.contextPath = path
         root.contextIsDir = isDir
         root.contextKind = "row"
+        root.rowMenuMore = false
         // Discovery runs off the Qt thread. The rows already in the model are
         // drawn at once, and `onShellCommandRevisionChanged` swaps in the fresh
         // answer without moving the panel.
@@ -1534,9 +1539,17 @@ Window {
         menu.openAt(x, y, root.rowMenuItems())
     }
 
-    /// The row menu's rows. Split out from `openRowMenu` because the installed
-    /// apps' commands arrive after the menu is already on screen and the same
-    /// list has to be rebuilt in place.
+    /// Whether the right-clicked row lives on a remote listing.
+    function rowMenuRemote() {
+        return root.contextTab !== null
+            ? (root.contextTab.listing.remote || root.isRemotePath(root.contextTab.listing.path))
+            : root.remoteLocation
+    }
+
+    /// The row menu's first page: the actions a right-click is actually for.
+    /// Everything rarer sits on the second page behind "更多…", because twenty
+    /// rows in one panel made the two actions people use most the two hardest
+    /// to find.
     function rowMenuItems() {
         const path = root.contextPath
         const isDir = root.contextIsDir
@@ -1544,24 +1557,56 @@ Window {
             ? root.contextList.selectionCount : fileList.selectionCount) > 1
         const hasPath = path !== ""
         const hasClipboard = Workspace.clipboardMode !== ""
-        const remote = root.contextTab !== null
-            ? (root.contextTab.listing.remote || root.isRemotePath(root.contextTab.listing.path))
-            : root.remoteLocation
-        // Archiving streams remote sources into a local container, so the
-        // sources may be remote but the destination (here) may not.
-        const canExtract = hasPath && !isDir && !remote && root.isArchivePath(path)
-        const items = [
+        const remote = root.rowMenuRemote()
+        return [
             { id: "open", label: isDir ? qsTr("打开") : qsTr("用默认应用打开"),
               enabled: hasPath && (!remote || isDir), shortcut: "Enter" },
             { id: "openTab", label: qsTr("在新标签页打开"), enabled: hasPath && isDir },
             { id: "openWindow", label: qsTr("在新窗口打开"), enabled: hasPath && isDir },
             { separator: true },
+            { id: "copy", label: qsTr("复制"),
+              shortcut: root.shortcutDisplay("explorer.copy"), enabled: hasPath },
+            { id: "cut", label: qsTr("剪切"),
+              shortcut: root.shortcutDisplay("explorer.cut"), enabled: hasPath },
+            { id: "paste", label: qsTr("粘贴到此处"),
+              shortcut: root.shortcutDisplay("explorer.paste"),
+              enabled: hasClipboard && isDir },
+            { separator: true },
+            { id: many ? "bulkRename" : "rename",
+              label: many ? qsTr("批量重命名…") : qsTr("重命名"),
+              enabled: hasPath,
+              shortcut: many ? "" : root.shortcutDisplay("explorer.rename") },
+            { id: "trash", label: qsTr("移到回收站"),
+              shortcut: root.shortcutDisplay("explorer.trash"),
+              enabled: hasPath && !remote, danger: true },
+            { separator: true },
+            { id: "properties", label: qsTr("属性"), shortcut: "Alt+Enter",
+              enabled: hasPath && !many },
+            { id: "moreMenu", label: qsTr("更多…") }
+        ]
+    }
+
+    /// The row menu's second page. It swaps the panel's rows in place instead
+    /// of opening a flyout, so the submenus here — installed apps, archive
+    /// formats, spaces — stay one level deep, which is what the menu overlay
+    /// supports.
+    function rowMoreMenuItems() {
+        const path = root.contextPath
+        const isDir = root.contextIsDir
+        const hasPath = path !== ""
+        const hasClipboard = Workspace.clipboardMode !== ""
+        const remote = root.rowMenuRemote()
+        // Archiving streams remote sources into a local container, so the
+        // sources may be remote but the destination (here) may not.
+        const canExtract = hasPath && !isDir && !remote && root.isArchivePath(path)
+        const items = [
+            { id: "menuBack", label: qsTr("‹ 返回") },
+            { separator: true },
             { id: "reveal", label: qsTr("在资源管理器中显示"), enabled: hasPath && !remote },
             { id: "openWith", label: qsTr("选择打开方式…"), enabled: hasPath && !remote },
             { id: "terminal", label: qsTr("在终端中打开"), enabled: hasPath && isDir && !remote },
-            { separator: true },
             { id: "preview", label: root.previewShows(path) ? qsTr("隐藏预览") : qsTr("预览"),
-              enabled: hasPath && !many, shortcut: root.shortcutDisplay("explorer.preview") },
+              enabled: hasPath && !manySelection(), shortcut: root.shortcutDisplay("explorer.preview") },
             { id: "copyPath", label: qsTr("复制路径"), enabled: hasPath }
         ]
 
@@ -1572,13 +1617,6 @@ Window {
         }
 
         items.push({ separator: true })
-        items.push({ id: "copy", label: qsTr("复制"),
-                     shortcut: root.shortcutDisplay("explorer.copy"), enabled: hasPath })
-        items.push({ id: "cut", label: qsTr("剪切"),
-                     shortcut: root.shortcutDisplay("explorer.cut"), enabled: hasPath })
-        items.push({ id: "paste", label: qsTr("粘贴到此处"),
-                     shortcut: root.shortcutDisplay("explorer.paste"),
-                     enabled: hasClipboard && isDir })
         items.push({ id: "pasteShortcut", label: qsTr("粘贴快捷方式"),
                      enabled: hasClipboard && isDir && !remote })
         items.push({ id: "duplicate", label: qsTr("创建副本"), enabled: hasPath })
@@ -1592,24 +1630,22 @@ Window {
         ] })
         items.push({ id: "extractHere", label: qsTr("解压到此处"), enabled: canExtract })
         items.push({ id: "moveTo", label: qsTr("移动到…"), enabled: hasPath })
-        items.push({ id: many ? "bulkRename" : "rename",
-                     label: many ? qsTr("批量重命名…") : qsTr("重命名"),
-                     enabled: hasPath,
-                     shortcut: many ? "" : root.shortcutDisplay("explorer.rename") })
         items.push({ separator: true })
         items.push({ id: "favorite", label: qsTr("加入收藏"), enabled: hasPath && isDir })
         items.push({ id: "addToSpace", label: qsTr("添加到空间"), enabled: hasPath,
                      submenu: root.spaceSubmenu() })
-        items.push({ id: "trash", label: qsTr("移到回收站"),
-                     shortcut: root.shortcutDisplay("explorer.trash"),
-                     enabled: hasPath && !remote, danger: true })
+        items.push({ separator: true })
         items.push({ id: "delete", label: qsTr("永久删除"),
                      shortcut: root.shortcutDisplay("explorer.deletePermanent"),
                      enabled: hasPath, danger: true })
-        items.push({ separator: true })
-        items.push({ id: "properties", label: qsTr("属性"), shortcut: "Alt+Enter",
-                     enabled: hasPath && !many })
         return items
+    }
+
+    /// The row menu opens on the right-clicked selection; the second page can
+    /// be reached with a multi-selection too, so it asks the same question.
+    function manySelection() {
+        return (root.contextList !== null
+            ? root.contextList.selectionCount : fileList.selectionCount) > 1
     }
 
     /// The installed apps' commands as a submenu: inline rows first, then one
@@ -1812,6 +1848,18 @@ Window {
         if (id.indexOf("hidePlace:") === 0) {
             Workspace.hidePlace(id.substring("hidePlace:".length))
             root.clearContext()
+            return
+        }
+        // The row menu's second page: the same panel, different rows, at the
+        // coordinates it already occupies.
+        if (id === "moreMenu") {
+            root.rowMenuMore = true
+            menu.openAt(menu.openX, menu.openY, root.rowMoreMenuItems())
+            return
+        }
+        if (id === "menuBack") {
+            root.rowMenuMore = false
+            menu.openAt(menu.openX, menu.openY, root.rowMenuItems())
             return
         }
         if (id === "newSpaceAdd") {
@@ -3846,7 +3894,8 @@ Window {
 
     onShellCommandRevisionChanged: {
         if (menu.visible && root.contextKind === "row" && root.contextPath !== "")
-            menu.replaceActions(root.rowMenuItems())
+            menu.replaceActions(root.rowMenuMore
+                ? root.rowMoreMenuItems() : root.rowMenuItems())
     }
 
     ContextMenu {

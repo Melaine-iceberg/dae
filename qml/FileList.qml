@@ -42,6 +42,13 @@ Item {
     readonly property int headerHeight: density === "compact" ? 28
         : density === "spacious" ? 36 : 32
     readonly property bool listHeaderVisible: viewMode === "list" && searchModel === null
+    /// The detail columns stop at a readable measure instead of stretching
+    /// with the window, the way Explorer's detail view does: past this point
+    /// the row is background, and that strip still takes clicks, marquees and
+    /// drops. 44 rem leaves the name column ~262 dp after the three fixed
+    /// columns, which is the width the reference's table occupies.
+    readonly property int contentMaxWidth: 704
+    readonly property int contentWidth: Math.min(width, contentMaxWidth)
     /// Detail columns are dropped, not squeezed, when the pane is narrow: a
     /// split pane at half of a 1180px window has room for the name and the
     /// timestamp, not for four columns of ellipses.
@@ -810,60 +817,70 @@ Item {
         visible: root.listHeaderVisible
         color: root.contentColor
 
-        SortHeader {
-            id: nameHeader
+        /// The column track shares the row cap, so a heading never floats
+        /// over blank background to the right of the rows it labels.
+        Item {
+            id: headerTrack
             anchors.left: parent.left
-            anchors.leftMargin: 36
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            width: Math.max(0, (root.showType ? typeHeader.x
-                : root.showSize ? sizeHeader.x
-                : root.showModified ? modifiedHeader.x : parent.width) - 8 - x)
-            label: qsTr("名称")
-            sortKey: "name"
-            onClicked: root.applySort("name")
-        }
+            width: root.contentWidth
 
-        SortHeader {
-            id: typeHeader
-            anchors.right: root.showSize ? sizeHeader.left
-                : (root.showModified ? modifiedHeader.left : parent.right)
-            anchors.rightMargin: 16
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            width: 108
-            visible: root.showType
-            label: qsTr("类型")
-            sortKey: "type"
-            onClicked: root.applySort("type")
-        }
+            SortHeader {
+                id: nameHeader
+                anchors.left: parent.left
+                anchors.leftMargin: 36
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: Math.max(0, (root.showType ? typeHeader.x
+                    : root.showSize ? sizeHeader.x
+                    : root.showModified ? modifiedHeader.x : parent.width) - 8 - x)
+                label: qsTr("名称")
+                sortKey: "name"
+                onClicked: root.applySort("name")
+            }
 
-        SortHeader {
-            id: sizeHeader
-            anchors.right: root.showModified ? modifiedHeader.left : parent.right
-            anchors.rightMargin: root.showModified ? 24 : 16
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            width: 92
-            visible: root.showSize
-            label: qsTr("大小")
-            sortKey: "size"
-            alignRight: true
-            onClicked: root.applySort("size")
-        }
+            SortHeader {
+                id: typeHeader
+                anchors.right: root.showSize ? sizeHeader.left
+                    : (root.showModified ? modifiedHeader.left : parent.right)
+                anchors.rightMargin: 16
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: 108
+                visible: root.showType
+                label: qsTr("类型")
+                sortKey: "type"
+                onClicked: root.applySort("type")
+            }
 
-        SortHeader {
-            id: modifiedHeader
-            anchors.right: parent.right
-            anchors.rightMargin: 16
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            width: 142
-            visible: root.showModified
-            label: qsTr("修改时间")
-            sortKey: "modified"
-            alignRight: true
-            onClicked: root.applySort("modified")
+            SortHeader {
+                id: sizeHeader
+                anchors.right: root.showModified ? modifiedHeader.left : parent.right
+                anchors.rightMargin: root.showModified ? 24 : 16
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: 92
+                visible: root.showSize
+                label: qsTr("大小")
+                sortKey: "size"
+                alignRight: true
+                onClicked: root.applySort("size")
+            }
+
+            SortHeader {
+                id: modifiedHeader
+                anchors.right: parent.right
+                anchors.rightMargin: 16
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: 142
+                visible: root.showModified
+                label: qsTr("修改时间")
+                sortKey: "modified"
+                alignRight: true
+                onClicked: root.applySort("modified")
+            }
         }
 
         Rectangle {
@@ -953,7 +970,10 @@ Item {
                 /// clean. The search model answers empty for every row.
                 required property string gitStatus
 
-                width: ListView.view.width
+                /// The row stops at the column track's cap; ListView leaves the
+                /// rest of the viewport as background, exactly like the
+                /// Tauri shell's Windows-style detail view.
+                width: Math.min(ListView.view.width, root.contentMaxWidth)
                 height: root.rowHeight
 
                 readonly property bool selected: root.tab !== null
@@ -1363,7 +1383,7 @@ Item {
                 x: 0
                 y: Math.max(0, Math.min(listMarquee.startContentY,
                                          list.contentY + listMarquee.pointerY) - list.contentY)
-                width: list.width
+                width: root.contentWidth
                 height: Math.max(0, Math.abs(list.contentY + listMarquee.pointerY
                                              - listMarquee.startContentY))
                 color: Theme.signalSoft

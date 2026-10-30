@@ -3490,6 +3490,14 @@
             <source>从侧栏隐藏</source>
             <translation>从侧栏隐藏</translation>
         </message>
+        <message>
+            <source>更多…</source>
+            <translation>更多…</translation>
+        </message>
+        <message>
+            <source>‹ 返回</source>
+            <translation>‹ 返回</translation>
+        </message>
     </context>
     <context>
         <name>Sidebar</name>
