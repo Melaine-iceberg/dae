@@ -57,8 +57,8 @@ Item {
         { kind: "radio", group: "density", value: "spacious", label: qsTr("宽松") },
         { kind: "sep" },
         { kind: "label", label: qsTr("图标") },
-        { kind: "radio", group: "iconStyle", value: "system", label: qsTr("系统图标") },
         { kind: "radio", group: "iconStyle", value: "themed", label: qsTr("内置图标") },
+        { kind: "radio", group: "iconStyle", value: "system", label: qsTr("系统图标") },
         { kind: "toggle", property: "rowThumbnails", label: qsTr("行内显示缩略图") },
         { kind: "sep" },
         { kind: "toggle", property: "splitEnabled", label: qsTr("分屏") }

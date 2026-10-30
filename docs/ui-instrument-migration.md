@@ -300,8 +300,11 @@ readonly property color terminalCanvas: "#0b0b0c"
 
 ### 6.4 图标 `qml/ThemedIcon.qml` + `qml/Glyph.qml`
 
-- 重写 `ThemedIcon` 的绘制：保留 `category` / `isDir` / `size` API，内部改为单色线稿；删除类型色表和彩色填充。
-- 扩展 `Glyph.qml`：`folder`、`file`、`image`、`code`、`archive`、`media`、`drive`、`network`、`cloud`、`trash`、`diamond`、`branch`、`terminal`、`panel`、`chevron`、`check`。全部 16 单位框、1.2 线宽、圆角线帽。
+- 图形数据只有一个来源：原型的 sprite（`docs/prototypes/dae-instrument-ui-20261028.html` 的 `<symbol>`）。`Glyph.qml` 存的是展开成绝对 `M`/`L`/`C`/`Q`/`Z` 的路径表，不再手绘近似——旧实现把「设置」画成太阳、把「链接」画成纸张，并且和原型已经漂移。
+- 描边按尺寸补偿：`lineWidth × max(1, 16 / 宽度)`。10 / 12 / 14 px 下仍是 1.2 设备像素（旧实现是 1.2 单位，10 px 时只剩 0.75 px，整列图标发灰）。
+- `folder` 是填充轮廓，其余是描边；填充和描边共用一个 `tint`，文件里没有颜色。
+- 重写 `ThemedIcon` 的绘制：保留 `category` / `isDir` / `size` API；分类映射 `image`、`video`→`media`、`audio`→`music`、`text`、`code`、`archive`、`link`、`other`→`exe`。
+- 列表默认 `iconStyle = "themed"`，系统图标仍在「视图 › 图标」里可选：一屏不能同时出现彩色 shell 图标和单色线稿。
 - 真实系统缩略图仍走现有后端；不要把图片换成图标。
 - 侧栏、标签页、菜单、空状态统一从 `Glyph` 取图标，不再用 unicode 字符或字体图标。
 

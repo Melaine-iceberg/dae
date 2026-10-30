@@ -346,7 +346,7 @@ Item {
                     isDir: cell.isDir
                     size: root.glyphSize
                     tint: cell.selected || hover.containsMouse
-                        ? Theme.inkMuted : Theme.inkFaint
+                        ? Theme.ink : Theme.inkMuted
                 }
             }
 

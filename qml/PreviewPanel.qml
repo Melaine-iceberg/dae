@@ -457,8 +457,8 @@ Item {
 
                                 Glyph {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    width: 12
-                                    height: 12
+                                    width: 14
+                                    height: 14
                                     kind: "file"
                                     tint: root.faintColor
                                 }

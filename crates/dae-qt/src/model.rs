@@ -722,9 +722,10 @@ fn category_for_extension(extension: &str) -> &'static str {
     const AUDIO: &[&str] = &["mp3", "wav", "flac", "aac", "ogg", "m4a", "wma", "opus"];
     const ARCHIVE: &[&str] = &["zip", "7z", "rar", "tar", "gz", "bz2", "xz", "zst", "iso"];
     const CODE: &[&str] = &[
-        "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "go", "java", "c", "h", "cpp", "hpp",
-        "cc", "cs", "rb", "php", "swift", "kt", "kts", "lua", "sh", "bash", "zsh", "ps1", "bat",
-        "cmd", "sql", "html", "htm", "css", "scss", "less", "json", "yaml", "yml", "toml", "xml",
+        "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "qml", "py", "go", "java", "c", "h", "cpp",
+        "hpp", "cc", "cs", "rb", "php", "swift", "kt", "kts", "lua", "sh", "bash", "zsh", "ps1",
+        "bat", "cmd", "sql", "html", "htm", "css", "scss", "less", "json", "yaml", "yml", "toml",
+        "xml",
     ];
     const TEXT: &[&str] = &[
         "txt", "md", "markdown", "log", "csv", "tsv", "ini", "conf", "cfg",
@@ -2418,6 +2419,7 @@ mod tests {
         assert_eq!(category_of(EntryKind::Directory, "docs"), "folder");
         assert_eq!(category_of(EntryKind::File, "photo.PNG"), "image");
         assert_eq!(category_of(EntryKind::File, "main.rs"), "code");
+        assert_eq!(category_of(EntryKind::File, "Button.qml"), "code");
         assert_eq!(category_of(EntryKind::File, "song.flac"), "audio");
         assert_eq!(category_of(EntryKind::File, "bundle.7z"), "archive");
         assert_eq!(category_of(EntryKind::File, "README"), "file");

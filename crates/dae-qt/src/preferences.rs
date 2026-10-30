@@ -22,7 +22,7 @@ const VIEW_MODES: &[&str] = &["list", "grid", "column"];
 const DENSITIES: &[&str] = &["compact", "comfortable", "spacious"];
 const SORT_KEYS: &[&str] = &["name", "modified", "type", "size"];
 const SORT_ORDERS: &[&str] = &["asc", "desc"];
-const ICON_STYLES: &[&str] = &["system", "themed"];
+const ICON_STYLES: &[&str] = &["themed", "system"];
 const KIND_FILTERS: &[&str] = &["all", "folders", "files", "images"];
 const MODIFIED_FILTERS: &[&str] = &["any", "today", "week", "month"];
 const SIZE_FILTERS: &[&str] = &["any", "small", "medium", "large"];
@@ -117,9 +117,11 @@ impl Default for StoredPrefs {
             sort_key: "name".to_owned(),
             sort_order: "asc".to_owned(),
             folders_first: true,
-            // The Qt shell has always drawn the desktop's own icons; "themed"
-            // is the opt-in for the built-in glyph set, not the starting point.
-            icon_style: "system".to_owned(),
+            // The shell draws as one object: arc, type and state all in the same
+            // ink, with colour reserved for the signal and the git badges. A
+            // column of full-colour shell icons broke that on the first screen.
+            // The desktop's own icons stay one menu click away.
+            icon_style: "themed".to_owned(),
             row_thumbnails: false,
             // The app has always listed hidden entries; the toggle is for
             // people who want the classic hidden-by-default reading.

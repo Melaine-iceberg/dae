@@ -3451,7 +3451,7 @@ Window {
                             kind: "branch"
                             implicitWidth: 12
                             implicitHeight: 12
-                            tint: Theme.inkFaint
+                            tint: Theme.inkMuted
                         }
 
                         Text {

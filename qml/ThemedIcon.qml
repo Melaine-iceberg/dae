@@ -32,11 +32,14 @@ Item {
             return "folder"
         switch (root.category) {
         case "image": return "image"
-        case "video":
-        case "audio": return "media"
+        case "video": return "media"
+        case "audio": return "music"
         case "archive": return "archive"
         case "code": return "code"
+        case "text":
+        case "document": return "text"
         case "link": return "link"
+        case "executable": return "exe"
         default: return "file"
         }
     }

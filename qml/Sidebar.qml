@@ -496,7 +496,7 @@ Item {
                     width: 14
                     height: 14
                     kind: root.glyphKind(row.icon)
-                    tint: row.lit ? Theme.inkMuted : Theme.inkFaint
+                    tint: row.lit ? Theme.ink : Theme.inkMuted
                 }
 
                 Text {
@@ -678,7 +678,7 @@ Item {
                 height: 14
                 kind: "trash"
                 tint: root.trashActive || trashMouse.containsMouse
-                    ? Theme.inkMuted : Theme.inkFaint
+                    ? Theme.ink : Theme.inkMuted
             }
 
             Text {

@@ -101,7 +101,7 @@ fn language_token(name: &str) -> Option<String> {
         "js" | "mjs" | "cjs" | "jsx" => "js",
         "json" | "jsonc" | "json5" => "json",
         "css" | "scss" | "less" | "styl" => "css",
-        "html" | "htm" | "xml" | "svg" | "xhtml" | "vue" | "svelte" | "astro" => "html",
+        "html" | "htm" | "xml" | "svg" | "xhtml" | "vue" | "svelte" | "astro" | "qml" => "html",
         "py" | "pyi" => "py",
         "rb" => "rb",
         "rs" => "rs",
@@ -780,6 +780,7 @@ mod tests {
         assert_eq!(classify("README.md"), SourceKind::Markdown);
         assert_eq!(classify("notes.MARKDOWN"), SourceKind::Markdown);
         assert_eq!(classify("main.rs"), SourceKind::Code("rs".to_owned()));
+        assert_eq!(classify("Glyph.qml"), SourceKind::Code("html".to_owned()));
         assert_eq!(
             classify("Dockerfile"),
             SourceKind::Code("dockerfile".to_owned())

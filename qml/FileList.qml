@@ -1069,7 +1069,7 @@ Item {
                     isDir: row.isDir
                     size: 16
                     tint: row.selected || rowHover.containsMouse
-                        ? Theme.inkMuted : Theme.inkFaint
+                        ? Theme.ink : Theme.inkMuted
                 }
 
                 Row {

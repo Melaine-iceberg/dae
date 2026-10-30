@@ -34,7 +34,7 @@ Item {
             width: 28
             height: 28
             kind: root.glyph
-            tint: Theme.inkFaint
+            tint: Theme.inkMuted
         }
 
         Item {

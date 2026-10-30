@@ -36,6 +36,7 @@ const TEXT_EXTENSIONS: &[&str] = &[
     "md",
     "markdown",
     "mdx",
+    "qml",
     "rst",
     "adoc",
     "org",
@@ -249,6 +250,7 @@ mod tests {
         assert!(is_text_preview_path("C:/tree/README"));
         assert!(is_text_preview_path("C:/tree/Dockerfile"));
         assert!(is_text_preview_path("C:/tree/.gitignore"));
+        assert!(is_text_preview_path("C:/tree/Button.qml"));
         assert!(!is_text_preview_path("C:/tree/photo.jpg"));
         assert!(!is_text_preview_path("C:/tree/archive.zip"));
     }

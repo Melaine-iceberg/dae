@@ -328,7 +328,7 @@ Item {
                     width: 14
                     height: 14
                     kind: "folder"
-                    tint: Theme.inkFaint
+                    tint: Theme.inkMuted
                 }
 
                 Text {
@@ -502,7 +502,7 @@ Item {
                     isDir: row.isDir
                     size: 16
                     tint: row.selected || row.expanded || hover.containsMouse
-                        ? Theme.inkMuted : Theme.inkFaint
+                        ? Theme.ink : Theme.inkMuted
                 }
 
                 Text {
@@ -644,7 +644,7 @@ Item {
                 width: 28
                 height: 28
                 kind: pane.emptyError ? "file" : "folder"
-                tint: Theme.inkFaint
+                tint: Theme.inkMuted
             }
 
             Text {

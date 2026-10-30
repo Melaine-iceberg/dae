@@ -154,7 +154,7 @@ Item {
                     height: 14
                     kind: "folder"
                     tint: node.current || nodeMouse.containsMouse
-                        ? Theme.inkMuted : Theme.inkFaint
+                        ? Theme.ink : Theme.inkMuted
                 }
 
                 Text {

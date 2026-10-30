@@ -647,7 +647,7 @@ Item {
                 height: 14
                 anchors.verticalCenter: parent.verticalCenter
                 kind: "search"
-                tint: Theme.inkFaint
+                tint: Theme.inkMuted
             }
 
             TextInput {

@@ -193,8 +193,8 @@ Item {
                 spacing: 5
 
                 Glyph {
-                    width: 12
-                    height: 12
+                    width: 14
+                    height: 14
                     kind: "file"
                     tint: Theme.inkMuted
                 }
