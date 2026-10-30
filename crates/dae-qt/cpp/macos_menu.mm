@@ -38,7 +38,10 @@ NSMenuItem* submenu_item(NSMenu* parent, NSString* title)
 
 } // namespace
 
-void dae_qt_install_macos_menu()
+// The declaration in the header is namespaced; an unqualified definition here
+// would be a different, global function and the bridge's symbol would stay
+// undefined.
+void dae_qt::dae_qt_install_macos_menu()
 {
     @autoreleasepool {
         if (NSApp == nil)
