@@ -256,3 +256,10 @@ Linux portal / xdg-mime 路径不在 Windows 上执行，仍需按 §4 手测。
 阶段 6 同时把 `cargo test --package dae-qt --lib` 加进 `qt-check`：Windows 上看不到
 的 `cfg(target_os)` 模块至少要在目标平台上编译并跑单元测试，但仍不覆盖窗口、
 IME、菜单和真实 D-Bus/AppKit 交互。
+
+2026-10-30 `qt-check` 首次在 Linux/macOS 上运行新代码（run 40991895908，两端全绿）：
+Linux 构建通过并跑完 132 个单元测试；macOS 通过构建与链接。运行中修掉三处只在
+目标平台暴露的问题：`macos_menu.h` 不再依赖 `<QtGlobal>`（独立 `cc` 调用没有 Qt
+include path），`macos_platform.mm` 改用 `NSColor` 分量读取（`getRed:…` 在新 SDK
+下被判为 `void`），菜单实现补上 `dae_qt::` 限定名；另有 `sidebar_model` 的卷名
+用例原来只断言 Windows 盘符拼写，已改成跨平台断言。
