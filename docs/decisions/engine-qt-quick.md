@@ -1321,7 +1321,7 @@ Qt Online Installer 装在 `K:/Qt`：
 
 | # | 项 | 现状与证据 | 验收 |
 |---|---|---|---|
-| 1 | Windows MSIX 仍打旧壳 | `release.yml:210` 把 `src-tauri\target\release\dae.exe` 复制进 `dist/` 再 `winapp pack`；Qt 作业只产出 portable zip 与 `latest-qt.json`（同文件 `qt:` 作业）。根 `Package.appxmanifest` 的 `Executable="$targetnametoken$.exe"` 由 `winapp pack` 解析，与产物无关 | MSIX 内是 `dae-app` 产物；装完 `dae://`、默认管理器、开机启动都指向 Qt 壳 |
+| 1 | Windows MSIX 仍打旧壳 | `release.yml` 曾把 `src-tauri\target\release\dae.exe` 复制进 `dist/` 再 `winapp pack`；Qt 作业只产出 portable zip 与 `latest-qt.json`。根 `Package.appxmanifest` 的 `Executable="$targetnametoken$.exe"` 由 `winapp pack` 解析，与产物无关 | **已补**，见 §9.7：MSIX 内是 Qt 部署树；`dae://` 改由清单声明，默认管理器与开机启动仍写版本化路径（§9.7.3-2） |
 | 2 | macOS 未签名、未公证 | 发布矩阵只有 `darwin-aarch64`，签名是 ad-hoc（`release.yml` 的 macOS 段） | Developer ID + 公证通过；Intel Mac 可运行，或在 README 明确写不支持 |
 | 3 | Linux 只有 portable zip | 无 deb/rpm/Flatpak/AppImage；QtMultimedia 依赖 GStreamer 插件，未在安装层声明；图标只有 128px | 至少一种系统包；缺 GStreamer 时预览给出可读提示，而不是静默失败 |
 
@@ -1347,12 +1347,16 @@ Qt Online Installer 装在 `K:/Qt`：
 ### 9.5 顺序
 
 1. **§9.3-4 日志与 panic 落盘** —— **已完成（§9.6）**。体量最小、与旧壳零耦合，决定后续问题能否定位；
-2. §9.2-1 MSIX 改指 Qt 产物；
+2. **§9.2-1 MSIX 改指 Qt 产物** —— **已完成（§9.7）**；
 3. §9.2-2 / §9.2-3 证书与安装包（需要产品决策，尽早启动）；
 4. §9.3-5 平台手测，回填 parity §6；
 5. §9.4 退役。
 
 退役必须排在最后：平台验证完成之前，旧壳是 A/B 与 `git revert` 的唯一回退路径（§7）。
+
+MSIX 落地后分出两件应该插队的事：**在真实机器上装一次，走一遍深链与升级**
+（§9.7.3-1），以及**把默认管理器与开机启动改成包身份注册**（§9.7.3-2）——
+后者现在属于「能用，但升级后会指向上一个版本目录」。
 
 ### 9.6 记录：日志与 panic 落盘（2026-10-30）
 
@@ -1404,3 +1408,70 @@ sink。首次实跑就把两条以前完全不可见的信息写了进去：
 4. panic 钩子与旧壳同构（`take_hook` → 记一条 → 调回原钩子），没有为它单独注入
    一次 panic 做端到端验证 —— 注入点需要一个只有测试构建才有的崩溃开关，不值得
    为验证加一条产品代码里的后门。
+
+### 9.7 记录：MSIX 改打 Qt 部署树（2026-10-30）
+
+**为什么不是改一行路径。** 旧步骤是「把 `src-tauri\target\release\dae.exe` 拷进 `dist/`，
+再 `winapp pack`」——包内只有一个裸可执行文件，没有 Qt 运行时。把来源换成
+`dae-app` 的 exe 也不够：Qt Quick 与 QtMultimedia 都不静态链接，包里缺
+`platforms\qwindows.dll` 和 `qml\QtQuick` 时装得上、打不开。所以要打的是
+**windeployqt 产出的整棵树**，也就是 portable zip 里那份。
+
+**9.7.1 打包链路。** `release.yml` 新增独立作业 `msix`（`needs: [build, qt]`）：
+
+- 下载 `qt` 作业上传的 `qt-windows-x86_64` 产物，解包进 `dist/`；
+- 断言 `dae.exe`、`platforms\qwindows.dll`、`qml\QtQuick`、`qml\QtMultimedia`、
+  `multimedia` 都在——旧包只有一个 exe 也能「装成功」，所以缺运行时必须让发布失败，
+  而不是发一个打不开窗的包；
+- `winapp pack` 与证书逻辑不变，清单与 `Assets/` 仍在仓库根；
+- MSIX 的挂载从 `build` 作业挪走（连同那个只为它存在的 winapp 安装步骤）。
+
+`build` 作业现在只负责 Tauri 产物与草稿 release，`qt` 作业不变。
+
+**9.7.2 包身份带来的两个后果，都在引擎里处理。** MSIX 把应用装进
+`C:\Program Files\WindowsApps\<name>_<version>_<arch>__<publisher>`：只读，且**每次更新换目录名**。
+
+1. `crates/dae-core/src/package.rs`（新）：`is_packaged()` 用
+   `GetCurrentPackageFullName` 做零长度探测——返回 `ERROR_INSUFFICIENT_BUFFER`
+   说明进程有身份。**按进程问，不按路径猜**：便携版即使放在包目录里也返回 `false`。
+   `InstallLayout::current()` 在打包运行时返回 `None`，于是 `updates_enabled()`
+   直接关掉自更新。便携式的「等进程退出后原地换文件」在这里既写不进树，也无法给
+   快捷方式和注册表一个稳定路径——升级必须作为新包到来。关掉比在安装阶段报
+   「目录不可写」诚实。
+2. `Package.appxmanifest` 增加 `windows.protocol` 扩展；`activation::claim()` 在打包
+   运行时跳过 `HKCU\Software\Classes\dae` 写入。包注册是**按应用**的，与版本目录无关；
+   再写一条按用户的命令只会把 `dae://` 钉在即将被下一次更新换掉的路径上。
+
+**本地入口也换掉了。** `bun run pack:msix` 原本同样是拷 `src-tauri` 的 exe；现在指向
+新脚本 `scripts/pack-msix.ps1`（构建 `dae-app` → `windeployqt` → 断言清单 → `winapp pack`），
+证书处理与 CI 一致。README 的脚本表同步改了那一行。
+
+**验证（本机，Qt 6.12.0 / MSVC 2022 / Windows）。**
+
+| 项目 | 结果 |
+|---|---|
+| `scripts/pack-msix.ps1` 全流程 | 通过：payload **101.9 MB** → `dae_0.5.0.0_x64.msix` **44.3 MB** |
+| 包内容 | 129 项；`dae.exe`（14.4 MB）、`platforms/qwindows.dll`、`qml/QtQuick`、`qml/QtMultimedia`、`multimedia/` 均在 |
+| 包清单 | `Executable="dae.exe"`、`EntryPoint="Windows.FullTrustApplication"`、`Identity dae 0.5.0.0 x64`、`Protocol Name="dae"` 已在包内 |
+| `cargo test -p dae-core --lib package` | 通过：`a_test_binary_is_not_packaged`（测试进程确实没有包身份） |
+| `cargo test -p dae-qt --lib` | **144 passed**（`activation` 的打包分支随之编译） |
+| `cargo check -p dae-core` | 通过（`Win32_Storage_Packaging_Appx` 特性已加） |
+
+**9.7.3 未关闭。**
+
+1. **没有真的装一次。** 包能打出来、内容与清单都对，但 `Add-AppxPackage` 需要信任
+   开发证书，那会改动本机状态，留给手动步骤：装完启动一次、点一个 `dae://` 链接、
+   确认日志落在 `%LOCALAPPDATA%\com.melaine.dae\logs`（打包进程不被重定向）。
+2. **默认管理器与开机启动仍写版本化路径。** 两者都用 `std::env::current_exe()`
+   （`default_manager.rs:64`、`:279`、`:596`），写进 `HKCU` 的是
+   `…\WindowsApps\dae_0.5.0.0_x64__…\dae.exe`。升级后新包换了目录名，这两条会指向
+   已被删除的路径，直到用户重新开关一次。正确做法是声明 `desktop:Extension`
+   （默认管理器）与 `uap5:startupTask`（开机启动），跟 `dae://` 一样交给包身份；
+   需要先确认 `startupTask` 在 full-trust 下的任务管理器可见性。
+3. **包内的自更新提示已关闭，但没有降级说明。** `updates_enabled()` 为假时设置页
+   不再出现更新入口，用户也就不知道该去下载新版本。要么在 About 里留一句
+   「此安装由系统包管理器更新」，要么接 MSIX 的部署 API——后者需要
+   `packageManagement` 能力与非 Store 签名信任，属独立决策。
+4. **CI 上未跑过。** 作业结构与依赖用本机 `yaml` 解析校验过，`windeployqt` 与
+   `winapp pack` 的调用与本机实测一致，但真实 runner 上的 windeployqt 版本、
+   `Assets/` 相对路径解析仍需第一次打 tag 时确认。

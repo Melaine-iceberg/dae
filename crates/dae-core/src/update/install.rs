@@ -66,6 +66,13 @@ impl InstallLayout {
 
         #[cfg(not(target_os = "macos"))]
         {
+            // An MSIX install is read-only and its directory is renamed on
+            // every update, so the swap below cannot run there. Answering
+            // "not installed" turns the updater off before it can offer an
+            // update it would fail to apply; see `crate::package`.
+            if crate::package::is_packaged() {
+                return None;
+            }
             let dir = exe.parent()?.to_path_buf();
             // `windeployqt`/`linuxdeploy` put the platform plugin next to the
             // executable. A `cargo run` from target/ does not, which keeps

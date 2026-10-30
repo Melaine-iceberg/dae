@@ -78,6 +78,9 @@ windows = { version = "0.62.2", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
   "Win32_Storage_FileSystem",
+  # `package::is_packaged` asks the app model whether this process belongs to an
+  # MSIX package, which decides whether the portable updater may run at all.
+  "Win32_Storage_Packaging_Appx",
   "Win32_System_Com",
   "Win32_System_DataExchange",
   "Win32_System_Memory",

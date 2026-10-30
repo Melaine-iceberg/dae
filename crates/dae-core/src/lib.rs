@@ -25,6 +25,7 @@ pub mod error;
 pub mod fs;
 pub mod hashing;
 pub mod host;
+pub mod package;
 pub mod paths;
 pub mod progress;
 pub mod pty;

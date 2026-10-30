@@ -64,7 +64,7 @@ bun run bindings:export   # regenerate src/bindings.ts alone
 | `bun run dev` | Vite alone on `http://localhost:1420` |
 | `bun run build` | `tsc`, then Vite, into `dist/` |
 | `bun run tauri:build:release` | Release bundle, with `src-tauri/tauri.release.conf.json` |
-| `bun run pack:msix` | Windows: release exe plus a development certificate, packed as MSIX |
+| `bun run pack:msix` | Windows: builds the Qt shell, deploys Qt with `windeployqt`, packs the tree as MSIX (`scripts/pack-msix.ps1`) |
 | `bun run tauri:dev:withidentity` | Windows: register the app with its identity (`winapp run`) |
 | `bun run lint` / `lint:type-aware` | Oxlint over `src` and `vite.config.ts`; add `:fix` to apply |
 | `bun run test:rust:setup` / `test:rust` | cargo-nextest, see [Tests](#tests) |

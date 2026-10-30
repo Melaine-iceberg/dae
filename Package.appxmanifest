@@ -45,6 +45,18 @@
         Square44x44Logo="Assets\AppList.png">
         <uap:DefaultTile Wide310x150Logo="Assets\WideTile.png" />
       </uap:VisualElements>
+      <!-- The scheme is registered for the application, not for one executable
+           path. An installed package is copied to a directory named after its
+           version, so a per-user `HKCU\Software\Classes\dae` command would go
+           stale on the first update; `dae-qt`'s `activation` module therefore
+           skips its registry write when it detects package identity. -->
+      <Extensions>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="dae">
+            <uap:DisplayName>dae link</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
     </Application>
   </Applications>
 

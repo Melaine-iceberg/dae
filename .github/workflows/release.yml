@@ -102,13 +102,6 @@ jobs:
         with:
           bun-version: latest
 
-      # Windows leg only: the MSIX steps below need winapp on PATH. Nothing
-      # else to run after it — there is no winapp.yaml to `winapp restore`
-      # because Tauri brings its own Rust bindings (see the winapp Tauri guide).
-      - name: Install winapp CLI
-        if: matrix.platform == 'windows-latest'
-        uses: microsoft/setup-WinAppCli@v0.2
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -187,13 +180,82 @@ jobs:
           # cannot silently replace a running install.
           updaterJsonPreferNsis: true
 
-      # The MSIX ships the release exe tauri-action just built: its
-      # beforeBuildCommand already left the frontend in dist/, so only the exe
-      # is copied in. The committed Package.appxmanifest + Assets/ at the repo
-      # root are what `winapp pack` picks up (it auto-detects the manifest from
-      # the working directory). No `winapp run` registration happens in CI.
+  # ---------------------------------------------------------------------------
+  # Windows MSIX.
+  #
+  # The package used to carry `src-tauri\target\release\dae.exe` — the Tauri
+  # shell — which is the one artifact this migration is retiring. It now ships
+  # the Qt shell's deployed tree: the same bytes as the portable zip, Qt runtime
+  # and QML modules included, so an installed copy has `platforms\qwindows.dll`
+  # and `qml\QtQuick` beside the executable exactly as the zip does.
+  #
+  # That is why it is its own job instead of a step in `build`: it needs the
+  # archive the `qt` job produces, and `build` is what creates the draft release
+  # both artifacts are attached to.
+  #
+  # Two consequences of a packaged install, both handled in the engine rather
+  # than here: the tree under `C:\Program Files\WindowsApps` is read-only and
+  # re-versioned on every update, so `dae-core` turns the portable self-updater
+  # off when it detects package identity, and `dae://` comes from the manifest's
+  # protocol extension instead of the per-user registry write.
+  # ---------------------------------------------------------------------------
+  msix:
+    name: Windows MSIX
+    needs: [build, qt]
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install winapp CLI
+        uses: microsoft/setup-WinAppCli@v0.2
+
+      - name: Download the Qt shell archive
+        uses: actions/download-artifact@v8
+        with:
+          name: qt-windows-x86_64
+          path: staging
+
+      # `dist/` is what the committed Package.appxmanifest describes: the
+      # manifest and Assets/ stay at the repo root, where `winapp pack` looks
+      # for them (it auto-detects the manifest from the working directory), and
+      # only the payload is staged here.
+      - name: Stage the package payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem staging -Filter 'dae-*-windows-x86_64.zip' |
+            Select-Object -First 1
+          if (-not $zip) {
+            throw "the qt job uploaded no Windows archive"
+          }
+          if (Test-Path dist) { Remove-Item dist -Recurse -Force }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath dist
+
+          # These are the files that prove the payload is the deployed Qt shell
+          # and not a bare executable: the old MSIX contained dae.exe alone and
+          # would still start, so a missing runtime has to fail the release
+          # rather than ship a package that cannot open a window.
+          foreach ($required in @(
+              'dae.exe',
+              'platforms\qwindows.dll',
+              'qml\QtQuick',
+              'qml\QtMultimedia',
+              'multimedia')) {
+            if (-not (Test-Path (Join-Path dist $required))) {
+              throw "the MSIX payload is missing $required"
+            }
+          }
+          "payload: {0:N1} MB, {1} top-level entries" -f `
+            ((Get-ChildItem dist -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), `
+            (Get-ChildItem dist | Measure-Object).Count
+
       - name: Package MSIX
-        if: matrix.platform == 'windows-latest'
         shell: pwsh
         env:
           # Optional real code-signing certificate as a base64-encoded .pfx:
@@ -206,8 +268,8 @@ jobs:
           MSIX_CERTIFICATE: ${{ secrets.MSIX_CERTIFICATE }}
           MSIX_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_CERTIFICATE_PASSWORD }}
         run: |
+          $ErrorActionPreference = 'Stop'
           node scripts/sync-msix-version.mjs --release
-          Copy-Item src-tauri\target\release\dae.exe dist\ -Force
           if ($env:MSIX_CERTIFICATE) {
             [IO.File]::WriteAllBytes("release.pfx", [Convert]::FromBase64String($env:MSIX_CERTIFICATE))
             winapp pack .\dist --cert .\release.pfx --cert-password "$env:MSIX_CERTIFICATE_PASSWORD"
@@ -215,13 +277,13 @@ jobs:
             winapp cert generate --if-exists skip
             winapp pack .\dist --cert .\devcert.pfx
           }
+          if ($LASTEXITCODE -ne 0) { throw "winapp pack failed with exit code $LASTEXITCODE" }
 
-      # tauri-action created the release as a draft; append the MSIX to that
-      # same draft so one manual publish ships every installer. `draft: true`
-      # is load-bearing: without it this action PUBLISHES the draft after
+      # The draft was created by tauri-action; append the MSIX to that same
+      # draft so one manual publish ships every installer. `draft: true` is
+      # load-bearing: without it this action PUBLISHES the draft after
       # uploading. Release name/body/notes set by tauri-action are retained.
       - name: Attach MSIX to release
-        if: matrix.platform == 'windows-latest'
         uses: softprops/action-gh-release@v3
         with:
           files: "*.msix"

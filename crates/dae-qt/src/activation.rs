@@ -5,7 +5,8 @@
 //! its command line, plus the directory it was started in, and exits. This
 //! module parses those arguments before QML sees them, so the shell is handed
 //! only directories that exist. It also registers the `dae` URL scheme in the
-//! current user's registry after winning the slot.
+//! current user's registry after winning the slot — unless the shell runs from
+//! an installed package, whose manifest already declares the scheme.
 //!
 //! Supported spellings, matching the Tauri shell:
 //!
@@ -68,7 +69,17 @@ pub fn claim() -> bool {
     }
 
     #[cfg(windows)]
-    if let Err(error) = register_url_scheme() {
+    if dae_core::package::is_packaged() {
+        // The package manifest declares `windows.protocol`, so Windows already
+        // routes `dae://` here and does it per application rather than per
+        // executable path. Writing the per-user command on top of that would
+        // pin the scheme to the versioned directory the package happens to be
+        // installed in, which the next update renames.
+        log::info!(
+            target: "dae::activation",
+            "dae:// is provided by the package manifest"
+        );
+    } else if let Err(error) = register_url_scheme() {
         log::warn!(target: "dae::activation", "could not register dae:// URL scheme: {error}");
     }
 

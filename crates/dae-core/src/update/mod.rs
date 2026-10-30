@@ -115,8 +115,10 @@ pub fn feed_url() -> String {
 ///
 /// Debug builds are excluded (they usually run from `target/`, not from a
 /// deployed bundle), and a deployed bundle must have the Qt platform directory
-/// next to the executable. `DAE_UPDATE_DEV=1` lifts the first restriction when
-/// the updater itself is being tested.
+/// next to the executable. An installed Windows package is excluded as well:
+/// its directory is read-only, so updates arrive as a new package rather than
+/// through the portable swap (`crate::package`). `DAE_UPDATE_DEV=1` lifts the
+/// first restriction when the updater itself is being tested.
 pub fn updates_enabled() -> bool {
     let dev = std::env::var("DAE_UPDATE_DEV").as_deref() == Ok("1");
     (cfg!(not(debug_assertions)) || dev) && InstallLayout::current().is_some()
