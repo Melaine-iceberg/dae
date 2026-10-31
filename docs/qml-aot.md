@@ -166,7 +166,7 @@ Linux / macOS 在合入前就看到预编译的错误（这个 job 存在的理�
 | 绑定求值 | 1000 个带 anchors + `Theme.*` 绑定的 Rectangle | **8–11 ms** |
 | Rust 对象构造 | 单独 `createObject` AppConfig / TrashModel / OverviewModel / ShellCommandModel | 每个 **0 ms** |
 | Canvas（542 个 Glyph） | 把 Glyph 的 Canvas 换成 Rectangle 做交替 A/B | 无差异 |
-| 终端项（profiler 报 638 ms） | 在 `TerminalItem` 构造函数两端加标记 | **2 ms** |
+| 终端项（profiler 报 638 ms） | 在 `TerminalItem` 构造函数两端加标记 | ~~2 ms~~ **535 ms**，§14 复核推翻了这一行 |
 | 子组件 `onCompleted` | Sidebar 的 `Spaces.refresh` + `sidebarModel.refresh` 两端加标记 | 各 **0.2 ms**，且都在根 `onCompleted` **之后**才跑 |
 | 同一棵树第二次实例化 | 运行时再建一个 `ShellWindow` | **~206 ms**（含它自己的启动工作），说明类型热了以后树本身很便宜 |
 | 未在首启路径上的组件类型 | 首次 vs 第二次 `createObject`（SettingsPanel / CommandPalette / OpenWithDialog / BulkRenameDialog） | 首次 0–21 ms，第二次 0–13 ms |
@@ -183,9 +183,14 @@ MenuList）也量过：profiler 的计数里 `MenuList.qml` 一共创建了 **11
 
 **工具注意事项。** `qmlprofiler` 能连上，但代价很大：要 `QT_QML_DEBUG`
 （`DAE_QML_PROFILE=1` 可给 release 打开，见 `crates/dae-qt/build.rs`），而 QML 调试
-服务会**绕过 AOT 单元**，并且每个事件都有开销。用它得到的 `TerminalItem` 638 ms
-与实测 2 ms 差了三个数量级——**不要用 profiler 的绝对时间做结论**，只用它的事件计数
-（哪些组件被创建了多少个）。
+服务会**绕过 AOT 单元**，并且每个事件都有开销。一般**不要用 profiler 的绝对时间做结论**，
+只用它的事件计数（哪些组件被创建了多少个）。但 `TerminalItem` 那个 638 ms 是个例外：
+§14 用 C++ 标记复核它确实阻塞了 535 ms，错的是本节当时的「2 ms」。
+
+**§14 复核（2026-10-31）推翻了本节的主要归因。** 745 ms 实例化里约有 **535 ms 是
+一次性字体/Windows 平台成本**，由首启路径上**第一个同步文本控件**承担；换掉那个控件，
+成本原样转移，剩下才是「组件类型首次准备」的 ~200 ms。所以「组件类型数量 × 5–15 ms」
+只解释小头，首启真正该动的是字体初始化，不是组件清单。
 
 ## 8. 首帧前的 ~290 ms 是 GPU 初始化，不是 QML（2026-10-31）
 
@@ -374,9 +379,83 @@ Windows，release，`DAE_STARTUP_PERF=1`，每组 8 轮交替（奇偶轮换先�
 | 新构建 · `DAE_QML_AOT=0` | 621.3 ms | 788.0 ms | 992.8 ms |
 
 旧/新 AOT 的差在噪声内；新树里 AOT 相对无 AOT 只剩 **~10 ms**（§11 量到的是 ~54 ms，
-但那次的无 AOT 基线是 877.7 ms，机器状态不可直接比）。**实例化没有变化**，与 §7 的
-结论一致：AOT 之后的大头是引擎为每个组件文件做的首次准备，不是绑定/函数能不能编成
-C++。覆盖率从 62% 提到 84% 也没有动这一项。
+但那次的无 AOT 基线是 877.7 ms，机器状态不可直接比）。**实例化没有变化**：AOT 之后
+的大头不在绑定/函数能不能编成 C++。§7 把这一大头归因到「每个组件文件的首次准备」，
+§14 复核后其中约 535 ms 其实是一次性字体/Windows 平台成本。覆盖率从 62% 提到 84%
+也没有动这一项。
 
 所以止损在这一步：不保留模块目录、全树导入和私有挂载点，`docs` 只留这条负结果。
 再往上就不是 QML 侧能改的了。
+
+## 14. 首帧前创建了什么，以及那 535 ms 不是「组件太多」（2026-10-31）
+
+§7 把首启实例化归因到「首启路径上的组件类型数量」。用 `qmlprofiler` 把首启对象抓下来、
+再用进程内标记复核那几笔大时间之后，这个归因只对了一小半：实例化里有一笔 **~535 ms
+的一次性字体/Windows 平台成本**，由首启路径上**第一个同步文本控件**承担。换掉那个控件，
+钱就跟着换；组件数量本身不是杠杆。
+
+### 测量方法
+
+`DAE_QML_PROFILE=1` 的 release，`qmlprofiler --include creating,javascript,binding`
+（QML 调试服务绕过 AOT，所以只用**事件计数**；时间用 `DAE_STARTUP_PERF` 与临时 C++ 标记
+交叉验证，标记已移除）。trace 在 `target/profiler/traces/`：
+`qmlprofiler-trace-dae-2026-10-31-222427.qtd`、`...-full-2026-10-31.qtd`。
+
+### 首帧前创建了什么
+
+首个 SceneGraph range 之前：**5069 次创建、81 种类型**——32 种 Qt 内建（4731 次）、
+37 种自定义 QML 类型（325 次）、12 种 Rust 类型（13 次）。§7 估的「约 50 个文件」偏高，
+实际自定义类型只有 37 个。实例数前列：`Text` 852、`Item` 798、`Rectangle` 600、
+`Connections` 508、`Canvas` 474、`MouseArea` 346、`Glyph` 229、`Row` 206、`Image` 170、
+`Accessible` 147。按「在哪个文件里创建」：`Glyph.qml` 1374、`MenuList.qml` 1152、
+`OverviewView.qml` 877、`ShellWindow.qml` 317、`FileList.qml` 190、`PreviewPanel.qml`
+176。首帧之后另有 1044 次（侧栏行 714 + Glyph 252 + 概览 78），那属于首帧布局，
+不在 `engine.load` 里。
+
+### 那 535 ms 在哪里
+
+终端面板还随窗口创建时，profiler 把 **517.9 ms** 记在第一个 `TerminalItem` 上。
+C++ 标记复核（Windows，release + AOT）：
+
+```
+term-ctor-begin       66.71 ms
+term-measure-begin    66.75 ms
+font-db warm end     189.75 ms
+term-measure-end     601.51 ms   ← measureCells 里第一次 QFontMetricsF
+qml-root-completed   637.41 ms
+qml-loaded           774.14 ms
+```
+
+把 `TerminalPanel` 改成首次点击才创建后，`TerminalItem` 从启动路径上消失了，但这
+535 ms **原样转移**到 `PreviewPanel` 的富文本 `TextEdit`（profiler 538.3 ms）；再把那块
+`TextEdit` 临时删掉，它又转移到下一个文本控件，`qml-root-completed` 仍停在 600–700 ms。
+所以它不是某个组件的属性，而是**进程里第一次同步字体/文本度量**的一次性成本。
+
+排除法（同一构建，只改环境或开关）：
+
+| 变量 | 结果 |
+|---|---|
+| `QT_QPA_PLATFORM=offscreen` / `minimal` | `qml-loaded` **~830 → ~100 ms**，块消失 |
+| `QT_QUICK_BACKEND=software` | 仍在（实例化 ~700 ms），不是 D3D11 |
+| `QSG_RENDER_LOOP=basic` | 仍在 |
+| 关掉字体预热线程 | 仍在（~600–735 ms） |
+| 应用字体改成单一 `Segoe UI` | 仍在 |
+| `QT_IM_MODULE=none`、`fontengine=freetype` | 仍在 |
+
+`QT_LOGGING_RULES=qt.qpa.*,qt.text.font.*` 的日志显示：主线程在第一次同步文本度量时
+先等到字体库预热结束（~190–270 ms），随后是成片的 `Family name match pass`
+（`Segoe UI` → `Tahoma` → `SimSun` → `Arial` ……，即中日韩字形回退），直到 ~600 ms。
+所以这笔钱是 **Windows 字体库构建 + 首次 CJK 回退匹配/字体引擎创建**；`offscreen` /
+`minimal` 用另一套字体后端，整棵树 80 ms 就建完了。
+
+### 结论与改动
+
+- **组件数量不是首启的杠杆。** 37 个自定义类型、5069 个对象本身很便宜（§7 的
+  「1000 个 Item 0–3 ms」仍成立）；继续砍面板或菜单只能影响剩余 ~200 ms。
+- **`TerminalPanel` 改成首次打开时创建**（`ShellWindow.qml` 的 `terminalLoaded` +
+  `Loader`/`Component`）。这不是启动收益——上面已说明钱会转移——而是让隐藏面板不再
+  常驻：`TerminalItem`、它的绘制区与焦点环只在用户真的开终端时存在。实测启动时不再
+  构造 `TerminalItem`，按一次 Ctrl+` 拉起 `pwsh.exe`，行为正常。
+- 启动时间的下一步不在 QML：要用 WPA/ETW 或把**字体引擎**（不只是
+  `QFontDatabase::families()`）放到预热线程，并且让主线程的第一个文本度量晚于它。
+  后者要求主线程在字体就绪前有 ≥500 ms 的非文本工作可做，当前没有，所以没接。

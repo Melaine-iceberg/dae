@@ -58,6 +58,11 @@ Window {
     /// that arrives before this stays in the native pending list.
     property bool activationReady: false
     property bool terminalActive: false
+    /// The terminal panel is built the first time the terminal is opened;
+    /// nothing in the window needs it before that. This is not a startup win
+    /// by itself (docs/qml-aot.md §14): the one-time font work its first
+    /// `TerminalItem` used to pay simply moved to the first other text item.
+    property bool terminalLoaded: false
     property bool sidebarVisible: true
     property bool previewVisible: true
     /// The second pane's tab. Created the first time split view is enabled and
@@ -2132,12 +2137,20 @@ Window {
             return
         }
         root.terminalActive = !root.terminalActive
-        if (root.terminalActive)
-            Qt.callLater(terminalPanel.focusTerminal)
-        else if (root.trashActive)
+        if (root.terminalActive) {
+            root.terminalLoaded = true
+            Qt.callLater(root.focusTerminalPanel)
+        } else if (root.trashActive) {
             trashView.takeFocus()
-        else
+        } else {
             fileList.takeFocus()
+        }
+    }
+
+    function focusTerminalPanel() {
+        const panel = terminalLoader.item as TerminalPanel
+        if (panel !== null)
+            panel.focusTerminal()
     }
 
     Connections {
@@ -2983,7 +2996,7 @@ Window {
 
                 Item {
                     width: parent.width
-                    height: parent.height - terminalPanel.height
+                    height: parent.height - terminalLoader.height
 
                     FileList {
                         id: fileList
@@ -3327,15 +3340,27 @@ Window {
                     }
                 }
 
-                TerminalPanel {
-                    id: terminalPanel
+                // Built on first use, not with the window: see `terminalLoaded`.
+                // Kept alive afterwards, like the shell it shows.
+                Loader {
+                    id: terminalLoader
                     width: parent.width
-                    active: root.folderActive && root.terminalActive
-                    tab: root.activeTab
-                    dark: root.dark
-                    material: root.material
-                    onExited: {
-                        fileList.takeFocus()
+                    active: root.terminalLoaded
+                    sourceComponent: terminalPanelComponent
+                }
+
+                Component {
+                    id: terminalPanelComponent
+
+                    TerminalPanel {
+                        width: parent ? parent.width : 0
+                        active: root.folderActive && root.terminalActive
+                        tab: root.activeTab
+                        dark: root.dark
+                        material: root.material
+                        onExited: {
+                            fileList.takeFocus()
+                        }
                     }
                 }
             }
