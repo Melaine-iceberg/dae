@@ -1523,5 +1523,11 @@ sink。首次实跑就把两条以前完全不可见的信息写了进去：
    同样会跳过。要覆盖桥，需要一套与 rustc 同 LLVM 的 clang 构建（Linux `CXX=clang++`）。
 2. **没有 A/B 数字。** 这次只接通链路；Qt 启动上 Rust + 桥能拿多少，仍要用
    `docs/pgo-bolt.md` §7 的方法量。
-3. **CI 未跑过。** `release.yml` 与 `perf-check.yml` 的结构按现有 Tauri 腿改写，
-   真实 runner 上的 Qt 训练（尤其 macOS 的单实例锁与 Linux 的 xvfb）待第一次运行确认。
+3. **CI 已跑通 Linux 训练，发布腿仍未跑。** 2026-10-31 手动触发
+   `perf-check.yml`（分支 `refactor/qt-quick`）通过：插桩 release 构建 4m50s，训练在
+   xvfb 下（`QT_QPA_PLATFORM=offscreen`）44 s 干净退出，`.perf/pgo/dae.profdata`
+   **16.3 MiB / 58,503 函数 / 633,296 计数**。第一次运行暴露了一个只有 Linux 才会
+   出现的 C++ 签名错误：`dae_qt_watch_first_frame` 用 `quintptr` 接收 cxx 的
+   `usize`，Windows 上两者同型、64 位 Linux 上不同型（`unsigned long long` vs
+   `unsigned long`），已改为 `std::size_t`。`release.yml` 的三条 Qt 腿（含 macOS
+   单实例锁与 BOLT）仍待第一次打 tag 确认。
