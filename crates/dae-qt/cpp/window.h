@@ -48,6 +48,8 @@
 #include <QTimer>
 #endif
 
+#include <cstddef>
+
 #include <QElapsedTimer>
 #include <QFont>
 #include <QFontDatabase>
@@ -112,7 +114,12 @@ inline void dae_qt_startup_mark(const QString& stage)
 /// emitted from the render thread, so the lambda is queued back to the window's
 /// (GUI) thread; the few hundred microseconds that adds are noise next to the
 /// startup numbers.
-inline void dae_qt_watch_first_frame(quintptr enginePtr)
+/// `std::size_t`, not `quintptr`: cxx maps Rust's `usize` to `::std::size_t`,
+/// and on 64-bit Linux those are distinct types (`unsigned long` against
+/// `unsigned long long`), so a `quintptr` signature fails the generated glue's
+/// function-pointer check. Windows compiles either spelling, which is why only
+/// the Linux CI leg caught it.
+inline void dae_qt_watch_first_frame(std::size_t enginePtr)
 {
     if (!dae_qt_startup_timing || enginePtr == 0)
         return;
