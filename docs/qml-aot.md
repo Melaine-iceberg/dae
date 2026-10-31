@@ -217,12 +217,17 @@ QML 侧的布局只有 ~4 ms，软件后端画完整棵树到第一帧也只要 
 
 ## 9. 还没做
 
-- **热启动的 A/B。** 热缓存那条 851 ms 里仍然要读 `.qmlc`、跑字节码；AOT 之后这两样
-  都没了，但没测，别引用。
-- **`qmlsc` 的严格面。** `--warnings-are-errors`、`qmllint` 的 `unqualified` 检查没接，
-  所以「编译不了只能回退」的绑定不会让构建变红。
-- **`.js` 单个文件的收益**：`DialogFocus.js` / `Shell.js` / `Shortcut.js` 一起编了，
-  没单独量。
+- **qmlsc 的严格面。** `qmllint` 已接（§12），但 `qmlcachegen --warnings-are-errors`
+  没有接：一份能解析同目录组件的模块环境里仍有约 1800 条 `[compiler]` 提示（未标注
+  类型的 JS 函数/调用、数组写入非序列类型等），它们是「这段绑定编不成 C++、运行时
+  回退」的性能提示，不是错误。清零是另一个量级的改造。
+- **AOT 对同目录组件的解析。** `qmlcachegen` 不做隐式目录导入，`Glyph`、
+  `DialogHeader` 这类同目录类型在单元里未知，实例化回退到运行时查找。补一个模块
+  qmldir 并显式 `import dae 1.0` 可以消掉（原型里 Toast 从 33 条告警降到 1 条），
+  但要改全树导入并生成模块目录，见 §12 末尾。
+- **`.js` 单个文件的收益**：三个 `.js` 单元的 `aotBuiltFunctions[]` 都是 0 项
+  （JS 只预编成字节码，没有 AOT 函数），所以不存在「AOT 函数」层面的收益；单独再量
+  它们省下的解析时间会低于启动抖动，不做。
 
 ## 10. `qmltc` 只做构建期校验（2026-10-31）
 
@@ -269,6 +274,59 @@ qmltypes 把 `QAudioBufferOutput` 标成 `isTypeOpaque: true`，qmltc 拒绝为 
   同一份构建的 AOT 基线是 `qml-loaded` 809.56 ms、`first-frame` 1102.47 ms，qmltc
   侧拿不到可比的数字。
 
-§5 已证明 AOT 把 QML 编译成本压到 ~16 ms，运行时 qmltc 即便成功也基本没有空间，
+§11 实测热启动下 AOT 只省 ~50 ms，运行时 qmltc 即便成功也基本没有空间，
 却要背上私有 API、单 TU 与平台导出限制。所以最终形态是本节开头的「只做校验」。
 
+
+## 11. 热启动的 A/B（2026-10-31）
+
+§5 的 16 ms 是在更早的一组交替测量里得到的。热启动这一条一直没测：同一份 release
+代码编两次（`DAE_QML_AOT=0` / `=1`），Windows，`DAE_STARTUP_PERF=1`，每次
+`timeout 5` 启动，8 组交替（奇偶轮换先后顺序），取中位：
+
+| 构建 | `qml-loaded` 中位 | `first-frame` 中位 |
+|---|---:|---:|
+| `DAE_QML_AOT=0` | 877.7 ms | 1090.8 ms |
+| `DAE_QML_AOT=1` | 823.7 ms | 1038.4 ms |
+| 差值 | **54.0 ms** | **52.4 ms** |
+
+第一次启动（DLL、字体缓存都冷）那一对是 1429.5 → 968.4 ms，差距更大，但只有一对，
+不能当结论；其余七对都在 ±60 ms 内。
+
+Qt 6.12 的 qrc QML 不写 `.qmlc` 目录（§5），所以这里省下的不是磁盘缓存，而是每次
+启动都要做的源码解析与字节码编译。热启动下 AOT 仍然值 ~50 ms，但量级不大——这和
+§6 的结论一致：AOT 之后的大头是实例化，不是编译。
+
+## 12. `qmllint` 接入与 `qmlsc` 的严格面（2026-10-31）
+
+`apps/dae/build.rs` 的 `mod lint` 在 `DAE_QML_LINT=1` 时对每个文档跑 `qmllint`
+（同 `mod typec` 的 `-I target/cxxqt/qml_modules -I qml -i qml/qmldir`），输出里出现
+任何 `Warning:`/`Error:` 行即构建失败；`qt-check.yml` 已开这个开关。它补的是
+qmlcachegen 不报的那一层：绑定不再解析时，AOT 单元只会退化成运行时查找，构建照样
+成功。
+
+接入前清了 149 条告警，全树现在为零：
+
+| 类别 | 数量 | 处理 |
+|---|---:|---|
+| `unqualified` | 125 | 两个文件补 `pragma ComponentBehavior: Bound`；嵌套组件里对 delegate/父级属性的访问改成 `id.属性` |
+| `missing-property` | 19 | `Loader.item` 用 `as MediaPreview` / `as SidebarTree` 转换；真正动态的 4 处和 `QStringList.length`（qmllint 类型模型没有这个成员）用 `// qmllint disable missing-property` 精确豁免 |
+| `id-shadows-member` | 4 | `header`、`overviewModel` 两个 id 与属性同名，改名 |
+| `import` | 1 | `qmllint` 显式 `-i qml/qmldir`，否则 `Theme` 的单例声明看不到 |
+
+**`--max-warnings 0` 在 Qt 6.12 上不能用。** 对 `ShellWindow.qml` 它会让 qmllint 以
+127 退出且不打印任何东西（`1`–`10000` 都正常）。所以 `mod lint` 不依赖该选项，改为
+解析报告里的 `Warning:` / `Error:` 行。升级 Qt 后可以再试。
+
+**`qmlcachegen --warnings-are-errors` 没有接。** 在给全树补上显式 `import dae 1.0`
+并生成完整模块 qmldir 的原型环境里，仍剩约 1800 条 `[compiler]` 提示：409 条未类型化
+的 JS 调用、272 条未标注类型的函数、117 条数组写入非序列类型，以及 `QJSValue` 查找、
+`QtObject::platform.os` 遮蔽等。它们是 qmlsc「编不成 C++、运行时回退」的提示，不是
+错误，清零等于重写大部分 JS 绑定，暂不接入。
+
+**顺带发现的 AOT 盲点。** `qmlcachegen` 不做隐式目录导入：`qml/Toast.qml` 引用同目录
+的 `Glyph` 时，AOT 单元里 `Glyph` 是未知类型（`Toast.qml` 仍有 93 个 AOT 函数，但
+每次实例化 `Glyph` 都回退到运行时查找）。补一个模块 qmldir（`typeinfo` + 全量条目 +
+`prefer :/qt/qml/dae/qml/`）并让文件显式 `import dae 1.0` 后，同一文件的告警从 33 条
+降到 1 条。这条路径能提高 AOT 覆盖，但要改全树的导入声明并在构建期生成模块目录，
+收益上限受 §6/§7 的实例化成本限制，留作后续。

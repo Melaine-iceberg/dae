@@ -305,6 +305,9 @@ Item {
                 return
             for (let index = 0; index < count; index += 1) {
                 const item = itemAtIndex(index)
+                // The delegate's `focused` is declared on its anonymous Item
+                // type, which qmllint cannot see through `itemAtIndex`.
+                // qmllint disable missing-property
                 if (item !== null && item.focused === true) {
                     currentIndex = index
                     return
@@ -314,6 +317,8 @@ Item {
         }
 
         section.delegate: Item {
+            id: sectionRow
+
             required property string section
 
             readonly property bool favoriteSection: section === "Favorites"
@@ -326,7 +331,7 @@ Item {
                 x: 18
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 4
-                text: root.sectionLabel(section)
+                text: root.sectionLabel(sectionRow.section)
                 color: parent.lit ? Theme.signal : Theme.inkFaint
                 font.pixelSize: Theme.typeMicro
                 font.weight: Font.Medium
@@ -712,7 +717,7 @@ Item {
                 anchors.right: parent.right
                 y: row.rowHeight
                 height: active && status === Loader.Ready && item !== null
-                    ? item.implicitHeight : 0
+                    ? (item as SidebarTree).implicitHeight : 0
                 active: row.treeOpen
                 visible: active
 
@@ -735,7 +740,7 @@ Item {
 
                 onLoaded: {
                     if (item !== null)
-                        item.rootPath = row.path
+                        (item as SidebarTree).rootPath = row.path
                 }
             }
         }

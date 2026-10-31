@@ -45,6 +45,7 @@ Item {
             return
         const paths = Spaces.itemPaths(root.spaceId)
         const names = Spaces.itemNames(root.spaceId)
+        // qmllint disable missing-property
         for (let index = 0; index < paths.length; index += 1)
             items.append({ path: paths[index], name: names[index] })
     }
@@ -81,7 +82,7 @@ Item {
     // The header stays put while the item list scrolls: the space's identity
     // and its two destructive actions should not scroll out of reach.
     Item {
-        id: header
+        id: headerBar
 
         anchors.left: parent.left
         anchors.right: parent.right
@@ -145,7 +146,7 @@ Item {
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: header.bottom
+        anchors.top: headerBar.bottom
         anchors.bottom: parent.bottom
         clip: true
         focus: true

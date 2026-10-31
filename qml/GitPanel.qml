@@ -326,7 +326,7 @@ Item {
 
                         Text {
                             anchors.centerIn: parent
-                            text: modelData.label
+                            text: actionButton.modelData.label
                             color: root.textColor
                             font.pixelSize: 11
                             textFormat: Text.PlainText
@@ -338,7 +338,7 @@ Item {
                             anchors.fill: parent
                             hoverEnabled: true
                             enabled: actionButton.actionEnabled
-                            onClicked: root.runAction(modelData.action)
+                            onClicked: root.runAction(actionButton.modelData.action)
                         }
                     }
                 }

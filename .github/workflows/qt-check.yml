@@ -96,9 +96,14 @@ jobs:
         # failure fatal. Nothing is linked from it yet: the job only proves the
         # tree still type-compiles, so a Qt upgrade that breaks it fails before
         # the change is merged (see apps/dae/build.rs, `mod typec`).
+        #
+        # `DAE_QML_LINT=1` runs qmllint with zero tolerated warnings. It is the
+        # layer qmlcachegen does not report: a binding that stopped resolving
+        # silently compiles to a fallback lookup (see `mod lint`).
         env:
           DAE_QML_AOT: "1"
           DAE_QML_TYPEC: "1"
+          DAE_QML_LINT: "1"
         run: |
           if [ -n "${{ matrix.target }}" ]; then
             cargo build --package dae-app --target ${{ matrix.target }}

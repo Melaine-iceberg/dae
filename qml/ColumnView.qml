@@ -309,7 +309,7 @@ Item {
         }
 
         Item {
-            id: header
+            id: headerBar
 
             anchors.left: parent.left
             anchors.right: parent.right
@@ -354,7 +354,7 @@ Item {
             id: list
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.top: header.bottom
+            anchors.top: headerBar.bottom
             anchors.bottom: parent.bottom
             model: pane.listing
             clip: true

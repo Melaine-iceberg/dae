@@ -311,6 +311,7 @@ fn main() {
     // Runs first because it is the cheapest guard: a Qt upgrade that breaks
     // type compilation fails here instead of after the AOT and C++ build.
     typec::compile();
+    lint::check();
 
     // The `.qml` files above stay in the resource: the units are a cache the
     // engine prefers for a matching `qrc:` URL, not a replacement for the file
@@ -745,5 +746,101 @@ mod typec {
         fs::write(&path, qrc)
             .map_err(|error| format!("could not write {}: {error}", path.display()))?;
         Ok(path)
+    }
+}
+
+/// QML lint, wired as a build-time check.
+///
+/// `qmllint` resolves every id, binding, property and signal against the type
+/// metadata, which is exactly the layer qmlcachegen does *not* report: a
+/// binding that no longer resolves compiles to a fallback lookup and stays
+/// silent. The tree is at zero warnings, so the check is a hard one: any new
+/// unqualified access, missing property or unresolved import fails the build.
+///
+/// `DAE_QML_LINT=1` runs it. Unset or `0` skips it: it is not part of a normal
+/// build, and CI (the Qt job) sets the variable. It is separate from `mod typec`
+/// because qmllint also covers `MediaPreview.qml`, which qmltc cannot compile
+/// yet, and because the two tools catch different regressions.
+mod lint {
+    use std::env;
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    use super::{QML_FILES, find_qt_tool, qml_modules};
+
+    pub(super) fn check() {
+        for name in [
+            "DAE_QML_LINT",
+            "DAE_QMLLINT",
+            "QMAKE",
+            "CARGO_TARGET_DIR",
+            "CXX_QT_EXPORT_DIR",
+        ] {
+            println!("cargo:rerun-if-env-changed={name}");
+        }
+
+        if env::var("DAE_QML_LINT").ok().as_deref() != Some("1") {
+            return;
+        }
+        if let Err(reason) = run() {
+            panic!("DAE_QML_LINT=1 was requested but QML linting failed: {reason}");
+        }
+    }
+
+    fn run() -> Result<(), String> {
+        let qmllint = find_qt_tool("DAE_QMLLINT", "qmllint")
+            .ok_or_else(|| "qmllint was not found (set QMAKE or DAE_QMLLINT)".to_owned())?;
+        let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+        let qml_dir = manifest.join("../../qml");
+        let modules =
+            qml_modules().ok_or_else(|| "could not locate target/cxxqt/qml_modules".to_owned())?;
+
+        for (source, alias) in QML_FILES {
+            // The `.js` files are imported by name, not linted as documents,
+            // and `qmldir` is not a document at all.
+            if !alias.ends_with(".qml") {
+                continue;
+            }
+
+            let mut command = Command::new(&qmllint);
+            command
+                // The Rust types, from cxx-qt's generated `plugin.qmltypes`.
+                .arg("-I")
+                .arg(&modules)
+                // The declarations for the two hand-registered modules
+                // (`dae.terminal`, `dae.activation`).
+                .arg("-I")
+                .arg(&qml_dir)
+                // `Theme` is declared as a singleton in `qml/qmldir`; without
+                // this qmllint reports the pragma as undeclared.
+                .arg("-i")
+                .arg(qml_dir.join("qmldir"))
+                // Absolute, so the file's own directory matches the `-i`
+                // above: qmllint compares the singleton declaration against
+                // the qmldir of the directory it sees the file in.
+                .arg(manifest.join(source));
+
+            // `--max-warnings 0` makes qmllint exit 127 on `ShellWindow.qml`
+            // (Qt 6.12) instead of reporting a count, so the warnings are
+            // read from the report instead. It exits 0 even when it warned.
+            let output = command
+                .output()
+                .map_err(|error| format!("could not run qmllint on {source}: {error}"))?;
+            let report = String::from_utf8_lossy(&output.stderr).into_owned();
+            if !output.status.success() {
+                return Err(format!("qmllint failed on {source}: {}", report.trim()));
+            }
+            if report
+                .lines()
+                .any(|line| line.starts_with("Warning:") || line.starts_with("Error:"))
+            {
+                return Err(format!(
+                    "qmllint reported warnings for {source}:\n{}",
+                    report.trim()
+                ));
+            }
+            println!("cargo:rerun-if-changed={source}");
+        }
+        Ok(())
     }
 }

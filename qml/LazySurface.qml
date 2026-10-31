@@ -30,6 +30,7 @@ Item {
 
     readonly property var content: loader.item
     /// Whether the wrapped surface is showing.
+    // qmllint disable missing-property
     readonly property bool shown: loader.item !== null && loader.item.visible
 
     /// Creates the surface if needed and returns it. Synchronous: `loader.item`

@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
 import dae 1.0
@@ -364,7 +365,7 @@ Window {
         else if (root.overviewActive)
             // The landing page's recents change as folders are visited; an
             // already-open overview tab must re-read them when it comes back.
-            overviewModel.refresh()
+            overviewModelInstance.refresh()
     }
 
     onActiveChanged: {
@@ -418,7 +419,7 @@ Window {
     /// The landing page is per-window so its git scan and refresh lifetime
     /// follow the window; the command palette reads the same instance.
     OverviewModel {
-        id: overviewModel
+        id: overviewModelInstance
     }
 
     Component {
@@ -799,7 +800,7 @@ Window {
         root.resetSearchState()
         previewPanel.showPaths([])
         root.activeTab.openOverview()
-        overviewModel.refresh()
+        overviewModelInstance.refresh()
         Qt.callLater(overviewView.takeFocus)
     }
 
@@ -826,7 +827,7 @@ Window {
                 tab.openOverview()
         }
         if (root.overviewActive)
-            overviewModel.refresh()
+            overviewModelInstance.refresh()
     }
 
     function trashTargetIds() {
@@ -2146,7 +2147,7 @@ Window {
             root.reconcileSpaces()
             // The landing page lists spaces too; refresh it in place so a
             // rename or a new space is not a stale row.
-            overviewModel.refresh()
+            overviewModelInstance.refresh()
             if (commandPalette.shown)
                 commandPalette.rebuild()
         }
@@ -2156,11 +2157,11 @@ Window {
         target: Workspace
 
         function onFavoritesChanged() {
-            overviewModel.refresh()
+            overviewModelInstance.refresh()
         }
 
         function onPlacesChanged() {
-            overviewModel.refresh()
+            overviewModelInstance.refresh()
         }
 
         function onOperationFinished(kind, focus) {
@@ -3279,7 +3280,7 @@ Window {
                         id: overviewView
                         anchors.fill: parent
                         visible: root.overviewActive
-                        model: overviewModel
+                        model: overviewModelInstance
                         dark: root.dark
                         accent: root.accent
                         textColor: root.textColor
@@ -3440,10 +3441,10 @@ Window {
                     if (root.activeTab === null)
                         return ""
                     if (root.overviewActive)
-                        return overviewModel.projectBusy
+                        return overviewModelInstance.projectBusy
                             ? qsTr("查找项目…")
-                            : (overviewModel.loaded
-                                ? overviewModel.count + qsTr(" 个入口")
+                            : (overviewModelInstance.loaded
+                                ? overviewModelInstance.count + qsTr(" 个入口")
                                 : qsTr("读取概览…"))
                     if (root.spaceActive)
                         return qsTr("空间 · ") + spaceView.itemCount + qsTr(" 项")
@@ -3497,6 +3498,9 @@ Window {
                 color: transferMouse.containsMouse ? Theme.raised : Theme.canvas
                 border.width: 1
 
+                // QStringList exposes `.length` to QML; qmllint's type model
+                // does not (same caveat in SpaceView/TransferQueue).
+                // qmllint disable missing-property
                 readonly property int count: Workspace.queuedTransfers.length
                     + (Workspace.busy ? 1 : 0)
                 readonly property real percent: Workspace.progressTotal > 0
@@ -4199,7 +4203,7 @@ Window {
                 textColor: root.textColor
                 mutedColor: root.mutedColor
                 hairline: root.hairline
-                overviewModel: overviewModel
+                overviewModel: overviewModelInstance
                 folderActive: root.folderActive
                 remoteLocation: root.remoteLocation
                 scopePath: root.folderActive ? root.activePath : Workspace.homeDirectory
@@ -4588,7 +4592,7 @@ Window {
                     tab.openOverview()
                     // `openOverview` is the shortcut that also rebuilds the
                     // rows; the startup tab bypasses it, so refresh here too.
-                    overviewModel.refresh()
+                    overviewModelInstance.refresh()
                 }
                 root.tabs = [tab]
                 root.activeIndex = 0

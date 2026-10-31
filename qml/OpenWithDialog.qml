@@ -260,6 +260,9 @@ FocusScope {
                     }
 
                     delegate: Item {
+                        id: entry
+
+                        required property int index
                         required property string kind
                         required property string label
                         required property string appId
@@ -271,11 +274,11 @@ FocusScope {
                         opacity: kind === "header" || appId !== "" ? 1 : 0
 
                         Text {
-                            visible: kind === "header"
+                            visible: entry.kind === "header"
                             anchors.left: parent.left
                             anchors.leftMargin: 4
                             anchors.verticalCenter: parent.verticalCenter
-                            text: kind === "header" ? label : ""
+                            text: entry.kind === "header" ? entry.label : ""
                             color: root.mutedColor
                             font.pixelSize: 11
                             font.weight: Font.Medium
@@ -283,12 +286,12 @@ FocusScope {
 
                         Rectangle {
                             id: rowBackground
-                            visible: kind !== "header"
+                            visible: entry.kind !== "header"
                             anchors.fill: parent
                             anchors.leftMargin: 2
                             anchors.rightMargin: 2
                             radius: Theme.radiusSm
-                            color: root.selectedId === appId
+                            color: root.selectedId === entry.appId
                                 ? Theme.selection
                                 : (rowMouse.containsMouse
                                     ? Theme.hover
@@ -297,21 +300,21 @@ FocusScope {
 
                         Image {
                             id: appIcon
-                            visible: kind !== "header" && iconName !== ""
+                            visible: entry.kind !== "header" && entry.iconName !== ""
                                 && status === Image.Ready
                             x: 12
                             width: 18
                             height: 18
                             anchors.verticalCenter: parent.verticalCenter
-                            source: iconName === "" ? ""
-                                : "image://fileicon/name/" + encodeURIComponent(iconName) + "?size=36"
+                            source: entry.iconName === "" ? ""
+                                : "image://fileicon/name/" + encodeURIComponent(entry.iconName) + "?size=36"
                             fillMode: Image.PreserveAspectFit
                             asynchronous: true
                             cache: true
                         }
 
                         Rectangle {
-                            visible: kind !== "header" && !appIcon.visible
+                            visible: entry.kind !== "header" && !appIcon.visible
                             x: 12
                             width: 18
                             height: 18
@@ -321,20 +324,21 @@ FocusScope {
 
                             Text {
                                 anchors.centerIn: parent
-                                text: label.length > 0 ? label.charAt(0).toUpperCase() : "?"
+                                text: entry.label.length > 0
+                                    ? entry.label.charAt(0).toUpperCase() : "?"
                                 color: root.mutedColor
                                 font.pixelSize: 11
                             }
                         }
 
                         Text {
-                            visible: kind !== "header"
+                            visible: entry.kind !== "header"
                             anchors.left: parent.left
                             anchors.leftMargin: 40
                             anchors.right: defaultBadge.left
                             anchors.rightMargin: 8
                             anchors.verticalCenter: parent.verticalCenter
-                            text: kind === "header" ? "" : label
+                            text: entry.kind === "header" ? "" : entry.label
                             color: root.textColor
                             font.pixelSize: 13
                             elide: Text.ElideRight
@@ -342,7 +346,7 @@ FocusScope {
 
                         Text {
                             id: defaultBadge
-                            visible: kind !== "header" && isDefault
+                            visible: entry.kind !== "header" && entry.isDefault
                             anchors.right: parent.right
                             anchors.rightMargin: 10
                             anchors.verticalCenter: parent.verticalCenter
@@ -353,15 +357,15 @@ FocusScope {
 
                         MouseArea {
                             id: rowMouse
-                            visible: kind !== "header"
+                            visible: entry.kind !== "header"
                             anchors.fill: parent
                             hoverEnabled: true
                             onClicked: {
-                                appList.currentIndex = index
-                                root.choose(appId)
+                                appList.currentIndex = entry.index
+                                root.choose(entry.appId)
                             }
                             onDoubleClicked: {
-                                root.choose(appId)
+                                root.choose(entry.appId)
                                 root.confirm()
                             }
                         }

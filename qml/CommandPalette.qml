@@ -791,6 +791,8 @@ Item {
             section.property: "groupLabel"
             section.criteria: ViewSection.FullString
             section.delegate: Item {
+                id: sectionRow
+
                 required property string section
 
                 width: list.width
@@ -800,7 +802,7 @@ Item {
                     x: 10
                     anchors.bottom: parent.bottom
                     anchors.bottomMargin: 3
-                    text: section
+                    text: sectionRow.section
                     color: Theme.inkFaint
                     font.pixelSize: Theme.typeMicro
                     font.weight: Font.Medium

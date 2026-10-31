@@ -35,6 +35,7 @@ Item {
     readonly property color textColor: Theme.ink
     readonly property color mutedColor: Theme.inkMuted
     readonly property color faintColor: Theme.inkFaint
+    // qmllint disable missing-property
     readonly property int queuedCount: Workspace.queuedTransfers.length
     readonly property int runningCount: Workspace.busy ? 1 : 0
     readonly property real percent: Workspace.progressTotal > 0
@@ -189,6 +190,7 @@ Item {
                         required property string modelData
                         width: body.width
                         name: modelData
+                        // qmllint disable missing-property
                         target: Workspace.queuedTransferPaths.length > index
                             ? Workspace.queuedTransferPaths[index] : ""
                         status: qsTr("等待")

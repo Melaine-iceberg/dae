@@ -476,6 +476,8 @@ Item {
                         model: controller.childNames
 
                         Item {
+                            id: childRow
+
                             required property string modelData
                             width: folderColumn.width
                             height: 22
@@ -496,7 +498,7 @@ Item {
                                 Text {
                                     anchors.verticalCenter: parent.verticalCenter
                                     width: folderColumn.width - 18
-                                    text: modelData
+                                    text: childRow.modelData
                                     color: root.mutedColor
                                     font.pixelSize: Theme.typeCaption
                                     elide: Text.ElideMiddle
@@ -511,22 +513,23 @@ Item {
             Loader {
                 id: mediaLoader
                 width: content.width
-                height: active && item ? item.implicitHeight : 0
+                height: active && item ? (item as MediaPreview).implicitHeight : 0
                 active: root.single && controller.mediaKind !== ""
                     && controller.mediaUrl !== "" && root.visible
                 source: active ? "MediaPreview.qml" : ""
 
                 onLoaded: {
-                    item.mediaUrl = Qt.binding(function () { return controller.mediaUrl })
-                    item.mediaKind = Qt.binding(function () { return controller.mediaKind })
-                    item.posterSource = Qt.binding(function () { return root.thumbnailSource })
-                    item.dark = Qt.binding(function () { return root.dark })
-                    item.accent = Qt.binding(function () { return root.accent })
-                    item.textColor = Qt.binding(function () { return root.textColor })
-                    item.mutedColor = Qt.binding(function () { return root.mutedColor })
-                    item.sectionColor = Qt.binding(function () { return root.sectionColor })
-                    item.hairline = Qt.binding(function () { return root.hairline })
-                    item.contentHeight = Qt.binding(function () { return root.previewHeight })
+                    const preview = item as MediaPreview
+                    preview.mediaUrl = Qt.binding(function () { return controller.mediaUrl })
+                    preview.mediaKind = Qt.binding(function () { return controller.mediaKind })
+                    preview.posterSource = Qt.binding(function () { return root.thumbnailSource })
+                    preview.dark = Qt.binding(function () { return root.dark })
+                    preview.accent = Qt.binding(function () { return root.accent })
+                    preview.textColor = Qt.binding(function () { return root.textColor })
+                    preview.mutedColor = Qt.binding(function () { return root.mutedColor })
+                    preview.sectionColor = Qt.binding(function () { return root.sectionColor })
+                    preview.hairline = Qt.binding(function () { return root.hairline })
+                    preview.contentHeight = Qt.binding(function () { return root.previewHeight })
                 }
             }
 

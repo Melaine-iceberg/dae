@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
 import dae.terminal 1.0
@@ -111,11 +112,11 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.running
                     ? qsTr("终端 · %1").arg(root.shellName)
-                    : (session !== null && session.title !== ""
-                            && session.title !== "Terminal"
-                        ? qsTr("终端 · %1").arg(session.title)
-                        : (session !== null
-                            ? qsTr("终端 · 已退出 %1").arg(session.exitCode)
+                    : (root.session !== null && root.session.title !== ""
+                            && root.session.title !== "Terminal"
+                        ? qsTr("终端 · %1").arg(root.session.title)
+                        : (root.session !== null
+                            ? qsTr("终端 · 已退出 %1").arg(root.session.exitCode)
                             : qsTr("终端")))
                 color: Theme.terminalInk
                 font.family: Theme.monoFamily
@@ -213,7 +214,7 @@ Item {
     }
 
     Connections {
-        target: session
+        target: root.session
 
         function onExited(code) {
             // The grid keeps the last frame; only the header changes. The

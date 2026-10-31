@@ -777,23 +777,26 @@ FocusScope {
                             model: root.shortcutRows
 
                             delegate: Item {
+                                id: shortcutRow
+
                                 required property var modelData
                                 width: shortcutColumn.width
                                 height: modelData.header ? 30 : 38
 
                                 Text {
-                                    visible: modelData.header
+                                    visible: shortcutRow.modelData.header
                                     anchors.left: parent.left
                                     anchors.bottom: parent.bottom
                                     anchors.bottomMargin: 8
-                                    text: modelData.header ? modelData.title : ""
+                                    text: shortcutRow.modelData.header
+                                        ? shortcutRow.modelData.title : ""
                                     color: root.faintColor
                                     font.pixelSize: 11
                                     font.weight: Font.Medium
                                 }
 
                                 Rectangle {
-                                    visible: !modelData.header
+                                    visible: !shortcutRow.modelData.header
                                     anchors.fill: parent
                                     anchors.margins: 0
                                     radius: Theme.radiusSm
@@ -802,7 +805,8 @@ FocusScope {
                                     Text {
                                         x: 4
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: modelData.header ? "" : modelData.label
+                                        text: shortcutRow.modelData.header
+                                            ? "" : shortcutRow.modelData.label
                                         color: root.textColor
                                         font.pixelSize: 12
                                     }
@@ -810,7 +814,8 @@ FocusScope {
                                         x: Math.min(190, parent.width * 0.35)
                                         width: parent.width - x - 170
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: modelData.header ? "" : modelData.detail
+                                        text: shortcutRow.modelData.header
+                                            ? "" : shortcutRow.modelData.detail
                                         color: root.faintColor
                                         font.pixelSize: 11
                                         elide: Text.ElideRight
@@ -830,9 +835,9 @@ FocusScope {
 
                                         Text {
                                             anchors.centerIn: parent
-                                            text: modelData.header ? ""
-                                                : root.bindingText(root.bindingFor(modelData.id))
-                                            color: root.bindingFor(modelData.id)
+                                            text: shortcutRow.modelData.header ? ""
+                                                : root.bindingText(root.bindingFor(shortcutRow.modelData.id))
+                                            color: root.bindingFor(shortcutRow.modelData.id)
                                                 ? root.textColor : root.faintColor
                                             font.pixelSize: 11
                                             font.family: Theme.monoFamily
@@ -843,7 +848,8 @@ FocusScope {
                                             id: keyMouse
                                             anchors.fill: parent
                                             hoverEnabled: true
-                                            onClicked: root.beginCapture(modelData.id, modelData.label)
+                                            onClicked: root.beginCapture(shortcutRow.modelData.id,
+                                                shortcutRow.modelData.label)
                                         }
                                     }
 
@@ -855,7 +861,7 @@ FocusScope {
                                         width: 28
                                         height: 24
                                         radius: Theme.radiusSm
-                                        visible: !modelData.header
+                                        visible: !shortcutRow.modelData.header
                                         color: resetMouse.containsMouse ? root.hoverFill : "transparent"
 
                                         /// A glyph-only button: the arrow is the
@@ -864,7 +870,7 @@ FocusScope {
                                         Accessible.name: qsTr("恢复默认快捷键")
                                         Accessible.onPressAction: {
                                             root.shortcutError = ""
-                                            Workspace.resetShortcut(modelData.id)
+                                            Workspace.resetShortcut(shortcutRow.modelData.id)
                                         }
 
                                         Text {
@@ -880,7 +886,7 @@ FocusScope {
                                             hoverEnabled: true
                                             onClicked: {
                                                 root.shortcutError = ""
-                                                Workspace.resetShortcut(modelData.id)
+                                                Workspace.resetShortcut(shortcutRow.modelData.id)
                                             }
                                         }
                                     }
@@ -890,11 +896,12 @@ FocusScope {
                                     id: rowMouse
                                     z: -1
                                     anchors.fill: parent
-                                    enabled: !modelData.header
+                                    enabled: !shortcutRow.modelData.header
                                     hoverEnabled: true
                                     onClicked: {
-                                        if (!modelData.header)
-                                            root.beginCapture(modelData.id, modelData.label)
+                                        if (!shortcutRow.modelData.header)
+                                            root.beginCapture(shortcutRow.modelData.id,
+                                                shortcutRow.modelData.label)
                                     }
                                 }
                             }
