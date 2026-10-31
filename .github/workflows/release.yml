@@ -384,6 +384,12 @@ jobs:
 
       - name: Build Qt shell
         shell: bash
+        # `DAE_QML_AOT=1` makes the ahead-of-time QML compilation fatal rather
+        # than a warning: a release that silently shipped without the units
+        # would boot like the pre-AOT build and nobody would notice. See
+        # docs/qml-aot.md.
+        env:
+          DAE_QML_AOT: "1"
         run: |
           if [ -n "${{ matrix.target }}" ]; then
             cargo build --release --package dae-app --target ${{ matrix.target }}

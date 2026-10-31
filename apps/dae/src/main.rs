@@ -22,6 +22,15 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 
+// Defined in `cpp/qml_cache_init.cpp`. The call does nothing on its own: it is
+// the reference the linker needs to keep the generated QML units (and the loader
+// that registers them) from being dropped out of the C++ static archive. Without
+// it the engine silently compiles the `.qml` sources at run time — see
+// `docs/qml-aot.md`.
+unsafe extern "C" {
+    fn dae_qml_cache_init();
+}
+
 fn main() {
     // Windows pins D3D11, which is the backend gates 1–4 were measured on.
     // macOS and Linux keep Qt's own choice (Metal and OpenGL respectively);
@@ -37,7 +46,6 @@ fn main() {
     }
 
     let mut application = QGuiApplication::new();
-
     // Before `claim`: a failed scheme registration or a refused instance lock
     // is exactly the kind of failure nobody can reproduce later, and starting
     // here means it lands in the file rather than in a stderr a release build
@@ -54,6 +62,10 @@ fn main() {
     // The alpha buffer is chosen before the engine creates the first window;
     // DwmEnableBlurBehindWindow then composites the backdrop behind it.
     dae_qt::init();
+    // Registers the precompiled QML units before anything can ask for them.
+    // This is also the only reference to `cpp/qml_cache_init.cpp`, which is what
+    // keeps the units linked at all.
+    unsafe { dae_qml_cache_init() };
 
     let mut engine = QQmlApplicationEngine::new();
     let engine_ptr = engine.as_mut_ptr();

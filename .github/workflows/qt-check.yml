@@ -86,6 +86,13 @@ jobs:
 
       - name: Build the Qt shell
         shell: bash
+        # `DAE_QML_AOT=1` compiles the QML ahead of time even in this debug
+        # build, and makes a failure fatal. This job exists so the release tag
+        # is not the first compiler Linux and macOS see; the precompiled units
+        # are C++ that only these platforms would otherwise compile at release
+        # time. See docs/qml-aot.md.
+        env:
+          DAE_QML_AOT: "1"
         run: |
           if [ -n "${{ matrix.target }}" ]; then
             cargo build --package dae-app --target ${{ matrix.target }}

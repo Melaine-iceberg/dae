@@ -329,12 +329,12 @@ Window {
     }
 
     readonly property var config: configLoader.item
-    readonly property bool modalOpen: menu.visible || namePrompt.visible
-        || commandPalette.visible
-        || passwordDialog.visible || settingsPanel.visible || confirmDialog.visible
-        || connectDialog.visible || cloudDialog.visible || openWithDialog.visible
-        || updateDialog.visible || transferConflict.visible || transferQueue.visible
-        || propertiesDialog.visible || bulkRenameDialog.visible || moveToDialog.visible
+    readonly property bool modalOpen: menu.visible || namePrompt.shown
+        || commandPalette.shown
+        || passwordDialog.shown || settingsPanel.shown || confirmDialog.shown
+        || connectDialog.shown || cloudDialog.shown || openWithDialog.shown
+        || updateDialog.shown || transferConflict.visible || transferQueue.visible
+        || propertiesDialog.shown || bulkRenameDialog.shown || moveToDialog.shown
 
     Timer {
         id: searchTimer
@@ -1183,7 +1183,7 @@ Window {
         root.archiveMode = "extract"
         root.archiveTarget = target
         root.archiveDestination = ""
-        if (passwordDialog.visible) {
+        if (passwordDialog.shown) {
             passwordDialog.showError(message)
             return
         }
@@ -2147,7 +2147,7 @@ Window {
             // The landing page lists spaces too; refresh it in place so a
             // rename or a new space is not a stale row.
             overviewModel.refresh()
-            if (commandPalette.visible)
+            if (commandPalette.shown)
                 commandPalette.rebuild()
         }
     }
@@ -2164,13 +2164,13 @@ Window {
         }
 
         function onOperationFinished(kind, focus) {
-            if (kind === "openWith" && openWithDialog.visible) {
+            if (kind === "openWith" && openWithDialog.shown) {
                 openWithDialog.close()
                 root.modalClosed()
             }
             if (kind === "compress" || kind === "extract") {
                 root.resetArchiveState()
-                if (passwordDialog.visible) {
+                if (passwordDialog.shown) {
                     passwordDialog.close()
                     root.modalClosed()
                 }
@@ -2189,11 +2189,11 @@ Window {
         }
 
         function onOperationFailed(kind, message) {
-            if (kind === "openWith" && openWithDialog.visible) {
+            if (kind === "openWith" && openWithDialog.shown) {
                 openWithDialog.showError(message)
                 return
             }
-            if (passwordDialog.visible && kind === root.archiveMode) {
+            if (passwordDialog.shown && kind === root.archiveMode) {
                 passwordDialog.showError(message)
                 return
             }
@@ -2207,19 +2207,19 @@ Window {
         }
 
         function onConnectionTestFinished(ok, message) {
-            if (connectDialog.visible)
+            if (connectDialog.shown)
                 connectDialog.applyTestResult(ok, message)
         }
 
         function onConnectionSaveFinished(ok, id, message) {
             if (!ok) {
-                if (connectDialog.visible)
+                if (connectDialog.shown)
                     connectDialog.applySaveError(message)
                 else
                     toast.show(message, true)
                 return
             }
-            if (connectDialog.visible) {
+            if (connectDialog.shown) {
                 connectDialog.close()
                 root.modalClosed()
             }
@@ -2232,13 +2232,13 @@ Window {
             const pending = root.cloudPending
             root.cloudPending = false
             if (!ok) {
-                if (cloudDialog.visible)
+                if (cloudDialog.shown)
                     cloudDialog.applyError(message)
                 else
                     toast.show(message, true)
                 return
             }
-            if (cloudDialog.visible) {
+            if (cloudDialog.shown) {
                 cloudDialog.close()
                 root.modalClosed()
             }
@@ -2255,7 +2255,7 @@ Window {
         target: root.gitListing
 
         function onGitOperationFailed(operation, message) {
-            if (operation === "create" && gitPanel.visible && gitPanel.creating)
+            if (operation === "create" && gitPanel.shown && gitPanel.creating)
                 return
             toast.show(message, true)
         }
@@ -3228,27 +3228,50 @@ Window {
                         }
                     }
 
-                    TrashView {
+                    LazySurface {
                         id: trashView
                         anchors.fill: parent
+                        // A view, not a dialog: created the first time the
+                        // content stack shows it, and kept afterwards.
                         visible: root.trashActive
-                        model: trashModel
-                        dark: root.dark
-                        accent: root.accent
-                        headerColor: root.chromeColor
+                        loadWhenShown: root.trashActive
+                        surface: Component {
+                            TrashView {
+                                anchors.fill: parent
+                                model: trashModel
+                                dark: root.dark
+                                accent: root.accent
+                                headerColor: root.chromeColor
 
-                        onRestoreRequested: function (ids) {
-                            root.restoreTrash(ids)
+                                onRestoreRequested: function (ids) {
+                                    root.restoreTrash(ids)
+                                }
+                                onPurgeRequested: function (ids) {
+                                    root.requestTrashPurge(ids)
+                                }
+                                onEmptyRequested: root.requestEmptyTrash()
+                                onPreviewRequested: function (item) {
+                                    previewPanel.showTrash(item)
+                                }
+                                onContextRequested: function (id, originalParent, x, y) {
+                                    root.showTrashRowMenu(id, originalParent, x, y)
+                                }
+                            }
                         }
-                        onPurgeRequested: function (ids) {
-                            root.requestTrashPurge(ids)
+
+                        // Reached from keyboard handlers that can fire before
+                        // the surface has ever been shown.
+                        readonly property int selectionCount: content !== null ? content.selectionCount : 0
+                        function selectedIdList() {
+                            return content !== null ? content.selectedIdList() : [];
                         }
-                        onEmptyRequested: root.requestEmptyTrash()
-                        onPreviewRequested: function (item) {
-                            previewPanel.showTrash(item)
+                        function clearSelection() {
+                            if (content !== null)
+                                content.clearSelection();
                         }
-                        onContextRequested: function (id, originalParent, x, y) {
-                            root.showTrashRowMenu(id, originalParent, x, y)
+                        function takeFocus() {
+                            if (content !== null)
+                                content.takeFocus();
                         }
                     }
 
@@ -3582,7 +3605,7 @@ Window {
                     Rectangle {
                         anchors.fill: parent
                         radius: Theme.radiusXs
-                        color: gitStatusMouse.containsMouse || gitPanel.visible
+                        color: gitStatusMouse.containsMouse || gitPanel.shown
                             ? Theme.hover : "transparent"
                     }
 
@@ -3994,154 +4017,359 @@ Window {
         id: shellCommands
     }
 
-    PropertiesDialog {
+    LazySurface {
         id: propertiesDialog
         anchors.fill: parent
-        dark: root.dark
-        accent: root.accent
+        z: 1005
+        surface: Component {
+            PropertiesDialog {
+                anchors.fill: parent
+                dark: root.dark
+                accent: root.accent
 
-        onChanged: root.reloadAfterOperation("properties", "")
-        onClosed: root.modalClosed()
+                onChanged: root.reloadAfterOperation("properties", "")
+                onClosed: root.modalClosed()
+            }
+        }
+        function open(path) {
+            instantiate().open(path);
+        }
+        function close() {
+            if (content !== null)
+                content.close();
+        }
     }
 
-    BulkRenameDialog {
+    LazySurface {
         id: bulkRenameDialog
         anchors.fill: parent
-        dark: root.dark
-        accent: root.accent
+        z: 1006
+        surface: Component {
+            BulkRenameDialog {
+                anchors.fill: parent
+                dark: root.dark
+                accent: root.accent
 
-        onClosed: root.modalClosed()
+                onClosed: root.modalClosed()
+            }
+        }
+        function open(paths) {
+            instantiate().open(paths);
+        }
     }
 
-    MoveToDialog {
+    LazySurface {
         id: moveToDialog
         anchors.fill: parent
-        dark: root.dark
-        accent: root.accent
+        z: 1007
+        surface: Component {
+            MoveToDialog {
+                anchors.fill: parent
+                dark: root.dark
+                accent: root.accent
 
-        onClosed: root.modalClosed()
+                onClosed: root.modalClosed()
+            }
+        }
+        function open(destination, moving) {
+            instantiate().open(destination, moving);
+        }
     }
 
-    NamePrompt {
+    LazySurface {
         id: namePrompt
         anchors.fill: parent
-        dark: root.dark
+        z: 1001
+        surface: Component {
+            NamePrompt {
+                anchors.fill: parent
+                dark: root.dark
 
-        onAccepted: function (text) {
-            root.acceptName(text)
-            root.modalClosed()
+                onAccepted: function (text) {
+                    root.acceptName(text)
+                    root.modalClosed()
+                }
+                onCanceled: root.modalClosed()
+            }
         }
-        onCanceled: root.modalClosed()
+        function open(title, initial, placeholder) {
+            instantiate().open(title, initial, placeholder);
+        }
+        function close() {
+            if (content !== null)
+                content.close();
+        }
     }
 
-    ConfirmDialog {
+    LazySurface {
         id: confirmDialog
         anchors.fill: parent
-        dark: root.dark
+        z: 1002
+        surface: Component {
+            ConfirmDialog {
+                anchors.fill: parent
+                dark: root.dark
 
-        onAccepted: root.acceptConfirm()
-        onCanceled: {
-            root.confirmMode = ""
-            root.confirmTrashIds = []
-            root.modalClosed()
+                onAccepted: root.acceptConfirm()
+                onCanceled: {
+                    root.confirmMode = ""
+                    root.confirmTrashIds = []
+                    root.modalClosed()
+                }
+            }
+        }
+        function open(title, text, label, isDanger) {
+            instantiate().open(title, text, label, isDanger);
+        }
+        function close() {
+            if (content !== null)
+                content.close();
         }
     }
 
-    ArchivePasswordDialog {
+    LazySurface {
         id: passwordDialog
         anchors.fill: parent
-        dark: root.dark
+        z: 1003
+        surface: Component {
+            ArchivePasswordDialog {
+                anchors.fill: parent
+                dark: root.dark
 
-        onAccepted: function (password) {
-            root.acceptArchivePassword(password)
+                onAccepted: function (password) {
+                    root.acceptArchivePassword(password)
+                }
+                onCanceled: {
+                    root.resetArchiveState()
+                    root.modalClosed()
+                }
+            }
         }
-        onCanceled: {
-            root.resetArchiveState()
-            root.modalClosed()
+        function open(mode, archiveName, error) {
+            instantiate().open(mode, archiveName, error);
+        }
+        function close() {
+            if (content !== null)
+                content.close();
+        }
+        // A failed open arrives while the dialog is up, so the surface exists.
+        function showError(message) {
+            if (content !== null)
+                content.showError(message);
         }
     }
 
-    SettingsPanel {
+    LazySurface {
         id: settingsPanel
         anchors.fill: parent
-        dark: root.dark
-        accent: root.accent
-        isMac: root.isMac
-        shortcutMap: root.shortcutMap
-        blurSupported: chrome.blurSupported
+        z: 1001
+        surface: Component {
+            SettingsPanel {
+                anchors.fill: parent
+                dark: root.dark
+                accent: root.accent
+                isMac: root.isMac
+                shortcutMap: root.shortcutMap
+                blurSupported: chrome.blurSupported
 
-        onClosed: root.modalClosed()
+                onClosed: root.modalClosed()
+            }
+        }
+        // Read from the Escape shortcut's `enabled`, which has to answer while
+        // the panel does not exist.
+        readonly property bool capturing: content !== null && content.capturing
+        function open() {
+            instantiate().open();
+        }
+        function close() {
+            if (content !== null)
+                content.close();
+        }
     }
 
-    CommandPalette {
+    LazySurface {
         id: commandPalette
         anchors.fill: parent
         z: 1200
-        dark: root.dark
-        accent: root.accent
-        textColor: root.textColor
-        mutedColor: root.mutedColor
-        hairline: root.hairline
-        overviewModel: overviewModel
-        folderActive: root.folderActive
-        remoteLocation: root.remoteLocation
-        scopePath: root.folderActive ? root.activePath : Workspace.homeDirectory
-        shortcutMap: root.shortcutMap
-        isMac: root.isMac
+        surface: Component {
+            CommandPalette {
+                anchors.fill: parent
+                dark: root.dark
+                accent: root.accent
+                textColor: root.textColor
+                mutedColor: root.mutedColor
+                hairline: root.hairline
+                overviewModel: overviewModel
+                folderActive: root.folderActive
+                remoteLocation: root.remoteLocation
+                scopePath: root.folderActive ? root.activePath : Workspace.homeDirectory
+                shortcutMap: root.shortcutMap
+                isMac: root.isMac
 
-        onActivated: function (kind, value) {
-            commandPalette.closePalette()
-            root.handlePaletteActivation(kind, value)
+                onActivated: function (kind, value) {
+                    commandPalette.closePalette()
+                    root.handlePaletteActivation(kind, value)
+                }
+                onClosed: root.modalClosed()
+            }
         }
-        onClosed: root.modalClosed()
+        function openPalette() {
+            instantiate().openPalette();
+        }
+        function closePalette() {
+            if (content !== null)
+                content.closePalette();
+        }
+        function rebuild() {
+            if (content !== null)
+                content.rebuild();
+        }
     }
 
-    ConnectDialog {
+    LazySurface {
         id: connectDialog
         anchors.fill: parent
-        dark: root.dark
-        accent: root.accent
+        z: 1001
+        surface: Component {
+            ConnectDialog {
+                anchors.fill: parent
+                dark: root.dark
+                accent: root.accent
 
-        onTestRequested: function (protocol, host, port, username, password) {
-            root.startConnectionTest(protocol, host, port, username, password)
+                onTestRequested: function (protocol, host, port, username, password) {
+                    root.startConnectionTest(protocol, host, port, username, password)
+                }
+                onSaveRequested: function (protocol, host, port, username, password, remember) {
+                    root.startConnectionSave(protocol, host, port, username, password, remember)
+                }
+                onCanceled: root.modalClosed()
+            }
         }
-        onSaveRequested: function (protocol, host, port, username, password, remember) {
-            root.startConnectionSave(protocol, host, port, username, password, remember)
+        function open() {
+            instantiate().open();
         }
-        onCanceled: root.modalClosed()
+        function close() {
+            if (content !== null)
+                content.close();
+        }
+        function dismiss() {
+            if (content !== null)
+                content.dismiss();
+        }
+        // Replies from the connection test land after `open()`, so the surface
+        // already exists; the guards cover a reply racing the first open.
+        function setTesting(busy) {
+            if (content !== null)
+                content.setTesting(busy);
+        }
+        function setSaving(busy) {
+            if (content !== null)
+                content.setSaving(busy);
+        }
+        function applyTestResult(ok, message) {
+            if (content !== null)
+                content.applyTestResult(ok, message);
+        }
+        function applySaveError(message) {
+            if (content !== null)
+                content.applySaveError(message);
+        }
     }
 
-    CloudAccountDialog {
+    LazySurface {
         id: cloudDialog
         anchors.fill: parent
-        dark: root.dark
-        accent: root.accent
+        z: 1005
+        surface: Component {
+            CloudAccountDialog {
+                anchors.fill: parent
+                dark: root.dark
+                accent: root.accent
 
-        onAuthorizeRequested: function (provider, clientId, clientSecret) {
-            root.startCloudAuthorize(provider, clientId, clientSecret)
+                onAuthorizeRequested: function (provider, clientId, clientSecret) {
+                    root.startCloudAuthorize(provider, clientId, clientSecret)
+                }
+                onCanceled: {
+                    root.cloudPending = false
+                    root.modalClosed()
+                }
+            }
         }
-        onCanceled: {
-            root.cloudPending = false
-            root.modalClosed()
+        function open() {
+            instantiate().open();
+        }
+        function close() {
+            if (content !== null)
+                content.close();
+        }
+        function dismiss() {
+            if (content !== null)
+                content.dismiss();
+        }
+        function setAuthorizing(busy) {
+            if (content !== null)
+                content.setAuthorizing(busy);
+        }
+        function applyError(message) {
+            if (content !== null)
+                content.applyError(message);
         }
     }
 
-    OpenWithDialog {
+    LazySurface {
         id: openWithDialog
         anchors.fill: parent
-        dark: root.dark
-        accent: root.accent
+        z: 1004
+        surface: Component {
+            OpenWithDialog {
+                anchors.fill: parent
+                dark: root.dark
+                accent: root.accent
 
-        onCanceled: root.modalClosed()
+                onCanceled: root.modalClosed()
+            }
+        }
+        function open(targetPath) {
+            instantiate().open(targetPath);
+        }
+        function close() {
+            if (content !== null)
+                content.close();
+        }
+        function dismiss() {
+            if (content !== null)
+                content.dismiss();
+        }
+        function showError(message) {
+            if (content !== null)
+                content.showError(message);
+        }
     }
 
-    UpdateDialog {
+    LazySurface {
         id: updateDialog
         anchors.fill: parent
-        dark: root.dark
-        accent: root.accent
+        z: 1005
+        surface: Component {
+            UpdateDialog {
+                anchors.fill: parent
+                dark: root.dark
+                accent: root.accent
 
-        onCanceled: root.modalClosed()
+                onCanceled: root.modalClosed()
+            }
+        }
+        function open() {
+            instantiate().open();
+        }
+        function close() {
+            if (content !== null)
+                content.close();
+        }
+        function dismiss() {
+            if (content !== null)
+                content.dismiss();
+        }
     }
 
     // Both are bound to `Workspace` rather than opened by a function: the
@@ -4168,16 +4396,26 @@ Window {
         }
     }
 
-    GitPanel {
+    LazySurface {
         id: gitPanel
         anchors.fill: parent
-        repo: root.gitListing
-        dark: root.dark
-        accent: root.accent
+        z: 1002
+        surface: Component {
+            GitPanel {
+                anchors.fill: parent
+                repo: root.gitListing
+                dark: root.dark
+                accent: root.accent
 
-        onVisibleChanged: {
-            if (!visible)
-                root.modalClosed()
+                onVisibleChanged: {
+                    if (!visible)
+                        root.modalClosed()
+                }
+            }
+        }
+        readonly property bool creating: content !== null && content.creating
+        function openAbove(x, y) {
+            instantiate().openAbove(x, y);
         }
     }
 
@@ -4192,7 +4430,7 @@ Window {
         }
 
         function onAvailableChanged() {
-            if (Updater.available && !updateDialog.visible)
+            if (Updater.available && !updateDialog.shown)
                 toast.show(qsTr("发现新版本 v") + Updater.latestVersion, false)
         }
     }
@@ -4283,22 +4521,22 @@ Window {
         onActivated: {
             if (menu.visible)
                 menu.close()
-            else if (commandPalette.visible)
+            else if (commandPalette.shown)
                 commandPalette.closePalette()
-            else if (updateDialog.visible)
+            else if (updateDialog.shown)
                 updateDialog.dismiss()
-            else if (namePrompt.visible)
+            else if (namePrompt.shown)
                 namePrompt.close()
-            else if (passwordDialog.visible) {
+            else if (passwordDialog.shown) {
                 passwordDialog.close()
                 root.resetArchiveState()
-            } else if (cloudDialog.visible)
+            } else if (cloudDialog.shown)
                 cloudDialog.dismiss()
-            else if (connectDialog.visible)
+            else if (connectDialog.shown)
                 connectDialog.dismiss()
-            else if (settingsPanel.visible)
+            else if (settingsPanel.shown)
                 settingsPanel.close()
-            else if (confirmDialog.visible) {
+            else if (confirmDialog.shown) {
                 confirmDialog.close()
                 root.confirmMode = ""
                 root.confirmTrashIds = []
