@@ -87,27 +87,31 @@ Linux / macOS 在合入前就看到预编译的错误（这个 job 存在的理�
 
 ## 5. 怎么确认它真的生效
 
-删掉缓存目录，启动一次，**再看一眼**：
+**缓存目录不是信号。** 旧版这一节让人删掉
+`%LOCALAPPDATA%\dae\cache\qmlcache` 再启动，看有没有重新写进 53 个 `.qmlc`。在 Qt
+6.12 上这个检查**证明不了任何事**：qrc 里的 QML 无论是否 AOT 都不写这个目录——
+用 `DAE_QML_AOT=0` 编的二进制连跑几次，目录同样不存在。
 
-```powershell
-Remove-Item "$env:LOCALAPPDATA\dae\cache\qmlcache" -Recurse -Force -ErrorAction SilentlyContinue
-# 启动 dae.exe，等窗口出来，关掉
-Get-ChildItem "$env:LOCALAPPDATA\dae\cache\qmlcache" -ErrorAction SilentlyContinue
-```
+现在的检查是**计时**：同一份代码编两次（`DAE_QML_AOT=0` 与 `=1`），交替跑，比
+`qml-loaded`：
 
-目录仍然是空的（或不含本树里的文件名）才说明单元被用上了。又被写进 53 个 `.qmlc`
-= loader 没被链接进来，先看 §2.1 那个 anchor，而不是去怀疑 `qmlcachegen`。
+| 构建 | `qml-loaded` 中位（8 组交替） |
+|---|---:|
+| `DAE_QML_AOT=0`（运行时编译） | 921.6 ms |
+| `DAE_QML_AOT=1`（预编译单元） | 905.6 ms |
 
-另一个廉价信号：`qmlcachegen --dump-aot-stats --module-id …` 的输出，以及
-`aotBuiltFunctions[]` 里 `nullptr` 项的数量——那才是「编译成 C++」的函数，
-其余是回退到字节码的。
+差值只有 **~16 ms**。AOT 仍然让构建失败可见（`DAE_QML_AOT=1` 是 fatal），但别再引用
+§1 的 265 ms——那是另一个指标（spawn → 窗口句柄）、非交替测量，而且包含冷缓存下写
+2 MB `.qmlc` 的磁盘成本，不是编译本身。
+
+`qmlcachegen --dump-aot-stats` 仍可用来确认某个文件确实编成了 C++（`aotBuiltFunctions[]`
+里的 `nullptr` 项是回退到字节码的函数）。
 
 ## 6. 首启 `engine.load` 的 924 ms 拆开了（2026-10-31）
 
-**前提是 AOT 真的生效。** 删掉 `%LOCALAPPDATA%\dae\cache\qmlcache` 后连续启动 7 次，
-目录**始终不存在**——一个 `.qmlc` 都没写，说明单元被用上了（§5）。同一批运行里
-`qml-loaded` 中位 954.6 ms，与 §1 改造后的冷启动 860 ms 同一量级，和改造前的
-1115–1137 ms 已经分开。
+**前提是 AOT 真的生效。** 按 §5 的交替计时确认（差值 16 ms 量级，不是缓存目录）。
+同一批运行里 `qml-loaded` 中位 954.6 ms，与 §1 改造后的冷启动 860 ms 同一量级，
+和改造前的 1115–1137 ms 已经分开。
 
 `DAE_STARTUP_PERF=1` 现在多三个点。它们由 QML 与模型各自标记
 （`crates/dae-qt/src/startup.rs`），同名阶段只打印第一次：
@@ -142,11 +146,47 @@ Get-ChildItem "$env:LOCALAPPDATA\dae\cache\qmlcache" -ErrorAction SilentlyContin
 （实例化在 622–827 ms 之间出现过，批次内很稳，批次之间不稳），所以表里只承诺比例：
 实例化约 80%、数据约 17%、布局 <1%。换机器或换 Qt 版本要重测，别引用绝对值。
 
-**下一步该看哪里。** 实例化 745 ms 是新的最大项，但它不是「编译 QML」——AOT 已经把
-那部分拿走了；它是对象创建、绑定求值和组件树规模。首帧前的 278 ms 是第二项，和首屏
-数据同量级，比布局本身大两个数量级。
+**下一步该看哪里。** 实例化 745 ms 是新的最大项，但它不是「编译 QML」——§7 用探针
+把对象数量、绑定、单元加载、Rust 对象和大组件逐个排除掉之后，指向的是每个组件文件
+第一次被实例化时的引擎侧准备成本。首帧前的 278 ms 是第二项，和首屏数据同量级，
+比布局本身大两个数量级。
 
-## 7. 还没做
+## 7. 首启实例化的 ~700 ms 排除了什么（2026-10-31）
+
+§6 把 `engine.load` 拆成「实例化 745 ms / 数据 162 ms / 布局 4 ms」之后，下一步是找出
+那 745 ms 花在哪。结论先说：**它不是对象数量、绑定、单元加载、Rust 对象或某一个大组件，
+而是每个组件文件第一次被实例化时的引擎侧准备成本。**
+
+用 `DAE_STARTUP_PERF=1` 与几个临时探针（均已移除）量到的边界：
+
+| 假设 | 测法 | 结果 |
+|---|---|---|
+| 单元加载（AOT 反序列化） | `QQmlComponent` 只加载不创建 | 45 ms（Main.qml）；再预载 10 个文件各 <0.1 ms |
+| 对象数量 | `Component { Item {} }` 创建 1000 个 | **0–3 ms** |
+| 绑定求值 | 1000 个带 anchors + `Theme.*` 绑定的 Rectangle | **8–11 ms** |
+| Rust 对象构造 | 单独 `createObject` AppConfig / TrashModel / OverviewModel / ShellCommandModel | 每个 **0 ms** |
+| Canvas（542 个 Glyph） | 把 Glyph 的 Canvas 换成 Rectangle 做交替 A/B | 无差异 |
+| 终端项（profiler 报 638 ms） | 在 `TerminalItem` 构造函数两端加标记 | **2 ms** |
+| 子组件 `onCompleted` | Sidebar 的 `Spaces.refresh` + `sidebarModel.refresh` 两端加标记 | 各 **0.2 ms**，且都在根 `onCompleted` **之后**才跑 |
+| 同一棵树第二次实例化 | 运行时再建一个 `ShellWindow` | **~206 ms**（含它自己的启动工作），说明类型热了以后树本身很便宜 |
+| 未在首启路径上的组件类型 | 首次 vs 第二次 `createObject`（SettingsPanel / CommandPalette / OpenWithDialog / BulkRenameDialog） | 首次 0–21 ms，第二次 0–13 ms |
+
+把树拆开量之后，剩下的解释只有「每个组件文件第一次被用到时，引擎要为它建类型、准备
+绑定表、准备单元数据」，按每个文件 5–15 ms、首启路径约 50 个文件算，正好是 700 ms
+的量级。第二次 `ShellWindow` 只花 ~50 ms 创建，因为所有类型都已经热了。
+
+**所以 AOT 之后能砍的不是「编译」，而是「首启路径上碰到的组件类型数量」。** 已经
+LazySurface 掉的 14 个面板不再计入；菜单（DisplayMenu / FilterMenu / ContextMenu /
+MenuList）仍在首启路径上，是剩下最大的一块可延迟类型，但要先量过它们的首次类型成本
+再决定值不值。
+
+**工具注意事项。** `qmlprofiler` 能连上，但代价很大：要 `QT_QML_DEBUG`
+（`DAE_QML_PROFILE=1` 可给 release 打开，见 `crates/dae-qt/build.rs`），而 QML 调试
+服务会**绕过 AOT 单元**，并且每个事件都有开销。用它得到的 `TerminalItem` 638 ms
+与实测 2 ms 差了三个数量级——**不要用 profiler 的绝对时间做结论**，只用它的事件计数
+（哪些组件被创建了多少个）。
+
+## 8. 还没做
 
 - **热启动的 A/B。** 热缓存那条 851 ms 里仍然要读 `.qmlc`、跑字节码；AOT 之后这两样
   都没了，但没测，别引用。

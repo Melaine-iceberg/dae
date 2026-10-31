@@ -192,10 +192,14 @@ fn main() {
         };
     }
 
-    if std::env::var("PROFILE").as_deref() == Ok("debug") {
+    println!("cargo:rerun-if-env-changed=DAE_QML_PROFILE");
+    let qml_profile = std::env::var_os("DAE_QML_PROFILE").is_some_and(|value| !value.is_empty());
+    if std::env::var("PROFILE").as_deref() == Ok("debug") || qml_profile {
         // SAFETY: the only change is one compile definition. QT_QML_DEBUG
         // opens a debug service that can load arbitrary QML, so it stays out
-        // of release builds.
+        // of release builds unless `DAE_QML_PROFILE=1` was passed at build
+        // time: that build exists to be attached to `qmlprofiler`, never to
+        // ship.
         unsafe {
             builder = builder.cc_builder(|cc| {
                 cc.define("QT_QML_DEBUG", None);
