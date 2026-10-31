@@ -391,6 +391,11 @@ impl qobject::OverviewModel {
         unsafe {
             self.as_mut().begin_reset_model();
             self.as_mut().rust_mut().rows = rows;
+            // Rows are published, but the views have not processed the reset
+            // yet. A QML `onModelReset`/`onCountChanged` handler runs after the
+            // view's own model connection, so it would report the layout pass
+            // as the data moment; this is the split the startup timeline needs.
+            crate::window::startup_mark_once("qml-first-model");
             self.as_mut().end_reset_model();
         }
     }

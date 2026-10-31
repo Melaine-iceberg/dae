@@ -102,7 +102,51 @@ Get-ChildItem "$env:LOCALAPPDATA\dae\cache\qmlcache" -ErrorAction SilentlyContin
 `aotBuiltFunctions[]` 里 `nullptr` 项的数量——那才是「编译成 C++」的函数，
 其余是回退到字节码的。
 
-## 6. 还没做
+## 6. 首启 `engine.load` 的 924 ms 拆开了（2026-10-31）
+
+**前提是 AOT 真的生效。** 删掉 `%LOCALAPPDATA%\dae\cache\qmlcache` 后连续启动 7 次，
+目录**始终不存在**——一个 `.qmlc` 都没写，说明单元被用上了（§5）。同一批运行里
+`qml-loaded` 中位 954.6 ms，与 §1 改造后的冷启动 860 ms 同一量级，和改造前的
+1115–1137 ms 已经分开。
+
+`DAE_STARTUP_PERF=1` 现在多三个点。它们由 QML 与模型各自标记
+（`crates/dae-qt/src/startup.rs`），同名阶段只打印第一次：
+
+| 点 | 位置 | 含义 |
+|---|---|---|
+| `qml-root-completed` | `ShellWindow.qml` 的 `Component.onCompleted` 第一条 | 对象树建完 |
+| `qml-first-model` | `model.rs` / `overview_model.rs` 发布行之前 | 首屏数据 |
+| `qml-first-list` | 两个 `ListView` 的 `onContentHeightChanged` | 首屏布局 |
+
+`qml-first-model` 标在模型里、不是 QML 里：QML 的 `onModelReset` / `onCountChanged`
+在视图自己的连接**之后**才跑，会把布局算成数据。第一版就是 QML 标记，实测
+`qml-first-list` 比 `qml-first-model` 早 5–6 ms，顺序倒挂。
+
+7 次 release + AOT（Windows，`target\release\dae.exe`，中位）：
+
+| 分段 | 中位 | 占 `engine.load` |
+|---|---:|---:|
+| `qml-engine` → `qml-root-completed`（实例化） | **745.4 ms** | **80.6%** |
+| `qml-root-completed` → `qml-first-model`（建 tab + 概览扫描 + 模型） | 161.7 ms | 17.5% |
+| `qml-first-model` → `qml-loaded`（`onCompleted` 余下 + load 返回） | 17.2 ms | 1.9% |
+| `qml-loaded` → `qml-first-list`（列表布局） | 3.8 ms | 0.4% |
+| **`qml-engine` → `qml-loaded`** | **924.2 ms** | 100% |
+| `qml-loaded` → `first-frame`（首次绘制） | 278.0 ms | — |
+
+**结论：AOT 之后 `engine.load` 的大头是实例化，不是编译，也不是数据。** 977 ms 里
+745 ms 花在把 `ShellWindow` 那棵树的对象建出来（`Component.onCompleted` 之前的
+`engine.load` 内部），首屏数据 162 ms，列表布局只有 4 ms。首批行到达时 `engine.load`
+还没返回，布局发生在它返回之后、下一轮事件循环里；随后到首帧的 278 ms 才是绘制。
+
+**数字的稳定性。** 同一二进制、同一天，不同批次之间绝对值会漂 ±10–15%
+（实例化在 622–827 ms 之间出现过，批次内很稳，批次之间不稳），所以表里只承诺比例：
+实例化约 80%、数据约 17%、布局 <1%。换机器或换 Qt 版本要重测，别引用绝对值。
+
+**下一步该看哪里。** 实例化 745 ms 是新的最大项，但它不是「编译 QML」——AOT 已经把
+那部分拿走了；它是对象创建、绑定求值和组件树规模。首帧前的 278 ms 是第二项，和首屏
+数据同量级，比布局本身大两个数量级。
+
+## 7. 还没做
 
 - **热启动的 A/B。** 热缓存那条 851 ms 里仍然要读 `.qmlc`、跑字节码；AOT 之后这两样
   都没了，但没测，别引用。

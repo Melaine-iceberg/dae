@@ -1710,6 +1710,12 @@ impl qobject::DirectoryListModel {
                 self.as_mut()
                     .begin_insert_rows(&QModelIndex::default(), first, last);
                 self.as_mut().rust_mut().rows.extend(rows);
+                // First batch only, and before the view sees the insertion: the
+                // data moment, not the layout that follows it. See
+                // `crates/dae-qt/src/startup.rs`.
+                if first == 0 {
+                    crate::window::startup_mark_once("qml-first-model");
+                }
                 self.as_mut().end_insert_rows();
             }
             self.as_mut().set_loaded(first + added);

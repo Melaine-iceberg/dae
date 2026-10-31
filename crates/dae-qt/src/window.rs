@@ -202,6 +202,24 @@ pub fn startup_mark(stage: &str) {
     qobject::dae_qt_startup_mark(&QString::from(stage));
 }
 
+/// Prints a mark only the first time this stage is reported.
+///
+/// QML calls this from every view that can reach a startup moment (the
+/// overview and the explorer list both observe their models, and the hidden
+/// one can publish rows too). The first report is the one that belongs on the
+/// timeline; later ones would be navigation, not startup.
+pub fn startup_mark_once(stage: &str) {
+    static SEEN: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+        std::sync::LazyLock::new(Default::default);
+    let mut seen = match SEEN.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if seen.insert(stage.to_owned()) {
+        startup_mark(stage);
+    }
+}
+
 /// Populates the font database off the GUI thread (Windows only; Qt documents
 /// the database as thread-safe).
 pub fn warm_font_database() {

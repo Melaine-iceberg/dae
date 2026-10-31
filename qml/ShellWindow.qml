@@ -4545,6 +4545,9 @@ Window {
     }
 
     Component.onCompleted: {
+        // First statement: everything above is instantiation, everything below
+        // is the startup work this mark splits from it. See startup.rs.
+        Startup.mark("qml-root-completed")
         ShellState.register(root.token, root)
 
         if (!chrome.attach())

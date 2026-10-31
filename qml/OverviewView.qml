@@ -147,6 +147,14 @@ Item {
         section.property: "section"
         section.criteria: ViewSection.FullString
 
+        /// Startup split: the model marks its publish point in Rust (a QML
+        /// handler runs after the view's own model connection, so it would
+        /// report layout as data); this is the layout half, and the Rust side
+        /// keeps only the first report of each stage. See
+        /// `crates/dae-qt/src/startup.rs`.
+        onContentHeightChanged: if (root.visible && count > 0 && contentHeight > 0)
+            Startup.mark("qml-first-list")
+
         /// The list is a keyboard surface too: the arrow keys move the cursor,
         /// Enter and Space open the row under it. Without this the landing
         /// page was only reachable with a pointer or a screen reader.

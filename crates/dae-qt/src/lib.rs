@@ -66,6 +66,7 @@ pub mod shell_command_model;
 pub mod sidebar_model;
 pub mod sidebar_tree_model;
 pub mod spaces_model;
+pub mod startup;
 mod system_watch;
 pub mod terminal;
 pub mod trash_model;

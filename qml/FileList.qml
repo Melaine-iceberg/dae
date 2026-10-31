@@ -929,6 +929,12 @@ Item {
             spacing: 0
             currentIndex: -1
 
+            /// Startup split, same contract as the overview: the model marks
+            /// its publish point in Rust, this is the layout half, and the
+            /// Rust side keeps only the first report of each stage.
+            onContentHeightChanged: if (root.visible && count > 0 && contentHeight > 0)
+                Startup.mark("qml-first-list")
+
             /// The listing announces itself as a list of rows; the empty space
             /// under the last row is part of it, which is why the tap handler
             /// below belongs to this element and not to a rectangle.

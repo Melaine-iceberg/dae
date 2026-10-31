@@ -167,6 +167,7 @@ fn main() {
             "src/sidebar_model.rs",
             "src/sidebar_tree_model.rs",
             "src/spaces_model.rs",
+            "src/startup.rs",
             "src/overview_model.rs",
             "src/terminal.rs",
             "src/trash_model.rs",
