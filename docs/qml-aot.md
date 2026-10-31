@@ -221,10 +221,10 @@ QML 侧的布局只有 ~4 ms，软件后端画完整棵树到第一帧也只要 
   没有接：一份能解析同目录组件的模块环境里仍有约 1800 条 `[compiler]` 提示（未标注
   类型的 JS 函数/调用、数组写入非序列类型等），它们是「这段绑定编不成 C++、运行时
   回退」的性能提示，不是错误。清零是另一个量级的改造。
-- **AOT 对同目录组件的解析。** `qmlcachegen` 不做隐式目录导入，`Glyph`、
-  `DialogHeader` 这类同目录类型在单元里未知，实例化回退到运行时查找。补一个模块
-  qmldir 并显式 `import dae 1.0` 可以消掉（原型里 Toast 从 33 条告警降到 1 条），
-  但要改全树导入并生成模块目录，见 §12 末尾。
+- **AOT 对同目录组件的解析（已试，收益为零）。** `qmlcachegen` 不做隐式目录导入，
+  `Glyph`、`DialogHeader` 这类同目录类型在单元里未知，实例化回退到运行时查找。
+  补模块 qmldir 并显式 `import dae 1.0` 能把回退从 2464 降到 1010，但热启动不变，
+  已回退，见 §13。
 - **`.js` 单个文件的收益**：三个 `.js` 单元的 `aotBuiltFunctions[]` 都是 0 项
   （JS 只预编成字节码，没有 AOT 函数），所以不存在「AOT 函数」层面的收益；单独再量
   它们省下的解析时间会低于启动抖动，不做。
@@ -326,7 +326,57 @@ qmlcachegen 不报的那一层：绑定不再解析时，AOT 单元只会退化�
 
 **顺带发现的 AOT 盲点。** `qmlcachegen` 不做隐式目录导入：`qml/Toast.qml` 引用同目录
 的 `Glyph` 时，AOT 单元里 `Glyph` 是未知类型（`Toast.qml` 仍有 93 个 AOT 函数，但
-每次实例化 `Glyph` 都回退到运行时查找）。补一个模块 qmldir（`typeinfo` + 全量条目 +
-`prefer :/qt/qml/dae/qml/`）并让文件显式 `import dae 1.0` 后，同一文件的告警从 33 条
-降到 1 条。这条路径能提高 AOT 覆盖，但要改全树的导入声明并在构建期生成模块目录，
-收益上限受 §6/§7 的实例化成本限制，留作后续。
+每次实例化 `Glyph` 都回退到运行时查找）。补模块 qmldir 并显式 `import dae 1.0` 后，
+同一文件的告警从 33 条降到 1 条。覆盖率确实提高了，但启动没有收益，见 §13。
+
+## 13. AOT 同目录组件：覆盖率上去了，启动没变（2026-10-31）
+
+§12 末尾那条盲点做完了，结论是**不值得**，改动已全部回退。全树 AOT 回退从 2464 条
+降到 1010 条（编译成功 4037 → 5491，总条目都是 6501），但热启动与实例化都在噪声内
+不动。
+
+### 怎么做的
+
+构建期生成一个 `dae` 模块 `qmldir`：`typeinfo`（cxx-qt 的 `plugin.qmltypes`）+
+全部组件条目；编译时把 `.qml`/`.js` 复制到同目录，`qmlcachegen -I <模块根>` 编译
+副本。模块随树挂到私有根 `qrc:/qt/qml/dae_aot/dae/`，24 个缺省的文件补
+`import dae 1.0`。编译产物里同目录类型因此从“未知、运行时查找”变成限定的
+`dae/<Type>`。
+
+### 三个实现上的硬约束
+
+1. **`qmlcachegen` 不读隐式目录。** 它用 `--resource-path`（qrc URL）而不是本地源
+   文件路径去算隐式导入目录；没有 `--resource` 映射时这个目录读不出来。把文件复制
+   到临时目录并在旁边放一个无 `module` 行的 qmldir 不会让兄弟类型可见。只有模块
+   qmldir 能把它们变成 `dae/<Type>`。
+2. **运行时签名校验不认 `prefer`。** Qt 的 `Validator::getTypeFromModule`
+   （`qqml.cpp`）先用 `urlsForModule(uri)` 取第一个 qrc 模块目录，再直接拼
+   `<目录>/<qmldir 里的文件名>`；它不解析 `prefer`。所以“编译期模块 + prefer 指回
+   `:/qt/qml/dae/qml/`”的单元会在运行时被整体拒绝（`QV4_FAIL_ON_INVALID_AOT=1`
+   会直接退出）。要过校验，qmldir 必须和 QML 文件同目录——这也是最终把挂载点移到
+   私有根 `qrc:/qt/qml/dae_aot/dae/` 的原因。
+3. **手写 qmltypes 的 `name` 必须是 C++ 全名。** 非复合类型校验走
+   `QMetaType::fromName(name + "*")`；`TerminalItem` 注册成 `dae_qt::TerminalItem`，
+   而 `terminal.qmltypes` 原来写的是不带命名空间的 `TerminalItem`，`TerminalPanel.qml`
+   的单元一直校验失败。改成 `dae_qt::TerminalItem` 后全部 50 个文档通过严格校验。
+   这条与布局无关，将来若单独修，只需改那一行。
+
+### 测量
+
+Windows，release，`DAE_STARTUP_PERF=1`，每组 8 轮交替（奇偶轮换先后），取中位；
+实例化 = `qml-root-completed` − `qml-engine`：
+
+| 构建 | 实例化 | `qml-loaded` | `first-frame` |
+|---|---:|---:|---:|
+| 旧 AOT（基线） | 613.3 ms | 778.3 ms | 988.8 ms |
+| 新 AOT（同目录模块） | 616.6 ms | 783.5 ms | 990.4 ms |
+| 新 AOT | 614.9 ms | 778.4 ms | 981.6 ms |
+| 新构建 · `DAE_QML_AOT=0` | 621.3 ms | 788.0 ms | 992.8 ms |
+
+旧/新 AOT 的差在噪声内；新树里 AOT 相对无 AOT 只剩 **~10 ms**（§11 量到的是 ~54 ms，
+但那次的无 AOT 基线是 877.7 ms，机器状态不可直接比）。**实例化没有变化**，与 §7 的
+结论一致：AOT 之后的大头是引擎为每个组件文件做的首次准备，不是绑定/函数能不能编成
+C++。覆盖率从 62% 提到 84% 也没有动这一项。
+
+所以止损在这一步：不保留模块目录、全树导入和私有挂载点，`docs` 只留这条负结果。
+再往上就不是 QML 侧能改的了。
