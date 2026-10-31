@@ -15,6 +15,7 @@ import { existsSync, rmSync } from "node:fs";
 import {
   appBinary,
   boltLinkFlags,
+  buildShell,
   corpusDir,
   fail,
   fileSize,
@@ -29,8 +30,10 @@ import {
   pgoRawDir,
   perfDir,
   prepareCorpus,
+  qtDir,
   repoRoot,
   resetProfileDirectory,
+  resolveShell,
   run,
   runCli,
   runTrainingWorkload,
@@ -38,7 +41,7 @@ import {
   rustflagsEnv,
   say,
   step,
-  tauriBuild,
+  tauriDir,
   toolVersion,
   warn,
   warnOnLlvmMismatch,
@@ -55,21 +58,25 @@ const USAGE = `LLVM IR PGO for dae.
   bun scripts/opt/pgo.mjs clean                 remove ${path.relative(repoRoot, perfDir) || ".perf"}/
 
 Options
+  --qt              profile the Qt Quick shell (\`cargo build -p dae-app\`,
+                    apps/dae) instead of the Tauri shell. Also enabled by
+                    DAE_PERF_SHELL=qt.
   --bolt            also link with --emit-relocs and keep symbols, i.e. the
                     input LLVM BOLT needs (see scripts/opt/bolt.mjs). Linux only:
                     the flag is a GNU ld flag and BOLT only rewrites ELF.
   --seconds N       training run length for \`train\` (default 45)
-  --target TRIPLE   cross build, as in \`tauri build --target\`; also where the
+  --target TRIPLE   cross build, as in \`cargo build --target\`; also where the
                     produced binary is looked for (macOS aarch64 on CI)
-  --bundle          let \`build\` produce installers as well (slow; rarely wanted)
+  --bundle          let \`build\` produce installers as well (Tauri only; slow)
 `;
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const flags = { bolt: false, bundle: false, seconds: 45, target: "" };
+  const flags = { bolt: false, bundle: false, qt: false, seconds: 45, target: "" };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
-    if (arg === "--bolt") flags.bolt = true;
+    if (arg === "--qt") flags.qt = true;
+    else if (arg === "--bolt") flags.bolt = true;
     else if (arg === "--bundle") flags.bundle = true;
     else if (arg === "--seconds") flags.seconds = Number(rest[(index += 1)]);
     else if (arg.startsWith("--seconds=")) flags.seconds = Number(arg.slice("--seconds=".length));
@@ -83,6 +90,9 @@ function parseArgs(argv) {
   // `appBinary()` resolves the target sub-directory from this variable, so a
   // cross build looks in `target/<triple>/release/` instead of the host's.
   if (flags.target) process.env.DAE_PERF_TARGET_TRIPLE = flags.target;
+  // Every lib.mjs helper reads this, including the default parameter values
+  // that `bolt.mjs`/`post-link.mjs` rely on.
+  if (flags.qt) process.env.DAE_PERF_SHELL = "qt";
   return { command, flags };
 }
 
@@ -97,27 +107,42 @@ const profdataTool = () => {  const tool = findLlvmTool("llvm-profdata", {
 
 const rawProfiles = () => listFiles(pgoRawDir, [".profraw"]);
 
-/** `beforeBuildCommand` runs `bindings:export`, which builds and *runs* another
- *  instrumented binary before the app itself exists. Those counters describe the
- *  build tooling, not the app, so they are thrown away as soon as the build is
- *  done: whatever is in the directory afterwards was produced by the training
- *  run and nothing else. */
+/** Both shells build and *run* instrumented helper binaries before the app
+ *  exists: Tauri's `beforeBuildCommand` runs `bindings:export`, and cargo
+ *  compiles and runs every build script. Those counters describe the build
+ *  tooling, not the app, so they are thrown away as soon as the build is done:
+ *  whatever is in the directory afterwards was produced by the training run
+ *  and nothing else. */
 function dropBuildTimeProfiles() {
   const stale = rawProfiles();
-  if (stale.length) say(`dropping ${stale.length} profraw file(s) written by the bindings export`);
+  if (stale.length) say(`dropping ${stale.length} profraw file(s) written by build-time programs`);
   resetProfileDirectory(pgoRawDir);
 }
 
 const instrumentFlags = () => ["-C", `profile-generate=${pgoRawDir}`];
 
 /** The instrumented build is the only one that links compiler-rt's profiling
- *  runtime, and `perf-train` is what lets `lib.rs::spawn_training_quit` call
+ *  runtime, and `perf-train` is what lets the app's training hook
+ *  (`src-tauri/src/lib.rs` and `apps/dae/src/main.rs`) call
  *  `__llvm_profile_write_file` — flushing the counters itself instead of
  *  trusting the exit path to finish. Any other build with this feature fails to
  *  link, so it cannot be switched on by accident. */
 const TRAIN_FEATURE_ARGS = ["--features", "perf-train"];
 
 const useFlags = () => ["-C", `profile-use=${pgoProfilePath}`, ...PROFILE_USE_ARGS];
+
+/** The C++ half of the Qt bridge, handed to `apps/dae/build.rs` and
+ *  `crates/dae-qt/build.rs`. It only applies where the C++ compiler is clang
+ *  with the same LLVM major as rustc; those build scripts warn and ignore the
+ *  variable for MSVC/GCC, whose profiles `llvm-profdata` cannot merge.
+ *
+ *  The Tauri shell has no cxx-qt bridge, so it gets nothing. */
+function cxxProfileEnv(kind) {
+  if (resolveShell() !== "qt") return {};
+  return kind === "generate"
+    ? { DAE_PERF_CXX_PROFILE_GENERATE: pgoRawDir }
+    : { DAE_PERF_CXX_PROFILE_USE: pgoProfilePath };
+}
 
 function describeArtifacts() {
   const raw = rawProfiles();
@@ -142,9 +167,13 @@ function instrument({ bolt, target }) {
   resetProfileDirectory(pgoRawDir);
   profdataTool();
   say(`profile directory emptied: ${path.relative(repoRoot, pgoRawDir)}`);
-  tauriBuild({ env: rustflagsEnv(instrumentFlags()), args: [...targetArgs(target), ...TRAIN_FEATURE_ARGS] });
+  buildShell({
+    env: { ...rustflagsEnv(instrumentFlags()), ...cxxProfileEnv("generate") },
+    args: [...targetArgs(target), ...TRAIN_FEATURE_ARGS],
+  });
   dropBuildTimeProfiles();
 
+  const suffix = resolveShell() === "qt" ? ":qt" : "";
   const exe = appBinary();
   console.log(
     [
@@ -157,11 +186,11 @@ function instrument({ bolt, target }) {
       "terminal, switch views — a few minutes of ordinary use is what the profile",
       "should describe. Then close it and run:",
       "",
-      "  bun run perf:pgo:merge",
+      `  bun run perf:pgo${suffix}:merge`,
       "",
       bolt
-        ? "The merge is followed by `bun run perf:pgo:build --bolt`, which keeps symbols\nand relocations so scripts/opt/bolt.mjs can run LLVM BOLT afterwards."
-        : "The merge is followed by `bun run perf:pgo:build`.",
+        ? `The merge is followed by \`bun run perf:pgo${suffix}:build --bolt\`, which keeps symbols\nand relocations so scripts/opt/bolt.mjs can run LLVM BOLT afterwards.`
+        : `The merge is followed by \`bun run perf:pgo${suffix}:build\`.`,
     ]
       .filter(Boolean)
       .join("\n"),
@@ -194,7 +223,7 @@ function merge() {
       say(line.trim());
     }
   }
-  say("next: bun run perf:pgo:build");
+  say(`next: bun run perf:pgo${resolveShell() === "qt" ? ":qt" : ""}:build`);
 }
 
 function build({ bolt, bundle, target }) {
@@ -206,11 +235,14 @@ function build({ bolt, bundle, target }) {
         "Run `bun run perf:pgo:instrument`, use the app, then `bun run perf:pgo:merge`.",
     );
   }
-  const env = rustflagsEnv([...(bolt ? boltLinkFlags : []), ...useFlags()]);
+  const env = {
+    ...rustflagsEnv([...(bolt ? boltLinkFlags : []), ...useFlags()]),
+    ...cxxProfileEnv("use"),
+  };
   // The release profile strips, which removes exactly what BOLT reads. The
   // post-link step strips the binary again once BOLT is done with it.
   if (bolt) env.CARGO_PROFILE_RELEASE_STRIP = "false";
-  tauriBuild({ env, bundle, args: targetArgs(target) });
+  buildShell({ env, bundle, args: targetArgs(target) });
 
   const exe = appBinary();
   step("built");
@@ -236,6 +268,12 @@ function flags({ bolt }) {
     `CARGO_ENCODED_RUSTFLAGS=${env.CARGO_ENCODED_RUSTFLAGS}`,
     ...(bolt ? ["CARGO_PROFILE_RELEASE_STRIP=false"] : []),
   ];
+  // The C++ bridge reads its own profile through the build script; on MSVC or
+  // GCC the build script warns and ignores it, so the Rust profile is still
+  // used. Only emitted when a profile exists, matching the Rust flag above.
+  if (resolveShell() === "qt" && existsSync(pgoProfilePath)) {
+    lines.push(`DAE_PERF_CXX_PROFILE_USE=${pgoProfilePath}`);
+  }
   process.stdout.write(`${lines.join("\n")}\n`);
 }
 
@@ -245,22 +283,26 @@ async function train({ seconds, target }) {
   resetProfileDirectory(pgoRawDir);
   profdataTool();
   prepareCorpus();
-  tauriBuild({ env: rustflagsEnv(instrumentFlags()), args: [...targetArgs(target), ...TRAIN_FEATURE_ARGS] });
+  buildShell({
+    env: { ...rustflagsEnv(instrumentFlags()), ...cxxProfileEnv("generate") },
+    args: [...targetArgs(target), ...TRAIN_FEATURE_ARGS],
+  });
   dropBuildTimeProfiles();
 
   const exe = appBinary();
   if (!existsSync(exe)) fail(`the instrumented build produced no binary at ${exe}`);
   // No `LLVM_PROFILE_FILE` here: rustc already told the runtime to write into
   // `pgoRawDir`, and the app quits cleanly (DAE_PERF_TRAIN_QUIT_MS), so the
-  // default per-process naming is what we want.
-  await runTrainingWorkload({ exe, seconds, directory: corpusDir });
+  // default per-process naming is what we want. The C++ units are compiled with
+  // a file name in the same directory, so one merge sees both halves.
+  await runTrainingWorkload({ exe, seconds, directory: corpusDir, shell: resolveShell() });
 
   const raw = rawProfiles();
   if (!raw.length) {
     fail(
       `the training run wrote no .profraw files into ${path.relative(repoRoot, pgoRawDir)}.\n` +
-        "The app most likely never started (no display, or a missing WebKit/WebView " +
-        "dependency), so there is nothing to merge.\n" +
+        "The app most likely never started (no display, Qt's bin directory not on " +
+        "PATH, or a missing WebKit/Qt platform plugin), so there is nothing to merge.\n" +
         `Read ${path.relative(repoRoot, path.join(perfDir, "training.log"))}: ` +
         "`[perf] training quit armed` means the binary started, `profile counters flushed` " +
         "means the counters reached the disk. The first without the second means the flush " +
@@ -271,6 +313,8 @@ async function train({ seconds, target }) {
 }
 
 function status() {
+  step("shell");
+  say(`${resolveShell()} — ${path.relative(repoRoot, resolveShell() === "qt" ? qtDir : tauriDir)}`);
   step("toolchain");
   const rustcLlvm = rustcLlvmVersion();
   say(`rustc LLVM ${rustcLlvm ?? "unknown"}`);

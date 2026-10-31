@@ -32,6 +32,11 @@ unsafe extern "C" {
 }
 
 fn main() {
+    // Armed before QGuiApplication and before `logging::init`: the harness
+    // starts its grace window at process spawn, so the timer has to count from
+    // the same instant. No-op unless `perf-train` is compiled in.
+    perf_train::arm();
+
     // Windows pins D3D11, which is the backend gates 1–4 were measured on.
     // macOS and Linux keep Qt's own choice (Metal and OpenGL respectively);
     // the gated native paths there are Qt's platform integration, not a
@@ -87,4 +92,109 @@ fn main() {
     if let Some(application) = application.as_mut() {
         application.exec();
     }
+}
+
+/// Quits on a timer, for the profiled builds only.
+///
+/// Ported from the Tauri shell (`src-tauri/src/lib.rs::spawn_training_quit`)
+/// because the reason is the same: LLVM's PGO counters are written from
+/// `atexit` / `.fini_array` hooks, so the process has to leave through the C
+/// runtime's exit path for a profile to exist, and an unattended training run
+/// (`scripts/opt/pgo.mjs train`) has nobody to close it. `DAE_PERF_TRAIN_QUIT_MS`
+/// is unset in every normal launch.
+///
+/// `std::process::exit` reaches `ExitProcess` on Windows and skips those hooks,
+/// and killing the process from outside skips them by definition. The Qt shell
+/// goes one step further than the Tauri one: it writes the counters with
+/// `__llvm_profile_write_file` and then leaves through `_exit` (Unix) or
+/// `TerminateProcess` (Windows), because Qt's teardown measured 20s on Windows
+/// and can hang under `xvfb` — long enough to fall outside the harness's grace
+/// window.
+#[cfg(feature = "perf-train")]
+mod perf_train {
+    pub fn arm() {
+        let Some(milliseconds) = std::env::var("DAE_PERF_TRAIN_QUIT_MS")
+            .ok()
+            .and_then(|value| value.trim().parse::<u64>().ok())
+        else {
+            return;
+        };
+
+        // stderr is captured into `.perf/training.log`; the two lines are how a
+        // failed run tells "the hook never fired" from "it fired and the exit
+        // hung". The absolute timestamp correlates the log with the CI job.
+        eprintln!(
+            "[perf] training quit armed at {} (+{milliseconds}ms)",
+            epoch_ms()
+        );
+
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(milliseconds));
+            flush();
+            finish();
+        });
+    }
+
+    fn epoch_ms() -> u128 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis())
+            .unwrap_or(0)
+    }
+
+    /// compiler-rt's own "save now" entry point, the function its exit handler
+    /// calls. It covers counters from the Rust crates and, when the bridge was
+    /// compiled by clang, the cxx-qt C++ units too: both register with the one
+    /// profiling runtime `-Cprofile-generate` links.
+    fn flush() {
+        // SAFETY: the symbol is part of that runtime, and `perf-train` is only
+        // ever set for the instrumented build; any other build fails to link.
+        unsafe extern "C" {
+            fn __llvm_profile_write_file() -> i32;
+        }
+        // SAFETY: compiler-rt documents this as callable from any thread.
+        let status = unsafe { __llvm_profile_write_file() };
+        eprintln!(
+            "[perf] profile counters flushed at {} (status {status})",
+            epoch_ms()
+        );
+    }
+
+    #[cfg(not(windows))]
+    fn finish() -> ! {
+        // SAFETY: `_exit` skips every exit handler. The counters were already
+        // written by `flush`, and the handlers Qt and the platform plugins
+        // register can take seconds or hang under xvfb.
+        unsafe extern "C" {
+            fn _exit(status: i32) -> !;
+        }
+        unsafe { _exit(0) }
+    }
+
+    #[cfg(windows)]
+    fn finish() -> ! {
+        // `_exit` is not enough here: it reaches `ExitProcess`, which still
+        // runs every loaded DLL's detach routine, and Qt's D3D11 backend spends
+        // ~20s there (`QDxgiVSyncService not destroyed in time`) — longer than
+        // the harness's grace window at 45s. `TerminateProcess` skips detach
+        // entirely, which is safe because the counters are already on disk.
+        #[link(name = "kernel32")]
+        unsafe extern "system" {
+            fn GetCurrentProcess() -> *mut core::ffi::c_void;
+            fn TerminateProcess(process: *mut core::ffi::c_void, exit_code: u32) -> i32;
+        }
+        unsafe {
+            TerminateProcess(GetCurrentProcess(), 0);
+        }
+        // `TerminateProcess` only returns on failure; failing to end the
+        // process is still better reported by the harness's kill than by
+        // falling through into Qt's teardown.
+        std::process::abort()
+    }
+}
+
+/// An ordinary build has no profiling runtime, so there is nothing to arm.
+#[cfg(not(feature = "perf-train"))]
+mod perf_train {
+    pub fn arm() {}
 }

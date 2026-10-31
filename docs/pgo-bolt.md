@@ -1,21 +1,27 @@
 # PGO 与 BOLT：编译期和后链接的两种优化
 
-> **状态：已接入，未测量收益。** 本地流程（Windows / Linux）与 `release.yml` 的三条腿
-> （Windows / Linux / macOS）都已接上，Linux 额外带 LLVM BOLT；每一步都有降级路径；但**还没有一次干净的 A/B 数字**说明它把启动或列目录加快了多少。
+> **状态：已接入，未测量收益。** 两个壳都接上了：`tauri`（旧 WebView 壳）与
+> `qt`（`apps/dae`，cxx-qt 桥）。本地流程（Windows / Linux）与 `release.yml` 的三条腿
+> （Windows / Linux / macOS）都覆盖，Linux 额外带 LLVM BOLT；每一步都有降级路径；但**还没有一次干净的 A/B 数字**说明它把启动或列目录加快了多少。
 > 按 `docs/decisions/` 的习惯，这里只写「怎么跑、为什么这么接、失败时退到哪」，
 > 收益等有数了再回填——没有数字之前，不要在任何地方宣称它更快。
+>
+> 选择哪个壳：`--qt`（或 `DAE_PERF_SHELL=qt`）。不带参数时仍是 Tauri，直到旧壳退役。
 
-改动只有两处是产品代码/配置，其余都是脚本：
+改动只有少数几处是产品代码/配置，其余都是脚本：
 
 | 文件 | 作用 |
 |---|---|
-| `scripts/opt/lib.mjs` | rustflags 合并、LLVM 工具查找、训练负载 |
+| `scripts/opt/lib.mjs` | 壳选择、rustflags 合并、LLVM 工具查找、训练负载 |
 | `scripts/opt/pgo.mjs` | 分阶段 PGO（instrument / merge / build） |
 | `scripts/opt/bolt.mjs` | BOLT（instrument / collect / merge / optimize） |
 | `scripts/opt/post-link.mjs` | `beforeBundleCommand` 钩子，BOLT 的接线点 |
-| `src-tauri/tauri.perf.conf.json` | 只被 CI 的 Linux 腿 `--config` 加进去 |
-| `src-tauri/src/lib.rs` | `spawn_training_quit`：唯一一处产品代码改动（见 §3） |
-| `.github/workflows/release.yml` | Linux 腿的新步骤：装 xvfb 与 `llvm-bolt`、训练、导出 flag，以及把 perf overlay 加进 `--config` |
+| `src-tauri/tauri.perf.conf.json` | 只被 CI 的 Tauri Linux 腿 `--config` 加进去 |
+| `src-tauri/src/lib.rs` | Tauri 的训练退出钩子（见 §3） |
+| `apps/dae/Cargo.toml`、`apps/dae/src/main.rs` | `perf-train` feature 与 Qt 的训练退出钩子（见 §3） |
+| `apps/dae/build.rs`、`crates/dae-qt/build.rs` | cxx-qt C++ 半的 profile flag（见 §2.1） |
+| `.github/workflows/release.yml` | 两条腿都训练/导出 flag；Linux 的 BOLT 与 `tauri.perf.conf.json` |
+| `.github/workflows/perf-check.yml` | 手动检查 `--qt` 的训练链路 |
 
 `[profile.release]` 本身没改：`strip = true` 是发货想要的，BOLT 构建通过
 `CARGO_PROFILE_RELEASE_STRIP=false` 从环境覆盖它，因为 `tauri build` 只会编 `release`
@@ -56,7 +62,30 @@ sudo apt install llvm-bolt        # Ubuntu 25.04+、Debian 13+、Fedora 42+
 ```
 
 工具路径可以用 `DAE_LLVM_PROFDATA`、`DAE_LLVM_BOLT`、`DAE_MERGE_FDATA`、`DAE_LLVM_STRIP` 覆盖。
-`bun run perf:pgo:status` 会列出版本、产物大小、以及目标二进制能不能被 BOLT 处理。
+`bun run perf:pgo:status`（或 `perf:pgo:qt:status`）会列出版本、产物大小、以及目标二进制
+能不能被 BOLT 处理。
+
+### 2.1 C++ 半：cxx-qt 桥里能被优化的只有这一小块
+
+Qt 本体是预编译 DLL/dylib，PGO 动不到；启动路径上属于本项目的 C++ 只有 cxx-qt 生成的
+胶水与 `crates/dae-qt/cpp/` 的桥接文件。它们在 `apps/dae/build.rs` 与
+`crates/dae-qt/build.rs` 里通过 `cc` 编译，所以 PGO 脚本把两个环境变量交给构建脚本：
+
+| 变量 | 阶段 | flag |
+|---|---|---|
+| `DAE_PERF_CXX_PROFILE_GENERATE` | 插桩 | `-fprofile-instr-generate=<raw>/cxx-%m-%p.profraw` |
+| `DAE_PERF_CXX_PROFILE_USE` | 使用 | `-fprofile-instr-use=<profdata>` |
+
+**只有 clang 能参与**，而且它的 LLVM 主版本必须和 rustc 的一致——profraw 是带版本的，
+MSVC / GCC 的 profile 数据 `llvm-profdata` 根本无法合并。构建脚本检测到不是 clang 或
+版本不一致时会打一条 `cargo:warning` 并跳过 C++ 半，**Rust 半照常**。因此：
+
+- macOS（Qt 用的就是 clang，且版本与 rustc 一致时）：C++ 桥也进 profile；
+- Windows（MSVC）、Linux（GCC）：C++ 桥不进 profile，只有 Rust 侧被优化；
+- 想覆盖 C++ 半，就在 Linux 上用与 rustc 同版本的 clang 构建（`CXX=clang++`）。
+
+这不是「少接了一半」，而是「另一半的工具链不支持同一份 profile」。Qt 本体无论哪种
+情况都不会被优化。
 
 ## 3. 本地：分阶段手动跑
 
@@ -64,20 +93,36 @@ PGO 的效果**完全取决于训练期间你怎么用这个 app**。所以本�
 中间那步由人来跑（CI 里没有人，才退化成脚本负载，见 §5）。
 
 ```bash
+# 旧 WebView 壳（默认）
 bun run perf:pgo:instrument      # ① 插桩构建，输出 .perf/pgo/raw/ 的空目录
                                  #    自己去用那个 exe：打开真正慢的目录、搜索、开终端、切视图
 bun run perf:pgo:merge           # ② llvm-profdata merge → .perf/pgo/dae.profdata
 bun run perf:pgo:build           # ③ -Cprofile-use 重新编译
+
+# Qt 壳（apps/dae，产物在 target/release/dae）
+bun run perf:pgo:qt:instrument
+bun run perf:pgo:qt:merge
+bun run perf:pgo:qt:build
 ```
 
-脚本构建时**默认带上 `--config src-tauri/tauri.release.conf.json`**（可用
+`--qt` 走的是 `cargo build --release -p dae-app`，不经过 Tauri CLI，也没有 bundler；
+`--target TRIPLE` 会原样交给 cargo，并从 `target/<triple>/release/` 找 exe。两个壳共用
+`.perf/pgo/` 的产物——同时训练两个壳会互相覆盖，想并行就把 `DAE_PERF_DIR` 指到不同目录。
+
+Qt 壳启动时还需要 Qt 的运行时 DLL：本机把 `K:/Qt/<ver>/msvc2022_64/bin` 放进 `PATH`
+（CI 由 `install-qt-action` 做）。只设 `QMAKE` 够编译，不够运行；缺 DLL 时进程会在
+`logging::init` 之前退出，`training.log` 是空的，训练脚本只会报「没有 profraw」。
+
+Tauri 脚本构建时**默认带上 `--config src-tauri/tauri.release.conf.json`**（可用
 `DAE_TAURI_BUILD_ARGS` 改）。这不是为了省事：release 构建如果没合并那份 overlay，
 `plugins.updater` 是 `null`，updater 插件在初始化时就 panic——
 `PluginInitialization("updater", "invalid type: null, expected struct Config")`，
-app 根本起不来，也就采不到任何 profile。本地已经因为这个原因跑空过一次。
+app 根本起不来，也就采不到任何 profile。本地已经因为这个原因跑空过一次。Qt 壳没有这份
+overlay，`--qt` 不需要它。
 
-训练跑出来的 stderr 写在 `.perf/training.log`：`windows_subsystem = "windows"` 的构建
-本身没有控制台，进程提前退出时，那段日志是唯一能看出为什么的地方。
+训练跑出来的 stderr 写在 `.perf/training.log`：两个壳的 release 构建在 Windows 上都是
+`windows_subsystem = "windows"`，本身没有控制台，进程提前退出时，那段日志是唯一能看出
+为什么的地方。
 
 要接着上 BOLT，第 ③ 步加 `--bolt`，它会额外做两件事：链接时加 `-Wl,--emit-relocs`、
 用 `CARGO_PROFILE_RELEASE_STRIP=false` 保留符号表——这两样正是 BOLT 的输入要求，
@@ -86,6 +131,8 @@ app 根本起不来，也就采不到任何 profile。本地已经因为这个�
 ```bash
 bun run perf:pgo:build -- --bolt   # 或者 bun scripts/opt/pgo.mjs build --bolt
 bun run perf:bolt                  # instrument → 跑训练负载 → merge-fdata → 重写 → strip
+bun run perf:pgo:qt:build:bolt     # Qt 壳；随后 post-link.mjs --qt（release.yml 的 Linux 腿）
+bun run perf:bolt:qt
 ```
 
 `perf:bolt` 默认把结果留在 `.perf/bolt/dae.bolt`（原 exe 不动），确认没问题后
@@ -105,13 +152,21 @@ bun run perf:bolt                  # instrument → 跑训练负载 → merge-fd
 | `AppHandle::exit(0)`（也即 Tauri 事件循环结束时走的路） | Windows 上走到 `ExitProcess`，**跳过 CRT 的 atexit**，无 profile。已实测：exit code 0、干净退出、一个 profraw 都没有 |
 | compiler-rt 的 continuous mode（`LLVM_PROFILE_FILE=…%c.profraw`） | 文件停在 20 MB 的 “truncated profile data”，`llvm-profdata merge` 直接拒收 |
 
-所以唯一可行的是**进程从 CRT 的 exit 出去**。唯一一处产品代码改动就是为此：
-`src-tauri/src/lib.rs` 的 `spawn_training_quit`——`DAE_PERF_TRAIN_QUIT_MS` 设置时，
+所以唯一可行的是**进程从 CRT 的 exit 出去**。两个壳各有一个同构的钩子，都只在
+`--features perf-train` 的构建里存在：`src-tauri/src/lib.rs` 的 `spawn_training_quit`
+与 `apps/dae/src/main.rs` 的 `perf_train::arm`。`DAE_PERF_TRAIN_QUIT_MS` 设置时，
 后台线程睡 N 毫秒后调 `exit(0)`（CRT 的那个，不是 `std::process::exit`）。
 没设置时（即所有正常启动）它什么都不做。这个差别不是理论：同一个 instrumented
 小程序，用 CRT `exit` 退出会写出 7.8 KB 的 profraw，用 `std::process::exit` 退出什么都没有。
 
-**但 Linux 上这个 `exit` 不返回。** CI 里 Windows / macOS 都拿到了 profile（20 MiB /
+Qt 壳比 Tauri 壳更进一步：计数器先由 `__llvm_profile_write_file` 落盘，然后
+Unix 用 `_exit`、Windows 用 `TerminateProcess` 直接结束——都不跑 Qt / 平台插件的
+teardown。原因是实测：Windows 上 `_exit` 仍会走到 `ExitProcess` 的 DLL detach，
+Qt 的 D3D11 后端在那里多花 **约 20 s**（并打一条 `QDxgiVSyncService not destroyed in
+time`），而 harness 的宽限期只有训练时长 +20 s；xvfb 下则可能永远不结束。C++ 半的计数器
+也由同一个 compiler-rt runtime 写出（见 §2.1），所以 `perf-train` 只打开一处就覆盖两者。
+
+**Tauri 壳最初的 Linux `exit` 不返回。** CI 里 Windows / macOS 都拿到了 profile（20 MiB /
 14.5 MiB），Linux 每次都是：训练进程活过自己的定时器 → harness 在 45+20 秒后 SIGTERM →
 `.perf/pgo/raw` 一个 profraw 都没有。`xvfb-run` 下的 `exit` 卡在退出路径上（GTK/WebKit 的
 teardown 与 `atexit` 钩子），进程既没活着完成也没退出。v0.5.0 的 Linux 产物就是这样发出去的：
@@ -147,33 +202,40 @@ BOLT 只认 **ELF**（x86-64 / AArch64）。Windows 是 PE/COFF、macOS 是 Mach
 
 ## 5. CI 是怎么接的
 
-**三条腿都跑标准两阶段 PGO**，Linux 额外多一层 BOLT：
+`release.yml` 的 **`build`（Tauri）与 `qt` 两条矩阵都跑标准两阶段 PGO**，Linux 额外多一层
+BOLT：
 
-1. `bun scripts/opt/pgo.mjs train --seconds 45 --target <triple>`：插桩构建 → 启动 app、
-   打开一个生成的语料目录、跑 45 秒（LINUX 无 DISPLAY 时套 `xvfb-run`）→ merge。
+1. `bun scripts/opt/pgo.mjs train --seconds 45 --target <triple> [--qt]`：插桩构建 → 启动 app、
+   打开一个生成的语料目录、跑 45 秒（Linux 无 DISPLAY 时套 `xvfb-run`）→ merge。
    这一步 `continue-on-error`。`--target` 在 Windows/Linux 是空串，在 macOS 是
-   `aarch64-apple-darwin`：它既传给 `tauri build`，也决定去 `target/<triple>/release/` 找 exe。
-2. `bun scripts/opt/pgo.mjs flags <matrix.perf_flags> >> $GITHUB_ENV`：把
-   `CARGO_ENCODED_RUSTFLAGS`（含 `-Cprofile-use`）交给后面的构建；只有 Linux 的
-   `perf_flags` 是 `--bolt`，会额外带 `-C link-arg=-Wl,--emit-relocs` 和
-   `CARGO_PROFILE_RELEASE_STRIP=false`——这两样是 GNU ld / ELF 专属，不能上另外两条腿。
-3. `tauri-action` 于是用**这套 flag** 编出真正的产物（Windows/MSIX 与 macOS 的 dmg/app
-   都在其中）。Linux 腿的 `--config src-tauri/tauri.perf.conf.json` 让 `beforeBundleCommand`
-   在**链接之后、打包之前**跑 `post-link.mjs`，对 `target/release/dae` 执行 BOLT 并 strip。
-   打包（deb/rpm/AppImage）与 updater 签名都在其后，所以安装包里的、`latest.json` 签名
-   指向的，都是被 BOLT 重写过的那个二进制。
-4. `beforeBundleCommand` 是唯一能插进「已经链接、还没打包」这个窗口的钩子；`beforeBuildCommand`
-   不行，它在编译之前。
+   `aarch64-apple-darwin`：它既传给构建命令，也决定去 `target/<triple>/release/` 找 exe。
+   `--qt` 使这一步走 `cargo build -p dae-app`，并把 C++ bridge 的 profile 变量交给
+   构建脚本（§2.1）。
+2. `bun scripts/opt/pgo.mjs flags [--qt] <matrix.perf_flags> >> $GITHUB_ENV`：把
+   `CARGO_ENCODED_RUSTFLAGS`（含 `-Cprofile-use`）交给后面的构建；`--qt` 还会导出
+   `DAE_PERF_CXX_PROFILE_USE`。只有 Linux 的 `perf_flags` 是 `--bolt`，会额外带
+   `-C link-arg=-Wl,--emit-relocs` 和 `CARGO_PROFILE_RELEASE_STRIP=false`——这两样是
+   GNU ld / ELF 专属，不能上另外两条腿。
+3. 真正的产物用**这套 flag** 编出来。Tauri 腿由 `tauri-action` 构建，Linux 的
+   `--config src-tauri/tauri.perf.conf.json` 让 `beforeBundleCommand` 在**链接之后、打包之前**
+   跑 `post-link.mjs`。Qt 腿则是 `cargo build --release -p dae-app` 之后直接跑
+   `post-link.mjs --qt`。Linux 腿因此在打包（deb/rpm/AppImage、portable zip、MSIX、
+   `latest-qt.json` 指向的 zip）之前完成 BOLT 与 strip；Windows/macOS 没有 BOLT，
+   符号剥离由 release profile 自己完成。
+4. `beforeBundleCommand` 是唯一能插进「已经链接、还没打包」这个窗口的 Tauri 钩子；
+   Qt 没有这个钩子，所以 release 步骤自己按同样的顺序调用 `post-link.mjs`。
 
 代价：每条腿多一次全量插桩构建（不论平台）+ 45 秒训练。实测本机 fat LTO 单次链接约 8 分钟，
 所以单腿 CI 时间大致 +40~60%；`llvm-tools` 是 `dtolnay/rust-toolchain` 装的，不靠源。
+Qt 腿另有 `windeployqt` / `macdeployqt` / `linuxdeploy` 的时间，那本来就在。
 
 **降级语义**（重要，别把它当成失败）：
 
 | 情况 | 结果 |
 |---|---|
-| 训练跑不起来（runner 没有可用的 GUI 会话 / 没有 WebKit） | 没有 profdata → `flags` 不导出 `-Cprofile-use`，产物是普通 release 构建 |
+| 训练跑不起来（runner 没有可用的 GUI 会话 / 缺 WebKit 或 Qt 平台插件） | 没有 profdata → `flags` 不导出 `-Cprofile-use`，产物是普通 release 构建 |
 | 训练失败（macOS/Windows 都算） | 同上；Linux 还会保留 BOLT 的链接 flag（只是没有 PGO） |
+| Qt 腿的 C++ 编译器不是 clang，或 LLVM 主版本与 rustc 不同 | 构建脚本打 `cargo:warning`，C++ 半不进 profile；Rust 半照常 |
 | `llvm-bolt` 没装 | `post-link` 打印原因、strip 之后继续打包 |
 | 二进制没有 `.rela.text` | 同上：跳过 BOLT，不跳过打包 |
 | BOLT 中途失败 | 打警告、还原原始二进制、继续打包（`DAE_PERF_STRICT=1` 可以让它硬失败） |
@@ -203,20 +265,27 @@ BOLT 只认 **ELF**（x86-64 / AArch64）。Windows 是 PE/COFF、macOS 是 Mach
 - **CI 的训练负载只是「启动 + 列一个目录」。** 它一定不如人练得好。正式发布前如果在意收益，
   应该用本地训练出来的 `.profdata`（可以传进 CI 复用，但 BOLT 的 fdata 必须对应 CI 自己链接
   出来的那个二进制，不能跨机构复用）。
-- **`DAE_PERF_TRAIN_QUIT_MS` 是唯一的产品代码改动**（`lib.rs::spawn_training_quit` 及其后两个
-  小函数，含注释约 60 行）。不设就走原路径，不注册任何东西；如果不想要它，删掉那个函数和调用点、
-  以及 `Cargo.toml` 里的 `perf-train` feature 即可，代价是 CI 里的训练步骤以后采不到 profile
-  （本地手动训练也采不到，因为人也没法把它“干净”关掉）。
+- **`DAE_PERF_TRAIN_QUIT_MS` 是唯一的产品代码改动**，两个壳各一份同构实现
+  （`src-tauri/src/lib.rs::spawn_training_quit`、`apps/dae/src/main.rs::perf_train`，
+  含注释各约 60 行）。不设就走原路径，不注册任何东西；如果不想要它，删掉那个函数和调用点、
+  以及对应 `Cargo.toml` 里的 `perf-train` feature 即可，代价是 CI 里的训练步骤以后采不到
+  profile（本地手动训练也采不到，因为人也没法把它“干净”关掉）。
+- **Qt 的训练会经过单实例锁。** `activation::claim()` 发现已有 dae 在跑时会让本次进程直接
+  退出，训练因此得到空 profile。CI 是干净会话所以不成问题；本地训练前先关掉正在运行的实例。
+- **Qt 的 C++ 半没有独立的 `llvm-profdata merge`。** clang 的 profraw 与 rustc 的在同一目录，
+  一次 `merge` 同时收下；C++ 若被跳过（§2.1），profile 只是少了那些函数，不影响 Rust。
 - **`perf-train` 只能开在插桩构建上。** 它引用的 `__llvm_profile_write_file` 由
   `-Cprofile-generate` 带进来的 compiler-rt 提供；给别的构建开它会链接失败。`pgo.mjs` 只在
   `instrument` / `train` 里传，`build` 不传——那边是 `-Cprofile-use`，没有那个运行时。
 
 ## 7. 怎么确认它真的生效了
 
-- **`.github/workflows/perf-check.yml`（手动触发，只跑 Linux）**：它会完整跑一遍
+- **`.github/workflows/perf-check.yml`（手动触发，只跑 Linux）**：它会用 `--qt` 完整跑一遍
   插桩 → 训练 → merge，并把 `.perf/training.log` 和 `.perf/pgo/` 传成 artifact。
   release 腿那一步是 `continue-on-error`，空的 profile 与成功的发布长得一模一样；
   这个 workflow 是专门让它可以变红的地方。改训练链路前后都应跑一次。
+- `perf:pgo:qt:status` 第一行会写明当前选的是哪个壳，`binary:` 则直接给出 Qt 的
+  `target/release/dae`（Tauri 是 `src-tauri/target/release/dae`）。选错壳时先看这两行。
 - `perf:pgo:merge` 结尾会打印 `llvm-profdata show` 的摘要：`Total functions` 应该在几万这个量级、
   `Total count` 不为 0。为 0 就说明训练没跑出东西（本地实测：一次 24 秒的启动+列目录 =
   63,858 个函数、12,547,845 次计数、20 MiB profdata）。
@@ -224,11 +293,13 @@ BOLT 只认 **ELF**（x86-64 / AArch64）。Windows 是 PE/COFF、macOS 是 Mach
   flushed` 是训练链路的两个断点：前者说明进程起来了、定时器挂上了（带 epoch 毫秒，可以拿去
   对 job log 的时间戳），后者说明计数器落了盘。只有前者 → 要么退出路径没走完，要么
   `perf-train` 没编进去（`grep -a "profile counters flushed" target/release/dae` 一秒判定）；
-  两者都没有 → 应用没启动起来（缺 WebKit、没显示、配置不对）。
+  两者都没有 → 应用没启动起来（缺 WebKit/Qt 平台插件、没显示、配置不对）。
 - **定时器从进程启动算起，不是从 `setup` 算起。** harness 的宽限期也是从 spawn 算的，
-  两边必须是同一个起点。`setup` 在窗口和 webview 建好之后才跑，xvfb 下（软件 GL、font cache
-  冷启动）这一段可能就有几十秒，44 秒的计时点会落到 harness 的 65 秒之后——这正是
-  Linux 那条腿之前一直"超时"的形态。
+  两边必须是同一个起点。两个壳都在 `main` 的第一行挂定时器，而不是等窗口建好；xvfb 下
+  （软件 GL、font cache 冷启动）建窗这一段可能就有几十秒，晚挂的计时点会落到 harness 的
+  65 秒之后——这正是 Linux 那条腿之前一直"超时"的形态。
+- **Qt 训练日志里没有 WebKit 的噪声，但可能多一行单实例锁。** 如果看到进程立刻以 0 退出，
+  先按 §6 关掉正在运行的 dae，再重跑训练。
 - `-Cprofile-use` 本身**不会**告诉你“匹配了多少”，除非加 `-Cllvm-args=-pgo-warn-missing-function`。
   默认不加：这个 crate 上它会吐 **77,886 行** "no profile data available for function …"（build script、
   没被训练覆盖的 crate 都在里面），把有用的信号埋掉。调试某份 profile 时用

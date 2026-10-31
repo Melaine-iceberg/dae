@@ -294,8 +294,9 @@ jobs:
   #
   # These jobs are deliberately separate from the Tauri matrix: the Qt shell
   # ships a portable directory (Windows/Linux) or a .app (macOS), not an MSI,
-  # NSIS installer or DMG. They also run without PGO/BOLT so a packaging
-  # problem cannot hide behind the Tauri optimiser.
+  # NSIS installer or DMG. They now get the same two-stage PGO (and BOLT on
+  # Linux) as the Tauri legs; every optimisation step degrades to a plain
+  # release build, so a missing profile cannot block packaging.
   #
   # The archives are signed with the same Tauri updater private key, and the
   # feed is published as `latest-qt.json` on the same (draft) release. Once the
@@ -312,17 +313,21 @@ jobs:
             platform_key: windows-x86_64
             qt_arch: win64_msvc2022_64
             target: ""
+            perf_flags: ""
             binary: target/release/dae.exe
           - platform: ubuntu-26.04
             platform_key: linux-x86_64
             qt_arch: linux_gcc_64
             target: ""
+            # BOLT is ELF-only; this is the leg that gets the post-link pass.
+            perf_flags: "--bolt"
             binary: target/release/dae
           # Matches the Tauri leg above: Apple Silicon only.
           - platform: macos-latest
             platform_key: darwin-aarch64
             qt_arch: clang_64
             target: aarch64-apple-darwin
+            perf_flags: ""
             binary: target/aarch64-apple-darwin/release/dae
 
     runs-on: ${{ matrix.platform }}
@@ -355,7 +360,16 @@ jobs:
             libxcb-util1 libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1 \
             libgtk-3-dev libgdk-pixbuf-2.0-dev librsvg2-dev \
             libdbus-1-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
-            libsecret-1-dev patchelf zip unzip
+            libsecret-1-dev patchelf zip unzip xvfb
+
+      # BOLT is optional by design: `post-link` skips it loudly on a runner
+      # without the package, rather than failing a release over an
+      # optimisation.
+      - name: Install LLVM BOLT (Linux, optional)
+        if: matrix.platform == 'ubuntu-26.04'
+        run: |
+          sudo apt-get install -y llvm-bolt || \
+            echo "::warning title=BOLT unavailable::llvm-bolt is not packaged for this runner; the Qt release will ship a PGO-only binary"
 
       # The same Qt minor as the local development instructions. cxx-qt picks
       # qmake up from PATH; QT_ROOT_DIR is used by the deployment steps.
@@ -371,6 +385,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+          # llvm-profdata must be the one rustc ships, or it refuses the
+          # profraw files rustc wrote. See docs/pgo-bolt.md §2.
+          components: llvm-tools-preview
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -381,6 +398,26 @@ jobs:
       - name: Install winapp CLI
         if: matrix.platform == 'windows-latest'
         uses: microsoft/setup-WinAppCli@v0.2
+
+      # --- LLVM IR PGO ---------------------------------------------------
+      # The Qt shell gets the same two-stage flow as the Tauri legs: an
+      # instrumented build is trained on a generated corpus, merged, and the
+      # resulting flags drive the real build below. `continue-on-error` is
+      # deliberate — the flags step then exports no `-Cprofile-use` and the
+      # release is a plain release build, never blocked by its optimiser.
+      - name: PGO — instrument and train (Qt shell)
+        continue-on-error: true
+        shell: bash
+        env:
+          DAE_QML_AOT: "1"
+        run: bun scripts/opt/pgo.mjs train --seconds 45 --qt --target ${{ matrix.target }}
+
+      # Writes CARGO_ENCODED_RUSTFLAGS and — for the Qt shell — the C++ bridge
+      # profile into the job environment. `--bolt` on Linux additionally sets
+      # the emit-relocs link flag and keeps symbols for the post-link step.
+      - name: PGO/BOLT — export compile flags
+        shell: bash
+        run: bun scripts/opt/pgo.mjs flags --qt ${{ matrix.perf_flags }} >> "$GITHUB_ENV"
 
       - name: Build Qt shell
         shell: bash
@@ -396,6 +433,16 @@ jobs:
           else
             cargo build --release --package dae-app
           fi
+
+      # BOLT runs on the linked binary, after `cargo build` and before the
+      # deployment steps copy it. Best-effort: a missing profile or tool strips
+      # the binary and continues.
+      - name: LLVM BOLT (Linux)
+        if: matrix.platform == 'ubuntu-26.04'
+        shell: bash
+        env:
+          DAE_PERF_TRAIN_SECONDS: "45"
+        run: bun scripts/opt/post-link.mjs --qt
 
       # ---- Windows: windeployqt -> optional Authenticode -> root-level zip ----
       - name: Deploy Qt runtime and package (Windows)

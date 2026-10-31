@@ -30,6 +30,14 @@ log = "0.4"
 # a `malloc` replacement that cannot reach the prebuilt Qt DLLs on Windows.
 mimalloc = { version = "0.1", default-features = false }
 
+[features]
+# Only ever set on the `-Cprofile-generate` build. It links compiler-rt's
+# `__llvm_profile_write_file`, so any other build that enables it fails to
+# link — which is the guard that keeps it out of a release. See
+# `src/main.rs::perf_train` and docs/pgo-bolt.md.
+perf-train = []
+
 [build-dependencies]
+cc = "1"
 cxx-qt-build = "0.10"
 qt-build-utils = "0.10"

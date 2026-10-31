@@ -1180,8 +1180,10 @@ Windows 11 Version 26H2 / build 26340 / Qt 6.12.0 / D3D11 / 3840×2160 @ 150%。
   边界严格：QML 只放布局、委托、动画，逻辑全在 Rust。
 - 双工具链：Qt 安装（CI 用 aqtinstall）、`windeployqt` / `macdeployqt` / `linuxdeploy`，
   安装包预计 **+60–120 MB**。
-- PGO / BOLT 要改造：`scripts/opt/pgo.mjs` 只 profile Rust 侧，cxx-qt 生成的 C++
-  需单独加 `-fprofile-instr-generate`；先不管 C++ 侧，量过再决定。
+- PGO / BOLT 已接到 Qt 壳（`--qt`）：Rust 侧照旧，cxx-qt 的 C++ 桥在 clang 且
+  LLVM 主版本与 rustc 一致时一起进 profile，其余工具链明确跳过。Qt 本体是预编译
+  的，任何工具链都动不到——启动上能被优化只有 Rust + cxx-qt 桥。见
+  [`../pgo-bolt.md`](../pgo-bolt.md) §2.1、§9.8。
 - 内存不会到 Slint 那个量级。目标从「30 MB」改成「**≤ 250 MB 且不随标签线性增长**」。
   门槛 1 实测 12 万行：混合名字 ~57 MB、全 CJK ~116 MB（滚动峰值 123.7 MB），
   没有随滚动时间增长（§5.1）。门槛 4 实测多窗口：第一个额外窗 +13.74 MB（含一次性
@@ -1293,7 +1295,8 @@ Qt Online Installer 装在 `K:/Qt`：
 
 ### 8.6 因此仍未解决的一件事
 
-1. **PGO / BOLT 的 C++ 那一半** —— 见 §6，仍未动。
+1. **PGO / BOLT 的 C++ 那一半** —— **已接**，见 §9.8：clang 参与、MSVC/GCC 明确跳过，
+   Qt 本体不在任何工具链的可优化范围内。
 
 （`window_material` 的 Mica/Acrylic 已接到 `QWindow` 的 HWND 上，见 §5.3。）
 
@@ -1340,8 +1343,8 @@ Qt Online Installer 装在 `K:/Qt`：
 | # | 项 | 现状 | 动作 |
 |---|---|---|---|
 | 9 | 旧壳与前端未退役 | 根 `Cargo.toml` 仍 `exclude = ["src-tauri"]`；`src-tauri` 105 个 `.rs` 加独立锁文件；`src/` 36.7k LOC、`bindings.ts`、`package.json` 里 15 个 `tauri:*` 脚本 | 删 `src-tauri`、`src/`、`index.html`、`vite.config.ts` 与相关脚本，重写 README |
-| 10 | 旧 CI 未下线 | `linux-check.yml`、`macos-check.yml`、`perf-check.yml` 仍编 `src-tauri`，perf 直接跑 `src-tauri/target/release/dae` | 删除或改指 `dae-app`；perf 基线换成 Qt 壳 |
-| 11 | PGO / BOLT 的 C++ 半 | `scripts/opt/pgo.mjs` 只 profile Rust，cxx-qt 生成的 C++ 没加 `-fprofile-instr-generate`（§8.6） | 量过再决定；不做也要在 §6 写明代价 |
+| 10 | 旧 CI 未下线 | `linux-check.yml`、`macos-check.yml` 仍编 `src-tauri`；`perf-check.yml` **已改指 Qt**（`--qt`，检查 `target/release/dae`，见 §9.8） | 删除剩余两条，或改指 `dae-app` |
+| 11 | PGO / BOLT 的 C++ 半 | **已补**，见 §9.8：`--qt` 走 `cargo build -p dae-app`；构建脚本在 clang 且 LLVM 主版本匹配时给桥加 `-fprofile-instr-generate/-use`，其余工具链警告并跳过（§8.6） | Rust + 桥都进 profile；Qt 预编译部分明确不在范围内 |
 | 12 | 文档与注释漂移 | `crates/dae-qt/src/lib.rs:32` 仍写 `dae:// registration … not implemented yet`，而 `activation.rs:238` 已写注册表；`README.md` 仍把 Tauri 2 + React 19 当日发货壳 | 逐条对齐代码 |
 
 ### 9.5 顺序
@@ -1475,3 +1478,50 @@ sink。首次实跑就把两条以前完全不可见的信息写了进去：
 4. **CI 上未跑过。** 作业结构与依赖用本机 `yaml` 解析校验过，`windeployqt` 与
    `winapp pack` 的调用与本机实测一致，但真实 runner 上的 windeployqt 版本、
    `Assets/` 相对路径解析仍需第一次打 tag 时确认。
+
+### 9.8 记录：PGO / BOLT 接到 Qt 壳（2026-10-31）
+
+**问题。** `scripts/opt/*` 只认 `tauri build`：二进制路径写死在 `src-tauri/target`，
+构建走 Tauri CLI，训练参数也按旧壳的启动方式传。Qt 壳在另一个 workspace
+（`apps/dae`），产物是根 `target/release/dae`，两条路不能互换。启动上能被 PGO
+动到的也只有 **Rust + cxx-qt 桥**：Qt 本体是预编译的，没有插桩入口。
+
+**改动。**
+
+1. `scripts/opt/lib.mjs` 增加壳选择（`--qt` / `DAE_PERF_SHELL=qt`）。目标目录、
+   二进制位置、`.cargo/config.toml` 的来源、构建命令都按壳分支：Qt 走
+   `cargo build --release -p dae-app`，Tauri 保持 `tauri build --no-bundle`。
+   `pgo.mjs`、`bolt.mjs`、`post-link.mjs` 都接受 `--qt`。
+2. `apps/dae/Cargo.toml` 增加 `perf-train` feature；`apps/dae/src/main.rs` 增加与
+   Tauri 同构的 `perf_train::arm`（`DAE_PERF_TRAIN_QUIT_MS` → 写计数器 → CRT `exit`，
+   Linux 走 `_exit`）。它挂在 `main` 第一行，和 harness 的 spawn 计时对齐。
+3. `apps/dae/build.rs` 与 `crates/dae-qt/build.rs` 读取
+   `DAE_PERF_CXX_PROFILE_GENERATE` / `DAE_PERF_CXX_PROFILE_USE`，在 **clang 且 LLVM
+   主版本与 rustc 一致** 时给 C++ 加 `-fprofile-instr-generate` / `-fprofile-instr-use`。
+   MSVC（Windows）与 GCC（Linux）无法把 profile 交给 `llvm-profdata`，构建脚本打
+   `cargo:warning` 后跳过，Rust 半不受影响。
+4. `release.yml` 的 `qt` 矩阵照 Tauri 腿的顺序接上：训练 → `flags --qt` → cargo 构建；
+   Linux 腿 `--bolt`，构建后跑 `post-link.mjs --qt` 再打包。`perf-check.yml` 改为用
+   `--qt` 验证训练链路（它原来直接跑 `src-tauri/target/release/dae`）。
+
+**验证（本机，Windows / Qt 6.12 / MSVC 2022）。**
+
+| 项目 | 结果 |
+|---|---|
+| `cargo check -p dae-app --all-targets` | 通过（44 s） |
+| `cargo check -p dae-app --features perf-train` | 通过 |
+| `bun scripts/opt/pgo.mjs status --qt` | `target/release/dae`，非 ELF（BOLT 跳过） |
+| `bun scripts/opt/pgo.mjs train --qt --seconds 5` | 插桩构建 6m34s；训练 5s 干净退出（code 0）；merge 出 **12.1 MiB / 44,922 函数 / 1,887,791 计数** |
+| `bun scripts/opt/pgo.mjs build --qt` | 5m04s；`target/release/dae.exe` **12.4 MiB**（插桩版 48 MB） |
+| MSVC 构建的 warning | 两条 `C++ bridge is not profiled: …cl.exe is not clang`（预期，见 §9.8 未关闭-1） |
+| 训练退出耗时 | 修复前从定时器到进程结束 **~21 s**（Qt D3D11 DLL detach）；改用 `TerminateProcess` 后 **2 s 定时器 → 2.18 s 进程结束**，profraw 正常落盘 |
+
+**未关闭。**
+
+1. **Windows 的 C++ 半没有进 profile。** Qt 用 MSVC，`-fprofile-instr-generate` 不可用；
+   构建脚本按 §2.1 的规则跳过。macOS 的 Apple clang 与 rustc LLVM 通常也不是同一主版本，
+   同样会跳过。要覆盖桥，需要一套与 rustc 同 LLVM 的 clang 构建（Linux `CXX=clang++`）。
+2. **没有 A/B 数字。** 这次只接通链路；Qt 启动上 Rust + 桥能拿多少，仍要用
+   `docs/pgo-bolt.md` §7 的方法量。
+3. **CI 未跑过。** `release.yml` 与 `perf-check.yml` 的结构按现有 Tauri 腿改写，
+   真实 runner 上的 Qt 训练（尤其 macOS 的单实例锁与 Linux 的 xvfb）待第一次运行确认。

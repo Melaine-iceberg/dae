@@ -39,9 +39,22 @@ import { fileURLToPath } from "node:url";
 
 export const repoRoot = path.resolve(import.meta.dirname, "..", "..");
 export const tauriDir = path.join(repoRoot, "src-tauri");
+export const qtDir = path.join(repoRoot, "apps", "dae");
 export const IS_WINDOWS = process.platform === "win32";
 export const IS_LINUX = process.platform === "linux";
 export const IS_MACOS = process.platform === "darwin";
+
+/** Which shell the scripts profile. `tauri` is the old WebView shell;
+ *  `qt` is the Qt Quick shell (`apps/dae`, cxx-qt bridge). Both are cargo
+ *  builds, but they live in different workspaces and tauri build also runs
+ *  the bundler, so every output path below depends on this choice. */
+export const SHELLS = ["tauri", "qt"];
+
+export function resolveShell(shell) {
+  const name = shell ?? process.env.DAE_PERF_SHELL ?? "tauri";
+  if (!SHELLS.includes(name)) fail(`unknown shell "${name}" — expected one of ${SHELLS.join(", ")}`);
+  return name;
+}
 
 /** Profiles are build output, so they live beside the build: untracked, and
  *  outside `target/` so that `cargo clean` does not throw away a profile that
@@ -174,16 +187,21 @@ export const rustcLlvmVersion = () => {
 // ---------------------------------------------------------------------------
 // rustflags
 
-/** The `rustflags` arrays cargo would use for `triple`, read out of
- *  `src-tauri/.cargo/config.toml`.
+/** The `rustflags` arrays cargo would use for `triple`, read out of the
+ *  workspace's `.cargo/config.toml`.
+ *
+ *  The Qt workspace is the repository root, so its config (if one is ever
+ *  added) lives in `.cargo/config.toml`; the Tauri package is excluded from
+ *  that workspace and keeps its own under `src-tauri/`.
  *
  *  A hand-written parser is used instead of a TOML dependency because bun and
  *  node disagree about what is available (`Bun.TOML` exists; node has no TOML
  *  at all) and this file only ever holds arrays of strings. It fails loudly on
  *  anything it does not understand rather than returning `[]`, so a future edit
  *  to the config cannot silently drop the stack reserve. */
-export function cargoConfigRustflags(triple) {
-  const file = path.join(tauriDir, ".cargo", "config.toml");
+export function cargoConfigRustflags(triple, shell) {
+  const configRoot = resolveShell(shell) === "qt" ? repoRoot : tauriDir;
+  const file = path.join(configRoot, ".cargo", "config.toml");
   if (!existsSync(file)) return [];
   const text = readFileSync(file, "utf8");
   const sections = new Map();
@@ -229,7 +247,8 @@ export function cargoConfigRustflags(triple) {
  *  Ambient flags win over the config exactly the way cargo resolves them,
  *  unless there are none — in which case the config's flags are carried over,
  *  which is the whole point. */
-export function rustflagsEnv(extra) {
+export function rustflagsEnv(extra, { shell } = {}) {
+  const selected = resolveShell(shell);
   const triple = hostTriple();
   const ambientEncoded = process.env.CARGO_ENCODED_RUSTFLAGS;
   const ambient = process.env.RUSTFLAGS?.trim();
@@ -242,8 +261,11 @@ export function rustflagsEnv(extra) {
     base = ambient.split(/\s+/).filter(Boolean);
     say("using RUSTFLAGS from the environment as the base");
   } else {
-    base = cargoConfigRustflags(triple);
-    if (base.length) say(`carrying ${path.relative(repoRoot, path.join(tauriDir, ".cargo", "config.toml"))} rustflags for ${triple}`);
+    base = cargoConfigRustflags(triple, selected);
+    if (base.length) {
+      const configRoot = selected === "qt" ? repoRoot : tauriDir;
+      say(`carrying ${path.relative(repoRoot, path.join(configRoot, ".cargo", "config.toml"))} rustflags for ${triple}`);
+    }
   }
 
   const flags = [...base, ...extra];
@@ -378,19 +400,25 @@ export const PROFILE_USE_ARGS = process.env.DAE_PGO_WARN_MISSING
 // ---------------------------------------------------------------------------
 // build outputs
 
-export const targetDir = () => {
+export const targetDir = (shell) => {
   const configured = process.env.CARGO_TARGET_DIR;
-  return configured ? path.resolve(repoRoot, configured) : path.join(tauriDir, "target");
+  const root = resolveShell(shell) === "qt" ? repoRoot : tauriDir;
+  return configured ? path.resolve(repoRoot, configured) : path.join(root, "target");
 };
 
-/** The binary `tauri build` produced. Hooks run by tauri get
- *  `TAURI_ENV_TARGET_TRIPLE`; a cross build puts the exe one directory deeper. */
-export const appBinary = (profile = "release") => {
+/** The binary the selected shell produced. Hooks run by tauri get
+ *  `TAURI_ENV_TARGET_TRIPLE`; a cross build puts the exe one directory deeper.
+ *  The Qt workspace is compiled from the repository root, so its target
+ *  directory and `dae` binary sit at the top level. */
+export const appBinary = (profile = "release", shell) => {
+  const selected = resolveShell(shell);
   const name = IS_WINDOWS ? "dae.exe" : "dae";
-  const bare = path.join(targetDir(), profile, name);
-  const triple = process.env.DAE_PERF_TARGET_TRIPLE || process.env.TAURI_ENV_TARGET_TRIPLE;
+  const bare = path.join(targetDir(selected), profile, name);
+  const triple =
+    process.env.DAE_PERF_TARGET_TRIPLE ||
+    (selected === "tauri" ? process.env.TAURI_ENV_TARGET_TRIPLE : "");
   if (!triple) return bare;
-  const scoped = path.join(targetDir(), triple, profile, name);
+  const scoped = path.join(targetDir(selected), triple, profile, name);
   // The tauri CLI sets `TAURI_ENV_TARGET_TRIPLE` to the host triple even when
   // `tauri build` ran without `--target`, so that variable is a hint about the
   // platform, not a fact about the output directory: a host build still lands
@@ -417,6 +445,23 @@ export function tauriBuild({ args = [], env = {}, bundle = false } = {}) {
   const configured = (process.env.DAE_TAURI_BUILD_ARGS ?? "--config src-tauri/tauri.release.conf.json").trim();
   const extraArgs = configured ? configured.split(/\s+/) : [];
   return run(bun, ["tauri", "build", ...(bundle ? [] : ["--no-bundle"]), ...extraArgs, ...args], { env });
+}
+
+/** `cargo build -p dae-app` with the given environment. No bundler and no
+ *  frontend step: the Qt shell's QML is compiled into the binary by its build
+ *  script, so this is the same artifact `release.yml` packages. */
+export function qtBuild({ args = [], env = {} } = {}) {
+  const cargo = which("cargo");
+  if (!cargo) fail("cargo is not on PATH");
+  return run(cargo, ["build", "--release", "--package", "dae-app", ...args], { env });
+}
+
+/** Build whichever shell the scripts were told to profile. `--qt` selects
+ *  `cargo build -p dae-app`; otherwise the historical `tauri build` path. */
+export function buildShell({ shell, args = [], env = {}, bundle = false } = {}) {
+  return resolveShell(shell) === "qt"
+    ? qtBuild({ args, env })
+    : tauriBuild({ args, env, bundle });
 }
 
 export const isElf = (file) => {
@@ -496,8 +541,9 @@ const TRAINING_ENV = {
  * The kill path below stays as a backstop for a build without the hook (an
  * older binary, or a platform where the app refuses to quit).
  */
-export async function runTrainingWorkload({ exe, seconds = 45, env = {}, directory } = {}) {
+export async function runTrainingWorkload({ exe, seconds = 45, env = {}, directory, shell } = {}) {
   if (!existsSync(exe)) fail(`no binary at ${exe} — build it first`);
+  const selected = resolveShell(shell);
   const corpus = directory ?? prepareCorpus();
   const binaryArgs = [corpus];
 
@@ -525,6 +571,11 @@ export async function runTrainingWorkload({ exe, seconds = 45, env = {}, directo
   const logFile = path.join(perfDir, "training.log");
   const logFd = openSync(logFile, "w");
   const childEnv = { ...process.env, ...TRAINING_ENV, DAE_PERF_TRAIN_QUIT_MS: String(quitAfterMs), ...env };
+  // Qt refuses to start without a platform plugin when there is no display and
+  // no xvfb-run; offscreen still executes the startup path the profile needs.
+  if (selected === "qt" && IS_LINUX && !process.env.DISPLAY) {
+    childEnv.QT_QPA_PLATFORM ??= "offscreen";
+  }
   // An inherited profile path (a shell that exported it, or a previous run)
   // would send the counters somewhere this script does not read.
   if (!("LLVM_PROFILE_FILE" in env)) delete childEnv.LLVM_PROFILE_FILE;

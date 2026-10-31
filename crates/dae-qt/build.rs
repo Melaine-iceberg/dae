@@ -24,6 +24,95 @@ fn qt_private_gui_include() -> Option<std::path::PathBuf> {
     None
 }
 
+/// Adds the LLVM profile flags `scripts/opt/pgo.mjs` asks for to the C++ bridge
+/// and the cxx-qt generated glue. This is the only part of the Qt shell that is
+/// ours to optimise besides Rust: Qt itself arrives prebuilt.
+///
+/// Only clang can contribute to the `.profdata` rustc consumes: MSVC and GCC
+/// have their own profilers whose output `llvm-profdata` cannot merge. The
+/// compiler's LLVM major also has to match rustc's, because the profraw format
+/// is versioned. Anything else is warned about and skipped — the Rust half still
+/// gets its profile, which is where the measured startup cost is.
+fn apply_cxx_profile(cc: &mut cc::Build) {
+    for name in ["DAE_PERF_CXX_PROFILE_GENERATE", "DAE_PERF_CXX_PROFILE_USE"] {
+        println!("cargo:rerun-if-env-changed={name}");
+    }
+
+    let generate =
+        std::env::var_os("DAE_PERF_CXX_PROFILE_GENERATE").filter(|value| !value.is_empty());
+    let use_profile =
+        std::env::var_os("DAE_PERF_CXX_PROFILE_USE").filter(|value| !value.is_empty());
+    if generate.is_none() && use_profile.is_none() {
+        return;
+    }
+
+    let compiler = cc.get_compiler();
+    if !compiler.is_like_clang() {
+        println!(
+            "cargo:warning=C++ bridge is not profiled: {:?} is not clang, and MSVC/GCC profiles cannot be merged with rustc's",
+            compiler.path()
+        );
+        return;
+    }
+
+    let rustc_major = rustc_llvm_major();
+    let compiler_major = compiler_llvm_major(&compiler);
+    if let (Some(rustc), Some(clang)) = (rustc_major, compiler_major) {
+        if rustc != clang {
+            println!(
+                "cargo:warning=C++ bridge is not profiled: clang is LLVM {clang}, rustc is LLVM {rustc}; profraw formats are versioned"
+            );
+            return;
+        }
+    }
+
+    if let Some(directory) = generate {
+        // clang writes this file name verbatim (rustc appends its own default
+        // name), and `%m`/`%p` keep concurrent runs apart.
+        let file = std::path::PathBuf::from(directory).join("cxx-%m-%p.profraw");
+        cc.flag(format!(
+            "-fprofile-instr-generate={}",
+            file.to_string_lossy().replace('\\', "/")
+        ));
+    }
+    if let Some(profile) = use_profile {
+        cc.flag(format!(
+            "-fprofile-instr-use={}",
+            std::path::PathBuf::from(profile)
+                .to_string_lossy()
+                .replace('\\', "/")
+        ));
+        // The profile is shared with the Rust half; untrained functions are
+        // expected and must not turn a release build into a warning flood.
+        cc.flag("-Wno-profile-instr-unprofiled");
+    }
+}
+
+fn compiler_llvm_major(compiler: &cc::Tool) -> Option<u32> {
+    let output = std::process::Command::new(compiler.path())
+        .arg("--version")
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let rest = text.split("clang version ").nth(1)?;
+    rest.split('.').next()?.parse().ok()
+}
+
+fn rustc_llvm_major() -> Option<u32> {
+    let rustc = std::env::var_os("RUSTC")?;
+    let output = std::process::Command::new(rustc).arg("-vV").output().ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let line = text
+        .lines()
+        .find(|line| line.starts_with("LLVM version:"))?;
+    line.split_whitespace()
+        .nth(2)?
+        .split('.')
+        .next()?
+        .parse()
+        .ok()
+}
+
 fn main() {
     // The native half talks to DWM, IMM32 and the window metrics API directly.
     // cxx-qt only links Qt.
@@ -85,6 +174,10 @@ fn main() {
             "src/window.rs",
             "src/workspace.rs",
         ]);
+
+    // One shared `cc::Build`, so this reaches the bridge sources, the cxx-qt
+    // generated glue and the moc products alike.
+    builder = unsafe { builder.cc_builder(|cc| apply_cxx_profile(cc)) };
 
     #[cfg(target_os = "linux")]
     {

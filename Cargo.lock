@@ -1009,6 +1009,7 @@ dependencies = [
 name = "dae-app"
 version = "0.5.0"
 dependencies = [
+ "cc",
  "cxx",
  "cxx-qt",
  "cxx-qt-build",

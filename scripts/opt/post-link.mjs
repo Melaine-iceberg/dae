@@ -32,6 +32,9 @@ const stripBinary = (exe) => {
 };
 
 if (isMain(import.meta.url)) runCli(async () => {
+  // The Tauri hook never passes an argument; the Qt release job runs this
+  // script directly after `cargo build --release`.
+  if (process.argv.includes("--qt")) process.env.DAE_PERF_SHELL = "qt";
   const exe = appBinary();
   const seconds = Number(process.env.DAE_PERF_TRAIN_SECONDS ?? 45);
 

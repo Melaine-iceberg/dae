@@ -56,7 +56,9 @@ const USAGE = `LLVM BOLT for dae's release binary (ELF only).
   bun scripts/opt/bolt.mjs status                    tools, relocation check, artifact sizes
 
 Options
-  --exe PATH     binary to optimise (default: the release build in src-tauri/target)
+  --qt           operate on the Qt shell (target/release/dae) instead of the
+                 Tauri binary (src-tauri/target/release/dae)
+  --exe PATH     binary to optimise (default: the release build for the shell)
   --seconds N    length of the training run (default 45)
   --in-place     \`all\` replaces the binary it was given (default: keep both)
 `;
@@ -96,10 +98,11 @@ const OPTIMIZE_ARGS_FALLBACK = [
 
 function parseArgs(argv) {
   const [command, ...rest] = argv;
-  const flags = { exe: null, seconds: 45, inPlace: false };
+  const flags = { exe: null, seconds: 45, inPlace: false, qt: false };
   for (let index = 0; index < rest.length; index += 1) {
     const arg = rest[index];
-    if (arg === "--exe") flags.exe = rest[(index += 1)];
+    if (arg === "--qt") flags.qt = true;
+    else if (arg === "--exe") flags.exe = rest[(index += 1)];
     else if (arg.startsWith("--exe=")) flags.exe = arg.slice("--exe=".length);
     else if (arg === "--seconds") flags.seconds = Number(rest[(index += 1)]);
     else if (arg.startsWith("--seconds=")) flags.seconds = Number(arg.slice("--seconds=".length));
@@ -109,6 +112,8 @@ function parseArgs(argv) {
       process.exit(0);
     } else fail(`unknown argument ${arg}\n\n${USAGE}`);
   }
+  // `appBinary()` and `runTrainingWorkload()` read this through lib.mjs.
+  if (flags.qt) process.env.DAE_PERF_SHELL = "qt";
   return { command, flags };
 }
 
