@@ -1,7 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
-import "Shortcut.js" as Shortcut
+import "Shortcut.js" as ShortcutJS
 
 // The Mod+K palette: commands, spaces, favorites, recents, projects and a
 // progressive filename search in one keyboard-first surface. Filename and
@@ -182,15 +182,15 @@ Item {
     function shortcutHint(id, fallback) {
         const binding = root.shortcutMap ? root.shortcutMap[id] : undefined
         if (binding === undefined)
-            return fallback === "" ? "" : Shortcut.display(fallback, root.isMac)
-        return Shortcut.display(binding, root.isMac)
+            return fallback === "" ? "" : ShortcutJS.display(fallback, root.isMac)
+        return ShortcutJS.display(binding, root.isMac)
     }
 
     /// Chords the shell decides for itself instead of reading from
     /// `settings.toml` — new tab, close tab, new folder — still print through
     /// the shared formatter, so a macOS palette reads `⌘T` and not `Ctrl+T`.
     function chord(binding) {
-        return Shortcut.display(binding, root.isMac)
+        return ShortcutJS.display(binding, root.isMac)
     }
 
     function command(id, label, hint, glyph, group) {

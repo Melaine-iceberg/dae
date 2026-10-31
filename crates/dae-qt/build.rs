@@ -129,7 +129,10 @@ fn main() {
     #[cfg(target_os = "linux")]
     println!("cargo:rustc-link-lib=wayland-client");
 
-    let mut builder = CxxQtBuilder::new_qml_module(QmlModule::new("dae"))
+    // The generated qmltypes prototypes the list models on
+    // `QAbstractListModel`, which qmltc resolves through this dependency;
+    // cxx-qt does not infer it from the prototype names.
+    let mut builder = CxxQtBuilder::new_qml_module(QmlModule::new("dae").depend("QtQuick"))
         .qt_module("Quick")
         .qt_module("Network")
         .include_dir("cpp")

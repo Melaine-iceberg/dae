@@ -1,7 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
-import "Shortcut.js" as Shortcut
+import "Shortcut.js" as ShortcutJS
 import "DialogFocus.js" as DialogFocus
 
 // The settings document.
@@ -226,7 +226,7 @@ FocusScope {
     }
 
     function bindingText(binding) {
-        return binding ? Shortcut.display(binding, root.isMac) : qsTr("未绑定")
+        return binding ? ShortcutJS.display(binding, root.isMac) : qsTr("未绑定")
     }
 
     /// Recognise fixed backend messages so the panel can translate them; a
@@ -267,7 +267,7 @@ FocusScope {
             for (let actionIndex = 0; actionIndex < actions.length; ++actionIndex) {
                 const action = actions[actionIndex]
                 if (action.id !== id
-                        && Shortcut.bindingsEqual(binding, root.bindingFor(action.id)))
+                        && ShortcutJS.bindingsEqual(binding, root.bindingFor(action.id)))
                     return action.label
             }
         }
@@ -317,7 +317,7 @@ FocusScope {
             event.accepted = true
             return
         }
-        const binding = Shortcut.record(event, root.isMac)
+        const binding = ShortcutJS.record(event, root.isMac)
         if (binding === "") {
             event.accepted = true
             return

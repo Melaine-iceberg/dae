@@ -3,7 +3,7 @@ import QtQuick.Window
 import dae 1.0
 import dae.activation 1.0
 import "Shell.js" as ShellState
-import "Shortcut.js" as Shortcut
+import "Shortcut.js" as ShortcutJS
 
 // One top-level window and its tabs.
 //
@@ -186,19 +186,19 @@ Window {
         return root.shortcutMap && root.shortcutMap[id] ? root.shortcutMap[id] : ""
     }
     function shortcutDisplay(id) {
-        return Shortcut.display(root.shortcutBinding(id), root.isMac)
+        return ShortcutJS.display(root.shortcutBinding(id), root.isMac)
     }
     /// A chord the shell fixes itself, with no row in `settings.toml`. It
     /// prints through the same formatter, so `Mod+Shift+N` reads `⇧⌘N` on
     /// macOS instead of leaking the internal `Meta` spelling into a menu.
     function chord(binding) {
-        return Shortcut.display(binding, root.isMac)
+        return ShortcutJS.display(binding, root.isMac)
     }
     function shortcutSequence(id) {
-        return Shortcut.qtSequence(root.shortcutBinding(id), root.isMac)
+        return ShortcutJS.qtSequence(root.shortcutBinding(id), root.isMac)
     }
     function shortcutMatches(event, id) {
-        return Shortcut.matches(event, root.shortcutBinding(id))
+        return ShortcutJS.matches(event, root.shortcutBinding(id))
     }
 
     /// A few status lines are formatted in Rust, where the shared model code

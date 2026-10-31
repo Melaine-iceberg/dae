@@ -213,7 +213,7 @@ QML 侧的布局只有 ~4 ms，软件后端画完整棵树到第一帧也只要 
 
 **结论**：这一段要么接受（D3D11 初始化是平台成本），要么走 Qt 内部（提前建 RHI
 设备、或换成 `QQuickRenderControl` 预热），都不是 QML 侧能改的。真正还能动的是
-§7 的组件类型数量——那需要 `qmltc` 级别的改造，不在当前计划里。
+§7 的组件类型数量——那需要 `qmltc` 级别的改造；这类改造只保留为构建期校验，见 §10。
 
 ## 9. 还没做
 
@@ -223,3 +223,52 @@ QML 侧的布局只有 ~4 ms，软件后端画完整棵树到第一帧也只要 
   所以「编译不了只能回退」的绑定不会让构建变红。
 - **`.js` 单个文件的收益**：`DialogFocus.js` / `Shell.js` / `Shortcut.js` 一起编了，
   没单独量。
+
+## 10. `qmltc` 只做构建期校验（2026-10-31）
+
+`apps/dae/build.rs` 的 `mod typec` 在 `DAE_QML_TYPEC=1` 时对每个 `.qml` 文档跑一次
+`qmltc`，失败即构建失败（`qt-check.yml` 的 Qt 腿开这个开关）。**它不产出任何运行时
+代码**：49 个文档里只有 `qml/MediaPreview.qml` 被跳过——Qt 6.12 QtMultimedia 自带的
+qmltypes 把 `QAudioBufferOutput` 标成 `isTypeOpaque: true`，qmltc 拒绝为 opaque 属性
+生成 setter；错误在 Qt 的元数据，不在本树，类型导出后删掉 `SKIPPED` 条目即可。
+
+要让 qmltc 跑通，下面几件事缺一不可：
+
+- **`--resource` 映射。** qmltc 拒绝不在 qrc 里的文件（"No resource paths for file"）。
+  build.rs 按 `QML_FILES` 生成 `files.qrc`，与 rcc 的资源别名同源，避免「按一个路径
+  编译、按另一个路径挂载」。
+- **剥掉 cxx-qt 的 opaque 占位。** 生成的 `plugin.qmltypes` 把只在属性里出现的
+  `QString`/`bool`/`double` 等内建类型写成 `isTypeOpaque: true` 的 `Component`
+  占位；qmllint 接受，qmltc 报每个 `dae` 类型的每个属性 "Type of property 'x' is
+  unknown"。校验前复制一份并删掉这些块，生成文件本身不动。
+- **`depends QtQuick`。** 列表模型的 prototype 是 `QAbstractListModel`，cxx-qt 不会
+  从 prototype 名字推断依赖，所以在 `crates/dae-qt/build.rs` 里显式
+  `QmlModule::new("dae").depend("QtQuick")`；校验用的 qmldir 副本也带这一行。
+- **`Shortcut.js` 的导入别名。** `import "Shortcut.js" as Shortcut` 会遮蔽 QML 的
+  `Shortcut` 类型，qmltc 报 "Shortcut was not found. Did you mean Shortcut?"。四个
+  文件统一改成 `as ShortcutJS`。
+- **两个手写模块的元数据。** `qml/dae/terminal/` 与 `qml/dae/activation/` 补了
+  `qmldir` + `qmltypes`，描述运行时注册的 `TerminalItem` 与 `Activation` 单例。
+  它们只给工具链（qmltc/qmllint）看，不进 qrc。
+
+### 运行时接线的尝试与回退
+
+运行时路径（生成的构造函数替换 `engine.load`）试过，**已放弃**，原因不只是「省不到
+100 ms」：
+
+- qmltc 把生成的类放在匿名命名空间里。`Main.qml` 继承 `ShellWindow`，基类定义和它
+  的 `staticMetaObject` 必须与子类在同一个 TU，所以只能用「全部 49 个单元 + 各自的
+  moc + 入口」拼一个大 TU；还要给生成头补 `qqmlintegration.h`、补直接依赖头，并把
+  同一头里的基类定义排到子类前（`PropertiesDialog.qml` 先声明 `PermissionRow`，后
+  声明它内联继承的 `Toggle`）。
+- 这个 TU 依赖私有 API（`private/qqmltcobjectcreationhelper_p.h` 等）与
+  `QtQmlModels`/`QtQmlMeta`；在 Windows 上还卡在 `QQuickCanvasItem` 没有
+  `Q_QUICK_EXPORT`（`Glyph.qml` 的 Canvas 用到），链接直接失败。
+- 勉强链上之后，窗口在 25 s 内**没有完成构造**：`ExplorerPrefs is not defined`、
+  `Binding loop detected for property "tabs"`、`QQuickColorValueType` 构造错误等。
+  同一份构建的 AOT 基线是 `qml-loaded` 809.56 ms、`first-frame` 1102.47 ms，qmltc
+  侧拿不到可比的数字。
+
+§5 已证明 AOT 把 QML 编译成本压到 ~16 ms，运行时 qmltc 即便成功也基本没有空间，
+却要背上私有 API、单 TU 与平台导出限制。所以最终形态是本节开头的「只做校验」。
+

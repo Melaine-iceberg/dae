@@ -1,0 +1,72 @@
+import QtQuick.tooling 1.2
+
+// Tooling description of the C++ type registered at run time by
+// `crates/dae-qt/cpp/terminal_item.h` (`qmlRegisterType` under
+// "dae.terminal"). The engine finds the type through the type registry; this
+// file only lets qmllint, qmlcachegen and qmltc resolve `import dae.terminal`.
+//
+// Keep it in sync with the Q_PROPERTY / Q_INVOKABLE / Q_SIGNAL block there.
+
+Module {
+    Component {
+        file: "terminal_item.h"
+        lineNumber: 41
+        name: "TerminalItem"
+        accessSemantics: "reference"
+        prototype: "QQuickItem"
+        exports: ["dae.terminal/TerminalItem 1.0"]
+        exportMetaObjectRevisions: [256]
+        Property {
+            name: "session"
+            type: "QObject"
+            isPointer: true
+            read: "session"
+            write: "setSession"
+            notify: "sessionChanged"
+            index: 0
+            lineNumber: 44
+        }
+        Property {
+            name: "dark"
+            type: "bool"
+            read: "dark"
+            write: "setDark"
+            notify: "darkChanged"
+            index: 1
+            lineNumber: 45
+        }
+        Property {
+            name: "fontSize"
+            type: "int"
+            read: "fontSize"
+            write: "setFontSize"
+            notify: "fontChanged"
+            index: 2
+            lineNumber: 46
+        }
+        Property {
+            name: "lineHeight"
+            type: "double"
+            read: "lineHeight"
+            write: "setLineHeight"
+            notify: "fontChanged"
+            index: 3
+            lineNumber: 47
+        }
+        Property {
+            name: "fontFamily"
+            type: "QString"
+            read: "fontFamily"
+            write: "setFontFamily"
+            notify: "fontChanged"
+            index: 4
+            lineNumber: 48
+        }
+        Signal { name: "sessionChanged"; lineNumber: 78 }
+        Signal { name: "darkChanged"; lineNumber: 79 }
+        Signal { name: "fontChanged"; lineNumber: 80 }
+        Method { name: "refresh"; lineNumber: 72 }
+        Method { name: "focusTerminal"; lineNumber: 73 }
+        Method { name: "copySelection"; lineNumber: 75 }
+    }
+}

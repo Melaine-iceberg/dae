@@ -2,7 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
 import dae 1.0
-import "Shortcut.js" as Shortcut
+import "Shortcut.js" as ShortcutJS
 
 // The explorer listing. Three presentations over one model: the detail list,
 // the card grid and Miller columns. Only the list has a header; the other two
@@ -164,7 +164,7 @@ Item {
     }
 
     function matches(id, event) {
-        return Shortcut.matches(event, root.binding(id))
+        return ShortcutJS.matches(event, root.binding(id))
     }
 
     /// Pushes the display preferences into the tab's model. Ordering is

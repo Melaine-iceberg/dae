@@ -1,0 +1,3 @@
+module dae.terminal
+typeinfo terminal.qmltypes
+depends QtQuick auto

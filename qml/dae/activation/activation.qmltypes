@@ -1,0 +1,28 @@
+import QtQuick.tooling 1.2
+
+// Tooling description of the singleton registered at run time by
+// `crates/dae-qt/cpp/activation.cpp` (`qmlRegisterSingletonInstance` under
+// "dae.activation"). The engine finds it through the type registry; this file
+// only lets qmllint, qmlcachegen and qmltc resolve `import dae.activation`.
+//
+// Keep it in sync with the Q_INVOKABLE / Q_SIGNAL block in `activation.h`.
+
+Module {
+    Component {
+        file: "activation.h"
+        lineNumber: 24
+        name: "Activation"
+        accessSemantics: "reference"
+        prototype: "QObject"
+        exports: ["dae.activation/Activation 1.0"]
+        exportMetaObjectRevisions: [256]
+        isCreatable: false
+        isSingleton: true
+        Method {
+            name: "takePending"
+            type: "QStringList"
+            lineNumber: 32
+        }
+        Signal { name: "activated"; lineNumber: 45 }
+    }
+}

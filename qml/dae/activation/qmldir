@@ -1,0 +1,3 @@
+module dae.activation
+typeinfo activation.qmltypes
+depends QtQml auto
