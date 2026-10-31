@@ -32,6 +32,12 @@ unsafe extern "C" {
 }
 
 fn main() {
+    // `DAE_STARTUP_PERF=1` prints process-relative marks on stderr. Started
+    // before anything else so the first mark lines up with the spawn a harness
+    // measures.
+    dae_qt::window::startup_begin();
+    dae_qt::window::startup_mark("main");
+
     // Armed before QGuiApplication and before `logging::init`: the harness
     // starts its grace window at process spawn, so the timer has to count from
     // the same instant. No-op unless `perf-train` is compiled in.
@@ -51,11 +57,23 @@ fn main() {
     }
 
     let mut application = QGuiApplication::new();
+    dae_qt::window::startup_mark("qgui-application");
+
+    // The first font-database query builds the whole Windows database
+    // (200–300 ms); every query API pays it, and `apply_system_font` no longer
+    // queries. Qt documents `QFontDatabase` as thread-safe, so pay it here on a
+    // worker while the main thread does logging, claiming and engine load.
+    // Measured (10 interleaved runs, release + AOT): first-frame median
+    // 1200 → 1133 ms. The first text that needs the database waits on it.
+    #[cfg(windows)]
+    std::thread::spawn(dae_qt::window::warm_font_database);
+
     // Before `claim`: a failed scheme registration or a refused instance lock
     // is exactly the kind of failure nobody can reproduce later, and starting
     // here means it lands in the file rather than in a stderr a release build
     // does not have.
     dae_qt::logging::init();
+    dae_qt::window::startup_mark("logging");
 
     // A later launch must not create a second shell. The owner receives the
     // command line over a local socket; this process exits before the engine or
@@ -63,10 +81,13 @@ fn main() {
     if !dae_qt::activation::claim() {
         return;
     }
+    dae_qt::window::startup_mark("claim");
 
     // The alpha buffer is chosen before the engine creates the first window;
     // DwmEnableBlurBehindWindow then composites the backdrop behind it.
     dae_qt::init();
+    dae_qt::window::startup_mark("qt-init");
+
     // Registers the precompiled QML units before anything can ask for them.
     // This is also the only reference to `cpp/qml_cache_init.cpp`, which is what
     // keeps the units linked at all.
@@ -74,6 +95,7 @@ fn main() {
 
     let mut engine = QQmlApplicationEngine::new();
     let engine_ptr = engine.as_mut_ptr();
+    dae_qt::window::startup_mark("qml-engine");
     // The persisted language has to be installed before `Main.qml` is loaded,
     // otherwise the first window paints its source strings once and only
     // retranslates on the next switch. The engine is attached so a change from
@@ -85,6 +107,8 @@ fn main() {
         engine
             .as_mut()
             .load(&QUrl::from("qrc:/qt/qml/dae/qml/Main.qml"));
+        dae_qt::window::startup_mark("qml-loaded");
+        dae_qt::window::watch_first_frame(engine_ptr as usize);
     } else {
         log::error!(target: "dae", "could not create QQmlApplicationEngine");
     }

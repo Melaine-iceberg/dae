@@ -58,6 +58,18 @@ pub mod qobject {
         fn dae_qt_apply_system_font();
 
         #[namespace = "dae_qt"]
+        fn dae_qt_warm_font_database();
+
+        #[namespace = "dae_qt"]
+        fn dae_qt_startup_begin();
+
+        #[namespace = "dae_qt"]
+        fn dae_qt_startup_mark(stage: &QString);
+
+        #[namespace = "dae_qt"]
+        fn dae_qt_watch_first_frame(engine: usize);
+
+        #[namespace = "dae_qt"]
         #[rust_name = "install_message_handler"]
         fn dae_qt_install_message_handler();
     }
@@ -178,6 +190,27 @@ pub fn blur_supported() -> bool {
 
 pub fn apply_system_font() {
     qobject::dae_qt_apply_system_font();
+}
+
+/// Starts the process-relative clock used by `DAE_STARTUP_PERF=1`.
+pub fn startup_begin() {
+    qobject::dae_qt_startup_begin();
+}
+
+/// Prints one `DAE_STARTUP_PERF=1` mark on stderr.
+pub fn startup_mark(stage: &str) {
+    qobject::dae_qt_startup_mark(&QString::from(stage));
+}
+
+/// Populates the font database off the GUI thread (Windows only; Qt documents
+/// the database as thread-safe).
+pub fn warm_font_database() {
+    qobject::dae_qt_warm_font_database();
+}
+
+/// Hooks the main window's first `frameSwapped` for the startup timeline.
+pub fn watch_first_frame(engine_ptr: usize) {
+    qobject::dae_qt_watch_first_frame(engine_ptr);
 }
 
 pub fn enable_diagnostics() {

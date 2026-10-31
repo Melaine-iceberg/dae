@@ -48,9 +48,11 @@
 #include <QTimer>
 #endif
 
+#include <QElapsedTimer>
 #include <QFont>
 #include <QFontDatabase>
 #include <QGuiApplication>
+#include <QQmlApplicationEngine>
 #include <QQuickWindow>
 #include <QString>
 #include <QStringList>
@@ -78,6 +80,59 @@
 #endif
 
 namespace dae_qt {
+
+// ---------------------------------------------------------------------------
+// Startup timeline.
+//
+// `DAE_STARTUP_PERF=1` prints process-relative marks on stderr. The clock is
+// started by `main` before `QGuiApplication` exists, so the marks line up with
+// the spawn a harness measures. Everything here is inline: the header is
+// included from several translation units and the clock must be one object.
+// ---------------------------------------------------------------------------
+
+inline QElapsedTimer dae_qt_startup_clock;
+inline const bool dae_qt_startup_timing = qEnvironmentVariableIsSet("DAE_STARTUP_PERF");
+
+inline void dae_qt_startup_begin()
+{
+    dae_qt_startup_clock.start();
+}
+
+inline void dae_qt_startup_mark(const QString& stage)
+{
+    if (!dae_qt_startup_timing)
+        return;
+    const QByteArray name = stage.toUtf8();
+    fprintf(stderr, "  %-26s %8.2f ms\n", name.constData(),
+            dae_qt_startup_clock.nsecsElapsed() / 1e6);
+    fflush(stderr);
+}
+
+/// Hooks the first `frameSwapped` of the main window. `frameSwapped` can be
+/// emitted from the render thread, so the lambda is queued back to the window's
+/// (GUI) thread; the few hundred microseconds that adds are noise next to the
+/// startup numbers.
+inline void dae_qt_watch_first_frame(quintptr enginePtr)
+{
+    if (!dae_qt_startup_timing || enginePtr == 0)
+        return;
+    auto* engine = reinterpret_cast<QQmlApplicationEngine*>(enginePtr);
+    for (QObject* root : engine->rootObjects()) {
+        auto* window = qobject_cast<QQuickWindow*>(root);
+        if (!window)
+            continue;
+        QObject::connect(
+            window, &QQuickWindow::frameSwapped, window, [] {
+                static bool seen = false;
+                if (seen)
+                    return;
+                seen = true;
+                dae_qt_startup_mark("first-frame");
+            },
+            Qt::QueuedConnection);
+        return;
+    }
+}
 
 #if defined(Q_OS_WIN)
 
@@ -873,23 +928,37 @@ inline void dae_qt_apply_system_font()
         && messageFace.compare(QStringLiteral("Segoe UI"),
                                Qt::CaseInsensitive) != 0;
 
-    const QStringList installed = QFontDatabase::families();
-    const QString latinFace = installed.contains(
-            QStringLiteral("Segoe UI Variable Text"))
-        ? QStringLiteral("Segoe UI Variable Text")
-        : QStringLiteral("Segoe UI");
-
+    // Deliberately no `QFontDatabase::families()` here: the first font-database
+    // query builds the whole Windows database (200–300 ms on this machine), and
+    // every query API pays the same. QFont treats `families` as a fallback
+    // list, so a name that is not installed is resolved by font matching
+    // instead. `dae_qt_warm_font_database` populates the database on a worker
+    // while the engine loads; the first text that needs it waits there.
     QStringList families;
-    if (customMessageFace && installed.contains(messageFace))
+    if (customMessageFace)
         families << messageFace;
     for (const QString& face : preferred) {
-        if (installed.contains(face) && !families.contains(face))
+        if (!families.contains(face))
             families << face;
     }
-    families << latinFace;
+    families << QStringLiteral("Segoe UI Variable Text")
+             << QStringLiteral("Segoe UI");
 
     font.setFamilies(families);
     QGuiApplication::setFont(font);
+    dae_qt_startup_mark("system-font");
+#endif
+}
+
+/// Populates the font database on a worker thread. Qt documents every
+/// `QFontDatabase` function as thread-safe. Used by the startup A/B: the main
+/// thread can build the engine while this pays the first-query cost.
+inline void dae_qt_warm_font_database()
+{
+#if defined(Q_OS_WIN)
+    dae_qt_startup_mark("font-db warm begin");
+    QFontDatabase::families();
+    dae_qt_startup_mark("font-db warm end");
 #endif
 }
 

@@ -81,6 +81,7 @@ pub fn init() {
     logging::init();
     window::enable_diagnostics();
     window::enable_alpha();
+    window::startup_mark("alpha");
     // The application font is the fallback for every Text item that does not
     // name a family; it has to be chosen before the first QML component is
     // created so nothing paints in the old face and then reflows.
@@ -90,7 +91,9 @@ pub fn init() {
     } else {
         appearance::migrate_legacy();
     }
+    window::startup_mark("settings");
     terminal::register_item();
+    window::startup_mark("terminal");
 }
 
 /// Loads the file-backed connection and cloud-account registries once. Both

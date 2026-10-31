@@ -21,6 +21,8 @@
 | IO 机制迁移（IOCP / io_uring）已实测否决 | `docs/decisions/completion-io.md` |
 | 冷启动：locale、explorer chunk、启动预取、预热窗口池 | `main.tsx`、`prefetch.rs`、`docs/decisions/tab-tear-off-warm-pool.md` |
 | 冷启动归因：WebView2 创建占 63–65%，parse+exec 只有 3–4%；交接 IPC 26 ms → 0 | `docs/cold-start-js.md` §1.2、`bench/cold-start/` |
+| QML 预编译：Qt 首启 1120 → 874 ms（−22%），运行时不再写 `.qmlc` | `apps/dae/build.rs`、`docs/qml-aot.md` |
+| 隐藏面板按需创建：工作集 241 → 221 MB（−8%），启动不变 | `qml/LazySurface.qml`、`qml/ShellWindow.qml` |
 
 这一层的结论是：**列举、排序、IPC、变更通知基本到顶了**。下面几条的共性不是「算法不够好」，
 而是「某条路径还没人对它做过判断」——要么还在全量遍历不该遍历的东西，要么每帧都在重算同一份东西。
@@ -461,6 +463,74 @@ error[E0507]: cannot move out of an `Arc`
 `directoryPathSet`，warm 那行同时确认缓存命中）。
 
 ---
+
+### 5.3 Qt 壳首启的 `apply_system_font()` 192 ms —— 已测量，结论：字体库首次解析
+
+**这是对照实验的结果，不是猜测。** 现象是 `crates/dae-qt/cpp/window.h` 的
+`dae_qt_apply_system_font()` 在 Windows 首启占约 192 ms（本机 release 实测
+208–289 ms），需要区分「字体库首次解析」还是「`QGuiApplication::setFont`」。
+在函数里加临时 `QElapsedTimer`（已移除）分三段计时，release / debug 一致：
+
+| 分段 | release 三次 |
+|---|---|
+| `QGuiApplication::font()` | 0.0 ms |
+| 语言 / `SPI_GETNONCLIENTMETRICS` | 0.1 ms |
+| `QFontDatabase::families()` | **288.5 / 234.8 / 208.3 ms** |
+| `QGuiApplication::setFont()` | **0.0 ms** |
+
+**`setFont` 不是成本。** 把 `setFont` 提到任何字体库查询之前先跑一次（冷启动），
+它仍是 0.0 ms，随后的 `families()` 照样 222.7–326.4 ms。成本跟着**第一次字体库查询**
+走，不跟具体 API 走：冷启动分别只调用一次 `families()` / `hasFamily()` / `QFontInfo()` /
+`exactMatch()`，四者都是 **215–328 ms**（583 个家族）。Qt 内部就是在这时把整个
+Windows 字体库建起来。
+
+**删掉查询不等于省掉时间。** 把函数改成直接拼 fallback 列表（不查 `installed`），
+函数本身降到 0.1 ms，但 spawn → 主窗口句柄的中位只从 1174 ms 变到 1165 ms
+（7 次，噪声范围）；那 200 ms 只是挪到第一段文本的字体解析。
+
+**唯一测到的杠杆是重叠，已接进产品。** 把字体库查询放到 `QGuiApplication` 构造后的
+worker 线程，主线程同时做 logging / 单实例 / 引擎构建（Qt 文档明确：`QFontDatabase`
+全部函数线程安全）。10 组交错 A/B（同一二进制、同一台机器、release + QML AOT）：
+
+| 指标 | 原有（函数内查库） | worker 预热 + 不查库 | 差值 |
+|---|---:|---:|---:|
+| `qml-loaded` 中位 | 1009.7 ms | 941.3 ms | −68.4 ms |
+| **`first-frame` 中位** | **1200.2 ms** | **1132.8 ms** | **−67.4 ms（−5.6%）** |
+| `first-frame` min–max | 1155.6–1221.7 | 1110.5–1138.1 | — |
+
+计时来自 `DAE_STARTUP_PERF=1`：进程启动时的 `QElapsedTimer`，`first-frame` 是主窗口
+第一个 `frameSwapped`。debug（QML 未 AOT，编译更久）同一对照是
+**1773 → 1233 ms**，因为 worker 的 200–300 ms 能被更长的 QML 编译完全盖住；
+出货形状只盖住约 67 ms——主线程在引擎加载早期就会开始要字体库，之后仍要等 worker。
+
+**为什么不是 192 ms**：函数内那次查询本来就在串行路径上；worker 只是把它与
+logging / claim / 引擎加载重叠。重叠窗口才是收益上限，所以剩下的大头仍然发生在
+第一段文本之前。这也是为什么**不能**只删查询：那会把 200 ms 原样挪到文本解析
+（实测 spawn→窗口句柄 1174 → 1165 ms，噪声内）。必须「不查 + worker 预热」一起做。
+
+**产品改动**（`apps/dae/src/main.rs`、`crates/dae-qt`）：
+
+1. `QGuiApplication` 构造后，Windows 上无条件
+   `std::thread::spawn(window::warm_font_database)`；
+2. `dae_qt_apply_system_font()` 不再调用 `QFontDatabase::families()`，直接按 fallback
+   顺序拼族名。已验证 Qt 会跳过不存在的族名
+   （`["Definitely Not Installed", "Microsoft YaHei UI"]` 解析为后者），所以列表里出现
+   未安装的名字不会改变选中结果；
+3. 新增 `DAE_STARTUP_PERF=1`：stderr 输出 `main` / `qgui-application` / `font-db warm
+   begin/end` / `system-font` / `qml-loaded` / `first-frame` 等进程相对时间点，
+   以后测 Qt 启动不用再临时插桩。
+
+**复现**：
+
+```powershell
+$env:PATH = "K:\Qt\6.12.0\msvc2022_64\bin;" + $env:PATH
+$env:DAE_STARTUP_PERF = "1"
+# 跑 target\release\dae.exe，读 stderr；或删掉 worker 调用做对照
+```
+
+**重新评估的条件**：Qt 改成按需解析字体元数据（`families()` 不再一次建整库）——
+那时 worker 的收益会变小；或者产品决定捆一个覆盖 UI + CJK 的字体、让系统字体库只做
+回退——那会改变这个成本的性质，需要重新量。
 
 ## 6. 复现命令汇总
 
