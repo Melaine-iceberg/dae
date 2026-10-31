@@ -176,9 +176,10 @@ Linux / macOS 在合入前就看到预编译的错误（这个 job 存在的理�
 的量级。第二次 `ShellWindow` 只花 ~50 ms 创建，因为所有类型都已经热了。
 
 **所以 AOT 之后能砍的不是「编译」，而是「首启路径上碰到的组件类型数量」。** 已经
-LazySurface 掉的 14 个面板不再计入；菜单（DisplayMenu / FilterMenu / ContextMenu /
-MenuList）仍在首启路径上，是剩下最大的一块可延迟类型，但要先量过它们的首次类型成本
-再决定值不值。
+LazySurface 掉的 14 个面板不再计入。菜单（DisplayMenu / FilterMenu / ContextMenu /
+MenuList）也量过：profiler 的计数里 `MenuList.qml` 一共创建了 **1152 个对象**
+（全树 6113 的 19%），按每对象 ~8 µs 算约 **10 ms**；把它们改成按需创建要先动 19 处
+`menu.*` 引用，收益远小于风险，不做。
 
 **工具注意事项。** `qmlprofiler` 能连上，但代价很大：要 `QT_QML_DEBUG`
 （`DAE_QML_PROFILE=1` 可给 release 打开，见 `crates/dae-qt/build.rs`），而 QML 调试
@@ -186,7 +187,35 @@ MenuList）仍在首启路径上，是剩下最大的一块可延迟类型，但
 与实测 2 ms 差了三个数量级——**不要用 profiler 的绝对时间做结论**，只用它的事件计数
 （哪些组件被创建了多少个）。
 
-## 8. 还没做
+## 8. 首帧前的 ~290 ms 是 GPU 初始化，不是 QML（2026-10-31）
+
+§6 的 `qml-loaded` → `first-frame` 这一段（中位 278 ms）一直没拆开。换渲染后端就
+能看出来：同一二进制、同一棵树，只改环境变量：
+
+| 后端 | `qml-loaded` | `qml-first-list` | `first-frame` | load → frame |
+|---|---:|---:|---:|---:|
+| D3D11（默认） | 958.2 ms | 974.7 ms | 1247.0 ms | **289 ms** |
+| `QT_QUICK_BACKEND=software` | 987.1 ms | 991.0 ms | 1044.9 ms | **58 ms** |
+
+QML 侧的布局只有 ~4 ms，软件后端画完整棵树到第一帧也只要 ~58 ms；换成 D3D11 多出来的
+**~230 ms 是设备/交换链创建和第一帧上传**，不是布局、不是文本整形、也不是 Canvas
+（§7 已把 Canvas 排除）。
+
+**提前显示窗口不能把它重叠掉。** 把 `ShellWindow` 的 `visible: false` 改成 `true`，
+让窗口在 `engine.load` 期间就暴露、让渲染线程先建设备，交替 A/B 反而更差：
+
+| | `qml-first-list` 中位 | `first-frame` 中位 |
+|---|---:|---:|
+| 加载完成后才显示（现状） | 991.6 ms | 1206.6 ms |
+| 一开始就显示 | 1228.4 ms | 1243.1 ms |
+
+渲染线程和 GUI 线程抢 CPU，布局被推迟 230 ms，首帧没有提前。已回退。
+
+**结论**：这一段要么接受（D3D11 初始化是平台成本），要么走 Qt 内部（提前建 RHI
+设备、或换成 `QQuickRenderControl` 预热），都不是 QML 侧能改的。真正还能动的是
+§7 的组件类型数量——那需要 `qmltc` 级别的改造，不在当前计划里。
+
+## 9. 还没做
 
 - **热启动的 A/B。** 热缓存那条 851 ms 里仍然要读 `.qmlc`、跑字节码；AOT 之后这两样
   都没了，但没测，别引用。
