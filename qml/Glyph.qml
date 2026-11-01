@@ -36,7 +36,7 @@ Item {
     /// Controls: "chevron" (and its left/up/down forms), "check", "close",
     /// "refresh", "eye", "info", "copy", "cut", "paste", "pencil", "external",
     /// "undo", "arrowLeft", "arrowRight", "arrowUp", "windowMin", "windowMax",
-    /// "windowClose".
+    /// "windowClose", "windowFullScreen", "windowExitFullScreen".
     /// Anything else draws nothing and the caller falls back to its label.
     property string kind: "home"
     property color tint: Theme.inkMuted
@@ -270,6 +270,18 @@ Item {
         ],
         "windowClose": [
             { d: "M4.5 4.5L11.5 11.5M11.5 4.5L4.5 11.5", w: 1 }
+        ],
+        // The macOS traffic-light glyphs: the green light is the only one whose
+        // mark changes with state, so it carries both. Out is two wedges
+        // hugging the corners (arrows running out of the frame), in is two
+        // detached triangles pointing at each other.
+        "windowFullScreen": [
+            { d: "M1.6 1.6L7.3 1.6L1.6 7.3Z", f: true },
+            { d: "M14.4 14.4L8.7 14.4L14.4 8.7Z", f: true }
+        ],
+        "windowExitFullScreen": [
+            { d: "M5.2 5.2L7.3 3.1L3.1 7.3Z", f: true },
+            { d: "M10.8 10.8L8.7 12.9L12.9 8.7Z", f: true }
         ],
     })
 

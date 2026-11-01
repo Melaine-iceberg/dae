@@ -2305,6 +2305,7 @@ Window {
                 id: titleBar
                 anchors.fill: parent
                 window: root
+                controller: chrome
                 dark: root.dark
                 material: root.material
                 title: root.title

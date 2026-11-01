@@ -1,15 +1,25 @@
-//! The focus-change half of gate 2.
+//! The focus-change half of gate 2, on all three platforms.
 //!
-//! Qt 6.12's `QWindowsInputContext::reset()` commits the stored composition
-//! string to the *old* focus object when the focus moves. Clicking from a
-//! composing `TextInput` into another field therefore leaves the raw pinyin
-//! (`shi'jie`) in the first field instead of cancelling it. The platform input
-//! context cannot be replaced from QML, but cancelling at the IMM level before
-//! Qt handles the press removes the composition first, so `reset()` has
-//! nothing to commit.
+//! Rule: a composition is cancelled, never committed, when the focus leaves the
+//! item that owns it. Where the cancel happens differs by platform, because the
+//! input contexts disagree about what `reset()` means:
 //!
-//! The native guard lives in `cpp/ime.h`; this module is the type-safe seam
-//! the window controller calls after it has attached an HWND.
+//! - **Windows.** Qt 6.12's `QWindowsInputContext::reset()` *commits* the stored
+//!   composition string to the old focus object, so clicking from a composing
+//!   `TextInput` into another field leaves the raw pinyin (`shi'jie`) behind.
+//!   The guard cancels at the IMM level before Qt handles the press, so
+//!   `reset()` has nothing to commit.
+//! - **macOS and Linux.** `QCocoaInputContext::reset()` discards the marked
+//!   text and `QIBusPlatformInputContext::reset()` drops the preedit, so the
+//!   same interception point calls `QInputMethod::reset()` and gets a cancel.
+//!   Both already cancel on a focus change, which is why the Windows defect has
+//!   no counterpart there; the guard keeps the shell's behaviour independent of
+//!   that policy.
+//!
+//! The native guard lives in `cpp/ime.h`; this module is the type-safe seam the
+//! window controller calls after it has attached the window. It answers whether
+//! the token named a live window on every platform, so a caller that ignores
+//! the result still gets the same wiring.
 
 #[cxx_qt::bridge]
 pub mod qobject {

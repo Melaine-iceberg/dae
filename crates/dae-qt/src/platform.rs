@@ -189,6 +189,49 @@ pub(crate) fn accent() -> Option<String> {
     platform_accent()
 }
 
+/// What a double-click on the title bar should do: `"zoom"`, `"minimize"` or
+/// `"none"`.
+///
+/// Only macOS publishes a preference for this (System Settings → Desktop &
+/// Dock → "Double-click a window's title bar to"), and only macOS needs us to
+/// ask: Windows reads the same decision through `DefWindowProc` on the caption,
+/// and the other platforms have no equivalent setting. The QML handler still
+/// consults this on every double-click rather than caching it at startup, so a
+/// preference changed while dae runs takes effect without a restart.
+pub fn titlebar_double_click() -> &'static str {
+    titlebar_double_click_text(platform_titlebar_double_click())
+}
+
+/// Maps the three-value preference onto its wire text. Split out from the
+/// platform read so the mapping is testable without AppKit, and so the
+/// sentinel for "unrecognised" is decided in one place.
+fn titlebar_double_click_text(kind: i32) -> &'static str {
+    match kind {
+        1 => "minimize",
+        2 => "none",
+        _ => "zoom",
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn platform_titlebar_double_click() -> i32 {
+    // SAFETY: the callee reads a Foundation default and returns an int; it
+    // takes no pointers and cannot fail.
+    unsafe { dae_qt_macos_titlebar_double_click() }
+}
+
+/// Zoom: the behaviour the shell had before the preference was read, and what
+/// macOS itself does when the default is unset.
+#[cfg(not(target_os = "macos"))]
+fn platform_titlebar_double_click() -> i32 {
+    0
+}
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" {
+    fn dae_qt_macos_titlebar_double_click() -> i32;
+}
+
 #[cfg(windows)]
 fn platform_accent() -> Option<String> {
     use windows::Win32::System::Registry::{
@@ -407,6 +450,18 @@ mod tests {
     fn a_zero_accent_is_no_reading() {
         assert_eq!(from_abgr(0), None);
         assert_eq!(from_argb(0), None);
+    }
+
+    /// The preference has three documented values; anything else (a nil
+    /// default, or a value a future macOS invents) has to land on zoom rather
+    /// than on "do nothing", which would look like a dropped double-click.
+    #[test]
+    fn the_titlebar_preference_falls_back_to_zoom() {
+        assert_eq!(titlebar_double_click_text(0), "zoom");
+        assert_eq!(titlebar_double_click_text(1), "minimize");
+        assert_eq!(titlebar_double_click_text(2), "none");
+        assert_eq!(titlebar_double_click_text(-1), "zoom");
+        assert_eq!(titlebar_double_click_text(7), "zoom");
     }
 
     /// The portal palette is 1-based and `0` means "no preference".

@@ -35,3 +35,27 @@ extern "C" bool dae_qt_macos_accent_hex(char* buffer, int size)
         return true;
     }
 }
+
+// System Settings → Desktop & Dock → "Double-click a window's title bar to".
+// The key is only written once the user changes it, so the read has to supply
+// macOS' own default; the domain is read through `standardUserDefaults`, which
+// already layers NSGlobalDomain over the app's, exactly as AppKit does.
+extern "C" int dae_qt_macos_titlebar_double_click(void)
+{
+    @autoreleasepool {
+        NSString* value = [[NSUserDefaults standardUserDefaults]
+            stringForKey:@"AppleActionOnDoubleClick"];
+        if (value == nil)
+            return 0;
+
+        // The values are English regardless of the UI language, but compare
+        // without case so a hand-edited plist still resolves.
+        if ([value caseInsensitiveCompare:@"Minimize"] == NSOrderedSame)
+            return 1;
+        if ([value caseInsensitiveCompare:@"None"] == NSOrderedSame)
+            return 2;
+        // "Maximize" is the documented zoom value, and it is also the answer
+        // for anything unrecognised: zooming is the harmless default.
+        return 0;
+    }
+}

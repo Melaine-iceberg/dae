@@ -19,10 +19,31 @@ import QtQuick.Window
 // stay native. `implicitHeight` here and `kTitleBarDp` there are the same
 // number; changing one without the other puts the button hit zones off by the
 // difference.
+//
+// ## The macOS three (`docs/qt-platform-parity.md` §2.8)
+//
+// The window is frameless everywhere, so on macOS the traffic lights are drawn
+// here and the platform never sees them. Three decisions follow from the
+// native behaviour rather than from taste:
+//
+//  * **Green toggles full screen**, not a maximised frame. Since 10.10 that is
+//    what the button means; a file manager filling the visible frame and
+//    leaving the menu bar and Dock in place is the old "zoom" behaviour, and
+//    users reach it by double-clicking the bar instead.
+//  * **The glyphs appear on hover of the group**, with the trio's own marks
+//    (`×`, `−`, and the two opposing arrows): drawn, not typed, because no
+//    macOS system font carries the Windows glyph code points.
+//  * **Double-click obeys the system preference.** AppKit would read
+//    `AppleActionOnDoubleClick` itself, but the click never reaches AppKit —
+//    the bar is content. `WindowController.titlebarDoubleAction()` reads the
+//    same default per call, so the choice applies without a restart.
 Item {
     id: root
 
     property var window: null
+    /// The window's `WindowController`. macOS reads the double-click
+    /// preference through it; the other platforms never call it.
+    property var controller: null
     property bool dark: true
     property string material: "none"
     /// For the OS: `Window.title` comes from the same property. Nothing on the
@@ -48,6 +69,27 @@ Item {
     readonly property color mutedColor: Theme.inkMuted
     readonly property bool maximized: window !== null
         && window.visibility === Window.Maximized
+    /// The green button's own state on macOS. Kept apart from `maximized`,
+    /// which the Windows-drawn buttons still use.
+    readonly property bool fullScreen: window !== null
+        && window.visibility === Window.FullScreen
+
+    /// macOS' green light: full screen, or back to the previous frame.
+    function toggleMacFullScreen() {
+        if (window === null)
+            return
+        if (fullScreen)
+            window.showNormal()
+        else
+            window.showFullScreen()
+    }
+
+    /// The zoom half of a double-click: the visible frame, not full screen.
+    function toggleMacZoom() {
+        if (window === null || fullScreen)
+            return
+        maximized ? window.showNormal() : window.showMaximized()
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -81,7 +123,18 @@ Item {
         onDoubleTapped: {
             if (root.window === null)
                 return
-            root.maximized ? root.window.showNormal() : root.window.showMaximized()
+            if (!root.isMac) {
+                root.maximized ? root.window.showNormal() : root.window.showMaximized()
+                return
+            }
+            // macOS: the action belongs to the user's preference, the same one
+            // AppKit would have applied had the click reached the caption.
+            const action = root.controller !== null
+                ? root.controller.titlebarDoubleAction() : "zoom"
+            if (action === "minimize")
+                root.window.showMinimized()
+            else if (action === "zoom")
+                root.toggleMacZoom()
         }
     }
 
@@ -109,12 +162,18 @@ Item {
 
     // A frameless window draws its own traffic lights. They sit on the left,
     // where macOS puts them, and the strip starts after the 78 dp they claim.
+    // The trio behaves like the group AppKit draws: the marks stay hidden until
+    // the pointer is over any of the three, then all three show at once.
     Row {
         id: trafficLights
         visible: root.isMac
         x: 14
         y: 16
         spacing: 8
+
+        HoverHandler {
+            id: lightsHover
+        }
 
         Repeater {
             model: 3
@@ -127,8 +186,21 @@ Item {
 
                 readonly property color light: index === 0 ? "#ff5f57"
                     : index === 1 ? "#febc2e" : "#28c840"
+                readonly property bool isZoom: index === 2
                 readonly property string lightName: index === 0 ? qsTr("关闭")
-                    : index === 1 ? qsTr("最小化") : qsTr("最大化")
+                    : index === 1 ? qsTr("最小化")
+                    : (root.fullScreen ? qsTr("退出全屏") : qsTr("全屏"))
+
+                function activate() {
+                    if (root.window === null)
+                        return
+                    if (index === 0)
+                        root.window.close()
+                    else if (index === 1)
+                        root.window.showMinimized()
+                    else
+                        root.toggleMacFullScreen()
+                }
 
                 Rectangle {
                     anchors.fill: parent
@@ -138,29 +210,28 @@ Item {
                     border.color: "#24000000"
                 }
 
+                // Drawn marks, not text: the Windows glyph code points have no
+                // macOS font, and SF Symbols is not reachable from QML.
+                Glyph {
+                    anchors.centerIn: parent
+                    width: 8
+                    height: 8
+                    visible: lightsHover.hovered
+                    kind: lightItem.index === 0 ? "windowClose"
+                        : lightItem.index === 1 ? "windowMin"
+                        : (root.fullScreen ? "windowExitFullScreen" : "windowFullScreen")
+                    // AppKit tints its own marks dark on all three lights; the
+                    // yellow one is bright enough that white would disappear.
+                    tint: "#73000000"
+                }
+
                 Accessible.role: Accessible.Button
                 Accessible.name: lightItem.lightName
-                Accessible.onPressAction: {
-                    if (lightItem.index === 0)
-                        root.window.close()
-                    else if (lightItem.index === 1)
-                        root.window.showMinimized()
-                    else
-                        root.maximized ? root.window.showNormal()
-                                       : root.window.showMaximized()
-                }
+                Accessible.onPressAction: lightItem.activate()
 
                 MouseArea {
                     anchors.fill: parent
-                    onClicked: {
-                        if (lightItem.index === 0)
-                            root.window.close()
-                        else if (lightItem.index === 1)
-                            root.window.showMinimized()
-                        else
-                            root.maximized ? root.window.showNormal()
-                                           : root.window.showMaximized()
-                    }
+                    onClicked: lightItem.activate()
                 }
             }
         }

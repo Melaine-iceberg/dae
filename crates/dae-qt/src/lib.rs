@@ -28,11 +28,11 @@
 //! |---|---|---|
 //! | frame, move, resize | Win32 hit test (`WM_NCHITTEST`) | frameless Qt window; QML `startSystemMove`, and `startSystemResize` with a manual geometry fallback because Cocoa does not implement it |
 //! | backdrop | DWM Mica/Acrylic | Wayland `ext-background-effect-v1`; macOS `NSVisualEffectView`; solid chrome when the compositor offers neither |
-//! | IME focus cancel | `CPS_CANCEL` guard (gate 2) | not installed; no measured equivalent |
+//! | IME focus cancel | `CPS_CANCEL` guard (gate 2) | `QInputMethod::reset()`, whose Cocoa and ibus implementations both cancel; the guard installs on all three, see `cpp/ime.h` |
 //! | `dae://` registration | `HKCU` write on claim (`activation.rs`) | desktop entry + `xdg-mime` on Linux; `CFBundleURLTypes` + `QFileOpenEvent` on macOS |
 //!
 //! Logging and the panic hook are installed by [`logging::init`] — the file the
-//! settings panel opens is written by this process, not only by the Tauri shell.
+//! settings panel opens is written by this process.
 //!
 //! A Linux/macOS release artifact is therefore a working shell with the
 //! platform's own chrome, not a pixel-for-pixel copy of the Windows one. Each

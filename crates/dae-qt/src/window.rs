@@ -127,6 +127,17 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setCaptionClient"]
         fn set_caption_client(self: Pin<&mut WindowController>, left: f64, right: f64) -> bool;
+
+        /// What a double-click on the chrome bar should do here: `"zoom"`,
+        /// `"minimize"` or `"none"`.
+        ///
+        /// The bar is content on Linux and macOS, so the platform never sees the
+        /// second click; on macOS the user's own preference therefore has to be
+        /// read and applied by QML. Read per call rather than cached, so a
+        /// preference changed while dae runs applies on the next double-click.
+        #[qinvokable]
+        #[cxx_name = "titlebarDoubleAction"]
+        fn titlebar_double_action(self: Pin<&mut WindowController>) -> QString;
     }
 }
 
@@ -189,6 +200,10 @@ impl qobject::WindowController {
     pub fn set_caption_client(self: Pin<&mut Self>, left: f64, right: f64) -> bool {
         let token = self.token.clone();
         qobject::set_window_caption_client(&token, left, right)
+    }
+
+    pub fn titlebar_double_action(self: Pin<&mut Self>) -> QString {
+        QString::from(crate::platform::titlebar_double_click())
     }
 }
 
