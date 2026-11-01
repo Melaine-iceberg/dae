@@ -1603,6 +1603,21 @@
             <translation>无法播放此文件</translation>
         </message>
         <message>
+            <location filename="../MediaPreview.qml" line="50" />
+            <source>无法播放此文件：</source>
+            <translation>无法播放此文件：</translation>
+        </message>
+        <message>
+            <location filename="../MediaPreview.qml" line="54" />
+            <source>无法开始播放：缺少多媒体后端或 GStreamer 解码插件（gstreamer1.0-plugins-base / -good / -libav）</source>
+            <translation>无法开始播放：缺少多媒体后端或 GStreamer 解码插件（gstreamer1.0-plugins-base / -good / -libav）</translation>
+        </message>
+        <message>
+            <location filename="../MediaPreview.qml" line="55" />
+            <source>无法开始播放：缺少多媒体后端</source>
+            <translation>无法开始播放：缺少多媒体后端</translation>
+        </message>
+        <message>
             <location filename="../MediaPreview.qml" line="266" />
             <source>静音</source>
             <translation>静音</translation>
@@ -3365,6 +3380,11 @@
             <translation>检查更新</translation>
         </message>
         <message>
+            <location filename="../ShellWindow.qml" line="1418" />
+            <source>由安装包更新</source>
+            <translation>由安装包更新</translation>
+        </message>
+        <message>
             <location filename="../ShellWindow.qml" line="2829" />
             <source>设置</source>
             <translation>设置</translation>
@@ -4000,6 +4020,11 @@
             <location filename="../UpdateDialog.qml" line="113" />
             <source>正在检查更新…</source>
             <translation>正在检查更新…</translation>
+        </message>
+        <message>
+            <location filename="../UpdateDialog.qml" line="124" />
+            <source>此安装来自 Windows 应用包：更新随新版本安装包到来，应用无法自行替换自身。</source>
+            <translation>此安装来自 Windows 应用包：更新随新版本安装包到来，应用无法自行替换自身。</translation>
         </message>
         <message>
             <location filename="../UpdateDialog.qml" line="121" />
