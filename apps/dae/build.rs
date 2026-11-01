@@ -174,11 +174,19 @@ fn rustc_llvm_major() -> Option<u32> {
 }
 
 /// Resolves a Qt host tool the same way for both QML compile steps: an
-/// explicit override first, then the `bin` directory `qmake` reports (`QMAKE`,
+/// explicit override first, then the directories `qmake` reports (`QMAKE`,
 /// the same override `crates/dae-qt/build.rs` honours), then `PATH`. Resolving
 /// through the same Qt matters: generated C++ is compiled against the headers
 /// cxx-qt links, and a tool/headers version mismatch fails with errors that
 /// name neither.
+///
+/// `QT_INSTALL_BINS` alone is not enough. Qt 6 keeps the code generators in
+/// `libexec` on Unix — `qmlcachegen`, `qmltyperegistrar`, `qmllint` — and only
+/// the Windows packages put them next to `qmake`. A lookup that asked `bin`
+/// and then `PATH` therefore found nothing on Linux (`libexec` is never on
+/// `PATH`), which surfaced as `DAE_QML_AOT=1` failing the release build with
+/// "qmlcachegen was not found" on a machine where qmake had just been used to
+/// compile the C++ bridge.
 fn find_qt_tool(override_var: &str, name: &str) -> Option<PathBuf> {
     if let Some(path) = std::env::var_os(override_var) {
         let path = PathBuf::from(path);
@@ -189,16 +197,42 @@ fn find_qt_tool(override_var: &str, name: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| which("qmake6").or_else(|| which("qmake")));
     if let Some(qmake) = qmake {
-        if let Ok(output) = Command::new(&qmake)
-            .args(["-query", "QT_INSTALL_BINS"])
-            .output()
-        {
-            if output.status.success() {
-                let bins = String::from_utf8_lossy(&output.stdout);
-                let candidate = Path::new(bins.trim()).join(exe_name(name));
-                if candidate.is_file() {
-                    return Some(candidate);
-                }
+        // `QT_INSTALL_*` is the Qt being built against, `QT_HOST_*` the one
+        // providing the tools; for a native build they are the same prefix,
+        // and asking both costs one `qmake -query` each.
+        for key in [
+            "QT_INSTALL_BINS",
+            "QT_HOST_BINS",
+            "QT_INSTALL_LIBEXECS",
+            "QT_HOST_LIBEXECS",
+        ] {
+            let output = match Command::new(&qmake).args(["-query", key]).output() {
+                Ok(output) if output.status.success() => output,
+                _ => continue,
+            };
+            let dir = String::from_utf8_lossy(&output.stdout);
+            let dir = dir.trim();
+            if dir.is_empty() {
+                continue;
+            }
+            let candidate = Path::new(dir).join(exe_name(name));
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    // Last structured chance before `PATH`: the Qt root the CI action and the
+    // packaging steps export, probed with both layouts. This is what covers a
+    // build script that runs with `QMAKE` unset and `qmake6` off `PATH`.
+    for key in ["QT_ROOT_DIR", "QTDIR"] {
+        let Some(root) = std::env::var_os(key) else {
+            continue;
+        };
+        for sub in ["bin", "libexec"] {
+            let candidate = Path::new(&root).join(sub).join(exe_name(name));
+            if candidate.is_file() {
+                return Some(candidate);
             }
         }
     }
