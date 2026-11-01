@@ -699,8 +699,9 @@ jobs:
             patchelf --set-rpath "\$ORIGIN/$relative" "$module"
           done < <(find "$staging/qml" -type f -name '*.so*' -print0)
 
-          if env -u LD_LIBRARY_PATH ldd "$staging/dae" | grep -q 'not found'; then
-            env -u LD_LIBRARY_PATH ldd "$staging/dae" | grep 'not found'
+          if env -u LD_LIBRARY_PATH ldd "$staging/dae" > "$RUNNER_TEMP/dae-ldd.txt" &&
+            grep -q 'not found' "$RUNNER_TEMP/dae-ldd.txt"; then
+            cat "$RUNNER_TEMP/dae-ldd.txt"
             echo "::error::the portable Qt tree is missing a shared library"
             exit 1
           fi
@@ -711,9 +712,17 @@ jobs:
           rm -f "$zip"
           shopt -s dotglob nullglob
           (cd "$staging" && zip -r -y -X -q "$zip" *)
-          unzip -Z1 "$zip" | grep -qx 'platforms/libqxcb.so'
-          unzip -Z1 "$zip" | grep -q '^platforms/libqwayland.*\.so$'
-          unzip -Z1 "$zip" | grep -qx 'dae'
+          # One listing, three assertions. Piping `unzip` into `grep -q` reads
+          # the same, but under `set -o pipefail` grep's early exit kills unzip
+          # with SIGPIPE and the pipeline reports 141 instead of "found".
+          names=$(unzip -Z1 "$zip")
+          for required in 'platforms/libqxcb.so' 'dae'; do
+            grep -qxF "$required" <<< "$names"
+          done
+          if ! grep -q '^platforms/libqwayland.*\.so$' <<< "$names"; then
+            echo "::error::the archive has no Wayland platform plugin"
+            exit 1
+          fi
 
           # ---- Debian package ---------------------------------------------
           # The zip is a folder to unpack by hand; a system package is what puts
@@ -813,7 +822,12 @@ jobs:
                           './usr/lib/dae/qml/QtQuick' \
                           './usr/share/applications/dae.desktop' \
                           './usr/share/icons/hicolor/128x128/apps/dae.png'; do
-            if ! printf '%s\n' "$contents" | grep -qF "$required"; then
+            # `printf | grep -q` is the obvious spelling and it is wrong here:
+            # under `set -o pipefail`, grep exits on the first match, printf
+            # takes SIGPIPE, the pipeline reports 141, and a file that IS in the
+            # package is reported missing. A here-string hands the text over
+            # with no pipe to break.
+            if ! grep -qF "$required" <<< "$contents"; then
               echo "::error::$deb is missing $required"
               exit 1
             fi
@@ -912,7 +926,8 @@ jobs:
                           '/usr/lib/dae/qml/QtQuick' \
                           '/usr/share/applications/dae.desktop' \
                           '/usr/share/icons/hicolor/128x128/apps/dae.png'; do
-            if ! printf '%s\n' "$rpmfiles" | grep -qF "$required"; then
+            # Same pipe/SIGPIPE trap as the .deb loop above.
+            if ! grep -qF "$required" <<< "$rpmfiles"; then
               echo "::error::$rpmfile is missing $required"
               exit 1
             fi
@@ -920,8 +935,9 @@ jobs:
           # A regular file here would put a second copy of the binary on PATH
           # that cannot find qt.conf; the .deb gets the same assertion through
           # `dpkg-deb --contents`.
-          if ! rpm -qp --dump "$rpmfile" | grep -q '^/usr/bin/dae .* \.\./lib/dae/dae$'; then
-            rpm -qp --dump "$rpmfile" | grep '^/usr/bin/dae'
+          dump=$(rpm -qp --dump "$rpmfile")
+          if ! grep -qE '^/usr/bin/dae .* \.\./lib/dae/dae$' <<< "$dump"; then
+            grep '^/usr/bin/dae' <<< "$dump" || true
             echo "::error::$rpmfile does not install /usr/bin/dae as a symlink to ../lib/dae/dae"
             exit 1
           fi
@@ -933,7 +949,7 @@ jobs:
           provides=$(rpm -qp --provides "$rpmfile" | awk '{print $1}')
           unbundled=""
           for soname in $(rpm -qp --requires "$rpmfile" | awk '/^libQt6/{print $1}'); do
-            if ! printf '%s\n' "$provides" | grep -qxF "$soname"; then
+            if ! grep -qxF "$soname" <<< "$provides"; then
               unbundled="$unbundled $soname"
             fi
           done
