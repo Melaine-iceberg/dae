@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+	Entitlements for a Developer ID signed, notarized build.
+
+	Two exceptions, both demanded by Qt Quick rather than by dae:
+
+	* QML compiles JavaScript to machine code at run time (QV4's JIT). The
+	  hardened runtime refuses to relax W^X on its own, so a QML engine without
+	  `allow-jit` aborts with an mmap failure on the first binding it evaluates.
+	* Qt loads its platform, image-format and multimedia plugins by path from
+	  the bundle. `macdeployqt` copies those dylibs verbatim and re-signs them,
+	  but any plugin it missed in a future Qt release would be rejected by
+	  library validation at load time — taking the window or the preview down
+	  with it, with a log line nobody sees.
+
+	Nothing else is granted: no network, file-system or AppleEvents exceptions,
+	because a notarized app runs outside the sandbox and already has them.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>
