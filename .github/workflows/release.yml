@@ -6,19 +6,22 @@ on:
       - "v*"
   # Manual runs exist to smoke-test one platform before a tag is worth cutting:
   # they build that leg and leave the results as Actions artifacts, and nothing
-  # else. Everything that publishes — tauri-action's draft, the MSIX attach, the
+  # else. Everything that publishes — the draft release, the MSIX attach, the
   # update feed — is gated on `github.event_name == 'push'`, so a manual run
   # cannot create, modify or publish a release even by accident.
   #
-  # Neither leg needs a secret.
+  # One secret is required, and only for signing: `TAURI_SIGNING_PRIVATE_KEY`
+  # (plus its password) is the minisign key the update feed's signature is made
+  # with. The name is historical — the key predates the Qt shell and the
+  # `tauri signer` command is still what signs the archives — but the key itself
+  # is the one `dae-core` trusts, so it must not be regenerated casually.
   #
   # There is no macOS leg. It was removed on 2026-11-01: the bundles were
   # Developer ID signed and notarized on a runner, and nothing on this side
   # could tell whether the result actually started on a Mac. Shipping a
   # platform nobody can launch is worse than not shipping it — see
   # `docs/packaging.md` §1. The macOS-only Rust is still compiled by
-  # `macos-check.yml` and `qt-check.yml`, so the code does not rot; only the
-  # artifact is gone.
+  # `qt-check.yml`, so the code does not rot; only the artifact is gone.
   workflow_dispatch:
     inputs:
       platform_key:
@@ -45,193 +48,69 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 jobs:
-  build:
-    # This job is the one tauri-action turns into a draft release, and it builds
-    # one installer set per runner. Windows and Linux only: the macOS leg was
-    # dropped along with the Qt one (see the trigger comment above).
-    if: github.event_name != 'workflow_dispatch'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-latest
-            target: ""
-            # Two-stage PGO everywhere; BOLT additionally on Linux only.
-            perf_flags: ""
-            args: ""
-          - platform: ubuntu-26.04
-            target: ""
-            # `--bolt` adds -Wl,--emit-relocs and turns strip off, i.e. the input
-            # LLVM BOLT needs. It is a GNU ld flag, so it stays out of the other
-            # legs — and so does `src-tauri/tauri.perf.conf.json` below, whose
-            # `beforeBundleCommand` hook is what actually runs BOLT.
-            perf_flags: "--bolt"
-            args: "--config src-tauri/tauri.perf.conf.json"
-
-    runs-on: ${{ matrix.platform }}
-
+  # ---------------------------------------------------------------------------
+  # The draft release.
+  #
+  # This used to be `tauri-action`'s job: that action built the WebView shell's
+  # installers *and* created the draft they were attached to. The shell is
+  # retired, so the release object is created directly here and every leg below
+  # attaches to it by tag. `gh release view` keeps a re-run from failing on the
+  # release an earlier attempt already made.
+  #
+  # The version check lives here because this is the only job that has to pass
+  # before anything is uploaded. The Qt shell compares the feed against its own
+  # `CARGO_PKG_VERSION` (read inside `dae-qt`) and builds the zip name from
+  # `package.json`, so a tag that disagrees with either would publish an update
+  # every launch offers and never installs.
+  # ---------------------------------------------------------------------------
+  draft:
+    name: Draft release
+    if: github.event_name == 'push'
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
 
-      # `bun run build` shells out to `tsc`, and the version check below uses
-      # `node -p`, so pin Node rather than trusting the runner image.
       - uses: actions/setup-node@v7
         with:
           node-version: 24
 
-      - name: Verify tag matches app version
+      - name: Verify the tag matches every version in the tree
         shell: bash
         run: |
-          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
           pkg=$(node -p "require('./package.json').version")
-          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
-            echo "::error::Pushed tag ${GITHUB_REF_NAME} but tauri.conf.json declares v$version."
-            echo "::error::Bump the version in src-tauri/tauri.conf.json, src-tauri/Cargo.toml and package.json, then re-tag."
-            exit 1
-          fi
-          # The MSIX version follows package.json (scripts/sync-msix-version.mjs),
-          # so a drifted package.json would ship an installer whose version lies.
-          if [ "$pkg" != "$version" ]; then
-            echo "::error::package.json declares v$pkg but tauri.conf.json declares v$version."
-            exit 1
-          fi
-          # The Qt shell compares the feed against its own CARGO_PKG_VERSION
-          # (read inside dae-qt), and the zip name is built from package.json.
-          # A crate that lags behind would make every launch offer the update
-          # it just installed, so keep the whole workspace on the release tag.
           for crate in apps/dae crates/dae-qt crates/dae-core; do
             crate_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$crate/Cargo.toml" | head -n 1)
-            if [ "$crate_version" != "$version" ]; then
+            if [ "$crate_version" != "$tag" ]; then
               echo "::error::$crate/Cargo.toml declares v$crate_version but the tag is ${GITHUB_REF_NAME}."
-              echo "::error::Bump apps/dae, crates/dae-qt and crates/dae-core to v$version, then re-tag."
+              echo "::error::Bump apps/dae, crates/dae-qt and crates/dae-core to ${GITHUB_REF_NAME#v}, then re-tag."
               exit 1
             fi
           done
+          if [ "$pkg" != "$tag" ]; then
+            echo "::error::package.json declares v$pkg but the tag is ${GITHUB_REF_NAME}."
+            exit 1
+          fi
 
-      - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-26.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential curl wget file pkg-config cmake \
-            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev \
-            libgtk-3-dev librsvg2-dev libxdo-dev \
-            libssl-dev libdbus-1-dev zlib1g-dev rpm \
-            xvfb
-
-      # BOLT is optional by design: the post-link step skips it (loudly, in the
-      # log) on any runner where the package is missing, rather than failing a
-      # release over a post-link optimisation.
-      - name: Install LLVM BOLT (Linux, optional)
-        if: matrix.platform == 'ubuntu-26.04'
-        run: |
-          sudo apt-get install -y llvm-bolt || \
-            echo "::warning title=BOLT unavailable::llvm-bolt is not packaged for this runner; the release will ship a PGO-only binary"
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-          # llvm-profdata et al. come from the toolchain rustc itself uses; the
-          # distro LLVM is a different version and would refuse the profraw.
-          components: llvm-tools-preview
-
-      - uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri -> target
-          cache-on-failure: true
-
-      - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
-
-      # --- LLVM IR PGO -----------------------------------------------------
-      # Two builds on every platform: an instrumented one that is only ever run,
-      # and the real one compiled from the profile it left behind. The training
-      # run is scripted because nobody is here to use the app; on a tagged
-      # release it replays startup plus a corpus listing (scripts/opt/pgo.mjs
-      # train). BOLT is the Linux-only extra, see the matrix above.
-      #
-      # `continue-on-error` is deliberate: with no profile the flags step below
-      # exports no `-Cprofile-use` (and, on Linux, the BOLT link flags), so the
-      # release is simply a normal release build. A release must not be blocked
-      # by its optimiser — a runner without a usable GUI session is the expected
-      # way this step fails.
-      #
-      # The signing key is here because the script builds with the release
-      # overlay (same embedded config as the shipped binary), which is the only
-      # shape of this app that starts: without `plugins.updater` the updater
-      # plugin panics during init.
-      - name: PGO — instrument and train
-        continue-on-error: true
-        # bash on both runners: the Windows default shell is pwsh, and a
-        # `--target ""` expansion means something different there.
-        shell: bash
+      - name: Create the draft release
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        # `--target` stays in the matrix and is empty on both legs: the script
-        # forwards it to `tauri build` and also looks for the binary under
-        # `target/<triple>/release/`, which is the shape a cross build needs.
-        run: bun scripts/opt/pgo.mjs train --seconds 45 --target ${{ matrix.target }}
-
-      # Writes CARGO_ENCODED_RUSTFLAGS (and, with --bolt, the strip override)
-      # into the job environment, so the build tauri-action performs below is the
-      # PGO build.
-      - name: PGO/BOLT — export compile flags
-        # bash, not the runner default: `$GITHUB_ENV` is a shell variable under
-        # bash but needs `$env:` in pwsh.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
-        run: bun scripts/opt/pgo.mjs flags ${{ matrix.perf_flags }} >> "$GITHUB_ENV"
+        run: |
+          set -euo pipefail
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "release ${GITHUB_REF_NAME} already exists; attaching to it"
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --draft \
+              --title "dae ${GITHUB_REF_NAME}" \
+              --generate-notes
+          fi
 
-
-      - uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Read by the `beforeBundleCommand` hook: how long to run the
-          # BOLT-instrumented binary before rewriting it. Unused elsewhere.
-          DAE_PERF_TRAIN_SECONDS: "45"
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "dae v__VERSION__"
-          releaseBody: "See the assets below to download and install this version."
-          releaseDraft: true
-          prerelease: false
-          generateReleaseNotes: true
-          # The updater config and signing requirement live in an overlay so
-          # that local `bun tauri build` keeps working without a signing key.
-          args: "--config src-tauri/tauri.release.conf.json ${{ matrix.args }}"
-          tauriScript: bun tauri
-          # Point latest.json at the NSIS installer rather than the MSI, which
-          # cannot silently replace a running install.
-          updaterJsonPreferNsis: true
-
-  # ---------------------------------------------------------------------------
-  # Windows MSIX.
-  #
-  # The package used to carry `src-tauri\target\release\dae.exe` — the Tauri
-  # shell — which is the one artifact this migration is retiring. It now ships
-  # the Qt shell's deployed tree: the same bytes as the portable zip, Qt runtime
-  # and QML modules included, so an installed copy has `platforms\qwindows.dll`
-  # and `qml\QtQuick` beside the executable exactly as the zip does.
-  #
-  # That is why it is its own job instead of a step in `build`: it needs the
-  # archive the `qt` job produces, and `build` is what creates the draft release
-  # both artifacts are attached to.
-  #
-  # Two consequences of a packaged install, both handled in the engine rather
-  # than here: the tree under `C:\Program Files\WindowsApps` is read-only and
-  # re-versioned on every update, so `dae-core` turns the portable self-updater
-  # off when it detects package identity, and `dae://` comes from the manifest's
-  # protocol extension instead of the per-user registry write.
-  # ---------------------------------------------------------------------------
   msix:
     name: Windows MSIX
-    needs: [build, qt]
+    needs: [draft, qt]
     runs-on: windows-latest
     # Attaches its package to the draft release, which a manual run has none of.
     if: github.event_name != 'workflow_dispatch'
@@ -577,7 +456,7 @@ jobs:
           mkdir -p "$appdir/usr/bin"
           cp target/release/dae "$appdir/usr/bin/dae"
           cp packaging/qt/dae.desktop "$appdir/dae.desktop"
-          cp src-tauri/icons/128x128.png "$appdir/dae.png"
+          cp packaging/icons/128x128.png "$appdir/dae.png"
 
           tools="$PWD/dist/qt-tools"
           mkdir -p "$tools"
@@ -698,7 +577,7 @@ jobs:
             cp -a "$appdir/usr/translations" "$staging/translations"
           fi
           cp packaging/qt/dae.desktop "$staging/dae.desktop"
-          cp src-tauri/icons/128x128.png "$staging/dae.png"
+          cp packaging/icons/128x128.png "$staging/dae.png"
           cat > "$staging/qt.conf" <<'EOF'
           [Paths]
           Prefix = .
@@ -786,9 +665,9 @@ jobs:
           install -D -m 0755 packaging/qt/dae-launcher "$pkg/usr/bin/dae"
           install -m 0644 packaging/qt/dae-installed.desktop \
             "$pkg/usr/share/applications/dae.desktop"
-          install -m 0644 src-tauri/icons/128x128.png \
+          install -m 0644 packaging/icons/128x128.png \
             "$pkg/usr/share/icons/hicolor/128x128/apps/dae.png"
-          install -m 0644 src-tauri/icons/128x128@2x.png \
+          install -m 0644 packaging/icons/128x128@2x.png \
             "$pkg/usr/share/icons/hicolor/256x256/apps/dae.png"
 
           # Runtime dependencies are derived, never hand-written: every shared
@@ -953,9 +832,9 @@ jobs:
           grep -q '^exec /usr/lib/dae/dae' %{buildroot}/usr/bin/dae
           install -D -m 0644 $PWD/packaging/qt/dae-installed.desktop \
             %{buildroot}/usr/share/applications/dae.desktop
-          install -D -m 0644 $PWD/src-tauri/icons/128x128.png \
+          install -D -m 0644 $PWD/packaging/icons/128x128.png \
             %{buildroot}/usr/share/icons/hicolor/128x128/apps/dae.png
-          install -D -m 0644 $PWD/src-tauri/icons/128x128@2x.png \
+          install -D -m 0644 $PWD/packaging/icons/128x128@2x.png \
             %{buildroot}/usr/share/icons/hicolor/256x256/apps/dae.png
 
           %files
@@ -1074,7 +953,7 @@ jobs:
   # release these assets are appended to.
   qt-feed:
     name: Qt update feed
-    needs: [build, qt]
+    needs: [draft, qt]
     runs-on: ubuntu-26.04
     # Every step here writes to the release by tag; a manual run has no tag.
     if: github.event_name != 'workflow_dispatch'

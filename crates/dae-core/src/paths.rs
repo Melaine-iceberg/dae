@@ -27,16 +27,15 @@ use crate::error::FileSystemError;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
-/// Must equal `identifier` in `src-tauri/tauri.conf.json` — `the_identifier_matches_the_bundle`
-/// fails if the two drift apart.
+/// Must equal `CFBundleIdentifier` in `packaging/qt/Info.plist` —
+/// `the_identifier_matches_the_bundle` fails if the two drift apart. It is also
+/// the Windows log directory name, so a change moves every user's data.
 pub const APP_IDENTIFIER: &str = "com.melaine.dae";
 
 /// The app's config directory. Every persisted document hangs off this.
 pub fn config_dir() -> Result<PathBuf, FileSystemError> {
     let root = config_root().ok_or_else(|| {
-        FileSystemError::Internal(
-            "the environment carries no system config directory".to_owned(),
-        )
+        FileSystemError::Internal("the environment carries no system config directory".to_owned())
     })?;
 
     Ok(root.join(APP_IDENTIFIER))
@@ -69,8 +68,11 @@ pub fn resolve_config_root(appdata: Option<&OsStr>) -> Option<PathBuf> {
 /// macOS' root: `Application Support` inside the home directory.
 #[cfg(target_os = "macos")]
 pub fn resolve_config_root(home: Option<&OsStr>) -> Option<PathBuf> {
-    home.filter(|value| !value.is_empty())
-        .map(|home| PathBuf::from(home).join("Library").join("Application Support"))
+    home.filter(|value| !value.is_empty()).map(|home| {
+        PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+    })
 }
 
 /// Linux/BSD's root: an **absolute** `$XDG_CONFIG_HOME`, else `$HOME/.config`.
@@ -79,10 +81,7 @@ pub fn resolve_config_root(home: Option<&OsStr>) -> Option<PathBuf> {
 /// them: an empty value is unset, and a relative value is ignored rather than
 /// resolved against the working directory.
 #[cfg(not(any(windows, target_os = "macos")))]
-pub fn resolve_config_root(
-    config_home: Option<&OsStr>,
-    home: Option<&OsStr>,
-) -> Option<PathBuf> {
+pub fn resolve_config_root(config_home: Option<&OsStr>, home: Option<&OsStr>) -> Option<PathBuf> {
     if let Some(config_home) = config_home {
         let path = PathBuf::from(config_home);
         if path.is_absolute() {
@@ -102,11 +101,11 @@ mod tests {
     /// bundle is a silent "fresh install" for every existing user.
     #[test]
     fn the_identifier_matches_the_bundle() {
-        let conf = include_str!("../../../src-tauri/tauri.conf.json");
+        let plist = include_str!("../../../packaging/qt/Info.plist");
 
         assert!(
-            conf.contains(&format!("\"identifier\": \"{APP_IDENTIFIER}\"")),
-            "APP_IDENTIFIER drifted from tauri.conf.json"
+            plist.contains(&format!("<string>{APP_IDENTIFIER}</string>")),
+            "APP_IDENTIFIER drifted from packaging/qt/Info.plist"
         );
     }
 
@@ -135,7 +134,10 @@ mod tests {
     #[test]
     fn a_relative_xdg_config_home_is_ignored_not_resolved() {
         assert_eq!(
-            resolve_config_root(Some(OsStr::new("relative/dir")), Some(OsStr::new("/home/me"))),
+            resolve_config_root(
+                Some(OsStr::new("relative/dir")),
+                Some(OsStr::new("/home/me"))
+            ),
             Some(PathBuf::from("/home/me/.config"))
         );
     }
@@ -144,7 +146,10 @@ mod tests {
     #[test]
     fn an_absolute_xdg_config_home_wins() {
         assert_eq!(
-            resolve_config_root(Some(OsStr::new("/custom/config")), Some(OsStr::new("/home/me"))),
+            resolve_config_root(
+                Some(OsStr::new("/custom/config")),
+                Some(OsStr::new("/home/me"))
+            ),
             Some(PathBuf::from("/custom/config"))
         );
     }

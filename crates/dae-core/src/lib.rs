@@ -1,11 +1,11 @@
 //! Engine-agnostic core of dae.
 //!
-//! Two shells link this crate: the Tauri shell in `src-tauri` (still shipped)
-//! and the Qt Quick shell that replaces it (`docs/decisions/engine-qt-quick.md`).
-//! That is the whole rule — **nothing here may know how the UI is drawn**. A
-//! `tauri::` import, a webview handle, a QML type or a serialized IPC packet in
-//! this crate would silently re-decide the engine, which is exactly the thing
-//! the migration is trying to undo.
+//! One shell links this crate: the Qt Quick shell in `apps/dae` + `crates/dae-qt`
+//! (`docs/decisions/engine-qt-quick.md`). The Tauri shell that preceded it was
+//! deleted on 2026-11-01, which is why the rule below survived the migration
+//! that produced it. **Nothing here may know how the UI is drawn**: a `tauri::`
+//! import, a webview handle, a QML type or a serialized IPC packet in this crate
+//! would put the engine back in the domain layer.
 //!
 //! # How code gets here
 //!

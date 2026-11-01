@@ -110,15 +110,34 @@ Windows 本机构建通过，macOS/Linux 的运行时结论仍以 §4 手测为�
   仍走 `dae_core::fs::thumbnails::extract`。
 - 验收：macOS 预览面板对 PDF、mp4、HEIC 显示缩略图；无产出时仍回落到字形。
 
-#### 2.8 macOS 窗口 chrome 是自绘的
+#### 2.8 macOS 窗口 chrome 是自绘的（已定案，待 macOS 手测）
 
 - 现状：红绿灯由 QML 画（`qml/TitleBar.qml`），绿色按钮走 `showMaximized`
   而不是全屏；没有悬停字形；双击标题栏由 QML 自己实现，不遵循系统偏好。
-- 这是产品决定，不是缺陷；但需要在 macOS 上明确定义：
-  - 绿色按钮：最大化（zoom）还是原生全屏；
-  - 是否补 hover 字形；
-  - 双击标题栏是否读取系统偏好。
-- 验收：与 macOS 原生文件管理器的窗口操作习惯不冲突；状态栏/标签不被遮挡。
+- 三条决定（2026-11-01，按 macOS 原生行为定，不按口味定）：
+  1. **绿色按钮 = 原生全屏切换**。自 10.10 起这就是该按钮的含义；
+     「铺满可视区域」由双击标题栏提供（见第 3 条）。实现上走
+     `window.showFullScreen()` / `showNormal()`，Qt 的 Cocoa 后端对应
+     `NSWindow toggleFullScreen:`，动画与菜单栏/Dock 的隐藏交给系统。
+  2. **补 hover 字形**：指针进入三颗灯中的任意一颗，三颗同时显示字形
+     （`×`、`−`、全屏进出箭头）。字形是 `qml/Glyph.qml` 里的绘制路径
+     （`windowClose` / `windowMin` / `windowFullScreen` /
+     `windowExitFullScreen`），不是字符——macOS 系统字体没有 Windows 那组
+     码位，早先版本正是因此把它们渲染成空框。绿色那颗随全屏状态在
+     「进入 / 退出」两个形状间切换。
+  3. **双击标题栏读系统偏好**：`AppleActionOnDoubleClick`（系统设置 →
+     桌面与程序坞 → 「双击窗口标题栏以」），取值 `Maximize` / `Minimize` /
+     `None`，分别对应 zoom / 最小化 / 不动作；读不到或不认识时按 zoom
+     处理（macOS 对鼠标的默认）。读取在 `cpp/macos_platform.mm`
+     （`dae_qt_macos_titlebar_double_click`），经
+     `platform.rs::titlebar_double_click` 暴露为
+     `WindowController.titlebarDoubleAction()`；QML 在**每次双击时**调用，
+     所以改完偏好不需要重启。
+  - 未做：Option+双击强制 zoom。`TapHandler` 拿不到修饰键，要拿就得换成
+    `MouseArea`，而它会和拖动用的 `DragHandler` 抢点击；收益不足以承担这个
+    风险，写在限制里。
+- 验收：与 macOS 原生文件管理器的窗口操作习惯不冲突；状态栏/标签不被遮挡；
+  绿色按钮进/出全屏、hover 出字形、双击按偏好执行。
 
 #### 2.9 macOS 单实例激活不保证到前台（已补）
 
@@ -213,7 +232,8 @@ Windows 本机构建通过，macOS/Linux 的运行时结论仍以 §4 手测为�
 | 强调色 | 设置选「系统强调色」，改系统强调色 | 立即跟随 |
 | 卷 | 插拔 U 盘 | 侧栏出现/消失 |
 | 缩略图 | 选中 PDF / mp4 / HEIC | 显示缩略图 |
-| 输入法 | 拼音输入中点击别处 / Tab | 组合取消，不提交原始拼音 |
+| 输入法 | 拼音输入中点击别处 / Tab | 组合取消，不提交原始拼音（§2.8 上方的守卫说明、`cpp/ime.h`） |
+| 窗口 chrome（macOS） | 悬停红绿灯 / 点绿灯 / 双击标题栏 | 三颗灯出字形；绿灯进全屏、再点退出；双击按系统偏好执行（zoom / 最小化 / 不动作） |
 | 拖放 | 从 Finder 拖文件进列表；从列表拖到 Finder | 复制/移动语义正确 |
 
 ## 5. 非目标
@@ -263,3 +283,43 @@ Linux 构建通过并跑完 132 个单元测试；macOS 通过构建与链接。
 include path），`macos_platform.mm` 改用 `NSColor` 分量读取（`getRed:…` 在新 SDK
 下被判为 `void`），菜单实现补上 `dae_qt::` 限定名；另有 `sidebar_model` 的卷名
 用例原来只断言 Windows 盘符拼写，已改成跨平台断言。
+
+### 2026-11-01 §9.3-7 / §9.3-8：IME 失焦守卫三平台化，macOS chrome 定案
+
+**IME 失焦守卫（§2.6 上方的清单一节、`crates/dae-qt/cpp/ime.h`）。**
+守卫从「只在 Windows 安装」改成三平台统一，取消原语按平台选，规则写成一句：
+*焦点离开时组合被取消，不被提交*。
+
+- Windows 仍是 IMM `CPS_CANCEL`（门槛 2 的原始结论，未改）。
+- macOS / Linux 改调 `QInputMethod::reset()`。两个平台的该实现都是「取消」，
+  与 Windows 相反，这一点是按 Qt 源码核对的，不是猜的：
+  - `qcocoainputcontext.mm`：`reset()` 做 `discardMarkedText` + `unmarkText`
+    （后者给控件发一个空预编辑），`setFocusObject()` 同样丢弃 marked text，
+    所以 macOS 本来就没有 Windows 那个缺陷；
+  - `qibusplatforminputcontext.cpp`：`reset()` 做 `context->Reset()` 并清空
+    `d->predit`；只有 `commit()` 会把预编辑当提交串发出去，而它只从
+    `invokeAction(Click)` 进来，`setFocusObject()` 走的是 `FocusOut()`。
+  因此在这两个平台上守卫是「双保险」：真正的价值是让壳的行为不依赖后端策略
+  （XIM、经 ibus 的 fcitx5、以及将来 Qt 改回 commit 的情况）。
+- 成本：新增 `focus_has_composition()` 判定——读焦点项自己的 `preeditText`
+  属性，为空时整条守卫不触发，所以没有组合时不会多出一次 IMM 调用或一次
+  D-Bus `Reset`。Esc 不在守卫里（那次按键归输入法）。
+
+**macOS chrome（§2.8）。** 三条决定与实现见 §2.8，落点：
+`qml/TitleBar.qml`（绿灯全屏、hover 字形、双击读偏好）、`qml/Glyph.qml`
+（两个新字形）、`cpp/macos_platform.{h,mm}`（读 `AppleActionOnDoubleClick`）、
+`crates/dae-qt/src/platform.rs`（三值 → `zoom|minimize|none`，含单测）、
+`window.rs`（`titlebarDoubleAction()`）、`ShellWindow.qml`（把控制器传给标题栏）。
+
+**本机验证（Windows 11，Qt 6.12.0）。**
+
+| 项目 | 结果 |
+|---|---|
+| `cargo build -p dae-app` | 通过（45 s） |
+| `cargo test -p dae-qt --lib` | **148 passed**（新增偏好映射用例；顺带把 `finds_a_packaged_entry_under_xdg_data_dirs` 标成 `cfg(unix)`，它的搜索路径按 `:` 切分，Windows 盘符里的冒号会把它切坏） |
+| `qmllint qml/TitleBar.qml qml/Glyph.qml` | 无告警 |
+| Windows IME 失焦 | 未重测：取消原语一行未改，只加了「有组合才取消」的前置判断；门槛 2 的 214 项检查仍是该路径的证据 |
+
+**未覆盖，写在这里免得被当成已完成。** macOS 的 `macos_platform.mm` 与 Linux
+的 `reset()` 路径都不在这台机器上执行：编译结论以 `qt-check` 为准，运行时结论
+以 §4「输入法」与「窗口 chrome」两行为准，**目前两行都还是「待目标平台」**。

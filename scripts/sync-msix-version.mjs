@@ -48,22 +48,22 @@ if (!/^\d+\.\d+\.\d+$/.test(appVersion)) {
 }
 
 // Cross-file drift is informational: package.json is the source of truth for
-// this script, and a hard stop here would only ever fire mid-release.
+// this script, and a hard stop here would only ever fire mid-release. The
+// crates are checked because the shell reports its own CARGO_PKG_VERSION and
+// the update feed compares against it.
+const crateVersion = (crate) =>
+  /^version\s*=\s*"([^"]+)"/m.exec(readFileSync(path.join(root, crate, "Cargo.toml"), "utf8"))?.[1];
 const drift = [
-  ["src-tauri/tauri.conf.json", readJson("src-tauri/tauri.conf.json").version],
-  [
-    "src-tauri/Cargo.toml",
-    /^version\s*=\s*"([^"]+)"/m.exec(
-      readFileSync(path.join(root, "src-tauri/Cargo.toml"), "utf8"),
-    )?.[1],
-  ],
+  ["apps/dae/Cargo.toml", crateVersion("apps/dae")],
+  ["crates/dae-qt/Cargo.toml", crateVersion("crates/dae-qt")],
+  ["crates/dae-core/Cargo.toml", crateVersion("crates/dae-core")],
 ].filter(([, version]) => version !== appVersion);
 for (const [file, version] of drift) {
   console.warn(`⚠ version drift: package.json ${appVersion} vs ${file} ${version}`);
 }
 if (releaseMode && drift.length > 0) {
   console.error(
-    "✖ release build: package.json, tauri.conf.json and Cargo.toml must agree (see warnings above)",
+    "✖ release build: package.json and the three crate versions must agree (see warnings above)",
   );
   process.exit(1);
 }

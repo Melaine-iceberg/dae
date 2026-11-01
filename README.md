@@ -1,10 +1,13 @@
 # dae
 
-An aesthetic desktop file manager with an integrated terminal. The shell is
-Rust behind a Qt Quick interface (QML + `cxx-qt`). The Tauri 2 + React 19
-frontend this repository grew up with is still in the tree while the migration
-finishes — `docs/decisions/engine-qt-quick.md` records why it is being replaced
-and what is left — but nothing it contains ships any more.
+An aesthetic desktop file manager with an integrated terminal. Rust behind a
+Qt Quick interface (QML + `cxx-qt`).
+
+The Tauri 2 + React 19 frontend this repository grew up with was removed on
+2026-11-01, once the Qt shell had every feature it had and the release pipeline
+no longer built it — `docs/decisions/engine-qt-quick.md` records why the engine
+changed and §9.13 what the retirement touched. Nothing in this tree is from
+that shell; `git log` and the decision document are where it lives now.
 
 - **Tabs and windows.** Tabs drag between windows and tear off into their own;
   a pool of pre-warmed windows makes a tear-off look immediate.
@@ -34,7 +37,7 @@ Every release carries one artifact per platform, all built from the Qt shell
 notarized on a runner, but nothing here could confirm it actually starts on a
 Mac, and shipping a platform nobody can launch is worse than not shipping it —
 so the leg was removed on 2026-11-01. The macOS-only Rust still compiles in CI
-(`macos-check.yml`, `qt-check.yml`); only the release artifact is gone. See
+(`qt-check.yml`); only the release artifact is gone. See
 [`docs/packaging.md`](docs/packaging.md) §1, which also lists what restoring it
 would take.
 
@@ -60,248 +63,163 @@ Manual verification steps for both installers — signing credentials,
 
 ## Prerequisites
 
-- [Bun](https://bun.sh/) — the release tooling and the retired frontend's
-  scripts run through it.
-- A stable Rust toolchain. The crate is edition 2024, so 1.85 or newer.
+- A stable Rust toolchain. The crates are edition 2024, so 1.85 or newer.
 - **Qt 6.12** with Qt Quick and the `qtmultimedia` module. `cxx-qt` finds
   `qmake` on `PATH` or in `QMAKE`; set both before `cargo build -p dae-app`
   (`QMAKE=…/bin/qmake`, and Qt's `bin/` on `PATH`).
 - Platform build dependencies, the same sets the release workflow installs:
   - **Linux** — `build-essential curl wget file pkg-config cmake ninja-build`,
     plus the GL, XCB/Wayland, xkbcommon, fontconfig, dbus and secret
-    development headers the Qt shell links against; the authoritative list is
-    the `qt` job in `.github/workflows/release.yml`. The retired Tauri shell
-    additionally wants `libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev
-    libsoup-3.0-dev libxdo-dev`.
+    development headers; the authoritative list is the `qt` job in
+    `.github/workflows/release.yml`.
   - **Windows** — MSVC build tools.
     [`winapp`](https://github.com/microsoft/winappCli) is needed only for the
     MSIX packaging script.
   - **macOS** — the Xcode command line tools.
-- Node 24 only for the release tooling (`scripts/sync-msix-version.mjs`, the
-  version check); CI pins it rather than trusting the runner image.
+- [Bun](https://bun.sh/) and Node 24 — only for the release tooling in
+  `scripts/` (packaging, icons, PGO/BOLT, signing) and as the version source the
+  release jobs read. A plain `cargo build` does not touch either.
 
 ## Getting started
 
 ```bash
-bun install
-bun run tauri dev
+export QMAKE=/path/to/Qt/6.12.0/msvc2022_64/bin/qmake   # or the gcc/macos kit
+export PATH=/path/to/Qt/6.12.0/msvc2022_64/bin:$PATH
+cargo build -p dae-app
+cargo run -p dae-app
 ```
 
-`tauri dev` starts Vite from `beforeDevCommand` and builds the Rust side, which
-— in a debug build — regenerates the TypeScript bindings into
-`src/bindings.ts` (`src-tauri/src/lib.rs`). That file is gitignored and is
-imported by the frontend, so anything that type-checks the frontend without
-building Rust first needs it explicitly:
+The build compiles the QML into the binary (see [QML AOT](docs/qml-aot.md)), so
+it needs the QML tooling Qt ships next to `qmake` — `qmlcachegen`, `qmltc` and
+`qmllint` are all looked up through it. A *deployed* tree additionally needs
+`platforms/` beside the executable; without it the updater refuses to run, which
+is what keeps a `target/debug` build from replacing itself.
+
+To try the Windows package locally:
 
 ```bash
-bun run bindings:export   # regenerate src/bindings.ts alone
+bun install             # the release scripts only
+bun run pack:msix       # builds the shell, deploys Qt, packs the MSIX
+bun run verify:msix     # installs it, checks launch, dae:// and the upgrade leg
 ```
-
-`bun run build` does this for you: `beforeBuildCommand` is
-`bun run bindings:export && bun run build`.
 
 ## Scripts
 
+Everything below is release tooling; none of it is needed to build or run the
+app.
+
 | Command | What it does |
 | --- | --- |
-| `bun run tauri dev` | Vite + the Rust app, with HMR; refreshes `src/bindings.ts` |
-| `bun run bindings:export` | Regenerate `src/bindings.ts` from the Rust commands |
-| `bun run dev` | Vite alone on `http://localhost:1420` |
-| `bun run build` | `tsc`, then Vite, into `dist/` |
-| `bun run tauri:build:release` | Release bundle, with `src-tauri/tauri.release.conf.json` |
+| `cargo build -p dae-app` | The shell. Add `--release` for the profile releases ship with |
+| `cargo test -p dae-qt --lib` | The bridge under test (models, appearance, logging, platform reads) |
+| `cargo test -p dae-core --lib` | The domain: filesystem backends, archives, terminal, the update engine |
+| `bun run test:rust` / `test:rust:setup` | The whole workspace through cargo-nextest |
+| `bun run lint:qml` | `qmllint` over `qml/` (needs Qt's `bin/` on `PATH`) |
 | `bun run pack:msix` | Windows: builds the Qt shell, deploys Qt with `windeployqt`, packs the tree as MSIX (`scripts/pack-msix.ps1`) |
 | `bun run verify:msix` | Windows: installs a `.msix` and checks the launch, `dae://` and upgrade legs (`scripts/msix-verify.ps1`; `-InspectOnly` reads the manifest and changes nothing) |
-| `bun run tauri:dev:withidentity` | Windows: register the app with its identity (`winapp run`) |
-| `bun run lint` / `lint:type-aware` | Oxlint over `src` and `vite.config.ts`; add `:fix` to apply |
-| `bun run test:rust:setup` / `test:rust` | cargo-nextest, see [Tests](#tests) |
-| `bun run icons:icon` | Re-render the platform icon set, see [App icon](#app-icon) |
-| `bun run perf:pgo:instrument` / `perf:pgo:merge` / `perf:pgo:build` | Staged LLVM IR PGO build for the Tauri shell, see [PGO and BOLT](docs/pgo-bolt.md) |
-| `bun run perf:pgo:qt:instrument` / `:merge` / `:build` | The same staged PGO for the shipped Qt shell (`cargo build -p dae-app`) |
-| `bun run perf:bolt` | Linux: rewrite the linked Tauri release binary with LLVM BOLT |
-| `bun run perf:bolt:qt` | Linux: the same post-link pass for the Qt shell |
+| `bun run update:feed` | Builds `latest-qt.json` from the signed per-platform zips (`scripts/qt-update-feed.mjs`) |
+| `bun run icons:icon` | Re-render the icon set from the artwork, see [App icon](#app-icon) |
+| `bun run perf:pgo:qt:instrument` / `:train` / `:merge` / `:build` | Staged LLVM IR PGO build for the shell, see [PGO and BOLT](docs/pgo-bolt.md) |
+| `bun run perf:pgo:qt:build:bolt` | The same, plus the BOLT pass (Linux only) |
+| `bun run perf:post-link` | The BOLT step on its own; `release.yml` calls it after the profile build |
 
-Releases are cut by pushing a `v*` tag, which runs
-`.github/workflows/release.yml` for Windows and Linux. The tag
-must match the version in `src-tauri/tauri.conf.json`, `package.json`, and the
-Qt crates (`apps/dae`, `crates/dae-qt`, `crates/dae-core`); CI fails the build
-otherwise. Besides the Tauri installers, the workflow deploys the Qt runtime,
-attaches `dae-<version>-<platform>.zip` files and a signed `latest-qt.json`
-feed, then leaves the release as a draft for manual publishing. `main` is
-additionally type-checked for macOS on every push, since
-`#[cfg(target_os = "macos")]` code is invisible on the other platforms. The Qt
-workspace (`apps/dae`, `crates/dae-qt`) is compiled with Qt 6.12 on Linux and
-macOS by `qt-check.yml`, so a compiler sees those platforms before a release
-would; that job and the release Qt legs also compile the QML ahead of
-time ([QML AOT](docs/qml-aot.md)). The Windows-only native chrome and its
-portable fallbacks are listed in [the engine
-decision](docs/decisions/engine-qt-quick.md).
+Releases are cut by pushing a `v*` tag. `.github/workflows/release.yml` then
+runs one leg per platform, and the tag must match the version in
+`package.json` and the three crates (`apps/dae`, `crates/dae-qt`,
+`crates/dae-core`) or the `draft` job fails before anything is uploaded. The
+`qt` legs build the shell, zip it, sign it with the release minisign key and
+upload the archives; `msix` attaches the Windows package; `qt-feed` writes
+`latest-qt.json` and attaches it last, so the feed never advertises a zip that
+is not on the release yet. The release stays a draft for manual publishing.
+
+`qt-check.yml` compiles the shell on Linux and macOS on every push, so
+`#[cfg(target_os = …)]` code a Windows machine cannot see still meets a compiler
+before release day; that job and the release legs also compile the QML ahead of
+time ([QML AOT](docs/qml-aot.md)).
 
 ## Where things live
 
-- `src-tauri/src/` — Rust. `file_system/` holds the backends (local, `sftp.rs`,
-  `smb.rs`, `archive.rs`) behind one VFS; also `terminal.rs` (the PTY),
-  `system_accent/`, `system_theme/`, `window_material/`, `tab_windows.rs`,
-  `settings.rs`, `default_manager.rs`.
-- `src/features/` — React by area: `explorer/`, `sidebar/`, `workspace/`,
-  `terminal/`, `settings/`, `shell-commands/`.
-- `src/lib/` — the seams between the two halves: `system-accent.ts`,
-  `theme.ts`, `window-material.ts`, `window-focus.ts`.
+- `apps/dae/` — the binary. `src/main.rs` creates the application and the QML
+  engine; `cpp/` holds the one C++ file the shell links directly.
+- `crates/dae-core/` — the domain, with no Qt in it: filesystem backends (local,
+  `sftp`, `smb`, `archive`), the PTY, thumbnails, search, trash, the update
+  engine and signed-feed verification.
+- `crates/dae-qt/` — the bridge. QML-facing models and commands (`workspace`,
+  `model`, `terminal`, `appearance`, `updater`), and `cpp/` for what only the
+  platform knows: window chrome and hit testing, materials, the IME focus guard,
+  the macOS menu and platform reads, Wayland background blur.
+- `qml/` — the interface: `ShellWindow.qml` is the whole window, `Theme.qml` the
+  token source of truth, one file per surface otherwise.
+- `packaging/` — the `.desktop` entries, the launcher wrapper, the macOS plist
+  and entitlements kept for a future re-run, and `icons/` (the artwork and the
+  derived set).
+- `Assets/` — the MSIX tile resources Windows indexes by name.
 
-## Design
+## Performance
 
-Visual and interaction changes are judged against
-[`docs/design-v3.md`](docs/design-v3.md) (the "Aura" language): the two
-planes the window is drawn as — canvas and the one floating sheet — the type
-ramp, the state vocabulary for hover, selection and focus, and the motion
-curves. The token source of truth is `src/App.css`; the document explains why
-the tokens are shaped the way they are.
-[`docs/design-v2.md`](docs/design-v2.md) (Atlas) and
-[`docs/design-principles.md`](docs/design-principles.md) (Quiet Desk) are kept
-as the historical record of the directions Aura replaced.
-
-Performance work is judged against
+Work is judged against
 [`docs/performance-opportunities.md`](docs/performance-opportunities.md): what is
 already measured and done, and the remaining opportunities with the harness and
 the numbers behind each one. Measure before changing anything — `docs/decisions/`
 holds the experiments that were run and declined, and the conditions that would
 reopen them.
 
-Two build-time optimisations are wired up on top of the release profile — LLVM IR
-PGO and, on Linux, a post-link pass with LLVM BOLT. Both shells use them: the Qt
-one takes `--qt` (`perf:pgo:qt:*`), and its cxx-qt C++ bridge joins the profile
-where the compiler is clang with rustc's LLVM major; prebuilt Qt itself is out of
-reach. How to run them, why BOLT is ELF-only, and what CI falls back to when a
-profile or a tool is missing is [`docs/pgo-bolt.md`](docs/pgo-bolt.md). The
-cold-start budget above the Rust side lives in the WebView; the options for it —
-and which ones are ruled out — are
-[`docs/cold-start-js.md`](docs/cold-start-js.md).
+Two build-time optimisations sit on top of the release profile: LLVM IR PGO and,
+on Linux, a post-link pass with LLVM BOLT. The cxx-qt C++ bridge joins the
+profile where the compiler is clang with rustc's LLVM major; prebuilt Qt itself
+is out of reach. How to run them, why BOLT is ELF-only, and what CI falls back to
+when a profile or a tool is missing is [`docs/pgo-bolt.md`](docs/pgo-bolt.md).
 
-## System accent
+## Appearance
 
 The shell's accent is the OS accent — the colour the user already picked in
-Windows, macOS or their Linux desktop — because that is what makes one
-cross-platform app read as native on all three without imitating any of them.
-
-The two halves meet at a pair of functions, `applySystemAccent` /
-`watchSystemAccent`, mirroring the light/dark pair in `src/lib/theme.ts`
-(`applySystemTheme` / `watchSystemTheme`):
-
-```ts
-// src/App.tsx
-useEffect(() => watchSystemAccent(applySystemAccent), []);
-```
-
-- `src-tauri/src/system_accent/` — the platform half. `windows.rs` reads
-  `HKCU\Software\Microsoft\Windows\DWM!AccentColor` and blocks on
-  `RegNotifyChangeKeyValue` for changes; `macos.rs` reads
-  `NSColor.controlAccentColor` and polls (macOS posts nothing when the accent
-  moves); `linux.rs` reads `org.freedesktop.appearance accent-color` from the
-  freedesktop settings portal and polls. Each reports `system-accent-changed`.
-- `src/lib/system-accent.ts` — the CSS half. `watchSystemAccent()` subscribes
-  and pulls once; `applySystemAccent()` is the whole write side.
-
-The CSS contract is in the "accent seam" block of `src/App.css`. Everything
-that means "the accent" — `--primary`, `--primary-foreground`, `--ring`,
-`--selection`, the sidebar's accent roles — derives from two custom
-properties, `--system-accent` and `--system-accent-ink`, and falls back to the
-shipped teal (`--accent-default`: `#1f7a72` light, `#6bbcb6` dark) while they
-are unset. Category colours (`--folder`, the six `--tone-*`) and the semantic
-set (`--destructive` / `--success` / `--warning` / `--info`) deliberately do
-not follow the accent.
-
-`applySystemAccent` derives a WCAG-readable ink from the hue and rejects
-anything it cannot parse, so a platform reader only supplies the colour. Pass
-an ink explicitly where the platform already guarantees one (macOS resolves
-`labelColor` against `controlAccentColor` and is better placed to pick it).
-
-The integrated terminal deliberately does not follow the accent.
-`src/features/terminal/terminal-palette.ts` hands xterm plain hex values, and
-its ANSI 16-colour table is accent-independent by design: ANSI blue means
-*blue* the way `--success` means *success*, so a symlink `ls --color` paints
-stays that colour whatever hue the window is tinted to. Only the terminal's
-own cursor and selection read `--primary` from CSS and so follow the accent
-live.
+Windows or their Linux desktop — because that is what makes one cross-platform
+app read as native without imitating any of them.
+`crates/dae-qt/src/platform.rs` reads it (`HKCU\…\DWM!AccentColor` on Windows,
+`org.freedesktop.appearance accent-color` on Linux), `cpp/platform_watch.cpp`
+watches for changes, and the workspace hands the result to QML, where the accent
+roles derive from `Theme.accent`. Category colours (`Theme.folder`, the tone set)
+deliberately do not follow it: a symlink stays the colour `ls --color` paints it.
 
 ## Decisions
 
-`docs/decisions/` is the decision log (written in Chinese): why the tab
-tear-off went through a pre-warmed window pool, why the browser-style webview
-`reparent` route was rejected, and why the gtk/gio stack is pinned at 0.18 —
-each with the measurements behind it, plus the conditions that would reopen the
-question. Start at [`docs/decisions/README.md`](docs/decisions/README.md); the
-archived PoC it links to is not part of the build.
+`docs/decisions/` is the decision log (written in Chinese): why the engine moved
+to Qt Quick, why the tab tear-off went through a pre-warmed window pool, why the
+browser-style webview `reparent` route was rejected, and why the gtk/gio stack is
+pinned at 0.18 — each with the measurements behind it, plus the conditions that
+would reopen the question. Start at
+[`docs/decisions/README.md`](docs/decisions/README.md).
 
 ## Tests
 
-Rust tests use [cargo-nextest](https://nexte.st/). Install it once, then run
-the suite:
+Rust tests use [cargo-nextest](https://nexte.st/):
 
 ```bash
-bun run test:rust:setup
+bun run test:rust:setup    # cargo binstall cargo-nextest
 bun run test:rust
 ```
 
-Both scripts are Windows-only: `test:rust` invokes
-`src-tauri\target\bin\cargo-nextest.exe`, and `test:rust:setup` installs it
-there with `cargo binstall`. On macOS and Linux, install nextest your usual way
-and call it directly:
-
-```bash
-cargo nextest run --manifest-path src-tauri/Cargo.toml
-```
-
-There is no frontend test runner configured; the frontend is held by `tsc`
-(`bun run build`) and the lint scripts below.
-
-## Lint
-
-Run the regular Oxlint checks with Bun:
-
-```bash
-bun run lint
-```
-
-Type-aware linting is also available through `oxlint-tsgolint` and TypeScript 7:
-
-```bash
-bun run lint:type-aware
-```
-
-Auto-fixable issues can be applied with `bun run lint:fix` or
-`bun run lint:type-aware:fix`.
+`cargo test -p dae-qt --lib` is the fastest loop while working on the bridge. The
+platform manuals no unit test can cover — macOS/Linux window chrome, menus, IME,
+thumbnails, installers — are the checklists in
+[`docs/qt-platform-parity.md`](docs/qt-platform-parity.md) §4.
 
 ## App icon
 
 The app icon (a white goose with an orange beak and a red line on a rounded
 charcoal plate) starts from a 2048×2048 raster artwork:
 
-- `src-tauri/icons/source/goose-source.jpg` — the original artwork
-- `src-tauri/icons/source/goose-master.png` — 1024×1024 master rendered from it
-- `src-tauri/icons/source/goose-preview.png` — 256px preview for quick review
+- `packaging/icons/source/goose-source.jpg` — the original artwork
+- `packaging/icons/source/goose-master.png` — 1024×1024 master rendered from it
+- `packaging/icons/source/goose-preview.png` — 256px preview for quick review
 
-To regenerate every derived icon after replacing the artwork:
-
-```bash
-bun run icons:icon
-```
-
-This renders the master, preview and the 256px in-app mark
-(`src/assets/app-icon.png`), runs `tauri icon` (which rewrites
-`src-tauri/icons/**`: PNG sizes, `icon.icns` for macOS, `icon.ico` for Windows,
-and the `android/`/`ios/` sets), and refreshes the MSIX tiles in `Assets/`.
-The default is the classic `.icns` look; a macOS 26 Tahoe Liquid Glass `.icon`
-(Icon Composer) can be added later — Tauri's bundler supports it since 2.9.
-
-## Recommended IDE Setup
-
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+`bun run icons:icon` re-renders the master, the preview and the MSIX tiles in
+`Assets/`. The per-size PNGs and `icon.ico` the packages use come from the same
+master through `bun tauri icon packaging/icons/source/goose-master.png` — the
+Tauri CLI stays a dev dependency for that and for signing.
 
 ## License
 
 GPL-3.0-or-later — see [`LICENSE`](LICENSE). Chosen because the interface layer
-is moving to Qt 6 (`docs/decisions/engine-qt-quick.md`), whose GPLv3 option this
-matches without the LGPL relinking obligations; the trade-off is that macOS App
-Store distribution is out.
-
-The engine migration lives on `refactor/qt-quick`. `main` still ships the Tauri
-shell until the Qt shell reaches parity.
+is Qt 6, whose GPLv3 option this matches without the LGPL relinking obligations;
+the trade-off is that macOS App Store distribution is out.

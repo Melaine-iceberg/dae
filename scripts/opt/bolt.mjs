@@ -17,7 +17,7 @@
 //     strips by default.
 //
 // `applyBolt` is also the body of the `beforeBundleCommand` hook
-// (`src-tauri/tauri.perf.conf.json`), which is how the release workflow gets a
+// (`scripts/opt/post-link.mjs`), which is how the release workflow gets a
 // BOLT'ed binary into the installers: it runs after `cargo build` and before
 // the bundles are assembled from `target/release/dae`.
 
@@ -57,7 +57,7 @@ const USAGE = `LLVM BOLT for dae's release binary (ELF only).
 
 Options
   --qt           operate on the Qt shell (target/release/dae) instead of the
-                 Tauri binary (src-tauri/target/release/dae)
+                 release binary (target/release/dae)
   --exe PATH     binary to optimise (default: the release build for the shell)
   --seconds N    length of the training run (default 45)
   --in-place     \`all\` replaces the binary it was given (default: keep both)

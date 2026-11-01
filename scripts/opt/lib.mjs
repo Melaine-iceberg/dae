@@ -1,15 +1,15 @@
 // Shared plumbing for the PGO / BOLT builds. `docs/pgo-bolt.md` explains the
 // flow; this file owns the parts that were easy to get wrong:
 //
-//   * **RUSTFLAGS.** `src-tauri/.cargo/config.toml` raises the Windows stack
-//     reserve through `target.x86_64-pc-windows-msvc.rustflags`. Setting the
-//     `RUSTFLAGS` environment variable *replaces* that array in cargo, so a PGO
-//     build that just exported `RUSTFLAGS=-Cprofile-generate=…` would silently
-//     ship an exe with the default 1MB stack and reintroduce the
-//     STATUS_STACK_OVERFLOW that config exists to prevent. Every profile flag
-//     below is therefore appended to the flags cargo would have used anyway,
-//     and the result is handed over as `CARGO_ENCODED_RUSTFLAGS`, the only
-//     form cargo splits without word-splitting on paths that contain spaces.
+//   * **RUSTFLAGS.** A `.cargo/config.toml` in the workspace root sets flags
+//     through `target.<triple>.rustflags`. Setting the `RUSTFLAGS` environment
+//     variable *replaces* that array in cargo, so a PGO build that just
+//     exported `RUSTFLAGS=-Cprofile-generate=…` would silently drop them (the
+//     Windows stack reserve used to be one such flag, in the retired
+//     `src-tauri/.cargo/config.toml`). Every profile flag below is therefore
+//     appended to the flags cargo would have used anyway, and the result is
+//     handed over as `CARGO_ENCODED_RUSTFLAGS`, the only form cargo splits
+//     without word-splitting on paths that contain spaces.
 //   * **LLVM tools.** `llvm-profdata` must come from the toolchain rustc uses,
 //     not from whatever LLVM happens to be on PATH (a mismatched profraw
 //     version is an error at profile-use time, hours later). The rustup
@@ -19,7 +19,7 @@
 //     corpus to list, and — because both profile runtimes write their counters
 //     from exit handlers — a *clean* way out of the process. The app grows one
 //     for this (`DAE_PERF_TRAIN_QUIT_MS`, see `spawn_training_quit` in
-//     `src-tauri/src/lib.rs`), and both callers share `runTrainingWorkload`.
+//     `apps/dae/src/main.rs`), and both callers share `runTrainingWorkload`.
 
 import { spawn, spawnSync } from "node:child_process";
 import {
@@ -38,20 +38,25 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const repoRoot = path.resolve(import.meta.dirname, "..", "..");
-export const tauriDir = path.join(repoRoot, "src-tauri");
 export const qtDir = path.join(repoRoot, "apps", "dae");
 export const IS_WINDOWS = process.platform === "win32";
 export const IS_LINUX = process.platform === "linux";
 export const IS_MACOS = process.platform === "darwin";
 
-/** Which shell the scripts profile. `tauri` is the old WebView shell;
- *  `qt` is the Qt Quick shell (`apps/dae`, cxx-qt bridge). Both are cargo
- *  builds, but they live in different workspaces and tauri build also runs
- *  the bundler, so every output path below depends on this choice. */
-export const SHELLS = ["tauri", "qt"];
+/** Which shell the scripts profile. There is exactly one now: the Qt Quick
+ *  shell (`apps/dae`, cxx-qt bridge), built from the repository root. The
+ *  WebView shell these scripts were written for was retired on 2026-11-01
+ *  (`docs/decisions/engine-qt-quick.md` §9.13); the `--qt` flag survives
+ *  because it is what the release workflow and the script docs pass. */
+export const SHELLS = ["qt"];
 
 export function resolveShell(shell) {
-  const name = shell ?? process.env.DAE_PERF_SHELL ?? "tauri";
+  const name = shell ?? process.env.DAE_PERF_SHELL ?? "qt";
+  if (name === "tauri") {
+    fail(
+      "the Tauri shell has been retired — profile the Qt shell instead (no flag, or --qt)",
+    );
+  }
   if (!SHELLS.includes(name)) fail(`unknown shell "${name}" — expected one of ${SHELLS.join(", ")}`);
   return name;
 }
@@ -190,9 +195,11 @@ export const rustcLlvmVersion = () => {
 /** The `rustflags` arrays cargo would use for `triple`, read out of the
  *  workspace's `.cargo/config.toml`.
  *
- *  The Qt workspace is the repository root, so its config (if one is ever
- *  added) lives in `.cargo/config.toml`; the Tauri package is excluded from
- *  that workspace and keeps its own under `src-tauri/`.
+ *  The workspace is the repository root, so its config (if one is ever added)
+ *  lives in `.cargo/config.toml`. There is none today — the file this parser
+ *  was written for belonged to the retired Tauri package — but the release
+ *  profiles would silently lose its flags if one came back and the PGO build
+ *  simply exported `RUSTFLAGS`.
  *
  *  A hand-written parser is used instead of a TOML dependency because bun and
  *  node disagree about what is available (`Bun.TOML` exists; node has no TOML
@@ -200,7 +207,7 @@ export const rustcLlvmVersion = () => {
  *  anything it does not understand rather than returning `[]`, so a future edit
  *  to the config cannot silently drop the stack reserve. */
 export function cargoConfigRustflags(triple, shell) {
-  const configRoot = resolveShell(shell) === "qt" ? repoRoot : tauriDir;
+  const configRoot = repoRoot;
   const file = path.join(configRoot, ".cargo", "config.toml");
   if (!existsSync(file)) return [];
   const text = readFileSync(file, "utf8");
@@ -263,7 +270,7 @@ export function rustflagsEnv(extra, { shell } = {}) {
   } else {
     base = cargoConfigRustflags(triple, selected);
     if (base.length) {
-      const configRoot = selected === "qt" ? repoRoot : tauriDir;
+      const configRoot = repoRoot;
       say(`carrying ${path.relative(repoRoot, path.join(configRoot, ".cargo", "config.toml"))} rustflags for ${triple}`);
     }
   }
@@ -402,50 +409,24 @@ export const PROFILE_USE_ARGS = process.env.DAE_PGO_WARN_MISSING
 
 export const targetDir = (shell) => {
   const configured = process.env.CARGO_TARGET_DIR;
-  const root = resolveShell(shell) === "qt" ? repoRoot : tauriDir;
+  const root = repoRoot;
   return configured ? path.resolve(repoRoot, configured) : path.join(root, "target");
 };
 
-/** The binary the selected shell produced. Hooks run by tauri get
- *  `TAURI_ENV_TARGET_TRIPLE`; a cross build puts the exe one directory deeper.
- *  The Qt workspace is compiled from the repository root, so its target
- *  directory and `dae` binary sit at the top level. */
+/** The binary the Qt shell produced. A cross build (`--target`) puts the exe
+ *  one directory deeper, which is what `DAE_PERF_TARGET_TRIPLE` describes; a
+ *  host build writes `target/release/dae`. The triple directory is preferred
+ *  only when a binary is actually in it, so a stale `--target` variable cannot
+ *  send a later step looking at a file that was never written. */
 export const appBinary = (profile = "release", shell) => {
   const selected = resolveShell(shell);
   const name = IS_WINDOWS ? "dae.exe" : "dae";
   const bare = path.join(targetDir(selected), profile, name);
-  const triple =
-    process.env.DAE_PERF_TARGET_TRIPLE ||
-    (selected === "tauri" ? process.env.TAURI_ENV_TARGET_TRIPLE : "");
+  const triple = process.env.DAE_PERF_TARGET_TRIPLE || "";
   if (!triple) return bare;
   const scoped = path.join(targetDir(selected), triple, profile, name);
-  // The tauri CLI sets `TAURI_ENV_TARGET_TRIPLE` to the host triple even when
-  // `tauri build` ran without `--target`, so that variable is a hint about the
-  // platform, not a fact about the output directory: a host build still lands
-  // in `target/release/`. Trusting it unconditionally is what made the Linux
-  // `beforeBundleCommand` look for `target/x86_64-unknown-linux-gnu/release/dae`
-  // while the build had written `target/release/dae` — post-link then warned
-  // "nothing to post-process" and skipped BOLT on a release that asked for it.
-  // Prefer the triple directory only when a binary is actually in it.
   return existsSync(scoped) || !existsSync(bare) ? scoped : bare;
 };
-
-/** `tauri build` with the given environment. `--no-bundle` is the default here
- *  because a profiled build is an intermediate artifact: bundling it would
- *  build installers around a binary that is about to be rebuilt.
- *
- *  `DAE_TAURI_BUILD_ARGS` defaults to the release overlay, and that default is
- *  load-bearing: the overlay is what supplies `plugins.updater`, and a release
- *  build compiled without it panics on startup (`PluginInitialization("updater",
- *  "invalid type: null")`). A profiled build that cannot start produces no
- *  profile, so the overlay is not optional here. */
-export function tauriBuild({ args = [], env = {}, bundle = false } = {}) {
-  const bun = which("bun");
-  if (!bun) fail("bun is not on PATH — every build in this repo goes through it");
-  const configured = (process.env.DAE_TAURI_BUILD_ARGS ?? "--config src-tauri/tauri.release.conf.json").trim();
-  const extraArgs = configured ? configured.split(/\s+/) : [];
-  return run(bun, ["tauri", "build", ...(bundle ? [] : ["--no-bundle"]), ...extraArgs, ...args], { env });
-}
 
 /** `cargo build -p dae-app` with the given environment. No bundler and no
  *  frontend step: the Qt shell's QML is compiled into the binary by its build
@@ -456,12 +437,12 @@ export function qtBuild({ args = [], env = {} } = {}) {
   return run(cargo, ["build", "--release", "--package", "dae-app", ...args], { env });
 }
 
-/** Build whichever shell the scripts were told to profile. `--qt` selects
- *  `cargo build -p dae-app`; otherwise the historical `tauri build` path. */
-export function buildShell({ shell, args = [], env = {}, bundle = false } = {}) {
-  return resolveShell(shell) === "qt"
-    ? qtBuild({ args, env })
-    : tauriBuild({ args, env, bundle });
+/** Build the shell these scripts profile. The `bundle` argument is accepted
+ *  and ignored: installers are `release.yml`'s job, and a profiled binary is an
+ *  intermediate artifact that is about to be rebuilt. */
+export function buildShell({ shell, args = [], env = {} } = {}) {
+  resolveShell(shell);
+  return qtBuild({ args, env });
 }
 
 export const isElf = (file) => {
@@ -530,7 +511,7 @@ const TRAINING_ENV = {
 /**
  * Launch the app on the corpus, let it settle, then let it *quit itself*.
  *
- * `DAE_PERF_TRAIN_QUIT_MS` (see `spawn_training_quit` in `src-tauri/src/lib.rs`)
+ * `DAE_PERF_TRAIN_QUIT_MS` (see `spawn_training_quit` in `apps/dae/src/main.rs`)
  * makes the app call `AppHandle::exit` after the given delay, which is a clean
  * shutdown: `atexit` and `.fini_array` hooks run, and that is where both profile
  * runtimes write their counters. Killing the process instead was tried and does

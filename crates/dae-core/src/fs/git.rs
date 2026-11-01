@@ -1692,7 +1692,7 @@ mod tests {
     /// pays the scan, every later one only the filter.
     ///
     /// ```bash
-    /// cd src-tauri
+    /// cd crates/dae-core
     /// # A real repository: the worktree root plus four directories from it.
     /// DAE_GIT_BENCH=K:/code/dae \
     ///   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_git_status_scan
@@ -1952,7 +1952,7 @@ mod tests {
     /// matters is what one event costs — not what one directory costs.
     ///
     /// ```bash
-    /// cd src-tauri
+    /// cd crates/dae-core
     /// DAE_GIT_BENCH=K:/code/dae \
     ///   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_branch_listing
     /// # Or the synthetic worktree of `DAE_GIT_BENCH_FILES` tracked files

@@ -41,7 +41,6 @@ import {
   rustflagsEnv,
   say,
   step,
-  tauriDir,
   toolVersion,
   warn,
   warnOnLlvmMismatch,
@@ -123,7 +122,7 @@ const instrumentFlags = () => ["-C", `profile-generate=${pgoRawDir}`];
 
 /** The instrumented build is the only one that links compiler-rt's profiling
  *  runtime, and `perf-train` is what lets the app's training hook
- *  (`src-tauri/src/lib.rs` and `apps/dae/src/main.rs`) call
+ *  (`apps/dae/src/main.rs`) calls
  *  `__llvm_profile_write_file` — flushing the counters itself instead of
  *  trusting the exit path to finish. Any other build with this feature fails to
  *  link, so it cannot be switched on by accident. */
@@ -314,7 +313,7 @@ async function train({ seconds, target }) {
 
 function status() {
   step("shell");
-  say(`${resolveShell()} — ${path.relative(repoRoot, resolveShell() === "qt" ? qtDir : tauriDir)}`);
+  say(`${resolveShell()} — ${path.relative(repoRoot, qtDir)}`);
   step("toolchain");
   const rustcLlvm = rustcLlvmVersion();
   say(`rustc LLVM ${rustcLlvm ?? "unknown"}`);

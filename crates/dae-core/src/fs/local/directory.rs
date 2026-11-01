@@ -755,7 +755,7 @@ mod tests {
     /// costs on its own.
     ///
     /// ```bash
-    /// cd src-tauri
+    /// cd crates/dae-core
     /// DAE_LISTING_BENCH=K:/dae-listing-bench/big \
     ///   cargo test --lib --release -- --ignored --nocapture reports_where_a_large_listing_spends_its_time
     /// ```

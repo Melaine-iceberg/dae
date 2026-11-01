@@ -1,13 +1,16 @@
 // 渲染鹅图标: JPG 原画 -> 1024 母版 PNG + 256 预览 + MSIX 磁贴资源,
-// 并输出 ASCII 字符画便于验收
+// 并输出 ASCII 字符画便于验收。
+//
+// 母版与预览放在 packaging/icons/source/，磁贴写进 Assets/。Linux 桌面入口
+// 用的 packaging/icons/128x128.png 与 @2x 是从同一张母版导出的；旧 WebView
+// 壳的那份 src/assets/app-icon.png 随它一起退役。
 import sharp from "sharp";
 import { readFileSync } from "node:fs";
 import zlib from "node:zlib";
 
-const SRC = "src-tauri/icons/source/goose-source.jpg";
-const MASTER = "src-tauri/icons/source/goose-master.png";
-const PREVIEW = "src-tauri/icons/source/goose-preview.png";
-const APP_ICON = "src/assets/app-icon.png";
+const SRC = "packaging/icons/source/goose-source.jpg";
+const MASTER = "packaging/icons/source/goose-master.png";
+const PREVIEW = "packaging/icons/source/goose-preview.png";
 const MSIX = "Assets";
 
 // 18% 圆角，与旧图标在 1024 画布上的 186px 半径一致。透明四角让系统
@@ -24,8 +27,7 @@ await sharp(SRC)
   .png()
   .toFile(MASTER);
 await sharp(MASTER).resize(256, 256, { kernel: "lanczos3" }).png().toFile(PREVIEW);
-await sharp(MASTER).resize(256, 256, { kernel: "lanczos3" }).png().toFile(APP_ICON);
-console.log("rendered", MASTER, PREVIEW, "and", APP_ICON);
+console.log("rendered", MASTER, "and", PREVIEW);
 
 // ---- MSIX 资源 ----
 // Windows 的磁贴清单引用 Assets/ 下的固定文件名，尺寸由系统按 DPI 缩放选取。

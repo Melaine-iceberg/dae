@@ -1334,28 +1334,31 @@ Qt Online Installer 装在 `K:/Qt`：
 |---|---|---|---|
 | 4 | 日志与 panic 不落盘 | 旧壳 `src-tauri/src/lib.rs:350` 起配 `tauri-plugin-log`（4 MB 轮转、留 5 份、本地时区），`:429` 的 `install_panic_logger` 把 panic 写进文件。Qt 侧 `crates/dae-qt/Cargo.toml` 没有日志依赖，`config.rs:238` 的 `log()` 只写 stderr，而 release 是 GUI 子系统、没有 stderr；`workspace.rs:2781` 的 `app_log_directory()` 只服务设置页 | **已补**，见 §9.6 |
 | 5 | macOS/Linux 无运行时回归 | `qt-check.yml` 只 `cargo build` + 138 个单测；`qt-platform-parity.md` §4 的 12 项手测全部「待目标平台」 | 12 项逐条记录，回填 parity §6 |
-| 6 | 更新链路未端到端验证 | `dae-core/src/update/install.rs` 已实现 portable 目录替换与 macOS bundle 交换，`DEFAULT_FEED_URL` 指向 `latest-qt.json`；但从未在真实发布物上跑过「下载 → 校验 → 替换 → 重启」 | 在上一版发布物上完成一次真实升级 |
-| 7 | IME 失焦守卫只在 Windows | `cpp/ime.h` 的 `CPS_CANCEL` 只在 Windows 安装；macOS/Linux 失焦语义未测 | 两平台各测一次：换焦点 / 点别处不提交原始拼音 |
-| 8 | macOS 窗口 chrome 未定案 | 红绿灯由 QML 绘制，绿灯走 `showMaximized` 而非全屏；没有 hover 字形；双击标题栏不读系统偏好（parity §2.8） | 三条各自给出决定并记录，与原生文件管理器习惯不冲突 |
+| 6 | 更新链路未端到端验证 | `dae-core/src/update/install.rs` 已实现 portable 目录替换与 macOS bundle 交换，`DEFAULT_FEED_URL` 指向 `latest-qt.json`；但从未在真实发布物上跑过「下载 → 校验 → 替换 → 重启」 | **机制已端到端跑通**（2026-11-01，见 §9.13.2）：上一版部署树上完成 下载→验签→解包→PS 脚本换树→重启，新进程日志报新版本；篡改产物被拒且安装树未动。**但真实发布物这一层仍缺一环**：仓库至今没有任何 Qt 发布产物，且所有 release 都是 prerelease，`releases/latest/download/latest-qt.json` 实测 **404**。详见 §9.13.2 末尾 |
+| 7 | IME 失焦守卫只在 Windows | `cpp/ime.h` 的 `CPS_CANCEL` 只在 Windows 安装；macOS/Linux 失焦语义未测 | **已补**，见 §9.13.1：守卫三平台统一，Windows 仍走 IMM，macOS/Linux 走 `QInputMethod::reset()`（两平台的该实现均按源码核对为「取消」），只在 `preeditText` 非空时触发。**运行时仍待 macOS/Linux 手测**（parity §4） |
+| 8 | macOS 窗口 chrome 未定案 | 红绿灯由 QML 绘制，绿灯走 `showMaximized` 而非全屏；没有 hover 字形；双击标题栏不读系统偏好（parity §2.8） | **已定案并落地**，见 §9.13.1：绿灯 = 原生全屏，hover 显示绘制字形，双击读 `AppleActionOnDoubleClick`（每次双击现读，无需重启）。macOS 运行时待手测 |
 
 ### 9.4 收尾（P2，等 §9.2 与 §9.3 关闭后再做）
 
 | # | 项 | 现状 | 动作 |
 |---|---|---|---|
-| 9 | 旧壳与前端未退役 | 根 `Cargo.toml` 仍 `exclude = ["src-tauri"]`；`src-tauri` 105 个 `.rs` 加独立锁文件；`src/` 36.7k LOC、`bindings.ts`、`package.json` 里 15 个 `tauri:*` 脚本 | 删 `src-tauri`、`src/`、`index.html`、`vite.config.ts` 与相关脚本，重写 README |
-| 10 | 旧 CI 未下线 | `linux-check.yml`、`macos-check.yml` 仍编 `src-tauri`；`perf-check.yml` **已改指 Qt**（`--qt`，检查 `target/release/dae`，见 §9.8） | 删除剩余两条，或改指 `dae-app` |
+| 9 | 旧壳与前端未退役 | 根 `Cargo.toml` 仍 `exclude = ["src-tauri"]`；`src-tauri` 108 个文件（其中 42 个 `.rs`）加独立锁文件；`src/` 172 个文件、约 39.8k 行，另有 `bindings.ts` 与 `package.json` 里 15 个 `tauri:*` 脚本 | **已完成**（2026-11-01，见 §9.13.3）：`src-tauri/`、`src/`、`index.html`、`vite.config.ts`、`tsconfig*.json`、`components.json` 全部删除；图标母版迁到 `packaging/icons/`；`package.json` 只留发布工具链（15 个脚本，依赖只剩 `@tauri-apps/cli` 用于 minisign 签名、`sharp` 用于图标）；README 重写 |
+| 10 | 旧 CI 未下线 | `linux-check.yml`、`macos-check.yml` 仍编 `src-tauri`；`perf-check.yml` **已改指 Qt**（`--qt`，检查 `target/release/dae`，见 §9.8） | **已完成**（2026-11-01，见 §9.13.3）：两条工作流删除，覆盖由 `qt-check.yml`（Linux+macOS 构建、`dae-qt` 单测）承担；`release.yml` 的 Tauri 构建作业换成 `draft` 作业（版本校验 + `gh release create --draft`），MSIX 与 feed 两条作业改挂它 |
 | 11 | PGO / BOLT 的 C++ 半 | **已补**，见 §9.8：`--qt` 走 `cargo build -p dae-app`；构建脚本在 clang 且 LLVM 主版本匹配时给桥加 `-fprofile-instr-generate/-use`，其余工具链警告并跳过（§8.6） | Rust + 桥都进 profile；Qt 预编译部分明确不在范围内 |
-| 12 | 文档与注释漂移 | `crates/dae-qt/src/lib.rs:32` 仍写 `dae:// registration … not implemented yet`，而 `activation.rs:238` 已写注册表；`README.md` 仍把 Tauri 2 + React 19 当日发货壳 | 逐条对齐代码 |
+| 12 | 文档与注释漂移 | `crates/dae-qt/src/lib.rs:32` 仍写 `dae:// registration … not implemented yet`，而 `activation.rs:238` 已写注册表；`README.md` 仍把 Tauri 2 + React 19 当日发货壳 | **已完成**（2026-11-01，见 §9.13.3）：`dae-qt/lib.rs` 的平台表改成三平台 IME 现状；`dae-core/lib.rs` 不再说「两个壳都链接本 crate」；`paths.rs` 的 identifier 断言从已删除的 `tauri.conf.json` 改指 `packaging/qt/Info.plist`（否则该单测无法编译）；3 处基准注释里的 `cd src-tauri` 改成 `cd crates/dae-core`；README 全量重写 |
 
 ### 9.5 顺序
 
 1. **§9.3-4 日志与 panic 落盘** —— **已完成（§9.6）**。体量最小、与旧壳零耦合，决定后续问题能否定位；
 2. **§9.2-1 MSIX 改指 Qt 产物** —— **已完成（§9.7）**；
 3. §9.2-2 / §9.2-3 证书与安装包（需要产品决策，尽早启动）；
-4. §9.3-5 平台手测，回填 parity §6；
-5. §9.4 退役。
+4. §9.3-5 平台手测，回填 parity §6 —— **唯一剩下的闸门**；
+5. §9.4 退役 —— **已完成（§9.13.3）**。
 
 退役必须排在最后：平台验证完成之前，旧壳是 A/B 与 `git revert` 的唯一回退路径（§7）。
+（2026-11-01 补记：这一条的前提已经松掉了 —— 旧壳自己从未在 macOS / Linux 上跑过，
+A/B 的价值只存在于「Qt 壳的 Windows 行为是否退化」，而 Windows 已经由 §9.7.3 /
+§9.10 / §9.12.3 的真机安装覆盖。所以退役先于第 4 步执行，理由见下面 2026-11-01 补记。）
 
 MSIX 落地后分出两件应该插队的事：**在真实机器上装一次，走一遍深链与升级**
 （§9.7.3-1），以及**把默认管理器与开机启动改成包身份注册**（§9.7.3-2）——
@@ -1366,6 +1369,14 @@ MSIX 落地后分出两件应该插队的事：**在真实机器上装一次，�
 > §9.11（别名路径、更新说明、`scripts/msix-verify.ps1`）。剩下的是在真机上跑
 > 一遍，命令与判据在 [`../packaging.md`](../packaging.md)。第 4 步（平台手测，
 > 回填 parity §6）与第 5 步（退役）顺序不变。
+>
+> **2026-11-01（补记）：第 5 步已完成**，见 §9.13.3 —— `src-tauri/`、`src/`、旧
+> CI 全部撤除，脚本与 CI 改指 Qt 产物，验证为 `cargo build -p dae-app`、`dae-core`
+> 303 项与 `dae-qt` 148 项单测、`qmllint` 零告警。退役之所以能排在平台手测之前，
+> 是因为第 4 步剩下的已经不是「旧壳能否跑」（§9.12.3 已在真机装过包），而是
+> 「Qt 壳在 macOS / Linux 上的输入法与窗口行为是否对得上」——这一层旧壳帮不上忙，
+> 留着它也不再是回退路径。**现在唯一剩下的闸门是 §9.3-5 平台手测（parity §4
+> 的 12 项，重点看「输入法」与「窗口 chrome（macOS）」两行）。**
 
 ### 9.6 记录：日志与 panic 落盘（2026-10-30）
 
@@ -1764,3 +1775,130 @@ GPU 路径只在真机上验过，这也是「软件渲染能起来」不算通�
   `macos-latest` 腿继续编译，防止代码腐烂；`packaging/qt/Info.plist` 保留。
 
 恢复清单与「先弄到一台 Mac」这个前提写在 [`../packaging.md`](../packaging.md) §1.4。
+
+### 9.13 记录：IME 三平台、macOS chrome、更新链路验证、旧壳退役（2026-11-01）
+
+这一节把 §9.3-6/7/8 与 §9.4-9/10/12 一次收掉。四条各有各的证据形式，
+所以分开写；平台手测那一层仍然没有做，本节最后一条统一交代。
+
+#### 9.13.1 IME 失焦与 macOS 窗口 chrome
+
+细节在 [`../qt-platform-parity.md`](../qt-platform-parity.md)：IME 见该文件
+2026-11-01 小节与 §2.6 上方的守卫说明，chrome 见 §2.8（三条决定、落点文件、
+明确放弃的 Option+双击）。这里只记结论与方向：
+
+- **IME**：规则的表述从「Windows 上装一个 IMM 过滤器」改成「焦点离开时组合
+  被取消」，取消原语按平台选。Windows 仍是 `CPS_CANCEL`（门槛 2 的原路径、
+  一行未改）；macOS/Linux 走 `QInputMethod::reset()`，依据是 Qt 源码里
+  `QCocoaInputContext::reset()` 与 `QIBusPlatformInputContext::reset()` 都是
+  取消语义（前者 `discardMarkedText` + `unmarkText`，后者 `context->Reset()`），
+  与 Windows 的 `QWindowsInputContext::reset()` 正好相反。新增
+  `focus_has_composition()` 前置判断，无组合时整条守卫不触发，所以没有为
+  Linux 引入「每次点空白都走一次 D-Bus」的代价。
+- **macOS chrome**：绿灯改成原生全屏（`showFullScreen`），「铺满可视区域」
+  归双击；hover 出绘制字形（`Glyph.qml` 新增 `windowFullScreen` /
+  `windowExitFullScreen`）；双击读 `AppleActionOnDoubleClick`，经
+  `WindowController.titlebarDoubleAction()` 每次现读。顺带把三颗灯的
+  `Accessible.name` 与全屏状态联动。
+
+#### 9.13.2 更新链路：机制端到端跑通，真实发布物仍缺一环
+
+**做了什么。** 新增 `crates/dae-core/examples/update_e2e.rs`——一个只调生产
+入口（`feed_url` / `check_for_update` / `download_and_install`）的 harness，
+用来在任意一台机器上重跑「上一版装好的树 → 检查 → 下载 → 验签 → 解包 →
+换树 → 重启」。它不是测试替身：走的每一个函数都是 app 自己走的那一个。
+
+**这一次怎么跑的（Windows 11，Qt 6.12.0）。**
+
+1. `dist/`（0.5.0 的部署树）复制两份：`app/` 当安装目录，`release/` 当新产物。
+2. 临时把 `apps/dae`、`crates/dae-qt` 版本改成 0.5.1，`cargo build -p dae-app
+   --release`（4 分 27 秒），把新 `dae.exe` 换进 `release/`，另加一个只在
+   新产物里存在的 `UPDATE-PROOF.txt`。
+3. `Compress-Archive` 打成 `dae-0.5.1-windows-x86_64.zip`（46.5 MB），
+   `tauri signer sign` 签名，写一份 `latest-qt.json`。
+4. `node` 起一个本地静态服务器，`DAE_UPDATE_ENDPOINT` 指过去；harness 以
+   `app/dae.exe` 的身份运行（`InstallLayout::current()` 因此认它为 portable 安装）。
+
+**结果。**
+
+| 步骤 | 证据 |
+|---|---|
+| 检查 | `available 0.5.1`，artifact URL 与 notes 与 feed 一致 |
+| 下载 + 验签 | 进度 0→100；签名用发布公钥同一套流程校验通过 |
+| 解包 + 布局检查 | 暂存目录建在安装目录的同级；`staged_launch` 确认 `dae.exe` 在 |
+| 换树 + 重启 | 脚本等 harness 退出后覆盖安装目录、删暂存、启动新 exe |
+| 新版本在跑 | `app/UPDATE-PROOF.txt` 出现；`app/dae.exe` 的 SHA-256 与新产物逐字节相同；`tasklist` 里 `dae.exe`（PID 25836）在跑；日志新增一行 `[2026-11-01 20:39:06.492][INFO][dae] dae 0.5.1 starting on windows (x86_64)` |
+| 篡改被拒 | 往 zip 尾部追加字节、签名不变：`install failed: the update signature is invalid: The signature verification failed`；安装目录未新增文件、没有残留暂存目录 |
+
+**因此可以说的和不能说的。**
+
+- 能说：`download → verify → extract → swap → relaunch` 这条链在真实部署树上
+  是通的，签名校验是真在拦的（不是装饰）。
+- **不能说「在上一版发布物上完成了一次真实升级」**：发布物那一条腿仍然是空的。
+  仓库至今**没有任何 Qt 发布产物**——v0.5.0 的资产是旧壳的
+  `setup.exe`/`msi`/`AppImage`/`deb`/`app.tar.gz` 与 `latest.json`，没有
+  portable zip、没有 `latest-qt.json`。而且所有 release 都标着 prerelease，
+  而 `releases/latest/download/...` 会跳过 prerelease，所以**默认 feed URL
+  实测 404**：
+
+  ```
+  https://github.com/Melaine-iceberg/dae/releases/latest/download/latest-qt.json  → 404
+  https://github.com/Melaine-iceberg/dae/releases/latest/download/latest.json     → 404
+  ```
+
+  这意味着**今天装出来的 dae 检查更新一定失败**（启动检查只记日志，所以表现
+  是「永远没有更新」）。两条修法，需要产品决定，任选其一：
+  1. 下一个 tag 发布成**非 prerelease** 的正式版——零代码改动，`release.yml`
+     的 `qt`/`msix`/`qt-feed` 已经会产出 zip 与 `latest-qt.json`；
+  2. 或把 `DEFAULT_FEED_URL` 改成能看见 prerelease 的发现方式（例如列
+     `api.github.com/repos/…/releases` 取最新一条的 `latest-qt.json`），代价是
+     引入一次 API 调用与限流语义。
+
+  在此之前，§9.3-6 的验收只能算「机制通过、发布物待验」。
+
+#### 9.13.3 退役：`src-tauri` / React / 旧 CI
+
+按 §9.4 的动作清单执行，顺序是先迁走还要用的资源，再删：
+
+- **迁走**：`src-tauri/icons` → `packaging/icons`（`git mv`，保留 `source/`
+  母版、`icon.ico`、`32/64/128/256` 与 MSIX 需要的方形图标）。
+- **删除**：`src-tauri/`（108 个文件，42 个 `.rs`；工作区里还带一个 80 GB 的
+  未跟踪 `target/`）、`src/`（172 个文件、约 39.8k 行）、`index.html`、
+  `vite.config.ts`、`tsconfig.json`、`tsconfig.node.json`、`components.json`。
+  这一次提交合计 305 个文件、−64,434 行。
+- **根 `Cargo.toml`**：去掉 `exclude = ["src-tauri"]`，并把「与旧壳的
+  release profile 逐字段对齐」那段注释改写成「这就是发布用的 profile」。
+- **`package.json`**：从 29 个脚本、47 个依赖收成 15 个脚本与 2 个 devDependency
+  （`@tauri-apps/cli` 只留作 minisign 签名与 `tauri icon`，`sharp` 给图标渲染）。
+  删掉的 `tauri:dev`、`dev`、`build`、`lint*`、`bindings:export`、
+  `perf:pgo:*`（无 `:qt` 的旧壳变体）在 Qt 壳上没有对应物：QML 由
+  `cargo build` 编进二进制，lint 用 `qmllint`。
+- **脚本**：`scripts/opt/lib.mjs` 的 shell 选择只剩 `qt`，`--qt` 参数保留（发布
+  流程与文档都在用），显式传 `tauri` 会得到一句「已退役」；`bun scripts/opt/
+  post-link.mjs` 仍在（Qt 腿的 BOLT 步骤），只是不再由 Tauri 的
+  `beforeBundleCommand` 调用；`render-icon.mjs`、`sync-msix-version.mjs` 的路径
+  与版本来源改到 `packaging/icons` 与三个 crate。
+- **CI**：删 `linux-check.yml`、`macos-check.yml`（都只编 `src-tauri`），覆盖面
+  由 `qt-check.yml` 接管；`release.yml` 的 `build`（Tauri 矩阵 + `tauri-action`
+  创建草稿）换成 `draft`（版本校验 + `gh release create --draft`），`msix` 与
+  `qt-feed` 的 `needs` 改挂 `draft`，六处 `src-tauri/icons` 路径改到
+  `packaging/icons`。
+- **注释与 README**：见 §9.4-12 那一行的记录。
+
+**验证。**
+
+| 项目 | 结果 |
+|---|---|
+| `cargo build -p dae-app` | 通过 |
+| `cargo test -p dae-core --lib` | **303 passed / 10 ignored**（`paths.rs` 的 identifier 断言改指 `Info.plist` 后仍有效） |
+| `cargo test -p dae-qt --lib` | **148 passed** |
+| `node --check` | `lib.mjs` / `pgo.mjs` / `bolt.mjs` / `post-link.mjs` / `render-icon.mjs` / `sync-msix-version.mjs` 全部通过 |
+| `node scripts/sync-msix-version.mjs --release` | `✅ MSIX version: 0.5.0.0 → 0.5.0.0 (app 0.5.0)`，无漂移告警 |
+| `qmllint qml/…` 改动文件 | 无告警 |
+
+**未验证，写在这里。** `release.yml` 的改动没有任何东西在本地跑过——`draft`
+作业要等下一个 tag 才会第一次执行。这也是它被写成「先 `gh release view` 再
+`gh release create`」的原因：重跑一次不会因为草稿已存在而失败。旧壳本身就是
+回退路径，所以退役确实排在了最后（§9.5 第 5 步）；现在回退靠 `git revert`
+这一个提交，而平台手测（§9.3-5）在退役之后仍是可以独立进行的——它验证的是
+Qt 壳，不需要旧壳在树里。

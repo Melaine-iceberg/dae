@@ -1,10 +1,13 @@
-// `beforeBundleCommand` hook — wired by `src-tauri/tauri.perf.conf.json`, which
-// only the Linux release leg adds.
+// The BOLT step for the release binary.
 //
-// Tauri runs this after `cargo build` and before the installers are assembled,
-// which is the one window in which the binary can still be rewritten: bundling
-// copies `target/release/dae` into every package and signs the updater artifact
-// afterwards, so anything that happens here lands in all of them.
+// It runs between the PGO build and packaging, which is the one window in which
+// the binary can still be rewritten: the legs below copy `target/release/dae`
+// into the zip, the MSIX tree and the .deb/.rpm afterwards, so anything that
+// happens here lands in all of them.
+//
+// History: this used to be a `beforeBundleCommand` hook of the retired Tauri
+// shell (`src-tauri/tauri.perf.conf.json`). `release.yml` now calls it directly
+// after `cargo build -p dae-app --release`, with the same arguments.
 //
 // It is deliberately best-effort. A release that loses its BOLT pass is still a
 // working release, while a release that fails to build because `llvm-bolt` was

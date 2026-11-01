@@ -38,7 +38,6 @@ devcert.pfx
 *.sln
 *.slnx
 *.sw?
-src/bindings.ts
 
 /skills-lock.json
 /.ai/mcp/mcp.json
@@ -70,10 +69,8 @@ NOTES.md
 # never source. See docs/pgo-bolt.md.
 /.perf/
 
-# Rust build output for the workspace. `src-tauri` keeps its own `/target/`
-# and `Cargo.lock` (ignored by `src-tauri/.gitignore`) because it is excluded
-# from the workspace until the Tauri shell retires. See
-# docs/decisions/engine-qt-quick.md §4.
+# Rust build output for the workspace. The Qt shell is built from the
+# repository root, so there is one target directory and one Cargo.lock.
 /target/
 # Leftovers from building `crates/dae-core` standalone before the workspace
 # landed; harmless if present, never source.
