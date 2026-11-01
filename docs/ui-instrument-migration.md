@@ -97,23 +97,52 @@ cargo build -p dae-app        # 三平台 CI 使用的真实构建
 
 ### 3.2 字号
 
-系统无衬线字体继续沿用平台栈；等宽仍用 `Theme.monoFamily`。字号只允许以下 8 档（一屏同时出现不超过 4 档）：
+系统无衬线字体继续沿用平台栈；等宽仍用 `Theme.monoFamily`。字号只允许以下 6 档（一屏同时出现不超过 4 档）：
 
 | 角色 | px | 用途 |
 | --- | --- | --- |
 | micro | 11 | 列头、分组标签、快捷键、状态附件 |
-| caption | 11.5 | 状态条、空状态提示、预览元数据标签 |
-| small | 12 | 标签页、文件元数据、表格数字、菜单辅助 |
-| body | 12.5 | 侧栏行、面包屑、菜单项、命令面板项 |
-| name | 13 | 文件名、列表主行、对话框正文 |
-| emphasis | 13.5 | 预览文件名、命令面板输入 |
-| title | 14 | 预览/对话框标题 |
+| caption | 12 | 状态条、空状态提示、预览元数据标签 |
+| small | 12 | 标签页、文件元数据、表格数字、菜单辅助（与 caption 同值，别名） |
+| body | 13 | 侧栏行、面包屑、菜单项、命令面板项 |
+| name | 13 | 文件名、列表主行、对话框正文（与 body 同值，别名） |
+| emphasis | 15 | 预览文件名、命令面板输入 |
+| title | 17 | 预览/对话框标题 |
 | display | 22 | 多选预览的计数；不要用于标题或空状态 |
 
-- 全仓删除 `pixelSize: 10`（`ContextMenu.qml` 的组标题目前是 10）和更小值。
+> **为什么从 8 档收到 6 档（2026-11 修订）。** 本表原先写的是
+> `11 / 11.5 / 12 / 12.5 / 13 / 13.5 / 14`，六个连续档位挤在 3px 之内。`font.pixelSize`
+> 在 Qt 里是 **int**（落在 `QFont::setPixelSize(int)`），半像素档无法表达，赋值时被取整到
+> 相邻整数：`caption` 并进 `micro` 或 `small`，`body` 并进 `small` 或 `name`，`emphasis`
+> 并进 `name` 或 `title`。八个名字最多只画出五个尺寸——名字承诺的层级和屏幕上实际存在的
+> 层级不是一回事，这正是「某些控件和它里面的字像是两把尺子量出来的」的来源。
+>
+> 现在全部取整数，并在必须互相区分的档位之间留出可见间距。退役的 `small` / `name` 保留为
+> 别名（分别等于 `caption` / `body`），避免旧调用点重新引入半像素档。`title` 由 14 提到 17：
+> 14 是任何别的档位都够不到的孤岛，44 高的对话框标题区里最大的字比列表行正文还小，整个标题
+> 区读起来是一块空 chrome。上限定在 17 而非 Web 壳的 22，是因为 `SettingsPanel` 仍用绝对
+> 坐标叠放标题与副标题（y 16/42、y 20/50），详见 `DialogHeader.qml` 的注释。
+>
+> **阅读本文档其余部分时的换算**：下文（含 §4 各组件规格）仍按旧值描述，一律按下表换算——
+> `11.5 → caption 12`、`12.5 → body 13`、`13.5 → emphasis 15`、写作标题的 `14 → title 17`，
+> `11` / `12` / `22` 不变。
+
+- 全仓已无 `pixelSize` 字面量：208 处硬编码在本次修订中全部替换为 `Theme.type*`（替换前后
+  数值相等，因此渲染零变化）。新代码只允许引用 token。
 - 尺寸、日期、传输速率、容量一律 `font-variant-numeric: tabular-nums`（QML 用 `font.features: {"tnum": 1}` 或继续用现有等宽/`Text` 数字设置）。
 - 字重只用 Regular / Medium（400/500）；标题不要 Bold。
 - 一屏同时出现的字号不超过 4 档。
+
+行高三档，作为倍率而非像素值（Qt 的 `lineHeight` 默认是比例，`Text.ProportionalHeight`）：
+
+| token | 值 | 用途 |
+| --- | --- | --- |
+| leadingTight | 1.35 | 单行 chip、键帽、两行以内的提示 |
+| leadingBody | 1.45 | 默认；等于 Web 壳 14.5/21 的比例 |
+| leadingProse | 1.6 | 需要真正阅读的段落 |
+
+- 旧调用点散落 1.2 / 1.25 / 1.3 / 1.4 / 1.5 / 1.6 六个值，在 12px 字下分别取整成
+  14 / 15 / 16px，给本应相同的两段文字之间留下 1px 抖动；现已全部收敛到上表三档。
 
 ### 3.3 几何
 
@@ -126,47 +155,73 @@ cargo build -p dae-app        # 三平台 CI 使用的真实构建
 | 表头 | 28 / 32 / 36 | 与行高成对 |
 | 标签 | 32，上边距 6 | 激活下划线 2px，左右各缩进 8 |
 | 新标签按钮 | 26 × 26 | 上边距 9 |
-| 导航按钮 | 28 × 28 | 圆角 4 |
-| 面包屑行高 | 28 | 文字 12.5 |
-| 搜索框 | 210 × 28 | 圆角 4；聚焦 1px signal |
-| 搜索筛选条 | 32 | chip 22，圆角 2 |
+| 导航按钮 | 28 × 28 | 圆角 6 |
+| 面包屑行高 | 28 | 文字 body 13 |
+| 搜索框 | 210 × 28 | 圆角 6；聚焦 1px signal |
+| 搜索筛选条 | 32 | chip 24，圆角 4 |
 | 侧栏 | 216（180–280 可拖） | 6px 拖拽缝 |
 | 预览 | 300（260–420 可拖） | 6px 拖拽缝；默认 300 |
-| 菜单 | 212–286 宽 | 内边距 4，行高 32，圆角 8 |
-| 命令面板 | 560 宽 | 顶部 64，圆角 8；输入区 44 |
-| 简单对话框 | 440 宽 | 顶部 64，圆角 12；标题区 44 |
-| 数据型对话框 | 现有功能宽度 | 属性/批量重命名等可保持 600，但圆角 12、标题区 44 |
-| Toast | 34 高 | 底部 38，圆角 4 |
-| 传输浮层 | 326 宽 | 底部 32，圆角 8 |
+| 菜单 | 212–286 宽 | 内边距 4，行高 32，圆角 12 |
+| 命令面板 | 560 宽 | 顶部 64，圆角 12；输入区 44 |
+| 简单对话框 | 440 宽 | 顶部 64，圆角 16；标题区 44 |
+| 数据型对话框 | 现有功能宽度 | 属性/批量重命名等可保持 600，但圆角 16、标题区 44 |
+| Toast | 36 高 | 底部 38，圆角 6 |
+| 传输浮层 | 326 宽 | 底部 32，圆角 12 |
 | 终端 | 132 高 | 内容区内嵌 |
-| 圆角 | 2 / 4 / 8 / 12 | xs / sm / md / lg，全部进 Theme |
+| 圆角 | 4 / 6 / 12 / 16 | xs / sm / md / lg，全部进 Theme |
+| 控件高度 | 20 / 24 / 28 / 32 / 36 | xs / sm / md / lg / xl，4px 网格 |
 
 - 表格列宽（宽屏）：名称 `1fr`、类型 108、大小 92、修改时间 142；中屏砍类型，窄屏再砍大小。
 - 侧栏容量条 2px，填充 `signal` 50% 不透明度；>90% 换 `warn`。
 - 图标尺寸：行图标 16、侧栏图标 14、菜单/面板图标 14、空状态 28、网格字形 38。
 - 所有 1px 线用 `hairline`；只有输入框、浮层、抬起面用 `hairlineStrong`。
 
+> **2026-11 修订：圆角与控件高度。** 本节原先写圆角 `2 / 4 / 8 / 12`——比 Web 壳
+> （`App.css` 的 `--radius-xs` 4 / `--radius-md` 6 / `--radius-xl` 12 / `--radius-panel` 16）
+> 整体低一档。两个壳并排看时，同一个按钮换壳就变形状，那读起来是渲染故障而不是密度
+> 选择；且 2px 在 16px 的小件上是一个看不见的角。现已对齐为 `4 / 6 / 12 / 16`，其中
+> `radiusLg` 就承担 Web 壳的 `panel` 角色，不再单独设档。依赖具体半径做补偿的布局要
+> 同步——`SettingsPanel` 侧栏压平内角的矩形宽度已从 10 改为 `Theme.radiusLg`。
+>
+> 控件高度原先散落 `18 / 20 / 22 / 24 / 26 / 28 / 30 / 34`，其中一半不是 4 的倍数。
+> 22 与 24、26 与 28、30 与 32、34 与 36 相差 2px，正是「本应对齐却差一点」的来源，而
+> 八个值没有一个有名字，同一个 34 在五个不相关的文件里各写了一遍。现收敛为
+> `controlXs 20 / controlSm 24 / controlMd 28 / controlLg 32 / controlXl 36`，与
+> `rowCompact 28` / `rowDefault 32` 共处同一条 4px 网格（一行高和一个按钮高本就是同一
+> 个 band，但行可以长高容纳两行文字、控件不能，所以名字分开）。
+>
+> 仍未收敛的三处单点特例：`FilterMenu` 29、`Sidebar` 42、`SettingsPanel` 46。它们各自
+> 只出现一次，是否有意（例如给 1px 边框留量）需要目视确认后再决定归到哪一档。
+
 建议在 `Theme.qml` 增补这份最小 token 集，组件只引用它们：
 
 ```qml
-readonly property int radiusXs: 2
-readonly property int radiusSm: 4
-readonly property int radiusMd: 8
-readonly property int radiusLg: 12
+readonly property int radiusXs: 4
+readonly property int radiusSm: 6
+readonly property int radiusMd: 12
+readonly property int radiusLg: 16
 readonly property int rowCompact: 28
 readonly property int rowDefault: 32
 readonly property int rowSpacious: 40
+readonly property int controlXs: 20
+readonly property int controlSm: 24
+readonly property int controlMd: 28
+readonly property int controlLg: 32
+readonly property int controlXl: 36
 readonly property int shellTitle: 44
 readonly property int shellNav: 44
 readonly property int shellStatus: 28
-readonly property real typeMicro: 11
-readonly property real typeCaption: 11.5
-readonly property real typeSmall: 12
-readonly property real typeBody: 12.5
-readonly property real typeName: 13
-readonly property real typeEmphasis: 13.5
-readonly property real typeTitle: 14
-readonly property real typeDisplay: 22
+readonly property int typeMicro: 11
+readonly property int typeCaption: 12
+readonly property int typeSmall: 12 /* retired alias → caption */
+readonly property int typeBody: 13
+readonly property int typeName: 13 /* retired alias → body */
+readonly property int typeEmphasis: 15
+readonly property int typeTitle: 17
+readonly property int typeDisplay: 22
+readonly property real leadingTight: 1.35
+readonly property real leadingBody: 1.45
+readonly property real leadingProse: 1.6
 readonly property color rowRule: dark ? "#0bffffff" : "#09000000"
 readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 ```
@@ -186,7 +241,7 @@ readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 
 - 高度 44；mac 左侧 78 让位红绿灯；Windows/Linux 右侧窗口按钮 46×44 / 40×44。
 - 应用标记 17×17，只在非 mac 显示；mac 不画应用图标。
-- 标签：32 高、上边距 6、圆角 4（只圆上边），未激活 `inkMuted`，激活 `fill` 底 + `ink`。
+- 标签：32 高、上边距 6、圆角 6（只圆上边），未激活 `inkMuted`，激活 `fill` 底 + `ink`。
 - 激活标签底部 2px `signal` 短线，左右各缩进 8；关按钮只在悬停/激活时出现。
 - Windows 关闭按钮悬停 `#c42b1c` 背景 + 白字；最小化/最大化悬停 `hover`。
 - 标签拖动、撕出命中区域不要被新的圆角/内边距吃掉。
@@ -199,9 +254,9 @@ readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 
 `后退 前进 上一级 | 面包屑 … [右侧] 清空(仅回收站) 搜索 视图 更多`
 
-- 高 44，左右内边距 8，按钮 28×28，圆角 4。
+- 高 44，左右内边距 8，按钮 28×28，圆角 6。
 - **删除左侧汉堡菜单**。侧栏显隐放进「视图」菜单和命令面板；窄屏自动收起，不靠汉堡。
-- 面包屑：12.5px，当前段 `ink` + 500，其余 `inkMuted`；每个 crumb 24 高、圆角 3、悬停 `hover`。
+- 面包屑：12.5px，当前段 `ink` + 500，其余 `inkMuted`；每个 crumb 24 高、圆角 4、悬停 `hover`。
 - 路径编辑：等宽 12，`field` 底，1px `signal` 边，行高 28。
 - 搜索：默认只显示放大镜按钮；点开后右侧出现 210×28 输入框，`Esc` 先清空、再收起。
 - 「视图」按钮显示当前视图图标，点开菜单（列表/网格/分栏 + 预览/终端开关）；「更多」保留刷新、隐藏文件、排序、设置等。
@@ -255,7 +310,7 @@ readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 
 ### 5.2 行
 
-- 行高 28，圆角 4，左右内边距 10，图标 14，标签 12.5，右侧信息 11 等宽。
+- 行高 28，圆角 6，左右内边距 10，图标 14，标签 12.5，右侧信息 11 等宽。
 - **去掉图标背后的 16×16 着色方块**；图标直接画在行内，`inkFaint`，悬停/激活时 `inkMuted`。
 - 当前行：`fill` 底 + 左侧 2px `signal` 轨道；悬停 `hover`；拖放目标 `signalSoft` + 1px `hairlineStrong`。
 - 卷行高 46：名称行 + 副行（左文件系统 `NTFS` / `APFS` / `ext4`，右容量文字 `286 / 477 GB`，均 11px `inkFaint`）+ 2px 容量条；窄侧栏只显示 `60%`。
@@ -283,11 +338,11 @@ readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 
 ### 6.2 网格 `qml/FileGrid.qml`
 
-- **去掉卡片**：无卡片底色、无 12px 圆角、无阴影。
+- **去掉卡片**：无卡片底色、无 16px 圆角、无阴影。
 - 网格 `auto-fill, minmax(100px, 1fr)`，间距 14×12，内边距 16。
 - QML 的 `GridView` 没有 CSS `auto-fill`：按 `columns = max(1, floor((width - 32 + 12) / (100 + 12)))` 求列数，再把剩余宽度均分给 `cellWidth`；窗口尺寸变化时重算，不要写死 5 列。
 - 字形 38；名称 12.5、居中、最多两行；名称与字形间距 7。
-- 选中：`signalSoft` 底 + 1px `signal` 内描边，圆角 4；悬停只给 `hover`。
+- 选中：`signalSoft` 底 + 1px `signal` 内描边，圆角 6；悬停只给 `hover`。
 - 图片继续显示缩略图；文件夹用单色文件夹字形。
 - 网格中也要显示键盘焦点环，且与选中可区分。
 
@@ -332,9 +387,9 @@ readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 
 - 宽度默认 300，可拖 260–420，双击恢复 300；6px 拖拽缝，悬停 `signal`。
 - 头部 32：`预览` 11.5 `inkFaint`，右侧 20×20 关闭。
-- 文本预览：等宽 11、行号列 28、行高 1.6、超出省略；代码块底色 `canvasAlt`、圆角 4。
+- 文本预览：等宽 11、行号列 28、行高 1.6、超出省略；代码块底色 `canvasAlt`、圆角 6。
 - 内容区高度取面板扣除元数据后的剩余空间（至少 176），图片/文本随窗口变高；切换选中项时上一份快照留在原位，新快照就绪后一次替换。
-- 图片：内容宽 -24，圆角 8，1px `hairline`。
+- 图片：内容宽 -24，圆角 12，1px `hairline`。
 - 文件夹：显示项目数与前几项文件名。
 - 元数据：标签 11 `inkFaint`，值 12.5 `ink`，行高 24；底部「全部属性」用 `signal` 文字 + 箭头。
 - 未选中：`未选择文件` / `单击文件查看详情`；回收站中改为 `选中项目查看原位置`。
@@ -351,7 +406,7 @@ readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 
 ### 7.3 传输 `qml/TransferQueue.qml`
 
-- 326 宽浮层，底部 32，圆角 8，`raised` 底，`overlay` 阴影。
+- 326 宽浮层，底部 32，圆角 12，`raised` 底，`overlay` 阴影。
 - 头部 26：`传输队列` 11 字距 + 关闭。
 - 每行：文件名 11.5、右侧状态 11 等宽（`68% · 4 秒` / `完成`）、2px 进度条、目标路径 11 `inkFaint` 单行省略。
 - 进度填充 `signal`；完成态可保持满条但不要变成绿色。
@@ -359,7 +414,7 @@ readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 
 ### 7.4 Toast `qml/Toast.qml`
 
-- 34 高，底部 38 居中，圆角 4，`raised` + `hairlineStrong`，12px。
+- 34 高，底部 38 居中，圆角 6，`raised` + `hairlineStrong`，12px。
 - 结构：图标 14 → 文本（最大 320，单行省略）→ 可选「撤销」12px `signal` → 关闭 20×20。
 - 4.8 秒自动消失；撤销后立即关闭；退场瞬时。
 
@@ -369,16 +424,16 @@ readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 
 ### 8.1 搜索
 
-- 输入框 210×28，圆角 4；`Esc` 清空再收起；空输入时筛选条显示「输入以筛选名称」。
+- 输入框 210×28，圆角 6；`Esc` 清空再收起；空输入时筛选条显示「输入以筛选名称」。
 - 筛选条 32，顺序：`文件名 / 内容`（模式 chip）→ `Aa` → 类型下拉 → 右侧「N 项匹配」。
-- chip 22 高、11px、圆角 2；激活 `fill` + `ink`；不要用大药丸。
+- chip 22 高、11px、圆角 4；激活 `fill` + `ink`；不要用大药丸。
 - 保留内容搜索模式；网络位置禁用内容搜索并在 chip 上降低透明度。
 - 类型下拉沿用现有分类；不要新增筛选维度。
 - 查询变化时同步选中与预览；结果为空时显示居中空状态。
 
 ### 8.2 命令面板 `qml/CommandPalette.qml`
 
-- 宽 560，顶部 64，圆角 8，`raised`，overlay 阴影。
+- 宽 560，顶部 64，圆角 12，`raised`，overlay 阴影。
 - 输入区 44：搜索图标 14 + 输入 13 + `Esc` 键帽 20×18。
 - 分组标签 11 `inkFaint`，行 30；图标 14，标签 12.5，右侧 chord 11 `inkFaint`。
 - 激活行 `signalSoft` + 左侧 2px `signal`；悬停 `hover`。
@@ -388,7 +443,7 @@ readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 
 ### 8.3 菜单 `qml/ContextMenu.qml` / `DisplayMenu.qml` / `FilterMenu.qml`
 
-- 宽 212–286，内边距 4，圆角 8，行 32，图标 14，标签 12.5，chord 11。
+- 宽 212–286，内边距 4，圆角 12，行 32，图标 14，标签 12.5，chord 11。
 - 危险项只在图标与文字上用 `danger`，不要整行红底。
 - 分隔线 1px `hairline`，上下各 4；组标题 11 `inkFaint`（删除 10px）。
 - 打开后焦点落在第一个可用项；`↑↓`、`Home/End`、`Enter`、`Esc` 全可用；超出窗口时向内夹取。
@@ -396,8 +451,8 @@ readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 
 ### 8.4 对话框
 
-- 简单确认/命名/连接：440 宽，顶部 64，圆角 12；头部 44，标题 14，正文 13，底部 44。
-- 属性、批量重命名、设置、云账户等数据型对话框：沿用现有功能宽度（属性 600），只统一圆角 12、头部 44、按钮 28 高、标签/值字号。
+- 简单确认/命名/连接：440 宽，顶部 64，圆角 16；头部 44，标题 14，正文 13，底部 44。
+- 属性、批量重命名、设置、云账户等数据型对话框：沿用现有功能宽度（属性 600），只统一圆角 16、头部 44、按钮 28 高、标签/值字号。
 - 遮罩 `scrim`；点击遮罩关闭（破坏性确认除外）。
 - 焦点进入对话框，`Esc` 关闭；`Tab` 在对话框内循环；按钮顺序 `取消` → 主操作。
 - 破坏性主按钮 `dangerSolid`，普通主按钮 `signal` + `signalInk`。
@@ -471,7 +526,7 @@ readonly property color terminalCanvas: dark ? "#0b0b0c" : "#fbfbf9"
 | 传输 | `TransferQueue.qml` | 326 浮层、行样式 |
 | 命令面板 | `CommandPalette.qml` | 560 宽、分组、chord |
 | 菜单 | `ContextMenu.qml`、`DisplayMenu.qml`、`FilterMenu.qml` | 212–286、32 行、危险色 |
-| 对话框 | `ConfirmDialog.qml`、`NamePrompt.qml`、`PropertiesDialog.qml`、`ConnectDialog.qml` 等 | 440/数据宽度、头部 44、圆角 12 |
+| 对话框 | `ConfirmDialog.qml`、`NamePrompt.qml`、`PropertiesDialog.qml`、`ConnectDialog.qml` 等 | 440/数据宽度、头部 44、圆角 16 |
 | 空状态 | 各视图内空状态 | 居中、28 图标、文案 |
 | Toast | `Toast.qml` | 34 高、底部 38、撤销 |
 | 色板/几何 | `Theme.qml` | 全部 token |
