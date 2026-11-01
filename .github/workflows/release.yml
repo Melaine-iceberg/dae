@@ -654,6 +654,36 @@ jobs:
             exit 1
           done
 
+          # Qt ships its Wayland client buffer integrations — the EGL and shm
+          # paths Qt Quick composites through — as dlopen'd plugins under
+          # `plugins/wayland-graphics-integration-client`. Nothing names them in
+          # a symbol table, and linuxdeploy-plugin-qt only has a deployer for
+          # the *server* side (`waylandcompositor`), so this directory was never
+          # copied. A Wayland session then starts and immediately reports:
+          #   qt: Failed to load client buffer integration: "wayland-egl"
+          #   qt: Available client buffer integrations: QList()
+          # and falls back to no GPU path at all.
+          #
+          # The copy has to come from this Qt. Plugins from the distribution are
+          # built against its own Qt 6.x, and the loader rejects the version
+          # mismatch instead of degrading, so a system package is not a fix.
+          buffer_dir="$QT_ROOT_DIR/plugins/wayland-graphics-integration-client"
+          buffer_target="$appdir/usr/plugins/wayland-graphics-integration-client"
+          if [ ! -d "$buffer_dir" ]; then
+            echo "::error::$buffer_dir is missing from this Qt install"
+            exit 1
+          fi
+          mkdir -p "$buffer_target"
+          cp -a "$buffer_dir"/. "$buffer_target/"
+          if ! compgen -G "$buffer_target/*.so" >/dev/null; then
+            echo "::group::$buffer_dir"
+            ls -1 "$buffer_dir"
+            echo "::endgroup::"
+            echo "::error::this Qt ships no Wayland client buffer integration"
+            exit 1
+          fi
+          echo "wayland client buffer integrations: $(cd "$buffer_target" && ls -1 | tr '\n' ' ')"
+
           # Start from linuxdeploy's AppDir, then fold `usr/` into the
           # install-directory shape §4.10 requires: executable at the root,
           # Qt libraries beside it in lib/, and every plugin directory
@@ -721,6 +751,13 @@ jobs:
           done
           if ! grep -q '^platforms/libqwayland.*\.so$' <<< "$names"; then
             echo "::error::the archive has no Wayland platform plugin"
+            exit 1
+          fi
+          # The platform plugin alone is not enough: without a client buffer
+          # integration the Wayland session has no GPU path and Qt says so only
+          # on stderr.
+          if ! grep -qE '^wayland-graphics-integration-client/[^/]+\.so$' <<< "$names"; then
+            echo "::error::the archive has no Wayland client buffer integration"
             exit 1
           fi
 
@@ -835,10 +872,13 @@ jobs:
               exit 1
             fi
           done
-          # The entry point has to be the launcher. It shipped as a symlink
-          # before, which is exactly what left Qt searching /usr/bin for the
-          # plugin directory; reading it back out of the archive catches a
-          # regression instead of trusting the build tree.
+          if ! grep -qE '\./usr/lib/dae/wayland-graphics-integration-client/[^/]+\.so$' <<< "$contents"; then
+            echo "::error::$deb has no Wayland client buffer integration"
+            exit 1
+          fi
+          # The entry point has to be the launcher, not a symlink: a symlink
+          # leaves Qt looking for qt.conf in /usr/bin. Read it back out of the
+          # archive rather than trusting the build tree.
           launcher=$(dpkg-deb --fsys-tarfile "$deb" | tar -xO ./usr/bin/dae)
           if ! grep -qxF 'exec /usr/lib/dae/dae "$@"' <<< "$launcher"; then
             echo "::error::$deb does not install /usr/bin/dae as a launcher for /usr/lib/dae/dae"
@@ -950,10 +990,13 @@ jobs:
               exit 1
             fi
           done
+          if ! grep -qE '^/usr/lib/dae/wayland-graphics-integration-client/[^/]+\.so$' <<< "$rpmfiles"; then
+            echo "::error::$rpmfile has no Wayland client buffer integration"
+            exit 1
+          fi
           # The launcher must be a regular executable (0100755); as a symlink
-          # (0120777) Qt looks for qt.conf next to it in /usr/bin and the shell
-          # refuses to start. The script itself is checked in %install, which
-          # means a bad copy fails the build rather than the installed package.
+          # (0120777) Qt looks for qt.conf next to it in /usr/bin. The script
+          # itself is checked in %install, so a bad copy fails the build.
           dump=$(rpm -qp --dump "$rpmfile")
           # The digest column is 32 hex characters under md5 and 64 under
           # sha256, so it is matched loosely; the mode is the assertion.

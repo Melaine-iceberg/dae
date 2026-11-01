@@ -9,6 +9,13 @@
 //! the registry on every launch; this is the same contract for Linux, without
 //! requiring the user to run an installer.
 //!
+//! A package-installed build gets its entry from the package instead. That file
+//! is in `$XDG_DATA_DIRS` and carries `MimeType=inode/directory`, which the file
+//! written here does not; because user data directories are searched first, a
+//! copy in `~/.local/share/applications` would shadow it, drop dae from "Open
+//! With" and survive `dnf remove`. So the entry is only written when no
+//! packaged one exists — the association is repaired either way.
+//!
 //! Only the scheme is registered here. Making dae the folder handler is a
 //! separate, explicit action in the settings panel (`default_manager`), and an
 //! app that silently took over folders would be a different product decision.
@@ -25,6 +32,13 @@ const DESKTOP_ID: &str = "dae.desktop";
 const SCHEME: &str = "x-scheme-handler/dae";
 
 pub(crate) fn ensure_registered() {
+    if let Some(entry) = installed_entry() {
+        // The package owns the entry; writing another one here would hide it.
+        log::debug!(target: "dae::linux", "desktop entry provided by {}", entry.display());
+        set_default_handler();
+        return;
+    }
+
     let Some(exe) = std::env::current_exe().ok() else {
         log::warn!(target: "dae::linux", "could not resolve the executable for scheme registration");
         return;
@@ -51,6 +65,29 @@ pub(crate) fn ensure_registered() {
             .status();
     }
 
+    set_default_handler();
+}
+
+/// The `dae.desktop` an installer put in one of the system data directories.
+///
+/// `XDG_DATA_DIRS` defaults to `/usr/local/share:/usr/share` when unset, which
+/// is where both the `.deb` and the `.rpm` install theirs.
+fn installed_entry() -> Option<PathBuf> {
+    let dirs = std::env::var("XDG_DATA_DIRS")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "/usr/local/share:/usr/share".to_owned());
+    installed_entry_in(&dirs)
+}
+
+fn installed_entry_in(dirs: &str) -> Option<PathBuf> {
+    dirs.split(':')
+        .filter(|dir| !dir.is_empty())
+        .map(|dir| Path::new(dir).join("applications").join(DESKTOP_ID))
+        .find(|entry| entry.is_file())
+}
+
+fn set_default_handler() {
     if current_handler().as_deref() == Some(DESKTOP_ID) {
         return;
     }
@@ -164,5 +201,32 @@ mod tests {
         assert!(entry.contains("MimeType=x-scheme-handler/dae;"));
         assert!(entry.contains("Exec=\"/opt/dae/dae\" %u"));
         assert!(entry.contains("StartupWMClass=dae"));
+    }
+
+    /// The `.deb`/`.rpm` entry lives under `/usr/share`; finding it is what
+    /// keeps the portable path from shadowing it.
+    #[test]
+    fn finds_a_packaged_entry_under_xdg_data_dirs() {
+        let root = std::env::temp_dir().join(format!("dae-desktop-{}", std::process::id()));
+        let applications = root.join("share/applications");
+        std::fs::create_dir_all(&applications).unwrap();
+        let entry = applications.join(DESKTOP_ID);
+        std::fs::write(&entry, "[Desktop Entry]\nName=dae\n").unwrap();
+
+        let dirs = format!("/nonexistent/dir:{}", root.join("share").display());
+        assert_eq!(installed_entry_in(&dirs).as_deref(), Some(entry.as_path()));
+
+        std::fs::remove_file(&entry).unwrap();
+        assert!(installed_entry_in(&dirs).is_none());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// An empty variable means "unset" per the XDG spec, so the default list
+    /// has to be used rather than an empty search path.
+    #[test]
+    fn ignores_empty_entries_in_the_search_path() {
+        let dirs = "/nonexistent/dir::/also/missing";
+        assert!(installed_entry_in(dirs).is_none());
     }
 }
