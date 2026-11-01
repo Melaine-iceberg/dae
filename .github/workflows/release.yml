@@ -742,9 +742,12 @@ jobs:
           # /usr/lib would be a duplicate no desktop reads: the installed entry
           # is the one under /usr/share/applications.
           rm -f "$pkg/usr/lib/dae/dae.desktop" "$pkg/usr/lib/dae/dae.png"
-          # A symlink is enough: Qt resolves /proc/self/exe, so it finds qt.conf
-          # and the plugins next to the real binary, not next to the symlink.
-          ln -s ../lib/dae/dae "$pkg/usr/bin/dae"
+          # A launcher, not a symlink: Qt takes its application directory from
+          # the path the process started with, so a symlink in /usr/bin points
+          # QLibraryInfo at /usr/bin and qt.conf is never read. A qt.conf there
+          # would be inherited by every Qt program on the system. The launcher
+          # exec's the real binary, keeping /usr/lib/dae as the app directory.
+          install -D -m 0755 packaging/qt/dae-launcher "$pkg/usr/bin/dae"
           install -m 0644 packaging/qt/dae-installed.desktop \
             "$pkg/usr/share/applications/dae.desktop"
           install -m 0644 src-tauri/icons/128x128.png \
@@ -817,7 +820,7 @@ jobs:
           # A .deb whose executable is not on PATH, or whose Qt platform plugin
           # is not in the installed tree, installs cleanly and then does nothing.
           contents=$(dpkg-deb --contents "$deb")
-          for required in './usr/bin/dae -> ../lib/dae/dae' \
+          for required in './usr/lib/dae/qt.conf' \
                           './usr/lib/dae/platforms/libqxcb.so' \
                           './usr/lib/dae/qml/QtQuick' \
                           './usr/share/applications/dae.desktop' \
@@ -832,6 +835,15 @@ jobs:
               exit 1
             fi
           done
+          # The entry point has to be the launcher. It shipped as a symlink
+          # before, which is exactly what left Qt searching /usr/bin for the
+          # plugin directory; reading it back out of the archive catches a
+          # regression instead of trusting the build tree.
+          launcher=$(dpkg-deb --fsys-tarfile "$deb" | tar -xO ./usr/bin/dae)
+          if ! grep -qxF 'exec /usr/lib/dae/dae "$@"' <<< "$launcher"; then
+            echo "::error::$deb does not install /usr/bin/dae as a launcher for /usr/lib/dae/dae"
+            exit 1
+          fi
           echo "deb: $(stat -c '%s' "$deb") bytes"
 
           # ---- RPM package -------------------------------------------------
@@ -892,9 +904,14 @@ jobs:
           mkdir -p %{buildroot}/usr/lib/dae %{buildroot}/usr/bin
           cp -a $staging/. %{buildroot}/usr/lib/dae/
           rm -f %{buildroot}/usr/lib/dae/dae.desktop %{buildroot}/usr/lib/dae/dae.png
-          # A symlink is enough: Qt resolves /proc/self/exe, so qt.conf and the
-          # plugins are found next to the real binary.
-          ln -s ../lib/dae/dae %{buildroot}/usr/bin/dae
+          # A launcher, not a symlink: Qt derives the application directory
+          # from the path the process started with, so a symlink in /usr/bin
+          # hides qt.conf and the plugins from it. See packaging/qt/dae-launcher.
+          install -D -m 0755 $PWD/packaging/qt/dae-launcher \
+            %{buildroot}/usr/bin/dae
+          # Guard the copy rather than the source: the file above is the one
+          # shipped, and %{buildroot} is what rpm turns into the payload.
+          grep -q '^exec /usr/lib/dae/dae' %{buildroot}/usr/bin/dae
           install -D -m 0644 $PWD/packaging/qt/dae-installed.desktop \
             %{buildroot}/usr/share/applications/dae.desktop
           install -D -m 0644 $PWD/src-tauri/icons/128x128.png \
@@ -922,7 +939,8 @@ jobs:
           # the Qt platform plugin travelled with it, and the desktop entry and
           # icon are installed where a desktop looks for them.
           rpmfiles=$(rpm -qlp "$rpmfile")
-          for required in '/usr/bin/dae' '/usr/lib/dae/platforms/libqxcb.so' \
+          for required in '/usr/bin/dae' '/usr/lib/dae/qt.conf' \
+                          '/usr/lib/dae/platforms/libqxcb.so' \
                           '/usr/lib/dae/qml/QtQuick' \
                           '/usr/share/applications/dae.desktop' \
                           '/usr/share/icons/hicolor/128x128/apps/dae.png'; do
@@ -932,13 +950,16 @@ jobs:
               exit 1
             fi
           done
-          # A regular file here would put a second copy of the binary on PATH
-          # that cannot find qt.conf; the .deb gets the same assertion through
-          # `dpkg-deb --contents`.
+          # The launcher must be a regular executable (0100755); as a symlink
+          # (0120777) Qt looks for qt.conf next to it in /usr/bin and the shell
+          # refuses to start. The script itself is checked in %install, which
+          # means a bad copy fails the build rather than the installed package.
           dump=$(rpm -qp --dump "$rpmfile")
-          if ! grep -qE '^/usr/bin/dae .* \.\./lib/dae/dae$' <<< "$dump"; then
+          # The digest column is 32 hex characters under md5 and 64 under
+          # sha256, so it is matched loosely; the mode is the assertion.
+          if ! grep -qE '^/usr/bin/dae [0-9]+ [0-9]+ [0-9a-f]* 0100755 ' <<< "$dump"; then
             grep '^/usr/bin/dae' <<< "$dump" || true
-            echo "::error::$rpmfile does not install /usr/bin/dae as a symlink to ../lib/dae/dae"
+            echo "::error::$rpmfile does not install /usr/bin/dae as a regular executable"
             exit 1
           fi
           # Qt is bundled, so rpm's generator writes the Qt sonames into both

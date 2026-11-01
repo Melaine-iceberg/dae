@@ -1,0 +1,15 @@
+#!/bin/sh
+# The installed entry point: `dae` on PATH, the payload in /usr/lib/dae.
+#
+# This is a launcher rather than a symlink to /usr/lib/dae/dae, and the
+# difference is Qt's: the application directory is the directory of the path
+# the process was started with, so a symlink here makes Qt look for `qt.conf`
+# and `platforms/` under /usr/bin. Verified on Fedora 44, where the symlinked
+# build logs `checking directory path "/usr/bin/platforms"` and then aborts
+# with "Could not find the Qt platform plugin".
+#
+# A qt.conf in /usr/bin is not an option: every other Qt program started from
+# that directory would read it and inherit this package's plugin paths. exec
+# leaves the real binary as the app directory, so /usr/lib/dae/qt.conf is the
+# only configuration in play.
+exec /usr/lib/dae/dae "$@"
