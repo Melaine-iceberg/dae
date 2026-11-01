@@ -41,9 +41,17 @@ root, then to `release.pfx`. Its subject must match the manifest's Publisher;
 sideloading needs the certificate in the current user's TrustedPeople store.
 
 .PARAMETER TrustCertificate
-Import the certificate into `Cert:\CurrentUser\TrustedPeople` before installing.
-Without this the install fails with 0x800B0109 (untrusted root) on a machine
-that has never trusted the publisher.
+Trust the signing certificate before installing. Without this the install fails
+with 0x800B0109 (untrusted root) on a machine that has never trusted the
+publisher. Trust is per thumbprint and lives in the *machine* stores that
+deployment checks, so a fresh devcert needs an elevated
+`winapp cert install <pfx>` once — this switch only helps when the script is
+already running as administrator.
+
+.PARAMETER CertificatePassword
+Password of the .pfx named by `-Certificate`. Defaults to `password`, which is
+what `winapp cert generate` uses and what `pack-msix.ps1` signs with when
+`MSIX_CERTIFICATE` is unset. A release .pfx needs the real one.
 
 .PARAMETER Uninstall
 Remove the package when the checks are done.
@@ -62,6 +70,7 @@ param(
   [string]$Package,
   [string]$Previous,
   [string]$Certificate,
+  [string]$CertificatePassword = 'password',
   [switch]$TrustCertificate,
   [switch]$Uninstall,
   [switch]$InspectOnly
@@ -152,11 +161,77 @@ function Stop-RunningInstance {
   Start-Sleep -Milliseconds 500
 }
 
+function Test-Administrator {
+  $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+  $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+  $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Trust-SigningCertificate([string]$certificate) {
+  # Deployment validates the package signature against the *machine* stores, so
+  # `CurrentUser\TrustedPeople` is not enough — that is where this looked first
+  # and `Add-AppxPackage` still answered 0x800B0109. Trusting a publisher on
+  # this machine therefore needs admin rights, once per certificate.
+  #
+  # Two smaller traps found on the same install. `Import-Certificate` only takes
+  # a path to a `.cer` (handed a `.pfx` it throws 「不支持导入 PFX 文件」), and
+  # in PowerShell 7 it has no `-Cert` parameter, so `-Cert` prefix-matches
+  # `-CertStoreLocation` and fails with "specified more than once". Opening the
+  # store directly avoids both, and keeps the private key out of the trust
+  # store: the package only has to be verifiable here, not signable.
+  $password = ConvertTo-SecureString -String $CertificatePassword -AsPlainText -Force
+  $data = Get-PfxData -FilePath $certificate -Password $password
+  if (-not $data.EndEntityCertificates.Count) {
+    throw "$certificate contains no certificate to trust"
+  }
+  $leaf = $data.EndEntityCertificates[0]
+
+  $existing = foreach ($name in 'TrustedPeople', 'Root') {
+    $probe = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+      [System.Security.Cryptography.X509Certificates.StoreName]::$name,
+      [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+    try {
+      $probe.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+      $hit = $probe.Certificates | Where-Object Thumbprint -eq $leaf.Thumbprint
+      if ($hit) { "LocalMachine\$name" }
+    } finally {
+      $probe.Close()
+    }
+  }
+  if ($existing) {
+    Write-Host ("  already trusted in {0}: {1}" -f $existing, $leaf.Thumbprint)
+    return
+  }
+
+  if (-not (Test-Administrator)) {
+    Write-Host ''
+    Write-Host ("The package is signed by {0}, which this machine does not trust yet." -f $leaf.Thumbprint) -ForegroundColor Yellow
+    Write-Host 'Deployment validates signatures against the machine stores, so a per-user'
+    Write-Host 'import cannot satisfy it and the install fails with 0x800B0109.'
+    Write-Host 'Run this once in an elevated shell, then re-run this script:'
+    Write-Host ''
+    Write-Host ("    winapp cert install {0} --password {1}" -f $certificate, $CertificatePassword) -ForegroundColor Cyan
+    Write-Host ''
+    Write-Host 'A machine that already trusted an older devcert needs this too: trust is'
+    Write-Host 'per thumbprint, not per subject.'
+    throw 'the signing certificate is not trusted on this machine'
+  }
+
+  $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+    [System.Security.Cryptography.X509Certificates.StoreName]::TrustedPeople,
+    [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+  try {
+    $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+    $store.Add($leaf)
+    Write-Host ("  trusted in LocalMachine\TrustedPeople: {0}" -f $leaf.Thumbprint)
+  } finally {
+    $store.Close()
+  }
+}
+
 function Install-Package([string]$path, [string]$certificate) {
   if ($certificate) {
-    Write-Host "Importing $certificate into Cert:\CurrentUser\TrustedPeople"
-    Import-Certificate -FilePath $certificate `
-      -CertStoreLocation 'Cert:\CurrentUser\TrustedPeople' | Out-Null
+    Trust-SigningCertificate $certificate
   }
   Stop-RunningInstance
   Add-AppxPackage -Path $path
@@ -341,8 +416,22 @@ try {
 if ($command) {
   Write-Host ''
   Write-Host 'Folder handler registration'
-  Write-Check 'the registration points at the stable alias' `
-    ($command -like "*WindowsApps\dae.exe*") $command
+  if ($command -like "*Microsoft\WindowsApps\dae.exe*") {
+    Write-Check 'the registration points at the stable alias' $true $command
+  } else {
+    # Not a failure in this shape, for two separate reasons. A portable build
+    # that registered the handler before the package was installed leaves a
+    # working path behind, and `default_manager::refresh` deliberately does not
+    # take over a registration whose executable still resolves. And the write
+    # this package *does* attempt never reaches HKCU: Windows redirects it into
+    # the per-app hive (%LOCALAPPDATA%\Packages\<PFN>\SystemAppData\Helium\
+    # UserClasses.dat), so Explorer cannot see it either. Both are recorded in
+    # docs/decisions/engine-qt-quick.md §9.15.
+    Write-Host ("  NOTE  registration points elsewhere: {0}" -f $command) -ForegroundColor Yellow
+    Write-Host '        Not counted as a failure — see the note in §9.15: package'
+    Write-Host '        writes land in the per-app hive, and a living portable'
+    Write-Host '        registration is left alone on purpose.'
+  }
 }
 
 if ($Uninstall) {
