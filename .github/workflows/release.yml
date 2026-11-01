@@ -4,16 +4,46 @@ on:
   push:
     tags:
       - "v*"
+  # Manual runs exist to smoke-test one platform before a tag is worth cutting:
+  # they build that leg and leave the results as Actions artifacts, and nothing
+  # else. Everything that publishes — tauri-action's draft, the MSIX attach, the
+  # update feed — is gated on `github.event_name == 'push'`, so a manual run
+  # cannot create, modify or publish a release even by accident.
+  #
+  # `linux-x86_64` and `windows-x86_64` need no secrets. `darwin-aarch64` still
+  # does: its packaging step notarizes, and refuses to continue without the
+  # Apple credentials.
+  workflow_dispatch:
+    inputs:
+      platform_key:
+        description: "Which leg to build; a manual run builds only this one"
+        type: choice
+        options:
+          - linux-x86_64
+          - windows-x86_64
+          - darwin-aarch64
+        default: linux-x86_64
+      perf:
+        description: "Run the PGO/BOLT training pass (recommended off for a smoke test)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
+# A tag build must never cancel another tag build: two runs racing over the same
+# release would interleave their uploads. Manual runs have no release to protect,
+# and the second attempt at a smoke test is usually the one that matters, so they
+# supersede each other instead of queueing.
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
 
 jobs:
   build:
+    # This job is the one tauri-action turns into a draft release, and it builds
+    # three installer sets nobody needs for a smoke test.
+    if: github.event_name != 'workflow_dispatch'
     strategy:
       fail-fast: false
       matrix:
@@ -102,13 +132,6 @@ jobs:
         with:
           bun-version: latest
 
-      # Windows leg only: the MSIX steps below need winapp on PATH. Nothing
-      # else to run after it — there is no winapp.yaml to `winapp restore`
-      # because Tauri brings its own Rust bindings (see the winapp Tauri guide).
-      - name: Install winapp CLI
-        if: matrix.platform == 'windows-latest'
-        uses: microsoft/setup-WinAppCli@v0.2
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -187,13 +210,84 @@ jobs:
           # cannot silently replace a running install.
           updaterJsonPreferNsis: true
 
-      # The MSIX ships the release exe tauri-action just built: its
-      # beforeBuildCommand already left the frontend in dist/, so only the exe
-      # is copied in. The committed Package.appxmanifest + Assets/ at the repo
-      # root are what `winapp pack` picks up (it auto-detects the manifest from
-      # the working directory). No `winapp run` registration happens in CI.
+  # ---------------------------------------------------------------------------
+  # Windows MSIX.
+  #
+  # The package used to carry `src-tauri\target\release\dae.exe` — the Tauri
+  # shell — which is the one artifact this migration is retiring. It now ships
+  # the Qt shell's deployed tree: the same bytes as the portable zip, Qt runtime
+  # and QML modules included, so an installed copy has `platforms\qwindows.dll`
+  # and `qml\QtQuick` beside the executable exactly as the zip does.
+  #
+  # That is why it is its own job instead of a step in `build`: it needs the
+  # archive the `qt` job produces, and `build` is what creates the draft release
+  # both artifacts are attached to.
+  #
+  # Two consequences of a packaged install, both handled in the engine rather
+  # than here: the tree under `C:\Program Files\WindowsApps` is read-only and
+  # re-versioned on every update, so `dae-core` turns the portable self-updater
+  # off when it detects package identity, and `dae://` comes from the manifest's
+  # protocol extension instead of the per-user registry write.
+  # ---------------------------------------------------------------------------
+  msix:
+    name: Windows MSIX
+    needs: [build, qt]
+    runs-on: windows-latest
+    # Attaches its package to the draft release, which a manual run has none of.
+    if: github.event_name != 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - name: Install winapp CLI
+        uses: microsoft/setup-WinAppCli@v0.2
+
+      - name: Download the Qt shell archive
+        uses: actions/download-artifact@v8
+        with:
+          name: qt-windows-x86_64
+          path: staging
+
+      # `dist/` is what the committed Package.appxmanifest describes: the
+      # manifest and Assets/ stay at the repo root, where `winapp pack` looks
+      # for them (it auto-detects the manifest from the working directory), and
+      # only the payload is staged here.
+      - name: Stage the package payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem staging -Filter 'dae-*-windows-x86_64.zip' |
+            Select-Object -First 1
+          if (-not $zip) {
+            throw "the qt job uploaded no Windows archive"
+          }
+          if (Test-Path dist) { Remove-Item dist -Recurse -Force }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Expand-Archive -Path $zip.FullName -DestinationPath dist
+
+          # These are the files that prove the payload is the deployed Qt shell
+          # and not a bare executable: the old MSIX contained dae.exe alone and
+          # would still start, so a missing runtime has to fail the release
+          # rather than ship a package that cannot open a window.
+          foreach ($required in @(
+              'dae.exe',
+              'platforms\qwindows.dll',
+              'qml\QtQuick',
+              'qml\QtMultimedia',
+              'multimedia')) {
+            if (-not (Test-Path (Join-Path dist $required))) {
+              throw "the MSIX payload is missing $required"
+            }
+          }
+          "payload: {0:N1} MB, {1} top-level entries" -f `
+            ((Get-ChildItem dist -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), `
+            (Get-ChildItem dist | Measure-Object).Count
+
       - name: Package MSIX
-        if: matrix.platform == 'windows-latest'
         shell: pwsh
         env:
           # Optional real code-signing certificate as a base64-encoded .pfx:
@@ -206,8 +300,8 @@ jobs:
           MSIX_CERTIFICATE: ${{ secrets.MSIX_CERTIFICATE }}
           MSIX_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_CERTIFICATE_PASSWORD }}
         run: |
+          $ErrorActionPreference = 'Stop'
           node scripts/sync-msix-version.mjs --release
-          Copy-Item src-tauri\target\release\dae.exe dist\ -Force
           if ($env:MSIX_CERTIFICATE) {
             [IO.File]::WriteAllBytes("release.pfx", [Convert]::FromBase64String($env:MSIX_CERTIFICATE))
             winapp pack .\dist --cert .\release.pfx --cert-password "$env:MSIX_CERTIFICATE_PASSWORD"
@@ -215,13 +309,13 @@ jobs:
             winapp cert generate --if-exists skip
             winapp pack .\dist --cert .\devcert.pfx
           }
+          if ($LASTEXITCODE -ne 0) { throw "winapp pack failed with exit code $LASTEXITCODE" }
 
-      # tauri-action created the release as a draft; append the MSIX to that
-      # same draft so one manual publish ships every installer. `draft: true`
-      # is load-bearing: without it this action PUBLISHES the draft after
+      # The draft was created by tauri-action; append the MSIX to that same
+      # draft so one manual publish ships every installer. `draft: true` is
+      # load-bearing: without it this action PUBLISHES the draft after
       # uploading. Release name/body/notes set by tauri-action are retained.
       - name: Attach MSIX to release
-        if: matrix.platform == 'windows-latest'
         uses: softprops/action-gh-release@v3
         with:
           files: "*.msix"
@@ -232,36 +326,60 @@ jobs:
   #
   # These jobs are deliberately separate from the Tauri matrix: the Qt shell
   # ships a portable directory (Windows/Linux) or a .app (macOS), not an MSI,
-  # NSIS installer or DMG. They also run without PGO/BOLT so a packaging
-  # problem cannot hide behind the Tauri optimiser.
+  # NSIS installer or DMG. They now get the same two-stage PGO (and BOLT on
+  # Linux) as the Tauri legs; every optimisation step degrades to a plain
+  # release build, so a missing profile cannot block packaging.
   #
   # The archives are signed with the same Tauri updater private key, and the
   # feed is published as `latest-qt.json` on the same (draft) release. Once the
   # release is published, `releases/latest/download/latest-qt.json` is the URL
   # baked into dae-core (`DEFAULT_FEED_URL`).
   # ---------------------------------------------------------------------------
+
+  # The leg list is data here rather than an inline `matrix.include` because
+  # `matrix` is unavailable to `jobs.<id>.if`: for a manual run to build one
+  # leg, the filtering has to happen before the matrix exists. On a tag push
+  # this job returns all three legs verbatim.
+  plan:
+    name: Plan Qt legs
+    runs-on: ubuntu-26.04
+    outputs:
+      legs: ${{ steps.legs.outputs.legs }}
+    steps:
+      - name: Select legs
+        id: legs
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          ONLY: ${{ inputs.platform_key }}
+        run: |
+          set -euo pipefail
+          # `perf_flags` is only meaningful where the toolchain consumes it:
+          # `--bolt` is ELF-only, so it stays on the Linux leg.
+          all='[
+            {"platform":"windows-latest","platform_key":"windows-x86_64","qt_arch":"win64_msvc2022_64","target":"","perf_flags":"","binary":"target/release/dae.exe"},
+            {"platform":"ubuntu-26.04","platform_key":"linux-x86_64","qt_arch":"linux_gcc_64","target":"","perf_flags":"--bolt","binary":"target/release/dae"},
+            {"platform":"macos-latest","platform_key":"darwin-aarch64","qt_arch":"clang_64","target":"aarch64-apple-darwin","perf_flags":"","binary":"target/aarch64-apple-darwin/release/dae"}
+          ]'
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            legs=$(printf '%s' "$all" | jq -c --arg k "$ONLY" '[.[] | select(.platform_key == $k)]')
+            if [ "$(printf '%s' "$legs" | jq length)" -eq 0 ]; then
+              echo "::error::unknown platform_key '$ONLY'"
+              exit 1
+            fi
+          else
+            legs=$(printf '%s' "$all" | jq -c .)
+          fi
+          echo "legs=$legs" >> "$GITHUB_OUTPUT"
+          printf 'qt legs: %s\n' "$(printf '%s' "$legs" | jq -r '.[].platform_key' | tr '\n' ' ')"
+
   qt:
     name: Qt shell (${{ matrix.platform_key }})
+    needs: [plan]
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows-latest
-            platform_key: windows-x86_64
-            qt_arch: win64_msvc2022_64
-            target: ""
-            binary: target/release/dae.exe
-          - platform: ubuntu-26.04
-            platform_key: linux-x86_64
-            qt_arch: linux_gcc_64
-            target: ""
-            binary: target/release/dae
-          # Matches the Tauri leg above: Apple Silicon only.
-          - platform: macos-latest
-            platform_key: darwin-aarch64
-            qt_arch: clang_64
-            target: aarch64-apple-darwin
-            binary: target/aarch64-apple-darwin/release/dae
+        include: ${{ fromJSON(needs.plan.outputs.legs) }}
 
     runs-on: ${{ matrix.platform }}
 
@@ -293,7 +411,17 @@ jobs:
             libxcb-util1 libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1 \
             libgtk-3-dev libgdk-pixbuf-2.0-dev librsvg2-dev \
             libdbus-1-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
-            libsecret-1-dev patchelf zip unzip
+            libsecret-1-dev patchelf zip unzip xvfb \
+            rpm cpio
+
+      # BOLT is optional by design: `post-link` skips it loudly on a runner
+      # without the package, rather than failing a release over an
+      # optimisation.
+      - name: Install LLVM BOLT (Linux, optional)
+        if: matrix.platform == 'ubuntu-26.04'
+        run: |
+          sudo apt-get install -y llvm-bolt || \
+            echo "::warning title=BOLT unavailable::llvm-bolt is not packaged for this runner; the Qt release will ship a PGO-only binary"
 
       # The same Qt minor as the local development instructions. cxx-qt picks
       # qmake up from PATH; QT_ROOT_DIR is used by the deployment steps.
@@ -309,6 +437,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+          # llvm-profdata must be the one rustc ships, or it refuses the
+          # profraw files rustc wrote. See docs/pgo-bolt.md §2.
+          components: llvm-tools-preview
 
       - uses: swatinem/rust-cache@v2
         with:
@@ -320,14 +451,57 @@ jobs:
         if: matrix.platform == 'windows-latest'
         uses: microsoft/setup-WinAppCli@v0.2
 
+      # --- LLVM IR PGO ---------------------------------------------------
+      # The Qt shell gets the same two-stage flow as the Tauri legs: an
+      # instrumented build is trained on a generated corpus, merged, and the
+      # resulting flags drive the real build below. `continue-on-error` is
+      # deliberate — the flags step then exports no `-Cprofile-use` and the
+      # release is a plain release build, never blocked by its optimiser.
+      - name: PGO — instrument and train (Qt shell)
+        # A smoke test wants a runnable binary, not a benchmark: with `perf`
+        # off the profile steps are skipped and the build below is a plain
+        # release build, exactly as it degrades when a profile is missing.
+        if: github.event_name != 'workflow_dispatch' || inputs.perf
+        continue-on-error: true
+        shell: bash
+        env:
+          DAE_QML_AOT: "1"
+        run: bun scripts/opt/pgo.mjs train --seconds 45 --qt --target ${{ matrix.target }}
+
+      # Writes CARGO_ENCODED_RUSTFLAGS and — for the Qt shell — the C++ bridge
+      # profile into the job environment. `--bolt` on Linux additionally sets
+      # the emit-relocs link flag and keeps symbols for the post-link step.
+      - name: PGO/BOLT — export compile flags
+        if: github.event_name != 'workflow_dispatch' || inputs.perf
+        shell: bash
+        run: bun scripts/opt/pgo.mjs flags --qt ${{ matrix.perf_flags }} >> "$GITHUB_ENV"
+
       - name: Build Qt shell
         shell: bash
+        # `DAE_QML_AOT=1` makes the ahead-of-time QML compilation fatal rather
+        # than a warning: a release that silently shipped without the units
+        # would boot like the pre-AOT build and nobody would notice. See
+        # docs/qml-aot.md.
+        env:
+          DAE_QML_AOT: "1"
         run: |
           if [ -n "${{ matrix.target }}" ]; then
             cargo build --release --package dae-app --target ${{ matrix.target }}
           else
             cargo build --release --package dae-app
           fi
+
+      # BOLT runs on the linked binary, after `cargo build` and before the
+      # deployment steps copy it. Best-effort: a missing profile or tool strips
+      # the binary and continues.
+      - name: LLVM BOLT (Linux)
+        # BOLT consumes the relocations that `--bolt` above only emits when the
+        # flags step ran, so it follows the same switch.
+        if: matrix.platform == 'ubuntu-26.04' && (github.event_name != 'workflow_dispatch' || inputs.perf)
+        shell: bash
+        env:
+          DAE_PERF_TRAIN_SECONDS: "45"
+        run: bun scripts/opt/post-link.mjs --qt
 
       # ---- Windows: windeployqt -> optional Authenticode -> root-level zip ----
       - name: Deploy Qt runtime and package (Windows)
@@ -432,8 +606,18 @@ jobs:
             --plugin qt
 
           test -f "$appdir/usr/plugins/platforms/libqxcb.so"
+          # The Wayland backend is what makes ext-background-effect-v1 blur
+          # reachable; without it the app silently runs through XWayland and
+          # the shell stays solid. Fail the build rather than ship that.
+          if ! compgen -G "$appdir/usr/plugins/platforms/libqwayland-*.so" >/dev/null; then
+            echo "::error::the Qt Wayland platform plugin was not deployed"
+            exit 1
+          fi
           test -d "$appdir/usr/qml/QtQuick"
           test -d "$appdir/usr/qml/QtMultimedia"
+          # QtMultimedia on Linux is a GStreamer client. This plugin is
+          # deployed; the codec plugins themselves come from the target
+          # desktop and are documented as a runtime dependency.
           test -d "$appdir/usr/plugins/multimedia"
 
           # Start from linuxdeploy's AppDir, then fold `usr/` into the
@@ -494,14 +678,267 @@ jobs:
           shopt -s dotglob nullglob
           (cd "$staging" && zip -r -y -X -q "$zip" *)
           unzip -Z1 "$zip" | grep -qx 'platforms/libqxcb.so'
+          unzip -Z1 "$zip" | grep -q '^platforms/libqwayland-.*\.so$'
           unzip -Z1 "$zip" | grep -qx 'dae'
 
-      # ---- macOS: .app + macdeployqt -> ad-hoc sign -> zip the bundle ----
+          # ---- Debian package ---------------------------------------------
+          # The zip is a folder to unpack by hand; a system package is what puts
+          # dae on PATH with a menu entry, a themed icon, and a dependency list
+          # apt can act on. The payload is the same staged tree: installed under
+          # /usr/lib/dae it keeps its `$ORIGIN/lib` rpaths and the qt.conf that
+          # sits beside the executable.
+          out="$PWD/dist/qt-release"
+          pkg="$PWD/dist/qt-deb/dae_${version}_amd64"
+          rm -rf "$PWD/dist/qt-deb"
+          mkdir -p "$pkg/DEBIAN" "$pkg/usr/bin" "$pkg/usr/lib/dae" \
+                   "$pkg/usr/share/applications" \
+                   "$pkg/usr/share/icons/hicolor/128x128/apps" \
+                   "$pkg/usr/share/icons/hicolor/256x256/apps"
+          cp -a "$staging/." "$pkg/usr/lib/dae/"
+          # The portable entry files belong to the zip. An installed copy inside
+          # /usr/lib would be a duplicate no desktop reads: the installed entry
+          # is the one under /usr/share/applications.
+          rm -f "$pkg/usr/lib/dae/dae.desktop" "$pkg/usr/lib/dae/dae.png"
+          # A symlink is enough: Qt resolves /proc/self/exe, so it finds qt.conf
+          # and the plugins next to the real binary, not next to the symlink.
+          ln -s ../lib/dae/dae "$pkg/usr/bin/dae"
+          install -m 0644 packaging/qt/dae-installed.desktop \
+            "$pkg/usr/share/applications/dae.desktop"
+          install -m 0644 src-tauri/icons/128x128.png \
+            "$pkg/usr/share/icons/hicolor/128x128/apps/dae.png"
+          install -m 0644 src-tauri/icons/128x128@2x.png \
+            "$pkg/usr/share/icons/hicolor/256x256/apps/dae.png"
+
+          # Runtime dependencies are derived, never hand-written: every shared
+          # library that still resolves outside the tree (the bundled copies are
+          # reached through the rpaths, so `ldd` reports them under $staging) is
+          # mapped back to the package that provides it. A guessed Depends list
+          # is how a package installs and then fails to start elsewhere.
+          ldd_output=""
+          while IFS= read -r -d '' file; do
+            ldd_output+=$(ldd "$file" 2>/dev/null || true)$'\n'
+          done < <(find "$staging" -type f \( -name dae -o -name '*.so*' \) -print0)
+          depends=$(printf '%s\n' "$ldd_output" \
+            | awk '/=> \//{print $3} /^\t\//{print $1}' \
+            | sort -u \
+            | grep -v "^$staging/" \
+            | while read -r lib; do
+                resolved=$(readlink -f "$lib" 2>/dev/null) && [ -n "$resolved" ] || continue
+                # `dpkg -S` writes diversion bookkeeping on the same channel as
+                # package names, and a path can belong to several packages
+                # (`liba, libb: /path`). Keep only lines that end in a package
+                # list followed by an absolute path, then keep the list.
+                dpkg -S "$resolved" 2>/dev/null \
+                  | grep -vE '^(local )?diversion by |^diverted by ' \
+                  | grep -E ': /' \
+                  | sed 's/: *\/.*$//'
+              done \
+            | tr ',' '\n' | tr -d ' ' | cut -d: -f1 | grep -v '^$' \
+            | sort -u | paste -sd, - | sed 's/,/, /g')
+          if [ -z "$depends" ]; then
+            echo "::error::no runtime dependency could be derived from the payload; refusing to ship a .deb with an empty Depends"
+            exit 1
+          fi
+          echo "deb Depends: $depends"
+
+          installed_kb=$(du -sk "$pkg/usr" | cut -f1)
+          cat > "$pkg/DEBIAN/control" <<EOF
+          Package: dae
+          Version: $version
+          Architecture: amd64
+          Installed-Size: $installed_kb
+          Depends: $depends
+          Recommends: gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-libav
+          Section: utils
+          Priority: optional
+          Maintainer: Melaine-iceberg <Melaine-iceberg@users.noreply.github.com>
+          Homepage: https://github.com/Melaine-iceberg/dae
+          Description: Aesthetic file manager
+           dae browses local, network and cloud storage in one window, with
+           tabs, split panes, previews, a terminal and a transfer queue.
+           .
+           Playing audio and video in the preview pane needs GStreamer: the
+           runtime belongs to the Qt Multimedia backend, and the decoders come
+           from the packages listed in Recommends. Without them the pane says
+           which packages are missing instead of staying silent.
+          EOF
+
+          mkdir -p "$out"
+          # dpkg-deb refuses a control directory that is group- or world-
+          # writable; a runner with an unusual umask would otherwise fail here
+          # after the whole payload has been copied.
+          chmod 0755 "$pkg" "$pkg/DEBIAN"
+          deb="$out/dae_${version}_amd64.deb"
+          dpkg-deb --root-owner-group --build "$pkg" "$deb"
+          dpkg-deb --info "$deb"
+          # A .deb whose executable is not on PATH, or whose Qt platform plugin
+          # is not in the installed tree, installs cleanly and then does nothing.
+          contents=$(dpkg-deb --contents "$deb")
+          for required in './usr/bin/dae -> ../lib/dae/dae' \
+                          './usr/lib/dae/platforms/libqxcb.so' \
+                          './usr/lib/dae/qml/QtQuick' \
+                          './usr/share/applications/dae.desktop' \
+                          './usr/share/icons/hicolor/128x128/apps/dae.png'; do
+            if ! printf '%s\n' "$contents" | grep -qF "$required"; then
+              echo "::error::$deb is missing $required"
+              exit 1
+            fi
+          done
+          echo "deb: $(stat -c '%s' "$deb") bytes"
+
+          # ---- RPM package -------------------------------------------------
+          # Same payload, same layout, different metadata. `Requires` are left
+          # to rpm's own ELF generator, which asks for sonames
+          # (`libxcb.so.1()(64bit)`) rather than Debian-style package names,
+          # so one package follows the payload to Fedora, RHEL or openSUSE
+          # without a second hand-written list. The bundled Qt libraries
+          # provide the sonames their own binaries ask for, so the generator
+          # does not request Qt from the distribution.
+          rpm_top="$PWD/dist/qt-rpm"
+          rm -rf "$rpm_top"
+          mkdir -p "$rpm_top/SPECS"
+          spec="$rpm_top/SPECS/dae.spec"
+          cat > "$spec" <<EOF
+          Name:           dae
+          Version:        $version
+          Release:        1
+          Summary:        Aesthetic file manager
+          License:        GPL-3.0-or-later
+          URL:            https://github.com/Melaine-iceberg/dae
+          BuildArch:      x86_64
+          # Every file is prebuilt (cargo produced them, PGO and BOLT already
+          # ran). The distribution's post-install hooks would strip the binary
+          # and rebuild a debuginfo set from code that no longer has a
+          # compile-time story, so they are switched off wholesale.
+          %global debug_package %{nil}
+          %global __os_install_post %{nil}
+
+          # GStreamer is a weak dependency: preview playback needs it, nothing
+          # else does, and a server install should not fail over it. The
+          # package names differ by distribution, hence the branch.
+          %if 0%{?suse_version}
+          Recommends:     gstreamer-plugins-base
+          Recommends:     gstreamer-plugins-good
+          Recommends:     gstreamer-plugins-libav
+          %else
+          Recommends:     gstreamer1-plugins-base
+          Recommends:     gstreamer1-plugins-good
+          Recommends:     gstreamer1-plugin-libav
+          %endif
+
+          %description
+          dae browses local, network and cloud storage in one window, with tabs,
+          split panes, previews, a terminal and a transfer queue.
+
+          Playing audio and video in the preview pane needs GStreamer: the runtime
+          belongs to the Qt Multimedia backend and the decoders come from the
+          packages this package recommends. Without them the pane names the
+          missing packages instead of staying silent.
+
+          %prep
+
+          %build
+
+          %install
+          rm -rf %{buildroot}
+          mkdir -p %{buildroot}/usr/lib/dae %{buildroot}/usr/bin
+          cp -a $staging/. %{buildroot}/usr/lib/dae/
+          rm -f %{buildroot}/usr/lib/dae/dae.desktop %{buildroot}/usr/lib/dae/dae.png
+          # A symlink is enough: Qt resolves /proc/self/exe, so qt.conf and the
+          # plugins are found next to the real binary.
+          ln -s ../lib/dae/dae %{buildroot}/usr/bin/dae
+          install -D -m 0644 $PWD/packaging/qt/dae-installed.desktop \
+            %{buildroot}/usr/share/applications/dae.desktop
+          install -D -m 0644 $PWD/src-tauri/icons/128x128.png \
+            %{buildroot}/usr/share/icons/hicolor/128x128/apps/dae.png
+          install -D -m 0644 $PWD/src-tauri/icons/128x128@2x.png \
+            %{buildroot}/usr/share/icons/hicolor/256x256/apps/dae.png
+
+          %files
+          /usr/bin/dae
+          /usr/lib/dae
+          /usr/share/applications/dae.desktop
+          /usr/share/icons/hicolor/128x128/apps/dae.png
+          /usr/share/icons/hicolor/256x256/apps/dae.png
+
+          %changelog
+          * $(LC_ALL=C date '+%a %b %d %Y') Melaine-iceberg <Melaine-iceberg@users.noreply.github.com> - $version-1
+          - Release $version
+          EOF
+
+          rpmbuild --define "_topdir $rpm_top" -bb "$spec"
+          rpmfile=$(ls "$rpm_top"/RPMS/x86_64/dae-"$version"-1.x86_64.rpm)
+          cp "$rpmfile" "$out/"
+          rpm -qip "$rpmfile"
+          # The same three things the .deb checks: the executable is on PATH,
+          # the Qt platform plugin travelled with it, and the desktop entry and
+          # icon are installed where a desktop looks for them.
+          rpmfiles=$(rpm -qlp "$rpmfile")
+          for required in '/usr/bin/dae' '/usr/lib/dae/platforms/libqxcb.so' \
+                          '/usr/lib/dae/qml/QtQuick' \
+                          '/usr/share/applications/dae.desktop' \
+                          '/usr/share/icons/hicolor/128x128/apps/dae.png'; do
+            if ! printf '%s\n' "$rpmfiles" | grep -qF "$required"; then
+              echo "::error::$rpmfile is missing $required"
+              exit 1
+            fi
+          done
+          # A regular file here would put a second copy of the binary on PATH
+          # that cannot find qt.conf; the .deb gets the same assertion through
+          # `dpkg-deb --contents`.
+          if ! rpm -qp --dump "$rpmfile" | grep -q '^/usr/bin/dae .* \.\./lib/dae/dae$'; then
+            rpm -qp --dump "$rpmfile" | grep '^/usr/bin/dae'
+            echo "::error::$rpmfile does not install /usr/bin/dae as a symlink to ../lib/dae/dae"
+            exit 1
+          fi
+          # Qt is bundled, so rpm's generator writes the Qt sonames into both
+          # `Provides` and `Requires`; the package satisfies its own requires,
+          # which is how a bundled runtime is supposed to look. What must never
+          # happen is a Qt require that the package does not also provide — that
+          # would make dnf look for a distribution Qt on the user's machine.
+          provides=$(rpm -qp --provides "$rpmfile" | awk '{print $1}')
+          unbundled=""
+          for soname in $(rpm -qp --requires "$rpmfile" | awk '/^libQt6/{print $1}'); do
+            if ! printf '%s\n' "$provides" | grep -qxF "$soname"; then
+              unbundled="$unbundled $soname"
+            fi
+          done
+          if [ -n "$unbundled" ]; then
+            echo "::error::$rpmfile requires Qt sonames it does not ship:$unbundled"
+            exit 1
+          fi
+          echo "bundled Qt sonames: $(rpm -qp --provides "$rpmfile" | awk '/^libQt6/{print $1}' | tr '\n' ' ')"
+          echo "rpm: $(stat -c '%s' "$rpmfile") bytes"
+
+      # ---- macOS: .app -> macdeployqt -> Developer ID -> notarize -> zip ----
+      #
+      # Gatekeeper refuses to open an ad-hoc signed app that carries the
+      # quarantine bit with a "damaged" dialog rather than a prompt, so a tag
+      # release without the Apple secrets is a failed release, not a warning.
       - name: Deploy Qt runtime and package (macOS)
         if: matrix.platform == 'macos-latest'
         shell: bash
+        env:
+          # base64-encoded Developer ID Application .p12 plus its password.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # Full identity string, e.g.
+          # `Developer ID Application: Your Name (TEAMID1234)`.
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # notarytool credentials: the Apple ID triple, or nothing.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         run: |
           set -euo pipefail
+          for secret in APPLE_CERTIFICATE APPLE_SIGNING_IDENTITY APPLE_ID \
+                        APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            if [ -z "${!secret:-}" ]; then
+              echo "::error::$secret is not configured; refusing to publish a macOS build that is not Developer ID signed and notarized."
+              exit 1
+            fi
+          done
+
           version=$(node -p "require('./package.json').version")
           staging="$PWD/dist/qt"
           app="$staging/dae.app"
@@ -510,23 +947,70 @@ jobs:
           cp target/aarch64-apple-darwin/release/dae "$app/Contents/MacOS/dae"
           cp packaging/qt/Info.plist "$app/Contents/Info.plist"
           cp src-tauri/icons/icon.icns "$app/Contents/Resources/icon.icns"
+          # macdeployqt signs with the first .entitlements file it finds in
+          # Contents/Resources; that file is what grants the hardened runtime
+          # its JIT and plugin-loading exceptions.
+          cp packaging/qt/dae.entitlements "$app/Contents/Resources/dae.entitlements"
           plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
           plutil -replace CFBundleVersion -string "$version" "$app/Contents/Info.plist"
           plutil -lint "$app/Contents/Info.plist"
 
-          macdeployqt "$app" -qmldir="$PWD/qml" -always-overwrite
+          # A throwaway keychain: the runner's login keychain is not unlocked
+          # for codesign, and `set-key-partition-list` is what lets codesign use
+          # the imported key without a GUI prompt.
+          keychain="$RUNNER_TEMP/dae-signing.keychain-db"
+          keychain_password=$(openssl rand -hex 16)
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security default-keychain -s "$keychain"
+          # shellcheck disable=SC2046
+          security list-keychains -d user -s "$keychain" \
+            $(security list-keychains -d user | tr -d '"')
+          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/dae.p12"
+          security import "$RUNNER_TEMP/dae.p12" -k "$keychain" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$keychain_password" "$keychain" >/dev/null
+          rm -f "$RUNNER_TEMP/dae.p12"
+
+          # macdeployqt's own switch applies the hardened runtime, a secure
+          # timestamp and this identity to every framework and plugin it copies.
+          macdeployqt "$app" -qmldir="$PWD/qml" -always-overwrite \
+            -sign-for-notarization="$APPLE_SIGNING_IDENTITY"
           test -d "$app/Contents/Frameworks"
           test -f "$app/Contents/PlugIns/platforms/libqcocoa.dylib"
           test -d "$app/Contents/Resources/qml/QtQuick"
           test -d "$app/Contents/Resources/qml/QtMultimedia"
           test -d "$app/Contents/PlugIns/multimedia"
 
-          # Ad-hoc signing keeps the bundle internally consistent. A Developer
-          # ID signature and notarization would need Apple credentials this
-          # workflow does not have; updates downloaded by the app do not carry
-          # the quarantine attribute.
-          codesign --force --deep --sign - "$app"
-          codesign --verify --deep "$app"
+          # Signing the bundle again is not redundant: it applies the
+          # entitlements to the main executable and seals the bundle's resource
+          # envelope last, which is the order notarization checks.
+          codesign --force --timestamp --options runtime \
+            --entitlements packaging/qt/dae.entitlements \
+            --sign "$APPLE_SIGNING_IDENTITY" "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          if ! codesign --display --entitlements :- "$app" 2>/dev/null \
+              | grep -q 'com.apple.security.cs.allow-jit'; then
+            echo "::error::the signed bundle is missing the allow-jit entitlement; QML's JIT will abort under the hardened runtime"
+            exit 1
+          fi
+
+          # Notarization takes a zip; the ticket is stapled to the bundle
+          # afterwards, so the archive below ships a notarized app.
+          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/dae-notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/dae-notarize.zip" \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
+          xcrun stapler staple "$app"
+          xcrun stapler validate "$app"
+          # The same verdict Gatekeeper reaches on the user's Mac. A bundle
+          # without a stapled ticket is reported as damaged there, not as
+          # blocked, so this has to pass before anything is uploaded.
+          spctl --assess --type execute --verbose=2 "$app"
+
+          security delete-keychain "$keychain"
 
           out="$PWD/dist/qt-release"
           mkdir -p "$out"
@@ -543,10 +1027,17 @@ jobs:
       # Reuses the release minisign key. The public half is the
       # `UPDATE_PUBLIC_KEY` constant in dae-core/src/update/mod.rs, so a
       # signature produced here is exactly what the installed app verifies.
+      # The signature exists to authenticate an update the installed app will
+      # download, and a manual run publishes no feed for it to belong to. It is
+      # also the one step that refuses to continue without
+      # `TAURI_SIGNING_PRIVATE_KEY`, so skipping it on a smoke test is what
+      # makes the run possible on a fork or a machine without the secret.
       - name: Install frontend dependencies for the Tauri signer
+        if: github.event_name == 'push'
         run: bun install --frozen-lockfile
 
       - name: Sign the Qt update archive
+        if: github.event_name == 'push'
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -586,6 +1077,8 @@ jobs:
     name: Qt update feed
     needs: [build, qt]
     runs-on: ubuntu-26.04
+    # Every step here writes to the release by tag; a manual run has no tag.
+    if: github.event_name != 'workflow_dispatch'
 
     steps:
       - uses: actions/checkout@v7
@@ -621,6 +1114,19 @@ jobs:
         run: |
           set -euo pipefail
           gh release upload "${GITHUB_REF_NAME}" dist-qt/*.zip --clobber
+          # The .deb and .rpm are not part of the update feed — a system package
+          # is replaced by the system installer, not by the app — but they
+          # belong on the same release as everything else.
+          if compgen -G 'dist-qt/*.deb' >/dev/null; then
+            gh release upload "${GITHUB_REF_NAME}" dist-qt/*.deb --clobber
+          else
+            echo "::warning title=No .deb::the Linux leg produced no system package"
+          fi
+          if compgen -G 'dist-qt/*.rpm' >/dev/null; then
+            gh release upload "${GITHUB_REF_NAME}" dist-qt/*.rpm --clobber
+          else
+            echo "::warning title=No .rpm::the Linux leg produced no RPM package"
+          fi
           gh release upload "${GITHUB_REF_NAME}" dist-qt/latest-qt.json --clobber
           gh release view "${GITHUB_REF_NAME}" --json isDraft,tagName,assets \
             --jq '"release " + .tagName + " draft=" + (.isDraft|tostring) + " assets=" + ([.assets[].name]|join(","))'
