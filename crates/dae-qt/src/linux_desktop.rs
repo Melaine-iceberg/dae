@@ -205,7 +205,12 @@ mod tests {
 
     /// The `.deb`/`.rpm` entry lives under `/usr/share`; finding it is what
     /// keeps the portable path from shadowing it.
+    ///
+    /// Unix only, and not because the code is: the search path is separated by
+    /// `:`, which an absolute Windows path also contains (`C:\…`), so the split
+    /// would break a path the function is never asked to read on Linux.
     #[test]
+    #[cfg(unix)]
     fn finds_a_packaged_entry_under_xdg_data_dirs() {
         let root = std::env::temp_dir().join(format!("dae-desktop-{}", std::process::id()));
         let applications = root.join("share/applications");
