@@ -1,8 +1,8 @@
 # PGO 与 BOLT：编译期和后链接的两种优化
 
 > **状态：已接入，未测量收益。** 两个壳都接上了：`tauri`（旧 WebView 壳）与
-> `qt`（`apps/dae`，cxx-qt 桥）。本地流程（Windows / Linux）与 `release.yml` 的三条腿
-> （Windows / Linux / macOS）都覆盖，Linux 额外带 LLVM BOLT；每一步都有降级路径；但**还没有一次干净的 A/B 数字**说明它把启动或列目录加快了多少。
+> `qt`（`apps/dae`，cxx-qt 桥）。本地流程（Windows / Linux）与 `release.yml` 的两条腿
+> （Windows / Linux）都覆盖，Linux 额外带 LLVM BOLT；每一步都有降级路径；但**还没有一次干净的 A/B 数字**说明它把启动或列目录加快了多少。
 > 按 `docs/decisions/` 的习惯，这里只写「怎么跑、为什么这么接、失败时退到哪」，
 > 收益等有数了再回填——没有数字之前，不要在任何地方宣称它更快。
 >
@@ -207,8 +207,9 @@ BOLT：
 
 1. `bun scripts/opt/pgo.mjs train --seconds 45 --target <triple> [--qt]`：插桩构建 → 启动 app、
    打开一个生成的语料目录、跑 45 秒（Linux 无 DISPLAY 时套 `xvfb-run`）→ merge。
-   这一步 `continue-on-error`。`--target` 在 Windows/Linux 是空串，在 macOS 是
-   `aarch64-apple-darwin`：它既传给构建命令，也决定去 `target/<triple>/release/` 找 exe。
+   这一步 `continue-on-error`。`--target` 是矩阵里的字段，当前两条腿（Windows、
+   Linux）都是空串；非空时它既传给构建命令，也决定去 `target/<triple>/release/`
+   找 exe，交叉编译的腿靠的就是这个。
    `--qt` 使这一步走 `cargo build -p dae-app`，并把 C++ bridge 的 profile 变量交给
    构建脚本（§2.1）。
 2. `bun scripts/opt/pgo.mjs flags [--qt] <matrix.perf_flags> >> $GITHUB_ENV`：把

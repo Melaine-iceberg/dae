@@ -1,9 +1,10 @@
 # dae
 
 An aesthetic desktop file manager with an integrated terminal. The shell is
-Rust ([Tauri 2](https://tauri.app/)) and the interface is React 19 +
-TypeScript in Vite. It is meant to read as native on Windows, macOS and Linux
-without imitating any of them.
+Rust behind a Qt Quick interface (QML + `cxx-qt`). The Tauri 2 + React 19
+frontend this repository grew up with is still in the tree while the migration
+finishes — `docs/decisions/engine-qt-quick.md` records why it is being replaced
+and what is left — but nothing it contains ships any more.
 
 - **Tabs and windows.** Tabs drag between windows and tear off into their own;
   a pool of pre-warmed windows makes a tear-off look immediate.
@@ -19,18 +20,62 @@ without imitating any of them.
   shortcuts, `dae://` deep links, and registering dae as the default file
   manager. Interface in English and Simplified Chinese.
 
+## Install
+
+Every release carries one artifact per platform, all built from the Qt shell
+(`apps/dae` + `qml/`):
+
+| Platform | Artifact | How it updates |
+| --- | --- | --- |
+| Windows | `dae_<version>_x64.msix`; portable `dae-<version>-windows-x86_64.zip` | The MSIX is a real package identity: Windows installs it under `C:\Program Files\WindowsApps`, the manifest owns `dae://`, and the app cannot replace itself, so a new version arrives as a new package. The zip is the portable form and updates itself from `latest-qt.json`. |
+| Linux | `dae_<version>_amd64.deb`, `dae-<version>-1.x86_64.rpm`; portable `dae-<version>-linux-x86_64.zip` | `sudo apt install ./dae_<version>_amd64.deb` on Debian/Ubuntu, `sudo dnf install ./dae-<version>-1.x86_64.rpm` on Fedora/RHEL and `sudo zypper install ./dae-<version>-1.x86_64.rpm` on openSUSE. Both carry the same payload; the `.deb` derives its `Depends` from the payload's `ldd`, the `.rpm` lets rpm's own ELF generator require sonames. GStreamer is a weak dependency (`Recommends`) in both. |
+
+**There is no macOS artifact.** The bundle used to be Developer ID signed and
+notarized on a runner, but nothing here could confirm it actually starts on a
+Mac, and shipping a platform nobody can launch is worse than not shipping it —
+so the leg was removed on 2026-11-01. The macOS-only Rust still compiles in CI
+(`macos-check.yml`, `qt-check.yml`); only the release artifact is gone. See
+[`docs/packaging.md`](docs/packaging.md) §1, which also lists what restoring it
+would take.
+
+**Media playback on Linux needs GStreamer.** Qt Multimedia's Linux backend
+decodes through GStreamer; the Qt plugin ships inside the package, the GStreamer
+runtime and codec plugins come from the system. Both packages recommend the
+decoder set, under each distribution's own names — `gstreamer1.0-plugins-base`,
+`-good`, `-bad`, `gstreamer1.0-libav` on Debian/Ubuntu; `gstreamer1-plugins-base`,
+`-good`, `gstreamer1-plugin-libav` on Fedora/RHEL; `gstreamer-plugins-*` on
+openSUSE — and `apt`/`dnf`/`zypper` install recommendations by default. On a
+system that declined them (or under the portable zip on a minimal install) the
+preview pane says which packages are missing instead of failing silently. The
+portable zip has no package manager, so on a bare system install them by hand:
+
+```bash
+sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad gstreamer1.0-libav
+```
+
+Manual verification steps for both installers — signing credentials,
+`dpkg`/`Get-AppxPackage` checks, the upgrade path — are in
+[`docs/packaging.md`](docs/packaging.md).
+
 ## Prerequisites
 
-- [Bun](https://bun.sh/) — every frontend script runs through it.
+- [Bun](https://bun.sh/) — the release tooling and the retired frontend's
+  scripts run through it.
 - A stable Rust toolchain. The crate is edition 2024, so 1.85 or newer.
-- Platform build dependencies, the same set the release workflow installs:
-  - **Linux** — `build-essential curl wget file pkg-config cmake`, plus
-    `libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
-    libgtk-3-dev librsvg2-dev libxdo-dev libssl-dev libdbus-1-dev zlib1g-dev
-    rpm`.
-  - **Windows** — MSVC build tools and the WebView2 runtime (built into
-    Windows 11). [`winapp`](https://github.com/microsoft/winappCli) is needed
-    only for the MSIX packaging script.
+- **Qt 6.12** with Qt Quick and the `qtmultimedia` module. `cxx-qt` finds
+  `qmake` on `PATH` or in `QMAKE`; set both before `cargo build -p dae-app`
+  (`QMAKE=…/bin/qmake`, and Qt's `bin/` on `PATH`).
+- Platform build dependencies, the same sets the release workflow installs:
+  - **Linux** — `build-essential curl wget file pkg-config cmake ninja-build`,
+    plus the GL, XCB/Wayland, xkbcommon, fontconfig, dbus and secret
+    development headers the Qt shell links against; the authoritative list is
+    the `qt` job in `.github/workflows/release.yml`. The retired Tauri shell
+    additionally wants `libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev
+    libsoup-3.0-dev libxdo-dev`.
+  - **Windows** — MSVC build tools.
+    [`winapp`](https://github.com/microsoft/winappCli) is needed only for the
+    MSIX packaging script.
   - **macOS** — the Xcode command line tools.
 - Node 24 only for the release tooling (`scripts/sync-msix-version.mjs`, the
   version check); CI pins it rather than trusting the runner image.
@@ -65,6 +110,7 @@ bun run bindings:export   # regenerate src/bindings.ts alone
 | `bun run build` | `tsc`, then Vite, into `dist/` |
 | `bun run tauri:build:release` | Release bundle, with `src-tauri/tauri.release.conf.json` |
 | `bun run pack:msix` | Windows: builds the Qt shell, deploys Qt with `windeployqt`, packs the tree as MSIX (`scripts/pack-msix.ps1`) |
+| `bun run verify:msix` | Windows: installs a `.msix` and checks the launch, `dae://` and upgrade legs (`scripts/msix-verify.ps1`; `-InspectOnly` reads the manifest and changes nothing) |
 | `bun run tauri:dev:withidentity` | Windows: register the app with its identity (`winapp run`) |
 | `bun run lint` / `lint:type-aware` | Oxlint over `src` and `vite.config.ts`; add `:fix` to apply |
 | `bun run test:rust:setup` / `test:rust` | cargo-nextest, see [Tests](#tests) |
@@ -75,7 +121,7 @@ bun run bindings:export   # regenerate src/bindings.ts alone
 | `bun run perf:bolt:qt` | Linux: the same post-link pass for the Qt shell |
 
 Releases are cut by pushing a `v*` tag, which runs
-`.github/workflows/release.yml` for Windows, Linux and Apple Silicon. The tag
+`.github/workflows/release.yml` for Windows and Linux. The tag
 must match the version in `src-tauri/tauri.conf.json`, `package.json`, and the
 Qt crates (`apps/dae`, `crates/dae-qt`, `crates/dae-core`); CI fails the build
 otherwise. Besides the Tauri installers, the workflow deploys the Qt runtime,
@@ -84,8 +130,8 @@ feed, then leaves the release as a draft for manual publishing. `main` is
 additionally type-checked for macOS on every push, since
 `#[cfg(target_os = "macos")]` code is invisible on the other platforms. The Qt
 workspace (`apps/dae`, `crates/dae-qt`) is compiled with Qt 6.12 on Linux and
-macOS by `qt-check.yml`, so the release matrix is not the first compiler those
-platforms see; that job and the release Qt legs also compile the QML ahead of
+macOS by `qt-check.yml`, so a compiler sees those platforms before a release
+would; that job and the release Qt legs also compile the QML ahead of
 time ([QML AOT](docs/qml-aot.md)). The Windows-only native chrome and its
 portable fallbacks are listed in [the engine
 decision](docs/decisions/engine-qt-quick.md).

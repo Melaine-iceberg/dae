@@ -10,9 +10,15 @@ on:
   # update feed — is gated on `github.event_name == 'push'`, so a manual run
   # cannot create, modify or publish a release even by accident.
   #
-  # `linux-x86_64` and `windows-x86_64` need no secrets. `darwin-aarch64` still
-  # does: its packaging step notarizes, and refuses to continue without the
-  # Apple credentials.
+  # Neither leg needs a secret.
+  #
+  # There is no macOS leg. It was removed on 2026-11-01: the bundles were
+  # Developer ID signed and notarized on a runner, and nothing on this side
+  # could tell whether the result actually started on a Mac. Shipping a
+  # platform nobody can launch is worse than not shipping it — see
+  # `docs/packaging.md` §1. The macOS-only Rust is still compiled by
+  # `macos-check.yml` and `qt-check.yml`, so the code does not rot; only the
+  # artifact is gone.
   workflow_dispatch:
     inputs:
       platform_key:
@@ -21,7 +27,6 @@ on:
         options:
           - linux-x86_64
           - windows-x86_64
-          - darwin-aarch64
         default: linux-x86_64
       perf:
         description: "Run the PGO/BOLT training pass (recommended off for a smoke test)"
@@ -42,7 +47,8 @@ concurrency:
 jobs:
   build:
     # This job is the one tauri-action turns into a draft release, and it builds
-    # three installer sets nobody needs for a smoke test.
+    # one installer set per runner. Windows and Linux only: the macOS leg was
+    # dropped along with the Qt one (see the trigger comment above).
     if: github.event_name != 'workflow_dispatch'
     strategy:
       fail-fast: false
@@ -61,12 +67,6 @@ jobs:
             # `beforeBundleCommand` hook is what actually runs BOLT.
             perf_flags: "--bolt"
             args: "--config src-tauri/tauri.perf.conf.json"
-          # The macOS artifact targets Apple Silicon, matching current macOS
-          # software support and the runner architecture.
-          - platform: macos-latest
-            target: aarch64-apple-darwin
-            perf_flags: ""
-            args: "--target aarch64-apple-darwin"
 
     runs-on: ${{ matrix.platform }}
 
@@ -166,23 +166,23 @@ jobs:
       # plugin panics during init.
       - name: PGO — instrument and train
         continue-on-error: true
-        # bash on all three runners: the Windows default shell is pwsh, and a
+        # bash on both runners: the Windows default shell is pwsh, and a
         # `--target ""` expansion means something different there.
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        # `--target` is empty on Windows and Linux, and the Apple Silicon triple
-        # on macOS: the script forwards it to `tauri build` and also looks for
-        # the binary in `target/<triple>/release/`.
+        # `--target` stays in the matrix and is empty on both legs: the script
+        # forwards it to `tauri build` and also looks for the binary under
+        # `target/<triple>/release/`, which is the shape a cross build needs.
         run: bun scripts/opt/pgo.mjs train --seconds 45 --target ${{ matrix.target }}
 
       # Writes CARGO_ENCODED_RUSTFLAGS (and, with --bolt, the strip override)
       # into the job environment, so the build tauri-action performs below is the
       # PGO build.
       - name: PGO/BOLT — export compile flags
-        # bash, not the runner default: `$GITHUB_ENV` is a shell variable on
-        # bash/macOS/Linux but needs `$env:` in pwsh.
+        # bash, not the runner default: `$GITHUB_ENV` is a shell variable under
+        # bash but needs `$env:` in pwsh.
         shell: bash
         run: bun scripts/opt/pgo.mjs flags ${{ matrix.perf_flags }} >> "$GITHUB_ENV"
 
@@ -325,10 +325,10 @@ jobs:
   # Qt shell update artifacts.
   #
   # These jobs are deliberately separate from the Tauri matrix: the Qt shell
-  # ships a portable directory (Windows/Linux) or a .app (macOS), not an MSI,
-  # NSIS installer or DMG. They now get the same two-stage PGO (and BOLT on
-  # Linux) as the Tauri legs; every optimisation step degrades to a plain
-  # release build, so a missing profile cannot block packaging.
+  # ships a portable directory, not an MSI or NSIS installer. They now get the
+  # same two-stage PGO (and BOLT on Linux) as the Tauri legs; every
+  # optimisation step degrades to a plain release build, so a missing profile
+  # cannot block packaging.
   #
   # The archives are signed with the same Tauri updater private key, and the
   # feed is published as `latest-qt.json` on the same (draft) release. Once the
@@ -339,7 +339,7 @@ jobs:
   # The leg list is data here rather than an inline `matrix.include` because
   # `matrix` is unavailable to `jobs.<id>.if`: for a manual run to build one
   # leg, the filtering has to happen before the matrix exists. On a tag push
-  # this job returns all three legs verbatim.
+  # this job returns both legs verbatim.
   plan:
     name: Plan Qt legs
     runs-on: ubuntu-26.04
@@ -358,8 +358,7 @@ jobs:
           # `--bolt` is ELF-only, so it stays on the Linux leg.
           all='[
             {"platform":"windows-latest","platform_key":"windows-x86_64","qt_arch":"win64_msvc2022_64","target":"","perf_flags":"","binary":"target/release/dae.exe"},
-            {"platform":"ubuntu-26.04","platform_key":"linux-x86_64","qt_arch":"linux_gcc_64","target":"","perf_flags":"--bolt","binary":"target/release/dae"},
-            {"platform":"macos-latest","platform_key":"darwin-aarch64","qt_arch":"clang_64","target":"aarch64-apple-darwin","perf_flags":"","binary":"target/aarch64-apple-darwin/release/dae"}
+            {"platform":"ubuntu-26.04","platform_key":"linux-x86_64","qt_arch":"linux_gcc_64","target":"","perf_flags":"--bolt","binary":"target/release/dae"}
           ]'
           if [ "$EVENT" = "workflow_dispatch" ]; then
             legs=$(printf '%s' "$all" | jq -c --arg k "$ONLY" '[.[] | select(.platform_key == $k)]')
@@ -1023,120 +1022,6 @@ jobs:
           fi
           echo "bundled Qt sonames: $(rpm -qp --provides "$rpmfile" | awk '/^libQt6/{print $1}' | tr '\n' ' ')"
           echo "rpm: $(stat -c '%s' "$rpmfile") bytes"
-
-      # ---- macOS: .app -> macdeployqt -> Developer ID -> notarize -> zip ----
-      #
-      # Gatekeeper refuses to open an ad-hoc signed app that carries the
-      # quarantine bit with a "damaged" dialog rather than a prompt, so a tag
-      # release without the Apple secrets is a failed release, not a warning.
-      - name: Deploy Qt runtime and package (macOS)
-        if: matrix.platform == 'macos-latest'
-        shell: bash
-        env:
-          # base64-encoded Developer ID Application .p12 plus its password.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # Full identity string, e.g.
-          # `Developer ID Application: Your Name (TEAMID1234)`.
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # notarytool credentials: the Apple ID triple, or nothing.
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: |
-          set -euo pipefail
-          for secret in APPLE_CERTIFICATE APPLE_SIGNING_IDENTITY APPLE_ID \
-                        APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
-            if [ -z "${!secret:-}" ]; then
-              echo "::error::$secret is not configured; refusing to publish a macOS build that is not Developer ID signed and notarized."
-              exit 1
-            fi
-          done
-
-          version=$(node -p "require('./package.json').version")
-          staging="$PWD/dist/qt"
-          app="$staging/dae.app"
-          rm -rf "$staging"
-          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-          cp target/aarch64-apple-darwin/release/dae "$app/Contents/MacOS/dae"
-          cp packaging/qt/Info.plist "$app/Contents/Info.plist"
-          cp src-tauri/icons/icon.icns "$app/Contents/Resources/icon.icns"
-          # macdeployqt signs with the first .entitlements file it finds in
-          # Contents/Resources; that file is what grants the hardened runtime
-          # its JIT and plugin-loading exceptions.
-          cp packaging/qt/dae.entitlements "$app/Contents/Resources/dae.entitlements"
-          plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
-          plutil -replace CFBundleVersion -string "$version" "$app/Contents/Info.plist"
-          plutil -lint "$app/Contents/Info.plist"
-
-          # A throwaway keychain: the runner's login keychain is not unlocked
-          # for codesign, and `set-key-partition-list` is what lets codesign use
-          # the imported key without a GUI prompt.
-          keychain="$RUNNER_TEMP/dae-signing.keychain-db"
-          keychain_password=$(openssl rand -hex 16)
-          security create-keychain -p "$keychain_password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$keychain_password" "$keychain"
-          security default-keychain -s "$keychain"
-          # shellcheck disable=SC2046
-          security list-keychains -d user -s "$keychain" \
-            $(security list-keychains -d user | tr -d '"')
-          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/dae.p12"
-          security import "$RUNNER_TEMP/dae.p12" -k "$keychain" \
-            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: \
-            -s -k "$keychain_password" "$keychain" >/dev/null
-          rm -f "$RUNNER_TEMP/dae.p12"
-
-          # macdeployqt's own switch applies the hardened runtime, a secure
-          # timestamp and this identity to every framework and plugin it copies.
-          macdeployqt "$app" -qmldir="$PWD/qml" -always-overwrite \
-            -sign-for-notarization="$APPLE_SIGNING_IDENTITY"
-          test -d "$app/Contents/Frameworks"
-          test -f "$app/Contents/PlugIns/platforms/libqcocoa.dylib"
-          test -d "$app/Contents/Resources/qml/QtQuick"
-          test -d "$app/Contents/Resources/qml/QtMultimedia"
-          test -d "$app/Contents/PlugIns/multimedia"
-
-          # Signing the bundle again is not redundant: it applies the
-          # entitlements to the main executable and seals the bundle's resource
-          # envelope last, which is the order notarization checks.
-          codesign --force --timestamp --options runtime \
-            --entitlements packaging/qt/dae.entitlements \
-            --sign "$APPLE_SIGNING_IDENTITY" "$app"
-          codesign --verify --deep --strict --verbose=2 "$app"
-          if ! codesign --display --entitlements :- "$app" 2>/dev/null \
-              | grep -q 'com.apple.security.cs.allow-jit'; then
-            echo "::error::the signed bundle is missing the allow-jit entitlement; QML's JIT will abort under the hardened runtime"
-            exit 1
-          fi
-
-          # Notarization takes a zip; the ticket is stapled to the bundle
-          # afterwards, so the archive below ships a notarized app.
-          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/dae-notarize.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/dae-notarize.zip" \
-            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
-          xcrun stapler staple "$app"
-          xcrun stapler validate "$app"
-          # The same verdict Gatekeeper reaches on the user's Mac. A bundle
-          # without a stapled ticket is reported as damaged there, not as
-          # blocked, so this has to pass before anything is uploaded.
-          spctl --assess --type execute --verbose=2 "$app"
-
-          security delete-keychain "$keychain"
-
-          out="$PWD/dist/qt-release"
-          mkdir -p "$out"
-          zip="$out/dae-$version-${{ matrix.platform_key }}.zip"
-          rm -f "$zip"
-          (cd "$staging" && COPYFILE_DISABLE=1 zip -r -y -X -q "$zip" dae.app)
-          unzip -Z1 "$zip" | grep -qx 'dae.app/Contents/MacOS/dae'
-          tops=$(unzip -Z1 "$zip" | awk -F/ '{print $1}' | sort -u | tr -d '\r')
-          if [ "$tops" != "dae.app" ]; then
-            echo "::error::the macOS archive must contain only dae.app, got: $tops"
-            exit 1
-          fi
 
       # Reuses the release minisign key. The public half is the
       # `UPDATE_PUBLIC_KEY` constant in dae-core/src/update/mod.rs, so a

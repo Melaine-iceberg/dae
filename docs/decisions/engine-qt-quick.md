@@ -1325,8 +1325,8 @@ Qt Online Installer 装在 `K:/Qt`：
 | # | 项 | 现状与证据 | 验收 |
 |---|---|---|---|
 | 1 | Windows MSIX 仍打旧壳 | `release.yml` 曾把 `src-tauri\target\release\dae.exe` 复制进 `dist/` 再 `winapp pack`；Qt 作业只产出 portable zip 与 `latest-qt.json`。根 `Package.appxmanifest` 的 `Executable="$targetnametoken$.exe"` 由 `winapp pack` 解析，与产物无关 | **已补**，见 §9.7：MSIX 内是 Qt 部署树；`dae://` 改由清单声明，默认管理器与开机启动仍写版本化路径（§9.7.3-2） |
-| 2 | macOS 未签名、未公证 | 发布矩阵只有 `darwin-aarch64`，签名是 ad-hoc（`release.yml` 的 macOS 段） | Developer ID + 公证通过；Intel Mac 可运行，或在 README 明确写不支持 |
-| 3 | Linux 只有 portable zip | 无 deb/rpm/Flatpak/AppImage；QtMultimedia 依赖 GStreamer 插件，未在安装层声明；图标只有 128px | 至少一种系统包；缺 GStreamer 时预览给出可读提示，而不是静默失败 |
+| 2 | macOS 未签名、未公证 | 发布矩阵只有 `darwin-aarch64`，签名曾是 ad-hoc | **已撤项**（2026-11-01，见 §9.12）：签名与公证链路按 §9.9 接线完成，但没有 Mac 设备能验收「装完能启动」这一层，Apple 的六个 secret 也从未配置（缺一个该腿就 `::error::`），于是整条腿连同产物一起移除。macOS 专属 Rust 仍由 `macos-check.yml` / `qt-check.yml` 编译 |
+| 3 | Linux 只有 portable zip | 无 deb/rpm/Flatpak/AppImage；QtMultimedia 依赖 GStreamer 插件，未在安装层声明；图标只有 128px | **已补**，见 §9.10：`.deb`（`Depends` 由 `ldd`+`dpkg -S` 推出）与 `.rpm`（soname 由 rpm 自己的 ELF 生成器推导），GStreamer 在两个包里都是 `Recommends`；缺后端时预览给出可读提示；图标 128 与 256 两档。真机装包启动已通过（§9.12.3）。Flatpak/AppImage 仍未做 |
 
 ### 9.3 运行时与排障（P1）
 
@@ -1360,6 +1360,12 @@ Qt Online Installer 装在 `K:/Qt`：
 MSIX 落地后分出两件应该插队的事：**在真实机器上装一次，走一遍深链与升级**
 （§9.7.3-1），以及**把默认管理器与开机启动改成包身份注册**（§9.7.3-2）——
 后者现在属于「能用，但升级后会指向上一个版本目录」。
+
+> **2026-11-01：** 第 3 步（§9.2-2 / §9.2-3）与上面这两件都已接线完成 —— 见
+> §9.9（macOS 签名与公证）、§9.10（`.deb` 与缺 GStreamer 的提示）、
+> §9.11（别名路径、更新说明、`scripts/msix-verify.ps1`）。剩下的是在真机上跑
+> 一遍，命令与判据在 [`../packaging.md`](../packaging.md)。第 4 步（平台手测，
+> 回填 parity §6）与第 5 步（退役）顺序不变。
 
 ### 9.6 记录：日志与 panic 落盘（2026-10-30）
 
@@ -1460,21 +1466,23 @@ sink。首次实跑就把两条以前完全不可见的信息写了进去：
 | `cargo test -p dae-qt --lib` | **144 passed**（`activation` 的打包分支随之编译） |
 | `cargo check -p dae-core` | 通过（`Win32_Storage_Packaging_Appx` 特性已加） |
 
-**9.7.3 未关闭。**
+**9.7.3 后续状态（2026-11-01 更新，详见 §9.11）。**
 
-1. **没有真的装一次。** 包能打出来、内容与清单都对，但 `Add-AppxPackage` 需要信任
-   开发证书，那会改动本机状态，留给手动步骤：装完启动一次、点一个 `dae://` 链接、
-   确认日志落在 `%LOCALAPPDATA%\com.melaine.dae\logs`（打包进程不被重定向）。
-2. **默认管理器与开机启动仍写版本化路径。** 两者都用 `std::env::current_exe()`
-   （`default_manager.rs:64`、`:279`、`:596`），写进 `HKCU` 的是
-   `…\WindowsApps\dae_0.5.0.0_x64__…\dae.exe`。升级后新包换了目录名，这两条会指向
-   已被删除的路径，直到用户重新开关一次。正确做法是声明 `desktop:Extension`
-   （默认管理器）与 `uap5:startupTask`（开机启动），跟 `dae://` 一样交给包身份；
-   需要先确认 `startupTask` 在 full-trust 下的任务管理器可见性。
-3. **包内的自更新提示已关闭，但没有降级说明。** `updates_enabled()` 为假时设置页
-   不再出现更新入口，用户也就不知道该去下载新版本。要么在 About 里留一句
-   「此安装由系统包管理器更新」，要么接 MSIX 的部署 API——后者需要
-   `packageManagement` 能力与非 Store 签名信任，属独立决策。
+1. **真机安装仍未做，但不再靠人肉清单。** `scripts/msix-verify.ps1` 把这件事变成
+   一条命令：`-InspectOnly` 只读清单（不改动机器），`-Previous` 先装旧包再装新包
+   验升级，`-Uninstall` 收尾。`Add-AppxPackage` 要信任开发证书、会改动本机状态，
+   所以它不进 CI。
+2. **默认管理器改指别名，已补。** 清单加 `windows.appExecutionAlias`
+   （`Alias="dae.exe"`），Windows 把它暴露成
+   `%LOCALAPPDATA%\Microsoft\WindowsApps\dae.exe`，跨版本稳定；
+   `default_manager` 在打包运行时注册这条路径，`claim()` 每次启动比对已存在的
+   `dae.folder` 命令，不一致就重写 —— 升级前注册过的用户由此被修复。
+   **原条目里的「开机启动」不成立**：Qt 壳没有开机启动功能（`src-tauri` 也没有），
+   全仓没有任何 `Run`/`startupTask` 写入，这一半无需改动。
+3. **自更新提示改成了说明，已补。** `Updater.packaged` 为真时，「更多」菜单里仍然
+   有入口（文案「由安装包更新」），打开更新对话框会说明「此安装来自 Windows 应用
+   包：更新随新版本安装包到来，应用无法自行替换自身」，不再把打包运行当成配置
+   错误而报 `error`。
 4. **CI 上未跑过。** 作业结构与依赖用本机 `yaml` 解析校验过，`windeployqt` 与
    `winapp pack` 的调用与本机实测一致，但真实 runner 上的 windeployqt 版本、
    `Assets/` 相对路径解析仍需第一次打 tag 时确认。
@@ -1531,3 +1539,228 @@ sink。首次实跑就把两条以前完全不可见的信息写了进去：
    `usize`，Windows 上两者同型、64 位 Linux 上不同型（`unsigned long long` vs
    `unsigned long`），已改为 `std::size_t`。`release.yml` 的三条 Qt 腿（含 macOS
    单实例锁与 BOLT）仍待第一次打 tag 确认。
+
+### 9.9 记录：macOS Developer ID + 公证（2026-11-01）
+
+> **已撤项（2026-11-01，见 §9.12.4）。** 下面这条链路已经接完又整段删掉了：它证明
+> 不了包在 Mac 上能启动，而 Apple 的证书 secret 一个都没配。保留本节是因为恢复时要
+> 照着它做——`macdeployqt -sign-for-notarization`、一次性 keychain、公证用的
+> `ditto` 打 zip 顺序都只在这里有记录。
+
+**问题。** `qt` 矩阵的 macOS 腿用 `codesign --sign -`（ad-hoc）收尾。ad-hoc 只保证
+bundle 内部一致，Gatekeeper 不认：带 quarantine 位的下载会被判「已损坏」，用户连
+「仍要打开」都没有。所以要么真签名与公证，要么承认不支持。
+
+**决定：真签名，且只发 Apple Silicon。**
+
+1. 矩阵里仍然只有 `aarch64-apple-darwin` 一条腿，产物没有 x86_64 slice，Intel Mac
+   装不了。README 的 Install 一节把这件事写死（`README.md`「macOS is Apple Silicon
+   only」），这是 §9.2-2 验收里「或在 README 明确写不支持」的那一半。做 universal
+   需要再加一条 `x86_64-apple-darwin` 构建腿并 `lipo` 合并，属另一个决定。
+2. `packaging/qt/dae.entitlements`（新）：`allow-jit` 与
+   `disable-library-validation`。前者是 QV4 在运行时生成机器码所必需 ——
+   hardened runtime 下缺它，第一次绑定求值就 abort；后者是因为 Qt 按路径加载
+   platform / imageformats / multimedia 插件，`macdeployqt` 漏签一个就会在加载时
+   被 library validation 拒绝。文件头把这两条理由写进了 XML 注释。
+
+**流程（`release.yml` 的 macOS 腿）。** 六个 secret 缺一个就 `::error::` 退出，
+不发 ad-hoc 包；然后用一次性 keychain 导入证书；`macdeployqt
+-sign-for-notarization=<identity>` 把 hardened runtime、安全时间戳、逐 framework
+与 plugin 的签名一起做完；再签一次最外层 bundle 让 entitlements 落地，并断言签名里
+确实有 `allow-jit`；`ditto` 打 zip → `notarytool submit --wait` → `stapler staple`
+→ `stapler validate` → `spctl --assess`；**只有走完这些才开始打发布 zip**，所以更新
+包里的 `.app` 带装订好的 ticket。
+
+**验证。**
+
+| 项目 | 结果 |
+|---|---|
+| 两个走 shell 的步骤 `bash -n` | 通过（macOS 与 Linux 腿） |
+| `release.yml` 结构 | `Bun.YAML.parse` 通过，`qt` 作业 19 步、`qt-feed` 5 步 |
+| 实际签名 / 公证 | **未跑**：开发机是 Windows，也没有 Apple 证书 |
+| 首次打 tag 的观察点 | 写在 `docs/packaging.md` §1.5（`-sign-for-notarization` 是否在、keychain 里是否恰好一条身份、notarytool `Invalid` 时看 `notarytool log`、`spctl` 失败通常是 ticket 没装订） |
+
+### 9.10 记录：Linux `.deb` / `.rpm` + 缺 GStreamer 时的可读提示（2026-11-01）
+
+**9.10.1 包。** `release.yml` 的 Linux 腿在 portable zip 之后，用同一棵 `staging`
+树组一个 `.deb`：
+
+- ~~`/usr/bin/dae` 是软链接（`../lib/dae/dae`）~~ —— **这一条是错的，见 §9.12.1**。
+  当时的理由是「Qt 用 `/proc/self/exe` 定位 `qt.conf` 与插件」；实测表明 Qt 的
+  application directory 取的是**进程启动时那个路径**所在的目录，软链接形态下
+  插件会去 `/usr/bin/platforms` 找，装完点图标没有任何窗口。现在入口是
+  `packaging/qt/dae-launcher`（`exec /usr/lib/dae/dae "$@"`）；
+- 载荷装在 `/usr/lib/dae/`，`platforms/`、`qml/`、`lib/` 都保持 staging 的相对形状；
+- `packaging/qt/dae-installed.desktop`（新）与便携版 `dae.desktop` 是两个文件：安装
+  版多声明 `MimeType=inode/directory`（进「打开方式」候选）并 `Exec=dae %f`；
+- 图标装 128 与 256 两档（`128x128.png`、`128x128@2x.png`）。
+
+**`Depends` 是算出来的。** 对整棵树（`dae` + `lib/*` + 各 plugin 目录 + `qml/**`）
+跑 `ldd`，把解析到 `$staging` 之外的库挑出来，再 `dpkg -S` 反查提供它的包。手写
+清单在下一个发行版就会漏掉 xcb/wayland/fontconfig 里的某一个。GStreamer 放在
+`Recommends`：`apt` 默认装，但服务器镜像不会被强行拉进整套解码器。
+
+**`.rpm` 用同一棵树、另一套元数据。** 二十来行 spec，`%install` 直接 `cp -a` 那棵
+staging 树，`%files` 列 `/usr/bin/dae`、`/usr/lib/dae`、desktop 与两档图标。依赖
+不推导而是交给 `rpmbuild` 的 ELF 生成器：它问的是 soname
+（`libxcb.so.1()(64bit)`），与发行版包名无关，所以 Fedora、RHEL、openSUSE 吃同一个
+包。两个细节是本项真正的收获：
+
+1. **自带运行时的 require 会写进 `Requires`。** 生成器把
+   `libQt6Core.so.6()(64bit)` 同时放进 `Provides` 与 `Requires`，包自己满足自己 ——
+   这是「随包带 Qt」的正确形状。断言因此写成「每个 `libQt6*` 的 require 都必须在
+   Provides 里」，而不是「不能出现 Qt require」：前者在真的漏包时立刻失败，后者会
+   把漏包当成正常。
+2. **`%__os_install_post` 必须关掉。** 二进制是 cargo 产出的，PGO 与 BOLT 已经跑过；
+   发行版的 strip / find-debuginfo 钩子只会把处理好的东西再动一遍，还会为一个不再
+   有编译期信息的产物生成 debuginfo 子包。
+
+**9.10.2 缺 GStreamer 时不再静默。** `qml/MediaPreview.qml` 原来只认
+`player.error !== NoError`。真正的静默失败是**后端根本没加载**：`play()` 之后状态
+停在 `NoMedia`、`error` 仍是 `NoError`，界面什么也不显示。现在：
+
+- `failed` 分支显示 Qt 自己的 `errorString`（缺编解码器、文件读不动都在这里）；
+- `backendUnavailable`：点了播放 2 秒后仍停在 `NoMedia` 且无错误，判定没有后端
+  应答，Linux 上文案直接点名要装的包
+  （`gstreamer1.0-plugins-base / -good / -libav`）；
+- 两者合成为 `unplayable`：播放按钮变灰且不可点，避免反复点一个永远不会开始的动作。
+
+新增四条文案同时进了 `qml/i18n/dae_en.ts` 与 `dae_zh_CN.ts`（两文件各 806 → 810
+条），否则英文界面会掉回中文源串。
+
+**验证。**
+
+| 项目 | 结果 |
+|---|---|
+| `cargo test -p dae-qt --lib` | **146 passed**（本节的 QML 改动随包编译；两条 `default_manager` 用例计入 §9.11） |
+| `DAE_QML_LINT=1 DAE_QML_TYPEC=1 cargo build -p dae-app` | 通过：`qmllint` 与类型编译零告警（`MediaPreview.qml`、`UpdateDialog.qml`、`ShellWindow.qml` 全在其中） |
+| deb 组装段（WSL / Fedora，真实 ELF 载荷 + 桩 `dpkg`） | 通过：`dpkg-deb --build` 出包 63 KB，`control` 的 `Depends`、`Recommends` 四包、`Package`/`Version`/`Installed-Size` 均正确；`--contents` 里 `./usr/bin/dae -> ../lib/dae/dae`、`platforms/libqxcb.so`、`qml/QtQuick/`、desktop 与 128px 图标全在 |
+| rpm 组装段（同上） | 通过：`rpmbuild -bb` 出包 74 KB；`rpm -qip` 的 License/URL/Summary 正确；`Provides` 含 `libQt6Core.so.6()(64bit)`（以及 desktop 文件带来的 `application()`/`mimehandler(inode/directory)`）；`Requires` 只有 libc/libm/rpmlib/rtld + 那条自满足的 Qt soname；`Recommends` 是 `gstreamer1-*`；`rpm2cpio` 解开后 `/usr/bin/dae -> ../lib/dae/dae`，二进制直接可运行 |
+| rpm 的 `Requires` 断言 | 写错过一版（要求「不能出现 `libQt6` require」），被本机实测否掉：自带运行时的包必然两者都有。现在断言「require 必须在 Provides 里」，同一份 harness 通过 |
+| 空 `Depends` 的失败路径 | 触发过：`::error::no runtime dependency …`，即派生失败不会发出一张空依赖表 |
+| `dpkg -S` 输出的解析 | 用合成的三类行（`diversion by …`、`local diversion by …`、`liba, libb: /path`）验证：只留下真实包名，多包一行不会丢包，diversion 行不会混进 `Depends` |
+| 真机 Ubuntu 安装 | **未跑**：开发机没有 Ubuntu，`ldd`+`dpkg -S` 的真输入只在 CI 的 `qt` 作业里 |
+| 缺 GStreamer 的实机复现 | **未跑**：文案与判定逻辑已编译通过，但「拔掉 gstreamer 插件后预览出提示」需要 Linux 手测 |
+
+`dpkg-deb` 的一个坑值得记下来：它拒绝 group/world 可写的 control 目录。WSL 的
+drvfs 挂载把目录权限强制成 0777，所以包必须在原生 Linux 文件系统上组；脚本里因
+此加了 `chmod 0755 "$pkg" "$pkg/DEBIAN"`，免得异常 umask 的 runner 在拷完载荷后
+才失败。
+
+### 9.11 记录：MSIX 包身份收尾（2026-11-01）
+
+**9.11.1 一个稳定的启动路径。** 打包运行时进程住在
+`…\WindowsApps\dae_<version>_<arch>__<publisher>`，升级会换目录名。清单因此声明
+`windows.appExecutionAlias`（`Alias="dae.exe"`，`EntryPoint="Windows.FullTrustApplication"`，
+容器元素是 `uap3:Extension`），Windows 把它暴露为
+`%LOCALAPPDATA%\Microsoft\WindowsApps\dae.exe` —— 跨版本不变的那条路径。
+
+- `default_manager::launch_path()`：打包运行时用别名路径，别名为不存在（用户在
+  设置里关掉了）时回退到 `current_exe()` 并记一条 `warn`；
+- `default_manager::refresh()`：`claim()` 每次启动调用。读已存在的
+  `HKCU\Software\Classes\dae.folder\shell\open\command`，取出其中第一个引号里的
+  可执行文件路径；**只有该路径已不存在**才重写（`registered_executable`）。这条修
+  的正是升级：旧版本目录被删掉，命令成了空指针。仍能解析的注册一律不动 —— 那是
+  别人正在用的设置，旁边启动的一个开发构建不该把它抢过来（这条规则是被实测逼出来
+  的：最初的实现是「与期望命令不同就重写」，一次 debug 启动就把机器上的注册改成了
+  `target\debug\dae.exe`）。
+- **「开机启动」在原条目里提到了，但代码里不存在**：Qt 壳与 `src-tauri` 都没有
+  开机启动写入，全仓没有 `Run`/`startupTask`。这一半不需要改，已从 §9.7.3-2 删掉。
+
+**9.11.2 打包运行时的更新说明。** `Updater` 新增 `packaged`（
+`dae_core::package::is_packaged()`）。`!supported && packaged` 时不再把
+「This build does not support automatic updates」当错误报出来；「更多」菜单里保留
+入口（文案「由安装包更新」），更新对话框顶部说明「此安装来自 Windows 应用包：更新随
+新版本安装包到来，应用无法自行替换自身」。`supported` 与 `packaged` 是两件事：
+debug 构建里前者为假而后者可能为真。
+
+**9.11.3 验收入口。** `scripts/msix-verify.ps1`（`bun run verify:msix`）：
+
+| 模式 | 做什么 |
+|---|---|
+| `-InspectOnly` | 从 `.msix` 里直接读 `AppxManifest.xml`（`zip` 里读，不安装），断言四段版本、`windows.protocol=dae`、`appExecutionAlias=dae.exe`、`Application Id` |
+| 默认 | 读清单后安装；核对安装目录里的 `platforms\qwindows.dll` / `qml\QtQuick` / `qml\QtMultimedia` / `multimedia`、别名路径、进程确实起来、日志写进 `%LOCALAPPDATA%\com.melaine.dae\logs`、`dae://` 之后仍只有一个进程、以及已注册的 `dae.folder` 命令是否指向别名 |
+| `-Previous <旧.msix>` | 先装旧包再装新包，断言版本前进、旧安装目录已删除、只注册了一个版本 |
+| `-Uninstall` | 收尾移除 |
+
+**验证。**
+
+| 项目 | 结果 |
+|---|---|
+| `pwsh scripts/pack-msix.ps1 -SkipBuild -QtRoot K:\Qt\6.12.0\msvc2022_64` | 通过：payload **108.6 MB** → `dae_0.5.0.0_x64.msix` **46.2 MB**；`makeappx` 未拒绝新清单（schema 校验在打包阶段） |
+| `scripts/msix-verify.ps1 -InspectOnly`（新包） | 四条全 PASS，`alias=dae.exe` |
+| 同一脚本对改动前的包 | `alias=` → **FAIL**，即该检查确实在测东西，而不是恒真 |
+| `cargo test -p dae-qt --lib` | **146 passed**，含新增 `the_package_alias_lives_under_local_app_data` 与 `a_launch_command_names_the_executable` |
+| `cargo build -p dae-app`（含 QML lint/typec） | 通过；实跑一次，窗口正常起，`MediaPreview` 对 `.mp4` 渲染出媒体卡片 |
+| `refresh()` 的健康路径（本机） | 注册指向仍存在的 `dist\dae.exe` 时启动：**无日志行、无注册表写入** |
+| `refresh()` 的修复路径（本机） | 把注册改成 `C:\Program Files\WindowsApps\dae_0.4.0.0_x64__nope\dae.exe`（不存在）后启动：日志 `the registered folder handler is gone (…); re-pointing it at K:\code\dae\target\debug\dae.exe`，注册被重写 |
+| 真机 `Add-AppxPackage` | **未跑**：要信任开发证书、会改动本机状态，留给手动执行；清单见 `docs/packaging.md` §3.2 |
+
+顺手把 `Package.appxmanifest` 的 `Version` 从 `0.3.0.0` 对齐到 `0.5.0.0`：打包脚本
+本来就要求它与 `package.json` 一致（`--release` 下直接以 drift 失败），留着旧值只会
+在每次本地打包时打一条 warning。
+
+三件 P0 的接线到此完整；**真机上仍待执行的只有 MSIX 安装/深链/升级、macOS 的
+签名公证链路、以及 Linux 上的实际安装与缺 GStreamer 复现**，验收命令都写在
+[`../packaging.md`](../packaging.md)。
+
+### 9.12 记录：Linux 装包实机验收、入口改启动器、Wayland 客户端 buffer、macOS 撤项（2026-11-01）
+
+**9.12.1 `/usr/bin/dae` 必须是启动器，不能是软链接。** 0.5.0 的 rpm 装完点图标没有
+任何窗口。`QT_DEBUG_PLUGINS=1` 给出的第一行是
+
+```
+checking directory path "/usr/bin/platforms" ...
+qt.qpa.plugin: Could not find the Qt platform plugin "xcb" in ""
+```
+
+`qt.conf` 就在 `/usr/lib/dae/`，但 Qt 的 application directory 取的是**进程启动时
+那个路径的所在目录**，`/proc/self/exe` 只用来取文件名，所以软链接形态下
+`QLibraryInfo` 根本不看 `/usr/lib/dae`。§9.10.1 里「Qt 用 `/proc/self/exe` 定位」
+那句话是错的，已在原地标注。
+
+`/usr/bin/qt.conf` 能让报错消失，但那文件会被系统上**所有**从 `/usr/bin` 启动的 Qt
+程序读到，等于把本包的插件路径注入全系统，不能用。入口改为
+`packaging/qt/dae-launcher`（一个 `exec /usr/lib/dae/dae "$@"`），`exec` 之后
+application directory 回到 `/usr/lib/dae`。两个包的断言随之改成：`.deb` 用
+`dpkg-deb --fsys-tarfile` 把入口读回来核对 `exec` 行，`.rpm` 要求 mode `0100755`
+（软链接是 `0120777`），两者都要求 `qt.conf` 在载荷里。
+
+**9.12.2 Wayland 的客户端 buffer 插件要自己带。** 包里 `platforms/`、
+`wayland-shell-integration`、`wayland-decoration-client` 都在，缺的是客户端 buffer
+这一层：`linuxdeploy-plugin-qt` 只有**服务端**合成器的部署器
+（`WaylandcompositorPluginsDeployer`），而客户端插件是运行期 `dlopen` 的，可执行文件
+的符号表里没有任何引用，于是包里没有该目录，Wayland 会话下 Qt Quick 起来就报
+
+```
+qt: Failed to load client buffer integration: "wayland-egl"
+qt: Available client buffer integrations: QList()
+```
+
+必须从 `$QT_ROOT_DIR` 整目录复制，不能拿发行版的同名插件补：那些是针对发行版自己的
+Qt 6.x 编的，插件加载器遇到版本不一致直接拒绝，不会降级——和整棵运行时随包带上
+是同一个理由。目录名与文件名都不写死（Qt 6 各版本命名不同），只断言「目录存在且
+非空」，zip / `.deb` / `.rpm` 三处都断言。副作用可以佐证依赖是真实的：`.deb` 的
+`Depends` 自动多出 `libwayland-egl1`，它是 `ldd` 反查新加的插件得到的。
+
+**9.12.3 实机验收。** 用户在自己的 Linux 机器上覆盖安装 `.rpm` 后从菜单点图标启动，
+确认正常：入口是启动器、`qt.conf` 生效、Wayland buffer 插件被加载，三件事同时成立。
+开发机（Windows）上的旁证是 WSL 里按 `/usr/lib/dae` + `/usr/bin/dae` 的真实路径启动
+时，`QT_DEBUG_PLUGINS=1` 下所有插件目录都落在 `/usr/lib/dae/`，`QT_QUICK_BACKEND=software`
+跑满 20 秒无崩溃。WSLg 拿不到可用 DRM 驱动（`MESA-EGL: warning: egl: failed to create dri2 screen`），
+GPU 路径只在真机上验过，这也是「软件渲染能起来」不算通过的边界。
+
+**9.12.4 macOS 撤项。** §9.9 的签名 + 公证链路本身没问题，但它证明不了用户机器上
+能启动：本机是 Windows，`codesign -dv` / `spctl` / 双击开窗一套验收没有设备可跑；
+而 Apple 那六个 secret 从未配置，缺一个该腿就直接 `::error::` 退出，等于每次发版前
+挂一个必然失败的环节。**一个没人能验收的平台不发**，于是：
+
+- `build` 与 `plan` 的腿清单里删掉 `macos-latest`，`workflow_dispatch` 的
+  `platform_key` 只剩两条；
+- `Deploy Qt runtime and package (macOS)` 整段删除（114 行）；
+- `scripts/qt-update-feed.mjs` 不动：它按目录里实际存在的产物生成 `platforms`，
+  缺 `darwin-*` 的 zip 与 `.sig` 自然就不写那两个键，已装的 Mac 版不会误判更新；
+- macOS 专属 Rust 一行没删，`macos-check.yml`（push 到 main）与 `qt-check.yml` 的
+  `macos-latest` 腿继续编译，防止代码腐烂；`packaging/qt/Info.plist` 保留。
+
+恢复清单与「先弄到一台 Mac」这个前提写在 [`../packaging.md`](../packaging.md) §1.4。
