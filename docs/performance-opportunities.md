@@ -119,7 +119,7 @@
 **复现**：
 
 ```bash
-cd src-tauri
+cd crates/dae-core
 # 名称搜索基准（中位 ms + 结果来源分布）
 DAE_SEARCH_BENCH=K:/code/dae DAE_SEARCH_BENCH_QUERY=readme \
   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_name_search
@@ -257,7 +257,7 @@ ignored harness 全部通过——行为测试走的是无缓存的参考路径�
 **复现**：
 
 ```bash
-cd src-tauri
+cd crates/dae-core
 # 真实仓：worktree 根 + 四个目录，逐目录读取 vs 缓存复用
 DAE_GIT_BENCH=K:/code/dae \
   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_git_status_scan
@@ -385,7 +385,7 @@ scratch），每个文件的状态要么由每次搜索新建（装行号的 `Co
 **复现**：
 
 ```bash
-cd src-tauri
+cd crates/dae-core
 # 真实内容：本仓库的依赖树（查询用一个不会命中的词，否则 100 个命中就够截断）
 DAE_CONTENT_SEARCH_BENCH=K:/code/dae/node_modules DAE_CONTENT_SEARCH_BENCH_QUERY=zzqqxx_no_such_token \
   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_content_search
@@ -536,7 +536,7 @@ $env:DAE_STARTUP_PERF = "1"
 
 ```bash
 # 名称搜索：中位 ms + 结果来源分布（§1）
-cd src-tauri
+cd crates/dae-core
 DAE_SEARCH_BENCH=K:/code/dae DAE_SEARCH_BENCH_QUERY=readme \
   cargo test --lib --release -- --ignored --nocapture reports_the_cost_of_a_name_search
 
@@ -568,7 +568,7 @@ bun bench/frontend-scans/scan-cost.ts
 bun bench/frontend-scans/scan-cost.ts --entries 120000
 
 # 预览响应：编译期就证「构造处那次拷贝挪不掉」（§5.1）
-cd src-tauri && cargo check --lib && cargo test --lib render_tests
+cd crates/dae-core && cargo check --lib && cargo test --lib render_tests
 ```
 
 ## 7. 什么条件下重新评估

@@ -144,7 +144,7 @@ fn main() {
 
 /// Quits on a timer, for the profiled builds only.
 ///
-/// Ported from the Tauri shell (`src-tauri/src/lib.rs::spawn_training_quit`)
+/// Ported from the retired Tauri shell's `spawn_training_quit`
 /// because the reason is the same: LLVM's PGO counters are written from
 /// `atexit` / `.fini_array` hooks, so the process has to leave through the C
 /// runtime's exit path for a profile to exist, and an unattended training run

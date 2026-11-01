@@ -1883,7 +1883,12 @@ GPU 路径只在真机上验过，这也是「软件渲染能起来」不算通�
   创建草稿）换成 `draft`（版本校验 + `gh release create --draft`），`msix` 与
   `qt-feed` 的 `needs` 改挂 `draft`，六处 `src-tauri/icons` 路径改到
   `packaging/icons`。
-- **注释与 README**：见 §9.4-12 那一行的记录。
+- **注释与 README**：见 §9.4-12 那一行的记录。此外把两处指向已删文件的注释
+  （`apps/dae/Cargo.toml` 的 profile 说明、`main.rs` 的 `spawn_training_quit`
+  出处）改成「已退役」+ 指向本节；`docs/performance-opportunities.md` 里 5 条
+  基准命令的 `cd src-tauri` 改成 `cd crates/dae-core`（那是还在用的配方）。
+  **没有动的是带日期的决策记录**（`docs/decisions/*.md` 里引用旧路径的那些）：
+  它们是当时的快照，改它等于篡改记录；要看今天的路径，看 README 与本文件。
 
 **验证。**
 
