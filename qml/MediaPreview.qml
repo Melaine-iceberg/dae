@@ -27,9 +27,34 @@ Item {
     /// audio clip keeps its fixed surface and centres its icon there.
     property real contentHeight: 0
 
+    /// True from the moment playback is asked for until it starts. A build with
+    /// no usable backend accepts the request and then does nothing, with no
+    /// error and no status change — this is what makes that silence visible.
+    property bool playRequested: false
+    /// Playback was requested and the player never left `NoMedia`. Set by
+    /// `backendProbe`, cleared by a selection change or a successful start.
+    property bool backendUnavailable: false
+
     readonly property bool video: mediaKind === "video"
     readonly property bool playing: player.playbackState === MediaPlayer.PlayingState
     readonly property bool failed: player.error !== MediaPlayer.NoError
+    /// Nothing will play here: either the player reported an error, or no
+    /// backend answered at all.
+    readonly property bool unplayable: root.failed || root.backendUnavailable
+    /// What the surface says instead of a frame. Qt's own error string names a
+    /// missing codec or an unreadable file; the backend case has no string, so
+    /// it names the runtime the platform needs to install.
+    readonly property string failureText: {
+        if (root.failed)
+            return player.errorString !== ""
+                ? qsTr("无法播放此文件：") + player.errorString
+                : qsTr("无法播放此文件")
+        if (root.backendUnavailable)
+            return Qt.platform.os === "linux"
+                ? qsTr("无法开始播放：缺少多媒体后端或 GStreamer 解码插件（gstreamer1.0-plugins-base / -good / -libav）")
+                : qsTr("无法开始播放：缺少多媒体后端")
+        return ""
+    }
     readonly property real progress: player.duration > 0
         ? Math.max(0, Math.min(1, player.position / player.duration)) : 0
     readonly property bool loading: player.mediaStatus === MediaPlayer.LoadingMedia
@@ -52,7 +77,7 @@ Item {
     }
 
     function togglePlayback() {
-        if (failed)
+        if (unplayable)
             return
         if (playing) {
             player.pause()
@@ -60,6 +85,7 @@ Item {
         }
         if (player.mediaStatus === MediaPlayer.EndOfMedia)
             player.position = 0
+        playRequested = true
         player.play()
     }
 
@@ -73,6 +99,20 @@ Item {
     onMediaUrlChanged: {
         player.stop()
         started = false
+        playRequested = false
+        backendUnavailable = false
+    }
+
+    /// Two seconds of `NoMedia` after a play request is the signature of a
+    /// backend that never loaded: a working backend moves to `LoadingMedia`
+    /// even for a file it will reject, and a rejected file sets `error`.
+    Timer {
+        id: backendProbe
+        interval: 2000
+        repeat: false
+        running: root.playRequested && !root.playing && !root.failed
+            && player.mediaStatus === MediaPlayer.NoMedia
+        onTriggered: root.backendUnavailable = true
     }
 
     Column {
@@ -127,7 +167,7 @@ Item {
             }
 
             Item {
-                visible: root.video && !root.started && !root.failed
+                visible: root.video && !root.started && !root.unplayable
                 anchors.centerIn: parent
                 width: 52
                 height: 52
@@ -170,7 +210,7 @@ Item {
 
             MouseArea {
                 anchors.fill: parent
-                enabled: !root.video || (root.started && !root.failed)
+                enabled: !root.video || (root.started && !root.unplayable)
                 cursorShape: Qt.PointingHandCursor
                 onClicked: root.togglePlayback()
 
@@ -182,8 +222,8 @@ Item {
             Text {
                 anchors.centerIn: parent
                 width: parent.width - 24
-                visible: root.failed
-                text: qsTr("无法播放此文件")
+                visible: root.failureText !== ""
+                text: root.failureText
                 color: "#e06c75"
                 font.pixelSize: Theme.typeMicro
                 horizontalAlignment: Text.AlignHCenter
@@ -265,7 +305,7 @@ Item {
                 height: Theme.controlMd
                 radius: Theme.radiusLg
                 color: root.accent
-                opacity: root.failed ? 0.4 : 1
+                opacity: root.unplayable ? 0.4 : 1
 
                 Canvas {
                     anchors.centerIn: parent
@@ -308,7 +348,7 @@ Item {
 
                 MouseArea {
                     anchors.fill: parent
-                    enabled: !root.failed
+                    enabled: !root.unplayable
                     cursorShape: Qt.PointingHandCursor
                     onClicked: root.togglePlayback()
 
@@ -361,8 +401,12 @@ Item {
         videoOutput: videoSink
 
         onPlayingChanged: {
-            if (playing)
+            if (playing) {
                 root.started = true
+                // A backend did answer after all: drop a probe verdict from an
+                // earlier selection or a slow start.
+                root.backendUnavailable = false
+            }
         }
     }
 }
