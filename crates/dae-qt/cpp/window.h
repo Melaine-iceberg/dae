@@ -49,13 +49,16 @@
 #endif
 
 #include <cstddef>
+#include <memory>
 
 #include <QElapsedTimer>
 #include <QFont>
 #include <QFontDatabase>
 #include <QGuiApplication>
+#include <QPalette>
 #include <QQmlApplicationEngine>
 #include <QQuickWindow>
+#include <QScreen>
 #include <QString>
 #include <QStringList>
 #include <QStyleHints>
@@ -110,6 +113,80 @@ inline void dae_qt_startup_mark(const QString& stage)
     fflush(stderr);
 }
 
+/// The stand-in window shown while the real one is being built.
+///
+/// `DAE_SHELL_FIRST=1` asks for it: a solid, text-free window put on screen
+/// before the QML tree is loaded, so the first pixels do not sit behind the
+/// one-time font cost (`docs/qml-aot.md` §14/§16). It carries no content item,
+/// so it never asks the font database for anything. Creating a `QQuickWindow`
+/// is enough — its render thread owns the D3D11 device from that moment on,
+/// which is the second half of what it is measuring.
+inline QPointer<QQuickWindow>& dae_qt_placeholder()
+{
+    static QPointer<QQuickWindow> window;
+    return window;
+}
+
+/// Gives the stand-in the frame the real window gets: the rounded corners DWM
+/// would apply to it, plus the dark-mode hint the taskbar and the corner mask
+/// read. Platform-specific; the other platforms do nothing.
+inline void dae_qt_dress_placeholder(QWindow* window);
+
+inline void dae_qt_show_placeholder()
+{
+    if (dae_qt_placeholder())
+        return;
+
+    auto* window = new QQuickWindow();
+    // Same geometry the QML window starts with, so the real window replaces it
+    // without a jump. Frameless, and it takes the foreground like any launched
+    // app: a stand-in that stays behind whatever was in front has brought the
+    // first pixels forward on paper only.
+    window->setFlags(Qt::Window | Qt::FramelessWindowHint);
+    window->setTitle(QStringLiteral("dae"));
+    // Not `palette()`: the shell paints its own theme tokens and leaves the
+    // palette alone, so a dark-mode launch would flash a light rectangle.
+    window->setColor(QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark
+                         ? QColor(0x1d, 0x1d, 0x1d)
+                         : QColor(0xf7, 0xf7, 0xf7));
+    const QRect area = QGuiApplication::primaryScreen()->availableGeometry();
+    const QSize size(qMin(1180, area.width()), qMin(780, area.height()));
+    window->resize(size);
+    window->setPosition(area.center() - QPoint(size.width() / 2, size.height() / 2));
+
+    if (dae_qt_startup_timing) {
+        QObject::connect(
+            window, &QQuickWindow::frameSwapped, window, [] {
+                static bool seen = false;
+                if (seen)
+                    return;
+                seen = true;
+                dae_qt_startup_mark("shell-frame");
+            },
+            Qt::QueuedConnection);
+    }
+
+    dae_qt_dress_placeholder(window);
+    dae_qt_placeholder() = window;
+    window->show();
+}
+
+/// Drops the stand-in. Safe to call when `DAE_SHELL_FIRST` never ran.
+inline void dae_qt_hide_placeholder()
+{
+    QQuickWindow* window = dae_qt_placeholder();
+    if (!window)
+        return;
+    dae_qt_placeholder() = nullptr;
+    window->hide();
+    window->deleteLater();
+}
+
+#if defined(Q_OS_WIN)
+// Defined with the rest of the native window code, below.
+inline void uncloak_painted(HWND hwnd);
+#endif
+
 /// Hooks the first `frameSwapped` of the main window. `frameSwapped` can be
 /// emitted from the render thread, so the lambda is queued back to the window's
 /// (GUI) thread; the few hundred microseconds that adds are noise next to the
@@ -121,15 +198,27 @@ inline void dae_qt_startup_mark(const QString& stage)
 /// the Linux CI leg caught it.
 inline void dae_qt_watch_first_frame(std::size_t enginePtr)
 {
-    if (!dae_qt_startup_timing || enginePtr == 0)
+    if (enginePtr == 0)
         return;
     auto* engine = reinterpret_cast<QQmlApplicationEngine*>(enginePtr);
-    for (QObject* root : engine->rootObjects()) {
+
+    const auto attach = [](QObject* root) {
         auto* window = qobject_cast<QQuickWindow*>(root);
         if (!window)
-            continue;
+            return;
         QObject::connect(
-            window, &QQuickWindow::frameSwapped, window, [] {
+            window, &QQuickWindow::frameSwapped, window, [window] {
+#if defined(Q_OS_WIN)
+                // The real window has painted: let DWM composite it before the
+                // stand-in goes away, or the gap shows the desktop for a frame.
+                if (const auto handle = reinterpret_cast<HWND>(window->winId()))
+                    uncloak_painted(handle);
+#else
+                Q_UNUSED(window)
+#endif
+                dae_qt_hide_placeholder();
+                if (!dae_qt_startup_timing)
+                    return;
                 static bool seen = false;
                 if (seen)
                     return;
@@ -137,8 +226,50 @@ inline void dae_qt_watch_first_frame(std::size_t enginePtr)
                 dae_qt_startup_mark("first-frame");
             },
             Qt::QueuedConnection);
+    };
+
+    // `objectCreated` covers the deferred load (`DAE_SHELL_FIRST=1`), where the
+    // root does not exist yet when this is called; the loop covers the
+    // synchronous one. Direct: the connection has to be in place before the
+    // event loop runs, or the first `frameSwapped` can beat it by one frame and
+    // `first-frame` would quietly mean "second frame".
+    QObject::connect(
+        engine, &QQmlApplicationEngine::objectCreated, engine,
+        [attach](QObject* object, const QUrl&) { attach(object); }, Qt::DirectConnection);
+    for (QObject* root : engine->rootObjects())
+        attach(root);
+}
+
+/// Loads `url` only after the stand-in window has presented its first frame.
+///
+/// This is the whole of `DAE_SHELL_FIRST=1`: the QML tree is built from inside
+/// the event loop, after the shell frame is on screen, instead of before the
+/// event loop starts. `qml-loaded` is marked here because the load no longer
+/// happens on the Rust side of the call.
+inline void dae_qt_load_after_shell(std::size_t enginePtr, const QString& url)
+{
+    auto* engine = reinterpret_cast<QQmlApplicationEngine*>(enginePtr);
+    if (!engine)
+        return;
+    const QUrl source(url);
+    // `frameSwapped` fires every frame, and `QQmlApplicationEngine::load` adds a
+    // root object each time it is called — without this flag the shell would
+    // spawn one window per frame.
+    auto fired = std::make_shared<bool>(false);
+    const auto load = [engine, source, fired] {
+        if (*fired)
+            return;
+        *fired = true;
+        engine->load(source);
+        dae_qt_startup_mark("qml-loaded");
+    };
+    QQuickWindow* shell = dae_qt_placeholder();
+    if (!shell) {
+        load();
         return;
     }
+    QObject::connect(
+        shell, &QQuickWindow::frameSwapped, engine, [load] { load(); }, Qt::QueuedConnection);
 }
 
 #if defined(Q_OS_WIN)
@@ -154,6 +285,32 @@ constexpr int kDwmsbtNone = 1;
 constexpr int kDwmsbtMainWindow = 2; // Mica
 constexpr int kDwmsbtTransientWindow = 3; // Acrylic
 constexpr int kDwmcprRound = 2;
+/// `DWMWA_TRANSITIONS_FORCEDISABLED`: TRUE stops DWM from fading this window in
+/// and out. The shell paints its own chrome, so a reveal fade has no opaque
+/// frame to land on — the QML content arrives washed out over whatever was
+/// behind the window (docs/qml-aot.md §17).
+constexpr DWORD kDwmwaTransitionsForcedisabled = 3;
+/// `DWMWA_CLOAK`: TRUE keeps DWM from compositing the window while it is still
+/// transparent. A Qt Quick window is shown before its first frame exists, and
+/// with an alpha buffer that gap shows the desktop *through* the app.
+constexpr DWORD kDwmwaCloak = 13;
+
+inline void set_transitions(HWND hwnd, BOOL disabled)
+{
+    DwmSetWindowAttribute(hwnd, kDwmwaTransitionsForcedisabled, &disabled, sizeof(disabled));
+}
+
+inline void dae_qt_dress_placeholder(QWindow* window)
+{
+    const HWND hwnd = reinterpret_cast<HWND>(window->winId());
+    if (!hwnd)
+        return;
+    const BOOL dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+    DwmSetWindowAttribute(hwnd, kDwmwaUseImmersiveDarkMode, &dark, sizeof(dark));
+    const int round = kDwmcprRound;
+    DwmSetWindowAttribute(hwnd, kDwmwaWindowCornerPreference, &round, sizeof(round));
+    set_transitions(hwnd, TRUE);
+}
 
 // The QML chrome bar is 44 dp tall and each window button 46 dp wide. These are
 // physical pixels on this side because WM_NCHITTEST speaks client pixels,
@@ -476,6 +633,41 @@ inline void install_filter_once()
     installed = true;
 }
 
+/// Hides the window from the compositor until it has something to show.
+///
+/// `root.visible = true` runs at the end of `Component.onCompleted`, while the
+/// first frame still needs the D3D11 device (or, with the stand-in window up,
+/// just a swapchain). Between those two moments the window is on screen and
+/// *empty*, and because it has an alpha buffer the desktop shows through it —
+/// measured 780→1000 ms on a cold launch (`docs/qml-aot.md` §17). Cloaking
+/// keeps DWM from compositing it, so the first thing anyone sees is real
+/// content. `dae_qt_watch_first_frame` uncloaks.
+///
+/// Also stops the reveal fade for that first appearance only: the attribute is
+/// window-wide, so it is handed back with the cloak and minimize/restore keep
+/// their animations.
+inline void cloak_until_painted(HWND hwnd)
+{
+    const BOOL on = TRUE;
+    DwmSetWindowAttribute(hwnd, kDwmwaCloak, &on, sizeof(on));
+    set_transitions(hwnd, TRUE);
+    // A window whose first frame never arrives must not stay invisible.
+    QTimer::singleShot(2000, qApp, [hwnd] {
+        if (!IsWindow(hwnd))
+            return;
+        const BOOL off = FALSE;
+        DwmSetWindowAttribute(hwnd, kDwmwaCloak, &off, sizeof(off));
+        set_transitions(hwnd, FALSE);
+    });
+}
+
+inline void uncloak_painted(HWND hwnd)
+{
+    const BOOL off = FALSE;
+    DwmSetWindowAttribute(hwnd, kDwmwaCloak, &off, sizeof(off));
+    set_transitions(hwnd, FALSE);
+}
+
 /// Registers the window named `token` and applies the native frame.
 ///
 /// The QML side creates the window hidden, calls this, and only then shows it.
@@ -510,6 +702,7 @@ inline bool dae_qt_attach(const QString& token)
     window_states().insert(key, state);
 
     style_window(hwnd);
+    cloak_until_painted(hwnd);
 
     // The HWND key must go away with the window: Windows recycles handles, and
     // a stale entry would hit-test a new window with the old DPR and material.
@@ -558,6 +751,8 @@ inline bool dae_qt_blur_supported()
 }
 
 #else // !Q_OS_WIN
+
+inline void dae_qt_dress_placeholder(QWindow*) {}
 
 #if defined(Q_OS_LINUX) && QT_CONFIG(wayland)
 

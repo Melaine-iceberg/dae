@@ -667,6 +667,7 @@ FocusScope {
                 }
 
                 Row {
+                    id: materialRow
                     x: 24; y: 648
                     visible: root.showMaterialChoices
                     spacing: 8
@@ -694,10 +695,53 @@ FocusScope {
                     wrapMode: Text.WordWrap
                 }
 
+                Text {
+                    id: startupTitle
+                    x: 24
+                    y: root.showMaterialChoices
+                       ? materialRow.y + materialRow.height + 24
+                       : platformNote.y + (platformNote.visible ? platformNote.height + 24 : 0)
+                    text: qsTr("启动")
+                    color: root.textColor
+                    font.pixelSize: 12
+                    font.weight: Font.Medium
+                }
+
+                Text {
+                    id: startupNote
+                    x: 24
+                    y: startupTitle.y + 20
+                    width: content.width - 48
+                    text: qsTr("开启后启动时先显示一个纯色窗口，界面在它后面加载：首帧从 ~955 ms 提前到 ~302 ms，代价是界面就绪前约 0.6 s 的空白。下次启动生效。")
+                    color: root.mutedColor
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                }
+
+                Row {
+                    id: startupRow
+                    x: 24
+                    y: startupNote.y + startupNote.height + 8
+                    spacing: 8
+
+                    Repeater {
+                        model: [
+                            { value: true, label: qsTr("开启") },
+                            { value: false, label: qsTr("关闭") }
+                        ]
+                        delegate: ChoiceChip {
+                            required property var modelData
+                            label: modelData.label
+                            selected: Appearance.shellFirst === modelData.value
+                            onClicked: Appearance.chooseShellFirst(modelData.value)
+                        }
+                    }
+                }
+
                 Rectangle {
                     id: appearanceHairline
                     x: 24
-                    y: root.showMaterialChoices ? 700 : (platformNote.visible ? 624 : 584)
+                    y: startupRow.y + startupRow.height + 20
                     width: content.width - 48
                     height: 1
                     color: root.hairline
@@ -708,7 +752,7 @@ FocusScope {
                     x: 24
                     y: appearanceHairline.y + 20
                     width: content.width - 48
-                    text: qsTr("外观、语言、背景效果、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。")
+                    text: qsTr("外观、语言、背景效果、启动方式、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。")
                     color: root.faintColor
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap

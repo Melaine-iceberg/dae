@@ -55,6 +55,10 @@ pub mod qobject {
         #[qproperty(QString, language)]
         #[qproperty(bool, blur_enabled, cxx_name = "blurEnabled")]
         #[qproperty(QString, window_material, cxx_name = "windowMaterial")]
+        /// Whether the next launch presents a text-free window while the QML
+        /// tree is still being built (`docs/qml-aot.md` §16). Read by `main`
+        /// before the engine exists, so it cannot live in QML state.
+        #[qproperty(bool, shell_first, cxx_name = "shellFirst")]
         type Appearance = super::AppearanceRust;
 
         #[qinvokable]
@@ -76,6 +80,12 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "chooseWindowMaterial"]
         fn change_window_material(self: Pin<&mut Appearance>, value: &QString);
+
+        /// Takes effect on the next launch: the current one has already decided
+        /// whether to show the stand-in window.
+        #[qinvokable]
+        #[cxx_name = "chooseShellFirst"]
+        fn change_shell_first(self: Pin<&mut Appearance>, enabled: bool);
     }
 }
 
@@ -141,6 +151,20 @@ pub fn stored_language() -> String {
     dae_core::settings::load_settings()
         .map(|settings| settings.language)
         .unwrap_or_else(|_| "system".to_owned())
+}
+
+/// Whether this launch should present the stand-in window.
+///
+/// Read before the QML engine exists, which is why it comes from the stored
+/// document rather than from QML state. `DAE_SHELL_FIRST` overrides it for
+/// measurement (`0` off, anything else on).
+pub fn stored_shell_first() -> bool {
+    match std::env::var("DAE_SHELL_FIRST") {
+        Ok(value) => !matches!(value.trim(), "0" | "false" | "off"),
+        Err(_) => dae_core::settings::load_settings()
+            .map(|settings| settings.shell_first)
+            .unwrap_or(true),
+    }
 }
 
 pub(crate) fn migrate_legacy() {
@@ -209,6 +233,7 @@ pub struct AppearanceRust {
     language: QString,
     blur_enabled: bool,
     window_material: QString,
+    shell_first: bool,
 }
 
 impl Default for AppearanceRust {
@@ -220,6 +245,7 @@ impl Default for AppearanceRust {
             language: QString::from(stored.language.as_str()),
             blur_enabled: stored.blur,
             window_material: QString::from(stored.window_material.as_str()),
+            shell_first: stored.shell_first,
         }
     }
 }
@@ -259,6 +285,14 @@ impl qobject::Appearance {
         }
         self.as_mut().set_blur_enabled(enabled);
         save(|settings| settings.blur = enabled);
+    }
+
+    fn change_shell_first(mut self: Pin<&mut Self>, enabled: bool) {
+        if self.shell_first == enabled {
+            return;
+        }
+        self.as_mut().set_shell_first(enabled);
+        save(|settings| settings.shell_first = enabled);
     }
 
     fn change_window_material(mut self: Pin<&mut Self>, value: &QString) {

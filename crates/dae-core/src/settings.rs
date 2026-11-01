@@ -60,6 +60,12 @@ pub struct AppSettings {
     /// never pre-builds a window (tear-off creates one on demand), so it reads
     /// this only to keep the document round-tripping unchanged.
     pub warm_tab_pool: bool,
+    /// Present a text-free window while the QML tree is still being built, so
+    /// the first pixels do not wait for the one-time font cost
+    /// (`docs/qml-aot.md` §16). Qt shell only: the WebView shell has nothing to
+    /// defer, so it drops the key on its next save — read-only there, which is
+    /// why the default lives here rather than in the panel.
+    pub shell_first: bool,
 }
 
 /// Integrated-terminal appearance. `None` fields fall back to the frontend's
@@ -97,6 +103,7 @@ impl Default for AppSettings {
             window_material: "mica".to_string(),
             default_file_manager: DefaultFileManagerState::default(),
             warm_tab_pool: true,
+            shell_first: true,
         }
     }
 }
@@ -398,6 +405,7 @@ mod tests {
         settings.language = "en".to_string();
         settings.blur = false;
         settings.window_material = "acrylic".to_string();
+        settings.shell_first = false;
 
         let saved = save_settings(settings.clone()).expect("save");
         assert_eq!(saved.terminal.font_size, 16);
@@ -406,6 +414,7 @@ mod tests {
         assert_eq!(saved.language, "en");
         assert!(!saved.blur);
         assert_eq!(saved.window_material, "acrylic");
+        assert!(!saved.shell_first);
         assert!(settings_path(&dir).exists(), "settings.toml written");
 
         use_config_dir_for_tests(dir.clone()).expect("reload");
@@ -444,6 +453,9 @@ mod tests {
         assert_eq!(loaded.language, "system");
         assert!(loaded.blur);
         assert_eq!(loaded.window_material, "mica");
+        // Absent means the shell-first window is on: the setting was added on by
+        // default, so an older document must not silently turn it off.
+        assert!(loaded.shell_first);
 
         fs::remove_dir_all(&dir).ok();
     }

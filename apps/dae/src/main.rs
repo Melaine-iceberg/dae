@@ -88,6 +88,21 @@ fn main() {
     dae_qt::init();
     dae_qt::window::startup_mark("qt-init");
 
+    // Put a solid, text-free window on screen before the QML tree is loaded.
+    // The tree's first synchronous CJK text layout is where the one-time font
+    // cost lands (`docs/qml-aot.md` §14/§15), and nothing can be painted before
+    // that layout returns — so the only way to show pixels earlier is to show a
+    // window that has no text to lay out. Measured (§16): first pixels
+    // 955 → 302 ms, the real window 955 → 846 ms.
+    //
+    // `settings.toml`'s `shellFirst` decides (default on); `DAE_SHELL_FIRST`
+    // overrides it for measurement.
+    let shell_first = dae_qt::appearance::stored_shell_first();
+    if shell_first {
+        dae_qt::window::show_placeholder();
+        dae_qt::window::startup_mark("shell");
+    }
+
     // Registers the precompiled QML units before anything can ask for them.
     // This is also the only reference to `cpp/qml_cache_init.cpp`, which is what
     // keeps the units linked at all.
@@ -104,11 +119,20 @@ fn main() {
     dae_qt::i18n::apply_stored();
     if let Some(mut engine) = engine.as_mut() {
         dae_qt::preview::register_image_providers(engine_ptr);
-        engine
-            .as_mut()
-            .load(&QUrl::from("qrc:/qt/qml/dae/qml/Main.qml"));
-        dae_qt::window::startup_mark("qml-loaded");
+        // Hooked before the root exists: the hook listens to `objectCreated` as
+        // well as the roots already there, which is what the deferred load
+        // needs.
         dae_qt::window::watch_first_frame(engine_ptr as usize);
+        if shell_first {
+            // The load runs from the event loop, once the stand-in window has a
+            // frame on screen; the C++ side marks `qml-loaded` then.
+            dae_qt::window::load_after_shell(engine_ptr as usize, "qrc:/qt/qml/dae/qml/Main.qml");
+        } else {
+            engine
+                .as_mut()
+                .load(&QUrl::from("qrc:/qt/qml/dae/qml/Main.qml"));
+            dae_qt::window::startup_mark("qml-loaded");
+        }
     } else {
         log::error!(target: "dae", "could not create QQmlApplicationEngine");
     }

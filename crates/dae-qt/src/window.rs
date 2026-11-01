@@ -69,6 +69,20 @@ pub mod qobject {
         #[namespace = "dae_qt"]
         fn dae_qt_watch_first_frame(engine: usize);
 
+        /// Puts a solid, text-free window on screen while the QML tree is still
+        /// being built (`DAE_SHELL_FIRST=1`). Dropped automatically on the real
+        /// window's first frame.
+        #[namespace = "dae_qt"]
+        fn dae_qt_show_placeholder();
+
+        #[namespace = "dae_qt"]
+        fn dae_qt_hide_placeholder();
+
+        /// Loads the QML root only after the stand-in window has presented its
+        /// first frame.
+        #[namespace = "dae_qt"]
+        fn dae_qt_load_after_shell(engine: usize, url: &QString);
+
         #[namespace = "dae_qt"]
         #[rust_name = "install_message_handler"]
         fn dae_qt_install_message_handler();
@@ -229,6 +243,29 @@ pub fn warm_font_database() {
 /// Hooks the main window's first `frameSwapped` for the startup timeline.
 pub fn watch_first_frame(engine_ptr: usize) {
     qobject::dae_qt_watch_first_frame(engine_ptr);
+}
+
+/// Shows the stand-in window (`DAE_SHELL_FIRST=1`).
+///
+/// It is a bare `QQuickWindow` with no content item, so it never touches the
+/// font database: its first frame can land while the QML tree is still being
+/// built and while the one-time font cost is being paid behind it. The real
+/// window's first frame drops it (`dae_qt_watch_first_frame`).
+pub fn show_placeholder() {
+    qobject::dae_qt_show_placeholder();
+}
+
+/// Drops the stand-in window if it is still up.
+pub fn hide_placeholder() {
+    qobject::dae_qt_hide_placeholder();
+}
+
+/// Loads `url` from the event loop, after the stand-in window's first frame.
+///
+/// Rust must not mark `qml-loaded` itself in this mode: the load happens inside
+/// the C++ slot, which marks it.
+pub fn load_after_shell(engine_ptr: usize, url: &str) {
+    qobject::dae_qt_load_after_shell(engine_ptr, &QString::from(url));
 }
 
 pub fn enable_diagnostics() {

@@ -472,11 +472,222 @@ qml-loaded           774.14 ms
 
 1. **不再推迟组件。** 继续砍面板或菜单只能影响 ~100 ms 的建树，还会牺牲首帧完整度；
    §13 也已经证明 AOT 覆盖率不动实例化。
-2. **535 ms 还没有被证明不可优化，但只能从平台层确认。** 下一步唯一的实验是用
-   WPA/ETW 抓这段的原生调用栈，确认它是不是「字体库构建 + 首次 CJK 引擎创建」。
-   是的话接受它；预热线程不是解法——主线程 60 ms 就要字体，没有 ≥500 ms 的非文本
-   工作可以垫。
+2. **535 ms 只能从平台层确认——已经确认，见 §15。** WPA/ETW 的原生采样栈把它坐实成
+   「字体库构建 + 首次 CJK 引擎创建」两块，都是一次性的。预热线程不是解法——主线程
+   60 ms 就要字体，没有 ≥500 ms 的非文本工作可以垫。
 3. **~260 ms 首帧**要动只能用 Qt 内部（预建 RHI 设备或 `QQuickRenderControl` 预热），
    风险高于收益，不做。
 
 要再往下走，起点是原生侧的采样，不是 QML。
+
+## 15. 原生采样：535 ms 就是「字体库构建 + 首次 CJK 引擎」（2026-11-01）
+
+§14 停手的前提是「这笔钱只能用平台层确认」。用 Windows Performance Recorder 抓了一次
+冷启动的内核采样栈之后，答案是**是这两块，而且都是一次性的**——所以按 §14 的约定接受它，
+QML 侧不再动。
+
+### 抓法
+
+`.perf/etw/record-startup.ps1`：管理员下 `wpr -start CPU -filemode` → 拉起
+`DAE_STARTUP_PERF=1` 的 release → 6 s 后 `wpr -stop`。`wpr` 需要
+"profile system performance" 策略，非管理员直接失败（`0xc5585011`）；分析全部走命令行
+（`xperf -a profile -detail -range`、`-a stack -butterfly`、`-a cswitch -thread`），
+不用开 WPA 界面。产物在 `.perf/etw/`：`startup.etl`（222 MB）、`profile-pre.txt`、
+`profile-post.txt`、`profile-steady.txt`、`cswitch-thread.txt`、`butterfly-*.html`。
+
+这次运行的打点（同一台机器，release + AOT，这块比 §14 记的大 25% 左右）：
+
+| 标记 | ms |
+|---|---:|
+| `qgui-application` | 25.0 |
+| `font-db warm begin` | 25.3 |
+| `qml-engine` | 36.0 |
+| `font-db warm end` | 219.5 |
+| `qml-root-completed` | 704.8 |
+| `qml-loaded` | 879.7 |
+| `first-frame` | 1094.6 |
+
+`qml-engine → qml-root-completed` = **669 ms**，即 §14 记的那块。
+
+### 主线程在那 669 ms 里在等什么
+
+`-a cswitch -thread -range`（窗口对齐到 `dae.exe` 进程起始 545 348 µs）：主线程 CPU
+**476.7 ms**，字体预热线程 **189.5 ms**——而它的寿命只有 194 ms，也就是跑满。主线程
+669 − 477 ≈ **192 ms 是空转**，正好卡在预热结束（219.5）之前，和 §14 的「第一次同步
+文本度量时先等字体库预热」一致。
+
+再按窗口切自耗时（`-a profile -detail`，按模块聚合）：
+
+| 窗口 | 该窗口 CPU | 主因 | DWrite |
+|---|---:|---|---:|
+| 预热中 545→765 ms | 252 ms | 加载器/缺页/堆（`LdrpSnapModule`、`KiPageFault`、`RtlpLowFragHeapAllocFromContext`） | 43 ms (17%) |
+| 预热后 765→1250 ms（主线程独占） | 400 ms | **DirectWrite 字体表解析** | **196 ms (49%)** |
+
+预热后那 196 ms 的自耗时明细，形状就是「把一份 CJK 字体读进 DWrite 的 face 缓存」：
+
+```
+DWrite.dll!ReadGlyphCoverage                              19.9 ms
+DWrite.dll!CmapRegionBuilder<CompactCmapRegion>::Insert    15.0 ms
+DWrite.dll!CmapRegionBuilder<CmapRegion>::Insert           14.0 ms
+DWrite.dll!OpenTypeFontFaceBuilder::GetHorizontalAdvance   13.1 ms
+DWrite.dll!CoverageChainingSubtableHelper::ReadLookupCoverage 11.0 ms
+DWrite.dll!OpenTypeCharacterMap::Read                      10.0 ms
+```
+
+`CompactCmapRegion`/`ReadGlyphCoverage` 是「把大字符集的 cmap 和覆盖表压成区间」，代价随
+字形数走——这正是 CJK 字体（数万字形）的形状，拉丁字体不会在这上面花钱。
+
+### 钱在 Qt 的哪条路径上
+
+Qt 6.12 不带 PDB，xperf 只能给到 `Qt6Gui.dll!***unknown***`。trace 里带着 RVA，回查
+DLL 导出表（`?name@Class@@…` 那张）就能定位到函数：整条链在全 trace 里的带内命中为
+
+```
+?layoutFinished@QTextDocumentLayout   3207
+?layout_helper@QTextLine              3207
+?setBoundary@QTextEngine              3207
+?engineForScript@QFontPrivate         3201
+?findFont@QFontDatabasePrivate        3201
+?load@QFontDatabasePrivate            3201
+```
+
+即：富文本控件第一次同步排版 → `QTextEngine` 取该 script 的字体引擎 →
+`QFontDatabasePrivate::load/findFont` → DWrite 造 face。DWrite 那侧的父帧是
+`OpenTypeFontFaceBuilder::ReadCharacterMap`/`AddNameDictionary`/`WriteSimpleGlyphBits`、
+`FontFaceRegionBuilder::WriteRegionInternal`、`FontDifferentiator`——都是「从字体文件
+造 face 放进缓存」，不是排版整形本身：`Qt6Gui` 自身（含内联的 HarfBuzz）在这个窗口只占
+3 ms。
+
+### 一次性
+
+首帧之后取 1.5→2.0 s 的窗口（`profile-steady.txt`）：`dae.exe` 196 ms CPU 里
+**DWrite 是 0 ms**，剩下是 D3D11 驱动（`nvwgf2umx`）和采样器自己的符号回走
+（`imagehlp`）。之后每次重绘只走缓存过的 face 和 `findFont` 查表。
+
+### 结论
+
+669 ms 的账（wall 668.8 ms，其中主线程 CPU 476.7 ms、等预热 ~192 ms，采样漏掉约 10%）：
+
+- **字体库构建 + 首次 CJK 引擎** = 等预热 ~192 ms + 主线程 DWrite ~200–240 ms
+  ≈ **400–430 ms，占这块的 ~60%**。
+- 剩下 ~240 ms 是冷加载/缺页/堆（`LdrpSnapModule`、`KiPageFault`、
+  `RtlpLowFragHeapAllocFromContext`）加上 §14 估的 ~100 ms 建树。
+
+所以 §14 的定性判断成立、定量偏高（那次机器更慢，绝对值不可直接比）：这块确实是
+**字体库构建 + 首次 CJK 引擎创建**，不是组件数量，也不是 QML 侧能改的东西。
+
+- **一次性**：首帧后 DWrite 归零，进程内只付一次。
+- **因此接受它，不再动 QML。** 要把这笔钱挪走只能预建字体缓存，而它必须在主线程第一次
+  同步文本度量（60 ms）之前就绪——没有 ≥500 ms 的非文本工作可以垫。
+
+方法学说明：采样器的栈回溯本身很贵，`-a stack -butterfly` 的独占命中里
+`ntkrnlmp.exe!EtwpTraceStackWalk` + `KeExpandKernelStackAndCalloutInternal` 占了 88%；
+所以上面只引用 `-a profile -detail` 的自耗时（它不含这些帧），窗口里另有约 25 ms
+（`RtlpLookupFunctionEntryForStackWalks` + `RtlpUnwindPrologue`）属于回走开销，不是被
+测进程的工作。
+
+
+## 16. 先画壳：首像素 −648 ms，而且真窗口也快了 80 ms（2026-11-01）
+
+§15 已经坐实「第一次同步 CJK 排版」这笔钱挪不走。但「等它」和「等它但先给用户一个窗口」
+是两件事：把 QML 树推迟到事件循环里加载，先show 一个**没有文本**的窗口——它不会问
+字体库任何问题——首像素就不用排在字体后面。
+
+§14 的「不再推迟组件」仍然成立：那里推迟的是单个面板，钱会原样转移到下一个文本控件；
+这里推迟的是整棵树，换来的是一块可见的纯色窗口，代价明码标价。
+
+这个开关现在是设置项 **`设置 → 外观与语言 → 启动`**（`settings.toml` 的
+`shellFirst`，**默认开**；`DAE_SHELL_FIRST=0/1` 仍然覆盖它，A/B 测量用）。开启时：
+
+- `main` 在 `qt-init` 后建一个裸 `QQuickWindow`（无 content item、圆角、深/浅色按系统
+  配色），先 show；此时 D3D11 设备归它所有。
+- 真的 `engine.load()` 不在 `main` 里同步跑，而是挂在这个壳窗口的 `frameSwapped` 上；
+  壳没上屏就不开始建树。
+- 真窗口的第一个 `frameSwapped` 里把壳关掉并 mark `first-frame`；壳自己的第一帧 mark 成
+  `shell-frame`。
+
+### 数字
+
+`.perf/shell-first-ab.ps1`（同一个 release，6 轮交错执行，base / shell 轮流跑，避免
+缓存只暖到一种模式）：
+
+| | base | shell | 差 |
+|---|---:|---:|---:|
+| 首像素（壳的第一帧） | 955.1 ms | **301.6 ms** | **−653.5 ms（−68%）** |
+| 真窗口第一帧 | 955.1 ms | **846.3 ms** | **−108.8 ms（−11%）** |
+
+三轮独立测量一致（另两轮 base/shell 真窗口：973/**901**、951/**872**；壳首帧一直在
+291–383 ms）。
+
+**真窗口也变快了**是意外的部分：`qml-loaded → first-frame` 在 base 里 ~190 ms（D3D11
+设备 + 交换链冷建），shell 模式下只 ~68 ms——壳已经把设备建好了，真窗口只补自己的交换链
+与首帧上传。也就是这一百多毫秒不是「换个地方花」，是设备创建被挪出了关键路径。
+
+### 两个实现里的坑
+
+1. **`frameSwapped` 每帧都发。** 直接把它接到 `engine.load()` 上会每帧多建一个根对象——
+   实测 3 秒内冒出 3 个窗口、`qml-loaded` 打三次。必须单发（`std::shared_ptr<bool>` 哨兵）。
+2. **`Qt::WindowDoesNotAcceptFocus` 让壳待在别人后面。** 第一版加了它，结果是 480 ms 的
+   截图上只有原本在前的窗口——壳上了屏但在 z 序下面，等于没做。壳必须像普通应用一样拿
+   前台，代价是真窗口出现时会再切一次前台。
+
+### 代价
+
+- 视觉：~600 ms 的一块纯色（浅色 `#f7f7f7` / 深色 `#1d1d1d`，按系统配色）。真窗口用
+  Mica，所以壳是近似不是相等；应用自己的主题是 `system` 之外的固定值时会对不上。
+- 任务栏/Alt-Tab 会短暂看到第二个窗口，且壳抢了前台。
+- 真窗口的字体钱一分没少，§15 的结论不变。
+
+### 验证（这个设置项本身）
+
+- 默认：`settings.toml` 里没有 `shellFirst` 时按开处理（`AppSettings::default` 是
+  `true`，`partial_file_fills_defaults_drops_unknown_ids` 和 `round_trips_through_toml`
+  两个测试盯着它）；实跑打点 `shell 149 ms / shell-frame 302 ms / first-frame 857 ms`。
+- 点「关闭」后 `settings.toml` 立刻出现 `shellFirst = false`，重选状态跟着变；重启后
+  打点里**没有** `shell`/`shell-frame`，`first-frame` 回到 942 ms。
+- 面板里这一块在「窗口材质」下面，页面本来就要滚动，所以新块按 `materialRow` 的底部定位，
+  不再用那个会隐藏的 `platformNote` 当锚点（第一版就踩了：平台说明在 Windows 上为空，
+  标题跟材质按钮叠在一起）。
+
+## 17. 壳和页面之间那层「溶」是窗口先上屏、后出帧（2026-11-01）
+
+§16 的壳上去之后，用户看到的是：纯色窗口 → 一层半透明的东西 → 内容。看起来像一段不该
+有的过渡动画。逐帧抓屏之后它不是动画，是**窗口在还没有内容的时候就已经被合成上屏**。
+
+### 证据
+
+按 ~10 ms 抓窗口区域、算相邻帧差（`.perf/ab/*`，脚本一次性留在会话里）：
+
+| 时刻 | 帧差 | 画面 |
+|---|---:|---|
+| 780–1000 ms | 持续 2–8 | 窗口框在，里面是**后面那个窗口**（抓到的帧里能直接读到编辑器文字） |
+| ~1000 ms | 8.3 | 内容一次性出现 |
+| 之后 | <1 | 只剩数据在补（侧栏、状态栏） |
+
+因为窗口是 `color: "transparent"` + `dae_qt_enable_alpha()`（Mica 需要 alpha），空帧就把
+桌面合成进来了。`root.visible = true` 在 `Component.onCompleted` 末尾执行，而首帧还要等
+D3D11 设备/交换链——没有壳时这段 150–200 ms，有壳时（设备已热）也有 30–50 ms。
+
+两个先试过的、都不成立的猜测，记下来免得再试：
+
+- **DWM 的显示淡入**。只关 `DWMWA_TRANSITIONS_FORCEDISABLED` 之后帧差图一模一样，说明这不
+  是系统那层淡入。
+- **Mica 合成晚了**。把 `blur=false` + `windowMaterial=none` 之后仍然是透的，说明不是背景材质。
+
+### 修法：cloak 到首帧
+
+`window.h` 里 attach 时给窗口 `DWMWA_CLOAK = TRUE`，DWM 就不再合成它——它照常渲染，
+只是不给屏幕看。首帧的 `frameSwapped` 里先 `uncloak`、再关掉壳，所以任何一帧都不会出现
+「空窗口压在桌面或壳上」。
+
+同时借这段时间把 `DWMWA_TRANSITIONS_FORCEDISABLED` 关掉，首帧到达后再交还，最小化/还原
+动画不受影响；另有一个 2 s 兜底，免得首帧永远不来时窗口一直是隐形的。
+
+### 结果
+
+- 改动后帧差图只剩两次：`347 ms`（壳）、`846 ms`（真窗口，**首次上屏就是有内容的**）。
+  没有壳时也一样：`982 ms` 一次干净的上屏。
+- 打点没变：壳首帧 306 ms、真窗口 881 ms（`base` 951 ms），cloak 不拖后任何一帧。
+- 剩下的是数据：首帧里侧栏为空、状态栏是「查找项目…」，随后 ~100 ms 补上。那是
+  `overviewModel` 的返回值，不是动画；要连它一起去掉只能把窗口压到列表就绪之后再显示，
+  代价正是 §16 挣到的那 ~650 ms 里的一两百。
