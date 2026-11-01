@@ -1359,12 +1359,15 @@ Qt Online Installer 装在 `K:/Qt`：
 （2026-11-01 补记：这一条的前提松掉了 —— 旧壳自己从未在 macOS / Linux 上跑过，
 A/B 的价值只存在于「Qt 壳的 Windows 行为是否退化」。而 Qt 壳在 Windows 上是以
 便携目录形态实际运行过的（§9.13.2 的端到端升级就是从这样一棵树里跑的），
-**MSIX 的真机 `Add-AppxPackage` 至今仍未跑**（§9.11.3），但那是打包层的验证，
-旧壳在不在树里都不影响它。所以退役排在了第 4 步之前。）
+**MSIX 的真机 `Add-AppxPackage` 当时还没跑**（§9.11.3），但那是打包层的验证，
+旧壳在不在树里都不影响它。所以退役排在了第 4 步之前。2026-11-01 补记：这一项
+当晚跑完，见 §9.15。）
 
 MSIX 落地后分出两件应该插队的事：**在真实机器上装一次，走一遍深链与升级**
 （§9.7.3-1），以及**把默认管理器与开机启动改成包身份注册**（§9.7.3-2）——
-后者现在属于「能用，但升级后会指向上一个版本目录」。
+后者现在属于「能用，但升级后会指向上一个版本目录」。**第一件已完成**（§9.15）；
+第二件的前提被证伪了：不是路径会过期，而是打包形态下这条写入根本到不了真实
+注册表，见 §9.15 末尾。
 
 > **2026-11-01：** 第 3 步（§9.2-2 / §9.2-3）与上面这两件都已接线完成 —— 见
 > §9.9（macOS 签名与公证）、§9.10（`.deb` 与缺 GStreamer 的提示）、
@@ -1484,15 +1487,23 @@ sink。首次实跑就把两条以前完全不可见的信息写了进去：
 
 **9.7.3 后续状态（2026-11-01 更新，详见 §9.11）。**
 
-1. **真机安装仍未做，但不再靠人肉清单。** `scripts/msix-verify.ps1` 把这件事变成
+1. **真机安装已做（2026-11-01），见 §9.15。** `scripts/msix-verify.ps1` 把这件事变成
    一条命令：`-InspectOnly` 只读清单（不改动机器），`-Previous` 先装旧包再装新包
-   验升级，`-Uninstall` 收尾。`Add-AppxPackage` 要信任开发证书、会改动本机状态，
-   所以它不进 CI。
-2. **默认管理器改指别名，已补。** 清单加 `windows.appExecutionAlias`
-   （`Alias="dae.exe"`），Windows 把它暴露成
+   验升级，`-Uninstall` 走完整个流程后卸载。`Add-AppxPackage` 要信任开发证书、会
+   改动本机状态，所以它不进 CI —— 这条判断没变，只是手动那一次现在真的跑过了。
+2. **默认管理器改指别名 —— 2026-11-01 更正：路径对，写不出去。** 清单加
+   `windows.appExecutionAlias`（`Alias="dae.exe"`），Windows 把它暴露成
    `%LOCALAPPDATA%\Microsoft\WindowsApps\dae.exe`，跨版本稳定；
-   `default_manager` 在打包运行时注册这条路径，`claim()` 每次启动比对已存在的
-   `dae.folder` 命令，不一致就重写 —— 升级前注册过的用户由此被修复。
+   `default_manager` 在打包运行时确实选这条路径。`claim()` 每次启动只在**目标
+   已不存在**时重写（原来这里写的是「不一致就重写」，实现比那更保守：一个仍能解析
+   的注册是别人的可用设置，不该被旁边的构建抢走）。
+
+   **但这套写入在打包形态下到不了真实注册表。** Windows 把打包应用的
+   `HKCU\Software\Classes` 重定向到每应用注册表
+   （`%LOCALAPPDATA%\Packages\<PFN>\SystemAppData\Helium\UserClasses.dat`），
+   Explorer 看不到，于是 MSIX 版「设为默认文件管理器」不生效。别名本身没有错，
+   错的是「写 HKCU 能生效」这个前提。证据与三条候选方案见 §9.15。
+
    **原条目里的「开机启动」不成立**：Qt 壳没有开机启动功能（`src-tauri` 也没有），
    全仓没有任何 `Run`/`startupTask` 写入，这一半无需改动。
 3. **自更新提示改成了说明，已补。** `Updater.packaged` 为真时，「更多」菜单里仍然
@@ -1962,3 +1973,111 @@ qml/ShellWindow.qml` 会报 76 条 `unqualified`，全部落在 360 行以后的
 
 **闸门关掉之后。** §9.3 的 8 项、§9.4 的 4 项至此全部有结论。剩下唯一没有结论的
 不是工程项，而是产品决策：更新链路的真实发布物（§9.13.2 末尾那个 404）。
+
+### 9.15 记录：MSIX 真机安装、升级与深链，以及一条写不出去的注册（2026-11-01）
+
+**做了什么。** `scripts/msix-verify.ps1` 第一次在真机上跑完（此前只跑过
+`-InspectOnly`）。两个包是同一份代码连打两次得到的：`sync-msix-version.mjs` 把
+第四段 revision 自增（同一版本 Windows 拒绝安装），于是 `0.5.0.1` 当旧包、
+`0.5.0.2` 当新包。
+
+**结果。** 除最后一条 `NOTE` 外全绿。
+
+| 检查 | 观测 |
+| --- | --- |
+| 身份版本四段、与包内一致 | `0.5.0.2` |
+| 清单声明 `dae://` | `protocol=dae` |
+| 执行别名 | `alias=dae.exe` |
+| Application Id | `id=dae` |
+| 升级顺序 | `0.5.0.2 > 0.5.0.1`，同一身份 `dae / CN=Mt342` |
+| 旧包安装 | `0.5.0.1` 于 `…\WindowsApps\dae_0.5.0.1_x64__9p0mka2v8xp6r` |
+| 新包替换 | 版本 `0.5.0.2`；**旧安装目录已删除**；只注册一个版本 |
+| 安装树 | `dae.exe`、`platforms\qwindows.dll`、`qml\QtQuick`、`qml\QtMultimedia`、`multimedia` 均在 |
+| 别名路径 | `%LOCALAPPDATA%\Microsoft\WindowsApps\dae.exe` |
+| 启动 | pid 25564，路径为 `…WindowsApps\dae_0.5.0.2_x64__9p0mka2v8xp6r\dae.exe` |
+| 日志位置 | `%LOCALAPPDATA%\com.melaine.dae\logs\dae.log`（full-trust 不被重定向） |
+| 深链（保留便携版注册） | 1 个进程 |
+| 深链（删掉 `HKCU\…\Classes\dae` 后） | 1 个进程，且进程路径是包内版本目录 |
+| 卸载 | 包注册、别名、安装目录、包数据目录全部消失 |
+
+深链那两行是分两次测的，因为这台机器上原本就有便携版留下的
+`HKCU\Software\Classes\dae`（指向 `K:\code\dae\dist\dae.exe`）。第一次保留它，
+链接被便携版 exe 接住后转发给已有实例，进程数仍是 1；第二次删掉整条键，链接由包
+清单独立拉起，进程路径直接是 `…\WindowsApps\dae_0.5.0.2…\dae.exe`。**两种情形都
+只有一个实例**，`activation.rs` 里「打包时跳过写 scheme、交给清单」的设计成立。
+
+**第一件事：脚本自己有三个缺陷，只有真机能发现。** 都在信任证书这一步：
+
+1. `Import-Certificate` 只接受 `.cer`，传 `.pfx` 直接抛「不支持导入 PFX 文件」；
+2. PowerShell 7 的该 cmdlet **没有 `-Cert` 参数**，`-Cert` 会被前缀匹配成
+   `-CertStoreLocation`，报「指定了多次」；
+3. 信任写错了层级：脚本原来写 `Cert:\CurrentUser\TrustedPeople`，而部署按**机器级**
+   存储验签。而且信任是按指纹的 —— 机器上早就有一张 `CN=Mt342`（9-22 生成，
+   `F59D…6011`），当次 `devcert.pfx` 是另一张（10-30 生成，`52F9…326C`），
+   所以「主题对得上」完全不等于「信任」。
+
+修法：用 `X509Store` 直接开 `LocalMachine\TrustedPeople`，只加公钥证书（私钥不出
+`.pfx`）；目标已在 `TrustedPeople` 或 `Root` 时跳过；非管理员时不再抛裸的
+`0x800B0109`，而是打印那条一次性命令：
+
+```
+winapp cert install devcert.pfx --password password
+```
+
+**第二件事（更重要）：`dae.folder` 在打包形态下写不进真实注册表。**
+`default_manager::refresh()` 的行为是对的 —— 它发现注册指向的
+`K:\code\dae\dist\dae.exe` 不存在（我把它临时改名，模拟「用户删掉了便携版」），
+于是调用 `set()`，日志写：
+
+```
+the registered folder handler is gone (K:\code\dae\dist\dae.exe); re-pointing it at
+C:\Users\Mt342\AppData\Local\Microsoft\WindowsApps\dae.exe
+```
+
+路径选对了（别名，不是版本目录），没有 `could not re-point` 的警告，`set()` 返回
+`Ok`。**但真实 `HKCU\Software\Classes\dae.folder\shell\open\command` 一个字节都没变。**
+`reg query` 全树只有那一处，没有第二份副本。实际去向是：
+
+```
+%LOCALAPPDATA%\Packages\dae_9p0mka2v8xp6r\SystemAppData\Helium\UserClasses.dat
+```
+
+两个文件的时间戳与两次启动一一对应（23:24:05、23:24:58），里面能读到
+`dae.folder`、`DefaultIcon`、`command`、`Directory`、`OpenWithProgids` —— 正是
+`set()` 写的那套键。这是 Windows 对打包应用的注册表重定向（Helium），
+**Explorer 与系统都不看这个 hive**。
+
+后果与边界：
+
+- **MSIX 版「设为默认文件管理器」当前不生效**，`refresh()` 的自愈同样无效；
+- 卸载会连 `%LOCALAPPDATA%\Packages\<PFN>` 一起删掉，所以沙箱里那份也留不下来；
+- 便携版不受影响（`is_packaged()` 为 false 时写真实 HKCU，这条链路今天仍在用）；
+- `msix-verify.ps1` 那条检查因此改成 `NOTE` 而不是 `FAIL`：在这个形态下它**永远**
+  拿不到别名，报失败只会掩盖真正的原因。`docs/packaging.md` §3.1 第 3 条与 §3.3
+  已同步。
+
+**没做决定的地方。** 三条候选，都需要产品判断：
+
+1. **清单声明文件夹关联。** `windows.fileTypeAssociation` 管的是文件类型，
+   文件夹（`Directory`）不在它的覆盖里，可能要走 `desktop:Extension` 的上下文
+   菜单扩展 —— 代价是放弃「双击文件夹直接打开」这个已经是便携版卖点的行为。
+2. **不写注册表，改引导。** 打包形态下「设为默认」打开系统设置
+   （`ms-settings:defaultapps`），让用户在 Windows 自己的界面里选 dae。改动小、
+   不撒谎，但比便携版多几步。
+3. **承认不支持。** 打包形态隐藏该项并说明原因。最诚实，也最不像成品。
+
+选哪条取决于 MSIX 究竟是「主分发形态」还是「企业侧的补充」。在这一点定下来之前，
+代码保持现状（写，但落在沙箱里），文档按「不生效」记录。
+
+**验收动作（可重跑）。**
+
+```powershell
+pwsh scripts/pack-msix.ps1 -SkipBuild -QtRoot K:\Qt\6.12.0\msvc2022_64   # -> 0.5.0.1
+Move-Item dae_0.5.0.1_x64.msix old.msix
+pwsh scripts/pack-msix.ps1 -SkipBuild -QtRoot K:\Qt\6.12.0\msvc2022_64   # -> 0.5.0.2
+pwsh scripts/msix-verify.ps1 -Previous .\old.msix -TrustCertificate -Uninstall
+Get-AppxPackage -Name dae | Remove-AppxPackage    # 若上一步没带 -Uninstall
+```
+
+注意 `-Uninstall` 会先重装一遍再卸。全程结束应满足：无 `dae` 包、无
+`…\WindowsApps\dae.exe` 别名、无 `…\Packages\dae_*` 目录。
