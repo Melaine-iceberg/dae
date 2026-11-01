@@ -598,10 +598,21 @@ jobs:
           # tree to know which Qt Quick modules to deploy.
           export QML_SOURCES_PATHS="$PWD/qml"
           # linuxdeploy-plugin-qt deploys `libqxcb.so` and nothing else from
-          # `platforms/` unless the others are named: without this the Wayland
-          # backend silently disappears from the tree, the app falls back to
-          # XWayland, and the check below is the only thing that would notice.
-          export EXTRA_PLATFORM_PLUGINS='libqwayland-egl.so;libqwayland-generic.so'
+          # `platforms/` unless the others are named. Which Wayland plugins a Qt
+          # ships is version dependent — 6.x folded the EGL and XComposite
+          # variants into `libqwayland-generic.so` — so name what this install
+          # actually has rather than a list that only holds for one release.
+          platforms="$QT_ROOT_DIR/plugins/platforms"
+          wayland_plugins=$(cd "$platforms" 2>/dev/null && ls -1 libqwayland-*.so 2>/dev/null | paste -sd';' -) || true
+          if [ -z "$wayland_plugins" ]; then
+            echo "::group::$platforms"
+            ls -1 "$platforms" 2>/dev/null || echo "(no platforms directory at all)"
+            echo "::endgroup::"
+            echo "::error::this Qt ships no Wayland platform plugin, so the shell would fall back to XWayland"
+            exit 1
+          fi
+          echo "wayland platform plugins: $wayland_plugins"
+          export EXTRA_PLATFORM_PLUGINS="$wayland_plugins"
 
           "$tools/linuxdeploy-x86_64.AppImage" \
             --appdir "$appdir" \
