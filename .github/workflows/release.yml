@@ -10,9 +10,15 @@ on:
   # update feed — is gated on `github.event_name == 'push'`, so a manual run
   # cannot create, modify or publish a release even by accident.
   #
-  # `linux-x86_64` and `windows-x86_64` need no secrets. `darwin-aarch64` still
-  # does: its packaging step notarizes, and refuses to continue without the
-  # Apple credentials.
+  # Neither leg needs a secret.
+  #
+  # There is no macOS leg. It was removed on 2026-11-01: the bundles were
+  # Developer ID signed and notarized on a runner, and nothing on this side
+  # could tell whether the result actually started on a Mac. Shipping a
+  # platform nobody can launch is worse than not shipping it — see
+  # `docs/packaging.md` §1. The macOS-only Rust is still compiled by
+  # `macos-check.yml` and `qt-check.yml`, so the code does not rot; only the
+  # artifact is gone.
   workflow_dispatch:
     inputs:
       platform_key:
@@ -21,7 +27,6 @@ on:
         options:
           - linux-x86_64
           - windows-x86_64
-          - darwin-aarch64
         default: linux-x86_64
       perf:
         description: "Run the PGO/BOLT training pass (recommended off for a smoke test)"
@@ -42,7 +47,8 @@ concurrency:
 jobs:
   build:
     # This job is the one tauri-action turns into a draft release, and it builds
-    # three installer sets nobody needs for a smoke test.
+    # one installer set per runner. Windows and Linux only: the macOS leg was
+    # dropped along with the Qt one (see the trigger comment above).
     if: github.event_name != 'workflow_dispatch'
     strategy:
       fail-fast: false
@@ -61,12 +67,6 @@ jobs:
             # `beforeBundleCommand` hook is what actually runs BOLT.
             perf_flags: "--bolt"
             args: "--config src-tauri/tauri.perf.conf.json"
-          # The macOS artifact targets Apple Silicon, matching current macOS
-          # software support and the runner architecture.
-          - platform: macos-latest
-            target: aarch64-apple-darwin
-            perf_flags: ""
-            args: "--target aarch64-apple-darwin"
 
     runs-on: ${{ matrix.platform }}
 
@@ -166,23 +166,23 @@ jobs:
       # plugin panics during init.
       - name: PGO — instrument and train
         continue-on-error: true
-        # bash on all three runners: the Windows default shell is pwsh, and a
+        # bash on both runners: the Windows default shell is pwsh, and a
         # `--target ""` expansion means something different there.
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        # `--target` is empty on Windows and Linux, and the Apple Silicon triple
-        # on macOS: the script forwards it to `tauri build` and also looks for
-        # the binary in `target/<triple>/release/`.
+        # `--target` stays in the matrix and is empty on both legs: the script
+        # forwards it to `tauri build` and also looks for the binary under
+        # `target/<triple>/release/`, which is the shape a cross build needs.
         run: bun scripts/opt/pgo.mjs train --seconds 45 --target ${{ matrix.target }}
 
       # Writes CARGO_ENCODED_RUSTFLAGS (and, with --bolt, the strip override)
       # into the job environment, so the build tauri-action performs below is the
       # PGO build.
       - name: PGO/BOLT — export compile flags
-        # bash, not the runner default: `$GITHUB_ENV` is a shell variable on
-        # bash/macOS/Linux but needs `$env:` in pwsh.
+        # bash, not the runner default: `$GITHUB_ENV` is a shell variable under
+        # bash but needs `$env:` in pwsh.
         shell: bash
         run: bun scripts/opt/pgo.mjs flags ${{ matrix.perf_flags }} >> "$GITHUB_ENV"
 
@@ -325,10 +325,10 @@ jobs:
   # Qt shell update artifacts.
   #
   # These jobs are deliberately separate from the Tauri matrix: the Qt shell
-  # ships a portable directory (Windows/Linux) or a .app (macOS), not an MSI,
-  # NSIS installer or DMG. They now get the same two-stage PGO (and BOLT on
-  # Linux) as the Tauri legs; every optimisation step degrades to a plain
-  # release build, so a missing profile cannot block packaging.
+  # ships a portable directory, not an MSI or NSIS installer. They now get the
+  # same two-stage PGO (and BOLT on Linux) as the Tauri legs; every
+  # optimisation step degrades to a plain release build, so a missing profile
+  # cannot block packaging.
   #
   # The archives are signed with the same Tauri updater private key, and the
   # feed is published as `latest-qt.json` on the same (draft) release. Once the
@@ -339,7 +339,7 @@ jobs:
   # The leg list is data here rather than an inline `matrix.include` because
   # `matrix` is unavailable to `jobs.<id>.if`: for a manual run to build one
   # leg, the filtering has to happen before the matrix exists. On a tag push
-  # this job returns all three legs verbatim.
+  # this job returns both legs verbatim.
   plan:
     name: Plan Qt legs
     runs-on: ubuntu-26.04
@@ -358,8 +358,7 @@ jobs:
           # `--bolt` is ELF-only, so it stays on the Linux leg.
           all='[
             {"platform":"windows-latest","platform_key":"windows-x86_64","qt_arch":"win64_msvc2022_64","target":"","perf_flags":"","binary":"target/release/dae.exe"},
-            {"platform":"ubuntu-26.04","platform_key":"linux-x86_64","qt_arch":"linux_gcc_64","target":"","perf_flags":"--bolt","binary":"target/release/dae"},
-            {"platform":"macos-latest","platform_key":"darwin-aarch64","qt_arch":"clang_64","target":"aarch64-apple-darwin","perf_flags":"","binary":"target/aarch64-apple-darwin/release/dae"}
+            {"platform":"ubuntu-26.04","platform_key":"linux-x86_64","qt_arch":"linux_gcc_64","target":"","perf_flags":"--bolt","binary":"target/release/dae"}
           ]'
           if [ "$EVENT" = "workflow_dispatch" ]; then
             legs=$(printf '%s' "$all" | jq -c --arg k "$ONLY" '[.[] | select(.platform_key == $k)]')
@@ -597,6 +596,28 @@ jobs:
           # QML is compiled into the binary; the scanner still needs the source
           # tree to know which Qt Quick modules to deploy.
           export QML_SOURCES_PATHS="$PWD/qml"
+          # linuxdeploy-plugin-qt deploys `libqxcb.so` and nothing else from
+          # `platforms/` unless the others are named. Which Wayland plugins a Qt
+          # ships is version dependent — 6.12 has a single `libqwayland.so`,
+          # older builds split it into `libqwayland-generic.so` and
+          # `libqwayland-egl.so` — so name what this install actually has
+          # rather than a list that only holds for one release.
+          platforms="$QT_ROOT_DIR/plugins/platforms"
+          wayland_plugins=$(cd "$platforms" 2>/dev/null && ls -1 libqwayland*.so 2>/dev/null | paste -sd';' -) || true
+          if [ -z "$wayland_plugins" ]; then
+            echo "::group::$platforms"
+            ls -1 "$platforms" 2>/dev/null || echo "(no platforms directory at all)"
+            echo "::endgroup::"
+            echo "::error::this Qt ships no Wayland platform plugin, so the shell would fall back to XWayland"
+            exit 1
+          fi
+          echo "wayland platform plugins: $wayland_plugins"
+          export EXTRA_PLATFORM_PLUGINS="$wayland_plugins"
+          # Multimedia is reached from QML (`MediaPreview.qml` imports
+          # QtMultimedia), never from a symbol in the executable, so the plugin
+          # does not detect the module on its own and deploys no media backend.
+          # `EXTRA_QT_MODULES` is the documented way to force it.
+          export EXTRA_QT_MODULES='multimedia'
 
           "$tools/linuxdeploy-x86_64.AppImage" \
             --appdir "$appdir" \
@@ -609,16 +630,58 @@ jobs:
           # The Wayland backend is what makes ext-background-effect-v1 blur
           # reachable; without it the app silently runs through XWayland and
           # the shell stays solid. Fail the build rather than ship that.
-          if ! compgen -G "$appdir/usr/plugins/platforms/libqwayland-*.so" >/dev/null; then
+          if ! compgen -G "$appdir/usr/plugins/platforms/libqwayland*.so" >/dev/null; then
             echo "::error::the Qt Wayland platform plugin was not deployed"
             exit 1
           fi
-          test -d "$appdir/usr/qml/QtQuick"
-          test -d "$appdir/usr/qml/QtMultimedia"
-          # QtMultimedia on Linux is a GStreamer client. This plugin is
-          # deployed; the codec plugins themselves come from the target
-          # desktop and are documented as a runtime dependency.
-          test -d "$appdir/usr/plugins/multimedia"
+          # One message per missing piece. A bare `test` fails the step with an
+          # exit code and no name, which is how the missing media backend took
+          # a whole debugging round to identify.
+          #
+          # QtMultimedia on Linux is a GStreamer client. Its plugin is deployed
+          # here; the codec plugins themselves come from the target desktop and
+          # are documented as a runtime dependency.
+          for required in \
+            usr/qml/QtQuick \
+            usr/qml/QtMultimedia \
+            usr/plugins/multimedia; do
+            if [ -e "$appdir/$required" ]; then continue; fi
+            echo "::error::linuxdeploy did not deploy $required"
+            echo "::group::$appdir/usr/plugins"
+            ls -1 "$appdir/usr/plugins" 2>/dev/null || true
+            echo "::endgroup::"
+            exit 1
+          done
+
+          # Qt ships its Wayland client buffer integrations — the EGL and shm
+          # paths Qt Quick composites through — as dlopen'd plugins under
+          # `plugins/wayland-graphics-integration-client`. Nothing names them in
+          # a symbol table, and linuxdeploy-plugin-qt only has a deployer for
+          # the *server* side (`waylandcompositor`), so this directory was never
+          # copied. A Wayland session then starts and immediately reports:
+          #   qt: Failed to load client buffer integration: "wayland-egl"
+          #   qt: Available client buffer integrations: QList()
+          # and falls back to no GPU path at all.
+          #
+          # The copy has to come from this Qt. Plugins from the distribution are
+          # built against its own Qt 6.x, and the loader rejects the version
+          # mismatch instead of degrading, so a system package is not a fix.
+          buffer_dir="$QT_ROOT_DIR/plugins/wayland-graphics-integration-client"
+          buffer_target="$appdir/usr/plugins/wayland-graphics-integration-client"
+          if [ ! -d "$buffer_dir" ]; then
+            echo "::error::$buffer_dir is missing from this Qt install"
+            exit 1
+          fi
+          mkdir -p "$buffer_target"
+          cp -a "$buffer_dir"/. "$buffer_target/"
+          if ! compgen -G "$buffer_target/*.so" >/dev/null; then
+            echo "::group::$buffer_dir"
+            ls -1 "$buffer_dir"
+            echo "::endgroup::"
+            echo "::error::this Qt ships no Wayland client buffer integration"
+            exit 1
+          fi
+          echo "wayland client buffer integrations: $(cd "$buffer_target" && ls -1 | tr '\n' ' ')"
 
           # Start from linuxdeploy's AppDir, then fold `usr/` into the
           # install-directory shape §4.10 requires: executable at the root,
@@ -665,8 +728,9 @@ jobs:
             patchelf --set-rpath "\$ORIGIN/$relative" "$module"
           done < <(find "$staging/qml" -type f -name '*.so*' -print0)
 
-          if env -u LD_LIBRARY_PATH ldd "$staging/dae" | grep -q 'not found'; then
-            env -u LD_LIBRARY_PATH ldd "$staging/dae" | grep 'not found'
+          if env -u LD_LIBRARY_PATH ldd "$staging/dae" > "$RUNNER_TEMP/dae-ldd.txt" &&
+            grep -q 'not found' "$RUNNER_TEMP/dae-ldd.txt"; then
+            cat "$RUNNER_TEMP/dae-ldd.txt"
             echo "::error::the portable Qt tree is missing a shared library"
             exit 1
           fi
@@ -677,9 +741,24 @@ jobs:
           rm -f "$zip"
           shopt -s dotglob nullglob
           (cd "$staging" && zip -r -y -X -q "$zip" *)
-          unzip -Z1 "$zip" | grep -qx 'platforms/libqxcb.so'
-          unzip -Z1 "$zip" | grep -q '^platforms/libqwayland-.*\.so$'
-          unzip -Z1 "$zip" | grep -qx 'dae'
+          # One listing, three assertions. Piping `unzip` into `grep -q` reads
+          # the same, but under `set -o pipefail` grep's early exit kills unzip
+          # with SIGPIPE and the pipeline reports 141 instead of "found".
+          names=$(unzip -Z1 "$zip")
+          for required in 'platforms/libqxcb.so' 'dae'; do
+            grep -qxF "$required" <<< "$names"
+          done
+          if ! grep -q '^platforms/libqwayland.*\.so$' <<< "$names"; then
+            echo "::error::the archive has no Wayland platform plugin"
+            exit 1
+          fi
+          # The platform plugin alone is not enough: without a client buffer
+          # integration the Wayland session has no GPU path and Qt says so only
+          # on stderr.
+          if ! grep -qE '^wayland-graphics-integration-client/[^/]+\.so$' <<< "$names"; then
+            echo "::error::the archive has no Wayland client buffer integration"
+            exit 1
+          fi
 
           # ---- Debian package ---------------------------------------------
           # The zip is a folder to unpack by hand; a system package is what puts
@@ -699,9 +778,12 @@ jobs:
           # /usr/lib would be a duplicate no desktop reads: the installed entry
           # is the one under /usr/share/applications.
           rm -f "$pkg/usr/lib/dae/dae.desktop" "$pkg/usr/lib/dae/dae.png"
-          # A symlink is enough: Qt resolves /proc/self/exe, so it finds qt.conf
-          # and the plugins next to the real binary, not next to the symlink.
-          ln -s ../lib/dae/dae "$pkg/usr/bin/dae"
+          # A launcher, not a symlink: Qt takes its application directory from
+          # the path the process started with, so a symlink in /usr/bin points
+          # QLibraryInfo at /usr/bin and qt.conf is never read. A qt.conf there
+          # would be inherited by every Qt program on the system. The launcher
+          # exec's the real binary, keeping /usr/lib/dae as the app directory.
+          install -D -m 0755 packaging/qt/dae-launcher "$pkg/usr/bin/dae"
           install -m 0644 packaging/qt/dae-installed.desktop \
             "$pkg/usr/share/applications/dae.desktop"
           install -m 0644 src-tauri/icons/128x128.png \
@@ -774,16 +856,33 @@ jobs:
           # A .deb whose executable is not on PATH, or whose Qt platform plugin
           # is not in the installed tree, installs cleanly and then does nothing.
           contents=$(dpkg-deb --contents "$deb")
-          for required in './usr/bin/dae -> ../lib/dae/dae' \
+          for required in './usr/lib/dae/qt.conf' \
                           './usr/lib/dae/platforms/libqxcb.so' \
                           './usr/lib/dae/qml/QtQuick' \
                           './usr/share/applications/dae.desktop' \
                           './usr/share/icons/hicolor/128x128/apps/dae.png'; do
-            if ! printf '%s\n' "$contents" | grep -qF "$required"; then
+            # `printf | grep -q` is the obvious spelling and it is wrong here:
+            # under `set -o pipefail`, grep exits on the first match, printf
+            # takes SIGPIPE, the pipeline reports 141, and a file that IS in the
+            # package is reported missing. A here-string hands the text over
+            # with no pipe to break.
+            if ! grep -qF "$required" <<< "$contents"; then
               echo "::error::$deb is missing $required"
               exit 1
             fi
           done
+          if ! grep -qE '\./usr/lib/dae/wayland-graphics-integration-client/[^/]+\.so$' <<< "$contents"; then
+            echo "::error::$deb has no Wayland client buffer integration"
+            exit 1
+          fi
+          # The entry point has to be the launcher, not a symlink: a symlink
+          # leaves Qt looking for qt.conf in /usr/bin. Read it back out of the
+          # archive rather than trusting the build tree.
+          launcher=$(dpkg-deb --fsys-tarfile "$deb" | tar -xO ./usr/bin/dae)
+          if ! grep -qxF 'exec /usr/lib/dae/dae "$@"' <<< "$launcher"; then
+            echo "::error::$deb does not install /usr/bin/dae as a launcher for /usr/lib/dae/dae"
+            exit 1
+          fi
           echo "deb: $(stat -c '%s' "$deb") bytes"
 
           # ---- RPM package -------------------------------------------------
@@ -844,9 +943,14 @@ jobs:
           mkdir -p %{buildroot}/usr/lib/dae %{buildroot}/usr/bin
           cp -a $staging/. %{buildroot}/usr/lib/dae/
           rm -f %{buildroot}/usr/lib/dae/dae.desktop %{buildroot}/usr/lib/dae/dae.png
-          # A symlink is enough: Qt resolves /proc/self/exe, so qt.conf and the
-          # plugins are found next to the real binary.
-          ln -s ../lib/dae/dae %{buildroot}/usr/bin/dae
+          # A launcher, not a symlink: Qt derives the application directory
+          # from the path the process started with, so a symlink in /usr/bin
+          # hides qt.conf and the plugins from it. See packaging/qt/dae-launcher.
+          install -D -m 0755 $PWD/packaging/qt/dae-launcher \
+            %{buildroot}/usr/bin/dae
+          # Guard the copy rather than the source: the file above is the one
+          # shipped, and %{buildroot} is what rpm turns into the payload.
+          grep -q '^exec /usr/lib/dae/dae' %{buildroot}/usr/bin/dae
           install -D -m 0644 $PWD/packaging/qt/dae-installed.desktop \
             %{buildroot}/usr/share/applications/dae.desktop
           install -D -m 0644 $PWD/src-tauri/icons/128x128.png \
@@ -874,21 +978,30 @@ jobs:
           # the Qt platform plugin travelled with it, and the desktop entry and
           # icon are installed where a desktop looks for them.
           rpmfiles=$(rpm -qlp "$rpmfile")
-          for required in '/usr/bin/dae' '/usr/lib/dae/platforms/libqxcb.so' \
+          for required in '/usr/bin/dae' '/usr/lib/dae/qt.conf' \
+                          '/usr/lib/dae/platforms/libqxcb.so' \
                           '/usr/lib/dae/qml/QtQuick' \
                           '/usr/share/applications/dae.desktop' \
                           '/usr/share/icons/hicolor/128x128/apps/dae.png'; do
-            if ! printf '%s\n' "$rpmfiles" | grep -qF "$required"; then
+            # Same pipe/SIGPIPE trap as the .deb loop above.
+            if ! grep -qF "$required" <<< "$rpmfiles"; then
               echo "::error::$rpmfile is missing $required"
               exit 1
             fi
           done
-          # A regular file here would put a second copy of the binary on PATH
-          # that cannot find qt.conf; the .deb gets the same assertion through
-          # `dpkg-deb --contents`.
-          if ! rpm -qp --dump "$rpmfile" | grep -q '^/usr/bin/dae .* \.\./lib/dae/dae$'; then
-            rpm -qp --dump "$rpmfile" | grep '^/usr/bin/dae'
-            echo "::error::$rpmfile does not install /usr/bin/dae as a symlink to ../lib/dae/dae"
+          if ! grep -qE '^/usr/lib/dae/wayland-graphics-integration-client/[^/]+\.so$' <<< "$rpmfiles"; then
+            echo "::error::$rpmfile has no Wayland client buffer integration"
+            exit 1
+          fi
+          # The launcher must be a regular executable (0100755); as a symlink
+          # (0120777) Qt looks for qt.conf next to it in /usr/bin. The script
+          # itself is checked in %install, so a bad copy fails the build.
+          dump=$(rpm -qp --dump "$rpmfile")
+          # The digest column is 32 hex characters under md5 and 64 under
+          # sha256, so it is matched loosely; the mode is the assertion.
+          if ! grep -qE '^/usr/bin/dae [0-9]+ [0-9]+ [0-9a-f]* 0100755 ' <<< "$dump"; then
+            grep '^/usr/bin/dae' <<< "$dump" || true
+            echo "::error::$rpmfile does not install /usr/bin/dae as a regular executable"
             exit 1
           fi
           # Qt is bundled, so rpm's generator writes the Qt sonames into both
@@ -899,7 +1012,7 @@ jobs:
           provides=$(rpm -qp --provides "$rpmfile" | awk '{print $1}')
           unbundled=""
           for soname in $(rpm -qp --requires "$rpmfile" | awk '/^libQt6/{print $1}'); do
-            if ! printf '%s\n' "$provides" | grep -qxF "$soname"; then
+            if ! grep -qxF "$soname" <<< "$provides"; then
               unbundled="$unbundled $soname"
             fi
           done
@@ -909,120 +1022,6 @@ jobs:
           fi
           echo "bundled Qt sonames: $(rpm -qp --provides "$rpmfile" | awk '/^libQt6/{print $1}' | tr '\n' ' ')"
           echo "rpm: $(stat -c '%s' "$rpmfile") bytes"
-
-      # ---- macOS: .app -> macdeployqt -> Developer ID -> notarize -> zip ----
-      #
-      # Gatekeeper refuses to open an ad-hoc signed app that carries the
-      # quarantine bit with a "damaged" dialog rather than a prompt, so a tag
-      # release without the Apple secrets is a failed release, not a warning.
-      - name: Deploy Qt runtime and package (macOS)
-        if: matrix.platform == 'macos-latest'
-        shell: bash
-        env:
-          # base64-encoded Developer ID Application .p12 plus its password.
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # Full identity string, e.g.
-          # `Developer ID Application: Your Name (TEAMID1234)`.
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # notarytool credentials: the Apple ID triple, or nothing.
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-        run: |
-          set -euo pipefail
-          for secret in APPLE_CERTIFICATE APPLE_SIGNING_IDENTITY APPLE_ID \
-                        APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
-            if [ -z "${!secret:-}" ]; then
-              echo "::error::$secret is not configured; refusing to publish a macOS build that is not Developer ID signed and notarized."
-              exit 1
-            fi
-          done
-
-          version=$(node -p "require('./package.json').version")
-          staging="$PWD/dist/qt"
-          app="$staging/dae.app"
-          rm -rf "$staging"
-          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-          cp target/aarch64-apple-darwin/release/dae "$app/Contents/MacOS/dae"
-          cp packaging/qt/Info.plist "$app/Contents/Info.plist"
-          cp src-tauri/icons/icon.icns "$app/Contents/Resources/icon.icns"
-          # macdeployqt signs with the first .entitlements file it finds in
-          # Contents/Resources; that file is what grants the hardened runtime
-          # its JIT and plugin-loading exceptions.
-          cp packaging/qt/dae.entitlements "$app/Contents/Resources/dae.entitlements"
-          plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
-          plutil -replace CFBundleVersion -string "$version" "$app/Contents/Info.plist"
-          plutil -lint "$app/Contents/Info.plist"
-
-          # A throwaway keychain: the runner's login keychain is not unlocked
-          # for codesign, and `set-key-partition-list` is what lets codesign use
-          # the imported key without a GUI prompt.
-          keychain="$RUNNER_TEMP/dae-signing.keychain-db"
-          keychain_password=$(openssl rand -hex 16)
-          security create-keychain -p "$keychain_password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$keychain_password" "$keychain"
-          security default-keychain -s "$keychain"
-          # shellcheck disable=SC2046
-          security list-keychains -d user -s "$keychain" \
-            $(security list-keychains -d user | tr -d '"')
-          printf '%s' "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/dae.p12"
-          security import "$RUNNER_TEMP/dae.p12" -k "$keychain" \
-            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: \
-            -s -k "$keychain_password" "$keychain" >/dev/null
-          rm -f "$RUNNER_TEMP/dae.p12"
-
-          # macdeployqt's own switch applies the hardened runtime, a secure
-          # timestamp and this identity to every framework and plugin it copies.
-          macdeployqt "$app" -qmldir="$PWD/qml" -always-overwrite \
-            -sign-for-notarization="$APPLE_SIGNING_IDENTITY"
-          test -d "$app/Contents/Frameworks"
-          test -f "$app/Contents/PlugIns/platforms/libqcocoa.dylib"
-          test -d "$app/Contents/Resources/qml/QtQuick"
-          test -d "$app/Contents/Resources/qml/QtMultimedia"
-          test -d "$app/Contents/PlugIns/multimedia"
-
-          # Signing the bundle again is not redundant: it applies the
-          # entitlements to the main executable and seals the bundle's resource
-          # envelope last, which is the order notarization checks.
-          codesign --force --timestamp --options runtime \
-            --entitlements packaging/qt/dae.entitlements \
-            --sign "$APPLE_SIGNING_IDENTITY" "$app"
-          codesign --verify --deep --strict --verbose=2 "$app"
-          if ! codesign --display --entitlements :- "$app" 2>/dev/null \
-              | grep -q 'com.apple.security.cs.allow-jit'; then
-            echo "::error::the signed bundle is missing the allow-jit entitlement; QML's JIT will abort under the hardened runtime"
-            exit 1
-          fi
-
-          # Notarization takes a zip; the ticket is stapled to the bundle
-          # afterwards, so the archive below ships a notarized app.
-          ditto -c -k --keepParent "$app" "$RUNNER_TEMP/dae-notarize.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/dae-notarize.zip" \
-            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_SPECIFIC_PASSWORD" --wait
-          xcrun stapler staple "$app"
-          xcrun stapler validate "$app"
-          # The same verdict Gatekeeper reaches on the user's Mac. A bundle
-          # without a stapled ticket is reported as damaged there, not as
-          # blocked, so this has to pass before anything is uploaded.
-          spctl --assess --type execute --verbose=2 "$app"
-
-          security delete-keychain "$keychain"
-
-          out="$PWD/dist/qt-release"
-          mkdir -p "$out"
-          zip="$out/dae-$version-${{ matrix.platform_key }}.zip"
-          rm -f "$zip"
-          (cd "$staging" && COPYFILE_DISABLE=1 zip -r -y -X -q "$zip" dae.app)
-          unzip -Z1 "$zip" | grep -qx 'dae.app/Contents/MacOS/dae'
-          tops=$(unzip -Z1 "$zip" | awk -F/ '{print $1}' | sort -u | tr -d '\r')
-          if [ "$tops" != "dae.app" ]; then
-            echo "::error::the macOS archive must contain only dae.app, got: $tops"
-            exit 1
-          fi
 
       # Reuses the release minisign key. The public half is the
       # `UPDATE_PUBLIC_KEY` constant in dae-core/src/update/mod.rs, so a
