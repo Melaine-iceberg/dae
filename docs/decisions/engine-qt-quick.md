@@ -1372,7 +1372,7 @@ MSIX 落地后分出两件应该插队的事：**在真实机器上装一次，�
 >
 > **2026-11-01（补记）：第 5 步已完成**，见 §9.13.3 —— `src-tauri/`、`src/`、旧
 > CI 全部撤除，脚本与 CI 改指 Qt 产物，验证为 `cargo build -p dae-app`、`dae-core`
-> 303 项与 `dae-qt` 148 项单测、`qmllint` 零告警。退役之所以能排在平台手测之前，
+> 303 项与 `dae-qt` 148 项单测、构建期 `qmllint`（`DAE_QML_LINT=1`）零告警。退役之所以能排在平台手测之前，
 > 是因为第 4 步剩下的已经不是「旧壳能否跑」（§9.12.3 已在真机装过包），而是
 > 「Qt 壳在 macOS / Linux 上的输入法与窗口行为是否对得上」——这一层旧壳帮不上忙，
 > 留着它也不再是回退路径。**现在唯一剩下的闸门是 §9.3-5 平台手测（parity §4
@@ -1894,11 +1894,17 @@ GPU 路径只在真机上验过，这也是「软件渲染能起来」不算通�
 | `cargo test -p dae-qt --lib` | **148 passed** |
 | `node --check` | `lib.mjs` / `pgo.mjs` / `bolt.mjs` / `post-link.mjs` / `render-icon.mjs` / `sync-msix-version.mjs` 全部通过 |
 | `node scripts/sync-msix-version.mjs --release` | `✅ MSIX version: 0.5.0.0 → 0.5.0.0 (app 0.5.0)`，无漂移告警 |
-| `qmllint qml/…` 改动文件 | 无告警 |
+| `DAE_QML_LINT=1 cargo build -p dae-app` | 通过：`apps/dae/build.rs` 的 `mod lint` 跑全树 `qmllint`，零 `Warning:` / `Error:` |
+
+**关于 `qmllint` 的一个坑，写下来免得下次误判。** 直接跑 `qmllint
+qml/ShellWindow.qml` 会报 76 条 `unqualified`，全部落在 360 行以后的单例访问上 ——
+那是少了 `-I target/cxxqt/qml_modules -I qml -i qml/qmldir` 三处配置的结果，不是
+本次改动引入的（`docs/qml-aot.md` §12 记了这套参数为什么必须给）。`TitleBar.qml`
+与 `Glyph.qml` 单独跑就是零告警。
 
 **未验证，写在这里。** `release.yml` 的改动没有任何东西在本地跑过——`draft`
 作业要等下一个 tag 才会第一次执行。这也是它被写成「先 `gh release view` 再
-`gh release create`」的原因：重跑一次不会因为草稿已存在而失败。旧壳本身就是
-回退路径，所以退役确实排在了最后（§9.5 第 5 步）；现在回退靠 `git revert`
-这一个提交，而平台手测（§9.3-5）在退役之后仍是可以独立进行的——它验证的是
-Qt 壳，不需要旧壳在树里。
+`gh release create`」的原因：重跑一次不会因为草稿已存在而失败。退役排在全部代码
+改动之后（§9.5 第 5 步），回退路径也随之从「旧壳还在树里」变成「`git revert`
+这一个提交」；平台手测（§9.3-5）在退役之后仍可以独立进行 —— 它验的是 Qt 壳，
+不需要旧壳在树里。
