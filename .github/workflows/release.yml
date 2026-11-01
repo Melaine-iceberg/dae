@@ -614,6 +614,11 @@ jobs:
           fi
           echo "wayland platform plugins: $wayland_plugins"
           export EXTRA_PLATFORM_PLUGINS="$wayland_plugins"
+          # Multimedia is reached from QML (`MediaPreview.qml` imports
+          # QtMultimedia), never from a symbol in the executable, so the plugin
+          # does not detect the module on its own and deploys no media backend.
+          # `EXTRA_QT_MODULES` is the documented way to force it.
+          export EXTRA_QT_MODULES='multimedia'
 
           "$tools/linuxdeploy-x86_64.AppImage" \
             --appdir "$appdir" \
@@ -630,12 +635,24 @@ jobs:
             echo "::error::the Qt Wayland platform plugin was not deployed"
             exit 1
           fi
-          test -d "$appdir/usr/qml/QtQuick"
-          test -d "$appdir/usr/qml/QtMultimedia"
-          # QtMultimedia on Linux is a GStreamer client. This plugin is
-          # deployed; the codec plugins themselves come from the target
-          # desktop and are documented as a runtime dependency.
-          test -d "$appdir/usr/plugins/multimedia"
+          # One message per missing piece. A bare `test` fails the step with an
+          # exit code and no name, which is how the missing media backend took
+          # a whole debugging round to identify.
+          #
+          # QtMultimedia on Linux is a GStreamer client. Its plugin is deployed
+          # here; the codec plugins themselves come from the target desktop and
+          # are documented as a runtime dependency.
+          for required in \
+            usr/qml/QtQuick \
+            usr/qml/QtMultimedia \
+            usr/plugins/multimedia; do
+            if [ -e "$appdir/$required" ]; then continue; fi
+            echo "::error::linuxdeploy did not deploy $required"
+            echo "::group::$appdir/usr/plugins"
+            ls -1 "$appdir/usr/plugins" 2>/dev/null || true
+            echo "::endgroup::"
+            exit 1
+          done
 
           # Start from linuxdeploy's AppDir, then fold `usr/` into the
           # install-directory shape §4.10 requires: executable at the root,
