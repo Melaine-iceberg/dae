@@ -599,11 +599,12 @@ jobs:
           export QML_SOURCES_PATHS="$PWD/qml"
           # linuxdeploy-plugin-qt deploys `libqxcb.so` and nothing else from
           # `platforms/` unless the others are named. Which Wayland plugins a Qt
-          # ships is version dependent — 6.x folded the EGL and XComposite
-          # variants into `libqwayland-generic.so` — so name what this install
-          # actually has rather than a list that only holds for one release.
+          # ships is version dependent — 6.12 has a single `libqwayland.so`,
+          # older builds split it into `libqwayland-generic.so` and
+          # `libqwayland-egl.so` — so name what this install actually has
+          # rather than a list that only holds for one release.
           platforms="$QT_ROOT_DIR/plugins/platforms"
-          wayland_plugins=$(cd "$platforms" 2>/dev/null && ls -1 libqwayland-*.so 2>/dev/null | paste -sd';' -) || true
+          wayland_plugins=$(cd "$platforms" 2>/dev/null && ls -1 libqwayland*.so 2>/dev/null | paste -sd';' -) || true
           if [ -z "$wayland_plugins" ]; then
             echo "::group::$platforms"
             ls -1 "$platforms" 2>/dev/null || echo "(no platforms directory at all)"
@@ -625,7 +626,7 @@ jobs:
           # The Wayland backend is what makes ext-background-effect-v1 blur
           # reachable; without it the app silently runs through XWayland and
           # the shell stays solid. Fail the build rather than ship that.
-          if ! compgen -G "$appdir/usr/plugins/platforms/libqwayland-*.so" >/dev/null; then
+          if ! compgen -G "$appdir/usr/plugins/platforms/libqwayland*.so" >/dev/null; then
             echo "::error::the Qt Wayland platform plugin was not deployed"
             exit 1
           fi
@@ -694,7 +695,7 @@ jobs:
           shopt -s dotglob nullglob
           (cd "$staging" && zip -r -y -X -q "$zip" *)
           unzip -Z1 "$zip" | grep -qx 'platforms/libqxcb.so'
-          unzip -Z1 "$zip" | grep -q '^platforms/libqwayland-.*\.so$'
+          unzip -Z1 "$zip" | grep -q '^platforms/libqwayland.*\.so$'
           unzip -Z1 "$zip" | grep -qx 'dae'
 
           # ---- Debian package ---------------------------------------------
