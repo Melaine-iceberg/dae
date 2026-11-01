@@ -76,7 +76,7 @@ Item {
     }
 
     implicitWidth: row.implicitWidth + 140
-    implicitHeight: 32
+    implicitHeight: Theme.controlLg
 
     Rectangle {
         anchors.fill: parent
@@ -105,7 +105,7 @@ Item {
 
         signal clicked()
 
-        height: 22
+        height: Theme.controlSm
         width: chip.square ? 28 : Math.ceil(chipLabel.implicitWidth) + 14
         radius: Theme.radiusXs
         color: chip.active ? Theme.fill : "transparent"
@@ -139,7 +139,7 @@ Item {
         anchors.left: parent.left
         anchors.leftMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        height: 22
+        height: Theme.controlSm
         spacing: 6
 
         Chip {
@@ -176,7 +176,7 @@ Item {
 
             visible: root.contentMode
             width: visible ? typeRow.implicitWidth + 28 : 0
-            height: 22
+            height: Theme.controlSm
             radius: Theme.radiusXs
             color: typeMouse.containsMouse ? Theme.hover : "transparent"
             border.width: 1

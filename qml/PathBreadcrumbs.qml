@@ -43,7 +43,7 @@ Item {
     readonly property real crumbGap: 3
     /// A crumb's own padding; the plate is what hover paints.
     readonly property real crumbPad: 5
-    readonly property real plateHeight: 24
+    readonly property real plateHeight: Theme.controlSm
     readonly property real ellipsisWidth: 22
 
     TextMetrics {

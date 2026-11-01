@@ -13,6 +13,15 @@ import QtQuick
 /// divider is inset with the body. A dialog with an edge-to-edge body leaves it
 /// at 0 too — the divider then reaches the panel sides, which is what
 /// `ConfirmDialog` wants.
+///
+/// `implicitHeight` and `Theme.typeTitle` are a pair, and the type rung is
+/// deliberately capped at 17 rather than the Web shell's 22: a title and its
+/// subtitle have to share 44 dp, and the hosts that lay this head out by hand
+/// would overlap before any layout pass ran. `SettingsPanel` stacks them at
+/// y 16 / y 42 in its 176 dp nav column and at y 20 / y 50 in its five page
+/// heads, against a 44 dp band; a 20 px title clears the subtitle there by
+/// roughly nothing, and 22 px runs into it. Raising the rung means converting
+/// those six pairs to a Column first — see the note in `Theme.qml`.
 Item {
     id: root
 
@@ -29,7 +38,7 @@ Item {
 
     signal closeRequested()
 
-    implicitHeight: 44
+    implicitHeight: Theme.shellTitle
 
     Column {
         anchors.left: parent.left
@@ -65,7 +74,7 @@ Item {
         anchors.rightMargin: 10
         anchors.verticalCenter: parent.verticalCenter
         width: 20
-        height: 20
+        height: Theme.controlXs
         visible: root.showClose
 
         Accessible.role: Accessible.Button

@@ -233,14 +233,14 @@ Item {
 
             Item {
                 width: note.implicitWidth
-                height: 30
+                height: Theme.controlLg
 
                 Text {
                     id: note
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("FTP / WebDAV 即将支持")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                 }
             }
         }
@@ -290,7 +290,7 @@ Item {
             x: 20
             y: 266
             width: card.width - 40
-            height: 18
+            height: Theme.controlXs
 
             Rectangle {
                 id: checkBox
@@ -318,7 +318,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("记住密码（保存在系统钥匙串中）")
                 color: root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
             }
 
             MouseArea {
@@ -334,11 +334,11 @@ Item {
             x: 20
             y: 292
             width: card.width - 40
-            height: 34
+            height: Theme.controlXl
             text: root.testMessage !== "" ? root.testMessage : root.errorText
             color: root.errorText !== "" ? root.dangerColor
                 : (root.testOk ? root.okColor : root.mutedColor)
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
             wrapMode: Text.Wrap
             elide: Text.ElideRight
         }
@@ -349,7 +349,7 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 90
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: testMouse.containsMouse && testButton.enabled
                 ? Theme.fill : "transparent"
@@ -361,7 +361,7 @@ Item {
                 anchors.centerIn: parent
                 text: root.testing ? qsTr("测试中…") : qsTr("测试连接")
                 color: testButton.enabled ? Theme.inkMuted : root.mutedColor
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
             }
 
             MouseArea {
@@ -379,7 +379,7 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 82
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: submitButton.enabled
                 ? (submitMouse.containsMouse ? Theme.interactiveHover : root.accent)
@@ -389,7 +389,7 @@ Item {
                 anchors.centerIn: parent
                 text: root.saving ? qsTr("保存中…") : qsTr("连接")
                 color: Theme.onInteractive
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
             }
 
             MouseArea {
@@ -407,7 +407,7 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 72
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: cancelMouse.containsMouse
                 ? Theme.fill : "transparent"
@@ -418,7 +418,7 @@ Item {
                 anchors.centerIn: parent
                 text: qsTr("取消")
                 color: Theme.inkMuted
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
             }
 
             MouseArea {
@@ -440,7 +440,7 @@ Item {
         readonly property bool hovered: protocolMouse.containsMouse
 
         width: Math.max(120, labelText.implicitWidth + 28)
-        height: 28
+        height: Theme.controlMd
         radius: Theme.radiusSm
         color: selected
             ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.20)
@@ -457,7 +457,7 @@ Item {
             anchors.centerIn: parent
             text: button.label
             color: button.selected ? root.textColor : Theme.inkMuted
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
 
         MouseArea {
@@ -495,7 +495,7 @@ Item {
             id: frame
             y: 20
             width: parent.width
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: root.fieldColor
             border.width: 1
@@ -508,7 +508,7 @@ Item {
                 visible: input.text.length === 0
                 text: field.placeholder
                 color: root.mutedColor
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
                 elide: Text.ElideRight
                 width: parent.width - 18
             }
@@ -522,7 +522,7 @@ Item {
                 color: root.textColor
                 selectionColor: root.accent
                 selectedTextColor: Theme.onInteractive
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
                 echoMode: field.password ? TextInput.Password : TextInput.Normal
                 inputMethodHints: field.inputHints
                 selectByMouse: true

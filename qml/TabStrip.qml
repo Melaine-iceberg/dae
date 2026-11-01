@@ -49,8 +49,8 @@ Item {
     signal tabDroppedOnWindow(int index, string token, real localX)
     signal tabTornOff(int index, real globalX, real globalY)
 
-    implicitHeight: 44
-    height: 44
+    implicitHeight: Theme.shellTitle
+    height: Theme.shellTitle
     // Still clipped: past the width of the bar the chips would otherwise paint
     // over the window buttons.
     clip: true
@@ -63,7 +63,7 @@ Item {
     readonly property real clientRight: tabX(tabs.length) + plusWidth
 
     readonly property int tabWidthValue: 184
-    readonly property int tabHeightValue: 32
+    readonly property int tabHeightValue: Theme.controlLg
     /// The chip sits 6 dp below the top of the 44 dp bar, so its bottom is
     /// flush with the strip's underline after the 6 dp gap.
     readonly property int tabTop: 6
@@ -249,7 +249,7 @@ Item {
                     anchors.rightMargin: 5
                     anchors.verticalCenter: parent.verticalCenter
                     width: 18
-                    height: 18
+                    height: Theme.controlXs
                     visible: root.activeIndex === tabItem.index || tabHover.hovered
 
                     Rectangle {

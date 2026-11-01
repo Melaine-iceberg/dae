@@ -98,7 +98,7 @@ Item {
             Text {
                 text: root.spaceName !== "" ? root.spaceName : qsTr("空间")
                 color: root.textColor
-                font.pixelSize: 22
+                font.pixelSize: Theme.typeDisplay
                 font.weight: Font.Medium
             }
 
@@ -107,7 +107,7 @@ Item {
                     ? qsTr("还没有固定项目")
                     : root.itemCount + qsTr(" 个固定项目")
                 color: root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
             }
         }
 
@@ -186,7 +186,7 @@ Item {
                 x: 22
                 anchors.verticalCenter: parent.verticalCenter
                 width: 26
-                height: 26
+                height: Theme.controlMd
                 radius: Theme.radiusSm
                 color: Theme.canvasAlt
 
@@ -194,7 +194,7 @@ Item {
                     anchors.centerIn: parent
                     text: "\u25b1"
                     color: root.accent
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                 }
             }
 
@@ -210,7 +210,7 @@ Item {
                     width: parent.width
                     text: row.name
                     color: root.textColor
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.typeBody
                     elide: Text.ElideRight
                 }
 
@@ -218,7 +218,7 @@ Item {
                     width: parent.width
                     text: row.path
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     elide: Text.ElideMiddle
                 }
             }
@@ -265,7 +265,7 @@ Item {
         signal clicked()
 
         width: Math.max(58, buttonLabel.implicitWidth + 22)
-        height: 24
+        height: Theme.controlSm
         radius: Theme.radiusSm
         opacity: enabled ? 1 : 0.45
         color: danger
@@ -291,7 +291,7 @@ Item {
             text: button.label
             color: button.danger ? Theme.onSolid
                 : (button.enabled ? root.textColor : root.mutedColor)
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
 
         MouseArea {

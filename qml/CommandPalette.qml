@@ -639,7 +639,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            height: 44
+            height: Theme.shellTitle
 
             Glyph {
                 x: 12
@@ -658,7 +658,7 @@ Item {
                 anchors.right: escChip.left
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                height: 24
+                height: Theme.controlSm
                 color: root.textColor
                 selectionColor: root.accent
                 selectedTextColor: Theme.onInteractive
@@ -738,7 +738,7 @@ Item {
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
                 width: 24
-                height: 18
+                height: Theme.controlXs
                 radius: Theme.radiusXs
                 color: "transparent"
                 border.width: 1
@@ -796,7 +796,7 @@ Item {
                 required property string section
 
                 width: list.width
-                height: 22
+                height: Theme.controlSm
 
                 Text {
                     x: 10
@@ -822,7 +822,7 @@ Item {
                 required property string value
 
                 width: list.width
-                height: 30
+                height: Theme.controlLg
 
                 readonly property bool current: list.currentIndex === row.index
 
@@ -957,7 +957,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 32
+            height: Theme.controlLg
             color: "transparent"
 
             Rectangle {

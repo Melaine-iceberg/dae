@@ -157,12 +157,12 @@ FocusScope {
 
             Row {
                 width: parent.width
-                height: 30
+                height: Theme.controlLg
                 spacing: 8
 
                 Rectangle {
                     width: 26
-                    height: 28
+                    height: Theme.controlMd
                     radius: Theme.radiusSm
                     color: upMouse.containsMouse
                         ? Theme.fill : "transparent"
@@ -173,7 +173,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: "\u2191"
                         color: root.textColor
-                        font.pixelSize: 13
+                        font.pixelSize: Theme.typeBody
                     }
 
                     MouseArea {
@@ -189,7 +189,7 @@ FocusScope {
 
                 Rectangle {
                     width: parent.width - 26 - 8
-                    height: 28
+                    height: Theme.controlMd
                     radius: Theme.radiusSm
                     color: root.fieldColor
                     border.width: 1
@@ -206,7 +206,7 @@ FocusScope {
                         color: root.textColor
                         selectionColor: root.accent
                         selectedTextColor: Theme.onInteractive
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                         selectByMouse: true
                         clip: true
 
@@ -222,7 +222,7 @@ FocusScope {
 
             Row {
                 width: parent.width
-                height: 24
+                height: Theme.controlSm
                 spacing: 8
 
                 QuickButton {
@@ -252,7 +252,7 @@ FocusScope {
                     visible: !browser.finished
                     text: qsTr("读取中…")
                     color: root.mutedColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                 }
 
                 ListView {
@@ -294,7 +294,7 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: folderRow.fileName
                             color: root.textColor
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.typeCaption
                             elide: Text.ElideRight
                         }
 
@@ -317,7 +317,7 @@ FocusScope {
 
             Row {
                 width: parent.width
-                height: 30
+                height: Theme.controlLg
                 spacing: 8
 
                 Item {
@@ -327,7 +327,7 @@ FocusScope {
 
                 Rectangle {
                     width: 76
-                    height: 28
+                    height: Theme.controlMd
                     anchors.verticalCenter: parent.verticalCenter
                     radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
@@ -339,7 +339,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: qsTr("取消")
                         color: Theme.inkMuted
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                     }
 
                     MouseArea {
@@ -352,7 +352,7 @@ FocusScope {
 
                 Rectangle {
                     width: 84
-                    height: 28
+                    height: Theme.controlMd
                     anchors.verticalCenter: parent.verticalCenter
                     radius: Theme.radiusSm
                     color: moveMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
@@ -361,7 +361,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: qsTr("移动")
                         color: Theme.onInteractive
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                     }
 
                     MouseArea {
@@ -382,7 +382,7 @@ FocusScope {
         property string path: ""
 
         width: quickLabel.width + 20
-        height: 22
+        height: Theme.controlSm
         radius: Theme.radiusSm
         color: quickMouse.containsMouse
             ? Theme.hover : "transparent"
@@ -395,7 +395,7 @@ FocusScope {
             anchors.centerIn: parent
             text: quick.label
             color: root.textColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
 
         MouseArea {

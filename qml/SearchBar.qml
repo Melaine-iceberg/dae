@@ -33,7 +33,7 @@ Item {
     signal dismissRequested()
 
     implicitWidth: 210
-    implicitHeight: 28
+    implicitHeight: Theme.controlMd
 
     function setText(value) {
         input.text = value

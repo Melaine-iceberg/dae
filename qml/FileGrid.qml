@@ -360,7 +360,7 @@ Item {
                 text: cell.fileName
                 color: cell.hidden ? Theme.inkFaint : Theme.ink
                 font.pixelSize: Theme.typeBody
-                lineHeight: 1.25
+                lineHeight: Theme.leadingTight
                 horizontalAlignment: Text.AlignHCenter
                 textFormat: Text.PlainText
                 wrapMode: Text.Wrap

@@ -32,7 +32,7 @@ FocusScope {
     /// Escape with no submenu open, or with one: the host knows which.
     signal escapeRequested()
 
-    readonly property int rowHeight: 32
+    readonly property int rowHeight: Theme.controlLg
 
     /// The width these rows want: the widest one is gutter + label + chord +
     /// chevron, plus the panel's 4 px padding on both sides. Clamped to the

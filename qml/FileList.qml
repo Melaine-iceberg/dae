@@ -1073,7 +1073,7 @@ Item {
                 Image {
                     x: 10
                     width: 20
-                    height: 20
+                    height: Theme.controlXs
                     anchors.verticalCenter: parent.verticalCenter
                     visible: row.showThumbnail
                     source: row.showThumbnail ? row.thumbnailSource : ""
@@ -1510,7 +1510,7 @@ Item {
                         ? qsTr("创建快捷方式到 %1").arg(target)
                         : qsTr("复制到 %1").arg(target)
                 color: root.textColor
-                font.pixelSize: 13
+                font.pixelSize: Theme.typeBody
             }
         }
     }

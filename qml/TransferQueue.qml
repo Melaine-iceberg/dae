@@ -78,7 +78,7 @@ Item {
         Item {
             id: header
             width: parent.width
-            height: 26
+            height: Theme.controlMd
 
             Text {
                 x: 10
@@ -98,7 +98,7 @@ Item {
                 Item {
                     id: cancelAll
                     width: 52
-                    height: 22
+                    height: Theme.controlSm
                     visible: root.queuedCount > 0
 
                     Accessible.role: Accessible.Button
@@ -124,7 +124,7 @@ Item {
                 Item {
                     id: closeButton
                     width: 20
-                    height: 20
+                    height: Theme.controlXs
 
                     Accessible.role: Accessible.Button
                     Accessible.name: qsTr("关闭传输队列")
@@ -202,7 +202,7 @@ Item {
 
                 Item {
                     width: parent.width
-                    height: 34
+                    height: Theme.controlXl
                     visible: !Workspace.busy && root.queuedCount === 0
 
                     Text {
@@ -248,7 +248,7 @@ Item {
 
             Item {
                 width: parent.width
-                height: 20
+                height: Theme.controlXs
 
                 Text {
                     anchors.left: parent.left
@@ -279,7 +279,7 @@ Item {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     width: row.cancellable ? 18 : 0
-                    height: 18
+                    height: Theme.controlXs
                     visible: row.cancellable
 
                     Accessible.role: Accessible.Button

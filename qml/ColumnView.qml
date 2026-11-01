@@ -33,7 +33,7 @@ Item {
     readonly property string density: ExplorerPrefs.density
     readonly property int rowHeight: density === "compact" ? Theme.rowCompact
         : density === "spacious" ? Theme.rowSpacious : Theme.rowDefault
-    readonly property int headerHeight: 32
+    readonly property int headerHeight: Theme.controlLg
     readonly property int columnWidth: 248
 
     Connections {
@@ -148,7 +148,7 @@ Item {
         required property string path
         required property string activeChildPath
         property var tab: null
-        property int rowHeight: 32
+        property int rowHeight: Theme.controlLg
         property bool keyboardCursor: false
         property string typeAheadBuffer: ""
 
@@ -481,7 +481,7 @@ Item {
                     x: 8
                     anchors.verticalCenter: parent.verticalCenter
                     width: 20
-                    height: 20
+                    height: Theme.controlXs
                     visible: row.showThumbnail
                     source: row.showThumbnail ? row.thumbnailSource : ""
                     sourceSize.width: Math.round(40 * Screen.devicePixelRatio)
@@ -642,7 +642,7 @@ Item {
             Glyph {
                 anchors.horizontalCenter: parent.horizontalCenter
                 width: 28
-                height: 28
+                height: Theme.controlMd
                 kind: pane.emptyError ? "file" : "folder"
                 tint: Theme.inkMuted
             }

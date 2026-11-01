@@ -112,7 +112,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: 32
+        height: Theme.controlLg
 
         Rectangle {
             anchors.left: parent.left
@@ -151,7 +151,7 @@ Item {
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             width: 20
-            height: 20
+            height: Theme.controlXs
 
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("关闭预览")
@@ -215,7 +215,7 @@ Item {
                 color: root.faintColor
                 font.pixelSize: Theme.typeCaption
                 wrapMode: Text.Wrap
-                lineHeight: 1.4
+                lineHeight: Theme.leadingBody
             }
 
             // ── A recycle-bin row ─────────────────────────────────────────
@@ -364,7 +364,7 @@ Item {
                             horizontalAlignment: Text.AlignRight
                             font.family: Theme.monoFamily
                             font.pixelSize: Theme.typeMicro
-                            lineHeight: 1.6
+                            lineHeight: Theme.leadingProse
                             font.features: { "tnum": 1 }
                         }
 
@@ -374,7 +374,7 @@ Item {
                             color: root.textColor
                             font.family: Theme.monoFamily
                             font.pixelSize: Theme.typeMicro
-                            lineHeight: 1.6
+                            lineHeight: Theme.leadingProse
                             wrapMode: Text.NoWrap
                             elide: Text.ElideRight
                             textFormat: Text.PlainText
@@ -460,7 +460,7 @@ Item {
 
                     Text {
                         width: parent.width
-                        height: 22
+                        height: Theme.controlSm
                         text: controller.loading
                             ? qsTr("读取中…")
                             : (controller.childCount === 0
@@ -480,7 +480,7 @@ Item {
 
                             required property string modelData
                             width: folderColumn.width
-                            height: 22
+                            height: Theme.controlSm
 
                             Row {
                                 anchors.left: parent.left
@@ -557,7 +557,7 @@ Item {
                     text: controller.mediaText
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
-                    lineHeight: 1.4
+                    lineHeight: Theme.leadingBody
                     wrapMode: Text.Wrap
                 }
 
@@ -620,7 +620,7 @@ Item {
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
                     wrapMode: Text.Wrap
-                    lineHeight: 1.4
+                    lineHeight: Theme.leadingBody
                 }
 
                 // ── Actions ───────────────────────────────────────────────
@@ -629,7 +629,7 @@ Item {
                 Row {
                     id: actionRow
                     width: parent.width
-                    height: 26
+                    height: Theme.controlMd
                     spacing: 16
                     visible: root.single && controller.path !== ""
                     enabled: !controller.loading
@@ -678,7 +678,7 @@ Item {
         property string value: ""
 
         width: parent ? parent.width : 0
-        height: 24
+        height: Theme.controlSm
 
         Rectangle {
             anchors.left: parent.left
@@ -731,7 +731,7 @@ Item {
         signal clicked()
 
         implicitWidth: actionRowText.implicitWidth + 2
-        implicitHeight: 26
+        implicitHeight: Theme.controlMd
         opacity: action.available ? 1 : 0.4
 
         Accessible.role: Accessible.Button

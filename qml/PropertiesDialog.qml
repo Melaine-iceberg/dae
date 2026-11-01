@@ -180,7 +180,7 @@ FocusScope {
             Row {
                 id: tabBar
                 width: parent.width
-                height: 28
+                height: Theme.controlMd
                 spacing: 18
 
                 Repeater {
@@ -207,7 +207,7 @@ FocusScope {
                             text: tabItem.modelData.label
                             color: root.tab === tabItem.modelData.key
                                 ? root.textColor : root.mutedColor
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.typeCaption
                             font.weight: root.tab === tabItem.modelData.key
                                 ? Font.Medium : Font.Normal
                         }
@@ -284,7 +284,7 @@ FocusScope {
 
                         Rectangle {
                             width: 96
-                            height: 24
+                            height: Theme.controlSm
                             radius: Theme.radiusSm
                             color: scanMouse.containsMouse
                                 ? Theme.fill : "transparent"
@@ -295,7 +295,7 @@ FocusScope {
                                 anchors.centerIn: parent
                                 text: controller.sizeScanning ? qsTr("取消计算") : qsTr("计算大小")
                                 color: root.textColor
-                                font.pixelSize: 11
+                                font.pixelSize: Theme.typeMicro
                             }
 
                             MouseArea {
@@ -314,7 +314,7 @@ FocusScope {
                                 ? qsTr("计算中… ") + controller.sizeScanText
                                 : (controller.sizeScanDone ? qsTr("已统计 ") + controller.sizeScanText : "")
                             color: root.mutedColor
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.typeMicro
                         }
                     }
 
@@ -338,12 +338,12 @@ FocusScope {
 
                     Row {
                         width: parent.width
-                        height: 22
+                        height: Theme.controlSm
 
                         Item { width: 70; height: 1 }
-                        Text { width: 90; text: qsTr("用户"); color: root.mutedColor; font.pixelSize: 11 }
-                        Text { width: 90; text: qsTr("组"); color: root.mutedColor; font.pixelSize: 11 }
-                        Text { width: 90; text: qsTr("其他"); color: root.mutedColor; font.pixelSize: 11 }
+                        Text { width: 90; text: qsTr("用户"); color: root.mutedColor; font.pixelSize: Theme.typeMicro }
+                        Text { width: 90; text: qsTr("组"); color: root.mutedColor; font.pixelSize: Theme.typeMicro }
+                        Text { width: 90; text: qsTr("其他"); color: root.mutedColor; font.pixelSize: Theme.typeMicro }
                     }
 
                     PermissionRow {
@@ -363,7 +363,7 @@ FocusScope {
 
                     Row {
                         width: parent.width
-                        height: 24
+                        height: Theme.controlSm
                         spacing: 14
 
                         Toggle {
@@ -387,7 +387,7 @@ FocusScope {
 
                     Row {
                         width: parent.width
-                        height: 32
+                        height: Theme.controlLg
                         spacing: 10
 
                         Text {
@@ -395,7 +395,7 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("所有者")
                             color: root.mutedColor
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.typeMicro
                         }
 
                         Field {
@@ -454,7 +454,7 @@ FocusScope {
                             ? qsTr("校验值已计算完成。")
                             : (controller.hashing ? qsTr("正在计算校验值…") : qsTr("一次读取文件，同时给出三种校验值。"))
                         color: root.mutedColor
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                         wrapMode: Text.WordWrap
                     }
 
@@ -493,18 +493,18 @@ FocusScope {
                         visible: controller.hashError !== ""
                         text: controller.hashError
                         color: root.dangerColor
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                         wrapMode: Text.WordWrap
                     }
 
                     Row {
                         width: parent.width
-                        height: 28
+                        height: Theme.controlMd
                         spacing: 8
 
                         Rectangle {
                             width: 96
-                            height: 28
+                            height: Theme.controlMd
                             radius: Theme.radiusSm
                             color: hashMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
 
@@ -512,7 +512,7 @@ FocusScope {
                                 anchors.centerIn: parent
                                 text: controller.hashing ? qsTr("取消") : qsTr("开始校验")
                                 color: Theme.onInteractive
-                                font.pixelSize: 12
+                                font.pixelSize: Theme.typeCaption
                             }
 
                             MouseArea {
@@ -529,7 +529,7 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: root.copiedAlgorithm !== "" ? qsTr("已复制") : ""
                             color: root.mutedColor
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.typeMicro
                         }
                     }
                 }
@@ -538,7 +538,7 @@ FocusScope {
             // ---- Footer ------------------------------------------------------
             Row {
                 width: parent.width
-                height: 32
+                height: Theme.controlLg
                 spacing: 8
 
                 Toggle {
@@ -558,7 +558,7 @@ FocusScope {
 
                 Rectangle {
                     width: 76
-                    height: 28
+                    height: Theme.controlMd
                     anchors.verticalCenter: parent.verticalCenter
                     radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
@@ -572,7 +572,7 @@ FocusScope {
                         // that is always available is a plain close.
                         text: controller.editable ? qsTr("取消") : qsTr("关闭")
                         color: Theme.inkMuted
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                     }
 
                     MouseArea {
@@ -585,7 +585,7 @@ FocusScope {
 
                 Rectangle {
                     width: 84
-                    height: 28
+                    height: Theme.controlMd
                     anchors.verticalCenter: parent.verticalCenter
                     visible: controller.editable
                     radius: Theme.radiusSm
@@ -596,7 +596,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: controller.saving ? qsTr("保存中…") : qsTr("确定")
                         color: root.canSave ? Theme.onInteractive : root.mutedColor
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                     }
 
                     MouseArea {
@@ -617,7 +617,7 @@ FocusScope {
                 visible: height > 0
                 text: root.errorMessage
                 color: root.dangerColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
                 elide: Text.ElideRight
             }
         }
@@ -672,14 +672,14 @@ FocusScope {
         property int bit: 0
 
         width: parent ? parent.width : 0
-        height: 26
+        height: Theme.controlMd
 
         Text {
             width: 70
             anchors.verticalCenter: parent.verticalCenter
             text: permission.label
             color: root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
 
         Toggle {
@@ -720,7 +720,7 @@ FocusScope {
         signal toggled()
 
         width: box.width + (showLabel ? 8 + toggleLabel.width : 0)
-        height: 22
+        height: Theme.controlSm
         opacity: enabled ? 1 : 0.45
 
         Rectangle {
@@ -738,7 +738,7 @@ FocusScope {
                 visible: toggle.checked
                 text: "\u2713"
                 color: Theme.onInteractive
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
             }
         }
 
@@ -750,7 +750,7 @@ FocusScope {
             visible: toggle.showLabel
             text: toggle.label
             color: root.textColor
-            font.pixelSize: 12
+            font.pixelSize: Theme.typeCaption
         }
 
         MouseArea {
@@ -777,7 +777,7 @@ FocusScope {
         }
 
         width: 150
-        height: 28
+        height: Theme.controlMd
         radius: Theme.radiusSm
         color: root.fieldColor
         border.width: 1
@@ -794,7 +794,7 @@ FocusScope {
             color: root.textColor
             selectionColor: root.accent
             selectedTextColor: Theme.onInteractive
-            font.pixelSize: 12
+            font.pixelSize: Theme.typeCaption
             selectByMouse: true
             clip: true
 
@@ -811,7 +811,7 @@ FocusScope {
             visible: fieldInput.text.length === 0
             text: field.placeholder
             color: root.mutedColor
-            font.pixelSize: 12
+            font.pixelSize: Theme.typeCaption
         }
     }
 
@@ -823,7 +823,7 @@ FocusScope {
         property string value: ""
 
         width: parent ? parent.width : 0
-        height: 40
+        height: Theme.rowSpacious
 
         Text {
             x: 0
@@ -831,7 +831,7 @@ FocusScope {
             anchors.verticalCenter: parent.verticalCenter
             text: checksum.algorithm
             color: root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
 
         Rectangle {
@@ -840,7 +840,7 @@ FocusScope {
             anchors.right: copyButton.left
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: root.fieldColor
             border.width: 1
@@ -853,7 +853,7 @@ FocusScope {
                 verticalAlignment: Text.AlignVCenter
                 text: checksum.value === "" ? "—" : checksum.value
                 color: root.textColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
                 elide: Text.ElideMiddle
             }
         }
@@ -863,7 +863,7 @@ FocusScope {
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             width: 56
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: copyMouse.containsMouse
                 ? Theme.fill : "transparent"
@@ -875,7 +875,7 @@ FocusScope {
                 anchors.centerIn: parent
                 text: qsTr("复制")
                 color: root.textColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
             }
 
             MouseArea {

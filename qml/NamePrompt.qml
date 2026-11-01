@@ -109,7 +109,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            height: 44
+            height: Theme.shellTitle
 
             Text {
                 anchors.left: parent.left
@@ -131,7 +131,7 @@ Item {
                 anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
                 width: 20
-                height: 20
+                height: Theme.controlXs
 
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("关闭")
@@ -175,7 +175,7 @@ Item {
             x: 16
             y: head.height + 12
             width: parent.width - 32
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: Theme.field
             border.width: 1
@@ -224,7 +224,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 44
+            height: Theme.shellTitle
 
             Rectangle {
                 anchors.left: parent.left

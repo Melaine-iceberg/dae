@@ -244,7 +244,7 @@ Item {
 
             Item {
                 width: parent.width
-                height: 44
+                height: Theme.shellTitle
 
                 Text {
                     x: 10
@@ -252,7 +252,7 @@ Item {
                     width: Math.max(0, parent.width - hint.width - 30)
                     text: "Git · " + root.currentBranch()
                     color: root.textColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     font.weight: Font.Medium
                     textFormat: Text.PlainText
                     elide: Text.ElideMiddle
@@ -265,7 +265,7 @@ Item {
                     y: 6
                     text: root.branchHint()
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     textFormat: Text.PlainText
                 }
 
@@ -276,7 +276,7 @@ Item {
                     text: root.hasRepo ? root.repo.gitRoot : ""
                     color: root.mutedColor
                     font.family: Theme.monoFamily
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     textFormat: Text.PlainText
                     elide: Text.ElideMiddle
                 }
@@ -290,7 +290,7 @@ Item {
 
             Item {
                 width: parent.width
-                height: 34
+                height: Theme.controlXl
 
                 Repeater {
                     model: [
@@ -309,7 +309,7 @@ Item {
                         x: 8 + index * 57
                         y: 5
                         width: 53
-                        height: 24
+                        height: Theme.controlSm
                         radius: Theme.radiusSm
                         readonly property bool actionEnabled: !root.busy
                             && (modelData.action === "create" || root.canNetwork)
@@ -328,7 +328,7 @@ Item {
                             anchors.centerIn: parent
                             text: actionButton.modelData.label
                             color: root.textColor
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.typeMicro
                             textFormat: Text.PlainText
                             opacity: actionButton.actionEnabled ? 1 : 0.35
                         }
@@ -355,7 +355,7 @@ Item {
                     x: 8
                     y: 5
                     width: parent.width - 16 - 60
-                    height: 24
+                    height: Theme.controlSm
                     radius: Theme.radiusSm
                     color: root.fieldColor
                     border.width: 1
@@ -370,7 +370,7 @@ Item {
                         visible: branchInput.text === ""
                         text: qsTr("分支名称")
                         color: root.mutedColor
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                         textFormat: Text.PlainText
                     }
 
@@ -382,7 +382,7 @@ Item {
                         verticalAlignment: TextInput.AlignVCenter
                         color: root.textColor
                         font.family: Theme.monoFamily
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                         selectByMouse: true
                         focus: root.creating
                         onTextChanged: {
@@ -402,7 +402,7 @@ Item {
                     x: parent.width - 8 - 52
                     y: 5
                     width: 52
-                    height: 24
+                    height: Theme.controlSm
                     radius: Theme.radiusSm
                     color: root.createPending || branchInput.text.trim() === ""
                         ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.10)
@@ -414,7 +414,7 @@ Item {
                         anchors.centerIn: parent
                         text: root.createPending ? qsTr("创建中…") : qsTr("创建")
                         color: root.textColor
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                         textFormat: Text.PlainText
                     }
 
@@ -458,7 +458,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: qsTr("创建后切换")
                         color: root.mutedColor
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                         textFormat: Text.PlainText
                     }
 
@@ -476,7 +476,7 @@ Item {
                     visible: root.createError !== ""
                     text: root.createError
                     color: Theme.danger
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     textFormat: Text.PlainText
                     elide: Text.ElideRight
                 }
@@ -510,7 +510,7 @@ Item {
                         text: branchRow.modelData.kind === "section"
                             ? branchRow.modelData.text : ""
                         color: root.mutedColor
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                         font.weight: Font.Medium
                         textFormat: Text.PlainText
                     }
@@ -522,7 +522,7 @@ Item {
                         text: branchRow.modelData.kind === "empty"
                             ? branchRow.modelData.text : ""
                         color: root.mutedColor
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                         textFormat: Text.PlainText
                     }
 
@@ -548,7 +548,7 @@ Item {
                             ? branchRow.modelData.name : ""
                         color: branchRow.modelData.current ? root.accent : root.textColor
                         font.family: Theme.monoFamily
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                         font.weight: branchRow.modelData.current ? Font.Medium : Font.Normal
                         textFormat: Text.PlainText
                         elide: Text.ElideMiddle

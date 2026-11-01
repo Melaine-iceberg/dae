@@ -124,8 +124,8 @@ FocusScope {
                 width: contentColumn.width
                 text: root.description
                 color: Theme.inkMuted
-                font.pixelSize: 12
-                lineHeight: 1.2
+                font.pixelSize: Theme.typeCaption
+                lineHeight: Theme.leadingTight
                 wrapMode: Text.Wrap
             }
 
@@ -138,7 +138,7 @@ FocusScope {
 
             Rectangle {
                 width: contentColumn.width
-                height: 28
+                height: Theme.controlMd
                 radius: Theme.radiusSm
                 color: Theme.field
                 border.width: 1
@@ -155,7 +155,7 @@ FocusScope {
                     color: Theme.ink
                     selectionColor: Theme.interactive
                     selectedTextColor: Theme.onInteractive
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.typeBody
                     echoMode: TextInput.Password
                     selectByMouse: true
                     clip: true
@@ -185,7 +185,7 @@ FocusScope {
             Rectangle {
                 visible: root.compressMode
                 width: contentColumn.width
-                height: 28
+                height: Theme.controlMd
                 radius: Theme.radiusSm
                 color: Theme.field
                 border.width: 1
@@ -202,7 +202,7 @@ FocusScope {
                     color: Theme.ink
                     selectionColor: Theme.interactive
                     selectedTextColor: Theme.onInteractive
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.typeBody
                     echoMode: TextInput.Password
                     selectByMouse: true
                     clip: true
@@ -221,7 +221,7 @@ FocusScope {
                 height: Math.max(16, implicitHeight)
                 text: ""
                 color: Theme.danger
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
                 wrapMode: Text.Wrap
             }
         }
@@ -233,7 +233,7 @@ FocusScope {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 72
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: cancelMouse.containsMouse
                 ? Theme.fill : "transparent"
@@ -251,7 +251,7 @@ FocusScope {
                 anchors.centerIn: parent
                 text: qsTr("取消")
                 color: Theme.inkMuted
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
             }
 
             MouseArea {
@@ -272,7 +272,7 @@ FocusScope {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 78
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: submitMouse.containsMouse ? Theme.interactiveHover : Theme.interactive
 
@@ -285,7 +285,7 @@ FocusScope {
                 anchors.centerIn: parent
                 text: root.compressMode ? qsTr("压缩") : qsTr("解压")
                 color: Theme.onInteractive
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
             }
 
             MouseArea {

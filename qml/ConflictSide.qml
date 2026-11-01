@@ -40,7 +40,7 @@ Rectangle {
             width: parent.width
             text: root.heading
             color: Theme.inkMuted
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
             elide: Text.ElideRight
         }
 
@@ -63,7 +63,7 @@ Rectangle {
                 width: Math.min(implicitWidth, parent.width - 22)
                 text: root.name
                 color: Theme.ink
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
                 font.weight: Font.Medium
                 elide: Text.ElideMiddle
             }
@@ -73,8 +73,8 @@ Rectangle {
             width: parent.width
             text: root.detail
             color: Theme.inkMuted
-            font.pixelSize: 11
-            lineHeight: 1.3
+            font.pixelSize: Theme.typeMicro
+            lineHeight: Theme.leadingBody
             wrapMode: Text.WordWrap
         }
     }

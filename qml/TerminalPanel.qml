@@ -81,7 +81,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: 28
+        height: Theme.controlMd
         color: Theme.terminalHeader
 
         Rectangle {
@@ -133,7 +133,7 @@ Item {
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             width: 56
-            height: 18
+            height: Theme.controlXs
             radius: Theme.radiusXs
             visible: !root.running
             color: restartMouse.containsMouse ? Theme.hover : "transparent"
@@ -163,7 +163,7 @@ Item {
             anchors.rightMargin: 8
             anchors.verticalCenter: parent.verticalCenter
             width: 20
-            height: 20
+            height: Theme.controlXs
 
             Accessible.role: Accessible.Button
             Accessible.name: qsTr("关闭终端")

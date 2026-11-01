@@ -57,7 +57,7 @@ Item {
 
         anchors.centerIn: parent
         width: row.implicitWidth + 20
-        height: 34
+        height: Theme.controlXl
         radius: Theme.radiusSm
         color: Theme.raised
         border.width: 1
@@ -93,7 +93,7 @@ Item {
             Rectangle {
                 visible: root.undoable
                 width: visible ? undoLabel.implicitWidth + 12 : 0
-                height: 24
+                height: Theme.controlSm
                 radius: Theme.radiusXs
                 color: undoMouse.containsMouse ? Theme.signalSoft : "transparent"
 
@@ -128,7 +128,7 @@ Item {
 
             Item {
                 width: 20
-                height: 20
+                height: Theme.controlXs
                 anchors.verticalCenter: parent.verticalCenter
 
                 Accessible.role: Accessible.Button

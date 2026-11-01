@@ -21,7 +21,7 @@ Item {
     property int selectionVersion: 0
     property int anchorIndex: -1
 
-    readonly property int rowHeight: 32
+    readonly property int rowHeight: Theme.controlLg
 
     /// Below this width the four columns cannot all be read: the name column
     /// would be squeezed under the original location and the two would paint on
@@ -263,7 +263,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: 40
+        height: Theme.rowSpacious
 
         /// The buttons keep their size; the heading gives way. With the preview
         /// open the pane is ~440 wide and four buttons already take most of it,
@@ -279,7 +279,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("回收站")
             color: root.textColor
-            font.pixelSize: 13
+            font.pixelSize: Theme.typeBody
             font.weight: Font.Medium
             elide: Text.ElideRight
         }
@@ -292,7 +292,7 @@ Item {
             text: root.model === null ? ""
                 : (root.model.loaded ? root.model.status : qsTr("读取回收站…"))
             color: root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
             elide: Text.ElideRight
         }
 
@@ -342,7 +342,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: actions.bottom
-        height: 30
+        height: Theme.controlLg
 
         Rectangle {
             anchors.fill: parent
@@ -373,7 +373,7 @@ Item {
                 visible: root.allSelected
                 text: "\u2713"
                 color: Theme.onInteractive
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
             }
 
             MouseArea {
@@ -396,7 +396,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("名称")
             color: root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
             elide: Text.ElideRight
         }
 
@@ -408,7 +408,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("原位置")
             color: root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
             elide: Text.ElideRight
         }
 
@@ -421,7 +421,7 @@ Item {
             horizontalAlignment: Text.AlignRight
             text: qsTr("删除时间")
             color: root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
 
         Text {
@@ -433,7 +433,7 @@ Item {
             horizontalAlignment: Text.AlignRight
             text: qsTr("大小")
             color: root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
     }
 
@@ -536,7 +536,7 @@ Item {
                     visible: row.selected
                     text: "\u2713"
                     color: Theme.onInteractive
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                 }
             }
 
@@ -558,7 +558,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.fileName
                 color: root.textColor
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
                 elide: Text.ElideRight
                 textFormat: Text.PlainText
             }
@@ -571,7 +571,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.originalParent !== "" ? row.originalParent : qsTr("原位置未知")
                 color: root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
                 elide: Text.ElideMiddle
                 textFormat: Text.PlainText
             }
@@ -585,7 +585,7 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 text: row.deletedText
                 color: root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
                 textFormat: Text.PlainText
             }
 
@@ -598,7 +598,7 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 text: row.sizeText
                 color: root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
                 textFormat: Text.PlainText
             }
 
@@ -641,7 +641,7 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             text: qsTr("无法读取回收站")
             color: Theme.danger
-            font.pixelSize: 13
+            font.pixelSize: Theme.typeBody
         }
 
         Text {
@@ -649,7 +649,7 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             text: root.model !== null ? root.model.error : ""
             color: root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
             wrapMode: Text.Wrap
             elide: Text.ElideRight
             maximumLineCount: 3
@@ -674,7 +674,7 @@ Item {
         signal clicked()
 
         width: Math.max(58, buttonLabel.implicitWidth + 22)
-        height: 24
+        height: Theme.controlSm
         radius: Theme.radiusSm
         opacity: enabled ? 1 : 0.45
         color: danger
@@ -700,7 +700,7 @@ Item {
             text: button.label
             color: button.danger ? Theme.onSolid
                 : (button.enabled ? root.textColor : root.mutedColor)
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
 
         MouseArea {

@@ -29,8 +29,8 @@ Item {
     /// bar renders it any more.
     property string title: "dae"
 
-    implicitHeight: 44
-    height: 44
+    implicitHeight: Theme.shellTitle
+    height: Theme.shellTitle
 
     readonly property bool isMac: Qt.platform.os === "osx"
     /// Where the tab strip ends and the window buttons begin. The shell anchors
@@ -102,7 +102,7 @@ Item {
             anchors.centerIn: parent
             text: "D"
             color: Theme.onInteractive
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
             font.weight: Font.Medium
         }
     }
@@ -227,7 +227,7 @@ Item {
                             : "\uE921"
                     color: button.isClose && button.hovered ? Theme.onSolid : root.textColor
                     font.family: "Segoe Fluent Icons"
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                 }
 
                 Item {

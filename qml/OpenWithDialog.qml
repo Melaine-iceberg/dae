@@ -193,7 +193,7 @@ FocusScope {
                     visible: filterInput.text.length === 0
                     text: qsTr("筛选应用…")
                     color: root.mutedColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                 }
 
                 TextInput {
@@ -205,7 +205,7 @@ FocusScope {
                     color: root.textColor
                     selectionColor: root.accent
                     selectedTextColor: Theme.onInteractive
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
 
@@ -280,7 +280,7 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: entry.kind === "header" ? entry.label : ""
                             color: root.mutedColor
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.typeMicro
                             font.weight: Font.Medium
                         }
 
@@ -304,7 +304,7 @@ FocusScope {
                                 && status === Image.Ready
                             x: 12
                             width: 18
-                            height: 18
+                            height: Theme.controlXs
                             anchors.verticalCenter: parent.verticalCenter
                             source: entry.iconName === "" ? ""
                                 : "image://fileicon/name/" + encodeURIComponent(entry.iconName) + "?size=36"
@@ -317,7 +317,7 @@ FocusScope {
                             visible: entry.kind !== "header" && !appIcon.visible
                             x: 12
                             width: 18
-                            height: 18
+                            height: Theme.controlXs
                             radius: Theme.radiusSm
                             anchors.verticalCenter: parent.verticalCenter
                             color: Theme.hairlineStrong
@@ -327,7 +327,7 @@ FocusScope {
                                 text: entry.label.length > 0
                                     ? entry.label.charAt(0).toUpperCase() : "?"
                                 color: root.mutedColor
-                                font.pixelSize: 11
+                                font.pixelSize: Theme.typeMicro
                             }
                         }
 
@@ -340,7 +340,7 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: entry.kind === "header" ? "" : entry.label
                             color: root.textColor
-                            font.pixelSize: 13
+                            font.pixelSize: Theme.typeBody
                             elide: Text.ElideRight
                         }
 
@@ -352,7 +352,7 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("默认")
                             color: root.mutedColor
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.typeMicro
                         }
 
                         MouseArea {
@@ -382,7 +382,7 @@ FocusScope {
                         width: parent.width
                         text: qsTr("正在查找可用的应用…")
                         color: root.mutedColor
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                         horizontalAlignment: Text.AlignHCenter
                     }
                 }
@@ -397,7 +397,7 @@ FocusScope {
                         width: parent.width
                         text: apps.error
                         color: root.dangerColor
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.Wrap
                     }
@@ -406,7 +406,7 @@ FocusScope {
                         width: parent.width
                         text: qsTr("重试")
                         color: root.accent
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                         font.underline: true
                         horizontalAlignment: Text.AlignHCenter
 
@@ -424,7 +424,7 @@ FocusScope {
                     visible: apps.loaded && apps.error === "" && appList.count === 0
                     text: qsTr("没有匹配的应用")
                     color: root.mutedColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     horizontalAlignment: Text.AlignHCenter
                 }
             }
@@ -440,7 +440,7 @@ FocusScope {
                 visible: root.errorText !== ""
                 text: root.errorText
                 color: root.dangerColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
                 wrapMode: Text.Wrap
             }
 
@@ -451,14 +451,14 @@ FocusScope {
 
             Item {
                 width: parent.width
-                height: 30
+                height: Theme.controlLg
 
                 Item {
                     id: defaultBox
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     width: defaultRow.width
-                    height: 20
+                    height: Theme.controlXs
 
                     Row {
                         id: defaultRow
@@ -488,7 +488,7 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: qsTr("设为默认打开方式")
                             color: root.mutedColor
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.typeMicro
                         }
                     }
 
@@ -506,7 +506,7 @@ FocusScope {
 
                     Rectangle {
                         width: 66
-                        height: 28
+                        height: Theme.controlMd
                         radius: Theme.radiusSm
                         color: cancelMouse.containsMouse
                             ? Theme.fill
@@ -518,7 +518,7 @@ FocusScope {
                             anchors.centerIn: parent
                             text: qsTr("取消")
                             color: root.mutedColor
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.typeCaption
                         }
 
                         MouseArea {
@@ -531,7 +531,7 @@ FocusScope {
 
                     Rectangle {
                         width: 76
-                        height: 28
+                        height: Theme.controlMd
                         radius: Theme.radiusSm
                         opacity: root.selectedId === "" || root.opening ? 0.45 : 1
                         color: root.accent
@@ -540,7 +540,7 @@ FocusScope {
                             anchors.centerIn: parent
                             text: root.opening ? qsTr("正在打开…") : qsTr("打开")
                             color: Theme.onInteractive
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.typeCaption
                             font.weight: Font.Medium
                         }
 

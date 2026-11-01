@@ -2369,7 +2369,7 @@ Window {
                 anchors.leftMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 width: 28
-                height: 28
+                height: Theme.controlMd
                 radius: Theme.radiusSm
                 color: root.canGoBack && backMouse.containsMouse
                     ? Theme.fill : "transparent"
@@ -2419,7 +2419,7 @@ Window {
                 anchors.leftMargin: 2
                 anchors.verticalCenter: parent.verticalCenter
                 width: 28
-                height: 28
+                height: Theme.controlMd
                 radius: Theme.radiusSm
                 color: root.canGoForward && forwardMouse.containsMouse
                     ? Theme.fill : "transparent"
@@ -2466,7 +2466,7 @@ Window {
                 anchors.leftMargin: 2
                 anchors.verticalCenter: parent.verticalCenter
                 width: 28
-                height: 28
+                height: Theme.controlMd
                 radius: Theme.radiusSm
                 color: root.folderActive && upMouse.containsMouse
                     ? Theme.fill : "transparent"
@@ -2524,7 +2524,7 @@ Window {
                 anchors.right: searchSlot.left
                 anchors.rightMargin: 6
                 anchors.verticalCenter: parent.verticalCenter
-                height: 28
+                height: Theme.controlMd
 
                 // The trail is a readout, not a field: it only looks like one
                 // while it is being typed into. The plate is the editing state.
@@ -2652,7 +2652,7 @@ Window {
                 anchors.right: viewSlot.left
                 anchors.rightMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
-                height: 28
+                height: Theme.controlMd
                 width: expanded ? 210 : 28
                 visible: root.folderActive
 
@@ -2741,7 +2741,7 @@ Window {
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 width: visible ? 44 : 0
-                height: 24
+                height: Theme.controlSm
                 radius: Theme.radiusXs
                 visible: root.trashActive && trashModel.count > 0
                 color: trashClearMouse.containsMouse ? Theme.hover : "transparent"
@@ -2779,7 +2779,7 @@ Window {
                 anchors.rightMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
                 width: 28
-                height: 28
+                height: Theme.controlMd
                 visible: root.folderActive
 
                 /// The slot takes focus, the plate inside draws the ring: the
@@ -2833,7 +2833,7 @@ Window {
                 anchors.rightMargin: 8
                 anchors.verticalCenter: parent.verticalCenter
                 width: 28
-                height: 28
+                height: Theme.controlMd
 
                 /// Same split as the view button: the slot is the tab stop, the
                 /// plate draws the ring.
@@ -3063,7 +3063,7 @@ Window {
                         Rectangle {
                             id: splitPathBar
                             width: parent.width
-                            height: 32
+                            height: Theme.controlLg
                             color: root.chromeColor
 
                             Text {
@@ -3074,7 +3074,7 @@ Window {
                                 text: "\u00D7"
                                 color: splitCloseMouse.containsMouse
                                     ? root.textColor : root.mutedColor
-                                font.pixelSize: 13
+                                font.pixelSize: Theme.typeBody
                             }
 
                             // The second pane names its own directory the same
@@ -3107,7 +3107,7 @@ Window {
                                 anchors.right: splitClose.left
                                 anchors.rightMargin: 8
                                 anchors.verticalCenter: parent.verticalCenter
-                                height: 22
+                                height: Theme.controlSm
                                 fontSize: 12
                                 names: root.splitTab !== null
                                     ? root.splitTab.listing.breadcrumbNames : []
@@ -3517,7 +3517,7 @@ Window {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter: parent.verticalCenter
                 width: transferRow.implicitWidth + 14
-                height: 22
+                height: Theme.controlSm
                 radius: Theme.radiusXs
                 visible: transferChip.count > 0
                 color: transferMouse.containsMouse ? Theme.raised : Theme.canvas
@@ -3605,7 +3605,7 @@ Window {
                 Item {
                     id: gitStatus
                     width: gitStatusRow.implicitWidth + 8
-                    height: 22
+                    height: Theme.controlSm
                     visible: root.gitVisible
 
                     Accessible.role: Accessible.Button
@@ -3683,7 +3683,7 @@ Window {
                 Item {
                     id: previewToggle
                     width: previewToggleRow.implicitWidth + 12
-                    height: 22
+                    height: Theme.controlSm
                     visible: root.folderActive || root.trashActive
 
                     Accessible.role: Accessible.Button
@@ -3754,7 +3754,7 @@ Window {
                 Item {
                     id: terminalToggle
                     width: terminalToggleRow.implicitWidth + 12
-                    height: 22
+                    height: Theme.controlSm
                     visible: root.folderActive
                     opacity: root.remoteLocation ? 0.35 : 1
 

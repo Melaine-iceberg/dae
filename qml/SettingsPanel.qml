@@ -395,12 +395,16 @@ FocusScope {
             radius: Theme.radiusLg
 
             // Square off the inner edge so the sidebar reads as a column, not
-            // as a floating card.
+            // as a floating card. The cover has to be as wide as the corner it
+            // is hiding: at a 16 dp radius a 10 dp plate left a visible arc in
+            // the top-right and bottom-right corners. Bound to the token
+            // rather than written as 16, so raising the radius again cannot
+            // bring the arc back.
             Rectangle {
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: 10
+                width: Theme.radiusLg
                 color: parent.color
             }
 
@@ -414,7 +418,7 @@ FocusScope {
 
             Text {
                 x: 18
-                y: 18
+                y: 16
                 text: qsTr("设置")
                 color: root.textColor
                 font.pixelSize: Theme.typeTitle
@@ -423,16 +427,19 @@ FocusScope {
 
             Text {
                 x: 18
-                y: 38
+                y: 42
                 text: qsTr("dae · Qt 桌面壳")
                 color: root.faintColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
             }
 
             Column {
                 x: 8
                 y: 66
-                width: parent.width - 16
+                // 8 dp of leading inset plus the cover below, which is now as
+                // wide as the corner radius. The rows stop where the cover
+                // starts so a selection fill cannot paint under it.
+                width: parent.width - 8 - Theme.radiusLg
                 spacing: 2
 
                 NavItem { label: qsTr("外观与语言"); value: "appearance" }
@@ -464,24 +471,24 @@ FocusScope {
                 boundsBehavior: Flickable.StopAtBounds
 
                 Text {
-                    x: 24; y: 22
+                    x: 24; y: 20
                     text: qsTr("外观与语言")
                     color: root.textColor
                     font.pixelSize: Theme.typeTitle
                     font.weight: Font.Medium
                 }
                 Text {
-                    x: 24; y: 48
+                    x: 24; y: 50
                     text: qsTr("主题、强调色、界面语言和背景效果对本 shell 立即生效。")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                 }
 
                 Text {
                     x: 24; y: 88
                     text: qsTr("主题")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     font.weight: Font.Medium
                 }
                 Text {
@@ -489,7 +496,7 @@ FocusScope {
                     width: content.width - 48
                     text: qsTr("跟随系统时，系统切换深浅色会同步更新窗口、标题栏与面板。")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -512,7 +519,7 @@ FocusScope {
                     x: 24; y: 192
                     text: qsTr("强调色")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     font.weight: Font.Medium
                 }
                 Text {
@@ -520,7 +527,7 @@ FocusScope {
                     width: content.width - 48
                     text: qsTr("“系统”读取桌面强调色，“信号橙”使用应用自带的信号色。")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -546,7 +553,7 @@ FocusScope {
                     x: 24; y: 296
                     text: qsTr("界面语言")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     font.weight: Font.Medium
                 }
                 Text {
@@ -554,7 +561,7 @@ FocusScope {
                     width: content.width - 48
                     text: qsTr("切换后整个窗口立即重新翻译。菜单、对话框和本面板共用同一份词条。")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -577,7 +584,7 @@ FocusScope {
                     x: 24; y: 396
                     text: qsTr("动效")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     font.weight: Font.Medium
                 }
 
@@ -589,7 +596,7 @@ FocusScope {
                     // other half still parsed after it.
                     text: qsTr("关闭后所有过渡改为瞬时切换，而不只是变快。Qt 6 没有系统级“减少动效”查询，所以这个开关在 dae 自己这里。")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -616,7 +623,7 @@ FocusScope {
                     x: 24; y: 496
                     text: qsTr("背景效果")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     font.weight: Font.Medium
                 }
 
@@ -625,7 +632,7 @@ FocusScope {
                     width: content.width - 48
                     text: qsTr("开启后窗口使用系统合成的半透明背景；关闭则使用实色，适合低性能或远程桌面环境。")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -652,7 +659,7 @@ FocusScope {
                     visible: root.showMaterialChoices
                     text: qsTr("窗口材质")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     font.weight: Font.Medium
                 }
 
@@ -662,7 +669,7 @@ FocusScope {
                     width: content.width - 48
                     text: qsTr("Mica 从桌面壁纸取色，Acrylic 实时模糊身后的窗口。默认 Mica；系统不支持或关闭透明效果时窗口回退为实色。")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -691,7 +698,7 @@ FocusScope {
                     visible: text !== ""
                     text: root.backgroundNote
                     color: root.faintColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -703,7 +710,7 @@ FocusScope {
                        : platformNote.y + (platformNote.visible ? platformNote.height + 24 : 0)
                     text: qsTr("启动")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     font.weight: Font.Medium
                 }
 
@@ -714,7 +721,7 @@ FocusScope {
                     width: content.width - 48
                     text: qsTr("开启后启动时先显示一个纯色窗口，界面在它后面加载：首帧从 ~955 ms 提前到 ~302 ms，代价是界面就绪前约 0.6 s 的空白。下次启动生效。")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -754,7 +761,7 @@ FocusScope {
                     width: content.width - 48
                     text: qsTr("外观、语言、背景效果、启动方式、快捷键与终端排版统一保存在 settings.toml，并与 Tauri 壳共享。")
                     color: root.faintColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
             }
@@ -765,18 +772,18 @@ FocusScope {
                 visible: root.page === "shortcuts"
 
                 Text {
-                    x: 24; y: 22
+                    x: 24; y: 20
                     text: qsTr("快捷键")
                     color: root.textColor
                     font.pixelSize: Theme.typeTitle
                     font.weight: Font.Medium
                 }
                 Text {
-                    x: 24; y: 48
+                    x: 24; y: 50
                     width: content.width - 160
                     text: qsTr("点击右侧按键重新录制。按 Backspace 清除绑定，按 Esc 取消；重复的绑定不会被保存。")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -796,7 +803,7 @@ FocusScope {
                     visible: text !== ""
                     text: root.shortcutError
                     color: Theme.warn
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -835,7 +842,7 @@ FocusScope {
                                     text: shortcutRow.modelData.header
                                         ? shortcutRow.modelData.title : ""
                                     color: root.faintColor
-                                    font.pixelSize: 11
+                                    font.pixelSize: Theme.typeMicro
                                     font.weight: Font.Medium
                                 }
 
@@ -852,7 +859,7 @@ FocusScope {
                                         text: shortcutRow.modelData.header
                                             ? "" : shortcutRow.modelData.label
                                         color: root.textColor
-                                        font.pixelSize: 12
+                                        font.pixelSize: Theme.typeCaption
                                     }
                                     Text {
                                         x: Math.min(190, parent.width * 0.35)
@@ -861,7 +868,7 @@ FocusScope {
                                         text: shortcutRow.modelData.header
                                             ? "" : shortcutRow.modelData.detail
                                         color: root.faintColor
-                                        font.pixelSize: 11
+                                        font.pixelSize: Theme.typeMicro
                                         elide: Text.ElideRight
                                     }
 
@@ -871,7 +878,7 @@ FocusScope {
                                         anchors.rightMargin: 6
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: 100
-                                        height: 24
+                                        height: Theme.controlSm
                                         radius: Theme.radiusSm
                                         color: keyMouse.containsMouse ? root.selectedFill : root.fieldColor
                                         border.width: 1
@@ -883,7 +890,7 @@ FocusScope {
                                                 : root.bindingText(root.bindingFor(shortcutRow.modelData.id))
                                             color: root.bindingFor(shortcutRow.modelData.id)
                                                 ? root.textColor : root.faintColor
-                                            font.pixelSize: 11
+                                            font.pixelSize: Theme.typeMicro
                                             font.family: Theme.monoFamily
                                             elide: Text.ElideRight
                                         }
@@ -903,7 +910,7 @@ FocusScope {
                                         anchors.rightMargin: 4
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: 28
-                                        height: 24
+                                        height: Theme.controlSm
                                         radius: Theme.radiusSm
                                         visible: !shortcutRow.modelData.header
                                         color: resetMouse.containsMouse ? root.hoverFill : "transparent"
@@ -921,7 +928,7 @@ FocusScope {
                                             anchors.centerIn: parent
                                             text: "↺"
                                             color: resetMouse.containsMouse ? root.textColor : root.faintColor
-                                            font.pixelSize: 12
+                                            font.pixelSize: Theme.typeCaption
                                         }
 
                                         MouseArea {
@@ -975,18 +982,18 @@ FocusScope {
                 visible: root.page === "terminal"
 
                 Text {
-                    x: 24; y: 22
+                    x: 24; y: 20
                     text: qsTr("终端")
                     color: root.textColor
                     font.pixelSize: Theme.typeTitle
                     font.weight: Font.Medium
                 }
                 Text {
-                    x: 24; y: 48
+                    x: 24; y: 50
                     width: content.width - 48
                     text: qsTr("外观写入 settings.toml，两个桌面壳共用同一组值。")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -994,12 +1001,12 @@ FocusScope {
                     x: 24; y: 92
                     text: qsTr("字号")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                 }
                 FieldFrame {
                     id: sizeFrame
                     x: 130; y: 86
-                    width: 90; height: 28
+                    width: 90; height: Theme.controlMd
                 }
                 TextInput {
                     id: sizeInput
@@ -1011,7 +1018,7 @@ FocusScope {
                     color: root.textColor
                     selectionColor: root.accent
                     selectedTextColor: Theme.onInteractive
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
                     onAccepted: root.saveTerminal()
@@ -1021,19 +1028,19 @@ FocusScope {
                     anchors.verticalCenter: sizeFrame.verticalCenter
                     text: qsTr("8 – 24")
                     color: root.faintColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                 }
 
                 Text {
                     x: 24; y: 142
                     text: qsTr("行高")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                 }
                 FieldFrame {
                     id: heightFrame
                     x: 130; y: 136
-                    width: 90; height: 28
+                    width: 90; height: Theme.controlMd
                 }
                 TextInput {
                     id: heightInput
@@ -1044,7 +1051,7 @@ FocusScope {
                     color: root.textColor
                     selectionColor: root.accent
                     selectedTextColor: Theme.onInteractive
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
                     onAccepted: root.saveTerminal()
@@ -1054,20 +1061,20 @@ FocusScope {
                     anchors.verticalCenter: heightFrame.verticalCenter
                     text: qsTr("0.80 – 3.00")
                     color: root.faintColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                 }
 
                 Text {
                     x: 24; y: 192
                     text: qsTr("字体")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                 }
                 FieldFrame {
                     id: familyFrame
                     x: 130; y: 186
                     width: content.width - 130 - 48
-                    height: 28
+                    height: Theme.controlMd
                 }
                 TextInput {
                     id: familyInput
@@ -1078,7 +1085,7 @@ FocusScope {
                     color: root.textColor
                     selectionColor: root.accent
                     selectedTextColor: Theme.onInteractive
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
                     onAccepted: root.saveTerminal()
@@ -1087,20 +1094,20 @@ FocusScope {
                     x: 130; y: 222
                     text: qsTr("留空使用 Cascadia Mono / Consolas")
                     color: root.faintColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                 }
 
                 Text {
                     x: 24; y: 256
                     text: qsTr("Shell")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                 }
                 FieldFrame {
                     id: shellFrame
                     x: 130; y: 250
                     width: content.width - 130 - 48
-                    height: 28
+                    height: Theme.controlMd
                 }
                 TextInput {
                     id: shellInput
@@ -1111,7 +1118,7 @@ FocusScope {
                     color: root.textColor
                     selectionColor: root.accent
                     selectedTextColor: Theme.onInteractive
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     selectByMouse: true
                     clip: true
                     onAccepted: root.saveTerminal()
@@ -1121,7 +1128,7 @@ FocusScope {
                     width: content.width - 130 - 48
                     text: qsTr("可执行文件名或完整路径；留空自动选择（Windows: pwsh / PowerShell，其他平台: $SHELL）")
                     color: root.faintColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -1129,7 +1136,7 @@ FocusScope {
                     x: 24; y: 324
                     text: qsTr("字号与行高立即应用；Shell 在下次启动终端时生效。")
                     color: root.faintColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                 }
 
                 Text {
@@ -1139,7 +1146,7 @@ FocusScope {
                     visible: text !== ""
                     text: root.terminalError
                     color: Theme.danger
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -1158,7 +1165,7 @@ FocusScope {
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.terminalStatus
                         color: Theme.success
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                     }
                 }
             }
@@ -1169,24 +1176,24 @@ FocusScope {
                 visible: root.page === "defaultManager"
 
                 Text {
-                    x: 24; y: 22
+                    x: 24; y: 20
                     text: qsTr("默认文件管理器")
                     color: root.textColor
                     font.pixelSize: Theme.typeTitle
                     font.weight: Font.Medium
                 }
                 Text {
-                    x: 24; y: 48
+                    x: 24; y: 50
                     width: content.width - 48
                     text: qsTr("把 dae 注册为系统打开文件夹的应用。这个设置修改操作系统关联，不写入 settings.toml。")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
                 Row {
                     x: 24; y: 100
-                    height: 18
+                    height: Theme.controlXs
                     spacing: 7
 
                     Text {
@@ -1194,7 +1201,7 @@ FocusScope {
                         anchors.verticalCenter: parent.verticalCenter
                         text: "↻"
                         color: root.faintColor
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
 
                         RotationAnimator on rotation {
                             running: Workspace.defaultManagerBusy
@@ -1218,7 +1225,7 @@ FocusScope {
                         anchors.verticalCenter: parent.verticalCenter
                         text: root.defaultManagerState
                         color: root.defaultManagerStateColor
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                     }
                 }
 
@@ -1228,7 +1235,7 @@ FocusScope {
                     visible: text !== ""
                     text: root.localizeDetail(Workspace.defaultManagerDetail)
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -1254,7 +1261,7 @@ FocusScope {
                     visible: text !== ""
                     text: root.backendError(Workspace.defaultManagerError)
                     color: Theme.danger
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
             }
@@ -1265,18 +1272,18 @@ FocusScope {
                 visible: root.page === "logs"
 
                 Text {
-                    x: 24; y: 22
+                    x: 24; y: 20
                     text: qsTr("日志")
                     color: root.textColor
                     font.pixelSize: Theme.typeTitle
                     font.weight: Font.Medium
                 }
                 Text {
-                    x: 24; y: 48
+                    x: 24; y: 50
                     width: content.width - 48
                     text: qsTr("两个桌面壳把运行日志写入同一个目录，方便一起排查。日志可能包含文件路径，分享前请先检查内容。")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
 
@@ -1284,14 +1291,14 @@ FocusScope {
                     x: 24; y: 92
                     text: qsTr("日志目录")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     font.weight: Font.Medium
                 }
 
                 Rectangle {
                     x: 24; y: 114
                     width: content.width - 48
-                    height: 34
+                    height: Theme.controlXl
                     radius: Theme.radiusSm
                     color: root.fieldColor
                     border.width: 1
@@ -1304,7 +1311,7 @@ FocusScope {
                         verticalAlignment: Text.AlignVCenter
                         text: Workspace.logDirectory
                         color: root.textColor
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                         font.family: Theme.monoFamily
                         elide: Text.ElideMiddle
                     }
@@ -1325,7 +1332,7 @@ FocusScope {
                     width: content.width - 48
                     text: qsTr("日志页只负责定位文件，不会上传或汇总任何内容。")
                     color: root.faintColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.WordWrap
                 }
             }
@@ -1353,7 +1360,7 @@ FocusScope {
                 anchors.verticalCenter: parent.verticalCenter
                 text: qsTr("更改会立即生效")
                 color: root.faintColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
             }
 
             Rectangle {
@@ -1361,7 +1368,7 @@ FocusScope {
                 anchors.rightMargin: 16
                 anchors.verticalCenter: parent.verticalCenter
                 width: 78
-                height: 28
+                height: Theme.controlMd
                 radius: Theme.radiusSm
                 color: doneMouse.containsMouse
                     ? Qt.lighter(root.accent, 1.08) : root.accent
@@ -1370,7 +1377,7 @@ FocusScope {
                     anchors.centerIn: parent
                     text: qsTr("完成")
                     color: Theme.onInteractive
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                 }
 
                 MouseArea {
@@ -1418,7 +1425,7 @@ FocusScope {
                     width: parent.width - 44
                     text: qsTr("为“%1”录制快捷键").arg(root.captureLabel)
                     color: root.textColor
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.typeBody
                     font.weight: Font.Medium
                     elide: Text.ElideRight
                 }
@@ -1436,7 +1443,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: qsTr("按下新的组合键…")
                         color: root.mutedColor
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                     }
                 }
 
@@ -1445,7 +1452,7 @@ FocusScope {
                     width: parent.width - 44
                     text: qsTr("Backspace 清除绑定 · Esc 取消")
                     color: root.faintColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                 }
             }
         }
@@ -1458,7 +1465,7 @@ FocusScope {
         property string value: ""
 
         width: parent.width
-        height: 32
+        height: Theme.controlLg
         radius: Theme.radiusSm
         color: root.page === nav.value
             ? root.selectedFill
@@ -1485,7 +1492,7 @@ FocusScope {
             anchors.verticalCenter: parent.verticalCenter
             text: nav.label
             color: root.page === nav.value ? root.textColor : root.mutedColor
-            font.pixelSize: 12
+            font.pixelSize: Theme.typeCaption
             font.weight: root.page === nav.value ? Font.Medium : Font.Normal
         }
 
@@ -1527,7 +1534,7 @@ FocusScope {
         // 24px for the swatch and 12px right padding, plus 2px of slack so the
         // last glyph never lands under the elide threshold.
         width: chipText.implicitWidth + (chip.swatch.a > 0 ? 38 : 24)
-        height: 28
+        height: Theme.controlMd
         radius: Theme.radiusSm
         color: chip.selected
             ? (root.dark ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)
@@ -1565,7 +1572,7 @@ FocusScope {
             anchors.verticalCenter: parent.verticalCenter
             text: chip.label
             color: chip.selected ? root.textColor : root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
             elide: Text.ElideRight
         }
 
@@ -1583,7 +1590,7 @@ FocusScope {
         signal clicked()
 
         width: buttonText.implicitWidth + 26
-        height: 28
+        height: Theme.controlMd
         radius: Theme.radiusSm
         opacity: button.enabled ? 1 : 0.45
         color: button.enabled && buttonMouse.containsMouse
@@ -1601,7 +1608,7 @@ FocusScope {
             anchors.centerIn: parent
             text: button.label
             color: Theme.onInteractive
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
 
         MouseArea {
@@ -1618,7 +1625,7 @@ FocusScope {
         signal clicked()
 
         width: buttonText.implicitWidth + 26
-        height: 28
+        height: Theme.controlMd
         radius: Theme.radiusSm
         opacity: button.enabled ? 1 : 0.45
         color: button.enabled && buttonMouse.containsMouse ? root.hoverFill : "transparent"
@@ -1637,7 +1644,7 @@ FocusScope {
             anchors.centerIn: parent
             text: button.label
             color: root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
 
         MouseArea {
@@ -1654,7 +1661,7 @@ FocusScope {
         signal clicked()
 
         width: smallText.implicitWidth + 20
-        height: 24
+        height: Theme.controlSm
         radius: Theme.radiusSm
         color: smallMouse.containsMouse ? root.hoverFill : "transparent"
         border.width: 1
@@ -1665,7 +1672,7 @@ FocusScope {
             anchors.centerIn: parent
             text: button.label
             color: root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
 
         MouseArea {

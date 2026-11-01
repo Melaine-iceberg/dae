@@ -46,7 +46,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        height: 34
+        height: Theme.controlXl
         color: root.headerColor
 
         Text {
@@ -54,7 +54,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: qsTr("内容匹配")
             color: root.mutedColor
-            font.pixelSize: 12
+            font.pixelSize: Theme.typeCaption
         }
 
         Text {
@@ -63,7 +63,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: root.model !== null ? root.model.status : ""
             color: root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
     }
 
@@ -73,7 +73,7 @@ Item {
         text: root.model !== null && root.model.status !== ""
             ? root.model.status : qsTr("没有匹配内容")
         color: root.mutedColor
-        font.pixelSize: 13
+        font.pixelSize: Theme.typeBody
     }
 
     ListView {
@@ -148,7 +148,7 @@ Item {
                 width: Math.max(0, row.width - 230)
                 text: row.isHeader ? row.relativePath || row.fileName : ""
                 color: root.textColor
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
                 font.weight: Font.Medium
                 textFormat: Text.PlainText
                 elide: Text.ElideMiddle
@@ -161,7 +161,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.matchCount + qsTr(" 处")
                 color: root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
             }
 
             Item {
@@ -172,7 +172,7 @@ Item {
                 anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
                 width: 34
-                height: 20
+                height: Theme.controlXs
 
                 /// "定位" is drawn as text inside a strip; the strip is the
                 /// control, and it reveals the file in the listing.
@@ -184,7 +184,7 @@ Item {
                     anchors.centerIn: parent
                     text: qsTr("定位")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                 }
 
                 MouseArea {
@@ -203,7 +203,7 @@ Item {
                 horizontalAlignment: Text.AlignRight
                 text: row.isHeader ? "" : row.lineNumber
                 color: root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
                 font.family: Theme.monoFamily
             }
 
@@ -216,7 +216,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: row.isHeader ? "" : row.lineHtml
                 color: root.textColor
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
                 font.family: Theme.monoFamily
                 textFormat: Text.StyledText
                 elide: Text.ElideRight

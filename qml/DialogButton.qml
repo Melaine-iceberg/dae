@@ -23,7 +23,7 @@ Rectangle {
     Keys.onSpacePressed: root.clicked()
 
     implicitWidth: Math.max(64, labelText.implicitWidth + 24)
-    implicitHeight: 28
+    implicitHeight: Theme.controlMd
     radius: Theme.radiusSm
     color: {
         if (root.tone === "danger")

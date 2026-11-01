@@ -119,8 +119,8 @@ FocusScope {
                     text: qsTr("“%1”已存在于目标文件夹，请选择%2方式。")
                         .arg(Workspace.conflictName).arg(root.verb)
                     color: root.bodyColor
-                    font.pixelSize: 12
-                    lineHeight: 1.25
+                    font.pixelSize: Theme.typeCaption
+                    lineHeight: Theme.leadingTight
                     wrapMode: Text.WordWrap
                 }
             }
@@ -177,7 +177,7 @@ FocusScope {
                         visible: root.applyToAll
                         text: "\u2713"
                         color: Theme.onInteractive
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                     }
                 }
 
@@ -189,7 +189,7 @@ FocusScope {
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("应用到剩余全部（") + root.remaining + qsTr(" 个冲突）")
                     color: root.bodyColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                     elide: Text.ElideRight
                 }
 
@@ -201,7 +201,7 @@ FocusScope {
 
             Item {
                 width: parent.width
-                height: 28
+                height: Theme.controlMd
 
                 // "取消复制" cancels the batch rather than the one item: the
                 // Tauri shell's wording made the same promise.
@@ -210,7 +210,7 @@ FocusScope {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     width: cancelLabel.implicitWidth + 24
-                    height: 28
+                    height: Theme.controlMd
                     radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
                         ? Theme.fill : "transparent"
@@ -226,7 +226,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: qsTr("取消%1").arg(root.verb)
                         color: Theme.inkMuted
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                     }
 
                     MouseArea {
@@ -247,7 +247,7 @@ FocusScope {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     width: skipSegment.width + keepSegment.width + replaceSegment.width
-                    height: 28
+                    height: Theme.controlMd
                     radius: Theme.radiusSm
                     color: "transparent"
                     border.width: 1
@@ -275,7 +275,7 @@ FocusScope {
                                 anchors.centerIn: parent
                                 text: qsTr("跳过")
                                 color: Theme.inkMuted
-                                font.pixelSize: 12
+                                font.pixelSize: Theme.typeCaption
                             }
 
                             MouseArea {
@@ -304,7 +304,7 @@ FocusScope {
                                 anchors.centerIn: parent
                                 text: qsTr("两者保留")
                                 color: Theme.inkMuted
-                                font.pixelSize: 12
+                                font.pixelSize: Theme.typeCaption
                             }
 
                             MouseArea {
@@ -334,7 +334,7 @@ FocusScope {
                                 anchors.centerIn: parent
                                 text: qsTr("替换")
                                 color: Theme.onInteractive
-                                font.pixelSize: 12
+                                font.pixelSize: Theme.typeCaption
                             }
 
                             MouseArea {

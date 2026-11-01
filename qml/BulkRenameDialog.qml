@@ -305,7 +305,7 @@ FocusScope {
             Row {
                 id: modeTabs
                 width: parent.width
-                height: 30
+                height: Theme.controlLg
                 spacing: 18
 
                 Repeater {
@@ -327,7 +327,7 @@ FocusScope {
                             text: modeItem.modelData.label
                             color: root.mode === modeItem.modelData.key
                                 ? root.textColor : root.mutedColor
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.typeCaption
                             font.weight: root.mode === modeItem.modelData.key
                                 ? Font.Medium : Font.Normal
                         }
@@ -370,7 +370,7 @@ FocusScope {
                 Row {
                     id: sequenceFields
                     width: parent.width
-                    height: 30
+                    height: Theme.controlLg
                     spacing: 10
                     visible: root.mode === "sequence"
 
@@ -425,7 +425,7 @@ FocusScope {
 
                     Row {
                         width: parent.width
-                        height: 30
+                        height: Theme.controlLg
                         spacing: 10
 
                         Field {
@@ -451,7 +451,7 @@ FocusScope {
 
                     Row {
                         width: parent.width
-                        height: 22
+                        height: Theme.controlSm
                         spacing: 18
 
                         Toggle {
@@ -476,7 +476,7 @@ FocusScope {
 
                 Row {
                     width: parent.width
-                    height: 30
+                    height: Theme.controlLg
                     spacing: 8
                     visible: root.mode === "case"
 
@@ -492,7 +492,7 @@ FocusScope {
                             id: caseButton
                             required property var modelData
                             width: caseLabel.width + 20
-                            height: 28
+                            height: Theme.controlMd
                             radius: Theme.radiusSm
                             color: root.caseTransform === caseButton.modelData.key
                                 ? Theme.selection
@@ -508,7 +508,7 @@ FocusScope {
                                 anchors.centerIn: parent
                                 text: caseButton.modelData.label
                                 color: root.textColor
-                                font.pixelSize: 11
+                                font.pixelSize: Theme.typeMicro
                             }
 
                             MouseArea {
@@ -539,7 +539,7 @@ FocusScope {
                         : qsTr("%1 项将被重命名").arg(root.renameCount))
                 color: root.globalError !== "" || root.errorCount > 0
                     ? root.dangerColor : root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
                 elide: Text.ElideRight
             }
 
@@ -568,14 +568,14 @@ FocusScope {
                         required property var modelData
 
                         width: previewList.width
-                        height: 24
+                        height: Theme.controlSm
 
                         Text {
                             width: parent.width * 0.44
                             anchors.verticalCenter: parent.verticalCenter
                             text: planRow.modelData.name
                             color: root.mutedColor
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.typeMicro
                             elide: Text.ElideMiddle
                         }
 
@@ -585,7 +585,7 @@ FocusScope {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "\u2192"
                             color: root.mutedColor
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.typeMicro
                             horizontalAlignment: Text.AlignHCenter
                         }
 
@@ -602,7 +602,7 @@ FocusScope {
                                 ? root.dangerColor
                                 : (planRow.modelData.status === "unchanged"
                                     ? root.mutedColor : root.textColor)
-                            font.pixelSize: 11
+                            font.pixelSize: Theme.typeMicro
                             elide: Text.ElideMiddle
                         }
                     }
@@ -613,7 +613,7 @@ FocusScope {
 
             Row {
                 width: parent.width
-                height: 30
+                height: Theme.controlLg
                 spacing: 8
 
                 Item {
@@ -623,7 +623,7 @@ FocusScope {
 
                 Rectangle {
                     width: 76
-                    height: 28
+                    height: Theme.controlMd
                     anchors.verticalCenter: parent.verticalCenter
                     radius: Theme.radiusSm
                     color: cancelMouse.containsMouse
@@ -635,7 +635,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: qsTr("取消")
                         color: Theme.inkMuted
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                     }
 
                     MouseArea {
@@ -648,7 +648,7 @@ FocusScope {
 
                 Rectangle {
                     width: 96
-                    height: 28
+                    height: Theme.controlMd
                     anchors.verticalCenter: parent.verticalCenter
                     radius: Theme.radiusSm
                     color: !root.canApply ? Theme.canvasAlt
@@ -658,7 +658,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: qsTr("重命名")
                         color: root.canApply ? Theme.onInteractive : root.mutedColor
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                     }
 
                     MouseArea {
@@ -688,7 +688,7 @@ FocusScope {
             fieldInput.text = value
         }
 
-        height: 28
+        height: Theme.controlMd
         radius: Theme.radiusSm
         color: root.fieldColor
         border.width: 1
@@ -709,7 +709,7 @@ FocusScope {
             color: root.textColor
             selectionColor: root.accent
             selectedTextColor: Theme.onInteractive
-            font.pixelSize: 12
+            font.pixelSize: Theme.typeCaption
             selectByMouse: true
             clip: true
 
@@ -726,7 +726,7 @@ FocusScope {
             visible: fieldInput.text.length === 0
             text: field.placeholder
             color: root.mutedColor
-            font.pixelSize: 12
+            font.pixelSize: Theme.typeCaption
         }
     }
 
@@ -744,13 +744,13 @@ FocusScope {
             numberInput.text = String(value)
         }
 
-        height: 30
+        height: Theme.controlLg
 
         Rectangle {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 24
+            height: Theme.controlSm
             radius: Theme.radiusSm
             color: root.fieldColor
             border.width: 1
@@ -767,7 +767,7 @@ FocusScope {
                 color: root.textColor
                 selectionColor: root.accent
                 selectedTextColor: Theme.onInteractive
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
                 selectByMouse: true
                 clip: true
                 text: String(number.value)
@@ -786,7 +786,7 @@ FocusScope {
             anchors.bottomMargin: 1
             text: number.label
             color: root.mutedColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
     }
 
@@ -799,7 +799,7 @@ FocusScope {
         signal toggled()
 
         width: box.width + 8 + toggleLabel.width
-        height: 22
+        height: Theme.controlSm
 
         Rectangle {
             id: box
@@ -816,7 +816,7 @@ FocusScope {
                 visible: toggle.checked
                 text: "\u2713"
                 color: Theme.onInteractive
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
             }
         }
 
@@ -827,7 +827,7 @@ FocusScope {
             anchors.verticalCenter: parent.verticalCenter
             text: toggle.label
             color: root.textColor
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
 
         MouseArea {

@@ -32,7 +32,7 @@ Item {
         Glyph {
             anchors.horizontalCenter: parent.horizontalCenter
             width: 28
-            height: 28
+            height: Theme.controlMd
             kind: root.glyph
             tint: Theme.inkMuted
         }
@@ -61,7 +61,7 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
-            lineHeight: 1.5
+            lineHeight: Theme.leadingProse
         }
 
         Item {
@@ -99,7 +99,7 @@ Item {
         signal clicked()
 
         implicitWidth: labelText.implicitWidth + 4
-        implicitHeight: 24
+        implicitHeight: Theme.controlSm
 
         Accessible.role: Accessible.Button
         Accessible.name: button.label

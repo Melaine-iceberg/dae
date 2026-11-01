@@ -176,7 +176,7 @@ Item {
 
             required property string section
             width: list.width
-            height: 24
+            height: Theme.controlSm
 
             Text {
                 x: 20
@@ -260,7 +260,7 @@ Item {
                     anchors.rightMargin: 8
                     anchors.verticalCenter: parent.verticalCenter
                     width: shortcutText.width + 12
-                    height: 18
+                    height: Theme.controlXs
                     radius: Theme.radiusXs
                     color: Theme.hover
 
@@ -405,7 +405,7 @@ Item {
 
                 Rectangle {
                     visible: row.project && row.branch !== ""
-                    height: 18
+                    height: Theme.controlXs
                     radius: Theme.radiusXs
                     color: Theme.canvasAlt
                     width: branchRow.implicitWidth + 12

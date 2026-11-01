@@ -163,28 +163,116 @@ QtObject {
         : "DejaVu Sans Mono"
 
     // ── Geometry ────────────────────────────────────────────────────────────
-    /// The only corner radii the shell draws.
-    readonly property int radiusXs: 2
-    readonly property int radiusSm: 4
-    readonly property int radiusMd: 8
-    readonly property int radiusLg: 12
+    /// The only corner radii the shell draws — four steps, no more, and the
+    /// same four numbers the Web shell's `App.css` spends (`--radius-xs` 4,
+    /// `--radius-md` 6, `--radius-xl` 12, `--radius-panel` 16).
+    ///
+    /// The Qt shell used to run 2 / 4 / 8 / 12, a full step below, on the
+    /// argument that a denser surface wants tighter corners. It does not
+    /// survive two shells side by side: the same button changed shape when the
+    /// window switched shells, which reads as a rendering fault rather than as
+    /// a density choice, and 2 px on a 16 px plate is a corner nobody can see.
+    /// The two ladders now share their numbers, and `radiusLg` is the Web
+    /// shell's `panel` step — dialogs, the palette's plate, the settings
+    /// surface — so `panel` needs no separate name here.
+    ///
+    /// Anything that squares off a corner by painting over it has to clear the
+    /// larger radius: `SettingsPanel`'s nav column covers 16 px of its own
+    /// right edge, not the 10 it needed when this step was 12.
+    readonly property int radiusXs: 4
+    readonly property int radiusSm: 6
+    readonly property int radiusMd: 12
+    readonly property int radiusLg: 16
     /// Row heights; the header is always the paired value.
     readonly property int rowCompact: 28
     readonly property int rowDefault: 32
     readonly property int rowSpacious: 40
+    /// Control heights — one ladder for everything the pointer can hit, on the
+    /// 4 dp grid, five steps and no more.
+    ///
+    /// The shell used to draw its controls at 18 / 20 / 22 / 24 / 26 / 28 /
+    /// 30 / 34, half of which are not multiples of four. Two things followed.
+    /// The odd ones sat 2 dp from a neighbour they were supposed to match, so a
+    /// chip and the row it lived in, or a form field and the button beside it,
+    /// were *nearly* aligned — the one state the eye reads as a mistake rather
+    /// than as a decision. And because none of the eight had a name, the same
+    /// 34 was written out by hand in five unrelated files.
+    ///
+    /// These five share the 4 dp grid with `rowCompact` / `rowDefault`, which is
+    /// the point: a 28 dp row and a 28 dp button are the same band. They keep
+    /// separate names because they answer different questions — a row can grow
+    /// to fit a second line of text, a control cannot — and because a caller
+    /// that needs "one row tall" should not have to know it equals "one button
+    /// tall".
+    ///
+    ///   xs  20  an icon plate, a close target, a keycap
+    ///   sm  24  a chip, a toggle, a small action button
+    ///   md  28  the standard control — button, field, menu row
+    ///   lg  32  a form row, a field row, a column header
+    ///   xl  36  a strip carrying one control plus its label
+    readonly property int controlXs: 20
+    readonly property int controlSm: 24
+    readonly property int controlMd: 28
+    readonly property int controlLg: 32
+    readonly property int controlXl: 36
     /// The three chrome bands. Their sum is the 116 px shell.
     readonly property int shellTitle: 44
     readonly property int shellNav: 44
     readonly property int shellStatus: 28
 
     // ── Type scale ──────────────────────────────────────────────────────────
-    /// Eight steps and no more. A screen shows at most four of them.
-    readonly property real typeMicro: 11
-    readonly property real typeCaption: 11.5
-    readonly property real typeSmall: 12
-    readonly property real typeBody: 12.5
-    readonly property real typeName: 13
-    readonly property real typeEmphasis: 13.5
-    readonly property real typeTitle: 14
-    readonly property real typeDisplay: 22
+    /// Six real steps, every one of them an integer.
+    ///
+    /// `font.pixelSize` is an **int** in Qt — it lands on
+    /// `QFont::setPixelSize(int)` — so a half-pixel rung is not a smaller step,
+    /// it is a step that cannot be drawn. The scale used to run
+    /// 11 / 11.5 / 12 / 12.5 / 13 / 13.5 / 14, and each of those three halves
+    /// was rounded onto the integer beside it, whichever way the conversion
+    /// went: `caption` merged into `micro` or `small`, `body` into `small` or
+    /// `name`, `emphasis` into `name` or `title`. Eight names were painting at
+    /// most five sizes, so the hierarchy the names promised was not the
+    /// hierarchy on screen — which is exactly what makes a control and the word
+    /// inside it look measured by two different rulers.
+    ///
+    /// The rungs are integers now, with a visible gap between the ones that
+    /// have to be told apart. The three retired names survive as aliases so a
+    /// stale call site cannot reintroduce a half step: `small` is `caption` and
+    /// `name` is `body`. Those pairs were never distinguishable in paint, and a
+    /// second name for one size is how the halves got invented in the first
+    /// place.
+    ///
+    /// `title` moved 14 → 17 because 14 was the one rung nothing else could
+    /// reach: a dialog head is 44 dp tall and the largest text in it was
+    /// smaller than a list row's own type, so the head read as a band of empty
+    /// chrome rather than as a name. The step is capped at 17 rather than the
+    /// Web shell's 22 on purpose — see the note in `DialogHeader.qml` about the
+    /// hosts that position this rung from absolute coordinates.
+    readonly property int typeMicro: 11
+    readonly property int typeCaption: 12
+    readonly property int typeSmall: 12 /* retired alias → caption */
+    readonly property int typeBody: 13
+    readonly property int typeName: 13 /* retired alias → body */
+    readonly property int typeEmphasis: 15
+    readonly property int typeTitle: 17
+    readonly property int typeDisplay: 22
+
+    // ── Leading ─────────────────────────────────────────────────────────────
+    /// Line height as a multiple of the type size, not as a pixel value: Qt's
+    /// `lineHeight` is proportional by default (`Text.ProportionalHeight`), and
+    /// a pixel value per rung would have to be retuned by hand every time a
+    /// rung moves — the coupling that made the old scale drift in the first
+    /// place.
+    ///
+    /// Three bands, and only three. Call sites used to carry 1.2 / 1.25 / 1.3 /
+    /// 1.4 / 1.5 / 1.6 — six values for one job, picked per file, which rounded
+    /// to 14 / 15 / 16 px at a 12 px size and put a one-pixel wobble between
+    /// paragraphs that were supposed to be identical.
+    ///
+    ///   tight   a single-line chip, a keycap, a two-line hint
+    ///   body    the default — matches the 1.448 that the Web shell's
+    ///           14.5 / 21 px pairing works out to
+    ///   prose   a paragraph someone actually reads
+    readonly property real leadingTight: 1.35
+    readonly property real leadingBody: 1.45
+    readonly property real leadingProse: 1.6
 }

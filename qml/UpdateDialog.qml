@@ -118,7 +118,7 @@ FocusScope {
                     visible: Updater.checking
                     text: qsTr("正在检查更新…")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                 }
 
                 Text {
@@ -126,7 +126,7 @@ FocusScope {
                     visible: !Updater.checking && Updater.restarting
                     text: qsTr("正在安装更新，应用即将重启…")
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                 }
 
                 Text {
@@ -135,7 +135,7 @@ FocusScope {
                         && !Updater.downloading
                     text: qsTr("发现新版本 v") + Updater.latestVersion
                     color: root.textColor
-                    font.pixelSize: 13
+                    font.pixelSize: Theme.typeBody
                     font.weight: Font.Medium
                 }
 
@@ -163,8 +163,8 @@ FocusScope {
                             ? Updater.notes
                             : qsTr("新版本已经准备好。下载完成后会自动校验更新包，确认无误后安装并重启。")
                         color: root.mutedColor
-                        font.pixelSize: 11
-                        lineHeight: 1.35
+                        font.pixelSize: Theme.typeMicro
+                        lineHeight: Theme.leadingTight
                         wrapMode: Text.Wrap
                         textFormat: Text.PlainText
                     }
@@ -180,7 +180,7 @@ FocusScope {
                     visible: Updater.downloading
                     text: qsTr("正在下载并校验更新… ") + Updater.installProgress + "%"
                     color: root.textColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                 }
 
                 Item {
@@ -215,7 +215,7 @@ FocusScope {
                         && !Updater.restarting && Updater.error === "" && Updater.checked
                     text: qsTr("已是最新版本")
                     color: root.mutedColor
-                    font.pixelSize: 12
+                    font.pixelSize: Theme.typeCaption
                 }
 
                 Item {
@@ -228,7 +228,7 @@ FocusScope {
                     visible: Updater.error !== ""
                     text: Updater.error
                     color: root.dangerColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                     wrapMode: Text.Wrap
                 }
             }
@@ -240,7 +240,7 @@ FocusScope {
 
                 Rectangle {
                     width: 72
-                    height: 28
+                    height: Theme.controlMd
                     radius: Theme.radiusSm
                     color: closeMouse.containsMouse
                         ? Theme.fill
@@ -252,7 +252,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: qsTr("关闭")
                         color: root.mutedColor
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                     }
 
                     MouseArea {
@@ -266,7 +266,7 @@ FocusScope {
 
                 Rectangle {
                     width: visible ? 76 : 0
-                    height: 28
+                    height: Theme.controlMd
                     radius: Theme.radiusSm
                     visible: !Updater.downloading && !Updater.restarting
                     color: checkMouse.containsMouse
@@ -279,7 +279,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: qsTr("重新检查")
                         color: root.mutedColor
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                     }
 
                     MouseArea {
@@ -293,7 +293,7 @@ FocusScope {
 
                 Rectangle {
                     width: visible ? 94 : 0
-                    height: 28
+                    height: Theme.controlMd
                     radius: Theme.radiusSm
                     visible: Updater.available && !Updater.restarting
                     opacity: Updater.downloading ? 0.55 : 1
@@ -303,7 +303,7 @@ FocusScope {
                         anchors.centerIn: parent
                         text: Updater.downloading ? qsTr("下载中…") : qsTr("下载并安装")
                         color: Theme.onInteractive
-                        font.pixelSize: 12
+                        font.pixelSize: Theme.typeCaption
                         font.weight: Font.Medium
                     }
 

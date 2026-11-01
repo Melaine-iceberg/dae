@@ -74,7 +74,7 @@ Item {
                 required property bool loaded
 
                 width: content.width
-                height: 28
+                height: Theme.controlMd
 
                 readonly property bool current: root.pathEquals(node.treePath, root.activePath)
                 readonly property int indent: 16 + node.depth * 13

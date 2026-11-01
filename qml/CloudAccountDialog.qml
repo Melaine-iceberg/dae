@@ -247,8 +247,8 @@ Item {
                 width: parent.width - 20
                 text: root.guideText()
                 color: root.mutedColor
-                font.pixelSize: 11
-                lineHeight: 1.25
+                font.pixelSize: Theme.typeMicro
+                lineHeight: Theme.leadingTight
                 wrapMode: Text.Wrap
                 maximumLineCount: 3
                 elide: Text.ElideRight
@@ -258,21 +258,21 @@ Item {
                 x: 10
                 y: 54
                 width: parent.width - 20
-                height: 22
+                height: Theme.controlSm
 
                 Text {
                     x: 0
                     anchors.verticalCenter: parent.verticalCenter
                     text: qsTr("重定向 URI")
                     color: root.mutedColor
-                    font.pixelSize: 11
+                    font.pixelSize: Theme.typeMicro
                 }
 
                 Rectangle {
                     id: redirectFrame
                     x: 68
                     width: parent.width - 68 - 26
-                    height: 22
+                    height: Theme.controlSm
                     radius: Theme.radiusSm
                     color: Theme.canvas
                     border.width: 1
@@ -289,7 +289,7 @@ Item {
                         color: Theme.inkMuted
                         selectionColor: root.accent
                         selectedTextColor: Theme.onInteractive
-                        font.pixelSize: 11
+                        font.pixelSize: Theme.typeMicro
                         font.family: Theme.monoFamily
 
                         Accessible.role: Accessible.EditableText
@@ -301,7 +301,7 @@ Item {
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     width: 20
-                    height: 20
+                    height: Theme.controlXs
 
                     Rectangle {
                         anchors.fill: parent
@@ -313,7 +313,7 @@ Item {
                             anchors.centerIn: parent
                             text: root.copied ? "✓" : "⎘"
                             color: root.copied ? root.accent : root.mutedColor
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.typeCaption
                         }
                     }
 
@@ -332,13 +332,19 @@ Item {
             x: 20
             y: 398
             width: card.width - 40
-            height: 24
+            /* 24 dp is one line at `micro` with tight leading; the authorising
+               note wraps to two on a narrow card, and the fixed 24 was
+               clipping the second one — the row read as a half-cut sentence
+               rather than as a message. The band is capped at two lines: the
+               card is 470 dp and the action plate starts at 428, so a third
+               line would grow into it. Anything longer elides. */
+            height: Math.min(30, Math.max(24, implicitHeight))
             text: root.authorizing
                 ? qsTr("请在刚刚打开的浏览器窗口中完成登录，成功后本窗口会自动关闭。")
                 : root.errorText
             color: root.authorizing ? root.mutedColor : root.dangerColor
-            font.pixelSize: 11
-            lineHeight: 1.2
+            font.pixelSize: Theme.typeMicro
+            lineHeight: Theme.leadingTight
             wrapMode: Text.Wrap
             elide: Text.ElideRight
         }
@@ -350,7 +356,7 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 146
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: root.authorizing
                 ? Theme.canvasAlt
@@ -360,7 +366,7 @@ Item {
                 anchors.centerIn: parent
                 text: root.authorizing ? qsTr("等待授权中…") : qsTr("在浏览器中授权…")
                 color: Theme.onInteractive
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
             }
 
             MouseArea {
@@ -378,7 +384,7 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 14
             width: 72
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: cancelMouse.containsMouse
                 ? Theme.fill : "transparent"
@@ -389,7 +395,7 @@ Item {
                 anchors.centerIn: parent
                 text: qsTr("取消")
                 color: Theme.inkMuted
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
             }
 
             MouseArea {
@@ -430,7 +436,7 @@ Item {
             anchors.topMargin: 9
             anchors.horizontalCenter: parent.horizontalCenter
             width: 26
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: providerCard.tint
 
@@ -438,7 +444,7 @@ Item {
                 anchors.centerIn: parent
                 text: providerCard.glyph
                 color: Theme.onSolid
-                font.pixelSize: 13
+                font.pixelSize: Theme.typeBody
                 font.weight: Font.Medium
             }
         }
@@ -449,7 +455,7 @@ Item {
             anchors.horizontalCenter: parent.horizontalCenter
             text: providerCard.label
             color: providerCard.selected ? root.textColor : Theme.inkMuted
-            font.pixelSize: 11
+            font.pixelSize: Theme.typeMicro
         }
 
         MouseArea {
@@ -486,7 +492,7 @@ Item {
         Rectangle {
             y: 20
             width: parent.width
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: root.fieldColor
             border.width: 1
@@ -499,7 +505,7 @@ Item {
                 visible: input.text.length === 0
                 text: field.placeholder
                 color: root.mutedColor
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
                 elide: Text.ElideRight
                 width: parent.width - 18
             }
@@ -513,7 +519,7 @@ Item {
                 color: root.textColor
                 selectionColor: root.accent
                 selectedTextColor: Theme.onInteractive
-                font.pixelSize: 12
+                font.pixelSize: Theme.typeCaption
                 echoMode: field.password ? TextInput.Password : TextInput.Normal
                 selectByMouse: true
                 clip: true

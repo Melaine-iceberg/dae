@@ -325,7 +325,7 @@ Item {
             readonly property bool lit: favoriteSection && root.favoriteDropActive
 
             width: ListView.view.width
-            height: 24
+            height: Theme.controlSm
 
             Text {
                 x: 18
@@ -539,7 +539,7 @@ Item {
                     x: 8
                     y: 3
                     width: 16
-                    height: 20
+                    height: Theme.controlXs
                     z: 2
 
                     /// Same split as the tree below: the row goes to the drive,
@@ -771,7 +771,7 @@ Item {
             x: 8
             y: 7
             width: parent.width - 16
-            height: 28
+            height: Theme.controlMd
             radius: Theme.radiusSm
             color: root.trashActive
                 ? Theme.fill

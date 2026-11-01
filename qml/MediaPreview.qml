@@ -142,7 +142,7 @@ Item {
                 Canvas {
                     anchors.centerIn: parent
                     width: 16
-                    height: 20
+                    height: Theme.controlXs
 
                     onPaint: {
                         const context = getContext("2d")
@@ -185,7 +185,7 @@ Item {
                 visible: root.failed
                 text: qsTr("无法播放此文件")
                 color: "#e06c75"
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
             }
@@ -197,7 +197,7 @@ Item {
                 visible: root.video && root.started && root.playing
                 text: root.durationLabel(player.position)
                 color: Theme.onInteractive
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
             }
         }
 
@@ -255,14 +255,14 @@ Item {
 
         Item {
             width: parent.width
-            height: 26
+            height: Theme.controlMd
 
             Rectangle {
                 id: playButton
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 width: 26
-                height: 26
+                height: Theme.controlMd
                 radius: Theme.radiusLg
                 color: root.accent
                 opacity: root.failed ? 0.4 : 1
@@ -325,7 +325,7 @@ Item {
                 text: root.durationLabel(player.position) + " / "
                     + (player.duration > 0 ? root.durationLabel(player.duration) : "--:--")
                 color: root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
                 font.family: Theme.monoFamily
             }
 
@@ -334,7 +334,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.muted ? qsTr("取消静音") : qsTr("静音")
                 color: root.mutedColor
-                font.pixelSize: 11
+                font.pixelSize: Theme.typeMicro
 
                 MouseArea {
                     anchors.fill: parent

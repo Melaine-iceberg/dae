@@ -124,7 +124,7 @@ FocusScope {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            height: 44
+            height: Theme.shellTitle
 
             Text {
                 anchors.left: parent.left
@@ -146,7 +146,7 @@ FocusScope {
                 anchors.rightMargin: 10
                 anchors.verticalCenter: parent.verticalCenter
                 width: 20
-                height: 20
+                height: Theme.controlXs
 
                 Accessible.role: Accessible.Button
                 Accessible.name: qsTr("关闭")
@@ -193,7 +193,7 @@ FocusScope {
             text: root.message
             color: Theme.inkMuted
             font.pixelSize: Theme.typeName
-            lineHeight: 1.3
+            lineHeight: Theme.leadingBody
             wrapMode: Text.Wrap
         }
 
@@ -203,7 +203,7 @@ FocusScope {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            height: 44
+            height: Theme.shellTitle
 
             Rectangle {
                 anchors.left: parent.left
