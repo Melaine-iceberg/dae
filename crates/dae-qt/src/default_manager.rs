@@ -59,6 +59,70 @@ pub(crate) fn unset() -> Result<DefaultManagerStatus, FileSystemError> {
     platform::unset()
 }
 
+/// Repairs a folder-handler registration that points at a path which is gone.
+///
+/// The Windows registration stores an absolute command, and a packaged install
+/// gets a new directory on every update, so the command is what goes stale.
+/// `claim()` calls this once per launch: an existing registration whose
+/// executable no longer exists is rewritten to the current launch path (the
+/// package's execution alias when packaged), and one that still resolves is
+/// left untouched. Nothing is registered here — turning the handler on stays a
+/// settings action.
+pub(crate) fn refresh() {
+    #[cfg(windows)]
+    windows_impl::refresh();
+}
+
+/// The executable name the package manifest exposes as an app execution alias.
+#[cfg(any(windows, test))]
+const PACKAGE_ALIAS: &str = "dae.exe";
+
+/// `%LOCALAPPDATA%\Microsoft\WindowsApps\<alias>`: the one path that follows an
+/// installed package across versions.
+#[cfg(any(windows, test))]
+fn alias_path(local_appdata: &std::path::Path) -> PathBuf {
+    local_appdata
+        .join("Microsoft")
+        .join("WindowsApps")
+        .join(PACKAGE_ALIAS)
+}
+
+/// The executable path inside a `"…" "%1"` launch command.
+///
+/// The first quoted token is the program: `launch_command` always writes it
+/// that way, and a path may contain spaces. `None` means the value was not
+/// written by this module.
+#[cfg(any(windows, test))]
+fn registered_executable(command: &str) -> Option<&str> {
+    let rest = command.strip_prefix('"')?;
+    let end = rest.find('"')?;
+    let executable = &rest[..end];
+    (!executable.is_empty()).then_some(executable)
+}
+
+/// The path a handler command embeds.
+///
+/// A packaged install lives under `…\WindowsApps\<name>_<version>_<arch>__…`,
+/// which the next update renames, so `current_exe()` would go stale there. The
+/// manifest's execution alias resolves to whichever version is installed; when
+/// it is missing (the alias switched off in Settings, or a test build that is
+/// not packaged) fall back to the running executable rather than guessing.
+#[cfg(windows)]
+fn launch_path() -> Result<PathBuf, FileSystemError> {
+    if dae_core::package::is_packaged() {
+        let alias =
+            std::env::var_os("LOCALAPPDATA").map(|local| alias_path(std::path::Path::new(&local)));
+        match alias {
+            Some(path) if path.exists() => return Ok(path),
+            _ => log::warn!(
+                target: "dae::default_manager",
+                "the package execution alias is missing; registering the versioned executable path"
+            ),
+        }
+    }
+    current_exe()
+}
+
 /// Resolves the running executable, used to build handler launch commands.
 fn current_exe() -> Result<PathBuf, FileSystemError> {
     std::env::current_exe().map_err(|error| {
@@ -321,7 +385,7 @@ mod linux {
 
 #[cfg(windows)]
 mod windows_impl {
-    use super::{DefaultManagerStatus, FileSystemError, current_exe};
+    use super::{DefaultManagerStatus, FileSystemError, launch_path};
     use std::path::Path;
     use windows::Win32::System::Registry::{
         HKEY, HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_NONE, REG_OPTION_NON_VOLATILE, REG_SZ,
@@ -593,7 +657,7 @@ mod windows_impl {
     }
 
     pub fn set() -> Result<DefaultManagerStatus, FileSystemError> {
-        let exe = current_exe()?;
+        let exe = launch_path()?;
         let launch = launch_command(&exe);
         let icon = icon_value(&exe);
 
@@ -633,6 +697,49 @@ mod windows_impl {
         status()
     }
 
+    /// Rewrites a registration that points at a path which no longer exists.
+    ///
+    /// The interesting case is an upgrade: the package's previous version
+    /// directory is deleted, so the command inside `dae.folder` becomes a path
+    /// to nothing. A registration whose executable still resolves is left
+    /// alone — that is somebody's working setup, and a development build
+    /// launched beside it must not take the association over.
+    pub fn refresh() {
+        let command_key = format!(r"Software\Classes\{PROGID}\shell\open\command");
+        let Some(existing) = read_string(&command_key, "") else {
+            // Nothing registered: the user never turned the handler on.
+            return;
+        };
+        let stale = match super::registered_executable(&existing) {
+            Some(target) if Path::new(target).exists() => return,
+            Some(target) => Some(target.to_string()),
+            // A command this program did not write is repaired rather than
+            // parsed; there is no filename to check.
+            None => None,
+        };
+        let Ok(exe) = launch_path() else {
+            return;
+        };
+        match stale {
+            Some(target) => log::info!(
+                target: "dae::default_manager",
+                "the registered folder handler is gone ({target}); re-pointing it at {}",
+                exe.display()
+            ),
+            None => log::info!(
+                target: "dae::default_manager",
+                "re-pointing an unreadable folder handler at {}",
+                exe.display()
+            ),
+        }
+        if let Err(error) = set() {
+            log::warn!(
+                target: "dae::default_manager",
+                "could not re-point the folder handler: {error}"
+            );
+        }
+    }
+
     #[cfg(test)]
     mod tests {
         use super::{icon_value, launch_command};
@@ -653,6 +760,31 @@ mod windows_impl {
 #[cfg(test)]
 mod tests {
     use super::desktop;
+    use super::alias_path;
+    use std::path::Path;
+
+    /// The alias is `%LOCALAPPDATA%\Microsoft\WindowsApps\dae.exe` — not the
+    /// versioned package directory, which is what makes the registration
+    /// survive an upgrade.
+    #[test]
+    fn the_package_alias_lives_under_local_app_data() {
+        let path = alias_path(Path::new(r"C:\Users\me\AppData\Local"));
+        assert!(path.ends_with(r"Microsoft\WindowsApps\dae.exe"), "{path:?}");
+        assert!(!path.to_string_lossy().contains("WindowsApps\\dae_"));
+    }
+
+    /// `refresh` decides what to repair from this parse, so a command with
+    /// spaces in the path must yield the whole path and nothing else.
+    #[test]
+    fn a_launch_command_names_the_executable() {
+        assert_eq!(
+            super::registered_executable(r#""C:\Program Files\dae\dae.exe" "%1""#),
+            Some(r"C:\Program Files\dae\dae.exe")
+        );
+        // Written by something else: not this module's shape.
+        assert_eq!(super::registered_executable("%1"), None);
+        assert_eq!(super::registered_executable(r#""""#), None);
+    }
 
     #[test]
     fn desktop_entry_advertises_the_folder_mime_type() {

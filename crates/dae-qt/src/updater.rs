@@ -31,6 +31,11 @@ pub mod qobject {
         #[qml_element]
         #[qml_singleton]
         #[qproperty(bool, supported)]
+        /// True when this process runs from an installed Windows app package.
+        /// The self-updater is off there — the tree is read-only and gets a new
+        /// directory on every update — so the UI has to say where updates come
+        /// from instead of silently hiding the entry.
+        #[qproperty(bool, packaged)]
         #[qproperty(QString, current_version, cxx_name = "currentVersion")]
         #[qproperty(bool, checking)]
         #[qproperty(bool, checked)]
@@ -65,6 +70,7 @@ pub mod qobject {
 
 pub struct UpdaterRust {
     supported: bool,
+    packaged: bool,
     current_version: QString,
     checking: bool,
     checked: bool,
@@ -82,6 +88,7 @@ impl Default for UpdaterRust {
     fn default() -> Self {
         Self {
             supported: update::updates_enabled(),
+            packaged: dae_core::package::is_packaged(),
             current_version: QString::from(env!("CARGO_PKG_VERSION")),
             checking: false,
             checked: false,
@@ -103,12 +110,15 @@ impl qobject::Updater {
             return;
         }
         if !self.supported {
-            if manual {
+            // A packaged install is not a broken configuration: the tree it
+            // runs from belongs to the system installer, so the dialog gets the
+            // "updates arrive as a package" note instead of an error.
+            if manual && !self.packaged {
                 self.as_mut().set_error(QString::from(
                     "This build does not support automatic updates",
                 ));
-                self.as_mut().set_checked(true);
             }
+            self.as_mut().set_checked(true);
             return;
         }
 

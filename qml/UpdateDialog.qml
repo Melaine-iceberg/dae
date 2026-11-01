@@ -113,6 +113,20 @@ FocusScope {
 
                 Item { width: 1; height: 12 }
 
+                /// A packaged install has no in-app updater: the system owns
+                /// the directory and renames it on every version. Saying so is
+                /// the difference between "this app never updates" and "the
+                /// update comes with the next package".
+                Text {
+                    width: parent.width
+                    height: visible ? implicitHeight + 12 : 0
+                    visible: Updater.packaged
+                    text: qsTr("此安装来自 Windows 应用包：更新随新版本安装包到来，应用无法自行替换自身。")
+                    color: root.mutedColor
+                    font.pixelSize: Theme.typeCaption
+                    wrapMode: Text.Wrap
+                }
+
                 Text {
                     width: parent.width
                     visible: Updater.checking

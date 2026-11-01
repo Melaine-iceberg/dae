@@ -83,6 +83,12 @@ pub fn claim() -> bool {
         log::warn!(target: "dae::activation", "could not register dae:// URL scheme: {error}");
     }
 
+    // A registration made by an earlier version embeds that version's absolute
+    // path. Repair it before the first window appears: after an MSIX upgrade
+    // the old directory is gone, and an Explorer "open with" that fails is
+    // indistinguishable from a broken install.
+    crate::default_manager::refresh();
+
     // A portable Linux build has no installer to put dae.desktop in place; the
     // scheme handler is registered from the running executable instead, the
     // same way Windows rewrites its registry command on every launch.

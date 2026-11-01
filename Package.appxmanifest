@@ -14,7 +14,7 @@
   <Identity
     Name="dae"
     Publisher="CN=Mt342"
-    Version="0.3.0.0" />
+    Version="0.5.0.0" />
 
   <Properties>
     <DisplayName>dae</DisplayName>
@@ -56,6 +56,19 @@
             <uap:DisplayName>dae link</uap:DisplayName>
           </uap:Protocol>
         </uap:Extension>
+        <!-- A launch path that survives an update. The package is unpacked into
+             a directory named after its version, so anything that stores an
+             absolute path — the per-user ProgID `default_manager` writes, a
+             taskbar pin, a script — breaks on the next update. The alias is
+             resolved by Windows through `%LOCALAPPDATA%\Microsoft\WindowsApps\
+             dae.exe` to whichever version is installed, so `default_manager`
+             registers that path instead of the versioned executable. -->
+        <uap3:Extension Category="windows.appExecutionAlias"
+                        EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="dae.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
       </Extensions>
     </Application>
   </Applications>

@@ -1411,6 +1411,11 @@ Window {
         if (Updater.supported)
             items.push({ id: "checkUpdates",
                          label: Updater.available ? qsTr("更新可用") : qsTr("检查更新") })
+        else if (Updater.packaged)
+            // A packaged install cannot replace itself, but hiding the entry
+            // leaves the user with no way to learn that. The dialog it opens
+            // says where updates come from instead.
+            items.push({ id: "checkUpdates", label: qsTr("由安装包更新") })
         return items
     }
 
