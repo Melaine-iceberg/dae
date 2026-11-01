@@ -230,15 +230,15 @@ Win32 / DWM / IMM32（原实现不变），其余平台保留同名空实现（�
 | 缩放 | `WM_NCHITTEST` 的八向 HT* 码 | Linux X11/Wayland `startSystemResize`；macOS 的 Cocoa 后端未实现它，QML 在返回 false 时手工改窗口几何 |
 | 应用菜单 | 自绘窗口按钮；无系统菜单栏 | Linux 没有系统菜单栏契约；macOS 安装 AppKit 菜单（About/Services/Hide/Quit、Edit、Window） |
 | 背景材质 | Mica / Acrylic（DWM，用户可选） | Linux Wayland：`ext-background-effect-v1`；macOS：`NSVisualEffectView`；不支持时实色 |
-| 输入法换焦点守卫 | `CPS_CANCEL`（门槛 2） | 仍不安装；macOS/Linux 的失焦语义尚未实测 |
+| 输入法换焦点守卫 | `CPS_CANCEL`（门槛 2） | 同一条守卫，取消原语换成 `QInputMethod::reset()`（两平台实现均为取消语义），并在 `preeditText` 为空时不触发；Linux 已在 fcitx5 下实测（§9.14） |
 | `dae://` 注册 | 注册表写入 | Linux 启动时写 `~/.local/share/applications/dae.desktop` 并 `xdg-mime`；macOS `CFBundleURLTypes` + `QFileOpenEvent` |
 | 系统外观 / 卷变化 | 注册表 watcher + `WM_DEVICECHANGE` | 主题走 `QStyleHints::colorSchemeChanged`；强调色 macOS `NSColor` / Linux portal；卷用 2 s 挂载签名轮询 |
 
 因此 Linux/macOS 的发行物是「能启动、能移动缩放、能接收 Finder/深链事件」的 Qt 壳，
-而不是 Windows 观感的逐像素复制。上表的代码路径已落地，但运行时结论仍以各自平台
-的手测为准：`qt-check.yml` 在 Linux/macOS 上编译 `dae-app`，只证明类型与链接，
-不替代真实输入下的 IME、窗口缩放、主题切换和卷插拔验证。逐项状态与手测清单见
-[`../qt-platform-parity.md`](../qt-platform-parity.md)。
+而不是 Windows 观感的逐像素复制。上表的代码路径已落地；运行时结论在 §9.12.3 与
+§9.14 补齐 —— **Linux 已于 2026-11-01 真机验过（Wayland 与 X11、fcitx5、`.rpm`），
+macOS 列不再属于发行范围（§9.12.4），代码保留、`qt-check.yml` 只保证它编得过**。
+逐项状态与手测清单见 [`../qt-platform-parity.md`](../qt-platform-parity.md)。
 
 ### 4.3 真路径已打通：配置 → 目录 → 导航（2026-10-25）
 
@@ -1325,7 +1325,7 @@ Qt Online Installer 装在 `K:/Qt`：
 | # | 项 | 现状与证据 | 验收 |
 |---|---|---|---|
 | 1 | Windows MSIX 仍打旧壳 | `release.yml` 曾把 `src-tauri\target\release\dae.exe` 复制进 `dist/` 再 `winapp pack`；Qt 作业只产出 portable zip 与 `latest-qt.json`。根 `Package.appxmanifest` 的 `Executable="$targetnametoken$.exe"` 由 `winapp pack` 解析，与产物无关 | **已补**，见 §9.7：MSIX 内是 Qt 部署树；`dae://` 改由清单声明，默认管理器与开机启动仍写版本化路径（§9.7.3-2） |
-| 2 | macOS 未签名、未公证 | 发布矩阵只有 `darwin-aarch64`，签名曾是 ad-hoc | **已撤项**（2026-11-01，见 §9.12）：签名与公证链路按 §9.9 接线完成，但没有 Mac 设备能验收「装完能启动」这一层，Apple 的六个 secret 也从未配置（缺一个该腿就 `::error::`），于是整条腿连同产物一起移除。macOS 专属 Rust 仍由 `macos-check.yml` / `qt-check.yml` 编译 |
+| 2 | macOS 未签名、未公证 | 发布矩阵只有 `darwin-aarch64`，签名曾是 ad-hoc | **已撤项**（2026-11-01，见 §9.12）：签名与公证链路按 §9.9 接线完成，但没有 Mac 设备能验收「装完能启动」这一层，Apple 的六个 secret 也从未配置（缺一个该腿就 `::error::`），于是整条腿连同产物一起移除。macOS 专属 Rust 仍由 `qt-check.yml` 的 `macos-latest` 腿编译（原来还有 `macos-check.yml`，它随退役删除，见 §9.13.3） |
 | 3 | Linux 只有 portable zip | 无 deb/rpm/Flatpak/AppImage；QtMultimedia 依赖 GStreamer 插件，未在安装层声明；图标只有 128px | **已补**，见 §9.10：`.deb`（`Depends` 由 `ldd`+`dpkg -S` 推出）与 `.rpm`（soname 由 rpm 自己的 ELF 生成器推导），GStreamer 在两个包里都是 `Recommends`；缺后端时预览给出可读提示；图标 128 与 256 两档。真机装包启动已通过（§9.12.3）。Flatpak/AppImage 仍未做 |
 
 ### 9.3 运行时与排障（P1）
@@ -1333,10 +1333,10 @@ Qt Online Installer 装在 `K:/Qt`：
 | # | 项 | 现状与证据 | 验收 |
 |---|---|---|---|
 | 4 | 日志与 panic 不落盘 | 旧壳 `src-tauri/src/lib.rs:350` 起配 `tauri-plugin-log`（4 MB 轮转、留 5 份、本地时区），`:429` 的 `install_panic_logger` 把 panic 写进文件。Qt 侧 `crates/dae-qt/Cargo.toml` 没有日志依赖，`config.rs:238` 的 `log()` 只写 stderr，而 release 是 GUI 子系统、没有 stderr；`workspace.rs:2781` 的 `app_log_directory()` 只服务设置页 | **已补**，见 §9.6 |
-| 5 | macOS/Linux 无运行时回归 | `qt-check.yml` 只 `cargo build` + 138 个单测；`qt-platform-parity.md` §4 的 12 项手测全部「待目标平台」 | 12 项逐条记录，回填 parity §6 |
+| 5 | macOS/Linux 无运行时回归 | `qt-check.yml` 只 `cargo build` + 138 个单测；`qt-platform-parity.md` §4 的 13 项手测全部「待目标平台」 | **已完成**（2026-11-01，见 §9.14）：Linux 真机按 §4 逐项跑完，可执行的 11 项全部符合期望（Wayland 与 X11 两种会话、fcitx5 输入法、`.rpm`）。两项 macOS 专属项（原生菜单、红绿灯 chrome）标为不适用——没有 Mac 设备，且 macOS 产物已随 §9.12.4 撤项 |
 | 6 | 更新链路未端到端验证 | `dae-core/src/update/install.rs` 已实现 portable 目录替换与 macOS bundle 交换，`DEFAULT_FEED_URL` 指向 `latest-qt.json`；但从未在真实发布物上跑过「下载 → 校验 → 替换 → 重启」 | **机制已端到端跑通**（2026-11-01，见 §9.13.2）：上一版部署树上完成 下载→验签→解包→PS 脚本换树→重启，新进程日志报新版本；篡改产物被拒且安装树未动。**但真实发布物这一层仍缺一环**：仓库至今没有任何 Qt 发布产物，且所有 release 都是 prerelease，`releases/latest/download/latest-qt.json` 实测 **404**。详见 §9.13.2 末尾 |
-| 7 | IME 失焦守卫只在 Windows | `cpp/ime.h` 的 `CPS_CANCEL` 只在 Windows 安装；macOS/Linux 失焦语义未测 | **已补**，见 §9.13.1：守卫三平台统一，Windows 仍走 IMM，macOS/Linux 走 `QInputMethod::reset()`（两平台的该实现均按源码核对为「取消」），只在 `preeditText` 非空时触发。**运行时仍待 macOS/Linux 手测**（parity §4） |
-| 8 | macOS 窗口 chrome 未定案 | 红绿灯由 QML 绘制，绿灯走 `showMaximized` 而非全屏；没有 hover 字形；双击标题栏不读系统偏好（parity §2.8） | **已定案并落地**，见 §9.13.1：绿灯 = 原生全屏，hover 显示绘制字形，双击读 `AppleActionOnDoubleClick`（每次双击现读，无需重启）。macOS 运行时待手测 |
+| 7 | IME 失焦守卫只在 Windows | `cpp/ime.h` 的 `CPS_CANCEL` 只在 Windows 安装；macOS/Linux 失焦语义未测 | **已补**，见 §9.13.1：守卫三平台统一，Windows 仍走 IMM，macOS/Linux 走 `QInputMethod::reset()`（两平台的该实现均按源码核对为「取消」），只在 `preeditText` 非空时触发。**Linux 已在 fcitx5 下实测通过**（§9.14）；macOS 不发布，无从实测 |
+| 8 | macOS 窗口 chrome 未定案 | 红绿灯由 QML 绘制，绿灯走 `showMaximized` 而非全屏；没有 hover 字形；双击标题栏不读系统偏好（parity §2.8） | **已定案并落地**，见 §9.13.1：绿灯 = 原生全屏，hover 显示绘制字形，双击读 `AppleActionOnDoubleClick`（每次双击现读，无需重启）。**运行时无法验收**：没有 Mac 设备，且 macOS 产物已撤（§9.12.4）——`qt-check` 的 `macos-latest` 腿保证它仍能编译链接 |
 
 ### 9.4 收尾（P2，等 §9.2 与 §9.3 关闭后再做）
 
@@ -1352,13 +1352,15 @@ Qt Online Installer 装在 `K:/Qt`：
 1. **§9.3-4 日志与 panic 落盘** —— **已完成（§9.6）**。体量最小、与旧壳零耦合，决定后续问题能否定位；
 2. **§9.2-1 MSIX 改指 Qt 产物** —— **已完成（§9.7）**；
 3. §9.2-2 / §9.2-3 证书与安装包（需要产品决策，尽早启动）；
-4. §9.3-5 平台手测，回填 parity §6 —— **唯一剩下的闸门**；
+4. §9.3-5 平台手测，回填 parity §6 —— **已完成（§9.14）**；
 5. §9.4 退役 —— **已完成（§9.13.3）**。
 
 退役必须排在最后：平台验证完成之前，旧壳是 A/B 与 `git revert` 的唯一回退路径（§7）。
-（2026-11-01 补记：这一条的前提已经松掉了 —— 旧壳自己从未在 macOS / Linux 上跑过，
-A/B 的价值只存在于「Qt 壳的 Windows 行为是否退化」，而 Windows 已经由 §9.7.3 /
-§9.10 / §9.12.3 的真机安装覆盖。所以退役先于第 4 步执行，理由见下面 2026-11-01 补记。）
+（2026-11-01 补记：这一条的前提松掉了 —— 旧壳自己从未在 macOS / Linux 上跑过，
+A/B 的价值只存在于「Qt 壳的 Windows 行为是否退化」。而 Qt 壳在 Windows 上是以
+便携目录形态实际运行过的（§9.13.2 的端到端升级就是从这样一棵树里跑的），
+**MSIX 的真机 `Add-AppxPackage` 至今仍未跑**（§9.11.3），但那是打包层的验证，
+旧壳在不在树里都不影响它。所以退役排在了第 4 步之前。）
 
 MSIX 落地后分出两件应该插队的事：**在真实机器上装一次，走一遍深链与升级**
 （§9.7.3-1），以及**把默认管理器与开机启动改成包身份注册**（§9.7.3-2）——
@@ -1375,8 +1377,9 @@ MSIX 落地后分出两件应该插队的事：**在真实机器上装一次，�
 > 303 项与 `dae-qt` 148 项单测、构建期 `qmllint`（`DAE_QML_LINT=1`）零告警。退役之所以能排在平台手测之前，
 > 是因为第 4 步剩下的已经不是「旧壳能否跑」（§9.12.3 已在真机装过包），而是
 > 「Qt 壳在 macOS / Linux 上的输入法与窗口行为是否对得上」——这一层旧壳帮不上忙，
-> 留着它也不再是回退路径。**现在唯一剩下的闸门是 §9.3-5 平台手测（parity §4
-> 的 12 项，重点看「输入法」与「窗口 chrome（macOS）」两行）。**
+> 留着它也不再是回退路径。**第 4 步随后也关掉了**：Linux 真机按 parity §4 跑完，
+> 可执行的 11 项全通过（含这次改的输入法与缩放），两项 macOS 专属项因 §9.12.4
+> 撤项标为不适用 —— 见 §9.14。至此 §9.3 与 §9.4 全部关闭。
 
 ### 9.6 记录：日志与 panic 落盘（2026-10-30）
 
@@ -1424,7 +1427,9 @@ sink。首次实跑就把两条以前完全不可见的信息写了进去：
 1. Qt 自身的 `qWarning` 走 `qInstallMessageHandler`，仍未落盘 —— 要在 C++ 侧再接一段；
 2. 轮转是「写满即切」，不分天、不分会话，与旧壳一致；需要按日归档是另一个决定；
 3. macOS / Linux 的目录分支只有单元测试（断言以 `logs` 结尾且带 identifier），
-   真实写入仍待 §9.3-5 的手测；
+   真实写入仍待 §9.3-5 的手测；（后记：Linux 分支已在 2026-11-01 的手测里实际生效
+   —— §9.14 那一轮进程就是从包内启动的，日志目录按该分支解析；macOS 分支随
+   §9.12.4 撤项，不再有真实运行。）
 4. panic 钩子与旧壳同构（`take_hook` → 记一条 → 调回原钩子），没有为它单独注入
    一次 panic 做端到端验证 —— 注入点需要一个只有测试构建才有的崩溃开关，不值得
    为验证加一条产品代码里的后门。
@@ -1713,7 +1718,10 @@ debug 构建里前者为假而后者可能为真。
 
 三件 P0 的接线到此完整；**真机上仍待执行的只有 MSIX 安装/深链/升级、macOS 的
 签名公证链路、以及 Linux 上的实际安装与缺 GStreamer 复现**，验收命令都写在
-[`../packaging.md`](../packaging.md)。
+[`../packaging.md`](../packaging.md)。（后记：三条各有着落 —— Linux 的装包与启动
+在 §9.12.3、§9.14 已验；macOS 那条随 §9.12.4 撤项，永远不会执行；**MSIX 的真机
+`Add-AppxPackage` 仍未跑**，§9.11.3 那张表里写的就是「未跑」，
+`msix-verify.ps1 -InspectOnly` 只读清单，不算安装。）
 
 ### 9.12 记录：Linux 装包实机验收、入口改启动器、Wayland 客户端 buffer、macOS 撤项（2026-11-01）
 
@@ -1773,6 +1781,8 @@ GPU 路径只在真机上验过，这也是「软件渲染能起来」不算通�
   缺 `darwin-*` 的 zip 与 `.sig` 自然就不写那两个键，已装的 Mac 版不会误判更新；
 - macOS 专属 Rust 一行没删，`macos-check.yml`（push 到 main）与 `qt-check.yml` 的
   `macos-latest` 腿继续编译，防止代码腐烂；`packaging/qt/Info.plist` 保留。
+  （后记：`macos-check.yml` 在 §9.13.3 的退役里删掉了，编译覆盖改由 `qt-check.yml`
+  的 `macos-latest` 腿单独承担。）
 
 恢复清单与「先弄到一台 Mac」这个前提写在 [`../packaging.md`](../packaging.md) §1.4。
 
@@ -1913,3 +1923,42 @@ qml/ShellWindow.qml` 会报 76 条 `unqualified`，全部落在 360 行以后的
 改动之后（§9.5 第 5 步），回退路径也随之从「旧壳还在树里」变成「`git revert`
 这一个提交」；平台手测（§9.3-5）在退役之后仍可以独立进行 —— 它验的是 Qt 壳，
 不需要旧壳在树里。
+
+### 9.14 记录：Linux 真机手测，§9.3-5 的闸门关掉（2026-11-01）
+
+**环境。** 用户自己的 Linux 机器，装的是 §9.12.3 同一个 `.rpm`；**Wayland 与 X11
+两种会话都跑过**；输入法后端 **fcitx5**。
+
+**结论。** `docs/qt-platform-parity.md` §4 的 13 项里，Linux 上可执行的 **11 项
+全部符合期望**，没有一项需要改代码。两项 macOS 专属项按「不适用」处理而不是
+「没测」：原生菜单（Cmd+Q / H / M 那一组，Linux 没有全局菜单栏）与红绿灯 chrome
+（Qt 不自绘 macOS 的窗口按钮）。理由与 §9.12.4 同一条 —— 没有 Mac 设备就没有能
+验收它的人，**一个没人能验收的平台不发**。
+
+这次手测真正在验的三件事（其余是回归确认）：
+
+1. **输入法**，也是 §9.13.1 改动的目标行为。fcitx5 拼音组字中点击别处或按 Tab，
+   组合被取消，没有原始拼音落进文本。链路是
+   `focus_has_composition()` → `QInputMethod::reset()` →
+   `QIBusPlatformInputContext::reset()` → `context->Reset()`，与 Windows 的
+   `QWindowsInputContext::reset()`（把 preedit 当 commit 发出去）正好相反。
+   前置判断也间接得到验证：没有组字时点空白没有可感知的停顿，也就是说守卫没有
+   变成「每次焦点变化都走一次 D-Bus」。
+2. **两种会话都能起、都能缩放**。Wayland 走 §9.12.2 后来补上的客户端 buffer
+   插件，X11 走 xcb；窗口拖边连续，`ResizeHandles.qml` 里 `startSystemResize`
+   返回 false 时的手工几何调整在两种会话下都会走到。
+3. **入口三处归一**。菜单启动、`dae://open?path=…` 深链、设为默认管理器后双击
+   文件夹，都落到同一个进程（实例锁）与同一个标签。
+
+**这一项的边界，写清楚免得下次当成「全都验过了」。**
+
+- **缩略图**依赖桌面的 freedesktop thumbnailer：`fs/thumbnails/linux.rs` 只读
+  `$XDG_DATA_DIRS/thumbnailers` 与共享缓存、按 spec 调外部程序，自己不解码。
+  所以「缩略图正常」在这台机器上成立，换一台装机不全的机器可能不成立 —— 这与
+  macOS 的 QuickLook、Windows 的 `IShellItemImageFactory` 是同一个设计取舍。
+- **macOS 全部路径**没有也不能验（§9.12.4），编译结论只来自 `qt-check.yml` 的
+  `macos-latest` 腿。
+- **Flatpak / AppImage** 没有这种包（§9.2-3）。
+
+**闸门关掉之后。** §9.3 的 8 项、§9.4 的 4 项至此全部有结论。剩下唯一没有结论的
+不是工程项，而是产品决策：更新链路的真实发布物（§9.13.2 末尾那个 404）。

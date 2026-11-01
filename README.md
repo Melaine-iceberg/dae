@@ -200,9 +200,13 @@ bun run test:rust
 ```
 
 `cargo test -p dae-qt --lib` is the fastest loop while working on the bridge. The
-platform manuals no unit test can cover — macOS/Linux window chrome, menus, IME,
-thumbnails, installers — are the checklists in
-[`docs/qt-platform-parity.md`](docs/qt-platform-parity.md) §4.
+platform manuals no unit test can cover — window chrome, menus, IME, thumbnails,
+installers — are the checklists in
+[`docs/qt-platform-parity.md`](docs/qt-platform-parity.md) §4. Linux was run
+against that list on 2026-11-01 (Wayland and X11, fcitx5, the `.rpm`) and passed
+every applicable row; the macOS rows are marked not-applicable rather than
+untested, for the same reason there is no macOS artifact above. The record is
+`docs/decisions/engine-qt-quick.md` §9.14.
 
 ## App icon
 

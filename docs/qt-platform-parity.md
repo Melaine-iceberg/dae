@@ -18,10 +18,12 @@
 3. 系统明暗、强调色、卷热插拔的 watcher 只在 Windows 实现；
 4. macOS 没有桌面缩略图产出；
 5. Linux 的 scheme 注册、桌面入口和发布包校验还不完整；
-6. Linux/macOS 只有编译验证，没有运行时回归。
+6. ~~Linux/macOS 只有编译验证，没有运行时回归~~ → Linux 已按 §4 跑完全部可执行项
+   （2026-11-01，§9.14）；macOS 的运行时回归不再需要，因为它不发布（§9.12.4）。
 
-以下 P0/P1 缺口已按 §3 分阶段落地，逐项状态见 §6；标「已补」的条目只代表代码与
-Windows 本机构建通过，macOS/Linux 的运行时结论仍以 §4 手测为准。
+以下 P0/P1 缺口已按 §3 分阶段落地，逐项状态见 §6。标「不发布」的 macOS 条目
+仍保留代码、仍由 `qt-check` 编译，但不再有「待手测」这种中间状态 —— 没有设备
+就没有能验收它的人。
 
 ## 1. 已经对齐，不再列为待办
 
@@ -110,7 +112,7 @@ Windows 本机构建通过，macOS/Linux 的运行时结论仍以 §4 手测为�
   仍走 `dae_core::fs::thumbnails::extract`。
 - 验收：macOS 预览面板对 PDF、mp4、HEIC 显示缩略图；无产出时仍回落到字形。
 
-#### 2.8 macOS 窗口 chrome 是自绘的（已定案，待 macOS 手测）
+#### 2.8 macOS 窗口 chrome 是自绘的（已定案；macOS 不发布，只保编译）
 
 - 现状：红绿灯由 QML 画（`qml/TitleBar.qml`），绿色按钮走 `showMaximized`
   而不是全屏；没有悬停字形；双击标题栏由 QML 自己实现，不遵循系统偏好。
@@ -138,6 +140,9 @@ Windows 本机构建通过，macOS/Linux 的运行时结论仍以 §4 手测为�
     风险，写在限制里。
 - 验收：与 macOS 原生文件管理器的窗口操作习惯不冲突；状态栏/标签不被遮挡；
   绿色按钮进/出全屏、hover 出字形、双击按偏好执行。
+- **状态：代码完成，不能验收。** 没有 Mac 设备，产物已随 §9.12.4 撤项；这四条
+  结论里只有「编译并链接」由 `qt-check` 的 `macos-latest` 腿保证，其余三条写在
+  这里是为了恢复 macOS 发布时有人照它验收，不是「已经验过」。
 
 #### 2.9 macOS 单实例激活不保证到前台（已补）
 
@@ -216,25 +221,37 @@ Windows 本机构建通过，macOS/Linux 的运行时结论仍以 §4 手测为�
 
 1. Windows：`cargo build -p dae-app`、`cargo test --workspace`；
 2. 更新 `docs/decisions/engine-qt-quick.md` §4.2 的平台边界表；
-3. 记录 Linux/macOS 手测结果（Finder/深链/菜单/缩放/主题/卷/缩略图）。
+3. 记录 Linux/macOS 手测结果（Finder/深链/菜单/缩放/主题/卷/缩略图）——
+   **已完成（2026-11-01）**：Linux 11 项全通过，macOS 两项不适用，见 §4 与
+   决策文档 §9.14。
 
 ## 4. Linux / macOS 手测清单
 
-| 项目 | 操作 | 期望 |
-| --- | --- | --- |
-| Finder 打开 | 运行中 Finder → 右键文件夹 → 打开方式 → dae | 新标签到该目录 |
-| 冷启动文件 | 退出 dae，`open -a dae /tmp` | 启动并到 `/tmp` |
-| 深链 | 浏览器打开 `dae://open?path=/tmp` | 复用/新建标签，窗口到前台 |
-| 默认管理器 | 设置 → 默认文件管理器 → 设为默认，双击 Finder 文件夹 | dae 打开并定位 |
-| 菜单 | Cmd+Q / Cmd+H / Cmd+M / 窗口菜单 | 行为与原生一致 |
-| 缩放 | 拖动八条边/四角 | 窗口连续缩放，不闪 |
-| 主题 | 系统切深色/浅色 | 立即切换 |
-| 强调色 | 设置选「系统强调色」，改系统强调色 | 立即跟随 |
-| 卷 | 插拔 U 盘 | 侧栏出现/消失 |
-| 缩略图 | 选中 PDF / mp4 / HEIC | 显示缩略图 |
-| 输入法 | 拼音输入中点击别处 / Tab | 组合取消，不提交原始拼音（§2.8 上方的守卫说明、`cpp/ime.h`） |
-| 窗口 chrome（macOS） | 悬停红绿灯 / 点绿灯 / 双击标题栏 | 三颗灯出字形；绿灯进全屏、再点退出；双击按系统偏好执行（zoom / 最小化 / 不动作） |
-| 拖放 | 从 Finder 拖文件进列表；从列表拖到 Finder | 复制/移动语义正确 |
+Linux 已在真机上按本表跑完（2026-11-01，记录见本节末）；macOS 没有可用设备，
+产物也随决策文档 §9.12.4 撤项，所以 macOS 列的 `—` 是**不适用**，不是「待测」。
+两项 macOS 专属项（原生菜单、红绿灯 chrome）在 Linux 上同样不适用。
+
+| 项目 | 操作 | 期望 | Linux | macOS |
+| --- | --- | --- | --- | --- |
+| 文件管理器打开 | 运行中，文件管理器里右键文件夹 → 用 dae 打开（macOS：Finder → 打开方式） | 新标签到该目录 | ✅ | — |
+| 冷启动文件 | 退出 dae，`dae /tmp`（macOS：`open -a dae /tmp`） | 启动并到 `/tmp` | ✅ | — |
+| 深链 | `xdg-open 'dae://open?path=/tmp'`（macOS：浏览器打开同一 URL） | 复用/新建标签，窗口到前台 | ✅ | — |
+| 默认管理器 | 设置 → 默认文件管理器 → 设为默认，之后双击文件夹 | dae 打开并定位 | ✅ | — |
+| 菜单 | macOS：Cmd+Q / Cmd+H / Cmd+M 与窗口菜单 | 行为与原生一致 | n/a | — |
+| 缩放 | 拖动八条边/四角 | 窗口连续缩放，不闪 | ✅ | — |
+| 主题 | 系统切深色/浅色 | 立即切换 | ✅ | — |
+| 强调色 | 设置选「系统强调色」，改系统强调色 | 立即跟随 | ✅ | — |
+| 卷 | 插拔 U 盘 | 侧栏出现/消失 | ✅ | — |
+| 缩略图 | 选中 PDF / mp4 / HEIC | 显示缩略图 | ✅ | — |
+| 输入法 | 拼音输入中点击别处 / Tab | 组合取消，不提交原始拼音（§2.8 上方的守卫说明、`cpp/ime.h`） | ✅ | — |
+| 窗口 chrome（macOS） | 悬停红绿灯 / 点绿灯 / 双击标题栏 | 三颗灯出字形；绿灯进全屏、再点退出；双击按系统偏好执行（zoom / 最小化 / 不动作） | n/a | — |
+| 拖放 | 从文件管理器拖文件进列表；从列表拖到文件管理器 | 复制/移动语义正确 | ✅ | — |
+
+**2026-11-01 Linux 手测。** 环境：用户自有机器，已装 `.rpm`（与 §9.12.3 同一个
+包），**Wayland 与 X11 两种会话都跑过**，输入法 **fcitx5**。上表 Linux 可执行的
+11 项全部符合期望，没有一项需要改代码；两项 macOS 专属项按不适用记录。结论、
+边界（缩略图取决于桌面的 freedesktop thumbnailer）与剩余项见决策文档 §9.14。
+macOS 列保持 `—`：无设备，且产物已撤（§9.12.4）。
 
 ## 5. 非目标
 
@@ -248,30 +265,34 @@ Windows 本机构建通过，macOS/Linux 的运行时结论仍以 §4 手测为�
 | 阶段 | 状态 | 证据 |
 | --- | --- | --- |
 | 文档 | 已完成 | 本文件 |
-| 阶段 1 · QFileOpenEvent | 代码完成，待 macOS 手测 | `cpp/activation.{h,cpp}` 安装 `QFileOpenEvent` 过滤器，统一走 `Activation::forwardExternal` |
-| 阶段 1 · 原生菜单 | 代码完成，待 macOS 手测 | 新增 `cpp/macos_menu.{h,mm}`；claim 后安装 App/File/Edit/Window 菜单 |
-| 阶段 1 · 缩放 fallback | 代码完成，待 macOS 手测 | `qml/ResizeHandles.qml` 在 `startSystemResize` 返回 false 时手工改窗口几何 |
-| 阶段 1 · 激活到前台 | 代码完成，待 macOS 手测 | `cpp/macos_backdrop.mm` 新增 `dae_qt_macos_activate_app`；`dae_qt_focus_window` 调用 |
-| 阶段 2 · 主题/强调色 | 代码完成，待 macOS/Linux 手测 | `cpp/platform_watch.cpp` 接 `colorSchemeChanged`；`platform.rs` 增加 macOS `NSColor` 与 Linux portal 读取；非 Windows 每 2 s 轮询 accent |
-| 阶段 3 · 卷监听 | 代码完成，待 macOS/Linux 手测 | 非 Windows 每 2 s 比较 `dae_core::fs::sidebar::disk_signature()`；Windows 仍走 `WM_DEVICECHANGE` |
-| 阶段 4 · macOS 缩略图 | 代码完成，待 macOS 手测 | 新增 `crates/dae-core/src/fs/thumbnails/macos.rs`：`qlmanage -t` 私有目录 + 5 s 超时 + PNG 校验 |
-| 阶段 5 · Linux 桌面/发布 | 代码完成，待 Linux 手测 | `linux_desktop::ensure_registered` 写 `dae.desktop` 并注册 scheme；`release.yml` 断言 Wayland 平台插件 |
-| 阶段 6 · 验证 | 本机验证完成，待目标平台 | Windows 构建/测试通过；引擎文档 §4.2 已同步；`qt-check` 增加 `dae-qt` 测试步骤；macOS/Linux 手测未执行 |
+| 阶段 1 · QFileOpenEvent | 代码完成，不发布 | `cpp/activation.{h,cpp}` 安装 `QFileOpenEvent` 过滤器，统一走 `Activation::forwardExternal`；macOS 专属，随 §9.12.4 撤项 |
+| 阶段 1 · 原生菜单 | 代码完成，不发布 | 新增 `cpp/macos_menu.{h,mm}`；claim 后安装 App/File/Edit/Window 菜单。macOS 专属，同上 |
+| 阶段 1 · 缩放 fallback | **Linux 已测通过**（2026-11-01） | `qml/ResizeHandles.qml` 在 `startSystemResize` 返回 false 时手工改窗口几何；Wayland 与 X11 两种会话下拖边都连续（§9.14） |
+| 阶段 1 · 激活到前台 | 代码完成，不发布 | `cpp/macos_backdrop.mm` 新增 `dae_qt_macos_activate_app`；`dae_qt_focus_window` 调用。macOS 专属，同上 |
+| 阶段 2 · 主题/强调色 | **Linux 已测通过**（2026-11-01） | `cpp/platform_watch.cpp` 接 `colorSchemeChanged`；`platform.rs` 增加 macOS `NSColor` 与 Linux portal 读取；非 Windows 每 2 s 轮询 accent |
+| 阶段 3 · 卷监听 | **Linux 已测通过**（2026-11-01） | 非 Windows 每 2 s 比较 `dae_core::fs::sidebar::disk_signature()`；Windows 仍走 `WM_DEVICECHANGE` |
+| 阶段 4 · macOS 缩略图 | 代码完成，不发布 | 新增 `crates/dae-core/src/fs/thumbnails/macos.rs`：`qlmanage -t` 私有目录 + 5 s 超时 + PNG 校验。macOS 专属，同上 |
+| 阶段 5 · Linux 桌面/发布 | **Linux 已测通过**（2026-11-01） | `linux_desktop::ensure_registered` 写 `dae.desktop` 并注册 scheme；菜单启动 / 深链 / 默认管理器三处都到同一进程（§9.14） |
+| 阶段 6 · 验证 | 完成（2026-11-01） | Windows 构建/测试通过；Linux 真机按 §4 跑完 11 项全通过，macOS 两项不适用；`qt-check` 含 `dae-qt` 单测与 `macos-latest` 编译腿 |
 
 2026-10-30 阶段 1 本机验证：`cargo build -p dae-app` 通过（44 s）；
 `cargo test -p dae-qt --lib` 133 passed；`qmllint qml/ResizeHandles.qml` 无告警。
 macOS 专有的 Objective-C++ 与 `QFileOpenEvent` 路径不在 Windows 上编译，
-其编译结论以 `qt-check` 为准，运行时结论以 §4 手测为准。
+其编译结论以 `qt-check` 为准，运行时结论以 §4 手测为准。（后记：这一条永远
+不会有运行时结论了 —— macOS 产物已撤，§9.12.4。）
 
 2026-10-30 阶段 2 本机验证：`cargo build -p dae-app` 通过；`cargo test -p dae-qt --lib`
 135 passed（新增 portal palette 与 RGB 解码用例）。`cpp/platform_watch.cpp` 在
 Windows 上参与编译和链接，确认 cxx 桥的命名空间与符号正确；macOS `NSColor` 与
-Linux portal 的实际读取仍待目标平台手测。
+Linux portal 的实际读取仍待目标平台手测。（后记：Linux 已于 2026-11-01 在真机上
+验过，Wayland 与 X11 两种会话、fcitx5，见 §4 与决策文档 §9.14；macOS 的 `NSColor`
+读取不再有不发布的产物可验。）
 
 2026-10-30 阶段 3–5 本机验证：`cargo build -p dae-app` 通过；
 `cargo test -p dae-qt --lib` 138 passed（新增 Linux desktop entry 用例），
 `cargo test -p dae-core --lib` 301 passed / 10 ignored。macOS QuickLook 与
-Linux portal / xdg-mime 路径不在 Windows 上执行，仍需按 §4 手测。
+Linux portal / xdg-mime 路径不在 Windows 上执行，仍需按 §4 手测。（后记：Linux 的
+`xdg-mime` 与桌面入口已在 2026-11-01 真机验过，§9.14；QuickLook 随 macOS 撤项。）
 
 阶段 6 同时把 `cargo test --package dae-qt --lib` 加进 `qt-check`：Windows 上看不到
 的 `cfg(target_os)` 模块至少要在目标平台上编译并跑单元测试，但仍不覆盖窗口、
@@ -320,6 +341,8 @@ include path），`macos_platform.mm` 改用 `NSColor` 分量读取（`getRed:�
 | `qmllint qml/TitleBar.qml qml/Glyph.qml` | 无告警 |
 | Windows IME 失焦 | 未重测：取消原语一行未改，只加了「有组合才取消」的前置判断；门槛 2 的 214 项检查仍是该路径的证据 |
 
-**未覆盖，写在这里免得被当成已完成。** macOS 的 `macos_platform.mm` 与 Linux
-的 `reset()` 路径都不在这台机器上执行：编译结论以 `qt-check` 为准，运行时结论
-以 §4「输入法」与「窗口 chrome」两行为准，**目前两行都还是「待目标平台」**。
+**未覆盖，写在这里免得被当成已完成。** macOS 的 `macos_platform.mm` 路径不在这台
+机器上执行，也没有第二台机器可验：编译结论以 `qt-check` 的 `macos-latest` 腿为准，
+运行时结论**永远不会有** —— macOS 产物已按 §9.12.4 撤项，这条路径只为防代码腐烂
+而保留。Linux 的 `reset()` 路径已随后续的 Linux 真机手测覆盖（fcitx5、Wayland 与
+X11），见 §4 与决策文档 §9.14。
