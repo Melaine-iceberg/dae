@@ -1,0 +1,25 @@
+# Desktop entry for a *system-installed* build (the .deb).
+#
+# The portable zip ships `dae.desktop` next to the executable, which is inert
+# until something puts it in an applications directory; it also carries
+# `Exec=dae %u` because `dae-qt`'s `linux_desktop` module registers it as the
+# `dae://` handler. This file is the installed counterpart: `%f` because a
+# package can be launched from a file manager with a folder argument, a
+# hicolor icon name because the icon is installed, and `inode/directory` so dae
+# shows up as a candidate in "Open With" without becoming the default by
+# installing.
+#
+# See http://standards.freedesktop.org/desktop-entry-spec/latest/
+[Desktop Entry]
+Type=Application
+Name=dae
+GenericName=File Manager
+Comment=Browse local, network and cloud files
+Exec=dae %f
+TryExec=dae
+Icon=dae
+Terminal=false
+Categories=System;FileManager;Utility;
+MimeType=inode/directory;x-scheme-handler/dae;
+Keywords=files;folders;browse;
+StartupWMClass=dae
