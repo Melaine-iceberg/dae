@@ -198,10 +198,10 @@ jobs:
           }
           if ($LASTEXITCODE -ne 0) { throw "winapp pack failed with exit code $LASTEXITCODE" }
 
-      # The draft was created by tauri-action; append the MSIX to that same
-      # draft so one manual publish ships every installer. `draft: true` is
+      # The `draft` job created the release; append the MSIX to that same one so
+      # a single manual publish ships every installer. `draft: true` is
       # load-bearing: without it this action PUBLISHES the draft after
-      # uploading. Release name/body/notes set by tauri-action are retained.
+      # uploading.
       - name: Attach MSIX to release
         uses: softprops/action-gh-release@v3
         with:
@@ -1010,8 +1010,8 @@ jobs:
           retention-days: 7
 
   # Merge the matrix results into the single feed the app fetches. This runs
-  # after the Tauri matrix too, because tauri-action is what creates the draft
-  # release these assets are appended to.
+  # after `draft`, which is what creates the release these assets are appended
+  # to.
   qt-feed:
     name: Qt update feed
     needs: [draft, qt]

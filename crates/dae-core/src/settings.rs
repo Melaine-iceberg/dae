@@ -19,7 +19,6 @@
 use crate::error::FileSystemError;
 use crate::fs::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -37,7 +36,7 @@ const MAX_LINE_HEIGHT: f32 = 3.0;
 const ANSI_PALETTE_LEN: usize = 16;
 
 /// The full settings document, as persisted and exposed to the frontend.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppSettings {
     /// Action id -> binding string (e.g. `"Mod+K"`, `"Shift+Delete"`, `""` for
@@ -70,7 +69,7 @@ pub struct AppSettings {
 
 /// Integrated-terminal appearance. `None` fields fall back to the frontend's
 /// built-in defaults (font stack, curated theme-aware ANSI palette).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TerminalSettings {
     pub font_size: u8,
@@ -85,7 +84,7 @@ pub struct TerminalSettings {
 /// Cached "is dae the OS default file manager" flag. The authoritative state
 /// is always re-queried from the OS by `default_manager`; this is only a hint
 /// for the first paint before that query resolves.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Type, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct DefaultFileManagerState {
     pub is_default: bool,
@@ -212,20 +211,8 @@ pub fn save_settings(settings: AppSettings) -> Result<AppSettings, FileSystemErr
     Ok(normalized)
 }
 
-/// Reads the warm-pool setting for the Rust side, which cannot call the command.
-///
-/// Before [`init`] has run this reads the default, which is what a fresh install
-/// resolves to, so the two cannot disagree about a window that is about to be
-/// built.
-pub fn tab_pool_enabled() -> bool {
-    REGISTRY
-        .lock()
-        .map(|registry| registry.settings.warm_tab_pool)
-        .unwrap_or(true)
-}
-
-/// Updates only the cached default-file-manager flag (used by the Tauri shell
-/// after a successful set/unset) and persists it.
+/// Updates only the cached default-file-manager flag (used by the shell after a
+/// successful set/unset) and persists it.
 pub fn set_default_file_manager_cache(is_default: bool) -> Result<(), FileSystemError> {
     let mut registry = REGISTRY.lock().expect("settings registry poisoned");
     registry.settings.default_file_manager.is_default = is_default;

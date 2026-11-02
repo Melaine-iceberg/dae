@@ -1,6 +1,5 @@
 use super::error::FileSystemError;
 use serde::Serialize;
-use specta::Type;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -8,7 +7,7 @@ use std::path::Path;
 /// Lightweight metadata snapshot for the preview panel. Everything is parsed
 /// from container headers only (a few KB of reads) — no audio/video decoding
 /// happens, so probing gigabyte-sized media files stays instant.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaPreview {
     /// "audio" or "video".

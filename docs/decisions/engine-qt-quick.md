@@ -10,12 +10,12 @@
 
 ## 0. 结论先行
 
-1. **离开系统 WebView 的理由是结构性的，不是调优能解决的。** 实测在
-   `tab-drag-webview-reparent.md` §2.4：**每多一个 webview ≈ +190–200 MB PSS**，
-   基线（1 窗口 1 webview）tree PSS **447–483 MB**；预热窗口池再 **+200 MB**
-   （`tab-tear-off-warm-pool.md` §3.5）。WebView2 创建本身占冷启动的 **63–65%**
-   （`cold-start-js.md` §1.2）。这三条都是「每多一个视图就多一个浏览器进程模型」
-   的直接后果，调参调不掉。
+1. **离开系统 WebView 的理由是结构性的，不是调优能解决的。** 实测：**每多一个 webview
+   ≈ +190–200 MB PSS**，基线（1 窗口 1 webview）tree PSS **447–483 MB**；预热窗口池再
+   **+200 MB**；WebView2 创建本身占冷启动的 **63–65%**。这三条都是「每多一个视图就多一个
+   浏览器进程模型」的直接后果，调参调不掉。原始记录（`tab-drag-webview-reparent.md` §2.4、
+   `tab-tear-off-warm-pool.md` §3.5、`cold-start-js.md` §1.2）随 WebView 壳一起归档在
+   `tauri` 分支，见 [`README.md`](README.md) 的「已归档」一节。
 2. **保留 Rust 后端成立，而且成本比看起来低。** 84 个 Rust 文件里 **34 个零
    `tauri::` 引用**，389 处 `tauri::` 绝大多数是注入点（`AppHandle` / `State` /
    `Window` / `Emitter`），不是逻辑。真正要重写的是**前端 36.7k LOC**。

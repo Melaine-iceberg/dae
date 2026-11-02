@@ -5,10 +5,9 @@
 //! request to compute any one of them.
 
 use serde::{Deserialize, Serialize};
-use specta::Type;
 
 /// Lowercase hex digests of one file, computed in a single pass.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileHashDigests {
     pub md5: String,

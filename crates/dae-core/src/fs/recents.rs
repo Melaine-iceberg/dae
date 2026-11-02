@@ -2,7 +2,6 @@ use super::error::FileSystemError;
 use crate::fs::atomic::write_atomic;
 use super::types::{EntryKind, display_name_from_path};
 use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -13,14 +12,14 @@ const MAX_RECENT_ITEMS: usize = 300;
 
 /// How the item entered the recent list: a folder the user browsed, or a file
 /// the user opened with the system handler.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RecentSource {
     Visited,
     Opened,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentItem {
     pub path: String,

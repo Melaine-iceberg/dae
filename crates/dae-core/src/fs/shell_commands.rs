@@ -39,7 +39,6 @@
 
 use crate::error::FileSystemError;
 use serde::Serialize;
-use specta::Type;
 
 // The `.desktop` / `.thumbnailer` INI dialect. Linux's shell-command backend
 // uses all of it; `fs::thumbnails::linux` compiles on other hosts under
@@ -72,7 +71,7 @@ use macos as backend;
 use windows as backend;
 
 /// One row of the application-extensions section of a context menu.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellCommand {
     /// Identifier of the command, unique within this platform's namespace, and

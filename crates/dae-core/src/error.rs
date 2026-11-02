@@ -1,9 +1,8 @@
 use serde::Serialize;
-use specta::Type;
 use std::io;
 use thiserror::Error;
 
-#[derive(Debug, Clone, Error, Serialize, Type)]
+#[derive(Debug, Clone, Error, Serialize)]
 #[serde(tag = "kind", content = "message", rename_all = "snake_case")]
 pub enum FileSystemError {
     #[error("The requested path was not found: {0}")]

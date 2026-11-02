@@ -18,7 +18,6 @@
 //! whole trash view works there too.
 
 use serde::Serialize;
-use specta::Type;
 
 #[cfg(all(
     unix,
@@ -29,7 +28,7 @@ use specta::Type;
 use super::types::path_to_string;
 
 /// One entry currently sitting in the system trash.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrashEntry {
     /// System identifier of the item inside the trash: the shell parsing

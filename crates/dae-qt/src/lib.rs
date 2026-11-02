@@ -97,9 +97,10 @@ pub fn init() {
     window::startup_mark("terminal");
 }
 
-/// Loads the file-backed connection and cloud-account registries once. Both
-/// live in `dae-core` and are shared with the Tauri shell, so the Qt shell
-/// reads the same `%APPDATA%` documents instead of keeping its own list.
+/// Loads the file-backed connection and cloud-account registries once. They
+/// live in `dae-core` and read the same `%APPDATA%` documents the WebView shell
+/// wrote, so an existing install keeps its connections instead of starting
+/// with an empty list.
 pub(crate) fn init_stores() {
     use std::sync::Once;
 

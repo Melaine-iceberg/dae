@@ -5,55 +5,26 @@
 
 | 文档 | 状态 | 一句话 |
 |---|---|---|
-| [`tab-drag-webview-reparent.md`](tab-drag-webview-reparent.md) | **已否决** | 标签拖动改成浏览器式 webview reparent —— 机制可行，但代价不值 |
-| [`tab-tear-off-warm-pool.md`](tab-tear-off-warm-pool.md) | **已实施，默认开启** | 预热窗口池让撕出看起来即时 —— 撕出中位从 ~530ms 降到 **~65ms**，代价 +200MB |
 | [`gtk-stack-pinned-by-upstream.md`](gtk-stack-pinned-by-upstream.md) | **已定案，等上游** | gtk/gio 被上游锁在 0.18 —— gtk 0.19 连依赖解析都过不去，实测证据在案 |
 | [`completion-io.md`](completion-io.md) | **已实测否决，不改** | 文件 IO 换成 IOCP/io_uring —— 枚举无异步形态、小文件慢 12.6 倍、拷贝输给 `CopyFileExW`；harness 与原始数据在 `bench/io-backends/` |
 | [`windows-directory-enumeration.md`](windows-directory-enumeration.md) | **已实测，已实施** | Windows 目录枚举补上 `FIND_FIRST_EX_LARGE_FETCH` —— 35,803 条目 24.2ms → **13.7ms**（-43%）、120,000 条目 -42%；首次绘制不变；harness 与原始数据在 `bench/listing-pipeline/` |
 | [`sftp-host-key-tofu.md`](sftp-host-key-tofu.md) | **已实施，未对真实 sshd 验证** | SFTP 之前接受任何主机密钥 —— 改为按用户 `~/.ssh/known_hosts` 的 `accept-new`：首次记录、变更即拒、记不下来也拒 |
-| [`boot-screen-prerender.md`](boot-screen-prerender.md) | **已实测否决** | 预渲染第一屏（`cold-start-js.md` §2）—— 静态骨架在 bundle 求值前一帧都没被画出来（0/18），`first-frame` 结构上不可能提前；让一帧才上屏 ~80ms，代价 +40–53ms，Rust 预渲染不做 |
-| [`first-mount-cost.md`](first-mount-cost.md) | **已实测，§5 对冷启动关闭** | 首次挂载的 62–74ms = React render **19ms**（首屏 Overview 仅 **1.4ms**）+ 树插入后的首次布局 **~40ms**（style 0、flush 0、248 节点；splash 只要 4.1ms）；这 40ms 是一次性冷成本（CJK 字面 + 首次布局），预热净亏，没有可搬去 Rust 的活 |
 | [`engine-qt-quick.md`](engine-qt-quick.md) | **方向已定，四组门槛全过（§5.1–§5.4）；Qt 壳已覆盖浏览/标签/终端/搜索/预览/压缩包/文件图标（§4.3–§4.7）；图标接入后 12 万行复测通过（§5.1.1）** | 引擎从系统 WebView 换成 Qt Quick（QML 视图 + cxx-qt 的 Rust 后端）—— 结构性理由：每 tab ~200 MB PSS、WebView2 占冷启动 63–65%；12 万行列表实测工作 p95 最差 5.68 ms、PSS 峰值 123.7 MB（全 CJK）；画真实图标后同会话 A/B 的 work p95 1.60–1.66 ms、PSS +3–4 MB；IME 214 项检查全过；无边框 + Mica + 自绘标题栏 63 项检查全过；第二个窗口撕出最差 76.82 ms、PSS 增量最差 13.74 MB（热态 5.1–6.2 MB）、关闭后私有提交不增长；Qt 壳已跑通真实配置/列举/标签撕出/终端/搜索/预览/压缩包/回收站/设置，图标与系统缩略图走 `dae-core`；连接管理、深链、更新链路与旧壳退役已在 §9.13–§9.17 记完（MSIX 版「设为默认文件管理器」已知不生效，§9.15）。**迁移收尾：`main` 即 Qt 壳，Tauri 壳留档在 `tauri` 分支（§9.18）** |
 
-第三份（`gtk-stack-pinned-by-upstream.md`）与上面两份**无关**：它记录的是**依赖升级遇到的上游阻断**，
-不是标签撕出的方案取舍 —— 下面各节只涉及前两份。
-`completion-io.md` 与上面三份都无关：它是一次**被实测否决的 IO 机制迁移**，结论、方法与原始数据都自洽。
-`windows-directory-enumeration.md` 与 `completion-io.md` 相邻但结论相反，并不矛盾：
+`gtk-stack-pinned-by-upstream.md` 与其余各份**无关**：它记录的是**依赖升级遇到的上游阻断**，
+不是方案取舍 —— gtk/gio 0.18 今天仍是 `dae-core` 在 Linux 上取主题图标的依赖。
+`completion-io.md` 是一次**被实测否决的 IO 机制迁移**，结论、方法与原始数据都自洽。
+`windows-directory-enumeration.md` 与它相邻但结论相反，并不矛盾：
 后者问的是「换**派发机制**值不值」（不值），前者做的是「同一套机制下减少**系统调用次数**」
 （值，-43%）—— 后者结尾自己给出的建议就是「把力气花在减少系统调用次数、批量读上」。
-`boot-screen-prerender.md` 与上面各份都无关：它测的是**冷启动首帧之前有没有绘制机会**
-（没有），以及让出一帧的代价；结论是否决 `cold-start-js.md` §2 的 Rust 预渲染，
-但不改变 `first-frame` 本身的归因（§1.2）。`first-mount-cost.md` 接在它后面：
-§2 死了之后，页面侧只剩 React 挂载那一笔；拆开看是 render 19ms + 首次布局 40ms，
-**没有可搬到 Rust 的活**，所以 `§5` 对冷启动也关闭。两份合起来说明：冷启动首帧
-只剩 §6（不冷启动）这一条。
 
-## 两份文档的关系
+## 已归档：WebView（Tauri）壳时期的记录
 
-它们解决的是**同一个问题的两条路**：标签撕出要等约 530ms 才有内容。
+`cold-start-js.md`、`boot-screen-prerender.md`、`first-mount-cost.md`、
+`tab-drag-webview-reparent.md`、`tab-tear-off-warm-pool.md` 与 `poc/webview-reparent/`
+描述的是**已退役的 WebView 壳**的窗口模型、标签撕出与冷启动行为。该壳于 2026-11-01
+退役、`main` 转为 Qt 壳，这批记录随后于 2026-11-02 从 `main` 移除，留档在 `tauri` 分支。
 
-- **reparent** 想从根上避免重建 UI —— 被否决，因为 wry 的 reparent 是 `unstable` 特性、
-  每个标签一个 webview 内存过高，而现有原生拖动已是 OS 级拖动，交互上几乎没有收益。
-- **预热池** 接受「要重建 UI」，改为**把重建的成本提前付掉** —— 实测证明除绘制外
-  都能在窗口可见之前完成。该路线已实施：`tab_windows.rs` 的池与收养分支 + 设置里的
-  `warm_tab_pool`（默认开），收养成本实测中位 ~65ms。冷路径保留为回退。
-
-所以 reparent 的否决**加强**了预热池这条路的理由，而不是削弱它。
-
-## 关联：`WebKitWebProcess` 泄漏
-
-`tab-drag-webview-reparent.md` §4.7 记录的泄漏（关闭标签窗口后子进程不退出，
-wry 的 GObject 引用环，6 行 patch 曾在本地验证）是**当前架构的独立 bug**，
-和上面两条路都无关，目前**记账但未排期**。
-
-预热池与它有相互作用：池化会**减少**窗口的创建/销毁次数（对泄漏中性偏好），
-但如果收养后反复关闭池窗口，泄漏会累积 —— 两者应当一起评估。
-池化落地后这条相互作用仍然成立，上限是「池常驻 1 个 = +200MB」。
-
-## 归档的 PoC
-
-`poc/webview-reparent/` 存放 reparent 路线的实测代码与脚本，**不参与构建**
-（`lib.rs` 里没有 `mod reparent_poc`，`Cargo.toml` 里没有 `unstable` feature）。
-其中包括 `webview-memory.py`（进程树 RSS + PSS 测量），
-预热池那条 **+200MB** 的内存数字（`tab-tear-off-warm-pool.md` §3.5）应当用它重新测，
-而不是沿用文档里的旧机器数字；延迟数字已是生产构建实测，不受此影响。
+`engine-qt-quick.md` 仍然引用其中的实测数字（每 webview +190–200 MB PSS、预热池
++200 MB、WebView2 占冷启动 63–65%），作为「为什么离开系统 WebView」的论据来源；
+要复核这些数字，到 `tauri` 分支取对应的文档与 `bench/` harness。

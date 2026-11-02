@@ -11,7 +11,6 @@ use flate2::write::GzEncoder;
 use serde::{Deserialize, Serialize};
 use sevenz_rust2::encoder_options::{AesEncoderOptions, Lzma2Options};
 use sevenz_rust2::{ArchiveEntry, ArchiveReader, ArchiveWriter, Password};
-use specta::Type;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use zip::CompressionMethod;
@@ -53,7 +52,7 @@ fn format_supports_password(format: ArchiveFormat) -> bool {
 }
 
 /// Archive containers the explorer can create and extract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ArchiveFormat {
     Zip,

@@ -12,11 +12,10 @@
 use super::error::FileSystemError;
 use super::vfs;
 use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::path::{Path, PathBuf};
 
 /// An application that can open a file or directory, as listed by the picker.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenWithApp {
     /// Platform identifier: the `.desktop` file id (Linux) or the application
@@ -38,7 +37,7 @@ pub struct OpenWithApp {
 /// the groups come from three genuinely different questions rather than one list
 /// sliced up. Only `other` is a large list, which is why it is a section behind a
 /// filter box rather than a flat continuation of `recommended`.
-#[derive(Debug, Default, Serialize, Deserialize, Type)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenWithChoices {
     /// The handler the desktop would use right now, shown at the top so the

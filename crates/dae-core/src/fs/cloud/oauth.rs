@@ -13,7 +13,6 @@ use base64::Engine;
 use rand::{RngExt, distr::Alphanumeric};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use specta::Type;
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -32,7 +31,7 @@ pub fn redirect_uri() -> String {
 /// How long the loopback listener waits for the browser round trip.
 const AUTH_TIMEOUT: Duration = Duration::from_secs(300);
 
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthorizeCloudAccountInput {
     pub provider: CloudProviderKind,

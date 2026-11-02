@@ -3,7 +3,6 @@ use super::recents::now_millis;
 use crate::fs::atomic::write_atomic;
 use super::types::display_name_from_path;
 use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::fs;
 use std::path::PathBuf;
 
@@ -11,7 +10,7 @@ const SPACES_FILE_NAME: &str = "spaces.json";
 
 /// One pinned location inside a space. Items are pointers, never copies:
 /// removing an item from a space never touches the filesystem.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpaceItem {
     pub path: String,
@@ -21,7 +20,7 @@ pub struct SpaceItem {
 }
 
 /// A contextual workspace grouping folders, network locations, and files.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Space {
     pub id: String,

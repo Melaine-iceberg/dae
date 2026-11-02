@@ -1,18 +1,17 @@
 use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
 // Backend-agnostic data types exchanged with the frontend. Every storage
 // backend produces these, so they must stay free of protocol-specific types.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Breadcrumb {
     pub name: String,
     pub path: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EntryKind {
     Directory,
@@ -21,7 +20,7 @@ pub enum EntryKind {
     Other,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DirectoryEntry {
     pub name: String,
@@ -38,7 +37,7 @@ pub struct DirectoryEntry {
     pub read_only: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DirectoryView {
     /// The absolute, canonical path that was read.
@@ -53,14 +52,14 @@ pub struct DirectoryView {
     pub stream_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum NewEntryKind {
     File,
     Directory,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchEntry {
     pub name: String,
@@ -75,14 +74,14 @@ pub struct SearchEntry {
     pub read_only: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchResponse {
     pub entries: Vec<SearchEntry>,
     pub truncated: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentSearchMatch {
     pub line_number: u64,
@@ -91,7 +90,7 @@ pub struct ContentSearchMatch {
     pub ranges: Vec<(usize, usize)>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentSearchFile {
     pub path: String,
@@ -99,7 +98,7 @@ pub struct ContentSearchFile {
     pub matches: Vec<ContentSearchMatch>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentSearchResponse {
     pub files: Vec<ContentSearchFile>,
@@ -112,7 +111,7 @@ pub struct ContentSearchResponse {
 /// platform-specific layer (POSIX mode bits, Windows DOS attributes) rides
 /// in `platform` as a tagged union so the frontend renders exactly the
 /// section the current backend supports.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileProperties {
     pub path: String,
@@ -130,7 +129,7 @@ pub struct FileProperties {
 }
 
 /// The platform-specific section of [`FileProperties`].
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlatformProperties {
     /// POSIX mode bits and ownership (Linux, macOS).
@@ -141,7 +140,7 @@ pub enum PlatformProperties {
     Basic,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnixProperties {
     /// Permission bits including the file-type mask (e.g. `0o100644`).
@@ -154,7 +153,7 @@ pub struct UnixProperties {
     pub group_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowsProperties {
     pub read_only: bool,
@@ -165,7 +164,7 @@ pub struct WindowsProperties {
 
 /// A field-set of property edits. `None` means "leave unchanged", so one
 /// command can chmod, chown, or toggle DOS attributes independently.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PropertyChanges {
     /// POSIX `chmod`: the low 12 bits (setuid/setgid/sticky included).
@@ -189,7 +188,7 @@ pub struct PropertyChanges {
 }
 
 /// Summary of a recursive property update over a directory tree.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecursivePropertyUpdateOutcome {
     /// Entries whose properties were applied successfully (no-ops included).
@@ -198,7 +197,7 @@ pub struct RecursivePropertyUpdateOutcome {
     pub failed: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OwnerChange {
     /// User name or numeric uid; `None` keeps the current owner.
@@ -238,7 +237,7 @@ pub struct EntryStat {
 }
 
 /// How a transfer resolves an existing entry at the destination.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictAction {
     /// Fails with `AlreadyExists` (the pre-dialog behavior).
@@ -253,7 +252,7 @@ pub enum ConflictAction {
 }
 
 /// One source entry paired with its conflict resolution.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransferItem {
     pub path: String,
@@ -262,7 +261,7 @@ pub struct TransferItem {
 
 /// One requested rename in a batch: the entry's current full path paired
 /// with the bare new name it should receive (never a path).
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenameRequest {
     pub path: String,
@@ -281,7 +280,7 @@ pub struct TransferPair {
 
 /// A name collision detected before a transfer runs, with both sides'
 /// metadata so the conflict dialog can compare them.
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransferConflict {
     pub source_path: String,

@@ -5,8 +5,8 @@
  * apart (run as the first step of `pack:msix`).
  *
  * Rules:
- *  - App version lives in three files (package.json, tauri.conf.json,
- *    Cargo.toml). A mismatch only warns — those are kept in sync by hand at
+ *  - App version lives in four files (package.json and the three crate
+ *    `Cargo.toml`s). A mismatch only warns — those are kept in sync by hand at
  *    release time, and blocking a pack over it helps nobody.
  *  - The MSIX base (first three parts) always follows package.json. When the
  *    app version changes, the manifest resets to `<app>.0`.

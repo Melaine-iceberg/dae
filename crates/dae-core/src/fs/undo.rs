@@ -20,7 +20,6 @@ use super::transfer::{self, TransferSource};
 use super::types::{ConflictAction, NewEntryKind, TransferPair, path_to_string};
 use super::vfs;
 use serde::Serialize;
-use specta::Type;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -119,7 +118,7 @@ impl Operation {
 
 /// Result of one undo/redo step. The frontend renders the localized toast
 /// from these fields, including pluralization for `count`.
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UndoRedoOutcome {
     /// "undo" or "redo".

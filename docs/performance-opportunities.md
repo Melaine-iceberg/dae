@@ -9,6 +9,12 @@
 > 这份文档记录的是「主干已经打磨过之后，还剩哪些量级够大的浪费」——
 > 不是猜测清单，每条的「证据」都指向可复现的 harness 或代码里的事实。
 > 判断标准沿用 `docs/decisions/` 的习惯：**先量，再改**；量不到就先记着。
+>
+> **范围说明（2026-11-02）**：本文写于 WebView（Tauri）壳时期，其中涉及
+> `src-tauri/`、`src/features/`、`main.tsx` 的「位置」「复现」段落描述的是**已退役的
+> 前端**，它们引用的 `bench/cold-start/`、`bench/frontend-scans/` 已于同日随该壳删除，
+> 留档在 `tauri` 分支。仍适用于当前 Qt 壳的是：IO 机制、Windows 枚举、QML 预编译、
+> 隐藏面板按需创建这几节。
 
 ## 0. 已经做过的（不要重复提）
 
@@ -19,8 +25,6 @@
 | 行对象缓存 + 视图访问器（不物化整份列表） | `src/features/explorer/listing-view.ts` |
 | 目录变更走「按名字打补丁」而不是重读 | `navigation.ts::patch`、`watch.rs` |
 | IO 机制迁移（IOCP / io_uring）已实测否决 | `docs/decisions/completion-io.md` |
-| 冷启动：locale、explorer chunk、启动预取、预热窗口池 | `main.tsx`、`prefetch.rs`、`docs/decisions/tab-tear-off-warm-pool.md` |
-| 冷启动归因：WebView2 创建占 63–65%，parse+exec 只有 3–4%；交接 IPC 26 ms → 0 | `docs/cold-start-js.md` §1.2、`bench/cold-start/` |
 | QML 预编译：Qt 首启 1120 → 874 ms（−22%），运行时不再写 `.qmlc` | `apps/dae/build.rs`、`docs/qml-aot.md` |
 | 隐藏面板按需创建：工作集 241 → 221 MB（−8%），启动不变 | `qml/LazySurface.qml`、`qml/ShellWindow.qml` |
 

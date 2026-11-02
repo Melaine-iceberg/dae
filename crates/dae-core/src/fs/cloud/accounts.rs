@@ -5,7 +5,6 @@ use super::provider::CloudProviderKind;
 use crate::fs::error::FileSystemError;
 use crate::fs::vfs::SharedBackend;
 use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -17,7 +16,7 @@ const KEYRING_SERVICE: &str = "dae";
 /// A saved cloud account as persisted and exposed to the frontend. Secrets
 /// never appear here: the OAuth client credentials and refresh token live in
 /// the OS keychain (or the session-scoped in-memory fallback), keyed by `id`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredCloudAccount {
     /// Canonical identity, also the explorer path of the drive root:

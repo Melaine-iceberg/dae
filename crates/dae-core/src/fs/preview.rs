@@ -8,12 +8,11 @@ use super::error::FileSystemError;
 use super::types::EntryKind;
 use super::vfs;
 use serde::Serialize;
-use specta::Type;
 use std::fs;
 use std::io::Read;
 use std::path::Path;
 
-#[derive(Debug, Clone, Serialize, Type)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextPreview {
     pub content: String,

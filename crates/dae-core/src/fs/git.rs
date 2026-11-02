@@ -3,7 +3,6 @@ use super::types::path_to_string;
 use git2::build::CheckoutBuilder;
 use git2::{BranchType, ErrorCode, Oid, Reference, Repository, Status, StatusOptions};
 use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::collections::HashMap;
 use std::fs;
 use std::process::Command;
@@ -12,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 /// Git 工作区徽标类型，对应文件管理器中的 M/A/U 状态。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum GitEntryStatusKind {
     Modified,
@@ -20,7 +19,7 @@ pub enum GitEntryStatusKind {
     Untracked,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitEntryStatus {
     /// 当前目录下直接子项的名称（目录为其本身名称）。
@@ -28,7 +27,7 @@ pub struct GitEntryStatus {
     pub kind: GitEntryStatusKind,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitDirectoryStatus {
     /// 仓库工作区根路径。
@@ -345,7 +344,7 @@ fn derive_directory_status(
 
 /// 分支条目：`name` 为完整简名（本地 "main"，远程 "origin/main"），
 /// 远程分支的 `short_name` 去掉远程前缀。
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitBranchInfo {
     pub name: String,
@@ -353,7 +352,7 @@ pub struct GitBranchInfo {
     pub is_current: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitBranches {
     /// 仓库工作区根路径。

@@ -2,7 +2,6 @@ use super::error::FileSystemError;
 use super::types::path_to_string;
 use crate::fs::atomic::write_atomic;
 use serde::{Deserialize, Serialize};
-use specta::Type;
 #[cfg(target_os = "linux")]
 use std::collections::HashMap;
 use std::fs;
@@ -17,7 +16,7 @@ const FAVORITES_FILE_NAME: &str = "sidebar-favorites.json";
 const HIDDEN_PLACES_FILE_NAME: &str = "sidebar-hidden-places.json";
 
 /// Well-known directories that are always offered in the sidebar's places section.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlaceKind {
     Home,
@@ -29,21 +28,21 @@ pub enum PlaceKind {
     Videos,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemPlace {
     pub kind: PlaceKind,
     pub path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Favorite {
     pub path: String,
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiskVolume {
     pub mount_point: String,
@@ -54,7 +53,7 @@ pub struct DiskVolume {
     pub is_removable: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WslDistro {
     pub name: String,

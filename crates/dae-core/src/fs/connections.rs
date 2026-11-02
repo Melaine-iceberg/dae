@@ -1,7 +1,6 @@
 use super::error::FileSystemError;
 use super::vfs::SharedBackend;
 use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -12,7 +11,7 @@ const KEYRING_SERVICE: &str = "dae";
 
 /// Storage protocols a user can connect to. Mirrors the network variants of
 /// [`super::vfs::Scheme`] without the local case.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Protocol {
     Smb,
@@ -35,7 +34,7 @@ impl Protocol {
 /// A saved server connection as persisted and exposed to the frontend.
 /// Passwords never appear here: they live in the OS keychain (or the
 /// session-scoped in-memory fallback), keyed by `id`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoredConnection {
     pub id: String,
@@ -47,7 +46,7 @@ pub struct StoredConnection {
 
 /// Input for creating or updating a connection. `id` is derived from
 /// protocol + host + port, so saving the same server again updates it.
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveConnectionInput {
     pub protocol: Protocol,

@@ -148,13 +148,13 @@ bun run perf:bolt:qt
 | 结束方式 | 结果 |
 |---|---|
 | `kill` / `TerminateProcess` | 钩子一个不跑，无 profile |
-| 关主窗口 | 进程根本不结束：预热标签池里的隐藏窗口还活着（`docs/decisions/tab-tear-off-warm-pool.md`） |
-| `AppHandle::exit(0)`（也即 Tauri 事件循环结束时走的路） | Windows 上走到 `ExitProcess`，**跳过 CRT 的 atexit**，无 profile。已实测：exit code 0、干净退出、一个 profraw 都没有 |
+| 关主窗口 | WebView 壳时期实测：进程根本不结束，预热标签池里的隐藏窗口还活着（池随该壳归档，Qt 壳无池） |
+| `AppHandle::exit(0)`（WebView 壳事件循环的退出路径） | Windows 上走到 `ExitProcess`，**跳过 CRT 的 atexit**，无 profile。已实测：exit code 0、干净退出、一个 profraw 都没有 |
 | compiler-rt 的 continuous mode（`LLVM_PROFILE_FILE=…%c.profraw`） | 文件停在 20 MB 的 “truncated profile data”，`llvm-profdata merge` 直接拒收 |
 
-所以唯一可行的是**进程从 CRT 的 exit 出去**。两个壳各有一个同构的钩子，都只在
-`--features perf-train` 的构建里存在：`src-tauri/src/lib.rs` 的 `spawn_training_quit`
-与 `apps/dae/src/main.rs` 的 `perf_train::arm`。`DAE_PERF_TRAIN_QUIT_MS` 设置时，
+所以唯一可行的是**进程从 CRT 的 exit 出去**。钩子只有一份，在
+`--features perf-train` 的构建里存在：`apps/dae/src/main.rs` 的 `perf_train::arm`
+（WebView 壳曾有一份同构的 `spawn_training_quit`，随该壳归档）。`DAE_PERF_TRAIN_QUIT_MS` 设置时，
 后台线程睡 N 毫秒后调 `exit(0)`（CRT 的那个，不是 `std::process::exit`）。
 没设置时（即所有正常启动）它什么都不做。这个差别不是理论：同一个 instrumented
 小程序，用 CRT `exit` 退出会写出 7.8 KB 的 profraw，用 `std::process::exit` 退出什么都没有。
@@ -312,7 +312,7 @@ Qt 腿另有 `windeployqt` / `macdeployqt` / `linuxdeploy` 的时间，那本来
 ## 8. 还没做
 
 - **没有 A/B 数字。** 冷启动、目录列举、搜索各自能拿多少，目前未知；要量的话用
-  `bench/` 里的 harness（`frontend-scans`、`listing-pipeline`）配合两个二进制对比。
+  `bench/` 里的 harness（`listing-pipeline`）配合两个二进制对比。
 - **没有把本地训练的 profdata 接进 CI。** 现在 CI 自己练，覆盖率低但流程闭环。
 - **没有 macOS/Windows 的等价后链接步骤**（BOLT 只认 ELF，不存在等价物）；PGO 三平台都已开。
 - **没有 sign 之后的验证**：`latest.json` 的签名是否始终指向 BOLT 后的产物，需要一次真实

@@ -6,17 +6,16 @@
 //! the shell — a webview event and a Qt queued signal want different rates, and
 //! neither belongs in a crate that also runs under `cargo test` with no window.
 //!
-//! # Why the enums carry `serde`/`specta` here
+//! # Why the enums carry `serde` here
 //!
-//! [`crate::types`] is already the IPC contract (the Tauri shell still exports
-//! its TypeScript bindings from these derives), and these two enums are part of
-//! it. [`crate::host::Event`] itself stays derive-free — the distinction is
-//! "a value that happens to be serialized" versus "the transport".
+//! They are part of the value vocabulary [`crate::types`] establishes, so they
+//! keep the same derives as the rest of it. [`crate::host::Event`] itself stays
+//! derive-free — the distinction is "a value that happens to be serialized"
+//! versus "the transport", and the transport is the shell's business.
 
 use serde::{Deserialize, Serialize};
-use specta::Type;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FileOperationKind {
     Copy,
@@ -27,7 +26,7 @@ pub enum FileOperationKind {
     Properties,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FileOperationPhase {
     Preparing,

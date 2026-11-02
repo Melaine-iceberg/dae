@@ -6,13 +6,12 @@ use crate::fs::error::FileSystemError;
 use crate::fs::types::EntryKind;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use specta::Type;
 use std::path::Path;
 use std::sync::Arc;
 
 /// The cloud services the app can connect to. The serialized form doubles as
 /// the provider segment of `cloud://` account ids, so it is a stable contract.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CloudProviderKind {
     GoogleDrive,
