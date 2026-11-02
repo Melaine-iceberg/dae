@@ -9,10 +9,12 @@ Standalone spike for **§5 gates 3 and 4** of
 > Gate 4: tear a tab out into a second window — ≤ 20 MB PSS and ≤ 150 ms — and
 > prove that the gate-3 path is per window, not per process.
 
-It is not part of the app. The backdrop **decision** is a port of
-[`src-tauri/src/window_material/windows.rs`](../../src-tauri/src/window_material/windows.rs)
-(the same `CurrentBuild` / `EnableTransparency` registry reads and the same
-22000 / 22523 thresholds), because the Qt shell must not disagree with the
+It is not part of the app. The backdrop **decision** is a port of the Tauri
+shell's `window_material/windows.rs`, which was deleted with that shell on
+2026-11-01; the port that survives is
+[`crates/dae-qt/src/material.rs`](../../crates/dae-qt/src/material.rs), with the
+same `CurrentBuild` / `EnableTransparency` registry reads and the same
+22000 / 22523 thresholds, because the Qt shell must not disagree with the
 Tauri shell about which machine has a backdrop. The **application** is raw
 Win32 (`DwmEnableBlurBehindWindow` + `DWMWA_SYSTEMBACKDROP_TYPE`), since Qt has
 no `window-vibrancy` equivalent. The title bar is drawn in QML; the native
