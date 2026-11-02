@@ -1334,7 +1334,7 @@ Qt Online Installer 装在 `K:/Qt`：
 |---|---|---|---|
 | 4 | 日志与 panic 不落盘 | 旧壳 `src-tauri/src/lib.rs:350` 起配 `tauri-plugin-log`（4 MB 轮转、留 5 份、本地时区），`:429` 的 `install_panic_logger` 把 panic 写进文件。Qt 侧 `crates/dae-qt/Cargo.toml` 没有日志依赖，`config.rs:238` 的 `log()` 只写 stderr，而 release 是 GUI 子系统、没有 stderr；`workspace.rs:2781` 的 `app_log_directory()` 只服务设置页 | **已补**，见 §9.6 |
 | 5 | macOS/Linux 无运行时回归 | `qt-check.yml` 只 `cargo build` + 138 个单测；`qt-platform-parity.md` §4 的 13 项手测全部「待目标平台」 | **已完成**（2026-11-01，见 §9.14）：Linux 真机按 §4 逐项跑完，可执行的 11 项全部符合期望（Wayland 与 X11 两种会话、fcitx5 输入法、`.rpm`）。两项 macOS 专属项（原生菜单、红绿灯 chrome）标为不适用——没有 Mac 设备，且 macOS 产物已随 §9.12.4 撤项 |
-| 6 | 更新链路未端到端验证 | `dae-core/src/update/install.rs` 已实现 portable 目录替换与 macOS bundle 交换，`DEFAULT_FEED_URL` 指向 `latest-qt.json`；但从未在真实发布物上跑过「下载 → 校验 → 替换 → 重启」 | **机制已端到端跑通**（2026-11-01，见 §9.13.2）：上一版部署树上完成 下载→验签→解包→PS 脚本换树→重启，新进程日志报新版本；篡改产物被拒且安装树未动。**但真实发布物这一层仍缺一环**：仓库至今没有任何 Qt 发布产物，且所有 release 都是 prerelease，`releases/latest/download/latest-qt.json` 实测 **404**。详见 §9.13.2 末尾 |
+| 6 | 更新链路未端到端验证 | `dae-core/src/update/install.rs` 已实现 portable 目录替换与 macOS bundle 交换，`DEFAULT_FEED_URL` 指向 `latest-qt.json`；但从未在真实发布物上跑过「下载 → 校验 → 替换 → 重启」 | **机制已端到端跑通**（2026-11-01，见 §9.13.2）：上一版部署树上完成 下载→验签→解包→PS 脚本换树→重启，新进程日志报新版本；篡改产物被拒且安装树未动。**但真实发布物这一层仍缺一环**：仓库至今没有任何 Qt 发布产物，且所有 release 都是 prerelease，`releases/latest/download/latest-qt.json` 实测 **404**。详见 §9.13.2 末尾。**2026-11-02 已按「永久预览版」的决定改掉发现方式**（§9.16）：首选 URL 失败时回退到 releases API，`release.yml` 的草稿默认带 `--prerelease`。代码与单测通过，真实资产上的端到端验证等下一个 tag |
 | 7 | IME 失焦守卫只在 Windows | `cpp/ime.h` 的 `CPS_CANCEL` 只在 Windows 安装；macOS/Linux 失焦语义未测 | **已补**，见 §9.13.1：守卫三平台统一，Windows 仍走 IMM，macOS/Linux 走 `QInputMethod::reset()`（两平台的该实现均按源码核对为「取消」），只在 `preeditText` 非空时触发。**Linux 已在 fcitx5 下实测通过**（§9.14）；macOS 不发布，无从实测 |
 | 8 | macOS 窗口 chrome 未定案 | 红绿灯由 QML 绘制，绿灯走 `showMaximized` 而非全屏；没有 hover 字形；双击标题栏不读系统偏好（parity §2.8） | **已定案并落地**，见 §9.13.1：绿灯 = 原生全屏，hover 显示绘制字形，双击读 `AppleActionOnDoubleClick`（每次双击现读，无需重启）。**运行时无法验收**：没有 Mac 设备，且 macOS 产物已撤（§9.12.4）——`qt-check` 的 `macos-latest` 腿保证它仍能编译链接 |
 
@@ -1875,6 +1875,10 @@ GPU 路径只在真机上验过，这也是「软件渲染能起来」不算通�
      `api.github.com/repos/…/releases` 取最新一条的 `latest-qt.json`），代价是
      引入一次 API 调用与限流语义。
 
+  **决定（2026-11-02）：走第 2 条。** 产品上不发正式版，之后一直是预览版，那么
+  `releases/latest/` 就永久解析不到东西——改 URL 无用，只能改发现方式。实现、
+  以及一个顺带发现的前提问题（draft 在未认证的 API 里也看不见）见 §9.16。
+
   在此之前，§9.3-6 的验收只能算「机制通过、发布物待验」。
 
 #### 9.13.3 退役：`src-tauri` / React / 旧 CI
@@ -1971,8 +1975,10 @@ qml/ShellWindow.qml` 会报 76 条 `unqualified`，全部落在 360 行以后的
   `macos-latest` 腿。
 - **Flatpak / AppImage** 没有这种包（§9.2-3）。
 
-**闸门关掉之后。** §9.3 的 8 项、§9.4 的 4 项至此全部有结论。剩下唯一没有结论的
-不是工程项，而是产品决策：更新链路的真实发布物（§9.13.2 末尾那个 404）。
+**闸门关掉之后。** §9.3 的 8 项、§9.4 的 4 项至此全部有结论。当时唯一没有结论的
+不是工程项，而是产品决策：更新链路的真实发布物（§9.13.2 末尾那个 404）。**这个
+决策也已落地**（2026-11-02）：发版路线固定为预览版，更新器改走 releases API 发现，
+见 §9.16。
 
 ### 9.15 记录：MSIX 真机安装、升级与深链，以及一条写不出去的注册（2026-11-01）
 
@@ -2056,18 +2062,20 @@ C:\Users\Mt342\AppData\Local\Microsoft\WindowsApps\dae.exe
   拿不到别名，报失败只会掩盖真正的原因。`docs/packaging.md` §3.1 第 3 条与 §3.3
   已同步。
 
-**没做决定的地方。** 三条候选，都需要产品判断：
+**决定（2026-11-02）：不修，接受这个限制。** dae 的主战场是 Linux，MSIX 是
+Windows 侧的第二形态；为一个非主平台引入 `desktop:Extension`（会丢掉「双击文件夹
+直接打开」）或改造设置流程，收益与代价不成比例。三条候选的取舍：
 
-1. **清单声明文件夹关联。** `windows.fileTypeAssociation` 管的是文件类型，
-   文件夹（`Directory`）不在它的覆盖里，可能要走 `desktop:Extension` 的上下文
-   菜单扩展 —— 代价是放弃「双击文件夹直接打开」这个已经是便携版卖点的行为。
-2. **不写注册表，改引导。** 打包形态下「设为默认」打开系统设置
-   （`ms-settings:defaultapps`），让用户在 Windows 自己的界面里选 dae。改动小、
-   不撒谎，但比便携版多几步。
-3. **承认不支持。** 打包形态隐藏该项并说明原因。最诚实，也最不像成品。
+1. 清单声明文件夹关联——放弃，`windows.fileTypeAssociation` 覆盖不到文件夹，
+   能被选中就意味着改掉产品行为；
+2. 引导到系统设置——不做，Windows 的默认应用界面本身也不提供「文件夹管理器」
+   这一项，引导过去只会让用户发现无路可走；
+3. 承认不支持——**采纳**，但只作文档层面的承认：代码保持现状（写，落在沙箱里，
+   无害且对便携版正确），设置项不隐藏（隐藏需要为打包形态加一条分支，而这条
+   分支没有任何用户价值）。
 
-选哪条取决于 MSIX 究竟是「主分发形态」还是「企业侧的补充」。在这一点定下来之前，
-代码保持现状（写，但落在沙箱里），文档按「不生效」记录。
+结论写在这里而不是只写在代码注释里，是因为它的依据是产品定位（Linux 优先），
+不是技术判断——将来若 MSIX 变成主分发形态，这一条需要重新审视。
 
 **验收动作（可重跑）。**
 
@@ -2081,3 +2089,58 @@ Get-AppxPackage -Name dae | Remove-AppxPackage    # 若上一步没带 -Uninstal
 
 注意 `-Uninstall` 会先重装一遍再卸。全程结束应满足：无 `dae` 包、无
 `…\WindowsApps\dae.exe` 别名、无 `…\Packages\dae_*` 目录。
+
+### 9.16 记录：更新器改走 releases API，发版路线定为预览版（2026-11-02）
+
+**决定。** 产品上不发正式版：之后所有 tag 都标 pre-release。于是
+`releases/latest/download/latest-qt.json` 这条 URL 永久解析不到东西（它只指向
+最新**稳定版**），§9.13.2 给的两条修法里第 1 条被排除，只剩改发现方式。
+
+**实现。** `check_for_update` 现在分两层：
+
+1. 先按原 URL 取 `latest-qt.json`。这条路径保留原样——真有一天发稳定版，它
+   仍然是一次请求就结束；
+2. 只有在**端点等于 `DEFAULT_FEED_URL`** 且第 1 步失败时，才回退到
+   `api.github.com/repos/{owner}/{repo}/releases?per_page=10`，取列表里第一个
+   带 `latest-qt.json` 资产的非 draft release，用它给出的
+   `browser_download_url` 再取一次。
+
+`DAE_UPDATE_ENDPOINT` 指定的端点**不回退**：那是测试夹具，指向一个不存在的地址
+就是它想给的答案，回退会把一次本地测试变成一次对 GitHub 的网络调用。
+
+API 地址不是第二个常量，而是从 feed URL 推导出来的
+（`releases_api_url`）：`https://github.com/{o}/{r}/releases/latest/download/…`
+→ `https://api.github.com/repos/{o}/{r}/releases`。这样两者不会漂移，代价是非
+GitHub 的镜像地址没有发现能力——`releases_api_url` 返回 `None`，行为退化成
+「只有第 1 层」。有一条单测专门把 `DEFAULT_FEED_URL` 钉在这个形状上，否则
+换域名或换路径布局会让回退静默失效，症状是若干年后才出现的「永远没有更新」。
+
+**顺带发现的前提问题：draft 在未认证的 API 里也是不可见的。** `release.yml` 的
+`draft` 作业用 `gh release create --draft` 建草稿，由人在 GitHub 上点 Publish。
+如果发布时忘了勾 "Set as pre-release"，会得到一个**看起来已发布、更新器却看不见**
+的 release——因为发现路径只认非 draft，而稳定性又没到能被
+`releases/latest/` 看见。两头都落空，且两边都不报错。
+
+修法是把它变成默认值：`draft` 作业的 `gh release create` 加了 `--prerelease`。
+草稿带这个标记，点一次 Publish 就是一个可被发现的预览版。这也是「永久预览版」
+这个产品决定在流水线里的落点。
+
+**验证。** `cargo test -p dae-core --lib` 308 passed / 10 ignored（新增 5 项：
+
+| 测试 | 断言 |
+| --- | --- |
+| `the_releases_api_is_derived_from_the_feed_url` | 默认 URL 推导出正确的 API 地址 |
+| `the_default_feed_is_one_discovery_can_derive_from` | 两个常量不漂移（锁住上一条的前提） |
+| `a_feed_elsewhere_has_no_releases_api` | 非 github.com、本地 server、路径不足三种都返回 `None` |
+| `discovery_picks_the_newest_release_that_carries_a_feed` | 跳过 draft、跳过无该资产的 release |
+| `discovery_reports_nothing_when_no_release_has_a_feed` | 一个都没有时如实返回 `None` |
+
+**仍然待验证的一层。** 仓库目前一个 Qt 发布产物都没有，所以「回退发现」在真实
+数据上还没跑过：下个 tag 走完 `release.yml`、人工 Publish 之后，才第一次有
+`latest-qt.json` 挂在预览版上。届时判断标准是——portable 包装在机器上启动，
+日志里出现 feed 取自 `api.github.com` 而非 `releases/latest/` 的那一次成功检查。
+在那之前，这条链的结论是「代码与单测通过、端到端未在真实资产上复现」。
+
+**限流与代价。** 未认证的 GitHub API 是 60 次/小时/IP。启动检查是低频的，远低于
+这个量级；真撞上限流（403）时会走 `UpdateError::Feed`，行为与今天一致——只在
+日志里留一行，不打扰用户。控制台窗口没有引入新的交互。

@@ -348,9 +348,40 @@ Get-AppxPackage -Name dae | Remove-AppxPackage
 ## 4. 仍然不在这两个形态里的事
 
 - **macOS 的一切运行时手测** —— §1 撤掉发布之后，这类问题连入口都没有了；macOS 窗口
-  chrome 的三条待定项（红绿灯 hover 字形、绿灯语义、双击标题栏读系统偏好，§9.3-8）
-  随之搁置，代码保留但不验收；
-- Linux 侧的 12 项运行时手测 —— §9.3-5，回填
-  [`qt-platform-parity.md`](qt-platform-parity.md) §6；
+  chrome 的三条决定（红绿灯 hover 字形、绿灯进原生全屏、双击标题栏读系统偏好，§9.3-8）
+  代码已落地，但只能由 `qt-check.yml` 的 `macos-latest` 腿保证编译，无法验收；
 - MSIX 走系统部署 API 做应用内「检查更新」—— 需要 `packageManagement` 能力与
-  Store 之外的签名信任，属独立决定（§9.7.3-3 的后半段）。
+  Store 之外的签名信任，属独立决定（§9.7.3-3 的后半段）；
+- MSIX 形态下的「设为默认文件管理器」—— Windows 把打包应用的 `HKCU\Software\Classes`
+  写入重定向到包私有 hive，Explorer 不读。按产品定位（Linux 优先）不修，理由与取舍
+  见 `decisions/engine-qt-quick.md` §9.15。
+
+Linux 侧的运行时手测已经跑完（parity §4 可执行 11 项全通过，见 §9.14），不再是缺口。
+
+## 5. 发版与更新源
+
+发版流程只有一条路径，因为 dae **不发布稳定版**：每个 tag 都是预览版。
+
+```
+打 tag → draft 作业（版本校验 + gh release create --draft --prerelease）
+       → qt / msix / qt-feed 挂资产
+       → 在 GitHub 上点 Publish
+```
+
+两个前提值得记住，任一条错了都会表现成「更新器永远说没有更新」：
+
+1. **发布时必须真的点 Publish。** 草稿在 GitHub 上人人可见，但对未认证的 API 是
+   不可见的；`latest-qt.json` 挂在草稿上等于没有发布。
+2. **更新器不靠 `releases/latest/`。** 那条 URL 只解析最新**稳定版**，本项目没有
+   稳定版，所以它永久 404。`check_for_update` 先试它、失败后回退到
+   `api.github.com/repos/{owner}/{repo}/releases`，取第一个带 `latest-qt.json` 的
+   已发布 release（`crates/dae-core/src/update/mod.rs`，记录见 §9.16）。
+
+因此发布后值得花三十秒验证一次：
+
+```bash
+curl -s https://api.github.com/repos/Melaine-iceberg/dae/releases?per_page=1 \
+  | grep -o '"name": "latest-qt.json"'
+```
+
+有输出就说明更新源已经可达；没有输出说明资产没挂上或 release 仍是草稿。
