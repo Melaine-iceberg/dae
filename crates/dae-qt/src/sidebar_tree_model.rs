@@ -15,7 +15,9 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
+use cxx_qt_lib::{
+    QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant,
+};
 use dae_core::fs::local::LocalBackend;
 use dae_core::fs::vfs::FileSystemBackend;
 use dae_core::types::EntryKind;
@@ -46,6 +48,9 @@ pub mod qobject {
 
         include!("cxx-qt-lib/qhash.h");
         type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
+
+        include!("cxx-qt-lib/core/qlist/qlist_i32.h");
+        type QList_i32 = cxx_qt_lib::QList<i32>;
     }
 
     unsafe extern "RustQt" {
@@ -79,6 +84,53 @@ pub mod qobject {
         #[qinvokable]
         fn toggle(self: Pin<&mut SidebarTreeModel>, path: &QString);
 
+        /// A folder that the user asked to expand could not be read. The row
+        /// goes back to its closed state and keeps its chevron, but it has no
+        /// children to show, so the shell has to say why: a silent no-op reads
+        /// as a broken chevron.
+        #[qsignal]
+        #[cxx_name = "readFailed"]
+        fn read_failed(self: Pin<&mut SidebarTreeModel>, path: &QString, message: &QString);
+
+        #[inherit]
+        #[rust_name = "begin_insert_rows"]
+        unsafe fn beginInsertRows(
+            self: Pin<&mut SidebarTreeModel>,
+            parent: &QModelIndex,
+            first: i32,
+            last: i32,
+        );
+
+        #[inherit]
+        #[rust_name = "end_insert_rows"]
+        unsafe fn endInsertRows(self: Pin<&mut SidebarTreeModel>);
+
+        #[inherit]
+        #[rust_name = "begin_remove_rows"]
+        unsafe fn beginRemoveRows(
+            self: Pin<&mut SidebarTreeModel>,
+            parent: &QModelIndex,
+            first: i32,
+            last: i32,
+        );
+
+        #[inherit]
+        #[rust_name = "end_remove_rows"]
+        unsafe fn endRemoveRows(self: Pin<&mut SidebarTreeModel>);
+
+        #[inherit]
+        #[rust_name = "model_index"]
+        unsafe fn index(&self, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
+
+        #[inherit]
+        #[rust_name = "data_changed"]
+        unsafe fn dataChanged(
+            self: Pin<&mut SidebarTreeModel>,
+            top_left: &QModelIndex,
+            bottom_right: &QModelIndex,
+            roles: &QList_i32,
+        );
+
         #[inherit]
         #[rust_name = "begin_reset_model"]
         unsafe fn beginResetModel(self: Pin<&mut SidebarTreeModel>);
@@ -97,7 +149,7 @@ struct TreeChild {
     path: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 struct TreeRow {
     name: String,
     path: String,
@@ -217,11 +269,11 @@ impl qobject::SidebarTreeModel {
         }
 
         self.as_mut().rust_mut().expanded_paths.insert(path.clone());
-        if self.children.contains_key(&path) {
-            self.as_mut().rebuild();
-            return;
-        }
-        if self.loading_paths.contains(&path) {
+        // Turn the chevron now rather than when the read finishes: the folder
+        // is open from the moment it is clicked, and a blocking read on a slow
+        // disk would otherwise leave the click looking ignored.
+        self.as_mut().rebuild();
+        if self.children.contains_key(&path) || self.loading_paths.contains(&path) {
             return;
         }
 
@@ -266,6 +318,7 @@ impl qobject::SidebarTreeModel {
         self.as_mut().rust_mut().loading_paths.remove(&path);
         let root = self.root.clone();
         let is_root = path == root;
+        let failed = result.is_err();
 
         match result {
             Ok(children) => {
@@ -282,21 +335,34 @@ impl qobject::SidebarTreeModel {
                 }
             }
             Err(error) => {
-                self.as_mut()
-                    .rust_mut()
-                    .children
-                    .insert(path.clone(), Vec::new());
-                self.as_mut().rust_mut().loaded_paths.insert(path.clone());
+                let message = crate::errors::friendly_error(&error);
                 if is_root {
+                    // The volume row's tree stays open on an empty list so the
+                    // status below it can say why nothing arrived.
+                    self.as_mut()
+                        .rust_mut()
+                        .children
+                        .insert(path.clone(), Vec::new());
+                    self.as_mut().rust_mut().loaded_paths.insert(path.clone());
                     self.as_mut().set_loaded(true);
                     self.as_mut()
                         .set_status(QString::from("Could not read folder"));
-                    log::warn!(target: "dae::sidebar", "sidebar tree read failed: {error}");
+                } else {
+                    // A failed folder is not an open folder. Close the branch
+                    // and leave it out of `loaded_paths`, so its chevron stays
+                    // and the next click retries the read instead of reusing
+                    // an empty child list.
+                    self.as_mut().rust_mut().expanded_paths.remove(&path);
+                    self.as_mut().read_failed(
+                        &QString::from(path.as_str()),
+                        &QString::from(message.as_str()),
+                    );
                 }
+                log::warn!(target: "dae::sidebar", "sidebar tree read failed: {message}");
             }
         }
 
-        if is_root || self.expanded_paths.contains(&path) {
+        if is_root || self.expanded_paths.contains(&path) || failed {
             self.as_mut().rebuild();
         }
         if self.loading_paths.is_empty() {
@@ -311,13 +377,107 @@ impl qobject::SidebarTreeModel {
             &self.children,
             &self.loaded_paths,
         );
-        let count = rows.len() as i32;
-        unsafe {
-            self.as_mut().begin_reset_model();
-            self.as_mut().rust_mut().rows = rows;
-            self.as_mut().end_reset_model();
+        self.as_mut().apply_rows(rows);
+    }
+
+    /// Replaces the flattened rows without resetting the model.
+    ///
+    /// A reset throws away every delegate in the tree and builds them again,
+    /// which is the flash the sidebar showed whenever a folder was expanded.
+    /// Expansion and collapse only touch one contiguous run: the row whose
+    /// `expanded` flag flipped, and the subtree introduced or dropped below
+    /// it. Matching by path keeps the other rows in place; only the toggled
+    /// row is repainted, and only the run is inserted or removed.
+    fn apply_rows(mut self: Pin<&mut Self>, next: Vec<TreeRow>) {
+        let previous = self.as_mut().rust_mut().rows.clone();
+        let (edit_at, previous_mid_end, next_mid_end) = row_delta(&previous, &next);
+
+        // Repaint the rows that stayed where they were but changed — the
+        // toggled row's `expanded` flag. This runs before the run below moves
+        // indexes, so the row numbers are still the old ones.
+        let mut changed: Option<(usize, usize)> = None;
+        for index in 0..edit_at {
+            if previous[index] == next[index] {
+                continue;
+            }
+            self.as_mut().rust_mut().rows[index] = next[index].clone();
+            changed = Some(match changed {
+                Some((first, _)) => (first, index),
+                None => (index, index),
+            });
         }
-        self.as_mut().set_count(count);
+        if let Some((first, last)) = changed {
+            self.as_mut().emit_rows_changed(first as i32, last as i32);
+        }
+
+        unsafe {
+            if edit_at < previous_mid_end {
+                self.as_mut().begin_remove_rows(
+                    &QModelIndex::default(),
+                    edit_at as i32,
+                    (previous_mid_end - 1) as i32,
+                );
+                self.as_mut()
+                    .rust_mut()
+                    .rows
+                    .drain(edit_at..previous_mid_end);
+                self.as_mut().end_remove_rows();
+            }
+            if edit_at < next_mid_end {
+                self.as_mut().begin_insert_rows(
+                    &QModelIndex::default(),
+                    edit_at as i32,
+                    (next_mid_end - 1) as i32,
+                );
+                self.as_mut().rust_mut().rows.splice(
+                    edit_at..edit_at,
+                    next[edit_at..next_mid_end].iter().cloned(),
+                );
+                self.as_mut().end_insert_rows();
+            }
+        }
+
+        // The shared tail cannot change its paths; a change there (an
+        // ancestor's `mayHaveChildren`) is still a repaint, at the indexes the
+        // insert or removal above left them.
+        let mut changed: Option<(usize, usize)> = None;
+        for index in next_mid_end..next.len() {
+            if self.as_mut().rust_mut().rows[index] == next[index] {
+                continue;
+            }
+            self.as_mut().rust_mut().rows[index] = next[index].clone();
+            changed = Some(match changed {
+                Some((first, _)) => (first, index),
+                None => (index, index),
+            });
+        }
+        if let Some((first, last)) = changed {
+            self.as_mut().emit_rows_changed(first as i32, last as i32);
+        }
+
+        self.as_mut().set_count(next.len() as i32);
+    }
+
+    /// Tells the view that `first..=last` kept its rows but changed their
+    /// values. The tree only has the six roles below, so they are all sent.
+    fn emit_rows_changed(mut self: Pin<&mut Self>, first: i32, last: i32) {
+        unsafe {
+            let parent = QModelIndex::default();
+            let top = self.as_mut().model_index(first, 0, &parent);
+            let bottom = self.as_mut().model_index(last, 0, &parent);
+            let mut roles = QList::<i32>::default();
+            for role in [
+                ROLE_NAME,
+                ROLE_PATH,
+                ROLE_DEPTH,
+                ROLE_EXPANDED,
+                ROLE_MAY_HAVE_CHILDREN,
+                ROLE_LOADED,
+            ] {
+                roles.append(role);
+            }
+            self.as_mut().data_changed(&top, &bottom, &roles);
+        }
     }
 
     fn set_rows(mut self: Pin<&mut Self>, rows: Vec<TreeRow>) {
@@ -405,6 +565,43 @@ fn natural_cmp(left: &str, right: &str) -> Ordering {
     left.to_lowercase().cmp(&right.to_lowercase())
 }
 
+/// The edit `apply_rows` has to make: repaint rows `..edit_at`, then replace
+/// `edit_at..previous_end` in the old list with `edit_at..next_end` from the
+/// new one. Rows are matched by path, not by their full contents, so the
+/// folder whose `expanded` flag flipped stays in place and the subtree below
+/// it is the only run inserted or removed.
+fn row_delta(previous: &[TreeRow], next: &[TreeRow]) -> (usize, usize, usize) {
+    let prefix = previous
+        .iter()
+        .zip(next.iter())
+        .take_while(|(before, after)| before.path == after.path)
+        .count();
+    // A shared tail must not overlap the prefix when the lists share a tail
+    // that is longer than what is left after the prefix.
+    let max_suffix = previous.len().min(next.len()) - prefix;
+    let suffix = previous
+        .iter()
+        .rev()
+        .zip(next.iter().rev())
+        .take(max_suffix)
+        .take_while(|(before, after)| before.path == after.path)
+        .count();
+
+    let previous_end = previous.len() - suffix;
+    let next_end = next.len() - suffix;
+    // The toggled row keeps its path; the children are what appears below it.
+    // Matching the leading paths inside the changed middle keeps that row
+    // (and repaints it) instead of removing and re-inserting it together with
+    // its subtree.
+    let in_place = previous[prefix..previous_end]
+        .iter()
+        .zip(next[prefix..next_end].iter())
+        .take_while(|(before, after)| before.path == after.path)
+        .count();
+
+    (prefix + in_place, previous_end, next_end)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -467,5 +664,65 @@ mod tests {
         assert_eq!(rows[1].path, "C:/root/a/a1");
         assert!(rows[0].expanded);
         assert!(!rows[2].expanded);
+    }
+
+    fn row(name: &str, expanded: bool) -> TreeRow {
+        TreeRow {
+            name: name.to_owned(),
+            path: format!("C:/root/{name}"),
+            depth: 0,
+            expanded,
+            may_have_children: true,
+            loaded: true,
+        }
+    }
+
+    /// Opening a folder inserts only the subtree below it; the rows above and
+    /// the siblings after it keep their delegates.
+    #[test]
+    fn expanding_a_folder_edits_the_run_below_its_row() {
+        let a = row("a", false);
+        let b = row("b", false);
+        let c = row("c", false);
+        let previous = vec![a.clone(), b, c.clone()];
+        let next = vec![a, row("b", true), row("b1", false), row("b2", false), c];
+
+        let (edit_at, previous_end, next_end) = row_delta(&previous, &next);
+        assert_eq!(edit_at, 2, "b keeps its row and is only repainted");
+        assert_eq!(previous_end, 2, "nothing above the open folder is removed");
+        assert_eq!(next_end, 4, "the two children are the insertion");
+    }
+
+    /// Folding it removes exactly that run again.
+    #[test]
+    fn collapsing_a_folder_removes_the_run_below_its_row() {
+        let a = row("a", false);
+        let b = row("b", true);
+        let c = row("c", false);
+        let previous = vec![a.clone(), b, row("b1", false), row("b2", false), c.clone()];
+        let next = vec![a, row("b", false), c];
+
+        let (edit_at, previous_end, next_end) = row_delta(&previous, &next);
+        assert_eq!(edit_at, 2, "b keeps its row and is only repainted");
+        assert_eq!(previous_end, 4, "the two children are the removal");
+        assert_eq!(next_end, 2, "nothing is inserted");
+    }
+
+    /// A flag-only change never touches the row count.
+    #[test]
+    fn a_flag_only_change_repaints_the_row_in_place() {
+        let previous = vec![row("a", false), row("b", false)];
+        let next = vec![row("a", false), row("b", true)];
+
+        let (edit_at, previous_end, next_end) = row_delta(&previous, &next);
+        assert_eq!((edit_at, previous_end, next_end), (2, 2, 2));
+    }
+
+    /// Identical lists produce an empty edit at the end, not a reset.
+    #[test]
+    fn an_unchanged_list_has_nothing_to_edit() {
+        let rows = vec![row("a", false), row("b", false)];
+        let (edit_at, previous_end, next_end) = row_delta(&rows, &rows);
+        assert_eq!((edit_at, previous_end, next_end), (2, 2, 2));
     }
 }

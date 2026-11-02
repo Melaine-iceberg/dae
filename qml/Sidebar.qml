@@ -23,6 +23,11 @@ Item {
     /// come back expanded. `volumeRevision` exists only to make the delegate's
     /// binding re-evaluate when the map is replaced.
     property var expandedVolumes: ({})
+    /// Volumes whose tree has been opened at least once. The loader stays
+    /// alive after a collapse, so the model keeps the folders the user had
+    /// expanded and reopening a volume is instant instead of re-reading its
+    /// root and flashing the loading line.
+    property var openedVolumes: ({})
     property int volumeRevision: 0
 
     signal navigateRequested(string path)
@@ -32,6 +37,8 @@ Item {
     signal addRequested(string kind)
     signal restorePlacesRequested()
     signal contextRequested(string kind, string path, real x, real y)
+    /// A folder row could not be expanded. The window owns the toast.
+    signal errorRequested(string message)
 
     /// A folder drag is hovering the favorites group, which is the add target.
     /// Set by the section header and the empty hint row, so both light while
@@ -71,17 +78,29 @@ Item {
         return volumeRevision >= 0 && expandedVolumes[path] === true
     }
 
+    function volumeOpened(path) {
+        return volumeRevision >= 0 && openedVolumes[path] === true
+    }
+
     function toggleVolume(path) {
         if (path === "")
             return
         const next = ({})
         for (const key in expandedVolumes)
             next[key] = expandedVolumes[key]
-        if (next[path])
-            delete next[path]
-        else
+        const opening = next[path] !== true
+        if (opening)
             next[path] = true
+        else
+            delete next[path]
         expandedVolumes = next
+        if (opening) {
+            const opened = ({})
+            for (const key in openedVolumes)
+                opened[key] = openedVolumes[key]
+            opened[path] = true
+            openedVolumes = opened
+        }
         volumeRevision += 1
     }
 
@@ -424,7 +443,7 @@ Item {
                 Math.max(0, Math.min(1, row.fill)) * 100)
 
             width: ListView.view.width
-            height: rowHeight + (treeLoader.active ? treeLoader.height : 0)
+            height: rowHeight + (row.treeOpen ? treeLoader.height : 0)
 
             /// A sidebar row is a destination: the name is what the reader says,
             /// the kind is where it goes, and the current row is the selected
@@ -705,19 +724,21 @@ Item {
                 }
             }
 
-            // One lazily loaded tree per expanded volume. Collapsing deactivates
-            // the loader, which releases that volume's children again; the
-            // expansion flags above make reopening it cheap and predictable.
+            // One lazily loaded tree per volume. The loader stays active after
+            // the first open so a collapse does not throw away the model's
+            // expansion set or re-read the root; it is only hidden and zero
+            // high. `openedVolumes` is what keeps it from loading a volume the
+            // user has never opened.
             Loader {
                 id: treeLoader
 
                 anchors.left: parent.left
                 anchors.right: parent.right
                 y: row.rowHeight
-                height: active && status === Loader.Ready && item !== null
+                height: row.treeOpen && active && status === Loader.Ready && item !== null
                     ? (item as SidebarTree).implicitHeight : 0
-                active: row.treeOpen
-                visible: active
+                active: row.treeOpen || (row.isVolume && root.volumeOpened(row.path))
+                visible: row.treeOpen
 
                 sourceComponent: Component {
                     SidebarTree {
@@ -732,6 +753,9 @@ Item {
                         }
                         onContextRequested: function (path, x, y) {
                             root.contextRequested("tree", path, x, y)
+                        }
+                        onErrorRequested: function (message) {
+                            root.errorRequested(message)
                         }
                     }
                 }

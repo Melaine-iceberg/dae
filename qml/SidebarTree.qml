@@ -20,10 +20,19 @@ Item {
 
     signal navigateRequested(string path)
     signal contextRequested(string path, real x, real y)
+    /// A folder that could not be read, with the shell's own wording. The
+    /// tree itself has nothing to show for that row, so the message travels
+    /// up to the window's toast.
+    signal errorRequested(string message)
 
     readonly property color panelColor: Theme.backdropTint(material, dark, true)
 
-    implicitHeight: content.implicitHeight + notice.height
+    /// The row height is a constant, so the tree's height comes from the row
+    /// count rather than from the delegates it currently holds. Measuring the
+    /// `Repeater` made the tree collapse to zero for one frame when the model
+    /// reset on expand, which the sidebar showed as a flicker: every row below
+    /// the volume jumped up and back down.
+    implicitHeight: treeModel.count * Theme.controlMd + notice.height
 
     function pathEquals(left, right) {
         if (left === "" || right === "")
@@ -43,6 +52,16 @@ Item {
         treeModel.load(root.rootPath, root.showHidden)
     }
 
+    /// The folder's own name for the failure message. Paths arrive with either
+    /// separator, and a drive or filesystem root has no trailing segment worth
+    /// showing, so the path itself is the fallback.
+    function leafName(path) {
+        const parts = path.split(/[\\/]/).filter(function (part) {
+            return part !== ""
+        })
+        return parts.length > 0 ? parts[parts.length - 1] : path
+    }
+
     onRootPathChanged: reload()
     // Re-reading resets the expansion set, because the model filters hidden
     // folders as it reads rather than remembering both views. The preference
@@ -51,6 +70,16 @@ Item {
 
     SidebarTreeModel {
         id: treeModel
+    }
+
+    Connections {
+        target: treeModel
+
+        function onReadFailed(path, message) {
+            root.errorRequested(message !== ""
+                ? qsTr("无法展开“%1”：%2").arg(root.leafName(path)).arg(message)
+                : qsTr("无法展开“%1”").arg(root.leafName(path)))
+        }
     }
 
     Column {

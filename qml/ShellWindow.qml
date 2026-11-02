@@ -2991,6 +2991,9 @@ Window {
                 onContextRequested: function (kind, path, x, y) {
                     root.showSidebarMenu(kind, path, x, y)
                 }
+                onErrorRequested: function (message) {
+                    toast.show(message, true)
+                }
             }
 
             Column {
