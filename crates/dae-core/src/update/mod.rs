@@ -22,7 +22,7 @@
 mod install;
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Once;
 use std::time::Duration;
 
@@ -391,6 +391,203 @@ fn http_client() -> Result<reqwest::Client, UpdateError> {
         .map_err(|error| UpdateError::Download(error.to_string()))
 }
 
+/// How many requests one artifact may take. A dropped connection resumes from
+/// the bytes already on disk, so this bounds "the link is down", not "the link
+/// hiccuped".
+const DOWNLOAD_ATTEMPTS: u32 = 3;
+
+/// Download bookkeeping that survives a dropped connection.
+#[derive(Default)]
+struct Transfer {
+    /// Bytes already on disk. This is also the offset the next request asks to
+    /// resume from.
+    have: u64,
+    /// Size of the whole artifact, once a response states one.
+    total: Option<u64>,
+    /// `ETag` of a full response, echoed as `If-Range` so an asset replaced
+    /// mid-transfer restarts instead of splicing two files together.
+    validator: Option<String>,
+    /// Last percentage handed to the caller, so a resume continues the bar
+    /// rather than winding it back.
+    percent: u8,
+}
+
+/// Downloads `url` into `path`, resuming across a body that stops early.
+///
+/// A single connection is not a reliable unit for a 40–80 MB artifact: the
+/// `v0.5.1` probe lost one at 78% with `error decoding response body` and the
+/// identical request succeeded on the next try. Each retry asks for
+/// `Range: bytes=<have>-` and keeps what is already on disk.
+async fn download_into<F>(url: &Url, path: &Path, progress: &F) -> Result<(), UpdateError>
+where
+    F: Fn(u8) + Send + Sync,
+{
+    let client = http_client()?;
+    let mut state = Transfer::default();
+    let mut last_error = None;
+    progress(0);
+
+    for attempt in 1..=DOWNLOAD_ATTEMPTS {
+        match transfer(&client, url, path, &mut state, progress).await {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                log::warn!(
+                    "update download: attempt {attempt}/{DOWNLOAD_ATTEMPTS} failed at {}/{} bytes: {error}",
+                    state.have,
+                    state
+                        .total
+                        .map_or_else(|| "?".to_owned(), |total| total.to_string()),
+                );
+                last_error = Some(error);
+            }
+        }
+        if attempt < DOWNLOAD_ATTEMPTS {
+            tokio::time::sleep(Duration::from_millis(400 * u64::from(attempt))).await;
+        }
+    }
+
+    Err(last_error
+        .unwrap_or_else(|| UpdateError::Download("the download never started".to_owned())))
+}
+
+/// One request. Resumes at `state.have` when the server honours the range and
+/// starts over when it does not.
+async fn transfer<F>(
+    client: &reqwest::Client,
+    url: &Url,
+    path: &Path,
+    state: &mut Transfer,
+    progress: &F,
+) -> Result<(), UpdateError>
+where
+    F: Fn(u8) + Send + Sync,
+{
+    use reqwest::header::{CONTENT_RANGE, ETAG, IF_RANGE, RANGE};
+    use tokio::io::{AsyncSeekExt, AsyncWriteExt};
+
+    let mut request = client.get(url.clone());
+    if state.have > 0 {
+        request = request.header(RANGE, format!("bytes={}-", state.have));
+        if let Some(validator) = state.validator.clone() {
+            request = request.header(IF_RANGE, validator);
+        }
+    }
+
+    let mut response = request
+        .send()
+        .await
+        .map_err(|error| UpdateError::Download(error.to_string()))?;
+    let status = response.status();
+
+    let start = if status == reqwest::StatusCode::PARTIAL_CONTENT {
+        let (start, total) =
+            content_range(response.headers().get(CONTENT_RANGE)).ok_or_else(|| {
+                UpdateError::Download(
+                    "the server answered 206 without a usable Content-Range".to_owned(),
+                )
+            })?;
+        if start != state.have {
+            let expected = state.have;
+            state.have = 0;
+            return Err(UpdateError::Download(format!(
+                "the server resumed at {start} instead of {expected}"
+            )));
+        }
+        if let Some(total) = total {
+            state.total = Some(total);
+        }
+        start
+    } else if status == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
+        // The bytes on disk are not a prefix of what is being served.
+        state.have = 0;
+        state.total = None;
+        return Err(UpdateError::Download(
+            "the server rejected the resume range".to_owned(),
+        ));
+    } else if status.is_success() {
+        // Either the first attempt or a server that ignored `Range` and sent
+        // everything: the file must be rewritten from byte zero.
+        if let Some(total) = response.content_length() {
+            state.total = Some(total);
+        }
+        if let Some(tag) = response
+            .headers()
+            .get(ETAG)
+            .and_then(|tag| tag.to_str().ok())
+        {
+            state.validator = Some(tag.to_owned());
+        }
+        state.have = 0;
+        0
+    } else {
+        return Err(UpdateError::Download(format!("HTTP {status}")));
+    };
+
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        // Truncation is decided by `start`, not by the open: a resumed attempt
+        // must keep the bytes it is resuming from.
+        .truncate(false)
+        .open(path)
+        .await
+        .map_err(|error| UpdateError::Download(error.to_string()))?;
+    if start == 0 {
+        file.set_len(0)
+            .await
+            .map_err(|error| UpdateError::Download(error.to_string()))?;
+    }
+    file.seek(std::io::SeekFrom::Start(start))
+        .await
+        .map_err(|error| UpdateError::Download(error.to_string()))?;
+
+    let mut written = start;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| UpdateError::Download(error.to_string()))?
+    {
+        file.write_all(&chunk)
+            .await
+            .map_err(|error| UpdateError::Download(error.to_string()))?;
+        written += chunk.len() as u64;
+        state.have = written;
+        if let Some(total) = state.total {
+            let percent = (written.min(total) * 90 / total) as u8;
+            if percent != state.percent {
+                state.percent = percent;
+                progress(percent);
+            }
+        }
+    }
+    file.flush()
+        .await
+        .map_err(|error| UpdateError::Download(error.to_string()))?;
+    drop(file);
+
+    // `chunk()` reports a body shorter than `Content-Length` as an error, so
+    // this only catches a server that never stated a length at all.
+    if let Some(total) = state.total
+        && written < total
+    {
+        return Err(UpdateError::Download(format!(
+            "the transfer ended at {written} of {total} bytes"
+        )));
+    }
+    Ok(())
+}
+
+/// Parses `Content-Range: bytes 100-9999/10000` into the start offset and the
+/// total size (`*` when the server does not know it).
+fn content_range(value: Option<&reqwest::header::HeaderValue>) -> Option<(u64, Option<u64>)> {
+    let text = value?.to_str().ok()?;
+    let rest = text.trim().strip_prefix("bytes")?.trim_start();
+    let (range, total) = rest.split_once('/')?;
+    let start = range.split_once('-')?.0.trim().parse().ok()?;
+    let total = total.trim().parse().ok();
+    Some((start, total))
+}
+
 /// Downloads the artifact into a temporary directory and verifies its
 /// signature. The temporary directory must stay alive until extraction ends.
 async fn download_verified<F>(
@@ -400,56 +597,13 @@ async fn download_verified<F>(
 where
     F: Fn(u8) + Send + Sync,
 {
-    let client = http_client()?;
-    let response = client
-        .get(update.url.clone())
-        .header(reqwest::header::USER_AGENT, USER_AGENT)
-        .send()
-        .await
-        .map_err(|error| UpdateError::Download(error.to_string()))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        return Err(UpdateError::Download(format!("HTTP {status}")));
-    }
-
-    let total = response.content_length().filter(|size| *size > 0);
     let temp = tempfile::Builder::new()
         .prefix("dae-update-")
         .tempdir()
         .map_err(|error| UpdateError::Download(error.to_string()))?;
     let zip_path = temp.path().join("update.zip");
-    let mut file = tokio::fs::File::create(&zip_path)
-        .await
-        .map_err(|error| UpdateError::Download(error.to_string()))?;
 
-    use tokio::io::AsyncWriteExt;
-    let mut response = response;
-    let mut downloaded = 0_u64;
-    let mut last_percent = 0_u8;
-    progress(0);
-
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|error| UpdateError::Download(error.to_string()))?
-    {
-        file.write_all(&chunk)
-            .await
-            .map_err(|error| UpdateError::Download(error.to_string()))?;
-        downloaded += chunk.len() as u64;
-        if let Some(total) = total {
-            let percent = (downloaded.min(total) * 90 / total) as u8;
-            if percent != last_percent {
-                last_percent = percent;
-                progress(percent);
-            }
-        }
-    }
-    file.flush()
-        .await
-        .map_err(|error| UpdateError::Download(error.to_string()))?;
-    drop(file);
+    download_into(&update.url, &zip_path, progress).await?;
     progress(90);
 
     let bytes =
@@ -701,5 +855,168 @@ QtKMXWyYcwdpZAlPF7tE2ENJkRd1ujvKjlj1m9RtHTBnZPa5WKU5uWRs5GoP5M/VqE81QFuMKI5k/SfN
     #[test]
     fn the_production_key_is_a_valid_minisign_key() {
         PublicKey::from_base64(UPDATE_PUBLIC_KEY).expect("release key must decode");
+    }
+
+    /// What one connection of the fake asset host does.
+    #[derive(Clone, Copy)]
+    enum Serve {
+        /// Announce the whole body, then close this many bytes in. This is the
+        /// `error decoding response body` the v0.5.1 probe hit.
+        Truncate(usize),
+        /// Send the requested range to the end.
+        Complete,
+        /// Ignore `Range` and send everything, as a CDN without range support
+        /// would.
+        IgnoreRange,
+    }
+
+    /// A raw HTTP/1.1 asset host, one connection per scripted step.
+    ///
+    /// Sockets rather than a mock framework: the behaviour under test is the
+    /// transport giving up mid-body, and a mock that returns an error would
+    /// never exercise the chunk loop.
+    async fn asset_host(
+        script: Vec<Serve>,
+        body: std::sync::Arc<Vec<u8>>,
+    ) -> (Url, std::sync::Arc<std::sync::Mutex<Vec<Option<u64>>>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = Url::parse(&format!(
+            "http://{}/dae.zip",
+            listener.local_addr().unwrap()
+        ))
+        .unwrap();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let recorded = seen.clone();
+
+        tokio::spawn(async move {
+            for step in script {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut buffer = vec![0_u8; 4096];
+                let read = socket.read(&mut buffer).await.unwrap();
+                let request = String::from_utf8_lossy(&buffer[..read]).to_string();
+                let asked = request.lines().find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    if !name.eq_ignore_ascii_case("range") {
+                        return None;
+                    }
+                    let first = value.trim().strip_prefix("bytes=")?.split('-').next()?;
+                    first.parse::<u64>().ok()
+                });
+                recorded.lock().unwrap().push(asked);
+
+                let start = match step {
+                    Serve::IgnoreRange => 0,
+                    _ => asked.unwrap_or(0),
+                } as usize;
+                let rest = &body[start..];
+                let partial = start > 0 && !matches!(step, Serve::IgnoreRange);
+                let mut head = format!(
+                    "HTTP/1.1 {}\r\nContent-Length: {}\r\nConnection: close\r\n",
+                    if partial {
+                        "206 Partial Content"
+                    } else {
+                        "200 OK"
+                    },
+                    rest.len()
+                );
+                if partial {
+                    head.push_str(&format!(
+                        "Content-Range: bytes {start}-{}/{}\r\n",
+                        body.len() - 1,
+                        body.len()
+                    ));
+                }
+                head.push_str("\r\n");
+                let _ = socket.write_all(head.as_bytes()).await;
+                let sent = match step {
+                    Serve::Truncate(limit) => rest.len().min(limit),
+                    _ => rest.len(),
+                };
+                let _ = socket.write_all(&rest[..sent]).await;
+                // Closing here is the whole point of `Truncate`: the client is
+                // left short of the length it was promised.
+                let _ = socket.shutdown().await;
+            }
+        });
+
+        (url, seen)
+    }
+
+    fn payload(size: usize) -> std::sync::Arc<Vec<u8>> {
+        std::sync::Arc::new((0..size).map(|index| (index % 251) as u8).collect())
+    }
+
+    #[tokio::test]
+    async fn a_dropped_connection_resumes_from_the_bytes_on_disk() {
+        let body = payload(300_000);
+        let (url, seen) = asset_host(
+            vec![Serve::Truncate(120_000), Serve::Complete],
+            body.clone(),
+        )
+        .await;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("update.zip");
+        download_into(&url, &path, &|_| {}).await.unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), *body);
+        // The retry must ask for exactly what is already there, not restart.
+        assert_eq!(*seen.lock().unwrap(), vec![None, Some(120_000)]);
+    }
+
+    #[tokio::test]
+    async fn a_server_that_ignores_the_range_restarts_instead_of_splicing() {
+        let body = payload(300_000);
+        let (url, seen) = asset_host(
+            vec![Serve::Truncate(120_000), Serve::IgnoreRange],
+            body.clone(),
+        )
+        .await;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("update.zip");
+        // Longer than the artifact: a missing truncate would leave this tail
+        // behind the real bytes and fail the comparison below.
+        std::fs::write(&path, vec![0xAA_u8; 400_000]).unwrap();
+
+        download_into(&url, &path, &|_| {}).await.unwrap();
+
+        assert_eq!(std::fs::read(&path).unwrap(), *body);
+        assert_eq!(seen.lock().unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_link_that_keeps_dropping_gives_up_after_three_requests() {
+        let body = payload(50_000);
+        let (url, seen) = asset_host(
+            vec![
+                Serve::Truncate(1_000),
+                Serve::Truncate(1_000),
+                Serve::Truncate(1_000),
+            ],
+            body,
+        )
+        .await;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("update.zip");
+        let error = download_into(&url, &path, &|_| {}).await.unwrap_err();
+
+        assert!(matches!(error, UpdateError::Download(_)), "{error:?}");
+        assert_eq!(seen.lock().unwrap().len(), DOWNLOAD_ATTEMPTS as usize);
+    }
+
+    #[test]
+    fn a_content_range_is_read_into_offset_and_total() {
+        let header = reqwest::header::HeaderValue::from_static("bytes 100-9999/10000");
+        assert_eq!(content_range(Some(&header)), Some((100, Some(10_000))));
+
+        let unknown_total = reqwest::header::HeaderValue::from_static("bytes 100-9999/*");
+        assert_eq!(content_range(Some(&unknown_total)), Some((100, None)));
+
+        let nonsense = reqwest::header::HeaderValue::from_static("pages 1-2");
+        assert_eq!(content_range(Some(&nonsense)), None);
     }
 }
