@@ -102,8 +102,16 @@ jobs:
           if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
             echo "release ${GITHUB_REF_NAME} already exists; attaching to it"
           else
+            # `--prerelease` is not cosmetic. dae ships previews only, so
+            # `releases/latest/download/latest-qt.json` never resolves — there
+            # is no stable release for it to point at. The app therefore falls
+            # back to the releases API, which lists pre-releases but *not*
+            # drafts. Marking the flag here means publishing the draft with one
+            # click yields a discoverable release; leaving it off would produce
+            # one that looks shipped and is invisible to every updater.
             gh release create "${GITHUB_REF_NAME}" \
               --draft \
+              --prerelease \
               --title "dae ${GITHUB_REF_NAME}" \
               --generate-notes
           fi
@@ -210,9 +218,11 @@ jobs:
   # cannot block packaging.
   #
   # The archives are signed with the same Tauri updater private key, and the
-  # feed is published as `latest-qt.json` on the same (draft) release. Once the
-  # release is published, `releases/latest/download/latest-qt.json` is the URL
-  # baked into dae-core (`DEFAULT_FEED_URL`).
+  # feed is published as `latest-qt.json` on the same (draft) release. That
+  # release is created pre-release, so publishing it makes the feed reachable
+  # through the releases API — which is how `dae-core` finds it, because
+  # `releases/latest/download/` only ever resolves to a *stable* release and
+  # this project ships previews.
   # ---------------------------------------------------------------------------
 
   # The leg list is data here rather than an inline `matrix.include` because

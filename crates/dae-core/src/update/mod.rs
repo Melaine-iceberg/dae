@@ -40,8 +40,19 @@ use install::InstallLayout;
 /// `latest.json`: the two shells ship different artifacts during the
 /// migration, and an update must never hand the other shell's installer to
 /// this app.
+///
+/// `releases/latest/` resolves to the newest *published stable* release, and
+/// dae ships previews only — every tag is marked pre-release, so this URL
+/// answers 404 for as long as that stays true. It remains the first choice
+/// because it is a single request when a stable release does exist;
+/// [`discover_feed`] covers the preview case by asking the releases API, which
+/// does list pre-releases.
 pub const DEFAULT_FEED_URL: &str =
     "https://github.com/Melaine-iceberg/dae/releases/latest/download/latest-qt.json";
+
+/// The feed's asset name. The discovery path looks for exactly this on each
+/// release, so it is one constant rather than a literal in three places.
+const FEED_ASSET_NAME: &str = "latest-qt.json";
 
 /// The key line from `minisign.pub`, the same release key the Tauri shell
 /// trusts. Only the base64 key line is stored; the comment line is not part of
@@ -129,11 +140,42 @@ pub async fn check_for_update(
     endpoint: &str,
     current_version: &str,
 ) -> Result<Option<AvailableUpdate>, UpdateError> {
-    let endpoint = Url::parse(endpoint)
-        .map_err(|error| UpdateError::InvalidFeed(format!("invalid feed URL: {error}")))?;
     let current = parse_version(current_version)?;
-    let feed = fetch_feed(&endpoint).await?;
-    select_update(feed, &endpoint, &current, platform_key())
+    let (feed, base) = fetch_feed_with_discovery(endpoint).await?;
+    select_update(feed, &base, &current, platform_key())
+}
+
+/// Reads the feed, falling back to release discovery when the documented URL
+/// misses.
+///
+/// The returned base URL is the one the feed was actually read from: the
+/// artifact paths inside it are resolved against that, not against the URL the
+/// caller passed in.
+async fn fetch_feed_with_discovery(endpoint: &str) -> Result<(UpdateFeed, Url), UpdateError> {
+    let url = Url::parse(endpoint)
+        .map_err(|error| UpdateError::InvalidFeed(format!("invalid feed URL: {error}")))?;
+    let miss = match fetch_feed(&url).await {
+        Ok(feed) => return Ok((feed, url)),
+        Err(error) => error,
+    };
+
+    // An endpoint from `DAE_UPDATE_ENDPOINT` is a test fixture: a miss is the
+    // answer it meant to give, and falling through to GitHub would put a
+    // network call inside a local test that deliberately points at nothing.
+    if endpoint.trim() != DEFAULT_FEED_URL {
+        return Err(miss);
+    }
+
+    let discovered = discover_feed(&url).await.map_err(|discovery| {
+        // Report both halves. "HTTP 404" alone cannot distinguish "no stable
+        // release yet" from "no published release at all", and the second one
+        // is the actionable fact when the feed has never shipped.
+        UpdateError::Feed(format!(
+            "{miss}; falling back to the releases API: {discovery}"
+        ))
+    })?;
+    let feed = fetch_feed(&discovered).await?;
+    Ok((feed, discovered))
 }
 
 /// Downloads, verifies and installs `update`, then asks the caller to exit.
@@ -194,6 +236,100 @@ async fn fetch_feed(endpoint: &Url) -> Result<UpdateFeed, UpdateError> {
         .await
         .map_err(|error| UpdateError::Feed(error.to_string()))?;
     serde_json::from_slice(&body).map_err(|error| UpdateError::InvalidFeed(error.to_string()))
+}
+
+/// One asset on a release, as the releases API lists it.
+#[derive(Debug, Deserialize)]
+struct ReleaseAsset {
+    name: String,
+    browser_download_url: String,
+}
+
+/// One entry of the releases API. Only the fields the discovery path reads are
+/// declared; GitHub returns a much larger object and unknown fields are fine.
+#[derive(Debug, Deserialize)]
+struct Release {
+    #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    assets: Vec<ReleaseAsset>,
+}
+
+/// Where the app is published, derived from the feed URL so the two can never
+/// drift apart: `https://github.com/{owner}/{repo}/releases/latest/download/…`
+/// becomes `https://api.github.com/repos/{owner}/{repo}/releases`.
+///
+/// A feed hosted anywhere else (a mirror, a local server in a test) has no
+/// releases API to ask, and `None` says so rather than inventing a URL.
+fn releases_api_url(feed: &Url) -> Option<String> {
+    if feed.host_str()? != "github.com" {
+        return None;
+    }
+    let segments: Vec<&str> = feed.path_segments()?.filter(|s| !s.is_empty()).collect();
+    if segments.len() < 3 || segments[2] != "releases" {
+        return None;
+    }
+    Some(format!(
+        "https://api.github.com/repos/{}/{}/releases?per_page=10",
+        segments[0], segments[1]
+    ))
+}
+
+/// Picks the download URL of `latest-qt.json` from a release list, newest
+/// first.
+///
+/// The list arrives in reverse chronological order, which is the order a user
+/// wants: the newest release that actually carries a feed. A release that has
+/// no such asset is skipped rather than fatal — a docs-only or Windows-only tag
+/// is a real possibility, and it must not hide the release before it.
+fn feed_asset_from_releases(releases: &[Release]) -> Option<&str> {
+    releases
+        .iter()
+        .filter(|release| !release.draft)
+        .find_map(|release| {
+            release
+                .assets
+                .iter()
+                .find(|asset| asset.name == FEED_ASSET_NAME)
+                .map(|asset| asset.browser_download_url.as_str())
+        })
+}
+
+/// Finds the newest published release that carries a feed.
+///
+/// Draft releases are invisible here: the unauthenticated API omits them
+/// entirely, which is why the release workflow marks its draft pre-release
+/// rather than leaving it unpublished. An unpublished release can never be
+/// discovered; a published pre-release can.
+async fn discover_feed(feed: &Url) -> Result<Url, UpdateError> {
+    let api = releases_api_url(feed)
+        .ok_or_else(|| UpdateError::InvalidFeed(format!("not a GitHub release feed: {feed}")))?;
+    let client = http_client()?;
+    let response = client
+        .get(api)
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .header(reqwest::header::USER_AGENT, USER_AGENT)
+        .send()
+        .await
+        .map_err(|error| UpdateError::Feed(error.to_string()))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(UpdateError::Feed(format!(
+            "HTTP {status} from the releases API"
+        )));
+    }
+
+    let body = response
+        .bytes()
+        .await
+        .map_err(|error| UpdateError::Feed(error.to_string()))?;
+    let releases: Vec<Release> = serde_json::from_slice(&body)
+        .map_err(|error| UpdateError::InvalidFeed(error.to_string()))?;
+    let url = feed_asset_from_releases(&releases).ok_or_else(|| {
+        UpdateError::Feed(format!("no published release carries {FEED_ASSET_NAME}"))
+    })?;
+    Url::parse(url).map_err(|error| UpdateError::InvalidFeed(format!("invalid feed URL: {error}")))
 }
 
 fn select_update(
@@ -464,6 +600,73 @@ mod tests {
         assert!(parsed.notes.is_empty());
         assert!(parsed.pub_date.is_none());
         assert!(parsed.platforms.contains_key("linux-x86_64"));
+    }
+
+    #[test]
+    fn the_releases_api_is_derived_from_the_feed_url() {
+        let feed = Url::parse(DEFAULT_FEED_URL).unwrap();
+        assert_eq!(
+            releases_api_url(&feed).as_deref(),
+            Some("https://api.github.com/repos/Melaine-iceberg/dae/releases?per_page=10")
+        );
+    }
+
+    #[test]
+    fn the_default_feed_is_one_discovery_can_derive_from() {
+        // The two halves of the fallback have to agree. If `DEFAULT_FEED_URL`
+        // ever moves to a host or a layout that `releases_api_url` does not
+        // understand, the fallback would silently stop working — and the only
+        // symptom would be "no updates", years later.
+        assert!(
+            releases_api_url(&Url::parse(DEFAULT_FEED_URL).unwrap()).is_some(),
+            "the default feed must stay on github.com/{{owner}}/{{repo}}/releases"
+        );
+    }
+
+    #[test]
+    fn a_feed_elsewhere_has_no_releases_api() {
+        for url in [
+            "https://example.com/releases/latest/download/latest-qt.json",
+            "http://localhost:8080/latest-qt.json",
+            "https://github.com/Melaine-iceberg/dae",
+        ] {
+            assert!(
+                releases_api_url(&Url::parse(url).unwrap()).is_none(),
+                "{url} should not yield a releases API"
+            );
+        }
+    }
+
+    #[test]
+    fn discovery_picks_the_newest_release_that_carries_a_feed() {
+        // Realistic shape: the newest tag is a docs-only release, the one
+        // before it has the feed, and a draft sits at the top of the list for
+        // the authenticated view. Drafts are skipped, and a release without the
+        // asset is skipped rather than treated as "nothing to offer".
+        let json = r#"[
+            {"draft": true, "assets": [
+                {"name": "latest-qt.json", "browser_download_url": "https://example.com/draft.json"}
+            ]},
+            {"draft": false, "assets": [
+                {"name": "notes.txt", "browser_download_url": "https://example.com/notes.txt"}
+            ]},
+            {"draft": false, "assets": [
+                {"name": "dae-0.6.0-linux-x86_64.zip", "browser_download_url": "https://example.com/a.zip"},
+                {"name": "latest-qt.json", "browser_download_url": "https://example.com/v0.6.0/latest-qt.json"}
+            ]}
+        ]"#;
+        let releases: Vec<Release> = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            feed_asset_from_releases(&releases),
+            Some("https://example.com/v0.6.0/latest-qt.json")
+        );
+    }
+
+    #[test]
+    fn discovery_reports_nothing_when_no_release_has_a_feed() {
+        let json = r#"[{"draft": false, "assets": [{"name": "dae.zip", "browser_download_url": "https://example.com/a.zip"}]}]"#;
+        let releases: Vec<Release> = serde_json::from_str(json).unwrap();
+        assert_eq!(feed_asset_from_releases(&releases), None);
     }
 
     #[test]
