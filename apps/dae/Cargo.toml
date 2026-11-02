@@ -41,4 +41,10 @@ perf-train = []
 [build-dependencies]
 cc = "1"
 cxx-qt-build = "0.10"
+# Never imported by `build.rs`. Its purpose is ordering: `build.rs` reads the
+# `plugin.qmltypes` that `dae-qt`'s build script exports, and cargo only orders
+# build scripts along `[build-dependencies]` (see the `links` note in
+# `crates/dae-qt/Cargo.toml`). Without this entry the two scripts race on a
+# cold `target/`, which is how CI first saw it as "did dae-qt build?".
+dae-qt = { path = "../../crates/dae-qt" }
 qt-build-utils = "0.10"
