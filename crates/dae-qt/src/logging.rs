@@ -405,6 +405,12 @@ mod tests {
     #[test]
     fn the_log_directory_keeps_the_tauri_convention() {
         let directory = app_log_directory();
+        // The convention differs by platform, and the test has to say so: on
+        // Windows and Linux the identifier is a directory with `logs` inside
+        // it, while macOS puts the identifier *under* `Library/Logs`. Asserting
+        // `ends_with("logs")` everywhere is what made this fail the first time
+        // it ran on a Mac.
+        #[cfg(not(target_os = "macos"))]
         assert!(directory.ends_with("logs"), "{}", directory.display());
         assert!(
             directory

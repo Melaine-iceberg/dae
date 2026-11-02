@@ -766,11 +766,27 @@ mod tests {
     /// The alias is `%LOCALAPPDATA%\Microsoft\WindowsApps\dae.exe` — not the
     /// versioned package directory, which is what makes the registration
     /// survive an upgrade.
+    ///
+    /// Compared by path component rather than by string. `alias_path` builds
+    /// the path with `join`, so the separator follows the host (`\` on Windows,
+    /// `/` elsewhere) while this test compiles and runs on all three platforms.
     #[test]
     fn the_package_alias_lives_under_local_app_data() {
         let path = alias_path(Path::new(r"C:\Users\me\AppData\Local"));
-        assert!(path.ends_with(r"Microsoft\WindowsApps\dae.exe"), "{path:?}");
-        assert!(!path.to_string_lossy().contains("WindowsApps\\dae_"));
+        let mut parts: Vec<String> = path
+            .iter()
+            .map(|part| part.to_string_lossy().into_owned())
+            .collect();
+        let tail = parts.split_off(parts.len() - 3);
+        assert_eq!(tail.join("/"), "Microsoft/WindowsApps/dae.exe");
+        // An upgrade renames the versioned directory, so nothing in this path
+        // may look like one.
+        assert!(
+            !path
+                .iter()
+                .any(|part| part.to_string_lossy().starts_with("dae_")),
+            "{path:?}"
+        );
     }
 
     /// `refresh` decides what to repair from this parse, so a command with
