@@ -2144,3 +2144,50 @@ GitHub 的镜像地址没有发现能力——`releases_api_url` 返回 `None`�
 **限流与代价。** 未认证的 GitHub API 是 60 次/小时/IP。启动检查是低频的，远低于
 这个量级；真撞上限流（403）时会走 `UpdateError::Feed`，行为与今天一致——只在
 日志里留一行，不打扰用户。控制台窗口没有引入新的交互。
+
+### 9.17 记录：这套改动第一次上 CI，三轮才绿（2026-11-02）
+
+分支上积了 11 个提交（IME、chrome、退役、更新器、文档），从没推送过，也就从没在
+Linux 与 macOS 上编译过。本机验的是 Windows + Qt 6.12，`qt-check.yml` 的两条腿是
+空的。推上去手动触发，三轮才全绿（后两轮各是一个修复提交）：
+
+| 轮次 | run | 结论 | 卡在哪 |
+| --- | --- | --- | --- |
+| 1 | `41373841667` | 两条腿都失败 | `Build the Qt shell`：`could not read …/cxxqt/qml_modules/dae/plugin.qmltypes (did dae-qt build?)` |
+| 2 | `41374606269` | 构建过了，测试挂 | Linux `142 passed / 1 failed`；macOS `141 passed / 2 failed` |
+| 3 | `41375930177` | **全绿** | macOS 7m0s、Linux 4m24s |
+
+**第一轮：build script 的竞态，不是平台问题。** `apps/dae/build.rs` 读
+`crates/dae-qt/build.rs` 导出的 `plugin.qmltypes`，但 cargo 只保证一个包的 build
+script 在其 **build-dependencies** 的 build script 之后运行，不保证在普通依赖之后。
+两个脚本因此并行，谁先谁后看调度。日志给了时序证据：`dae-app` 的脚本在
+`01:43:16` panic，而 `dae-qt@0.5.0:` 前缀的编译输出到 `01:44:10` 还在刷——它那时
+才在跑自己的 build script。
+
+本地一直正常，是因为增量构建里那个文件早就存在；`main` 上此前的成功也只是调度
+恰好正确。**这类缺陷只会在缓存干净的那一次暴露**，而那次恰好是第一次真跑。
+
+修法用 cargo 自己的顺序机制：`crates/dae-qt/Cargo.toml` 加
+`links = "dae_qt_qml"`，`apps/dae/Cargo.toml` 的 `[build-dependencies]` 列上
+`dae-qt`（`build.rs` 并不 import 它，加它只为建立这条边）。host 与 target 同三元组
+时 cargo 复用同一份产物，没有双份编译成本。本地用「删掉 `target/cxxqt` 与两个
+crate 的产物（25.2 GiB）后冷启动」验证：2m45s 通过。
+
+**第二轮：两条测试把 Windows 的路径形态写死了。**
+
+- `the_package_alias_lives_under_local_app_data` 断言
+  `ends_with(r"Microsoft\WindowsApps\dae.exe")`，而 `alias_path` 用的是
+  `Path::join`——非 Windows 上分隔符是 `/`，反斜杠被当成文件名的一部分。改成按
+  路径组件比较，另加一条「路径里没有 `dae_` 开头的版本目录」。
+- `the_log_directory_keeps_the_tauri_convention` 无条件断言
+  `ends_with("logs")`。约定本来就是分平台的：Windows/Linux 是 `<identifier>/logs`，
+  macOS 是 `Library/Logs/<identifier>`。把断言限到非 macOS，macOS 那条
+  `Library/Logs` 的检查保留。
+
+两处都不是实现的问题，是测试对平台的假设。失败计数也印证了这个分工：Linux 只中
+第一条（`ends_with("logs")` 在 Linux 成立），macOS 两条都中。
+
+**这件事的结论比修法本身重要。** 「本机通过」对跨平台代码的证明力很弱：顺序竞态
+被增量产物掩盖，平台假设被本机平台掩盖。§9.14 的 Linux 手测验的是**运行时行为**，
+不覆盖编译期与测试期的问题——两者互补，谁也替代不了谁。现在这条分支有
+`qt-check` 的三平台证据（Windows 由本地构建 + 148 项单测，Linux/macOS 由 CI）。
