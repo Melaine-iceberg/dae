@@ -21,9 +21,7 @@ Item {
     signal navigateRequested(string path)
     signal contextRequested(string path, real x, real y)
 
-    readonly property color panelColor: material === "none"
-        ? Theme.chrome
-        : (dark ? Qt.rgba(0.05, 0.06, 0.07, 0.30) : Qt.rgba(0.95, 0.96, 0.97, 0.34))
+    readonly property color panelColor: Theme.backdropTint(material, dark, true)
 
     implicitHeight: content.implicitHeight + notice.height
 

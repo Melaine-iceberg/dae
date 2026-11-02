@@ -72,6 +72,35 @@ QtObject {
     /// An input well: text fields, search, the rename box.
     readonly property color field: dark ? "#17181b" : "#e9e9e5"
 
+    // ── Material tint ───────────────────────────────────────────────────────
+    /// The veil painted over a native backdrop, by backdrop kind.
+    ///
+    /// Windows' Mica and Acrylic are composited by DWM with a tint of their
+    /// own, so the QML layer stays light there (α .30–.46). A live blur —
+    /// Wayland's `ext-background-effect-v1` or macOS's `NSVisualEffectView`
+    /// — has no tint: at the same alpha the wallpaper's colour and motion
+    /// came straight through the sidebar, so the chrome read as glass instead
+    /// of as a surface and the 11–13 px labels lost contrast against it.
+    /// Native file managers keep roughly a fifth of the backdrop visible
+    /// behind chrome, which is the α .76–.86 band below.
+    ///
+    /// `material` is what `WindowController.appliedMaterial` reports (`mica`,
+    /// `acrylic`, `blur` or `none`); `panel` is the sidebar, which has always
+    /// run slightly deeper than the title, path and status bands.
+    function backdropTint(material, isDark, panel) {
+        if (material === "none")
+            return theme.chrome
+        const blur = material === "blur"
+        const alpha = blur
+            ? (panel ? (isDark ? 0.76 : 0.84) : (isDark ? 0.78 : 0.86))
+            : (panel ? (isDark ? 0.30 : 0.34) : (isDark ? 0.38 : 0.46))
+        return isDark
+            ? Qt.rgba(panel ? 0.05 : 0.055, panel ? 0.06 : 0.063,
+                      panel ? 0.07 : 0.075, alpha)
+            : Qt.rgba(panel ? 0.95 : 0.98, panel ? 0.96 : 0.985,
+                      panel ? 0.97 : 0.99, alpha)
+    }
+
     // ── Ink ─────────────────────────────────────────────────────────────────
     /// Names and primary content.
     readonly property color ink: dark ? "#ecedef" : "#161719"

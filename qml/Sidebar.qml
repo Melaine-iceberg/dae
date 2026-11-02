@@ -45,9 +45,7 @@ Item {
     readonly property string trashLabel: Qt.platform.os === "osx"
         ? qsTr("废纸篓") : qsTr("回收站")
 
-    readonly property color panelColor: material === "none"
-        ? Theme.chrome
-        : (dark ? Qt.rgba(0.05, 0.06, 0.07, 0.30) : Qt.rgba(0.95, 0.96, 0.97, 0.34))
+    readonly property color panelColor: Theme.backdropTint(material, dark, true)
 
     /// The row a file drag is hovering, by path. Empty when nothing is over the
     /// sidebar, so a row asks one question to decide whether it is lit.

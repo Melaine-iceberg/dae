@@ -60,9 +60,7 @@ Item {
         : (Qt.platform.os === "linux" ? 40 : 46)
     readonly property real buttonsWidth: buttonWidth * 3
 
-    readonly property color chromeTint: dark
-        ? Qt.rgba(0.055, 0.063, 0.075, 0.38)
-        : Qt.rgba(0.98, 0.985, 0.99, 0.46)
+    readonly property color chromeTint: Theme.backdropTint(material, dark, false)
     readonly property color solidChrome: Theme.chrome
     readonly property color chromeColor: material === "none" ? solidChrome : chromeTint
     readonly property color textColor: Theme.ink
