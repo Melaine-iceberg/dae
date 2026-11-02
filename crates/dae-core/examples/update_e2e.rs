@@ -22,7 +22,39 @@ use std::io::Write;
 
 use dae_core::update;
 
+/// The updater reports *which* discovery path answered through `log`, which is
+/// the whole point of the §9.16 acceptance check. Without a sink those lines go
+/// nowhere, so this prints them to stderr when `DAE_E2E_LOG` is set — a plain
+/// run stays as quiet as before.
+struct StderrLogger;
+
+static LOGGER: StderrLogger = StderrLogger;
+
+impl log::Log for StderrLogger {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() <= log::Level::Debug
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            eprintln!(
+                "[{:<5}] {}: {}",
+                record.level(),
+                record.target(),
+                record.args()
+            );
+        }
+    }
+
+    fn flush(&self) {}
+}
+
 fn main() -> std::process::ExitCode {
+    if std::env::var_os("DAE_E2E_LOG").is_some() {
+        log::set_max_level(log::LevelFilter::Debug);
+        let _ = log::set_logger(&LOGGER);
+    }
+
     let mut args = std::env::args().skip(1);
     let current = args
         .next()

@@ -156,7 +156,7 @@ async fn fetch_feed_with_discovery(endpoint: &str) -> Result<(UpdateFeed, Url), 
         .map_err(|error| UpdateError::InvalidFeed(format!("invalid feed URL: {error}")))?;
     let miss = match fetch_feed(&url).await {
         Ok(feed) => {
-            log::debug!("update feed: read {url}");
+            log::debug!("update feed: {url} answered directly");
             return Ok((feed, url));
         }
         Err(error) => error,
@@ -183,7 +183,7 @@ async fn fetch_feed_with_discovery(endpoint: &str) -> Result<(UpdateFeed, Url), 
     // whether the fallback works are both guessing: `releases/latest/` and
     // `api.github.com` fail for different reasons and only the second one is
     // the permanent state of a preview-only project.
-    log::info!("update feed: {url} answered {miss}; read {discovered} instead");
+    log::info!("falling back to the releases API: {miss}; reading {discovered}");
     Ok((feed, discovered))
 }
 

@@ -2135,11 +2135,26 @@ GitHub 的镜像地址没有发现能力——`releases_api_url` 返回 `None`�
 | `discovery_picks_the_newest_release_that_carries_a_feed` | 跳过 draft、跳过无该资产的 release |
 | `discovery_reports_nothing_when_no_release_has_a_feed` | 一个都没有时如实返回 `None` |
 
-**仍然待验证的一层。** 仓库目前一个 Qt 发布产物都没有，所以「回退发现」在真实
-数据上还没跑过：下个 tag 走完 `release.yml`、人工 Publish 之后，才第一次有
-`latest-qt.json` 挂在预览版上。届时判断标准是——portable 包装在机器上启动，
-日志里出现 feed 取自 `api.github.com` 而非 `releases/latest/` 的那一次成功检查。
-在那之前，这条链的结论是「代码与单测通过、端到端未在真实资产上复现」。
+**端到端验证（2026-11-02，`v0.5.1` 探针 tag）。** 打了一个用完即删的 tag 走完整
+条 `release.yml`（run `41402772669`，六个资产全绿），把草稿 Publish 成预览版后
+立刻用 portable 包装跑真实的发现与安装，验证完删除 release 与 tag——仓库里不留
+这个版本。
+
+| 环节 | 观测 |
+| --- | --- |
+| `releases/latest/download/latest-qt.json` | `curl` 返回 404（所有 release 都是 pre-release，这条 URL 只指向稳定版） |
+| 发现回退 | 更新器日志 `falling back to the releases API: … HTTP 404 Not Found; reading …/releases/download/v0.5.1/latest-qt.json` |
+| 安装与重启 | 44 MB 资产下载 → minisign 验签 → 替换目录树 → 重启后的应用日志 `dae 0.5.1 starting on windows (x86_64)` |
+
+判据要的那行日志此前根本打不出来：`update_e2e` 只 `println` 自己那几行，没有安装
+`log` 的 sink。现在它带一个最小的 stderr sink，用 `DAE_E2E_LOG=1` 打开，默认仍然
+安静。
+
+**顺带暴露的一处脆弱点（未改）。** 第一次下载在 78% 断在
+`the update could not be downloaded: error decoding response body`，同一个请求第二
+次一次就完成——`download_verified` 对中途断流没有任何重试或续传，一次网络抖动等
+于整次更新失败。改它要在下载路径上加退避重试，等于把刚验过的链路再验一遍，所以
+这一轮只记录，不修。
 
 **限流与代价。** 未认证的 GitHub API 是 60 次/小时/IP。启动检查是低频的，远低于
 这个量级；真撞上限流（403）时会走 `UpdateError::Feed`，行为与今天一致——只在
