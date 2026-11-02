@@ -2215,3 +2215,33 @@ crate 的产物（25.2 GiB）后冷启动」验证：2m45s 通过。
 被增量产物掩盖，平台假设被本机平台掩盖。§9.14 的 Linux 手测验的是**运行时行为**，
 不覆盖编译期与测试期的问题——两者互补，谁也替代不了谁。现在这条分支有
 `qt-check` 的三平台证据（Windows 由本地构建 + 148 项单测，Linux/macOS 由 CI）。
+
+### 9.18 记录：`main` 换成 Qt 壳，Tauri 壳留档在 `tauri` 分支（2026-11-02）
+
+迁移做完了，但 `main` 还一直是 Tauri 壳：`src-tauri/`（109 个文件）与 `src/`（172
+个文件）只在这个分支上被删掉，分支领先主干 67 个提交。这一节记录怎么把这个差距
+合上，以及为什么不是强推。
+
+**先把旧壳留档。** `git branch tauri origin/main`（`0a3fed4`）并推送——内容一个字都
+没改，就是今天 `main` 的样子：Tauri + React 双份前端都在，`release.yml` 是 tauri-action
+那版。以后要翻旧实现或 cherry-pick 一处修复，`tauri` 就是入口。
+
+**再把主干合并进来。** `git merge origin/main`，冲突只有 `.github/workflows/release.yml`
+一处，取分支版本。原因：main 上那两个提交改的是旧 Tauri workflow（`c16541d` 把 deb/rpm
+打包与 `packaging/qt/dae-installed.desktop` 带过去、`0a3fed4` 撤掉 macOS 腿），而这条
+分支已经把整个文件重写成 Qt 流水线，两个决策都在里面——没有 macOS 腿、`workflow_dispatch`
+的 smoke 只构建不发布、`dae-installed.desktop` 两侧逐字节相同。
+
+**合并结果是零文件改动**：`git write-tree` 与 `HEAD^{tree}` 同为 `41e19ca`。这一点很
+关键——它让 `main` 可以**快进**（`0a3fed4..eb817f8`，无 `+`）而不是 force push。强推
+会把 main 上那两个提交从 `main` 的祖先链里抹掉，任何基于旧 main 的 fork 或未合 PR 都
+会错位，而这两个提交本身是有意义的（main 曾经要自洽到能手动 smoke 一次）。
+
+**结果**：`main` = `eb817f8`，顶层不再有 `src-tauri`/`src`；`qt-check` 随 push 自动在
+main 上跑，两条腿全绿（Linux 18m2s、macOS 20m34s，main 上缓存是冷的）。这同时补上了
+`97b4115`/`fa0ce4c`/`1c8e9c6` 三个提交从未被 CI 覆盖的缺口——`qt-check` 只对 main 的
+push、PR 与手动触发，往特性分支推不会跑，所以更新器日志与断点续传这两笔改动此前只有
+Windows 本机证据。
+
+**分支布局从此是这样**：`main` = Qt 壳（唯一开发线）；`tauri` = 旧壳留档，只读，不再
+接收修复；`refactor/qt-quick` 与 main 同内容，确认后可删。
