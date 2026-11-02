@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
+import "Localize.js" as Localize
 
 // The folder tree under one sidebar volume.
 //
@@ -228,7 +229,7 @@ Item {
         width: parent.width - 41
         height: visible ? 20 : 0
         visible: treeModel.count === 0 && (treeModel.busy || treeModel.loaded)
-        text: treeModel.status
+        text: Localize.message(treeModel.status)
         color: Theme.inkFaint
         font.pixelSize: Theme.typeMicro
         elide: Text.ElideRight

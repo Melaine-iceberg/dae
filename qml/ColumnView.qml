@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
 import dae 1.0
+import "Localize.js" as Localize
 
 // Miller columns: the tab's directory on the left, the selected folder's
 // children one column to the right, and so on.
@@ -660,7 +661,7 @@ Item {
             Text {
                 width: parent.width
                 visible: pane.emptyError
-                text: pane.emptyError ? pane.listing.status : ""
+                text: pane.emptyError ? Localize.message(pane.listing.status) : ""
                 color: Theme.inkFaint
                 font.pixelSize: Theme.typeCaption
                 horizontalAlignment: Text.AlignHCenter

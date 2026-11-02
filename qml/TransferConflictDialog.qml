@@ -1,6 +1,7 @@
 import QtQuick
 import dae 1.0
 import "DialogFocus.js" as DialogFocus
+import "Localize.js" as Localize
 
 // The transfer-conflict dialog: one collision at a time, with the Tauri shell's
 // three answers and its "apply to all" escape hatch.
@@ -136,7 +137,7 @@ FocusScope {
                     heading: qsTr("准备%1的项目").arg(root.verb)
                     name: Workspace.conflictName
                     category: Workspace.conflictSourceCategory
-                    detail: Workspace.conflictSourceDetail
+                    detail: Localize.message(Workspace.conflictSourceDetail)
                 }
 
                 ConflictSide {
@@ -147,7 +148,7 @@ FocusScope {
                     heading: qsTr("目标文件夹中的现有项目")
                     name: Workspace.conflictName
                     category: Workspace.conflictTargetCategory
-                    detail: Workspace.conflictTargetDetail
+                    detail: Localize.message(Workspace.conflictTargetDetail)
                 }
             }
 

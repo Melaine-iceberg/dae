@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
+import "Localize.js" as Localize
 
 // The docked preview pane.
 //
@@ -554,7 +555,7 @@ Item {
                 Text {
                     width: parent.width
                     visible: root.single && controller.mediaText !== ""
-                    text: controller.mediaText
+                    text: Localize.message(controller.mediaText)
                     color: root.faintColor
                     font.pixelSize: Theme.typeMicro
                     lineHeight: Theme.leadingBody
@@ -589,7 +590,7 @@ Item {
 
                     Repeater {
                         model: [
-                            [qsTr("类型"), controller.kindText],
+                            [qsTr("类型"), Localize.message(controller.kindText)],
                             [qsTr("大小"), controller.sizeText],
                             [qsTr("修改时间"), controller.modifiedText]
                         ]
@@ -606,7 +607,7 @@ Item {
                 Text {
                     width: parent.width
                     visible: root.single && controller.error !== ""
-                    text: controller.error
+                    text: Localize.message(controller.error)
                     color: Theme.danger
                     font.pixelSize: Theme.typeMicro
                     wrapMode: Text.Wrap

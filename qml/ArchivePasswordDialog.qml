@@ -1,5 +1,6 @@
 import QtQuick
 import "DialogFocus.js" as DialogFocus
+import "Localize.js" as Localize
 
 // Asks for an archive password. `compress` mode protects a new 7Z archive and
 // asks twice; `extract` mode retries a protected archive after the core
@@ -35,7 +36,7 @@ FocusScope {
         root.archiveName = archiveName || ""
         passwordInput.text = ""
         confirmInput.text = ""
-        errorText.text = error || ""
+        errorText.text = Localize.message(error) || ""
         root.visible = true
         Qt.callLater(function () {
             if (root.visible)
@@ -48,7 +49,7 @@ FocusScope {
     }
 
     function showError(message) {
-        errorText.text = message || ""
+        errorText.text = Localize.message(message) || ""
     }
 
     function submit() {

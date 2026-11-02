@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
 import "DialogFocus.js" as DialogFocus
+import "Localize.js" as Localize
 
 // One entry's metadata: identity and timestamps, the platform's permission
 // editor, and an on-demand checksum pass.
@@ -265,7 +266,7 @@ FocusScope {
                     spacing: 0
 
                     InfoRow { label: qsTr("名称"); value: controller.name }
-                    InfoRow { label: qsTr("类型"); value: controller.kindText }
+                    InfoRow { label: qsTr("类型"); value: Localize.message(controller.kindText) }
                     InfoRow { label: qsTr("位置"); value: controller.location }
                     InfoRow {
                         label: qsTr("大小")
@@ -625,7 +626,7 @@ FocusScope {
 
     /// The first failure worth showing, whichever half produced it.
     readonly property string errorMessage: controller.error !== ""
-        ? controller.error : controller.saveError
+        ? Localize.message(controller.error) : Localize.message(controller.saveError)
 
     // ---- Inline components ------------------------------------------------
 

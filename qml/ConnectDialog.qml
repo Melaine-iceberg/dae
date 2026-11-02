@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import "DialogFocus.js" as DialogFocus
+import "Localize.js" as Localize
 
 // The add/edit dialog for SMB and SFTP servers.
 //
@@ -98,7 +99,7 @@ Item {
     function applyTestResult(ok, message) {
         root.testing = false
         root.testOk = ok
-        root.testMessage = message
+        root.testMessage = Localize.message(message)
         if (ok)
             root.errorText = ""
     }
@@ -111,7 +112,7 @@ Item {
 
     function applySaveError(message) {
         root.saving = false
-        root.errorText = message
+        root.errorText = Localize.message(message)
     }
 
     /// Returns the trimmed port text, or sets `errorText` and returns null.

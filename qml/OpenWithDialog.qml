@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
 import "DialogFocus.js" as DialogFocus
+import "Localize.js" as Localize
 
 // The macOS/Linux "Open With" picker. The model owns the three groups and the
 // filter, so headers disappear with their last row; this file only draws the
@@ -69,7 +70,7 @@ FocusScope {
 
     function showError(message) {
         root.opening = false
-        root.errorText = message || qsTr("无法打开这个项目")
+        root.errorText = Localize.message(message) || qsTr("无法打开这个项目")
     }
 
     function choose(appId) {
@@ -395,7 +396,7 @@ FocusScope {
 
                     Text {
                         width: parent.width
-                        text: apps.error
+                        text: Localize.message(apps.error)
                         color: root.dangerColor
                         font.pixelSize: Theme.typeCaption
                         horizontalAlignment: Text.AlignHCenter

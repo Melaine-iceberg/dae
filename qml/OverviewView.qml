@@ -321,14 +321,21 @@ Item {
             readonly property bool cursor: list.activeFocus
                 && list.currentIndex === row.index
 
+            /// System places arrive from the model with an English key even
+            /// though they sit in the favorites section, so the icon — not
+            /// `kind` — decides whether a row gets the translated label.
+            readonly property string displayName: {
+                const place = root.placeLabel(row.icon)
+                return place !== "" ? place : row.name
+            }
+
             /// A landing-page row opens something. The kind decides what, so it
             /// goes in the description: "space" and "folder" look the same in a
             /// row but lead to different places.
             Accessible.role: Accessible.ListItem
             /// The reader hears what the row shows, which for a system place
             /// is its translated label, not the model's English key.
-            Accessible.name: row.kind === "place" ? root.placeLabel(row.icon)
-                : row.name
+            Accessible.name: row.displayName
             Accessible.description: row.hasDetail
                 ? root.detailLabel(row.detail) : ""
             Accessible.selectable: true
@@ -366,7 +373,7 @@ Item {
                 anchors.right: detailText.left
                 anchors.rightMargin: 12
                 anchors.verticalCenter: parent.verticalCenter
-                text: row.kind === "place" ? root.placeLabel(row.icon) : row.name
+                text: row.displayName
                 color: root.textColor
                 font.pixelSize: Theme.typeName
                 elide: Text.ElideRight

@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Window
 import dae 1.0
+import "Localize.js" as Localize
 import "Shortcut.js" as ShortcutJS
 
 // The explorer listing. Three presentations over one model: the detail list,
@@ -77,7 +78,7 @@ Item {
     readonly property string emptyTitle: emptyIsSearch
         ? (emptyIsError ? qsTr("无法完成搜索") : qsTr("没有匹配项"))
         : (emptyIsError ? qsTr("无法打开此文件夹") : qsTr("这个文件夹是空的"))
-    readonly property string emptyHint: emptyIsError ? model.status
+    readonly property string emptyHint: emptyIsError ? Localize.message(model.status)
         : emptyIsSearch ? qsTr("试试其他关键词，或检查大小写与类型筛选。")
         : qsTr("拖入文件，或在这里新建文件夹。")
     readonly property string emptyPrimaryLabel: emptyIsError ? ""

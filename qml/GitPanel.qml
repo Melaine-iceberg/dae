@@ -1,5 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
+import "Localize.js" as Localize
 
 // The branch switch and remote actions for the repository shown in the
 // active pane.
@@ -206,7 +207,7 @@ Item {
             if (operation !== "create")
                 return
             root.createPending = false
-            root.createError = message
+            root.createError = Localize.message(message)
         }
     }
 

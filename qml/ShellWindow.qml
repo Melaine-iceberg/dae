@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Window
 import dae 1.0
 import dae.activation 1.0
+import "Localize.js" as Localize
 import "Shell.js" as ShellState
 import "Shortcut.js" as ShortcutJS
 
@@ -305,7 +306,7 @@ Window {
         case "Shortcuts saved": return qsTr("快捷键已保存")
         case "Terminal settings saved": return qsTr("终端设置已保存")
         case "Opened log directory": return qsTr("已打开日志目录")
-        default: return text
+        default: return Localize.message(text)
         }
     }
     readonly property string sourceLabel: config === null ? ""
@@ -895,7 +896,8 @@ Window {
         } else if (mode === "deleteSpace") {
             const spaceId = ids.length > 0 ? ids[0] : ""
             if (!Spaces.deleteSpace(spaceId))
-                toast.show(Spaces.error !== "" ? Spaces.error : qsTr("无法删除空间"), true)
+                toast.show(Spaces.error !== ""
+                    ? root.localizeBackend(Spaces.error) : qsTr("无法删除空间"), true)
             else
                 toast.show(qsTr("空间已删除"), false)
         }
@@ -1486,7 +1488,8 @@ Window {
         if (!spaceId || !path)
             return
         if (!Spaces.addItem(spaceId, path))
-            toast.show(Spaces.error !== "" ? Spaces.error : qsTr("无法添加到空间"), true)
+            toast.show(Spaces.error !== ""
+                ? root.localizeBackend(Spaces.error) : qsTr("无法添加到空间"), true)
         else
             toast.show(qsTr("已添加到“") + Spaces.nameOfId(spaceId) + "”", false)
     }
@@ -1504,7 +1507,8 @@ Window {
         else if (mode === "spaceCreate") {
             const id = Spaces.createSpace(text)
             if (id === "")
-                toast.show(Spaces.error !== "" ? Spaces.error : qsTr("无法创建空间"), true)
+                toast.show(Spaces.error !== ""
+                    ? root.localizeBackend(Spaces.error) : qsTr("无法创建空间"), true)
             else {
                 if (path !== "")
                     Spaces.addItem(id, path)
@@ -1513,7 +1517,8 @@ Window {
             }
         } else if (mode === "spaceRename") {
             if (!Spaces.renameSpace(path, text))
-                toast.show(Spaces.error !== "" ? Spaces.error : qsTr("无法重命名空间"), true)
+                toast.show(Spaces.error !== ""
+                    ? root.localizeBackend(Spaces.error) : qsTr("无法重命名空间"), true)
         }
     }
 
@@ -2216,7 +2221,7 @@ Window {
             }
             if (kind === "compress" || kind === "extract")
                 root.resetArchiveState()
-            toast.show(message, true)
+            toast.show(root.localizeBackend(message), true)
         }
 
         function onArchivePasswordRequired(target, message) {
@@ -2233,7 +2238,7 @@ Window {
                 if (connectDialog.shown)
                     connectDialog.applySaveError(message)
                 else
-                    toast.show(message, true)
+                    toast.show(root.localizeBackend(message), true)
                 return
             }
             if (connectDialog.shown) {
@@ -2252,7 +2257,7 @@ Window {
                 if (cloudDialog.shown)
                     cloudDialog.applyError(message)
                 else
-                    toast.show(message, true)
+                    toast.show(root.localizeBackend(message), true)
                 return
             }
             if (cloudDialog.shown) {
@@ -2274,7 +2279,7 @@ Window {
         function onGitOperationFailed(operation, message) {
             if (operation === "create" && gitPanel.shown && gitPanel.creating)
                 return
-            toast.show(message, true)
+            toast.show(root.localizeBackend(message), true)
         }
     }
 
@@ -2992,7 +2997,7 @@ Window {
                     root.showSidebarMenu(kind, path, x, y)
                 }
                 onErrorRequested: function (message) {
-                    toast.show(message, true)
+                    toast.show(root.localizeBackend(message), true)
                 }
             }
 
@@ -3342,7 +3347,7 @@ Window {
                             root.requestSpaceDelete(id, name)
                         }
                         onErrorReported: function (message) {
-                            toast.show(message, true)
+                            toast.show(root.localizeBackend(message), true)
                         }
                     }
                 }

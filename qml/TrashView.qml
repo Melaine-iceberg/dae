@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
+import "Localize.js" as Localize
 
 // The recycle bin: newest deletion first, with restore, purge and empty.
 //
@@ -290,7 +291,8 @@ Item {
             visible: width >= 40
             anchors.verticalCenter: parent.verticalCenter
             text: root.model === null ? ""
-                : (root.model.loaded ? root.model.status : qsTr("读取回收站…"))
+                : (root.model.loaded
+                    ? Localize.message(root.model.status) : qsTr("读取回收站…"))
             color: root.mutedColor
             font.pixelSize: Theme.typeMicro
             elide: Text.ElideRight
@@ -647,7 +649,7 @@ Item {
         Text {
             width: parent.width
             horizontalAlignment: Text.AlignHCenter
-            text: root.model !== null ? root.model.error : ""
+            text: root.model !== null ? Localize.message(root.model.error) : ""
             color: root.mutedColor
             font.pixelSize: Theme.typeMicro
             wrapMode: Text.Wrap

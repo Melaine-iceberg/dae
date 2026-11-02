@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import "DialogFocus.js" as DialogFocus
+import "Localize.js" as Localize
 
 // The OAuth dialog for Google Drive, OneDrive and Dropbox.
 //
@@ -75,12 +76,12 @@ Item {
     function applyResult(ok, message) {
         root.authorizing = false
         if (!ok)
-            root.errorText = message
+            root.errorText = Localize.message(message)
     }
 
     function applyError(message) {
         root.authorizing = false
-        root.errorText = message
+        root.errorText = Localize.message(message)
     }
 
     function guideText() {

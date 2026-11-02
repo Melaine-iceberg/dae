@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
+import "Localize.js" as Localize
 
 // What is waiting behind the transfer that owns the status bar's progress row.
 //
@@ -174,7 +175,7 @@ Item {
                 TransferRow {
                     width: parent.width
                     visible: Workspace.busy
-                    name: Workspace.progressLabel
+                    name: Localize.message(Workspace.progressLabel)
                     target: Workspace.transferDestination
                     status: root.percent + "%"
                     progress: root.percent / 100
@@ -189,7 +190,7 @@ Item {
                         required property int index
                         required property string modelData
                         width: body.width
-                        name: modelData
+                        name: Localize.message(modelData)
                         // qmllint disable missing-property
                         target: Workspace.queuedTransferPaths.length > index
                             ? Workspace.queuedTransferPaths[index] : ""

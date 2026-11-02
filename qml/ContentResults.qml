@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import dae 1.0
+import "Localize.js" as Localize
 
 // Grouped content-search results: one header row per file, then one row per
 // match. The backend has already trimmed each line and turned its character
@@ -61,7 +62,7 @@ Item {
             anchors.right: parent.right
             anchors.rightMargin: 16
             anchors.verticalCenter: parent.verticalCenter
-            text: root.model !== null ? root.model.status : ""
+            text: root.model !== null ? Localize.message(root.model.status) : ""
             color: root.mutedColor
             font.pixelSize: Theme.typeMicro
         }
@@ -71,7 +72,7 @@ Item {
         anchors.centerIn: parent
         visible: root.model !== null && root.model.finished && root.model.loaded === 0
         text: root.model !== null && root.model.status !== ""
-            ? root.model.status : qsTr("没有匹配内容")
+            ? Localize.message(root.model.status) : qsTr("没有匹配内容")
         color: root.mutedColor
         font.pixelSize: Theme.typeBody
     }

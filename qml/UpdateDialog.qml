@@ -1,6 +1,7 @@
 import QtQuick
 import dae 1.0
 import "DialogFocus.js" as DialogFocus
+import "Localize.js" as Localize
 
 // Update status and the single "download and install" action. The startup
 // check is silent; this dialog is the place where a failure becomes visible
@@ -240,7 +241,7 @@ FocusScope {
                 Text {
                     width: parent.width
                     visible: Updater.error !== ""
-                    text: Updater.error
+                    text: Localize.message(Updater.error)
                     color: root.dangerColor
                     font.pixelSize: Theme.typeMicro
                     wrapMode: Text.Wrap
