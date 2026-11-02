@@ -9,8 +9,8 @@ no longer built it — `docs/decisions/engine-qt-quick.md` records why the engin
 changed and §9.13 what the retirement touched. Nothing in this tree is from
 that shell; `git log` and the decision document are where it lives now.
 
-- **Tabs and windows.** Tabs drag between windows and tear off into their own;
-  a pool of pre-warmed windows makes a tear-off look immediate.
+- **Tabs and windows.** Tabs drag between windows and tear off into their own
+  window on demand.
 - **More than the local disk.** Mounted volumes, WSL distros, the trash,
   SSH/SFTP and SMB connections, and archives (`zip`, 7z) browsed in place.
 - **A terminal in the frame.** An xterm panel beside the listing.
@@ -157,12 +157,10 @@ time ([QML AOT](docs/qml-aot.md)).
 
 ## Performance
 
-Work is judged against
-[`docs/performance-opportunities.md`](docs/performance-opportunities.md): what is
-already measured and done, and the remaining opportunities with the harness and
-the numbers behind each one. Measure before changing anything — `docs/decisions/`
-holds the experiments that were run and declined, and the conditions that would
-reopen them.
+Work is judged by measurement, and
+[`docs/decisions/`](docs/decisions/README.md) is where the measurements live:
+what was run, the numbers behind each one, and the conditions that would reopen
+a decision. Measure before changing anything.
 
 Two build-time optimisations sit on top of the release profile: LLVM IR PGO and,
 on Linux, a post-link pass with LLVM BOLT. The cxx-qt C++ bridge joins the
@@ -184,11 +182,12 @@ deliberately do not follow it: a symlink stays the colour `ls --color` paints it
 ## Decisions
 
 `docs/decisions/` is the decision log (written in Chinese): why the engine moved
-to Qt Quick, why the tab tear-off went through a pre-warmed window pool, why the
-browser-style webview `reparent` route was rejected, and why the gtk/gio stack is
-pinned at 0.18 — each with the measurements behind it, plus the conditions that
-would reopen the question. Start at
-[`docs/decisions/README.md`](docs/decisions/README.md).
+to Qt Quick, why the file-IO mechanism stayed as it is, why Windows directory
+enumeration needed the large-fetch flag, why SFTP host keys are trusted on first
+use, and why the gtk/gio stack is pinned at 0.18 — each with the measurements
+behind it, plus the conditions that would reopen the question. Start at
+[`docs/decisions/README.md`](docs/decisions/README.md); the records that only
+describe the retired WebView shell are archived on the `tauri` branch.
 
 ## Tests
 

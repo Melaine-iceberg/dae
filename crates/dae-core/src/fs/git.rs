@@ -85,9 +85,9 @@ type StatusRecords = Arc<[(String, GitEntryStatusKind)]>;
 /// directory listing only ever consumes the badges of its own direct children.
 /// A work tree of 20,000 tracked files therefore spends ~36 ms of a blocking
 /// thread and of the disk on a directory whose answer is two badges, and a
-/// monorepo pays it again for every step of a navigation
-/// (`docs/performance-opportunities.md` §2). One scan can answer every directory
-/// of the worktree, so it is computed once and filtered per directory instead.
+/// monorepo pays it again for every step of a navigation. One scan can answer
+/// every directory of the worktree, so it is computed once and filtered per
+/// directory instead.
 #[derive(Default)]
 pub struct GitStatusCache {
     /// Counts the filesystem changes the directory watchers reported. Their
@@ -1249,11 +1249,10 @@ mod tests {
         }
     }
 
-    /// The contract that rejected the pathspec road
-    /// (`docs/performance-opportunities.md` §2): a directory git folded into one
-    /// untracked record has to keep resolving to `directory_untracked` when it
-    /// is the directory being listed — including when the scan answering it was
-    /// taken for another directory.
+    /// The contract that ruled out restricting the scan by pathspec: a
+    /// directory git folded into one untracked record has to keep resolving to
+    /// `directory_untracked` when it is the directory being listed — including
+    /// when the scan answering it was taken for another directory.
     #[test]
     fn the_cached_scan_keeps_the_untracked_directory_contract() {
         let temp = TempRepo::create("cache-untracked-directory");
@@ -1589,8 +1588,8 @@ mod tests {
 
     /// One raw scan at `dir`: how many status records it produced, and whether
     /// it folded `dir` itself into a single untracked record. `pathspec`
-    /// restricts the scan to a literal path, which is the alternative §2 of
-    /// `docs/performance-opportunities.md` declined.
+    /// restricts the scan to a literal path, which is the alternative this
+    /// cache declined.
     fn scan_records(dir: &Path, pathspec: Option<&Path>) -> (usize, bool) {
         let repo = Repository::discover(dir).expect("discover");
         let mut options = StatusOptions::new();

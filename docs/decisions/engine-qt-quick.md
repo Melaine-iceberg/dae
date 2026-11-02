@@ -164,7 +164,8 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
    `get_system_places` 是唯一故意留下的命令：它经 `Manager::path()` 解析桌面/文档/下载
    等七个目录，把这套规则也搬进 core 是另一个决定，不该夹带在这一刀里。
 
-9. **文件系统整体搬入 `dae-core`**：按[施工单](../slice-8-core-extraction.md)执行，
+9. **文件系统整体搬入 `dae-core`**：按施工单执行（施工单随 Tauri 分支归档，见
+   [`README.md`](README.md) 的「已归档」一节），
    两处波次按真实依赖调整——`local` 必须与 `git` / `transfer` / `vfs` 同批
    （`local/directory` 会作废 Git 状态缓存），`sidebar` / `prefetch` 必须与
    `recents` / `spaces` 同批（`prefetch` 同时在读写两侧）。六个 wire 事件收进壳的
@@ -190,8 +191,8 @@ src-tauri/         # 旧壳，迁移期保留，用于 A/B 与回退；P4 之后
 
 ## 4.1 下一刀的执行手册
 
-切片八已完成，施工单保留作验收记录与踩坑清单：
-[`../slice-8-core-extraction.md`](../slice-8-core-extraction.md)。
+切片八已完成，施工单保留作验收记录与踩坑清单（`slice-8-core-extraction.md`，随
+Tauri 分支归档）。
 §5 的四组门槛（12 万行列表、中文 IME、无边框 + Mica、撕出/关闭）已经全部
 量完（§5.1–§5.4）。
 
@@ -1911,8 +1912,9 @@ GPU 路径只在真机上验过，这也是「软件渲染能起来」不算通�
   `packaging/icons`。
 - **注释与 README**：见 §9.4-12 那一行的记录。此外把两处指向已删文件的注释
   （`apps/dae/Cargo.toml` 的 profile 说明、`main.rs` 的 `spawn_training_quit`
-  出处）改成「已退役」+ 指向本节；`docs/performance-opportunities.md` 里 5 条
-  基准命令的 `cd src-tauri` 改成 `cd crates/dae-core`（那是还在用的配方）。
+  出处）改成「已退役」+ 指向本节；`docs/performance-opportunities.md`（已于
+  2026-11-02 随 WebView 壳归档）里 5 条基准命令的 `cd src-tauri` 改成
+  `cd crates/dae-core`（那是还在用的配方）。
   **没有动的是带日期的决策记录**（`docs/decisions/*.md` 里引用旧路径的那些）：
   它们是当时的快照，改它等于篡改记录；要看今天的路径，看 README 与本文件。
 

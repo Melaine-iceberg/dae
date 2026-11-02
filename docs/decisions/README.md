@@ -20,11 +20,17 @@
 
 ## 已归档：WebView（Tauri）壳时期的记录
 
-`cold-start-js.md`、`boot-screen-prerender.md`、`first-mount-cost.md`、
-`tab-drag-webview-reparent.md`、`tab-tear-off-warm-pool.md` 与 `poc/webview-reparent/`
-描述的是**已退役的 WebView 壳**的窗口模型、标签撕出与冷启动行为。该壳于 2026-11-01
-退役、`main` 转为 Qt 壳，这批记录随后于 2026-11-02 从 `main` 移除，留档在 `tauri` 分支。
+下列内容描述的是**已退役的 WebView 壳**：该壳于 2026-11-01 退役、`main` 转为 Qt 壳，
+这批记录随后于 2026-11-02 从 `main` 移除，留档在 `tauri` 分支。
+
+- `cold-start-js.md`、`boot-screen-prerender.md`、`first-mount-cost.md` —— 冷启动归因，
+  以及预渲染与 React 首次挂载这两项被实测否决的优化
+- `tab-drag-webview-reparent.md`、`tab-tear-off-warm-pool.md`、`poc/webview-reparent/` ——
+  标签撕出的两条路线：被否决的 webview reparent 与已实施的预热窗口池
+- `slice-8-core-extraction.md` —— 把文件系统搬进 `dae-core` 的施工单、验收记录与踩坑清单
+- `performance-opportunities.md` —— WebView 前端的性能机会清单与复现命令
+- `bench/cold-start/`、`bench/frontend-scans/` —— 上述两份文档依赖的 harness
 
 `engine-qt-quick.md` 仍然引用其中的实测数字（每 webview +190–200 MB PSS、预热池
 +200 MB、WebView2 占冷启动 63–65%），作为「为什么离开系统 WebView」的论据来源；
-要复核这些数字，到 `tauri` 分支取对应的文档与 `bench/` harness。
+要复核这些数字，到 `tauri` 分支取对应的文档与 harness。
