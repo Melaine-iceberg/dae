@@ -14,7 +14,7 @@
   <Identity
     Name="dae"
     Publisher="CN=Mt342"
-    Version="0.5.0.0" />
+    Version="0.5.1.0" />
 
   <Properties>
     <DisplayName>dae</DisplayName>

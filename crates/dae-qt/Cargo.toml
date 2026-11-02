@@ -1,6 +1,6 @@
 [package]
 name = "dae-qt"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Qt Quick shell bridge for dae: directory model, native window state (Win32, with portable fallbacks) and the IME focus guard"
