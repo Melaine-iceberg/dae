@@ -4430,8 +4430,8 @@
         </message>
         <message>
             <location filename="../ShellWindow.qml" line="1621" />
-            <source>‹ 返回</source>
-            <translation>‹ Back</translation>
+            <source>返回</source>
+            <translation>Back</translation>
         </message>
         <message>
             <location filename="../ShellWindow.qml" line="1754" />

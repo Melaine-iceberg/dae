@@ -36,14 +36,18 @@ Item {
 
     readonly property var items: [
         { kind: "label", label: qsTr("可见性") },
-        { kind: "toggle", property: "showHiddenFiles", label: qsTr("显示隐藏文件"),
+        { kind: "toggle", property: "showHiddenFiles", glyph: "eye",
+          label: qsTr("显示隐藏文件"),
           shortcut: root.hiddenShortcut },
         { kind: "sep" },
         { kind: "label", label: qsTr("类型") },
         { kind: "radio", group: "kindFilter", value: "all", label: qsTr("全部") },
-        { kind: "radio", group: "kindFilter", value: "folders", label: qsTr("仅文件夹") },
-        { kind: "radio", group: "kindFilter", value: "files", label: qsTr("仅文件") },
-        { kind: "radio", group: "kindFilter", value: "images", label: qsTr("仅图片") },
+        { kind: "radio", group: "kindFilter", value: "folders", glyph: "folder",
+          label: qsTr("仅文件夹") },
+        { kind: "radio", group: "kindFilter", value: "files", glyph: "file",
+          label: qsTr("仅文件") },
+        { kind: "radio", group: "kindFilter", value: "images", glyph: "image",
+          label: qsTr("仅图片") },
         { kind: "sep" },
         { kind: "label", label: qsTr("修改时间") },
         { kind: "radio", group: "modifiedFilter", value: "any", label: qsTr("不限") },
@@ -96,6 +100,7 @@ Item {
             mapped.push({
                 kind: kind,
                 label: entry.label,
+                glyph: entry.glyph || "",
                 checked: kind === "item" && root.checked(entry),
                 checkable: kind === "item" && (entry.kind === "toggle"
                     || entry.kind === "radio"),

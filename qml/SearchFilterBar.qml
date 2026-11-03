@@ -43,16 +43,16 @@ Item {
     /// what the backend's file filter already accepts (`"*.ts, .rs"`), so this
     /// introduces no new filter dimension — only a shorter way to type one.
     readonly property var typeOptions: [
-        { id: "all", label: qsTr("全部类型"), glob: "" },
-        { id: "doc", label: qsTr("文档"),
+        { id: "all", glyph: "search", label: qsTr("全部类型"), glob: "" },
+        { id: "doc", glyph: "text", label: qsTr("文档"),
           glob: "*.txt, *.md, *.pdf, *.doc, *.docx, *.rtf, *.csv" },
-        { id: "image", label: qsTr("图片"),
+        { id: "image", glyph: "image", label: qsTr("图片"),
           glob: "*.png, *.jpg, *.jpeg, *.gif, *.webp, *.svg, *.bmp, *.heic, *.avif" },
-        { id: "code", label: qsTr("代码"),
+        { id: "code", glyph: "code", label: qsTr("代码"),
           glob: "*.rs, *.ts, *.tsx, *.js, *.jsx, *.py, *.go, *.c, *.h, *.cc, *.cpp, *.hpp, *.java, *.kt, *.rb, *.php, *.swift, *.sh, *.lua, *.json, *.toml, *.yaml, *.yml, *.xml, *.html, *.css, *.scss, *.sql, *.qml" },
-        { id: "archive", label: qsTr("压缩包"),
+        { id: "archive", glyph: "archive", label: qsTr("压缩包"),
           glob: "*.zip, *.tar, *.gz, *.tgz, *.bz2, *.xz, *.7z, *.rar" },
-        { id: "media", label: qsTr("媒体"),
+        { id: "media", glyph: "media", label: qsTr("媒体"),
           glob: "*.mp3, *.flac, *.wav, *.m4a, *.ogg, *.mp4, *.mkv, *.mov, *.avi, *.webm" }
     ]
 

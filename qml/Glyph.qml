@@ -35,8 +35,9 @@ Item {
     /// "media", "link".
     /// Controls: "chevron" (and its left/up/down forms), "check", "close",
     /// "refresh", "eye", "info", "copy", "cut", "paste", "pencil", "external",
-    /// "undo", "arrowLeft", "arrowRight", "arrowUp", "windowMin", "windowMax",
-    /// "windowClose", "windowFullScreen", "windowExitFullScreen".
+    /// "undo", "sort", "filter", "split", "extract", "arrowLeft", "arrowRight",
+    /// "arrowUp", "windowMin", "windowMax", "windowClose", "windowFullScreen",
+    /// "windowExitFullScreen".
     /// Anything else draws nothing and the caller falls back to its label.
     property string kind: "home"
     property color tint: Theme.inkMuted
@@ -110,6 +111,13 @@ Item {
             { d: "M10.3 4C10.3 3.17 10.97 2.5 11.8 2.5C12.63 2.5 13.3 3.17 13.3 4C13.3 4.83 12.63 5.5 11.8 5.5C10.97 5.5 10.3 4.83 10.3 4Z" },
             { d: "M10.3 10C10.3 9.17 10.97 8.5 11.8 8.5C12.63 8.5 13.3 9.17 13.3 10C13.3 10.83 12.63 11.5 11.8 11.5C10.97 11.5 10.3 10.83 10.3 10Z" },
             { d: "M4.2 10.5L4.2 6.2C4.2 5 5.2 4 6.4 4L10.3 4M11.8 5.5L11.8 8.5" }
+        ],
+        // A window with its title bar drawn in, so a menu row reads "another
+        // window" rather than the empty square the title bar's maximize button
+        // already owns.
+        "window": [
+            { d: "M3.2 2.8L12.8 2.8C13.35 2.8 13.8 3.25 13.8 3.8L13.8 12.2C13.8 12.75 13.35 13.2 12.8 13.2L3.2 13.2C2.65 13.2 2.2 12.75 2.2 12.2L2.2 3.8C2.2 3.25 2.65 2.8 3.2 2.8Z" },
+            { d: "M2.2 6.1L13.8 6.1" }
         ],
         "panel": [
             { d: "M3.2 3L12.8 3C13.35 3 13.8 3.45 13.8 4L13.8 12C13.8 12.55 13.35 13 12.8 13L3.2 13C2.65 13 2.2 12.55 2.2 12L2.2 4C2.2 3.45 2.65 3 3.2 3Z" },
@@ -252,6 +260,26 @@ Item {
         "undo": [
             { d: "M3 6.5L9.2 6.5C10.97 6.5 12.4 7.93 12.4 9.7C12.4 11.47 10.97 12.9 9.2 12.9L6 12.9" },
             { d: "M5.4 4L3 6.5L5.4 9" }
+        ],
+        // Sorting is the only verb in the menus spelled as an arrow beside its
+        // own key: the bars shrink the way the order runs.
+        "sort": [
+            { d: "M2.6 4.4L9.4 4.4M2.6 8L7.4 8M2.6 11.6L5.4 11.6", w: 1.25 },
+            { d: "M12.4 3.6L12.4 12.2M10.2 10L12.4 12.2L14.6 10", w: 1.25 }
+        ],
+        "filter": [
+            { d: "M2.4 3.6L13.6 3.6L9.2 8.7L9.2 12.6L6.8 11.1L6.8 8.7Z" }
+        ],
+        // Two panes, split down the middle — the sidebar's "panel" mark is the
+        // same frame with the divider hard against one edge.
+        "split": [
+            { d: "M3.2 3L12.8 3C13.35 3 13.8 3.45 13.8 4L13.8 12C13.8 12.55 13.35 13 12.8 13L3.2 13C2.65 13 2.2 12.55 2.2 12L2.2 4C2.2 3.45 2.65 3 3.2 3Z" },
+            { d: "M8 3L8 13" }
+        ],
+        // Unpacking: an arrow leaving a tray, the mirror of "downloads".
+        "extract": [
+            { d: "M2.6 9L2.6 12.4C2.6 12.95 3.05 13.4 3.6 13.4L12.4 13.4C12.95 13.4 13.4 12.95 13.4 12.4L13.4 9" },
+            { d: "M8 11L8 2.8M4.9 5.9L8 2.8L11.1 5.9" }
         ],
         "arrowLeft": [
             { d: "M12.5 8L3.5 8M7 4L3 8L7 12", w: 1.25 }

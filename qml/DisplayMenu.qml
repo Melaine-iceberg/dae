@@ -39,17 +39,23 @@ Item {
 
     readonly property var items: [
         { kind: "label", label: qsTr("视图") },
-        { kind: "radio", group: "viewMode", value: "list", label: qsTr("列表") },
-        { kind: "radio", group: "viewMode", value: "grid", label: qsTr("网格") },
-        { kind: "radio", group: "viewMode", value: "column", label: qsTr("分栏") },
+        { kind: "radio", group: "viewMode", value: "list", glyph: "list",
+          label: qsTr("列表") },
+        { kind: "radio", group: "viewMode", value: "grid", glyph: "grid",
+          label: qsTr("网格") },
+        { kind: "radio", group: "viewMode", value: "column", glyph: "column",
+          label: qsTr("分栏") },
         { kind: "sep" },
         // The overview lost its sidebar header row; the view menu and the
         // command palette are now the two ways in.
         { kind: "action", id: "overview", label: qsTr("概览") },
         { kind: "sep" },
-        { kind: "shellToggle", property: "sidebarVisible", label: qsTr("侧栏") },
-        { kind: "shellToggle", property: "previewVisible", label: qsTr("预览") },
-        { kind: "shellToggle", property: "terminalVisible", label: qsTr("终端") },
+        { kind: "shellToggle", property: "sidebarVisible", glyph: "panel",
+          label: qsTr("侧栏") },
+        { kind: "shellToggle", property: "previewVisible", glyph: "eye",
+          label: qsTr("预览") },
+        { kind: "shellToggle", property: "terminalVisible", glyph: "terminal",
+          label: qsTr("终端") },
         { kind: "sep" },
         { kind: "label", label: qsTr("密度") },
         { kind: "radio", group: "density", value: "compact", label: qsTr("紧凑") },
@@ -59,9 +65,11 @@ Item {
         { kind: "label", label: qsTr("图标") },
         { kind: "radio", group: "iconStyle", value: "themed", label: qsTr("内置图标") },
         { kind: "radio", group: "iconStyle", value: "system", label: qsTr("系统图标") },
-        { kind: "toggle", property: "rowThumbnails", label: qsTr("行内显示缩略图") },
+        { kind: "toggle", property: "rowThumbnails", glyph: "image",
+          label: qsTr("行内显示缩略图") },
         { kind: "sep" },
-        { kind: "toggle", property: "splitEnabled", label: qsTr("分屏") }
+        { kind: "toggle", property: "splitEnabled", glyph: "split",
+          label: qsTr("分屏") }
     ]
 
     function openAbove(x, y) {
@@ -118,6 +126,7 @@ Item {
             mapped.push({
                 kind: kind,
                 label: entry.label,
+                glyph: entry.glyph || "",
                 checked: kind === "item" && root.checked(entry),
                 checkable: kind === "item" && (entry.kind === "radio"
                     || entry.kind === "toggle" || entry.kind === "shellToggle")

@@ -69,10 +69,10 @@ Item {
             list.takeFocus()
     }
 
-    /// Normalizes a caller's entries — `{ id, label, icon, checked, danger,
-    /// enabled, submenu, separator, header, shortcut }` — into the shape
-    /// `MenuList` paints. The index is preserved, so a triggered row maps back
-    /// to the caller's array without a second lookup table.
+    /// Normalizes a caller's entries — `{ id, label, glyph, icon, checked,
+    /// danger, enabled, submenu, separator, header, shortcut }` — into the
+    /// shape `MenuList` paints. The index is preserved, so a triggered row maps
+    /// back to the caller's array without a second lookup table.
     function normalized(source) {
         const entries = source || []
         const mapped = []
@@ -82,6 +82,7 @@ Item {
                 kind: entry.separator === true ? "separator"
                     : (entry.header === true ? "header" : "item"),
                 label: entry.label || "",
+                glyph: entry.glyph || "",
                 image: entry.icon || "",
                 checked: entry.checked === true,
                 // A caller that never says `checked` is offering an action, not

@@ -34,6 +34,29 @@ FocusScope {
 
     readonly property int rowHeight: Theme.controlLg
 
+    /// Whether these rows draw in the gutter at all — an icon, a mark, or a
+    /// tick. The whole list shares the answer: labelling each row from its own
+    /// contents indents the one ticked entry 22 px past its neighbours, and a
+    /// column that breaks for the selected row reads as a fault rather than as
+    /// a mark. `widthFor` needs the same answer before any row exists, which is
+    /// why this is a question about the entries rather than about the rows.
+    function gutterFor(entries) {
+        const rows = entries || []
+        for (let index = 0; index < rows.length; index += 1) {
+            const entry = rows[index]
+            if (entry === undefined || entry === null)
+                continue
+            if (entry.kind === "separator" || entry.kind === "header")
+                continue
+            if (entry.image || entry.glyph || entry.checked === true
+                    || entry.checkable === true)
+                return true
+        }
+        return false
+    }
+
+    readonly property bool gutter: root.gutterFor(root.items)
+
     /// The width these rows want: the widest one is gutter + label + chord +
     /// chevron, plus the panel's 4 px padding on both sides. Clamped to the
     /// 212–286 range the design uses — below it a two-word menu looks like a
@@ -41,6 +64,7 @@ FocusScope {
     /// the pointer away from the list it belongs to.
     function widthFor(entries) {
         const rows = entries || []
+        const indent = root.gutterFor(rows) ? 34 : 12
         let widest = 0
         for (let index = 0; index < rows.length; index += 1) {
             const entry = rows[index]
@@ -54,7 +78,7 @@ FocusScope {
                     (entry.image ? 28 : 8) + labelMeasure.implicitWidth + 8)
                 continue
             }
-            let need = entry.image || entry.glyph || entry.checked ? 34 : 12
+            let need = indent
             need += labelMeasure.implicitWidth + 12
             if (entry.shortcut) {
                 chordMeasure.text = entry.shortcut
@@ -284,6 +308,11 @@ FocusScope {
                     readonly property bool separator: modelData.kind === "separator"
                     readonly property bool header: modelData.kind === "header"
                     readonly property bool selectable: root.isSelectable(entry.index)
+                    /// Greyed out: the verb cannot be run on this selection.
+                    /// The label and the mark have to agree, or a menu reads as
+                    /// half available.
+                    readonly property bool barred: modelData.disabled === true
+                        || modelData.enabled === false
                     readonly property bool current: root.currentIndex === entry.index
                     readonly property bool hasImage: !separator && !header
                         && !!modelData.image
@@ -394,7 +423,7 @@ FocusScope {
                         anchors.verticalCenter: parent.verticalCenter
                         kind: entry.modelData.glyph || ""
                         tint: entry.modelData.danger === true ? Theme.danger
-                                                              : Theme.inkMuted
+                            : (entry.barred ? Theme.inkFaint : Theme.inkMuted)
                     }
 
                     Glyph {
@@ -410,15 +439,13 @@ FocusScope {
                     Text {
                         visible: !entry.separator && !entry.header
                         anchors.left: parent.left
-                        anchors.leftMargin: entry.hasImage || entry.hasGlyph || entry.hasCheck
-                            ? 34 : 12
+                        anchors.leftMargin: root.gutter ? 34 : 12
                         anchors.right: chord.visible ? chord.left : parent.right
                         anchors.rightMargin: 12
                         anchors.verticalCenter: parent.verticalCenter
                         text: entry.modelData.label || ""
                         color: {
-                            if (entry.modelData.disabled === true
-                                    || entry.modelData.enabled === false)
+                            if (entry.barred)
                                 return Theme.inkFaint
                             if (entry.modelData.danger === true)
                                 return Theme.danger

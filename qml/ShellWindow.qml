@@ -987,6 +987,7 @@ Window {
         const items = []
         for (let index = 0; index < options.length; index += 1)
             items.push({ id: options[index].id,
+                         glyph: options[index].glyph,
                          label: options[index].label,
                          checked: root.searchType === options[index].id })
         return items
@@ -1390,32 +1391,36 @@ Window {
     /// the sort keys that kept the view menu too tall.
     function moreMenuItems() {
         const items = [
-            { id: "refresh", label: qsTr("刷新"), shortcut: "F5" },
+            { id: "refresh", glyph: "refresh", label: qsTr("刷新"), shortcut: "F5" },
             { id: "toggleHidden",
+              glyph: "eye",
               label: qsTr("显示隐藏文件"),
               checked: ExplorerPrefs.showHiddenFiles,
               shortcut: root.shortcutDisplay("explorer.toggleHidden") },
             { id: "toggleSidebar",
+              glyph: "panel",
               label: qsTr("侧栏"),
               checked: root.sidebarVisible },
             { id: "toggleSplit",
+              glyph: "split",
               label: qsTr("分屏"),
               checked: ExplorerPrefs.splitEnabled },
-            { id: "sort", label: qsTr("排序"), submenu: root.sortMenuItems() },
+            { id: "sort", glyph: "sort", label: qsTr("排序"), submenu: root.sortMenuItems() },
             { separator: true },
-            { id: "filters", label: qsTr("筛选…") },
+            { id: "filters", glyph: "filter", label: qsTr("筛选…") },
             { separator: true },
-            { id: "settings", label: qsTr("设置"),
+            { id: "settings", glyph: "gear", label: qsTr("设置"),
               shortcut: root.shortcutDisplay("app.openSettings") }
         ]
         if (Updater.supported)
-            items.push({ id: "checkUpdates",
+            items.push({ id: "checkUpdates", glyph: "downloads",
                          label: Updater.available ? qsTr("更新可用") : qsTr("检查更新") })
         else if (Updater.packaged)
             // A packaged install cannot replace itself, but hiding the entry
             // leaves the user with no way to learn that. The dialog it opens
             // says where updates come from instead.
-            items.push({ id: "checkUpdates", label: qsTr("由安装包更新") })
+            items.push({ id: "checkUpdates", glyph: "downloads",
+                         label: qsTr("由安装包更新") })
         return items
     }
 
@@ -1529,9 +1534,10 @@ Window {
         const entries = []
         for (let index = 0; index < Spaces.count; index += 1)
             entries.push({ id: "addSpace:" + Spaces.idAt(index),
+                           glyph: "diamond",
                            label: Spaces.nameAt(index) })
         entries.push({ separator: true })
-        entries.push({ id: "newSpaceAdd", label: qsTr("新建空间并添加…") })
+        entries.push({ id: "newSpaceAdd", glyph: "plus", label: qsTr("新建空间并添加…") })
         return entries
     }
 
@@ -1577,30 +1583,34 @@ Window {
         const hasClipboard = Workspace.clipboardMode !== ""
         const remote = root.rowMenuRemote()
         return [
-            { id: "open", label: isDir ? qsTr("打开") : qsTr("用默认应用打开"),
+            { id: "open", glyph: isDir ? "folder" : "external",
+              label: isDir ? qsTr("打开") : qsTr("用默认应用打开"),
               enabled: hasPath && (!remote || isDir), shortcut: "Enter" },
-            { id: "openTab", label: qsTr("在新标签页打开"), enabled: hasPath && isDir },
-            { id: "openWindow", label: qsTr("在新窗口打开"), enabled: hasPath && isDir },
+            { id: "openTab", glyph: "plus", label: qsTr("在新标签页打开"),
+              enabled: hasPath && isDir },
+            { id: "openWindow", glyph: "window", label: qsTr("在新窗口打开"),
+              enabled: hasPath && isDir },
             { separator: true },
-            { id: "copy", label: qsTr("复制"),
+            { id: "copy", glyph: "copy", label: qsTr("复制"),
               shortcut: root.shortcutDisplay("explorer.copy"), enabled: hasPath },
-            { id: "cut", label: qsTr("剪切"),
+            { id: "cut", glyph: "cut", label: qsTr("剪切"),
               shortcut: root.shortcutDisplay("explorer.cut"), enabled: hasPath },
-            { id: "paste", label: qsTr("粘贴到此处"),
+            { id: "paste", glyph: "paste", label: qsTr("粘贴到此处"),
               shortcut: root.shortcutDisplay("explorer.paste"),
               enabled: hasClipboard && isDir },
             { separator: true },
             { id: many ? "bulkRename" : "rename",
+              glyph: "pencil",
               label: many ? qsTr("批量重命名…") : qsTr("重命名"),
               enabled: hasPath,
               shortcut: many ? "" : root.shortcutDisplay("explorer.rename") },
-            { id: "trash", label: qsTr("移到回收站"),
+            { id: "trash", glyph: "trash", label: qsTr("移到回收站"),
               shortcut: root.shortcutDisplay("explorer.trash"),
               enabled: hasPath && !remote, danger: true },
             { separator: true },
-            { id: "properties", label: qsTr("属性"), shortcut: "Alt+Enter",
+            { id: "properties", glyph: "info", label: qsTr("属性"), shortcut: "Alt+Enter",
               enabled: hasPath && !many },
-            { id: "moreMenu", label: qsTr("更多…") }
+            { id: "moreMenu", glyph: "more", label: qsTr("更多…") }
         ]
     }
 
@@ -1618,42 +1628,52 @@ Window {
         // sources may be remote but the destination (here) may not.
         const canExtract = hasPath && !isDir && !remote && root.isArchivePath(path)
         const items = [
-            { id: "menuBack", label: qsTr("‹ 返回") },
+            { id: "menuBack", glyph: "chevronLeft", label: qsTr("返回") },
             { separator: true },
-            { id: "reveal", label: qsTr("在资源管理器中显示"), enabled: hasPath && !remote },
-            { id: "openWith", label: qsTr("选择打开方式…"), enabled: hasPath && !remote },
-            { id: "terminal", label: qsTr("在终端中打开"), enabled: hasPath && isDir && !remote },
-            { id: "preview", label: root.previewShows(path) ? qsTr("隐藏预览") : qsTr("预览"),
+            { id: "reveal", glyph: "folder", label: qsTr("在资源管理器中显示"),
+              enabled: hasPath && !remote },
+            { id: "openWith", glyph: "exe", label: qsTr("选择打开方式…"),
+              enabled: hasPath && !remote },
+            { id: "terminal", glyph: "terminal", label: qsTr("在终端中打开"),
+              enabled: hasPath && isDir && !remote },
+            { id: "preview", glyph: "eye",
+              label: root.previewShows(path) ? qsTr("隐藏预览") : qsTr("预览"),
               enabled: hasPath && !manySelection(), shortcut: root.shortcutDisplay("explorer.preview") },
-            { id: "copyPath", label: qsTr("复制路径"), enabled: hasPath }
+            { id: "copyPath", glyph: "copy", label: qsTr("复制路径"), enabled: hasPath }
         ]
 
         const extensions = root.shellCommandSubmenu()
         if (extensions.length > 0) {
             items.push({ separator: true })
-            items.push({ id: "shellCommands", label: qsTr("应用扩展"), submenu: extensions })
+            items.push({ id: "shellCommands", glyph: "external",
+                         label: qsTr("应用扩展"), submenu: extensions })
         }
 
         items.push({ separator: true })
-        items.push({ id: "pasteShortcut", label: qsTr("粘贴快捷方式"),
+        items.push({ id: "pasteShortcut", glyph: "paste", label: qsTr("粘贴快捷方式"),
                      enabled: hasClipboard && isDir && !remote })
-        items.push({ id: "duplicate", label: qsTr("创建副本"), enabled: hasPath })
-        items.push({ id: "createShortcut", label: qsTr("创建快捷方式"), enabled: hasPath && !remote })
-        items.push({ id: "compress", label: qsTr("压缩为…"), enabled: hasPath && !remote, submenu: [
+        items.push({ id: "duplicate", glyph: "copy", label: qsTr("创建副本"), enabled: hasPath })
+        items.push({ id: "createShortcut", glyph: "link", label: qsTr("创建快捷方式"),
+                     enabled: hasPath && !remote })
+        items.push({ id: "compress", glyph: "archive", label: qsTr("压缩为…"),
+                     enabled: hasPath && !remote, submenu: [
             { id: "compressZip", label: qsTr("ZIP 压缩包") },
             { id: "compressTar", label: qsTr("TAR 归档") },
             { id: "compressTarGz", label: qsTr("TAR.GZ 压缩包") },
             { id: "compress7z", label: qsTr("7Z 压缩包") },
             { id: "compress7zEncrypted", label: qsTr("7Z 压缩包（加密）") }
         ] })
-        items.push({ id: "extractHere", label: qsTr("解压到此处"), enabled: canExtract })
-        items.push({ id: "moveTo", label: qsTr("移动到…"), enabled: hasPath })
+        items.push({ id: "extractHere", glyph: "extract", label: qsTr("解压到此处"),
+                     enabled: canExtract })
+        items.push({ id: "moveTo", glyph: "arrowRight", label: qsTr("移动到…"),
+                     enabled: hasPath })
         items.push({ separator: true })
-        items.push({ id: "favorite", label: qsTr("加入收藏"), enabled: hasPath && isDir })
-        items.push({ id: "addToSpace", label: qsTr("添加到空间"), enabled: hasPath,
-                     submenu: root.spaceSubmenu() })
+        items.push({ id: "favorite", glyph: "star", label: qsTr("加入收藏"),
+                     enabled: hasPath && isDir })
+        items.push({ id: "addToSpace", glyph: "diamond", label: qsTr("添加到空间"),
+                     enabled: hasPath, submenu: root.spaceSubmenu() })
         items.push({ separator: true })
-        items.push({ id: "delete", label: qsTr("永久删除"),
+        items.push({ id: "delete", glyph: "trash", label: qsTr("永久删除"),
                      shortcut: root.shortcutDisplay("explorer.deletePermanent"),
                      enabled: hasPath, danger: true })
         return items
@@ -1750,13 +1770,13 @@ Window {
         root.contextIsDir = true
         const remote = tab.listing.remote || root.isRemotePath(path)
         const items = [
-            { id: "copyPath", label: qsTr("复制路径") },
-            { id: "copyName", label: qsTr("复制名称") },
-            { id: "terminal", label: qsTr("在终端中打开"), enabled: !remote }
+            { id: "copyPath", glyph: "copy", label: qsTr("复制路径") },
+            { id: "copyName", glyph: "text", label: qsTr("复制名称") },
+            { id: "terminal", glyph: "terminal", label: qsTr("在终端中打开"), enabled: !remote }
         ]
         if (!split) {
             items.push({ separator: true })
-            items.push({ id: "editPath", label: qsTr("编辑路径") })
+            items.push({ id: "editPath", glyph: "pencil", label: qsTr("编辑路径") })
         }
         menu.openAt(x, y, items)
     }
@@ -1766,11 +1786,12 @@ Window {
         root.contextTrashId = id
         root.contextTrashParent = originalParent
         menu.openAt(x, y, [
-            { id: "trashRestore", label: qsTr("恢复"), shortcut: "Enter" },
-            { id: "trashOpenOriginal", label: qsTr("打开原位置"),
+            { id: "trashRestore", glyph: "undo", label: qsTr("恢复"), shortcut: "Enter" },
+            { id: "trashOpenOriginal", glyph: "external", label: qsTr("打开原位置"),
               enabled: originalParent !== "" },
             { separator: true },
-            { id: "trashPurge", label: qsTr("永久删除"), shortcut: "Delete", danger: true }
+            { id: "trashPurge", glyph: "trash", label: qsTr("永久删除"),
+              shortcut: "Delete", danger: true }
         ])
     }
 
@@ -1792,19 +1813,21 @@ Window {
             ? (paneTab.listing.remote || root.isRemotePath(paneTab.listing.path))
             : root.remoteLocation
         menu.openAt(x, y, [
-            { id: "newFolder", label: qsTr("新建文件夹"), shortcut: root.chord("Mod+Shift+N") },
-            { id: "newFile", label: qsTr("新建文件") },
+            { id: "newFolder", glyph: "folder", label: qsTr("新建文件夹"),
+              shortcut: root.chord("Mod+Shift+N") },
+            { id: "newFile", glyph: "file", label: qsTr("新建文件") },
             { separator: true },
-            { id: "paste", label: qsTr("粘贴"),
+            { id: "paste", glyph: "paste", label: qsTr("粘贴"),
               shortcut: root.shortcutDisplay("explorer.paste"),
               enabled: Workspace.clipboardMode !== "" },
-            { id: "pasteShortcut", label: qsTr("粘贴快捷方式"),
+            { id: "pasteShortcut", glyph: "link", label: qsTr("粘贴快捷方式"),
               enabled: Workspace.clipboardMode !== "" && !remote },
-            { id: "selectAll", label: qsTr("全选"),
+            { id: "selectAll", glyph: "check", label: qsTr("全选"),
               shortcut: root.shortcutDisplay("explorer.selectAll") },
-            { id: "refresh", label: qsTr("刷新"), shortcut: "F5" },
+            { id: "refresh", glyph: "refresh", label: qsTr("刷新"), shortcut: "F5" },
             { separator: true },
-            { id: "terminal", label: qsTr("在终端中打开"), enabled: !remote }
+            { id: "terminal", glyph: "terminal", label: qsTr("在终端中打开"),
+              enabled: !remote }
         ])
     }
 
@@ -1816,12 +1839,14 @@ Window {
         root.contextIsDir = true
         if (kind === "connection" || kind === "cloud") {
             menu.openAt(x, y, [
-                { id: "open", label: qsTr("打开") },
-                { id: "openTab", label: qsTr("在新标签页打开") },
-                { id: "openWindow", label: qsTr("在新窗口打开") },
-                { id: "copyPath", label: qsTr("复制路径") },
+                { id: "open", glyph: kind === "connection" ? "network" : "cloud",
+                  label: qsTr("打开") },
+                { id: "openTab", glyph: "plus", label: qsTr("在新标签页打开") },
+                { id: "openWindow", glyph: "window", label: qsTr("在新窗口打开") },
+                { id: "copyPath", glyph: "copy", label: qsTr("复制路径") },
                 { separator: true },
                 { id: kind === "connection" ? "removeConnection" : "removeCloud",
+                  glyph: "trash",
                   label: kind === "connection" ? qsTr("移除连接") : qsTr("移除云盘账户"),
                   danger: true }
             ])
@@ -1830,11 +1855,12 @@ Window {
         if (kind === "space") {
             const preset = Spaces.isPresetOfId(path)
             menu.openAt(x, y, [
-                { id: "spaceOpen", label: qsTr("打开空间") },
-                { id: "spaceTab", label: qsTr("在新标签页打开") },
+                { id: "spaceOpen", glyph: "diamond", label: qsTr("打开空间") },
+                { id: "spaceTab", glyph: "plus", label: qsTr("在新标签页打开") },
                 { separator: true },
-                { id: "spaceRename", label: qsTr("重命名空间") },
-                { id: "spaceDelete", label: qsTr("删除空间"), enabled: !preset, danger: true }
+                { id: "spaceRename", glyph: "pencil", label: qsTr("重命名空间") },
+                { id: "spaceDelete", glyph: "trash", label: qsTr("删除空间"),
+                  enabled: !preset, danger: true }
             ])
             return
         }
@@ -1845,18 +1871,20 @@ Window {
         const rowKind = placeKind !== "" ? "place" : kind
         const items = []
         if (rowKind === "favorite")
-            items.push({ id: "removeFavorite", label: qsTr("从收藏移除"), danger: true })
+            items.push({ id: "removeFavorite", glyph: "star", label: qsTr("从收藏移除"),
+                         danger: true })
         if (rowKind === "recent" && !root.isRemotePath(path))
-            items.push({ id: "reveal", label: qsTr("在资源管理器中显示") })
-        items.push({ id: "openTab", label: qsTr("在新标签页打开") })
-        items.push({ id: "openWindow", label: qsTr("在新窗口打开") })
+            items.push({ id: "reveal", glyph: "folder", label: qsTr("在资源管理器中显示") })
+        items.push({ id: "openTab", glyph: "plus", label: qsTr("在新标签页打开") })
+        items.push({ id: "openWindow", glyph: "window", label: qsTr("在新窗口打开") })
         if (rowKind !== "favorite")
-            items.push({ id: "favorite", label: qsTr("加入收藏") })
+            items.push({ id: "favorite", glyph: "star", label: qsTr("加入收藏") })
         items.push({ separator: true })
-        items.push({ id: "copyPath", label: qsTr("复制路径") })
+        items.push({ id: "copyPath", glyph: "copy", label: qsTr("复制路径") })
         if (placeKind !== "") {
             items.push({ separator: true })
-            items.push({ id: "hidePlace:" + placeKind, label: qsTr("从侧栏隐藏"), danger: true })
+            items.push({ id: "hidePlace:" + placeKind, glyph: "eye",
+                         label: qsTr("从侧栏隐藏"), danger: true })
         }
         menu.openAt(x, y, items)
     }
