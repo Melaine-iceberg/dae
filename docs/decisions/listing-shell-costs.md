@@ -364,7 +364,7 @@ n 次比较，**结构推断**，未单独计时）。
 | `model.rs` `layoutChanged` 代替 reset | 单轮阻塞已 ≤22 ms，收益不再明显；需要 `changePersistentIndexList`（cxx-qt 0.10 无绑定）和持久索引测试 | §10.6 |
 | `FileList.qml` 的 `rowIcon` | 行内系统图标 `Image` 没有 `asynchronous: true`（同文件缩略图、ColumnView、FileGrid 都有），provider 调用发生在 GUI 线程 | 只在 `iconStyle == "system"` 时可见；默认 `themed` 走 Glyph，不触发 |
 | `model.rs` 的 `git_badge` | git 徽标精确查不到就线性回退，干净行（大多数）都走这条 | 成本 = O(行 × 脏条目)，只在有大量未提交改动的仓库里明显 |
-| `ShellWindow.qml` 的 `onSelectionChanged` → `PreviewPanel.showPaths` | 选区一变就重开预览，无去重、无防抖；`showPaths` 只在恰好 1 项时 `open`（多选是 `clear`），单行框选或方向键切换会每次重开 | 结果应用在 GUI 线程，超时的任务靠 generation 丢弃但会跑完 |
+| `ShellWindow.qml` 的 `onSelectionChanged` → `PreviewPanel.showPaths` | 选区一变就重开预览，无去重、无防抖；`showPaths` 只在恰好 1 项时 `open`（多选是 `clear`），单行框选会每次重开 | 结果应用在 GUI 线程，超时的任务靠 generation 丢弃但会跑完 |
 | `Glyph.qml` 的 `canvas.onPaint` | 每行一个 `Canvas.Immediate`，悬停/选中改 tint → `requestPaint`，paint 里 `d.match(...)` 每次重新分词 | 仓库做过 Canvas→Rectangle 的创建期 A/B（`qml-aot.md` §7）无差异；重绘路径**未测**（§9.1），所以不排前 |
 | `OverviewModel::refresh`、`SidebarModel::refresh` | 刷新在 GUI 线程同步读 `recents`/`favorites`/`hidden` 等 JSON，再 `replace_rows` 两次 | Overview/侧栏切换时；文档注释里“这三次读是便宜的”只在热缓存成立 |
 | `DirectoryListModel::data` | 每次角色读取重新格式化 size/time/路径/图标/缩略图；delegate 声明 13 个 required role，创建时全部读取 | 每屏几十行、每行 2–4 次分配，量级小于排序，但在滚动路径上 |
@@ -595,3 +595,6 @@ app 内实测（release，100 000 行 `1..100000`，同样是 4 s 完成）：
   仍随 reset 重建。要等 `list.` 的引用面收窄（滚动恢复、框选、前缀都直接读它）
   才能同样 `LazySurface` 化。留在 §7。
 - **watcher 刷新**：§4.3 的整段仍未计时（§9.1）；§10 量的是打开路径。
+- **预览去抖**：`PreviewPanel.showPaths` 只在恰好 1 项时 `open`，多选是 `clear`；
+  grid 方向键只移动光标、不改选区，连按 3 s 的 CPU 增量约 0.03 s。没有量到
+  帧成本，不做。
