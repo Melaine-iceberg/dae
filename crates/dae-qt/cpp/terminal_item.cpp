@@ -227,6 +227,26 @@ void TerminalItem::applySizeToSession()
 
 void TerminalItem::refresh()
 {
+    // Output wakes can outpace the compositor. Pulling and decoding a frame on
+    // every delivered wake keeps the GUI thread busy for the whole burst, so
+    // cap the pull at one per frame and let the trailing wake draw the final
+    // state instead of dropping it.
+    constexpr qint64 FrameMs = 16;
+    if (m_lastRefresh.isValid()) {
+        const qint64 since = m_lastRefresh.elapsed();
+        if (since < FrameMs) {
+            if (!m_refreshQueued) {
+                m_refreshQueued = true;
+                QTimer::singleShot(int(FrameMs - since), Qt::PreciseTimer, this, [this] {
+                    m_refreshQueued = false;
+                    refresh();
+                });
+            }
+            return;
+        }
+    }
+    m_lastRefresh.restart();
+
     if (!m_session) {
         m_hasFrame = false;
         m_cells.clear();

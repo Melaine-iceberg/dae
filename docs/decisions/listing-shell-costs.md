@@ -2,7 +2,7 @@
 
 > **状态：审计完成；第 1 项（§2、§3）、§4 的 watcher 补丁、§5 的批量选择/前缀
 > 与 §6 的选区表示都已实施；§9 的 app 内 qmlprofiler 复测（2026-11-03）之后，
-> §10 又落地了三刀（可见视图按需、完成排序与交互式排序移出 GUI 线程），§7 的次级清单
+> §10 又落地了四刀（可见视图按需、完成排序与交互式排序移出 GUI 线程、终端输出按帧合并），§7 的次级清单
 > 只记录、未动。**
 > 枚举与 IO 不在本文范围之内——它们已经有实测与结论
 > （[`windows-directory-enumeration.md`](windows-directory-enumeration.md)、
@@ -361,7 +361,7 @@ n 次比较，**结构推断**，未单独计时）。
 | 位置 | 机制 | 备注 |
 |---|---|---|
 | `FileList.qml` 的 `list` | grid/column 模式下 list 仍常驻，165 个 delegate 随 reset 重建（§10.1 只按需化了 grid/column） | 要等 `list.` 的引用面收窄（滚动恢复、框选、前缀直接读它）后再 lazy |
-| `model.rs` `layoutChanged` 代替 reset | 单轮阻塞已 ≤22 ms，收益不再明显；需要 `changePersistentIndexList`（cxx-qt 0.10 无绑定）和持久索引测试 | §10.5 |
+| `model.rs` `layoutChanged` 代替 reset | 单轮阻塞已 ≤22 ms，收益不再明显；需要 `changePersistentIndexList`（cxx-qt 0.10 无绑定）和持久索引测试 | §10.6 |
 | `FileList.qml` 的 `rowIcon` | 行内系统图标 `Image` 没有 `asynchronous: true`（同文件缩略图、ColumnView、FileGrid 都有），provider 调用发生在 GUI 线程 | 只在 `iconStyle == "system"` 时可见；默认 `themed` 走 Glyph，不触发 |
 | `model.rs` 的 `git_badge` | git 徽标精确查不到就线性回退，干净行（大多数）都走这条 | 成本 = O(行 × 脏条目)，只在有大量未提交改动的仓库里明显 |
 | `ShellWindow.qml` 的 `onSelectionChanged` → `PreviewPanel.showPaths` | 选区一变就重开预览，无去重、无防抖；`showPaths` 只在恰好 1 项时 `open`（多选是 `clear`），单行框选或方向键切换会每次重开 | 结果应用在 GUI 线程，超时的任务靠 generation 丢弃但会跑完 |
@@ -370,7 +370,6 @@ n 次比较，**结构推断**，未单独计时）。
 | `DirectoryListModel::data` | 每次角色读取重新格式化 size/time/路径/图标/缩略图；delegate 声明 13 个 required role，创建时全部读取 | 每屏几十行、每行 2–4 次分配，量级小于排序，但在滚动路径上 |
 | `Tab.qml` 选区路径数组存入 `historyEntry()` | 大选区会随后退栈保留多份 | 内存，不是帧时间（§6.5） |
 | `TrashView.qml` 的 `selectionVersion`/`isSelected` | 回收站仍是 `path -> true` map + `selectionVersion`，delegate 每次变更跑一次 `isSelected` | 行在 `trash_model.rs` 里；要等那份模型也带 `selected` 角色时一起搬（§6.5） |
-| 终端 `TerminalItem::refresh` | 每次输出唤醒拉一整帧（rows×cols×13 B）并全格解码后重绘，无帧率上限 | 高输出命令（构建日志）下可能；未测（§9.1） |
 
 ## 8. 已经做对，不要重做
 
@@ -476,19 +475,18 @@ n 次比较，**结构推断**，未单独计时）。
 
 ### 9.1 明确延后的测量
 
-这三处还没有数字，是决定而不是遗漏。它们不改变已经给出的排序/重置结论，
+这两处还没有数字，是决定而不是遗漏。它们不改变已经给出的排序/重置结论，
 但触发条件变化时要回来补：
 
 | 路径 | 已知的 | 为什么现在不测 | 回来测的条件 |
 |---|---|---|---|
 | watcher 补丁（§4.3） | 省掉一次整目录枚举（12 万条 ≈55 ms，仓库 bench）加 §2 的完成重排；`plan_patch` 的单测与 app 冒烟已覆盖行为 | 需要可重复的外部事件流（批量改名/下载）才能定时；这条路径的风险是正确性（退回重读）而不是单次成本，正确性已有测试 | 大目录的改名/下载仍卡顿；150 ms 防抖或 `PATCH_LIMIT` 改动；watcher 后端换实现 |
 | `Glyph` 重绘（§7） | 创建期 Canvas→Rectangle 的 A/B 无差异（`qml-aot.md` §7）；悬停/选中改 tint 会 `requestPaint`，`onPaint` 里 `d.match(...)` 每次重新分词 | 只有 `themed` 图标的悬停/选中会触发，没有为它造过悬停/框选的计时场景；qmlprofiler 需要单独开 `painting` 场景 | 悬停或框选整屏时掉帧；准备把 Glyph 换成 Rectangle 或缓存绘制前要基线 |
-| 终端刷新（§7） | 每次输出唤醒整帧拉取（rows×cols×13 B）+ 全格解码，无帧率上限 | 高输出负载（构建日志）要单独造，且它不在列表外壳的完成路径上 | 构建日志滚动掉帧或 CPU 高；改 `TerminalItem::refresh` 的唤醒/合帧策略 |
 
 > §5.3 的“没有计时”不在这张表里：它省的是逐行跨 FFI，量级按行数线性，
 > 行为已由 app 内冒烟覆盖；要数字时按 §5.3 的入口补 qmlprofiler。
 
-## 10. 复测后的三刀（已实施）
+## 10. 复测后的四刀（已实施）
 
 ### 10.1 可见视图按需
 
@@ -569,7 +567,26 @@ app 内实测（release，120 000 条，`DAE_LOG=debug`，列表模式）：
 排序本身仍在 worker 上跑 24–35 ms，列表在结果回来前保持旧顺序——收益是点击不再
 冻结 GUI，而不是立即换序。
 
-### 10.5 没做的
+### 10.5 终端输出按帧合并（已实施）
+
+终端以前把每个跨线程的 `updated` 都换成一次 `refresh`：Rust 侧只合并同一瞬间的
+突发，GUI 处理完一帧就允许下一次进来。构建日志这种每秒几万行的输出会让 GUI 线程
+持续拉帧、解码、重绘，没有帧率上限。
+
+`TerminalItem::refresh` 现在把拉帧限制在每 16 ms 一次：间隔内的唤醒只置一个
+`m_refreshQueued`，由单次定时器在剩余时间到达时补最后一帧。终端仍是拉取模型，
+丢掉的只是中间帧，不是最终状态；输入回显、滚动和主题切换最多晚一帧。
+
+app 内实测（release，100 000 行 `1..100000`，同样是 4 s 完成）：
+
+| | 进程 CPU 累计 |
+|---|---:|
+| 合并前（每次唤醒一帧） | 3.09 s |
+| 合并后（≤60 帧/秒） | 2.30 s |
+
+省下约 26% 的 CPU，墙钟不变；剩余成本主要是 PTY 读取与网格解析，不在刷新路径上。
+
+### 10.6 没做的
 
 - **`layoutChanged` 代替 reset**：单轮阻塞已经 ≤22 ms，§2.4 的触发条件不再成立；
   它还需要 `changePersistentIndexList`（cxx-qt 0.10 没有绑定）和持久索引正确性的

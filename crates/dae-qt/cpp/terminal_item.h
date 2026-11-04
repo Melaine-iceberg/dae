@@ -14,6 +14,7 @@
 
 #include <QByteArray>
 #include <QColor>
+#include <QElapsedTimer>
 #include <QFont>
 #include <QFontMetricsF>
 #include <QHash>
@@ -174,6 +175,8 @@ private:
     bool m_hasFrame = false;
     QTimer m_blink;
     bool m_blinkOn = true;
+    QElapsedTimer m_lastRefresh;
+    bool m_refreshQueued = false;
 };
 
 /// Called from `dae_qt::init` before the QML engine loads. The module name is
